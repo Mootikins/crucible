@@ -418,11 +418,23 @@ impl NotePipeline {
         let tags: Vec<String> = parsed.tags.iter().map(|t| t.name.clone()).collect();
 
         // Extract properties from frontmatter
-        let properties: HashMap<String, serde_json::Value> = parsed
+        let mut properties: HashMap<String, serde_json::Value> = parsed
             .frontmatter
             .as_ref()
             .map(|fm| fm.properties().clone())
             .unwrap_or_default();
+
+        // Stamp `properties.scope` so the storage-layer scope filter has a
+        // value to match against. Precedence:
+        //   1. Explicit frontmatter `scope:` (already in `properties`)
+        //   2. Derived default = `Workspace { path: kiln_root }`
+        //
+        // For (1), we ALSO normalize an unbound `workspace` placeholder
+        // (frontmatter said `scope: workspace` with no path) by binding it
+        // to the kiln root. We never mutate the markdown file on disk —
+        // this stamping only affects the in-memory NoteRecord that becomes
+        // the SQLite row.
+        stamp_scope_on_properties(&mut properties, self.kiln_root.as_deref());
 
         Ok(NoteRecord {
             path: storage_path.to_string(),
@@ -437,6 +449,54 @@ impl NotePipeline {
             updated_at: chrono::Utc::now(),
         })
     }
+}
+
+/// Ensure `properties["scope"]` is present and bound. See
+/// [`NotePipeline::enriched_to_record`] for precedence rules.
+///
+/// - If `properties["scope"]` is missing or unparseable → stamp `workspace`
+///   derived from `kiln_root` (canonicalized if possible).
+/// - If `properties["scope"]` is an unbound workspace placeholder (the
+///   frontmatter said `scope: workspace` with no path) → bind it to
+///   `kiln_root`.
+/// - Otherwise leave the property as-is.
+///
+/// If `kiln_root` is `None` (rare, test-only) the property is stamped with
+/// an unbound workspace placeholder — the post-prune storage layer treats
+/// an unbound scope as invisible to every authority, which fails closed.
+///
+/// Public-in-crate so tests can exercise the migration logic directly
+/// without spinning up a full pipeline.
+pub(crate) fn stamp_scope_on_properties(
+    properties: &mut HashMap<String, serde_json::Value>,
+    kiln_root: Option<&std::path::Path>,
+) {
+    use crucible_core::storage::note_store::SCOPE_PROPERTY_KEY;
+    use crucible_core::storage::Scope;
+
+    // Pre-prune `from_property_value` returned `Option<Scope>`. It now
+    // returns `Option<Result<Scope, ScopeError>>` because legacy `global`
+    // and `user:*` kinds are refused. Treat any error as "missing" so a
+    // stale frontmatter `scope: global` flips back to the kiln workspace.
+    let existing = properties
+        .get(SCOPE_PROPERTY_KEY)
+        .and_then(|v| Scope::from_property_value(v).and_then(Result::ok));
+
+    let bound = match existing {
+        Some(scope) if scope.is_unbound_workspace() => match kiln_root {
+            Some(root) => scope.bind_to_workspace(root),
+            None => scope,
+        },
+        Some(scope) => scope,
+        None => match kiln_root {
+            Some(root) => {
+                Scope::workspace(root).unwrap_or_else(|_| Scope::workspace_unchecked(root))
+            }
+            None => Scope::workspace_unchecked(std::path::PathBuf::new()),
+        },
+    };
+
+    properties.insert(SCOPE_PROPERTY_KEY.to_string(), bound.to_property_value());
 }
 
 #[cfg(test)]
@@ -510,7 +570,11 @@ mod tests {
             Ok(vec![])
         }
 
-        async fn get(&self, _path: &str) -> std::result::Result<Option<NoteRecord>, StorageError> {
+        async fn get(
+            &self,
+            _path: &str,
+            _authority: &crucible_core::storage::Scope,
+        ) -> std::result::Result<Option<NoteRecord>, StorageError> {
             Ok(None)
         }
 
@@ -521,13 +585,17 @@ mod tests {
             }))
         }
 
-        async fn list(&self) -> std::result::Result<Vec<NoteRecord>, StorageError> {
+        async fn list(
+            &self,
+            _authority: &crucible_core::storage::Scope,
+        ) -> std::result::Result<Vec<NoteRecord>, StorageError> {
             Ok(vec![])
         }
 
         async fn get_by_hash(
             &self,
             _hash: &BlockHash,
+            _authority: &crucible_core::storage::Scope,
         ) -> std::result::Result<Option<NoteRecord>, StorageError> {
             Ok(None)
         }

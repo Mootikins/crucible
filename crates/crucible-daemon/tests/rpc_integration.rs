@@ -16,6 +16,8 @@ mod models;
 mod notes;
 #[path = "rpc_integration/recording.rs"]
 mod recording;
+#[path = "rpc_integration/scope.rs"]
+mod scope;
 #[path = "rpc_integration/sessions.rs"]
 mod sessions;
 #[path = "rpc_integration/tui_flow.rs"]

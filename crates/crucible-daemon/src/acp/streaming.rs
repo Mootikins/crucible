@@ -11,6 +11,7 @@
 
 use crate::acp::Result;
 
+use crucible_core::types::acp::FileDiff;
 // Re-export ToolCallInfo from core for backwards compatibility
 pub use crucible_core::types::acp::ToolCallInfo;
 
@@ -29,12 +30,28 @@ pub enum StreamingChunk {
         name: String,
         id: String,
         arguments: Option<serde_json::Value>,
+        /// File diffs extracted from `ToolCallContent::Diff` frames in the
+        /// initial `SessionUpdate::ToolCall` notification. Empty when the
+        /// agent hadn't attached any diff content yet (e.g. diffs that
+        /// arrive in a later `ToolCallUpdate` will surface via the
+        /// post-stream replay path instead of this live event).
+        diffs: Vec<FileDiff>,
     },
     /// Tool execution completed
     ToolEnd {
         id: String,
         result: Option<String>,
         error: Option<String>,
+    },
+    /// Diffs that arrived in a `ToolCallUpdate` after the matching
+    /// `ToolStart` was already announced. ACP agents like Claude Code
+    /// send the initial `tool_call` notification with empty `content`
+    /// and only attach `ToolCallContent::Diff` entries via a follow-up
+    /// `tool_call_update` frame; this variant carries those late diffs
+    /// to the daemon outer loop so they reach the TUI.
+    ToolDiffUpdate {
+        call_id: String,
+        diffs: Vec<FileDiff>,
     },
 }
 
@@ -462,6 +479,7 @@ mod tests {
             name: "search".to_string(),
             id: "tool_123".to_string(),
             arguments: Some(serde_json::json!({ "query": "test" })),
+            diffs: Vec::new(),
         };
         let result = callback(chunk.clone());
 

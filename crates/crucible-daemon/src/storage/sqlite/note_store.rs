@@ -16,7 +16,7 @@ use crate::storage::sqlite::error_ext::SqliteResultExt;
 use crucible_core::events::SessionEvent;
 use crucible_core::parser::BlockHash;
 use crucible_core::storage::{
-    Filter, NoteRecord, NoteStore, Op, SearchResult, StorageError, StorageResult,
+    Filter, NoteRecord, NoteStore, Op, Scope, SearchResult, StorageError, StorageResult,
 };
 
 // ============================================================================
@@ -167,6 +167,32 @@ fn validate_property_key(key: &str) -> StorageResult<()> {
     Ok(())
 }
 
+/// Build the WHERE-clause fragment that enforces same-workspace visibility
+/// at the SQL layer.
+///
+/// The note's scope is stored in `properties.scope` as a JSON object:
+///   `{"kind":"workspace","path":"/x"}`.
+///
+/// Legacy / unstamped notes (no `properties.scope` value) are treated as
+/// "the kiln this row was inserted into". Because SQLite is per-kiln, any
+/// `Workspace` authority querying this DB is implicitly querying the same
+/// kiln — so legacy rows are visible.
+///
+/// The pre-Wave-2 schema also had `global` and `user:*` kinds; rows still
+/// carrying those kind tags are hidden (the migration treats them as
+/// untrusted residue, fail-closed).
+fn scope_authority_to_sql(authority: &Scope, params: &mut Vec<Box<dyn ToSql + Send>>) -> String {
+    let Scope::Workspace { path } = authority;
+    // Visible:
+    //   (a) note scope kind is 'workspace' AND path matches, OR
+    //   (b) legacy: no scope property at all (treated as "this kiln").
+    params.push(Box::new(path.to_string_lossy().to_string()));
+    "((json_extract(properties, '$.scope.kind') = 'workspace' \
+         AND json_extract(properties, '$.scope.path') = ?) \
+     OR json_extract(properties, '$.scope') IS NULL)"
+        .to_string()
+}
+
 fn filter_to_sql(
     filter: &Filter,
     params: &mut Vec<Box<dyn ToSql + Send>>,
@@ -224,6 +250,7 @@ fn filter_to_sql(
                 key, op_str
             ))
         }
+        Filter::Scope(authority) => Ok(scope_authority_to_sql(authority, params)),
         Filter::And(filters) => {
             if filters.is_empty() {
                 return Ok("1=1".to_string());
@@ -462,24 +489,37 @@ impl NoteStore for SqliteNoteStore {
         Ok(result)
     }
 
-    async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
+    async fn get(&self, path: &str, authority: &Scope) -> StorageResult<Option<NoteRecord>> {
         let pool = self.pool.clone();
         let path = path.to_string();
+        let authority = authority.clone();
 
         tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
-                let mut stmt = conn
-                    .prepare(
+                // Compose path predicate AND scope predicate at SQL layer so a
+                // record outside the caller's authority is indistinguishable
+                // from a missing record (no side channel).
+                let mut scope_params: Vec<Box<dyn ToSql + Send>> = Vec::new();
+                let scope_clause = scope_authority_to_sql(&authority, &mut scope_params);
+                let sql = format!(
                     r#"
                     SELECT path, content_hash, embedding, embedding_model, embedding_dimensions, title, tags, links_to, properties, updated_at
                     FROM notes
-                    WHERE path = ?1
+                    WHERE path = ?1 AND {}
                     "#,
-                )
-                    .sql()?;
+                    scope_clause,
+                );
+
+                let mut stmt = conn.prepare(&sql).sql()?;
+
+                let mut all_params: Vec<&dyn ToSql> = Vec::with_capacity(1 + scope_params.len());
+                all_params.push(&path as &dyn ToSql);
+                for p in &scope_params {
+                    all_params.push(p.as_ref() as &dyn ToSql);
+                }
 
                 let note = stmt
-                    .query_row([&path], row_to_note)
+                    .query_row(params_from_iter(all_params), row_to_note)
                     .optional()
                     .sql()?;
                 Ok(note)
@@ -519,23 +559,30 @@ impl NoteStore for SqliteNoteStore {
         Ok(event)
     }
 
-    async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+    async fn list(&self, authority: &Scope) -> StorageResult<Vec<NoteRecord>> {
         let pool = self.pool.clone();
+        let authority = authority.clone();
 
         tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
-                let mut stmt = conn
-                    .prepare(
+                let mut scope_params: Vec<Box<dyn ToSql + Send>> = Vec::new();
+                let scope_clause = scope_authority_to_sql(&authority, &mut scope_params);
+                let sql = format!(
                     r#"
                     SELECT path, content_hash, embedding, embedding_model, embedding_dimensions, title, tags, links_to, properties, updated_at
                     FROM notes
+                    WHERE {}
                     ORDER BY updated_at DESC
                     "#,
-                )
-                    .sql()?;
+                    scope_clause,
+                );
+
+                let mut stmt = conn.prepare(&sql).sql()?;
+                let param_refs: Vec<&dyn ToSql> =
+                    scope_params.iter().map(|p| p.as_ref() as &dyn ToSql).collect();
 
                 let notes = stmt
-                    .query_map([], row_to_note)
+                    .query_map(params_from_iter(param_refs), row_to_note)
                     .sql()?
                     .collect::<Result<Vec<_>, _>>()
                     .sql()?;
@@ -546,25 +593,39 @@ impl NoteStore for SqliteNoteStore {
         .await?
     }
 
-    async fn get_by_hash(&self, hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+    async fn get_by_hash(
+        &self,
+        hash: &BlockHash,
+        authority: &Scope,
+    ) -> StorageResult<Option<NoteRecord>> {
         let pool = self.pool.clone();
         let hash_bytes = hash.as_bytes().to_vec();
+        let authority = authority.clone();
 
         tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
-                let mut stmt = conn
-                    .prepare(
+                let mut scope_params: Vec<Box<dyn ToSql + Send>> = Vec::new();
+                let scope_clause = scope_authority_to_sql(&authority, &mut scope_params);
+                let sql = format!(
                     r#"
                     SELECT path, content_hash, embedding, embedding_model, embedding_dimensions, title, tags, links_to, properties, updated_at
                     FROM notes
-                    WHERE content_hash = ?1
+                    WHERE content_hash = ?1 AND {}
                     LIMIT 1
                     "#,
-                )
-                    .sql()?;
+                    scope_clause,
+                );
+
+                let mut stmt = conn.prepare(&sql).sql()?;
+
+                let mut all_params: Vec<&dyn ToSql> = Vec::with_capacity(1 + scope_params.len());
+                all_params.push(&hash_bytes as &dyn ToSql);
+                for p in &scope_params {
+                    all_params.push(p.as_ref() as &dyn ToSql);
+                }
 
                 let note = stmt
-                    .query_row([&hash_bytes], row_to_note)
+                    .query_row(params_from_iter(all_params), row_to_note)
                     .optional()
                     .sql()?;
                 Ok(note)
@@ -879,7 +940,7 @@ mod tests {
         store.upsert(note).await.expect("Failed to upsert note");
 
         let retrieved = store
-            .get("metadata.md")
+            .get("metadata.md", &ws("/"))
             .await
             .expect("Failed to retrieve note")
             .expect("Expected note to exist");
@@ -906,7 +967,7 @@ mod tests {
 
         // Get
         let retrieved = store
-            .get("test/note.md")
+            .get("test/note.md", &ws("/"))
             .await
             .expect("Failed to get")
             .expect("Note should exist");
@@ -922,7 +983,7 @@ mod tests {
         store.upsert(updated).await.expect("Failed to update");
 
         let retrieved = store
-            .get("test/note.md")
+            .get("test/note.md", &ws("/"))
             .await
             .expect("Failed to get")
             .expect("Note should exist");
@@ -933,7 +994,10 @@ mod tests {
             .delete("test/note.md")
             .await
             .expect("Failed to delete");
-        let deleted = store.get("test/note.md").await.expect("Failed to get");
+        let deleted = store
+            .get("test/note.md", &ws("/"))
+            .await
+            .expect("Failed to get");
         assert!(deleted.is_none());
     }
 
@@ -952,7 +1016,7 @@ mod tests {
         }
 
         // List all
-        let notes = store.list().await.expect("Failed to list");
+        let notes = store.list(&ws("/")).await.expect("Failed to list");
         assert_eq!(notes.len(), 3);
     }
 
@@ -970,7 +1034,7 @@ mod tests {
 
         // Find by hash
         let found = store
-            .get_by_hash(&hash)
+            .get_by_hash(&hash, &ws("/"))
             .await
             .expect("Failed to get by hash")
             .expect("Note should exist");
@@ -978,7 +1042,7 @@ mod tests {
 
         // Non-existent hash
         let not_found = store
-            .get_by_hash(&BlockHash::new([2u8; 32]))
+            .get_by_hash(&BlockHash::new([2u8; 32]), &ws("/"))
             .await
             .expect("Failed to get by hash");
         assert!(not_found.is_none());
@@ -1083,7 +1147,7 @@ mod tests {
         store.upsert(note).await.expect("Failed to upsert");
 
         let retrieved = store
-            .get("test.md")
+            .get("test.md", &ws("/"))
             .await
             .expect("Failed to get")
             .expect("Note should exist");
@@ -1154,5 +1218,127 @@ mod tests {
         // Only b.md links to c.md now
         assert_eq!(inlinks_to_c.len(), 1);
         assert!(inlinks_to_c.contains(&"b.md".to_string()));
+    }
+
+    // =========================================================================
+    // Memory Scoping — security tests
+    // =========================================================================
+    //
+    // These tests pin the memory-scoping boundary at the SQLite layer. The
+    // threat model lives in crucible-core/src/storage/scope.rs; these
+    // verify the SQL-level enforcement matches that model.
+    //
+    // Each test seeds notes at known scopes via `with_scope`, then queries
+    // through `NoteStore::{get,list,get_by_hash,search}` under a specific
+    // request authority and asserts on visibility.
+
+    use std::path::PathBuf;
+
+    fn ws(p: &str) -> Scope {
+        Scope::Workspace {
+            path: PathBuf::from(p),
+        }
+    }
+
+    async fn scoped_store_with_notes(notes: Vec<(&str, Scope)>) -> SqliteNoteStore {
+        let pool = SqlitePool::memory().expect("pool");
+        let store = create_note_store(pool).await.expect("store");
+        for (path, scope) in notes {
+            let n = NoteRecord::new(path, BlockHash::zero())
+                .with_title(path)
+                .with_embedding(vec![1.0, 0.0, 0.0])
+                .with_scope(scope);
+            store.upsert(n).await.expect("upsert");
+        }
+        store
+    }
+
+    #[tokio::test]
+    async fn scope_workspace_a_cannot_read_workspace_b_notes() {
+        let store = scoped_store_with_notes(vec![("a.md", ws("/a")), ("b.md", ws("/b"))]).await;
+
+        // Authority is workspace A — only a.md visible.
+        let notes = store.list(&ws("/a")).await.unwrap();
+        let paths: Vec<_> = notes.iter().map(|n| n.path.as_str()).collect();
+        assert!(paths.contains(&"a.md"), "got: {:?}", paths);
+        assert!(!paths.contains(&"b.md"), "cross-scope leak: {:?}", paths);
+
+        // get() directly also denies.
+        let b_via_a = store.get("b.md", &ws("/a")).await.unwrap();
+        assert!(
+            b_via_a.is_none(),
+            "get of b.md from workspace A must be None"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_by_hash_respects_scope() {
+        let pool = SqlitePool::memory().expect("pool");
+        let store = create_note_store(pool).await.expect("store");
+
+        let h1 = BlockHash::new([1u8; 32]);
+        let h2 = BlockHash::new([2u8; 32]);
+
+        let mine = NoteRecord::new("mine.md", h1)
+            .with_title("mine")
+            .with_scope(ws("/a"));
+        let theirs = NoteRecord::new("theirs.md", h2)
+            .with_title("theirs")
+            .with_scope(ws("/b"));
+        store.upsert(mine).await.unwrap();
+        store.upsert(theirs).await.unwrap();
+
+        // Workspace A can hash-find mine but not theirs.
+        assert!(store.get_by_hash(&h1, &ws("/a")).await.unwrap().is_some());
+        assert!(
+            store.get_by_hash(&h2, &ws("/a")).await.unwrap().is_none(),
+            "cross-workspace hash lookup must be denied"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_respects_scope() {
+        let store = scoped_store_with_notes(vec![("a.md", ws("/a")), ("b.md", ws("/b"))]).await;
+
+        let a_only = store.list(&ws("/a")).await.unwrap();
+        let paths: Vec<_> = a_only.iter().map(|n| n.path.as_str()).collect();
+        assert!(paths.contains(&"a.md"));
+        assert!(
+            !paths.contains(&"b.md"),
+            "workspace A leaked cross-scope: {:?}",
+            paths
+        );
+    }
+
+    #[tokio::test]
+    async fn search_respects_scope() {
+        let store = scoped_store_with_notes(vec![("a.md", ws("/a")), ("b.md", ws("/b"))]).await;
+
+        let query = vec![1.0, 0.0, 0.0];
+        let filter = Some(crucible_core::storage::Filter::Scope(ws("/a")));
+        let hits = store.search(&query, 10, filter).await.unwrap();
+        let paths: Vec<_> = hits.iter().map(|h| h.note.path.as_str()).collect();
+        assert!(paths.contains(&"a.md"));
+        assert!(
+            !paths.contains(&"b.md"),
+            "search leaked cross-scope: {:?}",
+            paths
+        );
+    }
+
+    #[tokio::test]
+    async fn unset_scope_visible_to_any_workspace_authority() {
+        // Notes seeded without a `scope` property are visible to ANY workspace
+        // authority that's reading this DB. Per the migration policy: legacy
+        // notes belong to "this kiln's workspace" (and SQLite is per-kiln).
+        let pool = SqlitePool::memory().expect("pool");
+        let store = create_note_store(pool).await.expect("store");
+
+        let legacy = NoteRecord::new("legacy.md", BlockHash::zero()).with_title("legacy");
+        store.upsert(legacy).await.unwrap();
+
+        let from_workspace = store.list(&ws("/some-kiln")).await.unwrap();
+        assert_eq!(from_workspace.len(), 1);
+        assert_eq!(from_workspace[0].path, "legacy.md");
     }
 }

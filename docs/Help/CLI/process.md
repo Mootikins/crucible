@@ -161,9 +161,9 @@ For large kilns (>1000 files):
 **Source code:** `crates/crucible-cli/src/commands/process.rs`
 
 **Related modules:**
-- `crates/crucible-sqlite/` - SQLite storage layer (default)
+- `crates/crucible-daemon/src/storage/sqlite/` - SQLite storage layer (default)
 - `crates/crucible-core/src/parser/` - Markdown parsing
-- `crates/crucible-llm/src/embeddings/` - Embedding generation
+- `crates/crucible-daemon/src/llm/embeddings/` - Embedding generation
 
 ## See Also
 

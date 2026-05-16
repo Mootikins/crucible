@@ -13,6 +13,9 @@ tags:
 
 # Agent & LLM Types Analysis
 
+> **Historical snapshot (2024-12-13).** Predates the crate consolidation: `crucible-agents` was absorbed into `crucible-core`/`crucible-daemon`, `crucible-llm` and `crucible-acp` are now `crucible-daemon::llm` and `crucible-daemon::acp`. Many issues below were resolved by the simplification refactor; treat as archive context.
+
+
 ## Executive Summary
 
 The agent and LLM infrastructure is well-architected with clear separation across three crates:

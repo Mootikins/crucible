@@ -201,6 +201,24 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                 .get("lua_primary_arg")
                 .and_then(|v| v.as_str())
                 .map(String::from);
+            let diffs = match data.get("diffs") {
+                Some(raw) => match serde_json::from_value(raw.clone()) {
+                    Ok(parsed) => parsed,
+                    Err(err) => {
+                        tracing::warn!(
+                            target: "tui",
+                            error = %err,
+                            tool = ?data.get("tool"),
+                            call_id = ?data.get("call_id"),
+                            raw = %raw,
+                            "tool_call event carried a malformed `diffs` field; \
+                             ignoring and continuing with empty Vec",
+                        );
+                        Vec::new()
+                    }
+                },
+                None => Vec::new(),
+            };
             vec![ChatAppMsg::ToolCall {
                 name,
                 args,
@@ -208,7 +226,38 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                 description,
                 source,
                 lua_primary_arg,
+                diffs,
             }]
+        }
+        "tool_call_diff_update" => {
+            let Some(call_id) = data
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+            else {
+                return Vec::new();
+            };
+            let diffs = match data.get("diffs") {
+                Some(raw) => match serde_json::from_value(raw.clone()) {
+                    Ok(parsed) => parsed,
+                    Err(err) => {
+                        tracing::warn!(
+                            target: "tui",
+                            error = %err,
+                            call_id = %call_id,
+                            raw = %raw,
+                            "tool_call_diff_update event carried a malformed `diffs` field; \
+                             ignoring",
+                        );
+                        return Vec::new();
+                    }
+                },
+                None => Vec::new(),
+            };
+            if diffs.is_empty() {
+                return Vec::new();
+            }
+            vec![ChatAppMsg::ToolCallDiffUpdate { call_id, diffs }]
         }
         "tool_result" => {
             let name = data
@@ -273,6 +322,29 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                     used: total_tokens as usize,
                     total: 0,
                 });
+            }
+            // Compute cache hit rate from the per-event token fields.
+            // Both fields are optional; emit only when at least one is
+            // present so the StatusBar's "no data" sentinel still works
+            // for older sessions.
+            let cache_read = data
+                .get("cache_read_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let cache_creation = data
+                .get("cache_creation_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            if data.get("cache_read_tokens").is_some()
+                || data.get("cache_creation_tokens").is_some()
+            {
+                let denom = cache_read + cache_creation;
+                let rate = if denom == 0 {
+                    None
+                } else {
+                    Some(cache_read as f64 / denom as f64)
+                };
+                msgs.push(ChatAppMsg::CacheHitRate(rate));
             }
             msgs.push(ChatAppMsg::StreamComplete);
             msgs

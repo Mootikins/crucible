@@ -147,10 +147,162 @@ fn translate_bad_payload_shape_returns_empty() {
 }
 
 #[test]
+fn translate_tool_call_with_malformed_diffs_yields_empty_diffs() {
+    use serde_json::json;
+    // Wire-protocol drift safety: if the daemon sends a `diffs` field that
+    // isn't a Vec<FileDiff>, the translator must log a warning and emit
+    // an empty Vec rather than panic or drop the entire ToolCall message.
+    let data = json!({
+        "call_id": "tc-1",
+        "tool": "edit_file",
+        "args": {},
+        "diffs": "this is not a list",
+    });
+    let msgs = session_event_to_chat_msgs("tool_call", &data);
+    match msgs.as_slice() {
+        [ChatAppMsg::ToolCall { diffs, .. }] => assert!(diffs.is_empty()),
+        other => panic!("expected single ToolCall, got {other:?}"),
+    }
+}
+
+#[test]
+fn translate_tool_call_with_well_formed_diffs_passes_through() {
+    use serde_json::json;
+    let data = json!({
+        "call_id": "tc-1",
+        "tool": "edit_file",
+        "args": {},
+        "diffs": [{
+            "path": "/tmp/foo.rs",
+            "old_content": "old",
+            "new_content": "new"
+        }],
+    });
+    let msgs = session_event_to_chat_msgs("tool_call", &data);
+    match msgs.as_slice() {
+        [ChatAppMsg::ToolCall { diffs, .. }] => {
+            assert_eq!(diffs.len(), 1);
+            assert_eq!(diffs[0].path, "/tmp/foo.rs");
+        }
+        other => panic!("expected single ToolCall, got {other:?}"),
+    }
+}
+
+#[test]
 fn translate_unknown_event_returns_empty() {
     use serde_json::json;
     let msgs = session_event_to_chat_msgs("never_heard_of_it", &json!({}));
     assert!(msgs.is_empty());
+}
+
+#[test]
+fn translate_tool_call_propagates_diffs_into_chat_msg() {
+    use crucible_core::types::acp::FileDiff;
+    use serde_json::json;
+
+    // Build a payload as the daemon emits via tool_call_with_metadata
+    // (with non-empty diffs).
+    let diffs_in = vec![FileDiff::from_contents(
+        "src/foo.rs",
+        Some("fn old() {}\n".to_string()),
+        "fn new() {}\n",
+    )];
+    let data = json!({
+        "call_id": "call-1",
+        "tool": "edit",
+        "args": { "path": "src/foo.rs" },
+        "diffs": diffs_in,
+    });
+
+    let msgs = session_event_to_chat_msgs("tool_call", &data);
+    assert_eq!(msgs.len(), 1);
+    match &msgs[0] {
+        ChatAppMsg::ToolCall { diffs, .. } => {
+            assert_eq!(diffs, &diffs_in, "diffs must propagate end-to-end");
+        }
+        other => panic!("expected ToolCall, got {other:?}"),
+    }
+}
+
+#[test]
+fn translate_tool_call_without_diffs_yields_empty_vec() {
+    use serde_json::json;
+    let data = json!({
+        "call_id": "call-1",
+        "tool": "read_file",
+        "args": { "path": "/tmp/x" },
+    });
+    let msgs = session_event_to_chat_msgs("tool_call", &data);
+    assert_eq!(msgs.len(), 1);
+    match &msgs[0] {
+        ChatAppMsg::ToolCall { diffs, .. } => {
+            assert!(
+                diffs.is_empty(),
+                "missing diffs key must yield empty Vec, got {diffs:?}"
+            );
+        }
+        other => panic!("expected ToolCall, got {other:?}"),
+    }
+}
+
+#[test]
+fn translate_tool_call_diff_update_emits_chat_msg_with_diffs() {
+    use crucible_core::types::acp::FileDiff;
+    use serde_json::json;
+
+    // Late-diff path: ACP agents like Claude Code first send an empty
+    // tool_call, then attach diffs via a follow-up tool_call_update.
+    // The daemon translates that into a `tool_call_diff_update` event;
+    // the TUI must produce a `ChatAppMsg::ToolCallDiffUpdate` so the
+    // existing scrollback entry can merge in the diffs.
+    let diffs_in = vec![FileDiff::from_contents(
+        "src/late.rs",
+        Some("fn old() {}\n".to_string()),
+        "fn new() {}\n",
+    )];
+    let data = json!({
+        "call_id": "tc-late-1",
+        "diffs": diffs_in,
+    });
+
+    let msgs = session_event_to_chat_msgs("tool_call_diff_update", &data);
+    assert_eq!(msgs.len(), 1);
+    match &msgs[0] {
+        ChatAppMsg::ToolCallDiffUpdate { call_id, diffs } => {
+            assert_eq!(call_id, "tc-late-1");
+            assert_eq!(diffs, &diffs_in, "diffs must propagate end-to-end");
+        }
+        other => panic!("expected ToolCallDiffUpdate, got {other:?}"),
+    }
+}
+
+#[test]
+fn translate_tool_call_diff_update_with_empty_diffs_drops_msg() {
+    use serde_json::json;
+    // No diffs in the payload → no need to disturb the TUI scrollback.
+    let data = json!({
+        "call_id": "tc-noop",
+        "diffs": [],
+    });
+    let msgs = session_event_to_chat_msgs("tool_call_diff_update", &data);
+    assert!(
+        msgs.is_empty(),
+        "empty-diffs update should not emit a ChatAppMsg, got {msgs:?}"
+    );
+}
+
+#[test]
+fn translate_tool_call_diff_update_with_malformed_diffs_drops_msg() {
+    use serde_json::json;
+    let data = json!({
+        "call_id": "tc-bad",
+        "diffs": "not a list",
+    });
+    let msgs = session_event_to_chat_msgs("tool_call_diff_update", &data);
+    assert!(
+        msgs.is_empty(),
+        "malformed diffs must be dropped (warn-and-skip), got {msgs:?}"
+    );
 }
 
 #[test]

@@ -46,7 +46,11 @@ pub(crate) async fn handle_lua_init_session(
 
     lua_sessions.insert(
         session_id.clone(),
-        Arc::new(Mutex::new(LuaSessionState { executor, registry })),
+        Arc::new(Mutex::new(LuaSessionState {
+            executor,
+            registry,
+            end_hooks_fired: false,
+        })),
     );
 
     Response::success(
@@ -160,10 +164,11 @@ pub(crate) async fn handle_lua_execute_hook(
                 "content": content,
                 "position": position,
             }),
-            Ok(ScriptHandlerResult::Handled { result }) => serde_json::json!({
+            Ok(ScriptHandlerResult::Handled { result, terminate }) => serde_json::json!({
                 "handler": handler.name,
                 "type": "handled",
                 "result": result,
+                "terminate": terminate,
             }),
             Err(e) => {
                 serde_json::json!({"handler": handler.name, "type": "error", "error": e.to_string()})
@@ -188,18 +193,36 @@ pub(crate) async fn handle_lua_shutdown_session(
     let session_id = require_param!(req, "session_id", as_str);
 
     // Fire on_session_end hooks before removing the Lua session.
-    // Note: hooks may also fire via handle_session_end (dispatch.rs) — plugins
-    // must be idempotent (OCI plugin guards with `if not active then return end`).
+    //
+    // Why this path exists in addition to dispatch.rs::handle_session_end:
+    // The CLI fires `lua.shutdown_session` whenever the chat REPL exits,
+    // including paths that never called `session.end` (process kill,
+    // unhandled error, daemon shutdown). For those cases this is the only
+    // chance to run `on_session_end` handlers, so we tag the reason as
+    // `Shutdown`.
+    //
+    // Daemon ensures one fire per session lifecycle: whichever of
+    // `session.end` (reason=User) or `lua.shutdown_session` (reason=Shutdown)
+    // arrives first sets `end_hooks_fired`; the second is a no-op. Plugins
+    // do NOT need to be idempotent.
     if let Some(state) = lua_sessions.get(session_id) {
         let state = state.value().clone();
         let mut state = state.lock().await;
-        if let Err(e) = state.executor.sync_session_end_hooks() {
-            warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
-        }
-        if let Some(session) = state.executor.session_manager().get_current() {
-            if let Err(e) = state.executor.fire_session_end_hooks(&session) {
-                warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
+        if state.end_hooks_fired {
+            tracing::debug!(
+                session_id = %session_id,
+                "on_session_end hooks already fired; skipping"
+            );
+        } else {
+            if let Err(e) = state.executor.sync_session_end_hooks() {
+                warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
             }
+            if let Some(session) = state.executor.session_manager().get_current() {
+                if let Err(e) = state.executor.fire_session_end_hooks(&session) {
+                    warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
+                }
+            }
+            state.end_hooks_fired = true;
         }
     }
 

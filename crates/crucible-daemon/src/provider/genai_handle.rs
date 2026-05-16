@@ -99,18 +99,23 @@ fn usage_to_token_usage(usage: &genai::chat::Usage) -> TokenUsage {
 ///   2. Avoid double-emission when the provider also replays tool calls in
 ///      `captured_content` at `End` (deduplication by `call_id`).
 ///   3. Honor `max_tool_depth` consistently across both paths.
+///   4. Synthesize `FileDiff`s for file-mutating tools so the TUI can show
+///      the pending change in scrollback before the model receives the
+///      tool result.
 struct ToolCallEmitter {
     emitted_call_ids: std::collections::HashSet<String>,
     emitted_count: usize,
     max_depth: usize,
+    workspace_root: std::path::PathBuf,
 }
 
 impl ToolCallEmitter {
-    fn new(max_depth: usize) -> Self {
+    fn new(max_depth: usize, workspace_root: std::path::PathBuf) -> Self {
         Self {
             emitted_call_ids: std::collections::HashSet::new(),
             emitted_count: 0,
             max_depth,
+            workspace_root,
         }
     }
 
@@ -124,10 +129,20 @@ impl ToolCallEmitter {
             return None;
         }
         self.emitted_count += 1;
+        let normalized_args = normalize_tool_args(tc.fn_arguments);
+        // Pure helper — returns an empty Vec for unknown tools, malformed
+        // args, or oversized content. Mirrors the permission flow's
+        // synthesis at `agent_manager::messaging::permission`.
+        let diffs = crate::tools::diff_synth::synthesize_diffs(
+            &tc.fn_name,
+            &normalized_args,
+            &self.workspace_root,
+        );
         Some(TurnEvent::ToolCall {
             id: tc.call_id,
             name: tc.fn_name,
-            args: normalize_tool_args(tc.fn_arguments),
+            args: normalized_args,
+            diffs,
         })
     }
 
@@ -173,21 +188,19 @@ impl ReasoningEmissionState {
 fn normalize_tool_args(args: serde_json::Value) -> serde_json::Value {
     match args {
         serde_json::Value::Object(_) => args,
-        serde_json::Value::String(ref s) => {
-            match serde_json::from_str::<serde_json::Value>(s) {
-                Ok(parsed) if parsed.is_object() => parsed,
-                _ => {
-                    tracing::warn!(
-                        target: "provider",
-                        raw = %s,
-                        "tool args were a string but didn't decode to a JSON object; \
-                         coercing to {{}} — dispatcher will surface this as a \
-                         missing-parameter error"
-                    );
-                    serde_json::Value::Object(serde_json::Map::new())
-                }
+        serde_json::Value::String(ref s) => match serde_json::from_str::<serde_json::Value>(s) {
+            Ok(parsed) if parsed.is_object() => parsed,
+            _ => {
+                tracing::warn!(
+                    target: "provider",
+                    raw = %s,
+                    "tool args were a string but didn't decode to a JSON object; \
+                     coercing to {{}} — dispatcher will surface this as a \
+                     missing-parameter error"
+                );
+                serde_json::Value::Object(serde_json::Map::new())
             }
-        }
+        },
         serde_json::Value::Null => serde_json::Value::Object(serde_json::Map::new()),
         other => {
             tracing::warn!(
@@ -334,6 +347,14 @@ pub struct GenaiAgentHandle {
     context_window: Option<usize>,
     output_validation: OutputValidation,
     validation_retries: u32,
+    autocompact_threshold: Option<f32>,
+    /// Working directory used to resolve relative `path` arguments when
+    /// synthesizing diffs for file-mutating tool calls
+    /// (`edit_file`, `write_file`, etc.). Empty `PathBuf` causes
+    /// `synthesize_diffs` to resolve relative paths against the daemon's
+    /// current working directory (an empty base joins to the input path
+    /// unchanged, which the file-system then resolves against the CWD).
+    workspace_root: std::path::PathBuf,
 }
 
 /// Estimate token count from message content using a chars/4 heuristic.
@@ -352,6 +373,26 @@ fn estimate_message_tokens(msg: &ChatMessage) -> usize {
     (char_count / 4).max(1)
 }
 
+/// Outcome of `enforce_context_budget`. The Summarize variant carries
+/// the drained messages so an async caller can replace the inserted
+/// placeholder with an LLM-generated recap before the actual
+/// completion request goes out.
+pub(crate) enum BudgetAction {
+    /// Budget was respected without changes (no budget set, or under).
+    NoChange,
+    /// Mutated in place (Truncate or SlidingWindow). The caller has
+    /// nothing to do.
+    Mutated,
+    /// Summarize selected: a placeholder was inserted at
+    /// `placeholder_idx`, and `drained` holds the messages that were
+    /// removed. The async caller may replace the placeholder content
+    /// with an LLM-generated recap, or leave it as-is on error.
+    NeedsSummarize {
+        placeholder_idx: usize,
+        drained: Vec<ChatMessage>,
+    },
+}
+
 /// Enforce context budget by truncating messages according to the chosen strategy.
 ///
 /// Modifies the message vec in-place. System messages (at the front) are preserved.
@@ -361,12 +402,14 @@ fn enforce_context_budget(
     budget: Option<usize>,
     strategy: &ContextStrategy,
     window: Option<usize>,
-) {
-    let Some(budget) = budget else { return };
+) -> BudgetAction {
+    let Some(budget) = budget else {
+        return BudgetAction::NoChange;
+    };
 
     let current: usize = messages.iter().map(estimate_message_tokens).sum();
     if current <= budget {
-        return;
+        return BudgetAction::NoChange;
     }
 
     match strategy {
@@ -390,6 +433,7 @@ fn enforce_context_budget(
                     break;
                 }
             }
+            BudgetAction::Mutated
         }
         ContextStrategy::SlidingWindow => {
             let keep = window.unwrap_or(10);
@@ -402,7 +446,123 @@ fn enforce_context_budget(
                 let drain_end = messages.len() - keep_count;
                 messages.drain(system_count..drain_end);
             }
+            BudgetAction::Mutated
         }
+        ContextStrategy::Summarize => {
+            // Drain old non-system non-keep messages, insert a static
+            // placeholder, and return the drained vec so an async caller
+            // can replace the placeholder with an LLM summary. Ignoring
+            // the returned `NeedsSummarize` is safe — the placeholder
+            // is itself a usable (if static) elision marker.
+            let keep = window.unwrap_or(10);
+            let keep_count = keep * 2;
+            let system_count = messages
+                .iter()
+                .take_while(|m| m.role == genai::chat::ChatRole::System)
+                .count();
+            let action = if messages.len() > system_count + keep_count {
+                let drain_end = messages.len() - keep_count;
+                let n_dropped = drain_end - system_count;
+                let drained: Vec<ChatMessage> = messages.drain(system_count..drain_end).collect();
+                let placeholder = ChatMessage::system(format!(
+                    "[summary placeholder] {n_dropped} earlier turn{} elided to fit context budget",
+                    if n_dropped == 1 { "" } else { "s" }
+                ));
+                messages.insert(system_count, placeholder);
+                BudgetAction::NeedsSummarize {
+                    placeholder_idx: system_count,
+                    drained,
+                }
+            } else {
+                BudgetAction::NoChange
+            };
+            // Belt-and-braces: if even the kept window plus the
+            // placeholder + system prompt exceed the budget, fall back
+            // to Truncate behaviour to avoid over-budget prompts.
+            while messages.iter().map(estimate_message_tokens).sum::<usize>() > budget
+                && messages.len() > 2
+            {
+                if let Some(idx) = messages
+                    .iter()
+                    .position(|m| m.role != genai::chat::ChatRole::System)
+                {
+                    if idx >= messages.len() - 1 {
+                        break;
+                    }
+                    messages.remove(idx);
+                } else {
+                    break;
+                }
+            }
+            action
+        }
+    }
+}
+
+/// System prompt used for LLM-driven summarization in the Summarize
+/// context strategy. Kept brief; the conversation transcript is passed
+/// in the user message and dwarfs this anyway.
+const SUMMARIZE_SYSTEM_PROMPT: &str =
+    "You are summarizing earlier turns of an ongoing conversation so the assistant can keep \
+     context after older messages are dropped. Produce a concise factual recap of the \
+     transcript below. Preserve names, decisions, file paths, code references, and unresolved \
+     questions. Use 3-6 sentences. No preamble, no closing, no quotes — just the recap.";
+
+/// Format drained messages as a transcript for summarization.
+fn drained_transcript(drained: &[ChatMessage]) -> String {
+    drained
+        .iter()
+        .map(|m| {
+            let role = match m.role {
+                genai::chat::ChatRole::System => "system",
+                genai::chat::ChatRole::User => "user",
+                genai::chat::ChatRole::Assistant => "assistant",
+                genai::chat::ChatRole::Tool => "tool",
+            };
+            let body: String = m
+                .content
+                .parts()
+                .iter()
+                .filter_map(|p| match p {
+                    ContentPart::Text(t) => Some(t.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("");
+            format!("{role}: {body}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Ask the same backend the agent uses to summarize `drained` into a
+/// single recap string. The genai client is shared (cheap clone). On
+/// any error this returns `Err`; the caller falls back to keeping the
+/// static placeholder rather than propagating the failure into the
+/// user's turn.
+pub(crate) async fn summarize_via_backend(
+    client: &genai::Client,
+    model_name: &str,
+    drained: &[ChatMessage],
+) -> Result<String, String> {
+    if drained.is_empty() {
+        return Ok(String::new());
+    }
+    let transcript = drained_transcript(drained);
+    let request = ChatRequest::new(vec![
+        ChatMessage::system(SUMMARIZE_SYSTEM_PROMPT),
+        ChatMessage::user(transcript),
+    ]);
+    let options = ChatOptions::default().with_capture_content(true);
+    let resp = client
+        .exec_chat(model_name, request, Some(&options))
+        .await
+        .map_err(|e| format!("summarize call failed: {e}"))?;
+    let text: String = resp.content.texts().join("");
+    if text.trim().is_empty() {
+        Err("summarize call returned empty content".to_string())
+    } else {
+        Ok(text)
     }
 }
 
@@ -413,6 +573,32 @@ impl GenaiAgentHandle {
         system_prompt: &str,
         tools: Vec<LlmToolDefinition>,
         thinking_budget: Option<i64>,
+    ) -> Self {
+        Self::with_workspace(
+            client,
+            model,
+            system_prompt,
+            tools,
+            thinking_budget,
+            std::path::PathBuf::new(),
+        )
+    }
+
+    /// Construct a handle with an explicit workspace root used for
+    /// resolving relative file paths in synthesized diffs. The
+    /// daemon's `agent_factory` calls this with the session's
+    /// working directory; tests can pass any directory. An empty
+    /// `PathBuf` resolves relative paths against the daemon's CWD
+    /// (because joining an empty base with a relative path yields
+    /// the relative path unchanged, which the file-system then
+    /// resolves against the process CWD).
+    pub fn with_workspace(
+        client: genai::Client,
+        model: ModelIden,
+        system_prompt: &str,
+        tools: Vec<LlmToolDefinition>,
+        thinking_budget: Option<i64>,
+        workspace_root: std::path::PathBuf,
     ) -> Self {
         let mode_state = default_internal_modes();
         let current_mode_id = mode_state.current_mode_id.0.to_string();
@@ -432,6 +618,8 @@ impl GenaiAgentHandle {
             context_window: None,
             output_validation: OutputValidation::default(),
             validation_retries: 3,
+            autocompact_threshold: None,
+            workspace_root,
         }
     }
 
@@ -472,19 +660,12 @@ impl GenaiAgentHandle {
         mut messages: Vec<ChatMessage>,
     ) -> BoxStream<'static, TurnEvent> {
         apply_prompt_caching(&self.system_prompt, &mut messages);
-        enforce_context_budget(
-            &mut messages,
-            self.context_budget,
-            &self.context_strategy,
-            self.context_window,
-        );
 
         let req_tools: Vec<Tool> = self
             .visible_tools()
             .iter()
             .map(super::tool_bridge::llm_tool_to_genai)
             .collect();
-        let request = ChatRequest::new(messages).with_tools(req_tools);
 
         let options = ChatOptions::default()
             .with_capture_tool_calls(true)
@@ -502,8 +683,48 @@ impl GenaiAgentHandle {
         let client = self.client.clone();
         let model_name = self.explicit_model_name();
         let max_tool_depth = self.max_tool_depth;
+        let workspace_root = self.workspace_root.clone();
+        let context_budget = self.context_budget;
+        let context_strategy = self.context_strategy.clone();
+        let context_window = self.context_window;
 
         let stream = Box::pin(async_stream::stream! {
+            // Budget enforcement happens here (inside async) so the
+            // Summarize strategy can `.await` the LLM. Truncate /
+            // SlidingWindow are sync transforms and complete instantly.
+            let action = enforce_context_budget(
+                &mut messages,
+                context_budget,
+                &context_strategy,
+                context_window,
+            );
+            if let BudgetAction::NeedsSummarize { placeholder_idx, drained } = action {
+                match summarize_via_backend(&client, &model_name, &drained).await {
+                    Ok(summary) if !summary.trim().is_empty() => {
+                        let n = drained.len();
+                        messages[placeholder_idx] = ChatMessage::system(format!(
+                            "[summary of {} earlier turn{}] {}",
+                            n,
+                            if n == 1 { "" } else { "s" },
+                            summary.trim(),
+                        ));
+                    }
+                    Ok(_) => {
+                        tracing::warn!(
+                            "Summarize backend returned empty content; keeping static placeholder"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "Summarize backend call failed; keeping static placeholder"
+                        );
+                    }
+                }
+            }
+
+            let request = ChatRequest::new(messages).with_tools(req_tools);
+
             let provider_start = std::time::Instant::now();
             tracing::info!(target: "ttft", stage = "provider_call_start", model = %model_name, "ttft");
             let stream_res = client
@@ -526,7 +747,7 @@ impl GenaiAgentHandle {
             };
             let mut first_chunk_logged = false;
 
-            let mut tool_emitter = ToolCallEmitter::new(max_tool_depth);
+            let mut tool_emitter = ToolCallEmitter::new(max_tool_depth, workspace_root.clone());
             let mut reasoning_state = ReasoningEmissionState::new();
 
             while let Some(next) = stream.next().await {
@@ -550,7 +771,7 @@ impl GenaiAgentHandle {
                     );
                     first_chunk_logged = true;
                 }
-                tracing::info!(
+                tracing::trace!(
                     target: "ttft",
                     stage = "raw_chat_stream_event",
                     elapsed_ms = provider_start.elapsed().as_millis() as u64,
@@ -647,7 +868,7 @@ impl GenaiAgentHandle {
                     };
 
                     match event {
-                        TurnEvent::ToolCall { ref id, ref name, ref args } => {
+                        TurnEvent::ToolCall { ref id, ref name, ref args, .. } => {
                             pending_calls.push(ChatToolCall {
                                 id: Some(id.clone()),
                                 name: name.clone(),
@@ -701,6 +922,7 @@ impl GenaiAgentHandle {
                                 result: result_str,
                                 error: error.clone(),
                                 call_id: Some(id.clone()),
+                                terminate: false,
                             });
                         }
                         TurnEvent::HandlerInjection { content, .. } => {
@@ -856,6 +1078,15 @@ impl AgentHandle for GenaiAgentHandle {
     fn get_validation_retries(&self) -> u32 {
         self.validation_retries
     }
+
+    async fn set_autocompact_threshold(&mut self, threshold: Option<f32>) -> ChatResult<()> {
+        self.autocompact_threshold = threshold;
+        Ok(())
+    }
+
+    fn get_autocompact_threshold(&self) -> Option<f32> {
+        self.autocompact_threshold
+    }
 }
 
 #[async_trait]
@@ -920,6 +1151,15 @@ mod tests {
         }
     }
 
+    /// Build an emitter with no workspace root — synthesized diffs will
+    /// resolve relative paths against the daemon's current working
+    /// directory, which is fine for tests that don't exercise diff
+    /// synthesis (the tool name is a non-edit tool like "bash" or
+    /// "read", so synthesis returns an empty Vec).
+    fn emitter(max_depth: usize) -> ToolCallEmitter {
+        ToolCallEmitter::new(max_depth, std::path::PathBuf::new())
+    }
+
     #[test]
     fn emitter_unwraps_double_encoded_json_string_args() {
         // Some OpenAI-compatible providers (e.g. GLM-style endpoints over
@@ -935,7 +1175,7 @@ mod tests {
             ),
             thought_signatures: None,
         };
-        let mut e = ToolCallEmitter::new(10);
+        let mut e = emitter(10);
         let ev = e.try_emit(raw).expect("must emit");
         match ev {
             TurnEvent::ToolCall { args, .. } => {
@@ -956,7 +1196,7 @@ mod tests {
             fn_arguments: args_obj.clone(),
             thought_signatures: None,
         };
-        let mut e = ToolCallEmitter::new(10);
+        let mut e = emitter(10);
         let ev = e.try_emit(raw).expect("must emit");
         match ev {
             TurnEvent::ToolCall { args, .. } => assert_eq!(args, args_obj),
@@ -974,7 +1214,7 @@ mod tests {
             fn_arguments: serde_json::Value::String("not really json".to_string()),
             thought_signatures: None,
         };
-        let mut e = ToolCallEmitter::new(10);
+        let mut e = emitter(10);
         let ev = e.try_emit(raw).expect("must emit");
         match ev {
             TurnEvent::ToolCall { args, .. } => {
@@ -986,14 +1226,14 @@ mod tests {
 
     #[test]
     fn emitter_emits_first_chunk() {
-        let mut e = ToolCallEmitter::new(10);
+        let mut e = emitter(10);
         let ev = e.try_emit(tc("call-1", "bash"));
         assert!(matches!(ev, Some(TurnEvent::ToolCall { ref id, .. }) if id == "call-1"));
     }
 
     #[test]
     fn emitter_dedupes_same_call_id() {
-        let mut e = ToolCallEmitter::new(10);
+        let mut e = emitter(10);
         assert!(e.try_emit(tc("call-1", "bash")).is_some());
         assert!(
             e.try_emit(tc("call-1", "bash")).is_none(),
@@ -1003,14 +1243,14 @@ mod tests {
 
     #[test]
     fn emitter_distinct_ids_both_emit() {
-        let mut e = ToolCallEmitter::new(10);
+        let mut e = emitter(10);
         assert!(e.try_emit(tc("a", "bash")).is_some());
         assert!(e.try_emit(tc("b", "read")).is_some());
     }
 
     #[test]
     fn emitter_caps_at_max_depth() {
-        let mut e = ToolCallEmitter::new(2);
+        let mut e = emitter(2);
         assert!(e.try_emit(tc("a", "x")).is_some());
         assert!(e.try_emit(tc("b", "x")).is_some());
         assert!(
@@ -1023,7 +1263,7 @@ mod tests {
     fn emitter_chunk_then_end_no_double_emit() {
         // Real-world: provider streams ToolCallChunk live AND replays the
         // same tool calls in captured_content at End. Emitter dedupes by id.
-        let mut e = ToolCallEmitter::new(10);
+        let mut e = emitter(10);
         let chunk_ev = e.try_emit(tc("call-1", "bash"));
         assert!(chunk_ev.is_some());
         let end_ev = e.try_emit(tc("call-1", "bash"));
@@ -1037,10 +1277,68 @@ mod tests {
     fn emitter_end_only_path_still_works() {
         // Provider that does NOT emit ToolCallChunks (only End): emitter
         // sees the tool calls for the first time at End and emits.
-        let mut e = ToolCallEmitter::new(10);
+        let mut e = emitter(10);
         let ev = e.try_emit(tc("call-1", "bash"));
         assert!(ev.is_some());
         assert_eq!(e.emitted_count(), 1);
+    }
+
+    #[test]
+    fn emitter_synthesizes_diff_for_write_tool() {
+        // Regression: a `write_file` (or similar) tool call should arrive at
+        // the TUI scrollback with `diffs` populated so the user sees the
+        // pending file contents alongside the call header. The synthesizer
+        // is pure and gracefully degrades to empty for unknown tools, but
+        // for known edit-style tools it must produce one entry per file.
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let mut e = ToolCallEmitter::new(10, tmp.path().to_path_buf());
+
+        let raw = ToolCall {
+            call_id: "call-1".to_string(),
+            fn_name: "write_file".to_string(),
+            fn_arguments: serde_json::json!({
+                "path": "new_file.txt",
+                "content": "hello world\n",
+            }),
+            thought_signatures: None,
+        };
+        let ev = e.try_emit(raw).expect("must emit ToolCall");
+        match ev {
+            TurnEvent::ToolCall { diffs, .. } => {
+                assert_eq!(diffs.len(), 1, "should synthesize one FileDiff");
+                let diff = &diffs[0];
+                // synthesize_diffs resolves relative paths against
+                // workspace_root, so the path should be absolute.
+                assert!(
+                    diff.path.ends_with("new_file.txt"),
+                    "diff path: {}",
+                    diff.path
+                );
+                // File didn't exist on disk → old_content is None
+                // (treated as a "create").
+                assert!(diff.old_content.is_none());
+                assert_eq!(diff.new_content, "hello world\n");
+            }
+            other => panic!("expected ToolCall, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn emitter_emits_empty_diffs_for_non_file_tools() {
+        // For tools that aren't file-mutating (`bash`, `read`, etc.),
+        // synthesize_diffs returns an empty Vec — emitter forwards that
+        // unchanged so the TUI doesn't render a diff section.
+        let mut e = emitter(10);
+        let ev = e.try_emit(tc("call-1", "bash")).expect("must emit");
+        match ev {
+            TurnEvent::ToolCall { diffs, .. } => {
+                assert!(
+                    diffs.is_empty(),
+                    "non-file-mutating tools must not synthesize diffs"
+                );
+            }
+            other => panic!("expected ToolCall, got {other:?}"),
+        }
     }
 
     // ─── translate_chat_stream_event wiring ────────────────────────────
@@ -1048,7 +1346,7 @@ mod tests {
     use genai::chat::{MessageContent, StreamChunk, StreamEnd, ToolChunk};
 
     fn drive_translate(events: Vec<ChatStreamEvent>) -> Vec<TurnEvent> {
-        let mut emitter = ToolCallEmitter::new(10);
+        let mut emitter = self::emitter(10);
         let mut reasoning = ReasoningEmissionState::new();
         let mut out = Vec::new();
         for ev in events {
@@ -1068,7 +1366,7 @@ mod tests {
         // ALSO put the same content in End.captured_reasoning_content. That
         // replay would previously emit a second TurnEvent::Thinking, causing
         // the TUI to render two identical "Thought (N words)" blocks.
-        let mut emitter = ToolCallEmitter::new(10);
+        let mut emitter = self::emitter(10);
         let mut state = ReasoningEmissionState::new();
 
         let chunk = ChatStreamEvent::ReasoningChunk(StreamChunk {
@@ -1100,7 +1398,7 @@ mod tests {
     fn end_only_provider_still_emits_reasoning() {
         // Provider that only delivers reasoning at End (no live chunks)
         // must still surface it once.
-        let mut emitter = ToolCallEmitter::new(10);
+        let mut emitter = self::emitter(10);
         let mut state = ReasoningEmissionState::new();
 
         let end = ChatStreamEvent::End(StreamEnd {
@@ -1238,7 +1536,7 @@ mod tests {
 
     #[test]
     fn translate_end_yields_done_terminal() {
-        let mut emitter = ToolCallEmitter::new(10);
+        let mut emitter = self::emitter(10);
         let mut reasoning = ReasoningEmissionState::new();
         let (out, terminal) = translate_chat_stream_event(
             ChatStreamEvent::End(StreamEnd {
@@ -1255,7 +1553,7 @@ mod tests {
 
     #[test]
     fn translate_pre_end_events_are_not_terminal() {
-        let mut emitter = ToolCallEmitter::new(10);
+        let mut emitter = self::emitter(10);
         let mut reasoning = ReasoningEmissionState::new();
         for ev in [
             ChatStreamEvent::Start,
@@ -1269,8 +1567,7 @@ mod tests {
                 tool_call: tc("zz", "bash"),
             }),
         ] {
-            let (_out, terminal) =
-                translate_chat_stream_event(ev, &mut emitter, &mut reasoning);
+            let (_out, terminal) = translate_chat_stream_event(ev, &mut emitter, &mut reasoning);
             assert!(!terminal, "non-End events must not be terminal");
         }
     }
@@ -1424,6 +1721,7 @@ mod tests {
                 id: "call_1".to_string(),
                 name: "search".to_string(),
                 args: serde_json::Value::Null,
+                diffs: Vec::new(),
             },
             TurnEvent::Done {
                 stop_reason: StopReason::EndTurn,
@@ -1455,6 +1753,7 @@ mod tests {
                 id: "call_1".to_string(),
                 name: "search".to_string(),
                 args: serde_json::Value::Null,
+                diffs: Vec::new(),
             },
             TurnEvent::Done {
                 stop_reason: StopReason::EndTurn,
@@ -1468,4 +1767,203 @@ mod tests {
     // Undo semantics moved to AgentManager (operates on the scheduler-
     // owned ConversationTree). See agent_manager::models::undo + the
     // integration test `agent_manager::tests::messaging::*`.
+
+    // ─── ContextStrategy::Summarize ─────────────────────────────────────
+
+    fn user(s: &str) -> ChatMessage {
+        ChatMessage::user(s)
+    }
+    fn asst(s: &str) -> ChatMessage {
+        ChatMessage::assistant(s)
+    }
+    fn sys(s: &str) -> ChatMessage {
+        ChatMessage::system(s)
+    }
+
+    /// With Summarize and a budget that the message list exceeds, the
+    /// older non-system non-keep messages are replaced by a single
+    /// "[summary placeholder]" system message — distinct from Truncate,
+    /// which silently drops them.
+    /// `enforce_context_budget` with Summarize must return
+    /// `NeedsSummarize` so the async caller can replace the placeholder
+    /// with an LLM-generated recap. The drained payload should be
+    /// non-empty and match what was removed.
+    #[test]
+    fn summarize_returns_needs_summarize_action() {
+        let long = "x".repeat(40);
+        let mut messages = vec![
+            sys("system"),
+            user(&long),
+            asst(&long),
+            user(&long),
+            asst(&long),
+            user("current"),
+        ];
+        let action = enforce_context_budget(
+            &mut messages,
+            Some(12),
+            &ContextStrategy::Summarize,
+            Some(1),
+        );
+        match action {
+            BudgetAction::NeedsSummarize {
+                placeholder_idx,
+                drained,
+            } => {
+                assert!(
+                    placeholder_idx < messages.len(),
+                    "placeholder_idx must point at a real message"
+                );
+                assert!(!drained.is_empty(), "drained must carry the removed turns");
+                assert!(
+                    content_string(&messages[placeholder_idx]).contains("[summary placeholder]")
+                );
+            }
+            other => panic!("expected NeedsSummarize, got {}", action_label(&other)),
+        }
+    }
+
+    /// Truncate / SlidingWindow / under-budget Summarize must NOT
+    /// return NeedsSummarize — the async caller would otherwise issue
+    /// pointless backend calls.
+    #[test]
+    fn truncate_and_window_do_not_request_summarization() {
+        let long = "x".repeat(40);
+        let mut messages = vec![sys("system"), user(&long), asst(&long), user("current")];
+        let action = enforce_context_budget(
+            &mut messages.clone(),
+            Some(12),
+            &ContextStrategy::Truncate,
+            None,
+        );
+        assert!(matches!(
+            action,
+            BudgetAction::Mutated | BudgetAction::NoChange
+        ));
+        let action = enforce_context_budget(
+            &mut messages,
+            Some(12),
+            &ContextStrategy::SlidingWindow,
+            Some(1),
+        );
+        assert!(matches!(
+            action,
+            BudgetAction::Mutated | BudgetAction::NoChange
+        ));
+    }
+
+    fn action_label(action: &BudgetAction) -> &'static str {
+        match action {
+            BudgetAction::NoChange => "NoChange",
+            BudgetAction::Mutated => "Mutated",
+            BudgetAction::NeedsSummarize { .. } => "NeedsSummarize",
+        }
+    }
+
+    /// `drained_transcript` formats messages with role prefixes; an
+    /// LLM consuming this can attribute statements to the right party.
+    #[test]
+    fn drained_transcript_formats_with_role_prefixes() {
+        let drained = vec![user("hello there"), asst("hi back")];
+        let transcript = drained_transcript(&drained);
+        assert!(transcript.contains("user: hello there"));
+        assert!(transcript.contains("assistant: hi back"));
+    }
+
+    #[test]
+    fn summarize_inserts_elision_placeholder() {
+        // Use long messages so token estimates exceed the small budget;
+        // estimate_message_tokens uses chars/4.
+        let long = "x".repeat(40); // 10 tokens
+        let mut messages = vec![
+            sys("system"),
+            user(&long),
+            asst(&long),
+            user(&long),
+            asst(&long),
+            user(&long),
+            asst(&long),
+            user("current question"),
+        ];
+        // Budget=12 means the 80-token total triggers drainage; window=1
+        // keeps the last 2 messages.
+        enforce_context_budget(
+            &mut messages,
+            Some(12),
+            &ContextStrategy::Summarize,
+            Some(1),
+        );
+
+        let placeholder_present = messages.iter().any(|m| {
+            m.role == genai::chat::ChatRole::System
+                && content_string(m).contains("[summary placeholder]")
+        });
+        assert!(
+            placeholder_present,
+            "expected [summary placeholder] system message after Summarize, got: {:#?}",
+            messages.iter().map(content_string).collect::<Vec<_>>()
+        );
+        // Last message survives.
+        assert_eq!(content_string(messages.last().unwrap()), "current question");
+    }
+
+    /// When the message list is already under budget, Summarize is a
+    /// no-op — no placeholder is inserted.
+    #[test]
+    fn summarize_noop_when_under_budget() {
+        let mut messages = vec![sys("S"), user("hi"), asst("hello")];
+        let before_len = messages.len();
+        enforce_context_budget(
+            &mut messages,
+            Some(10_000),
+            &ContextStrategy::Summarize,
+            None,
+        );
+        assert_eq!(messages.len(), before_len);
+        assert!(!messages
+            .iter()
+            .any(|m| content_string(m).contains("[summary placeholder]")));
+    }
+
+    /// The placeholder cites the correct number of elided turns.
+    #[test]
+    fn summarize_placeholder_reports_dropped_count() {
+        let long = "x".repeat(40);
+        let mut messages = vec![sys("S")];
+        // 8 long turns past the system prompt; window=1 keeps the last 2.
+        for _ in 0..4 {
+            messages.push(user(&long));
+            messages.push(asst(&long));
+        }
+        messages.push(user("current"));
+
+        enforce_context_budget(
+            &mut messages,
+            Some(12),
+            &ContextStrategy::Summarize,
+            Some(1),
+        );
+
+        let placeholder = messages
+            .iter()
+            .find(|m| content_string(m).contains("[summary placeholder]"))
+            .expect("placeholder must be present");
+        let body = content_string(placeholder);
+        assert!(
+            body.contains("earlier turn"),
+            "body should mention turn count: {body}"
+        );
+    }
+
+    fn content_string(msg: &ChatMessage) -> String {
+        msg.content
+            .parts()
+            .iter()
+            .filter_map(|p| match p {
+                ContentPart::Text(t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("")
+    }
 }

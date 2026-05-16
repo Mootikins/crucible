@@ -62,3 +62,28 @@ fn test_message_serialization_roundtrip() {
     assert_eq!(original.role, restored.role);
     assert_eq!(original.content, restored.content);
 }
+
+#[test]
+fn test_estimate_tokens_chars_div_four_ceil() {
+    assert_eq!(estimate_tokens(""), 0);
+    assert_eq!(estimate_tokens("abcd"), 1);
+    assert_eq!(estimate_tokens("abcde"), 2); // ceil(5/4) = 2
+    assert_eq!(estimate_tokens("12345678"), 2);
+    assert_eq!(estimate_tokens("123456789"), 3); // ceil(9/4) = 3
+}
+
+#[test]
+fn test_estimate_messages_tokens_sums_metadata() {
+    let msgs = vec![
+        ContextMessage::user("abcd"),       // 4 / 4 = 1
+        ContextMessage::assistant("abcde"), // ceil(5/4) = 2
+        ContextMessage::system("12345678"), // 8 / 4 = 2
+    ];
+    // Sum reflects per-message metadata.token_estimate values
+    assert_eq!(estimate_messages_tokens(&msgs), 5);
+}
+
+#[test]
+fn test_estimate_messages_tokens_empty() {
+    assert_eq!(estimate_messages_tokens(&[]), 0);
+}

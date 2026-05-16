@@ -3,7 +3,7 @@ title: Product
 description: Product feature map — capabilities, status, documentation, and dependencies
 type: product
 status: active
-updated: 2026-04-09
+updated: 2026-05-07
 tags:
   - meta
   - product
@@ -53,29 +53,27 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 
 ## Knowledge Discovery
 
-- [x] **Semantic Search** `P0` — Vector similarity search with reranking · [[Help/Concepts/Semantic Search]] · `crucible-sqlite`, `crucible-llm`
-- [x] **Full-text Search** `P0` — Fast text search across all notes · [[Help/CLI/search]] · `crucible-sqlite`
-- [x] **Knowledge Graph** `P0` — Wikilink-based graph structure and traversal · [[Help/Concepts/The Knowledge Graph]] · `crucible-sqlite`
-- [x] **Query System** `P0` — Structured note queries with composable pipeline · [[Help/Query/Query System]] · `crucible-sqlite` (query)
+- [x] **Semantic Search** `P0` — Vector similarity search with reranking · [[Help/Concepts/Semantic Search]] · `crucible-daemon` (storage), `crucible-daemon` (llm)
+- [x] **Full-text Search** `P0` — Fast text search across all notes · [[Help/CLI/search]] · `crucible-daemon` (storage)
+- [x] **Knowledge Graph** `P0` — Wikilink-based graph structure and traversal · [[Help/Concepts/The Knowledge Graph]] · `crucible-daemon` (storage)
+- [x] **Query System** `P0` — Structured note queries with composable pipeline · [[Help/Query/Query System]] · `crucible-daemon` (storage) (query)
 - [x] **Property Search** `P0` — Search notes by frontmatter properties and tags · `crucible-daemon` (tools)
-- [x] **Document Clustering** `P0` — Heuristic clustering and MoC detection · `crucible-sqlite`
-- [ ] **K-Means Clustering** `P2` — K-means implementation (placeholder stub, needs ndarray or similar) · `crucible-sqlite`
-- [x] **Block-level Embeddings** `P0` — Paragraph-granularity semantic indexing · `crucible-llm`, `crucible-sqlite`
+- [x] **Document Clustering** `P0` — Heuristic clustering and MoC detection · `crucible-daemon` (storage)
+- [ ] **K-Means Clustering** `P2` — K-means implementation (placeholder stub, needs ndarray or similar) · `crucible-daemon` (storage)
+- [x] **Block-level Embeddings** `P0` — Paragraph-granularity semantic indexing · `crucible-daemon` (llm), `crucible-daemon` (storage)
 - [x] **Session Search** `P0` — Past conversations indexed and searchable via session indexing pipeline; `cru session reindex` for batch processing · `crucible-daemon` (observe), `crucible-cli`
 
 ## Agent Learning & Memory
 
 > Agents that get smarter over time. Learning is implemented as **notes in the kiln** — not opaque database stores. Entity facts, session summaries, and accumulated knowledge are all atomic zettelkasten-style markdown notes with wikilinks, tags, and frontmatter. This means agent memory is human-readable, editable, searchable via the existing knowledge graph, and available to precognition for future context injection.
 >
-> **Two-tier model**: Core Rust features (precognition, auto-linking) handle the fast path. Default runtime Lua plugins (entity-memory, session-digest) handle higher-level knowledge extraction. Both are toggleable and overridable. See [[#Core Agent Features]] and [[#Default Runtime Plugins]].
+> **Two-tier model**: Core Rust features (precognition, auto-linking) handle the fast path. Default runtime Lua plugins handle higher-level knowledge extraction. Both are toggleable and overridable. See [[#Core Agent Features]] and [[#Default Runtime Plugins]].
 >
 > **Informed by**: Agno framework analysis (2026-02). Agno uses six opaque DB-backed learning stores. Crucible's approach is strictly better — same learning capabilities but with human-readable, editable, wikilinked notes as the storage layer. Local embeddings, metadata (wikilinks, tags, frontmatter), and potential future LSP integration provide rich fetchable context without custom storage.
 
-- [x] **Precognition** `P0` — Auto-RAG: inject relevant kiln/session context before each agent turn; default on; `:set precognition`; the core differentiator — every conversation is knowledge-graph-aware · `crucible-cli`, `crucible-acp`
+- [x] **Precognition** `P0` — Auto-RAG: inject relevant kiln/session context before each agent turn; default on; `:set precognition`; the core differentiator — every conversation is knowledge-graph-aware · `crucible-cli`, `crucible-daemon` (acp)
 - [x] **Session Persistence** `P0` — Conversations saved as markdown + JSONL in kiln; indexed for semantic search · `crucible-daemon` (observe)
-- [ ] **Entity Memory Plugin** `P1` — Default runtime Lua plugin; extracts entities and structured facts from conversations → atomic notes in `Entities/` folder with wikilinks to source sessions; zettelkasten-style: one note per entity, updated across sessions; uses `turn:complete` hook + `cru.tools.call("semantic_search", ...)` to deduplicate · `runtime/entity-memory/`
-- [ ] **Session Digest Plugin** `P1` — Default runtime Lua plugin; summarizes completed sessions → linked notes in `Sessions/` folder; captures key decisions, topics discussed, entities mentioned; wikilinks to entity notes and source notes; builds the "what did we talk about?" knowledge layer · `runtime/session-digest/`
-- [ ] **Memory Scoping** `P2` — Namespace agent memory: per-user, per-workspace, or global; entity notes tagged with scope; precognition filters by active scope · `crucible-core`, `crucible-lua`
+- [x] **Memory Scoping** `P2` — `Scope::Workspace { path }` (single variant, workspace-only) enforced at the storage query layer (`SqliteNoteStore` filter + Lance post-filter). Write-side validation prevents writes targeting a sibling workspace; raw-SQL escape hatch gated `#[cfg(test)]`. Pre-prune `Global` and `User { id }` variants removed in the 2026-05-12 consolidation pass — neither had any in-tree consumer once session-digest shipped, then was retracted · `crucible-core`, `crucible-daemon`
 
 ## Context & Execution (Core Runtime)
 
@@ -83,30 +81,30 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 
 ### Prompt Caching
 - [x] **Anthropic Cache Control** `P0` — `CacheControl::Ephemeral` set on system prompts and second-to-last conversation turn via `apply_prompt_caching()` in genai_handle.rs; 90% cost reduction on cached reads; OpenAI caching is automatic (no code needed); cache token counts flow through `message_complete` events (`cache_read_tokens`, `cache_creation_tokens`) · `crucible-daemon`
-- [-] **Cache Stats** `P1` — Cache token counts available in events and web UI; Lua API (`cru.session.cache_stats()`) and statusline hit rate display not yet wired · `crucible-lua`, `crucible-cli`
+- [x] **Cache Stats** `P1` — Per-session `CacheStats` aggregate (hits, misses, read/creation tokens, hit_rate) in `AgentManager` exposed via `session.cache_stats` RPC; `cru.sessions.cache_stats(id)` Lua binding via `DaemonSessionApi`; TUI statusline supports a `{ type = "cache_hit_rate" }` component with `{percent}` placeholder, fed from `message_complete` cache token fields · `crucible-daemon`, `crucible-lua`, `crucible-cli`
 
 ### Context Window Management
-- [-] **Token Budget Tracking** `P0` — `context_budget` field on `SessionAgent`, settable via RPC; statusline shows `used/total` tokens from provider usage; char/4 heuristic estimation and auto-compact at >95% not yet implemented · `crucible-daemon`, `crucible-cli`
-- [-] **Context Strategies** `P1` — `ContextStrategy` enum implemented: `Truncate` (drop oldest, default) and `SlidingWindow` (keep last N turns + system); enforced in `genai_handle.rs`; `Summarize` (LLM-compress older turns) not yet implemented; `:set context_strategy` not yet wired · `crucible-core`, `crucible-daemon`
-- [ ] **Lua Context Operations** `P1` — Wire existing `context_ops` module to Lua: `cru.context.usage()`, `cru.context.compact()`, `cru.context.messages(range)`, `cru.context.remove(range)`, `cru.context.estimate_tokens(text)`; enables custom context strategies as plugins · `crucible-lua`, `crucible-core`
+- [x] **Token Budget Tracking** `P0` — `context_budget` field on `SessionAgent`, settable via RPC; `crucible_core::traits::context_ops::estimate_tokens` / `estimate_messages_tokens` provide chars/4 heuristic; auto-compact triggered in `run_reactor_handlers` via `agent_manager::autocompact::should_autocompact` when prompt usage exceeds `context_budget * autocompact_threshold` (default 0.95, configurable per session via `:set autocompact_threshold`) · `crucible-daemon`, `crucible-core`, `crucible-cli`
+- [x] **Context Strategies** `P1` — `ContextStrategy` enum: `Truncate` (drop oldest, default), `SlidingWindow` (keep last N pairs + system), and `Summarize` (drains older turns and replaces them with an LLM-generated recap via the same backend the agent uses; static `[summary placeholder]` is the fallback when the summarise call errors or returns empty); all three enforced in `genai_handle.rs::enforce_context_budget` + the async wrapper inside `stream_chat_from_messages`; `:set context_strategy=summarize` accepted · `crucible-core`, `crucible-daemon`
+- [x] **Lua Context Operations** `P1` — `cru.context.{usage, compact, messages, remove, estimate_tokens}` bind to `crucible-core::traits::context_ops` via `DaemonSessionApi`. `usage` returns `{messages, prompt_tokens, budget, percent}`; `compact` triggers `SessionManager::request_compaction`; `remove` mirrors `undo_turns` cursor-rewind semantics on the branchable `ConversationTree` · `crucible-lua`, `crucible-core`, `crucible-daemon`
 
 ### Execution Limits
 - [x] **Max Iterations** `P1` — `DEFAULT_MAX_TOOL_DEPTH = 10`; `max_iterations` on `SessionAgent` settable via RPC; injects "Iteration limit reached" prompt on exceed; `None` = unlimited · `crucible-daemon`
 - [x] **Execution Timeout** `P1` — `execution_timeout_secs` on `SessionAgent` settable via RPC; cancel and report on exceed; enforced in `execute_agent_stream()` · `crucible-daemon`
 
 ### Agent Undo
-- [ ] **Turn Undo** `P1` — `/undo` reverts last agent turn: git-based file rollback (`git stash create` before tool execution) + message truncation; `/undo 3` for multiple turns; `/redo` for branching; wires existing `UndoTree<T>` to session actions; non-git workspaces use file journal (path → original content); confirmation prompt before destructive revert · `crucible-daemon`, `crucible-cli`
-- [ ] **Undo Lua API** `P1` — `cru.session.undo(id, n?)`, `cru.session.redo(id, n?)`, `cru.session.can_undo(id)`, `cru.session.undo_history(id)` · `crucible-lua`
+- [x] **Turn Undo** `P1` — `/undo` reverts last agent turn: file rollback via `WorkspaceSnapshot` (git mode uses `write-tree`+`commit-tree` for untracked-file safety; non-git mode uses in-memory journal capped at 5MiB) + message truncation. Snapshots keyed by `(session_id, NodeId)` in a daemon-side `SnapshotMap`; restored on `AgentManager::undo` after tree rewind. `/undo 3` for multiple turns. `/redo` deferred — no `redo_turns` analogue on `ConversationTree` yet · `crucible-daemon`, `crucible-cli`
+- [x] **Undo Lua API** `P1` — `cru.sessions.undo(id, n?)`, `cru.sessions.can_undo(id)`, `cru.sessions.undo_depth(id)`, `cru.sessions.undo_history(id)` returning `[{turn_index, messages_removed}]`. `redo` deferred · `crucible-lua`, `crucible-daemon`
 
 ### Output Validation
-- [-] **Validate-Retry Loop** `P1` — `OutputValidation` enum (`None`, `Json`, `Regex(String)`) and `validation_retries` field exist on `SessionAgent`; types defined but validate-retry loop not yet wired in messaging.rs · `crucible-daemon`
-- [ ] **Lua Validators** `P1` — Custom validation via `cru.session.set("output_validation", { type = "lua", fn = validator_fn })`; validator returns `true` or `false, "reason"`; `cru.sessions.create({ output_validation = "json" })` at session creation · `crucible-lua`
+- [x] **Validate-Retry Loop** `P1` — `validate_output` runs in `agent_manager::messaging::stream::execute_agent_stream` after each assistant turn. Failure with retries remaining injects a synthetic regenerate-prompt and re-enters the stream; exhaustion emits `ended` with reason `error: output validation exhausted retries`. `OutputValidation::None` (default) is a zero-cost early return. Lua-callback validators are deferred to Wave 1 · `crucible-daemon`, `crucible-core`
+- [x] **Lua Validators** `P1` — `OutputValidation::Lua { name }` variant in core. Plugin authors register via `cru.context.register_validator(name, fn)` (validator returns `true | false, reason`); per-session enable via `cru.sessions.set_output_validation(id, { type = "lua", name = "..." })`. Daemon `DaemonPluginLoader` owns one `Arc<LuaValidatorRegistry>` shared with `AgentManager` via `OnceLock`; `validate_response_or_retry` calls `registry.run(&Lua, name, response)` synchronously (mlua `send` feature → no async lock). Unregistered names and unbound runtime degrade to validation failure (retry/exhaust path), not panic · `crucible-core`, `crucible-lua`, `crucible-daemon`
 
 ## AI Chat & Agents
 
 ### Conversation & Sessions
 - [x] **Interactive Chat** `P0` — Conversational AI with streaming text, thinking, tool calls, and subagent events · [[Help/CLI/chat]] · `crucible-cli`, `crucible-daemon`
-- [x] **Agent Cards** `P0` — Configurable agent personas with system prompts, model, temperature, tools · [[Help/Extending/Agent Cards]] · [[Help/Config/agents]] · `crucible-config`
+- [x] **Agent Cards** `P0` — Configurable agent personas with system prompts, model, temperature, tools · [[Help/Extending/Agent Cards]] · [[Help/Config/agents]] · `crucible-core` (config)
 - [x] **Session Persistence** `P0` — Conversations saved as markdown + JSONL in kiln · [[Help/Core/Sessions]] · `crucible-daemon`
 - [x] **Session Resume** `P0` — Load and continue previous sessions with full history · [[Help/Core/Sessions]] · `crucible-daemon` (rpc)
 - [x] **Conversation History** `P0` — Clear history (`:clear`), resume with prior messages; TUI viewport hydrated from daemon session events · `crucible-cli`, `crucible-daemon`
@@ -119,7 +117,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 - [x] **Temperature Control** `P0` — Runtime `:set temperature=0.5`; range 0.0–2.0; persisted per-session · `crucible-daemon`, `crucible-cli`
 - [x] **Max Tokens Control** `P0` — Runtime `:set max_tokens=4096` or `none` for provider default; persisted · `crucible-daemon`, `crucible-cli`
 - [x] **Extended Thinking** `P0` — Budget presets (off/minimal/low/medium/high/max) via `:set thinkingbudget`; Ctrl+T toggles display · `crucible-daemon`, `crucible-cli`
-- [x] **System Prompt** `P0` — Loaded from agent card at session creation; layered prompt composition · `crucible-daemon`, `crucible-config`
+- [x] **System Prompt** `P0` — Loaded from agent card at session creation; layered prompt composition · `crucible-daemon`, `crucible-core` (config)
 - [x] **Environment Overrides** `P0` — `--env KEY=VALUE` flag for per-session env vars (e.g., API keys) · `crucible-cli`
 - [x] **Agent Cancellation** `P0` — Ctrl+C/Esc cancels local stream and propagates to daemon via `session.cancel` RPC · `crucible-daemon`
 
@@ -134,15 +132,15 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 ### Context & Knowledge
 - [x] **Context Enrichment** `P0` — Inject kiln context into agent conversations · `crucible-daemon`
 - [x] **File Attachment** `P0` — `@file` context attachment in chat · `crucible-cli`
-- [x] **Rules Files** `P0` — Project-level AI instructions (`.crucible/rules`) · [[Help/Rules Files]] · `crucible-config`
+- [x] **Rules Files** `P0` — Project-level AI instructions (`.crucible/rules`) · [[Help/Rules Files]] · `crucible-core` (config)
 
 ### Core Agent Features
 
 > Core capabilities implemented in Rust. Precognition is toggleable via `:set precognition`. Other features are callable RPCs. Future: expose as toggleable session config with hook points for Lua override.
 
-- [x] **Precognition** `P0` — Auto-RAG: inject relevant kiln context before each agent turn; `:set precognition`; the core differentiator — every conversation is knowledge-graph-aware · `crucible-cli`, `crucible-acp`
+- [x] **Precognition** `P0` — Auto-RAG: inject relevant kiln context before each agent turn; `:set precognition`; the core differentiator — every conversation is knowledge-graph-aware · `crucible-cli`, `crucible-daemon` (acp)
 - [x] **Auto-Linking** `P1` — `suggest_links` RPC detects unlinked mentions of existing notes in text via word-boundary matching; case-insensitive, skips already-linked targets · `crucible-daemon`
-- [ ] **Team Patterns** `P1` — Multi-agent orchestration primitives in core Rust; supervisor (decompose → delegate → synthesize), router (route to specialist by topic), broadcast (parallel, gather perspectives); builds on existing subagent spawning infrastructure; `:set team.default_pattern=supervisor` · `crucible-daemon`
+- ~~**Team Patterns**~~ — supervisor / router / broadcast are user-Lua recipes against `cru.sessions.*` primitives, not hardcoded Rust types. See [[Help/Delegation Patterns]]. Removed 2026-05-12 (~1984 LOC) after recognising the hardcoded shapes shut out variants (Lua decider vs LLM, regex vs classifier, etc.) and shipped without consumers.
 
 ### Lua Session API
 - [x] **Scripted Agent Control** `P0` — Lua API for temperature, max_tokens, thinking_budget, model, mode; daemon getters use local cache · `crucible-lua`
@@ -156,14 +154,14 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 - [x] **`cru.tools.batch({...})`** `P1` — Concurrent multi-tool calls; `batch({{"semantic_search", {query="X"}}, {"list_notes", {tag="Y"}}})` runs in parallel via async runtime; essential for digest/summarization plugins · `crucible-lua`, `crucible-daemon` (tools)
 - [x] **`cru.sessions.messages(id, opts)`** `P1` — Read conversation history from Lua; opts: `{role, limit}`; enables context windowing, summarization, checkpoint detection · `crucible-lua`, `crucible-daemon`
 - [x] **`cru.sessions.inject(id, role, content)`** `P1` — Insert messages mid-conversation via `session.inject_context` RPC; requires session_id as first param; persists to session log and emits broadcast event · `crucible-lua`, `crucible-daemon`
-- [ ] **`session.fork()`** `P1` — Branch conversation state; enables parallel exploration, A/B approach testing · `crucible-lua`
+- [x] **`session.fork()`** `P1` — `cru.sessions.fork(id, opts)` returns `{ id, parent_id, messages_copied }`; copies message history and (via RPC handler) agent config; enables parallel exploration, A/B approach testing · `crucible-lua`, `crucible-daemon`
 - [x] **`cru.sessions.collect_subagents(ids, timeout?)`** `P1` — `subagent.collect` RPC + Lua API; await multiple subagents with optional timeout · `crucible-lua`, `crucible-daemon`
 
 ### In Progress / Planned
-- [x] **MCP Tool System** `P0` — Permission prompts via `PermissionGate` trait, ACP integration, `McpProxyTool` injection · `crucible-daemon` (tools), `crucible-acp`
+- [x] **MCP Tool System** `P0` — Permission prompts via `PermissionGate` trait, ACP integration, `McpProxyTool` injection · `crucible-daemon` (tools), `crucible-daemon` (acp)
 - [x] **Error Handling UX** `P0` — Toast notifications, contextual messages, graceful degradation for DB lock/search/kiln fallback, `BackendError::is_retryable()` + `retry_delay_secs()`, RPC `call_with_retry()` for idempotent daemon ops, recovery suggestions in error messages · `crucible-cli`, `crucible-core`, `crucible-daemon` (rpc)
-- [x] **Per-session MCP Servers** `P0` — Agent cards define MCP servers; `mcp_servers` propagated to `SessionAgent` and wired in daemon · `crucible-acp`
-- [ ] **Grammar + Lua Integration** `P1` — Constrained generation for structured agent outputs · `crucible-core`
+- [x] **Per-session MCP Servers** `P0` — Agent cards define MCP servers; `mcp_servers` propagated to `SessionAgent` and wired in daemon · `crucible-daemon` (acp)
+- [ ] **Grammar + Lua Integration** — `cru.grammar.{new, presets.*, set/clear/get_session_grammar}` GBNF bindings shipped briefly in Wave 2 but had no working backend; removed in the 2026-05-12 prune. Will revisit once llama-cpp is integrated · `crucible-core`, `crucible-lua`, `crucible-daemon`
 
 ## Terminal Interface (TUI)
 
@@ -252,7 +250,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 >
 > **Guiding insight**: Neovim's plugin ecosystem exploded when LuaLS type stubs + lazy.nvim hot reload made Lua plugins as ergonomic as TypeScript. Crucible needs the same inflection point.
 
-- [ ] **LuaCATS Type Stubs** `P1` — Generate `---@meta` files from Rust API surface (`cru.fs`, `cru.session`, `cru.http`, etc.); ship with binary, write to `~/.config/crucible/luals/`; enables IDE autocomplete and type checking via LuaLS · `crucible-lua`
+- [x] **LuaCATS Type Stubs** `P1` — `StubGenerator::generate` walks the registered `cru.*` namespaces and emits `cru.lua` (EmmyLua/LuaCATS) plus `cru-docs.json`; auto-runs at daemon startup writing to `~/.config/crucible/luals/`. `cru.context` added to `UNIVERSAL_MODULES` so the new Wave 1 surface ships with stubs · `crucible-lua`, `crucible-daemon`
 - [x] **Plugin Hot Reload** `P1` — `:reload <plugin>` command; invalidate `package.loaded`, re-require, re-extract services; `plugin.reload` RPC + `plugin.list` RPC · `crucible-lua`, `crucible-daemon`, `crucible-cli`
 - [x] **`:lua` REPL** `P1` — `lua.eval` RPC + `cru lua` CLI command; `=expr` prints result (Neovim pattern); inspect plugin state, test API calls · `crucible-cli`, `crucible-daemon`
 - [x] **`cru plugin new`** `P1` — Scaffold plugin from template: `plugin.yaml`, `init.lua`, `health.lua`, `.luarc.json`, `tests/` directory · `crucible-cli`
@@ -302,20 +300,20 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 
 Crucible acts as an **ACP host**, spawning and controlling external AI agents (Claude Code, Codex, Cursor, Gemini CLI, OpenCode) with Crucible's memory, context, and permission system.
 
-- [x] **ACP Host** `P0` — Spawn and control ACP agents with JSON-RPC 2.0 over stdio; capability negotiation, plan/act modes · [[Help/Concepts/Agents & Protocols]] · `crucible-acp`
-- [x] **Context Injection** `P0` — `PromptEnricher` performs semantic search, wraps results in `<precognition>` blocks; configurable via `ContextConfig::inject_context` · `crucible-acp`
-- [x] **In-Process MCP Host** `P0` — SSE transport MCP server running in-process; agents discover Crucible tools without external server · `crucible-acp`
-- [x] **Agent Discovery** `P0` — Parallel probing of known agents (`claude-code`, `opencode`, `cursor-acp`, `gemini`); env var overrides · `crucible-acp`
-- [x] **Sandboxed Filesystem** `P0` — Path validation, traversal prevention, mode-based permissions (plan=read-only), configurable size limits · `crucible-acp`
-- [x] **Permission Gate** `P0` — `PermissionGate` trait for pluggable permission decisions; `list_directory` in `FileSystemHandler` · `crucible-acp`
-- [x] **Streaming Responses** `P0` — Chunk processing, tool call parsing from stream, diff handling · `crucible-acp`
-- [x] **Session Management** `P0` — UUID sessions with config (cwd, mode, context size), history with ACP roles, persistence across reconnections · `crucible-acp`
+- [x] **ACP Host** `P0` — Spawn and control ACP agents with JSON-RPC 2.0 over stdio; capability negotiation, plan/act modes · [[Help/Concepts/Agents & Protocols]] · `crucible-daemon` (acp)
+- [x] **Context Injection** `P0` — `PromptEnricher` performs semantic search, wraps results in `<precognition>` blocks; configurable via `ContextConfig::inject_context` · `crucible-daemon` (acp)
+- [x] **In-Process MCP Host** `P0` — SSE transport MCP server running in-process; agents discover Crucible tools without external server · `crucible-daemon` (acp)
+- [x] **Agent Discovery** `P0` — Parallel probing of known agents (`claude-code`, `opencode`, `cursor-acp`, `gemini`); env var overrides · `crucible-daemon` (acp)
+- [x] **Sandboxed Filesystem** `P0` — Path validation, traversal prevention, mode-based permissions (plan=read-only), configurable size limits · `crucible-daemon` (acp)
+- [x] **Permission Gate** `P0` — `PermissionGate` trait for pluggable permission decisions; `list_directory` in `FileSystemHandler` · `crucible-daemon` (acp)
+- [x] **Streaming Responses** `P0` — Chunk processing, tool call parsing from stream, diff handling · `crucible-daemon` (acp)
+- [x] **Session Management** `P0` — UUID sessions with config (cwd, mode, context size), history with ACP roles, persistence across reconnections · `crucible-daemon` (acp)
 
 ### ACP Agent (Future — Crucible as Embeddable Agent)
 
-- [ ] **ACP Agent Mode** `P1` — Crucible as an embeddable ACP agent; any ACP host (Zed, JetBrains, Neovim) spawns Crucible to get knowledge graph + memory · `crucible-acp`
-- [ ] **ACP Registry Submission** `P1` — Agent manifest for [ACP Registry](https://github.com/agentclientprotocol/registry); one PR → available in all ACP clients · `crucible-acp`
-- [ ] **ACP Schema Bump** `P1` — Bump `agent-client-protocol-schema` from 0.10.6 → 0.10.7; SDK crate (`agent-client-protocol` 0.9.3) and wire protocol (v1) are already current · `crucible-acp`, `crucible-core`
+- [ ] **ACP Agent Mode** `P1` — Crucible as an embeddable ACP agent; any ACP host (Zed, JetBrains, Neovim) spawns Crucible to get knowledge graph + memory · `crucible-daemon` (acp)
+- [ ] **ACP Registry Submission** `P1` — Agent manifest for [ACP Registry](https://github.com/agentclientprotocol/registry); one PR → available in all ACP clients · `crucible-daemon` (acp)
+- [ ] **ACP Schema Bump** `P1` — Bump `agent-client-protocol-schema` from 0.10.6 → 0.10.7; SDK crate (`agent-client-protocol` 0.9.3) and wire protocol (v1) are already current · `crucible-daemon` (acp), `crucible-core`
 
 ### MCP Server (External Agents → Crucible Tools)
 
@@ -331,7 +329,7 @@ Crucible acts as an **ACP host**, spawning and controlling external AI agents (C
 - [x] **MCP Gateway** `P0` — Connect upstream MCP servers with prefixed tool names · [[Help/Extending/MCP Gateway]] · [[Help/Config/mcp]] · `crucible-daemon` (tools)
 - [x] **Lua Plugin Tools** `P0` — Dynamic tool discovery from Lua plugins · `crucible-daemon` (tools), `crucible-lua`
 - [x] **MCP Bridge/Gateway** `P0` — `McpGatewayManager` shared in daemon, `McpProxyTool` dynamic injection, live status display · `crucible-daemon` (tools)
-- [x] **MCP Connection Stability** `P0` — Auto-reconnect loop, 30s SSE keepalive, live status indicators in TUI · `crucible-acp`
+- [x] **MCP Connection Stability** `P0` — Auto-reconnect loop, 30s SSE keepalive, live status indicators in TUI · `crucible-daemon` (acp)
 
 ## Distribution & Growth
 
@@ -360,7 +358,7 @@ HTTP Gateway (crucible-web wired to daemon)
 - [x] **SSE/WebSocket Event Bridge** `P1` — Subscribe to daemon session events, stream to HTTP clients via SSE; `EventBroker` fans out per-session events · `crucible-web`
 - [x] **Chat HTTP API** `P1` — `POST /api/chat/send` + `GET /api/chat/events/:session_id` SSE stream; `POST /api/session`, `/list`, `/:id/pause`, `/:id/resume`, `/:id/end` · `crucible-web`
 - [x] **Search HTTP API** `P1` — `POST /api/search/vectors`; `GET /api/notes`, `GET /api/notes/:name`; `GET /api/kilns` · `crucible-web`
-- [x] **API Auth** `P1` — Bearer token middleware with auto-generated key; localhost bypass; `~/.config/crucible/api_key` persistence · `crucible-web`, `crucible-config`
+- [x] **API Auth** `P1` — Bearer token middleware with auto-generated key; localhost bypass; `~/.config/crucible/api_key` persistence · `crucible-web`, `crucible-core` (config)
 - [x] **Webhook API** `P1` — `POST /api/webhook/:name` receives payloads, broadcasts `webhook:received` event for Lua handlers; enables GitHub webhooks, IFTTT/Zapier/n8n integration · `crucible-web`, `crucible-daemon`
 
 ### Messaging Integrations (P1 — meet users where they are)
@@ -402,8 +400,7 @@ HTTP Gateway (crucible-web wired to daemon)
 > Same-named user plugin at any higher path **shadows** the runtime version. `:plugins` shows provenance: `[core]`, `[runtime]`, `[user]`, `[kiln]`.
 
 - [x] **Runtime Plugin Infrastructure** `P1` — `$CRUCIBLE_RUNTIME/plugins/` path with `PluginSource` provenance tracking; `plugin.list` RPC includes source/version; shadow-by-name semantics · `crucible-lua`, `crucible-daemon`
-- [ ] **`entity-memory` Runtime Plugin** `P1` — Extract entities/facts from conversations → atomic zettelkasten notes; wikilinks to source sessions; deduplicates against existing entity notes · `runtime/entity-memory/`
-- [ ] **`session-digest` Runtime Plugin** `P1` — Summarize completed sessions → linked notes; captures decisions, topics, entities; wikilinks to entity and source notes · `runtime/session-digest/`
+- [ ] **`session-digest` Runtime Plugin** — Shipped in Wave 2 then removed in the 2026-05-12 prune. LLM-judged dedupe risked wrong merges and kiln pollution; users preferred prompted refinement over automatic digests · `runtime/plugins/session-digest/` (removed)
 
 ### Ecosystem & Shareability (P1-P2)
 
@@ -423,32 +420,32 @@ HTTP Gateway (crucible-web wired to daemon)
 
 ## Storage & Processing
 
-- [x] **SQLite Backend** `P0` — Default storage; fast, lightweight, recommended for most users · [[Help/Config/storage]] · `crucible-sqlite`
-- [x] **Vector Embeddings** `P0` — FastEmbed (ONNX) local embedding generation · [[Help/Config/embedding]] · `crucible-llm`
-- [x] **Embedding Reranking** `P0` — Search result reranking for relevance · `crucible-sqlite`
+- [x] **SQLite Backend** `P0` — Default storage; fast, lightweight, recommended for most users · [[Help/Config/storage]] · `crucible-daemon` (storage)
+- [x] **Vector Embeddings** `P0` — FastEmbed (ONNX) local embedding generation · [[Help/Config/embedding]] · `crucible-daemon` (llm)
+- [x] **Embedding Reranking** `P0` — Search result reranking for relevance · `crucible-daemon` (storage)
 - [x] **File Processing** `P0` — Parse, enrich, and index notes via pipeline · [[Help/CLI/process]] · `crucible-daemon`
-- [x] **Transaction Queue** `P0` — Batched database operations with consistency · `crucible-sqlite`
+- [x] **Transaction Queue** `P0` — Batched database operations with consistency · `crucible-daemon` (storage)
 - [x] **Hash-based Change Detection** `P0` — Content-addressable block hashing · `crucible-core`
-- [x] **Task Storage** `P0` — Task records, history, dependencies, file associations · `crucible-sqlite`
+- [x] **Task Storage** `P0` — Task records, history, dependencies, file associations · `crucible-daemon` (storage)
 - [x] **Kiln Statistics** `P0` — Note counts, link analysis, storage metrics · [[Help/CLI/stats]] · `crucible-cli`
 - [x] **Daemon Server** `P0` — Unix socket server with 35 RPC methods · `crucible-daemon`
 - [x] **Daemon Client** `P0` — Auto-spawn, reconnect, RPC client library · `crucible-daemon` (rpc)
 - [x] **Event Subscriptions** `P0` — Per-session and wildcard event streaming via daemon · `crucible-daemon`
 - [x] **Notification RPC** `P0` — Add, list, dismiss notifications via daemon · `crucible-daemon`
 - [x] **File Watching** `P0` — File change detection (notify/polling, debouncing, daemon bridge) with auto-reprocessing: `file_changed` events trigger `pipeline.process()` via daemon reprocess task; enrichment disabled for now (parsing + storage only) · `crucible-daemon` (watch)
-- [ ] **Burn Embeddings** `P?` — Burn ML framework for local embeddings (stubbed) · `crucible-llm`
-- [ ] **LlamaCpp Embeddings** `P?` — GGUF model inference for embeddings (stubbed) · `crucible-llm`
+- [ ] **Burn Embeddings** `P?` — Burn ML framework for local embeddings (stubbed) · `crucible-daemon` (llm)
+- [ ] **LlamaCpp Embeddings** `P?` — GGUF model inference for embeddings (stubbed) · `crucible-daemon` (llm)
 - [ ] **Session Compaction** `P?` — Compact sessions with cache purge for memory efficiency · `crucible-daemon`
 
 ## Configuration & Setup
 
-- [x] **Config System** `P0` — TOML config with profiles, includes, environment overrides · [[Help/Configuration]] · `crucible-config`
-- [x] **Provider Config** `P0` — Unified provider configuration (Ollama, OpenAI, Anthropic) · [[Help/Config/llm]] · `crucible-config`
-- [x] **Embedding Config** `P0` — Provider, model, batch size, concurrency settings · [[Help/Config/embedding]] · `crucible-config`
-- [x] **Storage Config** `P0` — Backend selection, embedded vs daemon mode · [[Help/Config/storage]] · `crucible-config`
-- [x] **MCP Config** `P0` — Upstream MCP server connections · [[Help/Config/mcp]] · `crucible-config`
-- [x] **Workspace Config** `P0` — Multi-workspace kiln associations · [[Help/Config/workspaces]] · `crucible-config`
-- [x] **Agent Config** `P0` — Default agent, temperature, max_tokens, thinking budget · [[Help/Config/agents]] · `crucible-config`
+- [x] **Config System** `P0` — TOML config with profiles, includes, environment overrides · [[Help/Configuration]] · `crucible-core` (config)
+- [x] **Provider Config** `P0` — Unified provider configuration (Ollama, OpenAI, Anthropic) · [[Help/Config/llm]] · `crucible-core` (config)
+- [x] **Embedding Config** `P0` — Provider, model, batch size, concurrency settings · [[Help/Config/embedding]] · `crucible-core` (config)
+- [x] **Storage Config** `P0` — Backend selection, embedded vs daemon mode · [[Help/Config/storage]] · `crucible-core` (config)
+- [x] **MCP Config** `P0` — Upstream MCP server connections · [[Help/Config/mcp]] · `crucible-core` (config)
+- [x] **Workspace Config** `P0` — Multi-workspace kiln associations · [[Help/Config/workspaces]] · `crucible-core` (config)
+- [x] **Agent Config** `P0` — Default agent, temperature, max_tokens, thinking budget · [[Help/Config/agents]] · `crucible-core` (config)
 - [x] **CLI Commands** `P0` — 16 command modules: chat, session, process, search, stats, config, etc. · [[Help/CLI/Index]] · `crucible-cli`
 - [x] **Init Command** `P0` — Project initialization (`cru init`) with path validation · `crucible-cli`
 - [x] **Setup Wizard** `P0` — Oil TUI first-run wizard: auto-triggers on `cru chat` when no kiln exists; guides through kiln path, provider detection, model selection · `crucible-cli`
@@ -456,7 +453,7 @@ HTTP Gateway (crucible-web wired to daemon)
 - [x] **Kiln Path Validation** `P0` — Shared validation layer: hard blocks (root, nested kiln), strong warnings (git repo, source project, home dir, tmp), mild warnings (cloud sync) · `crucible-cli`
 - [x] **Getting Started** `P0` — Installation and first steps guide · [[Guides/Getting Started]] · [[Guides/Your First Kiln]]
 - [x] **Platform Guides** `P0` — Windows setup, GitHub Copilot integration · [[Guides/Windows Setup]] · [[Guides/GitHub Copilot Setup]]
-- [-] **CLI Help & Discoverability** `P0` — `--help` completeness, command suggestions · `crucible-cli`
+- [x] **CLI Help & Discoverability** `P0` — Every subcommand carries a `long_about` with examples; `infer_subcommands = true` on the top-level `Cli` so unique prefixes resolve (e.g. `cru con show` → `cru config show`); clap 4 emits "did you mean" suggestions on typos by default; insta snapshots in `cli_help_snapshot_tests` lock `cru --help`, `cru chat --help`, and `cru session --help` · `crucible-cli`
 - [x] **Plugin Loading Errors** `P0` — `:plugins` command shows load status; failures surfaced as toast notifications with error details · `crucible-lua`, `crucible-cli`
 
 ## Web & Desktop
@@ -500,7 +497,7 @@ HTTP Gateway (crucible-web wired to daemon)
 - [ ] **Knowledge Graph Visualization** `P2` — Interactive force-directed wikilink graph; Lua provides data query, SolidJS + d3 renders; no new Rust primitives needed · **Lua extension** · `crucible-web`
 - [ ] **Note Browser** `P2` — Browse notes with frontmatter, wikilinks, backlinks; users want custom columns/sort/filters — classic plugin territory · **Lua extension** · `crucible-web`
 - [ ] **Search UI** `P2` — Unified semantic + full-text + property search; Rust owns the search RPC (perf-critical), Lua owns result formatting + custom scopes · **Hybrid** · `crucible-web`
-- [ ] **Structured Data Views** `P3` — Obsidian Bases-style tables/kanban from frontmatter; the canonical "plugin not core" feature; depends on mature plugin system · **Lua extension** · `crucible-web`, `crucible-sqlite` (query)
+- [ ] **Structured Data Views** `P3` — Obsidian Bases-style tables/kanban from frontmatter; the canonical "plugin not core" feature; depends on mature plugin system · **Lua extension** · `crucible-web`, `crucible-daemon` (storage) (query)
 
 ### Plugin UI & Artifacts (P2 — easy primitives to _make_ things)
 
@@ -510,7 +507,7 @@ HTTP Gateway (crucible-web wired to daemon)
 
 ### Configuration & System (P2)
 
-- [ ] **Config Editor** `P2` — Schema-driven form for `config.toml`; form UI is plugin work, schema generated from config types · **Lua extension** · `crucible-web`, `crucible-config`
+- [ ] **Config Editor** `P2` — Schema-driven form for `config.toml`; form UI is plugin work, schema generated from config types · **Lua extension** · `crucible-web`, `crucible-core` (config)
 - [ ] **OpenAPI Spec** `P2` — Machine-readable API spec file (generated from routes); ship the spec, let users use Swagger UI / curl / httpie — zero maintenance vs custom playground · **Core Rust** · `crucible-web`
 - [ ] **System Info** `P2` — Daemon health, kilns, MCP status, plugin status, embedding stats; health checks over existing RPCs · **Lua extension** · `crucible-web`
 - [ ] **Log Viewer** `P2` — Real-time daemon log streaming; Rust owns the SSE log endpoint (backpressure), Lua owns filtering/formatting · **Hybrid** · `crucible-web`
@@ -570,7 +567,8 @@ HTTP Gateway (crucible-web wired to daemon)
 | 2026-02-05 | Agent learning as notes, not opaque DB | Informed by Agno framework analysis. Agno uses six opaque DB-backed learning stores. Crucible's approach: agent memory stored as wikilinked atomic notes (zettelkasten-style) in kiln. Human-readable, editable, searchable via existing graph. Strictly better — same capabilities plus human review/edit. Local embeddings + metadata (wikilinks, tags, frontmatter) provide rich fetchable context without custom storage |
 | 2026-02-05 | Two-tier extensibility: core Rust + runtime Lua | Core features (precognition, auto-linking, team patterns) in Rust for performance, toggleable via `:set`. Higher-level behaviors (entity-memory, session-digest) as default runtime Lua plugins. Both show in `:plugins` with provenance. Matches Neovim's architecture: C core + bundled Lua plugins |
 | 2026-02-05 | Default runtime plugins (Neovim-style) | Ship bundled Lua plugins at `$CRUCIBLE_RUNTIME/plugins/`; lowest-priority in discovery path; user plugins shadow by name. Source code serves as reference documentation. Plugins: `entity-memory` (facts → atomic notes), `session-digest` (session summaries → linked notes) |
-| 2026-02-05 | Team patterns as core Rust, not Lua plugins | Multi-agent orchestration (supervisor, router, broadcast) is fundamental infrastructure, not optional behavior. Implemented in Rust, builds on existing subagent spawning. Configurable via `:set team.default_pattern`. Lua hooks can intercept delegation decisions |
+| 2026-02-05 | Team patterns as core Rust, not Lua plugins | Multi-agent orchestration (supervisor, router, broadcast) is fundamental infrastructure, not optional behavior. Implemented in Rust, builds on existing subagent spawning. Configurable via `:set team.default_pattern`. Lua hooks can intercept delegation decisions. **Reversed 2026-05-12 — see next row.** |
+| 2026-05-12 | Team patterns as Lua recipes, not Rust orchestrators | The hardcoded `Supervisor` / `Router` / `Broadcast` types each picked one delegation shape (Lua decider, single-shot classifier, parallel fan-out) and shut out variants. Users want to script delegation with primitives — supervisor + LLM judge, router + regex, supervisor + DAG, fan-in pipelines, retries. `cru.sessions.{create, configure_agent, send_and_collect, end_session, collect_subagents}` already covers it; the three patterns become 5–20 line recipes in [[Help/Delegation Patterns]]. ~1984 LOC removed. The 2026-02-05 "fundamental infrastructure" framing was wrong: delegation *primitives* are infrastructure, delegation *patterns* are user code |
 | 2026-02-05 | SQLite is default storage | Product map updated to reflect SQLite as default, SurrealDB as advanced option. Docs (CLAUDE.md, Systems.md) corrected. SQLite is fast, lightweight, recommended for single-user local-first usage |
 | 2026-03-21 | Context & Execution as core runtime | Competitive analysis (Aider, CrewAI, LangGraph, Semantic Kernel) revealed 5 features universally treated as core: context window management, execution limits, prompt caching, agent undo, output validation. All too fundamental for plugins. Partial infrastructure already exists (context_ops module, UndoTree, session.compact, genai CacheControl) |
 | 2026-03-21 | Prompt caching via genai (no new deps) | genai v0.5.3 already exposes `CacheControl::Ephemeral`; Crucible just needs to import and use it. Anthropic: 90% savings on cached reads. OpenAI: automatic, no code needed. No Rust framework (Rig, kalosm) provides this — all DIY |

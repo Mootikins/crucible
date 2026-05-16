@@ -247,6 +247,122 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         up_to: Option<u64>,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>>;
 
+    /// Fetch the prompt-cache aggregate for a session.
+    ///
+    /// Returns a JSON object with hits/misses/{read,creation,prompt,completion}_tokens
+    /// and `hit_rate` (null until the first cache event has fired).
+    fn cache_stats(
+        &self,
+        session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>>;
+
+    /// Return current context usage for a session.
+    ///
+    /// JSON shape:
+    /// `{ messages: u32, prompt_tokens: u32, budget: u32, percent: f64 }`
+    ///
+    /// Default implementation returns `Err("not implemented")`; wired in Task A2.
+    fn context_usage(
+        &self,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
+    /// Trigger compaction on a session.
+    ///
+    /// Returns `()`; compaction runs asynchronously on the next agent turn.
+    /// Wraps `SessionManager::request_compaction`.
+    ///
+    /// Default implementation returns `Err("not implemented")`; wired in Task A2.
+    fn compact(
+        &self,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
+    /// Remove messages from a session's conversation tree by range.
+    ///
+    /// `range` is `{ "type": "all" }` | `{ "type": "last" | "first", "n": N }` |
+    /// `{ "type": "indices", "start": S, "end": E }` (half-open `[S, E)`).
+    /// Returns the count of messages actually removed.
+    ///
+    /// Default implementation returns `Err("not implemented")`; wired in Task A2.
+    fn remove_messages(
+        &self,
+        _session_id: String,
+        _range: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
+    /// Set the output validation mode for a session.
+    ///
+    /// `spec` is the stringified form parsed by
+    /// `OutputValidation::from_str`: `"none"` | `"json"` |
+    /// `"regex:<pattern>"` | `"lua:<name>"`. The Lua binding accepts
+    /// either a raw string or a structured table and serialises the
+    /// table form to one of the above before crossing this trait.
+    ///
+    /// Default implementation returns `Err("not implemented")`; wired
+    /// in Task B4.
+    fn set_output_validation(
+        &self,
+        _session_id: String,
+        _spec: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
+    /// Undo the last `count` agent turns by rewinding the session's
+    /// conversation tree cursor. Returns the number of turns actually
+    /// undone (capped at available turns).
+    ///
+    /// Default implementation returns `Err("not implemented")`; wired
+    /// in Task C1.
+    fn undo(
+        &self,
+        _session_id: String,
+        _count: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
+    /// Whether the session has at least one turn that can be undone.
+    ///
+    /// Default implementation returns `Err("not implemented")`; wired
+    /// in Task C1.
+    fn can_undo(
+        &self,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
+    /// Number of turns currently available for undo.
+    ///
+    /// Default implementation returns `Err("not implemented")`; wired
+    /// in Task C1.
+    fn undo_depth(
+        &self,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
+    /// Per-turn summaries of every turn currently undoable, oldest-to-
+    /// newest. Each entry serialises to (at minimum) `{ messages_removed }`.
+    ///
+    /// Default implementation returns `Err("not implemented")`; wired
+    /// in Task C1.
+    fn undo_history(
+        &self,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
     /// Send a message and stream structured response parts.
     ///
     /// Subscribes, sends the message, then returns a receiver that yields

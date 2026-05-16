@@ -53,9 +53,14 @@ impl KilnTools {
                 |n| n.to_string_lossy().into_owned(),
             );
 
-        // Use indexed data from NoteStore when available
+        // Use indexed data from NoteStore when available — workspace
+        // authority bound to this MCP server's kiln.
         if let Some(store) = &self.note_store {
-            let notes = store.list().await.map_err(|e| rmcp::ErrorData {
+            let authority = crucible_core::storage::Scope::workspace(&self.kiln_path)
+                .unwrap_or_else(|_| {
+                    crucible_core::storage::Scope::workspace_unchecked(&self.kiln_path)
+                });
+            let notes = store.list(&authority).await.map_err(|e| rmcp::ErrorData {
                 code: rmcp::model::ErrorCode(-32603), // INTERNAL_ERROR
                 message: format!("Failed to list notes: {e}").into(),
                 data: None,
@@ -230,7 +235,11 @@ mod tests {
             async fn upsert(&self, _note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
                 Ok(vec![])
             }
-            async fn get(&self, _path: &str) -> StorageResult<Option<NoteRecord>> {
+            async fn get(
+                &self,
+                _path: &str,
+                _authority: &crucible_core::storage::Scope,
+            ) -> StorageResult<Option<NoteRecord>> {
                 Ok(None)
             }
             async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
@@ -239,10 +248,17 @@ mod tests {
                     existed: false,
                 }))
             }
-            async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+            async fn list(
+                &self,
+                _authority: &crucible_core::storage::Scope,
+            ) -> StorageResult<Vec<NoteRecord>> {
                 Ok(self.notes.lock().unwrap().clone())
             }
-            async fn get_by_hash(&self, _hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+            async fn get_by_hash(
+                &self,
+                _hash: &BlockHash,
+                _authority: &crucible_core::storage::Scope,
+            ) -> StorageResult<Option<NoteRecord>> {
                 Ok(None)
             }
             async fn search(

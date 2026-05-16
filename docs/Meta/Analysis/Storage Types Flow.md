@@ -13,6 +13,9 @@ tags:
 
 # Storage Types & Data Flow Analysis
 
+> **Historical snapshot (2024-12-13).** Predates the crate consolidation: `crucible-sqlite` is now `crucible-daemon::storage::sqlite`. Many issues below were addressed in the simplification refactor; treat as archive context.
+
+
 ## Executive Summary
 
 The crucible-sqlite crate implements the storage layer:

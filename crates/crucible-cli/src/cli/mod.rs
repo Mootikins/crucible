@@ -56,6 +56,7 @@ impl From<LogLevel> for LevelFilter {
 #[command(about = "cru - Crucible CLI - Interactive knowledge management with semantic search")]
 #[command(version)]
 #[command(arg_required_else_help = false)]
+#[command(infer_subcommands = true)]
 pub struct Cli {
     /// Subcommand to execute (defaults to chat if not provided)
     #[command(subcommand)]
@@ -384,6 +385,12 @@ Examples:
     )]
     Plugin(crate::commands::plugin::PluginCommands),
 
+    /// Install a plugin from a git URL (alias for `cru plugin add`)
+    #[command(
+        long_about = "Install a plugin from a git URL. Shorthand for `cru plugin add`.\n\nExamples:\n  cru install user/repo\n  cru install https://github.com/user/repo.git --branch main\n  cru install user/repo --pin v1.2.0"
+    )]
+    Install(crate::commands::plugin::AddArgs),
+
     /// Evaluate Lua code in the daemon's plugin runtime
     #[command(
         long_about = "Evaluate Lua code in the daemon's plugin runtime.\n\nRuns code in the same Lua VM that plugins use. Use '=' prefix for expressions.\n\nExamples:\n  # Evaluate an expression\n  cru lua '=1+1'\n\n  # Call a function\n  cru lua 'print(\"hello\")'\n\n  # Inspect the cru namespace\n  cru lua '=cru'\n\n  # Run a script file\n  cru lua --file plugin_test.lua\n\n  # Pipe from stdin\n  echo 'print(42)' | cru lua -"
@@ -454,7 +461,6 @@ Examples:
         session_id_flag: Option<String>,
     },
 
-    /// Generate shell completion scripts (bash, zsh)
     /// Bootstrap the Crucible runtime (plugins, themes, default init.lua)
     #[command(
         long_about = "Bootstrap the Crucible runtime directory with bundled plugins, themes, and a template init.lua.\n\nRun this after installing Crucible to set up the runtime files that plugins and themes need.\n\nExamples:\n  # Bootstrap runtime to default location\n  cru setup\n\n  # Bootstrap to custom location\n  cru setup --runtime-dir ~/.config/crucible/runtime\n\n  # Force re-bootstrap (overwrites existing)\n  cru setup --force"

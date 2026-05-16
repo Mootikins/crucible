@@ -479,12 +479,13 @@ pub async fn create_agent_from_session_config(
         &agent_config.system_prompt,
     );
 
-    let handle = GenaiAgentHandle::new(
+    let handle = GenaiAgentHandle::with_workspace(
         genai_client,
         model_iden,
         &enriched_prompt,
         tool_defs,
         agent_config.thinking_budget,
+        workspace.to_path_buf(),
     );
 
     info!(
@@ -557,6 +558,7 @@ mod tests {
             context_window: None,
             output_validation: Default::default(),
             validation_retries: 3,
+            autocompact_threshold: None,
         }
     }
 

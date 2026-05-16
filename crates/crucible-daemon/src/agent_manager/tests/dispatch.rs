@@ -564,3 +564,62 @@ async fn cleanup_session_cancels_pending_requests() {
         "Cancel signal should have been sent during cleanup"
     );
 }
+
+/// Partial cancel (user hits Esc) must drop any in-flight permission
+/// `oneshot::Sender`s for the session, otherwise queued prompts behind
+/// the `PermissionSerializer` lock stay blocked for the full 300s
+/// timeout. Regression test for the cancel-arm fix.
+#[tokio::test]
+async fn cancel_drops_pending_permission_senders() {
+    use crate::agent_manager::PendingPermission;
+    use crucible_core::interaction::PermRequest;
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let agent_manager = create_test_agent_manager(session_manager);
+
+    let session_id = "cancel-pending-perm";
+
+    // Insert a pending permission with a oneshot we can poll.
+    let (response_tx, mut response_rx) = oneshot::channel();
+    let perm_request = PermRequest::tool("bash", serde_json::json!({"command": "ls"}));
+    agent_manager
+        .pending_permissions
+        .entry(session_id.to_string())
+        .or_default()
+        .insert(
+            "perm-1".to_string(),
+            PendingPermission {
+                request: perm_request,
+                response_tx,
+            },
+        );
+
+    // Receiver should still be open right now.
+    assert!(
+        matches!(
+            response_rx.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ),
+        "receiver should be empty before cancel"
+    );
+
+    let cancelled = agent_manager.cancel(session_id).await;
+    assert!(
+        cancelled,
+        "cancel should report success when it had pending state"
+    );
+
+    // After cancel, the sender was dropped → receiver returns Closed.
+    assert!(
+        matches!(
+            response_rx.try_recv(),
+            Err(oneshot::error::TryRecvError::Closed)
+        ),
+        "receiver must report Closed after cancel drops the sender"
+    );
+    assert!(
+        !agent_manager.pending_permissions.contains_key(session_id),
+        "pending_permissions entry should be removed after cancel"
+    );
+}

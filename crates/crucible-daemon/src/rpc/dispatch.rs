@@ -48,6 +48,9 @@ pub const METHODS: &[&str] = &[
     "session.list_models",
     "session.set_thinking_budget",
     "session.get_thinking_budget",
+    "session.cache_stats",
+    "session.set_autocompact_threshold",
+    "session.get_autocompact_threshold",
     "session.add_notification",
     "session.list_notifications",
     "session.dismiss_notification",
@@ -193,7 +196,8 @@ impl RpcDispatcher {
             | "session.set_validation_retries"
             | "session.set_system_prompt"
             | "session.set_precognition"
-            | "session.set_precognition_results" => {
+            | "session.set_precognition_results"
+            | "session.set_autocompact_threshold" => {
                 to_response(id, self.dispatch_session_config_setter(&req).await)
             }
             "session.get_thinking_budget"
@@ -208,9 +212,11 @@ impl RpcDispatcher {
             | "session.get_validation_retries"
             | "session.get_system_prompt"
             | "session.get_precognition"
-            | "session.get_precognition_results" => {
+            | "session.get_precognition_results"
+            | "session.get_autocompact_threshold" => {
                 to_response(id, self.dispatch_session_config_getter(&req).await)
             }
+            "session.cache_stats" => to_response(id, self.handle_session_cache_stats(&req).await),
             // Kiln CRUD handlers
             "kiln.open" => to_response(id, self.handle_kiln_open(&req).await),
             "kiln.close" => to_response(id, self.handle_kiln_close(&req).await),
@@ -595,6 +601,14 @@ impl RpcDispatcher {
                 )
                 .await
             }
+            "session.set_autocompact_threshold" => {
+                session::handle_session_set_autocompact_threshold(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx,
+                )
+                .await
+            }
             _ => unreachable!("dispatch match already filtered to known setter methods"),
         };
         map_server_resp(resp)
@@ -644,6 +658,10 @@ impl RpcDispatcher {
             }
             "session.get_precognition_results" => {
                 session::handle_session_get_precognition_results(req.clone(), &self.ctx.agents)
+                    .await
+            }
+            "session.get_autocompact_threshold" => {
+                session::handle_session_get_autocompact_threshold(req.clone(), &self.ctx.agents)
                     .await
             }
             _ => unreachable!("dispatch match already filtered to known getter methods"),
@@ -807,8 +825,12 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_end(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        // Fire on_session_end Lua hooks before ending the session
-        // Plugins use this for cleanup (e.g., releasing resources, stopping services)
+        // Fire on_session_end Lua hooks before ending the session.
+        // Plugins use this for cleanup (e.g., releasing resources, stopping
+        // services) and for agent-learning extraction (session digest, entity
+        // memory). Before firing, enrich the Session userdata with kiln_path,
+        // agent_name, and end_reason so handlers don't need extra RPC
+        // round-trips to do their work.
         let session_id = req
             .params
             .get("session_id")
@@ -818,13 +840,24 @@ impl RpcDispatcher {
             if let Some(state) = self.ctx.lua_sessions.get(session_id) {
                 let state = state.value().clone();
                 let mut state = state.lock().await;
-                if let Err(e) = state.executor.sync_session_end_hooks() {
-                    tracing::warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
-                }
-                if let Some(session) = state.executor.session_manager().get_current() {
-                    if let Err(e) = state.executor.fire_session_end_hooks(&session) {
-                        tracing::warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
+                // Daemon-side idempotency: `lua.shutdown_session` also fires
+                // these hooks. Whichever path reaches us first sets the flag;
+                // the second is a no-op.
+                if state.end_hooks_fired {
+                    tracing::debug!(
+                        session_id = %session_id,
+                        "on_session_end hooks already fired; skipping"
+                    );
+                } else {
+                    if let Err(e) = state.executor.sync_session_end_hooks() {
+                        tracing::warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
                     }
+                    if let Some(session) = state.executor.session_manager().get_current() {
+                        if let Err(e) = state.executor.fire_session_end_hooks(&session) {
+                            tracing::warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
+                        }
+                    }
+                    state.end_hooks_fired = true;
                 }
             }
         }
@@ -871,6 +904,12 @@ impl RpcDispatcher {
     async fn handle_session_compact(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_compact(req.clone(), &self.ctx.sessions).await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_cache_stats(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp =
+            crate::server::session::handle_session_cache_stats(req.clone(), &self.ctx.agents).await;
         map_server_resp(resp)
     }
 
@@ -1407,12 +1446,13 @@ mod tests {
         assert!(METHODS.contains(&"daemon.capabilities"));
         assert!(METHODS.contains(&"session.subscribe"));
         assert!(METHODS.contains(&"session.set_thinking_budget"));
+        assert!(METHODS.contains(&"session.cache_stats"));
         assert!(METHODS.contains(&"subagent.collect"));
     }
 
     #[test]
     fn methods_count() {
-        assert_eq!(METHODS.len(), 117, "Update when adding RPC methods");
+        assert_eq!(METHODS.len(), 120, "Update when adding RPC methods");
     }
 
     #[tokio::test]
@@ -1471,5 +1511,116 @@ mod tests {
         let subscribed = result["subscribed"].as_array().unwrap();
         assert_eq!(subscribed.len(), 1);
         assert_eq!(subscribed[0], "session-123");
+    }
+
+    /// Regression: `session.end` and `lua.shutdown_session` both
+    /// fire `on_session_end` hooks. The CLI chat REPL invokes both — once
+    /// when the user runs `:end` and again when the REPL exits — so an
+    /// `on_session_end` handler was being fired twice per session lifecycle.
+    /// Non-idempotent hooks (LLM calls, file writes) would have run twice.
+    ///
+    /// Fix: the daemon tracks per-session `end_hooks_fired` in
+    /// `LuaSessionState`. The second caller short-circuits.
+    #[tokio::test]
+    async fn end_then_shutdown_fires_on_session_end_hook_exactly_once() {
+        use crate::server::LuaSessionState;
+        use crucible_core::session::SessionType;
+        use crucible_lua::{LuaExecutor, LuaScriptHandlerRegistry, Session as LuaSession};
+        use tempfile::TempDir;
+
+        let tempdir = TempDir::new().unwrap();
+        let kiln_root = tempdir.path().to_path_buf();
+        let ctx = test_context();
+
+        // Create a real daemon-side session so handle_session_end can find it.
+        let session = ctx
+            .sessions
+            .create_session(
+                SessionType::Chat,
+                kiln_root.clone(),
+                Some(kiln_root.clone()),
+                Vec::new(),
+                None,
+            )
+            .await
+            .expect("create session");
+        let session_id = session.id.clone();
+
+        // Build a Lua session with a hook that increments a Lua global counter.
+        let mut executor = LuaExecutor::new().expect("lua executor");
+        executor
+            .lua()
+            .load(
+                r#"
+                _G.test_end_hook_count = 0
+                crucible.on_session_end(function(_session)
+                    _G.test_end_hook_count = _G.test_end_hook_count + 1
+                end)
+                "#,
+            )
+            .exec()
+            .expect("install end hook");
+        executor.sync_session_end_hooks().expect("sync end hooks");
+
+        // Bind a LuaSession into the executor's session manager so the
+        // hook dispatcher has a target.
+        let lua_session = LuaSession::new("chat".to_string());
+        executor.session_manager().set_current(lua_session);
+
+        let lua = executor.lua().clone();
+        let state = LuaSessionState {
+            executor,
+            registry: LuaScriptHandlerRegistry::new(),
+            end_hooks_fired: false,
+        };
+        ctx.lua_sessions
+            .insert(session_id.clone(), Arc::new(tokio::sync::Mutex::new(state)));
+
+        let dispatcher = RpcDispatcher::new(ctx);
+
+        // First: session.end (User reason)
+        let resp1 = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "session.end",
+                    serde_json::json!({ "session_id": session_id }),
+                ),
+            )
+            .await;
+        assert!(
+            resp1.error.is_none(),
+            "session.end failed: {:?}",
+            resp1.error
+        );
+
+        // Second: lua.shutdown_session (Shutdown reason) — pre-fix this
+        // re-fires the hook against the same Lua session.
+        let resp2 = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "lua.shutdown_session",
+                    serde_json::json!({ "session_id": session_id }),
+                ),
+            )
+            .await;
+        assert!(
+            resp2.error.is_none(),
+            "lua.shutdown_session failed: {:?}",
+            resp2.error
+        );
+
+        // Read back the Lua counter. `lua.shutdown_session` removes the
+        // session from `lua_sessions`, so we use the cloned Lua handle.
+        let count: i64 = lua
+            .globals()
+            .get("test_end_hook_count")
+            .expect("read counter");
+        assert_eq!(
+            count, 1,
+            "on_session_end fired {count} times; expected exactly 1 \
+             (session.end and lua.shutdown_session must not both fire)"
+        );
     }
 }

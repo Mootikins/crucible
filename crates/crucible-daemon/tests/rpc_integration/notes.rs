@@ -22,7 +22,7 @@ async fn test_list_notes_rpc() {
 
     // List notes - should return empty for fresh kiln
     let results = client
-        .list_notes(kiln_dir.path(), None)
+        .list_notes(kiln_dir.path(), None, None)
         .await
         .expect("list_notes RPC failed");
 
@@ -48,7 +48,7 @@ async fn test_get_note_by_name_rpc() {
 
     // Get non-existent note - should return None
     let result = client
-        .get_note_by_name(kiln_dir.path(), "NonExistent")
+        .get_note_by_name(kiln_dir.path(), "NonExistent", None)
         .await
         .expect("get_note_by_name RPC failed");
 
@@ -132,7 +132,7 @@ async fn test_search_vectors_rpc() {
     // Search with a test vector - should return empty since no data yet
     let test_vector: Vec<f32> = vec![1.0, 0.0, 0.0];
     let results = client
-        .search_vectors(kiln_dir.path(), &test_vector, 10)
+        .search_vectors(kiln_dir.path(), &test_vector, 10, None)
         .await
         .expect("search_vectors RPC failed");
 
@@ -256,7 +256,7 @@ async fn test_list_notes_with_data() {
 
     // List all notes
     let results = client
-        .list_notes(kiln_dir.path(), None)
+        .list_notes(kiln_dir.path(), None, None)
         .await
         .expect("list_notes RPC failed");
 
@@ -294,7 +294,7 @@ async fn test_list_notes_with_filter() {
 
     // Filter by "projects/" path
     let results = client
-        .list_notes(kiln_dir.path(), Some("projects/"))
+        .list_notes(kiln_dir.path(), Some("projects/"), None)
         .await
         .expect("list_notes RPC failed");
 
@@ -321,7 +321,7 @@ async fn test_get_note_by_name_found() {
 
     // Search by title (case-insensitive)
     let result = client
-        .get_note_by_name(kiln_dir.path(), "rust")
+        .get_note_by_name(kiln_dir.path(), "rust", None)
         .await
         .expect("get_note_by_name RPC failed");
 
@@ -355,7 +355,7 @@ async fn test_get_note_by_name_by_path() {
 
     // Search by path fragment
     let result = client
-        .get_note_by_name(kiln_dir.path(), "daily")
+        .get_note_by_name(kiln_dir.path(), "daily", None)
         .await
         .expect("get_note_by_name RPC failed");
 
@@ -381,7 +381,7 @@ async fn test_get_note_by_name_not_found() {
 
     // Search for non-existent note
     let result = client
-        .get_note_by_name(kiln_dir.path(), "nonexistent-note-xyz")
+        .get_note_by_name(kiln_dir.path(), "nonexistent-note-xyz", None)
         .await
         .expect("get_note_by_name RPC failed");
 

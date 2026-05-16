@@ -93,6 +93,7 @@ pub struct OilChatRunner {
     pub(super) mcp_config: Option<crucible_core::config::mcp::McpConfig>,
     pub(super) available_models: Vec<String>,
     pub(super) show_thinking: bool,
+    pub(super) show_diffs: bool,
     pub(super) session_cmd_rx: Option<mpsc::UnboundedReceiver<SessionCommand>>,
     pub(super) slash_commands: Vec<(String, String)>,
     pub(super) agent_name: Option<String>,
@@ -148,6 +149,7 @@ impl OilChatRunner {
             mcp_config: None,
             available_models: Vec::new(),
             show_thinking: false,
+            show_diffs: true,
             session_cmd_rx: None,
             slash_commands: Vec::new(),
             agent_name: None,
@@ -212,6 +214,11 @@ impl OilChatRunner {
 
     pub fn with_show_thinking(mut self, show: bool) -> Self {
         self.show_thinking = show;
+        self
+    }
+
+    pub fn with_show_diffs(mut self, show: bool) -> Self {
+        self.show_diffs = show;
         self
     }
 
@@ -289,5 +296,29 @@ impl OilChatRunner {
         is_replay: bool,
     ) -> Action<ChatAppMsg> {
         Self::process_message(msg, app, agent, bridge, is_replay).await
+    }
+
+    /// Test-only helper: drive `process_action` directly so tests exercise
+    /// the real production path rather than a mirrored copy of its body.
+    /// Constructs the dependent params (msg_tx, background_tasks) inline.
+    #[cfg(test)]
+    pub(crate) async fn process_action_for_test<A: AgentHandle>(
+        &mut self,
+        action: Action<ChatAppMsg>,
+        app: &mut OilChatApp,
+        agent: &mut A,
+        bridge: &AgentEventBridge,
+    ) -> io::Result<bool> {
+        let (msg_tx, _msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
+        let mut background_tasks: Vec<JoinHandle<()>> = Vec::new();
+        self.process_action(ProcessActionParams {
+            action,
+            app,
+            agent,
+            bridge,
+            msg_tx: &msg_tx,
+            background_tasks: &mut background_tasks,
+        })
+        .await
     }
 }

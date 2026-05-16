@@ -47,6 +47,7 @@ pub mod annotations;
 mod ask;
 pub mod auth_plugin;
 pub mod capability_gate;
+mod context;
 pub mod core_handler;
 mod error;
 mod error_ext;
@@ -112,6 +113,10 @@ pub use config::{
     get_app_config, get_statusline_config, get_theme_config, list_available_themes,
     seed_app_config, ConfigLoader, ConfigState,
 };
+pub use context::{
+    register_context_module, register_context_module_stub, register_context_validators,
+    LuaValidatorRegistry,
+};
 pub use core_handler::{LuaHandler, LuaHandlerMeta};
 pub use error::{format_lua_error, LuaError};
 pub use executor::LuaExecutor;
@@ -121,7 +126,8 @@ pub use fs::register_fs_module;
 pub use graph::{
     register_graph_module, register_graph_module_full, register_graph_module_with_all,
     register_graph_module_with_executor, register_graph_module_with_store,
-    register_graph_view_functions, register_note_store_functions,
+    register_graph_module_with_store_scoped, register_graph_view_functions,
+    register_note_store_functions,
 };
 pub use hooks::{
     fire_tools_registered_hooks, get_session_start_hooks, get_tools_registered_hooks,
@@ -154,7 +160,7 @@ pub use timer::register_timer_module;
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
 pub use vault::{
     register_vault_module, register_vault_module_full, register_vault_module_with_graph,
-    register_vault_module_with_store,
+    register_vault_module_with_store, register_vault_module_with_store_scoped,
 };
 pub use ws::register_ws_module;
 

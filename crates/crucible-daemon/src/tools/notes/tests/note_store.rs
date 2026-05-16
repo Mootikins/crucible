@@ -50,7 +50,11 @@ impl NoteStore for MockNoteStore {
         Ok(vec![event])
     }
 
-    async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
+    async fn get(
+        &self,
+        path: &str,
+        _authority: &crucible_core::storage::Scope,
+    ) -> StorageResult<Option<NoteRecord>> {
         let notes = self.notes.lock().unwrap();
         Ok(notes.get(path).cloned())
     }
@@ -64,12 +68,19 @@ impl NoteStore for MockNoteStore {
         }))
     }
 
-    async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+    async fn list(
+        &self,
+        _authority: &crucible_core::storage::Scope,
+    ) -> StorageResult<Vec<NoteRecord>> {
         let notes = self.notes.lock().unwrap();
         Ok(notes.values().cloned().collect())
     }
 
-    async fn get_by_hash(&self, _hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+    async fn get_by_hash(
+        &self,
+        _hash: &BlockHash,
+        _authority: &crucible_core::storage::Scope,
+    ) -> StorageResult<Option<NoteRecord>> {
         Ok(None)
     }
 

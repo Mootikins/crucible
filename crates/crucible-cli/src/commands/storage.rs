@@ -93,7 +93,10 @@ async fn execute_stats(config: CliConfig, _format: String) -> Result<()> {
 
     let storage = crate::factories::get_storage(&config).await?;
     let note_store = storage.note_store();
-    let notes = note_store.list().await?;
+    // CLI storage stats — workspace authority for the configured kiln.
+    let authority = crucible_core::storage::Scope::workspace(&config.kiln_path)
+        .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(&config.kiln_path));
+    let notes = note_store.list(&authority).await?;
 
     output::header("Storage Statistics");
     println!("  Total Notes: {}", notes.len());

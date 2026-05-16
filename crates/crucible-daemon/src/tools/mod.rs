@@ -13,6 +13,7 @@
 #![allow(missing_docs)]
 
 pub mod autolink;
+pub mod diff_synth;
 pub mod error_utils;
 pub mod extended_mcp_server;
 pub mod helpers;

@@ -122,6 +122,7 @@ fn test_session_with_agent() {
         context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
+        autocompact_threshold: None,
     };
 
     let kiln = PathBuf::from("/home/user/notes");
@@ -183,6 +184,7 @@ fn test_session_summary_includes_agent_model() {
         context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
+        autocompact_threshold: None,
     };
 
     let kiln = PathBuf::from("/home/user/notes");

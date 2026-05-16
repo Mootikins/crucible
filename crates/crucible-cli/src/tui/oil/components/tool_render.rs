@@ -3,6 +3,7 @@
 //! Renders tool call states: pending (with static ● icon), complete (with ✓),
 //! and error (with ✗). No animated spinners — animation lives in chrome only.
 
+use crate::tui::oil::components::diff_view::{render_diff, DiffOptions};
 use crate::tui::oil::utils::truncate_to_chars;
 use crate::tui::oil::viewport_cache::CachedToolCall;
 use crucible_oil::ansi::visible_width;
@@ -12,13 +13,24 @@ use crucible_oil::truncate_to_width;
 use std::time::Duration;
 
 impl CachedToolCall {
-    /// Render a compact tool call with default spinner frame (0).
+    /// Render a compact tool call with default spinner frame (0) and diffs visible.
     pub fn render_compact(&self, width: usize) -> Node {
-        self.render_compact_with_frame(0, width)
+        self.render_compact_with(0, width, true)
     }
 
-    /// Render a compact tool call with specified spinner frame for animation.
+    /// Render a compact tool call with specified spinner frame; diffs visible.
     pub fn render_compact_with_frame(&self, spinner_frame: usize, width: usize) -> Node {
+        self.render_compact_with(spinner_frame, width, true)
+    }
+
+    /// Render a compact tool call. `show_diffs` gates the diff body for
+    /// Edit/Write tool calls; the rest of the result still renders.
+    pub fn render_compact_with(
+        &self,
+        spinner_frame: usize,
+        width: usize,
+        show_diffs: bool,
+    ) -> Node {
         if self.superseded {
             return Node::Empty;
         }
@@ -35,7 +47,7 @@ impl CachedToolCall {
         let inner = if let Some(ref error) = self.error {
             self.render_error(&display_name, primary_arg, error, width)
         } else if self.complete {
-            self.render_complete(&display_name, primary_arg, &result_str, width)
+            self.render_complete(&display_name, primary_arg, &result_str, width, show_diffs)
         } else {
             self.render_running(
                 &display_name,
@@ -163,6 +175,7 @@ impl CachedToolCall {
         primary_arg: &str,
         result_str: &str,
         width: usize,
+        show_diffs: bool,
     ) -> Node {
         let result_summary = if !result_str.is_empty() {
             summarize_tool_result(&self.name, result_str)
@@ -219,10 +232,7 @@ impl CachedToolCall {
             )
         };
         let header = row([
-            styled(
-                icon_str,
-                Style::new().fg(t.resolve_color(t.colors.success)),
-            ),
+            styled(icon_str, Style::new().fg(t.resolve_color(t.colors.success))),
             styled(
                 display_name,
                 Style::new().fg(t.resolve_color(t.colors.text_dim)),
@@ -238,10 +248,25 @@ impl CachedToolCall {
             format_tool_result(&self.name, result_str, width)
         };
 
-        if matches!(result_node, Node::Empty) {
-            header
+        let diff_node = if show_diffs && !self.diffs.is_empty() {
+            let opts = DiffOptions::for_width(width);
+            let nodes: Vec<Node> = self.diffs.iter().map(|d| render_diff(d, &opts)).collect();
+            col(nodes)
         } else {
-            col([header, result_node])
+            Node::Empty
+        };
+
+        let mut children = vec![header];
+        if !matches!(diff_node, Node::Empty) {
+            children.push(diff_node);
+        }
+        if !matches!(result_node, Node::Empty) {
+            children.push(result_node);
+        }
+        if children.len() == 1 {
+            children.pop().unwrap()
+        } else {
+            col(children)
         }
     }
 
@@ -444,20 +469,24 @@ pub fn format_primary_arg(args: &str) -> String {
     }
 }
 
-/// Minimum visible columns the primary arg gets, even on tight terminals.
-const MIN_ARG_WIDTH: usize = 10;
-
 /// Truncates `arg` to fit within `available` visible columns, appending "…"
-/// when truncated. Falls back to [`MIN_ARG_WIDTH`] if `available` is smaller.
+/// when truncated. Returns empty when the budget is too small to convey any
+/// information — the caller should drop the arg from the line entirely.
+///
+/// Strict width contract: the returned string's visible width is always
+/// `<= available`. Callers like the tool-call header pass a budget computed
+/// after the icon/name/badge/separator are accounted for, so undershooting
+/// the budget is the only safe direction on narrow terminals.
 fn fit_arg_to_width(arg: &str, available: usize) -> String {
-    if arg.is_empty() {
+    if arg.is_empty() || available == 0 {
         return String::new();
     }
-    let cap = available.max(MIN_ARG_WIDTH);
-    if visible_width(arg) <= cap {
+    if visible_width(arg) <= available {
         arg.to_string()
+    } else if available == 1 {
+        "…".to_string()
     } else {
-        format!("{}…", truncate_to_width(arg, cap.saturating_sub(1), false))
+        format!("{}…", truncate_to_width(arg, available - 1, false))
     }
 }
 
@@ -781,6 +810,133 @@ mod tests {
     }
 
     #[test]
+    fn render_complete_includes_diff_body_when_diffs_present() {
+        use crucible_core::types::acp::FileDiff;
+
+        let mut tool = test_tool_with_output(
+            "edit",
+            r#"{"path": "src/foo.rs"}"#,
+            r#"{"success": true}"#,
+            true,
+        );
+        tool.diffs = vec![FileDiff::from_contents(
+            "src/foo.rs",
+            Some("OLD_LINE\n".to_string()),
+            "CHANGED_LINE\n".to_string(),
+        )];
+        let node = tool.render_compact(100);
+        let plain = render_to_plain_text(&node, 100);
+
+        assert!(
+            plain.contains("Edit"),
+            "Should still show tool header: {:?}",
+            plain
+        );
+        assert!(
+            plain.contains("src/foo.rs"),
+            "Diff header should show path: {:?}",
+            plain
+        );
+        assert!(
+            plain.contains("CHANGED_LINE"),
+            "Diff body should show added line: {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn render_complete_hides_diff_body_when_show_diffs_off() {
+        use crucible_core::types::acp::FileDiff;
+
+        let mut tool = test_tool_with_output(
+            "edit",
+            r#"{"path": "src/foo.rs"}"#,
+            r#"{"success": true}"#,
+            true,
+        );
+        tool.diffs = vec![FileDiff::from_contents(
+            "src/foo.rs",
+            Some("OLD_LINE\n".to_string()),
+            "CHANGED_LINE\n".to_string(),
+        )];
+
+        let on = tool.render_compact_with(0, 100, true);
+        let on_plain = render_to_plain_text(&on, 100);
+        assert!(
+            on_plain.contains("CHANGED_LINE"),
+            "show_diffs=true must render diff body: {:?}",
+            on_plain
+        );
+
+        let off = tool.render_compact_with(0, 100, false);
+        let off_plain = render_to_plain_text(&off, 100);
+        assert!(
+            off_plain.contains("Edit"),
+            "show_diffs=false must still render the tool header: {:?}",
+            off_plain
+        );
+        assert!(
+            !off_plain.contains("CHANGED_LINE"),
+            "show_diffs=false must omit diff body: {:?}",
+            off_plain
+        );
+        assert!(
+            !off_plain.contains("OLD_LINE"),
+            "show_diffs=false must omit removed line text: {:?}",
+            off_plain
+        );
+    }
+
+    #[test]
+    fn render_complete_with_multiple_diffs_renders_all() {
+        use crucible_core::types::acp::FileDiff;
+
+        let mut tool = test_tool_with_output("edit", r#"{}"#, r#"{"ok":true}"#, true);
+        tool.diffs = vec![
+            FileDiff::from_contents("a.rs", Some("X\n".into()), "ALPHA_NEW\n".to_string()),
+            FileDiff::from_contents("b.rs", Some("Y\n".into()), "BETA_NEW\n".to_string()),
+        ];
+        let node = tool.render_compact(100);
+        let plain = render_to_plain_text(&node, 100);
+
+        assert!(
+            plain.contains("ALPHA_NEW"),
+            "first diff visible: {:?}",
+            plain
+        );
+        assert!(
+            plain.contains("BETA_NEW"),
+            "second diff visible: {:?}",
+            plain
+        );
+        assert!(
+            plain.contains("a.rs") && plain.contains("b.rs"),
+            "both paths: {:?}",
+            plain
+        );
+    }
+
+    #[test]
+    fn render_running_omits_diff_body_even_if_diffs_present() {
+        use crucible_core::types::acp::FileDiff;
+
+        let mut tool = test_tool("edit", r#"{"path": "in_flight.rs"}"#, false);
+        tool.diffs = vec![FileDiff::from_contents(
+            "in_flight.rs",
+            Some(String::new()),
+            "PARTIAL_OUTPUT\n".to_string(),
+        )];
+        let node = tool.render_compact(100);
+        let plain = render_to_plain_text(&node, 100);
+
+        assert!(
+            !plain.contains("PARTIAL_OUTPUT"),
+            "in-flight tool should not render diff content yet: {:?}",
+            plain
+        );
+    }
+
+    #[test]
     fn render_tool_call_in_progress() {
         let tool = test_tool("mcp_bash", r#"{"command": "ls"}"#, false);
         let node = tool.render_compact(80);
@@ -1076,17 +1232,37 @@ mod tests {
     fn fit_arg_to_width_truncates_with_ellipsis() {
         let long = "abcdefghijklmnopqrstuvwxyz";
         let result = fit_arg_to_width(long, 15);
-        assert!(result.ends_with('…'), "should end with ellipsis: {result:?}");
+        assert!(
+            result.ends_with('…'),
+            "should end with ellipsis: {result:?}"
+        );
         assert!(crucible_oil::ansi::visible_width(&result) <= 15);
     }
 
     #[test]
-    fn fit_arg_to_width_respects_minimum() {
-        // Even with available=0, we never produce zero-width output for a
-        // non-empty arg — fall back to MIN_ARG_WIDTH.
-        let result = fit_arg_to_width("a long string here", 0);
-        assert!(crucible_oil::ansi::visible_width(&result) <= MIN_ARG_WIDTH);
-        assert!(crucible_oil::ansi::visible_width(&result) > 0);
+    fn fit_arg_to_width_returns_empty_when_budget_zero() {
+        // Strict width contract: budget=0 means caller has no room → drop.
+        assert_eq!(fit_arg_to_width("a long string here", 0), "");
+    }
+
+    #[test]
+    fn fit_arg_to_width_single_col_returns_ellipsis() {
+        let result = fit_arg_to_width("a long string here", 1);
+        assert_eq!(result, "…");
+        assert_eq!(crucible_oil::ansi::visible_width(&result), 1);
+    }
+
+    #[test]
+    fn fit_arg_to_width_narrow_budget_does_not_overflow() {
+        for budget in 2..=20 {
+            let result = fit_arg_to_width("abcdefghijklmnopqrstuvwxyz", budget);
+            assert!(
+                crucible_oil::ansi::visible_width(&result) <= budget,
+                "budget={} produced width={} for {result:?}",
+                budget,
+                crucible_oil::ansi::visible_width(&result)
+            );
+        }
     }
 
     #[test]
@@ -1187,7 +1363,12 @@ mod tests {
 
         for line in plain.lines() {
             let w = crucible_oil::ansi::visible_width(line);
-            assert!(w <= 80, "line wider than terminal width: {} - {:?}", w, line);
+            assert!(
+                w <= 80,
+                "line wider than terminal width: {} - {:?}",
+                w,
+                line
+            );
         }
 
         let header_line = plain
@@ -1201,6 +1382,31 @@ mod tests {
             visible,
             header_line
         );
+    }
+
+    #[test]
+    fn tool_header_respects_narrow_terminal_width() {
+        // Regression for the MIN_ARG_WIDTH=10 floor that previously overrode
+        // the caller's budget on narrow terminals, blowing the header past
+        // the terminal width. Sweep widths from a 24-col mobile terminal up
+        // to a typical 80-col split pane.
+        let cmd = "x".repeat(120);
+        let args = format!(r#"{{"command": "{}"}}"#, cmd);
+        let tool = test_tool("bash", &args, false);
+        for width in [24usize, 30, 40, 50, 60, 80] {
+            let node = tool.render_compact(width);
+            let plain = render_to_plain_text(&node, width);
+            for line in plain.lines() {
+                let w = crucible_oil::ansi::visible_width(line);
+                assert!(
+                    w <= width,
+                    "width={} produced line of width {}: {:?}",
+                    width,
+                    w,
+                    line
+                );
+            }
+        }
     }
 
     #[test]

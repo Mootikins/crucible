@@ -279,7 +279,7 @@ impl CrucibleAcpClient {
     }
 
     /// Apply a session update and invoke callback for streaming chunks.
-    fn apply_session_update_with_callback(
+    pub(super) fn apply_session_update_with_callback(
         &mut self,
         notification: SessionNotification,
         state: &mut StreamingState,
@@ -308,14 +308,9 @@ impl CrucibleAcpClient {
                 let tool_name = humanize_tool_title(&tool_call.title);
                 let tool_id = tool_call.tool_call_id.to_string();
 
-                // Emit tool start event
-                callback(StreamingChunk::ToolStart {
-                    name: tool_name.clone(),
-                    id: tool_id.clone(),
-                    arguments: tool_call.raw_input.clone(),
-                });
-
-                // Record tool call in state
+                // Extract diffs once from this notification's content; reuse
+                // for both the live `ToolStart` chunk and the `ToolCallInfo`
+                // recorded in `state.tool_calls`.
                 let diffs: Vec<FileDiff> = tool_call
                     .content
                     .iter()
@@ -327,7 +322,18 @@ impl CrucibleAcpClient {
                         )),
                         _ => None,
                     })
+                    .filter(filter_oversize_diff)
                     .collect();
+
+                // Emit tool start event with the diffs we just extracted so
+                // the TUI can render them in scrollback as the call appears.
+                callback(StreamingChunk::ToolStart {
+                    name: tool_name.clone(),
+                    id: tool_id.clone(),
+                    arguments: tool_call.raw_input.clone(),
+                    diffs: diffs.clone(),
+                });
+
                 let mut info = ToolCallInfo::new(tool_call.title.clone())
                     .with_id(tool_id)
                     .with_diffs(diffs);
@@ -388,7 +394,37 @@ impl CrucibleAcpClient {
                             )),
                             _ => None,
                         })
+                        .filter(filter_oversize_diff)
                         .collect();
+
+                    // Late-diff path: if the tool was already announced via
+                    // a prior `ToolStart` and this update brings *changed*
+                    // diff content (e.g. Claude Code defers diffs), fire a
+                    // live `ToolDiffUpdate` chunk so the TUI can replace the
+                    // diff snapshot in the existing scrollback entry.
+                    // Without this, the diffs are recorded into
+                    // `state.tool_calls` but the post-stream replay in
+                    // `acp_handle.rs` filters out already-announced ids and
+                    // silently drops them.
+                    //
+                    // Skip the emit when the prior recorded diffs already
+                    // match — re-rendering an identical snapshot causes a
+                    // visual flash with no informational gain.
+                    if has_content_diffs && !diffs.is_empty() {
+                        let prior_diffs = state
+                            .tool_calls
+                            .iter()
+                            .find(|tc| tc.id.as_deref() == Some(tool_id.as_str()))
+                            .map(|tc| &tc.diffs);
+                        if let Some(prior) = prior_diffs {
+                            if prior != &diffs {
+                                callback(StreamingChunk::ToolDiffUpdate {
+                                    call_id: tool_id.clone(),
+                                    diffs: diffs.clone(),
+                                });
+                            }
+                        }
+                    }
 
                     let mut info = ToolCallInfo::new(title).with_id(tool_id).with_diffs(diffs);
                     if let Some(args) = update.fields.raw_input.clone() {
@@ -535,6 +571,7 @@ impl CrucibleAcpClient {
                         )),
                         _ => None,
                     })
+                    .filter(filter_oversize_diff)
                     .collect();
                 let mut info = ToolCallInfo::new(tool_call.title.clone())
                     .with_id(tool_call.tool_call_id.to_string())
@@ -583,6 +620,7 @@ impl CrucibleAcpClient {
                             )),
                             _ => None,
                         })
+                        .filter(filter_oversize_diff)
                         .collect();
 
                     let mut info = ToolCallInfo::new(title).with_id(id).with_diffs(diffs);
@@ -603,5 +641,20 @@ impl CrucibleAcpClient {
                 tracing::debug!("Ignoring update type: {:?}", other);
             }
         }
+    }
+}
+
+/// True if this diff is within the size cap; logs and returns false otherwise.
+/// Use as a `.filter()` predicate when ingesting ACP-supplied diffs so the
+/// cache and renderer never have to hold huge payloads.
+fn filter_oversize_diff(d: &FileDiff) -> bool {
+    if d.is_oversize() {
+        tracing::debug!(
+            path = %d.path,
+            "ACP-supplied diff exceeded MAX_DIFF_BYTES; dropping at edge"
+        );
+        false
+    } else {
+        true
     }
 }

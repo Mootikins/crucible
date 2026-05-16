@@ -90,6 +90,36 @@ fn session_initialized_preserves_model_when_empty_string() {
 }
 
 #[test]
+fn set_show_diffs_disable_then_enable_round_trips_field() {
+    // The :set show_diffs command flows through runtime_config.set + sync_runtime_to_fields;
+    // this test locks in that the cli-visible field actually flips. Without coverage,
+    // the cross-layer plumbing could regress silently.
+    let mut app = OilChatApp::init();
+    assert!(app.show_diffs(), "show_diffs default expected to be true");
+
+    app.handle_set_command("set show_diffs false");
+    assert!(
+        !app.show_diffs(),
+        "show_diffs should be false after :set show_diffs false"
+    );
+
+    app.handle_set_command("set show_diffs true");
+    assert!(
+        app.show_diffs(),
+        "show_diffs should flip back to true on :set show_diffs true"
+    );
+}
+
+#[test]
+fn set_show_diffs_disable_via_short_form() {
+    // `:set disable show_diffs` and `:set show_diffs=0` are alternate forms;
+    // the runtime config layer normalizes both into a bool. Smoke-test one.
+    let mut app = OilChatApp::init();
+    app.handle_set_command("set show_diffs=0");
+    assert!(!app.show_diffs(), "':set show_diffs=0' should disable");
+}
+
+#[test]
 fn plugins_discovered_raises_notification_for_failed_plugin() {
     use crate::tui::oil::app::App;
     use crucible_core::types::PluginStatusEntry;

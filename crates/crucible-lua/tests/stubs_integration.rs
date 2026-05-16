@@ -70,6 +70,30 @@ fn ci_stubs_verification_generates_fresh_and_validates_content() {
         "Missing cru.sessions class annotation"
     );
     assert!(
+        stubs.contains("---@class cru.context"),
+        "Missing cru.context class annotation"
+    );
+    assert!(
+        stubs.contains("function cru.context.estimate_tokens(...) end"),
+        "Missing cru.context.estimate_tokens function stub"
+    );
+    assert!(
+        stubs.contains("function cru.context.usage(...) end"),
+        "Missing cru.context.usage function stub"
+    );
+    assert!(
+        stubs.contains("function cru.context.compact(...) end"),
+        "Missing cru.context.compact function stub"
+    );
+    assert!(
+        stubs.contains("function cru.context.messages(...) end"),
+        "Missing cru.context.messages function stub"
+    );
+    assert!(
+        stubs.contains("function cru.context.remove(...) end"),
+        "Missing cru.context.remove function stub"
+    );
+    assert!(
         stubs.contains("---@class cru.tools"),
         "Missing cru.tools class annotation"
     );

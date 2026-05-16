@@ -23,10 +23,18 @@
 //! end
 //!
 //! -- Search notes (async) - semantic search
-//! local results = cru.kiln.search("machine learning", {limit = 5})
+//! local results = cru.kiln.search("machine learning", {limit = 5, threshold = 0.6})
 //! for _, result in ipairs(results) do
-//!     print(result.path, result.score)
+//!     print(result.path, result.title, result.score, result.snippet)
 //! end
+//!
+//! -- Create a note (daemon-only; writes file and indexes synchronously)
+//! local path = cru.kiln.create_note({
+//!   path = "Entities/Jane Doe.md",
+//!   body = "# Jane Doe\n\nWorks on [[Crucible]].",
+//!   frontmatter = { type = "entity", aliases = { "jane", "JD" } },
+//!   overwrite = false,           -- default; set true to replace existing
+//! })
 //!
 //! -- Get outgoing links from a note (sync)
 //! local links = cru.kiln.outlinks("path/to/note.md")
@@ -40,7 +48,7 @@
 
 use crate::error::LuaError;
 use crate::lua_util::register_in_namespaces;
-use crucible_core::storage::{GraphView, NoteStore};
+use crucible_core::storage::{GraphView, NoteStore, Scope};
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::sync::Arc;
 
@@ -91,9 +99,29 @@ pub fn register_vault_module(lua: &Lua) -> Result<(), LuaError> {
 }
 
 /// Register the kiln module with NoteStore for database-backed queries.
+///
+/// Test/convenience wrapper: passes an unbound workspace authority so notes
+/// with no `scope:` property stay invisible. Production daemon callers
+/// must use the `_scoped` variant with the kiln workspace path.
 pub fn register_vault_module_with_store(
     lua: &Lua,
     store: Arc<dyn NoteStore>,
+) -> Result<(), LuaError> {
+    register_vault_module_with_store_scoped(
+        lua,
+        store,
+        Scope::workspace_unchecked(std::path::PathBuf::new()),
+    )
+}
+
+/// Scoped variant: every `cru.kiln.list` and `cru.kiln.get` call is
+/// filtered by the given authority. The daemon wires this with
+/// `Scope::Workspace { path: kiln_path }` so a plugin running in kiln A
+/// cannot read kiln B's notes — even with adversarial path arguments.
+pub fn register_vault_module_with_store_scoped(
+    lua: &Lua,
+    store: Arc<dyn NoteStore>,
+    authority: Scope,
 ) -> Result<(), LuaError> {
     register_vault_module(lua)?;
 
@@ -102,10 +130,12 @@ pub fn register_vault_module_with_store(
     let vault: Table = cru.get("kiln")?;
 
     let s = Arc::clone(&store);
+    let auth = authority.clone();
     let list_fn = lua.create_async_function(move |lua, limit: Option<usize>| {
         let s = Arc::clone(&s);
+        let auth = auth.clone();
         async move {
-            match s.list().await {
+            match s.list(&auth).await {
                 Ok(records) => {
                     let table = lua.create_table()?;
                     let iter = records.iter();
@@ -128,10 +158,12 @@ pub fn register_vault_module_with_store(
     vault.set("list", list_fn)?;
 
     let s = Arc::clone(&store);
+    let auth = authority.clone();
     let get_fn = lua.create_async_function(move |lua, path: String| {
         let s = Arc::clone(&s);
+        let auth = auth.clone();
         async move {
-            match s.get(&path).await {
+            match s.get(&path, &auth).await {
                 Ok(Some(record)) => note_record_to_lua(&lua, &record),
                 Ok(None) => Ok(Value::Nil),
                 Err(e) => Err(mlua::Error::runtime(format!("Kiln error: {}", e))),
@@ -140,13 +172,10 @@ pub fn register_vault_module_with_store(
     })?;
     vault.set("get", get_fn)?;
 
-    let search_fn = lua.create_async_function(
-        move |lua, (_query, _opts): (String, Option<Table>)| async move {
-            let table = lua.create_table()?;
-            Ok(Value::Table(table))
-        },
-    )?;
-    vault.set("search", search_fn)?;
+    // `search` is intentionally not implemented here — the bare stub from
+    // `register_vault_module` (which returns an empty table) is the
+    // production-shipping behaviour. Implementing semantic search would
+    // require an embedding provider, which lives daemon-side.
 
     Ok(())
 }
@@ -385,7 +414,11 @@ mod store_tests {
             Ok(vec![event])
         }
 
-        async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
+        async fn get(
+            &self,
+            path: &str,
+            _authority: &crucible_core::storage::Scope,
+        ) -> StorageResult<Option<NoteRecord>> {
             let map = self.notes.lock().unwrap();
             Ok(map.get(path).cloned())
         }
@@ -399,12 +432,19 @@ mod store_tests {
             }))
         }
 
-        async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+        async fn list(
+            &self,
+            _authority: &crucible_core::storage::Scope,
+        ) -> StorageResult<Vec<NoteRecord>> {
             let map = self.notes.lock().unwrap();
             Ok(map.values().cloned().collect())
         }
 
-        async fn get_by_hash(&self, _hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+        async fn get_by_hash(
+            &self,
+            _hash: &BlockHash,
+            _authority: &crucible_core::storage::Scope,
+        ) -> StorageResult<Option<NoteRecord>> {
             Ok(None)
         }
 

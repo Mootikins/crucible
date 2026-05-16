@@ -85,6 +85,7 @@ fn snapshot_tool_complete() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "read_file".into(),
@@ -107,6 +108,7 @@ fn snapshot_tool_pending() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     // Tool is still pending (no ToolResultComplete)
 
@@ -132,6 +134,7 @@ fn snapshot_multi_turn() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "read_file".into(),
@@ -186,6 +189,74 @@ fn snapshot_context_indicator_after_usage() {
         "Statusline should show token usage after ContextUsage message: {output:?}"
     );
     insta::assert_snapshot!(output);
+}
+
+#[test]
+fn show_diffs_off_omits_diff_body() {
+    use crucible_core::types::acp::FileDiff;
+
+    let mut app = OilChatApp::init();
+    app.set_show_diffs(false);
+    app.on_message(ChatAppMsg::UserMessage("edit a file".into()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "edit_file".into(),
+        args: r#"{"path": "src/lib.rs"}"#.into(),
+        call_id: Some("e1".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+        diffs: vec![FileDiff::from_contents(
+            "src/lib.rs",
+            Some("fn old() {}\n".to_string()),
+            "fn new() {}\n",
+        )],
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "edit_file".into(),
+        call_id: Some("e1".into()),
+    });
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    let output = vt_render(&mut app);
+    // With show_diffs off, the rendered diff body must not appear.
+    // (The tool call header — file path, action — may still render.)
+    assert!(
+        !output.contains("fn old()") && !output.contains("fn new()"),
+        "show_diffs=false should suppress diff body lines, got: {output:?}"
+    );
+}
+
+#[test]
+fn show_diffs_on_includes_diff_body() {
+    use crucible_core::types::acp::FileDiff;
+
+    let mut app = OilChatApp::init();
+    app.set_show_diffs(true);
+    app.on_message(ChatAppMsg::UserMessage("edit a file".into()));
+    app.on_message(ChatAppMsg::ToolCall {
+        name: "edit_file".into(),
+        args: r#"{"path": "src/lib.rs"}"#.into(),
+        call_id: Some("e1".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+        diffs: vec![FileDiff::from_contents(
+            "src/lib.rs",
+            Some("fn old() {}\n".to_string()),
+            "fn new() {}\n",
+        )],
+    });
+    app.on_message(ChatAppMsg::ToolResultComplete {
+        name: "edit_file".into(),
+        call_id: Some("e1".into()),
+    });
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    let output = vt_render(&mut app);
+    assert!(
+        output.contains("fn old()") || output.contains("fn new()"),
+        "show_diffs=true must render diff body content: {output:?}"
+    );
 }
 
 #[test]

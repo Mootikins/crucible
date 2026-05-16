@@ -89,7 +89,10 @@ async fn show_global_status(
     // Daemon is the only storage mode
     let mode = "daemon";
 
-    let note_count = Some(storage.note_store().list().await?.len());
+    // CLI status — workspace authority derived from the configured kiln.
+    let authority = crucible_core::storage::Scope::workspace(&config.kiln_path)
+        .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(&config.kiln_path));
+    let note_count = Some(storage.note_store().list(&authority).await?.len());
 
     match output_format {
         OutputFormat::Json => {

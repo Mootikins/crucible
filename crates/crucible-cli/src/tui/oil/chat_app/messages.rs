@@ -49,6 +49,7 @@ use std::path::PathBuf;
 use crucible_core::interaction::{InteractionRequest, InteractionResponse};
 use crucible_core::protocol::session_events::{ContextLimitSource, SessionInitializedPayload};
 use crucible_core::traits::chat::PrecognitionNoteInfo;
+use crucible_core::types::acp::FileDiff;
 use crucible_core::types::ProviderInfo;
 
 use super::{McpServerDisplay, PluginStatusEntry};
@@ -74,6 +75,20 @@ pub enum ChatAppMsg {
         source: Option<String>,
         /// Primary argument from Lua tool display hook.
         lua_primary_arg: Option<String>,
+        /// File modification previews when the daemon can derive them
+        /// (ACP `ToolCallContent::Diff` or args-based synthesis). Empty
+        /// when the tool does not produce diffs or the daemon hasn't
+        /// computed them yet.
+        diffs: Vec<FileDiff>,
+    },
+    /// **Event** (daemon → TUI): Late file-diff content for an
+    /// already-announced tool call (e.g. ACP agents like Claude Code
+    /// that defer diffs until after the initial `tool_call` frame).
+    /// The TUI merges `diffs` into the existing `CachedToolCall` keyed
+    /// by `call_id`.
+    ToolCallDiffUpdate {
+        call_id: String,
+        diffs: Vec<FileDiff>,
     },
     /// **Event** (daemon → TUI): Streaming delta of tool result output.
     ToolResultDelta {
@@ -145,6 +160,13 @@ pub enum ChatAppMsg {
     SetValidationRetries(u32),
     /// **Command** (TUI → daemon): Set precognition search results count.
     SetPrecognitionResults(usize),
+    /// **Command** (TUI → daemon): Set auto-compaction threshold (fraction of `context_budget`).
+    /// `None` clears the override; `Some(0.0)` disables auto-compaction.
+    SetAutocompactThreshold(Option<f32>),
+    /// **Event** (daemon → TUI): Latest prompt-cache hit rate from
+    /// `message_complete`. `None` indicates "no cache data this turn".
+    /// Drives the optional `cache_hit_rate` statusline component.
+    CacheHitRate(Option<f64>),
     // --- Delegation & Subagent Events (daemon → TUI) ---
     /// **Event** (daemon → TUI): Subagent spawned (background task started).
     SubagentSpawned { id: String, prompt: String },
@@ -242,6 +264,7 @@ impl ChatAppMsg {
             Self::TextDelta(_)
             | Self::ThinkingDelta(_)
             | Self::ToolCall { .. }
+            | Self::ToolCallDiffUpdate { .. }
             | Self::ToolResultDelta { .. }
             | Self::ToolResultComplete { .. }
             | Self::ToolResultError { .. }
@@ -263,6 +286,7 @@ impl ChatAppMsg {
             | Self::SetOutputValidation(_)
             | Self::SetValidationRetries(_)
             | Self::SetPrecognitionResults(_)
+            | Self::SetAutocompactThreshold(_)
             | Self::McpStatusLoaded(_)
             | Self::PluginStatusLoaded(_) => MsgCategory::Config,
 
@@ -278,6 +302,7 @@ impl ChatAppMsg {
             | Self::Status(_)
             | Self::ModeChanged(_)
             | Self::ContextUsage { .. }
+            | Self::CacheHitRate(_)
             | Self::ClearHistory
             | Self::ToggleMessages
             | Self::OpenInteraction { .. }

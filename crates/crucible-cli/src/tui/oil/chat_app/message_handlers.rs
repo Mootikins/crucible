@@ -53,6 +53,7 @@ impl OilChatApp {
                 description,
                 source,
                 lua_primary_arg,
+                diffs,
             } => {
                 let tool = CachedToolCall {
                     id: call_id.as_deref().map_or_else(
@@ -72,8 +73,13 @@ impl OilChatApp {
                     description: description.map(|d| Arc::from(d.as_str())),
                     source: source.as_deref().and_then(parse_tool_source),
                     lua_primary_arg: lua_primary_arg.map(|a| Arc::from(a.as_str())),
+                    diffs,
                 };
                 self.container_list.add_tool_call(tool);
+            }
+            ChatAppMsg::ToolCallDiffUpdate { call_id, diffs } => {
+                self.container_list
+                    .update_tool_by_call_id(&call_id, |t| t.set_diffs(diffs));
             }
             ChatAppMsg::ToolResultDelta {
                 name,
@@ -165,7 +171,8 @@ impl OilChatApp {
             | ChatAppMsg::SetContextWindow(_)
             | ChatAppMsg::SetOutputValidation(_)
             | ChatAppMsg::SetValidationRetries(_)
-            | ChatAppMsg::SetPrecognitionResults(_) => {}
+            | ChatAppMsg::SetPrecognitionResults(_)
+            | ChatAppMsg::SetAutocompactThreshold(_) => {}
             _ => {
                 tracing::warn!("unhandled config msg: {:?}", msg.category());
             }
@@ -237,6 +244,9 @@ impl OilChatApp {
             ChatAppMsg::ContextUsage { used, total } => {
                 self.context_used = used;
                 self.context_total = total;
+            }
+            ChatAppMsg::CacheHitRate(rate) => {
+                self.cache_hit_rate = rate;
             }
             ChatAppMsg::PrecognitionResult { notes_count, notes } => {
                 self.precognition.last_notes_count = Some(notes_count);

@@ -304,6 +304,37 @@ impl ConversationTree {
         self.undo_depth() > 0
     }
 
+    /// Per-turn summaries for every undoable turn on the current path,
+    /// in oldest-to-newest order. Each entry mirrors what `undo_turns`
+    /// *would* produce if invoked with the full undo depth — without
+    /// mutating the tree. Useful for the `cru.sessions.undo_history`
+    /// Lua API and any UI that wants to show "what would be undone".
+    pub fn turn_summaries(&self) -> Vec<crate::types::UndoSummary> {
+        let path = self.path_to_here(self.current);
+        let user_indices: Vec<usize> = path
+            .iter()
+            .enumerate()
+            .filter(|(_, id)| matches!(self.get(**id).content, NodeContent::User { .. }))
+            .map(|(idx, _)| idx)
+            .collect();
+        if user_indices.is_empty() {
+            return Vec::new();
+        }
+        let n = user_indices.len();
+        let mut summaries = Vec::with_capacity(n);
+        for i in 0..n {
+            let turn_span = if i + 1 < n {
+                user_indices[i + 1] - user_indices[i]
+            } else {
+                path.len() - user_indices[i]
+            };
+            summaries.push(crate::types::UndoSummary {
+                messages_removed: turn_span,
+            });
+        }
+        summaries
+    }
+
     /// Undo `n` turns: move `current` back to the parent of the
     /// `n`-th most-recent `User` node on the current path. Returns one
     /// entry per turn undone, recording how many non-root nodes were
@@ -345,6 +376,55 @@ impl ConversationTree {
         }
         self.current = new_current;
         summaries
+    }
+
+    /// Remove a contiguous slice of messages from the current path
+    /// (root excluded), reporting how many path nodes became
+    /// unreachable.
+    ///
+    /// The tree is append-only, so "removal" means rewinding the
+    /// `current` cursor to the last surviving node — anything below
+    /// becomes unreachable from `current` onward. Concretely:
+    ///
+    /// * `All` → drop everything, current becomes root, returns the
+    ///   prior path length (excluding root).
+    /// * `Last(n)` → rewind `n` non-root nodes from current; returns
+    ///   `min(n, path_len)`.
+    /// * `First(n)` → an append-only tree cannot drop a prefix while
+    ///   keeping a suffix; this rewinds to root and returns
+    ///   `min(n, path_len)`.
+    /// * `Indices(start..end)` → rewinds to keep the first `start`
+    ///   non-root path nodes (the cursor lands on that node, or the
+    ///   root if `start == 0`), then reports how many path nodes the
+    ///   range named (`min(end, path_len) - start`, saturating at 0).
+    pub fn remove_range(&mut self, range: crate::traits::context_ops::Range) -> usize {
+        use crate::traits::context_ops::Range;
+        // path_to_here includes root; non-root indices map to 1..path.len()
+        let path = self.path_to_here(self.current);
+        if path.len() <= 1 {
+            return 0;
+        }
+        let path_len = path.len() - 1;
+        let (keep_idx_in_path, removed) = match range {
+            Range::All => (0, path_len),
+            Range::Last(n) => {
+                let n = n.min(path_len);
+                (path_len - n, n)
+            }
+            Range::First(n) => (0, n.min(path_len)),
+            Range::Indices(r) => {
+                let start = r.start.min(path_len);
+                let end = r.end.min(path_len);
+                if end <= start {
+                    return 0;
+                }
+                (start, end - start)
+            }
+        };
+        // path[0] = root; path[1..] are non-root nodes. Cursor lands on
+        // path[keep_idx_in_path] which is root when keep_idx_in_path == 0.
+        self.current = path[keep_idx_in_path];
+        removed
     }
 
     /// Flatten the current path (root → current leaf) into the unified
@@ -547,6 +627,102 @@ mod tests {
         let u1 = t.add_child_and_advance(t.root(), text("u1"));
         assert!(t.undo_turns(0).is_empty());
         assert_eq!(t.current(), u1);
+    }
+
+    #[test]
+    fn turn_summaries_reports_per_turn_spans_oldest_first() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        t.add_child_and_advance(u1, NodeContent::Agent { text: "a1".into() });
+        let u2 = t.add_child_and_advance(t.current(), text("u2"));
+        t.add_child_and_advance(u2, NodeContent::Agent { text: "a2".into() });
+
+        let summaries = t.turn_summaries();
+        assert_eq!(summaries.len(), 2);
+        // Each turn has 2 nodes (user + agent) on the path.
+        assert_eq!(summaries[0].messages_removed, 2);
+        assert_eq!(summaries[1].messages_removed, 2);
+        // Read-only — tree state unchanged.
+        assert_eq!(t.undo_depth(), 2);
+    }
+
+    #[test]
+    fn turn_summaries_empty_when_no_turns() {
+        let t = ConversationTree::new();
+        assert!(t.turn_summaries().is_empty());
+    }
+
+    #[test]
+    fn remove_range_all_rewinds_to_root() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        let _a1 = t.add_child_and_advance(u1, NodeContent::Agent { text: "a1".into() });
+        let removed = t.remove_range(crate::traits::context_ops::Range::All);
+        assert_eq!(removed, 2);
+        assert_eq!(t.current(), t.root());
+    }
+
+    #[test]
+    fn remove_range_last_rewinds_n_nodes() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        let a1 = t.add_child_and_advance(u1, NodeContent::Agent { text: "a1".into() });
+        let _u2 = t.add_child_and_advance(a1, text("u2"));
+        let removed = t.remove_range(crate::traits::context_ops::Range::Last(2));
+        assert_eq!(removed, 2);
+        assert_eq!(t.current(), u1);
+    }
+
+    #[test]
+    fn remove_range_indices_truncates_from_start() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        let a1 = t.add_child_and_advance(u1, NodeContent::Agent { text: "a1".into() });
+        let _u2 = t.add_child_and_advance(a1, text("u2"));
+        // path (excluding root) has 3 nodes; remove indices [1, 3) = 2 nodes.
+        let removed = t.remove_range(crate::traits::context_ops::Range::Indices(1..3));
+        assert_eq!(removed, 2);
+        assert_eq!(t.current(), u1);
+    }
+
+    #[test]
+    fn remove_range_first_drops_everything() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        let _a1 = t.add_child_and_advance(u1, NodeContent::Agent { text: "a1".into() });
+        let removed = t.remove_range(crate::traits::context_ops::Range::First(1));
+        assert_eq!(removed, 1);
+        assert_eq!(t.current(), t.root());
+    }
+
+    #[test]
+    fn remove_range_last_more_than_available_caps() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        let _a1 = t.add_child_and_advance(u1, NodeContent::Agent { text: "a1".into() });
+        let removed = t.remove_range(crate::traits::context_ops::Range::Last(10));
+        assert_eq!(removed, 2);
+        assert_eq!(t.current(), t.root());
+    }
+
+    #[test]
+    fn remove_range_empty_indices_is_noop() {
+        let mut t = ConversationTree::new();
+        let u1 = t.add_child_and_advance(t.root(), text("u1"));
+        // Build the range explicitly so clippy doesn't flag a literal empty range.
+        let two: usize = 2;
+        let one: usize = 1;
+        let removed = t.remove_range(crate::traits::context_ops::Range::Indices(two..one));
+        assert_eq!(removed, 0);
+        assert_eq!(t.current(), u1);
+    }
+
+    #[test]
+    fn remove_range_on_empty_tree_returns_zero() {
+        let mut t = ConversationTree::new();
+        let removed = t.remove_range(crate::traits::context_ops::Range::All);
+        assert_eq!(removed, 0);
+        assert_eq!(t.current(), t.root());
     }
 
     #[test]

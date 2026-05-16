@@ -122,8 +122,22 @@ async fn test_file_deleted_event_removes_note_from_store() {
         .await
         .unwrap();
 
-    assert!(note_store.get(deleted_note_path).await.unwrap().is_some());
-    assert!(note_store.get(keep_note_path).await.unwrap().is_some());
+    assert!(note_store
+        .get(
+            deleted_note_path,
+            &crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new())
+        )
+        .await
+        .unwrap()
+        .is_some());
+    assert!(note_store
+        .get(
+            keep_note_path,
+            &crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new())
+        )
+        .await
+        .unwrap()
+        .is_some());
 
     event_tx
         .send(SessionEventMessage::new(
@@ -135,7 +149,15 @@ async fn test_file_deleted_event_removes_note_from_store() {
 
     let removed = tokio::time::timeout(Duration::from_secs(2), async {
         loop {
-            if note_store.get(deleted_note_path).await.unwrap().is_none() {
+            if note_store
+                .get(
+                    deleted_note_path,
+                    &crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new()),
+                )
+                .await
+                .unwrap()
+                .is_none()
+            {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -163,7 +185,14 @@ async fn test_file_deleted_event_removes_note_from_store() {
         .unwrap();
 
     tokio::time::sleep(Duration::from_millis(100)).await;
-    assert!(note_store.get(keep_note_path).await.unwrap().is_some());
+    assert!(note_store
+        .get(
+            keep_note_path,
+            &crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new())
+        )
+        .await
+        .unwrap()
+        .is_some());
 
     let _ = shutdown_handle.send(());
     let _ = server_task.await;

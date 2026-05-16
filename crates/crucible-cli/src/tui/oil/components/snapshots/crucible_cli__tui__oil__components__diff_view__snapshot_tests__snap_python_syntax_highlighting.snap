@@ -1,0 +1,8 @@
+---
+source: crates/crucible-cli/src/tui/oil/components/diff_view.rs
+expression: out
+---
+[38;2;0;206;209medit [0m[38;5;15mscript.py[0m[38;5;7m[2m  +1 -1[0m
+[38;5;7m def hello():[0m
+[38;2;247;118;142m-    return 1[0m
+[38;2;158;206;106m+    return 42[0m

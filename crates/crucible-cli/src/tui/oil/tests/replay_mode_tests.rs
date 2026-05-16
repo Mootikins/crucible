@@ -10,10 +10,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use crucible_core::events::EventRing;
 use crucible_core::traits::chat::{AgentHandle, ChatResult};
+use crucible_oil::terminal::Terminal;
 
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::chat_runner::OilChatRunner;
+use crate::tui::Action;
 
 struct CountingAgent {
     sends: AtomicUsize,
@@ -76,6 +78,50 @@ async fn live_user_message_invokes_send_once() {
     .await;
 
     assert_eq!(agent.sends.load(Ordering::Relaxed), 1);
+}
+
+/// Regression test for the first-message hang fix (5e21776a5).
+///
+/// Sequence: keypress submit → `submit_user_message` flips `turn_active`
+/// → returns `Action::Send(UserMessage)`. The fix removed the
+/// `!is_streaming()` gate at line 487 of `actions.rs`. Without the fix,
+/// every first message of a fresh conversation was silently dropped
+/// because `is_streaming()` was already true by the time the action
+/// reached the dispatch branch.
+///
+/// This test drives `process_action` directly with a turn-active app —
+/// the same shape `process_action` sees from the live keypress flow —
+/// so a regression in the production code (not a mirrored helper) trips
+/// the assertion.
+#[tokio::test]
+async fn first_message_sends_when_turn_active_already_flipped() {
+    let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
+    runner.is_replay = false;
+
+    let mut agent = CountingAgent::new();
+    let mut app = OilChatApp::default();
+    // Mirror the post-`submit_user_message` state the real keypress flow
+    // produces before the action reaches `process_action`.
+    app.container_list_mut().mark_turn_active();
+    assert!(app.is_streaming(), "precondition: turn must be active");
+
+    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
+
+    runner
+        .process_action_for_test(
+            Action::Send(ChatAppMsg::UserMessage("hello".into())),
+            &mut app,
+            &mut agent,
+            &bridge,
+        )
+        .await
+        .expect("process_action should not fail");
+
+    assert_eq!(
+        agent.sends.load(Ordering::Relaxed),
+        1,
+        "send must fire even when the turn is already active"
+    );
 }
 
 /// Guard-rail for the Task 2.3b audit: the daemon-bound `ChatAppMsg`

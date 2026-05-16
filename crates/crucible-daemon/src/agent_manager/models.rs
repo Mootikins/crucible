@@ -691,6 +691,45 @@ impl AgentManager {
         Ok(agent_config.context_budget)
     }
 
+    pub async fn set_autocompact_threshold(
+        &self,
+        session_id: &str,
+        threshold: Option<f32>,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        if let Some(t) = threshold {
+            if !(0.0..=1.0).contains(&t) {
+                return Err(AgentError::InvalidConfig(format!(
+                    "autocompact_threshold {t} out of range; expected 0.0..=1.0"
+                )));
+            }
+        }
+        self.update_agent_config_and_emit(
+            session_id,
+            event_tx,
+            "autocompact_threshold_changed",
+            serde_json::json!({ "autocompact_threshold": threshold }),
+            "Failed to emit autocompact_threshold_changed event (no subscribers)",
+            |agent_config| {
+                agent_config.autocompact_threshold = threshold;
+                Ok(())
+            },
+            || {
+                info!(
+                    session_id = %session_id,
+                    autocompact_threshold = ?threshold,
+                    "Autocompact threshold updated (agent cache invalidated)"
+                );
+            },
+        )
+        .await
+    }
+
+    pub fn get_autocompact_threshold(&self, session_id: &str) -> Result<Option<f32>, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.autocompact_threshold)
+    }
+
     pub async fn set_context_strategy(
         &self,
         session_id: &str,
@@ -831,21 +870,49 @@ impl AgentManager {
         count: usize,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<Vec<crucible_core::types::UndoSummary>, AgentError> {
-        let _ = self.get_session_with_agent(session_id)?;
+        let (session, _) = self.get_session_with_agent(session_id)?;
 
         if self.request_state.contains_key(session_id) {
             return Err(AgentError::ConcurrentRequest(session_id.to_string()));
         }
 
-        let summaries = match self.get_session_tree(session_id) {
-            Some(tree) => {
-                let mut t = tree.lock().await;
-                t.undo_turns(count)
-            }
-            None => Vec::new(),
+        // Rewind the conversation tree first, then capture the new
+        // cursor so we know which snapshot to replay. The snapshot was
+        // keyed by the node that was `current` at the moment the
+        // rewound turn began — which is exactly where the cursor lands
+        // post-rewind.
+        //
+        // Use the rebuilding variant so a daemon restart that resumes
+        // a persisted session sees its prior turns; without it, `undo`
+        // would silently no-op (empty tree, nothing to undo).
+        let jsonl_path = session.jsonl_path();
+        let (summaries, new_cursor_id) = {
+            let tree = self
+                .get_or_rebuild_session_tree(session_id, &jsonl_path)
+                .await;
+            let mut t = tree.lock().await;
+            let summaries = t.undo_turns(count);
+            let new_cursor = t.current().index();
+            (summaries, Some(new_cursor))
         };
 
         if !summaries.is_empty() {
+            // Replay the workspace snapshot for the cursor's new
+            // position. Restore failures are logged but do not abort
+            // the undo — the conversation has already been rewound and
+            // the user's mental model of "undo happened" should hold.
+            if let Some(node_id) = new_cursor_id {
+                if let Some(snap) = self.snapshots.remove(session_id, node_id) {
+                    if let Err(e) = snap.restore(&session.workspace).await {
+                        warn!(
+                            session_id = %session_id,
+                            error = %e,
+                            "workspace snapshot restore failed"
+                        );
+                    }
+                }
+            }
+
             if let Some(tx) = event_tx {
                 let total_removed: usize = summaries.iter().map(|s| s.messages_removed).sum();
                 emit_event(
@@ -871,11 +938,12 @@ impl AgentManager {
     }
 
     /// Check whether a session has any turns that can be undone.
-    pub fn can_undo(&self, session_id: &str) -> Result<bool, AgentError> {
-        let _ = self.get_session_with_agent(session_id)?;
-        let Some(tree) = self.get_session_tree(session_id) else {
-            return Ok(false);
-        };
+    pub async fn can_undo(&self, session_id: &str) -> Result<bool, AgentError> {
+        let (session, _) = self.get_session_with_agent(session_id)?;
+        let jsonl_path = session.jsonl_path();
+        let tree = self
+            .get_or_rebuild_session_tree(session_id, &jsonl_path)
+            .await;
         let result = match tree.try_lock() {
             Ok(t) => t.can_undo(),
             Err(_) => false,
@@ -884,15 +952,93 @@ impl AgentManager {
     }
 
     /// Return the number of turns that can be undone.
-    pub fn undo_depth(&self, session_id: &str) -> Result<usize, AgentError> {
-        let _ = self.get_session_with_agent(session_id)?;
-        let Some(tree) = self.get_session_tree(session_id) else {
-            return Ok(0);
-        };
+    pub async fn undo_depth(&self, session_id: &str) -> Result<usize, AgentError> {
+        let (session, _) = self.get_session_with_agent(session_id)?;
+        let jsonl_path = session.jsonl_path();
+        let tree = self
+            .get_or_rebuild_session_tree(session_id, &jsonl_path)
+            .await;
         let result = match tree.try_lock() {
             Ok(t) => t.undo_depth(),
             Err(_) => 0,
         };
         Ok(result)
+    }
+
+    /// Return one summary per undoable turn on the current path,
+    /// oldest-to-newest. Each entry serialises to `{ messages_removed }`.
+    /// Read-only — does not rewind the tree.
+    pub async fn undo_history(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<crucible_core::types::UndoSummary>, AgentError> {
+        let (session, _) = self.get_session_with_agent(session_id)?;
+        let jsonl_path = session.jsonl_path();
+        let tree = self
+            .get_or_rebuild_session_tree(session_id, &jsonl_path)
+            .await;
+        let result = match tree.try_lock() {
+            Ok(t) => t.turn_summaries(),
+            Err(_) => Vec::new(),
+        };
+        Ok(result)
+    }
+
+    /// Snapshot context-usage telemetry for `session_id`.
+    ///
+    /// Returns `{ messages, prompt_tokens, budget, percent }`:
+    /// * `messages` — non-root nodes on the conversation tree's current
+    ///   path (0 if the tree hasn't been seeded yet).
+    /// * `prompt_tokens` — last-known cumulative prompt tokens from the
+    ///   session's cache aggregate (`get_cache_stats`).
+    /// * `budget` — the session's configured `context_budget`, or 0
+    ///   when unset.
+    /// * `percent` — `prompt_tokens / budget * 100`, or 0 when budget
+    ///   is unset/zero.
+    pub async fn get_context_usage(
+        &self,
+        session_id: &str,
+    ) -> Result<serde_json::Value, AgentError> {
+        let (session, agent_config) = self.get_session_with_agent(session_id)?;
+        let stats = self.get_cache_stats(session_id);
+        let prompt_tokens = stats.prompt_tokens;
+        let budget = agent_config.context_budget.unwrap_or(0) as u64;
+        let percent = if budget == 0 {
+            0.0
+        } else {
+            (prompt_tokens as f64 / budget as f64) * 100.0
+        };
+        let jsonl_path = session.jsonl_path();
+        let tree = self
+            .get_or_rebuild_session_tree(session_id, &jsonl_path)
+            .await;
+        let messages = match tree.try_lock() {
+            Ok(t) => t.path_to_here(t.current()).len().saturating_sub(1),
+            Err(_) => 0,
+        };
+        Ok(serde_json::json!({
+            "messages": messages,
+            "prompt_tokens": prompt_tokens,
+            "budget": budget,
+            "percent": percent,
+        }))
+    }
+
+    /// Remove a slice of messages from the session's conversation tree,
+    /// returning the count that became unreachable. See
+    /// [`crucible_core::turn::ConversationTree::remove_range`] for the
+    /// exact append-only semantics applied to each `Range` variant.
+    pub async fn remove_messages(
+        &self,
+        session_id: &str,
+        range: crucible_core::traits::context_ops::Range,
+    ) -> Result<usize, AgentError> {
+        let (session, _) = self.get_session_with_agent(session_id)?;
+        let jsonl_path = session.jsonl_path();
+        let tree = self
+            .get_or_rebuild_session_tree(session_id, &jsonl_path)
+            .await;
+        let mut t = tree.lock().await;
+        Ok(t.remove_range(range))
     }
 }

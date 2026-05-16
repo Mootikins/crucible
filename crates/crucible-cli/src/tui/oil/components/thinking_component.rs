@@ -176,6 +176,7 @@ mod tests {
             terminal_width: 80,
             spinner_frame: 0,
             show_thinking: false,
+            show_diffs: true,
         }
     }
 

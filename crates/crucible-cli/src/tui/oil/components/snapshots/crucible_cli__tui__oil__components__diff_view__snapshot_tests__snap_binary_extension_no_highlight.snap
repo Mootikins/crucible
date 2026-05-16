@@ -1,0 +1,7 @@
+---
+source: crates/crucible-cli/src/tui/oil/components/diff_view.rs
+expression: out
+---
+[38;2;0;206;209medit [0m[38;5;15mimage.png[0m[38;5;7m[2m  +1 -1[0m
+[38;2;247;118;142m-placeholder bytes[0m
+[38;2;158;206;106m+different placeholder[0m

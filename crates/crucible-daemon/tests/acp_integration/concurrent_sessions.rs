@@ -102,11 +102,15 @@ fn serialize_chunk(chunk: &StreamingChunk) -> serde_json::Value {
             name,
             id,
             arguments,
+            ..
         } => {
             json!({"kind": "tool_start", "name": name, "id": id, "arguments": arguments})
         }
         StreamingChunk::ToolEnd { id, result, error } => {
             json!({"kind": "tool_end", "id": id, "result": result, "error": error})
+        }
+        StreamingChunk::ToolDiffUpdate { call_id, diffs } => {
+            json!({"kind": "tool_diff_update", "id": call_id, "diffs": diffs})
         }
     }
 }
@@ -120,6 +124,7 @@ fn deserialize_chunk(value: &serde_json::Value) -> StreamingChunk {
             name: value["name"].as_str().unwrap().to_string(),
             id: value["id"].as_str().unwrap().to_string(),
             arguments: value.get("arguments").cloned().filter(|v| !v.is_null()),
+            diffs: Vec::new(),
         },
         "tool_end" => StreamingChunk::ToolEnd {
             id: value["id"].as_str().unwrap().to_string(),
@@ -143,11 +148,13 @@ fn assert_chunk_eq(left: &StreamingChunk, right: &StreamingChunk) {
                 name: a_name,
                 id: a_id,
                 arguments: a_arguments,
+                ..
             },
             StreamingChunk::ToolStart {
                 name: b_name,
                 id: b_id,
                 arguments: b_arguments,
+                ..
             },
         ) => {
             assert_eq!(a_name, b_name);
@@ -442,6 +449,7 @@ fn stream_edge_streaming_chunk_round_trip_variants() {
             name: "read_note".to_string(),
             id: "tool-1".to_string(),
             arguments: Some(json!({"path": "demo.md"})),
+            diffs: Vec::new(),
         },
         StreamingChunk::ToolEnd {
             id: "tool-1".to_string(),

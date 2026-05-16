@@ -84,13 +84,11 @@ impl AgentManager {
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
         agent_permissions: Option<PermissionConfig>,
+        workspace_path: std::path::PathBuf,
     ) -> crate::acp::client::PermissionRequestHandler {
         let pending_permissions = self.pending_permissions.clone();
         let session_id_owned = session_id.to_string();
         let event_tx_owned = event_tx.clone();
-        // One serializer per handler == per session. Concurrent prompt
-        // requests within a session queue behind each other; cross-session
-        // prompts proceed independently.
         let serializer = PermissionSerializer::new();
 
         let ask_callback: PermissionPromptCallback = Arc::new(move |perm_request: PermRequest| {
@@ -129,11 +127,9 @@ impl AgentManager {
                             );
                         }
 
-                        let result = tokio::time::timeout(
-                            std::time::Duration::from_secs(300),
-                            response_rx,
-                        )
-                        .await;
+                        let result =
+                            tokio::time::timeout(std::time::Duration::from_secs(300), response_rx)
+                                .await;
 
                         match result {
                             Ok(Ok(response)) => response,
@@ -143,8 +139,13 @@ impl AgentManager {
                                 {
                                     session_map.remove(&permission_id);
                                 }
+                                tracing::debug!(
+                                    permission_id = %permission_id,
+                                    session_id = %session_id_owned,
+                                    "permission channel closed before response"
+                                );
                                 PermResponse::deny_with_reason(
-                                    "Permission request channel closed before response",
+                                    "Permission request channel closed before response".to_string(),
                                 )
                             }
                             Err(_) => {
@@ -153,7 +154,14 @@ impl AgentManager {
                                 {
                                     session_map.remove(&permission_id);
                                 }
-                                PermResponse::deny_with_reason("Permission request timed out")
+                                tracing::debug!(
+                                    permission_id = %permission_id,
+                                    session_id = %session_id_owned,
+                                    "permission request timed out"
+                                );
+                                PermResponse::deny_with_reason(
+                                    "Permission request timed out".to_string(),
+                                )
                             }
                         }
                     })
@@ -178,6 +186,7 @@ impl AgentManager {
         Arc::new(
             move |request: agent_client_protocol::RequestPermissionRequest| {
                 let gate = gate.clone();
+                let workspace_path = workspace_path.clone();
 
                 Box::pin(async move {
                     use agent_client_protocol::{
@@ -198,7 +207,12 @@ impl AgentManager {
                         .clone()
                         .unwrap_or(serde_json::Value::Null);
 
-                    let permission = PermRequest::tool(tool_name, args);
+                    let diffs = crate::tools::diff_synth::synthesize_diffs(
+                        &tool_name,
+                        &args,
+                        &workspace_path,
+                    );
+                    let permission = PermRequest::tool(tool_name, args).with_diffs(diffs);
                     let response = gate.request_permission(permission).await;
 
                     let desired_kind = if response.allowed {
@@ -340,6 +354,116 @@ impl AgentManager {
         Some(current_content)
     }
 
+    /// Fire `transform_context` for handlers that want to mutate the
+    /// `Vec<ContextMessage>` going to the provider. This is the rich-
+    /// message-array seam (Pi's `transformContext`); the existing
+    /// `pre_llm_call` is the later string-level seam. Both fire per turn.
+    ///
+    /// **Precognition is out-of-band.** The daemon-issued kiln-grounding
+    /// block does NOT appear in the `messages` payload Lua handlers see.
+    /// Instead, it is exposed as a read-only `event.payload.precognition`
+    /// field that handlers can inspect but cannot return or replace via
+    /// `messages`. After all handlers run, the daemon unconditionally
+    /// prepends its own precognition message to the result. This makes
+    /// `transform_context`'s contract honest — it transforms the
+    /// **conversation**, not daemon-managed system context — and forces
+    /// plugins that want to modify precog content to use the dedicated
+    /// `precognition_format` hook (the correct architectural seam, fires
+    /// before message construction and returns a string).
+    ///
+    /// Returns the (possibly mutated) message vec. `None` means a
+    /// handler cancelled and the caller should abort the turn.
+    pub(super) async fn apply_transform_context_handlers(
+        messages: Vec<crucible_core::traits::ContextMessage>,
+        stream_ctx: &StreamContext,
+        stream_config: &AgentStreamConfig,
+    ) -> Option<Vec<crucible_core::traits::ContextMessage>> {
+        let state = stream_ctx.session_state.lock().await;
+        let mut current = messages;
+
+        // Lua runtime handlers can replace the message array entirely
+        // by returning `{ messages = ... }` from their callback. The
+        // precognition block is exposed alongside (read-only) so plugins
+        // can observe it without being able to drop or substitute it.
+        let handlers = state
+            .registry
+            .runtime_handlers_for("transform_context", None);
+        for handler in handlers {
+            let event = SessionEvent::Custom {
+                name: "transform_context".to_string(),
+                payload: serde_json::json!({
+                    "messages": &current,
+                    "model": &stream_config.model,
+                    "precognition": stream_ctx.precognition_message.as_ref(),
+                }),
+            };
+            match state
+                .registry
+                .execute_runtime_handler(&state.lua, &handler.name, &event)
+                .await
+            {
+                Ok(crucible_lua::ScriptHandlerResult::Transform(val)) => {
+                    if let Some(msgs_val) = val.get("messages") {
+                        match serde_json::from_value::<Vec<crucible_core::traits::ContextMessage>>(
+                            msgs_val.clone(),
+                        ) {
+                            Ok(new_messages) => current = new_messages,
+                            Err(e) => warn!(
+                                session_id = %stream_ctx.session_id,
+                                handler = %handler.name,
+                                error = %e,
+                                "transform_context handler returned invalid messages, keeping previous"
+                            ),
+                        }
+                    }
+                }
+                Ok(crucible_lua::ScriptHandlerResult::Cancel { reason }) => {
+                    debug!(
+                        session_id = %stream_ctx.session_id,
+                        reason = %reason,
+                        "transform_context handler cancelled"
+                    );
+                    if !emit_event(
+                        &stream_ctx.event_tx,
+                        SessionEventMessage::ended(
+                            &stream_ctx.session_id,
+                            format!("cancelled by handler: {}", handler.name),
+                        ),
+                    ) {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            "No subscribers for cancelled event"
+                        );
+                    }
+                    return None;
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        handler = %handler.name,
+                        error = %error,
+                        "transform_context handler error (fail-open)"
+                    );
+                }
+            }
+        }
+
+        // Daemon-owned: always prepend the precog block AFTER handlers
+        // run, regardless of what Lua returned. Plugins that want to
+        // suppress Precognition should set `agent_config.precognition_enabled
+        // = false` at session config time. Plugins that want to MODIFY
+        // precog content should use the `precognition_format` hook.
+        if let Some(ref precog_msg) = stream_ctx.precognition_message {
+            let mut with_precog = Vec::with_capacity(current.len() + 1);
+            with_precog.push(precog_msg.clone());
+            with_precog.extend(current);
+            current = with_precog;
+        }
+
+        Some(current)
+    }
+
     pub(super) async fn handle_permission_request(
         stream_ctx: &StreamContext,
         tool_call: &crucible_core::traits::chat::ChatToolCall,
@@ -439,7 +563,13 @@ impl AgentManager {
                 false
             }
             PermissionHookResult::Prompt => {
-                let perm_request = PermRequest::tool(&tool_call.name, args.clone());
+                let diffs = crate::tools::diff_synth::synthesize_diffs(
+                    &tool_call.name,
+                    args,
+                    &stream_ctx.workspace_path,
+                );
+                let perm_request =
+                    PermRequest::tool(&tool_call.name, args.clone()).with_diffs(diffs);
                 let interaction_request = InteractionRequest::Permission(perm_request.clone());
                 let permission_id = format!("perm-{}", uuid::Uuid::new_v4());
                 let (response_tx, response_rx) = oneshot::channel();
@@ -717,6 +847,29 @@ impl AgentManager {
 /// returned config has the requested default and *empty* allow/deny/ask rule
 /// lists, so base-config rules cannot re-introduce prompts or blocks. For
 /// `Ask` the existing allow/deny/ask rules are preserved (interactive default).
+pub(super) fn resolve_effective_permission_config(
+    permission_override: Option<PermissionMode>,
+    agent_permissions: Option<PermissionConfig>,
+    global_permission_config: Option<PermissionConfig>,
+) -> Option<PermissionConfig> {
+    match permission_override {
+        Some(mode @ (PermissionMode::Allow | PermissionMode::Deny)) => Some(PermissionConfig {
+            default: mode,
+            allow: Vec::new(),
+            deny: Vec::new(),
+            ask: Vec::new(),
+        }),
+        Some(PermissionMode::Ask) => {
+            let mut config = agent_permissions
+                .or(global_permission_config)
+                .unwrap_or_default();
+            config.default = PermissionMode::Ask;
+            Some(config)
+        }
+        None => agent_permissions.or(global_permission_config),
+    }
+}
+
 #[cfg(test)]
 mod permission_serializer_tests {
     use super::*;
@@ -747,12 +900,8 @@ mod permission_serializer_tests {
                     let n = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
                     let mut prev = max_seen.load(Ordering::SeqCst);
                     while n > prev {
-                        match max_seen.compare_exchange(
-                            prev,
-                            n,
-                            Ordering::SeqCst,
-                            Ordering::SeqCst,
-                        ) {
+                        match max_seen.compare_exchange(prev, n, Ordering::SeqCst, Ordering::SeqCst)
+                        {
                             Ok(_) => break,
                             Err(actual) => prev = actual,
                         }
@@ -803,12 +952,8 @@ mod permission_serializer_tests {
                     let n = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
                     let mut prev = max_seen.load(Ordering::SeqCst);
                     while n > prev {
-                        match max_seen.compare_exchange(
-                            prev,
-                            n,
-                            Ordering::SeqCst,
-                            Ordering::SeqCst,
-                        ) {
+                        match max_seen.compare_exchange(prev, n, Ordering::SeqCst, Ordering::SeqCst)
+                        {
                             Ok(_) => break,
                             Err(actual) => prev = actual,
                         }
@@ -830,28 +975,5 @@ mod permission_serializer_tests {
             2,
             "different serializers must not block each other; both should run concurrently"
         );
-    }
-}
-
-pub(super) fn resolve_effective_permission_config(
-    permission_override: Option<PermissionMode>,
-    agent_permissions: Option<PermissionConfig>,
-    global_permission_config: Option<PermissionConfig>,
-) -> Option<PermissionConfig> {
-    match permission_override {
-        Some(mode @ (PermissionMode::Allow | PermissionMode::Deny)) => Some(PermissionConfig {
-            default: mode,
-            allow: Vec::new(),
-            deny: Vec::new(),
-            ask: Vec::new(),
-        }),
-        Some(PermissionMode::Ask) => {
-            let mut config = agent_permissions
-                .or(global_permission_config)
-                .unwrap_or_default();
-            config.default = PermissionMode::Ask;
-            Some(config)
-        }
-        None => agent_permissions.or(global_permission_config),
     }
 }

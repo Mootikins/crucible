@@ -82,7 +82,7 @@ The crucible-core crate follows **Dependency Inversion** architecture where trai
 
 | Trait | Core Defines | Implemented In | Status |
 |-------|-------------|----------------|--------|
-| Storage | ✅ | crucible-sqlite | ✅ Active |
+| Storage | ✅ | crucible-daemon::storage::sqlite | ✅ Active |
 | MarkdownParser | ✅ | crucible-core (parser) | ✅ Active |
 | ContentHasher | ✅ | core (Blake3/SHA256) | ✅ Active |
 | ToolExecutor | ✅ | crucible-lua, crucible-just | ✅ Active |

@@ -303,12 +303,6 @@ impl ToolCallInfo {
         self
     }
 
-    /// Add a file diff
-    pub fn with_diff(mut self, diff: FileDiff) -> Self {
-        self.diffs.push(diff);
-        self
-    }
-
     /// Add multiple file diffs
     pub fn with_diffs(mut self, diffs: impl IntoIterator<Item = FileDiff>) -> Self {
         self.diffs.extend(diffs);
@@ -321,16 +315,7 @@ impl ToolCallInfo {
 /// Protocol-agnostic representation of file modifications. Can be populated
 /// from ACP's `ToolCallContent::Diff`, generated from tool arguments, or
 /// computed by comparing file states.
-///
-/// # Example
-///
-/// ```rust
-/// use crate::types::acp::FileDiff;
-///
-/// let diff = FileDiff::new("/path/to/file.rs", "fn new() {}")
-///     .with_old_content("fn old() {}");
-/// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileDiff {
     /// Path to the modified file
     pub path: String,
@@ -342,8 +327,15 @@ pub struct FileDiff {
     pub new_content: String,
 }
 
+/// Maximum byte size of either side of a diff before it is suppressed.
+///
+/// Producers (daemon-side synth, ACP forwarding) drop oversize diffs at the
+/// edge so the cache and renderer never have to hold huge payloads. The
+/// renderer applies the same threshold defensively.
+pub const MAX_DIFF_BYTES: usize = 1024 * 1024;
+
 impl FileDiff {
-    /// Create a new file diff
+    /// Create a new file diff (no prior content; for new-file creation cases)
     pub fn new(path: impl Into<String>, new_content: impl Into<String>) -> Self {
         Self {
             path: path.into(),
@@ -352,10 +344,13 @@ impl FileDiff {
         }
     }
 
-    /// Set the old content (before modification)
-    pub fn with_old_content(mut self, content: impl Into<String>) -> Self {
-        self.old_content = Some(content.into());
-        self
+    /// True if either side exceeds [`MAX_DIFF_BYTES`].
+    pub fn is_oversize(&self) -> bool {
+        self.new_content.len() > MAX_DIFF_BYTES
+            || self
+                .old_content
+                .as_ref()
+                .is_some_and(|s| s.len() > MAX_DIFF_BYTES)
     }
 
     /// Create from old and new content

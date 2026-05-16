@@ -80,6 +80,20 @@ pub struct Session {
     /// Last time this session had activity
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity: Option<DateTime<Utc>>,
+
+    /// Whether Precognition (auto-RAG kiln injection) has fired at least
+    /// once during this session's lifetime. Set after the first
+    /// successful `compute_precognition_message`; gates the per-session
+    /// "first user message" behavior across daemon restarts and undo.
+    ///
+    /// Persisted so a session that previously got precog doesn't re-fire
+    /// after the daemon restarts. Sessions that existed before this
+    /// field was introduced (legacy) default to `false` and get a single
+    /// precog injection on their next message — matches the "fire once
+    /// per session lifetime" UX without losing the feature on the
+    /// migration.
+    #[serde(default)]
+    pub precognition_has_fired: bool,
 }
 
 impl Session {
@@ -106,6 +120,7 @@ impl Session {
             notifications: crate::types::NotificationQueue::new(),
             archived: false,
             last_activity: Some(Utc::now()),
+            precognition_has_fired: false,
         }
     }
 

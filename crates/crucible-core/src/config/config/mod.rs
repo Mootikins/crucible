@@ -16,7 +16,9 @@ pub use cli_app::{CliAppConfig, ProcessingConfig};
 pub use errors::{ConfigError, ConfigValidationError};
 pub use provider::EffectiveLlmConfig;
 pub use server::{LoggingConfig, ScmConfig, ServerConfig, WebConfig};
-pub use types::{parse_duration_string, Config, PluginEntry, PluginsConfig, ScheduleEntry};
+pub use types::{
+    parse_duration_string, plugin_name_from_url, Config, PluginEntry, PluginsConfig, ScheduleEntry,
+};
 
 /// Returns the Crucible home directory (`~/.crucible/`).
 ///

@@ -19,6 +19,24 @@ impl AgentManager {
     }
 
     pub async fn cancel(&self, session_id: &str) -> bool {
+        // Drop any pending permission `oneshot::Sender`s for this session so
+        // their receivers Err out immediately and any callers blocked inside
+        // `PermissionSerializer::run` release the per-session lock. Without
+        // this, partial cancel (user hits Esc) leaves prompts dangling for
+        // the full 300 s timeout, blocking subsequent prompts behind them.
+        let dropped_pending = self
+            .pending_permissions
+            .remove(session_id)
+            .map(|(_, m)| m.len())
+            .unwrap_or(0);
+        if dropped_pending > 0 {
+            debug!(
+                session_id = %session_id,
+                count = dropped_pending,
+                "Dropped pending permission senders on cancel"
+            );
+        }
+
         if let Some((_, mut state)) = self.request_state.remove(session_id) {
             if let Some(cancel_tx) = state.cancel_tx.take() {
                 let _ = cancel_tx.send(());
@@ -36,6 +54,9 @@ impl AgentManager {
             }
 
             info!(session_id = %session_id, "Request cancelled");
+            true
+        } else if dropped_pending > 0 {
+            // No active request, but we did clear stale prompts.
             true
         } else {
             warn!(session_id = %session_id, "No active request to cancel");

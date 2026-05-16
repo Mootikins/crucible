@@ -89,7 +89,17 @@ impl SessionConfigRpc for NoopSessionRpc {}
 
 pub struct LuaSessionState {
     pub(crate) executor: LuaExecutor,
-    registry: LuaScriptHandlerRegistry,
+    pub(crate) registry: LuaScriptHandlerRegistry,
+    /// Set to `true` after `on_session_end` hooks fire for this session.
+    ///
+    /// Both `session.end` and `lua.shutdown_session` try to fire
+    /// `on_session_end` hooks — the CLI chat REPL invokes both for the
+    /// same session lifecycle. Without this guard, non-idempotent hooks
+    /// (LLM calls, file writes) would run twice.
+    ///
+    /// The daemon enforces a single fire per session; plugins do NOT
+    /// need to be idempotent.
+    pub(crate) end_hooks_fired: bool,
 }
 
 /// Parameters for binding the server to a Unix socket with plugin configuration.
@@ -284,6 +294,13 @@ impl Server {
                 if let Err(e) = loader.upgrade_with_sessions(session_api) {
                     warn!("Failed to upgrade Lua sessions module: {}", e);
                 }
+
+                // Hand the validator registry + plugin Lua handle to the
+                // agent manager so the stream loop can dispatch
+                // `OutputValidation::Lua { name }` against plugin-registered
+                // validators. Bind once; `set_lua_validators` is idempotent.
+                self.agent_manager
+                    .set_lua_validators(loader.validator_registry(), loader.plugin_lua());
 
                 let tools_api: Arc<dyn crucible_lua::DaemonToolsApi> = Arc::new(
                     crate::tools_bridge::DaemonToolsBridge::new(Arc::clone(&self.workspace_tools)),

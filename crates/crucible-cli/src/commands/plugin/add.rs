@@ -1,6 +1,7 @@
-//! `cru plugin add` — declare a plugin from a git URL in plugins.toml.
+//! `cru plugin add` / `cru install` — clone a plugin from a git URL and
+//! declare it in plugins.toml.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Args;
 
 #[derive(Debug, Args)]
@@ -28,45 +29,60 @@ pub async fn execute(args: AddArgs) -> Result<()> {
         crucible_core::config::PluginsConfig::default()
     };
 
-    let name = args
-        .url
-        .trim_end_matches('/')
-        .rsplit('/')
-        .next()
-        .unwrap_or("")
-        .trim_end_matches(".git");
+    let name = crucible_core::config::plugin_name_from_url(&args.url).ok_or_else(|| {
+        anyhow::anyhow!("Cannot derive a valid plugin name from URL '{}'", args.url)
+    })?;
 
-    if name.is_empty() || name == "." || name == ".." {
-        anyhow::bail!("Cannot derive a valid plugin name from URL '{}'", args.url);
-    }
-
-    if config.plugin.iter().any(|p| {
-        let n = p
-            .url
-            .trim_end_matches('/')
-            .rsplit('/')
-            .next()
-            .unwrap_or("")
-            .trim_end_matches(".git");
-        n == name
-    }) {
+    if config
+        .plugin
+        .iter()
+        .any(|p| p.name().as_deref() == Some(name.as_str()))
+    {
         anyhow::bail!("Plugin '{}' already declared in plugins.toml", name);
     }
 
-    config.plugin.push(crucible_core::config::PluginEntry {
+    let entry = crucible_core::config::PluginEntry {
         url: args.url.clone(),
         branch: args.branch,
         pin: args.pin,
         enabled: true,
-    });
+    };
+
+    // Clone first; only persist to plugins.toml on success. This way a
+    // failed clone (bad URL, no network, unreachable pin) doesn't leave
+    // a phantom declaration behind.
+    let outcome = crucible_daemon::bootstrap_plugin_entry(&entry)
+        .await
+        .with_context(|| format!("failed to install plugin '{}'", name))?;
+
+    match outcome {
+        crucible_daemon::BootstrapOutcome::Cloned { dest } => {
+            println!("Cloned '{}' to {}", name, dest.display());
+        }
+        crucible_daemon::BootstrapOutcome::AlreadyPresent => {
+            println!(
+                "Plugin '{}' is already cloned; declaring in plugins.toml",
+                name
+            );
+        }
+        crucible_daemon::BootstrapOutcome::Disabled => {
+            // We construct entry with enabled = true so this branch is
+            // unreachable today, but a future flag like --disabled would
+            // change that — bail instead of panicking in the terminal.
+            anyhow::bail!(
+                "internal: bootstrap_plugin_entry returned Disabled for an entry constructed with enabled=true"
+            );
+        }
+    }
+
+    config.plugin.push(entry);
 
     if let Some(parent) = plugins_toml.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(&plugins_toml, toml::to_string_pretty(&config)?)?;
-
-    println!("Added plugin '{}' to {}", name, plugins_toml.display());
-    println!("Run `cru daemon restart` or start a new session to load it.");
+    println!("Declared '{}' in {}", name, plugins_toml.display());
+    println!("Restart the daemon or start a new session to load it.");
 
     Ok(())
 }

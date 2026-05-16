@@ -217,6 +217,13 @@ pub enum InternalSessionEvent {
     },
 
     /// Pre-event before LLM call (allows cancellation/modification).
+    ///
+    /// Note: Crucible also exposes a `transform_context` Lua hook
+    /// (handled in `crucible-daemon` outside the reactor) that fires
+    /// on the rich `Vec<ContextMessage>` before linearization. There
+    /// is no corresponding reactor-internal variant because no Rust
+    /// subscriber mutates that surface today — when one appears, add
+    /// the variant.
     PreLlmCall {
         /// The prompt text being sent.
         prompt: String,

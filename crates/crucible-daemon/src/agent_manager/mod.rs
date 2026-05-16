@@ -31,7 +31,8 @@ use crucible_core::traits::tools::ToolExecutor;
 use crucible_core::traits::PermissionGate;
 use crucible_lua::{
     execute_permission_hooks, register_crucible_on_api, register_permission_hook_api,
-    LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
+    LuaScriptHandlerRegistry, LuaValidatorRegistry, PermissionHook, PermissionHookResult,
+    PermissionRequest,
 };
 use dashmap::DashMap;
 use mlua::Lua;
@@ -300,6 +301,21 @@ struct StreamContext {
     /// Scheduler-owned conversation tree. Populated as a shadow of
     /// events; see `AgentManager::session_trees`.
     conversation_tree: Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>>,
+    /// Per-session prompt-cache aggregate updated on every
+    /// `message_complete` that carries usage data.
+    cache_stats: Arc<DashMap<String, cache_stats::CacheStats>>,
+    /// Session manager handle, used by the auto-compact trigger to
+    /// request compaction when prompt usage exceeds the configured
+    /// threshold.
+    session_manager: Arc<SessionManager>,
+    /// Pre-computed kiln/Precognition system message to prepend to the
+    /// context vector. Computed upstream of the stream loop (because
+    /// kiln search needs &AgentManager) and injected by
+    /// `apply_transform_context_handlers` before Lua transform_context
+    /// handlers run, so Lua plugins can further mutate it. `None` when
+    /// Precognition is gated off (disabled, /search command, no kiln,
+    /// or not the first user message of the session).
+    precognition_message: Option<crucible_core::traits::ContextMessage>,
 }
 
 #[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration
@@ -312,10 +328,35 @@ struct AgentStreamConfig {
     system_prompt: String,
     max_iterations: Option<u32>,
     execution_timeout_secs: Option<u64>,
+    /// Snapshot of the session's `context_budget` for auto-compaction.
+    /// `None` disables auto-compaction (no budget to compare against).
+    context_budget: Option<usize>,
+    /// Fraction of `context_budget` that triggers auto-compaction.
+    /// `None` falls back to `DEFAULT_AUTOCOMPACT_THRESHOLD`. See
+    /// [`crate::agent_manager::autocompact`].
+    autocompact_threshold: Option<f32>,
+    /// Validation mode for assistant text responses. Drives the
+    /// validate-retry loop in `execute_agent_stream`.
+    output_validation: OutputValidation,
+    /// Maximum retry count when output validation fails.
+    validation_retries: u32,
+    /// Registry of Lua-defined validators, populated when the daemon
+    /// has a plugin loader. The agent stream loop dispatches
+    /// `OutputValidation::Lua { name }` against this registry.
+    /// `None` outside daemon contexts (tests, isolated managers) — the
+    /// stream loop treats that as a validation failure with a clear reason.
+    lua_validators: Option<Arc<LuaValidatorRegistry>>,
+    /// Plugin runtime `Lua` handle used to call into validator functions.
+    /// Paired with `lua_validators`; both are `Some` together or both `None`.
+    plugin_lua: Option<Arc<Lua>>,
 }
 
 impl AgentStreamConfig {
-    fn from_session_agent(session_agent: &SessionAgent) -> Self {
+    fn from_session_agent(
+        session_agent: &SessionAgent,
+        lua_validators: Option<Arc<LuaValidatorRegistry>>,
+        plugin_lua: Option<Arc<Lua>>,
+    ) -> Self {
         Self {
             model: session_agent.model.clone(),
             temperature: session_agent.temperature,
@@ -324,6 +365,12 @@ impl AgentStreamConfig {
             system_prompt: session_agent.system_prompt.clone(),
             max_iterations: session_agent.max_iterations,
             execution_timeout_secs: session_agent.execution_timeout_secs,
+            context_budget: session_agent.context_budget,
+            autocompact_threshold: session_agent.autocompact_threshold,
+            output_validation: session_agent.output_validation.clone(),
+            validation_retries: session_agent.validation_retries,
+            lua_validators,
+            plugin_lua,
         }
     }
 }
@@ -433,6 +480,20 @@ pub struct AgentManager {
     permission_config: Option<PermissionConfig>,
     plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
     tool_dispatcher: Arc<dyn ToolDispatcher>,
+    cache_stats: Arc<DashMap<String, cache_stats::CacheStats>>,
+    /// Lua validator registry + plugin `Lua` handle. Populated once at
+    /// daemon startup via [`AgentManager::set_lua_validators`] after the
+    /// plugin loader has finished initializing. `OnceLock` keeps the
+    /// hot validation path lock-free; tests and isolated managers leave
+    /// it empty and `OutputValidation::Lua` surfaces as a validation
+    /// failure with a clear reason instead of panicking.
+    lua_validators: std::sync::OnceLock<(Arc<LuaValidatorRegistry>, Arc<Lua>)>,
+    /// Per-session, per-turn workspace snapshots indexed by the
+    /// conversation-tree node id that was `current` at the moment the
+    /// snapshot was captured (i.e. the parent of the soon-to-be-added
+    /// User node). On undo, the tree's new cursor position is looked up
+    /// here and its snapshot is replayed to revert tool-side file edits.
+    pub(crate) snapshots: Arc<crate::workspace_snapshot::SnapshotMap>,
 }
 
 /// Parameters for creating an AgentManager.
@@ -470,29 +531,96 @@ impl AgentManager {
             plugin_loader: params.plugin_loader,
             tool_dispatcher,
             session_trees: Arc::new(DashMap::new()),
+            cache_stats: Arc::new(DashMap::new()),
+            lua_validators: std::sync::OnceLock::new(),
+            snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),
         }
     }
 
+    /// Bind the plugin loader's validator registry + `Lua` handle.
+    ///
+    /// Called once during daemon startup after the plugin loader has
+    /// initialized. Subsequent calls are silently ignored (`OnceLock`
+    /// semantics) so reload paths can re-call without panicking; the
+    /// registry itself is shared by `Arc` and stays live across reloads.
+    pub fn set_lua_validators(&self, registry: Arc<LuaValidatorRegistry>, lua: Arc<Lua>) {
+        let _ = self.lua_validators.set((registry, lua));
+    }
+
+    /// Snapshot of `(registry, lua)` for the agent stream loop. `None`
+    /// when no plugin loader has bound validators (test contexts).
+    pub(crate) fn lua_validators(&self) -> Option<(Arc<LuaValidatorRegistry>, Arc<Lua>)> {
+        self.lua_validators
+            .get()
+            .map(|(r, l)| (Arc::clone(r), Arc::clone(l)))
+    }
+
+    /// Snapshot the prompt-cache aggregate for `session_id`. Returns
+    /// `Default::default()` (all zeros) when no completion has reported
+    /// cache fields yet — callers can interpret that as "no data" via
+    /// `CacheStats::hit_rate()`, which returns `None`.
+    pub fn get_cache_stats(&self, session_id: &str) -> cache_stats::CacheStats {
+        self.cache_stats
+            .get(session_id)
+            .map(|s| s.clone())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn cache_stats_handle(&self) -> Arc<DashMap<String, cache_stats::CacheStats>> {
+        self.cache_stats.clone()
+    }
+
     /// Look up or create the scheduler-owned `ConversationTree` for a
-    /// session. The tree is initialised with just the root; callers
-    /// append user/agent/tool nodes as events arrive.
-    pub(crate) fn get_or_create_session_tree(
+    /// session. When the entry is first inserted (e.g. after a daemon
+    /// restart resuming a persisted session, or a freshly-attached
+    /// AgentManager for an existing session), rebuild its contents from
+    /// the session JSONL log if one exists. Without this, the
+    /// first-user-message gate (Precognition, digest, etc.) sees an
+    /// empty tree post-restart and treats the next turn as "first" —
+    /// re-injecting on every restart.
+    ///
+    /// `jsonl_path` is the session's event log; when it doesn't exist
+    /// (the common case for in-progress sessions), the tree starts
+    /// empty.
+    pub(crate) async fn get_or_rebuild_session_tree(
         &self,
         session_id: &str,
+        jsonl_path: &std::path::Path,
     ) -> Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>> {
+        if let Some(existing) = self.session_trees.get(session_id) {
+            return existing.clone();
+        }
+
+        let initial = if jsonl_path.exists() {
+            match crate::observe::rebuild::rebuild_tree_from_jsonl(jsonl_path).await {
+                Ok(tree) => tree,
+                Err(error) => {
+                    tracing::warn!(
+                        session_id = %session_id,
+                        path = %jsonl_path.display(),
+                        error = %error,
+                        "Failed to rebuild conversation tree from JSONL; starting fresh"
+                    );
+                    crucible_core::turn::ConversationTree::new()
+                }
+            }
+        } else {
+            crucible_core::turn::ConversationTree::new()
+        };
+
         self.session_trees
             .entry(session_id.to_string())
-            .or_insert_with(|| {
-                Arc::new(tokio::sync::Mutex::new(
-                    crucible_core::turn::ConversationTree::new(),
-                ))
-            })
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(initial)))
             .clone()
     }
 
-    /// Look up an existing session tree. Returns `None` if no session
-    /// has produced turn events yet.
-    #[allow(dead_code)] // exposed for future RPC/test inspection of the shadow tree
+    /// Look up an existing session tree without rebuilding from JSONL.
+    /// Returns `None` if the session has no in-memory tree yet.
+    ///
+    /// Production paths use `get_or_rebuild_session_tree` so a resumed
+    /// session's history loads on first access. This sibling is for
+    /// tests inspecting the in-memory state without touching disk.
+    #[cfg(test)]
     pub(crate) fn get_session_tree(
         &self,
         session_id: &str,
@@ -627,6 +755,10 @@ impl AgentManager {
 
         self.agent_cache.remove(session_id);
         self.session_dispatchers.remove(session_id);
+        // Drop the in-memory conversation tree so a re-attach to this
+        // session rebuilds from on-disk JSONL rather than reusing stale
+        // pointers (and frees memory for ended sessions).
+        self.session_trees.remove(session_id);
 
         if let Some((_, mut state)) = self.request_state.remove(session_id) {
             if let Some(cancel_tx) = state.cancel_tx.take() {
@@ -835,6 +967,8 @@ impl AgentManager {
     }
 }
 
+pub mod autocompact;
+pub mod cache_stats;
 pub mod context_length;
 mod iter;
 mod messaging;

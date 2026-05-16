@@ -198,6 +198,7 @@ fn dump_synthetic_multi_turn_with_tools() {
         description: Some("Read file contents".into()),
         source: Some("Core".into()),
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".into(),
@@ -250,6 +251,7 @@ fn dump_synthetic_error_and_subagent() {
         description: None,
         source: None,
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     app.on_message(ChatAppMsg::ToolResultError {
         name: "bash".into(),

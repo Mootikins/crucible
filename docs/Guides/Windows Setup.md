@@ -109,7 +109,7 @@ cargo build --release
 cargo test
 
 # Run specific test
-cargo test -p crucible-llm --test test_backend_comparison
+cargo test -p crucible-daemon --test test_backend_comparison
 ```
 
 ## C Runtime Library Configuration
@@ -158,7 +158,7 @@ FastEmbed uses ONNX Runtime for local embedding generation. On Windows, this can
 
 1. **Run the diagnostic test:**
    ```powershell
-   cargo test -p crucible-llm --features fastembed --test test_onnx_windows_diagnostics -- --nocapture
+   cargo test -p crucible-daemon --features fastembed --test test_onnx_windows_diagnostics -- --nocapture
    ```
 
 2. **Verify build configuration:**
@@ -225,13 +225,13 @@ Tests are designed to work cross-platform:
 cargo test
 
 # Specific crate
-cargo test -p crucible-llm
+cargo test -p crucible-daemon
 
 # With output
 cargo test -- --nocapture
 
 # ONNX Runtime diagnostic test
-cargo test -p crucible-llm --features fastembed --test test_onnx_windows_diagnostics -- --nocapture
+cargo test -p crucible-daemon --features fastembed --test test_onnx_windows_diagnostics -- --nocapture
 ```
 
 ## Performance Considerations

@@ -668,7 +668,7 @@ pub(crate) async fn handle_session_undo(
 pub(crate) async fn handle_session_can_undo(req: Request, am: &Arc<AgentManager>) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
 
-    match am.can_undo(session_id) {
+    match am.can_undo(session_id).await {
         Ok(can_undo) => Response::success(
             req.id,
             serde_json::json!({
@@ -689,7 +689,7 @@ pub(crate) async fn handle_session_can_undo(req: Request, am: &Arc<AgentManager>
 pub(crate) async fn handle_session_undo_depth(req: Request, am: &Arc<AgentManager>) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
 
-    match am.undo_depth(session_id) {
+    match am.undo_depth(session_id).await {
         Ok(depth) => Response::success(
             req.id,
             serde_json::json!({
@@ -705,4 +705,72 @@ pub(crate) async fn handle_session_undo_depth(req: Request, am: &Arc<AgentManage
         }
         Err(e) => internal_error(req.id, e),
     }
+}
+
+pub(crate) async fn handle_session_set_autocompact_threshold(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let threshold = optional_param!(req, "autocompact_threshold", as_f64).map(|v| v as f32);
+
+    match am
+        .set_autocompact_threshold(session_id, threshold, Some(event_tx))
+        .await
+    {
+        Ok(()) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "autocompact_threshold": threshold,
+            }),
+        ),
+        Err(e) => agent_error_to_response(req.id, e),
+    }
+}
+
+pub(crate) async fn handle_session_get_autocompact_threshold(
+    req: Request,
+    am: &Arc<AgentManager>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+
+    match am.get_autocompact_threshold(session_id) {
+        Ok(threshold) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "autocompact_threshold": threshold,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            session_not_found(req.id, &id)
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
+            agent_not_configured(req.id, &id)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+/// `session.cache_stats` — return the per-session prompt-cache aggregate.
+/// `hit_rate` is `null` until at least one completion has reported cache
+/// fields, distinguishing "never had a cache event" from "0%".
+pub(crate) async fn handle_session_cache_stats(req: Request, am: &Arc<AgentManager>) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let stats = am.get_cache_stats(session_id);
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "session_id": session_id,
+            "hits": stats.hits,
+            "misses": stats.misses,
+            "read_tokens": stats.read_tokens,
+            "creation_tokens": stats.creation_tokens,
+            "prompt_tokens": stats.prompt_tokens,
+            "completion_tokens": stats.completion_tokens,
+            "hit_rate": stats.hit_rate(),
+        }),
+    )
 }

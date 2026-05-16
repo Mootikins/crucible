@@ -134,7 +134,11 @@ impl ReconnectingDaemon {
         self.call_with_reconnect("list_notes", move |daemon| {
             let kiln_path = kiln_path.clone();
             let path_filter = path_filter.clone();
-            Box::pin(async move { daemon.list_notes(&kiln_path, path_filter.as_deref()).await })
+            Box::pin(async move {
+                daemon
+                    .list_notes(&kiln_path, path_filter.as_deref(), None)
+                    .await
+            })
         })
         .await
     }
@@ -149,7 +153,7 @@ impl ReconnectingDaemon {
         self.call_with_reconnect("get_note_by_name", move |daemon| {
             let kiln_path = kiln_path.clone();
             let name = name.clone();
-            Box::pin(async move { daemon.get_note_by_name(&kiln_path, &name).await })
+            Box::pin(async move { daemon.get_note_by_name(&kiln_path, &name, None).await })
         })
         .await
     }
@@ -180,7 +184,11 @@ impl ReconnectingDaemon {
         self.call_with_reconnect("search_vectors", move |daemon| {
             let kiln_path = kiln_path.clone();
             let vector = vector.clone();
-            Box::pin(async move { daemon.search_vectors(&kiln_path, &vector, limit).await })
+            Box::pin(async move {
+                daemon
+                    .search_vectors(&kiln_path, &vector, limit, None)
+                    .await
+            })
         })
         .await
     }

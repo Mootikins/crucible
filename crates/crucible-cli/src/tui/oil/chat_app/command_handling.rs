@@ -833,6 +833,11 @@ impl OilChatApp {
                     self.show_thinking = val.as_bool().unwrap_or(true);
                 }
             }
+            "show_diffs" => {
+                if let Some(val) = self.runtime_config.get("show_diffs") {
+                    self.show_diffs = val.as_bool().unwrap_or(true);
+                }
+            }
             "model" => {
                 if let Some(ConfigValue::String(m)) = self
                     .runtime_config

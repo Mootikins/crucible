@@ -200,6 +200,13 @@ impl DaemonSessionApi for AsyncMockDaemonApi {
         })
     }
 
+    fn cache_stats(
+        &self,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
+        Box::pin(async { Ok(serde_json::json!({ "hit_rate": serde_json::Value::Null })) })
+    }
+
     fn send_and_collect(
         &self,
         _session_id: String,

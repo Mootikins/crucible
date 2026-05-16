@@ -84,6 +84,26 @@ pub struct ChatToolResult {
     /// LLM-assigned call ID for matching results to the correct tool call
     #[serde(default)]
     pub call_id: Option<String>,
+    /// Tool signaled the agent loop should end after this batch.
+    /// The loop only honors termination when *every* result in the batch
+    /// sets this — one tool can't unilaterally cut another's work short.
+    ///
+    /// **Producer scope (v1):** today this is only set by Lua
+    /// `pre_tool_call` handlers returning `{ handled = true,
+    /// terminate = true }`. The native `ToolExecutor::execute_tool` trait
+    /// returns `serde_json::Value` and has no way to signal terminate —
+    /// non-Lua tools always send `terminate: false`.
+    ///
+    /// **Consumer scope (v1):** the conjunctive check fires at
+    /// `TurnEvent::ToolBatchEnd`. The genai agent loop emits that event
+    /// after every tool batch. The ACP delegation path
+    /// (`crucible-daemon/src/acp_handle.rs`) does not yet emit
+    /// `ToolBatchEnd`, so this flag has no effect for
+    /// `cru chat -a claude / opencode / gemini` sessions. Wire
+    /// `ToolBatchEnd` through the ACP adapter when an ACP-side use case
+    /// appears.
+    #[serde(default)]
+    pub terminate: bool,
 }
 
 /// Runtime handle to an active agent.
@@ -292,6 +312,18 @@ pub trait AgentHandle: crate::turn::Agent + Send + Sync {
     /// Get the current validation retry count.
     fn get_validation_retries(&self) -> u32 {
         3
+    }
+
+    /// Set the auto-compaction threshold (fraction of `context_budget`).
+    /// `None` resets to the daemon default; `Some(0.0)` explicitly disables.
+    async fn set_autocompact_threshold(&mut self, _threshold: Option<f32>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_autocompact_threshold".into()))
+    }
+
+    /// Get the current auto-compaction threshold. `None` indicates the
+    /// daemon default is in effect.
+    fn get_autocompact_threshold(&self) -> Option<f32> {
+        None
     }
 
     /// Set the maximum number of Precognition search results.

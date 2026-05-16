@@ -12,7 +12,7 @@ async fn reactor_pre_llm_modifies_prompt() {
         behavior: MockHandlerBehavior::ModifyPrompt("MODIFIED: hello".to_string()),
     })
     .await;
-    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
+    let (received_prompt, _) = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
     h.wait_for("message_complete").await;
@@ -35,7 +35,7 @@ async fn reactor_pre_llm_cancel_aborts() {
     })
     .await;
 
-    let received_prompt =
+    let (received_prompt, _) =
         h.inject_capturing_agent(vec![script::text("should-not-run"), script::done()]);
 
     h.send("hello").await;
@@ -53,7 +53,7 @@ async fn reactor_pre_llm_cancel_aborts() {
 #[tokio::test]
 async fn reactor_pre_llm_empty_passthrough() {
     let mut h = ReactorTestHarness::new().await;
-    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
+    let (received_prompt, _) = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
     h.wait_for("message_complete").await;
@@ -75,7 +75,7 @@ async fn reactor_pre_llm_error_fails_open() {
     })
     .await;
 
-    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
+    let (received_prompt, _) = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
     h.wait_for("message_complete").await;
@@ -162,7 +162,7 @@ async fn runtime_dispatch_pre_llm_call_transforms_prompt() {
             .unwrap();
     }
 
-    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
+    let (received_prompt, _) = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
     h.wait_for("message_complete").await;
@@ -308,7 +308,7 @@ async fn reactor_lua_handler_discovery_empty_dir() {
         assert!(state.reactor.is_empty());
     }
 
-    let received_prompt = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
+    let (received_prompt, _) = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
     h.wait_for("message_complete").await;
@@ -341,4 +341,171 @@ fn event_patterns_match_event_type() {
         args: serde_json::Value::Null,
     });
     assert_eq!(pre_tool.event_type(), "pre_tool_call");
+}
+
+#[tokio::test]
+async fn runtime_transform_context_appends_system_message() {
+    // Pi-style two-stage seam: a transform_context handler operates on
+    // the rich message array BEFORE prompt linearization. This is the
+    // natural injection point for kiln/Precognition context — Lua sees
+    // the structured messages, not just a prompt string.
+    let mut h = ReactorTestHarness::new().await;
+
+    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
+    {
+        let state = session_state.lock().await;
+        state
+            .lua
+            .load(
+                r#"
+            crucible.on("transform_context", function(ctx, event)
+                local msgs = event.payload.messages
+                table.insert(msgs, {
+                    role = "system",
+                    content = "[precognition] note about widgets",
+                })
+                return { messages = msgs }
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+    }
+
+    let (_prompt, messages) = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
+
+    h.send("tell me about widgets").await;
+    h.wait_for("message_complete").await;
+
+    let captured = messages.lock().unwrap();
+    let messages = captured
+        .as_ref()
+        .expect("agent should have captured messages");
+    let injected = messages
+        .iter()
+        .find(|m| m.content.contains("[precognition] note about widgets"));
+    assert!(
+        injected.is_some(),
+        "transform_context handler should have appended a system message; got: {:?}",
+        messages
+            .iter()
+            .map(|m| (&m.role, &m.content))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn runtime_pre_tool_handled_with_terminate_ends_turn() {
+    // Pi-style conjunctive early-stop: if a pre_tool_call handler returns
+    // { handled=true, result=..., terminate=true }, and that's the only tool
+    // in the batch, the agent loop ends after the batch.
+    let mut h = ReactorTestHarness::new().await;
+
+    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
+    {
+        let state = session_state.lock().await;
+        state
+            .lua
+            .load(
+                r#"
+            crucible.on("pre_tool_call", function(ctx, event)
+                return { handled = true, result = "final answer", terminate = true }
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+    }
+
+    // Single tool_call only; the scripted stream emits ToolBatchEnd and
+    // waits for ToolResult feedback. With terminate=true the loop should
+    // end after the batch instead of returning to the model.
+    h.inject_streaming_agent(vec![script::tool_call(
+        "call-terminate",
+        "submit_answer",
+        serde_json::json!({ "answer": "x" }),
+    )]);
+
+    h.send("test").await;
+
+    let tool_result = h.wait_for("tool_result").await;
+    assert_eq!(tool_result.data["tool"], "submit_answer");
+
+    let ended = h.wait_for("ended").await;
+    assert!(
+        ended.data["reason"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("terminate"),
+        "ended reason should mention terminate, got: {:?}",
+        ended.data
+    );
+}
+
+#[tokio::test]
+async fn runtime_pre_tool_terminate_mixed_batch_does_not_end() {
+    // Conjunctive: if any result in the batch lacks terminate=true, the
+    // loop continues normally — one tool can't unilaterally cut another's
+    // work short.
+    let mut h = ReactorTestHarness::new().await;
+
+    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
+    {
+        let state = session_state.lock().await;
+        state
+            .lua
+            .load(
+                r#"
+            crucible.on("pre_tool_call", function(ctx, event)
+                local tool = event.payload.tool
+                if tool == "submit_final" then
+                    return { handled = true, result = "done", terminate = true }
+                elseif tool == "keep_going" then
+                    return { handled = true, result = "more work", terminate = false }
+                end
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+    }
+
+    // Two tools in one batch: only one signals terminate.
+    h.inject_streaming_agent(vec![
+        script::tool_call("call-1", "submit_final", serde_json::json!({})),
+        script::tool_call("call-2", "keep_going", serde_json::json!({})),
+    ]);
+
+    h.send("test").await;
+
+    // Mixed batch should NOT terminate. Stronger assertion than just
+    // "message_complete arrives": assert we never see an `ended` event
+    // carrying the terminate reason. Without this, the test would pass
+    // even if the conjunctive check were broken (e.g. firing
+    // unconditionally) — message_complete still arrives because Done
+    // gets emitted as well — and the bug would slip through.
+    let mut saw_terminate_ended = false;
+    let complete = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            match h.event_rx.recv().await {
+                Ok(event) if event.event == "ended" => {
+                    let reason = event.data["reason"].as_str().unwrap_or_default();
+                    if reason.contains("terminate") {
+                        saw_terminate_ended = true;
+                    }
+                }
+                Ok(event) if event.event == "message_complete" => return event,
+                Ok(_) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(err) => panic!("event channel closed: {err}"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for message_complete");
+
+    assert!(
+        !saw_terminate_ended,
+        "mixed batch should not emit terminate-reason ended; saw: {complete:?}"
+    );
 }

@@ -39,7 +39,7 @@ pub(crate) async fn handle_skills_list(req: Request) -> Response {
     let result = tokio::task::spawn_blocking(move || {
         let cwd = std::env::current_dir().unwrap_or_default();
         let kiln = PathBuf::from(&kiln_path);
-        let paths = default_discovery_paths(Some(&cwd), Some(&kiln));
+        let paths = default_discovery_paths(Some(&cwd), Some(&kiln), dirs::home_dir().as_deref());
         let discovery = FolderDiscovery::new(paths);
         discovery.discover()
     })
@@ -85,7 +85,7 @@ pub(crate) async fn handle_skills_get(req: Request) -> Response {
     let result = tokio::task::spawn_blocking(move || {
         let cwd = std::env::current_dir().unwrap_or_default();
         let kiln = PathBuf::from(&kiln_path);
-        let paths = default_discovery_paths(Some(&cwd), Some(&kiln));
+        let paths = default_discovery_paths(Some(&cwd), Some(&kiln), dirs::home_dir().as_deref());
         let discovery = FolderDiscovery::new(paths);
         discovery.discover()
     })
@@ -123,7 +123,7 @@ pub(crate) async fn handle_skills_search(req: Request) -> Response {
     let result = tokio::task::spawn_blocking(move || {
         let cwd = std::env::current_dir().unwrap_or_default();
         let kiln = PathBuf::from(&kiln_path);
-        let paths = default_discovery_paths(Some(&cwd), Some(&kiln));
+        let paths = default_discovery_paths(Some(&cwd), Some(&kiln), dirs::home_dir().as_deref());
         let discovery = FolderDiscovery::new(paths);
         discovery.discover()
     })

@@ -16,13 +16,13 @@ This document defines the orthogonal systems that make up Crucible. Each system 
 | System | Scope | Crates |
 |--------|-------|--------|
 | **parser** | Markdown → structured data (extensions, frontmatter, blocks) | `crucible-core/parser` |
-| **storage** | Persistence: SQLite (default), LanceDB (vector) | `crucible-sqlite`, `crucible-lance` |
+| **storage** | Persistence: SQLite (default), LanceDB (vector) | `crucible-daemon/storage/sqlite`, `crucible-lance` |
 | **sync** | Merkle-CRDT sync across devices, collaborators, and federated agents | `crucible-sync` (future) |
-| **agents** | Agent cards, handles, LLM providers, tool registry | `crucible-core/agents`, `crucible-llm`, `crucible-daemon/tools`, `crucible-acp` |
-| **workflows** | Definitions (markup) + sessions (logging, resumption) | `crucible-core/workflow` (future) |
+| **agents** | Agent cards, handles, LLM providers, tool registry | `crucible-core/agents`, `crucible-daemon/llm`, `crucible-daemon/tools`, `crucible-daemon/acp` |
+| **workflows** | Definitions (markup) + sessions (logging, resumption) | `crucible-core/workflow` |
 | **plugins** | Extension points, hooks, scripting (Lua) | `crucible-lua` |
 | **apis** | HTTP REST, WebSocket, events | `crucible-web` |
-| **cli** | Commands, REPL, TUI, configuration | `crucible-cli`, `crucible-oil`, `crucible-config` |
+| **cli** | Commands, REPL, TUI, configuration | `crucible-cli`, `crucible-oil`, `crucible-core/config` |
 | **daemon** | Multi-session server, RPC, agent management | `crucible-daemon` |
 | **observe** | Session logging, JSONL event streams, markdown export | `crucible-daemon/observe` |
 
@@ -207,7 +207,7 @@ Some changes span multiple systems:
 
 Systems are conceptual groupings. Crates are implementation units.
 
-- One system may span multiple crates (e.g., `agents` → `crucible-llm`, `crucible-daemon/tools`, `crucible-acp`)
+- One system may span multiple crates (e.g., `agents` → `crucible-daemon/llm`, `crucible-daemon/tools`, `crucible-daemon/acp`)
 - One crate may implement parts of multiple systems (e.g., `crucible-core` has parser types and agent traits)
 
 The system boundary is about **what** (requirements), crates are about **how** (implementation).

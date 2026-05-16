@@ -267,7 +267,7 @@ For cloud providers, check that the model name is correct. Run `cru models` to l
 
 ## Implementation
 
-**Source code:** `crates/crucible-config/src/components/llm.rs`
+**Source code:** `crates/crucible-core/src/config/components/llm.rs`
 
 ## See Also
 

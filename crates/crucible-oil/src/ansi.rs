@@ -218,9 +218,178 @@ pub fn apply_style(content: &str, style: &Style) -> String {
     format!("{}", StyledContent::new(ct_style, content))
 }
 
+/// Extract the background-color contribution of a (possibly compound) SGR
+/// style string, returning a standalone escape sequence that, when prepended
+/// to another style's content, restores the same bg.
+///
+/// Returns `None` if the style does not set a background color, OR if it ends
+/// in a reset (`SGR 0` or `SGR 49`) that clears any prior bg.
+///
+/// Used by [`crate::cell_grid::CellGrid::blit_line`] to compose styles when a
+/// new write does not specify its own bg — the prior cell's bg is preserved
+/// so a parent Box's `style.bg` survives child renders, matching the CSS
+/// background-color semantics.
+pub fn extract_bg(style: &str) -> Option<String> {
+    let mut last_bg: Option<String> = None;
+    let mut i = 0;
+    let bytes = style.as_bytes();
+
+    while i < bytes.len() {
+        if bytes[i] == 0x1b && i + 1 < bytes.len() && bytes[i + 1] == b'[' {
+            let start = i;
+            i += 2;
+            // SGR parameter bytes are digits + ';' (0x30..=0x3F). Anything else
+            // means this isn't an SGR escape — bail past `\x1b[` so we don't
+            // walk into a following SGR's terminator and misparse them as one.
+            let params_start = i;
+            while i < bytes.len() && matches!(bytes[i], b'0'..=b'9' | b';') {
+                i += 1;
+            }
+            if i >= bytes.len() || bytes[i] != b'm' {
+                // Not SGR (cursor move, OSC, truncated, etc.). Resume scanning
+                // immediately after `\x1b[`.
+                i = params_start;
+                continue;
+            }
+            i += 1; // consume 'm'
+            let escape = &style[start..i];
+            // Strip "\x1b[" prefix and "m" suffix, split on ';'
+            let inner = &escape[2..escape.len() - 1];
+            let params: Vec<i32> = if inner.is_empty() {
+                vec![0]
+            } else {
+                inner
+                    .split(';')
+                    .map(|p| p.parse::<i32>().unwrap_or(-1))
+                    .collect()
+            };
+
+            let mut p = 0;
+            while p < params.len() {
+                match params[p] {
+                    0 | 49 => {
+                        // Full reset OR bg-default — clears any prior bg.
+                        last_bg = None;
+                        p += 1;
+                    }
+                    40..=47 | 100..=107 => {
+                        // Basic 8-color bg or bright bg — single param.
+                        last_bg = Some(format!("\x1b[{}m", params[p]));
+                        p += 1;
+                    }
+                    48 => {
+                        // Extended bg: 48;5;N (256-color) or 48;2;R;G;B (RGB).
+                        match params.get(p + 1) {
+                            Some(&5) if params.len() > p + 2 => {
+                                last_bg = Some(format!("\x1b[48;5;{}m", params[p + 2]));
+                                p += 3;
+                            }
+                            Some(&2) if params.len() > p + 4 => {
+                                last_bg = Some(format!(
+                                    "\x1b[48;2;{};{};{}m",
+                                    params[p + 2],
+                                    params[p + 3],
+                                    params[p + 4]
+                                ));
+                                p += 5;
+                            }
+                            _ => p += 1,
+                        }
+                    }
+                    38 => {
+                        // Extended fg — must be skipped over so its R/G/B
+                        // components aren't misread as basic-bg codes.
+                        match params.get(p + 1) {
+                            Some(&5) if params.len() > p + 2 => p += 3,
+                            Some(&2) if params.len() > p + 4 => p += 5,
+                            _ => p += 1,
+                        }
+                    }
+                    _ => p += 1,
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    last_bg
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extract_bg_returns_none_for_no_bg() {
+        assert_eq!(extract_bg(""), None);
+        assert_eq!(extract_bg("\x1b[38;2;100;200;50m"), None);
+        assert_eq!(extract_bg("\x1b[1m"), None);
+    }
+
+    #[test]
+    fn extract_bg_handles_rgb_bg() {
+        assert_eq!(
+            extract_bg("\x1b[48;2;40;44;52m").as_deref(),
+            Some("\x1b[48;2;40;44;52m")
+        );
+    }
+
+    #[test]
+    fn extract_bg_handles_256color_bg() {
+        assert_eq!(
+            extract_bg("\x1b[48;5;236m").as_deref(),
+            Some("\x1b[48;5;236m")
+        );
+    }
+
+    #[test]
+    fn extract_bg_handles_basic_bg() {
+        assert_eq!(extract_bg("\x1b[42m").as_deref(), Some("\x1b[42m"));
+        assert_eq!(extract_bg("\x1b[105m").as_deref(), Some("\x1b[105m"));
+    }
+
+    #[test]
+    fn extract_bg_returns_last_bg_when_multiple() {
+        let style = "\x1b[48;2;0;0;0m\x1b[48;2;255;255;255m";
+        assert_eq!(extract_bg(style).as_deref(), Some("\x1b[48;2;255;255;255m"));
+    }
+
+    #[test]
+    fn extract_bg_returns_none_after_full_reset() {
+        let style = "\x1b[48;2;40;44;52m\x1b[0m";
+        assert_eq!(extract_bg(style), None);
+    }
+
+    #[test]
+    fn extract_bg_returns_none_after_bg_default() {
+        // SGR 49 = default bg
+        let style = "\x1b[48;2;40;44;52m\x1b[49m";
+        assert_eq!(extract_bg(style), None);
+    }
+
+    #[test]
+    fn extract_bg_skips_non_sgr_escapes() {
+        // Cursor positioning escape followed by a real bg-setting SGR.
+        // The non-SGR escape must not consume the SGR's terminator.
+        let style = "\x1b[H\x1b[42m";
+        assert_eq!(extract_bg(style).as_deref(), Some("\x1b[42m"));
+    }
+
+    #[test]
+    fn extract_bg_handles_truncated_escape() {
+        // Truncated SGR (no terminator) followed by a real bg.
+        let style = "\x1b[31\x1b[42m";
+        // First escape lacks `m`; the parser must skip it and find the second.
+        assert_eq!(extract_bg(style).as_deref(), Some("\x1b[42m"));
+    }
+
+    #[test]
+    fn extract_bg_handles_compound_fg_and_bg_in_one_escape() {
+        // crossterm sometimes emits combined: \x1b[38;2;...;48;2;...m
+        let style = "\x1b[38;2;255;255;255;48;2;40;44;52m";
+        assert_eq!(extract_bg(style).as_deref(), Some("\x1b[48;2;40;44;52m"));
+    }
 
     #[test]
     fn test_strip_ansi_plain() {

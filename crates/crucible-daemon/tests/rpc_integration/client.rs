@@ -292,7 +292,7 @@ async fn test_multiple_clients_query_same_kiln() {
             // Each client lists notes in the kiln
             // Note: This will return an empty result since we haven't indexed anything,
             // but it verifies the RPC works across multiple sessions
-            let result = client.list_notes(&kiln_path, None).await;
+            let result = client.list_notes(&kiln_path, None, None).await;
 
             // Query should succeed (even if empty results)
             assert!(

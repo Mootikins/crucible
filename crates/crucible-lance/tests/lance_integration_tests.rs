@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use crucible_core::parser::BlockHash;
-use crucible_core::storage::{Filter, NoteRecord, NoteStore};
+use crucible_core::storage::{Filter, NoteRecord, NoteStore, Scope};
 use crucible_lance::{create_note_store, create_note_store_with_dimensions, LanceNoteStore};
 use tempfile::TempDir;
 
@@ -89,7 +89,10 @@ async fn upsert_and_retrieve_note() {
     assert!(!events.is_empty(), "upsert should emit events");
 
     let got = store
-        .get("docs/hello.md")
+        .get(
+            "docs/hello.md",
+            &Scope::workspace_unchecked(std::path::PathBuf::new()),
+        )
         .await
         .expect("get failed")
         .expect("note should exist after upsert");
@@ -138,10 +141,24 @@ async fn delete_removes_note_from_store_and_search() {
     let (_dir, store) = setup().await;
 
     store.upsert(note("rm.md", "Remove Me", 2.0)).await.unwrap();
-    assert!(store.get("rm.md").await.unwrap().is_some());
+    assert!(store
+        .get(
+            "rm.md",
+            &Scope::workspace_unchecked(std::path::PathBuf::new())
+        )
+        .await
+        .unwrap()
+        .is_some());
 
     store.delete("rm.md").await.expect("delete failed");
-    assert!(store.get("rm.md").await.unwrap().is_none());
+    assert!(store
+        .get(
+            "rm.md",
+            &Scope::workspace_unchecked(std::path::PathBuf::new())
+        )
+        .await
+        .unwrap()
+        .is_none());
 
     // Also gone from search results
     let results = store.search(&embedding(2.0), 10, None).await.unwrap();
@@ -188,7 +205,10 @@ async fn search_on_empty_store_returns_empty() {
 async fn list_on_empty_store_returns_empty() {
     let (_dir, store) = setup().await;
 
-    let all = store.list().await.unwrap();
+    let all = store
+        .list(&Scope::workspace_unchecked(std::path::PathBuf::new()))
+        .await
+        .unwrap();
     assert!(all.is_empty());
 }
 
@@ -215,10 +235,20 @@ async fn upsert_same_path_twice_updates_in_place() {
     store.upsert(n2).await.unwrap();
 
     // Only one record should exist
-    let all = store.list().await.unwrap();
+    let all = store
+        .list(&Scope::workspace_unchecked(std::path::PathBuf::new()))
+        .await
+        .unwrap();
     assert_eq!(all.len(), 1, "upsert should not create duplicates");
 
-    let got = store.get("dup.md").await.unwrap().unwrap();
+    let got = store
+        .get(
+            "dup.md",
+            &Scope::workspace_unchecked(std::path::PathBuf::new()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(got.title, "Updated");
     assert_eq!(got.tags, vec!["v2"]);
 }
@@ -239,13 +269,19 @@ async fn batch_upsert_multiple_notes() {
         store.upsert(n).await.unwrap();
     }
 
-    let all = store.list().await.unwrap();
+    let all = store
+        .list(&Scope::workspace_unchecked(std::path::PathBuf::new()))
+        .await
+        .unwrap();
     assert_eq!(all.len(), 5, "all batch-upserted notes should be listed");
 
     // Verify each is retrievable
     for i in 0..5 {
         let got = store
-            .get(&format!("batch/{i}.md"))
+            .get(
+                &format!("batch/{i}.md"),
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
             .await
             .unwrap()
             .expect("each batch note should be retrievable");
@@ -293,7 +329,10 @@ async fn get_by_hash_round_trip() {
     store.upsert(n).await.unwrap();
 
     let found = store
-        .get_by_hash(&hash)
+        .get_by_hash(
+            &hash,
+            &Scope::workspace_unchecked(std::path::PathBuf::new()),
+        )
         .await
         .unwrap()
         .expect("note should be found by hash");
@@ -301,7 +340,10 @@ async fn get_by_hash_round_trip() {
 
     // Non-existent hash returns None
     let missing = store
-        .get_by_hash(&BlockHash::new([99u8; 32]))
+        .get_by_hash(
+            &BlockHash::new([99u8; 32]),
+            &Scope::workspace_unchecked(std::path::PathBuf::new()),
+        )
         .await
         .unwrap();
     assert!(missing.is_none());
@@ -324,7 +366,14 @@ async fn properties_survive_round_trip() {
 
     store.upsert(n).await.unwrap();
 
-    let got = store.get("props.md").await.unwrap().unwrap();
+    let got = store
+        .get(
+            "props.md",
+            &Scope::workspace_unchecked(std::path::PathBuf::new()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(got.properties.get("status"), props.get("status"));
     assert_eq!(got.properties.get("version"), props.get("version"));
 }

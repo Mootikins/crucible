@@ -6,7 +6,15 @@ use crate::skills::types::{ResolvedSkill, Skill, SkillScope, SkillSource};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use tracing::debug;
+use tracing::{debug, warn};
+
+/// Maximum size of a `SKILL.md` we'll read into memory.
+///
+/// Skills become LLM instructions, so a pathological file at the discovery
+/// path (intentionally hostile or accidentally generated) would either OOM
+/// the daemon at startup or balloon every prompt. 256 KB is well above any
+/// reasonable human-authored skill and still bounded.
+const SKILL_MAX_BYTES: u64 = 256 * 1024;
 
 /// A search path with its scope/priority
 #[derive(Debug, Clone)]
@@ -54,7 +62,7 @@ impl FolderDiscovery {
     /// - `<workspace>/.<agent>/skills/` for each known agent (workspace)
     /// - `<kiln>/skills/` if kiln path provided (kiln)
     pub fn with_default_paths(workspace: &Path, kiln: Option<&Path>) -> Self {
-        let paths = default_discovery_paths(Some(workspace), kiln);
+        let paths = default_discovery_paths(Some(workspace), kiln, dirs::home_dir().as_deref());
         Self::new(paths)
     }
 
@@ -106,6 +114,57 @@ impl FolderDiscovery {
     }
 
     fn parse_skill_file(&self, path: &Path, search_path: &SearchPath) -> SkillResult<Skill> {
+        // Reject symlinks. A SKILL.md (or its parent directory) symlinked
+        // to anything sensitive — `~/.ssh/id_rsa`, another user's home,
+        // arbitrary system files — would otherwise be read into LLM context
+        // as instructions. Cross-harness discovery makes this realistic:
+        // any unrelated tool that writes to `~/.claude/skills/...` becomes
+        // a vector.
+        let file_meta = std::fs::symlink_metadata(path).map_err(|e| SkillError::ReadError {
+            path: path.to_path_buf(),
+            source: e,
+        })?;
+        if file_meta.file_type().is_symlink() {
+            warn!(
+                path = %path.display(),
+                "Skipping symlinked SKILL.md (security policy)"
+            );
+            return Err(SkillError::DiscoveryError(format!(
+                "skipped symlinked SKILL.md: {}",
+                path.display()
+            )));
+        }
+        if let Some(parent) = path.parent() {
+            if let Ok(parent_meta) = std::fs::symlink_metadata(parent) {
+                if parent_meta.file_type().is_symlink() {
+                    warn!(
+                        path = %parent.display(),
+                        "Skipping skill in symlinked directory (security policy)"
+                    );
+                    return Err(SkillError::DiscoveryError(format!(
+                        "skipped skill in symlinked directory: {}",
+                        parent.display()
+                    )));
+                }
+            }
+        }
+
+        // Cap file size before reading. Prevents a 2 GB SKILL.md from
+        // OOMing the daemon at discovery time.
+        if file_meta.len() > SKILL_MAX_BYTES {
+            warn!(
+                path = %path.display(),
+                size = file_meta.len(),
+                limit = SKILL_MAX_BYTES,
+                "Skipping oversized SKILL.md"
+            );
+            return Err(SkillError::DiscoveryError(format!(
+                "SKILL.md exceeds {} bytes: {}",
+                SKILL_MAX_BYTES,
+                path.display()
+            )));
+        }
+
         let content = std::fs::read_to_string(path).map_err(|e| SkillError::ReadError {
             path: path.to_path_buf(),
             source: e,
@@ -124,8 +183,51 @@ impl FolderDiscovery {
     }
 }
 
-/// Build default discovery paths for Crucible
-pub fn default_discovery_paths(workspace: Option<&Path>, kiln: Option<&Path>) -> Vec<SearchPath> {
+/// Add skill paths from other coding-agent harnesses' home directories.
+///
+/// Pi explicitly cross-discovers other harnesses' skill libraries (see
+/// `pi-mono/packages/coding-agent/docs/skills.md` § "Using Skills from
+/// Other Harnesses"). We do the same: users invest in skill collections
+/// inside `~/.claude/skills`, `~/.codex/skills`, etc.; refusing to read
+/// them deepens ecosystem fragmentation for no real benefit.
+///
+/// Known harness shapes:
+/// - `claude`, `codex`, `opencode` → `~/.<harness>/skills/`
+/// - `pi`                          → `~/.pi/agent/skills/`
+///
+/// Unknown harness names are ignored (the helper only knows shapes it
+/// has been taught). Missing directories are silently skipped.
+///
+/// All cross-harness paths get `SkillScope::Personal` — they sit at the
+/// same priority as `~/.config/crucible/skills`, lower than workspace
+/// and kiln. The `agent` tag records the source harness so callers can
+/// disambiguate name clashes (`commit` from Claude vs Crucible) and
+/// show provenance.
+pub fn cross_harness_home_paths(home: &Path, harnesses: &[&str]) -> Vec<SearchPath> {
+    let mut paths = Vec::new();
+    for harness in harnesses {
+        let candidate = match *harness {
+            "claude" | "codex" | "opencode" => home.join(format!(".{harness}")).join("skills"),
+            "pi" => home.join(".pi").join("agent").join("skills"),
+            _ => continue,
+        };
+        if candidate.exists() {
+            paths.push(SearchPath::new(candidate, SkillScope::Personal).with_agent(*harness));
+        }
+    }
+    paths
+}
+
+/// Build default discovery paths for Crucible.
+///
+/// In production, callers pass `dirs::home_dir().as_deref()` for `home`.
+/// Tests inject a tempdir so they don't depend on the host's real
+/// `~/.claude/skills` / `~/.codex/skills` / `~/.pi/agent/skills` contents.
+pub fn default_discovery_paths(
+    workspace: Option<&Path>,
+    kiln: Option<&Path>,
+    home: Option<&Path>,
+) -> Vec<SearchPath> {
     let mut paths = Vec::new();
 
     if let Some(config_dir) = dirs::config_dir() {
@@ -136,6 +238,32 @@ pub fn default_discovery_paths(workspace: Option<&Path>, kiln: Option<&Path>) ->
             )
             .with_agent("crucible"),
         );
+    }
+
+    if let Some(home) = home {
+        // Cross-harness discovery (reading skills from `~/.claude/skills`,
+        // `~/.codex/skills`, `~/.pi/agent/skills`, `~/.opencode/skills`) is
+        // **opt-in**. Skill contents become LLM instructions, so silently
+        // sourcing prompts from another tool's config dir is a meaningful
+        // attack surface: any installer that drops a file into those paths
+        // (legitimately for the other tool) can inject into Crucible.
+        //
+        // Set `CRUCIBLE_CROSS_HARNESS_SKILLS=1` (or `true`/`on`) to enable.
+        let enabled = matches!(
+            std::env::var("CRUCIBLE_CROSS_HARNESS_SKILLS").as_deref(),
+            Ok("1") | Ok("true") | Ok("on")
+        );
+        if enabled {
+            let extras = cross_harness_home_paths(home, &["claude", "codex", "opencode", "pi"]);
+            if !extras.is_empty() {
+                let names: Vec<&str> = extras.iter().filter_map(|p| p.agent.as_deref()).collect();
+                tracing::info!(
+                    harnesses = ?names,
+                    "Discovered skill libraries from other coding-agent harnesses (CRUCIBLE_CROSS_HARNESS_SKILLS opt-in is set)"
+                );
+            }
+            paths.extend(extras);
+        }
     }
 
     if let Some(ws) = workspace {
@@ -211,6 +339,80 @@ mod tests {
             "---\nname: {skill_name}\ndescription: {description}\n---\n\nInstructions for {skill_name}.\n"
         );
         std::fs::write(skill_dir.join("SKILL.md"), content).unwrap();
+    }
+
+    #[test]
+    fn cross_harness_home_paths_includes_known_harness_skill_dirs() {
+        let tmp = TempDir::new().unwrap();
+        let home = tmp.path();
+
+        let claude_skills = home.join(".claude").join("skills");
+        std::fs::create_dir_all(&claude_skills).unwrap();
+        write_skill(&claude_skills, "claude-commit", "Claude commit skill");
+
+        let codex_skills = home.join(".codex").join("skills");
+        std::fs::create_dir_all(&codex_skills).unwrap();
+        write_skill(&codex_skills, "codex-review", "Codex review skill");
+
+        let opencode_skills = home.join(".opencode").join("skills");
+        std::fs::create_dir_all(&opencode_skills).unwrap();
+        write_skill(&opencode_skills, "opencode-debug", "OpenCode debug skill");
+
+        // Pi's home-skill path is one level deeper than the others.
+        let pi_skills = home.join(".pi").join("agent").join("skills");
+        std::fs::create_dir_all(&pi_skills).unwrap();
+        write_skill(&pi_skills, "pi-plan", "Pi plan skill");
+
+        let paths = cross_harness_home_paths(home, &["claude", "codex", "opencode", "pi"]);
+        let by_agent: HashMap<String, &SearchPath> = paths
+            .iter()
+            .map(|p| (p.agent.clone().unwrap_or_default(), p))
+            .collect();
+
+        assert_eq!(
+            paths.len(),
+            4,
+            "expected one path per harness, got {paths:?}"
+        );
+        assert_eq!(by_agent["claude"].path, claude_skills);
+        assert_eq!(by_agent["codex"].path, codex_skills);
+        assert_eq!(by_agent["opencode"].path, opencode_skills);
+        assert_eq!(by_agent["pi"].path, pi_skills);
+
+        // All cross-harness home paths are Personal scope (user-level
+        // libraries, lower priority than workspace/kiln).
+        for p in &paths {
+            assert_eq!(p.scope, SkillScope::Personal);
+        }
+    }
+
+    #[test]
+    fn cross_harness_home_paths_skips_missing_dirs() {
+        let tmp = TempDir::new().unwrap();
+        let home = tmp.path();
+
+        let claude_skills = home.join(".claude").join("skills");
+        std::fs::create_dir_all(&claude_skills).unwrap();
+        // Intentionally do not create codex or pi dirs.
+
+        let paths = cross_harness_home_paths(home, &["claude", "codex", "pi"]);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].agent.as_deref(), Some("claude"));
+    }
+
+    #[test]
+    fn cross_harness_home_paths_unknown_harness_is_skipped() {
+        let tmp = TempDir::new().unwrap();
+        // Even if a "made-up" harness dir exists, the helper only
+        // knows the shapes of harnesses it lists explicitly.
+        let weird = tmp.path().join(".made-up").join("skills");
+        std::fs::create_dir_all(&weird).unwrap();
+
+        let paths = cross_harness_home_paths(tmp.path(), &["made-up"]);
+        assert!(
+            paths.is_empty(),
+            "unknown harnesses should not contribute paths"
+        );
     }
 
     #[test]
@@ -376,10 +578,161 @@ mod tests {
     #[test]
     fn with_default_paths_includes_personal() {
         let tmp = TempDir::new().unwrap();
-        let discovery = FolderDiscovery::with_default_paths(tmp.path(), None);
+        // Inject an empty home dir so the test isn't affected by the
+        // host's real ~/.claude / ~/.codex / ~/.pi skill libraries.
+        let paths = default_discovery_paths(Some(tmp.path()), None, Some(tmp.path()));
+        let discovery = FolderDiscovery::new(paths);
 
         // Should not panic, and discover should work on nonexistent paths
         let resolved = discovery.discover().unwrap();
         assert!(resolved.is_empty());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // H2 — discovery hardening: symlinks, oversized files, opt-in default
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn discovery_skips_symlinked_skill_file() {
+        // A symlink at the SKILL.md path could resolve to anything sensitive
+        // (~/.ssh/id_rsa, /etc/shadow, ...). Must be skipped.
+        let tmp = TempDir::new().unwrap();
+        let skills_dir = tmp.path().join("skills");
+        std::fs::create_dir(&skills_dir).unwrap();
+
+        // A real, valid skill (control).
+        write_skill(&skills_dir, "valid", "Valid skill");
+
+        // Create a target file outside the skills dir, then symlink the
+        // SKILL.md path to it.
+        let secret_path = tmp.path().join("secret.txt");
+        std::fs::write(
+            &secret_path,
+            "---\nname: malicious\ndescription: leaked\n---\nSECRET-CONTENT\n",
+        )
+        .unwrap();
+        let evil_dir = skills_dir.join("evil");
+        std::fs::create_dir(&evil_dir).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&secret_path, evil_dir.join("SKILL.md")).unwrap();
+
+        let discovery =
+            FolderDiscovery::new(vec![SearchPath::new(skills_dir, SkillScope::Personal)]);
+        let resolved = discovery.discover().unwrap();
+
+        // The symlinked skill must NOT be discovered (control still is).
+        assert!(resolved.contains_key("valid"));
+        assert!(
+            !resolved.contains_key("malicious"),
+            "symlinked SKILL.md must be skipped"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn discovery_skips_skill_in_symlinked_directory() {
+        // The SKILL.md is real, but its parent directory is a symlink.
+        // Still treat the whole thing as suspicious and skip.
+        let tmp = TempDir::new().unwrap();
+        let skills_dir = tmp.path().join("skills");
+        std::fs::create_dir(&skills_dir).unwrap();
+
+        // A "real" skill directory outside the skills root.
+        let real_dir = tmp.path().join("real-skill-dir");
+        std::fs::create_dir(&real_dir).unwrap();
+        std::fs::write(
+            real_dir.join("SKILL.md"),
+            "---\nname: shadowed\ndescription: via symlink\n---\nbody\n",
+        )
+        .unwrap();
+
+        // Symlink the directory into the skills root.
+        std::os::unix::fs::symlink(&real_dir, skills_dir.join("shadowed")).unwrap();
+
+        let discovery =
+            FolderDiscovery::new(vec![SearchPath::new(skills_dir, SkillScope::Personal)]);
+        let resolved = discovery.discover().unwrap();
+
+        assert!(
+            !resolved.contains_key("shadowed"),
+            "skill in symlinked directory must be skipped"
+        );
+    }
+
+    #[test]
+    fn discovery_skips_oversized_skill() {
+        // A 300 KB SKILL.md exceeds the 256 KB cap and must be skipped
+        // without being read into memory.
+        let tmp = TempDir::new().unwrap();
+        let skills_dir = tmp.path().join("skills");
+        std::fs::create_dir(&skills_dir).unwrap();
+
+        let big_dir = skills_dir.join("big");
+        std::fs::create_dir(&big_dir).unwrap();
+        let mut content = String::from("---\nname: big\ndescription: too large\n---\n");
+        content.push_str(&"x".repeat(300 * 1024));
+        std::fs::write(big_dir.join("SKILL.md"), content).unwrap();
+
+        // Sanity: a normal-sized skill in the same root still loads.
+        write_skill(&skills_dir, "small", "Within cap");
+
+        let discovery =
+            FolderDiscovery::new(vec![SearchPath::new(skills_dir, SkillScope::Personal)]);
+        let resolved = discovery.discover().unwrap();
+
+        assert!(resolved.contains_key("small"));
+        assert!(
+            !resolved.contains_key("big"),
+            "SKILL.md over the 256 KB cap must be skipped"
+        );
+    }
+
+    #[test]
+    fn cross_harness_disabled_by_default() {
+        // Post-H2: cross-harness discovery is opt-in. Even with populated
+        // `~/.claude/skills`, no cross-harness paths appear unless the
+        // env var is explicitly enabled.
+        let tmp = TempDir::new().unwrap();
+        let home = tmp.path();
+        let claude_skills = home.join(".claude").join("skills");
+        std::fs::create_dir_all(&claude_skills).unwrap();
+        write_skill(&claude_skills, "claude-skill", "From claude");
+
+        // Ensure env is unset (or set to a disabling value) for this test.
+        let _guard =
+            crucible_core::test_support::EnvVarGuard::remove("CRUCIBLE_CROSS_HARNESS_SKILLS");
+
+        let paths = default_discovery_paths(None, None, Some(home));
+        // None of the discovered paths should reference `.claude/skills`.
+        for p in &paths {
+            assert!(
+                !p.path.to_string_lossy().contains(".claude"),
+                "cross-harness path must not appear by default: {:?}",
+                p.path
+            );
+        }
+    }
+
+    #[test]
+    fn cross_harness_enabled_by_env_var() {
+        let tmp = TempDir::new().unwrap();
+        let home = tmp.path();
+        let claude_skills = home.join(".claude").join("skills");
+        std::fs::create_dir_all(&claude_skills).unwrap();
+        write_skill(&claude_skills, "claude-skill", "From claude");
+
+        let _guard = crucible_core::test_support::EnvVarGuard::set(
+            "CRUCIBLE_CROSS_HARNESS_SKILLS",
+            "1".to_string(),
+        );
+
+        let paths = default_discovery_paths(None, None, Some(home));
+        let has_claude = paths
+            .iter()
+            .any(|p| p.path.to_string_lossy().contains(".claude"));
+        assert!(
+            has_claude,
+            "cross-harness path must appear when explicitly enabled"
+        );
     }
 }

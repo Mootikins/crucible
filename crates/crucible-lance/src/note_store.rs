@@ -32,7 +32,8 @@ use tracing::{debug, warn};
 use crucible_core::events::{NoteChangeType, SessionEvent};
 use crucible_core::parser::BlockHash;
 use crucible_core::storage::{
-    Filter, NoteRecord, NoteStore, Op, SearchResult, StorageError, StorageResult, StorageResultExt,
+    Filter, NoteRecord, NoteStore, Op, Scope, SearchResult, StorageError, StorageResult,
+    StorageResultExt,
 };
 
 // ============================================================================
@@ -144,6 +145,14 @@ fn filter_to_lance(filter: &Filter) -> String {
                 }
             }
         }
+        Filter::Scope(_) => {
+            // LanceDB string-matching on JSON is best-effort; the canonical
+            // scope filter lives at the SQLite layer. For the (test-only)
+            // LanceNoteStore we apply scope as a post-filter in Rust — see
+            // `note_passes_scope` below. Emit a tautology here so the SQL
+            // doesn't trip up.
+            "1=1".to_string()
+        }
         Filter::And(filters) => {
             if filters.is_empty() {
                 return "1=1".to_string();
@@ -158,6 +167,19 @@ fn filter_to_lance(filter: &Filter) -> String {
             let clauses: Vec<_> = filters.iter().map(filter_to_lance).collect();
             format!("({})", clauses.join(" OR "))
         }
+    }
+}
+
+/// Visibility check for the LanceNoteStore post-filter path.
+///
+/// Notes with no `scope` property are treated as legacy/unstamped and remain
+/// visible (the SQLite store has the same fallback). Production code stamps
+/// the scope at the pipeline boundary; this lenient default exists for
+/// fixture-heavy Lance tests that pre-date Memory Scoping.
+fn note_passes_scope(note: &NoteRecord, authority: &Scope) -> bool {
+    match note.scope() {
+        Some(s) => authority.same_workspace(&s),
+        None => true,
     }
 }
 
@@ -557,11 +579,38 @@ impl LanceNoteStore {
     }
 }
 
+impl LanceNoteStore {
+    /// Internal "does any row with this path exist?" check that bypasses
+    /// scope filtering. Scope enforcement lives at the public API boundary
+    /// (`get`, `list`, `search`, `get_by_hash`); upsert/delete bookkeeping
+    /// just needs to know whether a row exists to emit Created vs Modified
+    /// events.
+    async fn path_exists(&self, path: &str) -> StorageResult<bool> {
+        let table_guard = self.table.read().await;
+        let table = match &*table_guard {
+            Some(t) => t,
+            None => return Ok(false),
+        };
+        let escaped_path = escape_sql_string(path);
+        let filter = format!("path = '{}'", escaped_path);
+        let results = table
+            .query()
+            .only_if(&filter)
+            .limit(1)
+            .execute()
+            .await
+            .storage_backend()?
+            .try_collect::<Vec<_>>()
+            .await
+            .storage_backend()?;
+        Ok(results.iter().any(|b| b.num_rows() > 0))
+    }
+}
+
 #[async_trait]
 impl NoteStore for LanceNoteStore {
     async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
-        // Check if the note exists before upsert
-        let existed = self.get(&note.path).await?.is_some();
+        let existed = self.path_exists(&note.path).await?;
 
         // LanceDB is append-only, so we need to delete first then insert
         // This is the standard pattern for LanceDB upserts
@@ -605,7 +654,7 @@ impl NoteStore for LanceNoteStore {
         Ok(vec![event])
     }
 
-    async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
+    async fn get(&self, path: &str, authority: &Scope) -> StorageResult<Option<NoteRecord>> {
         let table_guard = self.table.read().await;
         let table = match &*table_guard {
             Some(t) => t,
@@ -636,12 +685,11 @@ impl NoteStore for LanceNoteStore {
         }
 
         let notes = batch_to_notes(batch)?;
-        Ok(notes.into_iter().next())
+        Ok(notes.into_iter().find(|n| note_passes_scope(n, authority)))
     }
 
     async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
-        // Check if the note exists before deletion
-        let existed = self.get(path).await?.is_some();
+        let existed = self.path_exists(path).await?;
 
         let table_guard = self.table.read().await;
         let table = match &*table_guard {
@@ -676,7 +724,7 @@ impl NoteStore for LanceNoteStore {
         ))
     }
 
-    async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+    async fn list(&self, authority: &Scope) -> StorageResult<Vec<NoteRecord>> {
         let table_guard = self.table.read().await;
         let table = match &*table_guard {
             Some(t) => t,
@@ -697,13 +745,20 @@ impl NoteStore for LanceNoteStore {
             notes.extend(batch_to_notes(&batch)?);
         }
 
+        // Scope post-filter — see `note_passes_scope`.
+        notes.retain(|n| note_passes_scope(n, authority));
+
         // Sort by updated_at descending
         notes.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
 
         Ok(notes)
     }
 
-    async fn get_by_hash(&self, hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+    async fn get_by_hash(
+        &self,
+        hash: &BlockHash,
+        authority: &Scope,
+    ) -> StorageResult<Option<NoteRecord>> {
         let table_guard = self.table.read().await;
         let table = match &*table_guard {
             Some(t) => t,
@@ -723,7 +778,7 @@ impl NoteStore for LanceNoteStore {
         for batch in results {
             let notes = batch_to_notes(&batch)?;
             for note in notes {
-                if note.content_hash == *hash {
+                if note.content_hash == *hash && note_passes_scope(&note, authority) {
                     return Ok(Some(note));
                 }
             }
@@ -942,7 +997,10 @@ mod tests {
         store.upsert(note.clone()).await.expect("Failed to upsert");
 
         let retrieved = store
-            .get("test/note.md")
+            .get(
+                "test/note.md",
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
             .await
             .expect("Failed to get")
             .expect("Note should exist");
@@ -968,7 +1026,10 @@ mod tests {
         store.upsert(note2).await.expect("Failed to update");
 
         let retrieved = store
-            .get("test/update.md")
+            .get(
+                "test/update.md",
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
             .await
             .expect("Failed to get")
             .expect("Note should exist");
@@ -977,7 +1038,10 @@ mod tests {
         assert_eq!(retrieved.tags, vec!["new-tag"]);
 
         // Verify no duplicates
-        let all = store.list().await.expect("Failed to list");
+        let all = store
+            .list(&Scope::workspace_unchecked(std::path::PathBuf::new()))
+            .await
+            .expect("Failed to list");
         assert_eq!(all.len(), 1);
     }
 
@@ -988,14 +1052,27 @@ mod tests {
         let note = make_note("test/delete.md", "To Be Deleted");
         store.upsert(note).await.expect("Failed to upsert");
 
-        assert!(store.get("test/delete.md").await.unwrap().is_some());
+        assert!(store
+            .get(
+                "test/delete.md",
+                &Scope::workspace_unchecked(std::path::PathBuf::new())
+            )
+            .await
+            .unwrap()
+            .is_some());
 
         store
             .delete("test/delete.md")
             .await
             .expect("Failed to delete");
 
-        let result = store.get("test/delete.md").await.expect("Failed to get");
+        let result = store
+            .get(
+                "test/delete.md",
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
+            .await
+            .expect("Failed to get");
         assert!(result.is_none());
     }
 
@@ -1020,7 +1097,13 @@ mod tests {
     async fn test_get_nonexistent_returns_none() {
         let (_dir, store) = setup().await;
 
-        let result = store.get("never/existed.md").await.expect("Failed to get");
+        let result = store
+            .get(
+                "never/existed.md",
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
+            .await
+            .expect("Failed to get");
         assert!(result.is_none());
     }
 
@@ -1033,7 +1116,10 @@ mod tests {
             store.upsert(note).await.expect("Failed to upsert");
         }
 
-        let all = store.list().await.expect("Failed to list");
+        let all = store
+            .list(&Scope::workspace_unchecked(std::path::PathBuf::new()))
+            .await
+            .expect("Failed to list");
         assert_eq!(all.len(), 3);
     }
 
@@ -1041,7 +1127,10 @@ mod tests {
     async fn test_list_empty() {
         let (_dir, store) = setup().await;
 
-        let all = store.list().await.expect("Failed to list");
+        let all = store
+            .list(&Scope::workspace_unchecked(std::path::PathBuf::new()))
+            .await
+            .expect("Failed to list");
         assert!(all.is_empty());
     }
 
@@ -1054,7 +1143,10 @@ mod tests {
         store.upsert(note).await.expect("Failed to upsert");
 
         let found = store
-            .get_by_hash(&hash)
+            .get_by_hash(
+                &hash,
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
             .await
             .expect("Failed to get by hash")
             .expect("Note should be found");
@@ -1069,7 +1161,10 @@ mod tests {
 
         let hash = BlockHash::new([99u8; 32]);
         let result = store
-            .get_by_hash(&hash)
+            .get_by_hash(
+                &hash,
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
             .await
             .expect("Failed to get by hash");
         assert!(result.is_none());
@@ -1151,7 +1246,14 @@ mod tests {
 
         store.upsert(note).await.expect("upsert");
 
-        let retrieved = store.get("props.md").await.unwrap().unwrap();
+        let retrieved = store
+            .get(
+                "props.md",
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
+            .await
+            .unwrap()
+            .unwrap();
 
         assert_eq!(retrieved.properties.get("string"), props.get("string"));
         assert_eq!(retrieved.properties.get("number"), props.get("number"));
@@ -1169,7 +1271,14 @@ mod tests {
 
         store.upsert(note).await.expect("upsert");
 
-        let retrieved = store.get("embed.md").await.unwrap().unwrap();
+        let retrieved = store
+            .get(
+                "embed.md",
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
+            .await
+            .unwrap()
+            .unwrap();
         let retrieved_embedding = retrieved.embedding.expect("Should have embedding");
 
         assert_eq!(embedding.len(), retrieved_embedding.len());
@@ -1193,7 +1302,14 @@ mod tests {
 
         store.upsert(note).await.expect("upsert");
 
-        let retrieved = store.get("empty.md").await.unwrap().unwrap();
+        let retrieved = store
+            .get(
+                "empty.md",
+                &Scope::workspace_unchecked(std::path::PathBuf::new()),
+            )
+            .await
+            .unwrap()
+            .unwrap();
         assert!(retrieved.tags.is_empty());
         assert!(retrieved.links_to.is_empty());
         assert!(retrieved.properties.is_empty());

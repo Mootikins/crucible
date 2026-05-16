@@ -11,14 +11,109 @@ struct ExecuteMultiKilnSearchParams<'a> {
 
 use super::*;
 
+/// Decide whether Precognition should run for this turn.
+///
+/// Pi-style heuristic: even when Precognition is enabled, only inject
+/// on the first user message of a session. Running every turn bloats
+/// context and degrades cache hits over a long conversation, with
+/// diminishing relevance — subsequent turns are usually about the same
+/// topic the first injection already covered.
+///
+/// Other gates: `/search` is a manual search command that shouldn't
+/// trigger auto-RAG; kiln must be configured. The handler hook seam
+/// (`transform_context`) is a separate, per-turn surface — Lua plugins
+/// can implement richer per-turn heuristics there.
+pub(super) fn should_run_precognition(
+    precognition_enabled: bool,
+    original_content: &str,
+    session_kiln: &std::path::Path,
+    is_first_user_message: bool,
+) -> bool {
+    precognition_enabled
+        && !original_content.starts_with("/search")
+        && !session_kiln.as_os_str().is_empty()
+        && is_first_user_message
+}
+
+#[cfg(test)]
+mod should_run_precognition_tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn runs_on_first_user_message_with_precognition_enabled() {
+        assert!(should_run_precognition(
+            true,
+            "tell me about widgets",
+            Path::new("/some/kiln"),
+            true,
+        ));
+    }
+
+    #[test]
+    fn skipped_on_subsequent_user_messages_even_when_enabled() {
+        // Pi-style: don't re-inject every turn — bloats context, hurts
+        // cache, redundant for same-topic follow-ups.
+        assert!(!should_run_precognition(
+            true,
+            "follow-up question",
+            Path::new("/some/kiln"),
+            false,
+        ));
+    }
+
+    #[test]
+    fn skipped_when_disabled_in_agent_config() {
+        assert!(!should_run_precognition(
+            false,
+            "x",
+            Path::new("/some/kiln"),
+            true,
+        ));
+    }
+
+    #[test]
+    fn skipped_for_explicit_search_command() {
+        assert!(!should_run_precognition(
+            true,
+            "/search widgets",
+            Path::new("/some/kiln"),
+            true,
+        ));
+    }
+
+    #[test]
+    fn skipped_when_no_kiln_configured() {
+        assert!(!should_run_precognition(true, "x", Path::new(""), true,));
+    }
+}
+
 impl AgentManager {
-    async fn format_with_precognition_runtime_hook(
+    /// Build just the Precognition context block (no original-content
+    /// concatenation). Used by `compute_precognition_message` which
+    /// wraps the block in a `ContextMessage::system` for prepending
+    /// via the `transform_context` seam.
+    ///
+    /// Returns an empty string for empty results so callers can detect
+    /// the "nothing to inject" case and skip prepending entirely.
+    ///
+    /// **Empty-results behavior for the `precognition_format` Lua hook:**
+    /// the hook does NOT fire on empty results — we short-circuit
+    /// before invocation. This matches the pre-migration string-mutating
+    /// implementation; plugin authors who want to inject a "no notes"
+    /// message on empty results should use the `transform_context` Lua
+    /// hook instead (which fires every turn) and check whether a
+    /// system Precognition message is already present.
+    async fn format_precognition_context_block(
         session_id: &str,
         original_content: &str,
         results: &[crucible_core::SearchResult],
         primary_kiln: &std::path::Path,
         state: &SessionEventState,
     ) -> String {
+        if results.is_empty() {
+            return String::new();
+        }
         let custom_formatted = Self::execute_precognition_format_handlers(
             session_id,
             original_content,
@@ -27,11 +122,53 @@ impl AgentManager {
         )
         .await;
 
-        if let Some(context_block) = custom_formatted {
-            format!("{}\n\n{}", context_block, original_content)
+        if let Some(custom) = custom_formatted {
+            custom
         } else {
-            Self::format_precognition_context(original_content, results, primary_kiln)
+            Self::precognition_context_block(results, primary_kiln)
         }
+    }
+
+    /// Pure formatter for the system-message body. No XML wrap for the
+    /// user message (the role on the ContextMessage already encodes
+    /// "system"); the `<system>...</system>` framing is kept because
+    /// it matches what prompt-engineering tutorials and existing
+    /// fixtures expect, and many models treat it as a hint that the
+    /// content is meta-instruction rather than chat history.
+    fn precognition_context_block(
+        results: &[crucible_core::SearchResult],
+        primary_kiln: &std::path::Path,
+    ) -> String {
+        if results.is_empty() {
+            return String::new();
+        }
+        let mut context = format!("<system>\nFound {} relevant notes:\n", results.len());
+        for result in results {
+            let title = result
+                .document_id
+                .0
+                .split('/')
+                .next_back()
+                .unwrap_or(&result.document_id.0)
+                .trim_end_matches(".md");
+            let kiln_label = result
+                .kiln_path
+                .as_ref()
+                .filter(|path| path != &primary_kiln)
+                .and_then(|path| path.file_name())
+                .and_then(|name| name.to_str())
+                .map(|name| format!(" [from: {name}]"))
+                .unwrap_or_default();
+            context.push_str(&format!(
+                "\n## {}{} (similarity: {:.2})\n\n{}\n",
+                title,
+                kiln_label,
+                result.score,
+                result.snippet.clone().unwrap_or_default()
+            ));
+        }
+        context.push_str("\n</system>");
+        context
     }
 
     async fn execute_precognition_format_handlers(
@@ -208,72 +345,37 @@ impl AgentManager {
         }
     }
 
-    /// Format search results into a precognition-enriched prompt.
-    /// If no results are found the original content is returned unchanged.
-    fn format_precognition_context(
-        original_content: &str,
-        results: &[crucible_core::SearchResult],
-        primary_kiln: &std::path::Path,
-    ) -> String {
-        if results.is_empty() {
-            return original_content.to_string();
-        }
-
-        let mut context = format!("<system>\nFound {} relevant notes:\n", results.len());
-
-        for result in results {
-            let title = result
-                .document_id
-                .0
-                .split('/')
-                .next_back()
-                .unwrap_or(&result.document_id.0)
-                .trim_end_matches(".md");
-
-            let kiln_label = result
-                .kiln_path
-                .as_ref()
-                .filter(|path| path != &primary_kiln)
-                .and_then(|path| path.file_name())
-                .and_then(|name| name.to_str())
-                .map(|name| format!(" [from: {name}]"))
-                .unwrap_or_default();
-
-            context.push_str(&format!(
-                "\n## {}{} (similarity: {:.2})\n\n{}\n",
-                title,
-                kiln_label,
-                result.score,
-                result.snippet.clone().unwrap_or_default()
-            ));
-        }
-
-        format!("{}\n</system>\n\n{}", context, original_content)
-    }
-
-    /// Returns the original content unchanged on any failure.
-    pub(super) async fn enrich_with_precognition(
+    /// Compute the Precognition system message for this turn, if any.
+    ///
+    /// Returns the kiln-search context as a system `ContextMessage`
+    /// that the caller prepends to the message array via the
+    /// `transform_context` seam. Returns `None` when there's nothing
+    /// to inject (no kiln, no embedding backend, search returned no
+    /// results, or any failure — Precognition is best-effort).
+    ///
+    /// Earlier this function returned the entire prompt with `<system>`
+    /// XML prepended; now it returns just the system message body
+    /// wrapped in a `ContextMessage::system`. The string-mutation path
+    /// was a workaround for the absence of a context-array seam.
+    pub(super) async fn compute_precognition_message(
         &self,
         session_id: &str,
         original_content: &str,
         session: &crucible_core::session::Session,
         agent_config: &SessionAgent,
         event_tx: &broadcast::Sender<SessionEventMessage>,
-    ) -> String {
+    ) -> Option<crucible_core::traits::ContextMessage> {
         let kiln_path = session.kiln.as_path();
 
         let handle = match self.kiln_manager.get_or_open(kiln_path).await {
             Ok(h) => h,
             Err(error) => {
                 warn!(session_id = %session_id, error = %error, "Failed to open kiln for precognition");
-                return original_content.to_string();
+                return None;
             }
         };
 
-        let primary_config = match self.kiln_manager.enrichment_config().cloned() {
-            Some(c) => c,
-            None => return original_content.to_string(),
-        };
+        let primary_config = self.kiln_manager.enrichment_config().cloned()?;
 
         let embedding_provider = match crate::embedding::get_or_create_embedding_provider(
             &primary_config,
@@ -283,7 +385,7 @@ impl AgentManager {
             Ok(p) => p,
             Err(error) => {
                 warn!(session_id = %session_id, error = %error, "Failed to create embedding provider for precognition");
-                return original_content.to_string();
+                return None;
             }
         };
 
@@ -292,7 +394,7 @@ impl AgentManager {
             Err(error) => {
                 warn!(session_id = %session_id, error = %error, "Precognition embedding failed");
                 emit_precognition_event(event_tx, session_id, original_content, 0, 1, 1, None);
-                return original_content.to_string();
+                return None;
             }
         };
 
@@ -301,7 +403,7 @@ impl AgentManager {
             .await;
         let kilns_searched = sources.len();
 
-        let mut results = match self
+        let mut results = self
             .execute_multi_kiln_search(ExecuteMultiKilnSearchParams {
                 session_id,
                 sources: &sources,
@@ -311,18 +413,14 @@ impl AgentManager {
                 event_tx,
                 original_content,
             })
-            .await
-        {
-            Some(r) => r,
-            None => return original_content.to_string(),
-        };
+            .await?;
 
         apply_precognition_char_cap(&mut results, self.kiln_manager.max_precognition_chars());
 
-        let enriched_prompt = {
+        let context_block = {
             let session_state = self.get_or_create_session_state(session_id);
             let state = session_state.lock().await;
-            Self::format_with_precognition_runtime_hook(
+            Self::format_precognition_context_block(
                 session_id,
                 original_content,
                 &results,
@@ -343,9 +441,36 @@ impl AgentManager {
             0,
             Some(note_info),
         );
-        enriched_prompt
+
+        // Empty context block (no results) → don't inject anything; the
+        // empty message would just waste tokens.
+        if context_block.trim().is_empty() {
+            return None;
+        }
+
+        // Tag the message so the drop-protection check in
+        // `apply_transform_context_handlers` can identify it by metadata
+        // rather than content. Lets a Lua handler legitimately mutate
+        // the precog content (translate, redact, summarize) without
+        // tripping the re-prepend logic — as long as the handler
+        // preserves the tag.
+        let mut msg = crucible_core::traits::ContextMessage::system(context_block);
+        msg.metadata.tags.push(PRECOGNITION_TAG.to_string());
+        Some(msg)
     }
 }
+
+/// Metadata tag the daemon attaches to its Precognition system block.
+///
+/// **Informational only — not used for security or drop-protection.** The
+/// precognition block is added to the message array by the daemon AFTER
+/// `transform_context` handlers run (see [`apply_transform_context_handlers`]),
+/// so plugins cannot replace it via that seam. Plugins that want to MODIFY
+/// precog content should use the `precognition_format` hook (fires before
+/// message construction, returns a string).
+///
+/// [`apply_transform_context_handlers`]: crate::agent_manager::AgentManager::apply_transform_context_handlers
+pub(super) const PRECOGNITION_TAG: &str = "precognition";
 
 fn apply_precognition_char_cap(results: &mut [crucible_core::SearchResult], cap: usize) {
     if results.is_empty() {
@@ -444,18 +569,24 @@ mod format_precognition_context_tests {
         }
     }
 
+    // These tests cover `precognition_context_block` — the pure
+    // formatter for the kiln-injected system message. The previous
+    // shape concatenated the user's content onto the block; that
+    // concatenation now happens implicitly by prepending the system
+    // message via `transform_context`. So the block itself no longer
+    // contains the user content; tests assert the block content only.
+
     #[test]
-    fn format_precognition_context_empty_results_returns_original() {
-        let result = AgentManager::format_precognition_context(
-            "What is Rust?",
-            &[],
-            std::path::Path::new("/home/user/notes"),
-        );
-        assert_eq!(result, "What is Rust?");
+    fn precognition_context_block_empty_results_returns_empty_string() {
+        // compute_precognition_message skips injection on empty blocks;
+        // this is the contract — empty → empty.
+        let result =
+            AgentManager::precognition_context_block(&[], std::path::Path::new("/home/user/notes"));
+        assert_eq!(result, "");
     }
 
     #[test]
-    fn format_precognition_context_single_result_has_system_tags() {
+    fn precognition_context_block_single_result_has_system_tags() {
         let results = vec![make_result(
             "notes/Rust.md",
             0.85,
@@ -463,44 +594,21 @@ mod format_precognition_context_tests {
             Some("/home/user/notes"),
         )];
 
-        let output = AgentManager::format_precognition_context(
-            "What is Rust?",
+        let output = AgentManager::precognition_context_block(
             &results,
             std::path::Path::new("/home/user/notes"),
         );
 
-        assert!(
-            output.starts_with("<system>\n"),
-            "Should start with <system> tag"
-        );
-        assert!(
-            output.contains("</system>"),
-            "Should contain closing </system> tag"
-        );
-        assert!(
-            output.contains("Found 1 relevant notes:"),
-            "Should state result count"
-        );
-        assert!(
-            output.contains("## Rust"),
-            "Should contain note title without .md"
-        );
-        assert!(
-            output.contains("(similarity: 0.85)"),
-            "Should contain similarity score"
-        );
-        assert!(
-            output.contains("Rust is a systems programming language."),
-            "Should contain snippet"
-        );
-        assert!(
-            output.ends_with("What is Rust?"),
-            "Original content should follow after </system>"
-        );
+        assert!(output.starts_with("<system>\n"));
+        assert!(output.contains("</system>"));
+        assert!(output.contains("Found 1 relevant notes:"));
+        assert!(output.contains("## Rust"));
+        assert!(output.contains("(similarity: 0.85)"));
+        assert!(output.contains("Rust is a systems programming language."));
     }
 
     #[test]
-    fn format_precognition_context_multiple_results() {
+    fn precognition_context_block_multiple_results() {
         let results = vec![
             make_result(
                 "notes/Rust.md",
@@ -516,8 +624,7 @@ mod format_precognition_context_tests {
             ),
         ];
 
-        let output = AgentManager::format_precognition_context(
-            "Compare languages",
+        let output = AgentManager::precognition_context_block(
             &results,
             std::path::Path::new("/home/user/notes"),
         );
@@ -527,11 +634,10 @@ mod format_precognition_context_tests {
         assert!(output.contains("## Go"));
         assert!(output.contains("Rust is fast."));
         assert!(output.contains("Go is simple."));
-        assert!(output.ends_with("Compare languages"));
     }
 
     #[test]
-    fn format_precognition_context_kiln_label_for_non_primary() {
+    fn precognition_context_block_kiln_label_for_non_primary() {
         let results = vec![make_result(
             "notes/External.md",
             0.70,
@@ -539,20 +645,16 @@ mod format_precognition_context_tests {
             Some("/other/kiln"),
         )];
 
-        let output = AgentManager::format_precognition_context(
-            "query",
+        let output = AgentManager::precognition_context_block(
             &results,
             std::path::Path::new("/home/user/notes"),
         );
 
-        assert!(
-            output.contains("[from: kiln]"),
-            "Non-primary kiln should have label"
-        );
+        assert!(output.contains("[from: kiln]"));
     }
 
     #[test]
-    fn format_precognition_context_no_kiln_label_for_primary() {
+    fn precognition_context_block_no_kiln_label_for_primary() {
         let results = vec![make_result(
             "notes/Local.md",
             0.90,
@@ -560,20 +662,16 @@ mod format_precognition_context_tests {
             Some("/home/user/notes"),
         )];
 
-        let output = AgentManager::format_precognition_context(
-            "query",
+        let output = AgentManager::precognition_context_block(
             &results,
             std::path::Path::new("/home/user/notes"),
         );
 
-        assert!(
-            !output.contains("[from:"),
-            "Primary kiln should not have label"
-        );
+        assert!(!output.contains("[from:"));
     }
 
     #[test]
-    fn format_precognition_context_missing_snippet_handled() {
+    fn precognition_context_block_missing_snippet_handled() {
         let results = vec![make_result(
             "notes/NoSnippet.md",
             0.60,
@@ -581,13 +679,11 @@ mod format_precognition_context_tests {
             Some("/home/user/notes"),
         )];
 
-        let output = AgentManager::format_precognition_context(
-            "query",
+        let output = AgentManager::precognition_context_block(
             &results,
             std::path::Path::new("/home/user/notes"),
         );
 
-        // Should not panic; empty string used for missing snippet
         assert!(output.contains("<system>"));
         assert!(output.contains("</system>"));
         assert!(output.contains("## NoSnippet"));
@@ -780,7 +876,11 @@ mod precognition_format_hook_tests {
             Some("/home/user/notes"),
         )];
 
-        let output = AgentManager::format_with_precognition_runtime_hook(
+        // Custom format handler controls the block content. The block
+        // is now what gets injected as a system ContextMessage; the
+        // user content lives in a separate message and isn't part of
+        // the block.
+        let output = AgentManager::format_precognition_context_block(
             "session-1",
             "What is Rust?",
             &results,
@@ -790,7 +890,6 @@ mod precognition_format_hook_tests {
         .await;
 
         assert!(output.starts_with("## Custom Format"));
-        assert!(output.contains("What is Rust?"));
         assert!(output.contains("Rust"));
         assert!(!output.starts_with("<system>"));
     }
@@ -805,7 +904,7 @@ mod precognition_format_hook_tests {
             Some("/home/user/notes"),
         )];
 
-        let output = AgentManager::format_with_precognition_runtime_hook(
+        let output = AgentManager::format_precognition_context_block(
             "session-1",
             "What is Rust?",
             &results,
@@ -814,9 +913,13 @@ mod precognition_format_hook_tests {
         )
         .await;
 
+        // Block is just the system content; ContextMessage role handles
+        // the "this is a system message" semantic separately.
         assert!(output.contains("<system>"));
         assert!(output.contains("Found 1 relevant notes:"));
-        assert!(output.ends_with("What is Rust?"));
+        assert!(output.contains("Rust is a systems programming language."));
+        // Original content is no longer concatenated into the block.
+        assert!(!output.contains("What is Rust?"));
     }
 
     #[test]

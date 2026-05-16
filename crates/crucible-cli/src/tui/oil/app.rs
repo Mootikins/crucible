@@ -10,6 +10,7 @@ pub struct ViewContext<'a> {
     pub terminal_size: (u16, u16),
     pub spinner_frame: usize,
     pub show_thinking: bool,
+    pub show_diffs: bool,
 }
 
 impl<'a> ViewContext<'a> {
@@ -20,6 +21,7 @@ impl<'a> ViewContext<'a> {
             terminal_size: (80, 24),
             spinner_frame: 0,
             show_thinking: false,
+            show_diffs: true,
         }
     }
 
@@ -30,6 +32,7 @@ impl<'a> ViewContext<'a> {
             terminal_size: (80, 24),
             spinner_frame: 0,
             show_thinking: false,
+            show_diffs: true,
         }
     }
 
@@ -44,6 +47,7 @@ impl<'a> ViewContext<'a> {
             terminal_size,
             spinner_frame: 0,
             show_thinking: false,
+            show_diffs: true,
         }
     }
 

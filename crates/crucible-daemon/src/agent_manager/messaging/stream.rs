@@ -23,12 +23,25 @@
 use super::super::*;
 use crate::agent_manager::tool_tracking::ToolCallTracker;
 use crucible_core::events::InternalSessionEvent;
+use crucible_core::session::{validate_output, OutputValidation};
 use crucible_core::traits::chat::{ChatToolCall, ChatToolResult};
 use crucible_core::traits::llm::TokenUsage;
 use crucible_core::turn::{Agent as TurnAgent, StopReason, TurnContext, TurnEvent};
 use futures::StreamExt;
 use std::collections::HashSet;
 use tokio::sync::mpsc;
+
+/// Outcome of running output validation on an accumulated response.
+enum ValidationOutcome {
+    /// Validation passes (or is disabled). Continue normally.
+    Pass,
+    /// Validation failed but retries remain — the carried string is the
+    /// synthetic user message to inject for the regeneration turn.
+    Retry(String),
+    /// Validation failed and `validation_retries` is exhausted. The
+    /// caller should bail out; an `ended` event has already been emitted.
+    Exhausted,
+}
 
 impl AgentManager {
     #[allow(clippy::ptr_arg)]
@@ -58,6 +71,36 @@ impl AgentManager {
             response_len = accumulated_response.len(),
             "Sending message_complete event"
         );
+        if let Some(u) = usage {
+            stream_ctx
+                .cache_stats
+                .entry(stream_ctx.session_id.clone())
+                .or_default()
+                .record(u);
+            if crate::agent_manager::autocompact::should_autocompact(
+                u.prompt_tokens,
+                stream_ctx.agent_stream_config.context_budget,
+                stream_ctx.agent_stream_config.autocompact_threshold,
+            ) {
+                match stream_ctx
+                    .session_manager
+                    .request_compaction(&stream_ctx.session_id)
+                    .await
+                {
+                    Ok(_) => info!(
+                        session_id = %stream_ctx.session_id,
+                        prompt_tokens = u.prompt_tokens,
+                        budget = ?stream_ctx.agent_stream_config.context_budget,
+                        "Auto-compaction triggered"
+                    ),
+                    Err(e) => debug!(
+                        session_id = %stream_ctx.session_id,
+                        error = %e,
+                        "Auto-compaction request skipped (not Active or already compacting)"
+                    ),
+                }
+            }
+        }
         if !emit_event(
             &stream_ctx.event_tx,
             SessionEventMessage::message_complete(
@@ -112,6 +155,79 @@ impl AgentManager {
         injection
     }
 
+    /// Validate the assistant response against the configured
+    /// `OutputValidation` and return the next action.
+    ///
+    /// `Pass` when validation is disabled or the response is valid.
+    /// `Retry` carries the synthetic user message to send next when
+    /// retries remain. `Exhausted` emits an `ended` event with reason
+    /// `error: output validation exhausted retries` and returns.
+    fn validate_response_or_retry(
+        stream_ctx: &StreamContext,
+        stream_config: &AgentStreamConfig,
+        accumulated_response: &str,
+        attempts_so_far: u32,
+    ) -> ValidationOutcome {
+        if matches!(stream_config.output_validation, OutputValidation::None) {
+            return ValidationOutcome::Pass;
+        }
+        // Lua validators bypass the pure `validate_output` (which is a
+        // no-op for the `Lua` variant) and dispatch through the plugin
+        // registry. Other variants flow through `validate_output`.
+        let validation_result: Result<(), String> = match &stream_config.output_validation {
+            OutputValidation::Lua { name } => match (
+                stream_config.lua_validators.as_ref(),
+                stream_config.plugin_lua.as_ref(),
+            ) {
+                (Some(registry), Some(lua)) => {
+                    match registry.run(lua, name, accumulated_response) {
+                        Ok(verdict) => verdict,
+                        Err(e) => Err(format!("lua validator '{name}' invocation error: {e}")),
+                    }
+                }
+                _ => Err(format!(
+                    "lua validator '{name}' unavailable: plugin runtime not bound"
+                )),
+            },
+            other => validate_output(accumulated_response, other),
+        };
+        let Err(reason) = validation_result else {
+            return ValidationOutcome::Pass;
+        };
+        if attempts_so_far >= stream_config.validation_retries {
+            warn!(
+                session_id = %stream_ctx.session_id,
+                attempts = attempts_so_far,
+                retries = stream_config.validation_retries,
+                reason = %reason,
+                "Output validation exhausted retries"
+            );
+            if !emit_event(
+                &stream_ctx.event_tx,
+                SessionEventMessage::ended(
+                    &stream_ctx.session_id,
+                    "error: output validation exhausted retries",
+                ),
+            ) {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    "No subscribers for validation-exhausted ended event"
+                );
+            }
+            return ValidationOutcome::Exhausted;
+        }
+        info!(
+            session_id = %stream_ctx.session_id,
+            attempt = attempts_so_far + 1,
+            retries = stream_config.validation_retries,
+            reason = %reason,
+            "Output validation failed; injecting retry prompt"
+        );
+        ValidationOutcome::Retry(format!(
+            "Output validation failed: {reason}. Please regenerate your previous response so it satisfies the validation requirement."
+        ))
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn execute_agent_stream(
         agent: Arc<Mutex<BoxedAgentHandle>>,
@@ -122,6 +238,7 @@ impl AgentManager {
         is_continuation: bool,
         mut tool_depth: usize,
         max_tool_depth: usize,
+        validation_attempts: u32,
     ) {
         let ttft_local = Instant::now();
         info!(target: "ttft", session_id = %stream_ctx.session_id, stage = "execute_stream_entry", elapsed_ms = 0, "ttft");
@@ -140,6 +257,19 @@ impl AgentManager {
         let flattened_messages = {
             let tree = stream_ctx.conversation_tree.lock().await;
             tree.flatten_current_path_to_context()
+        };
+
+        // Two-stage context seam (Pi-style): transform_context fires
+        // here, on the rich Vec<ContextMessage>, before linearization.
+        // pre_llm_call already fired above on the string `content`.
+        // Kiln/Precognition handlers should attach here, not at
+        // pre_llm_call — they get structured messages instead of having
+        // to parse the prompt string.
+        let Some(flattened_messages) =
+            Self::apply_transform_context_handlers(flattened_messages, &stream_ctx, &stream_config)
+                .await
+        else {
+            return;
         };
 
         let (inbound_tx, inbound_rx) = mpsc::channel::<TurnEvent>(32);
@@ -192,6 +322,11 @@ impl AgentManager {
         // Set once the runtime sent DepthCapHit, so the empty-response
         // branch below can surface the right error reason.
         let mut depth_cap_triggered = false;
+        // Conjunctive early-stop signals collected per batch. The loop
+        // ends after the batch only when every result in this vec is
+        // true (and the vec is non-empty) — one tool can't unilaterally
+        // cut another tool's work short.
+        let mut batch_terminate_signals: Vec<bool> = Vec::new();
 
         // Terminal state
         let mut last_usage: Option<TokenUsage> = None;
@@ -253,7 +388,12 @@ impl AgentManager {
                         );
                     }
                 }
-                TurnEvent::ToolCall { id, name, args } => {
+                TurnEvent::ToolCall {
+                    id,
+                    name,
+                    args,
+                    diffs,
+                } => {
                     // New batch? increment depth, possibly cap.
                     if !in_tool_batch {
                         // If the depth cap already fired once and the
@@ -363,10 +503,12 @@ impl AgentManager {
                             result: String::new(),
                             error: Some(blocked_error),
                             call_id: Some(id.clone()),
+                            terminate: false,
                         })
                     } else {
                         attempt = Some(tracker.record_call(&name, &args));
-                        Self::handle_tool_call_in_stream(&stream_ctx, &tool_call).await
+                        Self::handle_tool_call_in_stream(&stream_ctx, &tool_call, diffs.clone())
+                            .await
                     };
 
                     // Repeat-failure tracking / annotation.
@@ -420,6 +562,7 @@ impl AgentManager {
                         result: String::new(),
                         error: Some("tool dispatcher returned no result".to_string()),
                         call_id: Some(id.clone()),
+                        terminate: false,
                     });
 
                     // Commit ToolResult to scheduler-owned tree before
@@ -438,6 +581,10 @@ impl AgentManager {
                             },
                         );
                     }
+
+                    // Record this result's terminate flag for the
+                    // conjunctive batch-terminate check at ToolBatchEnd.
+                    batch_terminate_signals.push(tool_result.terminate);
 
                     // Feed back to the adapter so it can continue the turn.
                     let reply = TurnEvent::ToolResult {
@@ -480,6 +627,28 @@ impl AgentManager {
                         );
                     }
                 }
+                TurnEvent::ToolCallDiffUpdate { id, diffs } => {
+                    // ACP late-diff path: the agent attached file-diff
+                    // content via a `tool_call_update` after the matching
+                    // `tool_call` was already announced. Pass through to
+                    // subscribers so the TUI can merge into the existing
+                    // tool entry. Does not advance tool depth or trigger
+                    // dispatch.
+                    if !emit_event(
+                        &stream_ctx.event_tx,
+                        SessionEventMessage::tool_call_diff_update(
+                            &stream_ctx.session_id,
+                            &id,
+                            diffs,
+                        ),
+                    ) {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            call_id = %id,
+                            "No subscribers for tool_call_diff_update event"
+                        );
+                    }
+                }
                 TurnEvent::ToolBatchEnd => {
                     // Adapter has finished emitting all tool calls for
                     // this batch and is about to wait for ToolResults.
@@ -487,6 +656,29 @@ impl AgentManager {
                     // as a new batch and re-checks the depth cap.
                     in_tool_batch = false;
                     capped_this_batch = false;
+
+                    // Conjunctive early-stop: if every result in this
+                    // batch set terminate=true, end the turn now instead
+                    // of looping back to the model. Empty batches are
+                    // ignored.
+                    let should_terminate = !batch_terminate_signals.is_empty()
+                        && batch_terminate_signals.iter().all(|t| *t);
+                    batch_terminate_signals.clear();
+                    if should_terminate {
+                        if !emit_event(
+                            &stream_ctx.event_tx,
+                            SessionEventMessage::ended(
+                                &stream_ctx.session_id,
+                                "tool requested terminate".to_string(),
+                            ),
+                        ) {
+                            warn!(
+                                session_id = %stream_ctx.session_id,
+                                "No subscribers for terminate ended event"
+                            );
+                        }
+                        return;
+                    }
                 }
                 TurnEvent::Usage(usage) => {
                     last_usage = Some(usage);
@@ -569,6 +761,30 @@ impl AgentManager {
         )
         .await;
 
+        // If the Lua reactor didn't produce an injection, run output
+        // validation. Failure produces a synthetic "regenerate" prompt
+        // and increments the validation_attempts counter; exhaustion
+        // emits an ended event and aborts the turn.
+        let mut next_validation_attempts = validation_attempts;
+        let injection = match injection {
+            Some(_) => injection,
+            None => match Self::validate_response_or_retry(
+                &stream_ctx,
+                &stream_config,
+                accumulated_response,
+                validation_attempts,
+            ) {
+                ValidationOutcome::Pass => None,
+                ValidationOutcome::Retry(prompt) => {
+                    next_validation_attempts = validation_attempts + 1;
+                    Some((prompt, "after".to_string()))
+                }
+                ValidationOutcome::Exhausted => {
+                    return;
+                }
+            },
+        };
+
         if let Some((injected_content, _)) = injection {
             drop(event_stream);
             // Release the handle lock before recursing so the inner
@@ -588,6 +804,11 @@ impl AgentManager {
                 tool_dispatcher: stream_ctx.tool_dispatcher.clone(),
                 permission_override: stream_ctx.permission_override,
                 conversation_tree: stream_ctx.conversation_tree.clone(),
+                cache_stats: stream_ctx.cache_stats.clone(),
+                session_manager: stream_ctx.session_manager.clone(),
+                // Don't re-inject Precognition on a validation retry —
+                // the original turn already prepended it.
+                precognition_message: None,
             };
 
             Box::pin(Self::execute_agent_stream(
@@ -599,6 +820,7 @@ impl AgentManager {
                 true,
                 tool_depth,
                 max_tool_depth,
+                next_validation_attempts,
             ))
             .await;
         }

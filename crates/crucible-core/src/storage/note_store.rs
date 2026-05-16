@@ -49,7 +49,13 @@ use serde_json::Value;
 
 use crate::events::SessionEvent;
 use crate::parser::BlockHash;
+use crate::storage::scope::Scope;
 use crate::storage::StorageResult;
+
+/// Property key under which a note's [`Scope`] is stored in
+/// [`NoteRecord::properties`]. The pipeline stamps this key at upsert time
+/// from frontmatter (explicit) or kiln binding (derived default).
+pub const SCOPE_PROPERTY_KEY: &str = "scope";
 
 // ============================================================================
 // Core Types
@@ -175,6 +181,32 @@ impl NoteRecord {
     pub fn embedding_dimensions(&self) -> Option<usize> {
         self.embedding.as_ref().map(Vec::len)
     }
+
+    /// Read the note's [`Scope`] from `properties["scope"]`.
+    ///
+    /// Returns `None` if the property is unset, unparseable, or refers to a
+    /// no-longer-supported kind (`global`, `user:*` from the pre-Wave-2
+    /// schema). Callers that need a guaranteed scope (e.g. RPC handlers
+    /// enforcing read filters) should treat `None` as "deny" or fall back
+    /// to a derived default — never as "allow".
+    pub fn scope(&self) -> Option<Scope> {
+        self.properties
+            .get(SCOPE_PROPERTY_KEY)
+            .and_then(|v| Scope::from_property_value(v).and_then(Result::ok))
+    }
+
+    /// Set the note's [`Scope`] into `properties["scope"]`.
+    pub fn set_scope(&mut self, scope: Scope) {
+        self.properties
+            .insert(SCOPE_PROPERTY_KEY.to_string(), scope.to_property_value());
+    }
+
+    /// Builder-style: set the scope.
+    #[must_use]
+    pub fn with_scope(mut self, scope: Scope) -> Self {
+        self.set_scope(scope);
+        self
+    }
 }
 
 impl Default for NoteRecord {
@@ -281,6 +313,13 @@ pub enum Filter {
     /// Filter by frontmatter property
     Property(String, Op, Value),
 
+    /// Filter by [`Scope`]: the request authority. A note matches iff
+    /// `authority.can_read(note_scope)` is true (see [`Scope::can_read`]).
+    ///
+    /// This is the canonical security filter; storage backends MUST honor
+    /// it server-side, not rely on post-filtering at the call site.
+    Scope(Scope),
+
     /// Logical AND of multiple filters
     And(Vec<Filter>),
 
@@ -343,28 +382,48 @@ pub trait NoteStore: Send + Sync {
     ///
     /// If a record with the same `path` exists, it will be replaced.
     /// Returns a vector of SessionEvent instances representing note lifecycle events.
+    ///
+    /// Note: write-side scope enforcement (does this caller have authority
+    /// to claim the note's declared scope?) is the responsibility of the
+    /// caller above the trait, NOT the trait — `upsert` accepts the record
+    /// as-is so internal callers (pipeline migrations, system processes)
+    /// can persist anything. The Lua/RPC bridge enforces `Scope::can_write`
+    /// before calling here.
     async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>>;
 
-    /// Get a note record by path
+    /// Get a note record by path, scoped by request authority.
     ///
-    /// Returns `None` if the note doesn't exist.
-    async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>>;
+    /// Returns `None` if the note doesn't exist OR the caller's
+    /// `authority` cannot read it (see [`Scope::can_read`]). The two
+    /// outcomes are deliberately indistinguishable to callers — leaking
+    /// "exists but denied" would itself be a side-channel.
+    async fn get(&self, path: &str, authority: &Scope) -> StorageResult<Option<NoteRecord>>;
 
     /// Delete a note record by path
     ///
     /// This is idempotent: deleting a non-existent note succeeds.
     /// Returns a SessionEvent representing the deletion.
+    ///
+    /// Like [`Self::upsert`], delete is unscoped at the trait layer —
+    /// callers above the trait enforce authority. Internal pipeline /
+    /// migration paths must be able to delete any note.
     async fn delete(&self, path: &str) -> StorageResult<SessionEvent>;
 
-    /// List all note records
+    /// List note records visible to `authority`.
     ///
-    /// For large kilns, consider using pagination or streaming.
-    async fn list(&self) -> StorageResult<Vec<NoteRecord>>;
+    /// Backends MUST filter by [`Scope::can_read`] server-side; callers
+    /// must not see records they have no authority over.
+    async fn list(&self, authority: &Scope) -> StorageResult<Vec<NoteRecord>>;
 
-    /// Find a note by its content hash
+    /// Find a note by its content hash, scoped by request authority.
     ///
-    /// Useful for deduplication and detecting moved files.
-    async fn get_by_hash(&self, hash: &BlockHash) -> StorageResult<Option<NoteRecord>>;
+    /// Returns `None` if no match OR the match is outside the caller's
+    /// scope. Useful for deduplication and detecting moved files.
+    async fn get_by_hash(
+        &self,
+        hash: &BlockHash,
+        authority: &Scope,
+    ) -> StorageResult<Option<NoteRecord>>;
 
     /// Search notes by embedding similarity
     ///
@@ -372,7 +431,9 @@ pub trait NoteStore: Send + Sync {
     ///
     /// * `embedding` - Query embedding vector
     /// * `k` - Maximum number of results to return
-    /// * `filter` - Optional filter to narrow results
+    /// * `filter` - Optional filter to narrow results. Pass
+    ///   `Some(Filter::Scope(authority))` (or AND it into a compound
+    ///   filter) to enforce memory scoping at the SQL layer.
     ///
     /// # Returns
     ///

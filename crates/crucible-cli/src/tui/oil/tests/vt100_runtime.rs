@@ -312,6 +312,7 @@ mod tests {
             description: None,
             source: None,
             lua_primary_arg: None,
+            diffs: Vec::new(),
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "read_file".into(),
@@ -327,6 +328,7 @@ mod tests {
             description: None,
             source: None,
             lua_primary_arg: None,
+            diffs: Vec::new(),
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "read_file".into(),
@@ -413,6 +415,7 @@ mod tests {
             description: None,
             source: None,
             lua_primary_arg: None,
+            diffs: Vec::new(),
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: name.into(),
@@ -1001,6 +1004,7 @@ mod tests {
             description: None,
             source: None,
             lua_primary_arg: None,
+            diffs: Vec::new(),
         });
         vt.render_frame(&mut app); // thinking + tool in viewport, spinner may show
 
@@ -1018,6 +1022,7 @@ mod tests {
             description: None,
             source: None,
             lua_primary_arg: None,
+            diffs: Vec::new(),
         });
         vt.render_frame(&mut app);
 
@@ -1101,6 +1106,7 @@ mod tests {
             description: None,
             source: None,
             lua_primary_arg: None,
+            diffs: Vec::new(),
         });
         vt.render_frame(&mut app);
 
@@ -1320,6 +1326,7 @@ mod tests {
             description: None,
             source: None,
             lua_primary_arg: None,
+            diffs: Vec::new(),
         });
         vt.render_frame(&mut app);
 
@@ -1356,6 +1363,7 @@ mod tests {
             description: None,
             source: None,
             lua_primary_arg: None,
+            diffs: Vec::new(),
         });
         vt.render_frame(&mut app);
 
@@ -1386,6 +1394,7 @@ mod tests {
             description: None,
             source: None,
             lua_primary_arg: None,
+            diffs: Vec::new(),
         });
         vt.render_frame(&mut app);
 

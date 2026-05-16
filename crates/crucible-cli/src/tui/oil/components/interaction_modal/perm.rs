@@ -1,5 +1,6 @@
 use super::helpers::prettify_tool_args;
 use super::{InteractionModal, InteractionModalOutput, InteractionMode};
+use crate::tui::oil::components::diff_view::{render_diff, DiffOptions};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_core::interaction::{PermAction, PermRequest, PermResponse, PermissionScope};
 use crucible_oil::node::{col, row, styled, Node};
@@ -209,6 +210,29 @@ impl InteractionModal {
 
         lines.push(styled(" ".repeat(term_width), Style::new().bg(panel_bg)));
 
+        if !perm_request.diffs.is_empty() {
+            for fd in &perm_request.diffs {
+                let mut opts = DiffOptions::for_width(term_width);
+                opts.max_lines = Some(500);
+                opts.collapsed = self.diff_collapsed;
+                // Wrap the rendered diff in a Box with `style.bg = panel_bg`
+                // so the panel background paints behind the diff body. The
+                // renderer fills the box rect with bg-styled spaces, and
+                // CellGrid composition preserves the bg under any child
+                // text spans (which only set fg). See
+                // `crucible_oil::layout::tree_render::render_box_content`.
+                lines.push(col([render_diff(fd, &opts)]).with_style(Style::new().bg(panel_bg)));
+            }
+            lines.push(styled(
+                "  press h to expand/collapse diff",
+                Style::new()
+                    .bg(panel_bg)
+                    .fg(t.resolve_color(t.colors.text_dim))
+                    .dim(),
+            ));
+            lines.push(styled(" ".repeat(term_width), Style::new().bg(panel_bg)));
+        }
+
         let options: [(&str, &str); 3] = [("y", "Yes"), ("n", "No"), ("a", "Allowlist")];
 
         for (i, (key, label)) in options.iter().enumerate() {
@@ -309,7 +333,7 @@ impl InteractionModal {
                 nodes.push(styled("  S-Enter", key_style));
                 nodes.push(styled(" global", hint_style));
             }
-            if is_write {
+            if is_write || !perm_request.diffs.is_empty() {
                 nodes.push(styled("  h", key_style));
                 nodes.push(styled(" diff", hint_style));
             }

@@ -435,6 +435,7 @@ async fn acp_safe_tool_no_permission_request_needed() {
             StreamingChunk::Thinking(_) => "thinking",
             StreamingChunk::ToolStart { .. } => "tool_start",
             StreamingChunk::ToolEnd { .. } => "tool_end",
+            StreamingChunk::ToolDiffUpdate { .. } => "tool_diff_update",
         })
         .collect();
     assert_eq!(

@@ -18,16 +18,12 @@
 
 | Crate | Purpose | Key Types |
 |-------|---------|-----------|
-| `crucible-core` | Domain logic, traits, parser types; includes parser module (absorbed from crucible-parser) | `Provider`, `CanEmbed`, `CanChat`, `ParsedNote` |
+| `crucible-core` | Domain logic, traits, parser types, config (absorbed from crucible-config) | `Provider`, `CanEmbed`, `CanChat`, `ParsedNote`, `AppConfig` |
 | `crucible-cli` | Terminal UI, REPL, commands | `InkChatApp`, `ChatAppMsg` |
 | `crucible-oil` | Terminal rendering primitives | `Node`, `render_to_string` |
 | `crucible-web` | Browser chat UI (SolidJS + Axum) | HTTP/SSE endpoints |
-| `crucible-sqlite` | SQLite storage (default); fast, lightweight; includes query/ module | `SqliteStorage` |
 | `crucible-lua` | Lua/Luau with Fennel support | `LuaExecutor`, `FennelCompiler` |
-| `crucible-llm` | Embedding backends (FastEmbed, Ollama, OpenAI) | `EmbeddingProvider` |
-| `crucible-config` | Configuration types and loading | `AppConfig`, provider configs |
-| `crucible-acp` | Agent Context Protocol | Protocol types |
-| `crucible-daemon` | Daemon server (library); includes enrichment pipeline, note processing, RPC client, observability, file watching, skills discovery, and tools (absorbed from crucible-tools) | `Server`, `SessionManager`, `AgentManager` |
+| `crucible-daemon` | Daemon server: enrichment, note pipeline, RPC, observability, file watching, skills, tools, ACP host (`acp/`), embedding backends (`llm/`), SQLite storage (`storage/sqlite/`) | `Server`, `SessionManager`, `AgentManager`, `SqliteStorage`, `EmbeddingProvider` |
 | `crucible-lance` | LanceDB vector storage backend | `LanceStore`, `LanceNoteStore` |
 
 ### Terminology: Kiln vs Workspace vs Project
@@ -159,7 +155,8 @@ use crucible_daemon::pipeline::{NotePipeline, NotePipelineConfig};
 use crucible_daemon::rpc_client::{DaemonClient, DaemonStorageClient};
 use crucible_daemon::observe::{SessionWriter, SessionMetadata};
 use crucible_daemon::skills::{Skill, SkillSource, SkillScope};
-use crucible_sqlite::query::{SqlSugarSyntax, JaqSyntax};
+use crucible_daemon::storage::sqlite::query::{SqlSugarSyntax, JaqSyntax};
+use crucible_core::config::AppConfig;
 ```
 
 ### LLM Provider System
@@ -226,9 +223,9 @@ env = { ANTHROPIC_BASE_URL = "http://localhost:4000" }
 ```
 
 **Key files:**
-- Agent profiles and ACP types: `crucible-acp/`
-- Agent spawning and lifecycle: `crucible-daemon/src/agents/`
-- Delegation tool: `crucible-daemon/src/tools/delegate_session.rs`
+- Agent profiles and ACP types: `crucible-daemon/src/acp/`
+- Agent spawning and lifecycle: `crucible-daemon/src/agent_manager/`
+- Delegation tool: `crucible-daemon/src/tools/mcp_server.rs` (`delegate_session`)
 - CLI agent flag: `crucible-cli/src/commands/chat.rs` (`-a` / `--agent`)
 
 ## Project Structure
@@ -236,22 +233,18 @@ env = { ANTHROPIC_BASE_URL = "http://localhost:4000" }
 ```
 crucible/
 ├── crates/                      # Rust workspace crates
-│   ├── crucible-core/           # Core business logic and traits
+│   ├── crucible-core/           # Core domain types, traits, parser, config
 │   ├── crucible-cli/            # Terminal UI, REPL, commands
-│   ├── crucible-oil/            # Terminal rendering primitives
-│   ├── crucible-web/            # Browser-based chat UI
-│   ├── crucible-daemon/         # Daemon server (library); includes RPC client, observability, file watching, skills
-│   ├── crucible-sqlite/         # SQLite storage (default); includes query module
-│   ├── crucible-config/         # Configuration types and loading
-│   ├── crucible-acp/            # Agent Context Protocol
-│   ├── crucible-llm/            # Embedding backends
-│   ├── crucible-lua/            # Lua/Fennel scripting
-│   └── crucible-lance/          # LanceDB vector storage backend
-├── vendor/                      # Patched upstream dependencies
-├── docs/                        # Documentation kiln (user guides + test fixture)
-├── justfile                     # Development recipes
-├── AGENTS.md                    # This file (CLAUDE.md symlinks here)
-└── README.md                    # Project overview
+│   ├── crucible-oil/             # Terminal rendering primitives
+│   ├── crucible-web/             # Browser-based chat UI
+│   ├── crucible-daemon/          # Daemon: RPC, sessions, ACP host, embeddings, SQLite storage, skills
+│   ├── crucible-lua/             # Lua/Fennel scripting
+│   └── crucible-lance/           # LanceDB vector storage backend
+├── vendor/                       # Patched upstream dependencies
+├── docs/                         # Documentation kiln (user guides + test fixture)
+├── justfile                      # Development recipes
+├── AGENTS.md                     # This file (CLAUDE.md symlinks here)
+└── README.md                     # Project overview
 ```
 
 ### Where to Put Things

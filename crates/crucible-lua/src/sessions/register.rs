@@ -55,6 +55,17 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     );
     stub_async!("messages", lua, sessions, (String, mlua::Value));
     stub_async!("fork", lua, sessions, (String, mlua::Value));
+    stub_async!("cache_stats", lua, sessions, String);
+    stub_async!(
+        "set_output_validation",
+        lua,
+        sessions,
+        (String, mlua::Value)
+    );
+    stub_async!("undo", lua, sessions, (String, mlua::Value));
+    stub_async!("can_undo", lua, sessions, String);
+    stub_async!("undo_depth", lua, sessions, String);
+    stub_async!("undo_history", lua, sessions, String);
 
     register_in_namespaces(lua, "sessions", sessions)?;
 
@@ -509,6 +520,164 @@ pub fn register_sessions_module_with_api(
         }
     })?;
     sessions.set("fork", fork_fn)?;
+
+    // cache_stats(session_id) -> (table, nil) or (nil, err)
+    let a = Arc::clone(&api);
+    let cache_stats_fn = lua.create_async_function(move |lua, session_id: String| {
+        let a = Arc::clone(&a);
+        async move {
+            match a.cache_stats(session_id).await {
+                Ok(val) => {
+                    let lua_val = lua.to_value(&val)?;
+                    Ok((lua_val, Value::Nil))
+                }
+                Err(e) => {
+                    let err = lua.create_string(&e)?;
+                    Ok((Value::Nil, Value::String(err)))
+                }
+            }
+        }
+    })?;
+    sessions.set("cache_stats", cache_stats_fn)?;
+
+    // set_output_validation(session_id, spec) -> (true, nil) or (nil, err)
+    //
+    // `spec` accepts either:
+    //   - a string: "none" | "json" | "regex:<pattern>" | "lua:<name>"
+    //   - a table:  { type = "none" | "json" }
+    //               { type = "regex", pattern = "..." }
+    //               { type = "lua", name = "..." }
+    //
+    // The Lua API normalises both forms to the canonical string before
+    // crossing the trait boundary. The daemon then runs it through
+    // `OutputValidation::from_str` for full validation (e.g. regex
+    // compile errors surface here, not at agent-turn time).
+    let a = Arc::clone(&api);
+    let set_validation_fn =
+        lua.create_async_function(move |lua, (sid, spec): (String, Value)| {
+            let a = Arc::clone(&a);
+            async move {
+                let serialized = match spec {
+                    Value::String(s) => s.to_str()?.to_string(),
+                    Value::Table(t) => {
+                        let ty: String = t.get("type")?;
+                        match ty.as_str() {
+                            "none" => "none".to_string(),
+                            "json" => "json".to_string(),
+                            "regex" => {
+                                let pattern: String = t.get("pattern")?;
+                                format!("regex:{pattern}")
+                            }
+                            "lua" => {
+                                let name: String = t.get("name")?;
+                                format!("lua:{name}")
+                            }
+                            other => {
+                                return Err(mlua::Error::runtime(format!(
+                                    "unknown validation type '{other}'; want none|json|regex|lua"
+                                )));
+                            }
+                        }
+                    }
+                    other => {
+                        return Err(mlua::Error::runtime(format!(
+                            "validation spec must be string or table, got {}",
+                            other.type_name()
+                        )));
+                    }
+                };
+                match a.set_output_validation(sid, serialized).await {
+                    Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
+                    Err(e) => {
+                        let err = lua.create_string(&e)?;
+                        Ok((Value::Nil, Value::String(err)))
+                    }
+                }
+            }
+        })?;
+    sessions.set("set_output_validation", set_validation_fn)?;
+
+    // undo(session_id, count?) -> (turns_undone, nil) | (nil, err)
+    // `count` defaults to 1; non-positive values clamp to 1. The trait
+    // boundary takes a `usize`; the binding accepts integers and tables
+    // for forward-compatibility (`{ count = N }`).
+    let a = Arc::clone(&api);
+    let undo_fn = lua.create_async_function(move |lua, (sid, opts): (String, Value)| {
+        let a = Arc::clone(&a);
+        async move {
+            let count = match opts {
+                Value::Nil => 1,
+                Value::Integer(n) => n.max(1) as usize,
+                Value::Number(n) => (n.max(1.0) as i64).max(1) as usize,
+                Value::Table(ref t) => t.get::<usize>("count").unwrap_or(1).max(1),
+                _ => 1,
+            };
+            match a.undo(sid, count).await {
+                Ok(turns) => Ok((Value::Integer(turns as i64), Value::Nil)),
+                Err(e) => {
+                    let err = lua.create_string(&e)?;
+                    Ok((Value::Nil, Value::String(err)))
+                }
+            }
+        }
+    })?;
+    sessions.set("undo", undo_fn)?;
+
+    // can_undo(session_id) -> (bool, nil) | (nil, err)
+    let a = Arc::clone(&api);
+    let can_undo_fn = lua.create_async_function(move |lua, sid: String| {
+        let a = Arc::clone(&a);
+        async move {
+            match a.can_undo(sid).await {
+                Ok(v) => Ok((Value::Boolean(v), Value::Nil)),
+                Err(e) => {
+                    let err = lua.create_string(&e)?;
+                    Ok((Value::Nil, Value::String(err)))
+                }
+            }
+        }
+    })?;
+    sessions.set("can_undo", can_undo_fn)?;
+
+    // undo_depth(session_id) -> (int, nil) | (nil, err)
+    let a = Arc::clone(&api);
+    let undo_depth_fn = lua.create_async_function(move |lua, sid: String| {
+        let a = Arc::clone(&a);
+        async move {
+            match a.undo_depth(sid).await {
+                Ok(v) => Ok((Value::Integer(v as i64), Value::Nil)),
+                Err(e) => {
+                    let err = lua.create_string(&e)?;
+                    Ok((Value::Nil, Value::String(err)))
+                }
+            }
+        }
+    })?;
+    sessions.set("undo_depth", undo_depth_fn)?;
+
+    // undo_history(session_id) -> (list_of_summary, nil) | (nil, err)
+    // Each summary is a table; oldest-to-newest order.
+    let a = Arc::clone(&api);
+    let undo_history_fn = lua.create_async_function(move |lua, sid: String| {
+        let a = Arc::clone(&a);
+        async move {
+            match a.undo_history(sid).await {
+                Ok(entries) => {
+                    let table = lua.create_table()?;
+                    for (i, entry) in entries.iter().enumerate() {
+                        let lua_val = lua.to_value(entry)?;
+                        table.set(i + 1, lua_val)?;
+                    }
+                    Ok((Value::Table(table), Value::Nil))
+                }
+                Err(e) => {
+                    let err = lua.create_string(&e)?;
+                    Ok((Value::Nil, Value::String(err)))
+                }
+            }
+        }
+    })?;
+    sessions.set("undo_history", undo_history_fn)?;
 
     Ok(())
 }

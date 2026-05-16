@@ -25,6 +25,8 @@ fn sessions_module_registers_in_namespace() {
     assert!(sessions.contains_key("messages").unwrap());
     assert!(sessions.contains_key("inject").unwrap());
     assert!(sessions.contains_key("fork").unwrap());
+    assert!(sessions.contains_key("cache_stats").unwrap());
+    assert!(sessions.contains_key("set_output_validation").unwrap());
 
     // Also registered under crucible.*
     let crucible: Table = lua

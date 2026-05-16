@@ -67,6 +67,7 @@ pub mod watch;
 pub mod workflow_handlers;
 pub mod workflow_registry;
 pub mod workspace;
+pub mod workspace_snapshot;
 
 pub use acp_handle::{AcpAgentHandle, AcpHandleError};
 pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};
@@ -74,7 +75,10 @@ pub use agent_manager::{AgentError, AgentManager, AgentManagerParams};
 pub use background_manager::{
     BackgroundError, BackgroundJobManager, SubagentContext, SubagentFactory,
 };
-pub use daemon_plugins::{daemon_plugin_paths, default_daemon_plugin_paths, DaemonPluginLoader};
+pub use daemon_plugins::{
+    bootstrap_plugin_entry, bootstrap_plugins, daemon_plugin_paths, default_daemon_plugin_paths,
+    BootstrapOutcome, DaemonPluginLoader,
+};
 pub use file_watch_bridge::{create_event_bridge, DaemonEventBridge};
 pub use kiln_manager::KilnManager;
 pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};

@@ -86,21 +86,56 @@ impl StorageHandle {
     /// Vector index lives in LanceDB; the document_id is the note path
     /// stored at upsert time and looked up in SQLite if metadata hydration
     /// is required.
+    ///
+    /// Scope-aware vector search.
+    ///
+    /// Over-fetches the Lance index (~2x `limit`, capped at 4x) so the
+    /// SQLite scope post-filter doesn't return fewer than `limit` results
+    /// when the filter rejects some hits. Lance is the similarity oracle;
+    /// SQLite is the scope oracle. Both layers must approve for a hit to
+    /// reach the caller.
     pub async fn search_vectors(
         &self,
         vector: Vec<f32>,
         limit: usize,
+        authority: &crucible_core::storage::Scope,
     ) -> Result<Vec<(String, f64)>> {
-        let matches = self.vectors.search(&vector, limit).await?;
-        Ok(matches
-            .into_iter()
-            .map(|m| (m.id, m.similarity as f64))
-            .collect())
+        let fetch = limit.max(1).saturating_mul(2).min(limit.max(1) * 4);
+        let matches = self.vectors.search(&vector, fetch).await?;
+
+        // Post-filter: hydrate each match through the SQLite note store
+        // (scoped read). If the record is missing or out-of-scope, drop it.
+        // `NoteStore::get` is already authority-aware so we get both
+        // existence and visibility in one call.
+        let note_store = self.sqlite.as_note_store();
+        let mut filtered: Vec<(String, f64)> = Vec::with_capacity(matches.len());
+        for m in matches {
+            let visible = note_store
+                .get(&m.id, authority)
+                .await
+                .map(|opt| opt.is_some())
+                .unwrap_or(false);
+            if visible {
+                filtered.push((m.id, m.similarity as f64));
+                if filtered.len() >= limit {
+                    break;
+                }
+            }
+        }
+        Ok(filtered)
     }
 
     /// List notes by metadata filter. Always reads from SQLite.
-    pub async fn list_notes(&self, path_filter: Option<&str>) -> Result<Vec<NoteInfo>> {
-        let records = self.sqlite.as_note_store().list().await?;
+    ///
+    /// `authority` is the request authority — see [`crucible_core::storage::Scope`].
+    /// Records whose stored scope is outside the caller's authority are
+    /// filtered out at the SQL layer.
+    pub async fn list_notes(
+        &self,
+        path_filter: Option<&str>,
+        authority: &crucible_core::storage::Scope,
+    ) -> Result<Vec<NoteInfo>> {
+        let records = self.sqlite.as_note_store().list(authority).await?;
         Ok(records
             .into_iter()
             .filter(|r| path_filter.is_none_or(|p| r.path.contains(p)))
@@ -120,8 +155,14 @@ impl StorageHandle {
     }
 
     /// Case-insensitive fuzzy lookup by path or title.
-    pub async fn get_note_by_name(&self, name: &str) -> Result<Option<NoteRecord>> {
-        let records = self.sqlite.as_note_store().list().await?;
+    ///
+    /// `authority` is the request authority — see [`crucible_core::storage::Scope`].
+    pub async fn get_note_by_name(
+        &self,
+        name: &str,
+        authority: &crucible_core::storage::Scope,
+    ) -> Result<Option<NoteRecord>> {
+        let records = self.sqlite.as_note_store().list(authority).await?;
         let name_lower = name.to_lowercase();
         Ok(records.into_iter().find(|r| {
             r.path.to_lowercase().contains(&name_lower)
@@ -204,7 +245,7 @@ impl KilnManager {
 
         info!("Opening kiln at {:?}", db_path);
 
-        let handle = create_storage_handle(&db_path).await?;
+        let handle = create_storage_handle(&db_path, &canonical).await?;
         info!(
             "Kiln opened with {} backend at {:?}",
             handle.backend_name(),
@@ -650,9 +691,15 @@ async fn create_pipeline(
 /// Open both backends for a kiln. SQLite for metadata + properties at
 /// `<kiln>/.crucible/crucible-sqlite.db`; LanceDB vector index at
 /// `<kiln>/.crucible/crucible-vectors.lance/`.
-async fn create_storage_handle(sqlite_db_path: &Path) -> Result<StorageHandle> {
+///
+/// `kiln_path` is the kiln root (canonicalized by `open()`); the SQLite
+/// handle is bound to it so `as_knowledge_repository()` enforces
+/// `Scope::Workspace(kiln_path)` authority on reads.
+async fn create_storage_handle(sqlite_db_path: &Path, kiln_path: &Path) -> Result<StorageHandle> {
     let sqlite_config = SqliteConfig::new(sqlite_db_path);
-    let sqlite = sqlite_adapters::create_sqlite_client(sqlite_config).await?;
+    let sqlite = sqlite_adapters::create_sqlite_client(sqlite_config)
+        .await?
+        .with_kiln_path(kiln_path.to_path_buf());
 
     let lance_dir = sqlite_db_path
         .parent()
@@ -1081,7 +1128,8 @@ mod tests {
             .unwrap();
 
         // Verify all 3 notes exist in the store
-        let notes = note_store.list().await.unwrap();
+        let auth = crucible_core::storage::Scope::workspace_unchecked(&kiln_path);
+        let notes = note_store.list(&auth).await.unwrap();
         assert_eq!(notes.len(), 3, "DB should contain 3 notes");
 
         // Delete beta.md from disk
@@ -1096,21 +1144,21 @@ mod tests {
         );
 
         // Verify DB now has exactly 2 notes
-        let notes = note_store.list().await.unwrap();
+        let notes = note_store.list(&auth).await.unwrap();
         assert_eq!(notes.len(), 2, "DB should contain 2 notes after deletion");
 
         // Verify the deleted note is gone
         assert!(
-            note_store.get("beta.md").await.unwrap().is_none(),
+            note_store.get("beta.md", &auth).await.unwrap().is_none(),
             "deleted note should not be in the store",
         );
 
         // Verify the remaining 2 notes are intact
-        let alpha = note_store.get("alpha.md").await.unwrap();
+        let alpha = note_store.get("alpha.md", &auth).await.unwrap();
         assert!(alpha.is_some(), "alpha.md should still exist");
         assert_eq!(alpha.unwrap().title, "Alpha");
 
-        let gamma = note_store.get("gamma.md").await.unwrap();
+        let gamma = note_store.get("gamma.md", &auth).await.unwrap();
         assert!(gamma.is_some(), "gamma.md should still exist");
         assert_eq!(gamma.unwrap().title, "Gamma");
     }
@@ -1184,6 +1232,133 @@ mod tests {
 
         assert!(opened.is_empty());
         assert!(manager.list().await.is_empty());
+    }
+
+    // =========================================================================
+    // Memory Scoping — Lance post-filter
+    // =========================================================================
+    //
+    // These tests verify the LanceDB → SQLite post-filter pipeline. Lance
+    // is the similarity oracle; SQLite is the scope oracle. A hit must
+    // pass BOTH to reach the caller.
+
+    /// Default LanceDB dim (matches `LanceVectorIndex::open`).
+    const LANCE_DIM: usize = 768;
+
+    fn unit_embedding() -> Vec<f32> {
+        let mut v = vec![0.0_f32; LANCE_DIM];
+        v[0] = 1.0;
+        v
+    }
+
+    /// Seed a note into a kiln by upserting a NoteRecord with both a
+    /// known embedding (so Lance picks it up) and an explicit scope.
+    async fn seed_note_with_scope(
+        km: &KilnManager,
+        kiln: &Path,
+        path: &str,
+        scope: crucible_core::storage::Scope,
+    ) {
+        let handle = km.get_or_open(kiln).await.unwrap();
+        let emb = unit_embedding();
+        let record =
+            crucible_core::storage::NoteRecord::new(path, crucible_core::parser::BlockHash::zero())
+                .with_title(path)
+                .with_embedding(emb.clone())
+                .with_scope(scope);
+
+        // Upsert into SQLite (scope-stamped) and Lance (vector key).
+        let store = handle.as_note_store();
+        store.upsert(record.clone()).await.unwrap();
+        // Lance keys by note path; if upsert fails the test will surface
+        // it as an empty hit list (the assertion below).
+        handle
+            .vectors
+            .upsert(path, emb)
+            .await
+            .expect("Lance upsert");
+    }
+
+    #[tokio::test]
+    async fn lance_search_vectors_post_filters_by_scope() {
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().to_path_buf();
+        std::fs::create_dir_all(kiln_path.join(".crucible")).unwrap();
+        let km = KilnManager::new();
+        km.open(&kiln_path).await.unwrap();
+
+        seed_note_with_scope(
+            &km,
+            &kiln_path,
+            "own.md",
+            crucible_core::storage::Scope::workspace_unchecked(&kiln_path),
+        )
+        .await;
+        seed_note_with_scope(
+            &km,
+            &kiln_path,
+            "stranger.md",
+            crucible_core::storage::Scope::Workspace {
+                path: std::path::PathBuf::from("/some/other/kiln"),
+            },
+        )
+        .await;
+        let handle = km.get(&kiln_path).await.unwrap();
+        let query = unit_embedding();
+
+        // Authority = this kiln's workspace. own.md must appear,
+        // stranger.md must NOT.
+        let auth = crucible_core::storage::Scope::workspace_unchecked(&kiln_path);
+        let hits = handle.search_vectors(query, 10, &auth).await.unwrap();
+        let ids: Vec<_> = hits.iter().map(|(id, _)| id.as_str()).collect();
+        assert!(ids.contains(&"own.md"), "got: {:?}", ids);
+        assert!(
+            !ids.contains(&"stranger.md"),
+            "Lance post-filter leaked cross-scope: {:?}",
+            ids
+        );
+    }
+
+    #[tokio::test]
+    async fn lance_results_excluded_when_scope_mismatch() {
+        // A pure-cross-scope kiln (every note belongs to a stranger workspace)
+        // returns an empty hit list under workspace authority.
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().to_path_buf();
+        std::fs::create_dir_all(kiln_path.join(".crucible")).unwrap();
+        let km = KilnManager::new();
+        km.open(&kiln_path).await.unwrap();
+
+        seed_note_with_scope(
+            &km,
+            &kiln_path,
+            "alien_a.md",
+            crucible_core::storage::Scope::Workspace {
+                path: std::path::PathBuf::from("/strangers/A"),
+            },
+        )
+        .await;
+        seed_note_with_scope(
+            &km,
+            &kiln_path,
+            "alien_b.md",
+            crucible_core::storage::Scope::Workspace {
+                path: std::path::PathBuf::from("/strangers/B"),
+            },
+        )
+        .await;
+
+        let handle = km.get(&kiln_path).await.unwrap();
+        let auth = crucible_core::storage::Scope::workspace_unchecked(&kiln_path);
+        let hits = handle
+            .search_vectors(unit_embedding(), 10, &auth)
+            .await
+            .unwrap();
+        assert!(
+            hits.is_empty(),
+            "every note is cross-scope, must return no hits — got {:?}",
+            hits
+        );
     }
 
     #[test]

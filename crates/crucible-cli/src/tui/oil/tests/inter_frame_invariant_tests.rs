@@ -459,6 +459,7 @@ fn invariant_multi_tool_turn() {
         description: None,
         source: Some("Core".into()),
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     fc.render_and_check();
 
@@ -481,6 +482,7 @@ fn invariant_multi_tool_turn() {
         description: None,
         source: Some("Core".into()),
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     fc.send(ChatAppMsg::ToolResultDelta {
         name: "read_file".into(),
@@ -548,6 +550,7 @@ fn invariant_reproduce_cast_pattern() {
         description: None,
         source: Some("Core".into()),
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     fc.send(ChatAppMsg::ToolResultComplete {
         name: "bash".into(),
@@ -560,6 +563,7 @@ fn invariant_reproduce_cast_pattern() {
         description: None,
         source: Some("Core".into()),
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     fc.send(ChatAppMsg::ToolResultComplete {
         name: "glob".into(),
@@ -581,6 +585,7 @@ fn invariant_reproduce_cast_pattern() {
         description: None,
         source: Some("Core".into()),
         lua_primary_arg: None,
+        diffs: Vec::new(),
     });
     fc.send(ChatAppMsg::ToolResultComplete {
         name: "read_file".into(),

@@ -78,7 +78,7 @@ impl ChatNode {
                 Self::render_assistant_response(text, thinking, is_continuation, *complete, ctx)
             }
             Self::ToolGroup { tools } => {
-                Self::render_tool_group(tools, ctx.spinner_frame, ctx.width())
+                Self::render_tool_group(tools, ctx.spinner_frame, ctx.width(), ctx.show_diffs)
             }
             Self::SubagentTask { agent } => render_subagent(agent, ctx.spinner_frame, ctx.width()),
             Self::ShellExecution { shell } => render_shell_execution(shell),
@@ -140,6 +140,7 @@ impl ChatNode {
             terminal_width: ctx.terminal_size.0,
             spinner_frame: ctx.spinner_frame,
             show_thinking: ctx.show_thinking,
+            show_diffs: ctx.show_diffs,
         };
 
         let has_thinking = !thinking.is_empty();
@@ -178,10 +179,15 @@ impl ChatNode {
     }
 
     /// Tool group: renders each tool via the existing tool renderer.
-    fn render_tool_group(tools: &[CachedToolCall], spinner_frame: usize, width: usize) -> Node {
+    fn render_tool_group(
+        tools: &[CachedToolCall],
+        spinner_frame: usize,
+        width: usize,
+        show_diffs: bool,
+    ) -> Node {
         let items: Vec<Node> = tools
             .iter()
-            .map(|tool| tool.render_compact_with_frame(spinner_frame, width))
+            .map(|tool| tool.render_compact_with(spinner_frame, width, show_diffs))
             .filter(|n| !matches!(n, Node::Empty))
             .collect();
 
@@ -351,6 +357,25 @@ impl ContainerList {
             }
         }
         tracing::debug!(name = %name, call_id = ?call_id, "tool update for unknown tool (already graduated or never received)");
+    }
+
+    /// Update the most recent tool with the given call_id (without
+    /// requiring the tool name). Used for ACP `tool_call_diff_update`
+    /// events that key only on call_id.
+    pub fn update_tool_by_call_id(&mut self, call_id: &str, f: impl FnOnce(&mut CachedToolCall)) {
+        for node in self.nodes.iter_mut().rev() {
+            if let ChatNode::ToolGroup { tools } = node {
+                if let Some(tool) = tools
+                    .iter_mut()
+                    .rev()
+                    .find(|t| t.call_id.as_deref() == Some(call_id))
+                {
+                    f(tool);
+                    return;
+                }
+            }
+        }
+        tracing::debug!(call_id = %call_id, "tool update by call_id for unknown tool (already graduated or never received)");
     }
 
     pub fn add_agent_task(&mut self, agent: CachedSubagent) {
@@ -797,6 +822,83 @@ mod tests {
         } else {
             panic!("expected AssistantResponse as first node");
         }
+    }
+
+    #[test]
+    fn user_then_thinking_then_tool_call_preserves_thinking() {
+        // Sequence: user message → thinking delta arrives → tool call lands.
+        // The append_thinking call creates an AR that holds the thinking
+        // content. add_tool_call marks the AR complete and creates a fresh
+        // ToolGroup. Both nodes must render meaningful content; the AR is
+        // not empty (it carries the thinking) so it must NOT be silently
+        // swallowed by render-time Node::Empty short-circuiting.
+        let mut list = ContainerList::new();
+        list.add_user_message("question".into());
+        list.mark_turn_active();
+        list.append_thinking("considering options");
+        list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
+
+        let nodes = list.nodes();
+        // Expect [user, AR(thinking), ToolGroup] — three distinct nodes.
+        assert_eq!(
+            nodes.len(),
+            3,
+            "expected 3 nodes, got {} ({:?})",
+            nodes.len(),
+            nodes
+                .iter()
+                .map(|n| match n {
+                    ChatNode::UserMessage { .. } => "user",
+                    ChatNode::AssistantResponse { .. } => "ar",
+                    ChatNode::ToolGroup { .. } => "tools",
+                    ChatNode::SystemMessage { .. } => "sys",
+                    _ => "other",
+                })
+                .collect::<Vec<_>>()
+        );
+        match &nodes[1] {
+            ChatNode::AssistantResponse {
+                text,
+                thinking,
+                complete,
+            } => {
+                assert!(*complete, "AR before ToolGroup must be complete");
+                assert!(text.is_empty(), "no text yet — only thinking");
+                assert_eq!(thinking.len(), 1, "thinking component should exist");
+                let plain = render_node(&nodes[1], true);
+                assert!(
+                    plain.contains("considering options"),
+                    "thinking content must render: {:?}",
+                    plain
+                );
+            }
+            other => panic!("expected AssistantResponse, got {:?}", other),
+        }
+        assert!(matches!(&nodes[2], ChatNode::ToolGroup { .. }));
+    }
+
+    #[test]
+    fn empty_thinking_then_tool_call_does_not_render_blank_assistant_band() {
+        // Defensive: if append_thinking is called with an empty delta and a
+        // tool call follows immediately, we must not graduate a visually-
+        // empty AssistantResponse band into scrollback. Sanity check on
+        // the Node::Empty short-circuit in render_assistant_response.
+        let mut list = ContainerList::new();
+        list.add_user_message("q".into());
+        list.mark_turn_active();
+        list.append_thinking("");
+        list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
+        list.complete_response();
+
+        let grad = drain(&mut list).expect("graduation expected");
+        let plain = render_to_plain_text(&grad.node, 80);
+        // The graduated output should reach the tool group with no extra
+        // assistant indicator/bullet/separator that would belong to a real AR.
+        assert!(
+            !plain.lines().any(|l| l.trim() == "▌"),
+            "no assistant bullet expected for an empty thinking-only AR: {:?}",
+            plain
+        );
     }
 
     #[test]

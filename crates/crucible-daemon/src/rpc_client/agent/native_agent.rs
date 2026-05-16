@@ -120,6 +120,7 @@ fn _terminal_variant_check(event: TurnEvent) -> bool {
         | TurnEvent::Thinking(_)
         | TurnEvent::ToolCall { .. }
         | TurnEvent::ToolResult { .. }
+        | TurnEvent::ToolCallDiffUpdate { .. }
         | TurnEvent::ToolBatchEnd
         | TurnEvent::HandlerInjection { .. }
         | TurnEvent::DepthCapHit { .. }

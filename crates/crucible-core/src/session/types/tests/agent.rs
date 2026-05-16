@@ -34,6 +34,7 @@ fn test_session_agent_serialization() {
         context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
+        autocompact_threshold: None,
     };
 
     let json = serde_json::to_string(&agent).unwrap();
@@ -81,6 +82,7 @@ fn test_session_agent_typed_provider_serialization() {
         context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
+        autocompact_threshold: None,
     };
 
     let json = serde_json::to_string(&agent).unwrap();
@@ -131,6 +133,7 @@ fn test_session_agent_typed_provider_round_trip() {
         context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
+        autocompact_threshold: None,
     };
 
     let json = serde_json::to_string(&original).unwrap();
@@ -174,6 +177,7 @@ fn test_session_agent_with_capabilities() {
         context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
+        autocompact_threshold: None,
     };
 
     let json = serde_json::to_string(&agent).unwrap();
@@ -217,6 +221,7 @@ fn test_session_agent_with_agent_description() {
         context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
+        autocompact_threshold: None,
     };
 
     let json = serde_json::to_string(&agent).unwrap();
@@ -270,6 +275,7 @@ fn test_session_agent_with_delegation_config() {
         context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
+        autocompact_threshold: None,
     };
 
     let json = serde_json::to_string(&agent).unwrap();
@@ -355,6 +361,7 @@ fn test_session_agent_round_trip_with_all_fields() {
         context_window: None,
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
+        autocompact_threshold: None,
     };
 
     let json = serde_json::to_string(&original).unwrap();

@@ -1,0 +1,74 @@
+---
+source: crates/crucible-cli/tests/cli_help_snapshot_tests.rs
+expression: help
+---
+cru - Crucible CLI - Interactive knowledge management with semantic search
+
+Usage: cru [OPTIONS] [COMMAND]
+
+Commands:
+  chat         Interactive AI chat with session persistence and tool access [aliases: c]
+  mcp          Start MCP server exposing Crucible tools for external AI agents
+  process      Process markdown files through the pipeline (parse, enrich, store) [aliases: p]
+  search       Search kiln notes using semantic and/or text search
+  stats        Display kiln statistics
+  models       List available models from configured LLM provider
+  config       Manage Crucible configuration (initialize, view, export) [aliases: cfg]
+  status       Display storage status and statistics for the knowledge base
+  doctor       Run installation diagnostics for Crucible
+  storage      Manage storage operations (migration, verification, backup, cleanup)
+  agents       Manage agent cards (list, show, validate)
+  tasks        Manage tasks from a TASKS.md file (list, next, pick, done)
+  workflow     Inspect workflow notes in the active kiln (list, show)
+  daemon       Manage the Crucible daemon (start, stop, status, logs)
+  skills       Discover and manage agent skills (list, show, search)
+  tools        Discover and manage tools (list, show)
+  plugin       Manage and develop Lua plugins
+  install      Install a plugin from a git URL (alias for `cru plugin add`)
+  lua          Evaluate Lua code in the daemon's plugin runtime
+  init         Initialize a new kiln or project [aliases: i]
+  session      Manage chat sessions (create, configure, send, pause, resume, end) [aliases: s, sess]
+  auth         Manage LLM provider credentials (login, logout, list)
+  set          Configure a running session's settings (same syntax as TUI :set)
+  setup        Bootstrap the Crucible runtime (plugins, themes, default init.lua)
+  completions  Generate shell completion scripts for bash, zsh, and fish
+  web          Start the web UI server for browser-based chat
+  help         Print this message or the help of the given subcommand(s)
+
+Options:
+  -l, --log-level <LOG_LEVEL>
+          Set log level (off, error, warn, info, debug, trace) If not specified, uses config file value or defaults to 'off'
+
+          Possible values:
+          - off:   No logging output
+          - error: Error messages only
+          - warn:  Warnings and errors
+          - info:  Informational messages (default for verbose)
+          - debug: Debug messages
+          - trace: Trace-level messages (most verbose)
+
+  -v, --verbose
+          Enable verbose logging (shortcut for --log-level=debug)
+
+  -C, --config <CONFIG>
+          Config file path (defaults to ~/.config/crucible/config.toml)
+
+      --embedding-url <EMBEDDING_URL>
+          Embedding service URL (overrides config file)
+
+      --embedding-model <EMBEDDING_MODEL>
+          Embedding model name (overrides config file)
+
+  -f, --format <FORMAT>
+          Set output format (table, json, csv)
+          
+          [default: table]
+
+      --standalone
+          Run with an in-process daemon (no background server required). Useful for single-session use, restricted environments, or testing. Data persists to the kiln's .crucible/ directory
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

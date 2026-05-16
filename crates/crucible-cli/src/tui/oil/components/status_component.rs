@@ -23,6 +23,9 @@ pub struct StatusComponent<'a> {
     pub toast: Option<(&'a str, NotificationToastKind)>,
     pub notification_counts: Vec<(NotificationToastKind, usize)>,
     pub config: Option<&'a StatuslineConfig>,
+    /// Latest prompt-cache hit rate (0.0..=1.0), or `None` until a
+    /// `message_complete` event has reported cache token counts.
+    pub cache_hit_rate: Option<f64>,
 }
 
 impl<'a> StatusComponent<'a> {
@@ -69,6 +72,11 @@ impl<'a> StatusComponent<'a> {
         self.config = Some(config);
         self
     }
+
+    pub fn cache_hit_rate(mut self, rate: Option<f64>) -> Self {
+        self.cache_hit_rate = rate;
+        self
+    }
 }
 
 impl Component for StatusComponent<'_> {
@@ -87,6 +95,7 @@ impl Component for StatusComponent<'_> {
             .model(self.model)
             .context(self.context_used, self.context_total)
             .status(self.status);
+        status_bar.cache_hit_rate = self.cache_hit_rate;
 
         if let Some((text, kind)) = self.toast {
             status_bar = status_bar.toast(text, kind);

@@ -206,7 +206,7 @@ fn test_interpret_handled_with_result() {
 
     let result = interpret_handler_result(&Value::Table(table)).unwrap();
     match result {
-        ScriptHandlerResult::Handled { result } => {
+        ScriptHandlerResult::Handled { result, .. } => {
             assert_eq!(result["answer"], 42);
         }
         other => panic!("Expected Handled, got: {:?}", other),
@@ -221,7 +221,7 @@ fn test_interpret_handled_without_result_gives_null() {
 
     let result = interpret_handler_result(&Value::Table(table)).unwrap();
     match result {
-        ScriptHandlerResult::Handled { result } => {
+        ScriptHandlerResult::Handled { result, .. } => {
             assert!(result.is_null());
         }
         other => panic!("Expected Handled, got: {:?}", other),
@@ -267,4 +267,39 @@ fn test_interpret_handled_false_is_not_handled() {
     let result = interpret_handler_result(&Value::Table(table)).unwrap();
     // handled=false → falls through to Transform
     assert!(matches!(result, ScriptHandlerResult::Transform(_)));
+}
+
+#[test]
+fn test_interpret_handled_with_terminate() {
+    let lua = Lua::new();
+    let table = lua.create_table().unwrap();
+    table.set("handled", true).unwrap();
+    table.set("result", "done").unwrap();
+    table.set("terminate", true).unwrap();
+
+    let result = interpret_handler_result(&Value::Table(table)).unwrap();
+    match result {
+        ScriptHandlerResult::Handled { result, terminate } => {
+            assert_eq!(result, serde_json::json!("done"));
+            assert!(terminate, "terminate flag should propagate from Lua");
+        }
+        other => panic!("Expected Handled with terminate=true, got: {:?}", other),
+    }
+}
+
+#[test]
+fn test_interpret_handled_without_terminate_defaults_false() {
+    let lua = Lua::new();
+    let table = lua.create_table().unwrap();
+    table.set("handled", true).unwrap();
+    table.set("result", "keep going").unwrap();
+
+    let result = interpret_handler_result(&Value::Table(table)).unwrap();
+    match result {
+        ScriptHandlerResult::Handled { result, terminate } => {
+            assert_eq!(result, serde_json::json!("keep going"));
+            assert!(!terminate, "terminate should default to false");
+        }
+        other => panic!("Expected Handled, got: {:?}", other),
+    }
 }

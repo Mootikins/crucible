@@ -299,9 +299,14 @@ impl SearchTools {
         limit: usize,
         original_properties: &serde_json::Value,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        // Get all notes from the store
+        // Get all notes from the store — workspace authority derived from
+        // the kiln this MCP server is bound to.
+        let authority =
+            crucible_core::storage::Scope::workspace(&self.kiln_path).unwrap_or_else(|_| {
+                crucible_core::storage::Scope::workspace_unchecked(&self.kiln_path)
+            });
         let all_notes = note_store
-            .list()
+            .list(&authority)
             .await
             .mcp_err_ctx("Failed to list notes from store")?;
 
@@ -1053,7 +1058,11 @@ mod note_store_tests {
             Ok(vec![event])
         }
 
-        async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
+        async fn get(
+            &self,
+            path: &str,
+            _authority: &crucible_core::storage::Scope,
+        ) -> StorageResult<Option<NoteRecord>> {
             let notes = self.notes.lock().unwrap();
             Ok(notes.get(path).cloned())
         }
@@ -1067,12 +1076,19 @@ mod note_store_tests {
             }))
         }
 
-        async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+        async fn list(
+            &self,
+            _authority: &crucible_core::storage::Scope,
+        ) -> StorageResult<Vec<NoteRecord>> {
             let notes = self.notes.lock().unwrap();
             Ok(notes.values().cloned().collect())
         }
 
-        async fn get_by_hash(&self, _hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+        async fn get_by_hash(
+            &self,
+            _hash: &BlockHash,
+            _authority: &crucible_core::storage::Scope,
+        ) -> StorageResult<Option<NoteRecord>> {
             Ok(None)
         }
 

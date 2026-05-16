@@ -3,6 +3,22 @@ use crucible_core::config::{
     read_kiln_config, read_project_config, write_kiln_config, write_project_config,
     DataClassification, KilnConfig, KilnMeta, ProjectConfig,
 };
+use crucible_core::storage::Scope;
+
+/// Derive the read authority for a kiln-scoped RPC request.
+///
+/// Authority is always derived from the `kiln` parameter — callers cannot
+/// supply a wider scope via a `scope` field in the request (the historical
+/// `decode_request_scope` did, which made the storage filter enforce
+/// caller-controlled input rather than a session boundary). Any `scope`
+/// in `req.params` is now ignored.
+///
+/// Canonicalization is best-effort: if `kiln_path` doesn't yet resolve
+/// (e.g. during early setup) the unchecked path is used so the request
+/// still reaches the storage layer.
+fn request_scope(kiln_path: &Path) -> Scope {
+    Scope::workspace(kiln_path).unwrap_or_else(|_| Scope::workspace_unchecked(kiln_path))
+}
 
 pub(crate) async fn handle_kiln_open(
     req: Request,
@@ -213,14 +229,16 @@ pub(crate) async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -
         .collect();
     let limit = optional_param!(req, "limit", as_u64).unwrap_or(20) as usize;
 
+    let scope = request_scope(Path::new(kiln_path));
+
     // Get or open connection to the kiln
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
         Err(e) => return internal_error(req.id, e),
     };
 
-    // Execute vector search using the backend-agnostic method
-    match handle.search_vectors(vector, limit).await {
+    // Execute vector search with scope post-filtering.
+    match handle.search_vectors(vector, limit, &scope).await {
         Ok(results) => {
             let json_results: Vec<_> = results
                 .into_iter()
@@ -268,12 +286,14 @@ pub(crate) async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Re
     let kiln_path = require_param!(req, "kiln", as_str);
     let path_filter = optional_param!(req, "path_filter", as_str);
 
+    let scope = request_scope(Path::new(kiln_path));
+
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
         Err(e) => return internal_error(req.id, e),
     };
 
-    match handle.list_notes(path_filter).await {
+    match handle.list_notes(path_filter, &scope).await {
         Ok(notes) => {
             let json_notes: Vec<_> = notes
                 .into_iter()
@@ -297,12 +317,14 @@ pub(crate) async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>)
     let kiln_path = require_param!(req, "kiln", as_str);
     let name = require_param!(req, "name", as_str);
 
+    let scope = request_scope(Path::new(kiln_path));
+
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
         Err(e) => return internal_error(req.id, e),
     };
 
-    match handle.get_note_by_name(name).await {
+    match handle.get_note_by_name(name, &scope).await {
         Ok(Some(note)) => Response::success(
             req.id,
             serde_json::json!({
@@ -332,7 +354,7 @@ pub(crate) async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> R
         None => return Response::error(req.id, INVALID_PARAMS, "Missing 'note' parameter"),
     };
 
-    let note: NoteRecord = match serde_json::from_value(note_json.clone()) {
+    let mut note: NoteRecord = match serde_json::from_value(note_json.clone()) {
         Ok(n) => n,
         Err(e) => {
             return Response::error(
@@ -342,6 +364,46 @@ pub(crate) async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> R
             )
         }
     };
+
+    // Bridge authority is the workspace scope of the kiln being written to;
+    // a note declared in this RPC cannot exceed it. This closes the gap left
+    // when the DaemonVaultBridge write-validation was removed by the
+    // "cascade-orphaned APIs" cleanup — without this check, a Lua plugin in
+    // kiln A could write a note with `properties.scope` pointing at kiln B
+    // and have it become visible to B's read authority.
+    let bridge_authority = request_scope(Path::new(kiln_path));
+
+    let declared_scope = match note.properties.get("scope") {
+        Some(v) => match Scope::from_property_value(v) {
+            Some(Ok(s)) => s.bind_to_workspace(bridge_authority.path()),
+            Some(Err(e)) => {
+                return Response::error(
+                    req.id,
+                    INVALID_PARAMS,
+                    format!("unsupported scope in note properties: {}", e),
+                );
+            }
+            None => bridge_authority.clone(),
+        },
+        None => bridge_authority.clone(),
+    };
+
+    if !declared_scope.same_workspace(&bridge_authority) {
+        return Response::error(
+            req.id,
+            INVALID_PARAMS,
+            format!(
+                "declared scope {} exceeds session write authority {}",
+                declared_scope, bridge_authority
+            ),
+        );
+    }
+
+    // Stamp the resolved scope onto the record so unscoped notes inherit
+    // the bridge authority — closes the legacy-unstamped escape hatch
+    // (M6) at the RPC boundary.
+    note.properties
+        .insert("scope".to_string(), declared_scope.to_property_value());
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
@@ -365,13 +427,15 @@ pub(crate) async fn handle_note_get(req: Request, km: &Arc<KilnManager>) -> Resp
     let kiln_path = require_param!(req, "kiln", as_str);
     let path = require_param!(req, "path", as_str);
 
+    let scope = request_scope(Path::new(kiln_path));
+
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
         Err(e) => return internal_error(req.id, e),
     };
 
     let note_store = handle.as_note_store();
-    match note_store.get(path).await {
+    match note_store.get(path, &scope).await {
         Ok(Some(note)) => match serde_json::to_value(&note) {
             Ok(v) => Response::success(req.id, v),
             Err(e) => internal_error(req.id, e),
@@ -400,13 +464,15 @@ pub(crate) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> R
 pub(crate) async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Response {
     let kiln_path = require_param!(req, "kiln", as_str);
 
+    let scope = request_scope(Path::new(kiln_path));
+
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
         Err(e) => return internal_error(req.id, e),
     };
 
     let note_store = handle.as_note_store();
-    match note_store.list().await {
+    match note_store.list(&scope).await {
         Ok(notes) => match serde_json::to_value(&notes) {
             Ok(v) => Response::success(req.id, v),
             Err(e) => internal_error(req.id, e),
@@ -565,12 +631,14 @@ pub(crate) async fn handle_suggest_links(req: Request, km: &Arc<KilnManager>) ->
     let text = require_param!(req, "text", as_str);
     let kiln_path = require_param!(req, "kiln", as_str);
 
+    let scope = request_scope(Path::new(kiln_path));
+
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
         Err(e) => return internal_error(req.id, e),
     };
 
-    let notes = match handle.list_notes(None).await {
+    let notes = match handle.list_notes(None, &scope).await {
         Ok(n) => n,
         Err(e) => return internal_error(req.id, e),
     };

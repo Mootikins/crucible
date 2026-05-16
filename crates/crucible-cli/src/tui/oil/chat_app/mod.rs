@@ -57,6 +57,11 @@ pub struct OilChatApp {
     context_used: usize,
     /// Context window total capacity
     context_total: usize,
+    /// Latest prompt-cache hit rate (0.0..=1.0) from `message_complete`.
+    /// `None` until at least one completion has reported cache token
+    /// counts; the statusline `cache_hit_rate` component renders nothing
+    /// in that "no data" state to avoid a misleading `cache: 0%`.
+    pub(crate) cache_hit_rate: Option<f64>,
     /// Display name of the active LLM provider
     current_provider: String,
     /// MCP servers known to the daemon
@@ -86,6 +91,8 @@ pub struct OilChatApp {
     needs_full_redraw: bool,
     /// Whether to render LLM thinking/reasoning blocks
     show_thinking: bool,
+    /// Whether to render Edit/Write tool diff bodies (header always renders)
+    show_diffs: bool,
     /// Precognition state (auto-RAG settings)
     precognition: PrecognitionState,
     /// Current terminal size (width, height) — updated in view()
@@ -143,6 +150,7 @@ impl App for OilChatApp {
         let ctx = &ViewContext {
             spinner_frame: self.spinner_frame(),
             show_thinking: self.show_thinking,
+            show_diffs: self.show_diffs,
             ..*ctx
         };
 
@@ -304,6 +312,14 @@ impl OilChatApp {
         self.show_thinking = show;
     }
 
+    pub(crate) fn set_show_diffs(&mut self, show: bool) {
+        self.show_diffs = show;
+    }
+
+    pub(crate) fn show_diffs(&self) -> bool {
+        self.show_diffs
+    }
+
     /// Spinner frame derived from wall clock (100ms per frame).
     /// Independent of tick events — animates even during rapid streaming.
     pub fn spinner_frame(&self) -> usize {
@@ -335,6 +351,7 @@ impl OilChatApp {
             .mode(self.mode)
             .model(&self.model)
             .context(self.context_used, self.context_total)
+            .cache_hit_rate(self.cache_hit_rate)
             .status(&self.status);
         if let Some(ref cfg) = self.statusline_config {
             status = status.config(cfg);
@@ -482,6 +499,7 @@ impl OilChatApp {
         let ctx = &ViewContext {
             spinner_frame: self.spinner_frame(),
             show_thinking: self.show_thinking,
+            show_diffs: self.show_diffs,
             ..*ctx
         };
         self.container_list.drain_completed(ctx)

@@ -65,9 +65,18 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
     async fn get_note_by_name(&self, name: &str) -> CrucibleResult<Option<ParsedNote>> {
         use crucible_core::storage::NoteStore;
 
+        // Workspace authority derived from this repo's bound kiln (when
+        // present). Repos constructed via `new()` without a kiln path fall
+        // back to `Global` — they're test/admin paths.
+        let authority = match &self.kiln_path {
+            Some(p) => crucible_core::storage::Scope::workspace(p)
+                .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(p)),
+            None => crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new()),
+        };
+
         // Get all notes and find one matching by path or title
         let notes =
-            self.store.list().await.map_err(|e| {
+            self.store.list(&authority).await.map_err(|e| {
                 CrucibleError::DatabaseError(format!("Failed to list notes: {}", e))
             })?;
 
@@ -111,8 +120,14 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
     async fn list_notes(&self, path: Option<&str>) -> CrucibleResult<Vec<NoteInfo>> {
         use crucible_core::storage::NoteStore;
 
+        let authority = match &self.kiln_path {
+            Some(p) => crucible_core::storage::Scope::workspace(p)
+                .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(p)),
+            None => crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new()),
+        };
+
         let notes =
-            self.store.list().await.map_err(|e| {
+            self.store.list(&authority).await.map_err(|e| {
                 CrucibleError::DatabaseError(format!("Failed to list notes: {}", e))
             })?;
 
@@ -145,11 +160,17 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
     }
 
     async fn search_vectors(&self, vector: Vec<f32>) -> CrucibleResult<Vec<SearchResult>> {
-        use crucible_core::storage::NoteStore;
+        use crucible_core::storage::{Filter, NoteStore};
+
+        let scope_filter = self.kiln_path.as_ref().map(|p| {
+            let scope = crucible_core::storage::Scope::workspace(p)
+                .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(p));
+            Filter::Scope(scope)
+        });
 
         let results = self
             .store
-            .search(&vector, 10, None)
+            .search(&vector, 10, scope_filter)
             .await
             .map_err(|e| CrucibleError::DatabaseError(format!("Search failed: {}", e)))?;
 
@@ -366,4 +387,93 @@ mod tests {
             );
         }
     }
+
+    /// Memory-scoping regression test: a `KnowledgeRepository` bound to a
+    /// kiln must NOT return notes scoped to a sibling workspace.
+    ///
+    /// Pre-fix, `KilnManager::as_knowledge_repository()` flowed through
+    /// `SqliteClientHandle::as_knowledge_repository()` which constructed
+    /// `SqliteKnowledgeRepository::new(store)` with `kiln_path: None`.
+    /// That made every read default to an unbound authority — leaking
+    /// notes from other workspaces into precognition.
+    #[tokio::test]
+    async fn precognition_does_not_see_sibling_workspace_notes() {
+        let tempdir = tempfile::TempDir::new().unwrap();
+        let kiln_root = tempdir.path().to_path_buf();
+        let sibling_root = tempdir.path().join("sibling-elsewhere");
+
+        let config = SqliteConfig::memory();
+        let pool = SqlitePool::new(config).unwrap();
+        let store = create_note_store(pool).await.unwrap();
+        let store_arc = Arc::new(store);
+
+        // Own-workspace note.
+        let workspace_note = NoteRecord {
+            path: "notes/workspace_only.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: Some(vec![0.5, 0.5, 0.0]),
+            title: "Workspace Only".to_string(),
+            tags: vec![],
+            links_to: vec![],
+            properties: Default::default(),
+            updated_at: Utc::now(),
+            ..Default::default()
+        }
+        .with_scope(crucible_core::storage::Scope::workspace_unchecked(
+            &kiln_root,
+        ));
+        NoteStore::upsert(store_arc.as_ref(), workspace_note)
+            .await
+            .unwrap();
+
+        // Sibling-workspace note: should NEVER appear in this kiln's reads.
+        let sibling_note = NoteRecord {
+            path: "notes/sibling_private.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: Some(vec![0.5, 0.5, 0.0]),
+            title: "Sibling Private".to_string(),
+            tags: vec![],
+            links_to: vec![],
+            properties: Default::default(),
+            updated_at: Utc::now(),
+            ..Default::default()
+        }
+        .with_scope(crucible_core::storage::Scope::workspace_unchecked(
+            &sibling_root,
+        ));
+        NoteStore::upsert(store_arc.as_ref(), sibling_note)
+            .await
+            .unwrap();
+
+        let repo =
+            SqliteKnowledgeRepository::with_kiln_path(Arc::clone(&store_arc), kiln_root.clone());
+
+        // list_notes must only see the own-workspace note.
+        let listed = repo.list_notes(None).await.unwrap();
+        assert_eq!(
+            listed.len(),
+            1,
+            "expected exactly the workspace-scoped note, got: {:?}",
+            listed.iter().map(|n| &n.path).collect::<Vec<_>>()
+        );
+        assert_eq!(listed[0].path, "notes/workspace_only.md");
+
+        let sibling_hit = repo.get_note_by_name("Sibling Private").await.unwrap();
+        assert!(
+            sibling_hit.is_none(),
+            "sibling-workspace 'Sibling Private' leaked through workspace-authority read"
+        );
+
+        let results = repo.search_vectors(vec![0.5, 0.5, 0.0]).await.unwrap();
+        for result in &results {
+            assert_ne!(
+                result.document_id.0, "notes/sibling_private.md",
+                "sibling-workspace 'sibling_private.md' leaked into vector search"
+            );
+        }
+    }
+
+    // NOTE: `sqlite_client_handle_as_knowledge_repository_is_kiln_scoped`
+    // lives in `adapters.rs` so it can reach the `SqliteClientHandle` API
+    // directly without circular dependencies.
 }

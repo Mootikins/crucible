@@ -1,4 +1,5 @@
 use crate::tui::oil::utils::wrap_words;
+use crucible_core::types::acp::FileDiff;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -91,6 +92,10 @@ pub struct CachedToolCall {
     pub source: Option<ToolSourceDisplay>,
     /// Optional primary argument from Lua tool display hook.
     pub lua_primary_arg: Option<Arc<str>>,
+    /// File diffs surfaced by the agent (e.g. ACP `ToolCallContent::Diff`).
+    /// Empty for tools that don't produce diffs or for backends that don't
+    /// surface them yet. Rendered between header and result on completion.
+    pub diffs: Vec<FileDiff>,
 }
 
 impl CachedToolCall {
@@ -110,6 +115,7 @@ impl CachedToolCall {
             description: None,
             source: None,
             lua_primary_arg: None,
+            diffs: Vec::new(),
         }
     }
 
@@ -130,6 +136,14 @@ impl CachedToolCall {
 
     pub fn mark_complete(&mut self) {
         self.complete = true;
+    }
+
+    /// Replace the tool's file-diff snapshot. Used when ACP agents
+    /// (e.g. Claude Code) defer diff content until after the initial
+    /// tool_call frame and surface it via a follow-up
+    /// `tool_call_diff_update` event.
+    pub fn set_diffs(&mut self, diffs: Vec<FileDiff>) {
+        self.diffs = diffs;
     }
 
     pub fn set_output_path(&mut self, path: PathBuf) {

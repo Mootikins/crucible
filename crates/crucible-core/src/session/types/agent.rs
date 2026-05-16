@@ -117,6 +117,13 @@ pub struct SessionAgent {
     /// Maximum retries when output validation fails (default: 3).
     #[serde(default = "default_validation_retries")]
     pub validation_retries: u32,
+
+    /// Trigger auto-compaction when estimated message tokens exceed
+    /// `context_budget * autocompact_threshold`. `None` uses the default
+    /// (0.95). Set to `Some(0.0)` (or surface "off" in user-facing
+    /// parsers) to disable. Range: 0.0..=1.0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autocompact_threshold: Option<f32>,
 }
 
 impl SessionAgent {
@@ -163,6 +170,7 @@ impl SessionAgent {
             context_window: None,
             output_validation: OutputValidation::default(),
             validation_retries: default_validation_retries(),
+            autocompact_threshold: None,
         }
     }
 }

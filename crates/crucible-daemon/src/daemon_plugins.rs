@@ -7,16 +7,16 @@
 //! UI modules (oil, popup, panel, statusline) are intentionally excluded —
 //! the daemon is headless.
 
+use anyhow::Context;
 use crucible_core::storage::NoteStore;
 use crucible_core::storage::PropertyStore;
 use crucible_lua::{
-    register_graph_module, register_graph_module_with_store, register_oq_module,
-    register_paths_module, register_schedule_module, register_sessions_module,
+    register_context_module, register_context_validators, register_graph_module,
+    register_oq_module, register_paths_module, register_schedule_module, register_sessions_module,
     register_sessions_module_with_api, register_shell_module, register_storage_module,
     register_storage_module_with_store, register_tools_module, register_tools_module_with_api,
-    register_vault_module, register_vault_module_with_store, register_ws_module, DaemonSessionApi,
-    DaemonToolsApi, LuaExecutor, PathsContext, PluginManager, PluginSource, PluginSpec,
-    ShellPolicy,
+    register_vault_module, register_ws_module, DaemonSessionApi, DaemonToolsApi, LuaExecutor,
+    LuaValidatorRegistry, PathsContext, PluginManager, PluginSource, PluginSpec, ShellPolicy,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -35,6 +35,12 @@ pub struct DaemonPluginLoader {
     /// Service functions extracted from plugins during loading.
     /// Each entry is `(service_name, mlua::Function)`.
     service_fns: Vec<(String, mlua::Function)>,
+    /// Shared registry of Lua-defined output validators.
+    ///
+    /// Plugins call `cru.context.register_validator(name, fn)` which inserts
+    /// a `RegistryKey` into this map; the agent stream loop dispatches
+    /// validations by name without re-entering Lua's globals table.
+    validator_registry: Arc<LuaValidatorRegistry>,
 }
 
 impl DaemonPluginLoader {
@@ -79,12 +85,41 @@ impl DaemonPluginLoader {
 
         let plugin_manager = PluginManager::new();
 
+        // Validator registry is created up front so plugins can register
+        // validators during init — even before `upgrade_with_sessions`
+        // wires the daemon-backed `cru.context.*` methods. The same Arc
+        // is shared with `AgentManager` so the stream loop can dispatch
+        // by name without re-entering Lua's symbol table.
+        let validator_registry = Arc::new(LuaValidatorRegistry::new());
+        register_context_validators(lua, Arc::clone(&validator_registry))
+            .map_err(|e| anyhow::anyhow!("context validators: {e}"))?;
+
         Ok(Self {
             executor,
             plugin_manager,
             loaded_specs: Vec::new(),
             service_fns: Vec::new(),
+            validator_registry,
         })
+    }
+
+    /// Shared registry of Lua-defined output validators.
+    ///
+    /// Hand this `Arc` to `AgentManager::set_lua_validators` together with
+    /// [`Self::plugin_lua`] so the agent stream loop can resolve
+    /// `OutputValidation::Lua { name }` against plugin-registered functions.
+    pub fn validator_registry(&self) -> Arc<LuaValidatorRegistry> {
+        Arc::clone(&self.validator_registry)
+    }
+
+    /// Clone of the plugin runtime's `Lua` handle.
+    ///
+    /// `mlua::Lua` is `Send + Sync` with the `send` feature enabled and
+    /// is internally reference-counted; the clone is cheap and lets the
+    /// agent stream loop call into Lua-registered validators without
+    /// going through the plugin loader's outer mutex.
+    pub fn plugin_lua(&self) -> Arc<mlua::Lua> {
+        Arc::new(self.executor.lua().clone())
     }
 
     /// Register plugin config as `crucible.config` in the Lua runtime.
@@ -146,10 +181,15 @@ impl DaemonPluginLoader {
         kiln_path: &std::path::Path,
     ) -> anyhow::Result<()> {
         let lua = self.executor.lua();
+        let authority = crucible_core::storage::Scope::workspace_unchecked(kiln_path);
 
-        register_graph_module_with_store(lua, store.clone())
-            .map_err(|e| anyhow::anyhow!("graph upgrade: {e}"))?;
-        register_vault_module_with_store(lua, store)
+        crucible_lua::register_graph_module_with_store_scoped(
+            lua,
+            store.clone(),
+            authority.clone(),
+        )
+        .map_err(|e| anyhow::anyhow!("graph upgrade: {e}"))?;
+        crucible_lua::register_vault_module_with_store_scoped(lua, store, authority)
             .map_err(|e| anyhow::anyhow!("vault upgrade: {e}"))?;
 
         // Set cru.kiln.active_path so plugins know which kiln is active
@@ -182,11 +222,15 @@ impl DaemonPluginLoader {
     /// Upgrade sessions module with real daemon-backed implementations.
     ///
     /// Call after session/agent managers are created. Replaces stub `cru.sessions.*`
-    /// functions with implementations that delegate to the provided API.
+    /// functions with implementations that delegate to the provided API. Also
+    /// registers `cru.context.*` (Wave 1 plugin closure surface) which shares
+    /// the same [`DaemonSessionApi`].
     pub fn upgrade_with_sessions(&self, api: Arc<dyn DaemonSessionApi>) -> anyhow::Result<()> {
-        register_sessions_module_with_api(self.executor.lua(), api)
+        let lua = self.executor.lua();
+        register_sessions_module_with_api(lua, Arc::clone(&api))
             .map_err(|e| anyhow::anyhow!("sessions upgrade: {e}"))?;
-        info!("Lua sessions module upgraded with daemon API");
+        register_context_module(lua, api).map_err(|e| anyhow::anyhow!("context module: {e}"))?;
+        info!("Lua sessions + context modules upgraded with daemon API");
         Ok(())
     }
 
@@ -662,101 +706,189 @@ pub fn default_daemon_plugin_paths() -> Vec<(PathBuf, PluginSource)> {
     daemon_plugin_paths(&[])
 }
 
-/// Bootstrap declared plugins by git-cloning any that are missing.
+/// Outcome of attempting to bootstrap a single plugin entry.
+#[derive(Debug)]
+pub enum BootstrapOutcome {
+    /// Plugin already cloned at the expected destination; no work done.
+    AlreadyPresent,
+    /// Disabled in config; skipped.
+    Disabled,
+    /// Successfully cloned (and pinned, if specified).
+    Cloned { dest: PathBuf },
+}
+
+/// Bootstrap a single plugin entry: clone if missing, check out pin if
+/// set. Returns a structured outcome so callers (CLI vs daemon startup)
+/// can decide how loudly to react to failures.
 ///
-/// Reads `PluginEntry` declarations (typically from `plugins.toml`) and
-/// shallow-clones repos into `~/.config/crucible/plugins/<name>/` when
-/// the target directory does not already exist.
-pub async fn bootstrap_plugins(
-    entries: &[crucible_core::config::PluginEntry],
-) -> anyhow::Result<()> {
+/// Pin handling: when a pin is set we drop `--depth 1` because a shallow
+/// clone often won't contain the target SHA on the tip. Tags and branch
+/// names usually work shallow, but SHAs need full history. Trading
+/// bandwidth for correctness.
+pub async fn bootstrap_plugin_entry(
+    entry: &crucible_core::config::PluginEntry,
+) -> anyhow::Result<BootstrapOutcome> {
+    if !entry.enabled {
+        return Ok(BootstrapOutcome::Disabled);
+    }
+
     let plugins_dir = dirs::config_dir()
         .ok_or_else(|| anyhow::anyhow!("could not determine config directory"))?
         .join("crucible")
         .join("plugins");
 
+    let name = plugin_name_from_url(&entry.url)
+        .ok_or_else(|| anyhow::anyhow!("Plugin URL '{}' has no usable name segment", entry.url))?;
+    let dest = plugins_dir.join(&name);
+    if dest.exists() {
+        return Ok(BootstrapOutcome::AlreadyPresent);
+    }
+
+    let url =
+        normalize_git_url(&entry.url).with_context(|| format!("rejecting plugin '{}'", name))?;
+    info!("Cloning plugin '{}' from {}", name, url);
+
+    let mut cmd = tokio::process::Command::new("git");
+    cmd.arg("clone");
+    // Shallow clone unless we need to check out a specific SHA later —
+    // shallow clones often don't contain the target SHA.
+    if entry.pin.is_none() {
+        cmd.args(["--depth", "1"]);
+    }
+    if let Some(ref branch) = entry.branch {
+        cmd.args(["--branch", branch]);
+    }
+    // Defense-in-depth: `--` stops git from parsing any subsequent argv
+    // as flags, even if a future caller bypasses normalize_git_url.
+    cmd.arg("--").arg(&url).arg(&dest);
+
+    let output = cmd
+        .output()
+        .await
+        .with_context(|| format!("failed to spawn git clone for '{}'", name))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("git clone failed for '{}': {}", name, stderr.trim());
+    }
+
+    if let Some(ref pin) = entry.pin {
+        let checkout = tokio::process::Command::new("git")
+            .args(["checkout", pin])
+            .current_dir(&dest)
+            .output()
+            .await
+            .with_context(|| format!("failed to spawn git checkout for pin '{}'", pin))?;
+        if !checkout.status.success() {
+            // Roll back the cloned dir so retries don't get stuck on
+            // a half-installed plugin. Warn loudly if rollback itself
+            // fails — the user needs to know `dest` is dirty so they
+            // can clean it up manually.
+            if let Err(rb_err) = tokio::fs::remove_dir_all(&dest).await {
+                warn!(
+                    plugin = %name,
+                    path = %dest.display(),
+                    error = %rb_err,
+                    "Failed to roll back half-installed plugin after pin checkout failure; \
+                     remove the directory manually before retrying"
+                );
+            }
+            let stderr = String::from_utf8_lossy(&checkout.stderr);
+            anyhow::bail!(
+                "git checkout failed for pin '{}' of plugin '{}' (manually remove {} if it still exists): {}",
+                pin,
+                name,
+                dest.display(),
+                stderr.trim()
+            );
+        }
+    }
+
+    Ok(BootstrapOutcome::Cloned { dest })
+}
+
+/// Bootstrap declared plugins by git-cloning any that are missing.
+///
+/// Reads `PluginEntry` declarations (typically from `plugins.toml`).
+/// Failures are warned and skipped — the daemon should start even if
+/// one plugin can't be fetched. For per-entry error reporting (e.g.
+/// `cru install`), use `bootstrap_plugin_entry` directly.
+pub async fn bootstrap_plugins(
+    entries: &[crucible_core::config::PluginEntry],
+) -> anyhow::Result<()> {
     for entry in entries {
-        if !entry.enabled {
-            continue;
-        }
-        let name = match plugin_name_from_url(&entry.url) {
-            Some(n) => n,
-            None => {
-                warn!("Skipping plugin with unparseable URL: '{}'", entry.url);
-                continue;
-            }
-        };
-        let dest = plugins_dir.join(&name);
-        if dest.exists() {
-            continue;
-        }
-
-        let url = normalize_git_url(&entry.url);
-        info!("Bootstrapping plugin '{}' from {}", name, url);
-
-        let mut cmd = tokio::process::Command::new("git");
-        cmd.args(["clone", "--depth", "1"]);
-        if let Some(ref branch) = entry.branch {
-            cmd.args(["--branch", branch]);
-        }
-        cmd.arg(&url).arg(&dest);
-
-        match cmd.output().await {
-            Ok(output) if output.status.success() => {
-                info!("Cloned plugin '{}'", name);
-                if let Some(ref pin) = entry.pin {
-                    let checkout = tokio::process::Command::new("git")
-                        .args(["checkout", pin])
-                        .current_dir(&dest)
-                        .output()
-                        .await;
-                    if let Ok(out) = checkout {
-                        if !out.status.success() {
-                            warn!("Failed to checkout pin '{}' for plugin '{}'", pin, name);
-                        }
-                    }
-                }
-            }
-            Ok(output) => {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                warn!("Failed to clone plugin '{}': {}", name, stderr.trim());
-            }
+        match bootstrap_plugin_entry(entry).await {
+            Ok(_) => {}
             Err(e) => {
-                warn!("Failed to run git clone for plugin '{}': {}", name, e);
+                warn!("Plugin bootstrap failed: {}", e);
             }
         }
     }
     Ok(())
 }
 
-/// Extract plugin name from URL (last path segment, sans `.git`).
-///
-/// Returns `None` if the extracted name is empty, `.`, or `..` — callers
-/// should skip/warn rather than creating directories with unsafe names.
+/// Local alias for `crucible_core::config::plugin_name_from_url` so
+/// the existing call sites in this file read naturally. The canonical
+/// implementation lives in core so CLI, daemon, and any future
+/// consumer share the same definition of "safe plugin directory name".
 fn plugin_name_from_url(url: &str) -> Option<String> {
-    let name = url
-        .trim_end_matches('/')
-        .rsplit('/')
-        .next()
-        .unwrap_or("")
-        .trim_end_matches(".git")
-        .to_string();
-    if name.is_empty() || name == "." || name == ".." {
-        None
-    } else {
-        Some(name)
-    }
+    crucible_core::config::plugin_name_from_url(url)
 }
 
-/// Normalize shorthand URLs to full git URLs.
+/// Normalize and validate a plugin git URL.
 ///
-/// Passes through full URLs (`http`, `git@`, `ssh://`) unchanged.
-/// Treats anything else as a GitHub `user/repo` shorthand.
-fn normalize_git_url(url: &str) -> String {
-    if url.starts_with("http") || url.starts_with("git@") || url.starts_with("ssh://") {
-        url.to_string()
+/// Accepted forms:
+/// - `https://...` / `http://...`
+/// - `ssh://git@host/repo[.git]`
+/// - `git@host:user/repo[.git]`
+/// - Bare `user/repo` shorthand (expanded to `https://github.com/user/repo.git`)
+///
+/// Rejected:
+/// - URLs starting with `-` (parsed as a git flag — CVE-2017-1000117 family)
+/// - URLs containing `::` (git external transport — RCE vector via `ext::sh ...`)
+/// - Other schemes (`file://`, `git://`, custom) — narrows the attack surface to
+///   forms with a vetted use case
+/// - Shorthand containing anything outside `[A-Za-z0-9._/-]` (defends against
+///   shell-quoting hazards if the value ever lands in a non-`exec`-style context)
+fn normalize_git_url(url: &str) -> anyhow::Result<String> {
+    if url.is_empty() {
+        anyhow::bail!("plugin URL is empty");
+    }
+    if url.starts_with('-') {
+        anyhow::bail!(
+            "plugin URL '{}' starts with '-' (would be parsed as a git flag)",
+            url
+        );
+    }
+    if url.contains("::") {
+        anyhow::bail!(
+            "plugin URL '{}' contains '::' (git external transport, disallowed)",
+            url
+        );
+    }
+
+    if url.starts_with("https://")
+        || url.starts_with("http://")
+        || url.starts_with("ssh://git@")
+        || url.starts_with("git@")
+    {
+        Ok(url.to_string())
+    } else if url.contains("://") {
+        anyhow::bail!(
+            "plugin URL '{}' uses unsupported scheme (allowed: https, http, ssh://git@, git@host:repo)",
+            url
+        )
     } else {
-        format!("https://github.com/{}.git", url)
+        if !url
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '-' | '_' | '.'))
+        {
+            anyhow::bail!(
+                "plugin shorthand '{}' must match [A-Za-z0-9._/-]+ (got '{}')",
+                url,
+                url
+            );
+        }
+        Ok(format!("https://github.com/{}.git", url))
     }
 }
 
@@ -929,7 +1061,7 @@ mod tests {
     #[test]
     fn normalize_passes_https_through() {
         assert_eq!(
-            normalize_git_url("https://github.com/user/repo.git"),
+            normalize_git_url("https://github.com/user/repo.git").unwrap(),
             "https://github.com/user/repo.git"
         );
     }
@@ -937,7 +1069,7 @@ mod tests {
     #[test]
     fn normalize_passes_ssh_through() {
         assert_eq!(
-            normalize_git_url("git@github.com:user/repo.git"),
+            normalize_git_url("git@github.com:user/repo.git").unwrap(),
             "git@github.com:user/repo.git"
         );
     }
@@ -945,7 +1077,7 @@ mod tests {
     #[test]
     fn normalize_expands_shorthand() {
         assert_eq!(
-            normalize_git_url("user/repo"),
+            normalize_git_url("user/repo").unwrap(),
             "https://github.com/user/repo.git"
         );
     }
@@ -953,9 +1085,68 @@ mod tests {
     #[test]
     fn normalize_passes_ssh_scheme_through() {
         assert_eq!(
-            normalize_git_url("ssh://git@host/repo.git"),
+            normalize_git_url("ssh://git@host/repo.git").unwrap(),
             "ssh://git@host/repo.git"
         );
+    }
+
+    #[test]
+    fn normalize_rejects_leading_dash() {
+        // -oProxyCommand=... and similar option-injection forms would be
+        // parsed by git as flags rather than a URL.
+        assert!(normalize_git_url("-oProxyCommand=whoami").is_err());
+        assert!(normalize_git_url("--upload-pack=evil").is_err());
+        assert!(normalize_git_url("-bad").is_err());
+    }
+
+    #[test]
+    fn normalize_rejects_ext_transport() {
+        // git's `ext::` transport can execute arbitrary shell commands
+        // and was historically chained with submodule init for RCE.
+        assert!(normalize_git_url("ext::sh -c id").is_err());
+        assert!(normalize_git_url("https://example.com/ext::evil").is_err());
+    }
+
+    #[test]
+    fn normalize_rejects_file_scheme() {
+        // file:// could be used to read arbitrary repos off disk.
+        assert!(normalize_git_url("file:///etc/passwd").is_err());
+    }
+
+    #[test]
+    fn normalize_rejects_unknown_scheme() {
+        assert!(normalize_git_url("git://example.com/repo").is_err());
+        assert!(normalize_git_url("ftp://example.com/repo").is_err());
+        assert!(normalize_git_url("ssh://nobody@host/repo").is_err()); // requires ssh://git@
+    }
+
+    #[test]
+    fn normalize_rejects_shorthand_with_meta_chars() {
+        assert!(normalize_git_url("user/$(whoami)").is_err());
+        assert!(normalize_git_url("user/repo;rm -rf").is_err());
+        assert!(normalize_git_url("user/with space").is_err());
+    }
+
+    #[test]
+    fn normalize_rejects_empty() {
+        assert!(normalize_git_url("").is_err());
+    }
+
+    #[test]
+    fn plugin_name_rejects_leading_dash() {
+        // A name like "-rf" would be interpreted as an `rm -rf` flag if
+        // it ever lands in a non-`exec`-style context.
+        assert_eq!(plugin_name_from_url("user/-rf"), None);
+        assert_eq!(plugin_name_from_url("-rf"), None);
+    }
+
+    #[test]
+    fn plugin_name_rejects_shell_meta_chars() {
+        assert_eq!(plugin_name_from_url("user/$(whoami)"), None);
+        assert_eq!(plugin_name_from_url("user/repo;rm"), None);
+        assert_eq!(plugin_name_from_url("user/with space"), None);
+        // Newlines were rejected before; keep that invariant.
+        assert_eq!(plugin_name_from_url("user/foo\n"), None);
     }
 
     #[tokio::test]
