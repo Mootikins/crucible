@@ -1,4 +1,4 @@
-use crate::layout::{build_layout_tree, render_layout_tree_compact, LayoutEngine};
+use crate::layout::LayoutEngine;
 
 use crate::node::{Node, OverlayNode};
 use crate::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
@@ -140,9 +140,8 @@ impl FramePlanner {
         overlay_nodes
             .iter()
             .map(|overlay_node| {
-                let layout_tree = build_layout_tree(&overlay_node.child, self.width, self.height);
-                let (content, _) = render_layout_tree_compact(&layout_tree);
-                let lines: Vec<String> = content.lines().map(String::from).collect();
+                let result = render_tree(&overlay_node.child, self.width, self.height);
+                let lines: Vec<String> = result.content.lines().map(String::from).collect();
                 RenderedOverlay {
                     lines,
                     anchor: overlay_node.anchor,
