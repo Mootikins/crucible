@@ -1,11 +1,8 @@
-use crate::layout::{
-    build_layout_tree, build_layout_tree_with_engine, render_layout_tree,
-    render_layout_tree_compact, LayoutEngine,
-};
+use crate::layout::{build_layout_tree, render_layout_tree_compact, LayoutEngine};
 
 use crate::node::{Node, OverlayNode};
 use crate::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
-use crate::render::{render_tree, RenderResult, NATURAL_HEIGHT};
+use crate::render::{render_tree, render_tree_with_engine, RenderResult, NATURAL_HEIGHT};
 
 /// Graduated content ready for terminal output.
 ///
@@ -124,18 +121,8 @@ impl FramePlanner {
         let overlay_nodes = extract_overlays(tree);
         let main_tree = filter_overlays(tree.clone());
 
-        let layout_tree = build_layout_tree_with_engine(
-            &mut self.layout_engine,
-            &main_tree,
-            self.width,
-            self.height,
-        );
-        let (content, cursor_info) = render_layout_tree(&layout_tree);
-
-        let viewport = RenderResult {
-            content,
-            cursor: cursor_info,
-        };
+        let viewport =
+            render_tree_with_engine(&mut self.layout_engine, &main_tree, self.width, self.height);
 
         let rendered_overlays = self.render_overlays(&overlay_nodes);
 
