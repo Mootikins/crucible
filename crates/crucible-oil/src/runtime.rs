@@ -141,7 +141,6 @@ mod tests {
         let tree = col([text("Live")]);
         let grad = Graduation {
             node: col([text("Graduated content")]),
-            width: 80,
         };
         runtime.render_with_graduation(&tree, Some(&grad));
 
@@ -159,7 +158,6 @@ mod tests {
         let tree = col([text("Live")]);
         let grad = Graduation {
             node: col([text("Graduated via node")]),
-            width: 80,
         };
         runtime.render_with_graduation(&tree, Some(&grad));
 
@@ -192,14 +190,12 @@ mod tests {
         // Frame 1: graduate content A
         let grad_a = Graduation {
             node: col([text("Content A")]),
-            width: 80,
         };
         runtime.render_with_graduation(&tree, Some(&grad_a));
 
         // Frame 2: graduate content B
         let grad_b = Graduation {
             node: col([text("Content B")]),
-            width: 80,
         };
         runtime.render_with_graduation(&tree, Some(&grad_b));
 
@@ -218,7 +214,6 @@ mod tests {
         let tree = col([text("Viewport")]);
         let grad = Graduation {
             node: col([text("Scrollback")]),
-            width: 80,
         };
 
         // Use the FrameRenderer trait method

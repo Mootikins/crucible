@@ -8,7 +8,7 @@
 #[cfg(feature = "test-utils")]
 mod tests {
     use crucible_oil::node::*;
-    use crucible_oil::planning::Graduation;
+    use crucible_oil::planning::{FramePlanner, Graduation};
     use crucible_oil::proptest_strategies::*;
     use crucible_oil::TestRuntime;
     use proptest::prelude::*;
@@ -36,9 +36,9 @@ mod tests {
         })
     }
 
-    /// Generate a Graduation struct with random content and dimensions.
+    /// Generate a Graduation struct with random content.
     fn arb_graduation() -> impl Strategy<Value = Graduation> {
-        (arb_graduation_node(), 20u16..200).prop_map(|(node, width)| Graduation { node, width })
+        arb_graduation_node().prop_map(|node| Graduation { node })
     }
 
     /// Generate a viewport node that MAY contain spinners (the normal case).
@@ -63,14 +63,16 @@ mod tests {
         /// is_complete=true, which suppresses spinner nodes.
         #[test]
         fn graduation_content_has_no_spinners(grad in arb_graduation()) {
-            let rendered = grad.render();
+            let mut planner = FramePlanner::new(80, 24);
+            let snapshot = planner.plan_frame(&col([text("vp")]), Some(grad));
+            let rendered = &snapshot.stdout_delta;
 
             for ch in SPINNER_FRAMES.iter().chain(BRAILLE_SPINNER_FRAMES.iter()) {
                 prop_assert!(
                     !rendered.contains(*ch),
                     "Spinner char '{}' found in graduation content:\n{}",
                     ch,
-                    crucible_oil::ansi::strip_ansi(&rendered)
+                    crucible_oil::ansi::strip_ansi(rendered)
                 );
             }
         }

@@ -496,14 +496,13 @@ impl ContainerList {
         let top_margin = if self.has_graduated { 1 } else { 0 };
         self.has_graduated = true;
 
-        let width = ctx.terminal_size.0;
         let inner = col(rendered).gap(Gap::row(1)).with_margin(Padding {
             top: top_margin,
             ..Padding::all(0)
         });
         let node = col([inner]);
 
-        Some(Graduation { node, width })
+        Some(Graduation { node })
     }
 }
 
@@ -790,11 +789,13 @@ mod tests {
 
     #[test]
     fn cross_batch_spacing_uses_has_graduated() {
+        use crucible_oil::render::{render_tree, NATURAL_HEIGHT};
+
         let mut list = ContainerList::new();
         list.add_user_message("first".into());
         let grad1 = drain(&mut list).unwrap();
         // First graduation: no top padding (nothing before it)
-        let rendered1 = grad1.render();
+        let rendered1 = render_tree(&grad1.node, 80, NATURAL_HEIGHT).content;
         assert!(
             !rendered1.starts_with("\r\n"),
             "first grad should have no leading blank"
@@ -803,7 +804,7 @@ mod tests {
         // Second graduation: should have top padding
         list.add_system_message("second".into());
         let grad2 = drain(&mut list).unwrap();
-        let rendered2 = grad2.render();
+        let rendered2 = render_tree(&grad2.node, 80, NATURAL_HEIGHT).content;
         // The node tree should include top margin, producing a leading blank line
         assert!(
             rendered2.starts_with("\r\n") || rendered2.starts_with("\n"),

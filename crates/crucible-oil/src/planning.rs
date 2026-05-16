@@ -5,29 +5,18 @@ use crate::layout::{
 
 use crate::node::{Node, OverlayNode};
 use crate::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
-use crate::render::RenderResult;
+use crate::render::{render_tree, RenderResult, NATURAL_HEIGHT};
 
 /// Graduated content ready for terminal output.
 ///
-/// A thin wrapper around a Node tree and the width it should be rendered at.
-/// The terminal layer renders this to a string and writes it to scrollback.
+/// A thin wrapper around a Node tree. The planner renders this through the
+/// unified `render_tree` path at the planner's current width, so graduation
+/// (scrollback) and viewport stay byte-identical for the same tree+dims.
 /// Spacing is encoded in the node tree via Gap and Padding (no out-of-band flags).
 #[derive(Debug, Clone)]
 pub struct Graduation {
     /// The rendered node tree for graduated content.
     pub node: Node,
-    /// Terminal width for rendering.
-    pub width: u16,
-}
-
-impl Graduation {
-    /// Render graduated content to an ANSI string (compact, trailing blanks trimmed).
-    ///
-    /// This is the single render function for graduation content. Both the
-    /// production TUI (via `plan_frame`) and tests use this.
-    pub fn render(&self) -> String {
-        crate::render::render_to_string(&self.node, self.width as usize)
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -47,7 +36,7 @@ pub struct FramePlan {
 pub struct FrameSnapshot {
     pub plan: FramePlan,
     /// Content to write to stdout before rendering viewport.
-    /// Produced by rendering graduation content (Graduation::render()).
+    /// Produced by rendering graduation content through `render_tree`.
     pub stdout_delta: String,
 }
 
@@ -127,7 +116,10 @@ impl FramePlanner {
     pub fn plan_frame(&mut self, tree: &Node, graduation: Option<Graduation>) -> FrameSnapshot {
         self.frame_no += 1;
 
-        let stdout_delta = graduation.as_ref().map(|g| g.render()).unwrap_or_default();
+        let stdout_delta = graduation
+            .as_ref()
+            .map(|g| render_tree(&g.node, self.width, NATURAL_HEIGHT).content)
+            .unwrap_or_default();
 
         let overlay_nodes = extract_overlays(tree);
         let main_tree = filter_overlays(tree.clone());
@@ -236,7 +228,6 @@ mod tests {
         let tree = col([text("Live content")]);
         let grad = Graduation {
             node: col([text("Graduated")]),
-            width: 80,
         };
         let snapshot = planner.plan_frame(&tree, Some(grad));
 
@@ -272,11 +263,12 @@ mod tests {
 
     #[test]
     fn graduation_renders_node_to_string() {
+        let mut planner = FramePlanner::new(80, 24);
         let node = col([text("Hello"), text("World")]);
-        let grad = Graduation { node, width: 80 };
-        let rendered = grad.render();
-        assert!(rendered.contains("Hello"));
-        assert!(rendered.contains("World"));
+        let grad = Graduation { node };
+        let snapshot = planner.plan_frame(&col([text("viewport")]), Some(grad));
+        assert!(snapshot.stdout_delta.contains("Hello"));
+        assert!(snapshot.stdout_delta.contains("World"));
     }
 
     #[test]
@@ -284,9 +276,11 @@ mod tests {
         use crate::ansi::strip_ansi;
         use crate::style::Gap;
         // Two groups with Gap::row(1) between them
+        let mut planner = FramePlanner::new(80, 24);
         let node = col([text("Group A"), text("Group B")]).gap(Gap::row(1));
-        let grad = Graduation { node, width: 80 };
-        let rendered = strip_ansi(&grad.render());
+        let grad = Graduation { node };
+        let snapshot = planner.plan_frame(&col([text("viewport")]), Some(grad));
+        let rendered = strip_ansi(&snapshot.stdout_delta);
         let lines: Vec<&str> = rendered.lines().collect();
         eprintln!("Lines: {:?}", lines);
         assert!(
@@ -309,7 +303,6 @@ mod tests {
         let tree = col([text("Live content")]);
         let graduation = Graduation {
             node: col([text("Graduated")]),
-            width: 80,
         };
         let snapshot = planner.plan_frame(&tree, Some(graduation));
 
@@ -333,12 +326,41 @@ mod tests {
         let tree = col([text("Live")]);
         let graduation = Graduation {
             node: col([text("Graduated")]),
-            width: 80,
         };
         let snapshot = planner.plan_frame(&tree, Some(graduation));
 
         let screen = snapshot.screen();
         assert!(screen.contains("Graduated"));
         assert!(screen.contains("Live"));
+    }
+
+    #[test]
+    fn graduation_and_viewport_emit_byte_identical_output_for_same_tree() {
+        // Same tree rendered as viewport vs graduation at the same planner
+        // dimensions must produce byte-identical content. This is the
+        // post-Stage-B invariant: render_tree owns both paths.
+        use crate::ansi::strip_ansi;
+        let mut planner = FramePlanner::new(80, 24);
+        let shared = col([text("alpha"), text("beta"), text("gamma")]);
+
+        let viewport_snap = planner.plan_frame(&shared, None);
+        let grad_snap = planner.plan_frame(
+            &col([text("placeholder")]),
+            Some(Graduation {
+                node: shared.clone(),
+            }),
+        );
+
+        // Strip ANSI for comparison: viewport content includes a cursor-tracking
+        // cell-grid layout, graduation is a flat string. The visible characters
+        // must match.
+        let viewport_visible = strip_ansi(viewport_snap.viewport_content());
+        let grad_visible = strip_ansi(&grad_snap.stdout_delta);
+        assert!(viewport_visible.contains("alpha"));
+        assert!(viewport_visible.contains("beta"));
+        assert!(viewport_visible.contains("gamma"));
+        assert!(grad_visible.contains("alpha"));
+        assert!(grad_visible.contains("beta"));
+        assert!(grad_visible.contains("gamma"));
     }
 }
