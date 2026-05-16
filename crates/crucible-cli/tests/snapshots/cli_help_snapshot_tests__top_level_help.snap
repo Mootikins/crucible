@@ -25,6 +25,7 @@ Commands:
   skills       Discover and manage agent skills (list, show, search)
   tools        Discover and manage tools (list, show)
   plugin       Manage and develop Lua plugins
+  install      Install a plugin from a git URL (alias for `cru plugin add`)
   lua          Evaluate Lua code in the daemon's plugin runtime
   init         Initialize a new kiln or project [aliases: i]
   session      Manage chat sessions (create, configure, send, pause, resume, end) [aliases: s, sess]
