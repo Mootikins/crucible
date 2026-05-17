@@ -147,6 +147,127 @@ fn snapshot_eq(a: &FramePlan, b: &FramePlan) -> bool {
         && a.overlays.len() == b.overlays.len()
 }
 
+// ─── Invariant #2: Width-stable graduation ─────────────────────────────────
+
+/// For every `Graduate { node, .. }` op, the planner's `stdout_delta`
+/// equals `render_tree(&node, planner.width(), NATURAL_HEIGHT).content`
+/// byte-for-byte. Post-Stage-B this holds by construction (the planner
+/// literally invokes that call); the proof guards against regressions.
+fn check_graduation_width_stable(initial_dims: (u16, u16), ops: &[Op]) -> Result<(), Violation> {
+    // Replay ops and capture (graduate_node, planner_width_at_that_moment, observed_delta).
+    let mut planner_width = initial_dims.0;
+    let mut planner_height = initial_dims.1;
+    let mut rt = TestRuntime::new(initial_dims.0, initial_dims.1);
+
+    for (i, op) in ops.iter().enumerate() {
+        match op {
+            Op::RenderFrame { tree } => {
+                rt.render(tree);
+            }
+            Op::Graduate { node, viewport } => {
+                let grad = Graduation { node: node.clone() };
+                rt.render_with_graduation(viewport, Some(&grad));
+
+                // Predicted: oil renders the node through `render_tree` at
+                // the current planner width with natural height. The observed
+                // stdout_delta must equal that byte-for-byte.
+                let predicted = render_tree(node, planner_width, NATURAL_HEIGHT).content;
+                let observed = rt
+                    .last_snapshot()
+                    .map(|s| s.stdout_delta.clone())
+                    .unwrap_or_default();
+                if observed != predicted {
+                    return Err(Violation {
+                        invariant: "graduation_width_stable",
+                        op_index: i,
+                        detail: format!(
+                            "stdout_delta != render_tree(node, {planner_width}, NATURAL_HEIGHT)\n\
+                             observed: {:?}\npredicted: {:?}",
+                            preview(&observed),
+                            preview(&predicted),
+                        ),
+                    });
+                }
+            }
+            Op::Resize { width, height } => {
+                rt.resize(*width, *height);
+                planner_width = *width;
+                planner_height = *height;
+            }
+        }
+    }
+    let _ = planner_height;
+    Ok(())
+}
+
+// ─── Invariant #3: No graduation/viewport crosstalk ────────────────────────
+
+/// For every `Graduate { node, viewport }`, the viewport content equals
+/// `render_tree(viewport, w, h).content` — i.e., the graduated `node`
+/// does not leak into the viewport region. Combined with invariant #2,
+/// this is the formal "no double-paint" property at oil's level:
+/// scrollback bytes correspond to the graduation tree, viewport bytes
+/// correspond to the viewport tree, and the two are independent.
+///
+/// (Higher-level "graduated content stays in scrollback across many
+/// frames" is a caller contract — oil can't enforce that the caller
+/// stops passing the same tree as viewport input. The oil-level
+/// guarantee is the per-frame separation, which this invariant pins.)
+fn check_no_graduation_viewport_crosstalk(
+    initial_dims: (u16, u16),
+    ops: &[Op],
+) -> Result<(), Violation> {
+    let mut planner_width = initial_dims.0;
+    let mut planner_height = initial_dims.1;
+    let mut rt = TestRuntime::new(initial_dims.0, initial_dims.1);
+
+    for (i, op) in ops.iter().enumerate() {
+        match op {
+            Op::RenderFrame { tree } => {
+                rt.render(tree);
+                let predicted = render_tree(tree, planner_width, planner_height).content;
+                let observed = rt.viewport_content().to_string();
+                if observed != predicted {
+                    return Err(Violation {
+                        invariant: "no_graduation_viewport_crosstalk",
+                        op_index: i,
+                        detail: format!(
+                            "viewport != render_tree(tree, {planner_width}, {planner_height})\n\
+                             observed: {:?}\npredicted: {:?}",
+                            preview(&observed),
+                            preview(&predicted),
+                        ),
+                    });
+                }
+            }
+            Op::Graduate { node, viewport } => {
+                let grad = Graduation { node: node.clone() };
+                rt.render_with_graduation(viewport, Some(&grad));
+                let predicted = render_tree(viewport, planner_width, planner_height).content;
+                let observed = rt.viewport_content().to_string();
+                if observed != predicted {
+                    return Err(Violation {
+                        invariant: "no_graduation_viewport_crosstalk",
+                        op_index: i,
+                        detail: format!(
+                            "viewport != render_tree(viewport, {planner_width}, {planner_height}) after Graduate\n\
+                             observed: {:?}\npredicted: {:?}",
+                            preview(&observed),
+                            preview(&predicted),
+                        ),
+                    });
+                }
+            }
+            Op::Resize { width, height } => {
+                rt.resize(*width, *height);
+                planner_width = *width;
+                planner_height = *height;
+            }
+        }
+    }
+    Ok(())
+}
+
 // ─── Invariant #4: render_tree idempotence ─────────────────────────────────
 
 /// `render_tree(t, w, h)` is a pure function; calling it twice with the
@@ -245,6 +366,39 @@ proptest! {
     ) {
         if let Err(v) = check_determinism(dims, &ops) {
             prop_assert!(false, "determinism violated: {}\nops: {:#?}", v, ops);
+        }
+    }
+
+    /// Invariant #2: graduation stdout_delta is byte-equal to
+    /// `render_tree(node, planner_width, NATURAL_HEIGHT)`.
+    #[test]
+    fn prop_graduation_bytes_equal_render_tree_bytes(
+        dims in arb_dims(),
+        ops in arb_operation_sequence(),
+    ) {
+        if let Err(v) = check_graduation_width_stable(dims, &ops) {
+            prop_assert!(
+                false,
+                "width-stable graduation violated: {}\nops: {:#?}",
+                v, ops,
+            );
+        }
+    }
+
+    /// Invariant #3: viewport content after any op equals
+    /// `render_tree(viewport_tree, w, h)` — no crosstalk between
+    /// graduated scrollback and the viewport region.
+    #[test]
+    fn prop_no_graduation_viewport_crosstalk(
+        dims in arb_dims(),
+        ops in arb_operation_sequence(),
+    ) {
+        if let Err(v) = check_no_graduation_viewport_crosstalk(dims, &ops) {
+            prop_assert!(
+                false,
+                "graduation/viewport crosstalk: {}\nops: {:#?}",
+                v, ops,
+            );
         }
     }
 }
