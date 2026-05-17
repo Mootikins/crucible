@@ -514,6 +514,30 @@ export async function setPrecognition(sessionId: string, enabled: boolean): Prom
   });
 }
 
+/** Get the precognition results-per-query count (1..=20) for a session. */
+export async function getPrecognitionResults(sessionId: string): Promise<number> {
+  return (
+    await request<{ precognition_results: number }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionId)}/config/precognition/results`,
+      { errorMessage: 'Failed to get precognition results' },
+    )
+  ).precognition_results;
+}
+
+/** Set the precognition results-per-query count (1..=20) for a session. */
+export async function setPrecognitionResults(sessionId: string, count: number): Promise<void> {
+  await request<void>(
+    'PUT',
+    `/api/session/${encodeURIComponent(sessionId)}/config/precognition/results`,
+    {
+      errorMessage: 'Failed to set precognition results',
+      parseAs: 'none',
+      ...jsonRequest({ count }),
+    },
+  );
+}
+
 // =============================================================================
 // Session Export
 // =============================================================================

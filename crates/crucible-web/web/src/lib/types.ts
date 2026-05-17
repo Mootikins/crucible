@@ -21,6 +21,15 @@ export interface Message {
   thinking?: ThinkingBlock;
   /** Token usage data (populated on message_complete) */
   usage?: TokenUsage;
+  /**
+   * Precognition (auto-RAG) enrichment metadata, attached to the user message
+   * that triggered the daemon's first-turn note retrieval. Used by
+   * PrecognitionBadge to show what context was injected.
+   */
+  precognition?: {
+    notesCount: number;
+    notes: { name: string; relevance: number }[];
+  };
 }
 
 /** Summary of a tool call */

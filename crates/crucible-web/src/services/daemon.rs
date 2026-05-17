@@ -683,6 +683,37 @@ impl ReconnectingDaemon {
         .await
     }
 
+    pub async fn session_set_precognition_results(
+        &self,
+        session_id: &str,
+        count: usize,
+    ) -> anyhow::Result<()> {
+        let session_id = session_id.to_string();
+        self.call_with_reconnect("session.set_precognition_results", move |daemon| {
+            let session_id = session_id.clone();
+            Box::pin(async move {
+                daemon
+                    .session_set_precognition_results(&session_id, count)
+                    .await
+            })
+        })
+        .await
+    }
+
+    pub async fn session_get_precognition_results(&self, session_id: &str) -> anyhow::Result<usize> {
+        let session_id = session_id.to_string();
+        self.call_with_reconnect("session.get_precognition_results", move |daemon| {
+            let session_id = session_id.clone();
+            Box::pin(async move {
+                daemon
+                    .session_get_precognition_results(&session_id)
+                    .await
+                    .map(|opt| opt.unwrap_or(5))
+            })
+        })
+        .await
+    }
+
     pub async fn project_register(&self, path: &Path) -> anyhow::Result<crucible_core::Project> {
         let path = path.to_path_buf();
         self.call_with_reconnect("project.register", move |daemon| {

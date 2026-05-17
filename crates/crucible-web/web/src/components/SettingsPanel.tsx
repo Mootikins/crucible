@@ -13,6 +13,8 @@ import {
   setMaxTokens as apiSetMaxTokens,
   getPrecognition,
   setPrecognition as apiSetPrecognition,
+  getPrecognitionResults,
+  setPrecognitionResults as apiSetPrecognitionResults,
   getPlugins,
   reloadPlugin,
   getMcpStatus,
@@ -167,6 +169,7 @@ const ModelSettingsSection: Component = () => {
   const [, setMaxTokens] = createSignal<number | null>(null);
   const [maxTokensText, setMaxTokensText] = createSignal('');
   const [precognition, setPrecognition] = createSignal(true);
+  const [precognitionResults, setPrecognitionResults] = createSignal(5);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
 
@@ -204,17 +207,19 @@ const ModelSettingsSection: Component = () => {
     setLoading(true);
     setError(null);
     try {
-      const [budget, temp, tokens, precog] = await Promise.all([
+      const [budget, temp, tokens, precog, precogResults] = await Promise.all([
         getThinkingBudget(s.id),
         getTemperature(s.id),
         getMaxTokens(s.id),
         getPrecognition(s.id),
+        getPrecognitionResults(s.id),
       ]);
       setThinkingBudget(budget);
       setTemperature(temp ?? 1.0);
       setMaxTokens(tokens);
       setMaxTokensText(tokens !== null ? String(tokens) : '');
       setPrecognition(precog);
+      setPrecognitionResults(precogResults);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings');
     } finally {
@@ -271,6 +276,22 @@ const ModelSettingsSection: Component = () => {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to set precognition');
       setPrecognition(!newVal); // revert
+    }
+  };
+
+  const handlePrecognitionResultsChange = async (e: Event) => {
+    const s = session.currentSession();
+    if (!s) return;
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    if (Number.isNaN(raw)) return;
+    const clamped = Math.max(1, Math.min(20, raw));
+    const previous = precognitionResults();
+    setPrecognitionResults(clamped);
+    try {
+      await apiSetPrecognitionResults(s.id, clamped);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to set precognition results');
+      setPrecognitionResults(previous);
     }
   };
 
@@ -331,6 +352,7 @@ const ModelSettingsSection: Component = () => {
       <SettingRow label="Precognition" description="Auto-inject context">
         <button
           onClick={handlePrecognitionToggle}
+          data-testid="precognition-toggle"
           class={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
             precognition() ? 'bg-blue-600' : 'bg-neutral-600'
           }`}
@@ -341,6 +363,20 @@ const ModelSettingsSection: Component = () => {
             }`}
           />
         </button>
+      </SettingRow>
+
+      <SettingRow label="Results per query" description="1–20 notes injected">
+        <input
+          type="number"
+          min={1}
+          max={20}
+          step={1}
+          value={precognitionResults()}
+          onChange={handlePrecognitionResultsChange}
+          disabled={!precognition()}
+          data-testid="precognition-results-input"
+          class={`${inputClass} w-20 text-right ${!precognition() ? 'opacity-50 cursor-not-allowed' : ''}`}
+        />
       </SettingRow>
     </SettingsSectionState>
   );

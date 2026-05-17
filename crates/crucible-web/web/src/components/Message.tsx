@@ -2,29 +2,10 @@ import { Component, Show, For, createMemo, createSignal, createEffect, onCleanup
 import { Copy, Check, Pencil, RefreshCw } from 'lucide-solid';
 import { ToolCard } from './ToolCard';
 import { ThinkingBlock } from './ThinkingBlock';
+import { PrecognitionBadge } from './PrecognitionBadge';
 import { useChatSafe } from '@/contexts/ChatContext';
 import type { Message as MessageType, ToolCallDisplay, TokenUsage } from '@/lib/types';
 import { renderMarkdown, renderMarkdownAsync } from '@/lib/markdown';
-
-const PRECOGNITION_PATTERN = /^Auto-enriched with (\d+) notes:\s*\[(.*)\]$/s;
-
-function parsePrecognition(content: string): { notesCount: number; notes: string[] } | null {
-  const match = PRECOGNITION_PATTERN.exec(content.trim());
-  if (!match) {
-    return null;
-  }
-
-  const notesCount = Number.parseInt(match[1], 10);
-  const notes = match[2]
-    .split(',')
-    .map((note) => note.trim())
-    .filter((note) => note.length > 0);
-
-  return {
-    notesCount: Number.isNaN(notesCount) ? notes.length : notesCount,
-    notes,
-  };
-}
 
 function addCopyButtons(container: HTMLDivElement): void {
   const blocks = container.querySelectorAll('pre');
@@ -109,12 +90,11 @@ export const Message: Component<MessageProps> = (props) => {
   const isUser = () => props.message.role === 'user';
   const isSystem = () => props.message.role === 'system';
   const isAssistant = () => props.message.role === 'assistant';
-  const isPrecognition = () => props.message.role === 'system' && props.message.type === 'precognition';
   const isEmpty = () => !props.message.content || props.message.content.length === 0;
   const hasToolCalls = () => props.message.toolCalls && props.message.toolCalls.length > 0;
   const hasThinking = () => !!props.message.thinking && props.message.thinking.content.length > 0;
+  const hasPrecognition = () => !!props.message.precognition;
   const [renderedContent, setRenderedContent] = createSignal('');
-  const [showPrecognitionNotes, setShowPrecognitionNotes] = createSignal(false);
   const [copied, setCopied] = createSignal(false);
   const [isEditing, setIsEditing] = createSignal(false);
   const [editContent, setEditContent] = createSignal('');
@@ -131,10 +111,8 @@ export const Message: Component<MessageProps> = (props) => {
     }));
   });
 
-  const precognition = createMemo(() => parsePrecognition(props.message.content));
-
   createEffect(() => {
-    if (isUser() || isPrecognition() || isEmpty()) {
+    if (isUser() || isEmpty()) {
       setRenderedContent('');
       return;
     }
@@ -218,7 +196,7 @@ export const Message: Component<MessageProps> = (props) => {
     }
   };
 
-  const showActions = () => !isSystem() && !isPrecognition() && !props.isStreaming;
+  const showActions = () => !isSystem() && !props.isStreaming;
 
   return (
     <div
@@ -268,33 +246,6 @@ export const Message: Component<MessageProps> = (props) => {
           </Show>
 
           <Show when={!isEmpty()}>
-            <Show when={isPrecognition()}>
-              <div class="rounded border border-neutral-700/50 bg-neutral-900/30 px-2 py-1 not-italic text-neutral-300">
-                <div class="flex items-center gap-2">
-                  <span class="text-xs">Auto-enriched with {precognition()?.notesCount ?? 0} notes</span>
-                  <button
-                    type="button"
-                    class="text-[11px] text-blue-400 hover:text-blue-300"
-                    onClick={() => setShowPrecognitionNotes((value) => !value)}
-                  >
-                    {showPrecognitionNotes() ? 'Hide' : 'Show'} notes
-                  </button>
-                </div>
-                <Show when={showPrecognitionNotes()}>
-                  <div class="mt-1 flex flex-wrap gap-1">
-                    <For each={precognition()?.notes ?? []}>
-                      {(note) => (
-                        <span class="rounded border border-neutral-700 bg-neutral-800/80 px-1.5 py-0.5 font-mono text-[11px] not-italic text-neutral-300">
-                          {note}
-                        </span>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-              </div>
-            </Show>
-
-            <Show when={!isPrecognition()}>
               <Show when={!isEditing()} fallback={
                 <div class="flex flex-col gap-2">
                   <textarea
@@ -352,7 +303,12 @@ export const Message: Component<MessageProps> = (props) => {
                   />
                 </Show>
               </Show>
-            </Show>
+              <Show when={isUser() && hasPrecognition()}>
+                <PrecognitionBadge
+                  notesCount={props.message.precognition!.notesCount}
+                  notes={props.message.precognition!.notes}
+                />
+              </Show>
           </Show>
 
            <Show when={props.isStreaming}>

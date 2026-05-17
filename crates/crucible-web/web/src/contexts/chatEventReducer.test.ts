@@ -537,8 +537,14 @@ describe('event matrix — covers every ChatEvent variant', () => {
     });
   });
 
-  it('precognition_result: injects a synthetic system message', () => {
+  it('precognition_result: attaches metadata to the most recent user message', () => {
     const h = createHarness();
+    h.state.messages.push({
+      id: 'user-1',
+      role: 'user',
+      content: 'tell me about widgets',
+      timestamp: 0,
+    });
     h.reducer({
       type: 'precognition_result',
       notes_count: 2,
@@ -547,20 +553,21 @@ describe('event matrix — covers every ChatEvent variant', () => {
         { name: 'Note B', relevance: 0.7 },
       ],
     });
+    // No synthetic system message — metadata lives on the user message.
     expect(h.state.messages).toHaveLength(1);
-    expect(h.state.messages[0]).toMatchObject({
-      role: 'system',
-      type: 'precognition',
-      content: 'Auto-enriched with 2 notes: [Note A, Note B]',
+    expect(h.state.messages[0].precognition).toEqual({
+      notesCount: 2,
+      notes: [
+        { name: 'Note A', relevance: 0.9 },
+        { name: 'Note B', relevance: 0.7 },
+      ],
     });
   });
 
-  it('precognition_result: empty notes array uses "none" label', () => {
+  it('precognition_result: no-op when there is no user message yet', () => {
     const h = createHarness();
     h.reducer({ type: 'precognition_result', notes_count: 0, notes: [] });
-    expect(h.state.messages[0].content).toBe(
-      'Auto-enriched with 0 notes: [none]',
-    );
+    expect(h.state.messages).toHaveLength(0);
   });
 
   it('mode_changed: updates local mode AND statusBar', () => {

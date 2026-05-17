@@ -9,7 +9,6 @@ import type {
   ChatMode,
   TokenUsage,
 } from '@/lib/types';
-import { generateMessageId } from '@/lib/api';
 
 type ArraySetter<T> = (value: T[] | ((prev: T[]) => T[])) => void;
 
@@ -268,15 +267,19 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
       }
 
       case 'precognition_result': {
-        const noteNames = event.notes.map((note) => note.name);
-        const noteList = noteNames.length > 0 ? noteNames.join(', ') : 'none';
-        deps.addMessage({
-          id: generateMessageId(),
-          role: 'system' as Message['role'],
-          content: `Auto-enriched with ${event.notes_count} notes: [${noteList}]`,
-          timestamp: Date.now(),
-          type: 'precognition',
-        } as Message);
+        // Attach metadata to the most recent user message so PrecognitionBadge
+        // can render on it. Daemon currently only fires precognition on the
+        // first turn, so this is typically the first user message; finding
+        // "most recent" keeps us correct if that ever changes.
+        const lastUser = [...deps.messages()].reverse().find((m) => m.role === 'user');
+        if (lastUser) {
+          deps.updateMessage(lastUser.id, {
+            precognition: {
+              notesCount: event.notes_count,
+              notes: event.notes,
+            },
+          });
+        }
         break;
       }
 

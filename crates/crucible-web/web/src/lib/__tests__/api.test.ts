@@ -32,6 +32,8 @@ import {
   setMaxTokens,
   getPrecognition,
   setPrecognition,
+  getPrecognitionResults,
+  setPrecognitionResults,
   exportSession,
   executeShell,
   getPlugins,
@@ -699,6 +701,22 @@ describe('temperature / max-tokens / precognition endpoints', () => {
     global.fetch = mockFetch;
     await setPrecognition('ses-1', false);
     expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({ enabled: false });
+  });
+
+  it('getPrecognitionResults returns the count', async () => {
+    global.fetch = createMockFetch({
+      'GET /api/session/ses-1/config/precognition/results': { body: { precognition_results: 7 } },
+    });
+    expect(await getPrecognitionResults('ses-1')).toBe(7);
+  });
+
+  it('setPrecognitionResults PUTs { count }', async () => {
+    const mockFetch = createMockFetch({
+      'PUT /api/session/ses-1/config/precognition/results': { body: {} },
+    });
+    global.fetch = mockFetch;
+    await setPrecognitionResults('ses-1', 10);
+    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({ count: 10 });
   });
 
   it('getMaxTokens throws on error', async () => {

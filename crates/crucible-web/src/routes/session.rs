@@ -84,6 +84,17 @@ struct PrecognitionResponse {
     precognition_enabled: bool,
 }
 
+/// Response for precognition results-count config.
+#[derive(Debug, Serialize)]
+struct PrecognitionResultsResponse {
+    precognition_results: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct SetPrecognitionResultsRequest {
+    count: usize,
+}
+
 /// Response for provider listing.
 #[derive(Debug, Serialize)]
 struct ProvidersResponse {
@@ -137,6 +148,10 @@ pub fn session_routes() -> Router<AppState> {
         .route(
             "/api/session/{id}/config/precognition",
             put(set_precognition).get(get_precognition),
+        )
+        .route(
+            "/api/session/{id}/config/precognition/results",
+            put(set_precognition_results).get(get_precognition_results),
         )
         .route("/api/session/{id}/export", post(export_session))
         .route("/api/session/{id}/command", post(execute_command))
@@ -732,6 +747,39 @@ async fn set_precognition(
         .await
         .daemon_err()?;
     Ok(OkResponse::success())
+}
+
+async fn set_precognition_results(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<SetPrecognitionResultsRequest>,
+) -> Result<Json<OkResponse>, WebError> {
+    if !(1..=20).contains(&req.count) {
+        return Err(WebError::Validation(format!(
+            "precognition results count must be in 1..=20, got {}",
+            req.count
+        )));
+    }
+    state
+        .daemon
+        .session_set_precognition_results(&id, req.count)
+        .await
+        .daemon_err()?;
+    Ok(OkResponse::success())
+}
+
+async fn get_precognition_results(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<PrecognitionResultsResponse>, WebError> {
+    let count = state
+        .daemon
+        .session_get_precognition_results(&id)
+        .await
+        .daemon_err()?;
+    Ok(Json(PrecognitionResultsResponse {
+        precognition_results: count,
+    }))
 }
 
 async fn get_precognition(

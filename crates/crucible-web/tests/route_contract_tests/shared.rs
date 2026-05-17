@@ -133,6 +133,8 @@ pub(super) fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
         "session.get_max_tokens" => json!({"max_tokens": 4096}),
         "session.set_precognition" => json!(null),
         "session.get_precognition" => json!({"precognition_enabled": true}),
+        "session.set_precognition_results" => json!(null),
+        "session.get_precognition_results" => json!({"precognition_results": 5}),
         "session.render_markdown" => json!({"markdown": "# Test Session\n\nExported content"}),
         "providers.list" => json!({"providers": []}),
         "skills.list" => json!({
