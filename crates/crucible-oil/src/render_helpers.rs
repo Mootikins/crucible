@@ -36,7 +36,12 @@ pub(crate) fn wrap_and_style_padded(content: &str, style: &Style, width: usize) 
         return vec![apply_style(&" ".repeat(width), style)];
     }
 
-    // Style each line and pad to fill the width
+    // Style each line and pad to fill the width. Padding cells inherit
+    // the style — this is intentional: a styled `text("foo")` with a bg
+    // color forms a colored bar across the laid-out width (e.g., the
+    // input bar, mode bar, user-message highlight). The CellGrid's
+    // compact path preserves these styled-space cells via the
+    // `!c.style.is_empty()` rule.
     wrapped
         .into_iter()
         .map(|line| {

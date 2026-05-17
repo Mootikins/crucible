@@ -91,13 +91,20 @@ fn render_box(
 
             if *focused {
                 let cursor_char_pos = (*cursor).min(value.chars().count());
-                let cursor_col = visible_width(
+                let raw_col = visible_width(
                     &value[..value
                         .char_indices()
                         .nth(cursor_char_pos)
                         .map(|(i, _)| i)
                         .unwrap_or(value.len())],
                 ) as u16;
+                // If value overflows the input rect, clamp cursor to the last
+                // visible column. Without this, an over-wide value would put
+                // the cursor past the grid's right edge (where blit_line
+                // already truncated content), placing cursor.col outside the
+                // rendered line's visible width.
+                let max_col = layout_box.rect.width.saturating_sub(1);
+                let cursor_col = raw_col.min(max_col);
 
                 *cursor_position = Some((layout_box.rect.x + cursor_col, layout_box.rect.y));
             }
