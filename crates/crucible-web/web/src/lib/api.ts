@@ -706,6 +706,47 @@ export async function reloadPlugin(name: string): Promise<PluginReloadResult> {
   );
 }
 
+export interface InstallPluginParams {
+  url: string;
+  branch?: string;
+  pin?: string;
+}
+
+export interface InstallPluginResult {
+  name: string;
+  outcome: { kind: 'cloned'; dest: string } | { kind: 'already_present' } | { kind: 'disabled' };
+  plugins_toml: string;
+}
+
+/**
+ * Install a plugin by URL. Synchronous — can take 10+ seconds for a
+ * fresh clone over a slow network. Caller should show a spinner.
+ */
+export async function installPlugin(params: InstallPluginParams): Promise<InstallPluginResult> {
+  return request<InstallPluginResult>('POST', '/api/plugins', {
+    errorMessage: 'Failed to install plugin',
+    ...jsonRequest(params),
+  });
+}
+
+export interface RemovePluginResult {
+  name: string;
+  plugins_toml: string;
+  purged_dir: string | null;
+}
+
+/** Remove a plugin by name. If `purge`, the cloned directory is also deleted. */
+export async function removePlugin(name: string, purge = false): Promise<RemovePluginResult> {
+  const params = new URLSearchParams();
+  if (purge) params.set('purge', 'true');
+  const query = params.toString() ? `?${params.toString()}` : '';
+  return request<RemovePluginResult>(
+    'DELETE',
+    `/api/plugins/${encodeURIComponent(name)}${query}`,
+    { errorMessage: 'Failed to remove plugin' },
+  );
+}
+
 // =============================================================================
 // Skills Endpoints
 // =============================================================================

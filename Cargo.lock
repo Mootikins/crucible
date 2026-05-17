@@ -1755,6 +1755,7 @@ dependencies = [
  "encoding_rs",
  "fastembed",
  "flume",
+ "fs2",
  "futures",
  "futures-util",
  "genai",

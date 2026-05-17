@@ -229,6 +229,37 @@ impl ReconnectingDaemon {
         .await
     }
 
+    pub async fn plugin_install(
+        &self,
+        url: &str,
+        branch: Option<&str>,
+        pin: Option<&str>,
+    ) -> anyhow::Result<serde_json::Value> {
+        let url = url.to_string();
+        let branch = branch.map(str::to_string);
+        let pin = pin.map(str::to_string);
+        self.call_with_reconnect("plugin.install", move |daemon| {
+            let url = url.clone();
+            let branch = branch.clone();
+            let pin = pin.clone();
+            Box::pin(async move {
+                daemon
+                    .plugin_install(&url, branch.as_deref(), pin.as_deref())
+                    .await
+            })
+        })
+        .await
+    }
+
+    pub async fn plugin_remove(&self, name: &str, purge: bool) -> anyhow::Result<serde_json::Value> {
+        let name = name.to_string();
+        self.call_with_reconnect("plugin.remove", move |daemon| {
+            let name = name.clone();
+            Box::pin(async move { daemon.plugin_remove(&name, purge).await })
+        })
+        .await
+    }
+
     pub async fn mcp_status(&self) -> anyhow::Result<serde_json::Value> {
         self.call_with_reconnect("mcp.status", |daemon| Box::pin(daemon.mcp_status()))
             .await

@@ -68,6 +68,66 @@ pub(crate) async fn handle_plugin_list(
     }
 }
 
+// --- Install / remove handlers ---
+
+pub(crate) async fn handle_plugin_install(req: Request) -> Response {
+    let url = require_param!(req, "url", as_str).to_string();
+    let branch = optional_param!(req, "branch", as_str).map(|s| s.to_string());
+    let pin = optional_param!(req, "pin", as_str).map(|s| s.to_string());
+
+    let entry = crucible_core::config::PluginEntry {
+        url,
+        branch,
+        pin,
+        enabled: true,
+    };
+
+    match crate::plugin_ops::install(entry).await {
+        Ok(result) => Response::success(
+            req.id,
+            serde_json::json!({
+                "name": result.name,
+                "outcome": match result.outcome {
+                    crate::BootstrapOutcome::Cloned { ref dest } => serde_json::json!({
+                        "kind": "cloned",
+                        "dest": dest.to_string_lossy(),
+                    }),
+                    crate::BootstrapOutcome::AlreadyPresent => serde_json::json!({
+                        "kind": "already_present",
+                    }),
+                    crate::BootstrapOutcome::Disabled => serde_json::json!({
+                        "kind": "disabled",
+                    }),
+                },
+                "plugins_toml": result.plugins_toml.to_string_lossy(),
+            }),
+        ),
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+pub(crate) async fn handle_plugin_remove(req: Request) -> Response {
+    let name = require_param!(req, "name", as_str).to_string();
+    let purge = optional_param!(req, "purge", as_bool).unwrap_or(false);
+
+    // plugin_ops::remove is synchronous (no I/O off the runtime); run on
+    // spawn_blocking anyway because it does fs writes.
+    let result = tokio::task::spawn_blocking(move || crate::plugin_ops::remove(&name, purge)).await;
+
+    match result {
+        Ok(Ok(outcome)) => Response::success(
+            req.id,
+            serde_json::json!({
+                "name": outcome.name,
+                "plugins_toml": outcome.plugins_toml.to_string_lossy(),
+                "purged_dir": outcome.purged_dir.map(|p| p.to_string_lossy().to_string()),
+            }),
+        ),
+        Ok(Err(e)) => internal_error(req.id, e),
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
 // --- Project handlers ---
 
 pub(crate) async fn handle_project_register(req: Request, pm: &Arc<ProjectManager>) -> Response {

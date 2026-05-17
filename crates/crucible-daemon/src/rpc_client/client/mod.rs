@@ -658,6 +658,51 @@ impl DaemonClient {
             .and_then(|v| v.as_array().cloned())
             .unwrap_or_default())
     }
+
+    /// Install a plugin by URL. Synchronous (waits for the clone to
+    /// finish) — can take 10+ seconds for first-clone over a slow network.
+    pub async fn plugin_install(
+        &self,
+        url: &str,
+        branch: Option<&str>,
+        pin: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        #[derive(serde::Serialize)]
+        struct InstallParams {
+            url: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            branch: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            pin: Option<String>,
+        }
+        self.typed_call(
+            "plugin.install",
+            InstallParams {
+                url: url.to_string(),
+                branch: branch.map(str::to_string),
+                pin: pin.map(str::to_string),
+            },
+        )
+        .await
+    }
+
+    /// Remove a plugin by name. With `purge = true`, also deletes the
+    /// cloned plugin directory.
+    pub async fn plugin_remove(&self, name: &str, purge: bool) -> Result<serde_json::Value> {
+        #[derive(serde::Serialize)]
+        struct RemoveParams {
+            name: String,
+            purge: bool,
+        }
+        self.typed_call(
+            "plugin.remove",
+            RemoveParams {
+                name: name.to_string(),
+                purge,
+            },
+        )
+        .await
+    }
 }
 
 #[cfg(test)]

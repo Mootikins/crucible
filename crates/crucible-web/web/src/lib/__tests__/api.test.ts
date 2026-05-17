@@ -38,6 +38,8 @@ import {
   executeShell,
   getPlugins,
   reloadPlugin,
+  installPlugin,
+  removePlugin,
   getMcpStatus,
   listSkills,
   getSkill,
@@ -809,6 +811,50 @@ describe('plugin endpoints', () => {
   it('getPlugins throws on error', async () => {
     global.fetch = createMockFetch({ 'GET /api/plugins': { status: 500 } });
     await expect(getPlugins()).rejects.toThrow('Failed to list plugins');
+  });
+
+  it('installPlugin POSTs the request body and returns the result', async () => {
+    const mockFetch = createMockFetch({
+      'POST /api/plugins': {
+        body: {
+          name: 'np',
+          outcome: { kind: 'cloned', dest: '/tmp/np' },
+          plugins_toml: '/tmp/plugins.toml',
+        },
+      },
+    });
+    global.fetch = mockFetch;
+    const result = await installPlugin({ url: 'user/repo', branch: 'main' });
+    expect(result.name).toBe('np');
+    const body = JSON.parse(mockFetch.mock.calls[0][1]!.body as string);
+    expect(body).toEqual({ url: 'user/repo', branch: 'main' });
+  });
+
+  it('installPlugin throws on 5xx', async () => {
+    global.fetch = createMockFetch({ 'POST /api/plugins': { status: 500 } });
+    await expect(installPlugin({ url: 'user/repo' })).rejects.toThrow('Failed to install plugin');
+  });
+
+  it('removePlugin DELETEs without purge query when purge=false', async () => {
+    const mockFetch = createMockFetch({
+      'DELETE /api/plugins/my-plugin': {
+        body: { name: 'my-plugin', plugins_toml: '/tmp/plugins.toml', purged_dir: null },
+      },
+    });
+    global.fetch = mockFetch;
+    await removePlugin('my-plugin');
+    expect(mockFetch.mock.calls[0][0]).not.toContain('purge=');
+  });
+
+  it('removePlugin appends ?purge=true when purge=true', async () => {
+    const mockFetch = createMockFetch({
+      'DELETE /api/plugins/my-plugin': {
+        body: { name: 'my-plugin', plugins_toml: '/tmp/plugins.toml', purged_dir: '/tmp/p' },
+      },
+    });
+    global.fetch = mockFetch;
+    await removePlugin('my-plugin', true);
+    expect(mockFetch.mock.calls[0][0]).toContain('purge=true');
   });
 });
 

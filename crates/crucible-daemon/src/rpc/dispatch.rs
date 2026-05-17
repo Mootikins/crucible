@@ -327,6 +327,8 @@ impl RpcDispatcher {
             // Plugin RPC handlers
             "plugin.reload" => to_response(id, self.handle_plugin_reload(&req).await),
             "plugin.list" => to_response(id, self.handle_plugin_list(&req).await),
+            "plugin.install" => to_response(id, self.handle_plugin_install(&req).await),
+            "plugin.remove" => to_response(id, self.handle_plugin_remove(&req).await),
 
             // Project RPC handlers
             "project.register" => to_response(id, self.handle_project_register(&req).await),
@@ -1203,6 +1205,16 @@ impl RpcDispatcher {
     async fn handle_plugin_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::plugins::handle_plugin_list(req.clone(), &self.ctx.plugin_loader).await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_plugin_install(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::plugins::handle_plugin_install(req.clone()).await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_plugin_remove(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::plugins::handle_plugin_remove(req.clone()).await;
         map_server_resp(resp)
     }
 

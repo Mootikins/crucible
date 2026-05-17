@@ -3,10 +3,14 @@ import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 
 const getPluginsMock = vi.fn();
 const reloadPluginMock = vi.fn();
+const installPluginMock = vi.fn();
+const removePluginMock = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   getPlugins: () => getPluginsMock(),
   reloadPlugin: (...args: unknown[]) => reloadPluginMock(...args),
+  installPlugin: (...args: unknown[]) => installPluginMock(...args),
+  removePlugin: (...args: unknown[]) => removePluginMock(...args),
 }));
 
 const addNotificationMock = vi.fn();
@@ -100,5 +104,90 @@ describe('PluginPanel', () => {
         expect.stringContaining('boom'),
       ),
     );
+  });
+
+  it('install modal calls installPlugin with the entered URL', async () => {
+    installPluginMock.mockResolvedValue({
+      name: 'new-plugin',
+      outcome: { kind: 'cloned', dest: '/tmp/new-plugin' },
+      plugins_toml: '/tmp/plugins.toml',
+    });
+    render(() => <PluginPanel />);
+    await waitFor(() => expect(screen.getByTestId('plugins-install-open')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('plugins-install-open'));
+    expect(screen.getByTestId('plugins-install-modal')).toBeInTheDocument();
+
+    fireEvent.input(screen.getByTestId('plugins-install-url'), {
+      target: { value: 'user/repo' },
+    });
+    fireEvent.click(screen.getByTestId('plugins-install-submit'));
+
+    await waitFor(() => expect(installPluginMock).toHaveBeenCalledWith({ url: 'user/repo' }));
+    await waitFor(() =>
+      expect(addNotificationMock).toHaveBeenCalledWith(
+        'success',
+        expect.stringContaining('Installed new-plugin'),
+      ),
+    );
+    // Modal closes; refetch fires (initial + post-install).
+    expect(getPluginsMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('install rejects obvious invalid URLs without calling the API', async () => {
+    render(() => <PluginPanel />);
+    await waitFor(() => expect(screen.getByTestId('plugins-install-open')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('plugins-install-open'));
+    fireEvent.input(screen.getByTestId('plugins-install-url'), {
+      target: { value: 'not a url' },
+    });
+    fireEvent.click(screen.getByTestId('plugins-install-submit'));
+
+    expect(installPluginMock).not.toHaveBeenCalled();
+    expect(addNotificationMock).toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('Invalid URL'),
+    );
+  });
+
+  it('uninstall confirmation passes purge flag through to removePlugin', async () => {
+    removePluginMock.mockResolvedValue({
+      name: 'demo-plugin',
+      plugins_toml: '/tmp/plugins.toml',
+      purged_dir: '/tmp/demo',
+    });
+    render(() => <PluginPanel />);
+    await waitFor(() => expect(screen.getByTestId('plugin-remove-demo-plugin')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('plugin-remove-demo-plugin'));
+    expect(screen.getByTestId('plugins-remove-modal')).toBeInTheDocument();
+
+    // Check the purge checkbox.
+    const purgeCheckbox = screen.getByTestId('plugins-remove-purge') as HTMLInputElement;
+    fireEvent.click(purgeCheckbox);
+
+    fireEvent.click(screen.getByTestId('plugins-remove-confirm'));
+    await waitFor(() => expect(removePluginMock).toHaveBeenCalledWith('demo-plugin', true));
+    await waitFor(() =>
+      expect(addNotificationMock).toHaveBeenCalledWith(
+        'success',
+        expect.stringContaining('Removed demo-plugin'),
+      ),
+    );
+  });
+
+  it('uninstall confirmation defaults to purge=false', async () => {
+    removePluginMock.mockResolvedValue({
+      name: 'demo-plugin',
+      plugins_toml: '/tmp/plugins.toml',
+      purged_dir: null,
+    });
+    render(() => <PluginPanel />);
+    await waitFor(() => expect(screen.getByTestId('plugin-remove-demo-plugin')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('plugin-remove-demo-plugin'));
+    fireEvent.click(screen.getByTestId('plugins-remove-confirm'));
+    await waitFor(() => expect(removePluginMock).toHaveBeenCalledWith('demo-plugin', false));
   });
 });

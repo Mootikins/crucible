@@ -719,7 +719,7 @@ pub fn default_daemon_plugin_paths() -> Vec<(PathBuf, PluginSource)> {
 }
 
 /// Outcome of attempting to bootstrap a single plugin entry.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BootstrapOutcome {
     /// Plugin already cloned at the expected destination; no work done.
     AlreadyPresent,

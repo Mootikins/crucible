@@ -257,6 +257,16 @@ fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
             "handlers": 2,
             "services": 0,
         }),
+        "plugin.install" => json!({
+            "name": "installed-plugin",
+            "outcome": { "kind": "cloned", "dest": "/tmp/installed-plugin" },
+            "plugins_toml": "/tmp/plugins.toml",
+        }),
+        "plugin.remove" => json!({
+            "name": "removed-plugin",
+            "plugins_toml": "/tmp/plugins.toml",
+            "purged_dir": Value::Null,
+        }),
         _ => json!(null),
     }
 }
