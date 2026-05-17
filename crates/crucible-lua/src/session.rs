@@ -342,6 +342,7 @@ impl LuaSessionHandle {
             name: name.into(),
             result: result.into(),
             error: None,
+            terminate: false,
         })
         .await
     }

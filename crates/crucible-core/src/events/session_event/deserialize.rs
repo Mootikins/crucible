@@ -91,6 +91,8 @@ pub(super) enum SessionEventHelper {
         result: String,
         #[serde(default)]
         error: Option<String>,
+        #[serde(default)]
+        terminate: bool,
     },
     SessionStarted {
         config: SessionEventConfig,
@@ -168,10 +170,12 @@ impl From<SessionEventHelper> for SessionEvent {
                 name,
                 result,
                 error,
+                terminate,
             } => SessionEvent::ToolCompleted {
                 name,
                 result,
                 error,
+                terminate,
             },
             SessionEventHelper::SessionStarted { config } => {
                 SessionEvent::SessionStarted { config }

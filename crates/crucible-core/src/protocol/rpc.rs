@@ -213,6 +213,19 @@ impl SessionEventMessage {
         tool: impl Into<String>,
         result: Value,
     ) -> Self {
+        Self::tool_result_with_terminate(session_id, call_id, tool, result, false)
+    }
+
+    /// Same as [`tool_result`] but with the terminate flag carried in the
+    /// payload. Used by tool handlers that signal early-stop via the
+    /// conjunctive batch-terminate path; UI surfaces it as a badge.
+    pub fn tool_result_with_terminate(
+        session_id: impl Into<String>,
+        call_id: impl Into<String>,
+        tool: impl Into<String>,
+        result: Value,
+        terminate: bool,
+    ) -> Self {
         Self::new(
             session_id,
             "tool_result",
@@ -220,6 +233,7 @@ impl SessionEventMessage {
                 "call_id": call_id.into(),
                 "tool": tool.into(),
                 "result": result,
+                "terminate": terminate,
             }),
         )
     }

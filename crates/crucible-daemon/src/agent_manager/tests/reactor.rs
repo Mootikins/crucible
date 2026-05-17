@@ -426,6 +426,10 @@ async fn runtime_pre_tool_handled_with_terminate_ends_turn() {
 
     let tool_result = h.wait_for("tool_result").await;
     assert_eq!(tool_result.data["tool"], "submit_answer");
+    assert_eq!(
+        tool_result.data["terminate"], true,
+        "wire tool_result should carry terminate=true so UI can render the badge"
+    );
 
     let ended = h.wait_for("ended").await;
     assert!(

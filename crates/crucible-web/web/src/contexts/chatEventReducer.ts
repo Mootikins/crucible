@@ -90,6 +90,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         deps.setActiveTools((prev) => updateTool(prev, event.id, {
           result: event.result ?? '',
           status: 'complete',
+          terminate: event.terminate ?? false,
         }));
         break;
 

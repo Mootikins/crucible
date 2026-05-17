@@ -90,6 +90,7 @@ fn test_all_variants_serialize() {
             name: "tool".into(),
             result: "done".into(),
             error: None,
+            terminate: false,
         },
         SessionEvent::SessionStarted {
             config: SessionEventConfig::default(),

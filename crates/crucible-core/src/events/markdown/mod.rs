@@ -89,6 +89,7 @@ impl SessionEvent {
                 name,
                 result,
                 error,
+                ..
             } => format::format_tool_completed(name, result, error.as_deref()),
 
             SessionEvent::SessionStarted { config } => {

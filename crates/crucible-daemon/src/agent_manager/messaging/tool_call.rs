@@ -153,11 +153,12 @@ impl AgentManager {
                         // Emit tool_result event so TUI shows completion
                         emit_event(
                             &stream_ctx.event_tx,
-                            SessionEventMessage::tool_result(
+                            SessionEventMessage::tool_result_with_terminate(
                                 &stream_ctx.session_id,
                                 &call_id,
                                 &tool_call.name,
                                 serde_json::json!({ "result": &result_string }),
+                                terminate,
                             ),
                         );
                         return Some(crucible_core::traits::chat::ChatToolResult {

@@ -259,6 +259,24 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.state.activeTools[0].result).toBe('');
   });
 
+  it('tool_result: stores terminate=true when the daemon signaled early-stop', () => {
+    const h = createHarness();
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'submit_answer' });
+    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'final', terminate: true });
+    expect(h.state.activeTools[0]).toMatchObject({
+      result: 'final',
+      status: 'complete',
+      terminate: true,
+    });
+  });
+
+  it('tool_result: terminate defaults to false when omitted (backward compat)', () => {
+    const h = createHarness();
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
+    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'done' });
+    expect(h.state.activeTools[0].terminate).toBe(false);
+  });
+
   it('tool_result_delta: appends to existing result', () => {
     const h = createHarness();
     h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });

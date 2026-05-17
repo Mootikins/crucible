@@ -65,6 +65,7 @@ fn test_handler_matches_event_type() {
         name: "search".to_string(),
         result: "done".to_string(),
         error: None,
+        terminate: false,
     };
     assert!(!handler.matches(&other_event));
 }

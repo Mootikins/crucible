@@ -95,6 +95,7 @@ fn roundtrip_tool_completed_inline() {
         name: "read_file".into(),
         result: "File contents here".into(),
         error: None,
+        terminate: false,
     };
 
     let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
@@ -105,6 +106,7 @@ fn roundtrip_tool_completed_inline() {
             name,
             result,
             error,
+            ..
         } => {
             assert_eq!(name, "read_file");
             assert_eq!(result, "File contents here");
@@ -121,6 +123,7 @@ fn roundtrip_tool_completed_code_block() {
         name: "search".into(),
         result: long_result.into(),
         error: None,
+        terminate: false,
     };
 
     let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
@@ -131,6 +134,7 @@ fn roundtrip_tool_completed_code_block() {
             name,
             result,
             error,
+            ..
         } => {
             assert_eq!(name, "search");
             assert_eq!(result, long_result);
@@ -146,6 +150,7 @@ fn roundtrip_tool_completed_with_error() {
         name: "read_file".into(),
         result: "".into(),
         error: Some("File not found".into()),
+        terminate: false,
     };
 
     let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
@@ -156,6 +161,7 @@ fn roundtrip_tool_completed_with_error() {
             name,
             result: _,
             error,
+            ..
         } => {
             assert_eq!(name, "read_file");
             assert_eq!(error, Some("File not found".to_string()));

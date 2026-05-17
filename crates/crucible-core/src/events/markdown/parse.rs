@@ -246,6 +246,7 @@ pub(super) fn parse_tool_completed(body: &str) -> MarkdownParseResult<SessionEve
         name,
         result,
         error,
+        terminate: false,
     })
 }
 

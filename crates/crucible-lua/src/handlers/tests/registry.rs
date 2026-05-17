@@ -79,6 +79,7 @@ fn test_registry_handlers_for_event() {
         name: "search".to_string(),
         result: "done".to_string(),
         error: None,
+        terminate: false,
     };
 
     let matching_handlers = registry.handlers_for(&matching_event);

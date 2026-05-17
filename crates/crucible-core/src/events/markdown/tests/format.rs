@@ -91,6 +91,7 @@ fn test_event_type_name_tool_completed() {
         name: "test".into(),
         result: "".into(),
         error: None,
+        terminate: false,
     };
     assert_eq!(event.event_type_name(), "ToolCompleted");
 }
@@ -152,6 +153,7 @@ fn tool_completed_event_to_markdown() {
         name: "read_file".into(),
         result: "File contents here".into(),
         error: None,
+        terminate: false,
     };
 
     let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
@@ -168,6 +170,7 @@ fn tool_completed_with_error_to_markdown() {
         name: "read_file".into(),
         result: "".into(),
         error: Some("File not found".into()),
+        terminate: false,
     };
 
     let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
@@ -182,6 +185,7 @@ fn tool_completed_long_result_to_markdown() {
         name: "search".into(),
         result: long_result.into(),
         error: None,
+        terminate: false,
     };
 
     let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));

@@ -131,6 +131,11 @@ export interface ToolCallDisplay {
   result?: string;
   status: 'running' | 'complete' | 'error';
   callId?: string;
+  /**
+   * True if this tool signaled an early-stop and the agent turn ended after
+   * its batch (daemon's conjunctive terminate check). UI renders a badge.
+   */
+  terminate?: boolean;
 }
 
 /** Subagent event (background task) */
@@ -250,6 +255,12 @@ export interface ToolResultEvent {
   type: 'tool_result';
   id: string;
   result?: string;
+  /**
+   * True if this tool signaled an early-stop (the agent turn ended after
+   * this batch via the daemon's conjunctive terminate check). UI renders
+   * this as a badge on the tool card.
+   */
+  terminate?: boolean;
 }
 
 /** Subagent spawned event */

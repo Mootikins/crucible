@@ -410,6 +410,7 @@ impl ExtendedMcpServer {
                         name: name.to_string(),
                         result: result_text,
                         error: None,
+                        terminate: false,
                     };
                     drop(registry);
                     let (modified_result, _) = self.emit_event(post_event).await;
@@ -435,6 +436,7 @@ impl ExtendedMcpServer {
                         name: name.to_string(),
                         result: String::new(),
                         error: Some(error_msg.clone()),
+                        terminate: false,
                     };
                     drop(registry);
                     self.emit_event(event).await;
@@ -450,6 +452,7 @@ impl ExtendedMcpServer {
                     name: name.to_string(),
                     result: String::new(),
                     error: Some(e.to_string()),
+                    terminate: false,
                 };
                 drop(registry);
                 self.emit_event(event).await;
@@ -512,6 +515,7 @@ impl ExtendedMcpServer {
                     name: name.to_string(),
                     result: result_text,
                     error: None,
+                    terminate: false,
                 };
                 drop(gateway);
                 self.emit_event(post_event).await;
@@ -532,6 +536,7 @@ impl ExtendedMcpServer {
                     name: name.to_string(),
                     result: String::new(),
                     error: Some(e.to_string()),
+                    terminate: false,
                 };
                 drop(gateway);
                 self.emit_event(event).await;

@@ -125,6 +125,11 @@ pub enum SessionEvent {
         result: String,
         /// Error message if the tool failed.
         error: Option<String>,
+        /// Whether this tool requested the agent turn end after this batch.
+        /// Consumed by the conjunctive early-stop in the agent loop; surfaced
+        /// to clients so UI can render a "Terminated" indicator.
+        #[serde(default)]
+        terminate: bool,
     },
 
     // ─────────────────────────────────────────────────────────────────────
@@ -414,12 +419,14 @@ impl SessionEvent {
                 name,
                 result,
                 error,
+                terminate,
             } => {
                 format!(
-                    "tool={}, result_len={}, error={}",
+                    "tool={}, result_len={}, error={}, terminate={}",
                     name,
                     result.len(),
-                    error.is_some()
+                    error.is_some(),
+                    terminate
                 )
             }
             Self::SessionStarted { config } => {

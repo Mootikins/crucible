@@ -280,7 +280,8 @@ fn test_session_event_category_helpers() {
         SessionEvent::ToolCompleted {
             name: "".into(),
             result: "".into(),
-            error: None
+            error: None,
+            terminate: false,
         }
         .category()
             == EventCategory::Tool
