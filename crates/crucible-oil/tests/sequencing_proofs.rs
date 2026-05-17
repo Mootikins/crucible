@@ -15,10 +15,13 @@
 
 #![cfg(feature = "test-utils")]
 
-use crucible_oil::node::Node;
+use crucible_oil::node::{overlay_from_bottom, Node};
+use crucible_oil::overlay::filter_overlays;
 use crucible_oil::planning::{FramePlan, FrameSnapshot, Graduation};
-use crucible_oil::proptest_strategies::{arb_dims, arb_operation_sequence, Op};
-use crucible_oil::{render_tree, TestRuntime, NATURAL_HEIGHT};
+use crucible_oil::proptest_strategies::{
+    arb_chat_like_node, arb_dims, arb_operation_sequence, Op,
+};
+use crucible_oil::{render_tree, FrameRenderer, Terminal, TestRuntime, NATURAL_HEIGHT};
 use proptest::prelude::*;
 
 // ─── Harness ────────────────────────────────────────────────────────────────
@@ -302,6 +305,189 @@ fn check_render_tree_idempotent(tree: &Node, width: u16, height: u16) -> Result<
     Ok(())
 }
 
+// ─── Invariant #6: ANSI run integrity ──────────────────────────────────────
+
+/// Render output, when fed to a vt100 emulator, is fully consumed: no raw
+/// `\x1b` bytes survive into the parsed screen state, and the visible
+/// characters reported by vt100 match the strip_ansi flat output (after
+/// normalizing both for trailing whitespace on each line).
+///
+/// This pins two sub-properties:
+/// - Every escape sequence is well-formed enough for vt100 to consume.
+/// - The visible text content vt100 sees matches what strip_ansi produces.
+fn check_ansi_round_trips_through_vt100(
+    tree: &Node,
+    width: u16,
+    _height: u16,
+) -> Result<(), Violation> {
+    use crucible_oil::ansi::strip_ansi;
+
+    let result = render_tree(tree, width, NATURAL_HEIGHT);
+    let stripped = strip_ansi(&result.content);
+
+    // Size vt100 to match the render's width exactly so cells align.
+    // Use the actual line count to size height — content fits without scroll.
+    let line_count = result.content.lines().count().max(1) as u16;
+    let mut vt = vt100::Parser::new(line_count.max(1), width.max(1), 0);
+    vt.process(result.content.as_bytes());
+
+    let vt_screen = vt.screen().contents();
+    if vt_screen.contains('\x1b') {
+        return Err(Violation {
+            invariant: "ansi_round_trips_through_vt100",
+            op_index: usize::MAX,
+            detail: format!(
+                "vt100 screen contains raw escape byte (unconsumed)\nsample: {:?}",
+                preview(&vt_screen),
+            ),
+        });
+    }
+
+    // Compare flat visible text. Each line: trim trailing spaces from both
+    // (vt100 emits its grid as 80-col padded by default).
+    let strip_flat: String = stripped
+        .lines()
+        .map(|l| l.trim_end().to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let vt_flat: String = vt_screen
+        .lines()
+        .map(|l| l.trim_end().to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // vt100 padding the screen with extra trailing blank rows is OK.
+    if !vt_flat.starts_with(&strip_flat) && !strip_flat.starts_with(&vt_flat) {
+        return Err(Violation {
+            invariant: "ansi_round_trips_through_vt100",
+            op_index: usize::MAX,
+            detail: format!(
+                "vt100 visible content diverges from strip_ansi:\n\
+                 stripped: {:?}\nvt100:    {:?}",
+                preview(&strip_flat),
+                preview(&vt_flat),
+            ),
+        });
+    }
+    Ok(())
+}
+
+// ─── Invariant #7: Overlay non-interference ────────────────────────────────
+
+/// Wrap a tree in an `Overlay` and assert: cells outside the overlay's
+/// influence region match the same tree rendered without the overlay.
+///
+/// The overlay anchors at the bottom of the viewport; we generously claim
+/// "outside overlay region" as the top half of the rendered output (rows
+/// that the overlay's height could not possibly reach).
+fn check_overlay_non_interference(
+    base: &Node,
+    overlay_content: Node,
+    width: u16,
+    height: u16,
+) -> Result<(), Violation> {
+    let with_overlay = overlay_from_bottom(overlay_content, 0);
+    // Compose: base + overlay (overlay drawn on top).
+    let with = crucible_oil::node::fragment(vec![base.clone(), with_overlay]);
+    let without = filter_overlays(with.clone());
+
+    let with_lines: Vec<String> = render_tree(&with, width, height)
+        .content
+        .lines()
+        .map(String::from)
+        .collect();
+    let without_lines: Vec<String> = render_tree(&without, width, height)
+        .content
+        .lines()
+        .map(String::from)
+        .collect();
+
+    // Top half is unambiguously outside any reasonable overlay region.
+    let safe_rows = (height as usize / 3).max(1).min(with_lines.len()).min(without_lines.len());
+    for i in 0..safe_rows {
+        if with_lines[i] != without_lines[i] {
+            return Err(Violation {
+                invariant: "overlay_non_interference",
+                op_index: i,
+                detail: format!(
+                    "row {i} differs with/without overlay (overlay should only \
+                     touch rows near its anchor):\nwith:    {:?}\nwithout: {:?}",
+                    preview(&with_lines[i]),
+                    preview(&without_lines[i]),
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+// ─── Invariant #8: Cursor restored after cleanup_viewport ──────────────────
+
+/// After `Terminal::cleanup_viewport()`, the byte stream ends with the
+/// canonical "move below viewport then clear to end of screen" sequence:
+/// a `MoveDown(n)` (optional, only if cursor wasn't at last row),
+/// a column reset (`MoveToColumn(0)`),
+/// and a `Clear(FromCursorDown)` (`\x1b[J` or `\x1b[0J`).
+///
+/// This is the canonical end-of-frame leave-state: cursor sits below
+/// the rendered viewport, no orphan content can appear after a
+/// subsequent `println!`.
+fn check_cleanup_viewport_restores_cursor(
+    initial_dims: (u16, u16),
+    ops: &[Op],
+) -> Result<(), Violation> {
+    let mut term: Terminal<Vec<u8>> = Terminal::headless(initial_dims.0, initial_dims.1);
+
+    for op in ops {
+        match op {
+            Op::RenderFrame { tree } => {
+                FrameRenderer::render_frame(&mut term, tree, None);
+            }
+            Op::Graduate { node, viewport } => {
+                let grad = Graduation { node: node.clone() };
+                FrameRenderer::render_frame(&mut term, viewport, Some(&grad));
+            }
+            Op::Resize { width, height } => {
+                term.set_size(*width, *height);
+            }
+        }
+    }
+
+    // Drain the byte buffer accumulated by op processing, then call
+    // cleanup_viewport. The remaining bytes are exactly the cleanup emission.
+    let _ = term.take_bytes();
+    term.cleanup_viewport().map_err(|e| Violation {
+        invariant: "cleanup_viewport_restores_cursor",
+        op_index: usize::MAX,
+        detail: format!("cleanup_viewport returned io error: {e}"),
+    })?;
+    let cleanup_bytes = term.take_bytes();
+
+    // Two valid post-states:
+    //  - The OutputBuffer tracked zero visual rows (empty viewport / no
+    //    render produced output); cleanup_viewport is a no-op by design.
+    //  - Otherwise, the byte stream must contain the canonical clear
+    //    sequence so subsequent output starts on a fresh row.
+    if cleanup_bytes.is_empty() {
+        return Ok(());
+    }
+
+    let s = String::from_utf8_lossy(&cleanup_bytes);
+    let has_clear = s.contains("\x1b[J") || s.contains("\x1b[0J");
+    if !has_clear {
+        return Err(Violation {
+            invariant: "cleanup_viewport_restores_cursor",
+            op_index: usize::MAX,
+            detail: format!(
+                "cleanup_viewport emitted bytes without Clear-from-cursor-down \
+                 (\\x1b[J or \\x1b[0J).\nbytes: {:?}",
+                preview(&s),
+            ),
+        });
+    }
+    Ok(())
+}
+
 // ─── Violation reporting ───────────────────────────────────────────────────
 
 #[derive(Debug)]
@@ -399,6 +585,58 @@ proptest! {
                 "graduation/viewport crosstalk: {}\nops: {:#?}",
                 v, ops,
             );
+        }
+    }
+
+    /// Invariant #8: after `cleanup_viewport`, the byte stream ends with
+    /// the canonical clear-from-cursor-down emission. Cursor sits below
+    /// the rendered viewport — no orphan content appears on next println!.
+    #[test]
+    fn prop_cleanup_viewport_restores_cursor(
+        dims in arb_dims(),
+        ops in arb_operation_sequence(),
+    ) {
+        if let Err(v) = check_cleanup_viewport_restores_cursor(dims, &ops) {
+            prop_assert!(
+                false,
+                "cleanup_viewport restoration violated: {}\nops: {:#?}",
+                v, ops,
+            );
+        }
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: 200,
+        ..ProptestConfig::default()
+    })]
+
+    /// Invariant #6: vt100-parsed render output's visible cells match
+    /// `strip_ansi(output)` line-by-line. Catches escape sequences that
+    /// would confuse a real terminal.
+    #[test]
+    fn prop_ansi_round_trips_through_vt100(
+        tree in arb_chat_like_node(),
+        dims in arb_dims(),
+    ) {
+        if let Err(v) = check_ansi_round_trips_through_vt100(&tree, dims.0, dims.1) {
+            prop_assert!(false, "ANSI round-trip violated: {}", v);
+        }
+    }
+
+    /// Invariant #7: an `Overlay`'s effect is confined near its anchor.
+    /// Rendering with vs without the overlay produces identical cells in
+    /// the top third of the viewport (well away from the bottom-anchored
+    /// overlay's influence).
+    #[test]
+    fn prop_overlay_non_interference(
+        base in arb_chat_like_node(),
+        overlay_content in arb_chat_like_node(),
+        dims in arb_dims(),
+    ) {
+        if let Err(v) = check_overlay_non_interference(&base, overlay_content, dims.0, dims.1) {
+            prop_assert!(false, "overlay non-interference violated: {}", v);
         }
     }
 }

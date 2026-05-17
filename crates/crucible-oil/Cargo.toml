@@ -26,3 +26,4 @@ tracing = { workspace = true }
 insta = { version = "1.47", features = ["filters"] }
 test-case = "3.3"
 proptest = "1.11"
+vt100 = "0.15"  # Terminal emulation for byte-stream round-trip in sequencing proofs
