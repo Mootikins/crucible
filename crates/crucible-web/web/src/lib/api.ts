@@ -89,6 +89,36 @@ export async function sendChatMessage(
  * Call this BEFORE sending a message so no events are missed.
  * Automatically reconnects on disconnect with exponential backoff.
  */
+/**
+ * The set of SSE event types the daemon emits and the frontend listens for.
+ * Exported so tests can assert this list stays in sync with the reducer's
+ * switch (in `chatEventReducer.ts`). When a new ChatEvent variant is added,
+ * append it here and the reducer test will catch missing reducer handling.
+ */
+export const SSE_EVENT_TYPES = [
+  'token',
+  'tool_call',
+  'tool_call_start',
+  'tool_result',
+  'tool_result_delta',
+  'tool_result_complete',
+  'tool_result_error',
+  'thinking',
+  'message_complete',
+  'error',
+  'interaction_requested',
+  'session_event',
+  'subagent_spawned',
+  'subagent_completed',
+  'subagent_failed',
+  'delegation_spawned',
+  'delegation_completed',
+  'delegation_failed',
+  'context_usage',
+  'precognition_result',
+  'mode_changed',
+] as const;
+
 export function subscribeToEvents(
   sessionId: string,
   onEvent: (event: ChatEvent) => void,
@@ -99,36 +129,12 @@ export function subscribeToEvents(
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   let closed = false;
 
-  const eventTypes = [
-    'token',
-    'tool_call',
-    'tool_call_start',
-    'tool_result',
-    'tool_result_delta',
-    'tool_result_complete',
-    'tool_result_error',
-    'thinking',
-    'message_complete',
-    'error',
-    'interaction_requested',
-    'session_event',
-    'subagent_spawned',
-    'subagent_completed',
-    'subagent_failed',
-    'delegation_spawned',
-    'delegation_completed',
-    'delegation_failed',
-    'context_usage',
-    'precognition_result',
-    'mode_changed',
-  ] as const;
-
   function connect() {
     if (closed) return;
-    
+
     source = new EventSource(url);
 
-    for (const eventType of eventTypes) {
+    for (const eventType of SSE_EVENT_TYPES) {
       source.addEventListener(eventType, (e: MessageEvent) => {
         reconnectAttempts = 0;
         try {

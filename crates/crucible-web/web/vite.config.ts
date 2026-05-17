@@ -62,14 +62,32 @@ export default defineConfig({
         // definitions today (v8 reports 0/0, no cost) but if runtime helpers
         // ever land there we want them measured.
       ],
-      // No-regression gate. Values are floor() of the 2026-05-17 baseline.
+      // No-regression gate. Values are floor() of the post-A2 baseline.
       // Raise these as new tests land; never lower without a written reason.
       // See thoughts/shared/research/2026-05-17-web-coverage-baseline.md.
+      //
+      // Per-file thresholds policy: add a file here ONLY after it has
+      // organically achieved the level. Do not aspire here — per-file gates
+      // failing in CI for a new file someone is still developing creates
+      // friction without value. The global floor catches accidental
+      // regressions everywhere; per-file gates pin specific hard-won wins.
       thresholds: {
-        statements: 27,
-        branches: 22,
-        functions: 21,
-        lines: 31,
+        statements: 33,
+        branches: 28,
+        functions: 26,
+        lines: 37,
+        'src/contexts/chatEventReducer.ts': {
+          lines: 95,
+          branches: 90,
+          functions: 95,
+          statements: 95,
+        },
+        'src/lib/api.ts': {
+          lines: 95,
+          branches: 85,
+          functions: 95,
+          statements: 95,
+        },
       },
     },
   },
