@@ -82,6 +82,14 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
         <span class="flex-1 text-sm font-medium text-neutral-200 truncate font-mono">
           {props.toolCall.name}
         </span>
+        <Show when={props.toolCall.terminate}>
+          <span
+            class="flex-shrink-0 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-300 border border-amber-700/50 font-semibold"
+            title="This tool ended the agent turn early."
+          >
+            Terminated
+          </span>
+        </Show>
         <span class="flex-shrink-0">{statusIcon()}</span>
         <span class="text-neutral-500 text-xs ml-1">
           {expanded() ? '▼' : '▶'}
