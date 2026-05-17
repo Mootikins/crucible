@@ -19,6 +19,11 @@ pub enum ChatEvent {
         id: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         result: Option<String>,
+        /// True if this tool requested an agent-turn early-stop
+        /// (daemon's conjunctive batch-terminate check fired). UI renders
+        /// a "Terminated" badge on the tool card.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        terminate: bool,
     },
 
     ToolResultDelta {
@@ -182,8 +187,13 @@ impl ChatEvent {
             },
 
             "tool_result" => ChatEvent::ToolResult {
-                id: data["id"].as_str().unwrap_or("").to_string(),
+                id: data["id"]
+                    .as_str()
+                    .or_else(|| data["call_id"].as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 result: data["result"].as_str().map(String::from),
+                terminate: data["terminate"].as_bool().unwrap_or(false),
             },
 
             "tool_result_delta" => ChatEvent::ToolResultDelta {
@@ -362,6 +372,89 @@ impl ChatEvent {
                 event_type: event.event_type.clone(),
                 data: data.clone(),
             },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crucible_daemon::SessionEvent;
+
+    fn make_event(event_type: &str, data: serde_json::Value) -> SessionEvent {
+        SessionEvent {
+            event_type: event_type.to_string(),
+            session_id: "test-session".to_string(),
+            data,
+        }
+    }
+
+    #[test]
+    fn tool_result_carries_terminate_flag() {
+        let event = make_event(
+            "tool_result",
+            serde_json::json!({
+                "call_id": "tc-1",
+                "tool": "submit_answer",
+                "result": "final",
+                "terminate": true,
+            }),
+        );
+
+        match ChatEvent::from_daemon_event(&event) {
+            ChatEvent::ToolResult { id, terminate, .. } => {
+                assert_eq!(id, "tc-1");
+                assert!(terminate, "terminate must propagate through to the wire ChatEvent");
+            }
+            other => panic!("expected ToolResult, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tool_result_falls_back_to_call_id_when_id_absent() {
+        let event = make_event(
+            "tool_result",
+            serde_json::json!({
+                "call_id": "tc-fallback",
+                "tool": "x",
+                "result": "ok",
+            }),
+        );
+
+        match ChatEvent::from_daemon_event(&event) {
+            ChatEvent::ToolResult { id, terminate, .. } => {
+                assert_eq!(id, "tc-fallback");
+                assert!(!terminate, "terminate defaults to false when absent");
+            }
+            other => panic!("expected ToolResult, got {other:?}"),
+        }
+    }
+
+    /// The daemon emits `precognition_complete`; the frontend listens for
+    /// `precognition_result`. If anyone renames the daemon side, this test
+    /// breaks loudly instead of the precognition badge silently disappearing.
+    #[test]
+    fn precognition_complete_translates_to_precognition_result() {
+        let event = make_event(
+            "precognition_complete",
+            serde_json::json!({
+                "notes_count": 2,
+                "notes": [
+                    { "name": "Note A", "relevance": 0.9 },
+                    { "name": "Note B", "relevance": 0.7 },
+                ],
+            }),
+        );
+
+        let chat_event = ChatEvent::from_daemon_event(&event);
+        assert_eq!(chat_event.event_name(), "precognition_result");
+        match chat_event {
+            ChatEvent::PrecognitionResult { notes_count, notes } => {
+                assert_eq!(notes_count, 2);
+                assert_eq!(notes.len(), 2);
+                assert_eq!(notes[0].name, "Note A");
+            }
+            other => panic!("expected PrecognitionResult, got {other:?}"),
         }
     }
 }

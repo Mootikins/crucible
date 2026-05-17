@@ -88,16 +88,7 @@ pub fn remove(name: &str, purge: bool) -> Result<RemoveOutcome> {
 
     let found = with_locked_config(&toml_path, |config| {
         let before = config.plugin.len();
-        config.plugin.retain(|p| {
-            let entry_name = p
-                .url
-                .trim_end_matches('/')
-                .rsplit('/')
-                .next()
-                .unwrap_or("")
-                .trim_end_matches(".git");
-            entry_name != name
-        });
+        config.plugin.retain(|p| p.name().as_deref() != Some(name));
         Ok(config.plugin.len() < before)
     })?;
 

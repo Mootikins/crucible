@@ -35,6 +35,7 @@ fn chat_event_tool_result_event_name() {
     let event = ChatEvent::ToolResult {
         id: "1".to_string(),
         result: Some("found it".to_string()),
+        terminate: false,
     };
     assert_eq!(event.event_name(), "tool_result");
 }

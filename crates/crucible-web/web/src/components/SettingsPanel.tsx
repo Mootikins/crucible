@@ -387,8 +387,6 @@ const ModelSettingsSection: Component = () => {
 // =============================================================================
 
 const PluginsSection: Component = () => {
-  const session = useSessionSafe();
-
   const [plugins, setPlugins] = createSignal<PluginInfo[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
@@ -429,9 +427,6 @@ const PluginsSection: Component = () => {
       loading={loading()}
       error={error()}
       loadingMessage="Loading plugins…"
-      requiresSession
-      hasSession={!!session.currentSession()}
-      noSessionMessage="No active session — start a chat to view plugins."
       isEmpty={plugins().length === 0}
       emptyMessage="No plugins discovered."
     >

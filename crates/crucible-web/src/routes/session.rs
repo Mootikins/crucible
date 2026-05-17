@@ -754,6 +754,10 @@ async fn set_precognition_results(
     Path(id): Path<String>,
     Json(req): Json<SetPrecognitionResultsRequest>,
 ) -> Result<Json<OkResponse>, WebError> {
+    // Range guard for the web UX. The daemon accepts any usize today —
+    // this is a user-friendly clamp matching the TUI's settings UI, not
+    // an authoritative limit. If we ever tighten the daemon-side bounds,
+    // mirror them here.
     if !(1..=20).contains(&req.count) {
         return Err(WebError::Validation(format!(
             "precognition results count must be in 1..=20, got {}",
