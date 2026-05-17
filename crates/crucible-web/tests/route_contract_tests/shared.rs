@@ -4,7 +4,8 @@ use axum::Router;
 use crucible_core::config::CliAppConfig;
 use crucible_daemon::DaemonClient;
 use crucible_web::routes::{
-    chat_routes, health_routes, project_routes, search_routes, session_routes, skills_routes,
+    chat_routes, health_routes, plugin_routes, project_routes, search_routes, session_routes,
+    skills_routes,
 };
 use crucible_web::services::daemon::{AppState, EventBroker, ReconnectingDaemon};
 use serde_json::{json, Value};
@@ -137,6 +138,28 @@ pub(super) fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
         "session.get_precognition_results" => json!({"precognition_results": 5}),
         "session.render_markdown" => json!({"markdown": "# Test Session\n\nExported content"}),
         "providers.list" => json!({"providers": []}),
+        "plugin.list" => json!({
+            "plugins": ["mock-plugin"],
+            "plugin_info": [{
+                "name": "mock-plugin",
+                "version": "0.1.0",
+                "source": "User",
+                "state": "Active",
+                "dir": "/tmp/mock-plugin",
+                "tools": 3,
+                "commands": 1,
+                "handlers": 2,
+                "services": 0,
+            }],
+        }),
+        "plugin.reload" => json!({
+            "name": "mock-plugin",
+            "reloaded": true,
+            "tools": 3,
+            "commands": 1,
+            "handlers": 2,
+            "services": 0,
+        }),
         "skills.list" => json!({
             "skills": [
                 {
@@ -188,6 +211,7 @@ pub(super) fn build_test_app(state: AppState) -> Router {
         .merge(project_routes())
         .merge(search_routes())
         .merge(skills_routes())
+        .merge(plugin_routes())
         .with_state(state)
         .merge(health_routes())
 }

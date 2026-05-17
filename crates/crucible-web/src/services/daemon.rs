@@ -213,6 +213,22 @@ impl ReconnectingDaemon {
         .await
     }
 
+    pub async fn plugin_list_info(&self) -> anyhow::Result<Vec<serde_json::Value>> {
+        self.call_with_reconnect("plugin.list", |daemon| {
+            Box::pin(daemon.plugin_list_info())
+        })
+        .await
+    }
+
+    pub async fn plugin_reload(&self, name: &str) -> anyhow::Result<serde_json::Value> {
+        let name = name.to_string();
+        self.call_with_reconnect("plugin.reload", move |daemon| {
+            let name = name.clone();
+            Box::pin(async move { daemon.plugin_reload(&name).await })
+        })
+        .await
+    }
+
     pub async fn mcp_status(&self) -> anyhow::Result<serde_json::Value> {
         self.call_with_reconnect("mcp.status", |daemon| Box::pin(daemon.mcp_status()))
             .await

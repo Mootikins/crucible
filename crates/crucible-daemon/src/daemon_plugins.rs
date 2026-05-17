@@ -516,17 +516,29 @@ impl DaemonPluginLoader {
     }
 
     /// Return plugin info including provenance source for each loaded plugin.
+    ///
+    /// Includes capability counts (`tools`, `commands`, `handlers`, `services`)
+    /// sourced from `loaded_specs`, so UIs can show what each plugin provides
+    /// without a second RPC.
     pub fn loaded_plugin_info(&self) -> Vec<serde_json::Value> {
         self.plugin_manager
             .list()
             .filter(|p| p.state == crucible_lua::PluginState::Active)
             .map(|p| {
+                let spec = self
+                    .loaded_specs
+                    .iter()
+                    .find(|s| s.name.as_deref() == Some(p.manifest.name.as_str()));
                 serde_json::json!({
                     "name": p.manifest.name,
                     "version": p.manifest.version,
                     "source": p.source.to_string(),
                     "state": p.state.to_string(),
                     "dir": p.dir.to_string_lossy(),
+                    "tools": spec.map(|s| s.tools.len()).unwrap_or(0),
+                    "commands": spec.map(|s| s.commands.len()).unwrap_or(0),
+                    "handlers": spec.map(|s| s.handlers.len()).unwrap_or(0),
+                    "services": spec.map(|s| s.services.len()).unwrap_or(0),
                 })
             })
             .collect()

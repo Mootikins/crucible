@@ -235,6 +235,28 @@ fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
         "session.get_precognition_results" => json!({"precognition_results": 5}),
         "session.render_markdown" => json!({"markdown": "# Test Session\n\nExported content"}),
         "providers.list" => json!({"providers": []}),
+        "plugin.list" => json!({
+            "plugins": ["mock-plugin"],
+            "plugin_info": [{
+                "name": "mock-plugin",
+                "version": "0.1.0",
+                "source": "User",
+                "state": "Active",
+                "dir": "/tmp/mock-plugin",
+                "tools": 3,
+                "commands": 1,
+                "handlers": 2,
+                "services": 0,
+            }],
+        }),
+        "plugin.reload" => json!({
+            "name": "mock-plugin",
+            "reloaded": true,
+            "tools": 3,
+            "commands": 1,
+            "handlers": 2,
+            "services": 0,
+        }),
         _ => json!(null),
     }
 }

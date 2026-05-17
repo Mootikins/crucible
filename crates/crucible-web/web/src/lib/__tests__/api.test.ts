@@ -760,36 +760,46 @@ describe('exportSession', () => {
 // =============================================================================
 
 describe('plugin endpoints', () => {
-  it('getPlugins fetches /api/plugins?kiln=… and returns the plugins array', async () => {
-    const mockFetch = createMockFetch({
-      'GET /api/plugins': {
-        body: {
-          plugins: [
-            { name: 'p1', path: '/p1', plugin_type: 'lua', healthy: true },
-          ],
-        },
-      },
+  const richPluginRow = {
+    name: 'p1',
+    version: '0.1.0',
+    source: 'User',
+    state: 'Active',
+    dir: '/p1',
+    tools: 2,
+    commands: 1,
+    handlers: 0,
+    services: 0,
+  };
+
+  it('getPlugins fetches /api/plugins and returns rich plugin info', async () => {
+    global.fetch = createMockFetch({
+      'GET /api/plugins': { body: { plugins: [richPluginRow] } },
     });
-    global.fetch = mockFetch;
-    const plugins = await getPlugins('default');
+    const plugins = await getPlugins();
     expect(plugins).toHaveLength(1);
     expect(plugins[0].name).toBe('p1');
-    expect(mockFetch.mock.calls[0][0]).toContain('kiln=default');
+    expect(plugins[0].source).toBe('User');
+    expect(plugins[0].state).toBe('Active');
+    expect(plugins[0].tools).toBe(2);
   });
 
-  it('reloadPlugin POSTs to /reload and returns the body', async () => {
+  it('reloadPlugin POSTs to /reload and returns the daemon counts', async () => {
     global.fetch = createMockFetch({
       'POST /api/plugins/my-plugin/reload': {
-        body: { healthy: true, message: 'ok' },
+        body: { name: 'my-plugin', reloaded: true, tools: 1, commands: 0, handlers: 1, services: 0 },
       },
     });
     const result = await reloadPlugin('my-plugin');
-    expect(result).toEqual({ healthy: true, message: 'ok' });
+    expect(result.reloaded).toBe(true);
+    expect(result.tools).toBe(1);
   });
 
   it('reloadPlugin URL-encodes the name', async () => {
     const mockFetch = createMockFetch({
-      'POST /api/plugins/weird%20name/reload': { body: { healthy: true } },
+      'POST /api/plugins/weird%20name/reload': {
+        body: { name: 'weird name', reloaded: true, tools: 0, commands: 0, handlers: 0, services: 0 },
+      },
     });
     global.fetch = mockFetch;
     await reloadPlugin('weird name');
@@ -798,7 +808,7 @@ describe('plugin endpoints', () => {
 
   it('getPlugins throws on error', async () => {
     global.fetch = createMockFetch({ 'GET /api/plugins': { status: 500 } });
-    await expect(getPlugins('default')).rejects.toThrow('Failed to list plugins');
+    await expect(getPlugins()).rejects.toThrow('Failed to list plugins');
   });
 });
 

@@ -648,6 +648,16 @@ impl DaemonClient {
         let result: serde_json::Value = self.typed_call("plugin.list", EmptyParams {}).await?;
         Ok(extract_string_array(&result, "plugins"))
     }
+
+    /// Like [`plugin_list`] but returns the richer `plugin_info` array
+    /// (name, version, source, state, dir, capability counts).
+    pub async fn plugin_list_info(&self) -> Result<Vec<serde_json::Value>> {
+        let result: serde_json::Value = self.typed_call("plugin.list", EmptyParams {}).await?;
+        Ok(result
+            .get("plugin_info")
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default())
+    }
 }
 
 #[cfg(test)]

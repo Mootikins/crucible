@@ -661,24 +661,45 @@ export function executeShell(
 // Plugin Endpoints
 // =============================================================================
 
+/**
+ * Rich plugin metadata returned by `GET /api/plugins`. Mirrors the
+ * `plugin_info` array in the daemon's `plugin.list` response. The legacy
+ * `path` / `plugin_type` / `healthy` fields are gone — the daemon now
+ * carries provenance (source), lifecycle state, capability counts, and
+ * an absolute `dir`.
+ */
 export interface PluginInfo {
   name: string;
-  path: string;
-  plugin_type: string;
-  healthy?: boolean;
+  version: string;
+  source: 'User' | 'Runtime' | 'EnvPath' | 'Builtin' | string;
+  state: 'Active' | 'Error' | 'Disabled' | string;
+  dir: string;
+  tools: number;
+  commands: number;
+  handlers: number;
+  services: number;
 }
 
-/** List discovered plugins for a kiln. */
-export async function getPlugins(kiln: string): Promise<PluginInfo[]> {
-  const params = new URLSearchParams({ kiln });
-  return (await request<{ plugins: PluginInfo[] }>('GET', `/api/plugins?${params.toString()}`, {
+/** Plugin reload response (counts of reloaded capabilities). */
+export interface PluginReloadResult {
+  name: string;
+  reloaded: boolean;
+  tools: number;
+  commands: number;
+  handlers: number;
+  services: number;
+}
+
+/** List discovered plugins with rich metadata. */
+export async function getPlugins(): Promise<PluginInfo[]> {
+  return (await request<{ plugins: PluginInfo[] }>('GET', `/api/plugins`, {
     errorMessage: 'Failed to list plugins',
   })).plugins;
 }
 
-/** Reload a plugin by name. */
-export async function reloadPlugin(name: string): Promise<{ healthy: boolean; message?: string }> {
-  return request<{ healthy: boolean; message?: string }>(
+/** Reload a plugin by name. Returns the daemon's capability counts. */
+export async function reloadPlugin(name: string): Promise<PluginReloadResult> {
+  return request<PluginReloadResult>(
     'POST',
     `/api/plugins/${encodeURIComponent(name)}/reload`,
     { errorMessage: 'Failed to reload plugin' },

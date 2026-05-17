@@ -395,16 +395,10 @@ const PluginsSection: Component = () => {
   const [reloadingPlugin, setReloadingPlugin] = createSignal<string | null>(null);
 
   const loadPlugins = async () => {
-    const s = session.currentSession();
-    if (!s?.kiln) {
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
     setError(null);
     try {
-      const list = await getPlugins(s.kiln);
+      const list = await getPlugins();
       setPlugins(list);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load plugins');
@@ -448,12 +442,13 @@ const PluginsSection: Component = () => {
               <div class="flex items-center gap-2">
                 <span
                   class={`inline-block w-2 h-2 rounded-full ${
-                    plugin.healthy === false ? 'bg-red-500' : 'bg-emerald-500'
+                    plugin.state === 'Active' ? 'bg-emerald-500' : 'bg-red-500'
                   }`}
+                  title={`State: ${plugin.state}`}
                 />
                 <div>
-                  <div class="text-sm">{plugin.name}</div>
-                  <div class="text-xs text-neutral-500">{plugin.plugin_type}</div>
+                  <div class="text-sm">{plugin.name} <span class="text-xs text-neutral-500">v{plugin.version}</span></div>
+                  <div class="text-xs text-neutral-500">{plugin.source} · {plugin.tools}T {plugin.commands}C {plugin.handlers}H {plugin.services}S</div>
                 </div>
               </div>
             </td>

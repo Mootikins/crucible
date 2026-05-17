@@ -21,6 +21,8 @@ mod kilns;
 mod projects;
 #[path = "route_contract_tests/router.rs"]
 mod router;
+#[path = "route_contract_tests/plugins.rs"]
+mod plugins;
 #[path = "route_contract_tests/session_config.rs"]
 mod session_config;
 #[path = "route_contract_tests/sessions.rs"]
