@@ -2,233 +2,182 @@
 
 End-to-end tests for the Crucible web interface using Playwright.
 
-## Running Tests
+## Running
 
 ### Prerequisites
 
-1. Install dependencies:
+1. Install dependencies (from `crates/crucible-web/web/`):
    ```bash
    bun install
-   ```
-
-2. Install Playwright browsers:
-   ```bash
    bunx playwright install chromium
    ```
 
-3. Start the backend server:
+2. **No backend required for most tests.** Specs use mocked API/SSE responses
+   via `e2e/helpers/{mock-api.ts,mock-sse.ts}`. The Playwright config
+   (`playwright.config.ts`) auto-starts `bun run dev` on port 5173, so the dev
+   server is the only running prerequisite — and it starts itself.
+
+3. **For tests that hit a real backend** (rare; comment out `page.route()`
+   mocks in the spec): start the daemon separately from the repo root:
    ```bash
-   # From repo root
-   cargo run --bin cru -- daemon serve
+   cargo run -p crucible-cli -- daemon serve
    ```
 
-4. Build and serve the frontend:
-   ```bash
-   # From web/ directory
-   bun run build
-   bun run preview
-   ```
-
-### Test Commands
+### Commands
 
 ```bash
-bun run test:e2e          # Run all E2E tests (headless)
-bun run test:e2e:ui       # Run with Playwright UI
-bun run test:e2e:headed   # Run in headed mode (see browser)
+bun run test:e2e          # Headless, all specs
+bun run test:e2e:ui       # Playwright UI mode
+bun run test:e2e:headed   # Headed browser
+bunx playwright test e2e/chat-happy-path.spec.ts   # Single spec
+bunx playwright show-report                          # View last HTML report
 ```
 
-### Individual Test Suites
+## Specs (20 total)
 
-```bash
-bunx playwright test e2e/smoke.spec.ts              # Smoke tests
-bunx playwright test e2e/project-session.spec.ts   # Project/session management
-bunx playwright test e2e/chat.spec.ts               # Chat interface
-bunx playwright test e2e/notes-browser.spec.ts     # Notes browser
-bunx playwright test e2e/editor.spec.ts             # Editor functionality
-```
+Grouped by area. See each file for details.
 
-## Test Coverage
+### Windowing & layout (6)
 
-### Smoke Tests (`smoke.spec.ts`)
-- Complete user flow: project → session → note → edit
-- App loads without errors
-- Main UI components render
-- API error handling
-- Responsive layout
+| Spec                              | Covers                                                              |
+| --------------------------------- | ------------------------------------------------------------------- |
+| `windowing-comprehensive.spec.ts` | Broad windowing flow: split, tab, edge panel, floating window       |
+| `windowing-regression.spec.ts`    | Specific past-bug regressions in the window manager                 |
+| `center-resize.spec.ts`           | Splitter drag in the center tiling area resizes panes               |
+| `cross-zone-dnd.spec.ts`          | Drag-and-drop between zones (tab ↔ edge ↔ floating)                 |
+| `panel-placeholders.spec.ts`      | Empty/placeholder content in panels                                 |
+| `tab-reorder.spec.ts`             | Reordering tabs within a tab group                                  |
 
-### Project & Session Management (`project-session.spec.ts`)
-- Project selection interface
-- Add new project
-- Session list display
-- Create new session
-- Session state indicators
-- Switch between sessions
-- Session controls (pause/resume/end)
+### Chat (4)
 
-### Chat Interface (`chat.spec.ts`)
-- Chat input area
-- Type in chat input
-- Send button
-- Message list area
-- Send message
-- Microphone button for voice input
+| Spec                          | Covers                                                                  |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| `chat-happy-path.spec.ts`     | Send message → see assistant reply (mocked SSE stream)                  |
+| `model-switching.spec.ts`     | Change model mid-session via UI control                                 |
+| `tool-call-display.spec.ts`   | Tool calls render with name, args, and result in the message stream     |
+| `title-generation.spec.ts`    | Session title auto-generates after first turn                           |
 
-### Notes Browser (`notes-browser.spec.ts`)
-- Notes panel header
-- Kiln section
-- Loading state
-- File tree with icons
-- Click to open note
-- Expand/collapse folders
-- Empty state
-- Error state
+### Sessions (5)
 
-### Editor (`editor.spec.ts`)
-- Empty state when no files open
-- Open file from notes browser
-- File tabs for open files
-- Dirty indicator when modified
-- Switch between tabs
-- Close tabs
-- CodeMirror editor display
+| Spec                            | Covers                                                                |
+| ------------------------------- | --------------------------------------------------------------------- |
+| `session-management.spec.ts`    | Session list, create, switch, delete                                  |
+| `session-lifecycle.spec.ts`     | Pause / resume / end transitions                                      |
+| `session-filter.spec.ts`        | Search/filter the session list                                        |
+| `session-button-position.spec.ts` | Button placement in session panel doesn't shift across states       |
+| `new-session-chat-tab.spec.ts`  | New session opens its chat in a tab automatically                     |
 
-## Test Strategy
+### Files & integration (2)
 
-Tests use **mocked API responses** for reliability and speed. This means:
-- No backend dependency required for most tests
-- Consistent, predictable behavior
-- Fast execution
-- Easy to test edge cases and error states
+| Spec                              | Covers                                              |
+| --------------------------------- | --------------------------------------------------- |
+| `file-tab.spec.ts`                | Open file → file appears as tab                     |
+| `session-file-integration.spec.ts` | Session ↔ file interactions (e.g., open from chat) |
 
-To test against a real backend, comment out the `page.route()` mocks in individual tests.
+### Other (3)
 
-## CI Integration
+| Spec                       | Covers                                              |
+| -------------------------- | --------------------------------------------------- |
+| `empty-state.spec.ts`      | Initial empty state of the app on fresh load        |
+| `error-handling.spec.ts`   | UI behavior under API/SSE errors                    |
+| `flyout-panel.spec.ts`     | Flyout panel open/close, content rendering          |
 
-Tests are configured for CI with:
-- Headless mode
-- 2 retries on failure
-- Single worker (sequential execution)
-- Screenshots on failure
-- Video recording on failure
-- HTML report generation
+## Test strategy
+
+- **API mocking by default.** `e2e/helpers/mock-api.ts` and `mock-sse.ts`
+  provide deterministic responses. Tests are fast and don't require the daemon.
+- **Real backend possible.** Comment out `page.route()` calls in a spec to
+  exercise the live daemon — useful for diagnosing mock/reality drift.
+- **Fixtures** in `e2e/helpers/fixtures.ts` are shared between specs; prefer
+  reusing/extending them over inlining data.
+
+## CI
+
+Playwright config:
+- Headless, chromium only (no firefox/webkit until justified by a real bug).
+- 2 retries on failure in CI.
+- Single worker in CI (sequential).
+- Screenshots on failure; video retained on failure; trace on first retry.
+- HTML report (`bunx playwright show-report` to view locally after a run).
 
 ## Debugging
 
-### View test report
 ```bash
-bunx playwright show-report
+bunx playwright test --debug e2e/chat-happy-path.spec.ts
+bunx playwright show-trace path/to/trace.zip
 ```
 
-### Debug specific test
+## Manual layout debugging with playwright-cli
+
+The **flexlayout-test** page (`/flexlayout-test.html`) is a sandbox for the
+core layout library (DnD, expand/collapse, resize). Useful for one-off
+debugging without writing a spec.
+
+### Setup
+
 ```bash
-bunx playwright test --debug e2e/smoke.spec.ts
+bun run dev                                    # dev server (5173+)
+bunx playwright-cli install                    # if not already installed
 ```
 
-### View traces
-```bash
-bunx playwright show-trace trace.zip
-```
+### Workflow
 
-## Flexlayout-test and playwright-cli
-
-The **flexlayout-test** page (`/flexlayout-test.html`) is used to stabilize the core layout component library (DnD, expand/collapse, resize). You can drive it with **playwright-cli** for quick manual regression checks.
-
-### Prerequisites
-
-- Dev server running: `bun run dev` (default port 5173; may be 5174+ if ports are in use).
-- playwright-cli installed: `bunx playwright-cli install` (or global install).
-
-### Playwright-cli workflow
-
-1. **Open a layout** (use the port your dev server prints):
+1. **Open a layout** (port may vary):
    ```bash
    playwright-cli open "http://localhost:5173/flexlayout-test.html?layout=test_with_borders"
    ```
-   Other useful layouts: `basic_drag_disabled`, `splitter_handle`, `docked_panes`.
+   Other layouts: `basic_drag_disabled`, `splitter_handle`, `docked_panes`.
 
-2. **Capture element refs**:
+2. **Snapshot to get element refs**:
    ```bash
    playwright-cli snapshot
    ```
-   Inspect `.playwright-cli/page-*.yml` for refs (e.g. `[ref=e51]` → use `e51` in commands).
+   Refs (e.g. `[ref=e51]`) appear in `.playwright-cli/page-*.yml`.
 
-3. **Actions** (refs vary; get them from the latest snapshot):
-   - **Layout switch**: Use the combobox ref and `playwright-cli select <comboboxRef> "test_with_borders"`, or click the dropdown and choose an option.
-   - **Expand/collapse**: Click the border dock button (e.g. left collapse `◀`): `playwright-cli click <collapseButtonRef>`.
-   - **Resize**: Main-area splitters are between center tab sets; border resize is the thin edge of an expanded border. Use `mousedown` on the splitter ref, then `mousemove` and `mouseup` to drag.
-   - **DnD**: Use refs from snapshot:
-     - **Built-in drag** (if it works with this layout): `playwright-cli drag <tabRef> <dropRef>`
-     - **Pointer-based drag** (matches app’s pointer DnD): use `playwright-cli run-code` with the snippet below (replace port if needed).
+3. **Drive actions** with the captured refs:
+   - Combobox: `playwright-cli select <ref> "test_with_borders"`
+   - Click: `playwright-cli click <ref>`
+   - Drag: `playwright-cli drag <fromRef> <toRef>`
+   - For pointer-based DnD (matches app behavior), use `run-code` with a
+     manual mouse sequence — see the splitter-resize snippet below.
 
-4. **Snapshot again** after each action to confirm the UI updated (e.g. panel collapsed, tab moved).
+4. **Snapshot again** to confirm the UI updated.
 
-### DnD via playwright-cli (no test suite)
+### Pointer-based DnD example
 
-The layout uses **pointer** events for drag. To verify with playwright-cli:
+```bash
+playwright-cli run-code "
+  const from = page.locator('[data-layout-path=\"/r0/ts0/tb0\"]');
+  const to   = page.locator('[data-layout-path=\"/r0/ts0/content\"]');
+  const b1 = await from.boundingBox();
+  const b2 = await to.boundingBox();
+  if (!b1 || !b2) throw new Error('bbox');
+  await page.mouse.move(b1.x + b1.width/2, b1.y + b1.height/2);
+  await page.mouse.down();
+  await page.mouse.move(b2.x + b2.width/2, b2.y + b2.height/2, { steps: 10 });
+  await page.mouse.up();
+"
+```
 
-1. **Start dev server and open the page:**
-   ```bash
-   bun run dev
-   playwright-cli open "http://localhost:5173/flexlayout-test.html?layout=test_with_borders" --headed
-   ```
+### Center splitter resize repro
 
-2. **Take a snapshot and get refs:**
-   ```bash
-   playwright-cli snapshot
-   ```
-   Open `.playwright-cli/page-*.yml` and find refs for a center tab (e.g. "Main Content") and a drop target (e.g. another tab or border content area).
+To reproduce a splitter-resize bug in the main UI:
 
-3. **Option A – use built-in drag (two refs):**
-   ```bash
-   playwright-cli drag <tabRef> <dropRef>
-   ```
-   Example: `playwright-cli drag e42 e50` (replace with refs from your snapshot).
+```bash
+playwright-cli open "http://localhost:5173/"
+playwright-cli run-code "$(cat e2e/scripts/center-resize-repro.js)"
+```
 
-4. **Option B – pointer sequence via run-code** (if Option A doesn’t trigger the app’s DnD):
-   ```bash
-   playwright-cli run-code "const from = page.locator('[data-layout-path=\"/r0/ts0/tb0\"]'); const to = page.locator('[data-layout-path=\"/r0/ts0/content\"]'); const b1 = await from.boundingBox(); const b2 = await to.boundingBox(); if (!b1 || !b2) throw new Error('bbox'); await page.mouse.move(b1.x + b1.width/2, b1.y + b1.height/2); await page.mouse.down(); await page.mouse.move(b2.x + b2.width/2, b2.y + b2.height/2, { steps: 10 }); await page.mouse.up();"
-   ```
-   Adjust `data-layout-path` for your layout (e.g. `/r0/ts1/content` for second tabset; `/border/border_left/t0` for left border content after expanding).
-
-### Success criteria
-
-- Switch layout via dropdown.
-- Drag a tab from center to a border (or between center tab sets) and see the tab move.
-- Click a border collapse/expand and see the border collapse/expand.
-- Drag a center splitter and see pane sizes change.
-
-## Center splitter resize (playwright-cli)
-
-Reproduce the center splitter resize in the main windowing UI: open the app, target the root splitter, perform a pointer drag, and measure whether the left pane width changes. If the width changes, the resize path works in that run; if not, the failure is reproduced.
-
-### Prerequisites
-
-- Dev server running: `bun run dev` (default port 5173).
-- playwright-cli available: `bunx playwright-cli` or global install.
-
-### Steps
-
-1. **Open the main app** (windowing UI with center tiling):
-   ```bash
-   playwright-cli open "http://localhost:5173/"
-   ```
-   Add `--headed` to watch the browser.
-
-2. **Capture refs (optional):**
-   ```bash
-   playwright-cli snapshot
-   ```
-   Inspect `.playwright-cli/page-*.yml` for element refs.
-
-3. **Run the resize repro script** (measures first pane width before/after dragging the root splitter right by 80px):
-   ```bash
-   playwright-cli run-code "$(cat e2e/scripts/center-resize-repro.js)"
-   ```
-   The script targets `[data-split-id="split-root"]`, reads the first pane width, performs a pointer sequence (move to splitter center, down, move right 80px, up), then reads the width again and prints `{"widthBefore":...,"widthAfter":...}`. If resize worked, `widthAfter` should be greater than `widthBefore`; if they are equal, the failure is reproduced.
+The script targets `[data-split-id="split-root"]`, measures the first pane
+width, drags the splitter 80px right, then re-measures. Output:
+`{"widthBefore":..., "widthAfter":...}`. If `widthAfter > widthBefore`, the
+resize path works in that run; equal widths reproduce the failure.
 
 ## Notes
 
-- Tests expect the app to be running on `http://localhost:3000`
-- Tests use explicit assertions (`await expect(element).toBeVisible()`) to ensure proper failures
-- Tests include reasonable timeouts for async operations
-- API mocking ensures tests are deterministic and fast
+- Tests target `http://localhost:5173` (Vite dev server). The Playwright
+  webServer config starts it automatically; do not start it manually for CI runs.
+- Use explicit assertions (`await expect(element).toBeVisible()`) — implicit
+  waits hide flakes.
+- Mocks make tests deterministic; keep them in sync with `web/src/lib/api.ts`
+  changes.

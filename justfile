@@ -194,6 +194,12 @@ web-test:
 # Run web unit tests (Vitest)
 web-test-unit:
     cd crates/crucible-web/web && bunx vitest run
+
+# Run web unit tests with coverage (Vitest + v8). Report at crates/crucible-web/web/coverage/index.html.
+# Thresholds in vite.config.ts gate against regressions below the 2026-05-17 baseline.
+web-test-coverage:
+    cd crates/crucible-web/web && bun run test:coverage
+
 # === Daemon Management ===
 
 # Build and restart daemon (kills stale daemon so next cru auto-spawns fresh)
