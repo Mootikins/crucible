@@ -37,6 +37,9 @@ import {
   getPlugins,
   reloadPlugin,
   getMcpStatus,
+  listSkills,
+  getSkill,
+  searchSkills,
   listKilns,
   listNotes,
   getNote,
@@ -778,6 +781,81 @@ describe('plugin endpoints', () => {
   it('getPlugins throws on error', async () => {
     global.fetch = createMockFetch({ 'GET /api/plugins': { status: 500 } });
     await expect(getPlugins('default')).rejects.toThrow('Failed to list plugins');
+  });
+});
+
+// =============================================================================
+// Skills
+// =============================================================================
+
+describe('skills endpoints', () => {
+  it('listSkills fetches /api/skills?kiln=… and returns skills array', async () => {
+    const mockFetch = createMockFetch({
+      'GET /api/skills': {
+        body: {
+          skills: [
+            { name: 's1', scope: 'user', description: 'd', shadowed_count: 0 },
+          ],
+        },
+      },
+    });
+    global.fetch = mockFetch;
+    const skills = await listSkills('/tmp/k');
+    expect(skills).toHaveLength(1);
+    expect(skills[0].name).toBe('s1');
+    expect(mockFetch.mock.calls[0][0]).toContain('kiln=%2Ftmp%2Fk');
+  });
+
+  it('listSkills includes scope filter when provided', async () => {
+    const mockFetch = createMockFetch({
+      'GET /api/skills': { body: { skills: [] } },
+    });
+    global.fetch = mockFetch;
+    await listSkills('/tmp/k', 'kiln');
+    expect(mockFetch.mock.calls[0][0]).toContain('scope=kiln');
+  });
+
+  it('getSkill URL-encodes the name and returns the detail', async () => {
+    const mockFetch = createMockFetch({
+      'GET /api/skills/my%20skill': {
+        body: {
+          name: 'my skill',
+          scope: 'user',
+          description: 'd',
+          source_path: '/p',
+          body: '# Body',
+        },
+      },
+    });
+    global.fetch = mockFetch;
+    const detail = await getSkill('my skill', '/tmp/k');
+    expect(detail.body).toBe('# Body');
+    expect(mockFetch.mock.calls[0][0]).toContain('/api/skills/my%20skill');
+  });
+
+  it('searchSkills passes q + limit', async () => {
+    const mockFetch = createMockFetch({
+      'GET /api/skills/search': { body: { skills: [] } },
+    });
+    global.fetch = mockFetch;
+    await searchSkills('foo', '/tmp/k', 5);
+    const [url] = mockFetch.mock.calls[0];
+    expect(url).toContain('q=foo');
+    expect(url).toContain('limit=5');
+  });
+
+  it('searchSkills omits limit when not provided', async () => {
+    const mockFetch = createMockFetch({
+      'GET /api/skills/search': { body: { skills: [] } },
+    });
+    global.fetch = mockFetch;
+    await searchSkills('foo', '/tmp/k');
+    expect(mockFetch.mock.calls[0][0]).not.toContain('limit=');
+  });
+
+  it('listSkills throws on 5xx', async () => {
+    global.fetch = createMockFetch({ 'GET /api/skills': { status: 500 } });
+    await expect(listSkills('/tmp/k')).rejects.toThrow('Failed to list skills');
   });
 });
 

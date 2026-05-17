@@ -218,6 +218,52 @@ impl ReconnectingDaemon {
             .await
     }
 
+    pub async fn skills_list(
+        &self,
+        kiln: &Path,
+        scope_filter: Option<&str>,
+    ) -> anyhow::Result<serde_json::Value> {
+        let kiln = kiln.to_path_buf();
+        let scope_filter = scope_filter.map(str::to_string);
+        self.call_with_reconnect("skills.list", move |daemon| {
+            let kiln = kiln.clone();
+            let scope_filter = scope_filter.clone();
+            Box::pin(async move { daemon.skills_list(&kiln, scope_filter.as_deref()).await })
+        })
+        .await
+    }
+
+    pub async fn skills_get(
+        &self,
+        name: &str,
+        kiln: &Path,
+    ) -> anyhow::Result<serde_json::Value> {
+        let name = name.to_string();
+        let kiln = kiln.to_path_buf();
+        self.call_with_reconnect("skills.get", move |daemon| {
+            let name = name.clone();
+            let kiln = kiln.clone();
+            Box::pin(async move { daemon.skills_get(&name, &kiln).await })
+        })
+        .await
+    }
+
+    pub async fn skills_search(
+        &self,
+        query: &str,
+        kiln: &Path,
+        limit: Option<usize>,
+    ) -> anyhow::Result<serde_json::Value> {
+        let query = query.to_string();
+        let kiln = kiln.to_path_buf();
+        self.call_with_reconnect("skills.search", move |daemon| {
+            let query = query.clone();
+            let kiln = kiln.clone();
+            Box::pin(async move { daemon.skills_search(&query, &kiln, limit).await })
+        })
+        .await
+    }
+
     pub async fn session_create(
         &self,
         session_type: &str,

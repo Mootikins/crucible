@@ -25,3 +25,5 @@ mod router;
 mod session_config;
 #[path = "route_contract_tests/sessions.rs"]
 mod sessions;
+#[path = "route_contract_tests/skills.rs"]
+mod skills;

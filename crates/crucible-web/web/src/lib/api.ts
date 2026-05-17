@@ -662,6 +662,61 @@ export async function reloadPlugin(name: string): Promise<{ healthy: boolean; me
 }
 
 // =============================================================================
+// Skills Endpoints
+// =============================================================================
+
+export interface SkillSummary {
+  name: string;
+  scope: string;
+  description: string;
+  shadowed_count: number;
+}
+
+export interface SkillDetail {
+  name: string;
+  scope: string;
+  description: string;
+  source_path: string;
+  agent?: string | null;
+  license?: string | null;
+  body: string;
+}
+
+/** List skills discovered for a kiln, optionally filtered by scope. */
+export async function listSkills(kiln: string, scope?: string): Promise<SkillSummary[]> {
+  const params = new URLSearchParams({ kiln });
+  if (scope) params.set('scope', scope);
+  return (await request<{ skills: SkillSummary[] }>('GET', `/api/skills?${params.toString()}`, {
+    errorMessage: 'Failed to list skills',
+  })).skills;
+}
+
+/** Fetch a skill's full body and metadata. */
+export async function getSkill(name: string, kiln: string): Promise<SkillDetail> {
+  const params = new URLSearchParams({ kiln });
+  return request<SkillDetail>(
+    'GET',
+    `/api/skills/${encodeURIComponent(name)}?${params.toString()}`,
+    { errorMessage: 'Failed to load skill' },
+  );
+}
+
+/** Server-side skills search (case-insensitive name + description match). */
+export async function searchSkills(
+  query: string,
+  kiln: string,
+  limit?: number,
+): Promise<SkillSummary[]> {
+  const params = new URLSearchParams({ kiln, q: query });
+  if (limit !== undefined) params.set('limit', String(limit));
+  return (await request<{ skills: SkillSummary[] }>(
+    'GET',
+    `/api/skills/search?${params.toString()}`,
+    { errorMessage: 'Failed to search skills' },
+  )).skills;
+}
+
+// =============================================================================
 // MCP Endpoints
 // =============================================================================
 

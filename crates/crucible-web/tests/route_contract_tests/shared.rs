@@ -4,7 +4,7 @@ use axum::Router;
 use crucible_core::config::CliAppConfig;
 use crucible_daemon::DaemonClient;
 use crucible_web::routes::{
-    chat_routes, health_routes, project_routes, search_routes, session_routes,
+    chat_routes, health_routes, project_routes, search_routes, session_routes, skills_routes,
 };
 use crucible_web::services::daemon::{AppState, EventBroker, ReconnectingDaemon};
 use serde_json::{json, Value};
@@ -135,6 +135,35 @@ pub(super) fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
         "session.get_precognition" => json!({"precognition_enabled": true}),
         "session.render_markdown" => json!({"markdown": "# Test Session\n\nExported content"}),
         "providers.list" => json!({"providers": []}),
+        "skills.list" => json!({
+            "skills": [
+                {
+                    "name": "test-skill",
+                    "scope": "user",
+                    "description": "A test skill",
+                    "shadowed_count": 0,
+                }
+            ]
+        }),
+        "skills.get" => json!({
+            "name": "test-skill",
+            "scope": "user",
+            "description": "A test skill",
+            "source_path": "/tmp/skill.md",
+            "agent": Value::Null,
+            "license": Value::Null,
+            "body": "# Test Skill\n\nContent.",
+        }),
+        "skills.search" => json!({
+            "skills": [
+                {
+                    "name": "matched-skill",
+                    "scope": "user",
+                    "description": "Matched",
+                    "shadowed_count": 0,
+                }
+            ]
+        }),
         _ => json!(null),
     }
 }
@@ -156,6 +185,7 @@ pub(super) fn build_test_app(state: AppState) -> Router {
         .merge(session_routes())
         .merge(project_routes())
         .merge(search_routes())
+        .merge(skills_routes())
         .with_state(state)
         .merge(health_routes())
 }
