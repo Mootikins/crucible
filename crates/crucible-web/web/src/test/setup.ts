@@ -8,3 +8,10 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
     disconnect() {}
   } as any;
 }
+
+// jsdom doesn't implement scrollIntoView — cmdk-solid calls it on every
+// selection change to keep the active item visible. Stub it so tests
+// don't throw.
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = function () {};
+}
