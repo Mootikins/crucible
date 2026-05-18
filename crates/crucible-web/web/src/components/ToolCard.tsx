@@ -1,5 +1,8 @@
 import { Component, Show, createSignal, createMemo, createEffect } from 'solid-js';
 import type { ToolCallDisplay } from '@/lib/types';
+import { DiffViewer } from './DiffViewer';
+import { MultiEditDiff } from './MultiEditDiff';
+import { extractDiffFromToolCall } from '@/lib/tool-diffs';
 
 interface ToolCardProps {
   toolCall: ToolCallDisplay;
@@ -72,6 +75,8 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
     }
   });
 
+  const diff = createMemo(() => extractDiffFromToolCall(props.toolCall));
+
   return (
     <div class={`border ${statusBorderColor()} rounded-lg ${statusBgColor()} overflow-hidden my-2`}>
       <button
@@ -108,9 +113,32 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
             </div>
           </Show>
 
-          {/* Result section */}
-          <Show when={props.toolCall.result}>
-            <div class={`px-3 py-2 ${formattedArgs() ? 'border-t border-neutral-700/30' : ''} bg-neutral-900/50`}>
+          {/* Diff rendering for Edit/Write/MultiEdit when args parse cleanly */}
+          <Show when={diff()}>
+            {(d) => (
+              <div class={`px-3 py-2 ${formattedArgs() ? 'border-t border-neutral-700/30' : ''} bg-neutral-900/50`}>
+                <Show
+                  when={d().kind === 'single'}
+                  fallback={
+                    <MultiEditDiff
+                      fileName={(d() as { kind: 'multi'; fileName: string; edits: { oldContent: string; newContent: string }[] }).fileName}
+                      edits={(d() as { kind: 'multi'; fileName: string; edits: { oldContent: string; newContent: string }[] }).edits}
+                    />
+                  }
+                >
+                  <DiffViewer
+                    fileName={(d() as { kind: 'single'; fileName: string; oldContent: string; newContent: string }).fileName}
+                    oldContent={(d() as { kind: 'single'; fileName: string; oldContent: string; newContent: string }).oldContent}
+                    newContent={(d() as { kind: 'single'; fileName: string; oldContent: string; newContent: string }).newContent}
+                  />
+                </Show>
+              </div>
+            )}
+          </Show>
+
+          {/* Plain-text result section (kept for non-diff tools and as error display) */}
+          <Show when={props.toolCall.result && (!diff() || props.toolCall.status === 'error')}>
+            <div class={`px-3 py-2 ${formattedArgs() || diff() ? 'border-t border-neutral-700/30' : ''} bg-neutral-900/50`}>
               <div class="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 font-semibold">
                 {props.toolCall.status === 'error' ? 'Error' : 'Result'}
               </div>

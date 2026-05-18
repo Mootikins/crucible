@@ -1,7 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@solidjs/testing-library';
 import { ToolCard } from '../ToolCard';
 import type { ToolCallDisplay } from '@/lib/types';
+
+// Mock DiffViewer and MultiEditDiff to isolate ToolCard behavior under test.
+vi.mock('../DiffViewer', () => ({
+  DiffViewer: (props: { fileName?: string; oldContent: string; newContent: string }) => (
+    <div data-testid="diff-viewer" data-file={props.fileName}>
+      old:{props.oldContent}|new:{props.newContent}
+    </div>
+  ),
+}));
+vi.mock('../MultiEditDiff', () => ({
+  MultiEditDiff: (props: { fileName: string; edits: unknown[] }) => (
+    <div data-testid="multi-edit-diff" data-file={props.fileName} data-count={props.edits.length} />
+  ),
+}));
 
 function makeTool(overrides: Partial<ToolCallDisplay> = {}): ToolCallDisplay {
   return {
@@ -181,5 +195,138 @@ describe('ToolCard — ID footer', () => {
     render(() => <ToolCard toolCall={makeTool({ id: 'only-id', callId: undefined })} />);
     fireEvent.click(screen.getByText('read_file'));
     expect(screen.getByText('ID: only-id')).toBeInTheDocument();
+  });
+});
+
+function expandCard(container: HTMLElement) {
+  // Only click if currently collapsed — error-status cards auto-expand.
+  if (!container.querySelector('button')?.textContent?.includes('▼')) {
+    const button = container.querySelector('button');
+    if (button) fireEvent.click(button);
+  }
+}
+
+function call(overrides: Partial<ToolCallDisplay>): ToolCallDisplay {
+  return {
+    id: 'tc-1',
+    name: 'Edit',
+    args: '',
+    status: 'complete',
+    ...overrides,
+  };
+}
+
+describe('ToolCard — diff rendering', () => {
+  it('renders DiffViewer for completed Edit tool', () => {
+    const { container } = render(() => (
+      <ToolCard
+        toolCall={call({
+          name: 'Edit',
+          args: JSON.stringify({ file_path: 'src/a.rs', old_string: 'x', new_string: 'y' }),
+          result: 'edited',
+        })}
+      />
+    ));
+    expandCard(container);
+    const dv = screen.getByTestId('diff-viewer');
+    expect(dv).toBeInTheDocument();
+    expect(dv.getAttribute('data-file')).toBe('src/a.rs');
+  });
+
+  it('renders DiffViewer for completed Write tool with empty oldContent', () => {
+    const { container } = render(() => (
+      <ToolCard
+        toolCall={call({
+          name: 'Write',
+          args: JSON.stringify({ file_path: 'src/new.ts', content: 'hello' }),
+          result: 'wrote',
+        })}
+      />
+    ));
+    expandCard(container);
+    const dv = screen.getByTestId('diff-viewer');
+    expect(dv.textContent).toContain('old:|new:hello');
+  });
+
+  it('renders MultiEditDiff for completed MultiEdit tool', () => {
+    const { container } = render(() => (
+      <ToolCard
+        toolCall={call({
+          name: 'MultiEdit',
+          args: JSON.stringify({
+            file_path: 'src/a.rs',
+            edits: [
+              { old_string: 'a', new_string: 'b' },
+              { old_string: 'c', new_string: 'd' },
+            ],
+          }),
+          result: 'multi-edited',
+        })}
+      />
+    ));
+    expandCard(container);
+    const med = screen.getByTestId('multi-edit-diff');
+    expect(med.getAttribute('data-count')).toBe('2');
+  });
+
+  it('does not render diff while tool is still running', () => {
+    const { container } = render(() => (
+      <ToolCard
+        toolCall={call({
+          name: 'Edit',
+          status: 'running',
+          args: JSON.stringify({ file_path: 'a', old_string: 'x', new_string: 'y' }),
+        })}
+      />
+    ));
+    expandCard(container);
+    expect(screen.queryByTestId('diff-viewer')).toBeNull();
+  });
+
+  it('falls back to plain <pre> result for unrecognized tool names', () => {
+    const { container } = render(() => (
+      <ToolCard
+        toolCall={call({
+          name: 'Bash',
+          args: JSON.stringify({ command: 'ls' }),
+          result: 'foo\nbar',
+        })}
+      />
+    ));
+    expandCard(container);
+    expect(screen.queryByTestId('diff-viewer')).toBeNull();
+    expect(container.textContent).toContain('foo');
+    expect(container.textContent).toContain('bar');
+  });
+
+  it('still renders error result <pre> below diff for failed Edit', () => {
+    const { container } = render(() => (
+      <ToolCard
+        toolCall={call({
+          name: 'Edit',
+          status: 'error',
+          args: JSON.stringify({ file_path: 'a', old_string: 'x', new_string: 'y' }),
+          result: 'string not found',
+        })}
+      />
+    ));
+    expandCard(container);
+    expect(screen.getByTestId('diff-viewer')).toBeInTheDocument();
+    expect(container.textContent).toContain('string not found');
+  });
+
+  it('falls back to plain <pre> when args JSON is malformed', () => {
+    const { container } = render(() => (
+      <ToolCard
+        toolCall={call({
+          name: 'Edit',
+          args: '{not valid json',
+          result: 'result text',
+        })}
+      />
+    ));
+    expandCard(container);
+    expect(screen.queryByTestId('diff-viewer')).toBeNull();
+    expect(container.textContent).toContain('result text');
   });
 });
