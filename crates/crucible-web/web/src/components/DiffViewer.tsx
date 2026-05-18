@@ -30,6 +30,8 @@ interface Props {
   fileName?: string;
   /** Override the language used for syntax highlighting. Defaults to inferring from fileName. */
   language?: string;
+  /** When true, suppress the header bar (used by MultiEditDiff which provides its own). */
+  hideHeader?: boolean;
 }
 
 const CONTEXT_LINES = 3;
@@ -238,17 +240,19 @@ export const DiffViewer: Component<Props> = (props) => {
   };
 
   return (
-    <div class="rounded-lg border border-zinc-700/80 overflow-hidden">
+    <div class={props.hideHeader ? '' : 'rounded-lg border border-zinc-700/80 overflow-hidden'}>
       {/* Header */}
-      <div class="flex items-center gap-3 px-3 py-2 bg-zinc-800/80 border-b border-zinc-700/50 text-xs">
-        <Show when={props.fileName}>
-          <span class="font-mono text-zinc-300 truncate">{props.fileName}</span>
-        </Show>
-        <div class="flex items-center gap-2 ml-auto">
-          <span class="text-emerald-400 font-mono">+{stats().additions}</span>
-          <span class="text-red-400 font-mono">-{stats().deletions}</span>
+      <Show when={!props.hideHeader}>
+        <div class="flex items-center gap-3 px-3 py-2 bg-zinc-800/80 border-b border-zinc-700/50 text-xs">
+          <Show when={props.fileName}>
+            <span class="font-mono text-zinc-300 truncate">{props.fileName}</span>
+          </Show>
+          <div class="flex items-center gap-2 ml-auto">
+            <span class="text-emerald-400 font-mono">+{stats().additions}</span>
+            <span class="text-red-400 font-mono">-{stats().deletions}</span>
+          </div>
         </div>
-      </div>
+      </Show>
 
       {/* Diff body */}
       <div class="font-mono text-xs overflow-x-auto max-h-80 overflow-y-auto">
