@@ -299,7 +299,7 @@ describe('ToolCard — diff rendering', () => {
     expect(container.textContent).toContain('bar');
   });
 
-  it('still renders error result <pre> below diff for failed Edit', () => {
+  it('still renders error result <pre> when diff is also present for failed Edit', () => {
     const { container } = render(() => (
       <ToolCard
         toolCall={call({
@@ -311,8 +311,51 @@ describe('ToolCard — diff rendering', () => {
       />
     ));
     expandCard(container);
-    expect(screen.getByTestId('diff-viewer')).toBeInTheDocument();
+    const diffEl = screen.getByTestId('diff-viewer');
+    expect(diffEl).toBeInTheDocument();
     expect(container.textContent).toContain('string not found');
+
+    // Error pre should appear BEFORE the diff in DOM order so users see the
+    // failure reason before scrolling past the failed-attempt diff.
+    const errorPre = screen.getByText('string not found');
+    const position = errorPre.compareDocumentPosition(diffEl);
+    // DOCUMENT_POSITION_FOLLOWING (4) means diffEl follows errorPre.
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('suppresses the Arguments JSON section when a diff is rendered', () => {
+    const { container } = render(() => (
+      <ToolCard
+        toolCall={call({
+          name: 'Edit',
+          args: JSON.stringify({ file_path: 'src/a.rs', old_string: 'x', new_string: 'y' }),
+          result: 'edited',
+        })}
+      />
+    ));
+    expandCard(container);
+    // Diff IS in the DOM
+    expect(screen.getByTestId('diff-viewer')).toBeInTheDocument();
+    // Arguments heading and raw JSON keys are NOT
+    expect(screen.queryByText('Arguments')).not.toBeInTheDocument();
+    expect(container.textContent).not.toContain('"old_string"');
+    expect(container.textContent).not.toContain('"new_string"');
+  });
+
+  it('still renders the Arguments JSON section for non-diff tools (e.g. Bash)', () => {
+    const { container } = render(() => (
+      <ToolCard
+        toolCall={call({
+          name: 'Bash',
+          args: JSON.stringify({ command: 'ls' }),
+          result: 'a\nb',
+        })}
+      />
+    ));
+    expandCard(container);
+    expect(screen.queryByTestId('diff-viewer')).toBeNull();
+    expect(screen.getByText('Arguments')).toBeInTheDocument();
+    expect(container.textContent).toContain('"command"');
   });
 
   it('falls back to plain <pre> when args JSON is malformed', () => {

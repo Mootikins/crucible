@@ -103,8 +103,9 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
 
       <Show when={expanded()}>
         <div class="border-t border-neutral-700/50">
-          {/* Args section */}
-          <Show when={formattedArgs()}>
+          {/* Args section — suppressed when a diff renders, since the diff header
+              shows the file path and the diff body shows the old/new content. */}
+          <Show when={formattedArgs() && !diff()}>
             <div class="px-3 py-2 bg-neutral-900/50">
               <div class="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 font-semibold">Arguments</div>
               <pre class="text-xs text-neutral-300 font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-48 overflow-y-auto">
@@ -113,10 +114,23 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
             </div>
           </Show>
 
+          {/* Error result section — rendered BEFORE the diff so users see why a
+              tool failed before scrolling past the failed-attempt diff. */}
+          <Show when={props.toolCall.result && props.toolCall.status === 'error'}>
+            <div class={`px-3 py-2 ${formattedArgs() && !diff() ? 'border-t border-neutral-700/30' : ''} bg-neutral-900/50`}>
+              <div class="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 font-semibold">
+                Error
+              </div>
+              <pre class="text-xs font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-64 overflow-y-auto text-red-300">
+                {props.toolCall.result}
+              </pre>
+            </div>
+          </Show>
+
           {/* Diff rendering for Edit/Write/MultiEdit when args parse cleanly */}
           <Show when={diff()}>
             {(d) => (
-              <div class={`px-3 py-2 ${formattedArgs() ? 'border-t border-neutral-700/30' : ''} bg-neutral-900/50`}>
+              <div class={`px-3 py-2 ${props.toolCall.status === 'error' && props.toolCall.result ? 'border-t border-neutral-700/30' : ''} bg-neutral-900/50`}>
                 <Show
                   when={d().kind === 'single'}
                   fallback={
@@ -136,15 +150,13 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
             )}
           </Show>
 
-          {/* Plain-text result section (kept for non-diff tools and as error display) */}
-          <Show when={props.toolCall.result && (!diff() || props.toolCall.status === 'error')}>
-            <div class={`px-3 py-2 ${formattedArgs() || diff() ? 'border-t border-neutral-700/30' : ''} bg-neutral-900/50`}>
+          {/* Plain-text result section (kept for non-diff tools on success). */}
+          <Show when={props.toolCall.result && !diff() && props.toolCall.status !== 'error'}>
+            <div class={`px-3 py-2 ${formattedArgs() ? 'border-t border-neutral-700/30' : ''} bg-neutral-900/50`}>
               <div class="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 font-semibold">
-                {props.toolCall.status === 'error' ? 'Error' : 'Result'}
+                Result
               </div>
-              <pre class={`text-xs font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-64 overflow-y-auto ${
-                props.toolCall.status === 'error' ? 'text-red-300' : 'text-neutral-300'
-              }`}>
+              <pre class="text-xs font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-64 overflow-y-auto text-neutral-300">
                 {props.toolCall.result}
               </pre>
             </div>
