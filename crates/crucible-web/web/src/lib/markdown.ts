@@ -1,13 +1,11 @@
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
-import { createHighlighter } from 'shiki';
+import { initializeHighlighter, SHIKI_THEME } from './shiki';
 
 const WIKILINK_PATTERN = /\[\[([^\[\]\n]+)\]\]/g;
 const CODE_BLOCK_PATTERN = /<pre><code(?: class="language-([^"]+)")?>([\s\S]*?)<\/code><\/pre>/g;
-const SHIKI_THEME = 'github-dark';
 
 let markdownRenderer: MarkdownIt | null = null;
-let highlighterPromise: ReturnType<typeof createHighlighter> | null = null;
 
 function escapeHtml(value: string): string {
   return value
@@ -101,14 +99,7 @@ function wikilinkPlugin(md: MarkdownIt): void {
 }
 
 async function getShikiHighlighter() {
-  if (!highlighterPromise) {
-    highlighterPromise = createHighlighter({
-      themes: [SHIKI_THEME],
-      langs: ['plaintext', 'text', 'bash', 'json', 'markdown', 'rust', 'typescript', 'javascript'],
-    });
-  }
-
-  return highlighterPromise;
+  return initializeHighlighter();
 }
 
 async function highlightCodeBlocks(renderedHtml: string): Promise<string> {
@@ -182,5 +173,5 @@ export async function renderMarkdownAsync(content: string): Promise<string> {
 }
 
 export async function initializeMarkdownHighlighter(): Promise<void> {
-  await getShikiHighlighter();
+  await initializeHighlighter();
 }
