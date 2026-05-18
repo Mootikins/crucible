@@ -1,15 +1,8 @@
 import { Component, For, Show, createSignal, createMemo } from 'solid-js';
-import { diffLines } from 'diff';
 import { highlighter, SHIKI_THEME, SHIKI_LANGS } from '@/lib/shiki';
 import { languageFromFileName } from '@/lib/language-detection';
+import { analyzeDiff, type DiffAnalysis, type DiffLine } from '@/lib/diff-stats';
 import type { BundledLanguage, ThemedToken } from 'shiki';
-
-interface DiffLine {
-  type: 'add' | 'remove' | 'context';
-  content: string;
-  oldLineNum: number | null;
-  newLineNum: number | null;
-}
 
 interface CollapsedSection {
   kind: 'collapsed';
@@ -32,38 +25,15 @@ interface Props {
   language?: string;
   /** When true, suppress the header bar (used by MultiEditDiff which provides its own). */
   hideHeader?: boolean;
+  /**
+   * Optional precomputed diff analysis. Lets MultiEditDiff compute analyzeDiff()
+   * once per edit (for its stacked +/- header) and pass the result down so the
+   * inner DiffViewer doesn't redo the work.
+   */
+  precomputedAnalysis?: DiffAnalysis;
 }
 
 const CONTEXT_LINES = 3;
-
-function computeDiffLines(oldContent: string, newContent: string): DiffLine[] {
-  const changes = diffLines(oldContent, newContent);
-  const result: DiffLine[] = [];
-  let oldLine = 1;
-  let newLine = 1;
-
-  for (const change of changes) {
-    const lines = change.value.replace(/\n$/, '').split('\n');
-    // Handle empty string edge case (empty file)
-    if (lines.length === 1 && lines[0] === '' && change.value === '') continue;
-
-    for (const line of lines) {
-      if (change.added) {
-        result.push({ type: 'add', content: line, oldLineNum: null, newLineNum: newLine });
-        newLine++;
-      } else if (change.removed) {
-        result.push({ type: 'remove', content: line, oldLineNum: oldLine, newLineNum: null });
-        oldLine++;
-      } else {
-        result.push({ type: 'context', content: line, oldLineNum: oldLine, newLineNum: newLine });
-        oldLine++;
-        newLine++;
-      }
-    }
-  }
-
-  return result;
-}
 
 function buildSections(lines: DiffLine[]): DiffSection[] {
   if (lines.length === 0) return [];
@@ -139,8 +109,12 @@ const prefixChar = {
 };
 
 export const DiffViewer: Component<Props> = (props) => {
-  const diffLines_ = createMemo(() => computeDiffLines(props.oldContent, props.newContent));
-  const initialSections = createMemo(() => buildSections(diffLines_()));
+  // When MultiEditDiff supplies precomputedAnalysis, reuse it; otherwise compute
+  // locally. Either way the rest of the component sees one DiffAnalysis source.
+  const analysis = createMemo<DiffAnalysis>(
+    () => props.precomputedAnalysis ?? analyzeDiff(props.oldContent, props.newContent),
+  );
+  const initialSections = createMemo(() => buildSections(analysis().lines));
 
   // Track which collapsed sections have been expanded
   const [expandedSections, setExpandedSections] = createSignal<Set<number>>(new Set());
@@ -158,15 +132,12 @@ export const DiffViewer: Component<Props> = (props) => {
   };
 
   const stats = createMemo(() => {
-    const lines = diffLines_();
-    return {
-      additions: lines.filter((l) => l.type === 'add').length,
-      deletions: lines.filter((l) => l.type === 'remove').length,
-    };
+    const a = analysis();
+    return { additions: a.additions, deletions: a.deletions };
   });
 
   const maxLineNum = createMemo(() => {
-    const lines = diffLines_();
+    const lines = analysis().lines;
     let max = 0;
     for (const l of lines) {
       if (l.oldLineNum && l.oldLineNum > max) max = l.oldLineNum;

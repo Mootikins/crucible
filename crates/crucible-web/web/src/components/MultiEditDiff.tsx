@@ -1,7 +1,7 @@
 import { Component, For, createMemo } from 'solid-js';
-import { diffLines } from 'diff';
 import { DiffViewer } from './DiffViewer';
 import { languageFromFileName } from '@/lib/language-detection';
+import { analyzeDiff } from '@/lib/diff-stats';
 
 interface Edit {
   oldContent: string;
@@ -13,28 +13,20 @@ interface Props {
   edits: Edit[];
 }
 
-function countChanges(oldContent: string, newContent: string): { add: number; remove: number } {
-  let add = 0;
-  let remove = 0;
-  for (const change of diffLines(oldContent, newContent)) {
-    const lines = change.value.replace(/\n$/, '').split('\n');
-    if (lines.length === 1 && lines[0] === '' && change.value === '') continue;
-    if (change.added) add += lines.length;
-    else if (change.removed) remove += lines.length;
-  }
-  return { add, remove };
-}
-
 export const MultiEditDiff: Component<Props> = (props) => {
   const language = createMemo(() => languageFromFileName(props.fileName));
+
+  // Compute analysis once per edit and reuse it for both the outer +/- header
+  // and the inner DiffViewer (via precomputedAnalysis). Without this,
+  // analyzeDiff() would run twice per edit and risk drift between paths.
+  const analyses = createMemo(() => props.edits.map((e) => analyzeDiff(e.oldContent, e.newContent)));
 
   const stats = createMemo(() => {
     let add = 0;
     let remove = 0;
-    for (const e of props.edits) {
-      const c = countChanges(e.oldContent, e.newContent);
-      add += c.add;
-      remove += c.remove;
+    for (const a of analyses()) {
+      add += a.additions;
+      remove += a.deletions;
     }
     return { add, remove };
   });
@@ -63,6 +55,7 @@ export const MultiEditDiff: Component<Props> = (props) => {
                 newContent={edit.newContent}
                 language={language()}
                 hideHeader
+                precomputedAnalysis={analyses()[i()]}
               />
             </div>
           )}
