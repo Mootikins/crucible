@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { render, screen, fireEvent } from '@solidjs/testing-library';
 import { DiffViewer } from '../DiffViewer';
+import { initializeHighlighter } from '@/lib/shiki';
 
 describe('DiffViewer — header and stats', () => {
   it('renders the file name when provided', () => {
@@ -151,5 +152,51 @@ describe('DiffViewer — gutter sizing', () => {
     // Format is "<N>ch"; just verify N is >= 5
     const n = parseInt(width.replace('ch', ''), 10);
     expect(n).toBeGreaterThanOrEqual(5);
+  });
+});
+
+describe('DiffViewer — syntax highlighting', () => {
+  // Pre-warm Shiki once for all tests in this block. Vitest module isolation
+  // means singleton state from other test files doesn't leak in.
+  beforeAll(async () => {
+    await initializeHighlighter();
+  });
+
+  it('renders colored token spans when language is rust', () => {
+    const { container } = render(() => (
+      <DiffViewer oldContent="fn old() {}" newContent="fn new() {}" language="rust" />
+    ));
+    // After highlighting, line content is rendered as multiple <span style="color: ...">
+    // wrappers instead of a single text node.
+    const styledSpans = container.querySelectorAll('span[style*="color"]');
+    expect(styledSpans.length).toBeGreaterThan(0);
+  });
+
+  it('preserves +/- row backgrounds when highlighting is active', () => {
+    const { container } = render(() => (
+      <DiffViewer oldContent="fn a() {}" newContent="fn b() {}" language="rust" />
+    ));
+    // The 'remove' line keeps bg-red-950/70, the 'add' line keeps bg-emerald-950/70
+    expect(container.querySelector('.bg-emerald-950\\/70')).not.toBeNull();
+    expect(container.querySelector('.bg-red-950\\/70')).not.toBeNull();
+  });
+
+  it('falls back to plain text when language is unknown', () => {
+    const { container } = render(() => (
+      <DiffViewer oldContent="x" newContent="y" language="completely-fake-lang" />
+    ));
+    // No colored spans — content rendered as plain text
+    const styledSpans = container.querySelectorAll('span[style*="color"]');
+    expect(styledSpans.length).toBe(0);
+    expect(container.textContent).toContain('x');
+    expect(container.textContent).toContain('y');
+  });
+
+  it('infers language from fileName when language prop is omitted', () => {
+    const { container } = render(() => (
+      <DiffViewer oldContent="fn a() {}" newContent="fn b() {}" fileName="src/foo.rs" />
+    ));
+    const styledSpans = container.querySelectorAll('span[style*="color"]');
+    expect(styledSpans.length).toBeGreaterThan(0);
   });
 });

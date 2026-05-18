@@ -1,5 +1,8 @@
 import { Component, For, Show, createSignal, createMemo } from 'solid-js';
 import { diffLines } from 'diff';
+import { getHighlighter, SHIKI_THEME, SHIKI_LANGS } from '@/lib/shiki';
+import { languageFromFileName } from '@/lib/language-detection';
+import type { BundledLanguage, ThemedToken } from 'shiki';
 
 interface DiffLine {
   type: 'add' | 'remove' | 'context';
@@ -25,6 +28,8 @@ interface Props {
   oldContent: string;
   newContent: string;
   fileName?: string;
+  /** Override the language used for syntax highlighting. Defaults to inferring from fileName. */
+  language?: string;
 }
 
 const CONTEXT_LINES = 3;
@@ -170,8 +175,31 @@ export const DiffViewer: Component<Props> = (props) => {
 
   const gutterWidth = createMemo(() => Math.max(3, String(maxLineNum()).length));
 
+  const effectiveLanguage = createMemo(() => {
+    return props.language ?? languageFromFileName(props.fileName);
+  });
+
+  // Returns tokens for a single line of code, or null if highlighting unavailable
+  // (highlighter not yet loaded, or language not in our eager set).
+  const tokensForLine = (line: string): ThemedToken[] | null => {
+    const lang = effectiveLanguage();
+    if (lang === 'text' || lang === 'plaintext') return null;
+    if (!(SHIKI_LANGS as readonly string[]).includes(lang)) return null;
+    const h = getHighlighter();
+    if (!h) return null;
+    try {
+      // codeToTokens returns one row per source line; we pass a single line in.
+      // `lang` was just verified against SHIKI_LANGS, so the cast is safe.
+      const result = h.codeToTokens(line, { lang: lang as BundledLanguage, theme: SHIKI_THEME });
+      return result.tokens[0] ?? [];
+    } catch {
+      return null;
+    }
+  };
+
   const renderLine = (line: DiffLine) => {
     const gw = gutterWidth();
+    const tokens = tokensForLine(line.content);
     return (
       <div class={`flex ${lineStyles[line.type]} leading-5`}>
         <span
@@ -189,7 +217,15 @@ export const DiffViewer: Component<Props> = (props) => {
         <span class={`shrink-0 select-none w-4 text-center ${gutterStyles[line.type]}`}>
           {prefixChar[line.type]}
         </span>
-        <span class="flex-1 whitespace-pre overflow-x-auto">{line.content || ' '}</span>
+        <span class="flex-1 whitespace-pre overflow-x-auto">
+          <Show when={tokens} fallback={line.content || ' '}>
+            {(toks) => (
+              <For each={toks()}>
+                {(tok) => <span style={{ color: tok.color }}>{tok.content}</span>}
+              </For>
+            )}
+          </Show>
+        </span>
       </div>
     );
   };
