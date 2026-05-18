@@ -72,10 +72,11 @@ export default defineConfig({
       // friction without value. The global floor catches accidental
       // regressions everywhere; per-file gates pin specific hard-won wins.
       thresholds: {
-        statements: 33,
-        branches: 28,
-        functions: 26,
-        lines: 37,
+        // Post-Phase C baseline (May 2026). Floor() of the measured run.
+        statements: 49,
+        branches: 42,
+        functions: 46,
+        lines: 51,
         'src/contexts/chatEventReducer.ts': {
           lines: 95,
           branches: 90,
@@ -87,6 +88,38 @@ export default defineConfig({
           branches: 85,
           functions: 95,
           statements: 95,
+        },
+        // Phase C-1 component backfill — pin the wins so future PRs can't
+        // silently regress these chat-path components.
+        'src/components/ToolCard.tsx': {
+          lines: 95,
+          branches: 90,
+          functions: 90,
+          statements: 95,
+        },
+        'src/components/DiffViewer.tsx': {
+          lines: 95,
+          branches: 85,
+          functions: 95,
+          statements: 95,
+        },
+        'src/components/NotificationCenter.tsx': {
+          lines: 95,
+          branches: 80,
+          functions: 90,
+          statements: 95,
+        },
+        'src/components/CommandPalette.tsx': {
+          lines: 90,
+          branches: 85,
+          functions: 90,
+          statements: 90,
+        },
+        'src/components/Message.tsx': {
+          lines: 90,
+          branches: 85,
+          functions: 90,
+          statements: 90,
         },
       },
     },
