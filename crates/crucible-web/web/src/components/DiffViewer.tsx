@@ -1,6 +1,6 @@
 import { Component, For, Show, createSignal, createMemo } from 'solid-js';
 import { diffLines } from 'diff';
-import { getHighlighter, SHIKI_THEME, SHIKI_LANGS } from '@/lib/shiki';
+import { highlighter, SHIKI_THEME, SHIKI_LANGS } from '@/lib/shiki';
 import { languageFromFileName } from '@/lib/language-detection';
 import type { BundledLanguage, ThemedToken } from 'shiki';
 
@@ -185,7 +185,10 @@ export const DiffViewer: Component<Props> = (props) => {
     const lang = effectiveLanguage();
     if (lang === 'text' || lang === 'plaintext') return null;
     if (!(SHIKI_LANGS as readonly string[]).includes(lang)) return null;
-    const h = getHighlighter();
+    // Reactive read: when initializeHighlighter() resolves and flips the
+    // signal, any Solid scope that called tokensForLine re-runs and the diff
+    // upgrades from plain text to highlighted output.
+    const h = highlighter();
     if (!h) return null;
     try {
       // codeToTokens returns one row per source line; we pass a single line in.
@@ -199,7 +202,11 @@ export const DiffViewer: Component<Props> = (props) => {
 
   const renderLine = (line: DiffLine) => {
     const gw = gutterWidth();
-    const tokens = tokensForLine(line.content);
+    // Memo wraps the tokensForLine call so its `highlighter()` read is
+    // tracked. When initializeHighlighter() resolves and flips the signal,
+    // this memo re-runs and Solid swaps the <Show> branch from plain text
+    // to highlighted spans without us touching the surrounding For/render.
+    const tokens = createMemo(() => tokensForLine(line.content));
     return (
       <div class={`flex ${lineStyles[line.type]} leading-5`}>
         <span
@@ -218,7 +225,7 @@ export const DiffViewer: Component<Props> = (props) => {
           {prefixChar[line.type]}
         </span>
         <span class="flex-1 whitespace-pre overflow-x-auto">
-          <Show when={tokens} fallback={line.content || ' '}>
+          <Show when={tokens()} fallback={line.content || ' '}>
             {(toks) => (
               <For each={toks()}>
                 {(tok) => <span style={{ color: tok.color }}>{tok.content}</span>}

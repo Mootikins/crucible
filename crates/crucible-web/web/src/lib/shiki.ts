@@ -1,3 +1,4 @@
+import { createSignal } from 'solid-js';
 import { createHighlighter, type Highlighter } from 'shiki';
 
 export const SHIKI_THEME = 'github-dark';
@@ -26,7 +27,12 @@ export const SHIKI_LANGS = [
 ] as const;
 
 let highlighterPromise: Promise<Highlighter> | null = null;
-let highlighterInstance: Highlighter | null = null;
+
+// Reactive accessor for the loaded Highlighter. Returns null until
+// initializeHighlighter() resolves. Components that read this in a reactive
+// scope (e.g. inside a Solid render) will re-render when init completes.
+const [highlighter, setHighlighter] = createSignal<Highlighter | null>(null);
+export { highlighter };
 
 export async function initializeHighlighter(): Promise<Highlighter> {
   if (!highlighterPromise) {
@@ -34,14 +40,9 @@ export async function initializeHighlighter(): Promise<Highlighter> {
       themes: [SHIKI_THEME],
       langs: [...SHIKI_LANGS],
     }).then((h) => {
-      highlighterInstance = h;
+      setHighlighter(h);
       return h;
     });
   }
   return highlighterPromise;
-}
-
-/** Returns the loaded Highlighter, or null if initializeHighlighter hasn't resolved yet. */
-export function getHighlighter(): Highlighter | null {
-  return highlighterInstance;
 }

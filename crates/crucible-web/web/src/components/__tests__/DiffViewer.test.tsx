@@ -155,6 +155,36 @@ describe('DiffViewer — gutter sizing', () => {
   });
 });
 
+describe('DiffViewer — upgrades to highlighted output when Shiki resolves', () => {
+  // Regression test for review feedback on Task 3: tokensForLine() previously
+  // read a non-reactive module-level var, so a DiffViewer mounted before
+  // initializeHighlighter() resolved stayed plain-text forever (no signal
+  // change → no re-render). This test mounts BEFORE init, asserts no colored
+  // spans, then awaits init and re-queries to assert colored spans appeared.
+  //
+  // Placement: this describe MUST run before the "syntax highlighting" block
+  // below, because that block's beforeAll pre-warms Shiki for the file's
+  // module instance. Vitest runs describes top-to-bottom within a file.
+  it('renders plain text initially, then upgrades to colored tokens after init', async () => {
+    const { container } = render(() => (
+      <DiffViewer oldContent="fn old() {}" newContent="fn new() {}" language="rust" />
+    ));
+
+    // Before init: no syntax-colored spans should exist.
+    expect(container.querySelectorAll('span[style*="color"]').length).toBe(0);
+    expect(container.textContent).toContain('fn old() {}');
+    expect(container.textContent).toContain('fn new() {}');
+
+    // Trigger init. The reactive `highlighter` signal flips, which causes
+    // every Solid scope that called tokensForLine() to re-run.
+    await initializeHighlighter();
+
+    // After init: colored spans must now exist. Solid's reactivity is
+    // synchronous after a signal write, so no flush/tick is needed.
+    expect(container.querySelectorAll('span[style*="color"]').length).toBeGreaterThan(0);
+  });
+});
+
 describe('DiffViewer — syntax highlighting', () => {
   // Pre-warm Shiki once for all tests in this block. Vitest module isolation
   // means singleton state from other test files doesn't leak in.
