@@ -12,7 +12,11 @@ if (!root) {
 
 // Fire-and-forget: kick off Shiki download in parallel with first paint.
 // DiffViewer and markdown both call getHighlighter() and fall back to plain
-// text until the promise resolves, so this is non-blocking.
-void initializeHighlighter();
+// text until the promise resolves, so this is non-blocking. Surface init
+// failures (offline, corrupt WASM, etc.) so diffs/markdown silently degrading
+// to plain text doesn't go unnoticed.
+void initializeHighlighter().catch((err) => {
+  console.error('Shiki highlighter init failed:', err);
+});
 
 render(() => <App />, root);
