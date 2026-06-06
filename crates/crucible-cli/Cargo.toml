@@ -72,7 +72,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 # Table formatting
-tabled = "0.20"
+tabled = "0.21"
 
 # Date/time handling
 chrono = { workspace = true }
@@ -140,7 +140,7 @@ toml = { workspace = true }
 [dev-dependencies]
 crucible-cli = { path = ".", features = ["test-utils"] }  # Enable test utilities
 # MCP client for testing examples
-rmcp = { version = "1.4", features = ["client", "transport-child-process"] }
+rmcp = { version = "1.7", features = ["client", "transport-child-process"] }
 tempfile = { workspace = true }
 assert_cmd = { workspace = true }
 predicates = { workspace = true }
@@ -149,7 +149,7 @@ wiremock = { workspace = true }
 mockall = { workspace = true }
 toml = { workspace = true }
 blake3 = "1.8"  # For hash verification tests
-serial_test = "3.3"  # For preventing parallel test execution with shared env vars
+serial_test = "3.5"  # For preventing parallel test execution with shared env vars
 scopeguard = "1.2"  # For RAII-style cleanup in tests
 insta = { version = "1.47", features = ["filters"] }  # Snapshot testing for TUI
 expectrl = { workspace = true }  # PTY-based TUI testing
