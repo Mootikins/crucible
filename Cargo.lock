@@ -948,15 +948,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "borsh"
-version = "1.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1da5ab77c1437701eeff7c88d968729e7766172279eab0676857b3d63af7a6f"
-dependencies = [
- "cfg_aliases",
-]
-
-[[package]]
 name = "brotli"
 version = "8.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1654,7 +1645,6 @@ dependencies = [
  "expectrl",
  "fs2",
  "futures",
- "indicatif 0.18.4",
  "insta",
  "markdown-it",
  "mlua",
@@ -1676,7 +1666,6 @@ dependencies = [
  "similar 3.1.0",
  "syntect",
  "tabled",
- "taffy",
  "tempfile",
  "test-case",
  "textwrap",
@@ -1709,7 +1698,6 @@ dependencies = [
  "hex",
  "keyring",
  "markdown-it",
- "notify",
  "nucleo-matcher",
  "num_cpus",
  "parking_lot",
@@ -1767,7 +1755,6 @@ dependencies = [
  "hex",
  "ignore",
  "insta",
- "lazy_static",
  "libc",
  "mlua",
  "mockito",
@@ -1778,7 +1765,6 @@ dependencies = [
  "oq",
  "ort",
  "parking_lot",
- "pathdiff",
  "proptest",
  "rand 0.10.1",
  "regex",
@@ -1786,9 +1772,7 @@ dependencies = [
  "rmcp",
  "rusqlite",
  "rustls",
- "safetensors",
  "schemars 1.2.1",
- "scopeguard",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -1798,7 +1782,6 @@ dependencies = [
  "similar 3.1.0",
  "tempfile",
  "thiserror 2.0.18",
- "tokenizers",
  "tokio",
  "tokio-test",
  "tokio-util",
@@ -1806,10 +1789,7 @@ dependencies = [
  "toon-format",
  "tracing",
  "tracing-subscriber",
- "url",
- "urlencoding",
  "uuid",
- "validator",
  "walkdir",
  "which",
  "wiremock",
@@ -1827,10 +1807,8 @@ dependencies = [
  "crucible-core",
  "futures",
  "lancedb",
- "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.18",
  "tokio",
  "tracing",
 ]
@@ -1845,9 +1823,7 @@ dependencies = [
  "crucible-core",
  "crucible-oil",
  "dirs",
- "full_moon",
  "futures-util",
- "glob",
  "mlua",
  "oq",
  "proptest",
@@ -1873,7 +1849,6 @@ dependencies = [
  "html_parser",
  "insta",
  "proptest",
- "similar 3.1.0",
  "taffy",
  "test-case",
  "textwrap",
@@ -1894,7 +1869,6 @@ dependencies = [
  "crucible-daemon",
  "dirs",
  "futures",
- "futures-util",
  "mime_guess",
  "proptest",
  "rand 0.10.1",
@@ -1911,7 +1885,6 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
- "uuid",
 ]
 
 [[package]]
@@ -2824,32 +2797,11 @@ dependencies = [
 
 [[package]]
 name = "derive_more"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a9b99b9cbbe49445b21764dc0625032a89b145a2642e67603e1c936f5458d05"
-dependencies = [
- "derive_more-impl 1.0.0",
-]
-
-[[package]]
-name = "derive_more"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d751e9e49156b02b44f9c1815bcb94b984cdcc4396ecc32521c739452808b134"
 dependencies = [
- "derive_more-impl 2.1.1",
-]
-
-[[package]]
-name = "derive_more-impl"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb7330aeadfbe296029522e6c40f315320aba36fc43a5b3632f3795348f3bd22"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
- "unicode-xid",
+ "derive_more-impl",
 ]
 
 [[package]]
@@ -3437,33 +3389,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab85b9b05e3978cc9a9cf8fea7f01b494e1a09ed3037e16ba39edc7a29eb61a"
 dependencies = [
  "utf8-ranges",
-]
-
-[[package]]
-name = "full_moon"
-version = "2.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40373a6bf84c41c6124c01cbedf5ab53d0d468adf1c0d7efd4c3273531fbb609"
-dependencies = [
- "bytecount",
- "cfg-if",
- "derive_more 1.0.0",
- "full_moon_derive",
- "paste",
- "serde",
- "smol_str",
-]
-
-[[package]]
-name = "full_moon_derive"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99b4bd12ce56927d1dc5478d21528ea8c4b93ca85ff8f8043b6a5351a2a3c6f7"
-dependencies = [
- "indexmap 1.9.3",
- "proc-macro2",
- "quote",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -4820,7 +4745,7 @@ checksum = "629d8f3bbeda9d148036d6b0de0a3ab947abd08ce90626327fc3547a49d59d97"
 dependencies = [
  "dirs",
  "http",
- "indicatif 0.17.11",
+ "indicatif",
  "libc",
  "log",
  "rand 0.9.2",
@@ -5271,19 +5196,6 @@ dependencies = [
  "number_prefix",
  "portable-atomic",
  "unicode-width 0.2.0",
- "web-time",
-]
-
-[[package]]
-name = "indicatif"
-version = "0.18.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25470f23803092da7d239834776d653104d551bc4d7eacaf31e6837854b8e9eb"
-dependencies = [
- "console 0.16.2",
- "portable-atomic",
- "unicode-width 0.2.0",
- "unit-prefix",
  "web-time",
 ]
 
@@ -7341,12 +7253,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pathdiff"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
-
-[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9131,16 +9037,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
 
 [[package]]
-name = "smol_str"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f7a918bd2a9951d18ee6e48f076843e8e73a9a5d22cf05bcd4b7a81bdd04e17"
-dependencies = [
- "borsh",
- "serde_core",
-]
-
-[[package]]
 name = "snafu"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9898,7 +9794,6 @@ dependencies = [
  "derive_builder",
  "esaxx-rs",
  "getrandom 0.3.4",
- "indicatif 0.18.4",
  "itertools 0.14.0",
  "log",
  "macro_rules_attribute",
@@ -10426,12 +10321,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39ec24b3121d976906ece63c9daad25b85969647682eee313cb5779fdd69e14e"
 
 [[package]]
-name = "unit-prefix"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81e544489bf3d8ef66c953931f56617f423cd4b5494be343d9b9d3dda037b9a3"
-
-[[package]]
 name = "unsafe-libyaml"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10560,36 +10449,6 @@ dependencies = [
  "aligned-vec",
  "num-traits",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "validator"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43fb22e1a008ece370ce08a3e9e4447a910e92621bb49b85d6e48a45397e7cfa"
-dependencies = [
- "idna 1.1.0",
- "once_cell",
- "regex",
- "serde",
- "serde_derive",
- "serde_json",
- "url",
- "validator_derive",
-]
-
-[[package]]
-name = "validator_derive"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7df16e474ef958526d1205f6dda359fdfab79d9aa6d54bafcb92dcd07673dca"
-dependencies = [
- "darling 0.20.11",
- "once_cell",
- "proc-macro-error2",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
 ]
 
 [[package]]

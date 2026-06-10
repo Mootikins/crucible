@@ -17,7 +17,6 @@ tower-http = { version = "0.6", features = ["fs", "cors"] }
 tokio = { workspace = true, features = ["sync", "macros"] }
 tokio-stream = { workspace = true, features = ["sync"] }
 futures = { workspace = true }
-futures-util = { workspace = true }
 
 # HTTP client for provider discovery
 reqwest = { workspace = true }
@@ -37,7 +36,6 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 # UUID generation
-uuid = { workspace = true }
 
 # Daemon RPC client
 crucible-daemon = { path = "../crucible-daemon" }

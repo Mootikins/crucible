@@ -41,7 +41,6 @@ notify-debouncer-full = { workspace = true }
 globset = { workspace = true }
 num_cpus = { workspace = true }
 flume = { workspace = true }
-scopeguard = "1"
 once_cell = "1.21"
 fs2 = "0.4"
 reqwest = { workspace = true }
@@ -62,8 +61,6 @@ chumsky = "0.12"
 similar = "3"
 
 # Absorbed from crucible-llm (async-stream already present above)
-tokenizers = { version = "0.22", default-features = false, features = ["progressbar", "onig"] }
-safetensors = "0.7"
 gguf = "0.1"
 shellexpand = "3.1"
 fastembed = { version = "5.13", optional = true, default-features = false, features = ["hf-hub-rustls-tls", "image-models"] }
@@ -74,12 +71,7 @@ rmcp = { version = "1.4", features = ["macros", "server", "client", "transport-i
 axum = "0.8"
 schemars = { workspace = true }
 regex = { workspace = true }
-lazy_static = { workspace = true }
-urlencoding = { workspace = true }
 oq = { workspace = true }
-pathdiff = "0.2"
-url = "2.5"
-validator = { version = "0.20", features = ["derive"] }
 grep = "0.4"
 ignore = "0.4"
 
@@ -138,3 +130,8 @@ test = false
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[package.metadata.cargo-machete]
+# ort is never imported directly but pins the ONNX Runtime version/features
+# (download-binaries, copy-dylibs) that fastembed needs at link time.
+ignored = ["ort"]

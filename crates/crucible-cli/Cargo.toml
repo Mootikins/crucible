@@ -89,7 +89,6 @@ comfy-table = { workspace = true }
 colored = { workspace = true }
 
 # Interactive UI
-indicatif = { workspace = true }
 dialoguer = "0.12"
 
 # Logging
@@ -129,7 +128,6 @@ syntect = { version = "5.2", default-features = false, features = ["default-fanc
 textwrap = "0.16.2"
 
 # Flexbox layout for ink TUI
-taffy = "0.10"
 
 # Lua scripting (for lua_view)
 mlua = { workspace = true }
