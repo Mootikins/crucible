@@ -1,4 +1,4 @@
-use crate::{Result, WebError};
+use crate::web::{Result, WebError};
 use crucible_core::config::CliAppConfig;
 use crucible_daemon::{
     agent_manager::providers::ProviderInfo, DaemonCapabilities, DaemonClient,

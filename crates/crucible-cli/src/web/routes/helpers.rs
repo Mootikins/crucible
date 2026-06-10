@@ -5,13 +5,13 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::WebError;
+use crate::web::WebError;
 
 // =========================================================================
 // Note mapping
 // =========================================================================
 
-/// Tuple returned by [`crate::services::daemon::DaemonService::list_notes`].
+/// Tuple returned by [`crate::web::services::daemon::DaemonService::list_notes`].
 pub(crate) type NoteListItem = (String, String, Option<String>, Vec<String>, Option<String>);
 
 /// Map a note list item to full metadata JSON.

@@ -1,13 +1,13 @@
 //! Mock daemon infrastructure shared across route contract tests.
 
 use axum::Router;
-use crucible_core::config::CliAppConfig;
-use crucible_daemon::DaemonClient;
-use crucible_web::routes::{
+use crucible_cli::web::routes::{
     chat_routes, health_routes, plugin_routes, project_routes, search_routes, session_routes,
     skills_routes,
 };
-use crucible_web::services::daemon::{AppState, EventBroker, ReconnectingDaemon};
+use crucible_cli::web::services::daemon::{AppState, EventBroker, ReconnectingDaemon};
+use crucible_core::config::CliAppConfig;
+use crucible_daemon::DaemonClient;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tempfile::TempDir;

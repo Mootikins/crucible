@@ -7,7 +7,6 @@ members = [
     "crates/crucible-cli",
 
     "crates/crucible-lua",
-    "crates/crucible-web",
     "crates/crucible-daemon",
     "crates/crucible-oil",
 ]

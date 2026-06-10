@@ -1,13 +1,13 @@
-use crate::assets::static_routes;
-use crate::middleware::auth::{
+use crate::web::assets::static_routes;
+use crate::web::middleware::auth::{
     bearer_auth, localhost_only_shell_auth, resolve_api_key, ApiKeyState,
 };
-use crate::routes::{
+use crate::web::routes::{
     chat_routes, config_routes, health_routes, kiln_routes, mcp_routes, plugin_routes,
     project_routes, search_routes, session_routes, shell_routes, skills_routes, webhook_routes,
 };
-use crate::services::daemon;
-use crate::{Result, WebError};
+use crate::web::services::daemon;
+use crate::web::{Result, WebError};
 use axum::extract::DefaultBodyLimit;
 use axum::http::{header, HeaderValue, Method};
 use axum::middleware;

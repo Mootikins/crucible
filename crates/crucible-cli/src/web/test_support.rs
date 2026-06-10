@@ -1,7 +1,9 @@
 #[cfg(test)]
-use crate::routes::{chat_routes, health_routes, project_routes, search_routes, session_routes};
+use crate::web::routes::{
+    chat_routes, health_routes, project_routes, search_routes, session_routes,
+};
 #[cfg(test)]
-use crate::services::daemon::{AppState, EventBroker, ReconnectingDaemon};
+use crate::web::services::daemon::{AppState, EventBroker, ReconnectingDaemon};
 #[cfg(test)]
 use axum::Router;
 #[cfg(test)]

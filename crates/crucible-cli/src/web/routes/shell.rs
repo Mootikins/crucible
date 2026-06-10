@@ -1,5 +1,5 @@
-use crate::services::daemon::AppState;
-use crate::{error::WebResultExt, WebError};
+use crate::web::services::daemon::AppState;
+use crate::web::{error::WebResultExt, WebError};
 use axum::{
     extract::State,
     response::sse::{Event, Sse},

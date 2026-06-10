@@ -3,7 +3,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::Router;
-use crucible_web::routes::health_routes;
+use crucible_cli::web::routes::health_routes;
 use serde_json::Value;
 use tower::ServiceExt;
 

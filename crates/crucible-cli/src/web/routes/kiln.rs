@@ -2,8 +2,8 @@ use super::helpers::{
     note_to_file_json, validate_file_within_kiln, validate_no_traversal,
     validate_parent_within_kiln, MAX_CONTENT_SIZE,
 };
-use crate::services::daemon::AppState;
-use crate::{error::WebResultExt, WebError};
+use crate::web::services::daemon::AppState;
+use crate::web::{error::WebResultExt, WebError};
 use axum::{extract::State, routing::get, Json, Router};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -164,7 +164,7 @@ async fn find_enclosing_kiln(state: &AppState, file_path: &Path) -> Result<PathB
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{arb_safe_path, arb_traversal_path};
+    use crate::web::test_support::{arb_safe_path, arb_traversal_path};
     use proptest::prelude::*;
     use tempfile::tempdir;
 

@@ -24,11 +24,7 @@ bin-dir = "crucible-v{ version }-{ target }/{ bin }{ binary-ext }"
 pkg-fmt = "tgz"
 
 [features]
-default = ["fastembed", "web"]
-
-# Web UI integration
-web = ["dep:crucible-web"]
-
+default = ["fastembed"]
 
 # Local embedding support (pulls ONNX Runtime / fastembed via daemon).
 # The passthrough here only works because we turn off daemon's defaults on
@@ -53,7 +49,15 @@ crucible-daemon = { path = "../crucible-daemon", default-features = false }
 
 
 crucible-oil = { path = "../crucible-oil", default-features = false }
-crucible-web = { path = "../crucible-web", optional = true }
+
+# Web UI server (src/web — Axum routes over daemon RPC, embedded frontend)
+axum = { workspace = true, features = ["macros"] }
+tower = { workspace = true }
+tower-http = { version = "0.6", features = ["fs", "cors"] }
+tokio-stream = { workspace = true, features = ["sync"] }
+rust-embed = { version = "8", features = ["interpolate-folder-path"] }
+mime_guess = "2"
+rand = { workspace = true }
 
 # CLI framework
 clap = { workspace = true, features = ["derive", "env", "string"] }
@@ -155,8 +159,6 @@ vt100 = "0.15"  # Terminal emulation for queryable screen buffer in E2E tests
 proptest = "1.11"  # Property-based testing for graduation invariants
 test-case = "3.3"  # Parameterized tests
 
-# Additional dependencies for resource constraint testing
-rand = "0.10"
 # Unix-only resource constraint testing
 [target.'cfg(unix)'.dev-dependencies]
 nix = { version = "0.31", features = ["fs"] }

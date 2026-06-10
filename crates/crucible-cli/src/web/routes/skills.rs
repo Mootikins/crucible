@@ -1,6 +1,6 @@
-use crate::error::WebResultExt;
-use crate::services::daemon::AppState;
-use crate::WebError;
+use crate::web::error::WebResultExt;
+use crate::web::services::daemon::AppState;
+use crate::web::WebError;
 use axum::{
     extract::{Path, Query, State},
     routing::get,

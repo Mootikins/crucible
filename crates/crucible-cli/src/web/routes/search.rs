@@ -1,6 +1,6 @@
 use super::helpers::{note_to_metadata_json, validate_note_name, MAX_CONTENT_SIZE};
-use crate::services::daemon::AppState;
-use crate::{error::WebResultExt, WebError};
+use crate::web::services::daemon::AppState;
+use crate::web::{error::WebResultExt, WebError};
 use axum::{
     extract::{Path, State},
     routing::{get, post, put},
@@ -230,7 +230,7 @@ async fn search_vectors(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{arb_safe_path, arb_traversal_path};
+    use crate::web::test_support::{arb_safe_path, arb_traversal_path};
     use proptest::prelude::*;
 
     fn is_valid_note_name(name: &str) -> bool {

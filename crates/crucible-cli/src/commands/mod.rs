@@ -20,7 +20,6 @@ pub mod skills;
 pub mod stdin;
 pub mod tasks;
 pub mod tools;
-#[cfg(feature = "web")]
 pub mod web;
 pub mod wizard;
 pub mod workflow;

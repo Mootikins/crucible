@@ -1,7 +1,7 @@
 //! WebError Response Contract Tests
 
 use axum::http::StatusCode;
-use crucible_web::WebError;
+use crucible_cli::web::WebError;
 use serde_json::Value;
 
 #[test]

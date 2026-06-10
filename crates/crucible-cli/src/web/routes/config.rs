@@ -1,5 +1,5 @@
-use crate::services::daemon::AppState;
-use crate::WebError;
+use crate::web::services::daemon::AppState;
+use crate::web::WebError;
 use axum::{extract::State, routing::get, Json, Router};
 use serde::Serialize;
 

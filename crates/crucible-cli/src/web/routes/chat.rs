@@ -1,6 +1,6 @@
-use crate::events::ChatEvent;
-use crate::services::daemon::AppState;
-use crate::{error::WebResultExt, WebError};
+use crate::web::events::ChatEvent;
+use crate::web::services::daemon::AppState;
+use crate::web::{error::WebResultExt, WebError};
 use axum::{
     extract::{Path, State},
     response::sse::{Event, Sse},

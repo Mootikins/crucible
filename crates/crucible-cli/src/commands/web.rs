@@ -43,7 +43,7 @@ pub async fn handle(cmd: WebCommand) -> Result<()> {
         final_config.host, final_config.port
     );
 
-    crucible_web::start_server(&final_config, &config).await?;
+    crate::web::start_server(&final_config, &config).await?;
 
     Ok(())
 }

@@ -1,5 +1,5 @@
-use crate::services::daemon::AppState;
-use crate::{error::WebResultExt, WebError};
+use crate::web::services::daemon::AppState;
+use crate::web::{error::WebResultExt, WebError};
 use axum::{
     extract::{Path, State},
     routing::{get, post, put},
@@ -1043,7 +1043,7 @@ async fn list_providers(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::*;
+    use crate::web::test_support::*;
     use proptest::prelude::*;
     use tower::ServiceExt;
 
@@ -1131,9 +1131,9 @@ mod tests {
 
     #[tokio::test]
     async fn export_session_returns_text_markdown_content_type() {
-        let (_mock, client) = crate::test_support::start_mock_daemon().await;
-        let state = crate::test_support::build_mock_state(client);
-        let app = crate::test_support::build_test_app(state);
+        let (_mock, client) = crate::web::test_support::start_mock_daemon().await;
+        let state = crate::web::test_support::build_mock_state(client);
+        let app = crate::web::test_support::build_test_app(state);
 
         let response = app
             .oneshot(
@@ -1163,9 +1163,9 @@ mod tests {
 
     #[tokio::test]
     async fn export_session_returns_markdown_body() {
-        let (_mock, client) = crate::test_support::start_mock_daemon().await;
-        let state = crate::test_support::build_mock_state(client);
-        let app = crate::test_support::build_test_app(state);
+        let (_mock, client) = crate::web::test_support::start_mock_daemon().await;
+        let state = crate::web::test_support::build_mock_state(client);
+        let app = crate::web::test_support::build_test_app(state);
 
         let response = app
             .oneshot(
@@ -1196,9 +1196,9 @@ mod tests {
 
     #[tokio::test]
     async fn export_session_fallback_includes_session_metadata() {
-        let (_mock, client) = crate::test_support::start_mock_daemon().await;
-        let state = crate::test_support::build_mock_state(client);
-        let app = crate::test_support::build_test_app(state);
+        let (_mock, client) = crate::web::test_support::start_mock_daemon().await;
+        let state = crate::web::test_support::build_mock_state(client);
+        let app = crate::web::test_support::build_test_app(state);
 
         let response = app
             .oneshot(
@@ -1227,9 +1227,9 @@ mod tests {
 
     #[tokio::test]
     async fn export_session_with_valid_session_returns_200() {
-        let (_mock, client) = crate::test_support::start_mock_daemon().await;
-        let state = crate::test_support::build_mock_state(client);
-        let app = crate::test_support::build_test_app(state);
+        let (_mock, client) = crate::web::test_support::start_mock_daemon().await;
+        let state = crate::web::test_support::build_mock_state(client);
+        let app = crate::web::test_support::build_test_app(state);
 
         let response = app
             .oneshot(
@@ -1252,9 +1252,9 @@ mod tests {
 
     #[tokio::test]
     async fn auto_title_returns_200_with_title_field() {
-        let (_mock, client) = crate::test_support::start_mock_daemon().await;
-        let state = crate::test_support::build_mock_state(client);
-        let app = crate::test_support::build_test_app(state);
+        let (_mock, client) = crate::web::test_support::start_mock_daemon().await;
+        let state = crate::web::test_support::build_mock_state(client);
+        let app = crate::web::test_support::build_test_app(state);
 
         let response = app
             .oneshot(
@@ -1284,9 +1284,9 @@ mod tests {
     #[tokio::test]
     async fn auto_title_fallback_when_no_messages() {
         // Mock daemon returns empty messages, so fallback to "Untitled Session"
-        let (_mock, client) = crate::test_support::start_mock_daemon().await;
-        let state = crate::test_support::build_mock_state(client);
-        let app = crate::test_support::build_test_app(state);
+        let (_mock, client) = crate::web::test_support::start_mock_daemon().await;
+        let state = crate::web::test_support::build_mock_state(client);
+        let app = crate::web::test_support::build_test_app(state);
 
         let response = app
             .oneshot(
@@ -1383,9 +1383,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_session_without_provider_uses_detected_default() {
-        let (_mock, client) = crate::test_support::start_mock_daemon().await;
-        let state = crate::test_support::build_mock_state(client);
-        let app = crate::test_support::build_test_app(state);
+        let (_mock, client) = crate::web::test_support::start_mock_daemon().await;
+        let state = crate::web::test_support::build_mock_state(client);
+        let app = crate::web::test_support::build_test_app(state);
 
         // Only kiln is required — provider and model should resolve from detected defaults
         let response = app
@@ -1416,9 +1416,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_session_with_explicit_provider_still_works() {
-        let (_mock, client) = crate::test_support::start_mock_daemon().await;
-        let state = crate::test_support::build_mock_state(client);
-        let app = crate::test_support::build_test_app(state);
+        let (_mock, client) = crate::web::test_support::start_mock_daemon().await;
+        let state = crate::web::test_support::build_mock_state(client);
+        let app = crate::web::test_support::build_test_app(state);
 
         let response = app
             .oneshot(
@@ -1454,9 +1454,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_providers_with_kiln_query_param_returns_200() {
-        let (_mock, client) = crate::test_support::start_mock_daemon().await;
-        let state = crate::test_support::build_mock_state(client);
-        let app = crate::test_support::build_test_app(state);
+        let (_mock, client) = crate::web::test_support::start_mock_daemon().await;
+        let state = crate::web::test_support::build_mock_state(client);
+        let app = crate::web::test_support::build_test_app(state);
 
         let response = app
             .oneshot(

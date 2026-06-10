@@ -2,7 +2,7 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use crucible_web::ChatEvent;
+use crucible_cli::web::ChatEvent;
 use serde_json::{json, Value};
 use tower::ServiceExt;
 

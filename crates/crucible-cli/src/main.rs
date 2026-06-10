@@ -380,7 +380,6 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             commands::completions::execute(&shell)?;
         }
 
-        #[cfg(feature = "web")]
         Some(Commands::Web(cmd)) => {
             commands::web::handle(cmd).await?;
         }
