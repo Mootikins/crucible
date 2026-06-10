@@ -489,7 +489,7 @@ HTTP Gateway (crucible-web wired to daemon)
 - [ ] **Agent Inbox / Overview** `P1` — Dashboard of active sessions, pending permissions, recent completions; the landing page; composes existing `session.list` + event subscription RPCs · **Lua extension** · `crucible-web`
 - [ ] **Permission Approval UI** `P1` — Approve/deny from browser with diff preview; Rust owns the approval RPC (security-critical), Lua owns diff formatting + approval policy hooks · **Hybrid** · `crucible-web`
 - [-] **Session Management** `P1` — List, switch, resume, end sessions; pure HTTP→RPC proxy, already exists as daemon methods · **Core Rust** · `crucible-web`
-- [ ] **PWA Support** `P1` — Manifest + service worker; installable from browser, mobile access without app store · **Core Rust** · `crucible-web`
+- [x] **PWA Support** `P1` — Manifest + service worker; installable from browser, mobile access without app store · **Core Rust** · `crucible-web`
 - [ ] **SolidJS Oil Renderer** `P1` — `<OilNode>` component tree for browser; foundational rendering like Neovim's terminal grid — everything else depends on it · **Core Rust** (frontend) · `crucible-web`, `crucible-oil`
 
 ### Knowledge & Search (P2 — Crucible's unique strength)

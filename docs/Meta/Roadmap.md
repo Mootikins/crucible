@@ -106,7 +106,7 @@ Remaining follow-ups (not blocking Wave 3):
 - ✅ **Oil Node Serialization** — `Serialize` derives across the full `Node`/`Style` type graph behind the `serde` cargo feature on `crucible-oil` (TUI builds pay nothing). Externally-tagged snake_case JSON; default-valued fields omitted (missing key ⇒ default). Contract locked by insta snapshots in `crucible-oil/tests/serialize_json.rs`.
 - **SolidJS Oil Renderer** — `<OilNode>` component tree (depends on Oil Node Serialization)
 - **Plugin Panel Hosting** — iframe sandbox + message-passing protocol (depends on Oil Node Serialization)
-- **PWA Support** — depends on Static File Serving
+- **PWA Support** — ✅ shipped 2026-06-10 (manifest + workbox service worker via vite-plugin-pwa; app-shell precache only, `/api/*` incl. SSE never intercepted)
 
 ### Wave 5 — Web UI core (depends on Wave 4)
 
