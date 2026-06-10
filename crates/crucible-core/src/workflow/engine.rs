@@ -95,17 +95,13 @@ enum Slot {
         /// Path to the step, e.g. `[0, 1]` → `doc.steps[0].children[1]`.
         path: Vec<usize>,
     },
-    /// Run of ≥2 consecutive parallel-marked siblings. Each member is a
-    /// branch: the member step plus its descendants run sequentially
-    /// within the branch, branches run concurrently, and the engine
-    /// joins all of them before advancing.
-    ParallelGroup { members: Vec<GroupMember> },
-}
-
-#[derive(Debug, Clone)]
-struct GroupMember {
-    step_id: String,
-    path: Vec<usize>,
+    /// Run of ≥2 consecutive parallel-marked siblings, one path per
+    /// member. Each member is a branch: the member step plus its
+    /// descendants run sequentially within the branch, branches run
+    /// concurrently, and the engine joins all of them before advancing.
+    ParallelGroup {
+        members: Vec<Vec<usize>>,
+    },
 }
 
 pub struct WorkflowExecution {
@@ -306,12 +302,12 @@ impl WorkflowExecution {
                 // other's outputs. Outputs and events merge in document
                 // order after the join, keeping the stream deterministic
                 // regardless of completion order.
-                let results = futures::future::join_all(members.iter().map(|m| {
+                let results = futures::future::join_all(members.iter().map(|path| {
                     let root =
-                        resolve_step(&self.doc, &m.path).expect("slot path valid by construction");
+                        resolve_step(&self.doc, path).expect("slot path valid by construction");
                     run_branch(
                         root,
-                        m.path.clone(),
+                        path.clone(),
                         self.scope.clone(),
                         &self.doc.validations,
                         &self.dispatch,
@@ -418,12 +414,8 @@ fn flatten_siblings(steps: &[WorkflowStep], path: &mut Vec<usize>, out: &mut Vec
         if run >= 2 {
             let members = (i..i + run)
                 .map(|j| {
-                    path.push(j);
-                    let member = GroupMember {
-                        step_id: path_to_id(path),
-                        path: path.clone(),
-                    };
-                    path.pop();
+                    let mut member = path.clone();
+                    member.push(j);
                     member
                 })
                 .collect();

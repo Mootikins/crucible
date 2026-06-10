@@ -114,7 +114,13 @@ impl StepHandler for DaemonInlineHandler {
             let rx = self.event_tx.subscribe();
             match self
                 .agents
-                .send_message(&self.session_id, prompt.clone(), &self.event_tx, false, None)
+                .send_message(
+                    &self.session_id,
+                    prompt.clone(),
+                    &self.event_tx,
+                    false,
+                    None,
+                )
                 .await
             {
                 Ok(_id) => break rx,

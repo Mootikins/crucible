@@ -254,9 +254,12 @@ impl AgentHandle for MultiTurnScriptedAgent {
     }
 }
 
+type CapturedPrompt = Arc<std::sync::Mutex<Option<String>>>;
+type CapturedMessages = Arc<std::sync::Mutex<Option<Vec<crucible_core::traits::ContextMessage>>>>;
+
 struct PromptCapturingAgent {
-    received_prompt: Arc<std::sync::Mutex<Option<String>>>,
-    received_messages: Arc<std::sync::Mutex<Option<Vec<crucible_core::traits::ContextMessage>>>>,
+    received_prompt: CapturedPrompt,
+    received_messages: CapturedMessages,
     events: Vec<TurnEvent>,
 }
 
@@ -464,13 +467,7 @@ impl ReactorTestHarness {
     /// tests only need the prompt; transform_context tests want the
     /// message array. One method, drop the unused half if you don't
     /// need it.
-    fn inject_capturing_agent(
-        &self,
-        events: Vec<TurnEvent>,
-    ) -> (
-        Arc<std::sync::Mutex<Option<String>>>,
-        Arc<std::sync::Mutex<Option<Vec<crucible_core::traits::ContextMessage>>>>,
-    ) {
+    fn inject_capturing_agent(&self, events: Vec<TurnEvent>) -> (CapturedPrompt, CapturedMessages) {
         let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
         let received_messages = Arc::new(std::sync::Mutex::new(None));
         self.agent_manager.agent_cache.insert(

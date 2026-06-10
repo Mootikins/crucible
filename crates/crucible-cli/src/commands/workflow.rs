@@ -228,6 +228,11 @@ fn render_tree(wf: &WorkflowDoc) {
 fn render_step(step: &WorkflowStep, depth: usize) {
     let pad = "  ".repeat(depth);
     let mut line = step.title.clone();
+    if step.parallel {
+        // Echo the parser-stripped marker so the listing stays faithful
+        // to the source, matching the @agent/-> output echoes below.
+        line.insert(0, '&');
+    }
     if let Some(agent) = &step.agent {
         line.push_str(&format!(" @{}", agent));
     }
