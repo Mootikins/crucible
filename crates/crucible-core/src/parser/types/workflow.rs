@@ -82,6 +82,14 @@ pub struct WorkflowStep {
     /// runtime can feed it as prompt material.
     pub body: String,
 
+    /// Marked for concurrent execution — either a `&` title prefix
+    /// (`## &Build frontend`) or membership in a section whose heading
+    /// carries a `(parallel)` suffix. Consecutive parallel siblings form
+    /// one concurrent group at execution time. `serde(default)` keeps
+    /// pre-parallel snapshots rehydratable.
+    #[serde(default)]
+    pub parallel: bool,
+
     /// Nested sub-steps (headings with level > `self.level`, up to the next
     /// sibling at level <= `self.level`).
     pub children: Vec<WorkflowStep>,
@@ -491,6 +499,31 @@ fn parse_heading_suffix(
     (after_agent.trim().to_string(), agent, output, attributes)
 }
 
+/// Split a leading `&` parallel marker off a heading's raw text. The
+/// marker only counts as the first character with title text after it —
+/// `## Fix A & B` is untouched.
+fn strip_parallel_prefix(text: &str) -> (&str, bool) {
+    match text.strip_prefix('&') {
+        Some(rest) if !rest.trim().is_empty() => (rest.trim_start(), true),
+        _ => (text, false),
+    }
+}
+
+/// Strip a trailing case-insensitive `(parallel)` marker from an
+/// already-cleaned title. Only the very end of the title counts —
+/// `Run (parallel) builds` keeps its literal text.
+fn strip_parallel_suffix(title: &str) -> (String, bool) {
+    const MARKER: &str = "(parallel)";
+    let trimmed = title.trim_end();
+    if trimmed.len() >= MARKER.len() {
+        let split = trimmed.len() - MARKER.len();
+        if trimmed.is_char_boundary(split) && trimmed[split..].eq_ignore_ascii_case(MARKER) {
+            return (trimmed[..split].trim_end().to_string(), true);
+        }
+    }
+    (title.to_string(), false)
+}
+
 fn extract_goals(
     body: &str,
     headings: &[RawHeading],
@@ -715,7 +748,7 @@ fn build_subtree(
             .map(|j| headings[j].line)
             .unwrap_or(usize::MAX);
 
-        let (children, next_i) =
+        let (mut children, next_i) =
             build_subtree(body, body_start, headings, i + 1, step_level, gates);
 
         let first_child_line = ((i + 1)..next_i.min(headings.len()))
@@ -729,7 +762,14 @@ fn build_subtree(
 
         let body_text = body[this_body_start..first_child_byte].trim().to_string();
 
-        let (title, agent, output, attributes) = parse_heading_suffix(&h.text);
+        let (heading_text, step_parallel) = strip_parallel_prefix(&h.text);
+        let (title, agent, output, attributes) = parse_heading_suffix(heading_text);
+        let (title, children_parallel) = strip_parallel_suffix(&title);
+        if children_parallel {
+            for child in &mut children {
+                child.parallel = true;
+            }
+        }
 
         let step_gates: Vec<Gate> = gates
             .iter()
@@ -748,6 +788,7 @@ fn build_subtree(
             output,
             attributes,
             body: body_text,
+            parallel: step_parallel,
             children,
             gates: step_gates,
             offset: h.byte_offset + body_start,

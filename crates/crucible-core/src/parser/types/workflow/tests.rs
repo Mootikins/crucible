@@ -605,6 +605,117 @@ fn output_suffix_populates_step_output() {
     assert_eq!(wf.steps[0].title, "Parse");
 }
 
+// ---- parallel markers ----
+
+#[test]
+fn ampersand_prefix_marks_step_parallel_and_is_stripped() {
+    let source = "\
+---
+type: workflow
+---
+## &Build frontend
+## &Build backend
+## Run tests
+";
+    let wf = parse_workflow(source).unwrap();
+    assert!(wf.steps[0].parallel);
+    assert_eq!(wf.steps[0].title, "Build frontend");
+    assert!(wf.steps[1].parallel);
+    assert_eq!(wf.steps[1].title, "Build backend");
+    assert!(!wf.steps[2].parallel);
+    assert_eq!(wf.steps[2].title, "Run tests");
+}
+
+#[test]
+fn parallel_heading_suffix_marks_child_steps_parallel() {
+    let source = "\
+---
+type: workflow
+---
+## Build Artifacts (parallel)
+### Build frontend
+### Build backend
+## Test
+";
+    let wf = parse_workflow(source).unwrap();
+    let section = &wf.steps[0];
+    assert_eq!(section.title, "Build Artifacts");
+    assert!(!section.parallel, "the section itself stays sequential");
+    assert_eq!(section.children.len(), 2);
+    assert!(section.children.iter().all(|c| c.parallel));
+    assert!(!wf.steps[1].parallel);
+}
+
+#[test]
+fn parallel_suffix_is_case_insensitive() {
+    for suffix in ["(parallel)", "(Parallel)", "(PARALLEL)"] {
+        let source = format!("---\ntype: workflow\n---\n## Build {suffix}\n### A\n### B\n");
+        let wf = parse_workflow(&source).unwrap();
+        assert_eq!(wf.steps[0].title, "Build", "suffix {suffix} stripped");
+        assert!(
+            wf.steps[0].children.iter().all(|c| c.parallel),
+            "suffix {suffix} marks children"
+        );
+    }
+}
+
+#[test]
+fn ampersand_prefix_composes_with_agent_and_output_suffixes() {
+    let source = "---\ntype: workflow\n---\n## &Build @builder -> artifact\n";
+    let wf = parse_workflow(source).unwrap();
+    let step = &wf.steps[0];
+    assert!(step.parallel);
+    assert_eq!(step.title, "Build");
+    assert_eq!(step.agent.as_deref(), Some("builder"));
+    assert_eq!(step.output.as_deref(), Some("artifact"));
+}
+
+#[test]
+fn plain_ampersand_inside_title_is_not_a_marker() {
+    let source = "---\ntype: workflow\n---\n## Fix A & B\n";
+    let wf = parse_workflow(source).unwrap();
+    assert!(!wf.steps[0].parallel);
+    assert_eq!(wf.steps[0].title, "Fix A & B");
+}
+
+#[test]
+fn parallel_suffix_on_step_without_children_is_stripped_harmlessly() {
+    let source = "---\ntype: workflow\n---\n## Solo (parallel)\n";
+    let wf = parse_workflow(source).unwrap();
+    assert_eq!(wf.steps[0].title, "Solo");
+    assert!(!wf.steps[0].parallel);
+    assert!(wf.steps[0].children.is_empty());
+}
+
+#[test]
+fn grandchildren_of_parallel_section_stay_sequential() {
+    let source = "\
+---
+type: workflow
+---
+## Build (parallel)
+### Frontend
+#### Bundle assets
+### Backend
+";
+    let wf = parse_workflow(source).unwrap();
+    let section = &wf.steps[0];
+    assert!(section.children[0].parallel);
+    assert!(section.children[1].parallel);
+    assert!(
+        !section.children[0].children[0].parallel,
+        "only direct children of a (parallel) section are marked"
+    );
+}
+
+#[test]
+fn parallel_marker_inside_word_is_not_stripped() {
+    // "(parallel)" only counts as a marker at the very end of the title.
+    let source = "---\ntype: workflow\n---\n## Run (parallel) builds\n";
+    let wf = parse_workflow(source).unwrap();
+    assert_eq!(wf.steps[0].title, "Run (parallel) builds");
+}
+
 // ---- fixture-style full examples ----
 
 #[test]
