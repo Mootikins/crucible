@@ -1,6 +1,5 @@
 #![cfg(feature = "test-utils")]
 
-use crucible_oil::proptest_strategies::*;
 use crucible_oil::*;
 use proptest::prelude::*;
 

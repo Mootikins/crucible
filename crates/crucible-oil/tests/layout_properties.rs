@@ -18,10 +18,7 @@ proptest! {
 
         let lines: Vec<&str> = output.split("\r\n").collect();
 
-        prop_assert!(
-            lines.len() >= 1,
-            "Column should produce at least one line"
-        );
+        prop_assert!(!lines.is_empty(), "Column should produce at least one line");
 
         for line in &lines {
             let line_width = utils::visible_width(line);
