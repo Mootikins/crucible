@@ -6,7 +6,7 @@ End-to-end tests for the Crucible web interface using Playwright.
 
 ### Prerequisites
 
-1. Install dependencies (from `crates/crucible-web/web/`):
+1. Install dependencies (from `crates/crucible-cli/web/`):
    ```bash
    bun install
    bunx playwright install chromium

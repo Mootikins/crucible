@@ -19,12 +19,10 @@
 | Crate | Purpose | Key Types |
 |-------|---------|-----------|
 | `crucible-core` | Domain logic, traits, parser types, config (absorbed from crucible-config) | `Provider`, `CanEmbed`, `CanChat`, `ParsedNote`, `AppConfig` |
-| `crucible-cli` | Terminal UI, REPL, commands | `InkChatApp`, `ChatAppMsg` |
+| `crucible-cli` | Terminal UI, REPL, commands, web UI server (`src/web/` — SolidJS + Axum, HTTP/SSE over daemon RPC) | `InkChatApp`, `ChatAppMsg` |
 | `crucible-oil` | Terminal rendering primitives | `Node`, `render_to_string` |
-| `crucible-web` | Browser chat UI (SolidJS + Axum) | HTTP/SSE endpoints |
 | `crucible-lua` | Lua/Luau with Fennel support | `LuaExecutor`, `FennelCompiler` |
-| `crucible-daemon` | Daemon server: enrichment, note pipeline, RPC, observability, file watching, skills, tools, ACP host (`acp/`), embedding backends (`llm/`), SQLite storage (`storage/sqlite/`) | `Server`, `SessionManager`, `AgentManager`, `SqliteStorage`, `EmbeddingProvider` |
-| `crucible-lance` | LanceDB vector storage backend | `LanceStore`, `LanceNoteStore` |
+| `crucible-daemon` | Daemon server: enrichment, note pipeline, RPC, observability, file watching, skills, tools, ACP host (`acp/`), embedding backends (`llm/`), SQLite storage (`storage/sqlite/`), LanceDB vector storage (`storage/lance/`) | `Server`, `SessionManager`, `AgentManager`, `SqliteStorage`, `LanceVectorIndex`, `EmbeddingProvider` |
 
 ### Terminology: Kiln vs Workspace vs Project
 
@@ -234,12 +232,10 @@ env = { ANTHROPIC_BASE_URL = "http://localhost:4000" }
 crucible/
 ├── crates/                      # Rust workspace crates
 │   ├── crucible-core/           # Core domain types, traits, parser, config
-│   ├── crucible-cli/            # Terminal UI, REPL, commands
+│   ├── crucible-cli/            # Terminal UI, REPL, commands, web UI (src/web + web/ frontend)
 │   ├── crucible-oil/             # Terminal rendering primitives
-│   ├── crucible-web/             # Browser-based chat UI
-│   ├── crucible-daemon/          # Daemon: RPC, sessions, ACP host, embeddings, SQLite storage, skills
-│   ├── crucible-lua/             # Lua/Fennel scripting
-│   └── crucible-lance/           # LanceDB vector storage backend
+│   ├── crucible-daemon/          # Daemon: RPC, sessions, ACP host, embeddings, SQLite + LanceDB storage, skills
+│   └── crucible-lua/             # Lua/Fennel scripting
 ├── vendor/                       # Patched upstream dependencies
 ├── docs/                         # Documentation kiln (user guides + test fixture)
 ├── justfile                      # Development recipes
@@ -280,7 +276,7 @@ Conventions: use wikilinks (`[[Help/Wikilinks]]`), add frontmatter with tags, ke
 
 **Don't build release unless installing.** Release builds use LTO and take 5-10 minutes. Use debug builds for iteration.
 
-**Web frontend uses `bun`** (not npm/yarn). See `crates/crucible-web/web/AGENTS.md`.
+**Web frontend uses `bun`** (not npm/yarn). See `crates/crucible-cli/web/AGENTS.md`.
 
 ### Code Principles
 
