@@ -17,7 +17,6 @@ pub mod interaction;
 pub mod interaction_context;
 pub mod interaction_registry;
 pub mod kiln;
-pub mod merkle;
 pub mod note;
 pub mod parser;
 pub mod processing;
@@ -52,9 +51,6 @@ pub use kiln::EXCLUDED_DIRS;
 pub use enrichment::{
     BlockEmbedding, CachedEmbedding, EmbeddingProvider, EnrichedNote, EnrichmentMetadata,
 };
-
-// Re-export merkle tree abstractions
-pub use merkle::MerkleTreeBuilder;
 
 // Re-export processing handoff types, change detection, and pipeline trait
 pub use processing::{

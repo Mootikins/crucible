@@ -17,7 +17,6 @@
 
 pub mod acp;
 pub mod database;
-pub mod grammar;
 pub mod hashing;
 pub mod mcp_status;
 pub mod mode;
@@ -72,9 +71,6 @@ pub use crate::types::mode::{default_internal_modes, ModeDescriptor};
 // Re-export trait types (these are associated with traits but used as data)
 pub use crate::traits::storage::{Record as StorageRecord, RecordId as StorageRecordId};
 pub use crate::traits::tools::{ExecutionContext, ToolDefinition, ToolExample};
-
-// Re-export grammar types
-pub use crate::types::grammar::{Grammar, GrammarError, GrammarResult};
 
 // Re-export tool reference types
 pub use crate::types::tool_ref::{ToolRef, ToolSource};
