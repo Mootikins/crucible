@@ -1,7 +1,6 @@
 //! Shell modal, interaction modal, and screen management for OilChatApp.
 
 use std::path::PathBuf;
-use std::process::Command;
 
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
@@ -12,7 +11,7 @@ use super::OilChatApp;
 use crate::tui::oil::app::Action;
 use crate::tui::oil::components::{
     InteractionModal, InteractionModalMsg, InteractionModalOutput, ShellHistoryItem, ShellModal,
-    ShellModalMsg, ShellModalOutput, ShellStatus,
+    ShellModalMsg, ShellModalOutput,
 };
 
 impl OilChatApp {
@@ -179,18 +178,6 @@ impl OilChatApp {
         }
     }
 
-    #[allow(dead_code)]
-    pub(super) fn cancel_shell(&mut self) {
-        if let Some(ref mut modal) = self.shell_modal {
-            modal.cancel();
-        }
-    }
-
-    #[allow(dead_code)]
-    pub(super) fn close_shell_modal_with_history(&mut self, history_item: ShellHistoryItem) {
-        self.finalize_shell_modal(history_item);
-    }
-
     pub(super) fn enter_alternate_screen(&mut self) {
         let mut stdout = std::io::stdout();
         let _ = execute!(stdout, EnterAlternateScreen, cursor::Hide);
@@ -222,88 +209,6 @@ impl OilChatApp {
         let session_dir = self.session_dir.clone()?;
         let modal = self.shell_modal.as_mut()?;
         modal.save_output(&session_dir)
-    }
-
-    #[allow(dead_code)]
-    pub(super) fn send_shell_output(&mut self, truncated: bool) {
-        let path = self.save_shell_output();
-
-        if let Some(ref modal) = self.shell_modal {
-            let path_str = path
-                .as_ref()
-                .and_then(|p| p.file_name())
-                .and_then(|n| n.to_str())
-                .map(|n| format!("shell/{}", n))
-                .unwrap_or_else(|| "(not saved)".to_string());
-
-            let exit_str = match modal.status() {
-                ShellStatus::Completed { exit_code } => format!("exit {}", exit_code),
-                ShellStatus::Cancelled => "cancelled".to_string(),
-                ShellStatus::Running => "running".to_string(),
-            };
-
-            let mut message = format!(
-                "[Shell: {}]\n$ {} ({})\n\n",
-                path_str,
-                modal.command(),
-                exit_str
-            );
-
-            let output_lines = modal.output_lines();
-            if truncated {
-                let total = output_lines.len();
-                let show_lines = 50.min(total);
-                if total > show_lines {
-                    message.push_str(&format!(
-                        "[Truncated: showing last {} of {} lines]\n\n",
-                        show_lines, total
-                    ));
-                }
-                for line in output_lines.iter().rev().take(show_lines).rev() {
-                    message.push_str(line);
-                    message.push('\n');
-                }
-            } else {
-                for line in output_lines {
-                    message.push_str(line);
-                    message.push('\n');
-                }
-            }
-
-            self.add_system_message(message);
-        }
-    }
-
-    #[allow(dead_code)]
-    pub(super) fn open_shell_output_in_editor(&mut self) {
-        let path = match self.save_shell_output() {
-            Some(p) => p,
-            None => {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(
-                        "Failed to save output file".to_string(),
-                    ));
-                return;
-            }
-        };
-
-        let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
-
-        crossterm::terminal::disable_raw_mode().ok();
-        crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen).ok();
-
-        let status = Command::new(&editor).arg(&path).status();
-
-        crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen).ok();
-        crossterm::terminal::enable_raw_mode().ok();
-
-        if let Err(e) = status {
-            self.notification_area
-                .add(crucible_core::types::Notification::warning(format!(
-                    "Failed to open editor: {}",
-                    e
-                )));
-        }
     }
 
     pub(super) fn notify_toast(&mut self, msg: impl Into<String>) {

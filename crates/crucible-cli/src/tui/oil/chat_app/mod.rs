@@ -111,9 +111,6 @@ pub struct OilChatApp {
     // ─── I/O / Lifecycle (tech debt — future extraction) ──────────────
     // Callbacks, filesystem state, and registries that ideally move
     // behind a trait or into a dedicated struct later.
-    /// Submit callback — fires when the user sends a message
-    #[allow(dead_code)] // WIP: on_submit callback not yet used
-    on_submit: Option<Box<dyn Fn(String) + Send + Sync>>,
     /// Filesystem path for saving session transcripts
     session_dir: Option<PathBuf>,
     /// Shell command history state
@@ -243,16 +240,7 @@ impl App for OilChatApp {
 
 // ─── Accessors & Lifecycle ───────────────────────────────────────────────────
 
-#[allow(dead_code)] // WIP: multiple methods not yet used
 impl OilChatApp {
-    fn with_on_submit<F>(mut self, callback: F) -> Self
-    where
-        F: Fn(String) + Send + Sync + 'static,
-    {
-        self.on_submit = Some(Box::new(callback));
-        self
-    }
-
     pub(crate) fn set_mode(&mut self, mode: ChatMode) {
         self.mode = mode;
     }
@@ -300,14 +288,12 @@ impl OilChatApp {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn model_list_state(&self) -> &ModelListState {
         &self.model_list_state
     }
 
-    pub(crate) fn set_model_list_state(&mut self, state: ModelListState) {
-        self.model_list_state = state;
-    }
-
+    #[cfg(test)]
     pub(crate) fn available_models(&self) -> &[String] {
         &self.available_models
     }
@@ -320,6 +306,7 @@ impl OilChatApp {
         self.show_diffs = show;
     }
 
+    #[cfg(test)]
     pub(crate) fn show_diffs(&self) -> bool {
         self.show_diffs
     }
@@ -443,30 +430,16 @@ impl OilChatApp {
         self.precognition.precognition = val;
     }
 
-    pub(crate) fn precognition(&self) -> bool {
-        self.precognition.precognition
-    }
-
-    fn precognition_results(&self) -> usize {
-        self.precognition.precognition_results
-    }
-
     pub(crate) fn set_precognition_results(&mut self, count: usize) {
         self.precognition.precognition_results = count;
     }
 
-    fn perm_show_diff(&self) -> bool {
-        self.permission.perm_show_diff
-    }
-
-    fn perm_autoconfirm_session(&self) -> bool {
-        self.permission.perm_autoconfirm_session
-    }
-
+    #[cfg(test)]
     pub(crate) fn container_list(&self) -> &crate::tui::oil::containers::ContainerList {
         &self.container_list
     }
 
+    #[cfg(test)]
     pub(crate) fn container_list_mut(&mut self) -> &mut crate::tui::oil::containers::ContainerList {
         &mut self.container_list
     }
@@ -485,10 +458,6 @@ impl OilChatApp {
 
     pub(crate) fn hide_messages(&mut self) {
         self.notification_area.hide();
-    }
-
-    pub(crate) fn clear_notifications(&mut self) {
-        self.notification_area.clear();
     }
 
     pub(crate) fn clear_messages(&mut self) {
@@ -520,18 +489,9 @@ impl OilChatApp {
         self.container_list.is_streaming()
     }
 
+    #[cfg(test)]
     pub(crate) fn input_content(&self) -> &str {
         self.input.content()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn is_popup_visible(&self) -> bool {
-        self.popup.show
-    }
-
-    #[cfg(test)]
-    pub(crate) fn messages_drawer_visible(&self) -> bool {
-        self.notification_area.is_visible()
     }
 
     #[cfg(test)]
@@ -547,16 +507,6 @@ impl OilChatApp {
     #[cfg(test)]
     pub(crate) fn context_usage(&self) -> (usize, usize) {
         (self.context_used, self.context_total)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn last_precognition_count(&self) -> Option<usize> {
-        self.precognition.last_notes_count
-    }
-
-    #[cfg(test)]
-    pub(crate) fn current_popup_filter(&self) -> &str {
-        &self.popup.filter
     }
 
     #[cfg(test)]
@@ -619,32 +569,9 @@ impl OilChatApp {
         self.interaction_modal = None;
     }
 
+    #[cfg(test)]
     pub(crate) fn interaction_visible(&self) -> bool {
         self.interaction_modal.is_some()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn shell_output_lines(&self) -> Vec<String> {
-        self.shell_modal
-            .as_ref()
-            .map(|m| m.output_lines().to_vec())
-            .unwrap_or_default()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn shell_visible_lines(&self, max_lines: usize) -> Vec<String> {
-        self.shell_modal
-            .as_ref()
-            .map(|m| m.visible_lines(max_lines).to_vec())
-            .unwrap_or_default()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn shell_scroll_offset(&self) -> usize {
-        self.shell_modal
-            .as_ref()
-            .map(|m| m.scroll_offset())
-            .unwrap_or(0)
     }
 
     #[cfg(test)]
@@ -653,11 +580,6 @@ impl OilChatApp {
         for ch in content.chars() {
             self.input.handle(InputAction::Insert(ch));
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn handle_input_action(&mut self, action: InputAction) {
-        self.input.handle(action);
     }
 
     pub(crate) fn take_needs_full_redraw(&mut self) -> bool {
@@ -686,23 +608,12 @@ impl OilChatApp {
     pub(crate) fn reset_session(&mut self) {
         self.container_list.clear();
         self.message_queue.message_counter = 0;
-        self.message_queue.deferred_messages.clear();
         self.context_used = 0;
         self.context_total = 0;
         self.status = "Ready".to_string();
         self.notification_area.clear();
         self.pending_delegate_supersessions.clear();
         self.needs_full_redraw = true;
-    }
-
-    fn process_deferred_queue(&mut self) -> Action<ChatAppMsg> {
-        if let Some(queued) = self.message_queue.deferred_messages.pop_front() {
-            self.submit_user_message(queued.clone());
-            self.status = "Thinking...".to_string();
-            Action::Send(ChatAppMsg::UserMessage(queued))
-        } else {
-            Action::Continue
-        }
     }
 }
 

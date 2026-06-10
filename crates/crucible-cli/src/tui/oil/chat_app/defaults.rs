@@ -47,7 +47,6 @@ impl Default for OilChatApp {
             pending_delegate_supersessions: std::collections::HashSet::new(),
 
             // I/O / Lifecycle
-            on_submit: None,
             session_dir: None,
             shell_history: ShellHistoryState::default(),
             runtime_config: RuntimeConfig::empty(),

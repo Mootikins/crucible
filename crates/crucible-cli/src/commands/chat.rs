@@ -72,54 +72,6 @@ pub struct RunOneshotChatParams {
     pub set_overrides: Vec<String>,
 }
 
-/// Determine which kiln to save sessions to.
-///
-/// Priority:
-/// 1. `config.session_kiln` — explicit personal session kiln
-/// 2. `config.kiln_path` — workspace kiln (original behavior)
-/// 3. None — sessions won't be saved
-///
-/// When `session_kiln` is set in `~/.config/crucible/config.toml`,
-/// sessions are stored there instead of the workspace kiln.
-#[allow(dead_code)] // Prepared for future multi-kiln support
-fn select_session_kiln(config: &CliConfig) -> Option<PathBuf> {
-    // Prefer session_kiln if configured
-    if let Some(ref session_kiln) = config.session_kiln {
-        if session_kiln.exists() && session_kiln.is_dir() {
-            info!(
-                "Using session_kiln for session storage: {}",
-                session_kiln.display()
-            );
-            return Some(session_kiln.clone());
-        }
-        warn!(
-            "session_kiln path is invalid (not a directory or missing): {} - falling back to kiln_path",
-            session_kiln.display()
-        );
-    }
-
-    // Fall back to kiln_path
-    let kiln_path = &config.kiln_path;
-
-    if !kiln_path.exists() {
-        warn!(
-            "Kiln path does not exist: {} - sessions will not be saved",
-            kiln_path.display()
-        );
-        return None;
-    }
-
-    if !kiln_path.is_dir() {
-        warn!(
-            "Kiln path is not a directory: {} - sessions will not be saved",
-            kiln_path.display()
-        );
-        return None;
-    }
-
-    Some(kiln_path.clone())
-}
-
 pub async fn execute(params: ExecuteParams) -> Result<()> {
     if let Some(ref replay_path) = params.replay {
         if !replay_path.exists() {
@@ -832,7 +784,6 @@ pub fn known_slash_commands() -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     #[test]
     fn test_parse_env_overrides_empty() {
@@ -892,87 +843,5 @@ mod tests {
         let result = parse_env_overrides(&["KEY=".to_string()]);
         assert_eq!(result.len(), 1);
         assert_eq!(result.get("KEY"), Some(&"".to_string()));
-    }
-
-    #[test]
-    fn test_select_session_kiln_valid_directory() {
-        let temp = TempDir::new().unwrap();
-        let config = CliConfig {
-            kiln_path: temp.path().to_path_buf(),
-            ..Default::default()
-        };
-
-        let result = select_session_kiln(&config);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), temp.path());
-    }
-
-    #[test]
-    fn test_select_session_kiln_nonexistent_path() {
-        let config = CliConfig {
-            kiln_path: std::path::PathBuf::from("/nonexistent/path/that/does/not/exist"),
-            ..Default::default()
-        };
-
-        let result = select_session_kiln(&config);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_select_session_kiln_file_not_directory() {
-        let temp = TempDir::new().unwrap();
-        let file_path = temp.path().join("file.txt");
-        std::fs::write(&file_path, "content").unwrap();
-
-        let config = CliConfig {
-            kiln_path: file_path,
-            ..Default::default()
-        };
-
-        let result = select_session_kiln(&config);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_select_session_kiln_prefers_session_kiln_over_kiln_path() {
-        let session_dir = TempDir::new().unwrap();
-        let workspace_dir = TempDir::new().unwrap();
-        let config = CliConfig {
-            kiln_path: workspace_dir.path().to_path_buf(),
-            session_kiln: Some(session_dir.path().to_path_buf()),
-            ..Default::default()
-        };
-
-        let result = select_session_kiln(&config);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), session_dir.path());
-    }
-
-    #[test]
-    fn test_select_session_kiln_falls_back_when_session_kiln_invalid() {
-        let workspace_dir = TempDir::new().unwrap();
-        let config = CliConfig {
-            kiln_path: workspace_dir.path().to_path_buf(),
-            session_kiln: Some(std::path::PathBuf::from("/nonexistent/session/kiln")),
-            ..Default::default()
-        };
-
-        let result = select_session_kiln(&config);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), workspace_dir.path());
-    }
-
-    #[test]
-    fn test_select_session_kiln_none_when_not_set() {
-        let workspace_dir = TempDir::new().unwrap();
-        let config = CliConfig {
-            kiln_path: workspace_dir.path().to_path_buf(),
-            session_kiln: None,
-            ..Default::default()
-        };
-
-        let result = select_session_kiln(&config);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), workspace_dir.path());
     }
 }

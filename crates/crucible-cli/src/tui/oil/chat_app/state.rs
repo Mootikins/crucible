@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use crate::tui::oil::theme;
 use crucible_oil::style::Color;
 
@@ -105,11 +103,9 @@ pub enum PickSource {
     Files,
 }
 
-/// Message queue state — deferred messages and message counter
+/// Message queue state — message counter and Ctrl-C tracking
 #[derive(Default)]
 pub(crate) struct MessageQueueState {
-    /// Messages deferred until the current stream completes
-    pub deferred_messages: VecDeque<String>,
     /// Monotonic counter for assigning message IDs
     pub message_counter: usize,
     /// Timestamp of the last Ctrl-C press (for double-tap quit)
