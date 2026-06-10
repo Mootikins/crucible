@@ -256,8 +256,7 @@ impl AgentHandle for MultiTurnScriptedAgent {
 
 struct PromptCapturingAgent {
     received_prompt: Arc<std::sync::Mutex<Option<String>>>,
-    received_messages:
-        Arc<std::sync::Mutex<Option<Vec<crucible_core::traits::ContextMessage>>>>,
+    received_messages: Arc<std::sync::Mutex<Option<Vec<crucible_core::traits::ContextMessage>>>>,
     events: Vec<TurnEvent>,
 }
 

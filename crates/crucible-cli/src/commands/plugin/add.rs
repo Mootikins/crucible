@@ -42,7 +42,11 @@ pub async fn execute(args: AddArgs) -> Result<()> {
             );
         }
     }
-    println!("Declared '{}' in {}", result.name, result.plugins_toml.display());
+    println!(
+        "Declared '{}' in {}",
+        result.name,
+        result.plugins_toml.display()
+    );
     println!("Restart the daemon or start a new session to load it.");
 
     Ok(())

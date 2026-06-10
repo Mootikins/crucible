@@ -388,7 +388,9 @@ impl AgentManager {
 
         // Lua runtime handlers can replace the message array entirely
         // by returning `{ messages = ... }` from their callback.
-        let handlers = state.registry.runtime_handlers_for("transform_context", None);
+        let handlers = state
+            .registry
+            .runtime_handlers_for("transform_context", None);
         for handler in handlers {
             let event = SessionEvent::Custom {
                 name: "transform_context".to_string(),

@@ -248,7 +248,13 @@ async fn test_precognition_runs_only_on_first_user_message_of_session() {
     // Turn 2. Precognition must NOT fire — assertion is "no precog event
     // arrives before the next message_complete."
     agent_manager
-        .send_message(&session.id, "follow-up question".into(), &event_tx, true, None)
+        .send_message(
+            &session.id,
+            "follow-up question".into(),
+            &event_tx,
+            true,
+            None,
+        )
         .await
         .unwrap();
     assert_no_event_until_message_complete(&mut event_rx, "precognition_complete").await;
@@ -285,10 +291,7 @@ async fn test_precognition_does_not_re_fire_when_session_has_prior_history() {
     // rebuild_tree path counts User nodes.
     use crate::session_storage::SessionStorage;
     let prior_event = r#"{"type":"user","ts":"2026-05-15T12:00:00Z","content":"earlier message"}"#;
-    storage
-        .append_event(&session, prior_event)
-        .await
-        .unwrap();
+    storage.append_event(&session, prior_event).await.unwrap();
 
     // Fresh AgentManager — session_trees is empty, simulating restart
     // or a fresh client attaching to a persisted session.
@@ -443,11 +446,17 @@ async fn test_precognition_enriched_content_reaches_agent() {
         .unwrap_or_else(|| {
             panic!(
                 "expected a message containing the kiln note title, got: {:?}",
-                messages.iter().map(|m| (&m.role, &m.content)).collect::<Vec<_>>()
+                messages
+                    .iter()
+                    .map(|m| (&m.role, &m.content))
+                    .collect::<Vec<_>>()
             )
         });
     assert!(
-        matches!(kiln_msg.role, crucible_core::traits::llm::MessageRole::System),
+        matches!(
+            kiln_msg.role,
+            crucible_core::traits::llm::MessageRole::System
+        ),
         "kiln-injected note should be a system message, got role={:?}",
         kiln_msg.role
     );
@@ -700,12 +709,9 @@ async fn test_transform_context_handler_dropping_precog_triggers_reprepend() {
     let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
 
     let messages = received_messages.lock().unwrap().clone().unwrap();
-    let has_precog_tag = messages.iter().any(|m| {
-        m.metadata
-            .tags
-            .iter()
-            .any(|t| t == "precognition")
-    });
+    let has_precog_tag = messages
+        .iter()
+        .any(|m| m.metadata.tags.iter().any(|t| t == "precognition"));
     assert!(
         has_precog_tag,
         "drop protection should re-prepend tagged precog message; got: {:?}",

@@ -622,11 +622,7 @@ pub fn plugin_name_from_url(url: &str) -> Option<String> {
         .unwrap_or("")
         .trim_end_matches(".git")
         .to_string();
-    if name.is_empty()
-        || name == "."
-        || name == ".."
-        || name.chars().any(|c| c.is_control())
-    {
+    if name.is_empty() || name == "." || name == ".." || name.chars().any(|c| c.is_control()) {
         None
     } else {
         Some(name)

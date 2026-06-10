@@ -749,9 +749,8 @@ pub async fn bootstrap_plugin_entry(
         .join("crucible")
         .join("plugins");
 
-    let name = plugin_name_from_url(&entry.url).ok_or_else(|| {
-        anyhow::anyhow!("Plugin URL '{}' has no usable name segment", entry.url)
-    })?;
+    let name = plugin_name_from_url(&entry.url)
+        .ok_or_else(|| anyhow::anyhow!("Plugin URL '{}' has no usable name segment", entry.url))?;
     let dest = plugins_dir.join(&name);
     if dest.exists() {
         return Ok(BootstrapOutcome::AlreadyPresent);

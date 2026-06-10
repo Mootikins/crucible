@@ -265,12 +265,9 @@ impl AgentManager {
         // Kiln/Precognition handlers should attach here, not at
         // pre_llm_call — they get structured messages instead of having
         // to parse the prompt string.
-        let Some(flattened_messages) = Self::apply_transform_context_handlers(
-            flattened_messages,
-            &stream_ctx,
-            &stream_config,
-        )
-        .await
+        let Some(flattened_messages) =
+            Self::apply_transform_context_handlers(flattened_messages, &stream_ctx, &stream_config)
+                .await
         else {
             return;
         };

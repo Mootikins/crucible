@@ -110,24 +110,23 @@ impl AgentManager {
         };
 
         info!(target: "ttft", session_id = %session_id, stage = "precognition_start", elapsed_ms = ttft_start.elapsed().as_millis() as u64, "ttft");
-        let precognition_message =
-            if crate::agent_manager::precognition::should_run_precognition(
-                agent_config.precognition_enabled,
+        let precognition_message = if crate::agent_manager::precognition::should_run_precognition(
+            agent_config.precognition_enabled,
+            &original_content,
+            &session.kiln,
+            is_first_user_message,
+        ) {
+            self.compute_precognition_message(
+                session_id,
                 &original_content,
-                &session.kiln,
-                is_first_user_message,
-            ) {
-                self.compute_precognition_message(
-                    session_id,
-                    &original_content,
-                    &session,
-                    &agent_config,
-                    event_tx,
-                )
-                .await
-            } else {
-                None
-            };
+                &session,
+                &agent_config,
+                event_tx,
+            )
+            .await
+        } else {
+            None
+        };
         info!(target: "ttft", session_id = %session_id, stage = "precognition_done", elapsed_ms = ttft_start.elapsed().as_millis() as u64, "ttft");
         // Pass the user's content through to the stream loop unchanged;
         // the Precognition system block (if any) is staged on

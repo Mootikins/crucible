@@ -84,12 +84,7 @@ mod should_run_precognition_tests {
 
     #[test]
     fn skipped_when_no_kiln_configured() {
-        assert!(!should_run_precognition(
-            true,
-            "x",
-            Path::new(""),
-            true,
-        ));
+        assert!(!should_run_precognition(true, "x", Path::new(""), true,));
     }
 }
 
@@ -350,7 +345,6 @@ impl AgentManager {
         }
     }
 
-
     /// Compute the Precognition system message for this turn, if any.
     ///
     /// Returns the kiln-search context as a system `ContextMessage`
@@ -383,14 +377,17 @@ impl AgentManager {
 
         let primary_config = self.kiln_manager.enrichment_config().cloned()?;
 
-        let embedding_provider =
-            match crate::embedding::get_or_create_embedding_provider(&primary_config).await {
-                Ok(p) => p,
-                Err(error) => {
-                    warn!(session_id = %session_id, error = %error, "Failed to create embedding provider for precognition");
-                    return None;
-                }
-            };
+        let embedding_provider = match crate::embedding::get_or_create_embedding_provider(
+            &primary_config,
+        )
+        .await
+        {
+            Ok(p) => p,
+            Err(error) => {
+                warn!(session_id = %session_id, error = %error, "Failed to create embedding provider for precognition");
+                return None;
+            }
+        };
 
         let query_embedding = match embedding_provider.embed(original_content).await {
             Ok(e) => e,
@@ -576,10 +573,8 @@ mod format_precognition_context_tests {
     fn precognition_context_block_empty_results_returns_empty_string() {
         // compute_precognition_message skips injection on empty blocks;
         // this is the contract — empty → empty.
-        let result = AgentManager::precognition_context_block(
-            &[],
-            std::path::Path::new("/home/user/notes"),
-        );
+        let result =
+            AgentManager::precognition_context_block(&[], std::path::Path::new("/home/user/notes"));
         assert_eq!(result, "");
     }
 

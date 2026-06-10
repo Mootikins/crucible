@@ -93,7 +93,10 @@ pub fn remove(name: &str, purge: bool) -> Result<RemoveOutcome> {
     })?;
 
     if !found {
-        return Err(anyhow!("plugin '{name}' not found in {}", toml_path.display()));
+        return Err(anyhow!(
+            "plugin '{name}' not found in {}",
+            toml_path.display()
+        ));
     }
 
     let purged_dir = if purge {
@@ -145,11 +148,8 @@ where
         .open(toml_path)
         .with_context(|| format!("failed to open {}", toml_path.display()))?;
 
-    file.try_lock_exclusive().map_err(|e| {
-        anyhow!(
-            "plugins.toml is locked by another process (retry shortly): {e}",
-        )
-    })?;
+    file.try_lock_exclusive()
+        .map_err(|e| anyhow!("plugins.toml is locked by another process (retry shortly): {e}",))?;
 
     // Lock is held until `file` drops at function exit.
     let content = std::fs::read_to_string(toml_path).unwrap_or_default();
@@ -195,7 +195,8 @@ mod tests {
         })
         .unwrap();
 
-        let written: PluginsConfig = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let written: PluginsConfig =
+            toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(written.plugin.len(), 1);
         assert_eq!(written.plugin[0].url, "user/repo");
     }

@@ -54,11 +54,7 @@ impl FolderDiscovery {
     /// - `<workspace>/.<agent>/skills/` for each known agent (workspace)
     /// - `<kiln>/skills/` if kiln path provided (kiln)
     pub fn with_default_paths(workspace: &Path, kiln: Option<&Path>) -> Self {
-        let paths = default_discovery_paths(
-            Some(workspace),
-            kiln,
-            dirs::home_dir().as_deref(),
-        );
+        let paths = default_discovery_paths(Some(workspace), kiln, dirs::home_dir().as_deref());
         Self::new(paths)
     }
 
@@ -196,15 +192,9 @@ pub fn default_discovery_paths(
             Ok("0") | Ok("false") | Ok("off")
         );
         if enabled {
-            let extras = cross_harness_home_paths(
-                home,
-                &["claude", "codex", "opencode", "pi"],
-            );
+            let extras = cross_harness_home_paths(home, &["claude", "codex", "opencode", "pi"]);
             if !extras.is_empty() {
-                let names: Vec<&str> = extras
-                    .iter()
-                    .filter_map(|p| p.agent.as_deref())
-                    .collect();
+                let names: Vec<&str> = extras.iter().filter_map(|p| p.agent.as_deref()).collect();
                 tracing::info!(
                     harnesses = ?names,
                     "Discovered skill libraries from other coding-agent harnesses; set CRUCIBLE_CROSS_HARNESS_SKILLS=0 to disable"

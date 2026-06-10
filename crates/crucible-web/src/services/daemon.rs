@@ -214,10 +214,8 @@ impl ReconnectingDaemon {
     }
 
     pub async fn plugin_list_info(&self) -> anyhow::Result<Vec<serde_json::Value>> {
-        self.call_with_reconnect("plugin.list", |daemon| {
-            Box::pin(daemon.plugin_list_info())
-        })
-        .await
+        self.call_with_reconnect("plugin.list", |daemon| Box::pin(daemon.plugin_list_info()))
+            .await
     }
 
     pub async fn plugin_reload(&self, name: &str) -> anyhow::Result<serde_json::Value> {
@@ -251,7 +249,11 @@ impl ReconnectingDaemon {
         .await
     }
 
-    pub async fn plugin_remove(&self, name: &str, purge: bool) -> anyhow::Result<serde_json::Value> {
+    pub async fn plugin_remove(
+        &self,
+        name: &str,
+        purge: bool,
+    ) -> anyhow::Result<serde_json::Value> {
         let name = name.to_string();
         self.call_with_reconnect("plugin.remove", move |daemon| {
             let name = name.clone();
@@ -280,11 +282,7 @@ impl ReconnectingDaemon {
         .await
     }
 
-    pub async fn skills_get(
-        &self,
-        name: &str,
-        kiln: &Path,
-    ) -> anyhow::Result<serde_json::Value> {
+    pub async fn skills_get(&self, name: &str, kiln: &Path) -> anyhow::Result<serde_json::Value> {
         let name = name.to_string();
         let kiln = kiln.to_path_buf();
         self.call_with_reconnect("skills.get", move |daemon| {
@@ -747,7 +745,10 @@ impl ReconnectingDaemon {
         .await
     }
 
-    pub async fn session_get_precognition_results(&self, session_id: &str) -> anyhow::Result<usize> {
+    pub async fn session_get_precognition_results(
+        &self,
+        session_id: &str,
+    ) -> anyhow::Result<usize> {
         let session_id = session_id.to_string();
         self.call_with_reconnect("session.get_precognition_results", move |daemon| {
             let session_id = session_id.clone();

@@ -372,21 +372,25 @@ async fn runtime_transform_context_appends_system_message() {
             .unwrap();
     }
 
-    let (_prompt, messages) =
-        h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
+    let (_prompt, messages) = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("tell me about widgets").await;
     h.wait_for("message_complete").await;
 
     let captured = messages.lock().unwrap();
-    let messages = captured.as_ref().expect("agent should have captured messages");
+    let messages = captured
+        .as_ref()
+        .expect("agent should have captured messages");
     let injected = messages
         .iter()
         .find(|m| m.content.contains("[precognition] note about widgets"));
     assert!(
         injected.is_some(),
         "transform_context handler should have appended a system message; got: {:?}",
-        messages.iter().map(|m| (&m.role, &m.content)).collect::<Vec<_>>()
+        messages
+            .iter()
+            .map(|m| (&m.role, &m.content))
+            .collect::<Vec<_>>()
     );
 }
 

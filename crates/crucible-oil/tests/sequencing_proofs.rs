@@ -18,9 +18,7 @@
 use crucible_oil::node::{overlay_from_bottom, Node};
 use crucible_oil::overlay::filter_overlays;
 use crucible_oil::planning::{FramePlan, FrameSnapshot, Graduation};
-use crucible_oil::proptest_strategies::{
-    arb_chat_like_node, arb_dims, arb_operation_sequence, Op,
-};
+use crucible_oil::proptest_strategies::{arb_chat_like_node, arb_dims, arb_operation_sequence, Op};
 use crucible_oil::{render_tree, FrameRenderer, Terminal, TestRuntime, NATURAL_HEIGHT};
 use proptest::prelude::*;
 
@@ -296,10 +294,7 @@ fn check_render_tree_idempotent(tree: &Node, width: u16, height: u16) -> Result<
         return Err(Violation {
             invariant: "render_tree_idempotent",
             op_index: usize::MAX,
-            detail: format!(
-                "cursor diverges: A={:?} B={:?}",
-                a.cursor, b.cursor
-            ),
+            detail: format!("cursor diverges: A={:?} B={:?}", a.cursor, b.cursor),
         });
     }
     Ok(())
@@ -403,7 +398,10 @@ fn check_overlay_non_interference(
         .collect();
 
     // Top half is unambiguously outside any reasonable overlay region.
-    let safe_rows = (height as usize / 3).max(1).min(with_lines.len()).min(without_lines.len());
+    let safe_rows = (height as usize / 3)
+        .max(1)
+        .min(with_lines.len())
+        .min(without_lines.len());
     for i in 0..safe_rows {
         if with_lines[i] != without_lines[i] {
             return Err(Violation {

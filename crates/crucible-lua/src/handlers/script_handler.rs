@@ -38,10 +38,7 @@ pub enum ScriptHandlerResult {
     /// `terminate=true` signals the agent loop should end the turn after this tool
     /// batch (conjunctive across batch: only stops if every tool result in the batch
     /// sets terminate=true).
-    Handled {
-        result: JsonValue,
-        terminate: bool,
-    },
+    Handled { result: JsonValue, terminate: bool },
 }
 
 /// Handler for Lua script execution

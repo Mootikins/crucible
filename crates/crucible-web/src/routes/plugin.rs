@@ -30,9 +30,7 @@ struct RemoveQuery {
 
 /// `GET /api/plugins` — list discovered plugins with rich metadata
 /// (name, version, source, state, dir, capability counts).
-async fn list_plugins(
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, WebError> {
+async fn list_plugins(State(state): State<AppState>) -> Result<Json<serde_json::Value>, WebError> {
     let info = state.daemon.plugin_list_info().await.daemon_err()?;
     Ok(Json(serde_json::json!({ "plugins": info })))
 }

@@ -404,7 +404,10 @@ mod tests {
         match ChatEvent::from_daemon_event(&event) {
             ChatEvent::ToolResult { id, terminate, .. } => {
                 assert_eq!(id, "tc-1");
-                assert!(terminate, "terminate must propagate through to the wire ChatEvent");
+                assert!(
+                    terminate,
+                    "terminate must propagate through to the wire ChatEvent"
+                );
             }
             other => panic!("expected ToolResult, got {other:?}"),
         }
