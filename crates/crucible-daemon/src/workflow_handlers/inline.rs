@@ -43,6 +43,12 @@ pub struct DaemonInlineHandler {
     session_id: String,
     agents: Arc<AgentManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
+    /// One LLM turn at a time per workflow run. A session has a single
+    /// conversation: `AgentManager` rejects concurrent requests on it,
+    /// and `await_turn_completion` correlates events by session alone —
+    /// so parallel-group members must serialize their turns here. True
+    /// turn concurrency needs sub-session dispatch (`fan`, future).
+    turn_guard: tokio::sync::Mutex<()>,
 }
 
 impl DaemonInlineHandler {
@@ -55,9 +61,18 @@ impl DaemonInlineHandler {
             session_id: session_id.into(),
             agents,
             event_tx,
+            turn_guard: tokio::sync::Mutex::new(()),
         }
     }
 }
+
+/// `post_llm_call` (our completion signal) is emitted slightly before
+/// the turn task clears the session's `request_state` slot, so a
+/// back-to-back step can transiently see `ConcurrentRequest`. Retry
+/// briefly to absorb that window; a genuinely busy session (e.g. a user
+/// turn in flight) still fails once the budget is exhausted.
+const SEND_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(50);
+const SEND_RETRY_BUDGET: u32 = 40;
 
 #[async_trait]
 impl StepHandler for DaemonInlineHandler {
@@ -85,23 +100,35 @@ impl StepHandler for DaemonInlineHandler {
 
         let prompt = compose_prompt(&ctx.step.title, &body);
 
-        // Subscribe before send so queued events don't race past us.
-        let mut rx = self.event_tx.subscribe();
+        let _turn = self.turn_guard.lock().await;
 
         // The returned message_id is useful for observability only —
         // continuations use fresh ids and neither `post_llm_call` nor
         // `ended` carry one today, so we don't filter on it. See the
         // module-level event-flow notes.
-        let _initial_message_id = match self
-            .agents
-            .send_message(&self.session_id, prompt, &self.event_tx, false, None)
-            .await
-        {
-            Ok(id) => id,
-            Err(e) => {
-                return StepOutcome::Fail {
-                    reason: format!("failed to start agent turn: {e}"),
-                };
+        let mut attempts = 0u32;
+        let mut rx = loop {
+            // Subscribe before send so queued events don't race past us.
+            // Re-subscribe on retry so a failed attempt's buffered events
+            // (from the turn we were waiting out) don't leak into ours.
+            let rx = self.event_tx.subscribe();
+            match self
+                .agents
+                .send_message(&self.session_id, prompt.clone(), &self.event_tx, false, None)
+                .await
+            {
+                Ok(_id) => break rx,
+                Err(crate::agent_manager::AgentError::ConcurrentRequest(_))
+                    if attempts < SEND_RETRY_BUDGET =>
+                {
+                    attempts += 1;
+                    tokio::time::sleep(SEND_RETRY_DELAY).await;
+                }
+                Err(e) => {
+                    return StepOutcome::Fail {
+                        reason: format!("failed to start agent turn: {e}"),
+                    };
+                }
             }
         };
 

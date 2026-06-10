@@ -171,3 +171,92 @@ async fn empty_stream_without_done_cleans_up_request_state() {
         "request_state should be cleaned up after empty stream completes"
     );
 }
+
+/// Two workflow steps in a parallel group share one session, but a
+/// session supports a single in-flight turn (`request_state` guard) and
+/// inline-handler event correlation is session-scoped. The inline
+/// handler must therefore serialize its turns instead of surfacing
+/// `ConcurrentRequest` failures to the workflow.
+#[tokio::test]
+async fn parallel_workflow_steps_serialize_llm_turns_on_one_session() {
+    use crate::workflow_handlers::DaemonInlineHandler;
+    use crucible_core::parser::types::WorkflowStep;
+    use crucible_core::workflow::{ExecContext, OutputScope, StepHandler, StepOutcome};
+
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+    agent_manager
+        .configure_agent(&session.id, test_agent())
+        .await
+        .unwrap();
+
+    agent_manager.agent_cache.insert(
+        session.id.clone(),
+        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+            events: vec![script::text("branch result"), script::done()],
+        }) as BoxedAgentHandle)),
+    );
+
+    let (event_tx, _event_rx) = broadcast::channel::<SessionEventMessage>(256);
+    let handler = DaemonInlineHandler::new(&session.id, agent_manager.clone(), event_tx.clone());
+
+    fn step(title: &str) -> WorkflowStep {
+        WorkflowStep {
+            level: 2,
+            title: title.to_string(),
+            agent: None,
+            output: None,
+            attributes: HashMap::new(),
+            body: format!("do {title}"),
+            parallel: true,
+            children: Vec::new(),
+            gates: Vec::new(),
+            offset: 0,
+        }
+    }
+
+    let (step_a, step_b) = (step("A"), step("B"));
+    let scope = OutputScope::new();
+    let validations: Vec<crucible_core::parser::types::ValidationEntry> = Vec::new();
+    let ctx_a = ExecContext {
+        step: &step_a,
+        step_id: "0",
+        scope: &scope,
+        validations: &validations,
+    };
+    let ctx_b = ExecContext {
+        step: &step_b,
+        step_id: "1",
+        scope: &scope,
+        validations: &validations,
+    };
+
+    let (outcome_a, outcome_b) = tokio::join!(handler.execute(&ctx_a), handler.execute(&ctx_b));
+
+    for (label, outcome) in [("A", outcome_a), ("B", outcome_b)] {
+        match outcome {
+            StepOutcome::Advance { output } => {
+                assert_eq!(
+                    output,
+                    Some(serde_json::json!("branch result")),
+                    "step {label} should capture its own turn's response"
+                );
+            }
+            other => panic!("step {label}: expected Advance, got {other:?}"),
+        }
+    }
+}
