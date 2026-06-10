@@ -95,6 +95,17 @@ enum Slot {
         /// Path to the step, e.g. `[0, 1]` → `doc.steps[0].children[1]`.
         path: Vec<usize>,
     },
+    /// Run of ≥2 consecutive parallel-marked siblings. Each member is a
+    /// branch: the member step plus its descendants run sequentially
+    /// within the branch, branches run concurrently, and the engine
+    /// joins all of them before advancing.
+    ParallelGroup { members: Vec<GroupMember> },
+}
+
+#[derive(Debug, Clone)]
+struct GroupMember {
+    step_id: String,
+    path: Vec<usize>,
 }
 
 pub struct WorkflowExecution {
@@ -289,6 +300,54 @@ impl WorkflowExecution {
                     }
                 }
             }
+            Slot::ParallelGroup { members } => {
+                // Branches see the scope as of group start; sibling
+                // branches have no ordering, so they can't observe each
+                // other's outputs. Outputs and events merge in document
+                // order after the join, keeping the stream deterministic
+                // regardless of completion order.
+                let results = futures::future::join_all(members.iter().map(|m| {
+                    let root =
+                        resolve_step(&self.doc, &m.path).expect("slot path valid by construction");
+                    run_branch(
+                        root,
+                        m.path.clone(),
+                        self.scope.clone(),
+                        &self.doc.validations,
+                        &self.dispatch,
+                    )
+                }))
+                .await;
+
+                let mut failures: Vec<(String, String)> = Vec::new();
+                for branch in results {
+                    self.pending_events.extend(branch.events);
+                    for (name, value) in branch.outputs {
+                        self.scope.insert(name, value);
+                    }
+                    failures.extend(branch.failure);
+                }
+
+                if failures.is_empty() {
+                    self.cursor += 1;
+                    return &self.status;
+                }
+                // All branches ran to completion (or their own failure)
+                // before we report — partial successes keep their events
+                // and outputs.
+                let reason = failures
+                    .iter()
+                    .map(|(id, r)| format!("{id}: {r}"))
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                let at_step = Some(failures[0].0.clone());
+                self.pending_events.push(WorkflowEvent::WorkflowFailed {
+                    reason: reason.clone(),
+                    at_step: at_step.clone(),
+                });
+                self.status = WorkflowStatus::Failed { reason, at_step };
+                return &self.status;
+            }
         }
         &self.status
     }
@@ -344,11 +403,39 @@ fn flatten(doc: &WorkflowDoc) -> Vec<Slot> {
         });
     }
 
-    for (i, step) in doc.steps.iter().enumerate() {
-        flatten_step(step, &mut vec![i], &mut slots);
-    }
+    flatten_siblings(&doc.steps, &mut Vec::new(), &mut slots);
 
     slots
+}
+
+/// Walk a sibling list, collapsing runs of ≥2 consecutive parallel-marked
+/// steps into one [`Slot::ParallelGroup`]. A lone parallel step degrades
+/// to plain sequential flattening — there is nothing to overlap with.
+fn flatten_siblings(steps: &[WorkflowStep], path: &mut Vec<usize>, out: &mut Vec<Slot>) {
+    let mut i = 0;
+    while i < steps.len() {
+        let run = steps[i..].iter().take_while(|s| s.parallel).count();
+        if run >= 2 {
+            let members = (i..i + run)
+                .map(|j| {
+                    path.push(j);
+                    let member = GroupMember {
+                        step_id: path_to_id(path),
+                        path: path.clone(),
+                    };
+                    path.pop();
+                    member
+                })
+                .collect();
+            out.push(Slot::ParallelGroup { members });
+            i += run;
+        } else {
+            path.push(i);
+            flatten_step(&steps[i], path, out);
+            path.pop();
+            i += 1;
+        }
+    }
 }
 
 fn flatten_step(step: &WorkflowStep, path: &mut Vec<usize>, out: &mut Vec<Slot>) {
@@ -366,11 +453,94 @@ fn flatten_step(step: &WorkflowStep, path: &mut Vec<usize>, out: &mut Vec<Slot>)
         path: path.clone(),
     });
 
-    for (i, child) in step.children.iter().enumerate() {
-        path.push(i);
-        flatten_step(child, path, out);
-        path.pop();
+    flatten_siblings(&step.children, path, out);
+}
+
+/// What one parallel branch produced. Events and outputs are kept
+/// branch-local during the run and merged by the engine after the join.
+struct BranchOutcome {
+    events: Vec<WorkflowEvent>,
+    outputs: Vec<(String, serde_json::Value)>,
+    /// `(step_id, reason)` — set when the branch halted early.
+    failure: Option<(String, String)>,
+}
+
+/// Execute one parallel branch: the member step, then its descendants,
+/// depth-first and strictly sequential within the branch. Later branch
+/// steps see earlier branch outputs via the branch-local scope clone.
+///
+/// Gates can't pause a half-joined group (the cursor is slot-granular),
+/// so a gate callout or a `YieldForApproval` outcome fails the branch
+/// instead.
+async fn run_branch(
+    root: &WorkflowStep,
+    root_path: Vec<usize>,
+    mut scope: OutputScope,
+    validations: &[crate::parser::types::ValidationEntry],
+    dispatch: &DispatchTable,
+) -> BranchOutcome {
+    let mut out = BranchOutcome {
+        events: Vec::new(),
+        outputs: Vec::new(),
+        failure: None,
+    };
+
+    let mut stack: Vec<(&WorkflowStep, Vec<usize>)> = vec![(root, root_path)];
+    while let Some((step, path)) = stack.pop() {
+        let step_id = path_to_id(&path);
+
+        if !step.gates.is_empty() {
+            out.failure = Some((
+                step_id,
+                "human gates are not supported inside parallel groups".to_string(),
+            ));
+            return out;
+        }
+
+        out.events.push(WorkflowEvent::StepStarted {
+            step_id: step_id.clone(),
+            title: step.title.clone(),
+        });
+
+        let handler = dispatch.resolve(step.attributes.get("type").map(|s| s.as_str()));
+        let ctx = ExecContext {
+            step,
+            step_id: &step_id,
+            scope: &scope,
+            validations,
+        };
+        match handler.execute(&ctx).await {
+            StepOutcome::Advance { output } => {
+                let output_name = step.output.clone();
+                if let (Some(name), Some(value)) = (&step.output, output) {
+                    scope.insert(name.clone(), value.clone());
+                    out.outputs.push((name.clone(), value));
+                }
+                out.events.push(WorkflowEvent::StepCompleted {
+                    step_id,
+                    output_name,
+                });
+            }
+            StepOutcome::YieldForApproval { .. } => {
+                out.failure = Some((
+                    step_id,
+                    "human gates are not supported inside parallel groups".to_string(),
+                ));
+                return out;
+            }
+            StepOutcome::Fail { reason } => {
+                out.failure = Some((step_id, reason));
+                return out;
+            }
+        }
+
+        for (i, child) in step.children.iter().enumerate().rev() {
+            let mut child_path = path.clone();
+            child_path.push(i);
+            stack.push((child, child_path));
+        }
     }
+    out
 }
 
 fn path_to_id(path: &[usize]) -> String {
@@ -395,6 +565,7 @@ fn resolve_step<'a>(doc: &'a WorkflowDoc, path: &[usize]) -> Option<&'a Workflow
 mod tests {
     use super::*;
     use crate::parser::types::{Frontmatter, FrontmatterFormat, ParsedNote, WorkflowDoc};
+    use crate::workflow::handler::StepHandler;
     use crate::workflow::stdlib::stdlib_dispatch;
     use std::path::PathBuf;
 
@@ -655,6 +826,228 @@ type: workflow
         rehydrated.approve_gate(&gate.id).unwrap();
         run_until_gate_or_done(&mut rehydrated).await;
         assert_eq!(rehydrated.status(), &WorkflowStatus::Completed);
+    }
+
+    fn started_titles(events: &[WorkflowEvent]) -> Vec<&str> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                WorkflowEvent::StepStarted { title, .. } => Some(title.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Fails unless every member of the group reaches the barrier — i.e.
+    /// the engine really overlaps their execution.
+    struct BarrierHandler(std::sync::Arc<tokio::sync::Barrier>);
+
+    #[async_trait::async_trait]
+    impl StepHandler for BarrierHandler {
+        async fn execute(&self, _ctx: &ExecContext<'_>) -> StepOutcome {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), self.0.wait()).await {
+                Ok(_) => StepOutcome::Advance { output: None },
+                Err(_) => StepOutcome::Fail {
+                    reason: "barrier timeout: members did not run concurrently".into(),
+                },
+            }
+        }
+    }
+
+    struct AlwaysFail;
+
+    #[async_trait::async_trait]
+    impl StepHandler for AlwaysFail {
+        async fn execute(&self, _ctx: &ExecContext<'_>) -> StepOutcome {
+            StepOutcome::Fail {
+                reason: "intentional".into(),
+            }
+        }
+    }
+
+    fn exec_with_table(source: &str, table: DispatchTable) -> WorkflowExecution {
+        let (fm, _) = split_frontmatter(source);
+        let mut note = ParsedNote::new(PathBuf::from("test.md"));
+        note.frontmatter = fm;
+        let doc = WorkflowDoc::from_parsed(&note, source).expect("workflow");
+        WorkflowExecution::new(doc, table)
+    }
+
+    #[tokio::test]
+    async fn consecutive_parallel_steps_run_as_one_group_then_next_waits() {
+        let source = "---\ntype: workflow\n---\n## &A\n## &B\n## C\n";
+        let mut exec = exec_from(source);
+        assert_eq!(
+            exec.total_slots(),
+            2,
+            "parallel pair collapses into one slot"
+        );
+        let events = run_until_gate_or_done(&mut exec).await;
+        assert_eq!(exec.status(), &WorkflowStatus::Completed);
+        assert_eq!(started_titles(&events), vec!["A", "B", "C"]);
+    }
+
+    #[tokio::test]
+    async fn parallel_group_emits_start_and_complete_per_member_in_doc_order() {
+        let source = "---\ntype: workflow\n---\n## &A\n## &B\n";
+        let mut exec = exec_from(source);
+        let events = run_until_gate_or_done(&mut exec).await;
+        assert_eq!(exec.status(), &WorkflowStatus::Completed);
+        let kinds: Vec<String> = events
+            .iter()
+            .map(|e| match e {
+                WorkflowEvent::StepStarted { title, .. } => format!("start {title}"),
+                WorkflowEvent::StepCompleted { step_id, .. } => format!("done {step_id}"),
+                WorkflowEvent::WorkflowCompleted => "completed".to_string(),
+                other => format!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            vec!["start A", "done 0", "start B", "done 1", "completed"]
+        );
+    }
+
+    #[tokio::test]
+    async fn parallel_section_children_run_concurrently() {
+        let source = "\
+---
+type: workflow
+---
+## Build (parallel)
+### A [type:: barrier]
+### B [type:: barrier]
+";
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+        let mut table = stdlib_dispatch();
+        table.register("barrier", Box::new(BarrierHandler(barrier)));
+        let mut exec = exec_with_table(source, table);
+        run_until_gate_or_done(&mut exec).await;
+        assert_eq!(exec.status(), &WorkflowStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn parallel_member_outputs_bind_scope_after_join() {
+        let source = "---\ntype: workflow\n---\n## &A -> out_a\n## &B -> out_b\n## C\n";
+        let mut exec = exec_from(source);
+        run_until_gate_or_done(&mut exec).await;
+        assert_eq!(exec.status(), &WorkflowStatus::Completed);
+        assert!(exec.scope().contains_key("out_a"));
+        assert!(exec.scope().contains_key("out_b"));
+    }
+
+    #[tokio::test]
+    async fn failing_parallel_member_fails_workflow_after_join_reporting_all_failures() {
+        let source = "\
+---
+type: workflow
+---
+## &X [type:: boom]
+## &Y [type:: boom]
+## &Z
+## After
+";
+        let mut table = stdlib_dispatch();
+        table.register("boom", Box::new(AlwaysFail));
+        let mut exec = exec_with_table(source, table);
+        let events = run_until_gate_or_done(&mut exec).await;
+        let WorkflowStatus::Failed { reason, at_step } = exec.status() else {
+            panic!("expected Failed, got {:?}", exec.status());
+        };
+        assert!(reason.contains("0:"), "first failure reported: {reason}");
+        assert!(reason.contains("1:"), "second failure reported: {reason}");
+        assert_eq!(at_step.as_deref(), Some("0"));
+        // The healthy member still ran to completion before the join.
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, WorkflowEvent::StepCompleted { step_id, .. } if step_id == "2")));
+        // Nothing after the group starts.
+        assert!(!started_titles(&events).contains(&"After"));
+    }
+
+    #[tokio::test]
+    async fn gate_step_inside_parallel_group_fails_that_branch() {
+        let source = "---\ntype: workflow\n---\n## &G [type:: gate]\n## &H\n";
+        let mut exec = exec_from(source);
+        let events = run_until_gate_or_done(&mut exec).await;
+        let WorkflowStatus::Failed { reason, .. } = exec.status() else {
+            panic!("expected Failed, got {:?}", exec.status());
+        };
+        assert!(reason.contains("gate"), "reason mentions gates: {reason}");
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, WorkflowEvent::StepCompleted { step_id, .. } if step_id == "1")));
+    }
+
+    #[tokio::test]
+    async fn gate_callout_inside_parallel_member_fails_branch() {
+        let source = "\
+---
+type: workflow
+---
+## &D
+
+> [!gate]
+> Needs approval
+
+## &E
+";
+        let mut exec = exec_from(source);
+        run_until_gate_or_done(&mut exec).await;
+        let WorkflowStatus::Failed { reason, at_step } = exec.status() else {
+            panic!("expected Failed, got {:?}", exec.status());
+        };
+        assert!(reason.contains("gate"), "reason mentions gates: {reason}");
+        assert_eq!(at_step.as_deref(), Some("0"));
+    }
+
+    #[tokio::test]
+    async fn single_parallel_step_runs_sequentially() {
+        let source = "---\ntype: workflow\n---\n## &Only\n## Next\n";
+        let mut exec = exec_from(source);
+        assert_eq!(exec.total_slots(), 2, "run of one parallel step is plain");
+        run_until_gate_or_done(&mut exec).await;
+        assert_eq!(exec.status(), &WorkflowStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn parallel_member_children_run_sequentially_within_branch() {
+        let source = "\
+---
+type: workflow
+---
+## Build (parallel)
+### A
+#### A1
+### B
+";
+        let mut exec = exec_from(source);
+        let events = run_until_gate_or_done(&mut exec).await;
+        assert_eq!(exec.status(), &WorkflowStatus::Completed);
+        let titles = started_titles(&events);
+        // A's subtree stays ordered within its branch; branches merge in
+        // document order after the join.
+        assert_eq!(titles, vec!["Build", "A", "A1", "B"]);
+    }
+
+    #[tokio::test]
+    async fn snapshot_roundtrip_preserves_parallel_group_position() {
+        let source = "---\ntype: workflow\n---\n## First [type:: gate]\n## &A -> out_a\n## &B\n";
+        let mut exec = exec_from(source);
+        run_until_gate_or_done(&mut exec).await;
+        let WorkflowStatus::AwaitingApproval { gate } = exec.status().clone() else {
+            panic!("expected gate, got {:?}", exec.status());
+        };
+
+        let bytes = serde_json::to_vec(&exec.snapshot()).unwrap();
+        let snapshot: WorkflowSnapshot = serde_json::from_slice(&bytes).unwrap();
+        let mut rehydrated = WorkflowExecution::rehydrate(snapshot, stdlib_dispatch());
+        assert_eq!(rehydrated.total_slots(), exec.total_slots());
+
+        rehydrated.approve_gate(&gate.id).unwrap();
+        run_until_gate_or_done(&mut rehydrated).await;
+        assert_eq!(rehydrated.status(), &WorkflowStatus::Completed);
+        assert!(rehydrated.scope().contains_key("out_a"));
     }
 
     #[tokio::test]
