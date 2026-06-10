@@ -1,6 +1,6 @@
 //! Vector similarity search using LanceDB
 
-use crate::store::LanceStore;
+use super::store::LanceStore;
 use anyhow::Result;
 use arrow_array::{Float32Array, StringArray};
 use futures::TryStreamExt;

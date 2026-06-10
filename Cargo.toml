@@ -9,7 +9,6 @@ members = [
     "crates/crucible-lua",
     "crates/crucible-web",
     "crates/crucible-daemon",
-    "crates/crucible-lance",
     "crates/crucible-oil",
 ]
 default-members = ["crates/crucible-cli"]

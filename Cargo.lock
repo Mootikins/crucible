@@ -1728,6 +1728,8 @@ version = "0.6.3"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
+ "arrow-array",
+ "arrow-schema",
  "async-stream",
  "async-trait",
  "axum",
@@ -1736,7 +1738,6 @@ dependencies = [
  "chumsky",
  "criterion",
  "crucible-core",
- "crucible-lance",
  "crucible-lua",
  "dashmap",
  "dirs",
@@ -1755,6 +1756,7 @@ dependencies = [
  "hex",
  "ignore",
  "insta",
+ "lancedb",
  "libc",
  "mlua",
  "mockito",
@@ -1793,24 +1795,6 @@ dependencies = [
  "walkdir",
  "which",
  "wiremock",
-]
-
-[[package]]
-name = "crucible-lance"
-version = "0.6.3"
-dependencies = [
- "anyhow",
- "arrow-array",
- "arrow-schema",
- "async-trait",
- "chrono",
- "crucible-core",
- "futures",
- "lancedb",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
 ]
 
 [[package]]

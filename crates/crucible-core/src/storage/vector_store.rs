@@ -30,7 +30,7 @@ pub struct VectorMatch {
 
 /// Keyed vector index for semantic search.
 ///
-/// Implementations: [`crucible_lance::LanceVectorIndex`].
+/// Implementations: [`crucible_daemon::storage::lance::LanceVectorIndex`].
 #[async_trait]
 pub trait VectorStore: Send + Sync {
     /// Insert or replace the embedding for `id`. The vector dimension must

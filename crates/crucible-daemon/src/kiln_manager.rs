@@ -44,8 +44,8 @@ pub fn normalize_note_path(file_path: &Path, kiln_path: &Path) -> Option<String>
 }
 
 // Backend-specific imports
+use crate::storage::lance::LanceVectorIndex;
 use crate::storage::sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteConfig};
-use crucible_lance::LanceVectorIndex;
 
 // ===========================================================================
 // Constants

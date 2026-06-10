@@ -7,7 +7,9 @@ use std::collections::HashMap;
 
 use crucible_core::parser::BlockHash;
 use crucible_core::storage::{Filter, NoteRecord, NoteStore, Scope};
-use crucible_lance::{create_note_store, create_note_store_with_dimensions, LanceNoteStore};
+use crucible_daemon::storage::lance::{
+    create_note_store, create_note_store_with_dimensions, LanceNoteStore,
+};
 use tempfile::TempDir;
 
 /// Small embedding dimension for fast tests

@@ -1,7 +1,6 @@
 //! Daemon-owned storage backends.
 //!
-//! Currently houses the SQLite metadata/graph store. LanceDB remains a
-//! separate crate so its heavy transitive deps (arrow, datafusion, ...)
-//! don't recompile whenever daemon code changes.
+//! Houses the SQLite metadata/graph store and the LanceDB vector store.
 
+pub mod lance;
 pub mod sqlite;

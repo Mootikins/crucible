@@ -426,7 +426,7 @@ fn distance_to_similarity(distance: f32) -> f32 {
 /// # Example
 ///
 /// ```rust,ignore
-/// use crucible_lance::note_store::{LanceNoteStore, create_note_store};
+/// use crucible_daemon::storage::lance::note_store::{LanceNoteStore, create_note_store};
 /// use crucible_core::storage::NoteStore;
 ///
 /// let store = create_note_store("/path/to/lance.db").await?;
