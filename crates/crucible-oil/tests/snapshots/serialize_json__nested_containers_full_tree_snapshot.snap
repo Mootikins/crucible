@@ -1,0 +1,92 @@
+---
+source: crates/crucible-oil/tests/serialize_json.rs
+assertion_line: 64
+expression: to_json(&node)
+---
+{
+  "box": {
+    "children": [
+      {
+        "box": {
+          "children": [
+            {
+              "text": {
+                "content": "Crucible",
+                "style": {
+                  "bold": true
+                }
+              }
+            }
+          ],
+          "size": {
+            "fixed": 1
+          }
+        }
+      },
+      {
+        "box": {
+          "children": [
+            {
+              "box": {
+                "children": [
+                  {
+                    "text": {
+                      "content": "How can I help?"
+                    }
+                  },
+                  {
+                    "box": {
+                      "children": [
+                        {
+                          "text": {
+                            "content": " tool ",
+                            "style": {
+                              "bg": {
+                                "rgb": [
+                                  30,
+                                  34,
+                                  42
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "text": {
+                            "content": "read_file"
+                          }
+                        }
+                      ],
+                      "direction": "row"
+                    }
+                  }
+                ],
+                "gap": {
+                  "row": 1
+                }
+              }
+            }
+          ],
+          "size": {
+            "flex": 1
+          }
+        }
+      },
+      {
+        "spinner": {
+          "label": "thinking",
+          "frame": 3,
+          "style_variant": "braille"
+        }
+      },
+      {
+        "input": {
+          "value": "dra",
+          "cursor": 3,
+          "focused": true
+        }
+      }
+    ],
+    "justify": "space_between"
+  }
+}

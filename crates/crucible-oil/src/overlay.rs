@@ -3,6 +3,11 @@ use crate::node::{Node, OverlayNode};
 use unicode_width::UnicodeWidthChar;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize),
+    serde(rename_all = "snake_case")
+)]
 pub enum OverlayAnchor {
     FromBottom(usize),
     FromBottomRight(usize),

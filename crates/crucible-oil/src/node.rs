@@ -7,6 +7,11 @@ pub const DEFAULT_POPUP_BG: Color = Color::Rgb(30, 34, 42);
 /// Default popup selected-item background color (lighter blue-gray).
 pub const DEFAULT_POPUP_SELECTED_BG: Color = Color::Rgb(50, 56, 68);
 
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize),
+    serde(rename_all = "snake_case")
+)]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum Node {
     #[default]
@@ -22,7 +27,9 @@ pub enum Node {
     /// positional arguments: each slot holds child nodes that get rendered
     /// recursively and inserted into the layout.
     Slot {
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
         name: String,
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
         children: Vec<Node>,
     },
     Overlay(OverlayNode),
@@ -30,75 +37,123 @@ pub enum Node {
     Raw(RawNode),
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct OverlayNode {
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub child: Box<Node>,
     pub anchor: OverlayAnchor,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct RawNode {
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub content: String,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub display_width: u16,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub display_height: u16,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextNode {
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub content: String,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub style: Style,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct BoxNode {
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub children: Vec<Node>,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub direction: Direction,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub size: Size,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub padding: Padding,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub margin: Padding,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub border: Option<Border>,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub style: Style,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub justify: JustifyContent,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub align: AlignItems,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub gap: Gap,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct InputNode {
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub value: String,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub cursor: usize,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub placeholder: Option<String>,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub style: Style,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub focused: bool,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpinnerNode {
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub label: Option<String>,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub style: Style,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub frame: usize,
     /// Spinner style (Default or Braille). If None, uses Default.
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub style_variant: Option<SpinnerStyle>,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct PopupNode {
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub items: Vec<PopupItemNode>,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub selected: usize,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub viewport_offset: usize,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub max_visible: usize,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub bg_style: Style,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub selected_style: Style,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub unselected_style: Style,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct PopupItemNode {
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub label: String,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub description: Option<String>,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub kind: Option<String>,
 }
 
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize),
+    serde(rename_all = "snake_case")
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Direction {
     #[default]
@@ -125,6 +180,11 @@ pub enum Direction {
 ///     flex(1, col([text("...")])),  // Flex: fills remaining space
 /// ])
 /// ```
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize),
+    serde(rename_all = "snake_case")
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Size {
     Fixed(u16),
@@ -137,6 +197,11 @@ pub const SPINNER_FRAMES: &[char] = &['◐', '◓', '◑', '◒'];
 pub const BRAILLE_SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 /// Spinner frame style variants.
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize),
+    serde(rename_all = "snake_case")
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SpinnerStyle {
     /// Default spinner frames: ◐ ◓ ◑ ◒

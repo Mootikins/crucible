@@ -1,0 +1,16 @@
+---
+source: crates/crucible-oil/tests/serialize_json.rs
+assertion_line: 25
+expression: to_json(&node)
+---
+{
+  "text": {
+    "content": "Error: kiln not found",
+    "style": {
+      "fg": "red",
+      "bg": "black",
+      "bold": true,
+      "dim": true
+    }
+  }
+}

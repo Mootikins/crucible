@@ -1838,6 +1838,8 @@ dependencies = [
  "html_parser",
  "insta",
  "proptest",
+ "serde",
+ "serde_json",
  "taffy",
  "test-case",
  "textwrap",

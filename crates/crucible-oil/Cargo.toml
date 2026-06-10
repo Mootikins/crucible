@@ -9,10 +9,12 @@ description = "Minimal Elm/Dioxus-inspired TUI framework for terminal applicatio
 
 [features]
 default = []
+serde = ["dep:serde"]
 test-utils = ["dep:proptest"]
 
 [dependencies]
 crossterm = { workspace = true }
+serde = { workspace = true, optional = true }
 unicode-width = "0.2"
 taffy = "0.10"
 textwrap = "0.16.2"
@@ -23,6 +25,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 insta = { version = "1.47", features = ["filters"] }
+serde_json = { workspace = true }
 test-case = "3.3"
 proptest = "1.11"
 vt100 = "0.15"  # Terminal emulation for byte-stream round-trip in sequencing proofs

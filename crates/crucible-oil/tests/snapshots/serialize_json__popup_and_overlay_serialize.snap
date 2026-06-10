@@ -1,0 +1,55 @@
+---
+source: crates/crucible-oil/tests/serialize_json.rs
+assertion_line: 84
+expression: to_json(&node)
+---
+{
+  "overlay": {
+    "child": {
+      "popup": {
+        "items": [
+          {
+            "label": "Open kiln",
+            "description": "kiln.open",
+            "kind": "command"
+          },
+          {
+            "label": "Search"
+          }
+        ],
+        "selected": 1,
+        "max_visible": 5,
+        "bg_style": {
+          "bg": {
+            "rgb": [
+              30,
+              34,
+              42
+            ]
+          }
+        },
+        "selected_style": {
+          "bg": {
+            "rgb": [
+              50,
+              56,
+              68
+            ]
+          }
+        },
+        "unselected_style": {
+          "bg": {
+            "rgb": [
+              30,
+              34,
+              42
+            ]
+          }
+        }
+      }
+    },
+    "anchor": {
+      "from_bottom": 2
+    }
+  }
+}

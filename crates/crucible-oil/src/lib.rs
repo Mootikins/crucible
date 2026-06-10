@@ -38,6 +38,15 @@ pub mod terminal;
 pub mod viewport;
 
 pub use bounded::{bounded, bounded_head};
+
+/// Lean-JSON contract: default-valued fields are omitted when serializing nodes
+/// (missing key ⇒ default on the consumer side). One helper, used uniformly via
+/// `skip_serializing_if` across the node/style type graph.
+#[cfg(feature = "serde")]
+pub(crate) fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
+}
+
 pub use cell_grid::{CellGrid, StyledCell};
 pub use components::{
     clamp_input_lines, popup_item, popup_item_full, popup_item_with_desc, wrap_content, Drawer,

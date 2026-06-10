@@ -1,0 +1,43 @@
+---
+source: crates/crucible-oil/tests/serialize_json.rs
+assertion_line: 74
+expression: to_json(&node)
+---
+{
+  "box": {
+    "children": [
+      {
+        "slot": {
+          "name": "content",
+          "children": [
+            {
+              "text": {
+                "content": "body"
+              }
+            },
+            "empty"
+          ]
+        }
+      },
+      {
+        "fragment": [
+          {
+            "text": {
+              "content": "a"
+            }
+          },
+          {
+            "text": {
+              "content": "b"
+            }
+          }
+        ]
+      },
+      {
+        "slot": {
+          "name": "footer"
+        }
+      }
+    ]
+  }
+}

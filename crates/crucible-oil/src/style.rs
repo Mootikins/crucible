@@ -1,13 +1,21 @@
 use crossterm::style::{Attribute, Color as CtColor, ContentStyle, Stylize};
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Style {
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub fg: Option<Color>,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub bg: Option<Color>,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub bold: bool,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub italic: bool,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub underline: bool,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub dim: bool,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub reverse: bool,
 }
 
@@ -119,6 +127,11 @@ impl Style {
     }
 }
 
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize),
+    serde(rename_all = "snake_case")
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Color {
     Black,
@@ -250,11 +263,16 @@ fn detect_dark_from_colorfgbg(colorfgbg: Option<&str>) -> bool {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Padding {
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub top: u16,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub right: u16,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub bottom: u16,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub left: u16,
 }
 
@@ -286,6 +304,11 @@ impl Padding {
     }
 }
 
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize),
+    serde(rename_all = "snake_case")
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Border {
     Single,
@@ -343,6 +366,11 @@ pub struct BorderChars {
     pub vertical: char,
 }
 
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize),
+    serde(rename_all = "snake_case")
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum JustifyContent {
     #[default]
@@ -354,6 +382,11 @@ pub enum JustifyContent {
     SpaceEvenly,
 }
 
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize),
+    serde(rename_all = "snake_case")
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AlignItems {
     #[default]
@@ -373,9 +406,12 @@ pub enum AlignItems {
 ///   **Only supported in Taffy layout path.** Legacy render ignores this field.
 ///
 /// If you need horizontal row gap, use Taffy-based rendering.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Gap {
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub row: u16,
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub column: u16,
 }
 
