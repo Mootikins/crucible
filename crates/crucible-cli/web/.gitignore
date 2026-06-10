@@ -9,3 +9,6 @@ node_modules/
 # Local env
 .env.local
 .env.*.local
+
+# PWA icons (root .gitignore blanket-ignores *.png as debug artifacts)
+!public/*.png
