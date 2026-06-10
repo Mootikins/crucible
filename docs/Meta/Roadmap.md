@@ -103,7 +103,7 @@ Remaining follow-ups (not blocking Wave 3):
 > HTTP→RPC bridge, SSE, chat/search/webhook APIs, and auth are in. The remaining foundation is rendering.
 
 - **Static File Serving** — SolidJS bundle + PWA manifest + service worker
-- **Oil Node Serialization** — `impl Serialize for Node`; foundational primitive everything else composes on
+- ✅ **Oil Node Serialization** — `Serialize` derives across the full `Node`/`Style` type graph behind the `serde` cargo feature on `crucible-oil` (TUI builds pay nothing). Externally-tagged snake_case JSON; default-valued fields omitted (missing key ⇒ default). Contract locked by insta snapshots in `crucible-oil/tests/serialize_json.rs`.
 - **SolidJS Oil Renderer** — `<OilNode>` component tree (depends on Oil Node Serialization)
 - **Plugin Panel Hosting** — iframe sandbox + message-passing protocol (depends on Oil Node Serialization)
 - **PWA Support** — depends on Static File Serving

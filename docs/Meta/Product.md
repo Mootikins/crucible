@@ -473,7 +473,7 @@ HTTP Gateway (crucible-web wired to daemon)
 
 - [-] **HTTP → RPC Bridge** `P1` — Proxy daemon JSON-RPC methods to REST + SSE endpoints; thin translation layer, no domain logic · **Core Rust** · `crucible-web` · depends: [[#HTTP Gateway|HTTP-to-RPC Bridge]]
 - [ ] **SSE Event Streaming** `P1` — Stream chat tokens, log lines, and daemon events to browser via Server-Sent Events; backpressure handling · **Core Rust** · `crucible-web`
-- [ ] **Oil Node Serialization** `P1` — `impl Serialize for Node` — Oil nodes to JSON for browser rendering; foundational primitive for all rich display · **Core Rust** · `crucible-oil`
+- [x] **Oil Node Serialization** `P1` — `impl Serialize for Node` — Oil nodes to JSON for browser rendering; foundational primitive for all rich display · **Core Rust** · `crucible-oil` (behind `serde` cargo feature)
 - [ ] **Plugin Panel Hosting** `P1` — iframe sandbox + message-passing protocol for Lua-registered web panels; the "floating window" primitive that P2 features compose on · **Core Rust** · `crucible-web`, `crucible-lua`
 - [ ] **Static File Serving** `P1` — Serve SolidJS bundle, PWA manifest, service worker; infrastructure · **Core Rust** · `crucible-web`
 
