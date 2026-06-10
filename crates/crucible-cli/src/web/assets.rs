@@ -94,3 +94,24 @@ fn respond_with_asset(path: &str, data: Vec<u8>) -> Response<Body> {
         .body(Body::from(data))
         .expect("valid asset response")
 }
+
+#[cfg(test)]
+mod tests {
+    /// PWA installability depends on the manifest and service worker being
+    /// served with the right content types. Both the embedded path (above)
+    /// and the debug-mode `ServeDir` path resolve via mime_guess, so pin the
+    /// resolutions here to catch a mime_guess regression on upgrade.
+    #[test]
+    fn pwa_assets_resolve_to_correct_mime_types() {
+        let manifest = mime_guess::from_path("manifest.webmanifest")
+            .first()
+            .expect("webmanifest extension must be known");
+        assert_eq!(manifest.essence_str(), "application/manifest+json");
+
+        let sw = mime_guess::from_path("sw.js")
+            .first()
+            .expect("js extension must be known");
+        assert_eq!(sw.type_(), "text");
+        assert_eq!(sw.subtype(), "javascript");
+    }
+}
