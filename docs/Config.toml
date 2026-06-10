@@ -342,7 +342,7 @@ verbose = false
 # Configure the HTTP/WebSocket server for the web UI and APIs
 #
 # Only needed if you're using `cru web` or running Crucible as a server.
-# See crates/crucible-web/AGENTS.md for web UI details
+# See crates/crucible-cli/src/web/AGENTS.md for web UI details
 
 # [server]
 # host = "127.0.0.1"  # Bind address (default: localhost only)

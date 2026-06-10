@@ -26,7 +26,7 @@ jobs:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Create web asset placeholder
-        run: mkdir -p crates/crucible-web/web/dist && echo "<html></html>" > crates/crucible-web/web/dist/index.html
+        run: mkdir -p crates/crucible-cli/web/dist && echo "<html></html>" > crates/crucible-cli/web/dist/index.html
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --lib --bins --tests -- -W warnings
       - name: Check for god files
@@ -52,7 +52,7 @@ jobs:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Create web asset placeholder
-        run: mkdir -p crates/crucible-web/web/dist && echo "<html></html>" > crates/crucible-web/web/dist/index.html
+        run: mkdir -p crates/crucible-cli/web/dist && echo "<html></html>" > crates/crucible-cli/web/dist/index.html
       - name: Build mock ACP agent for smoke tests
         run: cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent
       - name: Run tests with nextest
@@ -71,7 +71,7 @@ jobs:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Create web asset placeholder
-        run: mkdir -p crates/crucible-web/web/dist && echo "<html></html>" > crates/crucible-web/web/dist/index.html
+        run: mkdir -p crates/crucible-cli/web/dist && echo "<html></html>" > crates/crucible-cli/web/dist/index.html
       - name: Build cru binary for e2e tests
         run: cargo build -p crucible-cli --bin cru
       - name: Build mock ACP agent for smoke tests
@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: crates/crucible-web/web
+        working-directory: crates/crucible-cli/web
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -102,6 +102,6 @@ jobs:
         with:
           name: playwright-report
           path: |
-            crates/crucible-web/web/playwright-report/
-            crates/crucible-web/web/test-results/
+            crates/crucible-cli/web/playwright-report/
+            crates/crucible-cli/web/test-results/
           retention-days: 7

@@ -12,7 +12,6 @@ exclude-files = [
 
 # Exclude crates that won't compile or are irrelevant
 exclude = [
-    "crucible-web",
     "crucible-benchmarks",
 ]
 

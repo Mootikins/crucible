@@ -124,7 +124,6 @@ crossterm = { version = "0.29", features = ["event-stream"] }
 crucible-core = { path = "crates/crucible-core" }
 
 crucible-lua = { path = "crates/crucible-lua" }
-crucible-web = { path = "crates/crucible-web" }
 crucible-daemon = { path = "crates/crucible-daemon" }
 crucible-oil = { path = "crates/crucible-oil" }
 oq = "0.1"
