@@ -20,4 +20,15 @@ void initializeHighlighter().catch((err) => {
   console.error('Shiki highlighter init failed:', err);
 });
 
+// PWA service worker: production builds only. The virtual module is emitted
+// by vite-plugin-pwa at build time; the PROD guard keeps dev and vitest from
+// ever touching it. autoUpdate registration — new builds activate on reload.
+if (import.meta.env.PROD) {
+  void import('virtual:pwa-register')
+    .then(({ registerSW }) => registerSW({ immediate: true }))
+    .catch((err) => {
+      console.error('Service worker registration failed:', err);
+    });
+}
+
 render(() => <App />, root);

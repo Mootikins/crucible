@@ -1,9 +1,51 @@
 import { defineConfig } from 'vitest/config';
 import solid from 'vite-plugin-solid';
+import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 
 export default defineConfig({
-  plugins: [solid()],
+  plugins: [
+    solid(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      // Dev flow stays untouched: no SW or manifest in `bun run dev`.
+      devOptions: { enabled: false },
+      manifest: {
+        name: 'Crucible',
+        short_name: 'Crucible',
+        description: 'Knowledge-grounded agent runtime',
+        start_url: '/',
+        scope: '/',
+        display: 'standalone',
+        // neutral-950 — matches the dark UI (`bg-neutral-950` on <body>)
+        theme_color: '#0a0a0a',
+        background_color: '#0a0a0a',
+        icons: [
+          { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+          {
+            src: '/pwa-maskable-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
+      },
+      workbox: {
+        // Precache the app shell only. Oversized vendor chunks (shiki,
+        // transformers) exceed the 2 MiB default and are intentionally
+        // skipped — they load from network exactly as before.
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        // SPA navigation fallback, but NEVER for API paths. /api/* (including
+        // SSE chat event streams) must hit the network untouched. generateSW
+        // adds no other fetch routes since we define no runtimeCaching, so
+        // this denylist closes the only path where the SW could respond to
+        // an /api request.
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//],
+      },
+    }),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
