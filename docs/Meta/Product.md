@@ -415,7 +415,7 @@ HTTP Gateway (crucible-web wired to daemon)
 - [ ] **Workflow Markup** `P2` — DAG workflows in markdown (`@agent`, `->` data flow, `> [!gate]`) · [[Help/Workflows/Workflow Syntax]]
 - [ ] **Workflow Sessions** `P2` — Log execution as markdown, resume interrupted work · [[Help/Workflows/Index]]
 - [ ] **Session Learning** `P2` — Codify successful sessions into reusable workflows
-- [ ] **Parallel Execution** `P2` — `(parallel)` suffix or `&` prefix for concurrent steps
+- [x] **Parallel Execution** `P2` — `(parallel)` heading suffix and `&` step prefix for concurrent steps; consecutive parallel siblings join before the next step · [[Help/Workflows/Workflow Syntax]] · `crucible-core` (parser + engine), `crucible-daemon`
 - [ ] **Workflow Authoring** `P2` — Guide for creating workflows · [[Help/Extending/Workflow Authoring]]
 
 ## Storage & Processing

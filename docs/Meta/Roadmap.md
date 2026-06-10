@@ -94,7 +94,7 @@ Remaining follow-ups (not blocking Wave 3):
 
 - **Workflow Sessions** — markdown execution log + resume from interruption
 - **Markdown Handlers** — event handlers in pure markdown, inject context into agents
-- **Parallel Execution** — `(parallel)` suffix / `&` prefix semantics
+- ✅ **Parallel Execution** (2026-06-10) — `&` heading prefix and case-insensitive `(parallel)` section suffix set `WorkflowStep.parallel`; consecutive parallel siblings collapse into one engine `ParallelGroup` slot run via `join_all` (branch = member + descendants, sequential within; scope snapshot at group start; document-order event/output merge). Join-all-then-fail aggregates every branch failure; gates inside a group fail their branch. Inline LLM turns serialize per session (turn guard + bounded `ConcurrentRequest` retry) — per-branch agent dispatch is `fan` territory.
 - **Session Learning** — codify successful sessions → reusable workflows. Depends on `session-digest` (Wave 2) and Markdown Handlers.
 - **Workflow Authoring guide** — docs only
 
