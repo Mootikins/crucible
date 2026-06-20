@@ -44,7 +44,7 @@ markdown-it = { workspace = true }
 schemars = { workspace = true }
 globset = { workspace = true }
 num_cpus = "1.17"
-keyring = { version = "3.6", optional = true }
+keyring = { version = "4.1", optional = true }
 
 # File watching (used by processing module)
 notify = { workspace = true }
