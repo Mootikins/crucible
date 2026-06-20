@@ -18,7 +18,7 @@ jobs:
     name: Check & Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -45,7 +45,7 @@ jobs:
           sudo rm -rf /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force || true
           df -h
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
@@ -64,7 +64,7 @@ jobs:
     name: Test SQLite Backend
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
@@ -86,7 +86,7 @@ jobs:
       run:
         working-directory: crates/crucible-web/web
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
