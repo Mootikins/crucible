@@ -72,7 +72,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 # Table formatting
-tabled = "0.20"
+tabled = "0.21"
 
 # Date/time handling
 chrono = { workspace = true }
@@ -129,7 +129,7 @@ syntect = { version = "5.2", default-features = false, features = ["default-fanc
 textwrap = "0.16.2"
 
 # Flexbox layout for ink TUI
-taffy = "0.10"
+taffy = "0.11"
 
 # Lua scripting (for lua_view)
 mlua = { workspace = true }
