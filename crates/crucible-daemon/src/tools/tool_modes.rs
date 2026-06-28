@@ -16,4 +16,5 @@ pub const PLAN_TOOL_NAMES: &[&str] = &[
     "read_metadata",
     "get_kiln_info",
     "list_jobs",
+    "skill_view",
 ];

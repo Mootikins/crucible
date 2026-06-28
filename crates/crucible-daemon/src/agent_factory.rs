@@ -242,11 +242,27 @@ pub enum AgentFactoryError {
     UnsupportedAgentType(String),
 }
 
+/// Discover skills for the agent's workspace/kiln and render the tier-1 catalog
+/// (name + description per skill) for the system prompt. The agent loads full
+/// instructions on demand via the `skill_view` tool. Best-effort: discovery
+/// failures yield an empty catalog rather than blocking agent creation.
+fn discover_skills_catalog(workspace: &Path, kiln_path: Option<&Path>) -> String {
+    let discovery = crate::skills::FolderDiscovery::with_default_paths(workspace, kiln_path);
+    match discovery.discover() {
+        Ok(skills) => crate::skills::format_skills_for_context(&skills),
+        Err(e) => {
+            warn!("Skill discovery failed; agent runs without a skills catalog: {e}");
+            String::new()
+        }
+    }
+}
+
 fn build_enriched_prompt(
     workspace: &Path,
     kiln_path: Option<&Path>,
     connected_kilns: &[std::path::PathBuf],
     base_prompt: &str,
+    skills_catalog: &str,
 ) -> String {
     let mut enriched_prompt = String::new();
     enriched_prompt.push_str(&format!("Workspace: {}\n", workspace.display()));
@@ -280,6 +296,11 @@ fn build_enriched_prompt(
     if !base_prompt.is_empty() {
         enriched_prompt.push('\n');
         enriched_prompt.push_str(base_prompt);
+    }
+
+    if !skills_catalog.is_empty() {
+        enriched_prompt.push('\n');
+        enriched_prompt.push_str(skills_catalog);
     }
     enriched_prompt
 }
@@ -472,11 +493,22 @@ pub async fn create_agent_from_session_config(
     })?;
     let genai_client = chat_client.inner().clone();
 
+    // Skills are surfaced via the kiln-scoped `skill_view` tool, so only inject
+    // the catalog when a kiln is present (keeps catalog and tool in lockstep).
+    // Note: discovery can also find personal/cross-harness skills with no kiln,
+    // but a kiln-less session has no `skill_view` to load them — so we skip the
+    // catalog entirely rather than advertise skills the agent can't open.
+    let skills_catalog = if kiln_path.is_some() {
+        discover_skills_catalog(workspace, kiln_path)
+    } else {
+        String::new()
+    };
     let enriched_prompt = build_enriched_prompt(
         workspace,
         kiln_path,
         connected_kilns,
         &agent_config.system_prompt,
+        &skills_catalog,
     );
 
     let handle = GenaiAgentHandle::with_workspace(
@@ -568,22 +600,35 @@ mod tests {
         let kiln = Path::new("/repo/docs");
 
         // With kiln + base prompt: both paths present, workspace before base
-        let enriched = build_enriched_prompt(ws, Some(kiln), &[], "You are helpful.");
+        let enriched = build_enriched_prompt(ws, Some(kiln), &[], "You are helpful.", "");
         assert!(enriched.contains("Workspace: /repo"));
         assert!(enriched.contains("Kiln: /repo/docs"));
         assert!(enriched.contains("You are helpful."));
         assert!(enriched.find("Workspace:").unwrap() < enriched.find("You are helpful.").unwrap());
 
         // Without kiln: no Kiln line
-        let no_kiln = build_enriched_prompt(ws, None, &[], "Base.");
+        let no_kiln = build_enriched_prompt(ws, None, &[], "Base.", "");
         assert!(no_kiln.contains("Workspace: /repo"));
         assert!(!no_kiln.contains("Kiln:"));
         assert!(no_kiln.contains("Base."));
 
         // Empty base prompt: just context lines, no double blank
-        let empty_base = build_enriched_prompt(ws, None, &[], "");
+        let empty_base = build_enriched_prompt(ws, None, &[], "", "");
         assert!(empty_base.contains("Workspace: /repo"));
         assert!(!empty_base.ends_with("\n\n"));
+
+        // Skills catalog is appended after the base prompt when present
+        let with_skills = build_enriched_prompt(
+            ws,
+            Some(kiln),
+            &[],
+            "Base.",
+            "# Available Skills\n\n## commit\n",
+        );
+        assert!(with_skills.contains("# Available Skills"));
+        assert!(
+            with_skills.find("Base.").unwrap() < with_skills.find("# Available Skills").unwrap()
+        );
     }
 
     #[test]
@@ -597,7 +642,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = build_enriched_prompt(Path::new("/workspace"), Some(tmp.path()), &[], "base");
+        let result =
+            build_enriched_prompt(Path::new("/workspace"), Some(tmp.path()), &[], "base", "");
         assert!(
             result.contains("Knowledge bases:"),
             "should have kb section"
@@ -610,7 +656,7 @@ mod tests {
 
     #[test]
     fn build_enriched_prompt_no_kiln_names_when_no_config() {
-        let result = build_enriched_prompt(Path::new("/workspace"), None, &[], "base");
+        let result = build_enriched_prompt(Path::new("/workspace"), None, &[], "base", "");
         assert!(
             !result.contains("Knowledge bases:"),
             "no kb section when no kiln"

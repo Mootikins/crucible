@@ -721,10 +721,14 @@ impl AgentManager {
                 (repo, embed)
             };
 
-            let mcp = Arc::new(CrucibleMcpServer::new(
+            // Pass the real workspace (not the kiln) so `skill_view` discovers
+            // workspace-scoped skills under the same root the prompt catalog used.
+            let mcp = Arc::new(CrucibleMcpServer::new_with_workspace_and_delegation(
                 session.kiln.to_string_lossy().to_string(),
+                session.workspace.clone(),
                 knowledge_repo,
                 embedding_provider,
+                None,
             ));
 
             Arc::new(DaemonToolDispatcher::new(vec![

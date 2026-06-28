@@ -60,6 +60,7 @@ pub struct CrucibleMcpServer {
     search_tools: SearchTools,
     kiln_tools: KilnTools,
     workspace_path: PathBuf,
+    kiln_path: PathBuf,
     delegation_context: Option<DelegationContext>,
     tool_router: ToolRouter<Self>,
 }
@@ -155,6 +156,12 @@ pub struct CancelJobParams {
     pub job_id: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SkillViewParams {
+    /// Skill name to load, as listed in the Available Skills catalog.
+    pub name: String,
+}
+
 impl CrucibleMcpServer {
     /// Create a new MCP server for a kiln
     ///
@@ -201,11 +208,13 @@ impl CrucibleMcpServer {
         embedding_provider: Arc<dyn EmbeddingProvider>,
         delegation_context: Option<DelegationContext>,
     ) -> Self {
+        let kiln_path_buf = PathBuf::from(&kiln_path);
         Self {
             note_tools: NoteTools::new(kiln_path.clone()),
             search_tools: SearchTools::new(kiln_path.clone(), knowledge_repo, embedding_provider),
             kiln_tools: KilnTools::new(kiln_path),
             workspace_path,
+            kiln_path: kiln_path_buf,
             delegation_context,
             tool_router: Self::tool_router(),
         }
@@ -230,8 +239,9 @@ impl CrucibleMcpServer {
         embedding_provider: Arc<dyn EmbeddingProvider>,
         note_store: Arc<dyn NoteStore>,
     ) -> Self {
+        let kiln_path_buf = PathBuf::from(kiln_path.as_str());
         Self {
-            workspace_path: PathBuf::from(kiln_path.as_str()),
+            workspace_path: kiln_path_buf.clone(),
             note_tools: NoteTools::with_note_store(kiln_path.clone(), note_store.clone()),
             search_tools: SearchTools::with_note_store(
                 kiln_path.clone(),
@@ -240,6 +250,7 @@ impl CrucibleMcpServer {
                 note_store.clone(),
             ),
             kiln_tools: KilnTools::with_note_store(kiln_path, note_store),
+            kiln_path: kiln_path_buf,
             delegation_context: None,
             tool_router: Self::tool_router(),
         }
@@ -455,6 +466,35 @@ impl CrucibleMcpServer {
     #[tool(description = "Get comprehensive kiln information including root path and statistics")]
     pub async fn get_kiln_info(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         self.kiln_tools.get_kiln_info().await
+    }
+
+    #[tool(
+        description = "Load a skill's full instructions by name. Skill names come from the Available Skills catalog in the system prompt; call this when a listed skill is relevant to the task."
+    )]
+    pub async fn skill_view(
+        &self,
+        params: Parameters<SkillViewParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let name = params.0.name;
+        let discovery = crate::skills::FolderDiscovery::with_default_paths(
+            &self.workspace_path,
+            Some(self.kiln_path.as_path()),
+        );
+        let body = match discovery.discover() {
+            Ok(skills) => match skills.get(&name) {
+                Some(resolved) => resolved.skill.body.clone(),
+                None => {
+                    let mut names: Vec<&str> = skills.keys().map(String::as_str).collect();
+                    names.sort_unstable();
+                    format!(
+                        "No skill named '{name}'. Available skills: {}",
+                        names.join(", ")
+                    )
+                }
+            },
+            Err(e) => format!("Skill discovery failed: {e}"),
+        };
+        Ok(crate::tools::helpers::text_success(body))
     }
 
     #[tool(
@@ -754,6 +794,67 @@ mod tests {
         );
 
         // Server should create successfully
+    }
+
+    #[tokio::test]
+    async fn skill_view_finds_workspace_and_kiln_skills() {
+        // workspace != kiln: skill_view must discover under both roots, the same
+        // way the system-prompt catalog does.
+        let ws = TempDir::new().unwrap();
+        let kiln = TempDir::new().unwrap();
+
+        let ws_skill = ws.path().join(".crucible").join("skills").join("ws-skill");
+        std::fs::create_dir_all(&ws_skill).unwrap();
+        std::fs::write(
+            ws_skill.join("SKILL.md"),
+            "---\nname: ws-skill\ndescription: workspace skill\n---\n\nWS-BODY-MARKER.",
+        )
+        .unwrap();
+
+        let kiln_skill = kiln.path().join("skills").join("kiln-skill");
+        std::fs::create_dir_all(&kiln_skill).unwrap();
+        std::fs::write(
+            kiln_skill.join("SKILL.md"),
+            "---\nname: kiln-skill\ndescription: kiln skill\n---\n\nKILN-BODY-MARKER.",
+        )
+        .unwrap();
+
+        let server = CrucibleMcpServer::new_with_workspace_and_delegation(
+            kiln.path().to_str().unwrap().to_string(),
+            ws.path().to_path_buf(),
+            Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
+            Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+            None,
+        );
+
+        for (name, marker) in [
+            ("ws-skill", "WS-BODY-MARKER"),
+            ("kiln-skill", "KILN-BODY-MARKER"),
+        ] {
+            let found = server
+                .skill_view(Parameters(SkillViewParams {
+                    name: name.to_string(),
+                }))
+                .await
+                .unwrap();
+            let json = serde_json::to_string(&found).unwrap();
+            assert!(
+                json.contains(marker),
+                "skill_view('{name}') should return the body, got: {json}"
+            );
+        }
+
+        let missing = server
+            .skill_view(Parameters(SkillViewParams {
+                name: "nonexistent".to_string(),
+            }))
+            .await
+            .unwrap();
+        let missing_json = serde_json::to_string(&missing).unwrap();
+        assert!(
+            missing_json.contains("No skill named 'nonexistent'"),
+            "skill_view should report unknown skills, got: {missing_json}"
+        );
     }
 
     #[test]

@@ -7,36 +7,27 @@ use std::collections::HashMap;
 
 use crate::skills::types::ResolvedSkill;
 
-/// Format discovered skills into context-friendly text
+/// Format discovered skills into a tier-1 catalog for an LLM system prompt.
 ///
-/// Creates a markdown-formatted list of available skills with their
-/// descriptions, suitable for injection into an LLM system prompt.
-///
-/// # Example output
-///
-/// ```text
-/// # Available Skills
-///
-/// You have access to these skills. Invoke with /<skill-name> when relevant.
-///
-/// ## /commit
-/// Create well-formatted git commits with conventional commit messages
-///
-/// ## /code-review
-/// Perform comprehensive code quality review
-/// ```
+/// Emits only name + description per skill (progressive disclosure tier 1).
+/// The agent loads a skill's full instructions on demand via the `skill_view`
+/// tool, so the catalog stays small and cache-friendly. Returns an empty
+/// string when there are no skills, so callers can append unconditionally.
 pub fn format_skills_for_context(skills: &HashMap<String, ResolvedSkill>) -> String {
-    let mut output = String::from("# Available Skills\n\n");
-    output.push_str("You have access to these skills. ");
-    output.push_str("Invoke with /<skill-name> when relevant.\n\n");
+    if skills.is_empty() {
+        return String::new();
+    }
 
-    // Sort skills by name for consistent output
+    let mut output = String::from("# Available Skills\n\n");
+    output.push_str("Load a skill's full instructions with `skill_view(name)` when relevant.\n\n");
+
+    // Sort skills by name for consistent (cache-stable) output
     let mut skill_names: Vec<_> = skills.keys().collect();
     skill_names.sort();
 
     for name in skill_names {
         if let Some(resolved) = skills.get(name) {
-            output.push_str(&format!("## /{}\n", name));
+            output.push_str(&format!("## {}\n", name));
             output.push_str(&format!("{}\n\n", resolved.skill.description));
         }
     }
@@ -74,14 +65,12 @@ mod tests {
     }
 
     #[test]
-    fn test_format_empty_skills() {
+    fn test_format_empty_skills_is_blank() {
         let skills = HashMap::new();
         let output = format_skills_for_context(&skills);
 
-        assert!(output.contains("# Available Skills"));
-        assert!(output.contains("Invoke with /<skill-name>"));
-        // Should just have the header, no skill entries
-        assert!(!output.contains("## /"));
+        // Empty catalog is the empty string so callers can append unconditionally.
+        assert!(output.is_empty());
     }
 
     #[test]
@@ -94,7 +83,9 @@ mod tests {
 
         let output = format_skills_for_context(&skills);
 
-        assert!(output.contains("## /commit"));
+        assert!(output.contains("# Available Skills"));
+        assert!(output.contains("skill_view(name)"));
+        assert!(output.contains("## commit"));
         assert!(output.contains("Create well-formatted git commits"));
     }
 
@@ -117,9 +108,9 @@ mod tests {
         let output = format_skills_for_context(&skills);
 
         // Verify alphabetical ordering
-        let alpha_pos = output.find("## /alpha").unwrap();
-        let middle_pos = output.find("## /middle").unwrap();
-        let zebra_pos = output.find("## /zebra").unwrap();
+        let alpha_pos = output.find("## alpha").unwrap();
+        let middle_pos = output.find("## middle").unwrap();
+        let zebra_pos = output.find("## zebra").unwrap();
 
         assert!(alpha_pos < middle_pos);
         assert!(middle_pos < zebra_pos);

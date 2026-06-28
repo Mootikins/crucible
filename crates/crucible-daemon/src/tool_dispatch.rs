@@ -18,7 +18,7 @@ use crate::tools::mcp_server::{
     WriteFileToolParams,
 };
 use crate::tools::mcp_server::{
-    CancelJobParams, DelegateSessionParams, GetJobResultParams, ListJobsParams,
+    CancelJobParams, DelegateSessionParams, GetJobResultParams, ListJobsParams, SkillViewParams,
 };
 use crate::tools::notes::{
     CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams,
@@ -306,6 +306,11 @@ impl ToolExecutor for McpToolExecutor {
                     .await
             }
             "get_kiln_info" => self.server.get_kiln_info().await,
+            "skill_view" => {
+                self.server
+                    .skill_view(Self::parse_params::<SkillViewParams>(params)?)
+                    .await
+            }
             "delegate_session" => {
                 self.server
                     .delegate_session(Self::parse_params::<DelegateSessionParams>(params)?)
