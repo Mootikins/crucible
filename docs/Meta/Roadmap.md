@@ -3,7 +3,7 @@ title: Roadmap
 description: Phase-based development timeline and dependency-ordered execution plan
 type: roadmap
 status: active
-updated: 2026-05-07
+updated: 2026-06-28
 tags:
   - meta
   - planning
@@ -136,6 +136,15 @@ Remaining follow-ups (not blocking Wave 3):
 - **Kiln Digest** — periodic scan, surface missed connections; uses entity-memory + messaging
 - **Daily Briefing Plugin** — reference plugin building on Kiln Digest
 
+### Agent learning & tooling follow-ups (post-Hermes-Agent review, 2026-06-28)
+
+> A repo review against Nous Research's Hermes Agent surfaced four items where Crucible's intent wasn't yet reflected in the build. Status detail lives in [[Meta/Product]]; ordering below. These are mostly independent and can slot in opportunistically.
+
+- **Skill Context Injection** — wire `format_skills_for_context` into the daemon turn path (tier-1 metadata, progressive disclosure). Currently dead code; skills only reach the model via client-prebaked `system_prompt`. Small lift, no dependencies.
+- **Progressive Tool Disclosure** — automatic budget-based deferral over the existing `discover_tools`/`get_tool_schema` tools; core tools never deferred. Depends on nothing; grows in value with MCP adoption.
+- **Reflection Pass** (second self-improvement avenue) — forked post-session reviewer that *proposes* notes/skills with provenance. Depends on delegation primitives (shipped) + skill self-creation. Relates to Wave 8 proactive work. Must not repeat the auto-merge `session-digest` mistake — propose, don't dispose.
+- **Execution Backends as Plugins** — ✅ already shipped via the `oci` runtime plugin + `pre_tool_call` interception; recorded in Product so the "backends are plugins, not core" stance is explicit.
+
 ### Wave 9 — P2 web rich features (depends on Wave 5)
 
 Knowledge Graph Visualization · Note Browser · Search UI · Agent Artifacts · Skills Browser · Rich Content Renderers · Config Editor · OpenAPI Spec · System Info · Log Viewer · `cru share` · K-Means Clustering
@@ -197,6 +206,7 @@ Wave 7 (ACP agent mode) has no dependencies on the others — it's a small lift 
 | 2025-01-24 | Model switching | Runtime model changes via :model command and daemon RPC |
 | 2026-05-07 | Roadmap split into Phase + Wave views | Phases communicate strategy; waves sequence execution. Topological sort of remaining work resolves dependency confusion when multiple tracks proceed in parallel. |
 | 2026-05-07 | Wave 0 shipped | 5 commits land CLI help discoverability, cache-stats RPC, configurable autocompact, validate-retry loop, and a `Summarize` strategy variant. Two follow-ups deferred: cache-stats Lua/statusline (trait surface) and LLM-driven Summarize recap (requires async backend access from `enforce_context_budget`). |
+| 2026-06-28 | Hermes Agent review → 4 follow-ups recorded | Compared Crucible against Nous Research's Hermes Agent runtime. Convergent design on most axes (native function-calling, file-based memory, agentskills.io skills, delegation, cache-preserving non-every-turn injection). Four intent-vs-build gaps captured: skill context injection (dead `format_skills_for_context`), progressive tool disclosure, a second self-improvement avenue (reflection pass), and execution-backends-as-plugins (already shipped via `oci`). Crucible's semantic knowledge graph remains the differentiator Hermes lacks in core (it's lexical FTS5 + optional vector plugins). |
 | 2026-05-07 | Wave 0 follow-ups shipped | Two follow-ups landed same day: (1) `cru.sessions.cache_stats` Lua binding via the `DaemonSessionApi` trait + a statusline `cache_hit_rate` component fed from `message_complete` cache fields; (2) Summarize now hoists the drain into an async wrapper inside `stream_chat_from_messages`, calls `summarize_via_backend` on the same genai client the agent uses, and replaces the placeholder with the LLM recap (static placeholder remains as the error-fallback). |
 
 ---

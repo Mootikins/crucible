@@ -3,7 +3,7 @@ title: Product
 description: Product feature map — capabilities, status, documentation, and dependencies
 type: product
 status: active
-updated: 2026-05-07
+updated: 2026-06-28
 tags:
   - meta
   - product
@@ -75,6 +75,13 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 - [x] **Session Persistence** `P0` — Conversations saved as markdown + JSONL in kiln; indexed for semantic search · `crucible-daemon` (observe)
 - [x] **Memory Scoping** `P2` — `Scope::Workspace { path }` (single variant, workspace-only) enforced at the storage query layer (`SqliteNoteStore` filter + Lance post-filter). Write-side validation prevents writes targeting a sibling workspace; raw-SQL escape hatch gated `#[cfg(test)]`. Pre-prune `Global` and `User { id }` variants removed in the 2026-05-12 consolidation pass — neither had any in-tree consumer once session-digest shipped, then was retracted · `crucible-core`, `crucible-daemon`
 
+### Self-Improvement Avenues
+
+> Two complementary ways an agent gets smarter. **Knowledge insertion** is the primary path and ships today; a **reflection pass** is the second avenue still to build. Both write to the same place — atomic kiln notes — so improvement stays human-readable and editable.
+
+- [x] **Knowledge Insertion (primary)** `P1` — Agents persist learning *during* work by writing kiln notes via tools (`create_note`, `update_note`); those notes re-enter future turns through [[Help/Concepts/Precognition|Precognition]]. The graph *is* the learning store — reactive, in-the-loop, no opaque DB · `crucible-daemon` (tools)
+- [ ] **Reflection Pass (second avenue)** `P2` — Knowledge insertion only captures what the agent thinks to write mid-turn. A complementary background reflection — a forked low-cost agent that reviews a *finished* session and **proposes** new/updated notes and skills, with provenance so it never edits human-authored notes — catches learning the inline path misses. Crucially distinct from the removed `session-digest` (which auto-merged via LLM-judged dedupe and risked kiln pollution): this proposes, the user (or a curator) disposes. Informed by Hermes Agent's background-review + curator loop (2026-06-28) · `crucible-daemon`, `crucible-lua`
+
 ## Context & Execution (Core Runtime)
 
 > Runtime primitives that every reliable agent needs. These are too fundamental to be plugins — they govern how the agent manages its own context window, enforces execution boundaries, validates its output, and allows users to recover from mistakes. Informed by competitive analysis (2026-03): Aider, CrewAI, LangGraph, and Semantic Kernel all treat these as core concerns.
@@ -128,6 +135,22 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 - [x] **Permission Hooks (Lua)** `P0` — Custom Lua hooks can Allow/Deny/Prompt with 1s timeout · `crucible-lua`, `crucible-daemon`
 - [x] **Interaction System** `P0` — Agent can ask questions (single/multi-select, free-text) and request permission · `crucible-core`, `crucible-daemon`
 - [x] **Subagent Spawning** `P0` — Background job manager for parallel subagent tasks with cancellation · `crucible-daemon`
+- [x] **Delegation** `P1` — `delegate_session` spawns a child agent that reuses the same session/task primitives (`cru.sessions.{create, configure_agent, send_and_collect, end_session, collect_subagents}`) — delegation is **not a separate subsystem**, it behaves like ordinary session/task creation; depth and trust gated via `DelegationConfig` (max_depth, allowed_targets, data-classification check). Supervisor/router/broadcast are Lua recipes, not built-ins · [[Help/Concepts/Delegation]] · [[Help/Delegation Patterns]] · `crucible-daemon`
+
+### Tool Discovery & Disclosure
+
+> Agents shouldn't carry every tool schema in context. Discovery tools let an agent find tools on demand; progressive disclosure makes that automatic when the tool set is large.
+
+- [x] **Tool Discovery** `P1` — `discover_tools` (search by name/description/source) and `get_tool_schema` tools (`extended_mcp_server`) let an agent enumerate and inspect tools at runtime instead of relying solely on the attached schema list · `crucible-daemon` (tools)
+- [ ] **Progressive Tool Disclosure** `P2` — Automatic deferral: when MCP/plugin tools would exceed a share of the context budget, swap them for the discovery bridge (search → describe → call) and surface on demand; core tools never deferred. The internal agent currently attaches all tools every turn — this closes that gap as MCP servers proliferate. Informed by Hermes Agent's progressive disclosure (2026-06-28) · `crucible-daemon` (tools)
+
+### Agent Skills
+
+> Skills are markdown capability docs ([agentskills.io](https://agentskills.io)-compatible `SKILL.md` + optional `scripts/`, `references/`) that teach the agent procedures on demand. Discovery and parsing ship today; daemon-side context injection is the remaining wiring.
+
+- [x] **Skill Discovery** `P1` — Folder discovery across search paths, `SKILL.md` frontmatter parsing, resolution; `cru skills` CLI listing; bundled help skills at `runtime/crucible-help/skills` · [[Help/Concepts/Agent Skills]] · [[Help/CLI/skills]] · `crucible-daemon` (skills), `crucible-cli`
+- [-] **Skill Context Injection** `P1` — `format_skills_for_context` renders discovered skills for the prompt but has **no daemon turn-path call site**; skills currently reach the model only if the client pre-bakes them into `system_prompt`. Wire tier-1 metadata injection daemon-side, with progressive disclosure (list → view → use) so full `SKILL.md` loads only when invoked · `crucible-daemon` (skills)
+- [ ] **Skill Self-Creation** `P2` — Agent-authored skills distilled from successful sessions (ties into the [[#Self-Improvement Avenues|Reflection Pass]]); provenance separating agent-created from user-authored so neither clobbers the other · `crucible-daemon` (skills)
 
 ### Context & Knowledge
 - [x] **Context Enrichment** `P0` — Inject kiln context into agent conversations · `crucible-daemon`
@@ -231,6 +254,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 - [x] **Tool Annotations** `P0` — `@tool`, `@hook`, `@param` annotations for Lua functions · [[Help/Extending/Custom Tools]] · `crucible-lua`
 - [x] **Event Hooks** `P0` — Note lifecycle hooks (`note:created`, `note:modified`, etc.) · [[Help/Extending/Event Hooks]] · `crucible-lua`
 - [x] **Custom Handlers** `P0` — Event handler chains with priority ordering · [[Help/Extending/Custom Handlers]] · `crucible-lua`
+- [x] **Execution Backends as Plugins** `P1` — Workspace tools (`bash`, `read_file`, `edit_file`, `write_file`) are intercepted via `pre_tool_call` hooks and routed to alternate backends; the agent core stays backend-agnostic. Reference: the `oci` runtime plugin (v0.2.0) runs workspace tools inside OCI containers via `docker`/`podman exec`, returning `{ handled = true, result = ... }`. Sandbox/container isolation is a **plugin, not a core concern** — the daemon never grows a per-backend abstraction · `runtime/plugins/oci/` · `crucible-lua`, `crucible-daemon`
 - [x] **Oil UI DSL** `P1` — Lua/Fennel API for interaction modals (ask, popup, panel); predefined modal types, not a general component model · [[Help/Extending/Scripted UI]] · [[Help/Plugins/Oil-Lua-API]] · `crucible-lua`, `crucible-oil`
 - [x] **Lua API Modules** `P0` — 20+ modules under unified `cru.*` namespace: `cru.fs`, `cru.graph`, `cru.http`, `cru.session`, `cru.shell`, `cru.timer`, `cru.ratelimit`, `cru.retry`, `cru.emitter`, `cru.check`, etc. (`crucible.*` retained as long-form alias) · `crucible-lua`
 - [x] **Timer/Sleep Primitives** `P1` — `cru.timer.sleep(secs)` async sleep, `cru.timer.timeout(secs, fn)` deadline wrapper; backed by `tokio::time` · `crucible-lua`
@@ -366,7 +390,7 @@ HTTP Gateway (crucible-web wired to daemon)
 > 1-2 good messaging integrations reduce the need for a web UI substantially. Users interact daily in messaging apps; Crucible meets them there and delivers proactive kiln insights. Integrations can be daemon-side Lua plugins (Discord) or thin adapters over the HTTP gateway (Telegram, Matrix).
 
 - [ ] **Telegram Bot** `P1` — Bot API adapter over HTTP gateway; lowest friction (HTTP API, no app store approval, huge dev audience); enables proactive digest delivery · `crucible-telegram` (new crate) · depends: [[#HTTP Gateway|HTTP-to-RPC Bridge]]
-- [x] **Discord Plugin** `P1` — Discord integration (REST API + Gateway) as daemon-side Lua plugin; tools: `discord_send`, `discord_read`, `discord_channels`, `discord_register_commands`; commands: `:discord connect/disconnect/status` · `plugins/discord/`
+- [x] **Discord Plugin** `P1` — Discord integration (REST API + Gateway) as daemon-side Lua plugin; tools: `discord_send`, `discord_read`, `discord_channels`, `discord_register_commands`; commands: `:discord connect/disconnect/status`. **Proof-of-concept that a plugin can *be* a gateway** — a full messaging entry point in Lua, not just a thin adapter over the HTTP gateway; the model for Telegram/Matrix/etc. · `plugins/discord/`
 - [ ] **Matrix Bridge** `P2` — Matrix protocol integration; strong overlap with self-host/privacy audience · `crucible-matrix` (new crate) · depends: [[#HTTP Gateway|HTTP-to-RPC Bridge]]
 
 ### Remote Access (P2 — self-hosting for everyone)
@@ -576,6 +600,9 @@ HTTP Gateway (crucible-web wired to daemon)
 | 2026-03-21 | Context strategies: truncate default, summarize opt-in | Truncate (drop oldest) is simple, no LLM call, good default. Summarize is expensive but preserves context — opt-in via `:set context_strategy=summarize`. Sliding window is middle ground. Prompt caching reduces urgency (cached prefix is cheap to resend) |
 | 2026-03-21 | Agent undo: git-based + message rollback | Most valuable undo is file changes. Git stash before tool execution, apply on undo. Non-git: file journal. UndoTree<T> already exists in crucible-core. /undo slash command matches Aider pattern |
 | 2026-03-21 | Output validation: primarily Lua-facing | Interactive chat rarely needs structured output validation. Programmatic/Lua sessions (entity extraction, digest generation) need it most. Built-in validators (json, regex) + custom Lua validators. Validate→retry loop is the universal pattern across CrewAI, Agno, Semantic Kernel |
+| 2026-06-28 | Second self-improvement avenue: reflection pass | Hermes Agent review showed knowledge insertion (write-notes-mid-turn) is reactive and misses learning the agent doesn't think to record. A forked background reviewer that *proposes* notes/skills after a finished session — never auto-merging, provenance-tagged so it can't touch human notes — is the complement. Deliberately avoids the `session-digest` failure mode (automatic LLM-judged merges → kiln pollution): propose, don't dispose |
+| 2026-06-28 | Tool/skill access via progressive disclosure | Hermes Agent review: attaching every MCP/plugin tool schema every turn bloats context and degrades as servers proliferate. `discover_tools`/`get_tool_schema` already exist; add automatic budget-based deferral (search → describe → call bridge) with core tools never deferred. Same pattern unifies tools and skills (list → view → use) |
+| 2026-06-28 | Execution backends stay plugins, not core | Confirmed by Hermes Agent contrast: Hermes ships 6 hardcoded backends (local/Docker/SSH/Singularity/Modal/Daytona) in core. Crucible keeps the agent backend-agnostic and routes alternate execution through `pre_tool_call` hooks — the `oci` plugin is the reference. Docker/sandbox isolation is plugin territory; the daemon never grows a per-backend abstraction |
 
 ## Archived / Cut
 
