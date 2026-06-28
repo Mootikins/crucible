@@ -54,9 +54,10 @@ impl RmcpExecutor {
     pub async fn from_service(service: RunningService<RoleClient, ()>) -> Result<Self, McpError> {
         let service = Arc::new(service);
 
-        // Get server info
+        // Get server info. rmcp 1.8 returns peer_info as Option<Arc<InitializeResult>>;
+        // deref to &InitializeResult for convert_server_info.
         let init_result = service.peer_info();
-        let server_info = init_result.and_then(convert_server_info);
+        let server_info = init_result.as_deref().and_then(convert_server_info);
 
         // Discover tools
         let tools_result = service
