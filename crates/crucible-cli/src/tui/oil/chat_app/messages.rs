@@ -140,10 +140,6 @@ pub enum ChatAppMsg {
     PluginStatusLoaded(Vec<PluginStatusEntry>),
     /// **Command** (TUI → daemon): Set LLM thinking budget (extended thinking).
     SetThinkingBudget(i64),
-    /// **Command** (TUI → daemon): Set LLM temperature (sampling randomness).
-    SetTemperature(f64),
-    /// **Command** (TUI → daemon): Set maximum tokens for LLM response.
-    SetMaxTokens(Option<u32>),
     /// **Command** (TUI → daemon): Set maximum tool-call iterations per turn.
     SetMaxIterations(Option<u32>),
     /// **Command** (TUI → daemon): Set execution timeout in seconds per turn.
@@ -276,8 +272,6 @@ impl ChatAppMsg {
             | Self::ModelsLoaded(_)
             | Self::ModelsFetchFailed(_)
             | Self::SetThinkingBudget(_)
-            | Self::SetTemperature(_)
-            | Self::SetMaxTokens(_)
             | Self::SetMaxIterations(_)
             | Self::SetExecutionTimeout(_)
             | Self::SetContextBudget(_)

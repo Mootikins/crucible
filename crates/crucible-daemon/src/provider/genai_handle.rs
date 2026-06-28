@@ -1099,8 +1099,6 @@ impl crucible_core::turn::Agent for GenaiAgentHandle {
             model_switching: true,
             usage_reporting: true,
             cancellation: true,
-            temperature_control: true,
-            max_tokens_control: true,
             owns_history: false,
             modes: true,
         }

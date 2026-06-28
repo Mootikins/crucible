@@ -38,7 +38,7 @@ Options:
           Environment variables to pass to the ACP agent (can be repeated) Format: KEY=VALUE Example: --env ANTHROPIC_BASE_URL=http://localhost:4000
 
       --set <KEY[=VALUE]>
-          Session configuration overrides in vim-style format (can be repeated) Same syntax as TUI :set — examples: --set model=llama3 --set temperature=0.5 Use --set key for boolean flags (e.g. --set perm.autoconfirm_session)
+          Session configuration overrides in vim-style format (can be repeated) Same syntax as TUI :set — examples: --set model=llama3 --set thinkingbudget=high Use --set key for boolean flags (e.g. --set perm.autoconfirm_session)
 
       --provider <PROVIDER>
           LLM provider to use (from config [llm.providers])

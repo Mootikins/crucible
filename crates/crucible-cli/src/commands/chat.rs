@@ -690,13 +690,6 @@ async fn apply_rpc_action(
             .await
             .map_err(|e| e.to_string()),
         SetRpcAction::SetThinkingBudget(None) => Ok(()),
-        SetRpcAction::SetTemperature(temp) => handle
-            .set_temperature(temp)
-            .await
-            .map_err(|e| e.to_string()),
-        SetRpcAction::SetMaxTokens(max) => {
-            handle.set_max_tokens(max).await.map_err(|e| e.to_string())
-        }
         SetRpcAction::SetMaxIterations(max) => handle
             .set_max_iterations(max)
             .await

@@ -260,40 +260,6 @@ impl OilChatRunner {
                             }
                         }
                     }
-                    ChatAppMsg::SetTemperature(temp) => {
-                        tracing::info!(temperature = temp, "Setting temperature");
-                        match params.agent.set_temperature(*temp).await {
-                            Ok(()) => {
-                                tracing::info!(temperature = temp, "Temperature set successfully");
-                            }
-                            Err(e) => {
-                                tracing::warn!(temperature = temp, error = %e, "set_temperature failed");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Set temperature failed: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
-                    ChatAppMsg::SetMaxTokens(max_tokens) => {
-                        tracing::info!(max_tokens = ?max_tokens, "Setting max_tokens");
-                        match params.agent.set_max_tokens(*max_tokens).await {
-                            Ok(()) => {
-                                tracing::info!(max_tokens = ?max_tokens, "Max tokens set successfully");
-                            }
-                            Err(e) => {
-                                tracing::warn!(max_tokens = ?max_tokens, error = %e, "set_max_tokens failed");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Set max_tokens failed: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
                     ChatAppMsg::SetMaxIterations(max_iterations) => {
                         tracing::info!(max_iterations = ?max_iterations, "Setting max_iterations");
                         match params.agent.set_max_iterations(*max_iterations).await {

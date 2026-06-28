@@ -96,7 +96,7 @@ pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyh
             }
             Err(SetError::UnknownKey(key)) => {
                 eprintln!(
-                    "error: unknown setting '{}'. Valid keys: model, temperature, thinkingbudget, maxtokens",
+                    "error: unknown setting '{}'. Valid keys: model, thinkingbudget, maxiterations",
                     key
                 );
                 std::process::exit(1);
@@ -130,18 +130,6 @@ pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyh
                     .session_set_thinking_budget(&session_id, *budget)
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to set thinking budget: {}", e))?;
-            }
-            SetRpcAction::SetTemperature(temp) => {
-                client
-                    .session_set_temperature(&session_id, *temp)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set temperature: {}", e))?;
-            }
-            SetRpcAction::SetMaxTokens(max_tokens) => {
-                client
-                    .session_set_max_tokens(&session_id, *max_tokens)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set max tokens: {}", e))?;
             }
             SetRpcAction::SetMaxIterations(max_iterations) => {
                 client
@@ -221,12 +209,6 @@ mod tests {
     }
 
     #[test]
-    fn validate_temperature_out_of_range() {
-        let err = validate_set_for_cli("temperature=3.0").unwrap_err();
-        assert!(matches!(err, SetError::InvalidValue { .. }));
-    }
-
-    #[test]
     fn validate_read_only_rejected() {
         let err = validate_set_for_cli("model?").unwrap_err();
         assert_eq!(err, SetError::NotSupportedAsCli);
@@ -269,23 +251,10 @@ mod tests {
     }
 
     #[test]
-    fn validate_maxtokens_none() {
-        let effect = validate_set_for_cli("maxtokens=none").unwrap();
-        assert!(matches!(
-            effect,
-            SetEffect::DaemonRpc(SetRpcAction::SetMaxTokens(None))
-        ));
-    }
-
-    #[test]
-    fn validate_daemon_rpc_keys_thinkingbudget_and_maxtokens_number() {
+    fn validate_daemon_rpc_key_thinkingbudget() {
         assert!(matches!(
             validate_set_for_cli("thinkingbudget=high").unwrap(),
             SetEffect::DaemonRpc(SetRpcAction::SetThinkingBudget(Some(_)))
-        ));
-        assert!(matches!(
-            validate_set_for_cli("maxtokens=4096").unwrap(),
-            SetEffect::DaemonRpc(SetRpcAction::SetMaxTokens(Some(4096)))
         ));
     }
 

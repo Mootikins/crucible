@@ -256,8 +256,6 @@ impl OilChatRunner {
                                 ChatAppMsg::SetThinkingBudget(b)
                             }
                             SetRpcAction::SetThinkingBudget(None) => continue,
-                            SetRpcAction::SetTemperature(t) => ChatAppMsg::SetTemperature(t),
-                            SetRpcAction::SetMaxTokens(n) => ChatAppMsg::SetMaxTokens(n),
                             SetRpcAction::SetMaxIterations(n) => ChatAppMsg::SetMaxIterations(n),
                             SetRpcAction::SetExecutionTimeout(n) => {
                                 ChatAppMsg::SetExecutionTimeout(n)

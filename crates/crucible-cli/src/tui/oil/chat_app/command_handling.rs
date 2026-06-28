@@ -79,7 +79,7 @@ fn help_text(category: Option<&str>) -> String {
              :clear          — Clear conversation\n\
              :undo [N]       — Undo last N agent turns (default 1)\n\
              :model <name>   — Switch model (or list available)\n\
-             :set <opt>      — Set option (e.g., :set temperature=0.7)\n\
+             :set <opt>      — Set option (e.g., :set thinkingbudget=high)\n\
              :export <path>  — Export session to markdown\n\
              :messages       — Toggle notification drawer\n\
              :mcp            — Show MCP server status\n\
@@ -99,9 +99,7 @@ fn help_text(category: Option<&str>) -> String {
              Up/Down        — Navigate popup / history"
             .to_string(),
         Some("config") | Some("settings") => {
-            ":set temperature=0.7          — LLM temperature (0.0-2.0)\n\
-             :set maxtokens=4096           — Max output tokens\n\
-             :set thinkingbudget=med       — Thinking budget preset\n\
+            ":set thinkingbudget=med       — Thinking budget preset\n\
              :set contextbudget=128000     — Context token budget (or 'none')\n\
              :set contextstrategy=truncate — Context strategy (truncate|sliding_window)\n\
              :set contextwindow=20         — Sliding window size (message pairs)\n\
@@ -421,8 +419,6 @@ impl OilChatApp {
         match key {
             "model" => self.handle_set_model(key, value),
             "thinkingbudget" => self.handle_set_thinking_budget(key, value),
-            "temperature" => self.handle_set_temperature(key, value),
-            "maxtokens" => self.handle_set_max_tokens(key, value),
             "maxiterations" => self.handle_set_max_iterations(key, value),
             "executiontimeout" => self.handle_set_execution_timeout(key, value),
             "contextbudget" | "context_budget" => self.handle_set_context_budget(key, value),
@@ -469,45 +465,6 @@ impl OilChatApp {
             self.warn_invalid(format!("Unknown preset '{}'. Valid: {}", value, valid));
             Action::Continue
         }
-    }
-
-    fn handle_set_temperature(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
-        match value.parse::<f64>() {
-            Ok(temp) if (0.0..=2.0).contains(&temp) => {
-                self.runtime_config.set_str(key, &value, ModSource::Command);
-                self.send_setting_ack("temperature", temp);
-                Action::Send(ChatAppMsg::SetTemperature(temp))
-            }
-            Ok(_) => {
-                self.warn_invalid("Temperature must be between 0.0 and 2.0");
-                Action::Continue
-            }
-            Err(_) => {
-                self.warn_invalid(format!("Invalid temperature value: {}", value));
-                Action::Continue
-            }
-        }
-    }
-
-    fn handle_set_max_tokens(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
-        let max_tokens = if value == "none" || value == "null" {
-            None
-        } else {
-            match value.parse::<u32>() {
-                Ok(n) => Some(n),
-                Err(_) => {
-                    self.warn_invalid(format!(
-                        "Invalid max_tokens value: {} (use a number or 'none')",
-                        value
-                    ));
-                    return Action::Continue;
-                }
-            }
-        };
-        self.runtime_config.set_str(key, &value, ModSource::Command);
-        let display = max_tokens.map_or("none".to_string(), |n| n.to_string());
-        self.send_setting_ack("maxtokens", &display);
-        Action::Send(ChatAppMsg::SetMaxTokens(max_tokens))
     }
 
     fn handle_set_max_iterations(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
@@ -719,18 +676,6 @@ impl OilChatApp {
 
     pub(super) fn handle_config_show_command(&mut self) -> Action<ChatAppMsg> {
         let mut output = String::from("Configuration:\n");
-
-        let temp = self
-            .runtime_config
-            .get("temperature")
-            .unwrap_or(ConfigValue::String("0.7".to_string()));
-        output.push_str(&format!("  temperature: {}\n", temp));
-
-        let tokens = self
-            .runtime_config
-            .get("maxtokens")
-            .unwrap_or(ConfigValue::String("none".to_string()));
-        output.push_str(&format!("  max_tokens: {}\n", tokens));
 
         let budget = self
             .runtime_config

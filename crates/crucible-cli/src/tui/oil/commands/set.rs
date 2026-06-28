@@ -31,8 +31,6 @@ pub enum SetCommand {
 pub enum SetRpcAction {
     SwitchModel(String),
     SetThinkingBudget(Option<i64>),
-    SetTemperature(f64),
-    SetMaxTokens(Option<u32>),
     SetMaxIterations(Option<u32>),
     SetExecutionTimeout(Option<u64>),
     SetContextBudget(Option<usize>),
@@ -100,40 +98,6 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
                         message: format!("unknown preset '{}'. Valid: {}", value, valid),
                     })
                 }
-            }
-            "temperature" => match value.parse::<f64>() {
-                Ok(temp) if (0.0..=2.0).contains(&temp) => {
-                    Ok(SetEffect::DaemonRpc(SetRpcAction::SetTemperature(temp)))
-                }
-                Ok(_) => Err(SetError::InvalidValue {
-                    key,
-                    message: "temperature must be between 0.0 and 2.0".to_string(),
-                }),
-                Err(_) => Err(SetError::InvalidValue {
-                    key,
-                    message: format!("invalid temperature value: {}", value),
-                }),
-            },
-            "maxtokens" => {
-                let max_tokens =
-                    if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
-                        None
-                    } else {
-                        match value.parse::<u32>() {
-                            Ok(n) => Some(n),
-                            Err(_) => {
-                                return Err(SetError::InvalidValue {
-                                    key,
-                                    message: format!(
-                                        "invalid maxtokens value: {} (use a number or 'none')",
-                                        value
-                                    ),
-                                });
-                            }
-                        }
-                    };
-
-                Ok(SetEffect::DaemonRpc(SetRpcAction::SetMaxTokens(max_tokens)))
             }
             "maxiterations" => {
                 let max_iterations =
@@ -369,8 +333,6 @@ fn is_daemon_rpc_key(key: &str) -> bool {
         key,
         "model"
             | "thinkingbudget"
-            | "temperature"
-            | "maxtokens"
             | "maxiterations"
             | "executiontimeout"
             | "contextbudget"
@@ -768,14 +730,6 @@ mod tests {
     }
 
     #[test]
-    fn validate_set_for_cli_temperature_invalid() {
-        assert!(matches!(
-            validate_set_for_cli("temperature=abc"),
-            Err(SetError::InvalidValue { .. })
-        ));
-    }
-
-    #[test]
     fn validate_set_for_cli_query_not_supported() {
         assert_eq!(
             validate_set_for_cli("model?"),
@@ -801,22 +755,6 @@ mod tests {
                 key: "perm.autoconfirm_session".to_string(),
                 value: CliValue::Enable,
             })
-        );
-    }
-
-    #[test]
-    fn validate_set_for_cli_temperature_ok() {
-        assert_eq!(
-            validate_set_for_cli("temperature=1.5"),
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetTemperature(1.5)))
-        );
-    }
-
-    #[test]
-    fn validate_set_for_cli_maxtokens_none_ok() {
-        assert_eq!(
-            validate_set_for_cli("maxtokens=none"),
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetMaxTokens(None)))
         );
     }
 

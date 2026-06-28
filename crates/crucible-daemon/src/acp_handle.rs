@@ -337,8 +337,6 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
             model_switching: false,
             usage_reporting: true,
             cancellation: false,
-            temperature_control: false,
-            max_tokens_control: false,
             owns_history: true,
             modes: true,
         }

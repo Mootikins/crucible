@@ -47,7 +47,6 @@ Examples:
 ```
 :set model=claude-3-5-sonnet
 :set thinkingbudget=8000
-:set temperature=0.7
 ```
 
 ### Boolean Options
@@ -242,7 +241,6 @@ Some options have short aliases:
 ### Reset to Defaults
 ```
 :set thinkingbudget&
-:set temperature&
 ```
 
 ### Debug Configuration

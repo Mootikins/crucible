@@ -162,8 +162,6 @@ impl OilChatApp {
             }
             // Command-only: side effects handled by chat_runner::process_action
             ChatAppMsg::SetThinkingBudget(_)
-            | ChatAppMsg::SetTemperature(_)
-            | ChatAppMsg::SetMaxTokens(_)
             | ChatAppMsg::SetMaxIterations(_)
             | ChatAppMsg::SetExecutionTimeout(_)
             | ChatAppMsg::SetContextBudget(_)

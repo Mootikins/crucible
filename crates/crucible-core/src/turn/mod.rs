@@ -208,10 +208,6 @@ pub struct AgentCapabilities {
     pub usage_reporting: bool,
     /// Agent honors `cancel()`.
     pub cancellation: bool,
-    /// Agent supports `:set temperature`.
-    pub temperature_control: bool,
-    /// Agent supports `:set max_tokens`.
-    pub max_tokens_control: bool,
     /// Agent manages its own conversation history and refuses
     /// `clear_history` (e.g. ACP agents).
     pub owns_history: bool,
