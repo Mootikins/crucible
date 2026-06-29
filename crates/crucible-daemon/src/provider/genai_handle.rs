@@ -1378,6 +1378,7 @@ mod tests {
             captured_usage: None,
             captured_content: None,
             captured_reasoning_content: Some("deliberate reasoning".to_string()),
+            ..Default::default()
         });
         let (events, terminal) = translate_chat_stream_event(end, &mut emitter, &mut state);
         assert!(terminal);
@@ -1403,6 +1404,7 @@ mod tests {
             captured_usage: None,
             captured_content: None,
             captured_reasoning_content: Some("after-the-fact reasoning".to_string()),
+            ..Default::default()
         });
         let (events, _) = translate_chat_stream_event(end, &mut emitter, &mut state);
         assert!(
@@ -1495,6 +1497,7 @@ mod tests {
                 captured_usage: None,
                 captured_content: Some(MessageContent::from_parts(vec![end_replay])),
                 captured_reasoning_content: None,
+                ..Default::default()
             }),
         ]);
         let tool_calls: Vec<_> = out
@@ -1521,6 +1524,7 @@ mod tests {
                 ContentPart::ToolCall(tc("call-2", "read_file")),
             ])),
             captured_reasoning_content: None,
+            ..Default::default()
         })]);
         let ids: Vec<&str> = out
             .iter()
@@ -1541,6 +1545,7 @@ mod tests {
                 captured_usage: None,
                 captured_content: None,
                 captured_reasoning_content: None,
+                ..Default::default()
             }),
             &mut emitter,
             &mut reasoning,
