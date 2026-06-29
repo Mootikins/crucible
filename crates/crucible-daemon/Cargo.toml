@@ -36,7 +36,7 @@ crucible-lua = { path = "../crucible-lua", features = ["send"] }
 genai = "0.5"
 async-stream = "0.3"
 agent-client-protocol = "0.10.4"
-gix = { version = "0.81", default-features = false, features = ["blocking-network-client", "sha1"] }
+gix = { version = "0.85", default-features = false, features = ["blocking-network-client", "sha1"] }
 mlua = { workspace = true }
 notify = { workspace = true }
 notify-debouncer-full = { workspace = true }
@@ -57,7 +57,7 @@ rand = { workspace = true }
 
 # Absorbed from crucible-sqlite
 parking_lot = "0.12"
-chumsky = "0.12"
+chumsky = "0.13"
 
 # Absorbed from crucible-acp
 similar = "3"
@@ -109,7 +109,7 @@ proptest = { workspace = true }
 # Absorbed from crucible-llm dev-deps
 criterion = { workspace = true, features = ["html_reports"] }
 serial_test = "3.3"
-toon-format = "0.4"
+toon-format = "0.5"
 futures-util = { workspace = true }
 
 # LLM embedding benchmark absorbed from crucible-llm

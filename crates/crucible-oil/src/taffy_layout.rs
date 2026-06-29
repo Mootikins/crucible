@@ -498,21 +498,21 @@ pub fn build_layout_tree(node: &Node, width: u16, height: u16) -> LayoutTree {
 
 fn convert_justify_content(justify: OilJustifyContent) -> JustifyContent {
     match justify {
-        OilJustifyContent::Start => JustifyContent::Start,
-        OilJustifyContent::End => JustifyContent::End,
-        OilJustifyContent::Center => JustifyContent::Center,
-        OilJustifyContent::SpaceBetween => JustifyContent::SpaceBetween,
-        OilJustifyContent::SpaceAround => JustifyContent::SpaceAround,
-        OilJustifyContent::SpaceEvenly => JustifyContent::SpaceEvenly,
+        OilJustifyContent::Start => JustifyContent::START,
+        OilJustifyContent::End => JustifyContent::END,
+        OilJustifyContent::Center => JustifyContent::CENTER,
+        OilJustifyContent::SpaceBetween => JustifyContent::SPACE_BETWEEN,
+        OilJustifyContent::SpaceAround => JustifyContent::SPACE_AROUND,
+        OilJustifyContent::SpaceEvenly => JustifyContent::SPACE_EVENLY,
     }
 }
 
 fn convert_align_items(align: OilAlignItems) -> AlignItems {
     match align {
-        OilAlignItems::Start => AlignItems::Start,
-        OilAlignItems::End => AlignItems::End,
-        OilAlignItems::Center => AlignItems::Center,
-        OilAlignItems::Stretch => AlignItems::Stretch,
+        OilAlignItems::Start => AlignItems::START,
+        OilAlignItems::End => AlignItems::END,
+        OilAlignItems::Center => AlignItems::CENTER,
+        OilAlignItems::Stretch => AlignItems::STRETCH,
     }
 }
 
