@@ -269,6 +269,72 @@ async fn mock_acp_agent_returns_message_response() {
     );
 }
 
+/// Regression: daemon-injected context (Precognition, Lua `transform_context`)
+/// is forwarded into the ACP prompt. The ACP agent owns its history, so
+/// `turn()` sends only the new user content — but System-role blocks in
+/// `ctx.messages` represent knowledge the external agent has no other way to
+/// see and must be forwarded. The mock captures the exact prompt text it
+/// received over the wire (gated on `CRU_MOCK_PROMPT_CAPTURE`).
+#[tokio::test]
+async fn injected_system_context_reaches_acp_prompt() {
+    use crucible_core::traits::ContextMessage;
+
+    let workspace = TempDir::new().expect("Failed to create temp workspace");
+    let capture_path = workspace.path().join("captured_prompt.txt");
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
+
+    let mut agent_config = mock_session_agent(&agent_path);
+    agent_config.env_overrides.insert(
+        "CRU_MOCK_PROMPT_CAPTURE".to_string(),
+        capture_path.to_string_lossy().into_owned(),
+    );
+
+    let mut handle = timeout(
+        Duration::from_secs(30),
+        AcpAgentHandle::new(AcpAgentHandleParams {
+            agent_config: &agent_config,
+            workspace: workspace.path(),
+            kiln_path: None,
+            knowledge_repo: None,
+            embedding_provider: None,
+            background_spawner: None,
+            parent_session_id: None,
+            delegation_config: None,
+            acp_config: None,
+            permission_handler: None,
+        }),
+    )
+    .await
+    .expect("ACP handshake timed out")
+    .expect("ACP handshake failed");
+
+    // Mirror what the daemon stages on the turn: a System-role Precognition
+    // block prepended ahead of the user's message in `ctx.messages`.
+    let ctx = TurnContext::new("What is the capital of Testlandia?").with_messages(vec![
+        ContextMessage::system("KNOWLEDGE: The capital of Testlandia is Fooville."),
+        ContextMessage::user("What is the capital of Testlandia?"),
+    ]);
+
+    let _events = timeout(Duration::from_secs(30), async {
+        let stream = handle.turn(ctx).await.expect("Agent::turn failed");
+        stream.collect::<Vec<_>>().await
+    })
+    .await
+    .expect("Streaming response timed out");
+
+    let captured = std::fs::read_to_string(&capture_path)
+        .expect("mock should have captured the prompt it received");
+
+    assert!(
+        captured.contains("KNOWLEDGE: The capital of Testlandia is Fooville."),
+        "daemon-injected System context must reach the ACP prompt; captured: {captured:?}"
+    );
+    assert!(
+        captured.contains("What is the capital of Testlandia?"),
+        "user content must still reach the ACP prompt; captured: {captured:?}"
+    );
+}
+
 #[tokio::test]
 async fn missing_binary_returns_connection_error() {
     let workspace = TempDir::new().expect("Failed to create temp workspace");

@@ -55,7 +55,9 @@ pub enum AcpHandleError {
 ///
 /// Unlike the old CLI adapter, this handle:
 /// - Does NOT manage its own history (daemon's `SessionManager` does that)
-/// - Does NOT do context enrichment (daemon's precognition does that)
+/// - Forwards daemon-injected context (Precognition, Lua `transform_context`)
+///   into the ACP prompt via `acp_prompt_text`, so external agents see the
+///   knowledge graph the same way internal agents do
 /// - Does NOT use `unsafe` lifetime transmutation
 /// - Routes through daemon's event system for multi-client consistency
 pub struct AcpAgentHandle {
@@ -353,7 +355,10 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
         use crucible_core::turn::{StopReason, TurnError, TurnEvent};
         use tokio::sync::mpsc;
 
-        let message = ctx.content;
+        // Forward daemon-injected context (Precognition, Lua transform_context)
+        // alongside the user content. ACP agents own their history, so we only
+        // send the new turn's content plus any injected System-role blocks.
+        let message = acp_prompt_text(&ctx.content, &ctx.messages);
 
         let Some(session_id) = self.session_id.clone() else {
             let body = stream! {
@@ -600,6 +605,39 @@ impl Drop for AcpAgentHandle {
     }
 }
 
+/// Build the prompt text sent to an ACP agent for one turn.
+///
+/// ACP agents own their conversation history, so we send only the new user
+/// content — never the daemon's flattened history (that would duplicate what
+/// the agent already holds). The exception is daemon-injected context:
+/// Precognition and Lua `transform_context` handlers prepend System-role
+/// blocks to `ctx.messages` (see `apply_transform_context_handlers`). Those
+/// represent knowledge the external agent has no other way to see, so we
+/// forward them ahead of the user content. Precognition only fires on the
+/// first user message, so this does not bloat the agent's context every turn.
+fn acp_prompt_text(
+    content: &str,
+    messages: &[crucible_core::traits::context_ops::ContextMessage],
+) -> String {
+    use crucible_core::traits::llm::MessageRole;
+
+    let injected: Vec<&str> = messages
+        .iter()
+        .filter(|m| m.role == MessageRole::System)
+        .map(|m| m.content.as_str())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if injected.is_empty() {
+        return content.to_string();
+    }
+
+    let mut out = injected.join("\n\n");
+    out.push_str("\n\n");
+    out.push_str(content);
+    out
+}
+
 /// Build a `ClientConfig` from `SessionAgent` fields.
 ///
 /// Maps agent_name to command/args via discovery, merges env_overrides,
@@ -801,5 +839,63 @@ mod tests {
 
         let config = build_client_config(&agent, Path::new("/tmp"), Some(&acp_config)).unwrap();
         assert_eq!(config.timeout_ms, Some(180_000));
+    }
+
+    // -- ACP prompt building: daemon-injected context push -------------------
+    //
+    // ACP agents own their conversation history, so `turn()` sends only the
+    // new user content — never the flattened history. But daemon-side context
+    // injection (Precognition, Lua `transform_context`) is prepended to
+    // `ctx.messages` as System-role blocks the agent would otherwise never
+    // see. `acp_prompt_text` is the seam that forwards that injected context.
+
+    use crucible_core::traits::context_ops::ContextMessage;
+
+    #[test]
+    fn injected_system_context_is_prepended_to_user_content() {
+        let precog = ContextMessage::system("KNOWLEDGE:\n- foo relates to bar")
+            .with_tag(crate::agent_manager::precognition::PRECOGNITION_TAG);
+        let user = ContextMessage::user("What is foo?");
+
+        let prompt = acp_prompt_text("What is foo?", &[precog, user]);
+
+        assert!(
+            prompt.contains("KNOWLEDGE:\n- foo relates to bar"),
+            "injected precognition context must reach the ACP prompt, got: {prompt:?}"
+        );
+        assert!(prompt.contains("What is foo?"));
+        // Injected context precedes the user's question.
+        assert!(
+            prompt.find("KNOWLEDGE").unwrap() < prompt.find("What is foo?").unwrap(),
+            "injected context must come before the user content"
+        );
+    }
+
+    #[test]
+    fn no_injected_context_leaves_user_content_unchanged() {
+        let user = ContextMessage::user("just chatting");
+        // History (User/Assistant) must NOT be resent — the ACP agent owns it.
+        let prior = ContextMessage::assistant("earlier reply");
+        let prompt = acp_prompt_text("just chatting", &[prior, user]);
+        assert_eq!(prompt, "just chatting");
+    }
+
+    #[test]
+    fn multiple_system_blocks_are_all_injected_in_order() {
+        let a = ContextMessage::system("BLOCK_A");
+        let b = ContextMessage::system("BLOCK_B");
+        let prompt = acp_prompt_text("hi", &[a, b]);
+        let ia = prompt.find("BLOCK_A").unwrap();
+        let ib = prompt.find("BLOCK_B").unwrap();
+        let iu = prompt.find("hi").unwrap();
+        assert!(
+            ia < ib && ib < iu,
+            "blocks injected in order before content: {prompt:?}"
+        );
+    }
+
+    #[test]
+    fn empty_messages_falls_back_to_raw_content() {
+        assert_eq!(acp_prompt_text("solo", &[]), "solo");
     }
 }

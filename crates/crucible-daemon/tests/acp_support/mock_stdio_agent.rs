@@ -8,6 +8,8 @@
 
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::env;
+use std::fs;
 use std::io::{self, BufRead, Write};
 
 // Import ACP protocol types for proper response construction
@@ -313,6 +315,26 @@ impl MockStdioAgent {
     fn handle_prompt(&self, request: &Value) -> Value {
         if self.config.inject_errors {
             return self.error_response(request, -32000, "Simulated prompt error");
+        }
+
+        // Test hook: capture the concatenated prompt text to a file so tests
+        // can assert exactly what reached the agent over the ACP wire (e.g.
+        // daemon-injected Precognition context). Gated on an env var set via
+        // the session agent's `env_overrides`, so it's inert by default.
+        if let Ok(path) = env::var("CRU_MOCK_PROMPT_CAPTURE") {
+            let text = request
+                .get("params")
+                .and_then(|p| p.get("prompt"))
+                .and_then(|p| p.as_array())
+                .map(|blocks| {
+                    blocks
+                        .iter()
+                        .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                        .collect::<Vec<_>>()
+                        .join("")
+                })
+                .unwrap_or_default();
+            let _ = fs::write(path, text);
         }
 
         // Construct proper PromptResponse using ACP types

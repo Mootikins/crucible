@@ -977,7 +977,7 @@ pub mod context_length;
 mod iter;
 mod messaging;
 mod models;
-mod precognition;
+pub(crate) mod precognition;
 pub mod providers;
 pub mod tool_tracking;
 

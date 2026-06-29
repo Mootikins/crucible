@@ -463,7 +463,7 @@ impl AgentManager {
 /// Metadata tag that marks a message as the built-in Precognition
 /// system block. The `transform_context` seam uses this to detect when
 /// a Lua handler has dropped the message and needs it re-prepended.
-pub(super) const PRECOGNITION_TAG: &str = "precognition";
+pub(crate) const PRECOGNITION_TAG: &str = "precognition";
 
 fn apply_precognition_char_cap(results: &mut [crucible_core::SearchResult], cap: usize) {
     if results.is_empty() {
