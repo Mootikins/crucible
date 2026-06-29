@@ -147,6 +147,35 @@ impl CrucibleAcpClient {
         Ok(mode_response)
     }
 
+    /// Send `session/set_model` to switch the agent's active model.
+    ///
+    /// Part of ACP's `unstable_session_model` feature — supported by agents
+    /// that advertise a model list in their `session/new` response (e.g.
+    /// claude-agent-acp). Unlike a provider switch on an internal agent, this
+    /// changes the model on the *running* agent process, preserving history.
+    pub async fn set_session_model(
+        &mut self,
+        session_id: impl Into<String>,
+        model_id: impl Into<String>,
+    ) -> Result<agent_client_protocol::SetSessionModelResponse> {
+        use agent_client_protocol::{ClientRequest, SetSessionModelRequest};
+
+        let request = SetSessionModelRequest::new(session_id.into(), model_id.into());
+
+        let response = self
+            .send_request(ClientRequest::SetSessionModelRequest(request))
+            .await?;
+
+        let result = response.get("result").ok_or_else(|| {
+            ClientError::Session("Missing result field in set model response".to_string())
+        })?;
+
+        let model_response: agent_client_protocol::SetSessionModelResponse =
+            serde_json::from_value(result.clone())?;
+
+        Ok(model_response)
+    }
+
     /// Build a stdio MCP server configuration pointing to `cru mcp`.
     ///
     /// This is the universal fallback — all ACP agents MUST support stdio transport.

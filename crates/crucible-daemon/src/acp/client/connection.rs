@@ -330,7 +330,8 @@ impl CrucibleAcpClient {
         Ok(AcpSession::new(
             TransportConfig::default(),
             session_response.session_id.to_string(),
-        ))
+        )
+        .with_models(session_response.models))
     }
 
     /// Mark the client as connected

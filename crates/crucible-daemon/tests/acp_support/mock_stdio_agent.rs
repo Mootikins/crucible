@@ -214,9 +214,29 @@ impl MockStdioAgent {
             "initialize" => self.handle_initialize(request),
             "session/new" => self.handle_new_session(request),
             "session/prompt" => self.handle_prompt(request),
+            "session/set_model" => self.handle_set_model(request),
             "authenticate" => self.handle_authenticate(request),
             _ => self.error_response(request, -32601, "Method not found"),
         }
+    }
+
+    /// Handle `session/set_model`. Captures the requested model id to the file
+    /// named by `CRU_MOCK_MODEL_CAPTURE` (when set) so tests can assert the
+    /// switch reached the agent over the wire.
+    fn handle_set_model(&self, request: &Value) -> Value {
+        if let Ok(path) = env::var("CRU_MOCK_MODEL_CAPTURE") {
+            let model_id = request
+                .get("params")
+                .and_then(|p| p.get("modelId"))
+                .and_then(|m| m.as_str())
+                .unwrap_or_default();
+            let _ = fs::write(path, model_id);
+        }
+        json!({
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "result": {}
+        })
     }
 
     /// Handle initialize request
@@ -292,10 +312,25 @@ impl MockStdioAgent {
         let session_id = format!("mock-session-{}", uuid::Uuid::new_v4());
         self.session_id = Some(session_id.clone());
 
+        // Advertise a model list when asked, mirroring claude-agent-acp's
+        // `unstable_session_model` support (availableModels + currentModelId).
+        let models = if env::var("CRU_MOCK_ADVERTISE_MODELS").is_ok() {
+            json!({
+                "currentModelId": "mock-sonnet",
+                "availableModels": [
+                    {"modelId": "mock-sonnet", "name": "Mock Sonnet"},
+                    {"modelId": "mock-opus", "name": "Mock Opus"}
+                ]
+            })
+        } else {
+            Value::Null
+        };
+
         // Construct proper NewSessionResponse using ACP types
         let response: NewSessionResponse = serde_json::from_value(json!({
             "sessionId": session_id,
             "modes": null,
+            "models": models,
             "_meta": null
         }))
         .expect("Failed to create NewSessionResponse");

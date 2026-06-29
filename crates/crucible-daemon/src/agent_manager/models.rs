@@ -82,6 +82,51 @@ impl AgentManager {
             .clone()
             .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?;
 
+        // ACP agents switch the model on the *running* agent process via
+        // session/set_model, preserving conversation history. The provider
+        // rebuild path below (evict the cached handle + recreate) would
+        // restart the external agent and lose its history, so route ACP
+        // through the live handle instead.
+        if agent_config.agent_type == "acp" {
+            let handle = self
+                .agent_cache
+                .get(session_id)
+                .map(|r| r.value().clone())
+                .ok_or_else(|| {
+                    AgentError::NotSupported(
+                        "start the ACP session before switching models (send a message first)"
+                            .to_string(),
+                    )
+                })?;
+
+            handle.lock().await.switch_model(model_id).await?;
+
+            // Persist for display/resume. ACP ignores `agent_config.model` for
+            // the actual LLM call (the agent owns model selection), but the
+            // stored value keeps `session.get` and the TUI status accurate.
+            agent_config.model = model_id.to_string();
+            session.agent = Some(agent_config.clone());
+            self.session_manager
+                .update_session(&session)
+                .await
+                .map_err(AgentError::Session)?;
+
+            if let Some(tx) = event_tx {
+                if !emit_event(
+                    tx,
+                    SessionEventMessage::model_switched(
+                        session_id,
+                        model_id,
+                        agent_config.provider.as_str(),
+                    ),
+                ) {
+                    tracing::debug!("Failed to emit model_switched event (no subscribers)");
+                }
+            }
+            info!(session_id = %session_id, model = %model_id, "Switched model on live ACP agent");
+            return Ok(());
+        }
+
         let (provider_key_opt, model_name) = self.parse_provider_model(model_id);
 
         if let Some(provider_key) = provider_key_opt {
@@ -154,6 +199,20 @@ impl AgentManager {
         session_id: &str,
         classification: Option<DataClassification>,
     ) -> Result<Vec<String>, AgentError> {
+        // ACP agents expose their own model list (advertised at connect), not
+        // the daemon's configured providers. Return that when the session has a
+        // live ACP handle.
+        if let Ok((_, agent_config)) = self.get_session_with_agent(session_id) {
+            if agent_config.agent_type == "acp" {
+                if let Some(handle) = self.agent_cache.get(session_id).map(|r| r.value().clone()) {
+                    let models = handle.lock().await.fetch_available_models().await;
+                    if !models.is_empty() {
+                        return Ok(models);
+                    }
+                }
+            }
+        }
+
         let cache_key = classification
             .map(|value| format!("classification:{}", value.as_str()))
             .unwrap_or_else(|| "all".to_string());

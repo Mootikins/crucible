@@ -35,7 +35,11 @@ arrow-schema = "57"
 crucible-lua = { path = "../crucible-lua", features = ["send"] }
 genai = "0.6"
 async-stream = "0.3"
-agent-client-protocol = "0.10.4"
+# NOTE(crucible): `unstable_session_model` gates the session/set_model API
+# (ModelInfo, SetSessionModelRequest, NewSessionResponse.models). It is an
+# explicitly-unstable ACP feature — real claude-agent-acp implements it as
+# `unstable_setSessionModel`. Re-verify model switching when bumping this crate.
+agent-client-protocol = { version = "0.10.4", features = ["unstable_session_model"] }
 gix = { version = "0.85", default-features = false, features = ["blocking-network-client", "sha1"] }
 mlua = { workspace = true }
 notify = { workspace = true }

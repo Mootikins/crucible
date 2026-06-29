@@ -168,6 +168,9 @@ impl CrucibleAcpClient {
             agent_client_protocol::ClientRequest::SetSessionModeRequest(req) => {
                 ("session/set_mode", serde_json::to_value(req)?)
             }
+            agent_client_protocol::ClientRequest::SetSessionModelRequest(req) => {
+                ("session/set_model", serde_json::to_value(req)?)
+            }
             agent_client_protocol::ClientRequest::PromptRequest(req) => {
                 ("session/prompt", serde_json::to_value(req)?)
             }

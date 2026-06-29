@@ -66,6 +66,10 @@ pub struct AcpAgentHandle {
     agent_name: String,
     mode_id: String,
     mode_state: SessionModeState,
+    /// Model state advertised by the agent at connect (`unstable_session_model`).
+    /// `None` if the agent doesn't expose models — drives the `model_switching`
+    /// capability and `current_model`/`fetch_available_models`.
+    model_state: Option<agent_client_protocol::SessionModelState>,
     session_id: Option<String>,
     cached_temperature: Option<f64>,
     cached_max_tokens: Option<u32>,
@@ -209,6 +213,7 @@ impl AcpAgentHandle {
         info!(session_id = %session_id, "ACP agent connected");
 
         let mode_id = "normal".to_string();
+        let model_state = session.models().cloned();
 
         Ok(Self {
             client: Arc::new(Mutex::new(Some(client))),
@@ -216,6 +221,7 @@ impl AcpAgentHandle {
             agent_name,
             mode_id,
             mode_state: default_internal_modes(),
+            model_state,
             session_id: Some(session_id),
             cached_temperature: agent_config.temperature,
             cached_max_tokens: agent_config.max_tokens,
@@ -303,14 +309,67 @@ impl AgentHandle for AcpAgentHandle {
     }
 
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
-        Err(ChatError::NotSupported(format!(
-            "ACP agents manage their own model. Cannot switch to '{}'",
-            model_id
-        )))
+        let Some(model_state) = self.model_state.as_ref() else {
+            return Err(ChatError::NotSupported(
+                "this ACP agent does not advertise selectable models".into(),
+            ));
+        };
+
+        // Reject ids the agent didn't advertise — set_model on an unknown id
+        // is an error on the agent side, so fail fast with a clear message.
+        if !model_state
+            .available_models
+            .iter()
+            .any(|m| m.model_id.0.as_ref() == model_id)
+        {
+            return Err(ChatError::ModeChange(format!(
+                "model '{}' is not in the agent's advertised model list",
+                model_id
+            )));
+        }
+
+        let Some(session_id) = self.session_id.clone() else {
+            return Err(ChatError::NotSupported("ACP agent not connected".into()));
+        };
+
+        {
+            let mut guard = self.client.lock().await;
+            let client = guard.as_mut().ok_or_else(|| {
+                ChatError::AgentUnavailable("ACP client unavailable (busy streaming)".into())
+            })?;
+            client
+                .set_session_model(&session_id, model_id)
+                .await
+                .map_err(|e| {
+                    ChatError::ModeChange(format!("ACP agent rejected model '{model_id}': {e}"))
+                })?;
+        }
+
+        // Reflect the new current model locally so `current_model` is accurate
+        // without a round-trip.
+        if let Some(model_state) = self.model_state.as_mut() {
+            model_state.current_model_id = model_id.to_string().into();
+        }
+        info!(model = %model_id, "Switched ACP agent model");
+        Ok(())
     }
 
     fn current_model(&self) -> Option<&str> {
-        None
+        self.model_state
+            .as_ref()
+            .map(|m| m.current_model_id.0.as_ref())
+    }
+
+    async fn fetch_available_models(&mut self) -> Vec<String> {
+        self.model_state
+            .as_ref()
+            .map(|m| {
+                m.available_models
+                    .iter()
+                    .map(|info| info.model_id.0.to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn get_modes(&self) -> Option<&SessionModeState> {
@@ -336,7 +395,8 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
             streaming: true,
             tool_calls: true,
             thinking: true,
-            model_switching: false,
+            // Only when the agent advertised a model list at connect.
+            model_switching: self.model_state.is_some(),
             usage_reporting: true,
             cancellation: false,
             owns_history: true,
@@ -580,9 +640,14 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
 
     async fn switch_model(
         &mut self,
-        _model_id: &str,
+        model_id: &str,
     ) -> Result<(), crucible_core::turn::NotSupported> {
-        Err(crucible_core::turn::NotSupported::new("switch_model"))
+        // Delegate to the AgentHandle impl (the daemon's RPC path). The Agent
+        // trait can only signal `NotSupported`, so a runtime wire failure is
+        // surfaced through that variant; the AgentHandle path carries detail.
+        AgentHandle::switch_model(self, model_id)
+            .await
+            .map_err(|_| crucible_core::turn::NotSupported::new("switch_model"))
     }
 }
 

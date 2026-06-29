@@ -335,6 +335,87 @@ async fn injected_system_context_reaches_acp_prompt() {
     );
 }
 
+/// ACP model switching round-trips against the live agent: the handle
+/// captures the agent-advertised model list at connect, reports
+/// `model_switching` capability, exposes the current model, and `switch_model`
+/// sends `session/set_model` over the wire (captured by the mock) without
+/// restarting the agent process (history-preserving).
+#[tokio::test]
+async fn acp_model_switching_round_trips() {
+    use crucible_core::turn::Agent;
+
+    let workspace = TempDir::new().expect("temp workspace");
+    let model_capture = workspace.path().join("set_model.txt");
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
+
+    let mut agent_config = mock_session_agent(&agent_path);
+    agent_config
+        .env_overrides
+        .insert("CRU_MOCK_ADVERTISE_MODELS".to_string(), "1".to_string());
+    agent_config.env_overrides.insert(
+        "CRU_MOCK_MODEL_CAPTURE".to_string(),
+        model_capture.to_string_lossy().into_owned(),
+    );
+
+    let mut handle = timeout(
+        Duration::from_secs(30),
+        AcpAgentHandle::new(AcpAgentHandleParams {
+            agent_config: &agent_config,
+            workspace: workspace.path(),
+            kiln_path: None,
+            knowledge_repo: None,
+            embedding_provider: None,
+            background_spawner: None,
+            parent_session_id: None,
+            delegation_config: None,
+            acp_config: None,
+            permission_handler: None,
+        }),
+    )
+    .await
+    .expect("ACP handshake timed out")
+    .expect("ACP handshake failed");
+
+    // Capability reflects that the agent advertised models.
+    assert!(
+        Agent::capabilities(&handle).model_switching,
+        "model_switching capability should be true when the agent advertises models"
+    );
+
+    // Current model = the advertised current.
+    assert_eq!(
+        AgentHandle::current_model(&handle),
+        Some("mock-sonnet"),
+        "handle should expose the agent's current model"
+    );
+
+    // Available models come from the agent's advertised list.
+    let models = handle.fetch_available_models().await;
+    assert!(
+        models.iter().any(|m| m == "mock-opus"),
+        "available models should include the advertised list, got: {models:?}"
+    );
+
+    // Switch — sends session/set_model to the live process.
+    AgentHandle::switch_model(&mut handle, "mock-opus")
+        .await
+        .expect("switch_model should succeed for an ACP agent that advertises models");
+
+    assert_eq!(
+        AgentHandle::current_model(&handle),
+        Some("mock-opus"),
+        "current model should update after switch"
+    );
+
+    let captured = std::fs::read_to_string(&model_capture)
+        .expect("mock should have captured the set_model request");
+    assert_eq!(
+        captured.trim(),
+        "mock-opus",
+        "the switched model id must reach the agent over the wire"
+    );
+}
+
 #[tokio::test]
 async fn missing_binary_returns_connection_error() {
     let workspace = TempDir::new().expect("Failed to create temp workspace");
