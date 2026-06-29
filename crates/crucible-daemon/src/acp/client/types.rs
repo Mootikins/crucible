@@ -66,6 +66,11 @@ pub(super) struct StreamingState {
     /// as a final notification before the JSON-RPC response. We track the
     /// accumulated text here to detect and skip these re-sends.
     pub(super) accumulated_text: String,
+    /// Set when a streaming callback returns `false`, meaning the receiver
+    /// (the daemon's turn stream) was dropped — i.e. the turn was cancelled.
+    /// The read loop reacts by sending `session/cancel` to the agent so it
+    /// stops generating server-side instead of running to completion.
+    pub(super) cancelled: bool,
 }
 
 impl StreamingState {

@@ -377,7 +377,11 @@ impl AgentHandle for AcpAgentHandle {
     }
 
     async fn cancel(&self) -> ChatResult<()> {
-        debug!("Cancel requested for ACP agent (graceful only)");
+        // Cancellation is driven by the daemon dropping the turn stream, which
+        // the ACP client detects (callback returns false) and answers by
+        // sending `session/cancel` to the agent. This handle method is not on
+        // that path — the daemon never calls it — so it is a no-op.
+        debug!("Cancel requested for ACP agent (handled via stream drop)");
         Ok(())
     }
 }
@@ -398,7 +402,10 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
             // Only when the agent advertised a model list at connect.
             model_switching: self.model_state.is_some(),
             usage_reporting: true,
-            cancellation: false,
+            // Cancelling the turn drops the daemon's stream; the ACP client
+            // reacts by sending `session/cancel`, stopping the agent
+            // server-side (see acp/client/streaming.rs).
+            cancellation: true,
             owns_history: true,
             modes: true,
         }
@@ -634,7 +641,8 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
     }
 
     async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
-        // Graceful cancel — matches the AgentHandle impl.
+        // See AgentHandle::cancel — real cancellation happens when the turn
+        // stream is dropped and the ACP client sends `session/cancel`.
         Ok(())
     }
 

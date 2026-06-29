@@ -11,6 +11,17 @@ use crate::acp::streaming::{humanize_tool_title, StreamingCallback, StreamingChu
 use crate::acp::{ClientError, Result};
 use crucible_core::types::acp::{FileDiff, ToolCallInfo};
 
+/// Build the `session/cancel` JSON-RPC notification (no `id` — notifications
+/// are fire-and-forget). The agent must abort the in-flight turn and end it
+/// with `StopReason::Cancelled`.
+pub(super) fn build_cancel_notification(session_id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "session/cancel",
+        "params": { "sessionId": session_id }
+    })
+}
+
 impl CrucibleAcpClient {
     /// Send a prompt request and handle streaming responses
     ///
@@ -167,8 +178,12 @@ impl CrucibleAcpClient {
             .map(|ms| tokio::time::Duration::from_millis(ms * 10))
             .unwrap_or(tokio::time::Duration::from_secs(30));
 
+        // Needed if the turn is cancelled mid-stream, to tell the agent to stop.
+        let session_id = request.session_id.to_string();
+
         let streaming_future = async {
             let mut state = StreamingState::default();
+            let mut cancel_sent = false;
 
             loop {
                 let response_line = self.read_response_line().await?;
@@ -200,6 +215,18 @@ impl CrucibleAcpClient {
                 {
                     return Ok((state, prompt_response));
                 }
+
+                // A callback returned `false`: the daemon's turn stream was
+                // dropped (cancelled). Tell the agent to stop generating so it
+                // doesn't run to completion server-side and burn tokens. Send
+                // `session/cancel` once, then keep reading until the agent
+                // returns its final (Cancelled) response, which exits the loop
+                // above and leaves the connection clean for the next turn.
+                if state.cancelled && !cancel_sent {
+                    tracing::debug!(session_id = %session_id, "Turn cancelled; sending session/cancel to ACP agent");
+                    self.send_session_cancel(&session_id).await?;
+                    cancel_sent = true;
+                }
             }
         };
 
@@ -211,6 +238,13 @@ impl CrucibleAcpClient {
                 overall_timeout.as_secs()
             ))),
         }
+    }
+
+    /// Send a `session/cancel` notification so the agent stops the in-flight
+    /// turn. Per ACP, the agent then ends the turn with `StopReason::Cancelled`.
+    async fn send_session_cancel(&mut self, session_id: &str) -> Result<()> {
+        self.write_request(&build_cancel_notification(session_id))
+            .await
     }
 
     /// Process a streaming message and invoke callback for chunks.
@@ -298,7 +332,7 @@ impl CrucibleAcpClient {
                         return;
                     }
                     state.append_text(&text_block.text);
-                    callback(StreamingChunk::Text(text_block.text));
+                    state.cancelled |= !callback(StreamingChunk::Text(text_block.text));
                 }
                 other => {
                     tracing::debug!("Ignoring non-text content block: {:?}", other);
@@ -327,7 +361,7 @@ impl CrucibleAcpClient {
 
                 // Emit tool start event with the diffs we just extracted so
                 // the TUI can render them in scrollback as the call appears.
-                callback(StreamingChunk::ToolStart {
+                state.cancelled |= !callback(StreamingChunk::ToolStart {
                     name: tool_name.clone(),
                     id: tool_id.clone(),
                     arguments: tool_call.raw_input.clone(),
@@ -349,7 +383,7 @@ impl CrucibleAcpClient {
                     update.fields.status,
                     Some(ToolCallStatus::Completed | ToolCallStatus::Failed)
                 ) {
-                    callback(StreamingChunk::ToolEnd {
+                    state.cancelled |= !callback(StreamingChunk::ToolEnd {
                         id: tool_id.clone(),
                         result: Self::extract_tool_result(update.fields.raw_output.as_ref()),
                         error: Self::extract_tool_error(
@@ -416,14 +450,16 @@ impl CrucibleAcpClient {
                             .iter()
                             .find(|tc| tc.id.as_deref() == Some(tool_id.as_str()))
                             .map(|tc| &tc.diffs);
+                        let mut cancelled = false;
                         if let Some(prior) = prior_diffs {
                             if prior != &diffs {
-                                callback(StreamingChunk::ToolDiffUpdate {
+                                cancelled = !callback(StreamingChunk::ToolDiffUpdate {
                                     call_id: tool_id.clone(),
                                     diffs: diffs.clone(),
                                 });
                             }
                         }
+                        state.cancelled |= cancelled;
                     }
 
                     let mut info = ToolCallInfo::new(title).with_id(tool_id).with_diffs(diffs);
@@ -656,5 +692,88 @@ fn filter_oversize_diff(d: &FileDiff) -> bool {
         false
     } else {
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::acp::client::ClientConfig;
+
+    fn test_client() -> CrucibleAcpClient {
+        CrucibleAcpClient::new(ClientConfig {
+            agent_path: std::path::PathBuf::from("/nonexistent"),
+            agent_args: None,
+            working_dir: None,
+            env_vars: None,
+            timeout_ms: None,
+            max_retries: None,
+        })
+    }
+
+    #[test]
+    fn cancel_notification_is_a_valid_jsonrpc_notification() {
+        let n = build_cancel_notification("sess-123");
+        assert_eq!(n["jsonrpc"], "2.0");
+        assert_eq!(n["method"], "session/cancel");
+        assert_eq!(n["params"]["sessionId"], "sess-123");
+        // Notifications MUST NOT carry an id.
+        assert!(
+            n.get("id").is_none(),
+            "cancel is a notification, not a request"
+        );
+    }
+
+    #[test]
+    fn streaming_callback_returning_false_marks_state_cancelled() {
+        use agent_client_protocol::SessionNotification;
+
+        let mut client = test_client();
+        let mut state = StreamingState::default();
+        // A callback that returns `false` models the daemon's turn stream being
+        // dropped (receiver gone) — i.e. the user cancelled. The read loop uses
+        // `state.cancelled` to decide to send `session/cancel`.
+        let mut cb: StreamingCallback = Box::new(|_chunk| false);
+
+        let notification: SessionNotification = serde_json::from_value(serde_json::json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": { "type": "text", "text": "partial answer" }
+            }
+        }))
+        .expect("valid agent_message_chunk notification");
+
+        client.apply_session_update_with_callback(notification, &mut state, &mut cb);
+
+        assert!(
+            state.cancelled,
+            "a false callback (dropped receiver) must mark the turn cancelled"
+        );
+    }
+
+    #[test]
+    fn streaming_callback_returning_true_leaves_state_running() {
+        use agent_client_protocol::SessionNotification;
+
+        let mut client = test_client();
+        let mut state = StreamingState::default();
+        let mut cb: StreamingCallback = Box::new(|_chunk| true);
+
+        let notification: SessionNotification = serde_json::from_value(serde_json::json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": { "type": "text", "text": "still going" }
+            }
+        }))
+        .expect("valid agent_message_chunk notification");
+
+        client.apply_session_update_with_callback(notification, &mut state, &mut cb);
+
+        assert!(
+            !state.cancelled,
+            "an active receiver must not trigger cancellation"
+        );
     }
 }
