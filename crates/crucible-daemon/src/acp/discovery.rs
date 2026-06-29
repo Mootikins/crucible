@@ -219,6 +219,21 @@ pub async fn discover_agent(preferred: Option<&str>, acp_config: &AcpConfig) -> 
         }
     }
 
+    let agent = discover_agent_uncached(preferred, acp_config).await?;
+    *AGENT_CACHE
+        .lock()
+        .expect("AGENT_CACHE: poisoned while caching discovered agent") = Some(agent.clone());
+    Ok(agent)
+}
+
+/// Cache-free discovery core: merges profiles, probes availability, and returns
+/// the first available agent in priority order. Unlike [`discover_agent`] it does
+/// NOT read or write the process-global `AGENT_CACHE`, so parallel tests can call
+/// it without cross-test state bleeding.
+pub async fn discover_agent_uncached(
+    preferred: Option<&str>,
+    acp_config: &AcpConfig,
+) -> Result<AgentInfo> {
     let merged_profiles = merge_profiles(acp_config)?;
 
     // If a preferred agent is specified, check it first (single probe)
@@ -228,13 +243,7 @@ pub async fn discover_agent(preferred: Option<&str>, acp_config: &AcpConfig) -> 
             if let Some(cmd) = profile.command.as_deref() {
                 if is_agent_available(cmd).await {
                     info!("Using preferred agent: {}", agent_name);
-                    let agent = profile_to_agent_info(agent_name, profile)?;
-                    // Cache the result
-                    *AGENT_CACHE
-                        .lock()
-                        .expect("AGENT_CACHE: poisoned while caching preferred agent") =
-                        Some(agent.clone());
-                    return Ok(agent);
+                    return profile_to_agent_info(agent_name, profile);
                 }
             }
         }
@@ -273,13 +282,7 @@ pub async fn discover_agent(preferred: Option<&str>, acp_config: &AcpConfig) -> 
     for (name, profile, available) in results {
         if available {
             info!("Discovered agent: {}", name);
-            let agent = profile_to_agent_info(&name, &profile)?;
-            // Cache the result
-            *AGENT_CACHE
-                .lock()
-                .expect("AGENT_CACHE: poisoned while caching discovered agent") =
-                Some(agent.clone());
-            return Ok(agent);
+            return profile_to_agent_info(&name, &profile);
         }
     }
 
@@ -516,6 +519,7 @@ fn resolve_profile(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     fn empty_config() -> AcpConfig {
         AcpConfig::default()
@@ -547,7 +551,10 @@ mod tests {
         assert!(result, "Command 'cargo' should be available");
     }
 
+    // Touches the process-global AGENT_CACHE; serialized so it can't race the
+    // other cache test.
     #[tokio::test]
+    #[serial(agent_cache)]
     async fn test_agent_cache_operations() {
         // Clear cache first
         reset_agent_cache();
@@ -571,9 +578,13 @@ mod tests {
         assert!(AGENT_CACHE.lock().unwrap().is_none());
     }
 
+    // Touches the process-global AGENT_CACHE; serialized so the cached value
+    // can't be cleared by a concurrent cache test.
     #[tokio::test]
+    #[serial(agent_cache)]
     async fn test_discover_agent_uses_cache() {
         // Pre-populate cache with a fake agent
+        reset_agent_cache();
         *AGENT_CACHE.lock().unwrap() = Some(AgentInfo {
             name: "cached-agent".to_string(),
             command: "cached-cmd".to_string(),
@@ -581,29 +592,20 @@ mod tests {
             env_vars: HashMap::new(),
         });
 
-        // Discovery should return cached agent without probing
+        // Discovery with no preference must return the cached agent without probing.
         let start = std::time::Instant::now();
         let config = empty_config();
-        let result = discover_agent(None, &config).await;
+        let agent = discover_agent(None, &config)
+            .await
+            .expect("cached agent should be returned");
         let elapsed = start.elapsed();
 
-        assert!(result.is_ok());
-        let agent = result.unwrap();
-
-        // In isolated tests, we should get the cached agent instantly.
-        // However, when running with --workspace, parallel tests may clear
-        // the cache causing a real probe. We accept either scenario:
-        // 1. Got our cached agent (fast) - cache worked
-        // 2. Got a real agent (slower) - another test cleared cache, that's ok
-        if agent.name == "cached-agent" {
-            // Cache was used - should be instant
-            assert!(
-                elapsed.as_millis() < 50,
-                "Cache lookup took too long: {:?}",
-                elapsed
-            );
-        }
-        // Either way, we got a valid agent - test passes
+        assert_eq!(agent.name, "cached-agent", "should return the cached agent");
+        assert!(
+            elapsed.as_millis() < 50,
+            "cache lookup took too long: {:?}",
+            elapsed
+        );
 
         // Clean up
         reset_agent_cache();
@@ -611,14 +613,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_discover_agent_parallel_probe_is_fast() {
-        // Clear cache to force fresh probe
-        reset_agent_cache();
-
         // Parallel probe should complete quickly even with multiple agents
-        // because non-existent commands fail fast via `which`
+        // because non-existent commands fail fast via `which`. Uses the
+        // cache-free core so it neither reads nor writes the global cache.
         let start = std::time::Instant::now();
         let config = empty_config();
-        let _result = discover_agent(None, &config).await;
+        let _result = discover_agent_uncached(None, &config).await;
         let elapsed = start.elapsed();
 
         // Should complete within timeout + some margin
@@ -629,9 +629,6 @@ mod tests {
             "Parallel probe took too long: {:?}",
             elapsed
         );
-
-        // Clean up
-        reset_agent_cache();
     }
 
     #[test]
@@ -887,8 +884,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_discover_agent_preferred_uses_merged_profile_command() {
-        reset_agent_cache();
-
         let mut agents = HashMap::new();
         agents.insert(
             "opencode".to_string(),
@@ -909,7 +904,7 @@ mod tests {
             ..Default::default()
         };
 
-        let agent = discover_agent(Some("opencode"), &config)
+        let agent = discover_agent_uncached(Some("opencode"), &config)
             .await
             .expect("preferred profile should resolve");
 
@@ -920,8 +915,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_discover_agent_without_preferred_can_use_config_only_profile() {
-        reset_agent_cache();
-
         let mut agents = HashMap::new();
         agents.insert(
             "cargo-agent".to_string(),
@@ -942,7 +935,7 @@ mod tests {
             ..Default::default()
         };
 
-        let agent = discover_agent(None, &config)
+        let agent = discover_agent_uncached(None, &config)
             .await
             .expect("should discover from merged profiles");
         assert!([
