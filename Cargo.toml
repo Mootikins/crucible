@@ -149,7 +149,10 @@ targets = [
 ]
 hosting = ["github"]
 checksum = "sha256"
-features = ["storage-sqlite", "web", "fastembed"]
+# `cru` (crucible-cli) only exposes `fastembed` now — web UI and SQLite are
+# always compiled in since the crate consolidation removed the `web` and
+# `storage-sqlite` features.
+features = ["fastembed"]
 default-features = false
 github-build-setup = "../build-setup.yml"
 github-custom-runners = { x86_64-unknown-linux-gnu = "ubuntu-24.04", aarch64-unknown-linux-gnu = "ubuntu-24.04" }
