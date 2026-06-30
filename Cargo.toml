@@ -138,6 +138,10 @@ oq = "0.1"
 [workspace.metadata.dist]
 cargo-dist-version = "0.31.0"
 ci = ["github"]
+# release.yml is hand-maintained for GitHub Actions major-version bumps
+# (checkout@v7, upload/download-artifact). Tell dist not to fail its plan step
+# on that intentional drift from its generated template.
+allow-dirty = ["ci"]
 installers = ["shell"]
 targets = [
     "x86_64-unknown-linux-gnu",
