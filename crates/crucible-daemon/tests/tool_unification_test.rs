@@ -28,6 +28,7 @@ const EXPECTED_TOOL_NAMES: &[&str] = &[
     "delegate_session",
     "get_job_result",
     "cancel_job",
+    "skill_view",
 ];
 
 fn to_set(names: &[&str]) -> HashSet<String> {

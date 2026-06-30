@@ -37,6 +37,8 @@ const EXPECTED_TOOLS: &[&str] = &[
     "bash",
     "glob",
     "grep",
+    // Skills tools (1)
+    "skill_view",
 ];
 
 fn create_test_server() -> CrucibleMcpServer {
@@ -51,22 +53,22 @@ fn create_test_server() -> CrucibleMcpServer {
     )
 }
 
-/// Test that CrucibleMcpServer exposes exactly 20 tools (including filtered ones)
+/// Test that CrucibleMcpServer exposes exactly 21 tools (including filtered ones)
 #[tokio::test]
 async fn test_mcp_server_exposes_13_tools() {
     let server = create_test_server();
 
     let tool_count = server.tool_count();
     assert_eq!(
-        tool_count, 20,
-        "Should expose exactly 20 tools (all tools including delegate_session), got {}",
+        tool_count, 21,
+        "Should expose exactly 21 tools (all tools including delegate_session), got {}",
         tool_count
     );
 
     let listed_tools = server.list_tools();
     assert_eq!(
-        listed_tools.len(), 19,
-        "Should list exactly 19 tools (delegate_session filtered when no delegation context), got {}",
+        listed_tools.len(), 20,
+        "Should list exactly 20 tools (delegate_session filtered when no delegation context), got {}",
         listed_tools.len()
     );
 }
@@ -147,8 +149,8 @@ async fn test_server_info_metadata() {
     assert!(info.instructions.is_some());
     let instructions = info.instructions.unwrap();
     assert!(
-        instructions.contains("20 tools"),
-        "Instructions should mention 20 tools (tool_count includes all tools)"
+        instructions.contains("21 tools"),
+        "Instructions should mention 21 tools (tool_count includes all tools)"
     );
 
     // Verify tools capability is advertised
@@ -246,11 +248,11 @@ async fn test_tool_count_matches_list_length() {
     let tools = server.list_tools();
 
     assert_eq!(
-        count, 20,
-        "tool_count() should return all 20 tools (including delegate_session)"
+        count, 21,
+        "tool_count() should return all 21 tools (including delegate_session)"
     );
     assert_eq!(
-        tools.len(), 19,
-        "list_tools() should return 19 tools (delegate_session filtered when no delegation context)"
+        tools.len(), 20,
+        "list_tools() should return 20 tools (delegate_session filtered when no delegation context)"
     );
 }
