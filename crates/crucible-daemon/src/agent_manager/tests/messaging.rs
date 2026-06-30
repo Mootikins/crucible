@@ -222,6 +222,70 @@ async fn same_chunk_thinking_emitted_before_text_delta() {
     assert_eq!(second.data["content"], "answer");
 }
 
+/// Regression: an ACP-style agent (owns_history) runs its own tool loop and
+/// emits ToolCall as an *observation*. The scheduler must NOT dispatch it —
+/// doing so feeds a result to `inbound_tx`, which fails because the ACP turn
+/// dropped the receiver, breaking the loop and truncating the turn right after
+/// the first tool call (the bug: claude's answer was silently dropped). The
+/// tool call must pass through and the agent's own follow-up text must arrive.
+#[tokio::test]
+async fn owns_history_agent_tool_call_passes_through_without_truncating_turn() {
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+    agent_manager
+        .configure_agent(&session.id, test_agent())
+        .await
+        .unwrap();
+
+    agent_manager.agent_cache.insert(
+        session.id.clone(),
+        Arc::new(Mutex::new(Box::new(OwnsToolsMockAgent {
+            events: vec![
+                script::tool_call(
+                    "call1",
+                    "Read",
+                    serde_json::json!({"file_path": "notes.txt"}),
+                ),
+                script::tool_result("call1", "Read", "LINE TWO beta"),
+                script::text("Line two is: LINE TWO beta"),
+                script::done(),
+            ],
+        }))),
+    );
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    agent_manager
+        .send_message(&session.id, "read notes".to_string(), &event_tx, true, None)
+        .await
+        .unwrap();
+
+    // The tool call must be surfaced (TUI renders it)...
+    let tool_call = next_event_or_skip(&mut event_rx, "tool_call").await;
+    assert_eq!(tool_call.data["tool"], "Read");
+
+    // ...and crucially, the agent's own follow-up answer must still arrive —
+    // proving the turn was not truncated at the tool call.
+    let delta = next_event_or_skip(&mut event_rx, "text_delta").await;
+    assert_eq!(delta.data["content"], "Line two is: LINE TWO beta");
+
+    let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
+    assert_eq!(complete.data["full_response"], "Line two is: LINE TWO beta");
+}
+
 #[tokio::test]
 async fn send_message_emits_tool_call_and_tool_result_events() {
     let tmp = TempDir::new().unwrap();

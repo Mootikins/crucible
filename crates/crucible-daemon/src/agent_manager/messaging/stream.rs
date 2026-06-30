@@ -284,6 +284,11 @@ impl AgentManager {
         // Hold the handle guard for the entire turn; Agent::turn returns
         // a stream that borrows `&mut *guard`.
         let mut guard = agent.lock().await;
+        // ACP-style agents run their own tool loop server-side and emit
+        // `ToolCall` events as observations (and drop the inbound channel).
+        // The scheduler must pass those through, not dispatch them. Capture
+        // the flag now, before `turn()` borrows the guard mutably.
+        let agent_owns_tools = guard.capabilities().owns_history;
         let mut event_stream = match guard.turn(turn_ctx).await {
             Ok(s) => s,
             Err(e) => {
@@ -394,6 +399,49 @@ impl AgentManager {
                     args,
                     diffs,
                 } => {
+                    // ACP-style agents already executed this tool in their own
+                    // server-side loop; the event is an observation. Pass it
+                    // through to subscribers + the tree and move on. We must NOT
+                    // dispatch it (the dispatch path feeds `inbound_tx`, which
+                    // the ACP turn dropped — the send fails and breaks the loop,
+                    // truncating the turn right after the first tool call), nor
+                    // count it toward the tool-depth cap. The agent streams its
+                    // own ToolResult + follow-up text, handled below.
+                    if agent_owns_tools {
+                        {
+                            let mut tree = stream_ctx.conversation_tree.lock().await;
+                            let parent = tree.current();
+                            tree.add_child(
+                                parent,
+                                crucible_core::turn::NodeContent::ToolCall {
+                                    id: id.clone(),
+                                    name: name.clone(),
+                                    args: args.clone(),
+                                },
+                            );
+                        }
+                        if !emit_event(
+                            &stream_ctx.event_tx,
+                            SessionEventMessage::tool_call_with_metadata(
+                                &stream_ctx.session_id,
+                                &id,
+                                &name,
+                                args.clone(),
+                                None,
+                                Some("acp".to_string()),
+                                None,
+                                diffs,
+                            ),
+                        ) {
+                            warn!(
+                                session_id = %stream_ctx.session_id,
+                                tool = %name,
+                                "No subscribers for pass-through tool_call event"
+                            );
+                        }
+                        continue;
+                    }
+
                     // New batch? increment depth, possibly cap.
                     if !in_tool_batch {
                         // If the depth cap already fired once and the

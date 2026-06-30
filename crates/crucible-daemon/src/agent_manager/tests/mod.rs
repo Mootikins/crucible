@@ -370,6 +370,57 @@ impl AgentHandle for StreamingMockAgent {
     }
 }
 
+/// Mimics an ACP-style agent: it owns its history and runs its own tool loop
+/// server-side, emitting `ToolCall` as an *observation* and never consuming
+/// `ctx.inbound`. The scheduler must NOT dispatch these tool calls (which would
+/// feed a result to `inbound_tx`, fail because the receiver was dropped, and
+/// truncate the turn). It must pass them through and keep relaying the agent's
+/// own follow-up text.
+pub(super) struct OwnsToolsMockAgent {
+    pub(super) events: Vec<TurnEvent>,
+}
+
+#[async_trait::async_trait]
+impl crucible_core::turn::Agent for OwnsToolsMockAgent {
+    fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+        crucible_core::turn::AgentCapabilities {
+            owns_history: true,
+            tool_calls: true,
+            ..Default::default()
+        }
+    }
+    async fn turn<'a>(
+        &'a mut self,
+        ctx: crucible_core::turn::TurnContext,
+    ) -> Result<futures::stream::BoxStream<'a, TurnEvent>, crucible_core::turn::AgentError> {
+        // ACP agents observe; they don't re-enter. Drop ctx (and its inbound
+        // receiver) just like AcpAgentHandle::turn does.
+        drop(ctx);
+        let events = self.events.clone();
+        Ok(Box::pin(async_stream::stream! {
+            for ev in events {
+                yield ev;
+            }
+        }))
+    }
+    async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+        Ok(())
+    }
+    async fn switch_model(&mut self, _: &str) -> Result<(), crucible_core::turn::NotSupported> {
+        Err(crucible_core::turn::NotSupported::new("switch_model"))
+    }
+}
+
+#[async_trait::async_trait]
+impl AgentHandle for OwnsToolsMockAgent {
+    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
+        Ok(())
+    }
+    async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
+        Ok(())
+    }
+}
+
 async fn next_event_or_skip(
     event_rx: &mut broadcast::Receiver<SessionEventMessage>,
     event_name: &str,
