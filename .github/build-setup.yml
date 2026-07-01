@@ -1,2 +1,13 @@
-- name: Create web asset placeholder
-  run: mkdir -p crates/crucible-cli/web/dist && echo "<html></html>" > crates/crucible-cli/web/dist/index.html
+# The `cru` binary embeds the SolidJS web UI (crates/crucible-cli/web/dist) at
+# compile time via rust-embed. dist is gitignored, so build the real frontend
+# here before `dist build` compiles the Rust binary. Runs on both the Linux and
+# macOS local-artifact runners; setup-bun supports both.
+- name: Set up bun
+  uses: oven-sh/setup-bun@v2
+  with:
+    bun-version: latest
+- name: Build web frontend
+  working-directory: crates/crucible-cli/web
+  run: |
+    bun install --frozen-lockfile
+    bun run build
