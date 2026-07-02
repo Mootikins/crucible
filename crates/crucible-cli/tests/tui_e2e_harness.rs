@@ -58,6 +58,9 @@ pub struct TuiTestConfig {
     /// Terminal dimensions
     pub cols: u16,
     pub rows: u16,
+    /// Working directory for the spawned process (via `env -C`). Needed when the
+    /// CLI derives its kiln from the cwd (e.g. `cru chat --resume` history fetch).
+    pub working_dir: Option<PathBuf>,
 }
 
 impl Default for TuiTestConfig {
@@ -70,6 +73,7 @@ impl Default for TuiTestConfig {
             timeout: Duration::from_secs(10),
             cols: 80,
             rows: 24,
+            working_dir: None,
         }
     }
 }
@@ -100,6 +104,11 @@ impl TuiTestConfig {
     pub fn with_dimensions(mut self, cols: u16, rows: u16) -> Self {
         self.cols = cols;
         self.rows = rows;
+        self
+    }
+
+    pub fn with_cwd(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.working_dir = Some(dir.into());
         self
     }
 
@@ -197,8 +206,17 @@ impl TuiTestSession {
         // split — none of our test env values (socket/config paths) contain
         // spaces.
         let mut cmd = String::new();
-        if !config.env.is_empty() {
+        if !config.env.is_empty() || config.working_dir.is_some() {
             cmd.push_str("/usr/bin/env");
+            if let Some(dir) = &config.working_dir {
+                let dir = dir.display().to_string();
+                assert!(
+                    !dir.contains(char::is_whitespace),
+                    "working_dir {dir} contains whitespace; expectrl string spawn cannot pass it"
+                );
+                cmd.push_str(" -C ");
+                cmd.push_str(&dir);
+            }
             for (key, value) in &config.env {
                 assert!(
                     !key.contains(char::is_whitespace) && !value.contains(char::is_whitespace),
