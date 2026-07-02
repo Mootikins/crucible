@@ -117,9 +117,7 @@ fn fn_body(src: &str, signature: &str) -> String {
 
 fn captures(re: &str, hay: &str) -> BTreeSet<String> {
     let re = Regex::new(re).unwrap();
-    re.captures_iter(hay)
-        .map(|c| c[1].to_string())
-        .collect()
+    re.captures_iter(hay).map(|c| c[1].to_string()).collect()
 }
 
 // ===========================================================================

@@ -20,7 +20,10 @@ fn user_message_then_assistant_reply_reads_as_intent() {
 
     // Eventual-state assertion: settle spinner frames, then require the reply.
     let frame = expect_assistant_contains(&mut story, "wikilinks", 32);
-    assert!(frame.contains("wikilinks"), "reply should be visible:\n{frame}");
+    assert!(
+        frame.contains("wikilinks"),
+        "reply should be visible:\n{frame}"
+    );
 }
 
 #[test]
@@ -62,5 +65,8 @@ fn hydrate_from_recording_fills_the_viewport() {
     // Re-attaching a console to an existing session replays its history.
     hydrate_from_recording(&mut story, "permission_flow.jsonl");
     let frame = expect_assistant_contains(&mut story, "Cargo.toml", 32);
-    assert!(frame.contains("Cargo.toml"), "history should hydrate:\n{frame}");
+    assert!(
+        frame.contains("Cargo.toml"),
+        "history should hydrate:\n{frame}"
+    );
 }

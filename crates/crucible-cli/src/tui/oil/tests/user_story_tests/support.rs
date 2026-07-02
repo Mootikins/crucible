@@ -218,11 +218,7 @@ impl StoryRuntime {
     /// assertion). On success, pump one more tick and warn on stderr if the
     /// frame changed — a cheap indeterminism check (a settled UI should not
     /// keep mutating).
-    pub(crate) fn expect_frame(
-        &mut self,
-        pred: impl Fn(&str) -> bool,
-        max_ticks: usize,
-    ) -> String {
+    pub(crate) fn expect_frame(&mut self, pred: impl Fn(&str) -> bool, max_ticks: usize) -> String {
         let mut last = self.fresh_screen();
         self.remember(&last);
         let mut ticks = 0;

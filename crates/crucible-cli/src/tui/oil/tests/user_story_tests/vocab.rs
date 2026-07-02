@@ -11,9 +11,7 @@
 
 use crossterm::event::KeyCode;
 
-use crucible_core::interaction::{
-    InteractionRequest, InteractionResponse, PermRequest,
-};
+use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermRequest};
 
 use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::ChatAppMsg;
@@ -56,7 +54,9 @@ pub(crate) fn open_permission(
     argv: &[&str],
 ) -> Action<ChatAppMsg> {
     let request = InteractionRequest::Permission(PermRequest::bash(argv.iter().copied()));
-    story.app().open_interaction(request_id.to_string(), request)
+    story
+        .app()
+        .open_interaction(request_id.to_string(), request)
 }
 
 /// Press `y` to approve the open permission modal; returns the allow/deny

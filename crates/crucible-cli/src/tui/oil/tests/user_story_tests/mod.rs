@@ -17,10 +17,10 @@ mod support;
 mod vocab;
 
 mod notification_tests; // US-701 / US-702
-mod vocab_tests; // intent-vocabulary exemplars (E)
 mod paste_tests; // US-106
 mod permission_tests; // US-401
 mod scroll_tests; // US-801
 mod shell_tests; // US-601 / US-602
 mod subagent_mcp_tests; // US-302 / US-303
 mod undo_tests; // US-902
+mod vocab_tests; // intent-vocabulary exemplars (E)

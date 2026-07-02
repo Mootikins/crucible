@@ -185,7 +185,11 @@ fn canonical_parser_types_are_not_redefined() {
         if p.extension().and_then(|e| e.to_str()) != Some("rs") {
             continue;
         }
-        let rel = p.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/");
+        let rel = p
+            .strip_prefix(&root)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
         if !rel.contains("/src/") || rel.contains(CANONICAL_HOME) {
             continue;
         }
