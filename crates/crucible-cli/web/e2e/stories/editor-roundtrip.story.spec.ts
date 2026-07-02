@@ -67,7 +67,7 @@ test.describe('WS-202 editor round-trip', () => {
 
     // On success dirty clears.
     await expect(page.getByText('●')).toHaveCount(0);
-    expect(harness.saves.at(-1)?.content).toContain('MORE');
+    expect(harness.saves[harness.saves.length - 1]?.content).toContain('MORE');
     await story.step(page, 'saved - clean');
   });
 

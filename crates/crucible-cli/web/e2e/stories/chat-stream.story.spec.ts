@@ -17,7 +17,7 @@ import { createStory } from './_helpers/story';
 
 type Frame = { type: string; data: object };
 
-function tokenFrames(text: string, id = 'msg-1'): Frame[] {
+function tokenFrames(text: string): Frame[] {
   const chunks: string[] = [];
   for (let i = 0; i < text.length; i += 8) chunks.push(text.slice(i, i + 8));
   return chunks.map((content) => ({ type: 'token', data: { type: 'token', content } }));
