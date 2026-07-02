@@ -52,6 +52,12 @@ describe("reflection", function()
       assert.is_nil(plugin.parse_proposals("not json at all"))
     end)
 
+    it("wraps a single proposal object into a one-element array", function()
+      local p = plugin.parse_proposals('{"title":"T","body":"B"}')
+      assert.equal(#p, 1)
+      assert.equal(p[1].title, "T")
+    end)
+
     it("treats empty string as empty list", function()
       assert.equal(#plugin.parse_proposals(""), 0)
     end)
@@ -94,6 +100,35 @@ describe("reflection", function()
     it("falls back to 'note' for empty titles", function()
       local id = plugin.proposal_id({ title = "" }, 2, "20260702-000000")
       assert.truthy(id:find("note"))
+    end)
+  end)
+
+  describe("is_reflection_session", function()
+    it("detects the marker in the system prompt", function()
+      local session = { system_prompt = plugin.reflection_marker .. "\n\nreview stuff" }
+      assert.truthy(plugin.is_reflection_session(session))
+    end)
+
+    it("returns false for an ordinary session", function()
+      assert.falsy(plugin.is_reflection_session({ system_prompt = "You are a helpful assistant" }))
+    end)
+
+    it("returns false when system_prompt is absent", function()
+      assert.falsy(plugin.is_reflection_session({ id = "chat-1" }))
+    end)
+
+    it("returns false for nil", function()
+      assert.falsy(plugin.is_reflection_session(nil))
+    end)
+  end)
+
+  describe("run recursion guard", function()
+    it("skips a session carrying the reflection marker without touching the daemon", function()
+      -- The guard is the first thing run() checks, before any cru.sessions
+      -- call, so a marked session short-circuits cleanly.
+      local marked = { id = "aux-1", system_prompt = plugin.reflection_marker .. "\n\nx" }
+      local ok = pcall(plugin.run, marked)
+      assert.truthy(ok)
     end)
   end)
 

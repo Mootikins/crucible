@@ -67,9 +67,24 @@ Emit ONLY a JSON array (no prose, no code fences). Each element:
 If nothing is worth saving, emit exactly: []
 ]==]
 
+-- Sentinel baked into a reflection subagent's system prompt so the handler can
+-- recognise (and skip) reflection-created sessions when they end. An HTML
+-- comment so it is inert if the model echoes it.
+M.REFLECTION_MARKER = "<!-- crucible:reflection-pass -->"
+
 -- ============================================================================
 -- Pure helpers (unit-testable without a daemon)
 -- ============================================================================
+
+--- True when a session's agent carries the reflection marker in its system
+--- prompt — i.e. it is a reflection-created aux session. Reads `system_prompt`
+--- defensively (the session object may not expose it in every context).
+function M.is_reflection_session(session)
+    if not session then return false end
+    local ok, prompt = pcall(function() return session.system_prompt end)
+    return ok and type(prompt) == "string"
+        and prompt:find(M.REFLECTION_MARKER, 1, true) ~= nil
+end
 
 --- Count user turns in a message list. Trivial sessions (few turns) are
 --- skipped, so this drives the min_turns gate.
@@ -106,6 +121,14 @@ function M.parse_proposals(text)
     local ok, parsed = pcall(cru.json.decode, stripped)
     if not ok or type(parsed) ~= "table" then
         return nil
+    end
+
+    -- Tolerate a single proposal object instead of an array: a model that
+    -- emits `{ "title": ..., "body": ... }` rather than `[ ... ]` should not be
+    -- silently dropped. Detect by the presence of proposal keys with no array
+    -- part.
+    if #parsed == 0 and (parsed.title or parsed.body) then
+        return { parsed }
     end
     return parsed
 end
@@ -203,6 +226,25 @@ function M.run(session)
     if not session or not session.id then return end
     local session_id = session.id
 
+    -- Recursion guard: ending our own aux session fires on_session_end again.
+    -- min_turns alone is not a guarantee (a user may set min_turns = 1), so we
+    -- positively identify reflection-created sessions by the marker baked into
+    -- their system prompt and skip them regardless of turn count. This is a
+    -- cross-session-visible tag (the aux session's config lives daemon-side),
+    -- which module-level Lua state cannot be — each session has its own VM.
+    if M.is_reflection_session(session) then
+        cru.log("debug", "reflection: skipping reflection-created aux session")
+        return
+    end
+
+    -- Resolve the aux model first: without it there is nothing to do, so bail
+    -- before spending any RPC round-trips on the session's kiln and messages.
+    local model = config.get("model", nil)
+    if not model then
+        cru.log("warn", "reflection: no aux model configured; skipping (set plugins.reflection.model)")
+        return
+    end
+
     local info = cru.sessions.get(session_id)
     local kiln = info and info.kiln
     if not kiln then
@@ -221,21 +263,28 @@ function M.run(session)
         return
     end
 
-    local model = config.get("model", nil)
-    if not model then
-        cru.log("warn", "reflection: no aux model configured; skipping (set plugins.reflection.model)")
-        return
-    end
-
-    -- Fork a fresh, kiln-less session so reflection never pollutes the source
-    -- session's prompt cache and its own writes are not precognition-eligible.
+    -- Fork a separate session for the review so it never touches the source
+    -- session's prompt cache. It is NOT kiln-less: cru.sessions.create with no
+    -- kiln defaults to the crucible home, so the marker-based recursion guard
+    -- above (not the absence of a kiln) is what stops it reflecting on itself.
     local aux, err = cru.sessions.create({ type = "chat" })
     if err or not aux then
         cru.log("warn", "reflection: failed to create aux session: " .. tostring(err))
         return
     end
 
-    local agent_cfg = { model = model, system_prompt = M.SYSTEM_PROMPT }
+    local agent_cfg = {
+        model = model,
+        -- The marker tags this as a reflection session so its own teardown is
+        -- skipped by the recursion guard.
+        system_prompt = M.REFLECTION_MARKER .. "\n\n" .. M.SYSTEM_PROMPT,
+        -- Bound the reviewer's tool-loop depth (it should emit JSON, not loop).
+        max_iterations = config.get("max_iterations_cap", 3),
+        -- No external tool servers for an unattended reviewer. NOTE: built-in
+        -- tools are still attached — fully disabling tools needs a core knob
+        -- (follow-up); low max_iterations + the propose-only prompt bound it.
+        mcp_servers = {},
+    }
     local provider = config.get("provider", nil)
     if provider then agent_cfg.provider = provider end
     cru.sessions.configure_agent(aux.id, agent_cfg)
@@ -288,6 +337,8 @@ return {
 
     -- Exposed for unit tests and manual invocation.
     run = M.run,
+    is_reflection_session = M.is_reflection_session,
+    reflection_marker = M.REFLECTION_MARKER,
     count_user_turns = M.count_user_turns,
     build_transcript = M.build_transcript,
     parse_proposals = M.parse_proposals,
