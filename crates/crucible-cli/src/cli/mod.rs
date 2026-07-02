@@ -5,6 +5,7 @@ use tracing_subscriber::filter::LevelFilter;
 mod agents;
 mod auth;
 mod config;
+mod proposals;
 mod session;
 mod skills;
 mod storage;
@@ -16,6 +17,7 @@ mod tests;
 pub use agents::AgentsCommands;
 pub use auth::AuthCommands;
 pub use config::ConfigCommands;
+pub use proposals::ProposalsCommands;
 pub use session::SessionCommands;
 pub use skills::SkillsCommands;
 pub use storage::StorageCommands;
@@ -370,6 +372,13 @@ Examples:
         long_about = "Discover and manage agent skills - reusable capabilities and tools.\n\nList available skills, show details, and search by functionality.\n\nExamples:\n  # List all discovered skills\n  cru skills list\n\n  # Filter by scope\n  cru skills list --scope workspace\n\n  # Show skill details\n  cru skills show \"semantic_search\"\n\n  # Search skills by query\n  cru skills search \"search\" -n 5"
     )]
     Skills(SkillsCommands),
+
+    /// Review reflection-pass proposals (list, show, accept, reject)
+    #[command(
+        subcommand,
+        long_about = "Review notes proposed by the reflection pass.\n\nAfter a session ends, the reflection plugin stages proposed notes in the kiln's .crucible/proposals/ directory (outside the index). These commands let you review and dispose of them.\n\nExamples:\n  # List pending proposals\n  cru proposals list\n\n  # Show a proposal's content\n  cru proposals show insight-20260702-1a2b\n\n  # Accept (promote into the kiln, then indexed)\n  cru proposals accept insight-20260702-1a2b\n\n  # Reject (delete)\n  cru proposals reject insight-20260702-1a2b"
+    )]
+    Proposals(ProposalsCommands),
 
     /// Discover and manage tools (list, show)
     #[command(

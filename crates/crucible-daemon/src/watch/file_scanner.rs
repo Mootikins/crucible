@@ -800,3 +800,48 @@ impl std::fmt::Debug for FileScanner {
             .finish()
     }
 }
+
+#[cfg(test)]
+mod scanner_tests {
+    use super::*;
+    use crucible_core::hashing::{Blake3Algorithm, FileHasher};
+    use std::fs;
+
+    /// The reflection pass stages proposals in `KILN/.crucible/proposals/`.
+    /// That directory must never be indexed, or unreviewed proposals would
+    /// leak into vector search and precognition. Verify the scanner skips it
+    /// while still discovering regular kiln notes.
+    #[tokio::test]
+    async fn scan_skips_crucible_proposals_but_keeps_regular_notes() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+
+        fs::write(root.join("real-note.md"), "# Real note").expect("write note");
+        let proposals = root.join(".crucible").join("proposals");
+        fs::create_dir_all(&proposals).expect("mkdir proposals");
+        fs::write(
+            proposals.join("proposed-note.md"),
+            "---\nsource: reflection\nstatus: proposed\n---\n# Proposed",
+        )
+        .expect("write proposal");
+
+        let scanner = FileScanner::with_defaults(root, Arc::new(FileHasher::new(Blake3Algorithm)))
+            .expect("scanner should build");
+        let result = scanner.scan_directory().await.expect("scan should succeed");
+
+        let discovered: Vec<String> = result
+            .discovered_files
+            .iter()
+            .map(|f| f.path().to_string_lossy().into_owned())
+            .collect();
+
+        assert!(
+            discovered.iter().any(|p| p.ends_with("real-note.md")),
+            "regular kiln note should be indexed, got: {discovered:?}"
+        );
+        assert!(
+            !discovered.iter().any(|p| p.contains(".crucible")),
+            "no .crucible-staged file should be indexed, got: {discovered:?}"
+        );
+    }
+}

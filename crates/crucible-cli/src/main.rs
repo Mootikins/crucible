@@ -337,6 +337,10 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             commands::skills::execute(config, cmd).await?;
         }
 
+        Some(Commands::Proposals(cmd)) => {
+            commands::proposals::execute(config, cmd).await?;
+        }
+
         Some(Commands::Tools(cmd)) => {
             commands::tools::execute(config, cmd).await?;
         }
