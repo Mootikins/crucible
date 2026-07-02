@@ -8,9 +8,9 @@
 
 use std::sync::Arc;
 
+use crucible_core::traits::tools::ToolExecutor;
 use crucible_daemon::tool_dispatch::{DaemonToolDispatcher, ToolDispatcher};
 use crucible_daemon::tools::workspace::WorkspaceTools;
-use crucible_core::traits::tools::ToolExecutor;
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -27,7 +27,11 @@ async fn discovery_bridge_finds_inspects_and_invokes_a_tool() {
 
     // 1. discover_tools surfaces the workspace tools (as if deferred).
     let discovered = dispatcher
-        .dispatch_tool("discover_tools", json!({ "query": "glob" }), Default::default())
+        .dispatch_tool(
+            "discover_tools",
+            json!({ "query": "glob" }),
+            Default::default(),
+        )
         .await
         .expect("discover_tools should succeed");
     assert!(
@@ -45,7 +49,10 @@ async fn discovery_bridge_finds_inspects_and_invokes_a_tool() {
         .await
         .expect("get_tool_schema should succeed");
     let schema_str = schema.to_string();
-    assert!(schema_str.contains("glob"), "schema names the tool: {schema_str}");
+    assert!(
+        schema_str.contains("glob"),
+        "schema names the tool: {schema_str}"
+    );
     assert!(
         schema_str.contains("pattern"),
         "glob schema should describe its pattern parameter: {schema_str}"
@@ -54,11 +61,7 @@ async fn discovery_bridge_finds_inspects_and_invokes_a_tool() {
     // 3. The discovered tool executes — this is the target an invoke_tool
     //    bridge call unwraps to before dispatch.
     let result = dispatcher
-        .dispatch_tool(
-            "glob",
-            json!({ "pattern": "**/*.md" }),
-            Default::default(),
-        )
+        .dispatch_tool("glob", json!({ "pattern": "**/*.md" }), Default::default())
         .await
         .expect("the discovered tool should execute");
     assert!(

@@ -561,7 +561,11 @@ mod invoke_tool_tests {
         assert_eq!(inner.name, "gh_search_repos");
         assert_eq!(inner.id.as_deref(), Some("call-42"));
         assert_eq!(
-            inner.arguments.unwrap().get("query").and_then(|v| v.as_str()),
+            inner
+                .arguments
+                .unwrap()
+                .get("query")
+                .and_then(|v| v.as_str()),
             Some("rust")
         );
     }

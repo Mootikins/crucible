@@ -390,7 +390,8 @@ fn tool_schema_tokens(defs: &[LlmToolDefinition]) -> usize {
                 .as_ref()
                 .map(|p| p.to_string().len().div_ceil(4))
                 .unwrap_or(0);
-            estimate_tokens(&d.function.name) + estimate_tokens(&d.function.description)
+            estimate_tokens(&d.function.name)
+                + estimate_tokens(&d.function.description)
                 + schema_tokens
         })
         .sum()
