@@ -90,7 +90,7 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
     // On success the panel returns to clean.
     await expect(page.getByTestId('file-dirty-indicator')).toHaveCount(0);
     await expect(page.getByTestId('file-save')).toBeDisabled();
-    expect(saves.at(-1)?.content).toContain('browser was here');
+    expect(saves[saves.length - 1]?.content).toContain('browser was here');
     await story.step(page, 'saved - clean');
   });
 

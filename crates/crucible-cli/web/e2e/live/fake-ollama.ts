@@ -69,7 +69,7 @@ function lastUserMessage(body: string): string {
       }
     }
     // Fall back to the last message of any role.
-    return messages.at(-1)?.content ?? '';
+    return messages[messages.length - 1]?.content ?? '';
   } catch {
     return '';
   }
