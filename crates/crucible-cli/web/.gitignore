@@ -17,3 +17,6 @@ node_modules/
 # These are checked-in golden images for the `stories` project; test-*.png
 # outputs live under test-results/ (ignored above).
 !e2e/__screenshots__/**/*.png
+
+# Live-tier runtime state (written by e2e/live/global-setup.ts)
+e2e/live/.live-state.json
