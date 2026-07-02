@@ -1,0 +1,6 @@
+{"version":1,"session_id":"permission-flow","recording_mode":"granular","started_at":"2026-07-02T09:10:00Z"}
+{"ts":"2026-07-02T09:10:01Z","seq":1,"event":"user_message","session_id":"permission-flow","data":{"content":"List the current directory"}}
+{"ts":"2026-07-02T09:10:02Z","seq":2,"event":"tool_call","session_id":"permission-flow","data":{"tool":"bash","args":{"command":"ls -la"},"call_id":"call-1","source":"Core"}}
+{"ts":"2026-07-02T09:10:03Z","seq":3,"event":"tool_result","session_id":"permission-flow","data":{"tool":"bash","call_id":"call-1","result":{"result":"total 8\nREADME.md\nCargo.toml"}}}
+{"ts":"2026-07-02T09:10:04Z","seq":4,"event":"message_complete","session_id":"permission-flow","data":{"full_response":"The directory contains README.md and Cargo.toml."}}
+{"ended_at":"2026-07-02T09:10:05Z"}

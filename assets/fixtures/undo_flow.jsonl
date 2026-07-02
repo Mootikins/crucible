@@ -1,0 +1,6 @@
+{"version":1,"session_id":"undo-flow","recording_mode":"granular","started_at":"2026-07-02T09:00:00Z"}
+{"ts":"2026-07-02T09:00:01Z","seq":1,"event":"user_message","session_id":"undo-flow","data":{"content":"What is 2 plus 2?"}}
+{"ts":"2026-07-02T09:00:02Z","seq":2,"event":"message_complete","session_id":"undo-flow","data":{"full_response":"2 plus 2 equals 4."}}
+{"ts":"2026-07-02T09:00:03Z","seq":3,"event":"user_message","session_id":"undo-flow","data":{"content":"Now rewrite my entire config file"}}
+{"ts":"2026-07-02T09:00:04Z","seq":4,"event":"message_complete","session_id":"undo-flow","data":{"full_response":"Rewriting the config file completely now."}}
+{"ended_at":"2026-07-02T09:00:05Z"}
