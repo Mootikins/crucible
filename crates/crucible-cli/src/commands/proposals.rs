@@ -18,9 +18,10 @@ use crate::cli::ProposalsCommands;
 use crate::config::CliConfig;
 use crate::formatting::OutputFormat;
 
-/// Frontmatter keys the reflection pass adds for provenance. They are dropped
-/// when a proposal is accepted so the promoted note is clean.
-const PROVENANCE_KEYS: &[&str] = &["source", "status", "session", "created"];
+/// Frontmatter keys the reflection pass adds for provenance (and `target`,
+/// which only directs placement). All are dropped when a proposal is accepted
+/// so the promoted note is clean.
+const PROVENANCE_KEYS: &[&str] = &["source", "status", "session", "created", "target"];
 
 #[derive(Debug, Serialize)]
 struct ProposalSummary {
@@ -152,10 +153,7 @@ fn accept(config: &CliConfig, id: &str) -> Result<()> {
         .as_ref()
         .and_then(|f| f.get_string("target"))
         .unwrap_or_else(|| format!("{id}.md"));
-    if target_rel.contains("..") {
-        bail!("proposal target escapes the kiln: {target_rel}");
-    }
-    let dest = config.kiln_path.join(&target_rel);
+    let dest = resolve_target_within_kiln(&config.kiln_path, &target_rel)?;
     if dest.exists() {
         bail!(
             "refusing to overwrite existing note: {} (edit the proposal's `target` or move the note aside)",
@@ -165,16 +163,52 @@ fn accept(config: &CliConfig, id: &str) -> Result<()> {
 
     let promoted = strip_provenance(result.frontmatter.as_ref(), &result.body);
 
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
-    }
     std::fs::write(&dest, promoted).with_context(|| format!("writing {}", dest.display()))?;
     std::fs::remove_file(&path).with_context(|| format!("removing proposal {}", path.display()))?;
 
     println!("Accepted proposal '{id}' -> {}", dest.display());
     println!("The daemon will index it on its next scan.");
     Ok(())
+}
+
+/// Resolve a proposal's `target` to an absolute destination guaranteed to live
+/// inside the kiln, creating its parent directory. Rejects absolute targets and
+/// any `..` component lexically, then canonicalizes the created parent and
+/// asserts it is under the (canonicalized) kiln root — so neither a crafted
+/// path nor a symlink inside the kiln can escape it.
+fn resolve_target_within_kiln(kiln: &Path, target_rel: &str) -> Result<PathBuf> {
+    use std::path::Component;
+
+    let target = Path::new(target_rel);
+    for component in target.components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => {
+                bail!("proposal target must be relative to the kiln: {target_rel}")
+            }
+            Component::ParentDir => {
+                bail!("proposal target must not contain '..': {target_rel}")
+            }
+            _ => {}
+        }
+    }
+
+    let dest = kiln.join(target);
+    let parent = dest
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("proposal target has no parent: {target_rel}"))?;
+    std::fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+
+    let kiln_root = kiln
+        .canonicalize()
+        .with_context(|| format!("resolving kiln root {}", kiln.display()))?;
+    let parent_canon = parent
+        .canonicalize()
+        .with_context(|| format!("resolving {}", parent.display()))?;
+    if !parent_canon.starts_with(&kiln_root) {
+        bail!("proposal target escapes the kiln: {target_rel}");
+    }
+
+    Ok(dest)
 }
 
 fn reject(config: &CliConfig, id: &str) -> Result<()> {
@@ -290,6 +324,67 @@ mod tests {
         accept(&config, "p2").unwrap();
 
         assert!(kiln.join("Notes/Nested/thing.md").is_file());
+    }
+
+    #[test]
+    fn accept_strips_target_from_promoted_note() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kiln = tmp.path();
+        let config = test_config(kiln);
+        write_proposal(
+            &proposals_dir(&config),
+            "p-target",
+            "---\nsource: reflection\nstatus: proposed\ntarget: Notes/x.md\ntitle: T\n---\nBody\n",
+        );
+
+        accept(&config, "p-target").unwrap();
+
+        let promoted = std::fs::read_to_string(kiln.join("Notes/x.md")).unwrap();
+        assert!(
+            !promoted.contains("target:"),
+            "target directs placement and must not survive into the note: {promoted:?}"
+        );
+        assert!(promoted.contains("title: T"), "user fields kept");
+    }
+
+    #[test]
+    fn accept_rejects_absolute_target() {
+        let tmp = tempfile::tempdir().unwrap();
+        let escape = tempfile::tempdir().unwrap();
+        let kiln = tmp.path();
+        let config = test_config(kiln);
+        let abs = escape.path().join("evil.md");
+        write_proposal(
+            &proposals_dir(&config),
+            "abs",
+            &format!(
+                "---\nstatus: proposed\ntarget: {}\n---\npwned\n",
+                abs.display()
+            ),
+        );
+
+        let err = accept(&config, "abs").unwrap_err();
+        assert!(
+            err.to_string().contains("relative to the kiln"),
+            "got: {err}"
+        );
+        assert!(!abs.exists(), "must not write outside the kiln");
+    }
+
+    #[test]
+    fn accept_rejects_relative_escape_target() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kiln = tmp.path();
+        let config = test_config(kiln);
+        write_proposal(
+            &proposals_dir(&config),
+            "esc",
+            "---\nstatus: proposed\ntarget: ../../etc/x.md\n---\npwned\n",
+        );
+
+        let err = accept(&config, "esc").unwrap_err();
+        assert!(err.to_string().contains("'..'"), "got: {err}");
+        assert!(!kiln.parent().unwrap().join("etc/x.md").exists());
     }
 
     #[test]
