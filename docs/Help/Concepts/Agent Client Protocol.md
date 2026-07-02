@@ -196,6 +196,41 @@ The agent never touches your kiln directly. Every file read, search, and write g
 
 Before each turn, Crucible runs [[Help/Concepts/Semantic Search|semantic search]] against your kiln using the user's message as a query. Relevant note fragments are injected into the agent's context alongside any loaded [[Help/Concepts/Agent Skills|skills]]. This means the agent has access to your knowledge without you manually searching for context.
 
+## Crucible as ACP Agent
+
+Crucible also implements the *other* side of the protocol: the **agent** role. Run
+
+```bash
+cru acp
+```
+
+and Crucible speaks ACP on stdin/stdout, so any ACP host (Zed, JetBrains, Neovim, marimo — or another Crucible instance) can drive it as a knowledge-grounded agent. Point your editor's ACP agent configuration at the `cru acp` command.
+
+What the host gets is the ordinary internal Crucible agent, exposed through a different front door:
+
+1. **`initialize`** — Crucible advertises protocol v1, text prompts, and `loadSession` support.
+2. **`session/new`** — creates a normal daemon session (`type = chat`, `agent = internal`) with the host-supplied `cwd` as the workspace. It shows up in `cru session list` and persists like any other session.
+3. **`session/prompt`** — the user's message is forwarded to the daemon; the daemon's event stream is translated into ACP `session/update` notifications: text deltas become agent message chunks, thinking becomes thought chunks, and tool calls/results become `tool_call` / `tool_call_update` entries (with a coarse tool-kind for host icons).
+4. **`session/request_permission`** — when the daemon needs approval to run a tool, Crucible surfaces it to the host as a permission request with Allow/Reject (once/always) options and maps the choice back to Crucible's permission model.
+5. **`session/cancel`** — forwarded to the daemon to stop the turn; the prompt returns `stop_reason = cancelled`.
+6. **`session/load`** — resumes an existing daemon session so the host can continue a prior conversation.
+
+Because sessions are real daemon sessions, Precognition, kiln tools, and session digests all apply automatically — the host does not need to know anything about Crucible's knowledge graph.
+
+**Not yet wired (v1):** session modes, model listing/switching and forking over ACP, host-side filesystem/terminal capabilities (tools run daemon-side exactly as for internal sessions), and authentication (none advertised). Non-permission interaction primitives (free-form questions, panels) have no ACP analogue and are auto-declined.
+
+### Dogfood: Crucible hosting Crucible
+
+Because Crucible is both host and agent, you can point one instance at another. Add a profile that runs `cru acp`:
+
+```toml
+[acp.agents.crucible]
+command = "cru"
+args = ["acp"]
+```
+
+Then `cru chat -a crucible` runs a full round trip: the host Crucible spawns `cru acp`, which serves the internal agent back over the protocol. This is the end-to-end test of both roles at once. (See the "Manual verification" note in the ACP agent-mode module for a scripted stdio recipe.)
+
 ## Comparison with MCP
 
 | Aspect | ACP | MCP |

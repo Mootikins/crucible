@@ -333,7 +333,7 @@ Crucible acts as an **ACP host**, spawning and controlling external AI agents (C
 
 ### ACP Agent (Future — Crucible as Embeddable Agent)
 
-- [ ] **ACP Agent Mode** `P1` — Crucible as an embeddable ACP agent; any ACP host (Zed, JetBrains, Neovim) spawns Crucible to get knowledge graph + memory · `crucible-daemon` (acp)
+- [x] **ACP Agent Mode** `P1` — Crucible as an embeddable ACP agent (`cru acp`); any ACP host (Zed, JetBrains, Neovim) spawns Crucible to get knowledge graph + memory. Each ACP session is a real daemon session (Precognition, kiln tools, persistence); prompts/thinking/tool-calls stream as `session/update`, tool approvals round-trip via `session/request_permission`. · `crucible-cli` (commands/acp)
 - [ ] **ACP Registry Submission** `P1` — Agent manifest for [ACP Registry](https://github.com/agentclientprotocol/registry); one PR → available in all ACP clients · `crucible-daemon` (acp)
 - [ ] **ACP Schema Bump** `P1` — Bump `agent-client-protocol-schema` from 0.10.6 → 0.10.7; SDK crate (`agent-client-protocol` 0.9.3) and wire protocol (v1) are already current · `crucible-daemon` (acp), `crucible-core`
 

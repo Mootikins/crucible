@@ -127,9 +127,8 @@ Remaining follow-ups (not blocking Wave 3):
 
 ### Wave 7 — ACP agent mode (independent track)
 
-- **ACP Schema Bump** — 0.10.6 → 0.10.7
-- **ACP Agent Mode** — Crucible as embeddable ACP agent (depends on schema bump)
-- **ACP Registry Submission** — depends on agent mode
+- ✅ **ACP Agent Mode** — Crucible as embeddable ACP agent, shipped as `cru acp` (CLI `commands/acp`). Serves the internal agent over stdio via `AgentSideConnection` on a `LocalSet`; each ACP session is a real daemon session, so Precognition/kiln tools/persistence apply. Translates daemon events → `session/update`, and tool approvals ↔ `session/request_permission`. Schema is already current (`agent-client-protocol` 0.10.4); no bump was needed.
+- **ACP Registry Submission** — remaining: agent manifest PR to the [ACP Registry](https://github.com/agentclientprotocol/registry) so `cru acp` is discoverable from all ACP clients.
 
 ### Wave 8 — Proactive features (depends on Waves 2 + 6)
 
