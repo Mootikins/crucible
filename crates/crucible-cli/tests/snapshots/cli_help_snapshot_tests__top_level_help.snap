@@ -10,6 +10,7 @@ Usage: cru [OPTIONS] [COMMAND]
 Commands:
   chat         Interactive AI chat with session persistence and tool access [aliases: c]
   mcp          Start MCP server exposing Crucible tools for external AI agents
+  acp          Run Crucible as an ACP agent for editors (speaks ACP over stdio)
   process      Process markdown files through the pipeline (parse, enrich, store) [aliases: p]
   search       Search kiln notes using semantic and/or text search
   stats        Display kiln statistics
