@@ -18,6 +18,24 @@ impl AgentManager {
             .id
             .clone()
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
+        // Progressive tool disclosure: an `invoke_tool` call is a bridge for a
+        // deferred tool. Unwrap it to the inner tool *before* the PreToolCall
+        // reactor event, permission gate, and display events so every
+        // downstream consumer sees the real tool name and arguments.
+        let unwrapped_call;
+        let tool_call = if tool_call.name == "invoke_tool" {
+            match Self::unwrap_invoke_tool(&stream_ctx.session_mode, tool_call, &call_id) {
+                Ok(inner) => {
+                    unwrapped_call = inner;
+                    &unwrapped_call
+                }
+                Err(result) => return Some(result),
+            }
+        } else {
+            tool_call
+        };
+
         let args = tool_call
             .arguments
             .clone()
@@ -435,6 +453,67 @@ impl AgentManager {
         })
     }
 
+    /// Unwrap an `invoke_tool` bridge call into the inner `ChatToolCall`,
+    /// reusing the original call id so the result matches the model's request.
+    /// Returns an error `ChatToolResult` (never a panic) for a missing/blank
+    /// `name`, a recursive `invoke_tool`, or an inner tool disallowed by the
+    /// current plan mode.
+    fn unwrap_invoke_tool(
+        mode: &str,
+        tool_call: &crucible_core::traits::chat::ChatToolCall,
+        call_id: &str,
+    ) -> Result<
+        crucible_core::traits::chat::ChatToolCall,
+        crucible_core::traits::chat::ChatToolResult,
+    > {
+        let args = tool_call
+            .arguments
+            .clone()
+            .unwrap_or(serde_json::Value::Null);
+        let invoke_err = |msg: String| crucible_core::traits::chat::ChatToolResult {
+            name: "invoke_tool".to_string(),
+            result: String::new(),
+            error: Some(msg),
+            call_id: Some(call_id.to_string()),
+            terminate: false,
+        };
+
+        let inner_name = match args.get("name").and_then(|v| v.as_str()) {
+            Some(name) if !name.is_empty() => name.to_string(),
+            _ => {
+                return Err(invoke_err(
+                    "invoke_tool requires a non-empty string `name` field naming the tool to \
+                     call, plus an optional `args` object"
+                        .to_string(),
+                ))
+            }
+        };
+        if inner_name == "invoke_tool" {
+            return Err(invoke_err("invoke_tool cannot invoke itself".to_string()));
+        }
+
+        // Plan mode: only the read-only plan tool set may be invoked, so the
+        // bridge cannot be used to escape plan mode's write-tool ban.
+        if mode == "plan"
+            && !crate::tools::tool_modes::PLAN_TOOL_NAMES.contains(&inner_name.as_str())
+        {
+            return Err(invoke_err(format!(
+                "Tool '{inner_name}' is not available in plan mode"
+            )));
+        }
+
+        let inner_args = args
+            .get("args")
+            .cloned()
+            .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
+
+        Ok(crucible_core::traits::chat::ChatToolCall {
+            name: inner_name,
+            arguments: Some(inner_args),
+            id: Some(call_id.to_string()),
+        })
+    }
+
     /// Spill large tool output to disk. Returns (absolute_path, filename).
     async fn spill_tool_output(
         session_dir: &std::path::Path,
@@ -455,6 +534,82 @@ impl AgentManager {
 
         tokio::fs::write(&path, output).await?;
         Ok((path, filename))
+    }
+}
+
+#[cfg(test)]
+mod invoke_tool_tests {
+    use super::AgentManager;
+    use crucible_core::traits::chat::ChatToolCall;
+
+    fn invoke(args: serde_json::Value) -> ChatToolCall {
+        ChatToolCall {
+            name: "invoke_tool".to_string(),
+            arguments: Some(args),
+            id: Some("call-42".to_string()),
+        }
+    }
+
+    #[test]
+    fn unwrap_rewrites_to_inner_tool_and_preserves_call_id() {
+        let call = invoke(serde_json::json!({
+            "name": "gh_search_repos",
+            "args": {"query": "rust"}
+        }));
+        let inner = AgentManager::unwrap_invoke_tool("auto", &call, "call-42")
+            .expect("valid invoke_tool must unwrap");
+        assert_eq!(inner.name, "gh_search_repos");
+        assert_eq!(inner.id.as_deref(), Some("call-42"));
+        assert_eq!(
+            inner.arguments.unwrap().get("query").and_then(|v| v.as_str()),
+            Some("rust")
+        );
+    }
+
+    #[test]
+    fn unwrap_defaults_missing_args_to_empty_object() {
+        let call = invoke(serde_json::json!({ "name": "list_jobs" }));
+        let inner = AgentManager::unwrap_invoke_tool("auto", &call, "call-42").unwrap();
+        assert!(inner.arguments.unwrap().is_object());
+    }
+
+    #[test]
+    fn unwrap_rejects_recursion() {
+        let call = invoke(serde_json::json!({ "name": "invoke_tool", "args": {} }));
+        let err = AgentManager::unwrap_invoke_tool("auto", &call, "call-42")
+            .expect_err("recursive invoke_tool must be denied");
+        assert_eq!(err.call_id.as_deref(), Some("call-42"));
+        assert!(err.error.unwrap().contains("itself"));
+    }
+
+    #[test]
+    fn unwrap_rejects_missing_name_without_panicking() {
+        let call = invoke(serde_json::json!({ "args": {"x": 1} }));
+        let err = AgentManager::unwrap_invoke_tool("auto", &call, "call-42")
+            .expect_err("missing name must yield an error result");
+        assert!(err.error.unwrap().contains("name"));
+    }
+
+    #[test]
+    fn unwrap_denies_write_tool_in_plan_mode() {
+        let call = invoke(serde_json::json!({
+            "name": "edit_file",
+            "args": {"path": "x", "content": "y"}
+        }));
+        let err = AgentManager::unwrap_invoke_tool("plan", &call, "call-42")
+            .expect_err("plan mode must deny non-plan tools via the bridge");
+        assert!(err.error.unwrap().contains("plan mode"));
+    }
+
+    #[test]
+    fn unwrap_allows_plan_tool_in_plan_mode() {
+        let call = invoke(serde_json::json!({
+            "name": "semantic_search",
+            "args": {"query": "notes"}
+        }));
+        let inner = AgentManager::unwrap_invoke_tool("plan", &call, "call-42")
+            .expect("plan-allowed tools remain callable via the bridge");
+        assert_eq!(inner.name, "semantic_search");
     }
 }
 

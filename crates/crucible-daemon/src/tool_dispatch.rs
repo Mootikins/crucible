@@ -25,6 +25,34 @@ use crate::tools::notes::{
     UpdateNoteParams,
 };
 use crate::tools::search::{PropertySearchParams, SemanticSearchParams, TextSearchParams};
+use crate::tools::tool_discovery::{DiscoverToolsParams, GetToolSchemaParams, ToolDiscovery};
+
+/// Names of the progressive-disclosure discovery tools handled directly by
+/// the dispatcher (not routed to a provider). `invoke_tool` is intentionally
+/// absent: it is unwrapped to its inner tool upstream in
+/// `handle_tool_call_in_stream` and never reaches dispatch.
+const DISCOVERY_TOOL_NAMES: &[&str] = &["discover_tools", "get_tool_schema"];
+
+/// Flatten an rmcp `CallToolResult` into a JSON value: parse the joined text
+/// content as JSON when possible, otherwise return it as a string. Errors map
+/// to `Err` so callers surface them as tool errors.
+fn call_tool_result_to_value(
+    result: rmcp::model::CallToolResult,
+) -> Result<serde_json::Value, String> {
+    let text = result
+        .content
+        .into_iter()
+        .filter_map(|c| match c.raw {
+            RawContent::Text(t) => Some(t.text),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if result.is_error.unwrap_or(false) {
+        return Err(text);
+    }
+    Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text)))
+}
 
 #[async_trait]
 pub trait ToolDispatcher: Send + Sync {
@@ -192,6 +220,31 @@ impl DaemonToolDispatcher {
             return;
         }
         self.hydrate_tool_names_blocking();
+    }
+
+    /// Aggregate every provider's tools into a `ToolDiscovery` so the
+    /// `discover_tools`/`get_tool_schema` bridge can search and inspect the
+    /// full catalog — including deferred (gateway) tools that were dropped
+    /// from the request's attached schemas.
+    async fn build_tool_discovery(&self) -> ToolDiscovery {
+        let mut tools: Vec<Tool> = Vec::new();
+        for provider in &self.providers {
+            if let Ok(defs) = provider.list_tools().await {
+                for def in defs {
+                    let schema = def
+                        .parameters
+                        .and_then(|v| v.as_object().cloned())
+                        .unwrap_or_default();
+                    let description = if def.description.is_empty() {
+                        "No description".to_string()
+                    } else {
+                        def.description
+                    };
+                    tools.push(Tool::new(def.name, description, Arc::new(schema)));
+                }
+            }
+        }
+        ToolDiscovery::new(tools)
     }
 }
 
@@ -387,6 +440,79 @@ impl ToolExecutor for McpToolExecutor {
     }
 }
 
+/// Dispatches gateway (user MCP) tools through the shared `McpGatewayManager`,
+/// scoped to the session agent's configured upstream servers. Registering this
+/// as a dispatcher provider makes deferred gateway tools reachable via the
+/// progressive-disclosure bridge (`discover_tools` → `invoke_tool`).
+pub struct GatewayToolExecutor {
+    gateway: Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>,
+    allowed_servers: HashSet<String>,
+}
+
+impl GatewayToolExecutor {
+    pub fn new(
+        gateway: Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>,
+        allowed_servers: Vec<String>,
+    ) -> Self {
+        Self {
+            gateway,
+            allowed_servers: allowed_servers.into_iter().collect(),
+        }
+    }
+}
+
+#[async_trait]
+impl ToolExecutor for GatewayToolExecutor {
+    async fn execute_tool(
+        &self,
+        name: &str,
+        params: serde_json::Value,
+        _context: &ExecutionContext,
+    ) -> ToolResult<serde_json::Value> {
+        let gateway = self.gateway.read().await;
+        // Only dispatch tools belonging to the agent's configured servers;
+        // anything else falls through the provider chain as NotFound.
+        match gateway.find_upstream(name) {
+            Some(upstream) if self.allowed_servers.contains(upstream) => {}
+            _ => return Err(ToolError::NotFound(name.to_string())),
+        }
+        match gateway.call_tool(name, params).await {
+            Ok(result) => {
+                let text = result
+                    .content
+                    .iter()
+                    .filter_map(|c| c.as_text().map(str::to_string))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if result.is_error {
+                    Err(ToolError::ExecutionFailed(text))
+                } else {
+                    Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text)))
+                }
+            }
+            Err(err) => Err(ToolError::ExecutionFailed(err.to_string())),
+        }
+    }
+
+    async fn list_tools(&self) -> ToolResult<Vec<ToolDefinition>> {
+        let gateway = self.gateway.read().await;
+        Ok(gateway
+            .all_tools()
+            .into_iter()
+            .filter(|t| self.allowed_servers.contains(&t.upstream))
+            .map(|t| ToolDefinition {
+                name: t.prefixed_name,
+                description: t.description.unwrap_or_default(),
+                category: Some("mcp".to_string()),
+                parameters: Some(t.input_schema),
+                returns: None,
+                examples: vec![],
+                required_permissions: vec![],
+            })
+            .collect())
+    }
+}
+
 #[async_trait]
 impl ToolDispatcher for DaemonToolDispatcher {
     async fn dispatch_tool(
@@ -396,6 +522,36 @@ impl ToolDispatcher for DaemonToolDispatcher {
         env_vars: std::collections::HashMap<String, String>,
     ) -> Result<serde_json::Value, String> {
         self.hydrate_tool_names().await;
+
+        // Progressive-disclosure bridge: search/inspect the full tool catalog.
+        // Handled here rather than by a provider so it spans every provider.
+        match name {
+            "discover_tools" => {
+                let params: DiscoverToolsParams = if args.is_null() {
+                    DiscoverToolsParams::default()
+                } else {
+                    serde_json::from_value(args)
+                        .map_err(|e| format!("invalid discover_tools params: {e}"))?
+                };
+                return self
+                    .build_tool_discovery()
+                    .await
+                    .discover_tools(&params)
+                    .map_err(|e| e.to_string())
+                    .and_then(call_tool_result_to_value);
+            }
+            "get_tool_schema" => {
+                let params: GetToolSchemaParams = serde_json::from_value(args)
+                    .map_err(|e| format!("invalid get_tool_schema params: {e}"))?;
+                return self
+                    .build_tool_discovery()
+                    .await
+                    .get_tool_schema(&params)
+                    .map_err(|e| e.to_string())
+                    .and_then(call_tool_result_to_value);
+            }
+            _ => {}
+        }
 
         let ctx = ExecutionContext {
             env_vars,
@@ -414,6 +570,10 @@ impl ToolDispatcher for DaemonToolDispatcher {
     }
 
     fn has_tool(&self, name: &str) -> bool {
+        if DISCOVERY_TOOL_NAMES.contains(&name) {
+            return true;
+        }
+
         if !self.tool_names_hydrated.load(Ordering::Acquire) {
             self.hydrate_tool_names_blocking();
         }
@@ -577,6 +737,64 @@ mod tests {
             result.is_ok(),
             "workspace tool should still dispatch: {result:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn red_dispatch_discover_tools_is_not_unknown_tool() {
+        let (_temp, dispatcher) = test_dispatcher_with_mcp();
+        let result = dispatcher
+            .dispatch_tool("discover_tools", json!({}), Default::default())
+            .await;
+
+        assert!(
+            !matches!(result, Err(ref err) if err.contains("Unknown tool")),
+            "discover_tools should be handled by the bridge, not Unknown: {result:?}"
+        );
+        let value = result.expect("discover_tools should succeed");
+        let rendered = value.to_string();
+        assert!(
+            rendered.contains("read_file") || rendered.contains("get_kiln_info"),
+            "discovery output should list provider tools: {rendered}"
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_get_tool_schema_returns_schema_for_known_tool() {
+        let (_temp, dispatcher) = test_dispatcher_with_mcp();
+        let result = dispatcher
+            .dispatch_tool(
+                "get_tool_schema",
+                json!({ "name": "read_file" }),
+                Default::default(),
+            )
+            .await
+            .expect("get_tool_schema should succeed for a known tool");
+
+        assert!(
+            result.to_string().contains("read_file"),
+            "schema output should name the tool: {result}"
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_get_tool_schema_errors_for_unknown_tool() {
+        let (_temp, dispatcher) = test_dispatcher_with_mcp();
+        let result = dispatcher
+            .dispatch_tool(
+                "get_tool_schema",
+                json!({ "name": "does_not_exist" }),
+                Default::default(),
+            )
+            .await;
+
+        assert!(result.is_err(), "unknown tool schema lookup should error");
+    }
+
+    #[test]
+    fn has_tool_reports_discovery_bridge() {
+        let dispatcher = test_dispatcher();
+        assert!(dispatcher.has_tool("discover_tools"));
+        assert!(dispatcher.has_tool("get_tool_schema"));
     }
 
     #[tokio::test]

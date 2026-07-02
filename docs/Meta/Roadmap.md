@@ -140,8 +140,8 @@ Remaining follow-ups (not blocking Wave 3):
 
 > A repo review against Nous Research's Hermes Agent surfaced four items where Crucible's intent wasn't yet reflected in the build. Status detail lives in [[Meta/Product]]; ordering below. These are mostly independent and can slot in opportunistically.
 
-- **Skill Context Injection** — wire `format_skills_for_context` into the daemon turn path (tier-1 metadata, progressive disclosure). Currently dead code; skills only reach the model via client-prebaked `system_prompt`. Small lift, no dependencies.
-- **Progressive Tool Disclosure** — automatic budget-based deferral over the existing `discover_tools`/`get_tool_schema` tools; core tools never deferred. Depends on nothing; grows in value with MCP adoption.
+- ✅ **Skill Context Injection** — shipped: `format_skills_for_context` renders the tier-1 catalog into the daemon's enriched prompt (kiln-gated); full `SKILL.md` loads on demand via the `skill_view` tool.
+- ✅ **Progressive Tool Disclosure** — shipped: automatic budget-based deferral of gateway/user MCP tool schemas behind the `discover_tools`/`get_tool_schema`/`invoke_tool` bridge; kiln and workspace tools never deferred; `invoke_tool` unwrapped before hooks/permissions and cannot escape plan mode.
 - **Reflection Pass** (second self-improvement avenue) — forked post-session reviewer that *proposes* notes/skills with provenance. Depends on delegation primitives (shipped) + skill self-creation. Relates to Wave 8 proactive work. Must not repeat the auto-merge `session-digest` mistake — propose, don't dispose.
 - **Execution Backends as Plugins** — ✅ already shipped via the `oci` runtime plugin + `pre_tool_call` interception; recorded in Product so the "backends are plugins, not core" stance is explicit.
 

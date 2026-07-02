@@ -857,6 +857,7 @@ impl AgentManager {
                 // Don't re-inject Precognition on a validation retry —
                 // the original turn already prepended it.
                 precognition_message: None,
+                session_mode: stream_ctx.session_mode.clone(),
             };
 
             Box::pin(Self::execute_agent_stream(

@@ -139,6 +139,10 @@ impl AgentManager {
 
         let session_id_owned = session_id.to_string();
         let request_state = self.request_state.clone();
+        // Snapshot the agent's mode for this request so the tool-dispatch
+        // path can enforce plan-mode restrictions on unwrapped invoke_tool
+        // calls without reaching back into the agent handle.
+        let session_mode = agent.lock().await.get_mode_id().to_string();
         let stream_ctx = StreamContext {
             session_id: session_id_owned.clone(),
             message_id: message_id.clone(),
@@ -160,6 +164,7 @@ impl AgentManager {
             cache_stats: self.cache_stats_handle(),
             session_manager: self.session_manager.clone(),
             precognition_message,
+            session_mode,
         };
 
         let task = tokio::spawn(async move {

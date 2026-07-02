@@ -140,14 +140,14 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 > Agents shouldn't carry every tool schema in context. Discovery tools let an agent find tools on demand; progressive disclosure makes that automatic when the tool set is large.
 
 - [x] **Tool Discovery** `P1` — `discover_tools` (search by name/description/source) and `get_tool_schema` tools (`extended_mcp_server`) let an agent enumerate and inspect tools at runtime instead of relying solely on the attached schema list · `crucible-daemon` (tools)
-- [ ] **Progressive Tool Disclosure** `P2` — Automatic deferral: when MCP/plugin tools would exceed a share of the context budget, swap them for the discovery bridge (search → describe → call) and surface on demand; core tools never deferred. The internal agent currently attaches all tools every turn — this closes that gap as MCP servers proliferate. Informed by Hermes Agent's progressive disclosure (2026-06-28) · `crucible-daemon` (tools)
+- [x] **Progressive Tool Disclosure** `P2` — Automatic deferral: when the internal agent's mode-filtered tool schemas exceed 15% of the effective context budget, the deferrable (gateway/user MCP) tools are dropped from the request and replaced by the `discover_tools` → `get_tool_schema` → `invoke_tool` bridge; kiln and workspace tools are never deferred. `invoke_tool` is unwrapped to the inner tool before hooks/permissions, and plan mode cannot be escaped through it. Decision recomputed per request in `GenaiAgentHandle::visible_tools`; bridge dispatch in `DaemonToolDispatcher`. Informed by Hermes Agent's progressive disclosure (2026-06-28) · `crucible-daemon` (tools)
 
 ### Agent Skills
 
 > Skills are markdown capability docs ([agentskills.io](https://agentskills.io)-compatible `SKILL.md` + optional `scripts/`, `references/`) that teach the agent procedures on demand. Discovery and parsing ship today; daemon-side context injection is the remaining wiring.
 
 - [x] **Skill Discovery** `P1` — Folder discovery across search paths, `SKILL.md` frontmatter parsing, resolution; `cru skills` CLI listing; bundled help skills at `runtime/crucible-help/skills` · [[Help/Concepts/Agent Skills]] · [[Help/CLI/skills]] · `crucible-daemon` (skills), `crucible-cli`
-- [-] **Skill Context Injection** `P1` — `format_skills_for_context` renders discovered skills for the prompt but has **no daemon turn-path call site**; skills currently reach the model only if the client pre-bakes them into `system_prompt`. Wire tier-1 metadata injection daemon-side, with progressive disclosure (list → view → use) so full `SKILL.md` loads only when invoked · `crucible-daemon` (skills)
+- [x] **Skill Context Injection** `P1` — `format_skills_for_context` renders the tier-1 skills catalog into the daemon's enriched system prompt (`agent_factory::discover_skills_catalog`), gated on kiln presence; the agent loads full `SKILL.md` on demand via the kiln-scoped `skill_view` tool (list → view → use) · `crucible-daemon` (skills)
 - [ ] **Skill Self-Creation** `P2` — Agent-authored skills distilled from successful sessions (ties into the [[#Self-Improvement Avenues|Reflection Pass]]); provenance separating agent-created from user-authored so neither clobbers the other · `crucible-daemon` (skills)
 
 ### Context & Knowledge
@@ -426,7 +426,7 @@ HTTP Gateway (crucible-web wired to daemon)
 
 ### Ecosystem & Shareability (P1-P2)
 
-- [ ] **Plugin Install** `P1` — `cru plugin add <git-url>` or `cru plugin add <name>`; Git-native distribution (lazy.nvim model, not centralized marketplace) · `crucible-lua`, `crucible-cli`
+- [x] **Plugin Install** `P1` — `cru plugin add <git-url>` / `cru install` clone a plugin from a git URL (branch/pin supported); Git-native distribution (lazy.nvim model, not centralized marketplace) · `crucible-cli` (`commands/plugin/add.rs`) · `crucible-lua`
 - [ ] **Agent Memory Branding** `P1` — Rename "Precognition" to "Agent Memory" in user-facing docs; communicates the value proposition directly · docs
 - [ ] **`cru share`** `P2` — Export sessions as self-contained HTML or shareable artifacts; `:export` exists for local markdown, this adds sharable formats · `crucible-cli`
 - [ ] **Graph Visualization** `P2` — Shareable knowledge graph renders (SVG/HTML); creates viral demo moments ("look at my AI-connected notes") · `crucible-cli` or `crucible-web`
@@ -497,7 +497,7 @@ HTTP Gateway (crucible-web wired to daemon)
 - [ ] **SSE Event Streaming** `P1` — Stream chat tokens, log lines, and daemon events to browser via Server-Sent Events; backpressure handling · **Core Rust** · `crucible-web`
 - [x] **Oil Node Serialization** `P1` — `impl Serialize for Node` — Oil nodes to JSON for browser rendering; foundational primitive for all rich display · **Core Rust** · `crucible-oil` (behind `serde` cargo feature)
 - [ ] **Plugin Panel Hosting** `P1` — iframe sandbox + message-passing protocol for Lua-registered web panels; the "floating window" primitive that P2 features compose on · **Core Rust** · `crucible-web`, `crucible-lua`
-- [ ] **Static File Serving** `P1` — Serve SolidJS bundle, PWA manifest, service worker; infrastructure · **Core Rust** · `crucible-web`
+- [x] **Static File Serving** `P1` — Axum serves the SolidJS bundle (PWA manifest + service worker) from `dist/` via rust-embed; static routes are public (no Bearer auth) · **Core Rust** · `crucible-cli` (`src/web`)
 
 ### Foundation UI (P1 — ships with HTTP gateway)
 

@@ -105,6 +105,9 @@ pub fn is_safe(tool_name: &str) -> bool {
             | "read_metadata"
             | "get_kiln_info"
             | "list_jobs"
+            // Progressive-disclosure bridge lookups are read-only.
+            | "discover_tools"
+            | "get_tool_schema"
     )
 }
 
@@ -316,6 +319,11 @@ struct StreamContext {
     /// Precognition is gated off (disabled, /search command, no kiln,
     /// or not the first user message of the session).
     precognition_message: Option<crucible_core::traits::ContextMessage>,
+    /// The agent's mode ("auto"/"plan") captured at request start. Used to
+    /// enforce plan-mode restrictions on the inner tool when an `invoke_tool`
+    /// bridge call is unwrapped — the agent handle that owns the canonical
+    /// mode is not reachable from the tool-dispatch path.
+    session_mode: String,
 }
 
 #[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration
@@ -731,7 +739,7 @@ impl AgentManager {
                 None,
             ));
 
-            Arc::new(DaemonToolDispatcher::new(vec![
+            let mut providers: Vec<Arc<dyn ToolExecutor>> = vec![
                 Arc::new(
                     WorkspaceTools::new(&session.workspace)
                         .with_env("CRU_SESSION", &session.id)
@@ -741,7 +749,26 @@ impl AgentManager {
                         ),
                 ) as Arc<dyn ToolExecutor>,
                 Arc::new(McpToolExecutor::new(mcp)),
-            ]))
+            ];
+
+            // Register the agent's configured gateway (user MCP) servers as a
+            // provider so those tools are dispatchable directly and reachable
+            // via the progressive-disclosure bridge when deferred.
+            if let Some(gateway) = &self.mcp_gateway {
+                let allowed = session
+                    .agent
+                    .as_ref()
+                    .map(|a| a.mcp_servers.clone())
+                    .unwrap_or_default();
+                if !allowed.is_empty() {
+                    providers.push(Arc::new(crate::tool_dispatch::GatewayToolExecutor::new(
+                        gateway.clone(),
+                        allowed,
+                    )) as Arc<dyn ToolExecutor>);
+                }
+            }
+
+            Arc::new(DaemonToolDispatcher::new(providers))
         } else {
             self.tool_dispatcher.clone()
         };
