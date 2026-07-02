@@ -14,8 +14,10 @@
 //! / event-stream half of each story.
 
 mod support;
+mod vocab;
 
 mod notification_tests; // US-701 / US-702
+mod vocab_tests; // intent-vocabulary exemplars (E)
 mod paste_tests; // US-106
 mod permission_tests; // US-401
 mod scroll_tests; // US-801
