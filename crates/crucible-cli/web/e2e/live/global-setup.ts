@@ -1,5 +1,5 @@
 import { execFileSync, spawn, execSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync, openSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync, openSync, rmSync } from 'node:fs';
 import net from 'node:net';
 import http from 'node:http';
 import os from 'node:os';
@@ -100,10 +100,41 @@ async function globalSetup(): Promise<void> {
   for (const k of [
     'GLM_AUTH_TOKEN', 'ZAI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY',
     'OPENROUTER_API_KEY', 'COHERE_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY',
-    'GITHUB_TOKEN', 'OLLAMA_HOST',
+    'GITHUB_TOKEN', 'GITHUB_COPILOT_OAUTH_TOKEN', 'CODEX_API_KEY', 'OLLAMA_HOST',
   ]) {
     delete env[k];
   }
+
+  // On any skip path we must self-clean: globalTeardown early-returns when
+  // state.skip is true, so it will not stop the daemon or remove tmpDir for us.
+  let child: ReturnType<typeof spawn> | undefined;
+  const bestEffortCleanup = (): void => {
+    if (child?.pid) {
+      try {
+        process.kill(-child.pid, 'SIGTERM'); // negative pid → process group
+      } catch {
+        try {
+          process.kill(child.pid, 'SIGTERM');
+        } catch {
+          /* already gone */
+        }
+      }
+    }
+    try {
+      execFileSync(cru, ['daemon', 'stop'], {
+        env: { ...env, CRUCIBLE_SOCKET: socket },
+        stdio: 'ignore',
+        timeout: 20_000,
+      });
+    } catch {
+      /* daemon may never have started */
+    }
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+  };
 
   try {
     execFileSync(cru, ['init', '-p', kilnDir, '-y'], { env, stdio: 'ignore', timeout: 60_000 });
@@ -120,7 +151,7 @@ async function globalSetup(): Promise<void> {
     const port = await freePort();
     const baseURL = `http://127.0.0.1:${port}`;
     const logFd = openSync(path.join(tmpDir, 'web.log'), 'w');
-    const child = spawn(cru, ['web', '--host', '127.0.0.1', '--port', String(port)], {
+    child = spawn(cru, ['web', '--host', '127.0.0.1', '--port', String(port)], {
       cwd: kilnDir,
       env,
       stdio: ['ignore', logFd, logFd],
@@ -130,8 +161,9 @@ async function globalSetup(): Promise<void> {
 
     const ready = await waitForHttp(`${baseURL}/api/config`, 60_000);
     if (!ready) {
-      writeState({ skip: true, reason: `cru web did not become ready (see ${tmpDir}/web.log)` });
-      console.log('[live] cru web did not start — live tier will skip.');
+      console.log('[live] cru web did not start — cleaning up, live tier will skip.');
+      bestEffortCleanup();
+      writeState({ skip: true, reason: 'cru web did not become ready' });
       return;
     }
 
@@ -146,8 +178,9 @@ async function globalSetup(): Promise<void> {
     });
     console.log(`[live] cru web ready at ${baseURL} (kiln ${kilnDir})`);
   } catch (err) {
+    console.log('[live] setup failed — cleaning up, live tier will skip:', err);
+    bestEffortCleanup();
     writeState({ skip: true, reason: `live setup failed: ${String(err).slice(0, 200)}` });
-    console.log('[live] setup failed — live tier will skip:', err);
   }
 }
 

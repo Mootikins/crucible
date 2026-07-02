@@ -72,7 +72,7 @@ W2 specs double as **image sequences**: `screenshot()` after each scripted step 
 ### WS-201: Browse workspace files and kiln notes
 **As a user**, the file tree shows workspace files and kiln notes as separate sections with type icons; clicking opens the file.
 **Acceptance:** tree loads `/api/kiln/files` + `/api/kiln/notes`; loading/error states render; folders expand/collapse.
-**Tests:** W2 via the real editor (harness), W4 live (`kiln-truth.live.spec.ts` — browse lists kiln notes against a real daemon).
+**Tests:** W4 live (`kiln-truth.live.spec.ts` — the `/api/kiln/notes` listing against a real daemon). **GAP:** the browse/tree *UI* (`FilesPanel`, workspace vs. kiln sections, type icons, expand/collapse) is NOT covered — the editor harness mounts only `EditorPanel`, and the live spec asserts the notes-listing API, not the tree component.
 
 ### WS-202: Edit a note and save it
 **As a user**, I open a note in the CodeMirror editor, type, see a dirty ● on the tab, save (button/Cmd-S), and the dot clears.

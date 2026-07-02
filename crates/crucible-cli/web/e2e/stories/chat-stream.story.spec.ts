@@ -39,6 +39,9 @@ const COMPLETE_STREAM: Frame[] = [
       id: 'msg-1',
       content: 'Here is the answer.',
       tool_calls: [{ id: 't1', title: 'read_file' }],
+      prompt_tokens: 900,
+      completion_tokens: 334,
+      total_tokens: 1234,
     },
   },
 ];
@@ -117,6 +120,9 @@ test.describe('WS-101/102/103 streaming chat', () => {
     await expect(page.getByText(/Thought for \d+ tokens/)).toBeVisible();
     // Tool card (WS-103): read_file rendered with a completed status.
     await expect(page.getByText('read_file')).toBeVisible();
+    // Completion shows token usage (WS-101). Rendered as `.text-[11px]` — not
+    // under the `.text-xs` timestamp mask — so it also appears in the baseline.
+    await expect(page.getByText('1,234 tokens')).toBeVisible();
     // Completion returned the composer to send state.
     await expect(page.getByTestId('send-button')).toBeVisible();
     await story.step(page, 'completed with thinking + tool card');
