@@ -589,3 +589,217 @@ impl OilChatApp {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! US-501 autocomplete candidate-generation matrix.
+    //!
+    //! Exercises every documented trigger kind through the real
+    //! `detect_trigger` + `get_popup_items` path, plus filter narrowing,
+    //! dismissal, and token-replacement on accept. These are the inline
+    //! unit tests the story doc calls out as the T1 gap for US-501.
+
+    use super::*;
+    use crate::tui::oil::app::App;
+    use crate::tui::oil::chat_app::state::{AutocompleteKind, PickSource};
+
+    fn app() -> OilChatApp {
+        let mut app = OilChatApp::init();
+        app.set_workspace_files(vec![
+            "src/main.rs".into(),
+            "src/lib.rs".into(),
+            "README.md".into(),
+        ]);
+        app.set_kiln_notes(vec![
+            "Rust Guide".into(),
+            "Testing Notes".into(),
+            "Roadmap".into(),
+        ]);
+        app.set_slash_commands(vec![
+            ("help".into(), "Show help".into()),
+            ("undo".into(), "Undo a turn".into()),
+        ]);
+        // Loaded state so Model triggers don't request a fetch.
+        app.set_available_models(vec![
+            "gpt-4o".into(),
+            "gpt-4o-mini".into(),
+            "claude-sonnet-5".into(),
+        ]);
+        app
+    }
+
+    /// Set input, run trigger detection, and return (kind, candidate labels).
+    fn probe(app: &mut OilChatApp, content: &str) -> (AutocompleteKind, Vec<String>) {
+        app.set_input_content(content);
+        app.check_autocomplete_trigger();
+        let labels = app.get_popup_items().into_iter().map(|i| i.label).collect();
+        (app.popup.kind.clone(), labels)
+    }
+
+    // ─── Trigger matrix: each kind produces candidates ─────────────────
+
+    #[test]
+    fn slash_trigger_lists_registered_commands() {
+        let mut app = app();
+        let (kind, labels) = probe(&mut app, "/");
+        assert_eq!(kind, AutocompleteKind::SlashCommand);
+        assert!(labels.contains(&"/help".to_string()));
+        assert!(labels.contains(&"/undo".to_string()));
+    }
+
+    #[test]
+    fn at_trigger_lists_workspace_files() {
+        let mut app = app();
+        let (kind, labels) = probe(&mut app, "@");
+        assert_eq!(kind, AutocompleteKind::File);
+        assert!(labels.iter().any(|l| l == "src/main.rs"));
+    }
+
+    #[test]
+    fn double_bracket_trigger_lists_notes() {
+        let mut app = app();
+        let (kind, labels) = probe(&mut app, "[[");
+        assert_eq!(kind, AutocompleteKind::Note);
+        assert!(labels.iter().any(|l| l == "Rust Guide"));
+    }
+
+    #[test]
+    fn colon_trigger_lists_repl_commands() {
+        let mut app = app();
+        let (kind, labels) = probe(&mut app, ":");
+        assert_eq!(kind, AutocompleteKind::ReplCommand);
+        assert!(labels.iter().any(|l| l == ":quit"));
+        assert!(labels.iter().any(|l| l == ":set"));
+    }
+
+    #[test]
+    fn model_trigger_lists_available_models() {
+        let mut app = app();
+        let (kind, labels) = probe(&mut app, ":model ");
+        assert_eq!(kind, AutocompleteKind::Model);
+        assert!(labels.iter().any(|l| l == "gpt-4o"));
+        assert!(labels.iter().any(|l| l == "claude-sonnet-5"));
+    }
+
+    #[test]
+    fn set_trigger_lists_option_shortcuts() {
+        let mut app = app();
+        let (kind, labels) = probe(&mut app, ":set ");
+        assert!(matches!(kind, AutocompleteKind::SetOption { option: None }));
+        assert!(!labels.is_empty(), "set options should be non-empty");
+    }
+
+    #[test]
+    fn export_arg_trigger_completes_file_paths() {
+        let mut app = app();
+        let (kind, labels) = probe(&mut app, ":export ");
+        assert!(matches!(
+            kind,
+            AutocompleteKind::CommandArg { ref command, .. } if command == "export"
+        ));
+        assert!(labels.iter().any(|l| l == "src/main.rs"));
+    }
+
+    #[test]
+    fn mcp_arg_trigger_completes_server_names() {
+        let mut app = app();
+        app.set_mcp_servers(vec![crate::tui::oil::chat_app::McpServerDisplay {
+            name: "github".into(),
+            prefix: "gh".into(),
+            tool_count: 4,
+            connected: true,
+        }]);
+        let (kind, labels) = probe(&mut app, ":mcp ");
+        assert!(matches!(
+            kind,
+            AutocompleteKind::CommandArg { ref command, .. } if command == "mcp"
+        ));
+        assert!(labels.iter().any(|l| l == "github"));
+    }
+
+    #[test]
+    fn pick_trigger_lists_from_source() {
+        let mut app = app();
+        app.open_picker(Some("notes"));
+        assert!(matches!(
+            app.popup.kind,
+            AutocompleteKind::Pick {
+                source: PickSource::Notes
+            }
+        ));
+        let labels: Vec<String> = app.get_popup_items().into_iter().map(|i| i.label).collect();
+        assert!(labels.iter().any(|l| l == "Rust Guide"));
+    }
+
+    // ─── Filtering narrows as the user types ───────────────────────────
+
+    #[test]
+    fn filter_narrows_file_candidates() {
+        let mut app = app();
+        let (_, all) = probe(&mut app, "@");
+        let (_, filtered) = probe(&mut app, "@README");
+        assert!(filtered.len() < all.len());
+        assert!(filtered.iter().any(|l| l == "README.md"));
+    }
+
+    #[test]
+    fn filter_narrows_model_candidates() {
+        let mut app = app();
+        let (_, all) = probe(&mut app, ":model ");
+        let (_, filtered) = probe(&mut app, ":model claude");
+        assert!(filtered.len() < all.len());
+        assert!(filtered.iter().all(|l| l.contains("claude")));
+    }
+
+    // ─── Dismissal without insertion ───────────────────────────────────
+
+    #[test]
+    fn esc_dismisses_popup_without_touching_input() {
+        let mut app = app();
+        probe(&mut app, "@src");
+        assert!(app.popup.show);
+        app.close_popup();
+        assert!(!app.popup.show);
+        assert_eq!(app.popup.kind, AutocompleteKind::None);
+        // input untouched by close_popup
+        assert_eq!(app.input_content(), "@src");
+    }
+
+    #[test]
+    fn trigger_clears_when_token_no_longer_matches() {
+        let mut app = app();
+        probe(&mut app, "@src");
+        assert!(app.popup.show);
+        // A trailing space ends the @-token; trigger should clear.
+        let (kind, _) = probe(&mut app, "@src done ");
+        assert_eq!(kind, AutocompleteKind::None);
+        assert!(!app.popup.show);
+    }
+
+    // ─── Accepting a completion replaces the token correctly ───────────
+
+    #[test]
+    fn accept_file_replaces_at_token() {
+        let mut app = app();
+        probe(&mut app, "@READ");
+        app.insert_autocomplete_selection("README.md");
+        assert_eq!(app.input_content(), "@README.md ");
+        assert!(!app.popup.show);
+    }
+
+    #[test]
+    fn accept_note_wraps_in_wikilink() {
+        let mut app = app();
+        probe(&mut app, "[[Rust");
+        app.insert_autocomplete_selection("Rust Guide");
+        assert_eq!(app.input_content(), "[[Rust Guide]] ");
+    }
+
+    #[test]
+    fn accept_model_sets_full_command() {
+        let mut app = app();
+        probe(&mut app, ":model gpt");
+        app.insert_autocomplete_selection("gpt-4o");
+        assert_eq!(app.input_content(), ":model gpt-4o");
+    }
+}

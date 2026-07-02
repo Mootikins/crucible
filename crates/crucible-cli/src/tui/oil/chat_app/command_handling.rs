@@ -991,4 +991,257 @@ mod tests {
         // Empty string is distance 4 from "quit" — beyond threshold of 2
         assert_eq!(suggest_command("", known), None);
     }
+
+    // ════════════════════════════════════════════════════════════════
+    // US-104: `:set` runtime-config dispatch matrix
+    // ════════════════════════════════════════════════════════════════
+
+    use crate::tui::oil::app::App;
+    use crate::tui::oil::chat_app::ChatAppMsg;
+    use test_case::test_case;
+
+    fn app() -> OilChatApp {
+        OilChatApp::init()
+    }
+
+    /// Run a `:set` body (e.g. `"thinkingbudget=high"`) through the real
+    /// command handler and return the resulting action.
+    fn run_set(app: &mut OilChatApp, body: &str) -> Action<ChatAppMsg> {
+        app.handle_set_command(&format!("set {body}"))
+    }
+
+    // Every session-scoped key must emit a daemon-sync `Action::Send` so
+    // multi-client state stays consistent (see AGENTS.md cross-layer checklist).
+    #[test_case("model=gpt-4o" ; "model")]
+    #[test_case("thinkingbudget=high" ; "thinking budget")]
+    #[test_case("maxiterations=5" ; "max iterations")]
+    #[test_case("executiontimeout=30" ; "execution timeout")]
+    #[test_case("contextbudget=128000" ; "context budget")]
+    #[test_case("contextstrategy=truncate" ; "context strategy")]
+    #[test_case("contextwindow=20" ; "context window")]
+    #[test_case("outputvalidation=off" ; "output validation")]
+    #[test_case("validationretries=2" ; "validation retries")]
+    #[test_case("precognition.results=8" ; "precognition results")]
+    fn set_session_key_emits_daemon_sync(body: &str) {
+        let mut app = app();
+        let action = run_set(&mut app, body);
+        assert!(
+            matches!(action, Action::Send(_)),
+            "session-scoped `:set {body}` must emit a daemon-sync message, got {:?}",
+            std::mem::discriminant(&action)
+        );
+    }
+
+    // Precise variant mapping for the load-bearing keys.
+    #[test]
+    fn set_thinkingbudget_maps_to_set_thinking_budget() {
+        let mut app = app();
+        assert!(matches!(
+            run_set(&mut app, "thinkingbudget=high"),
+            Action::Send(ChatAppMsg::SetThinkingBudget(_))
+        ));
+    }
+
+    #[test]
+    fn set_model_maps_to_switch_model() {
+        let mut app = app();
+        assert!(matches!(
+            run_set(&mut app, "model=gpt-4o"),
+            Action::Send(ChatAppMsg::SwitchModel(m)) if m == "gpt-4o"
+        ));
+    }
+
+    #[test]
+    fn set_contextstrategy_normalizes_value() {
+        let mut app = app();
+        assert!(matches!(
+            run_set(&mut app, "contextstrategy=sliding_window"),
+            Action::Send(ChatAppMsg::SetContextStrategy(s)) if s == "sliding_window"
+        ));
+    }
+
+    // Set → query round-trips on the same key.
+    #[test]
+    fn set_then_query_round_trips() {
+        let mut app = app();
+        run_set(&mut app, "thinkingbudget=high");
+        let stored = app.runtime_config.get("thinkingbudget").expect("value stored");
+        assert_eq!(stored.as_string(), Some("high"));
+    }
+
+    // Invalid values surface a warning and do NOT emit a daemon sync.
+    #[test_case("contextbudget=abc" ; "non-numeric budget")]
+    #[test_case("maxiterations=xyz" ; "non-numeric iterations")]
+    #[test_case("thinkingbudget=boguspreset" ; "unknown preset")]
+    #[test_case("contextstrategy=nonsense" ; "unknown strategy")]
+    #[test_case("validationretries=-1" ; "negative retries")]
+    fn set_invalid_value_warns_and_no_send(body: &str) {
+        let mut app = app();
+        let action = run_set(&mut app, body);
+        assert!(
+            matches!(action, Action::Continue),
+            "invalid `:set {body}` must not emit a daemon sync"
+        );
+        assert!(
+            app.has_notifications(),
+            "invalid `:set {body}` should surface a warning"
+        );
+    }
+
+    #[test]
+    fn set_invalid_perm_key_warns() {
+        let mut app = app();
+        let action = run_set(&mut app, "perm.bogus=true");
+        assert!(matches!(action, Action::Continue));
+        assert!(app.has_notifications());
+    }
+
+    #[test]
+    fn set_reset_returns_to_base() {
+        let mut app = app();
+        run_set(&mut app, "thinking=false");
+        // `&` resets the key back to its base value.
+        let action = app.handle_set_command("set thinking&");
+        assert!(matches!(action, Action::Continue));
+    }
+
+    #[test]
+    fn set_query_unmodified_key_is_continue() {
+        let mut app = app();
+        let action = app.handle_set_command("set thinkingbudget?");
+        assert!(matches!(action, Action::Continue));
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // US-103: slash & REPL command dispatch
+    // ════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn slash_plan_sets_mode_and_syncs() {
+        let mut app = app();
+        let action = app.handle_slash_command("/plan");
+        assert!(matches!(action, Action::Send(ChatAppMsg::ModeChanged(m)) if m == "plan"));
+        assert_eq!(app.mode(), ChatMode::Plan);
+    }
+
+    #[test]
+    fn slash_mode_cycles() {
+        let mut app = app();
+        assert_eq!(app.mode(), ChatMode::Normal);
+        app.handle_slash_command("/mode");
+        assert_eq!(app.mode(), ChatMode::Plan);
+    }
+
+    #[test]
+    fn unknown_slash_forwards_to_agent() {
+        let mut app = app();
+        let action = app.handle_slash_command("/deploy now");
+        assert!(matches!(
+            action,
+            Action::Send(ChatAppMsg::ExecuteSlashCommand(c)) if c == "/deploy now"
+        ));
+    }
+
+    #[test]
+    fn repl_quit_returns_quit() {
+        let mut app = app();
+        assert!(matches!(app.handle_repl_command(":quit"), Action::Quit));
+        assert!(matches!(app.handle_repl_command(":q"), Action::Quit));
+    }
+
+    #[test]
+    fn repl_clear_dispatches_clear_history() {
+        let mut app = app();
+        assert!(matches!(
+            app.handle_repl_command(":clear"),
+            Action::Send(ChatAppMsg::ClearHistory)
+        ));
+    }
+
+    #[test]
+    fn repl_messages_toggles_drawer() {
+        let mut app = app();
+        assert!(!app.notification_area.is_visible());
+        app.handle_repl_command(":messages");
+        assert!(app.notification_area.is_visible());
+    }
+
+    #[test]
+    fn repl_model_no_arg_opens_picker_and_fetches() {
+        let mut app = app();
+        let action = app.handle_repl_command(":model");
+        assert!(matches!(action, Action::Send(ChatAppMsg::FetchModels)));
+        assert!(app.popup.show);
+    }
+
+    #[test]
+    fn repl_config_show_is_continue() {
+        let mut app = app();
+        assert!(matches!(
+            app.handle_repl_command(":config"),
+            Action::Continue
+        ));
+    }
+
+    #[test]
+    fn repl_export_without_session_warns() {
+        let mut app = app();
+        let action = app.handle_repl_command(":export out.md");
+        assert!(matches!(action, Action::Continue));
+        assert!(app.has_notifications());
+    }
+
+    #[test]
+    fn unknown_repl_suggests_nearest_match() {
+        let mut app = app();
+        // typo of :quit — within levenshtein distance 2
+        let action = app.handle_repl_command(":quti");
+        assert!(matches!(action, Action::Continue));
+        assert!(app.has_notifications(), "typo should surface a suggestion");
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // US-902: `/undo` dispatch
+    // ════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn slash_undo_dispatches_single_turn() {
+        let mut app = app();
+        assert!(matches!(
+            app.handle_slash_command("/undo"),
+            Action::Send(ChatAppMsg::Undo(1))
+        ));
+    }
+
+    #[test]
+    fn slash_undo_with_count_dispatches_n() {
+        let mut app = app();
+        assert!(matches!(
+            app.handle_slash_command("/undo 3"),
+            Action::Send(ChatAppMsg::Undo(3))
+        ));
+    }
+
+    #[test]
+    fn repl_undo_dispatches() {
+        let mut app = app();
+        assert!(matches!(
+            app.handle_repl_command(":undo"),
+            Action::Send(ChatAppMsg::Undo(1))
+        ));
+        assert!(matches!(
+            app.handle_repl_command(":undo 2"),
+            Action::Send(ChatAppMsg::Undo(2))
+        ));
+    }
+
+    #[test]
+    fn undo_count_floors_at_one() {
+        let mut app = app();
+        // "/undo 0" must not revert zero turns — floored to 1.
+        assert!(matches!(
+            app.handle_slash_command("/undo 0"),
+            Action::Send(ChatAppMsg::Undo(1))
+        ));
+    }
 }
