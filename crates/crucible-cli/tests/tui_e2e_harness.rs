@@ -189,16 +189,33 @@ impl TuiTestSession {
     /// Spawn a new TUI test session
     pub fn spawn(config: TuiTestConfig) -> Result<Self, expectrl::Error> {
         let binary = config.find_binary();
-        let mut cmd = format!("{} {}", binary.display(), config.subcommand);
+
+        // Env vars are scoped to the child via `/usr/bin/env` rather than
+        // `std::env::set_var`: mutating the test process's environment is
+        // process-global and races under parallel nextest runs. expectrl's
+        // string spawn tokenizes on whitespace, so reject values that would
+        // split — none of our test env values (socket/config paths) contain
+        // spaces.
+        let mut cmd = String::new();
+        if !config.env.is_empty() {
+            cmd.push_str("/usr/bin/env");
+            for (key, value) in &config.env {
+                assert!(
+                    !key.contains(char::is_whitespace) && !value.contains(char::is_whitespace),
+                    "env var {key}={value} contains whitespace; expectrl string spawn cannot pass it"
+                );
+                cmd.push(' ');
+                cmd.push_str(key);
+                cmd.push('=');
+                cmd.push_str(value);
+            }
+            cmd.push(' ');
+        }
+        cmd.push_str(&format!("{} {}", binary.display(), config.subcommand));
 
         for arg in &config.args {
             cmd.push(' ');
             cmd.push_str(arg);
-        }
-
-        // Set environment variables
-        for (key, value) in &config.env {
-            std::env::set_var(key, value);
         }
 
         let session = spawn(&cmd)?;
