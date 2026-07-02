@@ -1,0 +1,41 @@
+name: reflection
+version: "0.1.0"
+description: Retrospective self-improvement — propose kiln notes after a session ends
+author: Crucible Team
+license: MIT
+
+main: init.lua
+
+capabilities:
+  - session
+  - agent
+  - config
+  - fs
+
+config:
+  properties:
+    enabled:
+      type: boolean
+      description: Master switch for the reflection pass
+      default: true
+    model:
+      type: string
+      description: "Auxiliary model the reflection subagent runs on (keep it cheap)"
+    provider:
+      type: string
+      description: "Optional provider override (e.g. anthropic, openai)"
+    min_turns:
+      type: number
+      description: Minimum user turns before a session is worth reflecting on
+      default: 3
+    max_proposals:
+      type: number
+      description: Maximum proposals to stage per session
+      default: 5
+    timeout:
+      type: number
+      description: Seconds to wait for the reflection subagent
+      default: 120
+
+exports:
+  auto_discover: true

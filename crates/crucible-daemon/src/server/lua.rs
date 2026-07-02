@@ -474,6 +474,9 @@ local plugin_root = {plugin_root_str:?}
 local entries = {{
     plugin_root .. "/?.lua",
     plugin_root .. "/?/init.lua",
+    -- Mirror the runtime plugin loader: sibling modules live in lua/, so
+    -- `require("config")` from init.lua must resolve there in tests too.
+    plugin_root .. "/lua/?.lua",
 }}
 for _, entry in ipairs(entries) do
     if not package.path:find(entry, 1, true) then
@@ -707,5 +710,44 @@ mod discover_plugins_tests {
         assert_eq!(entry.version, "0.1.0");
         // `state` is `Loaded` / `Error` / etc. — stringified variant.
         assert!(!entry.state.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod reflection_plugin_tests {
+    use crucible_core::protocol::Request;
+
+    fn run_plugin_tests(plugin_dir: &str) -> serde_json::Value {
+        let req = Request {
+            jsonrpc: "2.0".to_string(),
+            id: None,
+            method: "lua.run_plugin_tests".to_string(),
+            params: serde_json::json!({ "test_path": plugin_dir }),
+        };
+        let resp = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(super::handle_lua_run_plugin_tests(req));
+        assert!(resp.error.is_none(), "handler errored: {:?}", resp.error);
+        resp.result.expect("result present")
+    }
+
+    // Runs the reflection plugin's busted-style Lua tests in-process through the
+    // same handler `cru plugin test` uses. Also exercises the package.path fix
+    // that lets `require("config")` resolve the plugin's lua/ submodule.
+    #[test]
+    fn reflection_plugin_lua_tests_pass() {
+        let plugin_dir = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../runtime/plugins/reflection"
+        );
+        let result = run_plugin_tests(plugin_dir);
+
+        let passed = result["passed"].as_u64().unwrap_or(0);
+        let failed = result["failed"].as_u64().unwrap_or(u64::MAX);
+        let load_failures = result["load_failures"].as_u64().unwrap_or(u64::MAX);
+
+        assert_eq!(load_failures, 0, "test files should load: {result:?}");
+        assert_eq!(failed, 0, "no Lua test should fail: {result:?}");
+        assert!(passed > 0, "expected passing assertions: {result:?}");
     }
 }
