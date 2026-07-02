@@ -80,6 +80,23 @@ pub async fn execute(mut config: CliConfig, kiln_override: Option<PathBuf>) -> R
         .await
 }
 
+fn resolve_kiln(config: &mut CliConfig, kiln_override: Option<PathBuf>) -> Result<()> {
+    if let Some(path) = kiln_override {
+        config.kiln_path = path;
+    }
+    if config.kiln_path.join(".crucible").is_dir() {
+        return Ok(());
+    }
+    if let Some(found) = discover_kiln(None, None) {
+        config.kiln_path = found.path;
+        return Ok(());
+    }
+    anyhow::bail!(
+        "no valid kiln found for `cru acp`; pass --kiln <path> or run from inside a kiln \
+         (a directory containing .crucible/). Initialize one with `cru init`."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,21 +181,4 @@ mod tests {
             })
             .await;
     }
-}
-
-fn resolve_kiln(config: &mut CliConfig, kiln_override: Option<PathBuf>) -> Result<()> {
-    if let Some(path) = kiln_override {
-        config.kiln_path = path;
-    }
-    if config.kiln_path.join(".crucible").is_dir() {
-        return Ok(());
-    }
-    if let Some(found) = discover_kiln(None, None) {
-        config.kiln_path = found.path;
-        return Ok(());
-    }
-    anyhow::bail!(
-        "no valid kiln found for `cru acp`; pass --kiln <path> or run from inside a kiln \
-         (a directory containing .crucible/). Initialize one with `cru init`."
-    )
 }
