@@ -167,8 +167,8 @@ async fn find_enclosing_kiln(state: &AppState, file_path: &Path) -> Result<PathB
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::helpers::{reject_path_traversal, validate_parent_within_kiln};
+    use super::*;
     use crate::web::test_support::{arb_safe_path, arb_traversal_path};
     use proptest::prelude::*;
     use tempfile::tempdir;

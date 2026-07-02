@@ -80,7 +80,14 @@ fn chat_resume_config(session_id: &str, kiln: &str) -> TuiTestConfig {
     config.binary_path = Some(cru_bin());
     // Re-export the daemon env explicitly (expectrl inherits parent env too, but
     // be explicit so a leg is reproducible from its command line).
-    for key in ["CRUCIBLE_SOCKET", "CRUCIBLE_CONFIG_DIR", "HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR"] {
+    for key in [
+        "CRUCIBLE_SOCKET",
+        "CRUCIBLE_CONFIG_DIR",
+        "HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_RUNTIME_DIR",
+    ] {
         if let Ok(v) = std::env::var(key) {
             if !v.is_empty() {
                 config = config.with_env(key, &v);
@@ -119,22 +126,28 @@ fn wait_for_file_contains(path: &str, needle: &str, timeout: Duration) {
 #[test]
 #[ignore = "hero flow — driven by the Playwright live harness (needs HERO_STATE env)"]
 fn hero_leg_1() {
-    let Some(hero_state) = env_or_skip("HERO_STATE") else { return };
-    let Some(kiln) = env_or_skip("HERO_KILN") else { return };
+    let Some(hero_state) = env_or_skip("HERO_STATE") else {
+        return;
+    };
+    let Some(kiln) = env_or_skip("HERO_KILN") else {
+        return;
+    };
     let artifact = std::env::var("HERO_ARTIFACT").unwrap_or_else(|_| kiln.clone());
 
     // Create the session on the daemon and capture its id (`-q` prints only the
     // id). This is the "VM" every console will later attach to.
     let session_id = run_cru(&kiln, &["session", "create", "-q"]);
-    assert!(!session_id.is_empty(), "cru session create -q returned empty id");
+    assert!(
+        !session_id.is_empty(),
+        "cru session create -q returned empty id"
+    );
 
     // Publish the handoff state for legs 2 and 3.
-    let state = format!(
-        "{{\n  \"session_id\": \"{session_id}\",\n  \"kiln\": \"{kiln}\"\n}}\n"
-    );
+    let state = format!("{{\n  \"session_id\": \"{session_id}\",\n  \"kiln\": \"{kiln}\"\n}}\n");
     fs::write(&hero_state, state).expect("write HERO_STATE");
 
-    let mut session = TuiTestSession::spawn(chat_resume_config(&session_id, &kiln)).expect("spawn cru chat");
+    let mut session =
+        TuiTestSession::spawn(chat_resume_config(&session_id, &kiln)).expect("spawn cru chat");
     session.wait_for_ready().expect("TUI never reached NORMAL");
     dump_frame(&mut session, &artifact, "leg1-01-ready");
 
@@ -143,7 +156,10 @@ fn hero_leg_1() {
     session.send("Summarize [[Seed]]").expect("send prompt");
     session.send_key(Key::Enter).expect("enter");
     session
-        .wait_until(|s| s.contents().to_lowercase().contains("baseline"), Duration::from_secs(60))
+        .wait_until(
+            |s| s.contents().to_lowercase().contains("baseline"),
+            Duration::from_secs(60),
+        )
         .expect("turn 1 reply never rendered in the TUI");
     dump_frame(&mut session, &artifact, "leg1-02-turn1");
 
@@ -153,7 +169,9 @@ fn hero_leg_1() {
     session
         .send(&format!("!printf 'terminal was here' > {note}"))
         .expect("send shell command");
-    session.wait_for_text("from-tui.md", Duration::from_secs(5)).ok();
+    session
+        .wait_for_text("from-tui.md", Duration::from_secs(5))
+        .ok();
     dump_frame(&mut session, &artifact, "leg1-03a-shell-typed");
     session.send_key(Key::Enter).expect("enter");
     std::thread::sleep(Duration::from_millis(500));
@@ -174,14 +192,19 @@ fn hero_leg_1() {
 #[test]
 #[ignore = "hero flow — driven by the Playwright live harness (needs HERO_STATE env)"]
 fn hero_leg_3() {
-    let Some(hero_state) = env_or_skip("HERO_STATE") else { return };
-    let Some(kiln) = env_or_skip("HERO_KILN") else { return };
+    let Some(hero_state) = env_or_skip("HERO_STATE") else {
+        return;
+    };
+    let Some(kiln) = env_or_skip("HERO_KILN") else {
+        return;
+    };
     let artifact = std::env::var("HERO_ARTIFACT").unwrap_or_else(|_| kiln.clone());
 
     let state = fs::read_to_string(&hero_state).expect("read HERO_STATE");
     let session_id = parse_json_string(&state, "session_id").expect("session_id in HERO_STATE");
 
-    let mut session = TuiTestSession::spawn(chat_resume_config(&session_id, &kiln)).expect("spawn cru chat");
+    let mut session =
+        TuiTestSession::spawn(chat_resume_config(&session_id, &kiln)).expect("spawn cru chat");
     session.wait_for_ready().expect("TUI never reached NORMAL");
 
     // Both turns hydrate from daemon history: turn 1 ("baseline") was sent from
@@ -202,10 +225,15 @@ fn hero_leg_3() {
     session.send(&format!("!cat {note}")).expect("send cat");
     // Settle: ensure the full command is typed before submitting (a bare Enter
     // races the long path and would submit a truncated command).
-    session.wait_for_text("from-tui.md", Duration::from_secs(5)).ok();
+    session
+        .wait_for_text("from-tui.md", Duration::from_secs(5))
+        .ok();
     session.send_key(Key::Enter).expect("enter");
     session
-        .wait_until(|s| s.contents().contains("browser was here"), Duration::from_secs(15))
+        .wait_until(
+            |s| s.contents().contains("browser was here"),
+            Duration::from_secs(15),
+        )
         .expect("browser edit not visible in the terminal shell output");
     dump_frame(&mut session, &artifact, "leg3-02-cat-shows-browser-edit");
 
@@ -217,11 +245,18 @@ fn hero_leg_3() {
         .expect("shell modal did not close back to NORMAL");
 
     // Turn 3 from the terminal, to confirm the session is still live for writes.
-    session.send("Please confirm the note contents.").expect("send turn 3");
-    session.wait_for_text("confirm the note", Duration::from_secs(5)).ok();
+    session
+        .send("Please confirm the note contents.")
+        .expect("send turn 3");
+    session
+        .wait_for_text("confirm the note", Duration::from_secs(5))
+        .ok();
     session.send_key(Key::Enter).expect("enter");
     session
-        .wait_until(|s| s.contents().to_lowercase().contains("carries"), Duration::from_secs(60))
+        .wait_until(
+            |s| s.contents().to_lowercase().contains("carries"),
+            Duration::from_secs(60),
+        )
         .expect("turn 3 reply never rendered");
     dump_frame(&mut session, &artifact, "leg3-03-turn3");
 

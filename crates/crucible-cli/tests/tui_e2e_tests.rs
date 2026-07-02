@@ -54,10 +54,10 @@ mod shared;
 
 #[path = "tui_e2e_tests/chat.rs"]
 mod chat;
-#[path = "tui_e2e_tests/hero.rs"]
-mod hero;
 #[path = "tui_e2e_tests/errors.rs"]
 mod errors;
+#[path = "tui_e2e_tests/hero.rs"]
+mod hero;
 #[path = "tui_e2e_tests/model.rs"]
 mod model;
 #[path = "tui_e2e_tests/oil.rs"]
