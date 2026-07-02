@@ -91,9 +91,12 @@ fn build_internal_delegation_context(
     })
 }
 
+/// Build the internal agent's tool definitions and the set of names eligible
+/// for progressive disclosure. Core tools (kiln MCP + workspace) are never
+/// deferrable; the deferrable set is exactly the gateway (user MCP) tool names.
 async fn create_internal_mcp_tool_defs(
     params: CreateInternalMcpToolDefsParams<'_>,
-) -> Vec<LlmToolDefinition> {
+) -> (Vec<LlmToolDefinition>, std::collections::HashSet<String>) {
     let CreateInternalMcpToolDefsParams {
         workspace,
         kiln_path,
@@ -194,8 +197,12 @@ async fn create_internal_mcp_tool_defs(
         vec![]
     };
 
+    let deferrable_names: std::collections::HashSet<String> = user_mcp_tools
+        .iter()
+        .map(|t| t.function.name.clone())
+        .collect();
     tool_defs.extend(user_mcp_tools);
-    tool_defs
+    (tool_defs, deferrable_names)
 }
 
 fn is_plan_mode_tool(name: &str) -> bool {
@@ -215,7 +222,7 @@ async fn create_internal_mcp_tool_names_for_tests(
     mode: &str,
     gateway_all_tools_override: Option<&[McpToolInfo]>,
 ) -> Vec<String> {
-    let tools = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+    let (tools, _deferrable) = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
         workspace,
         kiln_path,
         mcp_gateway,
@@ -458,18 +465,19 @@ pub async fn create_agent_from_session_config(
         workspace,
         kiln_path,
     );
-    let tool_defs = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
-        workspace,
-        kiln_path,
-        mcp_gateway: mcp_gateway.clone(),
-        server_names: &agent_config.mcp_servers,
-        knowledge_repo,
-        embedding_provider,
-        delegation_context,
-        mode,
-        gateway_all_tools_override: None,
-    })
-    .await;
+    let (tool_defs, deferrable_tool_names) =
+        create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+            workspace,
+            kiln_path,
+            mcp_gateway: mcp_gateway.clone(),
+            server_names: &agent_config.mcp_servers,
+            knowledge_repo,
+            embedding_provider,
+            delegation_context,
+            mode,
+            gateway_all_tools_override: None,
+        })
+        .await;
 
     info!(
         provider = %agent_config.provider,
@@ -518,7 +526,8 @@ pub async fn create_agent_from_session_config(
         tool_defs,
         agent_config.thinking_budget,
         workspace.to_path_buf(),
-    );
+    )
+    .with_deferrable_tools(deferrable_tool_names);
 
     info!(
         provider = %agent_config.provider,
@@ -926,7 +935,7 @@ mod tests {
         let knowledge_repo: Arc<dyn KnowledgeRepository> = Arc::new(EmptyKnowledgeRepository);
         let embedding_provider: Arc<dyn EmbeddingProvider> = Arc::new(EmptyEmbeddingProvider);
 
-        let tools = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+        let (tools, _deferrable) = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
             workspace: Path::new("/tmp"),
             kiln_path: Some(kiln_path),
             mcp_gateway: None,
@@ -954,7 +963,7 @@ mod tests {
         let knowledge_repo: Arc<dyn KnowledgeRepository> = Arc::new(EmptyKnowledgeRepository);
         let embedding_provider: Arc<dyn EmbeddingProvider> = Arc::new(EmptyEmbeddingProvider);
 
-        let tools = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+        let (tools, _deferrable) = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
             workspace: Path::new("/tmp"),
             kiln_path: Some(kiln_path),
             mcp_gateway: None,

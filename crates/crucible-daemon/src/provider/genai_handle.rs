@@ -24,6 +24,15 @@ pub(crate) const STREAM_UNEXPECTED_END_ERROR: &str =
     "LLM stream ended unexpectedly — connection terminated without completion";
 pub(crate) const STREAM_CHUNK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
+/// Attached tool-schema token estimate above this share of the effective
+/// context budget triggers progressive tool disclosure: deferrable tools are
+/// dropped from the request and replaced by the discovery bridge.
+const TOOL_SCHEMA_BUDGET_SHARE: f64 = 0.15;
+
+/// Effective-budget fallback used when a session sets neither `context_budget`
+/// nor `context_window`. A conservative modern context size.
+const DEFAULT_ASSUMED_CONTEXT: usize = 128_000;
+
 /// Apply Anthropic prompt caching to a message list.
 ///
 /// Marks the system prompt and the second-to-last message (the last message before
@@ -355,6 +364,113 @@ pub struct GenaiAgentHandle {
     /// current working directory (an empty base joins to the input path
     /// unchanged, which the file-system then resolves against the CWD).
     workspace_root: std::path::PathBuf,
+    /// Tool names eligible for progressive disclosure. The daemon's agent
+    /// factory populates this with the gateway (user MCP) tool names; kiln
+    /// and workspace tools are never deferrable. Empty means the handle
+    /// never defers, regardless of schema size.
+    deferrable_tool_names: std::collections::HashSet<String>,
+}
+
+/// The tool set attached to a single request, plus how many tools were
+/// deferred behind the discovery bridge (zero when no deferral occurred).
+struct VisibleToolSet {
+    tools: Vec<LlmToolDefinition>,
+    deferred_count: usize,
+}
+
+/// Rough token cost of attaching `defs` as function schemas: the serialized
+/// name, description, and parameter schema, via the shared chars/4 heuristic.
+fn tool_schema_tokens(defs: &[LlmToolDefinition]) -> usize {
+    use crucible_core::traits::context_ops::estimate_tokens;
+    defs.iter()
+        .map(|d| {
+            let schema_tokens = d
+                .function
+                .parameters
+                .as_ref()
+                .map(|p| p.to_string().len().div_ceil(4))
+                .unwrap_or(0);
+            estimate_tokens(&d.function.name) + estimate_tokens(&d.function.description)
+                + schema_tokens
+        })
+        .sum()
+}
+
+/// The three discovery-bridge tool definitions attached in place of the
+/// deferred tools. `discover_tools`/`get_tool_schema` mirror
+/// `ExtendedMcpServer::discovery_tools()`; `invoke_tool` is a generic proxy
+/// the daemon unwraps to the real tool *before* hooks and permissions run.
+fn bridge_tool_defs() -> Vec<LlmToolDefinition> {
+    use serde_json::json;
+    vec![
+        LlmToolDefinition::new(
+            "discover_tools",
+            "Search available tools by name, description, or source. Some tools are \
+             deferred to save context — use this to find them before calling them with \
+             invoke_tool.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query to filter by name or description"
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": "Filter by tool source"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Maximum results to return"
+                    }
+                }
+            }),
+        ),
+        LlmToolDefinition::new(
+            "get_tool_schema",
+            "Get the full JSON Schema for a specific tool's input parameters.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The name of the tool to get schema for"
+                    }
+                },
+                "required": ["name"]
+            }),
+        ),
+        LlmToolDefinition::new(
+            "invoke_tool",
+            "Call a deferred tool by name. Routes through the normal permission and hook \
+             pipeline exactly as a direct call would. Use discover_tools and get_tool_schema \
+             first to find the tool and its parameters.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The exact name of the tool to invoke"
+                    },
+                    "args": {
+                        "type": "object",
+                        "description": "Arguments object for the tool, matching its input schema"
+                    }
+                },
+                "required": ["name"]
+            }),
+        ),
+    ]
+}
+
+/// System-prompt line appended when deferral is active for a request. Kept
+/// static except for the count so the prompt stays cache-friendly.
+fn deferral_prompt_note(count: usize) -> String {
+    format!(
+        "{count} additional tools are deferred to save context. Find them with \
+         discover_tools, inspect with get_tool_schema, call with invoke_tool."
+    )
 }
 
 /// Estimate token count from message content using a chars/4 heuristic.
@@ -620,11 +736,26 @@ impl GenaiAgentHandle {
             validation_retries: 3,
             autocompact_threshold: None,
             workspace_root,
+            deferrable_tool_names: std::collections::HashSet::new(),
         }
     }
 
-    fn visible_tools(&self) -> Vec<LlmToolDefinition> {
-        if self.current_mode_id == "plan" {
+    /// Declare which attached tools may be deferred behind the discovery
+    /// bridge when their schemas would consume too much of the context
+    /// budget. The daemon's agent factory passes the gateway (user MCP) tool
+    /// names; kiln and workspace tools are never deferrable.
+    pub fn with_deferrable_tools(mut self, names: std::collections::HashSet<String>) -> Self {
+        self.deferrable_tool_names = names;
+        self
+    }
+
+    /// Compute the tool set for a single request: apply the plan-mode filter,
+    /// then — if a deferrable set is present and the mode-filtered schemas
+    /// exceed the budget share — drop the deferrable defs and append the
+    /// discovery bridge. Pure over `&self`; the decision is recomputed each
+    /// request so runtime `context_budget` changes are respected.
+    fn visible_tools(&self) -> VisibleToolSet {
+        let mode_filtered: Vec<LlmToolDefinition> = if self.current_mode_id == "plan" {
             self.tools
                 .iter()
                 .filter(|t| !is_write_tool_name(&t.function.name))
@@ -632,6 +763,45 @@ impl GenaiAgentHandle {
                 .collect()
         } else {
             self.tools.clone()
+        };
+
+        if self.deferrable_tool_names.is_empty() {
+            return VisibleToolSet {
+                tools: mode_filtered,
+                deferred_count: 0,
+            };
+        }
+
+        let effective_budget = self
+            .context_budget
+            .or(self.context_window)
+            .unwrap_or(DEFAULT_ASSUMED_CONTEXT);
+        let threshold = (TOOL_SCHEMA_BUDGET_SHARE * effective_budget as f64) as usize;
+        if tool_schema_tokens(&mode_filtered) <= threshold {
+            return VisibleToolSet {
+                tools: mode_filtered,
+                deferred_count: 0,
+            };
+        }
+
+        let before = mode_filtered.len();
+        let mut kept: Vec<LlmToolDefinition> = mode_filtered
+            .into_iter()
+            .filter(|t| !self.deferrable_tool_names.contains(&t.function.name))
+            .collect();
+        let deferred_count = before - kept.len();
+        if deferred_count == 0 {
+            // Nothing deferrable survived the mode filter; the bridge would
+            // add cost without removing anything, so leave the list as-is.
+            return VisibleToolSet {
+                tools: kept,
+                deferred_count: 0,
+            };
+        }
+        kept.extend(bridge_tool_defs());
+        VisibleToolSet {
+            tools: kept,
+            deferred_count,
         }
     }
 
@@ -659,10 +829,20 @@ impl GenaiAgentHandle {
         &self,
         mut messages: Vec<ChatMessage>,
     ) -> BoxStream<'static, TurnEvent> {
-        apply_prompt_caching(&self.system_prompt, &mut messages);
+        let visible = self.visible_tools();
+        let system_prompt = if visible.deferred_count > 0 {
+            format!(
+                "{}\n\n{}",
+                self.system_prompt,
+                deferral_prompt_note(visible.deferred_count)
+            )
+        } else {
+            self.system_prompt.clone()
+        };
+        apply_prompt_caching(&system_prompt, &mut messages);
 
-        let req_tools: Vec<Tool> = self
-            .visible_tools()
+        let req_tools: Vec<Tool> = visible
+            .tools
             .iter()
             .map(super::tool_bridge::llm_tool_to_genai)
             .collect();
@@ -1623,6 +1803,115 @@ mod tests {
 
         assert_eq!(clamped_negative, 0);
         assert_eq!(clamped_overflow, u32::MAX);
+    }
+
+    // ─── Progressive tool disclosure: visible_tools() deferral ──────────
+
+    fn test_handle_with_tools(tools: Vec<LlmToolDefinition>) -> GenaiAgentHandle {
+        let config = LlmProviderConfig::builder(BackendType::OpenAI)
+            .model("gpt-4o-mini")
+            .build();
+        let chat_client = ChatClient::new(&config);
+        let client = chat_client.inner().clone();
+        let model = chat_client
+            .model_iden("gpt-4o-mini")
+            .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, "gpt-4o-mini"));
+        GenaiAgentHandle::new(client, model, "system", tools, None)
+    }
+
+    fn tool_def(name: &str) -> LlmToolDefinition {
+        LlmToolDefinition::new(
+            name,
+            "a tool description that contributes some tokens to the schema estimate",
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "a query parameter"}
+                }
+            }),
+        )
+    }
+
+    fn visible_names(set: &VisibleToolSet) -> Vec<String> {
+        set.tools.iter().map(|t| t.function.name.clone()).collect()
+    }
+
+    #[test]
+    fn visible_tools_under_budget_attaches_all_and_no_bridge() {
+        let gateway: Vec<_> = (0..3).map(|i| tool_def(&format!("gh_tool_{i}"))).collect();
+        let mut tools = vec![tool_def("read_file")];
+        tools.extend(gateway.iter().cloned());
+        let deferrable: std::collections::HashSet<String> =
+            gateway.iter().map(|t| t.function.name.clone()).collect();
+        // Default effective budget (128k) → threshold ~19200 tokens; a handful
+        // of small schemas is far under, so nothing defers.
+        let handle = test_handle_with_tools(tools).with_deferrable_tools(deferrable);
+
+        let visible = handle.visible_tools();
+        assert_eq!(visible.deferred_count, 0);
+        let names = visible_names(&visible);
+        assert!(names.iter().any(|n| n == "read_file"));
+        assert!(names.iter().any(|n| n == "gh_tool_0"));
+        assert!(!names.iter().any(|n| n == "invoke_tool"));
+    }
+
+    #[test]
+    fn visible_tools_over_budget_defers_gateway_and_adds_bridge() {
+        let gateway: Vec<_> = (0..6).map(|i| tool_def(&format!("gh_tool_{i}"))).collect();
+        let mut tools = vec![tool_def("read_file"), tool_def("semantic_search")];
+        tools.extend(gateway.iter().cloned());
+        let deferrable: std::collections::HashSet<String> =
+            gateway.iter().map(|t| t.function.name.clone()).collect();
+        let mut handle = test_handle_with_tools(tools).with_deferrable_tools(deferrable);
+        // Small budget → threshold ~150 tokens, which the tool schemas exceed.
+        handle.context_budget = Some(1_000);
+
+        let visible = handle.visible_tools();
+        assert_eq!(visible.deferred_count, 6, "all gateway tools deferred");
+        let names = visible_names(&visible);
+        assert!(names.iter().any(|n| n == "read_file"), "core kept");
+        assert!(names.iter().any(|n| n == "semantic_search"), "core kept");
+        assert!(
+            !names.iter().any(|n| n.starts_with("gh_tool_")),
+            "gateway tools dropped: {names:?}"
+        );
+        assert!(names.iter().any(|n| n == "discover_tools"));
+        assert!(names.iter().any(|n| n == "get_tool_schema"));
+        assert!(names.iter().any(|n| n == "invoke_tool"));
+    }
+
+    #[test]
+    fn visible_tools_never_defers_without_deferrable_set() {
+        let tools: Vec<_> = (0..20).map(|i| tool_def(&format!("tool_{i}"))).collect();
+        let mut handle = test_handle_with_tools(tools);
+        handle.context_budget = Some(1); // threshold 0 — would defer if anything were deferrable
+
+        let visible = handle.visible_tools();
+        assert_eq!(visible.deferred_count, 0);
+        assert_eq!(visible.tools.len(), 20);
+        assert!(!visible_names(&visible).iter().any(|n| n == "invoke_tool"));
+    }
+
+    #[test]
+    fn visible_tools_plan_mode_filters_writes_and_defers() {
+        let gateway: Vec<_> = (0..6).map(|i| tool_def(&format!("gh_tool_{i}"))).collect();
+        let mut tools = vec![tool_def("read_file"), tool_def("edit_file")];
+        tools.extend(gateway.iter().cloned());
+        let deferrable: std::collections::HashSet<String> =
+            gateway.iter().map(|t| t.function.name.clone()).collect();
+        let mut handle = test_handle_with_tools(tools).with_deferrable_tools(deferrable);
+        handle.current_mode_id = "plan".to_string();
+        handle.context_budget = Some(1_000);
+
+        let visible = handle.visible_tools();
+        let names = visible_names(&visible);
+        assert!(
+            !names.iter().any(|n| n == "edit_file"),
+            "write tool filtered in plan mode: {names:?}"
+        );
+        assert!(names.iter().any(|n| n == "read_file"));
+        assert_eq!(visible.deferred_count, 6);
+        assert!(names.iter().any(|n| n == "invoke_tool"));
     }
 
     fn has_empty_response_error(events: &[TurnEvent]) -> bool {
