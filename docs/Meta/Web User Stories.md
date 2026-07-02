@@ -92,20 +92,21 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 ### WS-202: Edit a note and save it
 **As a user**, I open a note in the CodeMirror editor, type, see a dirty ● on the tab, save (button/Cmd-S), and the dot clears.
 **Acceptance:** edits hit `PUT /api/notes/:name`; success clears dirty; failure keeps dirty + shows a toast; content round-trips exactly (frontmatter, unicode, wikilinks untouched).
-**Tests:** W2 full round-trip via the real editor harness (`editor-roundtrip.story.spec.ts` — open → dirty ● → PUT body → clean; save-failure keeps dirty), W4 save-lands-on-disk (`kiln-truth.live.spec.ts` — byte-exact temp-kiln file).
-**Product bugs found (documented, not fixed):** (1) `App.tsx` never mounts `<EditorProvider>`, so the editor is unreachable in the shipped app; (2) no UI calls `EditorContext.saveFile` (no Save button / Cmd-S); the harness supplies both. `GET /api/notes/:name` returns metadata only (no `content`) though `getNote()` expects `content`.
+**Tests:** W2 full round-trip via the real editor harness (`editor-roundtrip.story.spec.ts` — open → dirty ● → PUT body → clean; save-failure keeps dirty), **W2 through the SHIPPED app** (`editor-shipped-app.story.spec.ts` — real `App` mount, file opened via the product `openFileInEditor` path, real `FileViewerPanel`, Save button + Cmd-S), W4 save-lands-on-disk (`kiln-truth.live.spec.ts` — byte-exact temp-kiln file).
+**Product bugs — FIXED (were bugs 3/4/8):** (3) `App.tsx` now mounts `<EditorProvider>` around `WindowManager`, so the editor is reachable in the shipped app; (4) `FileViewerPanel` now has a Save button + Cmd/Ctrl-S wired to `EditorContext.saveFile`; (8) content load switched from `getNote()` (metadata only — `get_note_by_name` returns no `content`) to `getFileContent()` (`GET /api/kiln/file`), so the editor hydrates real bytes. Save still uses `PUT /api/notes/:name` (unchanged, works).
+**Latent loop fixed alongside:** with the editor finally reachable, `FileViewerPanel`'s dirty-sync effect read `windowStore` (via `findTabByFilePath`) and wrote it (via `updateTab`) in one tracked scope → self-retriggering stack overflow; the write is now `untrack`ed, and `Pane.renderContent` re-renders only on tab identity/type change (not on `updateTab` ref churn) so edits are not discarded.
 
 ### WS-203: Multi-file tabs with unsaved-changes safety
 **As a user**, multiple open files show as tabs; each tracks its own dirty state; closing a dirty tab warns me.
 **Acceptance:** switching tabs preserves per-file undo/content; dirty markers independent; close-with-unsaved prompts (or documents that it discards).
 **Tests:** W2 via the real editor harness (`editor-tabs.story.spec.ts` — content preserved across tab switches).
-**Product bugs found (documented, not fixed):** the reused single CodeMirror instance re-dispatches its doc on active-file change, so the update listener spuriously marks the incoming/second-opened file dirty; `closeFile` has no unsaved-changes guard (silent discard).
+**Product bugs found (still open — bugs 5/6):** (5) the reused single CodeMirror instance re-dispatches its doc on active-file change, so the update listener spuriously marks the incoming/second-opened file dirty; (6) `closeFile` has no unsaved-changes guard (silent discard).
 
 ### WS-204: Syntax-aware editing
 **As a user**, markdown, rust, and js/ts files highlight appropriately in the editor.
 **Acceptance:** language detected by extension; theme consistent (one-dark); large files stay responsive.
 **Tests:** W1 (exists), W3 markdown highlight baseline (`editor-roundtrip.story.spec.ts`).
-**Product gap found (documented, not fixed):** `getLanguageExtension()` handles only `.md`; rust/js highlighting is unimplemented despite the CodeMirror lang deps being installed. The baseline is markdown-only for that reason.
+**Product gap found (still open — bug 7):** `getLanguageExtension()` handles only `.md`; rust/js highlighting is unimplemented despite the CodeMirror lang deps being installed. The baseline is markdown-only for that reason.
 
 ### WS-205: Writes are kiln-safe
 **As a user/operator**, the browser can never write outside the kiln or workspace roots.

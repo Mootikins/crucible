@@ -1,4 +1,4 @@
-import { Component, Show } from 'solid-js';
+import { Component, Show, createMemo, untrack } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { createDroppable, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { TabBar } from './TabBar';
@@ -78,26 +78,37 @@ export const Pane: Component<{ paneId: string }> = (props) => {
     }
   };
 
+  // Re-render the panel only when the active tab's identity or content type
+  // changes — NOT when unrelated tab fields (e.g. isModified) churn the tab
+  // object reference. updateTab() replaces the whole tabs array on every write,
+  // so depending on activeTab() directly would remount the panel (and, for the
+  // editor, discard in-progress edits + loop). Metadata is read untracked since
+  // it is set once at tab creation.
+  const activeTabId = createMemo(() => activeTab()?.id ?? null);
+  const activeContentType = createMemo(() => activeTab()?.contentType ?? null);
+
   const renderContent = () => {
-    const tab = activeTab();
-    if (!tab) {
+    const id = activeTabId();
+    const contentType = activeContentType();
+    if (!id || !contentType) {
       return (
         <div class="flex-1 flex items-center justify-center bg-zinc-900/50">
           <div class="text-zinc-500 text-sm">No tab selected</div>
         </div>
       );
     }
-    const panel = getGlobalRegistry().get(tab.contentType);
+    const tab = untrack(() => activeTab());
+    const panel = getGlobalRegistry().get(contentType);
     if (panel) {
-      const panelProps = (tab.metadata ?? {}) as Record<string, unknown>;
+      const panelProps = (tab?.metadata ?? {}) as Record<string, unknown>;
       return <Dynamic component={panel.component} {...panelProps} />;
     }
-    switch (tab.contentType) {
+    switch (contentType) {
       case 'file':
         return (
           <div class="flex-1 bg-zinc-900 overflow-auto p-4">
             <pre class="text-sm font-mono text-zinc-300 whitespace-pre-wrap">
-              {`// ${tab.title}\nimport { createRoot } from 'solid-js/web'\nimport App from './App'\n\nconst root = document.getElementById('root')\nif (root) createRoot(root).render(() => <App />)\n`}
+              {`// ${tab?.title ?? ''}\nimport { createRoot } from 'solid-js/web'\nimport App from './App'\n\nconst root = document.getElementById('root')\nif (root) createRoot(root).render(() => <App />)\n`}
             </pre>
           </div>
         );

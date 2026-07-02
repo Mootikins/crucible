@@ -2,6 +2,7 @@ import { Component, createSignal, onCleanup, onMount } from 'solid-js';
 import { SettingsProvider } from '@/contexts/SettingsContext';
 import { ProjectProvider } from '@/contexts/ProjectContext';
 import { SessionProvider } from '@/contexts/SessionContext';
+import { EditorProvider } from '@/contexts/EditorContext';
 import { WindowManager } from '@/components/windowing/WindowManager';
 import { CommandPalette, type PaletteCommand } from '@/components/CommandPalette';
 import { registerPanels } from '@/lib/register-panels';
@@ -193,7 +194,9 @@ const App: Component = () => {
     <SettingsProvider>
       <ProjectProvider>
         <SessionProvider initialKiln={kilnPath()}>
-          <WindowManager />
+          <EditorProvider>
+            <WindowManager />
+          </EditorProvider>
           <NotificationToast />
           <ExportDialog
             open={isExportDialogOpen()}

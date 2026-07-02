@@ -4,6 +4,7 @@ import {
   createEffect,
   onMount,
   onCleanup,
+  untrack,
 } from 'solid-js';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightSpecialChars, drawSelection } from '@codemirror/view';
 import { EditorState, StateEffect, Extension } from '@codemirror/state';
@@ -28,6 +29,7 @@ const CodeMirrorEditor: Component<{
   content: string;
   path: string;
   onChange: (content: string) => void;
+  onSave: () => void;
 }> = (props) => {
   let containerRef: HTMLDivElement | undefined;
   let view: EditorView | undefined;
@@ -39,6 +41,19 @@ const CodeMirrorEditor: Component<{
       highlightSpecialChars(),
       drawSelection(),
       history(),
+      // Cmd/Ctrl-S saves through the real EditorContext.saveFile path. Placed
+      // before defaultKeymap so it wins, and preventDefault stops the browser
+      // "save page" dialog.
+      keymap.of([
+        {
+          key: 'Mod-s',
+          preventDefault: true,
+          run: () => {
+            props.onSave();
+            return true;
+          },
+        },
+      ]),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       oneDark,
       EditorView.updateListener.of((update) => {
@@ -111,9 +126,13 @@ interface FileViewerPanelProps {
 }
 
 const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
-  const { openFile, closeFile, openFiles, isLoading, error, updateFileContent } = useEditorSafe();
+  const { openFile, closeFile, openFiles, isLoading, error, updateFileContent, saveFile } = useEditorSafe();
 
   const fileData = () => openFiles().find(f => f.path === props.filePath) ?? null;
+
+  const handleSave = () => {
+    if (props.filePath) void saveFile(props.filePath);
+  };
 
   createEffect(() => {
     if (props.filePath) {
@@ -127,16 +146,21 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
     }
   });
 
-  // Sync EditorContext dirty state → windowStore tab isModified
+  // Sync EditorContext dirty state → windowStore tab isModified.
+  // Depend ONLY on the editor's dirty flag: the tab lookup + updateTab write
+  // must be untracked, otherwise findTabByFilePath reads windowStore.tabGroups
+  // and updateTab writes it back in the same effect — a self-retriggering loop
+  // that overflows the stack (updateTab replaces the whole tabs array).
   createEffect(() => {
-    const file = openFiles().find(f => f.path === props.filePath);
     if (!props.filePath) return;
-    const tabInfo = findTabByFilePath(props.filePath);
-    if (tabInfo) {
-      windowActions.updateTab(tabInfo.groupId, tabInfo.tab.id, {
-        isModified: file?.dirty ?? false,
-      });
-    }
+    const file = openFiles().find(f => f.path === props.filePath);
+    const isModified = file?.dirty ?? false;
+    untrack(() => {
+      const tabInfo = findTabByFilePath(props.filePath!);
+      if (tabInfo) {
+        windowActions.updateTab(tabInfo.groupId, tabInfo.tab.id, { isModified });
+      }
+    });
   });
 
   // No file path provided — nothing to render
@@ -150,6 +174,28 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
 
   return (
     <PanelShell class="overflow-hidden relative">
+      {/* Toolbar: Save affordance (Cmd/Ctrl-S also saves via the editor keymap). */}
+      <div class="flex items-center justify-end gap-2 border-b border-neutral-800 px-3 py-1.5 shrink-0">
+        <Show when={fileData()?.dirty}>
+          <span
+            data-testid="file-dirty-indicator"
+            class="text-xs text-amber-500"
+            title="Unsaved changes"
+          >
+            ●
+          </span>
+        </Show>
+        <button
+          data-testid="file-save"
+          onClick={handleSave}
+          disabled={!fileData()?.dirty}
+          class="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Save (⌘S)"
+        >
+          Save
+        </button>
+      </div>
+
       {/* Loading overlay */}
       <Show when={isLoading()}>
         <div class="absolute inset-0 flex items-center justify-center bg-neutral-900/80 z-10">
@@ -189,6 +235,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
               content={file().content}
               path={file().path}
               onChange={(content) => updateFileContent(file().path, content)}
+              onSave={handleSave}
             />
           )}
         </Show>
