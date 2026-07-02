@@ -94,6 +94,8 @@ export default defineConfig({
         'e2e/**',
         'src/test/**',
         'src/test-utils/**',
+        // Dev/test-only editor harness (served only in dev, never in dist).
+        'src/test-harness/**',
         'src/**/*.d.ts',
         'src/**/index.ts',
         '*.config.ts',

@@ -200,6 +200,15 @@ web-test-unit:
 web-test-coverage:
     cd crates/crucible-cli/web && bun run test:coverage
 
+# Run the web user-story suites only (video + trace + per-step screenshots)
+web-test-stories:
+    cd crates/crucible-cli/web && bunx playwright test --project=stories --reporter=line
+
+# Run the live web tier (real `cru web` + daemon + temp kiln). Needs a `cru`
+# binary: set CRU_BIN or build target/debug/cru first. Skips cleanly if absent.
+web-test-live:
+    cd crates/crucible-cli/web && bunx playwright test --config=playwright.live.config.ts
+
 # === Daemon Management ===
 
 # Build and restart daemon (kills stale daemon so next cru auto-spawns fresh)
@@ -245,7 +254,7 @@ coverage-open: coverage
 # === CI ===
 
 # Run full CI check (mirrors GitHub CI workflow)
-ci: fmt-check clippy file-size-check test-ci web-test
+ci: fmt-check clippy file-size-check test-ci web-test-unit web-test
     @echo "CI checks passed!"
 
 # Run tests with CI profile (matches GitHub Actions)
