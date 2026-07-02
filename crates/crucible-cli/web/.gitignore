@@ -12,3 +12,8 @@ node_modules/
 
 # PWA icons (root .gitignore blanket-ignores *.png as debug artifacts)
 !public/*.png
+
+# Committed Playwright visual baselines (re-include past the root *.png ignore).
+# These are checked-in golden images for the `stories` project; test-*.png
+# outputs live under test-results/ (ignored above).
+!e2e/__screenshots__/**/*.png

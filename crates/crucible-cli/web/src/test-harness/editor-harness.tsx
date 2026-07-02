@@ -1,0 +1,91 @@
+/**
+ * DEV/TEST-ONLY editor harness — NOT part of the shipped app.
+ *
+ * Served by Vite in dev at `/editor-harness.html`; it is not in the production
+ * rollup input, so it never lands in `dist/`. Playwright story specs
+ * (e2e/stories/editor-*.story.spec.ts) navigate here to drive the REAL editor
+ * components — `EditorProvider`, `EditorPanel`, `FileViewerPanel` — in a real
+ * browser with video/screenshots, without the registry-bypass antipattern used
+ * by e2e/file-tab.spec.ts.
+ *
+ * Why a harness instead of the app's own file flow: as of this writing the app
+ * (src/App.tsx) never mounts <EditorProvider>, and no UI element calls
+ * EditorContext.saveFile — so the editor is unreachable and unsaveable through
+ * the running app. See docs/Meta/Web User Stories.md (WS-202/204 GAP notes) and
+ * the spec headers. This harness mounts the same real components under the real
+ * providers and adds the one missing affordance (a Save button wired to the
+ * real saveFile) so the genuine round-trip code path is exercised end-to-end.
+ */
+import { render } from 'solid-js/web';
+import { Show, type Component } from 'solid-js';
+import { ProjectProvider } from '@/contexts/ProjectContext';
+import { EditorProvider, useEditor } from '@/contexts/EditorContext';
+import { EditorPanel } from '@/components/EditorPanel';
+
+interface HarnessApi {
+  open: (path: string) => Promise<void>;
+  save: (path: string) => Promise<void>;
+  activePath: () => string | null;
+}
+
+declare global {
+  interface Window {
+    __editorHarness?: HarnessApi;
+  }
+}
+
+const HarnessInner: Component = () => {
+  const editor = useEditor();
+
+  // Publish an imperative handle so specs can open/save without depending on a
+  // product "open file" affordance (which the app currently lacks).
+  window.__editorHarness = {
+    open: (path: string) => editor.openFile(path),
+    save: (path: string) => editor.saveFile(path),
+    activePath: () => editor.activeFile(),
+  };
+
+  const saveActive = () => {
+    const p = editor.activeFile();
+    if (p) void editor.saveFile(p);
+  };
+
+  return (
+    <div class="h-screen flex flex-col bg-neutral-950 text-neutral-100">
+      <div class="flex items-center gap-2 border-b border-neutral-800 px-3 py-2">
+        <span class="text-xs text-neutral-500">editor-harness</span>
+        <button
+          data-testid="harness-save"
+          onClick={saveActive}
+          class="rounded bg-blue-600 px-3 py-1 text-sm hover:bg-blue-500"
+        >
+          Save
+        </button>
+        <span data-testid="harness-open-count" class="text-xs text-neutral-500">
+          {editor.openFiles().length} open
+        </span>
+        <Show when={editor.error()}>
+          <span data-testid="harness-error" class="text-xs text-red-400">
+            {editor.error()}
+          </span>
+        </Show>
+      </div>
+      <div class="flex-1 overflow-hidden">
+        <EditorPanel />
+      </div>
+    </div>
+  );
+};
+
+const EditorHarness: Component = () => (
+  <ProjectProvider>
+    <EditorProvider>
+      <HarnessInner />
+    </EditorProvider>
+  </ProjectProvider>
+);
+
+const root = document.getElementById('root');
+if (root) {
+  render(() => <EditorHarness />, root);
+}
