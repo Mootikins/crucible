@@ -724,6 +724,88 @@ mod tests {
         assert!(names.iter().any(|name| name == "list_jobs"));
     }
 
+    fn many_gateway_tools(n: usize) -> Vec<McpToolInfo> {
+        (0..n)
+            .map(|i| McpToolInfo {
+                name: format!("tool_{i}"),
+                prefixed_name: format!("gh_tool_{i}"),
+                description: Some("a gateway tool with a description".to_string()),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {"q": {"type": "string", "description": "a query"}}
+                }),
+                upstream: "gh".to_string(),
+            })
+            .collect()
+    }
+
+    /// End-to-end through the factory: an over-budget agent attaches core tools
+    /// plus the three bridge defs and drops every gateway def; the plan-mode
+    /// variant attaches no gateway defs at all.
+    #[tokio::test]
+    async fn over_budget_agent_attaches_core_plus_bridge_and_plan_excludes_gateway() {
+        use crucible_core::traits::chat::AgentHandle;
+
+        let gateway_tools = many_gateway_tools(12);
+        let gateway = Arc::new(RwLock::new(
+            crate::tools::mcp_gateway::McpGatewayManager::new(),
+        ));
+        let (defs, deferrable) = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+            workspace: Path::new("/tmp"),
+            kiln_path: Some(Path::new("/tmp")),
+            mcp_gateway: Some(gateway),
+            server_names: &["gh".to_string()],
+            knowledge_repo: None,
+            embedding_provider: None,
+            delegation_context: None,
+            mode: "auto",
+            gateway_all_tools_override: Some(&gateway_tools),
+        })
+        .await;
+        assert_eq!(deferrable.len(), 12, "all gateway tools are deferrable");
+
+        let config = LlmProviderConfig::builder(BackendType::OpenAI)
+            .model("gpt-4o-mini")
+            .build();
+        let chat_client = ChatClient::new(&config);
+        let client = chat_client.inner().clone();
+        let model = chat_client
+            .model_iden("gpt-4o-mini")
+            .expect("model iden for gpt-4o-mini");
+        let mut handle = GenaiAgentHandle::with_workspace(
+            client,
+            model,
+            "system",
+            defs,
+            None,
+            std::path::PathBuf::new(),
+        )
+        .with_deferrable_tools(deferrable);
+        // Tiny budget → the tool schemas exceed the 15% share.
+        handle.set_context_budget(Some(1_000)).await.unwrap();
+
+        let (names, deferred) = handle.visible_tool_names_for_test();
+        assert_eq!(deferred, 12, "every gateway tool deferred");
+        assert!(names.iter().any(|n| n == "discover_tools"));
+        assert!(names.iter().any(|n| n == "get_tool_schema"));
+        assert!(names.iter().any(|n| n == "invoke_tool"));
+        assert!(
+            !names.iter().any(|n| n.starts_with("gh_")),
+            "no gateway defs attached natively: {names:?}"
+        );
+        // Core kiln + workspace tools remain attached.
+        assert!(names.iter().any(|n| n == "semantic_search"));
+        assert!(names.iter().any(|n| n == "read_file"));
+
+        // Plan-mode variant: gateway defs excluded categorically.
+        handle.set_mode_str("plan").await.unwrap();
+        let (plan_names, _) = handle.visible_tool_names_for_test();
+        assert!(
+            !plan_names.iter().any(|n| n.starts_with("gh_")),
+            "no gateway defs in plan mode: {plan_names:?}"
+        );
+    }
+
     #[tokio::test]
     async fn adapter_tools_come_before_user_mcp_tools() {
         let gateway = Arc::new(RwLock::new(

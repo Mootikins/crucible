@@ -170,6 +170,11 @@ impl DaemonToolDispatcher {
             return;
         }
 
+        // NOTE(crucible): spawns a throwaway current-thread runtime and joins it
+        // so a sync caller (has_tool/get_tool_ref) can drive async list_tools
+        // without blocking an existing runtime's worker. Only runs once per
+        // dispatcher (guarded by tool_names_hydrated); the async hydrate path is
+        // preferred wherever an await is available.
         let providers = self.providers.clone();
         let (discovered_names, discovered_refs) = std::thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_current_thread()
@@ -226,6 +231,11 @@ impl DaemonToolDispatcher {
     /// `discover_tools`/`get_tool_schema` bridge can search and inspect the
     /// full catalog — including deferred (gateway) tools that were dropped
     /// from the request's attached schemas.
+    ///
+    /// NOTE(crucible): re-lists providers on every bridge call. That's cheap
+    /// today (a handful of providers, cached upstream tool lists) and keeps the
+    /// catalog fresh if a gateway reconnects mid-session; revisit with a cached
+    /// snapshot if provider `list_tools` ever becomes expensive.
     async fn build_tool_discovery(&self) -> ToolDiscovery {
         let mut tools: Vec<Tool> = Vec::new();
         for provider in &self.providers {

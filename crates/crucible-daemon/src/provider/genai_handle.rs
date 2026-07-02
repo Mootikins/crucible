@@ -756,7 +756,12 @@ impl GenaiAgentHandle {
     /// discovery bridge. Pure over `&self`; the decision is recomputed each
     /// request so runtime `context_budget` changes are respected.
     fn visible_tools(&self) -> VisibleToolSet {
-        let mode_filtered: Vec<LlmToolDefinition> = if self.current_mode_id == "plan" {
+        let in_plan = self.current_mode_id == "plan";
+
+        // Native attach candidates after the plan-mode write blocklist. This
+        // set still contains gateway tools; the budget trigger is computed over
+        // it so a large upstream tool set forces deferral even in plan mode.
+        let write_filtered: Vec<LlmToolDefinition> = if in_plan {
             self.tools
                 .iter()
                 .filter(|t| !is_write_tool_name(&t.function.name))
@@ -768,7 +773,7 @@ impl GenaiAgentHandle {
 
         if self.deferrable_tool_names.is_empty() {
             return VisibleToolSet {
-                tools: mode_filtered,
+                tools: write_filtered,
                 deferred_count: 0,
             };
         }
@@ -778,32 +783,62 @@ impl GenaiAgentHandle {
             .or(self.context_window)
             .unwrap_or(DEFAULT_ASSUMED_CONTEXT);
         let threshold = (TOOL_SCHEMA_BUDGET_SHARE * effective_budget as f64) as usize;
-        if tool_schema_tokens(&mode_filtered) <= threshold {
+        let over_budget = tool_schema_tokens(&write_filtered) > threshold;
+
+        // Drop deferrable (gateway/user MCP) tools when either the schemas
+        // exceed the budget share (both modes) or we're in plan mode. Plan mode
+        // excludes upstream tools categorically — fail-closed, because we can't
+        // tell which upstream tools mutate state and plan mode must stay
+        // read-only. The bridge's invoke_tool enforces the same ban.
+        if !over_budget && !in_plan {
             return VisibleToolSet {
-                tools: mode_filtered,
+                tools: write_filtered,
                 deferred_count: 0,
             };
         }
 
-        let before = mode_filtered.len();
-        let mut kept: Vec<LlmToolDefinition> = mode_filtered
+        let before = write_filtered.len();
+        let mut kept: Vec<LlmToolDefinition> = write_filtered
             .into_iter()
             .filter(|t| !self.deferrable_tool_names.contains(&t.function.name))
             .collect();
-        let deferred_count = before - kept.len();
-        if deferred_count == 0 {
-            // Nothing deferrable survived the mode filter; the bridge would
-            // add cost without removing anything, so leave the list as-is.
+        let dropped = before - kept.len();
+        if dropped == 0 {
             return VisibleToolSet {
                 tools: kept,
                 deferred_count: 0,
             };
         }
-        kept.extend(bridge_tool_defs());
-        VisibleToolSet {
-            tools: kept,
-            deferred_count,
+
+        // Attach the discovery bridge only when the drop was budget-driven. A
+        // purely categorical plan-mode drop (under budget) leaves no bridge:
+        // upstream tools are disabled, not deferred, and invoke_tool would deny
+        // them anyway — so there's nothing to reach through the bridge.
+        if over_budget {
+            kept.extend(bridge_tool_defs());
+            VisibleToolSet {
+                tools: kept,
+                deferred_count: dropped,
+            }
+        } else {
+            VisibleToolSet {
+                tools: kept,
+                deferred_count: 0,
+            }
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn visible_tool_names_for_test(&self) -> (Vec<String>, usize) {
+        let visible = self.visible_tools();
+        (
+            visible
+                .tools
+                .iter()
+                .map(|t| t.function.name.clone())
+                .collect(),
+            visible.deferred_count,
+        )
     }
 
     fn explicit_model_name(&self) -> String {
@@ -1913,6 +1948,35 @@ mod tests {
         assert!(names.iter().any(|n| n == "read_file"));
         assert_eq!(visible.deferred_count, 6);
         assert!(names.iter().any(|n| n == "invoke_tool"));
+    }
+
+    #[test]
+    fn visible_tools_plan_mode_disables_gateway_under_budget() {
+        // Fail-closed: even comfortably under budget, plan mode attaches no
+        // gateway/deferrable tool defs and no bridge — upstream MCP tools are
+        // disabled entirely in plan mode.
+        let gateway: Vec<_> = (0..3).map(|i| tool_def(&format!("gh_tool_{i}"))).collect();
+        let mut tools = vec![tool_def("read_file"), tool_def("semantic_search")];
+        tools.extend(gateway.iter().cloned());
+        let deferrable: std::collections::HashSet<String> =
+            gateway.iter().map(|t| t.function.name.clone()).collect();
+        let mut handle = test_handle_with_tools(tools).with_deferrable_tools(deferrable);
+        handle.current_mode_id = "plan".to_string();
+        // Default 128k budget → far under; no budget-driven deferral.
+
+        let visible = handle.visible_tools();
+        let names = visible_names(&visible);
+        assert!(
+            !names.iter().any(|n| n.starts_with("gh_tool_")),
+            "no gateway defs attached in plan mode: {names:?}"
+        );
+        assert!(
+            !names.iter().any(|n| n == "invoke_tool"),
+            "no bridge: {names:?}"
+        );
+        assert_eq!(visible.deferred_count, 0);
+        assert!(names.iter().any(|n| n == "read_file"));
+        assert!(names.iter().any(|n| n == "semantic_search"));
     }
 
     fn has_empty_response_error(events: &[TurnEvent]) -> bool {

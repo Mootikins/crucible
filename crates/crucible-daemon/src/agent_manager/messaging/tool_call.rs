@@ -23,8 +23,9 @@ impl AgentManager {
         // deferred tool. Unwrap it to the inner tool *before* the PreToolCall
         // reactor event, permission gate, and display events so every
         // downstream consumer sees the real tool name and arguments.
+        let was_unwrapped = tool_call.name == "invoke_tool";
         let unwrapped_call;
-        let tool_call = if tool_call.name == "invoke_tool" {
+        let tool_call = if was_unwrapped {
             match Self::unwrap_invoke_tool(&stream_ctx.session_mode, tool_call, &call_id) {
                 Ok(inner) => {
                     unwrapped_call = inner;
@@ -311,12 +312,34 @@ impl AgentManager {
         // matching tool_result separately. Dispatching would produce a bogus
         // "Unknown tool" error that the TUI would render as a failed call.
         if !stream_ctx.tool_dispatcher.has_tool(&tool_call.name) {
-            debug!(
-                session_id = %stream_ctx.session_id,
-                tool = %tool_call.name,
-                "Tool not in local dispatcher; leaving result to external agent"
-            );
-            return None;
+            // A tool reached via invoke_tool has no external agent to answer it
+            // — returning None would leave the model waiting for a result that
+            // never comes and stall the turn until the dispatch timeout. Return
+            // an error so the model can recover (e.g. re-run discover_tools). A
+            // genuine ACP tool (not unwrapped) still falls through to None so
+            // the external agent supplies the result.
+            match Self::missing_tool_result(was_unwrapped, &tool_call.name, &call_id) {
+                Some(result) => {
+                    emit_event(
+                        &stream_ctx.event_tx,
+                        SessionEventMessage::tool_result(
+                            &stream_ctx.session_id,
+                            &call_id,
+                            &tool_call.name,
+                            serde_json::json!({ "error": result.error }),
+                        ),
+                    );
+                    return Some(result);
+                }
+                None => {
+                    debug!(
+                        session_id = %stream_ctx.session_id,
+                        tool = %tool_call.name,
+                        "Tool not in local dispatcher; leaving result to external agent"
+                    );
+                    return None;
+                }
+            }
         }
 
         let tool_result = tokio::time::timeout(
@@ -492,8 +515,11 @@ impl AgentManager {
             return Err(invoke_err("invoke_tool cannot invoke itself".to_string()));
         }
 
-        // Plan mode: only the read-only plan tool set may be invoked, so the
-        // bridge cannot be used to escape plan mode's write-tool ban.
+        // Plan mode fails closed: only the read-only plan tool set may be
+        // invoked. Gateway/upstream tools are never in that set, so the bridge
+        // cannot reach them in plan mode — mirroring visible_tools(), which also
+        // excludes upstream tools categorically because we can't tell which
+        // ones write.
         if mode == "plan"
             && !crate::tools::tool_modes::PLAN_TOOL_NAMES.contains(&inner_name.as_str())
         {
@@ -511,6 +537,30 @@ impl AgentManager {
             name: inner_name,
             arguments: Some(inner_args),
             id: Some(call_id.to_string()),
+        })
+    }
+
+    /// Decide the result for a tool the local dispatcher doesn't know. When the
+    /// call was unwrapped from `invoke_tool` (the model named a tool that isn't
+    /// available), return an error `ChatToolResult` so the turn completes rather
+    /// than hanging. Otherwise return `None` so an external ACP agent supplies
+    /// the result.
+    fn missing_tool_result(
+        was_unwrapped: bool,
+        name: &str,
+        call_id: &str,
+    ) -> Option<crucible_core::traits::chat::ChatToolResult> {
+        if !was_unwrapped {
+            return None;
+        }
+        Some(crucible_core::traits::chat::ChatToolResult {
+            name: name.to_string(),
+            result: String::new(),
+            error: Some(format!(
+                "Tool not found: {name}. Use discover_tools to list available tools."
+            )),
+            call_id: Some(call_id.to_string()),
+            terminate: false,
         })
     }
 
@@ -636,5 +686,26 @@ mod invoke_tool_tests {
         let inner = AgentManager::unwrap_invoke_tool("plan", &call, "call-42")
             .expect("plan-allowed tools remain callable via the bridge");
         assert_eq!(inner.name, "semantic_search");
+    }
+
+    #[test]
+    fn missing_tool_after_unwrap_yields_error_result_not_stall() {
+        // invoke_tool named a tool the dispatcher doesn't know: must return an
+        // error result (so the turn completes) rather than None (which stalls
+        // the turn waiting for a result that never arrives).
+        let result = AgentManager::missing_tool_result(true, "bogus_tool", "call-42")
+            .expect("unwrapped unknown tool must yield an error result");
+        assert_eq!(result.name, "bogus_tool");
+        assert_eq!(result.call_id.as_deref(), Some("call-42"));
+        let err = result.error.expect("must carry an error");
+        assert!(err.contains("bogus_tool"));
+        assert!(err.contains("discover_tools"));
+    }
+
+    #[test]
+    fn missing_tool_without_unwrap_returns_none_for_external_agent() {
+        // A genuine ACP tool call (not unwrapped) still defers to the external
+        // agent — no synthetic error result.
+        assert!(AgentManager::missing_tool_result(false, "acp_tool", "call-42").is_none());
     }
 }

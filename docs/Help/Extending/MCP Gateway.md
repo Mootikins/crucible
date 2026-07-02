@@ -306,9 +306,13 @@ built-in tools:
 
 `invoke_tool` is unwrapped to the real tool *before* hooks and permission
 checks run, so `pre_tool_call` handlers, permission prompts, and the TUI all
-see the actual tool name — not `invoke_tool`. In plan mode, only read-only
-plan tools can be invoked through the bridge; it cannot be used to reach write
-tools.
+see the actual tool name — not `invoke_tool`.
+
+**Plan mode disables upstream MCP tools entirely.** Because Crucible can't
+tell which upstream tools mutate state, plan mode fails closed: gateway tools
+are never attached (on either the direct or the deferred path), and
+`invoke_tool` refuses to call anything outside the read-only plan tool set.
+Plan mode stays limited to kiln and read-only workspace tools.
 
 This is automatic and needs no configuration. Sessions with a modest tool set
 behave exactly as before (all schemas attached, no bridge).
