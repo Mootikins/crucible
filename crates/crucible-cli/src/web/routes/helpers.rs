@@ -100,6 +100,38 @@ pub(crate) fn validate_parent_within_kiln(file_path: &Path, kiln: &Path) -> Resu
     Ok(())
 }
 
+/// Validate a write target within the kiln.
+///
+/// Checks the parent (via [`validate_parent_within_kiln`], which resolves any
+/// ancestor symlinks) AND the final path component: if the target already exists
+/// as a symlink, its fully-resolved destination must also stay within the kiln.
+/// Without the second check, `fs::write` follows a pre-planted symlink (e.g.
+/// `KILN/notes/evil.md -> ~/.bashrc`) and writes OUTSIDE the kiln even though the
+/// parent directory is legitimate. `kiln` must be the canonical kiln root.
+pub(crate) fn validate_write_target_within_kiln(
+    file_path: &Path,
+    kiln: &Path,
+) -> Result<(), WebError> {
+    validate_parent_within_kiln(file_path, kiln)?;
+
+    // symlink_metadata does NOT follow the link, so this detects a symlinked
+    // final component regardless of where it points.
+    if let Ok(meta) = std::fs::symlink_metadata(file_path) {
+        if meta.file_type().is_symlink() {
+            let resolved = file_path.canonicalize().map_err(|_| {
+                WebError::Validation("Symlinked path could not be resolved".to_string())
+            })?;
+            if !resolved.starts_with(kiln) {
+                return Err(WebError::Validation(
+                    "Path escapes kiln directory".to_string(),
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Canonicalize a file path and verify it resides within the kiln.
 pub(crate) fn validate_file_within_kiln(
     file_path: &Path,

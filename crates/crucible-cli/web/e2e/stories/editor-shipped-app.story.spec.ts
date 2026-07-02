@@ -16,7 +16,7 @@ import { setupBasicMocks } from '../helpers/mock-api';
  *   - Content loads via GET /api/kiln/file (bug 8) — get_note_by_name returns no
  *     content, so the old getNote path always yielded an empty editor.
  *   - The FileViewerPanel Save button (bug 4) is wired to EditorContext.saveFile
- *     → PUT /api/notes.
+ *     → saveFileContent → PUT /api/kiln/file (path-based, symmetric with load).
  */
 
 const KILN = '/home/user/.crucible/kiln';

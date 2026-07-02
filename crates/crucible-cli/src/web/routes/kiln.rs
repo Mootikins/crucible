@@ -1,6 +1,6 @@
 use super::helpers::{
     note_to_file_json, reject_path_traversal, validate_file_within_kiln,
-    validate_parent_within_kiln, MAX_CONTENT_SIZE,
+    validate_write_target_within_kiln, MAX_CONTENT_SIZE,
 };
 use crate::web::services::daemon::AppState;
 use crate::web::{error::WebResultExt, WebError};
@@ -130,7 +130,7 @@ async fn put_kiln_file(
     let file_path = PathBuf::from(&req.path);
     let kiln = find_enclosing_kiln(&state, &file_path).await?;
 
-    validate_parent_within_kiln(&file_path, &kiln)?;
+    validate_write_target_within_kiln(&file_path, &kiln)?;
 
     // Create parent directories if needed
     if let Some(parent) = file_path.parent() {
@@ -168,7 +168,7 @@ async fn find_enclosing_kiln(state: &AppState, file_path: &Path) -> Result<PathB
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::helpers::reject_path_traversal;
+    use super::super::helpers::{reject_path_traversal, validate_parent_within_kiln};
     use crate::web::test_support::{arb_safe_path, arb_traversal_path};
     use proptest::prelude::*;
     use tempfile::tempdir;
@@ -271,6 +271,46 @@ mod tests {
             }
             other => panic!("expected validation error, got: {other:?}"),
         }
+    }
+
+    #[test]
+    fn write_target_symlinked_final_component_rejected() {
+        // KILN/evil.md is a pre-planted symlink to a file OUTSIDE the kiln. The
+        // parent (the kiln root) is legitimate, so only the final-component
+        // symlink check catches the escape — without it, fs::write would follow
+        // the link and overwrite the outside file.
+        let kiln = tempdir().expect("temp kiln");
+        let outside = tempdir().expect("temp outside");
+
+        let secret = outside.path().join("secret.md");
+        std::fs::write(&secret, "original secret").expect("write secret");
+
+        let link = kiln.path().join("evil.md");
+        symlink_dir(&secret, &link).expect("plant symlink to outside file");
+
+        let canonical_kiln = kiln.path().canonicalize().expect("canonical kiln");
+        let err = validate_write_target_within_kiln(&link, &canonical_kiln)
+            .expect_err("symlinked final component pointing outside the kiln must be rejected");
+        match err {
+            WebError::Validation(message) => assert_eq!(message, "Path escapes kiln directory"),
+            other => panic!("expected validation error, got: {other:?}"),
+        }
+
+        // The guard runs before any write, so the outside file is untouched.
+        assert_eq!(
+            std::fs::read_to_string(&secret).expect("read secret"),
+            "original secret"
+        );
+    }
+
+    #[test]
+    fn write_target_regular_file_within_kiln_allowed() {
+        // A normal (non-symlink) file inside the kiln passes.
+        let kiln = tempdir().expect("temp kiln");
+        let canonical_kiln = kiln.path().canonicalize().expect("canonical kiln");
+        let note = canonical_kiln.join("note.md");
+        std::fs::write(&note, "hi").expect("write note");
+        assert!(validate_write_target_within_kiln(&note, &canonical_kiln).is_ok());
     }
 
     proptest! {

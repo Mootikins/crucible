@@ -209,6 +209,8 @@ impl TuiTestSession {
         if !config.env.is_empty() || config.working_dir.is_some() {
             cmd.push_str("/usr/bin/env");
             if let Some(dir) = &config.working_dir {
+                // `env -C DIR` is a GNU coreutils extension (fine on the Linux CI
+                // these PTY tests run on; not portable to BSD/macOS env).
                 let dir = dir.display().to_string();
                 assert!(
                     !dir.contains(char::is_whitespace),

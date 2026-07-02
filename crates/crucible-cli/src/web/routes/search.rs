@@ -1,4 +1,6 @@
-use super::helpers::{note_to_metadata_json, validate_note_name, MAX_CONTENT_SIZE};
+use super::helpers::{
+    note_to_metadata_json, validate_note_name, validate_write_target_within_kiln, MAX_CONTENT_SIZE,
+};
 use crate::web::services::daemon::AppState;
 use crate::web::{error::WebResultExt, WebError};
 use axum::{
@@ -140,6 +142,10 @@ async fn put_note(
     if let Some(parent) = file_path.parent() {
         fs::create_dir_all(parent).await.map_err(WebError::Io)?;
     }
+
+    // Security: block writes that would escape the kiln by following a symlinked
+    // final component (the lexical check above does NOT resolve symlinks).
+    validate_write_target_within_kiln(&file_path, &canonical_kiln)?;
 
     // Write content to filesystem (source of truth)
     fs::write(&file_path, &req.content)
