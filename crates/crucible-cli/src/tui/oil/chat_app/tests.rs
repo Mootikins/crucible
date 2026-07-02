@@ -136,3 +136,43 @@ fn plugins_discovered_raises_notification_for_failed_plugin() {
 
     assert!(app.has_notifications());
 }
+
+// ─── US-602: shell command history storage ──────────────────────────
+
+#[test]
+fn shell_history_stores_commands_in_arrival_order() {
+    let mut app = OilChatApp::init();
+    app.push_shell_history("ls -la".into());
+    app.push_shell_history("git status".into());
+    app.push_shell_history("cargo test".into());
+
+    let hist = &app.shell_history.shell_history;
+    assert_eq!(hist.len(), 3);
+    assert_eq!(hist.front().unwrap(), "ls -la");
+    assert_eq!(hist.back().unwrap(), "cargo test");
+}
+
+#[test]
+fn shell_history_caps_at_max_and_evicts_oldest() {
+    let mut app = OilChatApp::init();
+    for i in 0..(MAX_SHELL_HISTORY + 10) {
+        app.push_shell_history(format!("cmd{i}"));
+    }
+
+    let hist = &app.shell_history.shell_history;
+    assert_eq!(
+        hist.len(),
+        MAX_SHELL_HISTORY,
+        "history is bounded to the last {MAX_SHELL_HISTORY} commands"
+    );
+    // FIFO eviction: the earliest commands drop off the front.
+    assert!(
+        !hist.contains(&"cmd0".to_string()),
+        "the oldest command should be evicted"
+    );
+    assert_eq!(
+        hist.back().unwrap(),
+        &format!("cmd{}", MAX_SHELL_HISTORY + 9),
+        "the newest command is retained"
+    );
+}

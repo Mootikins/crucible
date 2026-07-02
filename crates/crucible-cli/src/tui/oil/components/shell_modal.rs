@@ -650,6 +650,62 @@ mod tests {
         }
     }
 
+    // ─── US-801: auto-follow scroll semantics ──────────────────────
+
+    #[test]
+    fn running_modal_auto_follows_to_bottom() {
+        let mut modal = create_test_modal(ShellStatus::Running);
+        modal.output_lines = (0..30).map(|i| format!("line{i}")).collect();
+
+        // A tick on a running, un-scrolled modal keeps the view pinned to
+        // the bottom (auto-follow).
+        modal.update(ShellModalMsg::Tick, 10);
+        assert_eq!(
+            modal.scroll_offset, 20,
+            "auto-follow should keep the newest output in view"
+        );
+    }
+
+    #[test]
+    fn manual_scroll_disables_auto_follow() {
+        let mut modal = create_test_modal(ShellStatus::Running);
+        modal.output_lines = (0..30).map(|i| format!("line{i}")).collect();
+        modal.update(ShellModalMsg::Tick, 10); // pinned to bottom (offset 20)
+
+        // User scrolls up one line — auto-follow must switch off.
+        modal.update(
+            ShellModalMsg::Key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE)),
+            10,
+        );
+        let after_scroll = modal.scroll_offset;
+        assert!(modal.user_scrolled, "manual scroll should set the flag");
+
+        // A subsequent tick must NOT yank the view back to the bottom.
+        modal.update(ShellModalMsg::Tick, 10);
+        assert_eq!(
+            modal.scroll_offset, after_scroll,
+            "auto-follow should stay disabled after a manual scroll"
+        );
+    }
+
+    #[test]
+    fn completed_modal_jump_to_top_and_bottom() {
+        let mut modal = create_test_modal(ShellStatus::Completed { exit_code: 0 });
+        modal.output_lines = (0..40).map(|i| format!("line{i}")).collect();
+
+        modal.update(
+            ShellModalMsg::Key(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE)),
+            10,
+        );
+        assert_eq!(modal.scroll_offset, 30, "`G` jumps to the bottom");
+
+        modal.update(
+            ShellModalMsg::Key(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE)),
+            10,
+        );
+        assert_eq!(modal.scroll_offset, 0, "`g` jumps back to the top");
+    }
+
     fn create_test_modal(status: ShellStatus) -> ShellModal {
         ShellModal {
             command: "echo test".to_string(),

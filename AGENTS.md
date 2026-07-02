@@ -19,7 +19,7 @@
 | Crate | Purpose | Key Types |
 |-------|---------|-----------|
 | `crucible-core` | Domain logic, traits, parser types, config (absorbed from crucible-config) | `Provider`, `CanEmbed`, `CanChat`, `ParsedNote`, `AppConfig` |
-| `crucible-cli` | Terminal UI, REPL, commands, web UI server (`src/web/` — SolidJS + Axum, HTTP/SSE over daemon RPC) | `InkChatApp`, `ChatAppMsg` |
+| `crucible-cli` | Terminal UI, REPL, commands, web UI server (`src/web/` — SolidJS + Axum, HTTP/SSE over daemon RPC) | `OilChatApp`, `ChatAppMsg` |
 | `crucible-oil` | Terminal rendering primitives | `Node`, `render_to_string` |
 | `crucible-lua` | Lua/Luau with Fennel support | `LuaExecutor`, `FennelCompiler` |
 | `crucible-daemon` | Daemon server: enrichment, note pipeline, RPC, observability, file watching, skills, tools, ACP host (`acp/`), embedding backends (`llm/`), SQLite storage (`storage/sqlite/`), LanceDB vector storage (`storage/lance/`) | `Server`, `SessionManager`, `AgentManager`, `SqliteStorage`, `LanceVectorIndex`, `EmbeddingProvider` |
@@ -96,7 +96,7 @@ When implementing features that affect agent/session behavior (not just UI displ
 | Scope | Examples | Where State Lives |
 |-------|----------|-------------------|
 | Session-scoped | model, thinking_budget, temperature | Daemon `SessionAgent`, synced via RPC |
-| TUI-local | theme, show_thinking, verbose | `InkChatApp` fields, no RPC needed |
+| TUI-local | theme, show_thinking, verbose | `OilChatApp` fields, no RPC needed |
 
 **Before Implementing:**
 - [ ] Check if daemon already has RPC for this (`crucible-daemon/src/rpc_client/`)
@@ -400,7 +400,7 @@ diff /tmp/reference.txt <snapshot_content>
 
 | Scenario | Test Type | Why |
 |----------|-----------|-----|
-| State changes (popup open/close, mode switch) | Unit test with `InkChatApp` | Fast, isolated |
+| State changes (popup open/close, mode switch) | Unit test with `OilChatApp` | Fast, isolated |
 | Visual output (layout, colors, content) | Snapshot test with `insta` | Catches regressions |
 | Keyboard interactions | Unit test with `Event::Key` | Deterministic |
 | Multi-turn flows (chat, streaming) | Integration test | Component interaction |
@@ -408,12 +408,22 @@ diff /tmp/reference.txt <snapshot_content>
 
 Start with unit tests. Escalate to PTY tests only when unit tests can't verify the behavior.
 
-**Fixture reuse:** Check `tui/testing/fixtures/` before creating new fixtures:
-- `sessions.rs` — Conversation histories
-- `registries.rs` — Commands, agents, files, sessions, models
-- `events.rs` — Event sequences
+The chat app type is `OilChatApp` (`src/tui/oil/chat_app/mod.rs`) — drive it via
+`Vt100TestRuntime` (`src/tui/oil/tests/vt100_runtime.rs`) for real rendered-frame
+capture, or `AppHarness` (`src/tui/oil/test_harness.rs`) for string-based frames.
 
-**New TUI features require full-flow snapshot tests** covering: initial state → navigation → selection → final state. See `popup_snapshot_tests.rs` for examples.
+**Fixture reuse:** JSONL session recordings live in `assets/fixtures/*.jsonl`
+(replayed via `session_event_to_chat_msgs`; see `tests/fixture_replay_tests.rs`).
+Mock agents for scripted flows use the `impl_noop_agent!` / `CountingAgent`
+pattern in `tests/replay_mode_tests.rs`.
+
+**New TUI features require a story in `docs/Meta/TUI User Stories.md` plus at least
+T1 + T2 coverage.** Full-flow tests live in `src/tui/oil/tests/user_story_tests/`
+(one file per story group, driven through the `StoryRuntime` frame-sequence
+helper); popup rendering is covered in `tests/popup_tests.rs` and
+`tests/container_snapshot_tests.rs`. Dispatch-logic matrices (`:set`, slash,
+autocomplete) live inline in the relevant `chat_app` submodule where the
+`pub(super)` handlers are reachable.
 
 **PTY E2E tests** live in `crates/crucible-cli/tests/tui_e2e_harness.rs`. They're slow and flaky — reserve for behaviors that can't be verified any other way:
 
