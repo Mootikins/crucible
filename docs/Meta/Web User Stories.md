@@ -18,6 +18,21 @@ Stories for the two web surfaces that matter now: **chat** and **kiln/note editi
 
 W2 specs double as **image sequences**: `screenshot()` after each scripted step into the test's artifact dir; W3 pins the key frames; video records the whole story.
 
+## Coverage governance
+
+The tiers only help if scenarios move between them deliberately. These rules decide when.
+
+**Promote a GAP / manual scenario to an automated tier when all three hold:**
+- **Deterministic** — the outcome is fixed given the inputs. Mock the model at the wire (fake-ollama / mock-acp-agent) so replies are scripted; wait on conditions (`expect.poll`, `toBeVisible`), never `page.waitForTimeout`.
+- **Acceptance-criteria-shaped** — the story has a concrete "then" you can assert via a role/label/text/testid locator, not a raw CSS class and not an eyeball.
+- **Broke once** — a real regression slipped through here. Promotion buys the most where it already cost us.
+
+Until a GAP meets all three, leave it marked GAP with a one-line note on what blocks automation.
+
+**Graduate a mock tier (W2 e2e-mock) to the live tier (W4 e2e-live) when the assertion depends on state that crosses the daemon boundary** — real session persistence, resume from history, kiln-file bytes on disk, or cross-console visibility with the TUI. W2's `page.route()` mocks fake the daemon's responses; only W4 (real `cru web` + daemon + temp kiln) proves the state is actually there. If a story's "then" is "the same state is visible on disk / from the other console", it belongs in W4.
+
+**Every new feature adds a story and a tier before it merges.** A behavior with no WS entry and no tier is untested by definition. Add the story (with acceptance criteria), pick the lowest tier that can prove it, and — if it crosses the daemon boundary — add the W4 leg too.
+
 ---
 
 ## 1. Chat

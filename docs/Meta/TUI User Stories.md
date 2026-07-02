@@ -19,6 +19,21 @@ Complete user-facing stories for the Crucible chat TUI, covering every implement
 
 Multi-frame stories are verified as **frame sequences**: capture a `Vt100TestRuntime` frame after each scripted step and snapshot the sequence, not just the end state.
 
+## Coverage governance
+
+The tiers only help if scenarios move between them deliberately. These rules decide when.
+
+**Promote a GAP / manual scenario to an automated tier when all three hold:**
+- **Deterministic** — the outcome is fixed given the inputs (no real wall-clock, network, or model sampling). Drive spinner/streaming convergence with `StoryRuntime::settle`/`expect_frame`, never a sleep.
+- **Acceptance-criteria-shaped** — the story has a concrete "then" you can assert against a rendered frame or emitted `Action`, not a vibe.
+- **Broke once** — a real regression slipped through here. A scenario that has never failed is a lower priority than one that has; promotion buys the most where it already cost us.
+
+Until a GAP meets all three, leave it marked GAP with a one-line note on what blocks automation.
+
+**Graduate a mock tier (T1–T3) to the live tier (T4 pty) when the assertion depends on state that crosses the daemon boundary** — real session persistence, `--resume` hydration, cross-console visibility, or anything the in-process `OilChatApp` fakes via injected events. T1–T3 verify the view and the event-stream contract; only T4 proves the daemon actually holds the state. If a story's "then" is "the same state is visible after restart / from another console", it belongs in T4.
+
+**Every new feature adds a story and a tier before it merges.** A behavior with no US entry and no tier is untested by definition. Add the story (with acceptance criteria), pick the lowest tier that can prove it, and — if it crosses the daemon boundary — add the T4 leg too.
+
 ---
 
 ## 1. Modes & Input
