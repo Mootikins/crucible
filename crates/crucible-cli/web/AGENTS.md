@@ -66,6 +66,7 @@ Three layers, all bun-driven:
 - **Story specs** live in `e2e/stories/**`; the `stories` project sets `video/trace/screenshot: on`. `createStory(testInfo).step(page, name)` writes an ordered image sequence per story. Committed visual baselines are under `e2e/__screenshots__/` (re-included past the root `*.png` ignore). Per repo policy, EYE-VERIFY a regenerated baseline before committing — never blindly `--update-snapshots`.
 - **Editor stories** drive the REAL editor via the dev-only harness at `/editor-harness.html` (`src/test-harness/editor-harness.tsx`) — not the registry-bypass in `e2e/file-tab.spec.ts`. The harness is dev-served only and never ships in `dist`.
 - **Live tier** (`playwright.live.config.ts`): `e2e/live/global-setup.ts` boots `cru web` on an isolated `$CRUCIBLE_SOCKET` against a TempDir kiln and scrubs provider credentials so no real LLM call can happen. Provide the binary via `CRU_BIN=…/target/debug/cru`; otherwise it skips. To run it in GitHub CI, build `cru` first (`cargo build -p crucible-cli --bin cru`) and set `CRU_BIN`.
+- **Follow-up (pre-existing):** the original e2e specs have type errors under a `src`+`e2e` typecheck (unused vars; `/src/...` dynamic imports in `file-tab.spec.ts`/`session-file-integration.spec.ts`). They predate this work and aren't covered by the `src`-scoped `bun run typecheck`; clean up if/when e2e is folded into the typechecked project.
 
 ## Do NOT
 
