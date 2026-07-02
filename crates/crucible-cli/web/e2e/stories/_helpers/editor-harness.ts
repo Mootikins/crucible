@@ -26,8 +26,7 @@ export interface HarnessFile {
 }
 
 export interface SavedNote {
-  name: string;
-  kiln: string;
+  path: string;
   content: string;
 }
 
@@ -52,42 +51,28 @@ export async function setupEditorHarness(
     kilns: [{ path: HARNESS_KILN, name: 'My Kiln' }],
     last_accessed: '2026-01-01T00:00:00Z',
   };
-  const byName = new Map(files.map((f) => [f.name, f]));
   const saves: SavedNote[] = [];
-
   const byPath = new Map(files.map((f) => [f.path, f]));
 
   await page.route('**/api/project/list', (r) => r.fulfill({ json: [project] }));
 
-  // Content load path: EditorContext.openFile reads bytes via GET
-  // /api/kiln/file?path=<abs> (get_note_by_name returns no content).
+  // Editor load + save both go through /api/kiln/file by absolute path:
+  //   GET  → return the seeded bytes (get_note_by_name has no content)
+  //   PUT  → record the save { path, content } and 200
   await page.route('**/api/kiln/file**', (route: Route) => {
-    if (route.request().method() !== 'GET') return route.continue();
-    const url = new URL(route.request().url());
-    const p = url.searchParams.get('path') ?? '';
-    const file = byPath.get(p);
-    if (!file) return route.fulfill({ status: 404, body: 'not found' });
-    return route.fulfill({ json: { content: file.content } });
-  });
-
-  await page.route('**/api/notes/**', (route: Route) => {
     const req = route.request();
-    const url = new URL(req.url());
-    // /api/notes/<encoded name>?kiln=...
-    const encoded = url.pathname.replace(/^\/api\/notes\//, '');
-    const name = decodeURIComponent(encoded);
-
+    if (req.method() === 'GET') {
+      const p = new URL(req.url()).searchParams.get('path') ?? '';
+      const file = byPath.get(p);
+      if (!file) return route.fulfill({ status: 404, body: 'not found' });
+      return route.fulfill({ json: { content: file.content } });
+    }
     if (req.method() === 'PUT') {
-      const body = req.postDataJSON() as { kiln: string; content: string };
-      saves.push({ name, kiln: body.kiln, content: body.content });
+      const body = req.postDataJSON() as { path: string; content: string };
+      saves.push({ path: body.path, content: body.content });
       return route.fulfill({ status: 200, body: '' });
     }
-
-    const file = byName.get(name);
-    if (!file) return route.fulfill({ status: 404, body: 'not found' });
-    return route.fulfill({
-      json: { name, content: file.content, path: file.path },
-    });
+    return route.continue();
   });
 
   await page.goto('/editor-harness.html');

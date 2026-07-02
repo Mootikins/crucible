@@ -1,5 +1,5 @@
 use super::helpers::{
-    note_to_file_json, validate_file_within_kiln, validate_no_traversal,
+    note_to_file_json, reject_path_traversal, validate_file_within_kiln,
     validate_parent_within_kiln, MAX_CONTENT_SIZE,
 };
 use crate::web::services::daemon::AppState;
@@ -79,7 +79,9 @@ async fn get_kiln_file(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<FilePathQuery>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    validate_no_traversal(&query.path)?;
+    // The editor addresses files by ABSOLUTE path (a note's `path`); containment
+    // is enforced below by find_enclosing_kiln + validate_file_within_kiln.
+    reject_path_traversal(&query.path)?;
 
     let file_path = PathBuf::from(&query.path);
     let kiln = find_enclosing_kiln(&state, &file_path).await?;
@@ -113,7 +115,9 @@ async fn put_kiln_file(
     State(state): State<AppState>,
     Json(req): Json<PutFileRequest>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    validate_no_traversal(&req.path)?;
+    // Accept absolute paths (the editor saves by a note's absolute path);
+    // containment is enforced below by find_enclosing_kiln + parent-within-kiln.
+    reject_path_traversal(&req.path)?;
 
     // Security: limit content size (10 MB)
     if req.content.len() > MAX_CONTENT_SIZE {
@@ -164,6 +168,7 @@ async fn find_enclosing_kiln(state: &AppState, file_path: &Path) -> Result<PathB
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::helpers::reject_path_traversal;
     use crate::web::test_support::{arb_safe_path, arb_traversal_path};
     use proptest::prelude::*;
     use tempfile::tempdir;
@@ -174,26 +179,29 @@ mod tests {
     use std::os::windows::fs::symlink_dir;
 
     #[test]
-    fn test_validate_no_traversal_rejects_dotdot() {
-        assert!(validate_no_traversal("../etc/passwd").is_err());
-        assert!(validate_no_traversal("foo/../../bar").is_err());
+    fn test_reject_path_traversal_rejects_dotdot() {
+        assert!(reject_path_traversal("../etc/passwd").is_err());
+        assert!(reject_path_traversal("foo/../../bar").is_err());
     }
 
     #[test]
-    fn test_validate_no_traversal_rejects_null_bytes() {
-        assert!(validate_no_traversal("file\0.md").is_err());
+    fn test_reject_path_traversal_rejects_null_bytes() {
+        assert!(reject_path_traversal("file\0.md").is_err());
     }
 
     #[test]
-    fn test_validate_no_traversal_allows_valid_paths() {
-        assert!(validate_no_traversal("notes/daily/2024-01-15.md").is_ok());
-        assert!(validate_no_traversal("subdir/note.md").is_ok());
+    fn test_reject_path_traversal_allows_valid_paths() {
+        assert!(reject_path_traversal("notes/daily/2024-01-15.md").is_ok());
+        assert!(reject_path_traversal("subdir/note.md").is_ok());
     }
 
     #[test]
-    fn test_validate_no_traversal_rejects_absolute_paths() {
-        assert!(validate_no_traversal("/home/user/kiln/note.md").is_err());
-        assert!(validate_no_traversal("/etc/passwd").is_err());
+    fn test_reject_path_traversal_allows_absolute_paths() {
+        // The kiln file routes accept absolute paths; kiln containment is
+        // enforced separately by find_enclosing_kiln + within-kiln checks.
+        assert!(reject_path_traversal("/home/user/kiln/note.md").is_ok());
+        // ...but an absolute path with a `..` segment is still rejected.
+        assert!(reject_path_traversal("/home/user/kiln/../../etc/passwd").is_err());
     }
 
     #[test]
@@ -268,18 +276,18 @@ mod tests {
     proptest! {
         #[test]
         fn prop_traversal_paths_are_rejected(path in arb_traversal_path()) {
-            prop_assert!(validate_no_traversal(&path).is_err());
+            prop_assert!(reject_path_traversal(&path).is_err());
         }
 
         #[test]
         fn prop_safe_paths_are_accepted(path in arb_safe_path()) {
-            prop_assert!(validate_no_traversal(&path).is_ok());
+            prop_assert!(reject_path_traversal(&path).is_ok());
         }
 
         #[test]
         fn prop_null_bytes_are_always_rejected(prefix in ".{0,32}", suffix in ".{0,32}") {
             let path = format!("{prefix}\0{suffix}");
-            prop_assert!(validate_no_traversal(&path).is_err());
+            prop_assert!(reject_path_traversal(&path).is_err());
         }
 
         #[test]

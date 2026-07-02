@@ -49,14 +49,14 @@ test.describe('WS-202 editor round-trip', () => {
     await story.step(page, 'edited - dirty dot');
 
     // Save via the harness Save button (wired to the real EditorContext.saveFile
-    // → api.saveNote → PUT /api/notes). Assert the exact request body.
+    // → api.saveFileContent → PUT /api/kiln/file). Assert the exact request body.
     const putPromise = page.waitForRequest(
-      (r) => r.method() === 'PUT' && r.url().includes('/api/notes/'),
+      (r) => r.method() === 'PUT' && r.url().includes('/api/kiln/file'),
     );
     await page.getByTestId('harness-save').click();
     const put = await putPromise;
-    const body = put.postDataJSON() as { kiln: string; content: string };
-    expect(body.kiln).toBe(HARNESS_KILN);
+    const body = put.postDataJSON() as { path: string; content: string };
+    expect(body.path).toBe(NOTE_A.path);
     // Original content round-trips untouched: heading, wikilinks, unicode.
     expect(body.content.startsWith(NOTE_A.content)).toBe(true);
     expect(body.content).toContain('[[Wikilink]]');
@@ -74,13 +74,13 @@ test.describe('WS-202 editor round-trip', () => {
   test('save failure keeps the file dirty and surfaces an error', async ({ page }) => {
     // Re-route PUT to 500 to exercise the failure branch.
     const harness = await setupEditorHarness(page, [NOTE_A]);
-    await page.route('**/api/notes/**', (route) => {
+    // Re-route the PUT save to 500 to exercise the failure branch (GET load is
+    // still served by the harness route registered earlier).
+    await page.route('**/api/kiln/file**', (route) => {
       if (route.request().method() === 'PUT') {
         return route.fulfill({ status: 500, body: 'disk full' });
       }
-      return route.fulfill({
-        json: { name: NOTE_A.name, content: NOTE_A.content, path: NOTE_A.path },
-      });
+      return route.fallback();
     });
 
     await harness.open(NOTE_A);

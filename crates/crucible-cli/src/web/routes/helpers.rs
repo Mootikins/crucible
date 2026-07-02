@@ -65,13 +65,14 @@ pub(crate) fn validate_note_name(name: &str) -> Result<(), WebError> {
 ///
 /// Returns [`WebError::Validation`] on failure (preserving the existing
 /// HTTP-422 behaviour of the kiln routes).
-pub(crate) fn validate_no_traversal(path: &str) -> Result<(), WebError> {
-    // Reject absolute paths — callers must use kiln-relative or daemon-resolved paths.
-    if path.starts_with('/') || path.starts_with('\\') {
-        return Err(WebError::Validation(
-            "Invalid path: absolute paths not allowed".to_string(),
-        ));
-    }
+/// Reject `..` traversal sequences and NUL bytes, but ALLOW absolute paths.
+///
+/// The kiln file routes address files by absolute path (a note's own path) and
+/// enforce kiln containment separately (`find_enclosing_kiln` +
+/// `validate_file_within_kiln` / `validate_parent_within_kiln`, which
+/// canonicalize and check `starts_with` the open kiln). Banning absolute paths
+/// here would reject every real editor request while adding no security.
+pub(crate) fn reject_path_traversal(path: &str) -> Result<(), WebError> {
     if path.contains("..") || path.contains('\0') {
         return Err(WebError::Validation(
             "Invalid path: traversal not allowed".to_string(),

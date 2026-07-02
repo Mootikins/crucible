@@ -7,19 +7,12 @@ import {
 import { createStore, produce } from 'solid-js/store';
 import type { EditorFile } from '@/lib/types';
 import type { EditorContextValue } from '@/lib/types/context';
-import { getFileContent, saveNote } from '@/lib/api';
-import { useProjectSafe } from '@/contexts/ProjectContext';
+import { getFileContent, saveFileContent } from '@/lib/api';
 
 
 const EditorContext = createContext<EditorContextValue>();
 
-function extractNoteName(path: string, kilnPath: string): string {
-  const relative = path.replace(kilnPath + '/', '');
-  return relative.replace(/\.md$/, '');
-}
-
 export const EditorProvider: ParentComponent = (props) => {
-  const project = useProjectSafe();
   const [openFilesStore, setOpenFiles] = createStore<EditorFile[]>([]);
   const [activeFile, setActiveFileSignal] = createSignal<string | null>(null);
   const [isLoading, setIsLoading] = createSignal(false);
@@ -81,15 +74,9 @@ export const EditorProvider: ParentComponent = (props) => {
     setError(null);
 
     try {
-      const currentProject = project.currentProject();
-      if (!currentProject || !currentProject.kilns[0]) {
-        setError('No project selected');
-        return;
-      }
-
-      const kilnPath = currentProject.kilns[0].path;
-      const noteName = extractNoteName(path, kilnPath);
-      await saveNote(noteName, kilnPath, file.content);
+      // Save by absolute path (symmetric with the load) — the editor addresses
+      // files by path, and PUT /api/kiln/file writes within the open kiln.
+      await saveFileContent(path, file.content);
 
       setOpenFiles(
         produce((files) => {

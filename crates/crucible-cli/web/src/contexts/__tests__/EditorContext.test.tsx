@@ -5,26 +5,16 @@ import { render, waitFor } from '@solidjs/testing-library';
 // file bytes via GET /api/kiln/file (getFileContent). These mocks let us assert
 // which endpoint openFile actually hits.
 const getFileContent = vi.fn(async (_path: string) => '');
-const saveNote = vi.fn(async () => {});
+const saveFileContent = vi.fn(async (_path: string, _content: string) => {});
 const getNote = vi.fn(async () => ({ name: '', path: '', content: '', title: null, tags: [], updated_at: '' }));
 
 vi.mock('@/lib/api', () => ({
   getFileContent: (p: string) => getFileContent(p),
-  saveNote: (...args: unknown[]) => saveNote(...(args as [])),
+  saveFileContent: (p: string, c: string) => saveFileContent(p, c),
   getNote: () => getNote(),
 }));
 
 const KILN = '/home/user/kiln';
-vi.mock('@/contexts/ProjectContext', () => ({
-  useProjectSafe: () => ({
-    currentProject: () => ({
-      path: '/home/user/project',
-      name: 'p',
-      kilns: [{ path: KILN, name: 'k' }],
-      last_accessed: '',
-    }),
-  }),
-}));
 
 const { EditorProvider, useEditor } = await import('../EditorContext');
 
@@ -46,7 +36,7 @@ function withEditor(fn: (editor: ReturnType<typeof useEditor>) => void) {
 describe('EditorContext — content load path (bug 8)', () => {
   beforeEach(() => {
     getFileContent.mockClear();
-    saveNote.mockClear();
+    saveFileContent.mockClear();
     getNote.mockClear();
   });
 
@@ -68,7 +58,7 @@ describe('EditorContext — content load path (bug 8)', () => {
     });
   });
 
-  it('edit marks dirty; saveFile PUTs content via saveNote and clears dirty', async () => {
+  it('edit marks dirty; saveFile writes via saveFileContent and clears dirty', async () => {
     const path = `${KILN}/notes/from-tui.md`;
     getFileContent.mockResolvedValueOnce('start\n');
 
@@ -81,8 +71,8 @@ describe('EditorContext — content load path (bug 8)', () => {
 
     await editor.saveFile(path);
 
-    // Save goes through PUT /api/notes/:name (saveNote), which writes to disk.
-    expect(saveNote).toHaveBeenCalledWith('notes/from-tui', KILN, 'start\nbrowser was here\n');
+    // Save goes through PUT /api/kiln/file (saveFileContent) by absolute path.
+    expect(saveFileContent).toHaveBeenCalledWith(path, 'start\nbrowser was here\n');
     await waitFor(() => expect(editor.openFiles()[0].dirty).toBe(false));
   });
 });

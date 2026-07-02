@@ -10,6 +10,7 @@ import { getConfig } from '@/lib/api';
 import { setupLayoutAutoSave, loadLayoutOnStartup } from '@/lib/layout-persistence';
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
 import { openSessionInChat } from '@/lib/session-actions';
+import { openFileInEditor } from '@/lib/file-actions';
 import { statusBarActions, statusBarStore } from '@/stores/statusBarStore';
 import { windowActions } from '@/stores/windowStore';
 import { NotificationToast } from '@/components/NotificationToast';
@@ -182,11 +183,20 @@ const App: Component = () => {
       openSessionInChat(sessionId, title);
     };
     window.addEventListener('crucible:open-session', onOpenSession);
+    // Open a kiln file in the editor programmatically (symmetric with
+    // open-session). Lets other panels/commands "reveal in editor" a path
+    // without a sidebar click.
+    const onOpenFile = (e: Event) => {
+      const { path, name } = (e as CustomEvent<{ path: string; name?: string }>).detail;
+      openFileInEditor(path, name ?? path.split('/').pop() ?? path);
+    };
+    window.addEventListener('crucible:open-file', onOpenFile);
 
     onCleanup(() => {
       document.removeEventListener('keydown', onGlobalKeyDown, true);
       window.removeEventListener('crucible:export-session', onExportSession);
       window.removeEventListener('crucible:open-session', onOpenSession);
+      window.removeEventListener('crucible:open-file', onOpenFile);
     });
   });
 

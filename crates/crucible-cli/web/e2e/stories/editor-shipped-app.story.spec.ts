@@ -10,9 +10,9 @@ import { setupBasicMocks } from '../helpers/mock-api';
  * genuine product path:
  *   - App.tsx now mounts <EditorProvider> (bug 3), so FileViewerPanel resolves a
  *     real EditorContext instead of the noop fallback.
- *   - openFileInEditor() — the exact function FilesPanel's file-click calls —
- *     opens a 'file' tab; the real FileViewerPanel renders (registry NOT
- *     bypassed, cf. e2e/file-tab.spec.ts).
+ *   - the `crucible:open-file` product event (handled in App.tsx) opens a 'file'
+ *     tab via openFileInEditor — the same function FilesPanel's click calls; the
+ *     real FileViewerPanel renders (registry NOT bypassed, cf. file-tab.spec.ts).
  *   - Content loads via GET /api/kiln/file (bug 8) — get_note_by_name returns no
  *     content, so the old getNote path always yielded an empty editor.
  *   - The FileViewerPanel Save button (bug 4) is wired to EditorContext.saveFile
@@ -28,24 +28,20 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
     const story = createStory(testInfo);
     await setupBasicMocks(page, { sessions: [] });
 
-    const saves: Array<{ kiln: string; content: string }> = [];
+    const saves: Array<{ path: string; content: string }> = [];
 
     // Load path (bug 8): GET /api/kiln/file returns the file bytes.
     await page.route('**/api/kiln/file**', (route: Route) => {
       if (route.request().method() === 'GET') {
         return route.fulfill({ json: { content: INITIAL } });
       }
-      return route.continue();
-    });
-
-    // Save path (bug 4): PUT /api/notes/:name records the write.
-    await page.route('**/api/notes/**', (route: Route) => {
+      // Save path (bug 4): PUT /api/kiln/file records the write.
       if (route.request().method() === 'PUT') {
-        const body = route.request().postDataJSON() as { kiln: string; content: string };
+        const body = route.request().postDataJSON() as { path: string; content: string };
         saves.push(body);
         return route.fulfill({ status: 200, body: '' });
       }
-      return route.fulfill({ status: 404, body: 'not found' });
+      return route.continue();
     });
 
     await page.goto('/');
@@ -54,9 +50,10 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
     // FilesPanel.handleFileClick calls). Registry is left intact so the REAL
     // FileViewerPanel renders under the REAL EditorProvider.
     await page.evaluate(
-      async ({ filePath, fileName }) => {
-        const { openFileInEditor } = await import('/src/lib/file-actions.ts');
-        openFileInEditor(filePath, fileName);
+      ({ filePath, fileName }) => {
+        window.dispatchEvent(
+          new CustomEvent('crucible:open-file', { detail: { path: filePath, name: fileName } }),
+        );
       },
       { filePath: FILE_PATH, fileName: 'from-tui.md' },
     );
@@ -79,14 +76,14 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
     await expect(page.getByTestId('file-save')).toBeEnabled();
     await story.step(page, 'edited - dirty');
 
-    // Save through the product Save button → real saveFile → PUT /api/notes.
+    // Save through the product Save button → real saveFile → PUT /api/kiln/file.
     const putPromise = page.waitForRequest(
-      (r) => r.method() === 'PUT' && r.url().includes('/api/notes/'),
+      (r) => r.method() === 'PUT' && r.url().includes('/api/kiln/file'),
     );
     await page.getByTestId('file-save').click();
     const put = await putPromise;
-    const body = put.postDataJSON() as { kiln: string; content: string };
-    expect(body.kiln).toBe(KILN);
+    const body = put.postDataJSON() as { path: string; content: string };
+    expect(body.path).toBe(FILE_PATH);
     expect(body.content).toContain('terminal was here');
     expect(body.content).toContain('browser was here');
 
@@ -99,22 +96,19 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
 
   test('Cmd/Ctrl-S saves without clicking the button', async ({ page }) => {
     await setupBasicMocks(page, { sessions: [] });
-    await page.route('**/api/kiln/file**', (route) =>
-      route.request().method() === 'GET'
-        ? route.fulfill({ json: { content: INITIAL } })
-        : route.continue(),
-    );
-    await page.route('**/api/notes/**', (route) =>
-      route.request().method() === 'PUT'
-        ? route.fulfill({ status: 200, body: '' })
-        : route.fulfill({ status: 404, body: '' }),
-    );
+    await page.route('**/api/kiln/file**', (route) => {
+      const m = route.request().method();
+      if (m === 'GET') return route.fulfill({ json: { content: INITIAL } });
+      if (m === 'PUT') return route.fulfill({ status: 200, body: '' });
+      return route.continue();
+    });
 
     await page.goto('/');
     await page.evaluate(
-      async ({ filePath, fileName }) => {
-        const { openFileInEditor } = await import('/src/lib/file-actions.ts');
-        openFileInEditor(filePath, fileName);
+      ({ filePath, fileName }) => {
+        window.dispatchEvent(
+          new CustomEvent('crucible:open-file', { detail: { path: filePath, name: fileName } }),
+        );
       },
       { filePath: FILE_PATH, fileName: 'from-tui.md' },
     );
@@ -126,7 +120,7 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
     await expect(page.getByTestId('file-save')).toBeEnabled();
 
     const putPromise = page.waitForRequest(
-      (r) => r.method() === 'PUT' && r.url().includes('/api/notes/'),
+      (r) => r.method() === 'PUT' && r.url().includes('/api/kiln/file'),
     );
     await page.keyboard.press('ControlOrMeta+s');
     await putPromise;
