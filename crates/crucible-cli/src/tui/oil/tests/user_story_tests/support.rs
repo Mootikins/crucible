@@ -58,7 +58,10 @@ pub(crate) fn load_fixture(name: &str) -> Vec<ChatAppMsg> {
         let Some(event_type) = value.get("event").and_then(|v| v.as_str()) else {
             continue;
         };
-        let data = value.get("data").cloned().unwrap_or(serde_json::Value::Null);
+        let data = value
+            .get("data")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         msgs.extend(session_event_to_chat_msgs(event_type, &data));
     }
     msgs
@@ -104,7 +107,8 @@ impl StoryRuntime {
     /// Send a key event and return the resulting action (for asserting
     /// daemon-bound `Action::Send`s such as permission responses).
     pub(crate) fn key(&mut self, code: KeyCode) -> Action<ChatAppMsg> {
-        self.app.update(Event::Key(KeyEvent::new(code, KeyModifiers::NONE)))
+        self.app
+            .update(Event::Key(KeyEvent::new(code, KeyModifiers::NONE)))
     }
 
     /// Type a string one `Char` key at a time (drives autocomplete + input).
@@ -122,8 +126,10 @@ impl StoryRuntime {
 
     /// Send a Ctrl+`c` key event (e.g. Ctrl+J to insert a newline).
     pub(crate) fn key_ctrl(&mut self, c: char) -> Action<ChatAppMsg> {
-        self.app
-            .update(Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)))
+        self.app.update(Event::Key(KeyEvent::new(
+            KeyCode::Char(c),
+            KeyModifiers::CONTROL,
+        )))
     }
 
     /// Render the current state into a fresh terminal and record it under

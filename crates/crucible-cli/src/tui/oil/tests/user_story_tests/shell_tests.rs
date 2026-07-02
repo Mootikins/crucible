@@ -30,7 +30,10 @@ fn run_to_completion(cmd: &str) -> ShellModal {
         }
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
-    assert!(!modal.is_running(), "command did not complete in time: {cmd}");
+    assert!(
+        !modal.is_running(),
+        "command did not complete in time: {cmd}"
+    );
     modal
 }
 

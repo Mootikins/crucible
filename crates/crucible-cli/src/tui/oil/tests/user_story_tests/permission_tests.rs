@@ -137,7 +137,10 @@ fn queued_permissions_open_in_arrival_order() {
     let action = story.key(KeyCode::Char('y'));
     assert_eq!(decision(&action), Some(true));
 
-    assert!(story.app().has_interaction_modal(), "queued request should open");
+    assert!(
+        story.app().has_interaction_modal(),
+        "queued request should open"
+    );
     let screen = story.screen();
     assert!(
         screen.contains("secret.txt"),

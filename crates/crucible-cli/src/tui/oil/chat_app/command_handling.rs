@@ -1065,7 +1065,10 @@ mod tests {
     fn set_then_query_round_trips() {
         let mut app = app();
         run_set(&mut app, "thinkingbudget=high");
-        let stored = app.runtime_config.get("thinkingbudget").expect("value stored");
+        let stored = app
+            .runtime_config
+            .get("thinkingbudget")
+            .expect("value stored");
         assert_eq!(stored.as_string(), Some("high"));
     }
 

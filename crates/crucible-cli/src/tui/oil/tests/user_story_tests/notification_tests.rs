@@ -29,7 +29,11 @@ fn messages_drawer_lists_all_notifications_in_order() {
     story.app().show_messages();
     let screen = story.screen();
 
-    for msg in ["first entry saved", "context at 85 percent", "third entry done"] {
+    for msg in [
+        "first entry saved",
+        "context at 85 percent",
+        "third entry done",
+    ] {
         assert!(
             screen.contains(msg),
             "drawer should list notification {msg:?}:\n{screen}"
