@@ -14,9 +14,11 @@ use std::rc::Rc;
 
 use agent_client_protocol::{
     Agent, AgentCapabilities, AuthenticateRequest, AuthenticateResponse, CancelNotification,
-    Client, Error, InitializeRequest, InitializeResponse, LoadSessionRequest, LoadSessionResponse,
-    NewSessionRequest, NewSessionResponse, PromptCapabilities, PromptRequest, PromptResponse,
-    RequestPermissionRequest, Result as AcpResult, SessionId, SessionNotification, StopReason,
+    Client, CloseSessionRequest, CloseSessionResponse, Error, InitializeRequest,
+    InitializeResponse, LoadSessionRequest, LoadSessionResponse, NewSessionRequest,
+    NewSessionResponse, PromptCapabilities, PromptRequest, PromptResponse,
+    RequestPermissionRequest, Result as AcpResult, SessionCapabilities, SessionCloseCapabilities,
+    SessionId, SessionNotification, StopReason,
 };
 use crucible_core::config::CliAppConfig;
 use crucible_core::interaction::{InteractionRequest, InteractionResponse};
@@ -82,6 +84,38 @@ impl CrucibleAcpAgent {
         ))
     }
 
+    fn insert_session(
+        &self,
+        id: String,
+        client: DaemonClient,
+        events: mpsc::UnboundedReceiver<SessionEvent>,
+    ) {
+        self.sessions.borrow_mut().insert(
+            id.clone(),
+            SessionEntry {
+                client: Rc::new(client),
+                daemon_session_id: id,
+                events: Rc::new(Mutex::new(events)),
+            },
+        );
+    }
+
+    /// Drop a session's map entry. This releases the last `Rc<DaemonClient>`
+    /// (unless a turn is still borrowing it), closing that session's dedicated
+    /// daemon connection — which the daemon treats as a disconnect and uses to
+    /// clean up all of the session's subscriptions server-side. No explicit
+    /// unsubscribe RPC is sent (it could hang on an already-dead connection).
+    fn remove_session(&self, daemon_session_id: &str) {
+        if self
+            .sessions
+            .borrow_mut()
+            .remove(daemon_session_id)
+            .is_some()
+        {
+            debug!(session = %daemon_session_id, "acp session removed");
+        }
+    }
+
     /// Pump daemon events into ACP `session/update` notifications until the turn
     /// ends, returning the stop reason to report on `session/prompt`.
     async fn pump_turn(
@@ -95,8 +129,11 @@ impl CrucibleAcpAgent {
         let mut rx = events.lock().await;
         loop {
             let Some(event) = rx.recv().await else {
-                // Daemon connection closed mid-turn.
-                return Ok(StopReason::Cancelled);
+                // Daemon connection closed mid-turn: report a JSON-RPC error
+                // (more truthful than a clean Cancelled) and drop the session.
+                warn!(session = %daemon_session_id, "daemon event stream closed mid-turn");
+                self.remove_session(daemon_session_id);
+                return Err(Error::internal_error());
             };
             if event.session_id != daemon_session_id {
                 continue;
@@ -178,10 +215,13 @@ impl CrucibleAcpAgent {
 impl Agent for CrucibleAcpAgent {
     async fn initialize(&self, args: InitializeRequest) -> AcpResult<InitializeResponse> {
         // Echo the client's requested protocol version (we support v1 shapes);
-        // advertise text prompts and load_session support.
+        // advertise text prompts, load_session, and session/close support.
         let caps = AgentCapabilities::new()
             .load_session(true)
-            .prompt_capabilities(PromptCapabilities::new());
+            .prompt_capabilities(PromptCapabilities::new())
+            .session_capabilities(
+                SessionCapabilities::new().close(SessionCloseCapabilities::new()),
+            );
         Ok(InitializeResponse::new(args.protocol_version).agent_capabilities(caps))
     }
 
@@ -230,6 +270,13 @@ impl Agent for CrucibleAcpAgent {
             .ok_or_else(Error::internal_error)?
             .to_string();
 
+        // Now that we know the id, narrow the wildcard down to this session so
+        // an idle connection can't buffer other sessions' events unboundedly.
+        // Best-effort: on failure we keep the (broader) wildcard, so we never
+        // miss this session's events. The specific subscribe must land before
+        // the wildcard is dropped to avoid an event gap.
+        narrow_subscription(&client, &daemon_session_id).await;
+
         let agent = crate::factories::agent::build_internal_session_agent(&self.config);
         client
             .session_configure_agent(&daemon_session_id, &agent)
@@ -240,14 +287,7 @@ impl Agent for CrucibleAcpAgent {
             })?;
 
         info!(session = %daemon_session_id, "acp session ready");
-        self.sessions.borrow_mut().insert(
-            daemon_session_id.clone(),
-            SessionEntry {
-                client: Rc::new(client),
-                daemon_session_id: daemon_session_id.clone(),
-                events: Rc::new(Mutex::new(event_rx)),
-            },
-        );
+        self.insert_session(daemon_session_id.clone(), client, event_rx);
 
         Ok(NewSessionResponse::new(daemon_session_id))
     }
@@ -299,8 +339,10 @@ impl Agent for CrucibleAcpAgent {
         let (client, event_rx) = DaemonClient::connect_or_start_with_events()
             .await
             .map_err(|_| Error::internal_error())?;
+        // The id is known up front (we're resuming), so subscribe to exactly
+        // this session — no wildcard, no create→subscribe race to cover.
         client
-            .session_subscribe(&["*"])
+            .session_subscribe(&[daemon_session_id.as_str()])
             .await
             .map_err(|_| Error::internal_error())?;
         client
@@ -311,15 +353,35 @@ impl Agent for CrucibleAcpAgent {
                 Error::internal_error()
             })?;
 
-        self.sessions.borrow_mut().insert(
-            daemon_session_id.clone(),
-            SessionEntry {
-                client: Rc::new(client),
-                daemon_session_id,
-                events: Rc::new(Mutex::new(event_rx)),
-            },
-        );
+        self.insert_session(daemon_session_id, client, event_rx);
         Ok(LoadSessionResponse::default())
+    }
+
+    async fn close_session(&self, args: CloseSessionRequest) -> AcpResult<CloseSessionResponse> {
+        let daemon_session_id = args.session_id.0.as_ref();
+        info!(session = %daemon_session_id, "acp close_session");
+        // Best-effort: stop any in-flight turn server-side, then drop the entry
+        // (which closes the dedicated connection and releases subscriptions).
+        if let Some((client, id, _)) = self.lookup(daemon_session_id) {
+            if let Err(e) = client.session_cancel(&id).await {
+                debug!(error = %e, "session.cancel during close failed (ignored)");
+            }
+        }
+        self.remove_session(daemon_session_id);
+        Ok(CloseSessionResponse::default())
+    }
+}
+
+/// Subscribe to a specific session, then drop the wildcard subscription used to
+/// cover the create→subscribe race. Best-effort: if the specific subscribe
+/// fails we leave the wildcard in place rather than risk missing events.
+async fn narrow_subscription(client: &DaemonClient, daemon_session_id: &str) {
+    if let Err(e) = client.session_subscribe(&[daemon_session_id]).await {
+        warn!(error = %e, "specific subscribe failed; keeping wildcard subscription");
+        return;
+    }
+    if let Err(e) = client.session_unsubscribe(&["*"]).await {
+        warn!(error = %e, "failed to drop wildcard subscription (harmless)");
     }
 }
 

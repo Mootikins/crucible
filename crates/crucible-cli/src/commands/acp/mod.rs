@@ -157,6 +157,10 @@ mod tests {
                     resp.agent_capabilities.load_session,
                     "agent should advertise load_session"
                 );
+                assert!(
+                    resp.agent_capabilities.session_capabilities.close.is_some(),
+                    "agent should advertise session/close support"
+                );
             })
             .await;
     }
