@@ -588,14 +588,14 @@ describe('session title endpoints', () => {
 
   it('generateSessionTitle returns the generated title', async () => {
     global.fetch = createMockFetch({
-      'POST /api/session/ses-1/generate-title': { body: { title: 'Auto title' } },
+      'POST /api/session/ses-1/auto-title': { body: { title: 'Auto title' } },
     });
     expect(await generateSessionTitle('ses-1')).toBe('Auto title');
   });
 
   it('generateSessionTitle throws on error', async () => {
     global.fetch = createMockFetch({
-      'POST /api/session/ses-1/generate-title': { status: 503 },
+      'POST /api/session/ses-1/auto-title': { status: 503 },
     });
     await expect(generateSessionTitle('ses-1')).rejects.toThrow('Failed to generate title: HTTP 503');
   });

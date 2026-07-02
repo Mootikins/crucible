@@ -373,7 +373,7 @@ export async function setSessionTitle(sessionId: string, title: string): Promise
 /** Generate a title for a session using LLM. */
 export async function generateSessionTitle(sessionId: string): Promise<string> {
   return (
-    await request<{ title: string }>('POST', `/api/session/${encodeURIComponent(sessionId)}/generate-title`, {
+    await request<{ title: string }>('POST', `/api/session/${encodeURIComponent(sessionId)}/auto-title`, {
       errorMessage: 'Failed to generate title',
     })
   ).title;

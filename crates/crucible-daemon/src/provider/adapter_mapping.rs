@@ -25,7 +25,7 @@ use tracing;
 /// - `Burn` → Not supported (embedding-only, no chat)
 /// - `GitHubCopilot` → `AdapterKind::OpenAI` (uses ServiceTargetResolver for endpoint)
 /// - `OpenRouter` → `AdapterKind::OpenAI` (uses ServiceTargetResolver for custom endpoint)
-/// - `ZAI` → `AdapterKind::Zai` (coding plan uses `zai-coding::` model prefix)
+/// - `ZAI` → `AdapterKind::Zai` (coding plan uses `zai_coding::` model prefix)
 /// - `Custom` → `AdapterKind::OpenAI` (generic OpenAI-compatible)
 /// - `Mock` → Not supported (testing only)
 pub fn backend_to_adapter(backend: &BackendType) -> Option<AdapterKind> {
@@ -70,7 +70,7 @@ fn ensure_trailing_slash(endpoint: &str) -> String {
 pub struct ChatClient {
     client: genai::Client,
     backend: BackendType,
-    /// ZAI coding plan requires `zai-coding::` model name prefix for correct
+    /// ZAI coding plan requires `zai_coding::` model name prefix for correct
     /// endpoint routing in genai's ZAI adapter.
     zai_coding: bool,
 }
@@ -174,9 +174,10 @@ impl ChatClient {
     pub fn model_iden(&self, model: &str) -> Option<ModelIden> {
         let adapter = backend_to_adapter(&self.backend)?;
         if self.zai_coding {
-            // Prefix with zai-coding:: so genai's ZAI adapter routes to the
-            // coding endpoint instead of the regular credit-based one.
-            Some(ModelIden::new(adapter, format!("zai-coding::{model}")))
+            // Prefix with zai_coding:: (underscore — genai's ZAI_CODING_NAMESPACE)
+            // so genai routes to the coding endpoint instead of the credit-based one.
+            // A hyphen is not a recognized namespace and silently falls back to Ollama.
+            Some(ModelIden::new(adapter, format!("zai_coding::{model}")))
         } else {
             Some(ModelIden::new(adapter, model))
         }
@@ -809,6 +810,35 @@ mod tests {
         let iden = model_iden.unwrap();
         assert_eq!(iden.adapter_kind, AdapterKind::Ollama);
         assert_eq!(&*iden.model_name, "llama3.2");
+    }
+
+    #[test]
+    fn chat_client_model_iden_zai_coding_uses_genai_namespace() {
+        // genai's coding-plan namespace is `zai_coding::` (underscore). A hyphen
+        // (`zai-coding::`) is not a recognized namespace, so genai falls back to
+        // the Ollama adapter, which sends no auth header → 401 from api.z.ai.
+        let config = crucible_core::config::LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            endpoint: Some("https://api.z.ai/api/coding/paas/v4".to_string()),
+            default_model: Some("glm-5".to_string()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: Some("glm-auth-token".to_string()),
+            available_models: None,
+            trust_level: None,
+            name: None,
+        };
+
+        let client = ChatClient::new(&config);
+        let iden = client.model_iden("glm-5").unwrap();
+        assert_eq!(iden.adapter_kind, AdapterKind::Zai);
+        assert_eq!(&*iden.model_name, "zai_coding::glm-5");
+        // genai must resolve the namespaced name back to the ZAI adapter
+        assert_eq!(
+            AdapterKind::from_model(&iden.model_name).unwrap(),
+            AdapterKind::Zai
+        );
     }
 
     #[test]
