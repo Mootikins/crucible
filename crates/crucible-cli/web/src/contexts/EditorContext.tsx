@@ -7,7 +7,7 @@ import {
 import { createStore, produce } from 'solid-js/store';
 import type { EditorFile } from '@/lib/types';
 import type { EditorContextValue } from '@/lib/types/context';
-import { getNote, saveNote } from '@/lib/api';
+import { getFileContent, saveNote } from '@/lib/api';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 
 
@@ -36,16 +36,10 @@ export const EditorProvider: ParentComponent = (props) => {
     setError(null);
 
     try {
-      const currentProject = project.currentProject();
-      if (!currentProject || !currentProject.kilns[0]) {
-        setError('No project selected');
-        return;
-      }
-
-      const kilnPath = currentProject.kilns[0].path;
-      const noteName = extractNoteName(path, kilnPath);
-      const noteData = await getNote(noteName, kilnPath);
-      const content = noteData.content ?? '';
+      // Load the raw file bytes from disk. get_note_by_name returns metadata
+      // only (no content), so the note endpoint can't hydrate the editor —
+      // GET /api/kiln/file reads the file itself and is the source of truth.
+      const content = await getFileContent(path);
 
       setOpenFiles(
         produce((files) => {

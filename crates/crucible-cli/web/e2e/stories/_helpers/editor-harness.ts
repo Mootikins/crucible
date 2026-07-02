@@ -55,7 +55,20 @@ export async function setupEditorHarness(
   const byName = new Map(files.map((f) => [f.name, f]));
   const saves: SavedNote[] = [];
 
+  const byPath = new Map(files.map((f) => [f.path, f]));
+
   await page.route('**/api/project/list', (r) => r.fulfill({ json: [project] }));
+
+  // Content load path: EditorContext.openFile reads bytes via GET
+  // /api/kiln/file?path=<abs> (get_note_by_name returns no content).
+  await page.route('**/api/kiln/file**', (route: Route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const url = new URL(route.request().url());
+    const p = url.searchParams.get('path') ?? '';
+    const file = byPath.get(p);
+    if (!file) return route.fulfill({ status: 404, body: 'not found' });
+    return route.fulfill({ json: { content: file.content } });
+  });
 
   await page.route('**/api/notes/**', (route: Route) => {
     const req = route.request();
