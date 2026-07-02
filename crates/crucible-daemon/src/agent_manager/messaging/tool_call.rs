@@ -537,6 +537,28 @@ impl AgentManager {
     }
 }
 
+/// Tools whose output is trivially reproducible from existing data on disk.
+/// These should not be spilled — the content already exists and can be re-read.
+fn is_reproducible_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "read_file"
+            | "mcp_read"
+            | "edit_file"
+            | "mcp_edit"
+            | "write_file"
+            | "mcp_write"
+            | "glob"
+            | "mcp_glob"
+            | "grep"
+            | "mcp_grep"
+            | "list_notes"
+            | "read_note"
+            | "read_metadata"
+            | "get_kiln_info"
+    )
+}
+
 #[cfg(test)]
 mod invoke_tool_tests {
     use super::AgentManager;
@@ -615,26 +637,4 @@ mod invoke_tool_tests {
             .expect("plan-allowed tools remain callable via the bridge");
         assert_eq!(inner.name, "semantic_search");
     }
-}
-
-/// Tools whose output is trivially reproducible from existing data on disk.
-/// These should not be spilled — the content already exists and can be re-read.
-fn is_reproducible_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "read_file"
-            | "mcp_read"
-            | "edit_file"
-            | "mcp_edit"
-            | "write_file"
-            | "mcp_write"
-            | "glob"
-            | "mcp_glob"
-            | "grep"
-            | "mcp_grep"
-            | "list_notes"
-            | "read_note"
-            | "read_metadata"
-            | "get_kiln_info"
-    )
 }
