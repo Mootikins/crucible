@@ -21,10 +21,19 @@ pub(super) fn create_manager() -> BackgroundJobManager {
 #[derive(Clone)]
 pub(super) enum MockSubagentBehavior {
     ImmediateSuccess(String),
-    DelayedSuccess { output: String, delay: Duration },
-    DelayedFailure { error: String, delay: Duration },
+    DelayedSuccess {
+        output: String,
+        delay: Duration,
+    },
+    DelayedFailure {
+        error: String,
+        delay: Duration,
+    },
     Pending,
     StreamFailure(String),
+    /// Emits `marker` text plus a tool call every turn, so the execution loop
+    /// only terminates when it hits `max_turns`. Used to verify turn caps.
+    RepeatingToolCall(String),
 }
 
 pub(super) struct MockSubagentHandle {
@@ -64,6 +73,16 @@ impl crucible_core::turn::Agent for MockSubagentHandle {
                 }
                 MockSubagentBehavior::StreamFailure(message) => {
                     yield TurnEvent::Error(TurnError::Internal(message));
+                }
+                MockSubagentBehavior::RepeatingToolCall(marker) => {
+                    yield TurnEvent::TextDelta(marker);
+                    yield TurnEvent::ToolCall {
+                        id: "call-1".to_string(),
+                        name: "noop".to_string(),
+                        args: serde_json::Value::Null,
+                        diffs: Vec::new(),
+                    };
+                    yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
                 }
             }
         };

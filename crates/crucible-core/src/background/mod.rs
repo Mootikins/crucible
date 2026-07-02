@@ -20,6 +20,10 @@ pub struct SubagentBlockingConfig {
     pub timeout: Duration,
     /// Maximum bytes returned in `JobResult.output`.
     pub result_max_bytes: usize,
+    /// Maximum conversation turns the subagent may take. `None` falls back to
+    /// the runtime default. Reflection and other single-shot spawns cap this
+    /// low (1–3) so they cannot loop.
+    pub max_turns: Option<usize>,
 }
 
 impl Default for SubagentBlockingConfig {
@@ -27,6 +31,7 @@ impl Default for SubagentBlockingConfig {
         Self {
             timeout: Duration::from_secs(300),
             result_max_bytes: 51200,
+            max_turns: None,
         }
     }
 }

@@ -42,6 +42,7 @@ async fn spawn_subagent_blocking_timeout_returns_failed_job_result() {
             SubagentBlockingConfig {
                 timeout: Duration::from_millis(50),
                 result_max_bytes: 51200,
+                max_turns: None,
             },
             None,
         )
@@ -144,6 +145,7 @@ async fn spawn_subagent_blocking_truncates_output_to_configured_max_bytes() {
             SubagentBlockingConfig {
                 timeout: Duration::from_secs(1),
                 result_max_bytes: 32,
+                max_turns: None,
             },
             None,
         )
@@ -152,6 +154,63 @@ async fn spawn_subagent_blocking_truncates_output_to_configured_max_bytes() {
 
     let output = result.output.unwrap_or_default();
     assert!(output.len() <= 32, "output length was {}", output.len());
+}
+
+#[tokio::test]
+async fn spawn_subagent_blocking_respects_max_turns_cap() {
+    // The mock emits a tool call every turn, so without a cap it would run
+    // DEFAULT_SUBAGENT_MAX_TURNS times. With max_turns=1 it must stop after one.
+    let manager = make_subagent_manager_with_factory(
+        behavior_factory(MockSubagentBehavior::RepeatingToolCall("turn".to_string())),
+        None,
+    );
+
+    let result = manager
+        .spawn_subagent_blocking(
+            "session-1",
+            "do it".to_string(),
+            None,
+            SubagentBlockingConfig {
+                max_turns: Some(1),
+                ..SubagentBlockingConfig::default()
+            },
+            None,
+        )
+        .await
+        .expect("blocking run should succeed");
+
+    assert_eq!(result.info.status, JobStatus::Completed);
+    let output = result.output.unwrap_or_default();
+    assert_eq!(
+        output.matches("turn").count(),
+        1,
+        "max_turns=1 should produce exactly one turn of output, got: {output:?}"
+    );
+}
+
+#[tokio::test]
+async fn spawn_subagent_blocking_max_turns_defaults_when_unset() {
+    let manager = make_subagent_manager_with_factory(
+        behavior_factory(MockSubagentBehavior::RepeatingToolCall("turn".to_string())),
+        None,
+    );
+
+    let result = manager
+        .spawn_subagent_blocking(
+            "session-1",
+            "do it".to_string(),
+            None,
+            SubagentBlockingConfig::default(),
+            None,
+        )
+        .await
+        .expect("blocking run should succeed");
+
+    let output = result.output.unwrap_or_default();
+    assert!(
+        output.matches("turn").count() > 1,
+        "unset max_turns should fall back to the multi-turn default, got: {output:?}"
+    );
 }
 
 #[tokio::test]

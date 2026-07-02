@@ -129,7 +129,7 @@ impl BackgroundJobManager {
             cancel_rx,
             prepared.subagent_writer,
             SubagentExecutionOptions {
-                max_turns: DEFAULT_SUBAGENT_MAX_TURNS,
+                max_turns: config.max_turns.unwrap_or(DEFAULT_SUBAGENT_MAX_TURNS),
                 max_output_bytes: config.result_max_bytes,
                 timeout: Some(config.timeout),
             },

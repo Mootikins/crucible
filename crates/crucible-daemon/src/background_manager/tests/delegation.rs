@@ -311,6 +311,7 @@ async fn delegation_timeout_returns_failed_job_result() {
             SubagentBlockingConfig {
                 timeout: Duration::from_millis(30),
                 result_max_bytes: 51200,
+                max_turns: None,
             },
             None,
         )
@@ -402,6 +403,7 @@ async fn delegation_result_truncation_respects_config_limit() {
             SubagentBlockingConfig {
                 timeout: Duration::from_secs(1),
                 result_max_bytes: 16,
+                max_turns: None,
             },
             None,
         )
