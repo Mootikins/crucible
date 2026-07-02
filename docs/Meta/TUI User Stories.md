@@ -36,12 +36,12 @@ Multi-frame stories are verified as **frame sequences**: capture a `Vt100TestRun
 ### US-103: Slash commands
 **As a user**, I type `/` commands (`/help`, `/clear`, `/quit`, `/mode`, `/undo`, `/sessions`, `/files`, registry commands) and they execute locally or route to the agent.
 **Acceptance:** unknown command suggests nearest match (levenshtein); `/help` lists commands; `/clear` empties viewport; registry commands forward to agent.
-**Tests:** T1 (dispatch per command — GAP today beyond help/clear/model/mode), T2 (help render).
+**Tests:** T1 dispatch matrix in `chat_app/command_handling.rs` (quit/clear/messages/model/config/export/undo, unknown-command suggestion), T2 (help render).
 
 ### US-104: REPL `:set` runtime config
 **As a user**, I use vim-style `:set key=value` (and `?`, `??`, `&`, `<`) to change runtime config (thinking budget, context strategy/budget/window, autocompact threshold, precognition, perm.*).
 **Acceptance:** each documented key round-trips (set → query shows new value); invalid keys error with a message; session-scoped keys sync to the daemon; `:set key?` shows value, `&` resets.
-**Tests:** T1 per-key dispatch matrix (GAP), T2 (`:set` result notification render).
+**Tests:** T1 per-key dispatch matrix in `chat_app/command_handling.rs` (test-case over every session-scoped key: daemon-sync emission, invalid-value warnings, query round-trip, reset), T2 (`:set` result notification render).
 
 ### US-105: Double Ctrl+C quit
 **As a user**, one Ctrl+C clears input or warns; a second within 300ms quits, so I can't quit by accident.
@@ -51,7 +51,7 @@ Multi-frame stories are verified as **frame sequences**: capture a `Vt100TestRun
 ### US-106: Bracketed paste
 **As a user**, pasting multi-line text inserts it as one input block without executing lines.
 **Acceptance:** paste of N lines yields one buffer with N lines; no premature send; paste inside `:`/`!` modes stays literal.
-**Tests:** T1 (paste event handling — GAP: zero today), T4 (real bracketed-paste sequences).
+**Tests:** T1 multi-line substrate (`InputBuffer::insert_str`, Ctrl+J) in `user_story_tests/paste_tests.rs`; **GAP: bracketed-paste event plumbing not wired** (`CtEvent::Paste` → `Event::Tick` in `convert_event`), documented there. T4 (real bracketed-paste sequences).
 
 ### US-107: Message queueing while streaming
 **As a user**, I can type and queue my next message while the agent streams; Ctrl+Enter force-sends.
@@ -95,19 +95,19 @@ Multi-frame stories are verified as **frame sequences**: capture a `Vt100TestRun
 ### US-302: Subagent display
 **As a user**, spawned subagents show status (spawned/completed/failed), elapsed time, and truncated prompt.
 **Acceptance:** concurrent subagents render as separate rows; failure state distinct; completion collapses to a summary.
-**Tests:** T3 (delegation-demo fixture exists — assert states), T2 snapshots (GAP: no user-story flow).
+**Tests:** T2 spawn/complete/fail + concurrent-row + delegation-target render in `user_story_tests/subagent_mcp_tests.rs`; T3 (delegation-demo fixture).
 
 ### US-303: MCP server status
 **As a user**, `:mcp` lists configured MCP servers with live connection status that updates at runtime.
 **Acceptance:** connected/disconnected/connecting states visible; status refresh on `McpStatusLoaded`.
-**Tests:** T1 (status msg handling), T2 (list render — GAP).
+**Tests:** T1 (status msg handling), T2 `:mcp` list render with connection status in `user_story_tests/subagent_mcp_tests.rs`.
 
 ## 4. Interaction Modals
 
 ### US-401: Permission modal full flow
 **As a user**, when the agent needs permission I get a modal with the tool, args, and a togglable diff; y approves, n denies, a allowlists — and the tool then runs or errors accordingly.
 **Acceptance:** queued permissions auto-open in order; `d` toggles diff; decision reaches the daemon; deny yields an error tool result and the turn continues; allowlist persists project-scoped.
-**Tests:** T2 (modal render + diff exist), **T1+T3 full approve/deny→tool-result flow (GAP)**, permission_invariant_tests.
+**Tests:** T2 (modal render + diff), full approve/deny→tool-result flow + queued-ordering in `user_story_tests/permission_tests.rs`, permission_invariant_tests.
 
 ### US-402: Ask modal
 **As a user**, agent questions render as single-select, multi-select (Space), or free-text-"other" modals I drive with the keyboard.
@@ -124,7 +124,7 @@ Multi-frame stories are verified as **frame sequences**: capture a `Vt100TestRun
 ### US-501: Autocomplete triggers
 **As a user**, typing `@` (files), `[[` (notes), `/` (commands), `:` (REPL), `:model `, `:set ` (and args) pops contextual completions I cycle with Tab/arrows and accept with Enter.
 **Acceptance:** all 9 trigger kinds produce candidates; filtering narrows as I type; Esc dismisses without inserting; accepted completion replaces the token correctly.
-**Tests:** **T1 candidate-generation matrix (GAP: zero inline tests)**, T2 (popup snapshots), T4 (one Tab-cycle smoke).
+**Tests:** T1 candidate-generation matrix inline in `chat_app/autocomplete.rs` (every trigger kind, filter narrowing, dismiss, token replacement), T2 (popup snapshots), T4 (one Tab-cycle smoke).
 
 ### US-502: Command palette
 **As a user**, F1 opens a palette of every command; typing filters; Enter executes the selection.
@@ -141,31 +141,31 @@ Multi-frame stories are verified as **frame sequences**: capture a `Vt100TestRun
 ### US-601: Shell modal execution
 **As a user**, `!command` runs in a full-screen modal I can scroll (j/k/g/G/PgUp/PgDn); `i` inserts the output into chat input; Esc closes.
 **Acceptance:** exit code shown; long output scrolls; insert puts stdout at cursor; modal restores the chat view intact underneath.
-**Tests:** **T1+T2 end-to-end through the app (GAP)**, T4 (one real-command smoke).
+**Tests:** T1+T2 end-to-end via the `ShellModal` component in `user_story_tests/shell_tests.rs` (spawn → exit code → output → scroll); header/status + auto-follow unit-tested in `components/shell_modal.rs`. **Bug: `i`-insert closes the modal before stdout is inserted** (`#[ignore]` repro). T4 (one real-command smoke).
 
 ### US-602: Shell history
 **As a user**, `!` recalls my last 100 shell commands.
 **Acceptance:** up/down cycles history in shell mode; history persists within session; duplicates collapse.
-**Tests:** T1 (GAP).
+**Tests:** T1 storage + cap/eviction in `chat_app/tests.rs`. (Up/Down recall reads `InputBuffer` history; the dedicated `!`-history recall keybinding is not wired — see report.)
 
 ## 7. Notifications
 
 ### US-701: Toast lifecycle
 **As a user**, transient events show toasts that auto-dismiss after 3s; severities are visually distinct.
 **Acceptance:** multiple toasts stack in arrival order; expiry removes exactly the aged toast; badge count matches drawer contents.
-**Tests:** **T1 lifecycle (stack/expiry — GAP)**, T2 (badge snapshots exist).
+**Tests:** T2 stacking + latest-toast + drawer + dismissal in `user_story_tests/notification_tests.rs`; 3s expiry as an `#[ignore]` slow test (timeout not injectable headlessly). T2 (badge snapshots exist).
 
 ### US-702: Messages drawer
 **As a user**, `:messages` toggles a full history of notifications so nothing transient is lost.
 **Acceptance:** drawer lists all session notifications with severity; toggle preserves scroll; dismiss clears the badge.
-**Tests:** T1, T2 (drawer render — GAP as a flow).
+**Tests:** T2 drawer flow (`:messages` lists all, dismiss) in `user_story_tests/notification_tests.rs`.
 
 ## 8. Scrollback & Layout
 
 ### US-801: Review history without losing my place
 **As a user**, I scroll up through graduated history (PageUp/Dn, mouse), the view holds position while new content arrives, and End/indicator jumps me back to live.
 **Acceptance:** scroll disables auto-follow; "new content" indicator appears; jump-to-bottom resumes following.
-**Tests:** **T1 scroll state (GAP as user story)**, T4 (real terminal scroll region).
+**Tests:** T1 scroll state via the shell modal's scroll region (auto-follow off on manual scroll, jump-to-top/bottom) in `user_story_tests/scroll_tests.rs` + `components/shell_modal.rs`. The **main chat viewport graduates to the terminal's own scrollback (no app-held scroll state)**, so its scroll/auto-follow is T4-only. T4 (real terminal scroll region).
 
 ### US-802: Stable rendering across widths
 **As a user**, the TUI renders correctly at narrow (50), normal (80), and wide (120) widths without flicker or duplication.
@@ -182,7 +182,7 @@ Multi-frame stories are verified as **frame sequences**: capture a `Vt100TestRun
 ### US-902: Undo a turn
 **As a user**, `/undo` (and `/undo 3`) reverts the last agent turn(s) — conversation and file changes — so mistakes are cheap.
 **Acceptance:** viewport reflects removed turns; workspace files restored (git and non-git); `/undo` with nothing to undo says so; undo depth reported.
-**Tests:** **T1+T3 (GAP: zero undo tests)**, T4 optional.
+**Tests:** T1 `/undo`/`:undo [N]` dispatch in `chat_app/command_handling.rs`; T2/T3 UndoComplete toast, viewport truncation on daemon revert, and a frame-sequence snapshot in `user_story_tests/undo_tests.rs` (fixture `undo_flow.jsonl`). T4 optional.
 
 ### US-903: Resume with full history
 **As a user**, resuming a session rehydrates the viewport from daemon events with correct rendering of every historical element.
