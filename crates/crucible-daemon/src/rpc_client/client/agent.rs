@@ -39,9 +39,6 @@ pub struct SessionSetSystemPromptRequest {
 }
 
 /// Request for `session.set_precognition`.
-///
-/// NOTE: The client sends `precognition_enabled` but the daemon handler reads `enabled`.
-/// This is a pre-existing field name mismatch.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionSetPrecognitionRequest {
     pub session_id: String,

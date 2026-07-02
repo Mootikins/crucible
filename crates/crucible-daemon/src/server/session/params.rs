@@ -106,7 +106,7 @@ pub(crate) async fn handle_session_set_precognition(
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
-    let enabled = optional_param!(req, "enabled", as_bool).unwrap_or(true);
+    let enabled = optional_param!(req, "precognition_enabled", as_bool).unwrap_or(true);
 
     match am
         .set_precognition(session_id, enabled, Some(event_tx))

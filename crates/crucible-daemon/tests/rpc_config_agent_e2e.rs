@@ -249,23 +249,10 @@ async fn test_precognition_round_trip() {
     let server = TestServer::start().await.expect("Failed to start server");
     let (session_id, client) = setup_session_with_agent(&server).await;
 
-    // Use raw call because the DaemonClient struct sends `precognition_enabled`
-    // but the server handler reads `enabled` (known field name mismatch).
-    // Test the server-side behavior directly.
-    let result = client
-        .call(
-            "session.set_precognition",
-            serde_json::json!({
-                "session_id": session_id,
-                "enabled": false
-            }),
-        )
+    client
+        .session_set_precognition(&session_id, false)
         .await
         .expect("set_precognition false failed");
-    assert!(
-        result.get("precognition_enabled").and_then(|v| v.as_bool()) == Some(false),
-        "Response should confirm precognition_enabled = false"
-    );
 
     let enabled = client
         .session_get_precognition(&session_id)
@@ -275,20 +262,10 @@ async fn test_precognition_round_trip() {
     assert!(!enabled, "Precognition should be false after set(false)");
 
     // Flip back to true
-    let result = client
-        .call(
-            "session.set_precognition",
-            serde_json::json!({
-                "session_id": session_id,
-                "enabled": true
-            }),
-        )
+    client
+        .session_set_precognition(&session_id, true)
         .await
         .expect("set_precognition true failed");
-    assert!(
-        result.get("precognition_enabled").and_then(|v| v.as_bool()) == Some(true),
-        "Response should confirm precognition_enabled = true"
-    );
 
     let enabled = client
         .session_get_precognition(&session_id)
