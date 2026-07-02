@@ -93,7 +93,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **As a user**, I open a note in the CodeMirror editor, type, see a dirty ● on the tab, save (button/Cmd-S), and the dot clears.
 **Acceptance:** edits hit `PUT /api/notes/:name`; success clears dirty; failure keeps dirty + shows a toast; content round-trips exactly (frontmatter, unicode, wikilinks untouched).
 **Tests:** W2 full round-trip via the real editor harness (`editor-roundtrip.story.spec.ts` — open → dirty ● → PUT body → clean; save-failure keeps dirty), **W2 through the SHIPPED app** (`editor-shipped-app.story.spec.ts` — real `App` mount, file opened via the product `openFileInEditor` path, real `FileViewerPanel`, Save button + Cmd-S), W4 save-lands-on-disk (`kiln-truth.live.spec.ts` — byte-exact temp-kiln file).
-**Product bugs — FIXED (were bugs 3/4/8):** (3) `App.tsx` now mounts `<EditorProvider>` around `WindowManager`, so the editor is reachable in the shipped app; (4) `FileViewerPanel` now has a Save button + Cmd/Ctrl-S wired to `EditorContext.saveFile`; (8) content load switched from `getNote()` (metadata only — `get_note_by_name` returns no `content`) to `getFileContent()` (`GET /api/kiln/file`), so the editor hydrates real bytes. Save still uses `PUT /api/notes/:name` (unchanged, works).
+**Product bugs — FIXED (were bugs 3/4/8):** (3) `App.tsx` now mounts `<EditorProvider>` around `WindowManager` (+ a `crucible:open-file` event to open a path in the editor programmatically), so the editor is reachable in the shipped app; (4) `FileViewerPanel` now has a Save button + Cmd/Ctrl-S wired to `EditorContext.saveFile`; (8) the editor now loads AND saves by absolute path through `/api/kiln/file` (`getFileContent`/`saveFileContent`) — the old `getNote()` returned metadata only (`get_note_by_name` has no `content`), and `saveNote()`'s note-name route broke for notes in subdirectories (URL-encoded slash). `GET`/`PUT /api/kiln/file` were also fixed server-side to accept absolute paths (containment is still enforced by `find_enclosing_kiln` + within-kiln canonicalization); previously the absolute-path ban made those routes reject every real editor request.
 **Latent loop fixed alongside:** with the editor finally reachable, `FileViewerPanel`'s dirty-sync effect read `windowStore` (via `findTabByFilePath`) and wrote it (via `updateTab`) in one tracked scope → self-retriggering stack overflow; the write is now `untrack`ed, and `Pane.renderContent` re-renders only on tab identity/type change (not on `updateTab` ref churn) so edits are not discarded.
 
 ### WS-203: Multi-file tabs with unsaved-changes safety
@@ -118,13 +118,18 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Acceptance:** tree refreshes on note creation events; agent tool reads reflect saved edits (through daemon, no cache staleness).
 **Tests:** W4 (the flagship live-stack story — `kiln-truth.live.spec.ts`: a note written through the browser is the one shared truth — appears in the kiln tree and is byte-exact on disk, what an agent tool reads next turn).
 
+### WS-HERO: One session across web and terminal (cross-surface)
+**As a user**, a session and its kiln notes are shared truth across the browser and the terminal — the daemon is the hypervisor, the consoles are stateless.
+**Acceptance:** the web console resumes a session started in `cru chat` (turn 1 hydrates both sides); opening `from-tui.md` in the real editor shows the terminal's write; editing + saving changes the bytes on disk; a web-sent turn 2 is later visible from `cru chat --resume`; final history is 3 turns and the file carries both the terminal and browser edits.
+**Tests:** the flagship live journey `e2e/live/hero.live.spec.ts` (serial), orchestrating TUI legs (`tests/tui_e2e_tests/hero.rs`) around the web console. Deterministic LLM turns via the fake Ollama server (`e2e/live/fake-ollama.ts`) + injected `config.toml` (`hero-setup.ts`). Run with `just hero`. This is the first live-tier story to exercise real agent turns (see infra #3 note).
+
 ---
 
 ## Infra requirements these stories impose (status)
 
 1. **vitest gates CI** — DONE: `just ci` runs `web-test-unit`; the GitHub `test-web` job runs `bunx vitest run` (617 tests).
 2. **Story specs run with video + trace ON** and step screenshots — DONE: the `stories` Playwright project (`e2e/stories/**`) with `createStory().step()`; the existing default project keeps its cheap settings.
-3. **W4 harness** — DONE: `playwright.live.config.ts` + `e2e/live/global-setup.ts` boot `cru web` on an isolated socket against a `TempDir` kiln; teardown stops the daemon and kills the tree. Gated on a `cru` binary (`CRU_BIN`); skips cleanly otherwise. NOTE: the daemon can't be pointed at `mock-acp-agent` from the web session route (hardcoded internal agent), so the live specs cover the deterministic kiln-truth path rather than agent turns.
+3. **W4 harness** — DONE: `playwright.live.config.ts` + `e2e/live/global-setup.ts` boot `cru web` on an isolated socket against a `TempDir` kiln; teardown stops the daemon and kills the tree. Gated on a `cru` binary (`CRU_BIN`); skips cleanly otherwise. NOTE: the web session route hardcodes the internal agent, so `mock-acp-agent` is unreachable — but the hero tier (`playwright.hero.config.ts`) now makes real internal-agent turns deterministic by pointing the daemon's Ollama provider at a fake Ollama server (`e2e/live/fake-ollama.ts`) via an injected `config.toml`. The base live tier still covers the no-LLM kiln-truth path.
 4. **Visual baselines** committed under `e2e/__screenshots__/` — DONE: markdown editor + chat mid-stream/complete, each eye-verified before commit.
 
 ## See Also

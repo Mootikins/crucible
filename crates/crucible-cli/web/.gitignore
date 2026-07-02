@@ -18,5 +18,6 @@ node_modules/
 # outputs live under test-results/ (ignored above).
 !e2e/__screenshots__/**/*.png
 
-# Live-tier runtime state (written by e2e/live/global-setup.ts)
+# Live-tier runtime state (written by e2e/live/global-setup.ts + hero-setup.ts)
 e2e/live/.live-state.json
+e2e/live/.hero-state.json

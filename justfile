@@ -209,6 +209,16 @@ web-test-stories:
 web-test-live:
     cd crates/crucible-cli/web && bunx playwright test --config=playwright.live.config.ts
 
+# Run the cross-surface hero flow (TUI → web → TUI, one session; deterministic
+# via a fake Ollama server). Builds `cru`, the web assets, and the TUI test
+# binary (throttled -j4), then runs only the hero spec. Skips cleanly if `cru`
+# is absent.
+hero:
+    cargo build -j4 -p crucible-cli --bin cru
+    cd crates/crucible-cli/web && bun install && bun run build
+    cargo test -j4 -p crucible-cli --test tui_e2e_tests --no-run
+    cd crates/crucible-cli/web && bunx playwright test --config=playwright.hero.config.ts
+
 # === Daemon Management ===
 
 # Build and restart daemon (kills stale daemon so next cru auto-spawns fresh)

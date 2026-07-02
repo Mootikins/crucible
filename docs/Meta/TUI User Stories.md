@@ -209,6 +209,11 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Acceptance:** replay never re-sends RPC; golden keyword checks pass; `--replay-speed`/`--replay-auto-exit` honored.
 **Tests:** T3 (fixture_replay + replay_mode exist), T5 (VHS demos), validate-demos.sh.
 
+### US-HERO: One session, many consoles (cross-surface)
+**As a user**, work I start in the terminal is fully continuable in the browser and back again — the session lives in the daemon (the "hypervisor"), the TUI and web are stateless consoles, and kiln files are a shared buffer.
+**Acceptance:** a session created + advanced in `cru chat` resumes in `cru web` with turn 1 hydrated both sides; a note the terminal wrote via the shell modal opens in the web editor; the browser's edit to that note is visible from a later `cru chat --resume` via `!cat`; both consoles see the same 3-turn history and the same bytes on disk.
+**Tests:** the flagship live journey — TUI legs `hero_leg_1`/`hero_leg_3` in `tests/tui_e2e_tests/hero.rs` (driven, not standalone), orchestrated by `web/e2e/live/hero.live.spec.ts`. Deterministic turns come from a fake Ollama server (`web/e2e/live/fake-ollama.ts`) + a temp `config.toml` (`hero-setup.ts`). Run with `just hero`.
+
 ---
 
 ## Coverage matrix maintenance
