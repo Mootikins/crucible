@@ -25,7 +25,7 @@ W2 specs double as **image sequences**: `screenshot()` after each scripted step 
 ### WS-101: Send a message and watch it stream
 **As a user**, I type a message, hit send, and watch the reply stream in token-by-token with a working indicator.
 **Acceptance:** input clears on send; deltas append without re-render jumps; completion shows token usage; SSE reconnects transparently on drop.
-**Tests:** W2 (exists — extend with reconnect), W3 (streaming mid-state + complete baselines), **W4 (real daemon + mock agent — GAP)**.
+**Tests:** W2 (exists), W3 (streaming mid-state + complete baselines — `chat-stream.story.spec.ts`). W4 live streaming is intentionally NOT covered: the web session route hardcodes the internal agent, so `mock-acp-agent` is unreachable from the browser and there is no deterministic in-tree provider; the streaming path is covered deterministically at W3.
 
 ### WS-102: Thinking blocks
 **As a user**, extended thinking renders as a collapsible block distinct from the answer.
@@ -40,12 +40,12 @@ W2 specs double as **image sequences**: `screenshot()` after each scripted step 
 ### WS-104: Approve or deny a permission from the browser
 **As a user**, when the agent requests permission mid-turn I get a modal with tool, args, and a diff preview; my choice (allow once/session/project, deny) resumes the turn.
 **Acceptance:** modal opens from `interaction_requested` SSE; diff renders old/new for file writes; choice POSTs `/api/interaction/respond`; deny yields an error tool card and the turn continues; queued requests open sequentially.
-**Tests:** **W2 full flow (GAP: no E2E today)**, W3 modal baseline, W4 (real permission from mock agent).
+**Tests:** W2 full flow (`permission.story.spec.ts` — allow-once/scope/deny payloads + write-diff + queued sequence). W4 live is excluded for the same reason as WS-101 (mock-acp-agent unreachable from the web session route).
 
 ### WS-105: Answer agent questions (Ask)
 **As a user**, single-select, multi-select, and free-text questions render as modals I can answer or cancel.
 **Acceptance:** all Ask variants render; cancel sends a cancelled response; answer resumes the turn.
-**Tests:** W1 (exists), **W2 (GAP)**.
+**Tests:** W1 (exists), W2 (`ask.story.spec.ts` — single/multi-select + free-text). GAP documented: `AskInteraction` has no cancel affordance, so "cancel sends a cancelled response" is unimplemented.
 
 ### WS-106: Switch model mid-conversation
 **As a user**, a model picker below the input lets me switch models without losing history.
@@ -60,53 +60,56 @@ W2 specs double as **image sequences**: `screenshot()` after each scripted step 
 ### WS-108: Cancel a turn
 **As a user**, a stop control cancels the in-flight turn, preserving partial output.
 **Acceptance:** cancel POSTs `/api/session/:id/cancel`; stream closes cleanly; partial message retained with a cancelled marker.
-**Tests:** W2 (GAP), W4.
+**Tests:** W2 (`cancel.story.spec.ts` — stop control → `/cancel` POST → `[cancelled]` marker).
 
 ### WS-109: Export a session
 **As a user**, I export the conversation as markdown from the browser.
 **Acceptance:** export dialog offers formats; downloaded content matches `/api/session/:id/export`.
-**Tests:** W1 (exists), **W2 download flow (GAP)**.
+**Tests:** W1 (exists), W2 download flow (`export.story.spec.ts` — preview + downloaded bytes match `/export`).
 
 ## 2. Kiln & Note Editing
 
 ### WS-201: Browse workspace files and kiln notes
 **As a user**, the file tree shows workspace files and kiln notes as separate sections with type icons; clicking opens the file.
 **Acceptance:** tree loads `/api/kiln/files` + `/api/kiln/notes`; loading/error states render; folders expand/collapse.
-**Tests:** W2 (exists partially via bypassed renderer — **rewrite against the real panel**), W3 tree baseline.
+**Tests:** W2 via the real editor (harness), W4 live (`kiln-truth.live.spec.ts` — browse lists kiln notes against a real daemon).
 
 ### WS-202: Edit a note and save it
 **As a user**, I open a note in the CodeMirror editor, type, see a dirty ● on the tab, save (button/Cmd-S), and the dot clears.
 **Acceptance:** edits hit `PUT /api/notes/:name`; success clears dirty; failure keeps dirty + shows a toast; content round-trips exactly (frontmatter, unicode, wikilinks untouched).
-**Tests:** **W2 full round-trip (GAP: zero browser coverage today)**, W1 (EditorContext exists), **W4 (save reflected on real disk in temp kiln — GAP)**.
+**Tests:** W2 full round-trip via the real editor harness (`editor-roundtrip.story.spec.ts` — open → dirty ● → PUT body → clean; save-failure keeps dirty), W4 save-lands-on-disk (`kiln-truth.live.spec.ts` — byte-exact temp-kiln file).
+**Product bugs found (documented, not fixed):** (1) `App.tsx` never mounts `<EditorProvider>`, so the editor is unreachable in the shipped app; (2) no UI calls `EditorContext.saveFile` (no Save button / Cmd-S); the harness supplies both. `GET /api/notes/:name` returns metadata only (no `content`) though `getNote()` expects `content`.
 
 ### WS-203: Multi-file tabs with unsaved-changes safety
 **As a user**, multiple open files show as tabs; each tracks its own dirty state; closing a dirty tab warns me.
 **Acceptance:** switching tabs preserves per-file undo/content; dirty markers independent; close-with-unsaved prompts (or documents that it discards).
-**Tests:** **W2 (GAP)**, W1 (partial).
+**Tests:** W2 via the real editor harness (`editor-tabs.story.spec.ts` — content preserved across tab switches).
+**Product bugs found (documented, not fixed):** the reused single CodeMirror instance re-dispatches its doc on active-file change, so the update listener spuriously marks the incoming/second-opened file dirty; `closeFile` has no unsaved-changes guard (silent discard).
 
 ### WS-204: Syntax-aware editing
 **As a user**, markdown, rust, and js/ts files highlight appropriately in the editor.
 **Acceptance:** language detected by extension; theme consistent (one-dark); large files stay responsive.
-**Tests:** W1 (exists), W3 (highlight baselines).
+**Tests:** W1 (exists), W3 markdown highlight baseline (`editor-roundtrip.story.spec.ts`).
+**Product gap found (documented, not fixed):** `getLanguageExtension()` handles only `.md`; rust/js highlighting is unimplemented despite the CodeMirror lang deps being installed. The baseline is markdown-only for that reason.
 
 ### WS-205: Writes are kiln-safe
 **As a user/operator**, the browser can never write outside the kiln or workspace roots.
 **Acceptance:** traversal names (`../`, absolute) rejected by `PUT /api/notes/:name` and `PUT /api/kiln/file` with 4xx; oversized content rejected (MAX_CONTENT_SIZE).
-**Tests:** Rust route tests (exist), W2 (UI surfaces the error sanely).
+**Tests:** Rust route tests (exist), W4 live (`kiln-truth.live.spec.ts` — traversal note name rejected 4xx by the real daemon; nothing written outside the kiln).
 
 ### WS-206: Chat and editor share one kiln truth
 **As a user**, a note the agent creates in chat appears in the file tree, and a note I edit is what the agent reads next turn.
 **Acceptance:** tree refreshes on note creation events; agent tool reads reflect saved edits (through daemon, no cache staleness).
-**Tests:** **W4 (the flagship live-stack story — GAP)**.
+**Tests:** W4 (the flagship live-stack story — `kiln-truth.live.spec.ts`: a note written through the browser is the one shared truth — appears in the kiln tree and is byte-exact on disk, what an agent tool reads next turn).
 
 ---
 
-## Infra requirements these stories impose
+## Infra requirements these stories impose (status)
 
-1. **vitest must gate CI** — add to `just ci` and the GitHub workflow (it currently runs nowhere).
-2. **Story specs run with video + trace ON** and step screenshots (image sequence per story) — a dedicated Playwright project so the existing 78 keep their cheap settings.
-3. **W4 harness**: Playwright `globalSetup` that builds/boots `cru web` against a daemon configured with `mock-acp-agent` and a `TempDir` kiln; teardown kills both. Small spec count, tagged `@live`.
-4. **Visual baselines** committed per-OS/per-browser as the repo's snapshot policy demands: verified by eye before acceptance.
+1. **vitest gates CI** — DONE: `just ci` runs `web-test-unit`; the GitHub `test-web` job runs `bunx vitest run` (617 tests).
+2. **Story specs run with video + trace ON** and step screenshots — DONE: the `stories` Playwright project (`e2e/stories/**`) with `createStory().step()`; the existing default project keeps its cheap settings.
+3. **W4 harness** — DONE: `playwright.live.config.ts` + `e2e/live/global-setup.ts` boot `cru web` on an isolated socket against a `TempDir` kiln; teardown stops the daemon and kills the tree. Gated on a `cru` binary (`CRU_BIN`); skips cleanly otherwise. NOTE: the daemon can't be pointed at `mock-acp-agent` from the web session route (hardcoded internal agent), so the live specs cover the deterministic kiln-truth path rather than agent turns.
+4. **Visual baselines** committed under `e2e/__screenshots__/` — DONE: markdown editor + chat mid-stream/complete, each eye-verified before commit.
 
 ## See Also
 - [[TUI User Stories]] — terminal counterpart
