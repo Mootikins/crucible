@@ -134,6 +134,8 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         // None defaults to chat mode
         Some(Commands::Mcp { stdio, .. }) => *stdio,
         Some(Commands::Chat { .. }) | None => true,
+        // ACP speaks JSON-RPC on stdio; logs must never reach stdout/stderr.
+        Some(Commands::Acp { .. }) => true,
         _ => false,
     };
 
@@ -170,6 +172,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             let log_file_name = match &cli.command {
                 Some(Commands::Mcp { .. }) => "mcp.log",
                 Some(Commands::Chat { .. }) | None => "chat.log",
+                Some(Commands::Acp { .. }) => "acp.log",
                 _ => "crucible.log",
             };
 
@@ -271,6 +274,8 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             };
             commands::mcp::execute(config, args).await?
         }
+
+        Some(Commands::Acp { kiln }) => commands::acp::execute(config, kiln).await?,
 
         Some(Commands::Process {
             path,

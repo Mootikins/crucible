@@ -1758,6 +1758,7 @@ dependencies = [
 name = "crucible-cli"
 version = "0.7.1"
 dependencies = [
+ "agent-client-protocol",
  "anyhow",
  "assert_cmd",
  "async-trait",
@@ -1809,6 +1810,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-test",
+ "tokio-util",
  "toml 1.1.2+spec-1.1.0",
  "tower",
  "tower-http",

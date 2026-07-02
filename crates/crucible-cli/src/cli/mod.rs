@@ -196,6 +196,16 @@ pub enum Commands {
         log_file: Option<std::path::PathBuf>,
     },
 
+    /// Run Crucible as an ACP agent for editors (speaks ACP over stdio)
+    #[command(
+        long_about = "Run Crucible as an Agent Client Protocol (ACP) agent over stdin/stdout.\n\nACP hosts (Zed, JetBrains, Neovim, marimo) spawn this to get a knowledge-grounded agent: Precognition, kiln tools, and session persistence included. Sessions are ordinary daemon sessions — visible in `cru session list`.\n\nExamples:\n  # As configured in an editor's ACP agent settings\n  cru acp\n\n  # Override the kiln\n  cru acp --kiln ~/notes"
+    )]
+    Acp {
+        /// Override the kiln path (default: config or ancestor-walk discovery)
+        #[arg(long)]
+        kiln: Option<PathBuf>,
+    },
+
     /// Process markdown files through the pipeline (parse, enrich, store)
     #[command(
         long_about = "Process markdown files through the pipeline: parse, enrich with embeddings, and store in the knowledge graph.\n\nExamples:\n  # Process entire kiln\n  cru process\n\n  # Process specific file\n  cru process docs/notes.md\n\n  # Watch for changes\n  cru process --watch\n\n  # Force reprocess all files\n  cru process --force\n\n  # Dry run to preview changes\n  cru process --dry-run\n\n  # Use 4 parallel workers\n  cru process --parallel 4",

@@ -1,4 +1,5 @@
 // New CLI commands (ACP-based)
+pub mod acp;
 pub mod agents;
 pub mod auth;
 pub mod chat;

@@ -50,6 +50,12 @@ crucible-daemon = { path = "../crucible-daemon", default-features = false }
 
 crucible-oil = { path = "../crucible-oil", default-features = false }
 
+# ACP agent mode: `cru acp` serves the internal agent over the Agent Client
+# Protocol on stdio. Feature-matched to crucible-daemon's host-side dependency
+# so cargo unifies to one build of the crate.
+agent-client-protocol = { version = "0.10.4", features = ["unstable_session_model"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+
 # Web UI server (src/web — Axum routes over daemon RPC, embedded frontend)
 axum = { workspace = true, features = ["macros"] }
 tower = { workspace = true }

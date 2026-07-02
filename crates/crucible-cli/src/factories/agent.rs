@@ -192,7 +192,7 @@ fn build_acp_session_agent(params: &AgentInitParams, config: &CliAppConfig) -> S
     }
 }
 
-fn build_internal_session_agent(config: &CliAppConfig) -> SessionAgent {
+pub(crate) fn build_internal_session_agent(config: &CliAppConfig) -> SessionAgent {
     let effective_llm = config.effective_llm_provider().ok();
     let model = effective_llm
         .as_ref()
