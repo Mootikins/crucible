@@ -23,6 +23,7 @@ Commands:
   workflow     Inspect workflow notes in the active kiln (list, show)
   daemon       Manage the Crucible daemon (start, stop, status, logs)
   skills       Discover and manage agent skills (list, show, search)
+  proposals    Review reflection-pass proposals (list, show, accept, reject)
   tools        Discover and manage tools (list, show)
   plugin       Manage and develop Lua plugins
   install      Install a plugin from a git URL (alias for `cru plugin add`)
