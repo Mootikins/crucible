@@ -216,6 +216,62 @@ fn validate_endpoint(endpoint: &str) -> Result<(), WebError> {
     Ok(())
 }
 
+/// Provider/model/endpoint resolved for a new session's agent.
+struct ResolvedAgentTarget {
+    /// Backend type string (e.g. "openai", "zai")
+    provider: String,
+    model: String,
+    endpoint: Option<String>,
+    /// Named provider entry when defaulted from detection (e.g. "llama-swappo"),
+    /// else the backend type string the caller supplied.
+    provider_key: String,
+}
+
+/// Resolve the agent target from request values, falling back to the first
+/// available detected provider. When the PROVIDER itself is defaulted, its
+/// endpoint and name come along too — a detected provider is a named config
+/// entry (custom endpoint included), and flattening it to just its backend
+/// type used to send e.g. a local llama-swap default to api.openai.com.
+fn resolve_agent_target(
+    req_provider: Option<String>,
+    req_model: Option<String>,
+    req_endpoint: Option<String>,
+    detected: &[ProviderInfo],
+) -> ResolvedAgentTarget {
+    let first = detected.iter().find(|p| p.available);
+    let provider_defaulted = req_provider.is_none();
+
+    let provider = req_provider.unwrap_or_else(|| {
+        first
+            .map(|p| p.provider_type.clone())
+            .unwrap_or_else(|| "ollama".to_string())
+    });
+    let model = req_model.unwrap_or_else(|| {
+        first
+            .and_then(|p| p.default_model.clone())
+            .unwrap_or_else(|| "llama3.2".to_string())
+    });
+    // Only inherit the detected endpoint/name when the provider was defaulted —
+    // an explicit provider must not pick up another entry's endpoint.
+    let (endpoint, provider_key) = if provider_defaulted {
+        (
+            req_endpoint.or_else(|| first.and_then(|p| p.endpoint.clone())),
+            first
+                .map(|p| p.name.clone())
+                .unwrap_or_else(|| provider.clone()),
+        )
+    } else {
+        (req_endpoint, provider.clone())
+    };
+
+    ResolvedAgentTarget {
+        provider,
+        model,
+        endpoint,
+        provider_key,
+    }
+}
+
 async fn create_session(
     State(state): State<AppState>,
     Json(req): Json<CreateSessionRequest>,
@@ -239,41 +295,30 @@ async fn create_session(
 
     let session_id = result["session_id"].as_str().unwrap_or("");
 
-    // Resolve provider and model: use provided values or detect from available providers
-    let (provider_str, model_str) = match (req.provider, req.model) {
-        (Some(p), Some(m)) => (p, m),
-        (p_opt, m_opt) => {
-            // Resolve from detected providers
-            let providers = state.daemon.list_providers(None).await.unwrap_or_default();
-            let first = providers.into_iter().find(|p| p.available);
-            let default_p = first
-                .as_ref()
-                .map(|p| p.provider_type.clone())
-                .unwrap_or_else(|| "ollama".to_string());
-            let default_m = first
-                .as_ref()
-                .and_then(|p| p.default_model.clone())
-                .unwrap_or_else(|| "llama3.2".to_string());
-            (p_opt.unwrap_or(default_p), m_opt.unwrap_or(default_m))
-        }
+    // Resolve provider/model/endpoint: use provided values or detect defaults
+    let target = if req.provider.is_some() && req.model.is_some() {
+        resolve_agent_target(req.provider, req.model, req.endpoint, &[])
+    } else {
+        let providers = state.daemon.list_providers(None).await.unwrap_or_default();
+        resolve_agent_target(req.provider, req.model, req.endpoint, &providers)
     };
 
     // Configure agent for the session (required before sending messages)
-    let provider_type = BackendType::from_str(&provider_str)
+    let provider_type = BackendType::from_str(&target.provider)
         .map_err(|e| WebError::Validation(format!("Invalid provider: {}", e)))?;
 
     let agent = SessionAgent {
         agent_type: "internal".to_string(),
         agent_name: None,
-        provider_key: Some(provider_str.clone()),
+        provider_key: Some(target.provider_key),
         provider: provider_type,
-        model: model_str,
+        model: target.model,
         system_prompt: String::new(),
         temperature: None,
         max_tokens: None,
         max_context_tokens: None,
         thinking_budget: None,
-        endpoint: req.endpoint,
+        endpoint: target.endpoint,
         env_overrides: HashMap::new(),
         mcp_servers: vec![],
         agent_card_name: None,
@@ -1283,6 +1328,99 @@ mod tests {
             "Response should contain 'title' field"
         );
         assert!(json["title"].is_string(), "Title should be a string");
+    }
+
+    // =========================================================================
+    // resolve_agent_target Tests
+    // =========================================================================
+
+    fn detected_provider(name: &str, ptype: &str, endpoint: Option<&str>) -> ProviderInfo {
+        ProviderInfo {
+            name: name.to_string(),
+            provider_type: ptype.to_string(),
+            available: true,
+            default_model: Some("glm-4.7-flash-iq4".to_string()),
+            models: vec![],
+            endpoint: endpoint.map(String::from),
+            reason: None,
+            is_local: true,
+        }
+    }
+
+    #[test]
+    fn defaulted_provider_carries_detected_endpoint_and_name() {
+        // The bug: a detected named provider (llama-swappo, type=openai, custom
+        // endpoint) was flattened to just "openai" with no endpoint, so the
+        // agent targeted api.openai.com and demanded OPENAI_API_KEY.
+        let detected = [detected_provider(
+            "llama-swappo",
+            "openai",
+            Some("https://llama.example.com/v1"),
+        )];
+        let t = resolve_agent_target(None, None, None, &detected);
+        assert_eq!(t.provider, "openai");
+        assert_eq!(t.model, "glm-4.7-flash-iq4");
+        assert_eq!(t.endpoint.as_deref(), Some("https://llama.example.com/v1"));
+        assert_eq!(t.provider_key, "llama-swappo");
+    }
+
+    #[test]
+    fn explicit_provider_does_not_inherit_detected_endpoint() {
+        let detected = [detected_provider(
+            "llama-swappo",
+            "openai",
+            Some("https://llama.example.com/v1"),
+        )];
+        let t = resolve_agent_target(
+            Some("anthropic".to_string()),
+            Some("claude-sonnet-5".to_string()),
+            None,
+            &detected,
+        );
+        assert_eq!(t.provider, "anthropic");
+        assert_eq!(t.model, "claude-sonnet-5");
+        assert_eq!(t.endpoint, None, "must not borrow another entry's endpoint");
+        assert_eq!(t.provider_key, "anthropic");
+    }
+
+    #[test]
+    fn explicit_endpoint_wins_over_detected() {
+        let detected = [detected_provider(
+            "llama-swappo",
+            "openai",
+            Some("https://llama.example.com/v1"),
+        )];
+        let t = resolve_agent_target(
+            None,
+            None,
+            Some("https://other.example.com/v1".to_string()),
+            &detected,
+        );
+        assert_eq!(t.endpoint.as_deref(), Some("https://other.example.com/v1"));
+    }
+
+    #[test]
+    fn no_detected_providers_falls_back_to_ollama() {
+        let t = resolve_agent_target(None, None, None, &[]);
+        assert_eq!(t.provider, "ollama");
+        assert_eq!(t.model, "llama3.2");
+        assert_eq!(t.endpoint, None);
+        assert_eq!(t.provider_key, "ollama");
+    }
+
+    #[test]
+    fn unavailable_providers_are_skipped() {
+        let mut unavailable =
+            detected_provider("dead-provider", "openai", Some("https://dead.example.com"));
+        unavailable.available = false;
+        let live = detected_provider("live", "zai", Some("https://api.z.ai/api/coding/paas/v4"));
+        let t = resolve_agent_target(None, None, None, &[unavailable, live]);
+        assert_eq!(t.provider, "zai");
+        assert_eq!(t.provider_key, "live");
+        assert_eq!(
+            t.endpoint.as_deref(),
+            Some("https://api.z.ai/api/coding/paas/v4")
+        );
     }
 
     #[tokio::test]

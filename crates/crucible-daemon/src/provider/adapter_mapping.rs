@@ -106,6 +106,16 @@ impl ChatClient {
             builder = builder.with_auth_resolver(AuthResolver::from_resolver_fn(
                 move |_: genai::ModelIden| Ok(Some(AuthData::from_single(api_key.clone()))),
             ));
+        } else if config.endpoint.is_some() {
+            // Keyless custom endpoint (local llama.cpp/llama-swap, keyless
+            // proxies): without a resolver, genai falls back to the vendor
+            // env var (e.g. OPENAI_API_KEY) and errors when it's unset, even
+            // though the endpoint needs no auth. Send a placeholder bearer —
+            // OpenAI-compatible local servers ignore it. Providers using the
+            // vendor's default endpoint keep genai's env-var fallback.
+            builder = builder.with_auth_resolver(AuthResolver::from_resolver_fn(
+                |_: genai::ModelIden| Ok(Some(AuthData::from_single("sk-no-key-required"))),
+            ));
         }
 
         // Set up service target resolver for custom endpoints
@@ -810,6 +820,69 @@ mod tests {
         let iden = model_iden.unwrap();
         assert_eq!(iden.adapter_kind, AdapterKind::Ollama);
         assert_eq!(&*iden.model_name, "llama3.2");
+    }
+
+    #[tokio::test]
+    async fn keyless_custom_endpoint_does_not_require_vendor_env_key() {
+        // An OpenAI-compatible provider pointed at a custom endpoint with no
+        // api_key (local llama.cpp/llama-swap, keyless proxies) must not fall
+        // through to genai's vendor env-var lookup — that fails with
+        // `ApiKeyEnvNotFound { env_name: "OPENAI_API_KEY" }` even though the
+        // endpoint needs no auth at all.
+        let config = crucible_core::config::LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            endpoint: Some("https://llama.example.com/v1".to_string()),
+            default_model: Some("glm-4.7-flash-iq4".to_string()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: None,
+            name: None,
+        };
+
+        let client = ChatClient::new(&config);
+        let target = client
+            .inner()
+            .resolve_service_target("openai::glm-4.7-flash-iq4")
+            .await
+            .expect("resolving a keyless custom endpoint must not error");
+        assert!(
+            matches!(target.auth, genai::resolver::AuthData::Key(_)),
+            "keyless custom endpoint should get a placeholder key, not env lookup (got {:?})",
+            target.auth
+        );
+    }
+
+    #[tokio::test]
+    async fn default_endpoint_still_uses_vendor_env_key() {
+        // Without a custom endpoint, genai's env-var fallback (OPENAI_API_KEY)
+        // is a feature — the placeholder must NOT be injected there.
+        let config = crucible_core::config::LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            endpoint: None,
+            default_model: Some("gpt-4o".to_string()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+            available_models: None,
+            trust_level: None,
+            name: None,
+        };
+
+        let client = ChatClient::new(&config);
+        let target = client
+            .inner()
+            .resolve_service_target("openai::gpt-4o")
+            .await
+            .expect("target resolution itself should succeed");
+        assert!(
+            matches!(target.auth, genai::resolver::AuthData::FromEnv(_)),
+            "default endpoint keeps genai's env-var auth (got {:?})",
+            target.auth
+        );
     }
 
     #[test]
