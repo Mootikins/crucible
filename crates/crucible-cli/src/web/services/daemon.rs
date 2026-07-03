@@ -20,6 +20,18 @@ pub struct AppState {
     pub events: Arc<EventBroker>,
     pub config: Arc<CliAppConfig>,
     pub http_client: reqwest::Client,
+    /// Where the web UI's serialized pane layout is persisted (JSON blob,
+    /// opaque to the server). Tests point this at a tempdir.
+    pub layout_path: Arc<std::path::PathBuf>,
+}
+
+/// Default persistence location for the web UI layout:
+/// `~/.config/crucible/web-layout.json` (alongside `api_key`).
+pub fn default_layout_path() -> std::path::PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("crucible")
+        .join("web-layout.json")
 }
 
 pub struct ReconnectingDaemon {
@@ -915,6 +927,7 @@ pub async fn init_daemon(config: CliAppConfig) -> Result<AppState> {
         events: broker,
         config: Arc::new(config),
         http_client,
+        layout_path: Arc::new(default_layout_path()),
     })
 }
 

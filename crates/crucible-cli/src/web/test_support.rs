@@ -215,7 +215,42 @@ fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
         "session.switch_model" => json!(null),
         "session.set_title" => json!(null),
         "session.search" => json!([{"session_id": "s1", "title": "Test Session"}]),
-        "session.resume_from_storage" => json!({"messages": [], "session_id": "test-session-001"}),
+        // Mirrors the daemon's real response shape: a `history` array of
+        // SessionEventMessage entries, NOT a `messages` array. Session id
+        // "empty-session-001" yields an empty history for fallback tests.
+        "session.resume_from_storage" => {
+            let session_id = _msg
+                .get("params")
+                .and_then(|p| p.get("session_id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("test-session-001");
+            if session_id == "empty-session-001" {
+                json!({"session_id": session_id, "history": [], "total_events": 0})
+            } else {
+                json!({
+                    "session_id": session_id,
+                    "history": [
+                        {
+                            "type": "event",
+                            "session_id": session_id,
+                            "event": "user_message",
+                            "data": {"message_id": "msg-001", "content": "Explain the merkle tree sync design"},
+                            "timestamp": "2026-01-01T00:00:00Z",
+                            "seq": 1
+                        },
+                        {
+                            "type": "event",
+                            "session_id": session_id,
+                            "event": "agent_message",
+                            "data": {"message_id": "msg-002", "content": "Sure — the merkle tree..."},
+                            "timestamp": "2026-01-01T00:00:01Z",
+                            "seq": 2
+                        }
+                    ],
+                    "total_events": 2
+                })
+            }
+        }
         "project.list" => json!([]),
         "project.register" => json!({
             "path": "/tmp/test-project",
@@ -281,7 +316,21 @@ pub fn build_mock_state(client: DaemonClient) -> AppState {
         events: Arc::new(EventBroker::new()),
         config: Arc::new(CliAppConfig::default()),
         http_client: reqwest::Client::new(),
+        layout_path: Arc::new(unique_test_layout_path()),
     }
+}
+
+#[cfg(test)]
+/// Per-call unique layout path so parallel tests never share a file.
+/// Layout-specific tests build their own AppState over a TempDir instead.
+pub fn unique_test_layout_path() -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    std::env::temp_dir().join(format!(
+        "crucible-test-layout-{}-{}.json",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ))
 }
 
 #[cfg(test)]

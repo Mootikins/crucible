@@ -204,3 +204,95 @@ fn canonical_parser_types_are_not_redefined() {
         offenders.join("\n  - ")
     );
 }
+
+// ===========================================================================
+// A2c — every /api path the web frontend calls exists as a backend route.
+// This mismatch class shipped twice (generate-title vs auto-title 405,
+// /api/layout with no backend route at all): the frontend degrades silently,
+// so nothing but a console warning catches it. Source-scan both sides.
+// ===========================================================================
+
+/// `${...}` interpolations and `{param}` segments both normalize to `{}` so
+/// the two sides compare structurally. Query strings are stripped. Adjacent
+/// interpolations collapse (`/api/plugins/${name}${query}` → `/api/plugins/{}`
+/// — the trailing one is a conditionally-appended query suffix).
+fn normalize_api_path(raw: &str) -> String {
+    let no_query = raw.split('?').next().unwrap_or(raw);
+    let re = Regex::new(r"\$\{[^}]*\}|\{[^}]*\}").unwrap();
+    let braced = re.replace_all(no_query, "{}").to_string();
+    let mut collapsed = braced;
+    while collapsed.contains("{}{}") {
+        collapsed = collapsed.replace("{}{}", "{}");
+    }
+    collapsed.trim_end_matches('/').to_string()
+}
+
+fn frontend_api_paths(root: &Path) -> BTreeSet<String> {
+    let src = read(&root.join("crates/crucible-cli/web/src/lib/api.ts"));
+    let re = Regex::new(r#"['"`](/api/[^'"`]*)['"`]"#).unwrap();
+    re.captures_iter(&src)
+        .map(|c| normalize_api_path(&c[1]))
+        .collect()
+}
+
+fn backend_api_paths(root: &Path) -> BTreeSet<String> {
+    let route_re = Regex::new(r#"\.route\(\s*"([^"]+)""#).unwrap();
+    let nest_re = Regex::new(r#"\.nest\(\s*"([^"]+)""#).unwrap();
+
+    let mut sources = Vec::new();
+    let routes_dir = root.join("crates/crucible-cli/src/web/routes");
+    for entry in WalkDir::new(&routes_dir).into_iter().filter_map(Result::ok) {
+        if entry.path().extension().and_then(|e| e.to_str()) == Some("rs") {
+            sources.push(read(entry.path()));
+        }
+    }
+    sources.push(read(&root.join("crates/crucible-cli/src/web/server.rs")));
+
+    let mut absolute = BTreeSet::new();
+    let mut relative = BTreeSet::new();
+    let mut nest_prefixes = BTreeSet::new();
+    for src in &sources {
+        for c in route_re.captures_iter(src) {
+            let path = normalize_api_path(&c[1]);
+            if path.starts_with("/api") {
+                absolute.insert(path);
+            } else {
+                relative.insert(path);
+            }
+        }
+        for c in nest_re.captures_iter(src) {
+            nest_prefixes.insert(normalize_api_path(&c[1]));
+        }
+    }
+    // Routers mounted via .nest() register relative paths; join every relative
+    // path with every nest prefix. Over-approximates (harmless: this set is
+    // only checked for membership), avoids resolving which router nests where.
+    for prefix in &nest_prefixes {
+        for rel in &relative {
+            absolute.insert(format!("{prefix}{rel}"));
+        }
+    }
+    absolute
+}
+
+#[test]
+fn every_frontend_api_path_has_a_backend_route() {
+    let root = workspace_root();
+    let frontend = frontend_api_paths(&root);
+    let backend = backend_api_paths(&root);
+
+    assert!(
+        frontend.len() >= 20,
+        "extraction sanity check: expected 20+ /api paths in api.ts, found {} — \
+         the scan regex probably broke, fix the test",
+        frontend.len()
+    );
+
+    let missing: Vec<_> = frontend.difference(&backend).cloned().collect();
+    assert!(
+        missing.is_empty(),
+        "web/src/lib/api.ts calls /api paths that no backend route serves \
+         (routes/*.rs + server.rs). Add the route or fix the frontend path:\n  - {}",
+        missing.join("\n  - ")
+    );
+}

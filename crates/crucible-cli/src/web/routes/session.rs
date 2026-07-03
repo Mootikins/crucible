@@ -578,15 +578,19 @@ async fn auto_title(
             .await
             .ok();
 
+        // The daemon returns a `history` array of session events; user turns
+        // are entries with event == "user_message" and the text in data.content.
         history
             .as_ref()
-            .and_then(|h| h.get("messages"))
+            .and_then(|h| h.get("history"))
             .and_then(|v| v.as_array())
-            .and_then(|msgs| {
-                msgs.iter().find_map(|m| {
-                    let role = m.get("role").and_then(|r| r.as_str())?;
-                    if role == "user" {
-                        m.get("content").and_then(|c| c.as_str()).map(String::from)
+            .and_then(|events| {
+                events.iter().find_map(|e| {
+                    if e.get("event").and_then(|v| v.as_str()) == Some("user_message") {
+                        e.get("data")
+                            .and_then(|d| d.get("content"))
+                            .and_then(|c| c.as_str())
+                            .map(String::from)
                     } else {
                         None
                     }
@@ -1282,8 +1286,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn auto_title_fallback_when_no_messages() {
-        // Mock daemon returns empty messages, so fallback to "Untitled Session"
+    async fn auto_title_uses_first_user_message_from_history() {
+        // The daemon returns a `history` array of events (event: "user_message",
+        // data.content), NOT a `messages` array with role/content. The handler
+        // must extract the first user message from that real shape.
         let (_mock, client) = crate::web::test_support::start_mock_daemon().await;
         let state = crate::web::test_support::build_mock_state(client);
         let app = crate::web::test_support::build_test_app(state);
@@ -1293,6 +1299,38 @@ mod tests {
                 axum::http::Request::builder()
                     .method("POST")
                     .uri("/api/session/test-session-001/auto-title")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(
+            json["title"].as_str().unwrap(),
+            "Explain the merkle tree sync design",
+            "Title should come from the first user_message event in history"
+        );
+    }
+
+    #[tokio::test]
+    async fn auto_title_fallback_when_no_messages() {
+        // Mock daemon returns empty history for this id, so fallback to "Untitled Session"
+        let (_mock, client) = crate::web::test_support::start_mock_daemon().await;
+        let state = crate::web::test_support::build_mock_state(client);
+        let app = crate::web::test_support::build_test_app(state);
+
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/session/empty-session-001/auto-title")
                     .body(axum::body::Body::empty())
                     .unwrap(),
             )

@@ -116,7 +116,10 @@ pub(super) fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
         "session.switch_model" => json!(null),
         "session.set_title" => json!(null),
         "session.search" => json!([{"session_id": "s1", "title": "Test Session"}]),
-        "session.resume_from_storage" => json!({"messages": [], "session_id": "test-session-001"}),
+        // Real daemon shape: `history` array of session events (not `messages`)
+        "session.resume_from_storage" => {
+            json!({"session_id": "test-session-001", "history": [], "total_events": 0})
+        }
         "project.list" => json!([]),
         "project.register" => json!({
             "path": "/tmp/test-project",
@@ -210,6 +213,10 @@ pub(super) fn build_mock_state(client: DaemonClient) -> AppState {
         events: Arc::new(EventBroker::new()),
         config: Arc::new(CliAppConfig::default()),
         http_client: reqwest::Client::new(),
+        layout_path: Arc::new(std::env::temp_dir().join(format!(
+            "crucible-contract-layout-{}.json",
+            std::process::id()
+        ))),
     }
 }
 
