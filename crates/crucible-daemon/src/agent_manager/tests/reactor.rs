@@ -320,7 +320,6 @@ async fn reactor_lua_handler_discovery_empty_dir() {
 #[test]
 fn event_patterns_match_event_type() {
     let _repo = MockKnowledgeRepository { results: vec![] };
-    let _embedding = MockEmbeddingProvider { should_fail: false };
 
     let pre_llm = SessionEvent::internal(InternalSessionEvent::PreLlmCall {
         prompt: String::new(),

@@ -2,7 +2,6 @@ use super::*;
 use crate::session_storage::FileSessionStorage;
 use crate::tools::workspace::WorkspaceTools;
 use async_trait::async_trait;
-use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::events::handler::{Handler, HandlerContext, HandlerResult};
 use crucible_core::events::{InternalSessionEvent, SessionEvent};
 use crucible_core::parser::ParsedNote;
@@ -310,43 +309,6 @@ impl KnowledgeRepository for MockKnowledgeRepository {
 
     async fn search_vectors(&self, _vector: Vec<f32>) -> crucible_core::Result<Vec<SearchResult>> {
         Ok(self.results.clone())
-    }
-}
-
-struct MockEmbeddingProvider {
-    should_fail: bool,
-}
-
-#[async_trait]
-impl EmbeddingProvider for MockEmbeddingProvider {
-    async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
-        if self.should_fail {
-            return Err(anyhow::anyhow!("embedding failed"));
-        }
-        Ok(vec![0.1, 0.2, 0.3])
-    }
-
-    async fn embed_batch(&self, _texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
-        if self.should_fail {
-            return Err(anyhow::anyhow!("batch embedding failed"));
-        }
-        Ok(vec![vec![0.1, 0.2, 0.3]])
-    }
-
-    fn model_name(&self) -> &str {
-        "mock-model"
-    }
-
-    fn dimensions(&self) -> usize {
-        3
-    }
-
-    fn provider_name(&self) -> &str {
-        "mock"
-    }
-
-    async fn list_models(&self) -> anyhow::Result<Vec<String>> {
-        Ok(vec!["mock-model".to_string()])
     }
 }
 

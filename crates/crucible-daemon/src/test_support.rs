@@ -7,14 +7,17 @@
 
 use async_trait::async_trait;
 use crucible_core::enrichment::EmbeddingProvider;
+use crucible_core::traits::chat::{AgentHandle, ChatResult};
 use crucible_core::traits::completion_backend::{
     BackendCompletionChunk, BackendCompletionRequest, BackendError, BackendResult,
     CompletionBackend,
 };
 use crucible_core::traits::KnowledgeRepository;
+use crucible_core::turn::{StopReason, TurnError, TurnEvent};
 use futures::stream::BoxStream;
 use std::collections::VecDeque;
 use std::sync::Mutex;
+use std::time::Duration;
 
 /// Canonical mock implementation of KnowledgeRepository for testing
 ///
@@ -146,5 +149,103 @@ impl CompletionBackend for MockCompletionBackend {
 
     async fn health_check(&self) -> BackendResult<bool> {
         Ok(true)
+    }
+}
+
+/// Scripted behaviors for [`MockSubagentHandle`]. Covers the success, delay,
+/// failure, pending, and turn-cap scenarios exercised by delegation and
+/// background-job tests.
+#[derive(Clone)]
+pub enum MockSubagentBehavior {
+    ImmediateSuccess(String),
+    DelayedSuccess {
+        output: String,
+        delay: Duration,
+    },
+    DelayedFailure {
+        error: String,
+        delay: Duration,
+    },
+    Pending,
+    StreamFailure(String),
+    /// Emits `marker` text plus a tool call every turn, so the execution loop
+    /// only terminates when it hits `max_turns`. Used to verify turn caps.
+    RepeatingToolCall(String),
+}
+
+/// Canonical mock agent handle driven by a [`MockSubagentBehavior`] script.
+pub struct MockSubagentHandle {
+    behavior: MockSubagentBehavior,
+}
+
+impl MockSubagentHandle {
+    pub fn new(behavior: MockSubagentBehavior) -> Self {
+        Self { behavior }
+    }
+}
+
+#[async_trait]
+impl crucible_core::turn::Agent for MockSubagentHandle {
+    fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+        crucible_core::turn::AgentCapabilities::default()
+    }
+    async fn turn<'a>(
+        &'a mut self,
+        _ctx: crucible_core::turn::TurnContext,
+    ) -> Result<
+        futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
+        crucible_core::turn::AgentError,
+    > {
+        let behavior = self.behavior.clone();
+        let body = async_stream::stream! {
+            match behavior {
+                MockSubagentBehavior::ImmediateSuccess(output) => {
+                    yield TurnEvent::TextDelta(output);
+                    yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+                }
+                MockSubagentBehavior::DelayedSuccess { output, delay } => {
+                    tokio::time::sleep(delay).await;
+                    yield TurnEvent::TextDelta(output);
+                    yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+                }
+                MockSubagentBehavior::DelayedFailure { error, delay } => {
+                    tokio::time::sleep(delay).await;
+                    yield TurnEvent::Error(TurnError::Internal(error));
+                }
+                MockSubagentBehavior::Pending => {
+                    futures::future::pending::<()>().await;
+                }
+                MockSubagentBehavior::StreamFailure(message) => {
+                    yield TurnEvent::Error(TurnError::Internal(message));
+                }
+                MockSubagentBehavior::RepeatingToolCall(marker) => {
+                    yield TurnEvent::TextDelta(marker);
+                    yield TurnEvent::ToolCall {
+                        id: "call-1".to_string(),
+                        name: "noop".to_string(),
+                        args: serde_json::Value::Null,
+                        diffs: Vec::new(),
+                    };
+                    yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+                }
+            }
+        };
+        Ok(Box::pin(body))
+    }
+    async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+        Ok(())
+    }
+    async fn switch_model(&mut self, _: &str) -> Result<(), crucible_core::turn::NotSupported> {
+        Err(crucible_core::turn::NotSupported::new("switch_model"))
+    }
+}
+
+#[async_trait]
+impl AgentHandle for MockSubagentHandle {
+    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
+        Ok(())
+    }
+    async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
+        Ok(())
     }
 }

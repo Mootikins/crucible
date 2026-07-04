@@ -884,9 +884,9 @@ mod db_tests {
     }
 }
 
+/// Shared test mocks reused across the test modules in this file.
 #[cfg(test)]
-mod note_store_tests {
-    use super::*;
+mod test_mocks {
     use async_trait::async_trait;
     use crucible_core::events::{InternalSessionEvent, SessionEvent};
     use crucible_core::parser::BlockHash;
@@ -894,19 +894,19 @@ mod note_store_tests {
     use std::collections::HashMap;
     use std::sync::Mutex;
 
-    /// Mock NoteStore for testing
-    struct MockNoteStore {
+    /// In-memory mock `NoteStore` keyed by note path.
+    pub(super) struct MockNoteStore {
         notes: Mutex<HashMap<String, NoteRecord>>,
     }
 
     impl MockNoteStore {
-        fn new() -> Self {
+        pub(super) fn new() -> Self {
             Self {
                 notes: Mutex::new(HashMap::new()),
             }
         }
 
-        fn with_notes(notes: Vec<NoteRecord>) -> Self {
+        pub(super) fn with_notes(notes: Vec<NoteRecord>) -> Self {
             let store = Self::new();
             {
                 let mut map = store.notes.lock().unwrap();
@@ -975,6 +975,15 @@ mod note_store_tests {
             Ok(vec![])
         }
     }
+}
+
+#[cfg(test)]
+mod note_store_tests {
+    use super::*;
+    use async_trait::async_trait;
+    use crucible_core::parser::BlockHash;
+    use crucible_core::storage::{NoteRecord, NoteStore};
+    use test_mocks::MockNoteStore;
 
     fn sample_note(path: &str, title: &str) -> NoteRecord {
         NoteRecord::new(path, BlockHash::zero())
@@ -1408,10 +1417,9 @@ mod graph_view_tests {
 
     #[tokio::test]
     async fn test_register_graph_module_with_all() {
+        use super::test_mocks::MockNoteStore;
         use async_trait::async_trait;
-        use crucible_core::events::{InternalSessionEvent, SessionEvent};
-        use crucible_core::parser::BlockHash;
-        use crucible_core::storage::{Filter, NoteRecord, NoteStore, SearchResult, StorageResult};
+        use crucible_core::storage::NoteStore;
         use crucible_core::traits::{GraphQueryExecutor, GraphQueryResult};
 
         struct MockExecutor;
@@ -1423,56 +1431,9 @@ mod graph_view_tests {
             }
         }
 
-        struct MockNoteStore;
-
-        #[async_trait]
-        impl NoteStore for MockNoteStore {
-            async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
-                let event = SessionEvent::internal(InternalSessionEvent::NoteCreated {
-                    path: note.path.into(),
-                    title: Some(note.title),
-                });
-                Ok(vec![event])
-            }
-            async fn get(
-                &self,
-                _path: &str,
-                _authority: &crucible_core::storage::Scope,
-            ) -> StorageResult<Option<NoteRecord>> {
-                Ok(None)
-            }
-            async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
-                Ok(SessionEvent::internal(InternalSessionEvent::NoteDeleted {
-                    path: path.into(),
-                    existed: false,
-                }))
-            }
-            async fn list(
-                &self,
-                _authority: &crucible_core::storage::Scope,
-            ) -> StorageResult<Vec<NoteRecord>> {
-                Ok(vec![])
-            }
-            async fn get_by_hash(
-                &self,
-                _hash: &BlockHash,
-                _authority: &crucible_core::storage::Scope,
-            ) -> StorageResult<Option<NoteRecord>> {
-                Ok(None)
-            }
-            async fn search(
-                &self,
-                _embedding: &[f32],
-                _k: usize,
-                _filter: Option<Filter>,
-            ) -> StorageResult<Vec<SearchResult>> {
-                Ok(vec![])
-            }
-        }
-
         let lua = Lua::new();
         let executor: Arc<dyn GraphQueryExecutor> = Arc::new(MockExecutor);
-        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore);
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
         let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
 
         // Use the combined registration function
