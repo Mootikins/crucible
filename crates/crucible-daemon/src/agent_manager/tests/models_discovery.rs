@@ -1,40 +1,58 @@
 use super::*;
+use crucible_core::config::BackendType;
+use test_case::test_case;
 
+#[test_case(
+    BackendType::OpenAI, "openai-dynamic", Some("test-openai-key"), true,
+    serde_json::json!({ "data": [ { "id": "gpt-4o" }, { "id": "gpt-4o-mini" }, { "id": "o3-mini" } ] }),
+    &["openai-dynamic/gpt-4o", "openai-dynamic/gpt-4o-mini", "openai-dynamic/o3-mini"]
+    ; "openai"
+)]
+#[test_case(
+    BackendType::ZAI, "zai-dynamic", None, false,
+    serde_json::json!({ "data": [ { "id": "GLM-5" }, { "id": "GLM-4.7" }, { "id": "GLM-4.5-Flash" } ] }),
+    &["zai-dynamic/GLM-5", "zai-dynamic/GLM-4.7", "zai-dynamic/GLM-4.5-Flash"]
+    ; "zai"
+)]
+#[test_case(
+    BackendType::OpenRouter, "openrouter-dynamic", Some("test-or-key"), true,
+    serde_json::json!({ "data": [ { "id": "anthropic/claude-sonnet-4-20250514" }, { "id": "openai/gpt-4o" }, { "id": "meta-llama/llama-3.3-70b" } ] }),
+    &["openrouter-dynamic/anthropic/claude-sonnet-4-20250514", "openrouter-dynamic/openai/gpt-4o", "openrouter-dynamic/meta-llama/llama-3.3-70b"]
+    ; "openrouter"
+)]
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
-async fn test_list_models_dynamic_discovery_openai_succeeds() {
-    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
+async fn list_models_dynamic_discovery_succeeds(
+    backend: BackendType,
+    provider_name: &str,
+    api_key: Option<&str>,
+    clear_env: bool,
+    response: serde_json::Value,
+    expected_models: &[&str],
+) {
+    use crucible_core::config::{LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
-    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
-    let _env_guards = clear_provider_env();
+    // openai/openrouter read their API key from the process env when none is
+    // configured, so those cases must serialize on ENV_LOCK and clear the vars;
+    // zai has no such env fallback and runs without the guard.
+    let _env_guard = clear_env.then(|| {
+        let lock = ENV_LOCK.lock().expect("env lock poisoned");
+        (lock, clear_provider_env())
+    });
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    // Mock server returns OpenAI-style models
-    let (endpoint, server) = start_mock_openai_models_server(
-        200,
-        serde_json::json!({
-            "data": [
-                { "id": "gpt-4o" },
-                { "id": "gpt-4o-mini" },
-                { "id": "o3-mini" }
-            ]
-        }),
-        Some("test-openai-key"),
-    )
-    .await;
+    let (endpoint, server) = start_mock_openai_models_server(200, response, api_key).await;
 
+    let mut builder = LlmProviderConfig::builder(backend).endpoint(&endpoint);
+    if let Some(key) = api_key {
+        builder = builder.api_key(key);
+    }
     let mut providers = HashMap::new();
-    providers.insert(
-        "openai-dynamic".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .endpoint(&endpoint)
-            .api_key("test-openai-key")
-            .build(),
-    );
+    providers.insert(provider_name.to_string(), builder.build());
 
     let llm_config = LlmConfig {
-        default: Some("openai-dynamic".to_string()),
+        default: Some(provider_name.to_string()),
         providers,
     };
 
@@ -49,148 +67,19 @@ async fn test_list_models_dynamic_discovery_openai_succeeds() {
     let models = agent_manager.list_models(&session.id, None).await.unwrap();
     server.await.unwrap();
 
-    assert!(
-        models.contains(&"openai-dynamic/gpt-4o".to_string()),
-        "Should contain dynamically discovered gpt-4o, got: {:?}",
-        models
-    );
-    assert!(
-        models.contains(&"openai-dynamic/gpt-4o-mini".to_string()),
-        "Should contain dynamically discovered gpt-4o-mini, got: {:?}",
-        models
-    );
-    assert!(
-        models.contains(&"openai-dynamic/o3-mini".to_string()),
-        "Should contain dynamically discovered o3-mini, got: {:?}",
-        models
-    );
+    for expected in expected_models {
+        assert!(
+            models.contains(&expected.to_string()),
+            "Should contain dynamically discovered {}, got: {:?}",
+            expected,
+            models
+        );
+    }
     assert_eq!(
         models.len(),
-        3,
-        "Should have exactly 3 dynamically discovered models, got: {:?}",
-        models
-    );
-}
-
-#[tokio::test]
-async fn test_list_models_dynamic_discovery_zai_succeeds() {
-    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
-
-    let (_tmp, session_manager, session) = setup_session_manager().await;
-
-    let (endpoint, server) = start_mock_openai_models_server(
-        200,
-        serde_json::json!({
-            "data": [
-                { "id": "GLM-5" },
-                { "id": "GLM-4.7" },
-                { "id": "GLM-4.5-Flash" }
-            ]
-        }),
-        None,
-    )
-    .await;
-
-    let mut providers = HashMap::new();
-    providers.insert(
-        "zai-dynamic".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .endpoint(&endpoint)
-            .build(),
-    );
-
-    let llm_config = LlmConfig {
-        default: Some("zai-dynamic".to_string()),
-        providers,
-    };
-
-    let agent_manager =
-        create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
-
-    agent_manager
-        .configure_agent(&session.id, test_agent())
-        .await
-        .unwrap();
-
-    let models = agent_manager.list_models(&session.id, None).await.unwrap();
-    server.await.unwrap();
-
-    assert!(
-        models.contains(&"zai-dynamic/GLM-5".to_string()),
-        "Should contain dynamically discovered GLM-5, got: {:?}",
-        models
-    );
-    assert!(
-        models.contains(&"zai-dynamic/GLM-4.7".to_string()),
-        "Should contain dynamically discovered GLM-4.7, got: {:?}",
-        models
-    );
-    assert_eq!(
-        models.len(),
-        3,
-        "Should have exactly 3 dynamically discovered ZAI models, got: {:?}",
-        models
-    );
-}
-
-#[tokio::test]
-#[allow(clippy::await_holding_lock)]
-async fn test_list_models_dynamic_discovery_openrouter_succeeds() {
-    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
-
-    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
-    let _env_guards = clear_provider_env();
-    let (_tmp, session_manager, session) = setup_session_manager().await;
-
-    let (endpoint, server) = start_mock_openai_models_server(
-        200,
-        serde_json::json!({
-            "data": [
-                { "id": "anthropic/claude-sonnet-4-20250514" },
-                { "id": "openai/gpt-4o" },
-                { "id": "meta-llama/llama-3.3-70b" }
-            ]
-        }),
-        Some("test-or-key"),
-    )
-    .await;
-
-    let mut providers = HashMap::new();
-    providers.insert(
-        "openrouter-dynamic".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenRouter)
-            .endpoint(&endpoint)
-            .api_key("test-or-key")
-            .build(),
-    );
-
-    let llm_config = LlmConfig {
-        default: Some("openrouter-dynamic".to_string()),
-        providers,
-    };
-
-    let agent_manager =
-        create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
-
-    agent_manager
-        .configure_agent(&session.id, test_agent())
-        .await
-        .unwrap();
-
-    let models = agent_manager.list_models(&session.id, None).await.unwrap();
-    server.await.unwrap();
-
-    assert_eq!(
-        models.len(),
-        3,
-        "Should have 3 dynamically discovered OpenRouter models, got: {:?}",
-        models
-    );
-    assert!(
-        models.contains(&"openrouter-dynamic/anthropic/claude-sonnet-4-20250514".to_string()),
-        "Should contain dynamically discovered model, got: {:?}",
+        expected_models.len(),
+        "Should have exactly {} dynamically discovered models, got: {:?}",
+        expected_models.len(),
         models
     );
 }
