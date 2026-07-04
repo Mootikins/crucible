@@ -77,7 +77,6 @@
 //! (local answer (ask.answer [0 1]))
 //! ```
 
-mod agent_context;
 mod context;
 mod conversion;
 mod register;
@@ -86,7 +85,6 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use agent_context::LuaAgentAskContext;
 pub use context::{EventPushCallback, LuaAskContext, LuaAskError};
 pub use conversion::{
     core_answer_to_lua, core_batch_to_lua, core_question_to_lua, core_response_to_lua,
@@ -94,7 +92,5 @@ pub use conversion::{
     lua_question_table_to_core, lua_question_to_core, lua_response_table_to_core,
     lua_response_to_core,
 };
-pub use register::{
-    register_ask_module, register_ask_module_with_agent, register_ask_module_with_context,
-};
+pub use register::register_ask_module;
 pub use types::{LuaAskBatch, LuaAskBatchResponse, LuaAskQuestion, LuaQuestionAnswer};
