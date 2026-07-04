@@ -1924,6 +1924,7 @@ dependencies = [
  "shellexpand",
  "similar 3.1.1",
  "tempfile",
+ "test-case",
  "thiserror 2.0.18",
  "tokio",
  "tokio-test",
