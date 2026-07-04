@@ -11,23 +11,6 @@ use super::helpers::vt_render;
 use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 
-/// Count blank lines between the last line matching `before` and the first
-/// line matching `after` (searching after the `before` line).
-#[allow(dead_code)] // available for future spacing tests
-fn blank_lines_between(screen: &str, before: &str, after: &str) -> Option<usize> {
-    let lines: Vec<&str> = screen.lines().collect();
-    let before_end = lines.iter().rposition(|l| l.contains(before))?;
-    let after_start = lines[before_end + 1..]
-        .iter()
-        .position(|l| l.contains(after))
-        .map(|p| p + before_end + 1)?;
-    let blanks = lines[before_end + 1..after_start]
-        .iter()
-        .filter(|l| l.trim().is_empty())
-        .count();
-    Some(blanks)
-}
-
 /// Assert no triple-blank lines anywhere in the output (always a bug).
 fn assert_no_triple_blanks(screen: &str, context: &str) {
     let lines: Vec<&str> = screen.lines().collect();
