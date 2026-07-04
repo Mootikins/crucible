@@ -85,7 +85,7 @@ axum = "0.8"
 tower = "0.5"
 
 # MCP protocol
-rmcp = { version = "1.4", features = ["macros", "server"] }
+rmcp = { version = "2.1", features = ["macros", "server"] }
 
 # Testing utilities
 criterion = { version = "0.8", features = ["html_reports"] }
@@ -96,7 +96,7 @@ expectrl = "0.9"
 assert_cmd = "2.2"
 predicates = "3.1"
 wiremock = "0.6"
-mockall = "0.14"
+mockall = "0.15"
 test-case = "3.3"
 
 # Database
