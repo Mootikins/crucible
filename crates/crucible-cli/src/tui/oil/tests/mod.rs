@@ -28,4 +28,3 @@ mod replay_mode_tests;
 mod session_event_stream_tests;
 mod spacing_tests;
 mod user_story_tests;
-mod visual_inspection;
