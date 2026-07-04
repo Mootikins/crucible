@@ -21,6 +21,7 @@ mod e2e_debug_test;
 mod fixture_replay_tests;
 mod graduation_tests;
 mod inter_frame_invariant_tests;
+mod permission_invariant_tests;
 mod message_routing_tests;
 mod rendering_regression_tests;
 mod replay_mode_tests;
