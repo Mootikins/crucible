@@ -514,8 +514,7 @@ pub(crate) enum BudgetAction {
 /// under `budget`, always keeping the system prefix and the final (current)
 /// message.
 fn truncate_to_budget(messages: &mut Vec<ChatMessage>, budget: usize) {
-    while messages.iter().map(estimate_message_tokens).sum::<usize>() > budget
-        && messages.len() > 2
+    while messages.iter().map(estimate_message_tokens).sum::<usize>() > budget && messages.len() > 2
     {
         let Some(idx) = messages
             .iter()

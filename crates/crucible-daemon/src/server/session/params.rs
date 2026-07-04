@@ -210,7 +210,11 @@ session_config_getter!(
     get_precognition_results,
     "precognition_results"
 );
-session_config_getter!(handle_session_get_temperature, get_temperature, "temperature");
+session_config_getter!(
+    handle_session_get_temperature,
+    get_temperature,
+    "temperature"
+);
 session_config_getter!(handle_session_get_max_tokens, get_max_tokens, "max_tokens");
 session_config_getter!(
     handle_session_get_max_iterations,

@@ -103,8 +103,8 @@ pub use ask::{
     core_answer_to_lua, core_batch_to_lua, core_question_to_lua, core_response_to_lua,
     lua_answer_table_to_core, lua_answer_to_core, lua_batch_table_to_core, lua_batch_to_core,
     lua_question_table_to_core, lua_question_to_core, lua_response_table_to_core,
-    lua_response_to_core, register_ask_module, EventPushCallback, LuaAskBatch,
-    LuaAskBatchResponse, LuaAskContext, LuaAskError, LuaAskQuestion, LuaQuestionAnswer,
+    lua_response_to_core, register_ask_module, EventPushCallback, LuaAskBatch, LuaAskBatchResponse,
+    LuaAskContext, LuaAskError, LuaAskQuestion, LuaQuestionAnswer,
 };
 pub use auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
 pub use capability_gate::{check_module_access, module_capability_map, ModuleCapabilityMapping};

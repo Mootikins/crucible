@@ -83,10 +83,7 @@ impl CachedToolCall {
             _ => return Node::Empty,
         };
         let t = crate::tui::oil::theme::active();
-        styled(
-            format!("    {}", desc),
-            fg(t, t.colors.text_muted).dim(),
-        )
+        styled(format!("    {}", desc), fg(t, t.colors.text_muted).dim())
     }
 
     /// Raw badge text (with leading space and brackets) for width math.
@@ -105,10 +102,7 @@ impl CachedToolCall {
             return Node::Empty;
         }
         let t = crate::tui::oil::theme::active();
-        styled(
-            text,
-            fg(t, t.colors.text_muted).dim(),
-        )
+        styled(text, fg(t, t.colors.text_muted).dim())
     }
 
     fn render_error(
@@ -141,15 +135,9 @@ impl CachedToolCall {
         if error_visible <= remaining {
             row([
                 styled(icon, fg(t, t.colors.error)),
-                styled(
-                    display_name,
-                    fg(t, t.colors.text_dim),
-                ),
+                styled(display_name, fg(t, t.colors.text_dim)),
                 source_badge,
-                styled(
-                    arg_part,
-                    fg(t, t.colors.text_dim).dim(),
-                ),
+                styled(arg_part, fg(t, t.colors.text_dim).dim()),
                 styled(
                     format!("\u{2192} {}", error_first_line),
                     fg(t, t.colors.error).bold(),
@@ -158,15 +146,9 @@ impl CachedToolCall {
         } else {
             let header = row([
                 styled(icon, fg(t, t.colors.error)),
-                styled(
-                    display_name,
-                    fg(t, t.colors.text_dim),
-                ),
+                styled(display_name, fg(t, t.colors.text_dim)),
                 source_badge,
-                styled(
-                    arg_part,
-                    fg(t, t.colors.text_dim).dim(),
-                ),
+                styled(arg_part, fg(t, t.colors.text_dim).dim()),
             ]);
             let error_node = styled(
                 format!("  \u{2192} {}", error_first_line),
@@ -195,10 +177,7 @@ impl CachedToolCall {
 
         let t = crate::tui::oil::theme::active();
         let arrow_suffix = if let Some(ref s) = collapsed {
-            styled(
-                format!("→ {}", s),
-                fg(t, t.colors.text_muted),
-            )
+            styled(format!("→ {}", s), fg(t, t.colors.text_muted))
         } else {
             Node::Empty
         };
@@ -228,22 +207,13 @@ impl CachedToolCall {
                 Node::Empty
             }
         } else if has_arrow_suffix {
-            styled(
-                format!(" {} ", fitted_arg),
-                fg(t, t.colors.text_dim).dim(),
-            )
+            styled(format!(" {} ", fitted_arg), fg(t, t.colors.text_dim).dim())
         } else {
-            styled(
-                format!(" {}", fitted_arg),
-                fg(t, t.colors.text_dim).dim(),
-            )
+            styled(format!(" {}", fitted_arg), fg(t, t.colors.text_dim).dim())
         };
         let header = row([
             styled(icon_str, fg(t, t.colors.success)),
-            styled(
-                display_name,
-                fg(t, t.colors.text_dim),
-            ),
+            styled(display_name, fg(t, t.colors.text_dim)),
             source_badge,
             arg_node,
             arrow_suffix,
@@ -292,10 +262,7 @@ impl CachedToolCall {
         // No animated spinner in container content — spinners are chrome only.
         // Pending tools show a static ● indicator instead.
         let _ = spinner_frame; // unused — animation is in turn indicator
-        let pending_icon = styled(
-            "\u{25CF}",
-            fg(t, t.colors.text_dim),
-        );
+        let pending_icon = styled("\u{25CF}", fg(t, t.colors.text_dim));
         let badge_text = self.source_badge_text();
         let source_badge = self.render_source_badge();
         let elapsed_text = if show_elapsed {
@@ -314,19 +281,13 @@ impl CachedToolCall {
         let arg_node = if fitted_arg.is_empty() {
             Node::Empty
         } else {
-            styled(
-                format!(" {}", fitted_arg),
-                fg(t, t.colors.text_dim).dim(),
-            )
+            styled(format!(" {}", fitted_arg), fg(t, t.colors.text_dim).dim())
         };
         let header = row([
             styled(" ", Style::new()),
             pending_icon,
             styled(" ", Style::new()),
-            styled(
-                display_name,
-                fg(t, t.colors.text_dim),
-            ),
+            styled(display_name, fg(t, t.colors.text_dim)),
             source_badge,
             arg_node,
             if show_elapsed {
@@ -501,10 +462,7 @@ fn fit_arg_to_width(arg: &str, available: usize) -> String {
 pub fn format_tool_result(name: &str, result: &str, width: usize) -> Node {
     if let Some(summary) = summarize_tool_result(name, result) {
         let t = crate::tui::oil::theme::active();
-        return styled(
-            format!("   {}", summary),
-            fg(t, t.colors.text_muted),
-        );
+        return styled(format!("   {}", summary), fg(t, t.colors.text_muted));
     }
     let inner = unwrap_json_result(result);
     format_output_tail(&inner, "   ", width)
