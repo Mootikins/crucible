@@ -66,11 +66,6 @@ impl<W: Write> OutputBuffer<W> {
         self.terminal_height = height;
     }
 
-    #[allow(dead_code)] // WIP: render not yet used
-    pub fn render(&mut self, content: &str) -> io::Result<bool> {
-        self.render_with_overlays(content, &[])
-    }
-
     pub fn render_with_overlays(
         &mut self,
         content: &str,
@@ -275,11 +270,6 @@ impl<W: Write> OutputBuffer<W> {
 
     pub fn height(&self) -> usize {
         self.previous.as_ref().map(|p| p.visual_rows).unwrap_or(0)
-    }
-
-    #[allow(dead_code)] // WIP: reset not yet used
-    pub fn reset(&mut self) {
-        self.previous = None;
     }
 
     pub fn force_redraw(&mut self) {

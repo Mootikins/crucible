@@ -469,14 +469,6 @@ impl DaemonClient {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    /// Build a request containing only a session_id.
-    ///
-    /// Helper for methods that take only a session_id parameter.
-    fn session_id_request(&self, session_id: &str) -> serde_json::Value {
-        serde_json::json!({"session_id": session_id.to_string()})
-    }
-
     /// Shorthand for RPC methods that only take a session_id parameter.
     pub(super) async fn session_id_call(
         &self,

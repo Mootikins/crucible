@@ -29,9 +29,6 @@ use context::parse_and_render_internal;
 #[cfg(test)]
 mod tests;
 
-#[allow(dead_code)] // WIP: NATURAL_TEXT_WIDTH not yet used
-const NATURAL_TEXT_WIDTH: usize = 10000;
-
 /// Regex to match HTML <br> tags in various forms: <br>, <br/>, <br />, <BR>, etc.
 static BR_TAG_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?i)<br\s*/?\s*>").expect("valid regex"));

@@ -1,7 +1,7 @@
 use crucible_core::events::SessionEvent;
 use mlua::{Lua, LuaSerdeExt, Result as LuaResult, Table, Value};
 use serde_json::Value as JsonValue;
-use tracing::{debug, warn};
+use tracing::warn;
 
 /// Convert SessionEvent to Lua table
 ///
@@ -30,31 +30,6 @@ pub(super) fn session_event_to_lua(lua: &Lua, event: &SessionEvent) -> LuaResult
     }
 
     Ok(table)
-}
-
-#[allow(dead_code)]
-pub(super) fn lua_table_to_session_event(table: &Table) -> LuaResult<SessionEvent> {
-    // Get the event type to determine variant
-    let event_type: String = table.get("type").unwrap_or_else(|_| "Custom".to_string());
-
-    // Convert table to JSON first
-    let json = lua_table_to_json(table)?;
-
-    // Try to deserialize to SessionEvent
-    match serde_json::from_value::<SessionEvent>(json.clone()) {
-        Ok(event) => Ok(event),
-        Err(e) => {
-            debug!(
-                "Could not deserialize to SessionEvent ({}), creating Custom event",
-                e
-            );
-            // Fall back to Custom event
-            Ok(SessionEvent::Custom {
-                name: event_type,
-                payload: json,
-            })
-        }
-    }
 }
 
 /// Convert Lua table to JSON value

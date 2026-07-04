@@ -161,11 +161,6 @@ impl RpcDispatcher {
         Self { ctx }
     }
 
-    #[allow(dead_code)] // accessor for direct RpcContext access by handlers
-    pub fn context(&self) -> &RpcContext {
-        &self.ctx
-    }
-
     pub async fn dispatch(&self, client_id: ClientId, req: Request) -> Response {
         let id = req.id.clone();
         tracing::debug!("RPC dispatch: method={:?}, id={:?}", req.method, id);

@@ -658,19 +658,6 @@ impl AgentManager {
         Ok((session, agent))
     }
 
-    #[allow(dead_code)] // Future: concurrency guard for multi-client scenarios
-    pub fn get_session_if_idle(
-        &self,
-        session_id: &str,
-    ) -> Result<crucible_core::session::Session, AgentError> {
-        if self.request_state.contains_key(session_id) {
-            return Err(AgentError::ConcurrentRequest(session_id.to_string()));
-        }
-        self.session_manager
-            .get_session(session_id)
-            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))
-    }
-
     pub fn invalidate_agent_cache(&self, session_id: &str) {
         self.agent_cache.remove(session_id);
     }
