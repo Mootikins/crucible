@@ -321,14 +321,17 @@ The Rust types are the source of truth; Lua bindings project them, not duplicate
 
 ### Feature Flags
 
-```toml
-[features]
-default = ["fastembed"]
-fastembed = ["dep:fastembed"]      # Local ONNX embeddings
-llama-cpp = ["dep:llama-cpp-2"]   # GGUF model support
-burn = ["dep:burn"]               # Burn ML framework
-test-utils = []                   # Mock providers for testing
-```
+Features are declared per-crate. The notable ones:
+
+| Feature | Crate(s) | Default | Purpose |
+|---------|----------|---------|---------|
+| `fastembed` | daemon, cli | Yes | Local ONNX embeddings (pulls `fastembed` + `ort`) |
+| `fennel` | lua | Yes | Fennel → Lua compilation |
+| `keyring` | core | No | Optional OS keyring backend for secrets |
+| `web` | daemon | No | Web UI server support |
+| `serde` | oil | No | Serialize/deserialize render nodes |
+| `test-utils` | core, cli, daemon, oil | No | Mock providers / test helpers |
+| `test-fixtures`, `test-slow` | cli, daemon | No | Test tier gating (see justfile) |
 
 ### Vendored Dependencies
 
