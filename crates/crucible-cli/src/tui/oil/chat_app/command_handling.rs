@@ -144,6 +144,13 @@ impl OilChatApp {
                     .max(1);
                 Action::Send(ChatAppMsg::Undo(count))
             }
+            // Alias for :help — the command palette advertises "/help".
+            "help" => self.handle_help_repl(
+                parts
+                    .get(1)
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty()),
+            ),
             _ => Action::Send(ChatAppMsg::ExecuteSlashCommand(cmd.to_string())),
         }
     }

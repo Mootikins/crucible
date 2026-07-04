@@ -115,6 +115,48 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         completions: CompletionSource::None,
         description: "Number of context results to inject (1-20)",
     },
+    ConfigShortcut {
+        short: "maxiterations",
+        target: ShortcutTarget::Path("llm.max_iterations"),
+        completions: CompletionSource::None,
+        description: "Max agent iterations per turn (number or 'none')",
+    },
+    ConfigShortcut {
+        short: "executiontimeout",
+        target: ShortcutTarget::Path("llm.execution_timeout"),
+        completions: CompletionSource::None,
+        description: "Tool execution timeout in seconds (or 'none')",
+    },
+    ConfigShortcut {
+        short: "contextbudget",
+        target: ShortcutTarget::Path("llm.context_budget"),
+        completions: CompletionSource::None,
+        description: "Context token budget (number or 'none')",
+    },
+    ConfigShortcut {
+        short: "contextstrategy",
+        target: ShortcutTarget::Path("llm.context_strategy"),
+        completions: CompletionSource::Static(&["truncate", "sliding_window"]),
+        description: "Context overflow strategy",
+    },
+    ConfigShortcut {
+        short: "contextwindow",
+        target: ShortcutTarget::Path("llm.context_window"),
+        completions: CompletionSource::None,
+        description: "Sliding window size in messages (or 'none')",
+    },
+    ConfigShortcut {
+        short: "outputvalidation",
+        target: ShortcutTarget::Path("llm.output_validation"),
+        completions: CompletionSource::None,
+        description: "Output validation mode (none, json, regex:<pat>)",
+    },
+    ConfigShortcut {
+        short: "validationretries",
+        target: ShortcutTarget::Path("llm.validation_retries"),
+        completions: CompletionSource::None,
+        description: "Retries when output validation fails",
+    },
     // Permission settings (session-scoped, TUI-only)
     ConfigShortcut {
         short: "perm.show_diff",
@@ -305,7 +347,7 @@ mod tests {
 
         // Should have all defined shortcuts
         assert_eq!(all.len(), SHORTCUTS.len());
-        assert_eq!(all.len(), 10);
+        assert_eq!(all.len(), 17);
 
         // Verify we have expected shortcuts
         let shorts: Vec<_> = all.iter().map(|s| s.short).collect();
@@ -317,6 +359,13 @@ mod tests {
         assert!(shorts.contains(&"verbose"));
         assert!(shorts.contains(&"precognition"));
         assert!(shorts.contains(&"precognition.results"));
+        assert!(shorts.contains(&"maxiterations"));
+        assert!(shorts.contains(&"executiontimeout"));
+        assert!(shorts.contains(&"contextbudget"));
+        assert!(shorts.contains(&"contextstrategy"));
+        assert!(shorts.contains(&"contextwindow"));
+        assert!(shorts.contains(&"outputvalidation"));
+        assert!(shorts.contains(&"validationretries"));
         assert!(shorts.contains(&"perm.show_diff"));
         assert!(shorts.contains(&"perm.autoconfirm_session"));
     }

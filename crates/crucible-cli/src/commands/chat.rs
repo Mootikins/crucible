@@ -755,6 +755,13 @@ async fn fetch_resume_history(
         .unwrap_or_default())
 }
 
+/// Slash commands advertised in the TUI completion popup.
+///
+/// Only list commands `handle_slash_command` actually handles — anything
+/// else falls through to `ExecuteSlashCommand`, which delivers the raw
+/// text to the LLM as a user message. Advertising unhandled commands
+/// (/search, /new, /resume, ...) promised features that silently became
+/// prompt text.
 pub fn known_slash_commands() -> Vec<(String, String)> {
     vec![
         ("mode".into(), "Cycle chat mode".into()),
@@ -764,12 +771,8 @@ pub fn known_slash_commands() -> Vec<(String, String)> {
         ),
         ("plan".into(), "Set plan mode (read-only)".into()),
         ("auto".into(), "Set auto mode (full access)".into()),
-        ("search".into(), "Search the knowledge base".into()),
-        ("commit".into(), "Smart git commit workflow".into()),
-        ("agent".into(), "Show/list available agents".into()),
-        ("new".into(), "Start a new session".into()),
-        ("resume".into(), "Resume a recent session".into()),
-        ("view".into(), "Open or list Lua-defined views".into()),
+        ("undo".into(), "Undo last exchange(s)".into()),
+        ("help".into(), "Show help".into()),
     ]
 }
 
