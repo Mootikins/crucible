@@ -472,6 +472,20 @@ fn match_tags_property(tags: &[String], search_value: &serde_json::Value) -> boo
 // Use shared utilities for frontmatter parsing and path validation
 use super::utils::{parse_yaml_frontmatter, validate_folder_within_kiln};
 
+/// Extract the JSON payload from a tool result, panicking (rather than silently
+/// skipping assertions) if the result has no text content or invalid JSON.
+#[cfg(test)]
+fn parse_tool_json(result: &CallToolResult) -> serde_json::Value {
+    let content = result
+        .content
+        .first()
+        .expect("tool result should contain content");
+    let raw_text = content
+        .as_text()
+        .expect("tool result content should be text");
+    serde_json::from_str(&raw_text.text).expect("tool result text should be valid JSON")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -513,20 +527,16 @@ mod tests {
         assert!(result.is_ok());
 
         let call_result = result.unwrap();
-        if let Some(content) = call_result.content.first() {
-            if let Some(raw_text) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
-                assert_eq!(parsed["query"], "TODO");
-                assert_eq!(parsed["count"], 1);
+        let parsed = parse_tool_json(&call_result);
+        assert_eq!(parsed["query"], "TODO");
+        assert_eq!(parsed["count"], 1);
 
-                let matches = parsed["matches"].as_array().unwrap();
-                assert_eq!(matches.len(), 1);
-                assert!(matches[0]["line_content"]
-                    .as_str()
-                    .unwrap()
-                    .contains("TODO"));
-            }
-        }
+        let matches = parsed["matches"].as_array().unwrap();
+        assert_eq!(matches.len(), 1);
+        assert!(matches[0]["line_content"]
+            .as_str()
+            .unwrap()
+            .contains("TODO"));
     }
 
     #[tokio::test]
@@ -551,12 +561,8 @@ mod tests {
         });
 
         let result = search_tools.text_search(params).await.unwrap();
-        if let Some(content) = result.content.first() {
-            if let Some(raw_text) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
-                assert_eq!(parsed["count"], 2);
-            }
-        }
+        let parsed = parse_tool_json(&result);
+        assert_eq!(parsed["count"], 2);
 
         // Case sensitive - should find only one
         let params = Parameters(TextSearchParams {
@@ -567,12 +573,8 @@ mod tests {
         });
 
         let result = search_tools.text_search(params).await.unwrap();
-        if let Some(content) = result.content.first() {
-            if let Some(raw_text) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
-                assert_eq!(parsed["count"], 1);
-            }
-        }
+        let parsed = parse_tool_json(&result);
+        assert_eq!(parsed["count"], 1);
     }
 
     #[tokio::test]
@@ -601,14 +603,10 @@ mod tests {
         });
 
         let result = search_tools.text_search(params).await.unwrap();
-        if let Some(content) = result.content.first() {
-            if let Some(raw_text) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
-                assert_eq!(parsed["count"], 1);
-                let matches = parsed["matches"].as_array().unwrap();
-                assert!(matches[0]["path"].as_str().unwrap().contains("subfolder"));
-            }
-        }
+        let parsed = parse_tool_json(&result);
+        assert_eq!(parsed["count"], 1);
+        let matches = parsed["matches"].as_array().unwrap();
+        assert!(matches[0]["path"].as_str().unwrap().contains("subfolder"));
     }
 
     #[tokio::test]
@@ -633,14 +631,10 @@ mod tests {
         });
 
         let result = search_tools.text_search(params).await.unwrap();
-        if let Some(content) = result.content.first() {
-            if let Some(raw_text) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
-                let matches = parsed["matches"].as_array().unwrap();
-                assert_eq!(matches.len(), 3); // Limited to 3
-                assert_eq!(parsed["truncated"], true);
-            }
-        }
+        let parsed = parse_tool_json(&result);
+        let matches = parsed["matches"].as_array().unwrap();
+        assert_eq!(matches.len(), 3); // Limited to 3
+        assert_eq!(parsed["truncated"], true);
     }
 
     // ===== property_search tests =====
@@ -671,14 +665,10 @@ mod tests {
         });
 
         let result = search_tools.property_search(params).await.unwrap();
-        if let Some(content) = result.content.first() {
-            if let Some(raw_text) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
-                assert_eq!(parsed["count"], 1);
-                let matches = parsed["matches"].as_array().unwrap();
-                assert!(matches[0]["path"].as_str().unwrap().contains("draft"));
-            }
-        }
+        let parsed = parse_tool_json(&result);
+        assert_eq!(parsed["count"], 1);
+        let matches = parsed["matches"].as_array().unwrap();
+        assert!(matches[0]["path"].as_str().unwrap().contains("draft"));
     }
 
     #[tokio::test]
@@ -706,12 +696,8 @@ mod tests {
         });
 
         let result = search_tools.property_search(params).await.unwrap();
-        if let Some(content) = result.content.first() {
-            if let Some(raw_text) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
-                assert_eq!(parsed["count"], 1);
-            }
-        }
+        let parsed = parse_tool_json(&result);
+        assert_eq!(parsed["count"], 1);
     }
 
     #[tokio::test]
@@ -740,12 +726,8 @@ mod tests {
         });
 
         let result = search_tools.property_search(params).await.unwrap();
-        if let Some(content) = result.content.first() {
-            if let Some(raw_text) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
-                assert_eq!(parsed["count"], 2); // Both should match
-            }
-        }
+        let parsed = parse_tool_json(&result);
+        assert_eq!(parsed["count"], 2); // Both should match
     }
 
     #[tokio::test]
@@ -767,12 +749,8 @@ mod tests {
         });
 
         let result = search_tools.property_search(params).await.unwrap();
-        if let Some(content) = result.content.first() {
-            if let Some(raw_text) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
-                assert_eq!(parsed["count"], 0); // No matches
-            }
-        }
+        let parsed = parse_tool_json(&result);
+        assert_eq!(parsed["count"], 0); // No matches
     }
 
     // ===== Helper function tests =====
@@ -1011,7 +989,6 @@ mod tests {
 mod note_store_tests {
     use super::*;
     use async_trait::async_trait;
-    use chrono::Utc;
     use crucible_core::events::{InternalSessionEvent, NoteChangeType, SessionEvent};
     use crucible_core::parser::BlockHash;
     use crucible_core::storage::{Filter, NoteRecord, StorageResult};
@@ -1037,6 +1014,18 @@ mod note_store_tests {
             let mut notes = self.notes.lock().unwrap();
             notes.insert(record.path.clone(), record);
         }
+    }
+
+    fn note(
+        path: impl Into<String>,
+        title: impl Into<String>,
+        tags: Vec<String>,
+        properties: HashMap<String, serde_json::Value>,
+    ) -> NoteRecord {
+        NoteRecord::new(path, BlockHash::zero())
+            .with_title(title)
+            .with_tags(tags)
+            .with_properties(properties)
     }
 
     #[async_trait]
@@ -1122,34 +1111,22 @@ mod note_store_tests {
         let mut props1 = HashMap::new();
         props1.insert("status".to_string(), serde_json::json!("draft"));
 
-        mock_store.add_note(NoteRecord {
-            path: "draft-note.md".to_string(),
-            content_hash: BlockHash::zero(),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            title: "Draft Note".to_string(),
-            tags: vec!["work".to_string()],
-            links_to: vec![],
-            properties: props1,
-            updated_at: Utc::now(),
-        });
+        mock_store.add_note(note(
+            "draft-note.md".to_string(),
+            "Draft Note".to_string(),
+            vec!["work".to_string()],
+            props1,
+        ));
 
         let mut props2 = HashMap::new();
         props2.insert("status".to_string(), serde_json::json!("published"));
 
-        mock_store.add_note(NoteRecord {
-            path: "published-note.md".to_string(),
-            content_hash: BlockHash::zero(),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            title: "Published Note".to_string(),
-            tags: vec!["blog".to_string()],
-            links_to: vec![],
-            properties: props2,
-            updated_at: Utc::now(),
-        });
+        mock_store.add_note(note(
+            "published-note.md".to_string(),
+            "Published Note".to_string(),
+            vec!["blog".to_string()],
+            props2,
+        ));
 
         let search_tools = create_search_tools_with_store(kiln_path, mock_store);
 
@@ -1164,19 +1141,15 @@ mod note_store_tests {
         assert!(result.is_ok(), "property_search should succeed");
 
         let call_result = result.unwrap();
-        if let Some(content) = call_result.content.first() {
-            if let Some(raw_text) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+        let parsed = parse_tool_json(&call_result);
 
-                assert_eq!(parsed["count"], 1);
-                let matches = parsed["matches"].as_array().unwrap();
-                assert_eq!(matches.len(), 1);
+        assert_eq!(parsed["count"], 1);
+        let matches = parsed["matches"].as_array().unwrap();
+        assert_eq!(matches.len(), 1);
 
-                // Verify source is from index
-                assert_eq!(matches[0]["source"], "index");
-                assert!(matches[0]["path"].as_str().unwrap().contains("draft"));
-            }
-        }
+        // Verify source is from index
+        assert_eq!(matches[0]["source"], "index");
+        assert!(matches[0]["path"].as_str().unwrap().contains("draft"));
     }
 
     #[tokio::test]
@@ -1187,44 +1160,26 @@ mod note_store_tests {
         // Create a mock NoteStore with tagged notes
         let mock_store = Arc::new(MockNoteStore::new());
 
-        mock_store.add_note(NoteRecord {
-            path: "rust-note.md".to_string(),
-            content_hash: BlockHash::zero(),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            title: "Rust Note".to_string(),
-            tags: vec!["rust".to_string(), "programming".to_string()],
-            links_to: vec![],
-            properties: HashMap::new(),
-            updated_at: Utc::now(),
-        });
+        mock_store.add_note(note(
+            "rust-note.md".to_string(),
+            "Rust Note".to_string(),
+            vec!["rust".to_string(), "programming".to_string()],
+            HashMap::new(),
+        ));
 
-        mock_store.add_note(NoteRecord {
-            path: "python-note.md".to_string(),
-            content_hash: BlockHash::zero(),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            title: "Python Note".to_string(),
-            tags: vec!["python".to_string(), "programming".to_string()],
-            links_to: vec![],
-            properties: HashMap::new(),
-            updated_at: Utc::now(),
-        });
+        mock_store.add_note(note(
+            "python-note.md".to_string(),
+            "Python Note".to_string(),
+            vec!["python".to_string(), "programming".to_string()],
+            HashMap::new(),
+        ));
 
-        mock_store.add_note(NoteRecord {
-            path: "cooking-note.md".to_string(),
-            content_hash: BlockHash::zero(),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            title: "Cooking Note".to_string(),
-            tags: vec!["cooking".to_string(), "recipes".to_string()],
-            links_to: vec![],
-            properties: HashMap::new(),
-            updated_at: Utc::now(),
-        });
+        mock_store.add_note(note(
+            "cooking-note.md".to_string(),
+            "Cooking Note".to_string(),
+            vec!["cooking".to_string(), "recipes".to_string()],
+            HashMap::new(),
+        ));
 
         let search_tools = create_search_tools_with_store(kiln_path, mock_store);
 
@@ -1239,14 +1194,10 @@ mod note_store_tests {
         assert!(result.is_ok(), "property_search should succeed");
 
         let call_result = result.unwrap();
-        if let Some(content) = call_result.content.first() {
-            if let Some(raw_text) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+        let parsed = parse_tool_json(&call_result);
 
-                // Should match both rust and python notes (OR logic)
-                assert_eq!(parsed["count"], 2);
-            }
-        }
+        // Should match both rust and python notes (OR logic)
+        assert_eq!(parsed["count"], 2);
     }
 
     #[tokio::test]
@@ -1256,31 +1207,19 @@ mod note_store_tests {
 
         let mock_store = Arc::new(MockNoteStore::new());
 
-        mock_store.add_note(NoteRecord {
-            path: "tagged.md".to_string(),
-            content_hash: BlockHash::zero(),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            title: "Tagged Note".to_string(),
-            tags: vec!["important".to_string()],
-            links_to: vec![],
-            properties: HashMap::new(),
-            updated_at: Utc::now(),
-        });
+        mock_store.add_note(note(
+            "tagged.md".to_string(),
+            "Tagged Note".to_string(),
+            vec!["important".to_string()],
+            HashMap::new(),
+        ));
 
-        mock_store.add_note(NoteRecord {
-            path: "untagged.md".to_string(),
-            content_hash: BlockHash::zero(),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            title: "Untagged Note".to_string(),
-            tags: vec![],
-            links_to: vec![],
-            properties: HashMap::new(),
-            updated_at: Utc::now(),
-        });
+        mock_store.add_note(note(
+            "untagged.md".to_string(),
+            "Untagged Note".to_string(),
+            vec![],
+            HashMap::new(),
+        ));
 
         let search_tools = create_search_tools_with_store(kiln_path, mock_store);
 
@@ -1295,12 +1234,8 @@ mod note_store_tests {
         assert!(result.is_ok());
 
         let call_result = result.unwrap();
-        if let Some(content) = call_result.content.first() {
-            if let Some(raw_text) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
-                assert_eq!(parsed["count"], 1);
-            }
-        }
+        let parsed = parse_tool_json(&call_result);
+        assert_eq!(parsed["count"], 1);
     }
 
     #[tokio::test]
@@ -1314,35 +1249,23 @@ mod note_store_tests {
         props1.insert("status".to_string(), serde_json::json!("draft"));
         props1.insert("priority".to_string(), serde_json::json!("high"));
 
-        mock_store.add_note(NoteRecord {
-            path: "high-priority-draft.md".to_string(),
-            content_hash: BlockHash::zero(),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            title: "High Priority Draft".to_string(),
-            tags: vec![],
-            links_to: vec![],
-            properties: props1,
-            updated_at: Utc::now(),
-        });
+        mock_store.add_note(note(
+            "high-priority-draft.md".to_string(),
+            "High Priority Draft".to_string(),
+            vec![],
+            props1,
+        ));
 
         let mut props2 = HashMap::new();
         props2.insert("status".to_string(), serde_json::json!("draft"));
         props2.insert("priority".to_string(), serde_json::json!("low"));
 
-        mock_store.add_note(NoteRecord {
-            path: "low-priority-draft.md".to_string(),
-            content_hash: BlockHash::zero(),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            title: "Low Priority Draft".to_string(),
-            tags: vec![],
-            links_to: vec![],
-            properties: props2,
-            updated_at: Utc::now(),
-        });
+        mock_store.add_note(note(
+            "low-priority-draft.md".to_string(),
+            "Low Priority Draft".to_string(),
+            vec![],
+            props2,
+        ));
 
         let search_tools = create_search_tools_with_store(kiln_path, mock_store);
 
@@ -1357,19 +1280,15 @@ mod note_store_tests {
         assert!(result.is_ok());
 
         let call_result = result.unwrap();
-        if let Some(content) = call_result.content.first() {
-            if let Some(raw_text) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+        let parsed = parse_tool_json(&call_result);
 
-                // Should only match the high priority draft
-                assert_eq!(parsed["count"], 1);
-                let matches = parsed["matches"].as_array().unwrap();
-                assert!(matches[0]["path"]
-                    .as_str()
-                    .unwrap()
-                    .contains("high-priority"));
-            }
-        }
+        // Should only match the high priority draft
+        assert_eq!(parsed["count"], 1);
+        let matches = parsed["matches"].as_array().unwrap();
+        assert!(matches[0]["path"]
+            .as_str()
+            .unwrap()
+            .contains("high-priority"));
     }
 
     #[tokio::test]
@@ -1384,18 +1303,12 @@ mod note_store_tests {
             let mut props = HashMap::new();
             props.insert("status".to_string(), serde_json::json!("draft"));
 
-            mock_store.add_note(NoteRecord {
-                path: format!("note{i}.md"),
-                content_hash: BlockHash::zero(),
-                embedding: None,
-                embedding_model: None,
-                embedding_dimensions: None,
-                title: format!("Note {i}"),
-                tags: vec![],
-                links_to: vec![],
-                properties: props,
-                updated_at: Utc::now(),
-            });
+            mock_store.add_note(note(
+                format!("note{i}.md"),
+                format!("Note {i}"),
+                vec![],
+                props,
+            ));
         }
 
         let search_tools = create_search_tools_with_store(kiln_path, mock_store);
@@ -1411,13 +1324,9 @@ mod note_store_tests {
         assert!(result.is_ok());
 
         let call_result = result.unwrap();
-        if let Some(content) = call_result.content.first() {
-            if let Some(raw_text) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+        let parsed = parse_tool_json(&call_result);
 
-                // Should respect the limit
-                assert_eq!(parsed["count"], 3);
-            }
-        }
+        // Should respect the limit
+        assert_eq!(parsed["count"], 3);
     }
 }
