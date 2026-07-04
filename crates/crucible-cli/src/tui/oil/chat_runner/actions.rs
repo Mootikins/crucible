@@ -117,6 +117,14 @@ impl OilChatRunner {
             // Unified message processing for all paths.
             // In replay mode, process_message skips the RPC send so the
             // recorded events drive the UI without hitting the daemon.
+            //
+            // CAUTION: follow-up Sends re-enter process_message, NOT
+            // process_action — side effects that only exist in
+            // process_action arms (daemon RPCs, spawns) are dropped here.
+            // A reducer that returns Action::Send for a side-effectful
+            // variant must not rely on this loop to execute it (this is
+            // how the FetchModels prefetch and --set startup overrides
+            // silently broke; both now run their effects directly).
             let mut action = Self::process_message(&msg, app, agent, bridge, self.is_replay).await;
             while let Action::Send(follow_up) = action {
                 action =

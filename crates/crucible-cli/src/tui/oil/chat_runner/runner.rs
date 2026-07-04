@@ -243,46 +243,8 @@ impl OilChatRunner {
             )));
         }
 
-        if !self.initial_sets.is_empty() {
-            for effect in std::mem::take(&mut self.initial_sets) {
-                match effect {
-                    SetEffect::TuiLocal { key, value } => {
-                        app.apply_cli_override(&key, value);
-                    }
-                    SetEffect::DaemonRpc(action) => {
-                        let msg = match action {
-                            SetRpcAction::SwitchModel(m) => ChatAppMsg::SwitchModel(m),
-                            SetRpcAction::SetThinkingBudget(Some(b)) => {
-                                ChatAppMsg::SetThinkingBudget(b)
-                            }
-                            SetRpcAction::SetThinkingBudget(None) => continue,
-                            SetRpcAction::SetMaxIterations(n) => ChatAppMsg::SetMaxIterations(n),
-                            SetRpcAction::SetExecutionTimeout(n) => {
-                                ChatAppMsg::SetExecutionTimeout(n)
-                            }
-                            SetRpcAction::SetContextBudget(n) => ChatAppMsg::SetContextBudget(n),
-                            SetRpcAction::SetContextStrategy(s) => {
-                                ChatAppMsg::SetContextStrategy(s)
-                            }
-                            SetRpcAction::SetContextWindow(n) => ChatAppMsg::SetContextWindow(n),
-                            SetRpcAction::SetOutputValidation(v) => {
-                                ChatAppMsg::SetOutputValidation(v)
-                            }
-                            SetRpcAction::SetValidationRetries(n) => {
-                                ChatAppMsg::SetValidationRetries(n)
-                            }
-                            SetRpcAction::SetPrecognitionResults(n) => {
-                                ChatAppMsg::SetPrecognitionResults(n)
-                            }
-                            SetRpcAction::SetAutocompactThreshold(t) => {
-                                ChatAppMsg::SetAutocompactThreshold(t)
-                            }
-                        };
-                        let _ = msg_tx.send(msg);
-                    }
-                }
-            }
-        }
+        self.apply_initial_sets(&mut app, &mut agent, bridge, &msg_tx, &mut background_tasks)
+            .await?;
 
         // Connect to MCP servers in background to update tool_count /
         // connected state. The initial list (name, prefix, connected)
@@ -367,6 +329,64 @@ impl OilChatRunner {
             );
         }
 
+        Ok(())
+    }
+
+    /// Apply `cru chat --set` startup overrides.
+    ///
+    /// Daemon-bound overrides must go through `process_action` — that's
+    /// where the RPC arms live. Sending them down the UI message channel
+    /// only reaches the reducer, silently dropping the daemon call (the
+    /// same seam documented on `queue_model_prefetch`), which left every
+    /// `--set <daemon-key>=…` inert and `--set model=…` a display-only lie.
+    pub(super) async fn apply_initial_sets<A: AgentHandle>(
+        &mut self,
+        app: &mut OilChatApp,
+        agent: &mut A,
+        bridge: &AgentEventBridge,
+        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
+        background_tasks: &mut Vec<tokio::task::JoinHandle<()>>,
+    ) -> io::Result<()> {
+        for effect in std::mem::take(&mut self.initial_sets) {
+            match effect {
+                SetEffect::TuiLocal { key, value } => {
+                    app.apply_cli_override(&key, value);
+                }
+                SetEffect::DaemonRpc(action) => {
+                    let msg = match action {
+                        SetRpcAction::SwitchModel(m) => ChatAppMsg::SwitchModel(m),
+                        SetRpcAction::SetThinkingBudget(Some(b)) => {
+                            ChatAppMsg::SetThinkingBudget(b)
+                        }
+                        SetRpcAction::SetThinkingBudget(None) => continue,
+                        SetRpcAction::SetMaxIterations(n) => ChatAppMsg::SetMaxIterations(n),
+                        SetRpcAction::SetExecutionTimeout(n) => ChatAppMsg::SetExecutionTimeout(n),
+                        SetRpcAction::SetContextBudget(n) => ChatAppMsg::SetContextBudget(n),
+                        SetRpcAction::SetContextStrategy(s) => ChatAppMsg::SetContextStrategy(s),
+                        SetRpcAction::SetContextWindow(n) => ChatAppMsg::SetContextWindow(n),
+                        SetRpcAction::SetOutputValidation(v) => ChatAppMsg::SetOutputValidation(v),
+                        SetRpcAction::SetValidationRetries(n) => {
+                            ChatAppMsg::SetValidationRetries(n)
+                        }
+                        SetRpcAction::SetPrecognitionResults(n) => {
+                            ChatAppMsg::SetPrecognitionResults(n)
+                        }
+                        SetRpcAction::SetAutocompactThreshold(t) => {
+                            ChatAppMsg::SetAutocompactThreshold(t)
+                        }
+                    };
+                    self.process_action(ProcessActionParams {
+                        action: Action::Send(msg),
+                        app,
+                        agent,
+                        bridge,
+                        msg_tx,
+                        background_tasks,
+                    })
+                    .await?;
+                }
+            }
+        }
         Ok(())
     }
 

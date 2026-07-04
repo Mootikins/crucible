@@ -124,8 +124,6 @@ pub enum ChatAppMsg {
     ContextUsage { used: usize, total: usize },
     /// **Command** (TUI → daemon): Clear chat history.
     ClearHistory,
-    /// **Command** (TUI → daemon): Queue a message to send to agent.
-    QueueMessage(String),
     /// **Command** (TUI → daemon): Switch to a different LLM model.
     SwitchModel(String),
     /// **Command** (TUI → daemon): Fetch available models from providers.
@@ -291,8 +289,7 @@ impl ChatAppMsg {
             | Self::DelegationCompleted { .. }
             | Self::DelegationFailed { .. } => MsgCategory::Delegation,
 
-            Self::QueueMessage(_)
-            | Self::Error(_)
+            Self::Error(_)
             | Self::Status(_)
             | Self::ModeChanged(_)
             | Self::ContextUsage { .. }

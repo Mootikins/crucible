@@ -19,8 +19,9 @@ use crate::tui::oil::chat_app::ChatAppMsg;
 use super::support::StoryRuntime;
 
 /// Type `text` and press Enter, as a user submitting a chat message. Returns
-/// the resulting [`Action`] (normally `Action::Send(ChatAppMsg::UserMessage)`,
-/// or `QueueMessage` if a turn is already streaming).
+/// the resulting [`Action`] (normally `Action::Send(ChatAppMsg::UserMessage)`;
+/// while a turn is streaming the draft stays in the input and this returns
+/// `Action::Continue`).
 pub(crate) fn send_user_message(story: &mut StoryRuntime, text: &str) -> Action<ChatAppMsg> {
     story.text(text);
     story.enter()

@@ -127,10 +127,11 @@ impl OilChatApp {
             }
             KeyCode::BackTab => self.set_mode_with_status(self.mode.cycle()),
             KeyCode::Enter if ctrl => {
-                let content = self.input.content().to_string();
-                if !content.trim().is_empty() {
-                    self.input.handle(InputAction::Clear);
-                    tracing::info!("Force-send during streaming");
+                // Cancel the stream but keep the draft in the input so it
+                // can be sent once the turn stops. Clearing here silently
+                // discarded the typed text (nothing re-sent it).
+                if !self.input.content().trim().is_empty() {
+                    tracing::info!("Stream cancel requested via Ctrl+Enter (draft preserved)");
                     Action::Send(ChatAppMsg::StreamCancelled)
                 } else {
                     Action::Continue
@@ -143,12 +144,16 @@ impl OilChatApp {
                     self.input.handle(InputAction::Clear);
                     return self.handle_submit(content);
                 }
+                // There is no queue-while-streaming (the deferred message
+                // queue was removed). Keep the draft instead of clearing it
+                // into an unhandled message — that silently lost the text.
                 if !trimmed.is_empty() {
-                    self.input.handle(InputAction::Clear);
-                    Action::Send(ChatAppMsg::QueueMessage(content))
-                } else {
-                    Action::Continue
+                    self.notification_area
+                        .add(crucible_core::types::Notification::toast(
+                            "Turn in progress — Esc cancels, then Enter to send",
+                        ));
                 }
+                Action::Continue
             }
             _ => {
                 let action = InputAction::from(key);
@@ -254,5 +259,54 @@ impl OilChatApp {
 
         self.submit_user_message(content.clone());
         Action::Send(ChatAppMsg::UserMessage(content))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tui::oil::app::App;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn streaming_app_with_draft(draft: &str) -> OilChatApp {
+        let mut app = OilChatApp::init();
+        app.container_list_mut().mark_turn_active();
+        assert!(app.is_streaming(), "precondition: turn must be active");
+        app.set_input(draft);
+        app
+    }
+
+    #[test]
+    fn enter_while_streaming_preserves_typed_input() {
+        let mut app = streaming_app_with_draft("important draft");
+
+        let action = app.handle_streaming_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert!(
+            matches!(action, Action::Continue),
+            "no queue-while-streaming exists; Enter must not emit a message"
+        );
+        assert_eq!(
+            app.input.content(),
+            "important draft",
+            "the draft must stay in the input, not be silently discarded"
+        );
+    }
+
+    #[test]
+    fn ctrl_enter_while_streaming_cancels_and_preserves_input() {
+        let mut app = streaming_app_with_draft("important draft");
+
+        let action = app.handle_streaming_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL));
+
+        assert!(
+            matches!(action, Action::Send(ChatAppMsg::StreamCancelled)),
+            "Ctrl+Enter must cancel the stream"
+        );
+        assert_eq!(
+            app.input.content(),
+            "important draft",
+            "the draft must survive the cancel so it can be sent afterwards"
+        );
     }
 }
