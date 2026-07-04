@@ -770,7 +770,6 @@ pub fn known_slash_commands() -> Vec<(String, String)> {
         ("new".into(), "Start a new session".into()),
         ("resume".into(), "Resume a recent session".into()),
         ("view".into(), "Open or list Lua-defined views".into()),
-        ("models".into(), "List or switch models".into()),
     ]
 }
 
