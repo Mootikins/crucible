@@ -89,7 +89,7 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     }
   });
 
-  await page.route('**/api/session/*/generate-title', (route) =>
+  await page.route('**/api/session/*/auto-title', (route) =>
     route.fulfill({ json: { title: 'Auto-generated Title' } }),
   );
 

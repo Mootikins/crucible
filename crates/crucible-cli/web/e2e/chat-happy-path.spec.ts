@@ -43,7 +43,7 @@ test.describe('Chat happy path', () => {
     await setupBasicMocks(page, { sseEvents: [] });
 
     // Mock the title endpoints (auto-title fires after first response)
-    await page.route('**/api/session/*/generate-title', (route) =>
+    await page.route('**/api/session/*/auto-title', (route) =>
       route.fulfill({ json: { title: 'Generated Title' } }),
     );
     await page.route('**/api/session/*/title', (route) =>
@@ -143,7 +143,7 @@ test.describe('Chat happy path', () => {
     await page.route('**/api/session/*/cancel', (route) =>
       route.fulfill({ json: { cancelled: true } }),
     );
-    await page.route('**/api/session/*/generate-title', (route) =>
+    await page.route('**/api/session/*/auto-title', (route) =>
       route.fulfill({ json: { title: 'Generated Title' } }),
     );
     await page.route('**/api/session/*/title', (route) =>

@@ -7,10 +7,10 @@ import { MOCK_SESSION } from './helpers/fixtures';
  * E2E: LLM Title Generation
  *
  * Verifies that after the first assistant response, the frontend calls
- * `/api/session/{id}/generate-title` to get an LLM-generated title,
+ * `/api/session/{id}/auto-title` to get an LLM-generated title,
  * then sets it via PUT `/api/session/{id}/title`.
  *
- * Also verifies fallback to truncation when the generate-title endpoint fails.
+ * Also verifies fallback to truncation when the auto-title endpoint fails.
  */
 
 /** Build SSE events matching the real backend format (type in data payload). */
@@ -41,7 +41,7 @@ const UNTITLED_SESSION = {
 };
 
 test.describe('LLM title generation', () => {
-  test('calls generate-title endpoint after first assistant response', async ({ page }) => {
+  test('calls auto-title endpoint after first assistant response', async ({ page }) => {
     const responseText = 'Sure, I can help with that!';
     const generatedTitle = 'Help with project setup';
     const sseBody = createSSEStream(buildChatEvents(responseText));
@@ -58,8 +58,8 @@ test.describe('LLM title generation', () => {
       }
     });
 
-    // Mock generate-title to return LLM-generated title
-    await page.route('**/api/session/*/generate-title', (route) =>
+    // Mock auto-title to return LLM-generated title
+    await page.route('**/api/session/*/auto-title', (route) =>
       route.fulfill({ json: { title: generatedTitle } }),
     );
 
@@ -124,13 +124,13 @@ test.describe('LLM title generation', () => {
       (req) => req.url().includes('/api/chat/send') && req.method() === 'POST',
     );
 
-    // Watch for generate-title POST (fires after message_complete)
+    // Watch for auto-title POST (fires after message_complete)
     const generateTitlePromise = page.waitForRequest(
-      (req) => req.url().includes('/generate-title') && req.method() === 'POST',
+      (req) => req.url().includes('/auto-title') && req.method() === 'POST',
       { timeout: 15000 },
     );
 
-    // Watch for title PUT (fires after generate-title returns)
+    // Watch for title PUT (fires after auto-title returns)
     const titlePutPromise = page.waitForRequest(
       (req) => req.url().includes('/title') && req.method() === 'PUT',
       { timeout: 15000 },
@@ -142,9 +142,9 @@ test.describe('LLM title generation', () => {
     // Release SSE events — message_complete triggers autoGenerateTitle
     resolveSSE!();
 
-    // Assert: generate-title was called
+    // Assert: auto-title was called
     const generateReq = await generateTitlePromise;
-    expect(generateReq.url()).toContain(`/api/session/${UNTITLED_SESSION.session_id}/generate-title`);
+    expect(generateReq.url()).toContain(`/api/session/${UNTITLED_SESSION.session_id}/auto-title`);
 
     // Assert: title was set via PUT with the generated title
     const titleReq = await titlePutPromise;
@@ -152,7 +152,7 @@ test.describe('LLM title generation', () => {
     expect(titleBody.title).toBe(generatedTitle);
   });
 
-  test('falls back to truncation when generate-title fails', async ({ page }) => {
+  test('falls back to truncation when auto-title fails', async ({ page }) => {
     const responseText = 'Here is my response';
     const sseBody = createSSEStream(buildChatEvents(responseText));
 
@@ -167,8 +167,8 @@ test.describe('LLM title generation', () => {
       }
     });
 
-    // generate-title returns 500 to trigger fallback
-    await page.route('**/api/session/*/generate-title', (route) =>
+    // auto-title returns 500 to trigger fallback
+    await page.route('**/api/session/*/auto-title', (route) =>
       route.fulfill({ status: 500, body: 'Internal Server Error' }),
     );
 
@@ -233,7 +233,7 @@ test.describe('LLM title generation', () => {
       (req) => req.url().includes('/api/chat/send') && req.method() === 'POST',
     );
 
-    // Watch for title PUT (fallback truncation sets title after generate-title fails)
+    // Watch for title PUT (fallback truncation sets title after auto-title fails)
     const titlePutPromise = page.waitForRequest(
       (req) => req.url().includes('/title') && req.method() === 'PUT',
       { timeout: 15000 },
