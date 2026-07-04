@@ -199,25 +199,6 @@ impl ChatClient {
     }
 }
 
-/// Builds a genai `Client` from an `LlmProviderConfig`.
-///
-/// # Deprecated
-///
-/// Use `ChatClient::new()` instead.
-pub fn build_genai_client(config: &crucible_core::config::LlmProviderConfig) -> genai::Client {
-    ChatClient::new(config).client
-}
-
-/// Builds an explicit `ModelIden` from a `BackendType` and model name.
-///
-/// # Deprecated
-///
-/// Use `ChatClient::model_iden()` instead.
-pub fn build_model_iden(backend: &BackendType, model: &str) -> Option<ModelIden> {
-    let adapter = backend_to_adapter(backend)?;
-    Some(ModelIden::new(adapter, model))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,117 +299,11 @@ mod tests {
     }
 
     // ========================================================================
-    // build_model_iden tests — all chat-capable variants
+    // ChatClient::new tests — basic construction
     // ========================================================================
 
     #[test]
-    fn test_build_model_iden_ollama() {
-        let model_iden = build_model_iden(&BackendType::Ollama, "llama3.2");
-        assert!(model_iden.is_some());
-        let iden = model_iden.unwrap();
-        assert_eq!(iden.adapter_kind, AdapterKind::Ollama);
-        assert_eq!(&*iden.model_name, "llama3.2");
-    }
-
-    #[test]
-    fn test_build_model_iden_openai() {
-        let model_iden = build_model_iden(&BackendType::OpenAI, "gpt-4o");
-        assert!(model_iden.is_some());
-        let iden = model_iden.unwrap();
-        assert_eq!(iden.adapter_kind, AdapterKind::OpenAI);
-        assert_eq!(&*iden.model_name, "gpt-4o");
-    }
-
-    #[test]
-    fn test_build_model_iden_anthropic() {
-        let model_iden = build_model_iden(&BackendType::Anthropic, "claude-3-5-sonnet-20241022");
-        assert!(model_iden.is_some());
-        let iden = model_iden.unwrap();
-        assert_eq!(iden.adapter_kind, AdapterKind::Anthropic);
-        assert_eq!(&*iden.model_name, "claude-3-5-sonnet-20241022");
-    }
-
-    #[test]
-    fn test_build_model_iden_cohere() {
-        let model_iden = build_model_iden(&BackendType::Cohere, "command-r-plus");
-        assert!(model_iden.is_some());
-        let iden = model_iden.unwrap();
-        assert_eq!(iden.adapter_kind, AdapterKind::Cohere);
-        assert_eq!(&*iden.model_name, "command-r-plus");
-    }
-
-    #[test]
-    fn test_build_model_iden_vertexai() {
-        // VertexAI is not supported in genai 0.5.3
-        assert_eq!(
-            build_model_iden(&BackendType::VertexAI, "gemini-1.5-pro"),
-            None
-        );
-    }
-
-    #[test]
-    fn test_build_model_iden_github_copilot() {
-        let model_iden = build_model_iden(&BackendType::GitHubCopilot, "gpt-4o");
-        assert!(model_iden.is_some());
-        let iden = model_iden.unwrap();
-        assert_eq!(iden.adapter_kind, AdapterKind::OpenAI);
-        assert_eq!(&*iden.model_name, "gpt-4o");
-    }
-
-    #[test]
-    fn test_build_model_iden_openrouter() {
-        let model_iden = build_model_iden(&BackendType::OpenRouter, "openai/gpt-4o");
-        assert!(model_iden.is_some());
-        let iden = model_iden.unwrap();
-        assert_eq!(iden.adapter_kind, AdapterKind::OpenAI);
-        assert_eq!(&*iden.model_name, "openai/gpt-4o");
-    }
-
-    #[test]
-    fn test_build_model_iden_zai() {
-        let model_iden = build_model_iden(&BackendType::ZAI, "GLM-4.7");
-        assert!(model_iden.is_some());
-        let iden = model_iden.unwrap();
-        assert_eq!(iden.adapter_kind, AdapterKind::Zai);
-        assert_eq!(&*iden.model_name, "GLM-4.7");
-    }
-
-    #[test]
-    fn test_build_model_iden_custom() {
-        let model_iden = build_model_iden(&BackendType::Custom, "my-custom-model");
-        assert!(model_iden.is_some());
-        let iden = model_iden.unwrap();
-        assert_eq!(iden.adapter_kind, AdapterKind::OpenAI);
-        assert_eq!(&*iden.model_name, "my-custom-model");
-    }
-
-    #[test]
-    fn test_build_model_iden_fastembed_none() {
-        // FastEmbed is embedding-only
-        assert_eq!(
-            build_model_iden(&BackendType::FastEmbed, "some-model"),
-            None
-        );
-    }
-
-    #[test]
-    fn test_build_model_iden_burn_none() {
-        // Burn is embedding-only
-        assert_eq!(build_model_iden(&BackendType::Burn, "some-model"), None);
-    }
-
-    #[test]
-    fn test_build_model_iden_mock_none() {
-        // Mock is testing-only
-        assert_eq!(build_model_iden(&BackendType::Mock, "mock-model"), None);
-    }
-
-    // ========================================================================
-    // build_genai_client tests — basic construction
-    // ========================================================================
-
-    #[test]
-    fn test_build_genai_client_ollama() {
+    fn test_chat_client_new_ollama() {
         let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::Ollama,
             endpoint: Some("http://localhost:11434".to_string()),
@@ -442,12 +317,12 @@ mod tests {
             name: None,
         };
 
-        let _client = build_genai_client(&config);
+        let _client = ChatClient::new(&config);
         // If we get here without panic, the client was built successfully
     }
 
     #[test]
-    fn test_build_genai_client_openai_with_api_key() {
+    fn test_chat_client_new_openai_with_api_key() {
         let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::OpenAI,
             endpoint: None,
@@ -461,12 +336,12 @@ mod tests {
             name: None,
         };
 
-        let _client = build_genai_client(&config);
+        let _client = ChatClient::new(&config);
         // If we get here without panic, the client was built successfully
     }
 
     #[test]
-    fn test_build_genai_client_anthropic() {
+    fn test_chat_client_new_anthropic() {
         let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::Anthropic,
             endpoint: None,
@@ -480,12 +355,12 @@ mod tests {
             name: None,
         };
 
-        let _client = build_genai_client(&config);
+        let _client = ChatClient::new(&config);
         // If we get here without panic, the client was built successfully
     }
 
     #[test]
-    fn test_build_genai_client_github_copilot_with_endpoint() {
+    fn test_chat_client_new_github_copilot_with_endpoint() {
         let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::GitHubCopilot,
             endpoint: Some("https://api.githubcopilot.com".to_string()),
@@ -499,12 +374,12 @@ mod tests {
             name: None,
         };
 
-        let _client = build_genai_client(&config);
+        let _client = ChatClient::new(&config);
         // If we get here without panic, the client was built successfully
     }
 
     #[test]
-    fn test_build_genai_client_openrouter_with_custom_endpoint() {
+    fn test_chat_client_new_openrouter_with_custom_endpoint() {
         let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::OpenRouter,
             endpoint: Some("https://openrouter.ai/api/v1".to_string()),
@@ -518,12 +393,12 @@ mod tests {
             name: None,
         };
 
-        let _client = build_genai_client(&config);
+        let _client = ChatClient::new(&config);
         // If we get here without panic, the client was built successfully
     }
 
     #[test]
-    fn test_build_genai_client_zai_with_custom_endpoint() {
+    fn test_chat_client_new_zai_with_custom_endpoint() {
         let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::ZAI,
             endpoint: Some("https://api.z.ai/api/coding/paas/v4".to_string()),
@@ -537,12 +412,12 @@ mod tests {
             name: None,
         };
 
-        let _client = build_genai_client(&config);
+        let _client = ChatClient::new(&config);
         // If we get here without panic, the client was built successfully
     }
 
     #[test]
-    fn test_build_genai_client_custom_with_endpoint() {
+    fn test_chat_client_new_custom_with_endpoint() {
         let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::Custom,
             endpoint: Some("http://custom-api.example.com/v1".to_string()),
@@ -556,13 +431,13 @@ mod tests {
             name: None,
         };
 
-        let _client = build_genai_client(&config);
+        let _client = ChatClient::new(&config);
         // If we get here without panic, the client was built successfully
     }
 
     #[test]
     #[should_panic(expected = "Backend does not support chat")]
-    fn test_build_genai_client_fastembed_panics() {
+    fn test_chat_client_new_fastembed_panics() {
         let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::FastEmbed,
             endpoint: None,
@@ -576,12 +451,12 @@ mod tests {
             name: None,
         };
 
-        let _client = build_genai_client(&config);
+        let _client = ChatClient::new(&config);
     }
 
     #[test]
     #[should_panic(expected = "Backend does not support chat")]
-    fn test_build_genai_client_burn_panics() {
+    fn test_chat_client_new_burn_panics() {
         let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::Burn,
             endpoint: None,
@@ -595,12 +470,12 @@ mod tests {
             name: None,
         };
 
-        let _client = build_genai_client(&config);
+        let _client = ChatClient::new(&config);
     }
 
     #[test]
     #[should_panic(expected = "Backend does not support chat")]
-    fn test_build_genai_client_mock_panics() {
+    fn test_chat_client_new_mock_panics() {
         let config = crucible_core::config::LlmProviderConfig {
             provider_type: BackendType::Mock,
             endpoint: None,
@@ -614,7 +489,7 @@ mod tests {
             name: None,
         };
 
-        let _client = build_genai_client(&config);
+        let _client = ChatClient::new(&config);
     }
 
     // ========================================================================

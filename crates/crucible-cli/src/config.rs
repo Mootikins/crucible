@@ -187,9 +187,6 @@ verbose = false
         let config = CliConfig::default();
 
         assert_eq!(config.chat_model(), "llama3.2");
-        assert_eq!(config.temperature(), 0.7);
-        assert_eq!(config.max_tokens(), 2048);
-        assert!(config.streaming());
 
         // New embedding defaults
         assert!(!config.llm.has_providers());
@@ -236,9 +233,6 @@ verbose = false
 
         // Verify all important defaults
         assert_eq!(config.chat_model(), "llama3.2");
-        assert_eq!(config.temperature(), 0.7);
-        assert_eq!(config.max_tokens(), 2048);
-        assert!(config.streaming());
         assert!(!config.llm.has_providers());
     }
 
@@ -274,7 +268,6 @@ type = "openai"
 
         // Default fields should still be present
         assert_eq!(config.chat_model(), "llama3.2");
-        assert_eq!(config.temperature(), 0.7);
         assert_eq!(provider.max_tokens, 4096);
     }
 
@@ -347,7 +340,6 @@ type = "openai"
 
         let loaded = CliConfig::load(Some(config_path), None, None).unwrap();
         assert_eq!(config.chat_model(), loaded.chat_model());
-        assert_eq!(config.temperature(), loaded.temperature());
     }
 
     #[test]

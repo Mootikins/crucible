@@ -684,54 +684,13 @@ verbose = false
         Ok(())
     }
 
-    // Legacy compatibility methods
+    // Legacy compatibility method — prefer chat.model directly.
     #[allow(missing_docs)]
     pub fn chat_model(&self) -> String {
         self.chat
             .model
             .clone()
             .unwrap_or_else(|| "llama3.2".to_string())
-    }
-
-    #[allow(missing_docs)]
-    pub fn temperature(&self) -> f32 {
-        crate::config::components::defaults::DEFAULT_TEMPERATURE
-    }
-
-    #[allow(missing_docs)]
-    pub fn max_tokens(&self) -> u32 {
-        crate::config::components::defaults::DEFAULT_CHAT_MAX_TOKENS
-    }
-
-    #[allow(missing_docs)]
-    pub fn streaming(&self) -> bool {
-        true // Default streaming
-    }
-
-    #[allow(missing_docs)]
-    /// Minimal fallback — the real default is set in Lua init.lua
-    pub fn system_prompt(&self) -> String {
-        "Answer from the notes and context provided to you. If information isn't in your context, say so — do not fabricate. Be brief.".to_string()
-    }
-
-    #[allow(missing_docs)]
-    pub fn ollama_endpoint(&self) -> String {
-        "http://localhost:11434".to_string()
-    }
-
-    #[allow(missing_docs)]
-    pub fn timeout(&self) -> u64 {
-        30 // Default timeout
-    }
-
-    #[allow(missing_docs)]
-    pub fn openai_api_key(&self) -> Option<String> {
-        std::env::var("OPENAI_API_KEY").ok()
-    }
-
-    #[allow(missing_docs)]
-    pub fn anthropic_api_key(&self) -> Option<String> {
-        std::env::var("ANTHROPIC_API_KEY").ok()
     }
 
     /// Get the default config file path

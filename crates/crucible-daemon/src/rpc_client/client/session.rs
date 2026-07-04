@@ -249,29 +249,6 @@ impl DaemonClient {
         .await
     }
 
-    /// Create a session (deprecated: use session_create with SessionCreateParams instead).
-    #[deprecated(since = "0.1.0", note = "use session_create with SessionCreateParams")]
-    pub async fn session_create_legacy(
-        &self,
-        session_type: &str,
-        kiln: &Path,
-        workspace: Option<&Path>,
-        connect_kilns: Vec<&Path>,
-        recording_mode: Option<&str>,
-        recording_path: Option<&Path>,
-    ) -> Result<serde_json::Value> {
-        self.session_create(SessionCreateParams {
-            session_type: session_type.to_string(),
-            kiln: kiln.to_path_buf(),
-            workspace: workspace.map(|ws| ws.to_path_buf()),
-            connect_kilns: connect_kilns.iter().map(|p| p.to_path_buf()).collect(),
-            recording_mode: recording_mode.map(|m| m.to_string()),
-            recording_path: recording_path.map(|p| p.to_path_buf()),
-            agent_type: None,
-        })
-        .await
-    }
-
     pub async fn session_list(
         &self,
         kiln: Option<&Path>,

@@ -137,7 +137,6 @@ fn test_config_default_minimal() {
 
     // Should have defaults
     assert_eq!(config.chat_model(), "llama3.2");
-    assert_eq!(config.temperature(), 0.7);
     assert!(!config.llm.has_providers());
 }
 
@@ -152,7 +151,6 @@ fn test_config_with_custom_kiln_path() {
     assert_eq!(config.kiln_path, kiln_path);
     assert!(!config.llm.has_providers());
     assert_eq!(config.chat_model(), "llama3.2");
-    assert_eq!(config.temperature(), 0.7);
 }
 
 // ============================================================================
@@ -288,24 +286,6 @@ endpoint = "https://api.openai.com/v1"
 // API Key Resolution Tests
 // ============================================================================
 
-#[test]
-#[serial]
-fn test_openai_api_key_from_env() {
-    let _guard = EnvVarGuard::set("OPENAI_API_KEY", "env-key".to_string());
-
-    let config = CliConfig::default();
-    assert_eq!(config.openai_api_key(), Some("env-key".to_string()));
-}
-
-#[test]
-#[serial]
-fn test_anthropic_api_key_from_env() {
-    let _guard = EnvVarGuard::set("ANTHROPIC_API_KEY", "env-key".to_string());
-
-    let config = CliConfig::default();
-    assert_eq!(config.anthropic_api_key(), Some("env-key".to_string()));
-}
-
 // ============================================================================
 // Default Configuration Tests
 // ============================================================================
@@ -315,13 +295,6 @@ fn test_default_config_values() {
     let config = CliConfig::default();
 
     assert_eq!(config.chat_model(), "llama3.2");
-    assert_eq!(config.temperature(), 0.7);
-    assert_eq!(config.max_tokens(), 2048);
-    assert!(config.streaming());
-    assert!(config.system_prompt().contains("do not fabricate"));
-    // Default endpoint should be standard localhost for Ollama
-    assert_eq!(config.ollama_endpoint(), "http://localhost:11434");
-    assert_eq!(config.timeout(), 30);
 
     // New embedding defaults
     assert!(!config.llm.has_providers());

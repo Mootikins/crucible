@@ -9,7 +9,6 @@ use super::types::{
     ASTBlock, ASTBlockMetadata, ASTBlockType, Callout, CodeBlock, Heading, HorizontalRule,
     LatexExpression, ListBlock, ListType, ParsedNote, Table,
 };
-use std::collections::HashMap;
 
 /// Tracks heading hierarchy using a tree structure
 ///
@@ -25,52 +24,26 @@ use std::collections::HashMap;
 /// - H1: New root, depth=0 (not a sibling of first H1)
 #[derive(Debug, Clone)]
 struct HeadingTree {
-    /// All heading nodes indexed by their block_index
-    nodes: HashMap<usize, HeadingNode>,
     /// Current path from root to current heading: [(level, block_index), ...]
     /// This represents the "active" branch of the tree
     current_path: Vec<(u8, usize)>,
 }
 
-#[derive(Debug, Clone)]
-struct HeadingNode {
-    children: Vec<usize>,
-}
-
 impl HeadingTree {
     fn new() -> Self {
         Self {
-            nodes: HashMap::new(),
             current_path: Vec::new(),
         }
     }
 
     /// Add a new heading to the tree and return its parent index and depth
     ///
-    /// This method:
-    /// 1. Finds the appropriate parent based on heading level
-    /// 2. Calculates the depth based on tree position
-    /// 3. Updates the tree structure
-    /// 4. Returns (parent_index, depth) for immediate use
+    /// Finds the parent from the active path, calculates depth, updates the
+    /// path, and returns (parent_index, depth) for immediate use.
     fn add_heading(&mut self, level: u8, block_index: usize) -> (Option<usize>, u32) {
         let parent_idx = self.find_parent_for_level(level);
         let depth = self.calculate_depth_for_level(level);
 
-        let node = HeadingNode {
-            children: Vec::new(),
-        };
-
-        // Add to parent's children if there is a parent
-        if let Some(parent) = parent_idx {
-            if let Some(parent_node) = self.nodes.get_mut(&parent) {
-                parent_node.children.push(block_index);
-            }
-        }
-
-        // Store the node
-        self.nodes.insert(block_index, node);
-
-        // Update current path
         self.update_path(level, block_index);
 
         (parent_idx, depth)

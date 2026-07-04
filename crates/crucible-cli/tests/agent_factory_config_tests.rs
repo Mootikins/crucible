@@ -53,7 +53,6 @@ fn test_default_config_has_sensible_values() {
     let config = create_agent_factory_test_config();
 
     // Chat config should have defaults
-    assert_eq!(config.ollama_endpoint(), "http://localhost:11434");
     assert_eq!(config.chat.chat_model(), "llama3.2");
     assert_eq!(config.chat.temperature(), 0.7);
     assert_eq!(config.chat.max_tokens(), 2048);

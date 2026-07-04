@@ -5,14 +5,11 @@
 
 mod context;
 mod dispatch;
-mod error;
 mod params;
 mod workflow_handlers;
 
 pub use context::RpcContext;
 #[allow(unused_imports)]
 pub use dispatch::{RpcDispatcher, METHODS};
-#[allow(unused_imports)]
-pub use error::RpcResult;
 #[allow(unused_imports)]
 pub use params::parse_params;
