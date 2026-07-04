@@ -4,13 +4,20 @@
 //! and error (with ✗). No animated spinners — animation lives in chrome only.
 
 use crate::tui::oil::components::diff_view::{render_diff, DiffOptions};
+use crate::tui::oil::theme::ThemeConfig;
 use crate::tui::oil::utils::truncate_to_chars;
 use crate::tui::oil::viewport_cache::CachedToolCall;
 use crucible_oil::ansi::visible_width;
 use crucible_oil::node::{col, row, styled, Node};
-use crucible_oil::style::Style;
+use crucible_oil::style::{AdaptiveColor, Style};
 use crucible_oil::truncate_to_width;
 use std::time::Duration;
+
+/// Foreground-only style from a theme-resolved adaptive color. Condenses the
+/// pervasive `Style::new().fg(t.resolve_color(...))` call sites.
+fn fg(t: &ThemeConfig, color: AdaptiveColor) -> Style {
+    Style::new().fg(t.resolve_color(color))
+}
 
 impl CachedToolCall {
     /// Render a compact tool call with default spinner frame (0) and diffs visible.
@@ -78,7 +85,7 @@ impl CachedToolCall {
         let t = crate::tui::oil::theme::active();
         styled(
             format!("    {}", desc),
-            Style::new().fg(t.resolve_color(t.colors.text_muted)).dim(),
+            fg(t, t.colors.text_muted).dim(),
         )
     }
 
@@ -100,7 +107,7 @@ impl CachedToolCall {
         let t = crate::tui::oil::theme::active();
         styled(
             text,
-            Style::new().fg(t.resolve_color(t.colors.text_muted)).dim(),
+            fg(t, t.colors.text_muted).dim(),
         )
     }
 
@@ -133,37 +140,37 @@ impl CachedToolCall {
         let error_visible = visible_width(error_first_line);
         if error_visible <= remaining {
             row([
-                styled(icon, Style::new().fg(t.resolve_color(t.colors.error))),
+                styled(icon, fg(t, t.colors.error)),
                 styled(
                     display_name,
-                    Style::new().fg(t.resolve_color(t.colors.text_dim)),
+                    fg(t, t.colors.text_dim),
                 ),
                 source_badge,
                 styled(
                     arg_part,
-                    Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+                    fg(t, t.colors.text_dim).dim(),
                 ),
                 styled(
                     format!("\u{2192} {}", error_first_line),
-                    Style::new().fg(t.resolve_color(t.colors.error)).bold(),
+                    fg(t, t.colors.error).bold(),
                 ),
             ])
         } else {
             let header = row([
-                styled(icon, Style::new().fg(t.resolve_color(t.colors.error))),
+                styled(icon, fg(t, t.colors.error)),
                 styled(
                     display_name,
-                    Style::new().fg(t.resolve_color(t.colors.text_dim)),
+                    fg(t, t.colors.text_dim),
                 ),
                 source_badge,
                 styled(
                     arg_part,
-                    Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+                    fg(t, t.colors.text_dim).dim(),
                 ),
             ]);
             let error_node = styled(
                 format!("  \u{2192} {}", error_first_line),
-                Style::new().fg(t.resolve_color(t.colors.error)).bold(),
+                fg(t, t.colors.error).bold(),
             );
             col([header, error_node])
         }
@@ -190,7 +197,7 @@ impl CachedToolCall {
         let arrow_suffix = if let Some(ref s) = collapsed {
             styled(
                 format!("→ {}", s),
-                Style::new().fg(t.resolve_color(t.colors.text_muted)),
+                fg(t, t.colors.text_muted),
             )
         } else {
             Node::Empty
@@ -223,19 +230,19 @@ impl CachedToolCall {
         } else if has_arrow_suffix {
             styled(
                 format!(" {} ", fitted_arg),
-                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+                fg(t, t.colors.text_dim).dim(),
             )
         } else {
             styled(
                 format!(" {}", fitted_arg),
-                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+                fg(t, t.colors.text_dim).dim(),
             )
         };
         let header = row([
-            styled(icon_str, Style::new().fg(t.resolve_color(t.colors.success))),
+            styled(icon_str, fg(t, t.colors.success)),
             styled(
                 display_name,
-                Style::new().fg(t.resolve_color(t.colors.text_dim)),
+                fg(t, t.colors.text_dim),
             ),
             source_badge,
             arg_node,
@@ -287,7 +294,7 @@ impl CachedToolCall {
         let _ = spinner_frame; // unused — animation is in turn indicator
         let pending_icon = styled(
             "\u{25CF}",
-            Style::new().fg(t.resolve_color(t.colors.text_dim)),
+            fg(t, t.colors.text_dim),
         );
         let badge_text = self.source_badge_text();
         let source_badge = self.render_source_badge();
@@ -309,7 +316,7 @@ impl CachedToolCall {
         } else {
             styled(
                 format!(" {}", fitted_arg),
-                Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+                fg(t, t.colors.text_dim).dim(),
             )
         };
         let header = row([
@@ -318,14 +325,14 @@ impl CachedToolCall {
             styled(" ", Style::new()),
             styled(
                 display_name,
-                Style::new().fg(t.resolve_color(t.colors.text_dim)),
+                fg(t, t.colors.text_dim),
             ),
             source_badge,
             arg_node,
             if show_elapsed {
                 styled(
                     format!("  {}", format_elapsed(elapsed)),
-                    Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+                    fg(t, t.colors.text_dim).dim(),
                 )
             } else {
                 Node::Empty
@@ -496,7 +503,7 @@ pub fn format_tool_result(name: &str, result: &str, width: usize) -> Node {
         let t = crate::tui::oil::theme::active();
         return styled(
             format!("   {}", summary),
-            Style::new().fg(t.resolve_color(t.colors.text_muted)),
+            fg(t, t.colors.text_muted),
         );
     }
     let inner = unwrap_json_result(result);
@@ -553,7 +560,7 @@ pub fn format_output_tail(output: &str, prefix: &str, width: usize) -> Node {
     let t = crate::tui::oil::theme::active();
     let bar_prefix = format!("{}{} ", prefix, t.decorations.separator_char);
     let truncate_at = width.saturating_sub(visible_width(&bar_prefix) + 1);
-    let dim_style = Style::new().fg(t.resolve_color(t.colors.text_dim));
+    let dim_style = fg(t, t.colors.text_dim);
 
     let hidden_count = all_lines.len().saturating_sub(MAX_TAIL);
     let visible_lines = &all_lines[hidden_count..];
@@ -622,7 +629,10 @@ fn count_grep_matches(result: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::oil::viewport_cache::ToolSourceDisplay;
     use crucible_oil::render::render_to_plain_text;
+    use std::sync::Arc;
+    use test_case::test_case;
 
     fn test_tool(name: &str, args: &str, complete: bool) -> CachedToolCall {
         let mut tool = CachedToolCall::new("tool-1", name, args);
@@ -1170,46 +1180,17 @@ mod tests {
         );
     }
 
-    #[test]
-    fn format_primary_arg_empty() {
-        assert_eq!(format_primary_arg(""), "");
-        assert_eq!(format_primary_arg("{}"), "");
-    }
-
-    #[test]
-    fn format_primary_arg_path() {
-        let args = r#"{"path": "src/lib.rs"}"#;
-        assert_eq!(format_primary_arg(args), "src/lib.rs");
-    }
-
-    #[test]
-    fn format_primary_arg_file_path_camel() {
-        let args = r#"{"filePath": "/home/user/test.rs"}"#;
-        assert_eq!(format_primary_arg(args), "/home/user/test.rs");
-    }
-
-    #[test]
-    fn format_primary_arg_command() {
-        let args = r#"{"command": "ls -la", "timeout": 5000}"#;
-        assert_eq!(format_primary_arg(args), "ls -la");
-    }
-
-    #[test]
-    fn format_primary_arg_query() {
-        let args = r#"{"query": "auth patterns", "limit": 10}"#;
-        assert_eq!(format_primary_arg(args), "auth patterns");
-    }
-
-    #[test]
-    fn format_primary_arg_priority_over_first_key() {
-        let args = r#"{"limit": 10, "path": "src/main.rs"}"#;
-        assert_eq!(format_primary_arg(args), "src/main.rs");
-    }
-
-    #[test]
-    fn format_primary_arg_fallback_to_first_value() {
-        let args = r#"{"repo": "crucible"}"#;
-        assert_eq!(format_primary_arg(args), "crucible");
+    #[test_case("", "" ; "empty string")]
+    #[test_case("{}", "" ; "empty object")]
+    #[test_case(r#"{"path": "src/lib.rs"}"#, "src/lib.rs" ; "path key")]
+    #[test_case(r#"{"filePath": "/home/user/test.rs"}"#, "/home/user/test.rs" ; "camelCase file path")]
+    #[test_case(r#"{"command": "ls -la", "timeout": 5000}"#, "ls -la" ; "command key")]
+    #[test_case(r#"{"query": "auth patterns", "limit": 10}"#, "auth patterns" ; "query key")]
+    #[test_case(r#"{"limit": 10, "path": "src/main.rs"}"#, "src/main.rs" ; "priority key over first key")]
+    #[test_case(r#"{"repo": "crucible"}"#, "crucible" ; "fallback to first value")]
+    #[test_case(r#"{"count": 42}"#, "42" ; "non-string value")]
+    fn format_primary_arg_extracts_expected(args: &str, expected: &str) {
+        assert_eq!(format_primary_arg(args), expected);
     }
 
     #[test]
@@ -1268,12 +1249,6 @@ mod tests {
     #[test]
     fn fit_arg_to_width_empty() {
         assert_eq!(fit_arg_to_width("", 80), "");
-    }
-
-    #[test]
-    fn format_primary_arg_non_string_value() {
-        let args = r#"{"count": 42}"#;
-        assert_eq!(format_primary_arg(args), "42");
     }
 
     #[test]
@@ -1409,61 +1384,19 @@ mod tests {
         }
     }
 
-    #[test]
-    fn core_source_renders_no_badge() {
+    #[test_case(ToolSourceDisplay::Core, "[core]", false ; "core renders no badge")]
+    #[test_case(ToolSourceDisplay::Crucible, "[crucible]", false ; "crucible renders no badge")]
+    #[test_case(ToolSourceDisplay::Mcp { server: Arc::from("gmail") }, "[mcp:gmail]", true ; "mcp renders badge")]
+    #[test_case(ToolSourceDisplay::Plugin { name: Arc::from("oci") }, "[plugin:oci]", true ; "plugin renders badge")]
+    fn source_badge_visibility(source: ToolSourceDisplay, badge: &str, should_show: bool) {
         let mut tool = test_tool_with_output("bash", r#"{"command": "ls"}"#, "ok", true);
-        tool.source = Some(crate::tui::oil::viewport_cache::ToolSourceDisplay::Core);
+        tool.source = Some(source);
         let node = tool.render_compact(80);
         let plain = render_to_plain_text(&node, 80);
-        assert!(
-            !plain.contains("[core]"),
-            "Core tools must not show a [core] badge: {:?}",
-            plain
-        );
-    }
-
-    #[test]
-    fn crucible_source_renders_no_badge() {
-        let mut tool = test_tool_with_output("bash", r#"{"command": "ls"}"#, "ok", true);
-        tool.source = Some(crate::tui::oil::viewport_cache::ToolSourceDisplay::Crucible);
-        let node = tool.render_compact(80);
-        let plain = render_to_plain_text(&node, 80);
-        assert!(
-            !plain.contains("[crucible]"),
-            "Crucible tools must not show a [crucible] badge: {:?}",
-            plain
-        );
-    }
-
-    #[test]
-    fn mcp_source_renders_badge() {
-        use std::sync::Arc;
-        let mut tool = test_tool_with_output("send_email", r#"{}"#, "ok", true);
-        tool.source = Some(crate::tui::oil::viewport_cache::ToolSourceDisplay::Mcp {
-            server: Arc::from("gmail"),
-        });
-        let node = tool.render_compact(80);
-        let plain = render_to_plain_text(&node, 80);
-        assert!(
-            plain.contains("[mcp:gmail]"),
-            "MCP tools must show a [mcp:server] badge: {:?}",
-            plain
-        );
-    }
-
-    #[test]
-    fn plugin_source_renders_badge() {
-        use std::sync::Arc;
-        let mut tool = test_tool_with_output("oci_run", r#"{}"#, "ok", true);
-        tool.source = Some(crate::tui::oil::viewport_cache::ToolSourceDisplay::Plugin {
-            name: Arc::from("oci"),
-        });
-        let node = tool.render_compact(80);
-        let plain = render_to_plain_text(&node, 80);
-        assert!(
-            plain.contains("[plugin:oci]"),
-            "Plugin tools must show a [plugin:name] badge: {:?}",
-            plain
+        assert_eq!(
+            plain.contains(badge),
+            should_show,
+            "badge {badge} visibility mismatch: {plain:?}"
         );
     }
 
