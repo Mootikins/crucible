@@ -33,10 +33,8 @@
 //! storage.set_simulate_errors(true, "Storage full");
 //! ```
 
-mod completion;
 mod event_emitter;
 mod storage;
 
-pub use completion::MockCompletionBackend;
 pub use event_emitter::{MockEmitterBehavior, MockEventEmitter, MockEventEmitterStats};
 pub use storage::{MockStorage, MockStorageStats};

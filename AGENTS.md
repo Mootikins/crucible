@@ -131,22 +131,20 @@ Other hash infrastructure in `crucible-core/src/types/hashing.rs`.
 
 **LLM Types** (unified contracts):
 - `ContextMessage` — canonical message type for all conversation contexts
-- `BackendError` / `BackendResult` — canonical error type for LLM operations
-- `CompletionBackend` — canonical trait for chat/completion providers
 
 **Event Types**: `SessionEvent` includes pre-events (`PreToolCall`, `PreParse`, `PreLlmCall`) for handler interception.
 
 **DO NOT duplicate types between crates.** Each type has exactly one canonical location. Use re-exports.
 
-**Result Type Aliases** follow `<Domain>Result<T>`: `StorageResult`, `ChatResult`, `BackendResult`, `ToolResult`, `ParserResult`, `AcpResult`. The crate-level `crucible_core::Result<T>` is for general operations.
+**Result Type Aliases** follow `<Domain>Result<T>`: `StorageResult`, `ChatResult`, `ToolResult`, `ParserResult`, `AcpResult`. The crate-level `crucible_core::Result<T>` is for general operations.
 
 **Import patterns:**
 ```rust
 use crucible_core::parser::{ParsedNote, Wikilink, Tag, BlockHash};
 use crucible_core::types::hashing::{FileHash, HashAlgorithm};
 use crucible_core::traits::provider::{Provider, CanEmbed, CanChat};
-use crucible_core::traits::{CompletionBackend, BackendError, ContextMessage};
-use crucible_core::traits::{StorageResult, ChatResult, BackendResult, ToolResult};
+use crucible_core::traits::ContextMessage;
+use crucible_core::traits::{StorageResult, ChatResult, ToolResult};
 use crucible_core::protocol::{Request, Response, RpcError, SessionEventMessage};
 use crucible_daemon::enrichment::{EmbeddingHandler, Enricher};
 use crucible_daemon::pipeline::{NotePipeline, NotePipelineConfig};

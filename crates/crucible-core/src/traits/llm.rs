@@ -15,11 +15,6 @@
 //! - **Streaming**: `ChatCompletionChunk`, `ChatMessageDelta`, etc.
 //! - **Tool Calling**: `ToolCall`, `LlmToolDefinition`, `ToolChoice`
 //! - **Model Info**: `TextModelInfo`, `ModelFeature`, `ProviderCapabilities`
-//!
-//! ## Traits (in `provider.rs`)
-//!
-//! - `CompletionBackend` - Chat completion with streaming and tool calling
-//! - `EmbeddingBackend` - Text embeddings
 
 use super::context_ops::ContextMessage;
 use chrono::{DateTime, Utc};

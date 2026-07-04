@@ -7,7 +7,6 @@
 pub mod acp;
 pub mod auth;
 pub mod chat;
-pub mod completion_backend;
 pub mod context_ops;
 pub mod input;
 pub mod knowledge;
@@ -25,10 +24,6 @@ pub mod undoable;
 pub use acp::SessionManager;
 
 pub use chat::{AgentHandle, ChatError, ChatResult, ChatToolCall};
-pub use completion_backend::{
-    BackendCompletionChunk, BackendCompletionRequest, BackendCompletionResponse, BackendError,
-    BackendResult, CompletionBackend,
-};
 pub use context_ops::{ContextMessage, MessageMetadata, Position, Range};
 pub use knowledge::{KnowledgeRepository, NoteInfo};
 pub use llm::{

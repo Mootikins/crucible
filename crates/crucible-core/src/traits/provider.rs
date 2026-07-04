@@ -4,7 +4,8 @@
 //! The canonical embedding trait is [`EmbeddingProvider`](crate::enrichment::EmbeddingProvider)
 //! in crucible-core::enrichment.
 //!
-//! Chat completions are handled by [`CompletionBackend`](super::CompletionBackend).
+//! Chat completions are driven directly through the genai client in
+//! crucible-daemon (`provider::genai_handle`).
 
 use crate::config::BackendType;
 use serde::{Deserialize, Serialize};
