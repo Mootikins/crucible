@@ -1,3 +1,9 @@
+use super::session_commands::execute_command;
+use super::session_config::{
+    get_max_tokens, get_precognition, get_precognition_results, get_temperature,
+    get_thinking_budget, set_max_tokens, set_precognition, set_precognition_results,
+    set_temperature, set_thinking_budget,
+};
 use crate::web::services::daemon::AppState;
 use crate::web::{error::WebResultExt, WebError};
 use axum::{
@@ -20,12 +26,12 @@ use std::str::FromStr;
 
 /// Standard acknowledgment response for successful mutations.
 #[derive(Debug, Serialize)]
-struct OkResponse {
+pub(super) struct OkResponse {
     ok: bool,
 }
 
 impl OkResponse {
-    fn success() -> Json<Self> {
+    pub(super) fn success() -> Json<Self> {
         Json(Self { ok: true })
     }
 }
@@ -58,41 +64,6 @@ struct ModelsResponse {
 #[derive(Debug, Serialize)]
 struct TitleResponse {
     title: String,
-}
-
-/// Response for thinking budget config.
-#[derive(Debug, Serialize)]
-struct ThinkingBudgetResponse {
-    thinking_budget: Option<i64>,
-}
-
-/// Response for temperature config.
-#[derive(Debug, Serialize)]
-struct TemperatureResponse {
-    temperature: Option<f64>,
-}
-
-/// Response for max tokens config.
-#[derive(Debug, Serialize)]
-struct MaxTokensResponse {
-    max_tokens: Option<u32>,
-}
-
-/// Response for precognition config.
-#[derive(Debug, Serialize)]
-struct PrecognitionResponse {
-    precognition_enabled: bool,
-}
-
-/// Response for precognition results-count config.
-#[derive(Debug, Serialize)]
-struct PrecognitionResultsResponse {
-    precognition_results: usize,
-}
-
-#[derive(Debug, Deserialize)]
-struct SetPrecognitionResultsRequest {
-    count: usize,
 }
 
 /// Response for provider listing.
@@ -686,169 +657,6 @@ fn truncate_to_title(message: &str) -> String {
     format!("{}...", truncated)
 }
 
-// =========================================================================
-// Session Config Endpoints
-// =========================================================================
-
-#[derive(Debug, Deserialize)]
-struct SetThinkingBudgetRequest {
-    thinking_budget: Option<i64>,
-}
-
-async fn set_thinking_budget(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<SetThinkingBudgetRequest>,
-) -> Result<Json<OkResponse>, WebError> {
-    state
-        .daemon
-        .session_set_thinking_budget(&id, req.thinking_budget)
-        .await
-        .daemon_err()?;
-    Ok(OkResponse::success())
-}
-
-async fn get_thinking_budget(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<ThinkingBudgetResponse>, WebError> {
-    let thinking_budget = state
-        .daemon
-        .session_get_thinking_budget(&id)
-        .await
-        .daemon_err()?;
-    Ok(Json(ThinkingBudgetResponse { thinking_budget }))
-}
-
-#[derive(Debug, Deserialize)]
-struct SetTemperatureRequest {
-    temperature: f64,
-}
-
-async fn set_temperature(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<SetTemperatureRequest>,
-) -> Result<Json<OkResponse>, WebError> {
-    state
-        .daemon
-        .session_set_temperature(&id, req.temperature)
-        .await
-        .daemon_err()?;
-    Ok(OkResponse::success())
-}
-
-async fn get_temperature(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<TemperatureResponse>, WebError> {
-    let temperature = state
-        .daemon
-        .session_get_temperature(&id)
-        .await
-        .daemon_err()?;
-    Ok(Json(TemperatureResponse { temperature }))
-}
-
-#[derive(Debug, Deserialize)]
-struct SetMaxTokensRequest {
-    max_tokens: Option<u32>,
-}
-
-async fn set_max_tokens(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<SetMaxTokensRequest>,
-) -> Result<Json<OkResponse>, WebError> {
-    state
-        .daemon
-        .session_set_max_tokens(&id, req.max_tokens)
-        .await
-        .daemon_err()?;
-    Ok(OkResponse::success())
-}
-
-async fn get_max_tokens(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<MaxTokensResponse>, WebError> {
-    let max_tokens = state
-        .daemon
-        .session_get_max_tokens(&id)
-        .await
-        .daemon_err()?;
-    Ok(Json(MaxTokensResponse { max_tokens }))
-}
-
-#[derive(Debug, Deserialize)]
-struct SetPrecognitionRequest {
-    enabled: bool,
-}
-
-async fn set_precognition(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<SetPrecognitionRequest>,
-) -> Result<Json<OkResponse>, WebError> {
-    state
-        .daemon
-        .session_set_precognition(&id, req.enabled)
-        .await
-        .daemon_err()?;
-    Ok(OkResponse::success())
-}
-
-async fn set_precognition_results(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<SetPrecognitionResultsRequest>,
-) -> Result<Json<OkResponse>, WebError> {
-    // Range guard for the web UX. The daemon accepts any usize today —
-    // this is a user-friendly clamp matching the TUI's settings UI, not
-    // an authoritative limit. If we ever tighten the daemon-side bounds,
-    // mirror them here.
-    if !(1..=20).contains(&req.count) {
-        return Err(WebError::Validation(format!(
-            "precognition results count must be in 1..=20, got {}",
-            req.count
-        )));
-    }
-    state
-        .daemon
-        .session_set_precognition_results(&id, req.count)
-        .await
-        .daemon_err()?;
-    Ok(OkResponse::success())
-}
-
-async fn get_precognition_results(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<PrecognitionResultsResponse>, WebError> {
-    let count = state
-        .daemon
-        .session_get_precognition_results(&id)
-        .await
-        .daemon_err()?;
-    Ok(Json(PrecognitionResultsResponse {
-        precognition_results: count,
-    }))
-}
-
-async fn get_precognition(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<PrecognitionResponse>, WebError> {
-    let enabled = state
-        .daemon
-        .session_get_precognition(&id)
-        .await
-        .daemon_err()?;
-    Ok(Json(PrecognitionResponse {
-        precognition_enabled: enabled,
-    }))
-}
-
 async fn export_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -921,155 +729,6 @@ async fn export_session(
         )],
         markdown,
     ))
-}
-
-#[derive(Debug, Deserialize)]
-struct ExecuteCommandRequest {
-    command: String,
-}
-
-#[derive(Debug, Serialize)]
-struct CommandResponse {
-    result: String,
-    #[serde(rename = "type")]
-    response_type: String,
-}
-
-async fn execute_command(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<ExecuteCommandRequest>,
-) -> Result<Json<CommandResponse>, WebError> {
-    let raw = req.command.trim().to_string();
-    let command_str = raw.strip_prefix('/').unwrap_or(&raw);
-    let (cmd, args) = match command_str.split_once(' ') {
-        Some((c, a)) => (c.trim(), a.trim()),
-        None => (command_str.trim(), ""),
-    };
-
-    match cmd {
-        "help" => {
-            let help_text = [
-                "/help — Show available commands",
-                "/search <query> — Search notes by title",
-                "/models — List available models",
-                "/clear — Clear the chat",
-                "/export — Export session to markdown",
-                "/model <name> — Switch to a different model",
-            ]
-            .join("\n");
-            Ok(Json(CommandResponse {
-                result: help_text,
-                response_type: "success".to_string(),
-            }))
-        }
-        "search" => {
-            if args.is_empty() {
-                return Ok(Json(CommandResponse {
-                    result: "Usage: /search <query>".to_string(),
-                    response_type: "error".to_string(),
-                }));
-            }
-
-            // Get session to find kiln path
-            let session = state.daemon.session_get(&id).await.daemon_err()?;
-            let kiln_str = session.get("kiln").and_then(|v| v.as_str()).unwrap_or("");
-
-            let kiln_path = if kiln_str.is_empty() {
-                None
-            } else {
-                Some(PathBuf::from(kiln_str))
-            };
-
-            let results = state
-                .daemon
-                .session_search(args, kiln_path.as_deref(), Some(10))
-                .await
-                .daemon_err()?;
-
-            let result_text = if let Some(sessions) = results.as_array() {
-                if sessions.is_empty() {
-                    format!("No results found for '{}'", args)
-                } else {
-                    let mut lines = vec![format!(
-                        "Search results for '{}' ({} found):",
-                        args,
-                        sessions.len()
-                    )];
-                    for (i, item) in sessions.iter().enumerate() {
-                        let title = item
-                            .get("title")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("Untitled");
-                        let id_val = item
-                            .get("session_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown");
-                        lines.push(format!("  {}. {} ({})", i + 1, title, id_val));
-                    }
-                    lines.join("\n")
-                }
-            } else {
-                format!("Search results for '{}':\n{}", args, results)
-            };
-
-            Ok(Json(CommandResponse {
-                result: result_text,
-                response_type: "success".to_string(),
-            }))
-        }
-        "models" => {
-            let models = state.daemon.session_list_models(&id).await.daemon_err()?;
-            let result = if models.is_empty() {
-                "No models available".to_string()
-            } else {
-                let mut lines = vec![format!("Available models ({}):", models.len())];
-                for model in &models {
-                    lines.push(format!("  • {}", model));
-                }
-                lines.join("\n")
-            };
-            Ok(Json(CommandResponse {
-                result,
-                response_type: "success".to_string(),
-            }))
-        }
-        "model" => {
-            if args.is_empty() {
-                return Ok(Json(CommandResponse {
-                    result: "Usage: /model <name>".to_string(),
-                    response_type: "error".to_string(),
-                }));
-            }
-            state
-                .daemon
-                .session_switch_model(&id, args)
-                .await
-                .daemon_err()?;
-            Ok(Json(CommandResponse {
-                result: format!("Switched model to {}", args),
-                response_type: "success".to_string(),
-            }))
-        }
-        "clear" => Ok(Json(CommandResponse {
-            result: "Chat cleared".to_string(),
-            response_type: "success".to_string(),
-        })),
-        "export" => {
-            // Return a hint — the actual export is handled by the existing export endpoint
-            Ok(Json(CommandResponse {
-                result: "Use the export dialog to download your session as markdown.".to_string(),
-                response_type: "success".to_string(),
-            }))
-        }
-        _ => Ok(Json(CommandResponse {
-            result: format!(
-                "Unknown command: /{}. Type /help for available commands.",
-                cmd
-            ),
-            response_type: "error".to_string(),
-        })),
-    }
 }
 
 #[derive(Debug, Deserialize)]

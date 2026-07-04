@@ -9,6 +9,8 @@ mod plugin;
 mod project;
 mod search;
 mod session;
+mod session_commands;
+mod session_config;
 mod shell;
 mod skills;
 mod webhook;
