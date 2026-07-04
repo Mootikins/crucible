@@ -96,6 +96,8 @@ pub const METHODS: &[&str] = &[
     "session.undo_depth",
     "plugin.reload",
     "plugin.list",
+    "plugin.install",
+    "plugin.remove",
     "lua.init_session",
     "lua.register_hooks",
     "lua.execute_hook",
@@ -1353,8 +1355,53 @@ mod tests {
     }
 
     #[test]
-    fn methods_count() {
-        assert_eq!(METHODS.len(), 120, "Update when adding RPC methods");
+    fn methods_has_no_duplicates() {
+        let unique: std::collections::HashSet<_> = METHODS.iter().collect();
+        assert_eq!(unique.len(), METHODS.len(), "duplicate entry in METHODS");
+    }
+
+    // METHODS is hand-maintained while the dispatch arms are the source of truth;
+    // daemon.capabilities returns METHODS, so any drift silently hides methods
+    // from capability-detecting clients (this happened with plugin.install/remove).
+    #[test]
+    fn methods_matches_dispatch_arms() {
+        let src = include_str!("dispatch.rs");
+        let start = src
+            .find("match req.method.as_str()")
+            .expect("dispatch match not found");
+        let end = src[start..]
+            .find("_ => Response::error")
+            .expect("dispatch default arm not found")
+            + start;
+        let region = &src[start..end];
+
+        let mut dispatched = std::collections::BTreeSet::new();
+        let mut rest = region;
+        while let Some(open) = rest.find('"') {
+            let after = &rest[open + 1..];
+            let Some(close) = after.find('"') else { break };
+            let lit = &after[..close];
+            if !lit.is_empty()
+                && lit
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c == '_' || c == '.')
+            {
+                dispatched.insert(lit);
+            }
+            rest = &after[close + 1..];
+        }
+
+        let advertised: std::collections::BTreeSet<_> = METHODS.iter().copied().collect();
+        let unadvertised: Vec<_> = dispatched.difference(&advertised).collect();
+        let unreachable: Vec<_> = advertised.difference(&dispatched).collect();
+        assert!(
+            unadvertised.is_empty(),
+            "dispatched but missing from METHODS: {unadvertised:?}"
+        );
+        assert!(
+            unreachable.is_empty(),
+            "in METHODS but no dispatch arm: {unreachable:?}"
+        );
     }
 
     #[tokio::test]
