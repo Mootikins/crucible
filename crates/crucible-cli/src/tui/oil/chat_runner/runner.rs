@@ -330,7 +330,7 @@ impl OilChatRunner {
 
         // Prefetch available models in background — daemon cache should be warm,
         // so this returns near-instantly. Ensures :model popup has data immediately.
-        self.queue_model_prefetch(&msg_tx);
+        self.queue_model_prefetch(&msg_tx, &mut background_tasks);
 
         let interaction_rx = agent.take_interaction_receiver();
         tracing::debug!(

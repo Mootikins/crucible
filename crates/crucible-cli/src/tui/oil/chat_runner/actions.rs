@@ -9,6 +9,51 @@ use tokio::sync::mpsc;
 use super::{DrainMessagesOutcome, OilChatRunner, ProcessActionParams};
 
 impl OilChatRunner {
+    /// Spawn the daemon RPC behind `FetchModels` as a background task.
+    ///
+    /// The reducer only flips `model_list_state` to Loading; this is the
+    /// half that actually resolves it (ModelsLoaded / ModelsFetchFailed).
+    /// Shared by the `:model` action path and the startup prefetch — a
+    /// Loading transition without a matching spawn wedges the picker
+    /// forever, since nothing re-fetches while Loading.
+    ///
+    /// Uses a fresh DaemonClient connection (same pattern as plugin reload)
+    /// to avoid blocking the event loop.
+    pub(super) fn spawn_model_fetch(
+        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
+        background_tasks: &mut Vec<tokio::task::JoinHandle<()>>,
+    ) {
+        let tx = msg_tx.clone();
+        background_tasks.push(tokio::spawn(async move {
+            tracing::debug!(target: "crucible_cli::tui::oil::model_flow", "background: FetchModels starting");
+            match crucible_daemon::DaemonClient::connect().await {
+                Ok(client) => match client.list_all_models(None).await {
+                    Ok(models) if models.is_empty() => {
+                        let _ = tx.send(ChatAppMsg::ModelsFetchFailed(
+                            "No models available".to_string(),
+                        ));
+                    }
+                    Ok(models) => {
+                        tracing::info!(count = models.len(), "Models fetched successfully");
+                        let _ = tx.send(ChatAppMsg::ModelsLoaded(models));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(ChatAppMsg::ModelsFetchFailed(format!(
+                            "Failed to list models: {}",
+                            e
+                        )));
+                    }
+                },
+                Err(e) => {
+                    let _ = tx.send(ChatAppMsg::ModelsFetchFailed(format!(
+                        "Failed to connect to daemon: {}",
+                        e
+                    )));
+                }
+            }
+        }));
+    }
+
     /// Route a `ChatAppMsg` to the app reducer, and — in live mode — kick
     /// off any side-effects (e.g. sending a user message via RPC).
     ///
@@ -208,37 +253,7 @@ impl OilChatRunner {
                         // For ACP agents the fetched list is the daemon's configured
                         // internal providers, not the ACP agent's own model — trying
                         // to switch will surface a NotSupported error at that point.
-                        // Spawn model fetch as background task to avoid blocking the event loop.
-                        // Uses a fresh DaemonClient connection (same pattern as plugin reload).
-                        let tx = params.msg_tx.clone();
-                        params.background_tasks.push(tokio::spawn(async move {
-                            tracing::debug!(target: "crucible_cli::tui::oil::model_flow", "background: FetchModels starting");
-                            match crucible_daemon::DaemonClient::connect().await {
-                                Ok(client) => {
-                                    match client.list_all_models(None).await {
-                                        Ok(models) if models.is_empty() => {
-                                            let _ = tx.send(ChatAppMsg::ModelsFetchFailed(
-                                                "No models available".to_string(),
-                                            ));
-                                        }
-                                        Ok(models) => {
-                                            tracing::info!(count = models.len(), "Models fetched successfully");
-                                            let _ = tx.send(ChatAppMsg::ModelsLoaded(models));
-                                        }
-                                        Err(e) => {
-                                            let _ = tx.send(ChatAppMsg::ModelsFetchFailed(
-                                                format!("Failed to list models: {}", e),
-                                            ));
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    let _ = tx.send(ChatAppMsg::ModelsFetchFailed(
-                                        format!("Failed to connect to daemon: {}", e),
-                                    ));
-                                }
-                            }
-                        }));
+                        Self::spawn_model_fetch(params.msg_tx, params.background_tasks);
                     }
                     ChatAppMsg::McpStatusLoaded(_) | ChatAppMsg::PluginStatusLoaded(_) => {
                         params.app.on_message(msg.clone());

@@ -267,18 +267,30 @@ impl OilChatRunner {
         self
     }
 
-    /// Queue an initial `FetchModels` message so the `:model` popup has data
-    /// without a user-triggered round-trip.
+    /// Start the initial model fetch so the `:model` popup has data without
+    /// a user-triggered round-trip: queue `FetchModels` (reducer transition
+    /// to Loading) and spawn the daemon RPC that resolves it.
+    ///
+    /// Both halves are needed. Messages drained from the UI channel only hit
+    /// the reducer, never `process_action`, so sending `FetchModels` alone
+    /// wedges the picker at Loading forever — nothing re-fetches while
+    /// Loading.
     ///
     /// Structurally live-path only: called exclusively from
     /// `run_with_factory`. The replay entry point (added in Task 2.3c) does
     /// not invoke this. If `FetchModels` ever reaches the event loop under
     /// replay anyway, the guard on the `ChatAppMsg::FetchModels` arm
     /// swallows it — see the match-arm comment there.
-    pub(super) fn queue_model_prefetch(&self, msg_tx: &mpsc::UnboundedSender<ChatAppMsg>) {
+    pub(super) fn queue_model_prefetch(
+        &self,
+        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
+        background_tasks: &mut Vec<JoinHandle<()>>,
+    ) {
         if msg_tx.send(ChatAppMsg::FetchModels).is_err() {
             tracing::warn!("UI channel closed, initial FetchModels dropped");
+            return;
         }
+        Self::spawn_model_fetch(msg_tx, background_tasks);
     }
 
     pub(crate) fn abort_background_tasks(background_tasks: &mut Vec<JoinHandle<()>>) {
