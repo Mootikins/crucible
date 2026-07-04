@@ -9,7 +9,6 @@ pub mod auth;
 pub mod chat;
 pub mod completion_backend;
 pub mod context_ops;
-pub mod graph_query;
 pub mod input;
 pub mod knowledge;
 pub mod llm;
@@ -24,7 +23,6 @@ pub mod undoable;
 
 // Re-export key traits
 pub use acp::SessionManager;
-pub use graph_query::{GraphQueryError, GraphQueryExecutor, GraphQueryResult};
 
 pub use chat::{AgentHandle, ChatError, ChatResult, ChatToolCall};
 pub use completion_backend::{

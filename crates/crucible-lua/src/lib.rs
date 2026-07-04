@@ -122,12 +122,7 @@ pub use executor::LuaExecutor;
 #[cfg(feature = "fennel")]
 pub use fennel::FennelCompiler;
 pub use fs::register_fs_module;
-pub use graph::{
-    register_graph_module, register_graph_module_full, register_graph_module_with_all,
-    register_graph_module_with_executor, register_graph_module_with_store,
-    register_graph_module_with_store_scoped, register_graph_view_functions,
-    register_note_store_functions,
-};
+pub use graph::{register_graph_module, register_graph_module_with_store_scoped};
 pub use hooks::{
     fire_tools_registered_hooks, get_session_start_hooks, get_tools_registered_hooks,
     register_hooks_module, ToolRegistrationInfo,
