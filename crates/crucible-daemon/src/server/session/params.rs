@@ -106,6 +106,14 @@ session_config_setter!(
 );
 
 session_config_setter!(
+    handle_session_set_precognition,
+    req,
+    set_precognition,
+    "precognition_enabled",
+    optional_param!(req, "precognition_enabled", as_bool).unwrap_or(true)
+);
+
+session_config_setter!(
     handle_session_set_precognition_results,
     req,
     set_precognition_results,
@@ -149,6 +157,14 @@ session_config_setter!(
 );
 
 session_config_setter!(
+    handle_session_set_context_budget,
+    req,
+    set_context_budget,
+    "context_budget",
+    optional_param!(req, "context_budget", as_u64).map(|v| v as usize)
+);
+
+session_config_setter!(
     handle_session_set_context_window,
     req,
     set_context_window,
@@ -175,9 +191,19 @@ session_config_setter!(
 // ── Getters (uniform shape: fetch → echo, sync `AgentManager` accessors) ─────
 
 session_config_getter!(
+    handle_session_get_thinking_budget,
+    get_thinking_budget,
+    "thinking_budget"
+);
+session_config_getter!(
     handle_session_get_system_prompt,
     get_system_prompt,
     "system_prompt"
+);
+session_config_getter!(
+    handle_session_get_precognition,
+    get_precognition,
+    "precognition_enabled"
 );
 session_config_getter!(
     handle_session_get_precognition_results,
@@ -195,6 +221,11 @@ session_config_getter!(
     handle_session_get_execution_timeout,
     get_execution_timeout,
     "timeout_secs"
+);
+session_config_getter!(
+    handle_session_get_context_budget,
+    get_context_budget,
+    "context_budget"
 );
 session_config_getter!(
     handle_session_get_context_window,
@@ -224,23 +255,16 @@ session_config_getter!(
     display
 );
 
-// ── Hand-written handlers ───────────────────────────────────────────────────
+// ── Hand-written handlers (deviate from the uniform macro shape) ────────────
 //
-// Two reasons a handler stays hand-written rather than macro-generated:
+// These knobs can't be macro-generated: `set_thinking_budget` echoes back a
+// different value than it stores (the raw Option, not the clamped effective
+// budget); `set_context_strategy` / `set_output_validation` parse-and-validate
+// the incoming string and short-circuit with INVALID_PARAMS on a bad value.
 //
-//  1. It deviates from the uniform shape — `set_thinking_budget` echoes back a
-//     different value than it stores; `set_context_strategy` /
-//     `set_output_validation` parse-and-validate the incoming string.
-//
-//  2. It is one of the methods sampled by the A1 field-name parity gate in
-//     `tests/architecture_tests.rs`. That gate source-scans this file for
-//     literal `fn handle_session_{get,set}_<suffix>(` signatures and diffs the
-//     param/response field names against the client — a defense against the
-//     project's known client/server field-name-mismatch bug class. Macro
-//     invocations have no such literal signature for it to find, so the three
-//     sampled methods (`thinking_budget`, `context_budget`, `precognition`)
-//     keep their get/set handlers spelled out here. (Teaching that gate to read
-//     the macro invocations would let these collapse too — see hand-off report.)
+// The A1 field-name parity gate in `tests/architecture_tests.rs` covers these
+// alongside the macro-generated knobs — it reads each handler's wire field
+// names from whichever form (fn body or macro invocation) the knob uses.
 
 pub(crate) async fn handle_session_set_thinking_budget(
     req: Request,
@@ -265,124 +289,6 @@ pub(crate) async fn handle_session_set_thinking_budget(
             }),
         ),
         Err(e) => agent_error_to_response(req.id, e),
-    }
-}
-
-pub(crate) async fn handle_session_get_thinking_budget(
-    req: Request,
-    am: &Arc<AgentManager>,
-) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-
-    match am.get_thinking_budget(session_id) {
-        Ok(budget) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "thinking_budget": budget,
-            }),
-        ),
-        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
-            session_not_found(req.id, &id)
-        }
-        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
-            agent_not_configured(req.id, &id)
-        }
-        Err(e) => internal_error(req.id, e),
-    }
-}
-
-pub(crate) async fn handle_session_set_context_budget(
-    req: Request,
-    am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let context_budget = optional_param!(req, "context_budget", as_u64).map(|v| v as usize);
-
-    match am
-        .set_context_budget(session_id, context_budget, Some(event_tx))
-        .await
-    {
-        Ok(()) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "context_budget": context_budget,
-            }),
-        ),
-        Err(e) => agent_error_to_response(req.id, e),
-    }
-}
-
-pub(crate) async fn handle_session_get_context_budget(
-    req: Request,
-    am: &Arc<AgentManager>,
-) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-
-    match am.get_context_budget(session_id) {
-        Ok(context_budget) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "context_budget": context_budget,
-            }),
-        ),
-        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
-            session_not_found(req.id, &id)
-        }
-        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
-            agent_not_configured(req.id, &id)
-        }
-        Err(e) => internal_error(req.id, e),
-    }
-}
-
-pub(crate) async fn handle_session_set_precognition(
-    req: Request,
-    am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let enabled = optional_param!(req, "precognition_enabled", as_bool).unwrap_or(true);
-
-    match am
-        .set_precognition(session_id, enabled, Some(event_tx))
-        .await
-    {
-        Ok(()) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "precognition_enabled": enabled,
-            }),
-        ),
-        Err(e) => agent_error_to_response(req.id, e),
-    }
-}
-
-pub(crate) async fn handle_session_get_precognition(
-    req: Request,
-    am: &Arc<AgentManager>,
-) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-
-    match am.get_precognition(session_id) {
-        Ok(enabled) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "precognition_enabled": enabled,
-            }),
-        ),
-        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
-            session_not_found(req.id, &id)
-        }
-        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
-            agent_not_configured(req.id, &id)
-        }
-        Err(e) => internal_error(req.id, e),
     }
 }
 
