@@ -27,15 +27,20 @@ use crate::protocol::SessionEventMessage;
 
 use crucible_core::config::EmbeddingProviderConfig;
 
+/// Canonicalize a path, falling back to the path as-given if it cannot be
+/// resolved (e.g. the file was deleted, or lives on a filesystem that does not
+/// support canonicalization).
+fn canonical_or_self(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
 /// Normalize a file path to be relative to the kiln root.
 ///
 /// Strips the kiln prefix (canonical or as-given) and normalizes
 /// separators to forward slashes. Returns `None` if the path is not
 /// inside the kiln.
 pub fn normalize_note_path(file_path: &Path, kiln_path: &Path) -> Option<String> {
-    let canonical = kiln_path
-        .canonicalize()
-        .unwrap_or_else(|_| kiln_path.to_path_buf());
+    let canonical = canonical_or_self(kiln_path);
     let relative = file_path
         .strip_prefix(&canonical)
         .or_else(|_| file_path.strip_prefix(kiln_path))
@@ -230,9 +235,7 @@ impl KilnManager {
 
     /// Open a connection to a kiln (or return existing)
     pub async fn open(&self, kiln_path: &Path) -> Result<()> {
-        let canonical = kiln_path
-            .canonicalize()
-            .unwrap_or_else(|_| kiln_path.to_path_buf());
+        let canonical = canonical_or_self(kiln_path);
 
         {
             let conns = self.connections.read().await;
@@ -327,9 +330,7 @@ impl KilnManager {
 
     /// Close a kiln connection
     pub async fn close(&self, kiln_path: &Path) -> Result<()> {
-        let canonical = kiln_path
-            .canonicalize()
-            .unwrap_or_else(|_| kiln_path.to_path_buf());
+        let canonical = canonical_or_self(kiln_path);
         let mut conns = self.connections.write().await;
         if let Some(mut conn) = conns.remove(&canonical) {
             if let Some(ref mut wm) = conn.watch_manager {
@@ -357,9 +358,7 @@ impl KilnManager {
     /// Get handle for a kiln if it's already open (does not open if closed)
     #[allow(dead_code)] // peek-without-open API, exercised by tests
     pub async fn get(&self, kiln_path: &Path) -> Option<StorageHandle> {
-        let canonical = kiln_path
-            .canonicalize()
-            .unwrap_or_else(|_| kiln_path.to_path_buf());
+        let canonical = canonical_or_self(kiln_path);
 
         let mut conns = self.connections.write().await;
         if let Some(conn) = conns.get_mut(&canonical) {
@@ -378,9 +377,7 @@ impl KilnManager {
         // Ensure kiln is open
         self.open(kiln_path).await?;
 
-        let canonical = kiln_path
-            .canonicalize()
-            .unwrap_or_else(|_| kiln_path.to_path_buf());
+        let canonical = canonical_or_self(kiln_path);
 
         let mut conns = self.connections.write().await;
         let conn = conns
@@ -408,9 +405,7 @@ impl KilnManager {
 
         self.open(kiln_path).await?;
 
-        let canonical = kiln_path
-            .canonicalize()
-            .unwrap_or_else(|_| kiln_path.to_path_buf());
+        let canonical = canonical_or_self(kiln_path);
 
         let mut conns = self.connections.write().await;
         let conn = conns
@@ -451,9 +446,7 @@ impl KilnManager {
         // Ensure kiln is open
         self.open(kiln_path).await?;
 
-        let canonical = kiln_path
-            .canonicalize()
-            .unwrap_or_else(|_| kiln_path.to_path_buf());
+        let canonical = canonical_or_self(kiln_path);
 
         let mut conns = self.connections.write().await;
         let conn = conns
@@ -493,9 +486,7 @@ impl KilnManager {
     }
 
     pub async fn get_or_open(&self, kiln_path: &Path) -> Result<StorageHandle> {
-        let canonical = kiln_path
-            .canonicalize()
-            .unwrap_or_else(|_| kiln_path.to_path_buf());
+        let canonical = canonical_or_self(kiln_path);
 
         // Try to get existing and update last_access
         {
@@ -524,9 +515,7 @@ impl KilnManager {
     /// we fall back to the raw path which may still match if the kiln key
     /// also wasn't canonicalized (defensive).
     pub async fn find_kiln_for_path(&self, file_path: &Path) -> Option<PathBuf> {
-        let canonical = file_path
-            .canonicalize()
-            .unwrap_or_else(|_| file_path.to_path_buf());
+        let canonical = canonical_or_self(file_path);
         let conns = self.connections.read().await;
         conns
             .keys()

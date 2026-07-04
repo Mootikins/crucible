@@ -308,6 +308,23 @@ impl CrucibleMcpServer {
     fn workspace_tools(&self) -> WorkspaceTools {
         WorkspaceTools::new(&self.workspace_path)
     }
+
+    /// Borrow the delegation context or fail with a uniform error naming the
+    /// tool that required it.
+    fn require_delegation(&self, tool: &str) -> Result<&DelegationContext, rmcp::ErrorData> {
+        self.delegation_context.as_ref().ok_or_else(|| {
+            rmcp::ErrorData::internal_error(
+                format!("{tool} unavailable: no daemon delegation context"),
+                None,
+            )
+        })
+    }
+
+    /// Wrap a serializable value as a successful single-content tool result.
+    fn json_ok(value: impl serde::Serialize) -> Result<CallToolResult, rmcp::ErrorData> {
+        let content = rmcp::model::Content::json(value)?;
+        Ok(CallToolResult::success(vec![content]))
+    }
 }
 
 // ===== MCP Server Implementation =====
@@ -506,12 +523,7 @@ impl CrucibleMcpServer {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
 
-        let delegation = self.delegation_context.as_ref().ok_or_else(|| {
-            rmcp::ErrorData::internal_error(
-                "delegate_session unavailable: no daemon delegation context",
-                None,
-            )
-        })?;
+        let delegation = self.require_delegation("delegate_session")?;
 
         if !delegation.enabled {
             return Err(rmcp::ErrorData::invalid_params(
@@ -567,11 +579,10 @@ impl CrucibleMcpServer {
                     )
                 })?;
 
-            let content = rmcp::model::Content::json(serde_json::json!({
+            return Self::json_ok(serde_json::json!({
                 "delegation_id": job_id,
                 "status": "spawned",
-            }))?;
-            return Ok(CallToolResult::success(vec![content]));
+            }));
         }
 
         let result = delegation
@@ -605,8 +616,7 @@ impl CrucibleMcpServer {
             })
         };
 
-        let content = rmcp::model::Content::json(content)?;
-        Ok(CallToolResult::success(vec![content]))
+        Self::json_ok(content)
     }
 
     // ===== Job Tools (3) =====
@@ -618,20 +628,12 @@ impl CrucibleMcpServer {
         &self,
         _params: Parameters<ListJobsParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let delegation = self.delegation_context.as_ref().ok_or_else(|| {
-            rmcp::ErrorData::internal_error(
-                "list_jobs unavailable: no daemon delegation context",
-                None,
-            )
-        })?;
+        let delegation = self.require_delegation("list_jobs")?;
 
         let jobs = delegation
             .background_spawner
             .list_jobs(&delegation.session_id);
-        let content = rmcp::model::Content::json(
-            serde_json::to_value(&jobs).mcp_err_ctx("Failed to serialize jobs")?,
-        )?;
-        Ok(CallToolResult::success(vec![content]))
+        Self::json_ok(serde_json::to_value(&jobs).mcp_err_ctx("Failed to serialize jobs")?)
     }
 
     #[tool(description = "Get the result of a specific background job by ID")]
@@ -640,24 +642,15 @@ impl CrucibleMcpServer {
         params: Parameters<GetJobResultParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let delegation = self.delegation_context.as_ref().ok_or_else(|| {
-            rmcp::ErrorData::internal_error(
-                "get_job_result unavailable: no daemon delegation context",
-                None,
-            )
-        })?;
+        let delegation = self.require_delegation("get_job_result")?;
 
         match delegation.background_spawner.get_job_result(&params.job_id) {
-            Some(result) => {
-                let content =
-                    rmcp::model::Content::json(serde_json::to_value(&result).map_err(|e| {
-                        rmcp::ErrorData::internal_error(
-                            format!("Failed to serialize job result: {e}"),
-                            None,
-                        )
-                    })?)?;
-                Ok(CallToolResult::success(vec![content]))
-            }
+            Some(result) => Self::json_ok(serde_json::to_value(&result).map_err(|e| {
+                rmcp::ErrorData::internal_error(
+                    format!("Failed to serialize job result: {e}"),
+                    None,
+                )
+            })?),
             None => Err(rmcp::ErrorData::invalid_params(
                 format!("Job not found: {}", params.job_id),
                 None,
@@ -671,22 +664,16 @@ impl CrucibleMcpServer {
         params: Parameters<CancelJobParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let delegation = self.delegation_context.as_ref().ok_or_else(|| {
-            rmcp::ErrorData::internal_error(
-                "cancel_job unavailable: no daemon delegation context",
-                None,
-            )
-        })?;
+        let delegation = self.require_delegation("cancel_job")?;
 
         let cancelled = delegation
             .background_spawner
             .cancel_job(&params.job_id)
             .await;
-        let content = rmcp::model::Content::json(serde_json::json!({
+        Self::json_ok(serde_json::json!({
             "job_id": params.job_id,
             "cancelled": cancelled,
-        }))?;
-        Ok(CallToolResult::success(vec![content]))
+        }))
     }
 }
 
@@ -723,6 +710,11 @@ mod tests {
 
     use crate::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
 
+    /// Unified test spawner. Counts `spawn_subagent` calls (used by delegate
+    /// tests) and serves a single canned job `job-test-123` for the job-tool
+    /// tests. The two concerns don't overlap in any single test, so one mock
+    /// covers both.
+    #[derive(Default)]
     struct MockBackgroundSpawner {
         spawn_calls: AtomicUsize,
     }
@@ -768,16 +760,50 @@ mod tests {
             Ok(JobResult::success(info, "done".to_string()))
         }
 
-        fn list_jobs(&self, _session_id: &str) -> Vec<JobInfo> {
-            vec![]
+        fn list_jobs(&self, session_id: &str) -> Vec<JobInfo> {
+            let mut info = JobInfo::new(
+                session_id.to_string(),
+                JobKind::Subagent {
+                    prompt: "test task".to_string(),
+                    context: None,
+                },
+            );
+            info.id = "job-test-123".to_string();
+            vec![info]
         }
 
-        fn get_job_result(&self, _job_id: &String) -> Option<JobResult> {
-            None
+        fn get_job_result(&self, job_id: &String) -> Option<JobResult> {
+            if job_id == "job-test-123" {
+                let mut info = JobInfo::new(
+                    "test-session".to_string(),
+                    JobKind::Subagent {
+                        prompt: "test".to_string(),
+                        context: None,
+                    },
+                );
+                info.id = "job-test-123".to_string();
+                info.mark_completed();
+                Some(JobResult::success(info, "completed output".to_string()))
+            } else {
+                None
+            }
         }
 
-        async fn cancel_job(&self, _job_id: &String) -> bool {
-            false
+        async fn cancel_job(&self, job_id: &String) -> bool {
+            job_id == "job-test-123"
+        }
+    }
+
+    impl Default for DelegationContext {
+        fn default() -> Self {
+            Self {
+                background_spawner: Arc::new(MockBackgroundSpawner::default()),
+                session_id: "chat-parent".to_string(),
+                targets: vec![],
+                enabled: true,
+                depth: 0,
+                data_classification: DataClassification::Public,
+            }
         }
     }
 
@@ -903,9 +929,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
         let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
-        let spawner = Arc::new(MockBackgroundSpawner {
-            spawn_calls: AtomicUsize::new(0),
-        });
+        let spawner = Arc::new(MockBackgroundSpawner::default());
 
         let server = CrucibleMcpServer::new_with_delegation(
             temp.path().to_str().unwrap().to_string(),
@@ -913,11 +937,8 @@ mod tests {
             embedding_provider,
             Some(DelegationContext {
                 background_spawner: spawner.clone(),
-                session_id: "chat-parent".to_string(),
                 targets: vec!["opencode".to_string()],
-                enabled: true,
-                depth: 0,
-                data_classification: DataClassification::Public,
+                ..Default::default()
             }),
         );
 
@@ -939,9 +960,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
         let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
-        let spawner = Arc::new(MockBackgroundSpawner {
-            spawn_calls: AtomicUsize::new(0),
-        });
+        let spawner = Arc::new(MockBackgroundSpawner::default());
 
         let server = CrucibleMcpServer::new_with_delegation(
             temp.path().to_str().unwrap().to_string(),
@@ -949,11 +968,8 @@ mod tests {
             embedding_provider,
             Some(DelegationContext {
                 background_spawner: spawner.clone(),
-                session_id: "chat-parent".to_string(),
                 targets: vec!["my-custom-agent".to_string(), "another-agent".to_string()],
-                enabled: true,
-                depth: 0,
-                data_classification: DataClassification::Public,
+                ..Default::default()
             }),
         );
 
@@ -1004,9 +1020,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
         let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
-        let spawner = Arc::new(MockBackgroundSpawner {
-            spawn_calls: AtomicUsize::new(0),
-        });
+        let spawner = Arc::new(MockBackgroundSpawner::default());
 
         let server = CrucibleMcpServer::new_with_delegation(
             temp.path().to_str().unwrap().to_string(),
@@ -1014,11 +1028,7 @@ mod tests {
             embedding_provider,
             Some(DelegationContext {
                 background_spawner: spawner.clone(),
-                session_id: "chat-parent".to_string(),
-                targets: vec![],
-                enabled: true,
-                depth: 0,
-                data_classification: DataClassification::Public,
+                ..Default::default()
             }),
         );
 
@@ -1040,63 +1050,6 @@ mod tests {
         );
     }
 
-    struct MockJobBackgroundSpawner;
-
-    #[async_trait::async_trait]
-    impl BackgroundSpawner for MockJobBackgroundSpawner {
-        async fn spawn_bash(
-            &self,
-            _session_id: &str,
-            _command: String,
-            _workdir: Option<std::path::PathBuf>,
-            _timeout: Option<std::time::Duration>,
-        ) -> Result<String, JobError> {
-            Err(JobError::SpawnFailed("not implemented".to_string()))
-        }
-
-        async fn spawn_subagent(
-            &self,
-            _session_id: &str,
-            _prompt: String,
-            _context: Option<String>,
-        ) -> Result<String, JobError> {
-            Err(JobError::SpawnFailed("not implemented".to_string()))
-        }
-
-        fn list_jobs(&self, session_id: &str) -> Vec<JobInfo> {
-            let mut info = JobInfo::new(
-                session_id.to_string(),
-                JobKind::Subagent {
-                    prompt: "test task".to_string(),
-                    context: None,
-                },
-            );
-            info.id = "job-test-123".to_string();
-            vec![info]
-        }
-
-        fn get_job_result(&self, job_id: &String) -> Option<JobResult> {
-            if job_id == "job-test-123" {
-                let mut info = JobInfo::new(
-                    "test-session".to_string(),
-                    JobKind::Subagent {
-                        prompt: "test".to_string(),
-                        context: None,
-                    },
-                );
-                info.id = "job-test-123".to_string();
-                info.mark_completed();
-                Some(JobResult::success(info, "completed output".to_string()))
-            } else {
-                None
-            }
-        }
-
-        async fn cancel_job(&self, job_id: &String) -> bool {
-            job_id == "job-test-123"
-        }
-    }
-
     fn make_server_without_delegation() -> CrucibleMcpServer {
         let temp = TempDir::new().unwrap();
         CrucibleMcpServer::new(
@@ -1113,12 +1066,8 @@ mod tests {
             Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
             Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
             Some(DelegationContext {
-                background_spawner: Arc::new(MockJobBackgroundSpawner),
                 session_id: "test-session".to_string(),
-                targets: vec![],
-                enabled: true,
-                depth: 0,
-                data_classification: DataClassification::Public,
+                ..Default::default()
             }),
         )
     }
@@ -1127,20 +1076,15 @@ mod tests {
         data_classification: DataClassification,
     ) -> (CrucibleMcpServer, Arc<MockBackgroundSpawner>) {
         let temp = TempDir::new().unwrap();
-        let spawner = Arc::new(MockBackgroundSpawner {
-            spawn_calls: AtomicUsize::new(0),
-        });
+        let spawner = Arc::new(MockBackgroundSpawner::default());
         let server = CrucibleMcpServer::new_with_delegation(
             temp.path().to_str().unwrap().to_string(),
             Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
             Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
             Some(DelegationContext {
                 background_spawner: spawner.clone(),
-                session_id: "chat-parent".to_string(),
-                targets: vec![],
-                enabled: true,
-                depth: 0,
                 data_classification,
+                ..Default::default()
             }),
         );
 
@@ -1156,14 +1100,9 @@ mod tests {
             Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
             Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
             Some(DelegationContext {
-                background_spawner: Arc::new(MockBackgroundSpawner {
-                    spawn_calls: AtomicUsize::new(0),
-                }),
-                session_id: "chat-parent".to_string(),
-                targets: vec![],
                 enabled: false,
-                depth: 0,
                 data_classification,
+                ..Default::default()
             }),
         )
     }

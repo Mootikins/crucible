@@ -510,6 +510,27 @@ pub(crate) enum BudgetAction {
     },
 }
 
+/// Drop oldest non-system messages until the running token estimate is at or
+/// under `budget`, always keeping the system prefix and the final (current)
+/// message.
+fn truncate_to_budget(messages: &mut Vec<ChatMessage>, budget: usize) {
+    while messages.iter().map(estimate_message_tokens).sum::<usize>() > budget
+        && messages.len() > 2
+    {
+        let Some(idx) = messages
+            .iter()
+            .position(|m| m.role != genai::chat::ChatRole::System)
+        else {
+            break;
+        };
+        // Don't remove the last message (current user turn).
+        if idx >= messages.len() - 1 {
+            break;
+        }
+        messages.remove(idx);
+    }
+}
+
 /// Enforce context budget by truncating messages according to the chosen strategy.
 ///
 /// Modifies the message vec in-place. System messages (at the front) are preserved.
@@ -531,25 +552,7 @@ fn enforce_context_budget(
 
     match strategy {
         ContextStrategy::Truncate => {
-            // Drop oldest non-system messages until under budget.
-            // Keep system messages at the front and the last message (current user turn).
-            while messages.iter().map(estimate_message_tokens).sum::<usize>() > budget
-                && messages.len() > 2
-            {
-                // Find first non-system message
-                if let Some(idx) = messages
-                    .iter()
-                    .position(|m| m.role != genai::chat::ChatRole::System)
-                {
-                    // Don't remove the last message (current user turn)
-                    if idx >= messages.len() - 1 {
-                        break;
-                    }
-                    messages.remove(idx);
-                } else {
-                    break;
-                }
-            }
+            truncate_to_budget(messages, budget);
             BudgetAction::Mutated
         }
         ContextStrategy::SlidingWindow => {
@@ -596,21 +599,7 @@ fn enforce_context_budget(
             // Belt-and-braces: if even the kept window plus the
             // placeholder + system prompt exceed the budget, fall back
             // to Truncate behaviour to avoid over-budget prompts.
-            while messages.iter().map(estimate_message_tokens).sum::<usize>() > budget
-                && messages.len() > 2
-            {
-                if let Some(idx) = messages
-                    .iter()
-                    .position(|m| m.role != genai::chat::ChatRole::System)
-                {
-                    if idx >= messages.len() - 1 {
-                        break;
-                    }
-                    messages.remove(idx);
-                } else {
-                    break;
-                }
-            }
+            truncate_to_budget(messages, budget);
             action
         }
     }
@@ -1353,6 +1342,7 @@ mod tests {
     use crucible_core::config::{BackendType, LlmProviderConfig};
 
     use futures::StreamExt;
+    use test_case::test_case;
 
     // ─── ToolCallEmitter contract ──────────────────────────────────────
 
@@ -2058,66 +2048,28 @@ mod tests {
 
     // === Negative tests: verify no false positives on legitimate responses ===
 
-    #[tokio::test]
-    async fn test_normal_text_response_no_error() {
-        let events = wrap_stream_with_guards(scripted_turn_stream(vec![
-            TurnEvent::TextDelta("Hello world".to_string()),
-            TurnEvent::Done {
-                stop_reason: StopReason::EndTurn,
-            },
-        ]))
-        .collect::<Vec<_>>()
-        .await;
-        assert!(!has_any_error(&events), "got: {events:?}");
+    fn tool_call_event() -> TurnEvent {
+        TurnEvent::ToolCall {
+            id: "call_1".to_string(),
+            name: "search".to_string(),
+            args: serde_json::Value::Null,
+            diffs: Vec::new(),
+        }
     }
 
+    #[test_case(vec![TurnEvent::TextDelta("Hello world".to_string())] ; "normal text")]
+    #[test_case(vec![tool_call_event()] ; "tool call only")]
+    #[test_case(vec![TurnEvent::Thinking("Let me think about this...".to_string())] ; "thinking only")]
+    #[test_case(vec![TurnEvent::TextDelta("Hello".to_string()), tool_call_event()] ; "text plus tool call")]
     #[tokio::test]
-    async fn test_tool_call_only_response_no_error() {
-        let events = wrap_stream_with_guards(scripted_turn_stream(vec![
-            TurnEvent::ToolCall {
-                id: "call_1".to_string(),
-                name: "search".to_string(),
-                args: serde_json::Value::Null,
-                diffs: Vec::new(),
-            },
-            TurnEvent::Done {
-                stop_reason: StopReason::EndTurn,
-            },
-        ]))
-        .collect::<Vec<_>>()
-        .await;
-        assert!(!has_any_error(&events), "got: {events:?}");
-    }
-
-    #[tokio::test]
-    async fn test_thinking_only_response_no_error() {
-        let events = wrap_stream_with_guards(scripted_turn_stream(vec![
-            TurnEvent::Thinking("Let me think about this...".to_string()),
-            TurnEvent::Done {
-                stop_reason: StopReason::EndTurn,
-            },
-        ]))
-        .collect::<Vec<_>>()
-        .await;
-        assert!(!has_any_error(&events), "got: {events:?}");
-    }
-
-    #[tokio::test]
-    async fn test_text_plus_tool_call_response_no_error() {
-        let events = wrap_stream_with_guards(scripted_turn_stream(vec![
-            TurnEvent::TextDelta("Hello".to_string()),
-            TurnEvent::ToolCall {
-                id: "call_1".to_string(),
-                name: "search".to_string(),
-                args: serde_json::Value::Null,
-                diffs: Vec::new(),
-            },
-            TurnEvent::Done {
-                stop_reason: StopReason::EndTurn,
-            },
-        ]))
-        .collect::<Vec<_>>()
-        .await;
+    async fn terminated_stream_yields_no_error(content: Vec<TurnEvent>) {
+        let mut script = content;
+        script.push(TurnEvent::Done {
+            stop_reason: StopReason::EndTurn,
+        });
+        let events = wrap_stream_with_guards(scripted_turn_stream(script))
+            .collect::<Vec<_>>()
+            .await;
         assert!(!has_any_error(&events), "got: {events:?}");
     }
 
