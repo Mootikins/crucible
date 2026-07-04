@@ -62,8 +62,7 @@ pub use processing::{
 
 // Re-export core traits (abstractions for Dependency Inversion)
 pub use traits::{
-    ChangeDetector, ContentHasher, ContextMessage, HashLookupStorage, MarkdownParser,
-    SessionManager, Storage, ToolExecutor,
+    ContextMessage, MarkdownParser, SessionManager, Storage, ToolExecutor,
 };
 
 // Re-export key types used across module boundaries
@@ -75,9 +74,6 @@ pub use types::{
     // Hashing types
     BlockHash,
     BlockHashInfo,
-    // Change detection types
-    ChangeSet,
-    ChangeSummary,
     // ACP types
     ChunkType,
     // Storage trait types (from traits/storage.rs)

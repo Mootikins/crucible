@@ -28,7 +28,6 @@
 
 pub mod acp;
 pub mod auth;
-pub mod change_detection;
 pub mod chat;
 pub mod completion_backend;
 pub mod context_ops;
@@ -48,7 +47,6 @@ pub mod undoable;
 
 // Re-export key traits
 pub use acp::SessionManager;
-pub use change_detection::{CacheEntry, ChangeDetector, ContentHasher, HashLookupStorage};
 pub use graph_query::{GraphQueryError, GraphQueryExecutor, GraphQueryResult};
 
 pub use chat::{AgentHandle, ChatError, ChatResult, ChatToolCall};

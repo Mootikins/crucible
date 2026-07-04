@@ -8,25 +8,7 @@
 //!
 //! ## Modules
 //!
-//! - [`mocks`]: Mock implementations of traits (hasher, storage, change detector)
-//!
-//! ## Usage in Tests
-//!
-//! ```rust
-//! use crate::test_support::{create_basic_kiln, mocks::MockHashingAlgorithm};
-//! use crate::hashing::algorithm::HashingAlgorithm;
-//!
-//! # fn example() -> anyhow::Result<()> {
-//! // Create temporary test kiln
-//! let kiln = create_basic_kiln()?;
-//!
-//! // Use mock hasher for deterministic testing
-//! let hasher = MockHashingAlgorithm::new();
-//! let hash = hasher.hash(b"test");
-//! assert_eq!(hash.len(), 32);
-//! # Ok(())
-//! # }
-//! ```
+//! - [`mocks`]: Mock implementations of traits (storage, completion, event emitter)
 
 pub mod env_guard;
 pub mod fixtures;

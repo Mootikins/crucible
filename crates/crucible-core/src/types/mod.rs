@@ -49,9 +49,6 @@ pub use crate::types::hashing::{
     BlockHash, BlockHashInfo, FileHash, FileHashInfo, HashAlgorithm, HashError,
 };
 
-// Re-export change detection types
-pub use crate::traits::change_detection::{ChangeSet, ChangeSummary};
-
 // Re-export ACP types
 // NOTE: ToolDescriptor and ToolExample removed - use ToolDefinition from traits::tools
 pub use crate::types::acp::{
