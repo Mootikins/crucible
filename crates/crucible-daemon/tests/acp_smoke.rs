@@ -33,9 +33,14 @@ use tokio::time::{timeout, Duration};
 
 /// Returns the path to the mock-acp-agent binary.
 ///
-/// The binary is built at `target/debug/mock-acp-agent` relative to the workspace root.
-/// This function resolves the path from the daemon crate's manifest directory.
+/// Prefers `CARGO_BIN_EXE_mock-acp-agent` (set by cargo when the bin target is
+/// built, i.e. when the test-utils feature is enabled — honors any custom
+/// target-dir). Falls back to the default workspace-root target path.
 pub fn mock_agent_path() -> PathBuf {
+    if let Some(path) = option_env!("CARGO_BIN_EXE_mock-acp-agent") {
+        return PathBuf::from(path);
+    }
+
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/debug/mock-acp-agent")
         .canonicalize()

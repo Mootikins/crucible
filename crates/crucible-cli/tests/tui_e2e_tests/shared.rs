@@ -29,7 +29,9 @@ pub(super) fn find_binary() -> Option<PathBuf> {
         return Some(release_path);
     }
 
-    let debug_path = workspace_root.join("target/debug/cru");
+    // CARGO_BIN_EXE_cru honors custom target-dirs (e.g. shared worktree
+    // targets), where workspace_root/target does not exist.
+    let debug_path = PathBuf::from(env!("CARGO_BIN_EXE_cru"));
     if debug_path.exists() {
         return Some(debug_path);
     }

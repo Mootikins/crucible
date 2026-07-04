@@ -402,15 +402,10 @@ fn chat_rapid_input() {
 fn chat_short_prompt_streams_response() {
     require_binary!();
 
-    // Force the freshly-built debug binary — `target/release/cru` may be a
-    // stale snapshot from before the current refactor.
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let manifest_path = std::path::PathBuf::from(manifest_dir);
-    let workspace_root = manifest_path
-        .parent()
-        .and_then(|p| p.parent())
-        .expect("workspace root");
-    let debug_bin = workspace_root.join("target/debug/cru");
+    // Force the freshly-built test-profile binary — `target/release/cru` may
+    // be a stale snapshot from before the current refactor. CARGO_BIN_EXE_cru
+    // honors custom target-dirs (e.g. shared worktree targets).
+    let debug_bin = std::path::PathBuf::from(env!("CARGO_BIN_EXE_cru"));
     assert!(
         debug_bin.exists(),
         "debug binary missing at {:?}; run `cargo build -p crucible-cli` first",

@@ -131,17 +131,9 @@ impl TuiTestConfig {
             return release_path;
         }
 
-        let debug_path = workspace_root.join("target/debug/cru");
-        if debug_path.exists() {
-            return debug_path;
-        }
-
-        panic!(
-            "Could not find cru binary. Run `cargo build` or `cargo build --release` first.\n\
-             Looked in:\n  - {}\n  - {}",
-            release_path.display(),
-            debug_path.display()
-        );
+        // CARGO_BIN_EXE_cru honors custom target-dirs (e.g. shared worktree
+        // targets), where workspace_root/target does not exist.
+        PathBuf::from(env!("CARGO_BIN_EXE_cru"))
     }
 }
 

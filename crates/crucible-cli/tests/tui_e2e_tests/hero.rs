@@ -40,12 +40,9 @@ fn cru_bin() -> PathBuf {
             return PathBuf::from(p);
         }
     }
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .parent()
-        .and_then(|p| p.parent())
-        .expect("workspace root")
-        .join("target/debug/cru")
+    // CARGO_BIN_EXE_cru honors custom target-dirs (e.g. shared worktree
+    // targets), where workspace_root/target does not exist.
+    PathBuf::from(env!("CARGO_BIN_EXE_cru"))
 }
 
 /// Run `cru <args>` in the kiln dir with inherited env; return trimmed stdout.
