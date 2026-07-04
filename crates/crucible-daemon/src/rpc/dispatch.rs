@@ -152,6 +152,33 @@ fn map_server_resp(resp: Response) -> RpcResult<serde_json::Value> {
     }
 }
 
+// Route a filtered `session.set_*` / `session.get_*` method string to its
+// server handler. Every method literal stays paired with its handler at the
+// call site (greppable, wire-name-explicit); the shared call shape lives here.
+macro_rules! dispatch_session_setter {
+    ($req:expr, $agents:expr, $event_tx:expr, { $($method:literal => $handler:ident),+ $(,)? }) => {
+        match $req.method.as_str() {
+            $(
+                $method => {
+                    crate::server::session::$handler($req.clone(), $agents, $event_tx).await
+                }
+            )+
+            _ => unreachable!("dispatch match already filtered to known setter methods"),
+        }
+    };
+}
+
+macro_rules! dispatch_session_getter {
+    ($req:expr, $agents:expr, { $($method:literal => $handler:ident),+ $(,)? }) => {
+        match $req.method.as_str() {
+            $(
+                $method => crate::server::session::$handler($req.clone(), $agents).await,
+            )+
+            _ => unreachable!("dispatch match already filtered to known getter methods"),
+        }
+    };
+}
+
 pub struct RpcDispatcher {
     ctx: RpcContext,
 }
@@ -492,122 +519,22 @@ impl RpcDispatcher {
     /// All session config setters share the signature `(Request, &AgentManager, &Sender) -> Response`.
     /// This avoids 13 near-identical one-line forwarding methods.
     async fn dispatch_session_config_setter(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        use crate::server::session;
-        let resp = match req.method.as_str() {
-            "session.set_thinking_budget" => {
-                session::handle_session_set_thinking_budget(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx,
-                )
-                .await
-            }
-            "session.set_temperature" => {
-                session::handle_session_set_temperature(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx,
-                )
-                .await
-            }
-            "session.set_max_tokens" => {
-                session::handle_session_set_max_tokens(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx,
-                )
-                .await
-            }
-            "session.set_max_iterations" => {
-                session::handle_session_set_max_iterations(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx,
-                )
-                .await
-            }
-            "session.set_execution_timeout" => {
-                session::handle_session_set_execution_timeout(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx,
-                )
-                .await
-            }
-            "session.set_context_budget" => {
-                session::handle_session_set_context_budget(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx,
-                )
-                .await
-            }
-            "session.set_context_strategy" => {
-                session::handle_session_set_context_strategy(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx,
-                )
-                .await
-            }
-            "session.set_context_window" => {
-                session::handle_session_set_context_window(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx,
-                )
-                .await
-            }
-            "session.set_output_validation" => {
-                session::handle_session_set_output_validation(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx,
-                )
-                .await
-            }
-            "session.set_validation_retries" => {
-                session::handle_session_set_validation_retries(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx,
-                )
-                .await
-            }
-            "session.set_system_prompt" => {
-                session::handle_session_set_system_prompt(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx,
-                )
-                .await
-            }
-            "session.set_precognition" => {
-                session::handle_session_set_precognition(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx,
-                )
-                .await
-            }
-            "session.set_precognition_results" => {
-                session::handle_session_set_precognition_results(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx,
-                )
-                .await
-            }
-            "session.set_autocompact_threshold" => {
-                session::handle_session_set_autocompact_threshold(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx,
-                )
-                .await
-            }
-            _ => unreachable!("dispatch match already filtered to known setter methods"),
-        };
+        let resp = dispatch_session_setter!(req, &self.ctx.agents, &self.ctx.event_tx, {
+            "session.set_thinking_budget" => handle_session_set_thinking_budget,
+            "session.set_temperature" => handle_session_set_temperature,
+            "session.set_max_tokens" => handle_session_set_max_tokens,
+            "session.set_max_iterations" => handle_session_set_max_iterations,
+            "session.set_execution_timeout" => handle_session_set_execution_timeout,
+            "session.set_context_budget" => handle_session_set_context_budget,
+            "session.set_context_strategy" => handle_session_set_context_strategy,
+            "session.set_context_window" => handle_session_set_context_window,
+            "session.set_output_validation" => handle_session_set_output_validation,
+            "session.set_validation_retries" => handle_session_set_validation_retries,
+            "session.set_system_prompt" => handle_session_set_system_prompt,
+            "session.set_precognition" => handle_session_set_precognition,
+            "session.set_precognition_results" => handle_session_set_precognition_results,
+            "session.set_autocompact_threshold" => handle_session_set_autocompact_threshold,
+        });
         map_server_resp(resp)
     }
 
@@ -615,54 +542,22 @@ impl RpcDispatcher {
     ///
     /// All session config getters share the signature `(Request, &AgentManager) -> Response`.
     async fn dispatch_session_config_getter(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        use crate::server::session;
-        let resp = match req.method.as_str() {
-            "session.get_thinking_budget" => {
-                session::handle_session_get_thinking_budget(req.clone(), &self.ctx.agents).await
-            }
-            "session.get_temperature" => {
-                session::handle_session_get_temperature(req.clone(), &self.ctx.agents).await
-            }
-            "session.get_max_tokens" => {
-                session::handle_session_get_max_tokens(req.clone(), &self.ctx.agents).await
-            }
-            "session.get_max_iterations" => {
-                session::handle_session_get_max_iterations(req.clone(), &self.ctx.agents).await
-            }
-            "session.get_execution_timeout" => {
-                session::handle_session_get_execution_timeout(req.clone(), &self.ctx.agents).await
-            }
-            "session.get_context_budget" => {
-                session::handle_session_get_context_budget(req.clone(), &self.ctx.agents).await
-            }
-            "session.get_context_strategy" => {
-                session::handle_session_get_context_strategy(req.clone(), &self.ctx.agents).await
-            }
-            "session.get_context_window" => {
-                session::handle_session_get_context_window(req.clone(), &self.ctx.agents).await
-            }
-            "session.get_output_validation" => {
-                session::handle_session_get_output_validation(req.clone(), &self.ctx.agents).await
-            }
-            "session.get_validation_retries" => {
-                session::handle_session_get_validation_retries(req.clone(), &self.ctx.agents).await
-            }
-            "session.get_system_prompt" => {
-                session::handle_session_get_system_prompt(req.clone(), &self.ctx.agents).await
-            }
-            "session.get_precognition" => {
-                session::handle_session_get_precognition(req.clone(), &self.ctx.agents).await
-            }
-            "session.get_precognition_results" => {
-                session::handle_session_get_precognition_results(req.clone(), &self.ctx.agents)
-                    .await
-            }
-            "session.get_autocompact_threshold" => {
-                session::handle_session_get_autocompact_threshold(req.clone(), &self.ctx.agents)
-                    .await
-            }
-            _ => unreachable!("dispatch match already filtered to known getter methods"),
-        };
+        let resp = dispatch_session_getter!(req, &self.ctx.agents, {
+            "session.get_thinking_budget" => handle_session_get_thinking_budget,
+            "session.get_temperature" => handle_session_get_temperature,
+            "session.get_max_tokens" => handle_session_get_max_tokens,
+            "session.get_max_iterations" => handle_session_get_max_iterations,
+            "session.get_execution_timeout" => handle_session_get_execution_timeout,
+            "session.get_context_budget" => handle_session_get_context_budget,
+            "session.get_context_strategy" => handle_session_get_context_strategy,
+            "session.get_context_window" => handle_session_get_context_window,
+            "session.get_output_validation" => handle_session_get_output_validation,
+            "session.get_validation_retries" => handle_session_get_validation_retries,
+            "session.get_system_prompt" => handle_session_get_system_prompt,
+            "session.get_precognition" => handle_session_get_precognition,
+            "session.get_precognition_results" => handle_session_get_precognition_results,
+            "session.get_autocompact_threshold" => handle_session_get_autocompact_threshold,
+        });
         map_server_resp(resp)
     }
 
