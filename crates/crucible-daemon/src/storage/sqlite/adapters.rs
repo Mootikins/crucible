@@ -107,9 +107,7 @@ impl SqliteClientHandle {
     ///
     /// Gated behind `#[cfg(test)]` so no production build ever links
     /// this symbol. The Lua `cru.storage` surface intentionally exposes
-    /// only the property-store (EAV) API, not raw SQL. The only
-    /// production-facing wrapper that historically called this method
-    /// (`crucible_core::CrucibleCore::query`) is itself a test helper.
+    /// only the property-store (EAV) API, not raw SQL.
     #[cfg(test)]
     pub(crate) async fn query(
         &self,

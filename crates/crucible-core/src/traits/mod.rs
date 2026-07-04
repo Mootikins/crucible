@@ -1,30 +1,8 @@
-//! Core abstractions (traits) for Crucible's Dependency Inversion architecture
+//! Core abstractions (traits) for Crucible's dependency-inversion architecture.
 //!
-//! This module defines the core abstractions that enable dependency inversion:
-//! - Core defines traits (abstractions)
-//! - Implementations (SQLite, Pulldown parser, etc.) depend on Core for trait definitions
-//! - Core orchestrates through trait interfaces, never depends on concrete implementations
-//!
-//! ## Architecture Pattern
-//!
-//! ```text
-//! ┌─────────────────┐
-//! │  CrucibleCore   │  ← Orchestrator (defines traits, coordinates operations)
-//! │   (defines)     │
-//! │   - Storage     │
-//! │   - Parser      │
-//! │   - ToolExecutor│
-//! │   - Agent       │
-//! └────────┬────────┘
-//!          │ uses (trait bounds)
-//!          ▼
-//! ┌─────────────────┐
-//! │ Implementations │  ← Depend on Core for trait definitions
-//! │  - SQLite       │
-//! │  - Pulldown     │
-//! │  - Lua MCP      │
-//! └─────────────────┘
-//! ```
+//! Core defines these trait abstractions (parser, tool execution, knowledge
+//! repository, completion backend, etc.); concrete implementations in other
+//! crates depend on Core for the definitions and are injected at the edges.
 
 pub mod acp;
 pub mod auth;
@@ -39,7 +17,6 @@ pub mod mcp;
 pub mod parser;
 pub mod permission_gate;
 pub mod provider;
-pub mod storage;
 pub mod storage_client;
 pub mod text_search;
 pub mod tools;
@@ -65,7 +42,6 @@ pub use llm::{
 };
 pub use parser::MarkdownParser;
 pub use provider::EmbeddingResponse;
-pub use storage::Storage;
 pub use storage_client::StorageClient;
 pub use tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult};
 // Input abstractions for cross-platform UI

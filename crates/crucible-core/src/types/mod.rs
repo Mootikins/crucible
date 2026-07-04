@@ -66,7 +66,7 @@ pub use crate::types::acp::schema::{
 pub use crate::types::mode::{default_internal_modes, ModeDescriptor};
 
 // Re-export trait types (these are associated with traits but used as data)
-pub use crate::traits::storage::{Record as StorageRecord, RecordId as StorageRecordId};
+pub use crate::types::database::{Record as StorageRecord, RecordId as StorageRecordId};
 pub use crate::traits::tools::{ExecutionContext, ToolDefinition, ToolExample};
 
 // Re-export tool reference types

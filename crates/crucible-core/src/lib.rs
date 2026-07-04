@@ -5,7 +5,6 @@ pub mod agent;
 pub mod background;
 pub mod config;
 pub mod content_category;
-pub mod crucible_core;
 pub mod discovery;
 pub mod enrichment;
 pub mod error_utils;
@@ -36,7 +35,6 @@ pub mod types;
 pub mod utils;
 pub mod workflow;
 
-pub use crate::crucible_core::CrucibleCore;
 pub use agent::{
     AgentCard, AgentCardFrontmatter, AgentCardLoader, AgentCardMatch, AgentCardMatcher,
     AgentCardQuery, AgentCardRegistry,
@@ -61,9 +59,7 @@ pub use processing::{
 };
 
 // Re-export core traits (abstractions for Dependency Inversion)
-pub use traits::{
-    ContextMessage, MarkdownParser, SessionManager, Storage, ToolExecutor,
-};
+pub use traits::{ContextMessage, MarkdownParser, SessionManager, ToolExecutor};
 
 // Re-export key types used across module boundaries
 pub use types::{

@@ -23,10 +23,7 @@
 //!
 //! ## Mid-Level: Database Operations
 //!
-//! - **`crate::traits::storage::Storage`** - Database queries
-//!   - Raw SQL queries
-//!   - Statistics and metadata
-//!   - Schema management
+//! - **`crate::traits::storage_client::StorageClient`** - Daemon-backed queries
 //!
 //! ## Low-Level: Content-Addressed Storage
 //!
