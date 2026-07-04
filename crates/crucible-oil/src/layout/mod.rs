@@ -1,5 +1,4 @@
 mod debug;
-pub mod flex;
 mod query;
 mod tree_render;
 mod types;
