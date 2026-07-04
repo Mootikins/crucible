@@ -94,9 +94,6 @@ test-utils = []
 
 # Absorbed from crucible-llm: FastEmbed local ONNX embeddings (pulls ort)
 fastembed = ["dep:fastembed", "dep:ort"]
-# Guarded local-model e2e tests (require GGUF models in ~/models/)
-local-config = []
-local-config-embedding = []
 
 [dev-dependencies]
 tempfile = { workspace = true }
