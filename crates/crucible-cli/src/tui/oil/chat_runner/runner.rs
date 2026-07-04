@@ -2,7 +2,7 @@ use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::agent_selection::AgentSelection;
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, McpServerDisplay, OilChatApp};
-use crate::tui::oil::commands::{SetEffect, SetRpcAction};
+use crate::tui::oil::commands::SetEffect;
 use crate::tui::oil::event::Event;
 use crate::tui::oil::theme;
 use anyhow::Result;
@@ -353,27 +353,8 @@ impl OilChatRunner {
                     app.apply_cli_override(&key, value);
                 }
                 SetEffect::DaemonRpc(action) => {
-                    let msg = match action {
-                        SetRpcAction::SwitchModel(m) => ChatAppMsg::SwitchModel(m),
-                        SetRpcAction::SetThinkingBudget(Some(b)) => {
-                            ChatAppMsg::SetThinkingBudget(b)
-                        }
-                        SetRpcAction::SetThinkingBudget(None) => continue,
-                        SetRpcAction::SetMaxIterations(n) => ChatAppMsg::SetMaxIterations(n),
-                        SetRpcAction::SetExecutionTimeout(n) => ChatAppMsg::SetExecutionTimeout(n),
-                        SetRpcAction::SetContextBudget(n) => ChatAppMsg::SetContextBudget(n),
-                        SetRpcAction::SetContextStrategy(s) => ChatAppMsg::SetContextStrategy(s),
-                        SetRpcAction::SetContextWindow(n) => ChatAppMsg::SetContextWindow(n),
-                        SetRpcAction::SetOutputValidation(v) => ChatAppMsg::SetOutputValidation(v),
-                        SetRpcAction::SetValidationRetries(n) => {
-                            ChatAppMsg::SetValidationRetries(n)
-                        }
-                        SetRpcAction::SetPrecognitionResults(n) => {
-                            ChatAppMsg::SetPrecognitionResults(n)
-                        }
-                        SetRpcAction::SetAutocompactThreshold(t) => {
-                            ChatAppMsg::SetAutocompactThreshold(t)
-                        }
+                    let Some(msg) = action.into_chat_msg() else {
+                        continue;
                     };
                     self.process_action(ProcessActionParams {
                         action: Action::Send(msg),

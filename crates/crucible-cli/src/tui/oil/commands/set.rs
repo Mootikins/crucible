@@ -84,222 +84,258 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
         SetCommand::Enable { key } => classify_key_without_value(key, CliValue::Enable),
         SetCommand::Disable { key } => classify_key_without_value(key, CliValue::Disable),
         SetCommand::Toggle { key } => classify_key_without_value(key, CliValue::Toggle),
-        SetCommand::Set { key, value } => match key.as_str() {
-            "model" => Ok(SetEffect::DaemonRpc(SetRpcAction::SwitchModel(value))),
-            "thinkingbudget" => {
-                if let Some(preset) = ThinkingPreset::by_name(&value) {
-                    Ok(SetEffect::DaemonRpc(SetRpcAction::SetThinkingBudget(Some(
-                        preset.to_budget(),
-                    ))))
-                } else {
-                    let valid = ThinkingPreset::names().collect::<Vec<_>>().join(", ");
-                    Err(SetError::InvalidValue {
-                        key,
-                        message: format!("unknown preset '{}'. Valid: {}", value, valid),
-                    })
-                }
-            }
-            "maxiterations" => {
-                let max_iterations =
-                    if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
-                        None
-                    } else {
-                        match value.parse::<u32>() {
-                            Ok(n) => Some(n),
-                            Err(_) => {
-                                return Err(SetError::InvalidValue {
-                                    key,
-                                    message: format!(
-                                        "invalid maxiterations value: {} (use a number or 'none')",
-                                        value
-                                    ),
-                                });
-                            }
-                        }
-                    };
+        SetCommand::Set { key, value } => classify_set_value(key, value),
+    }
+}
 
-                Ok(SetEffect::DaemonRpc(SetRpcAction::SetMaxIterations(
-                    max_iterations,
-                )))
+/// Classify and validate a `key=value` assignment into its effect.
+///
+/// Single source of truth for the set-key space: both the CLI `--set` path
+/// (via [`validate_set_for_cli`]) and the live TUI `:set` dispatch call this,
+/// so a key can't be accepted by one surface and silently dropped by the
+/// other (the routing-seam bug class).
+pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetError> {
+    match key.as_str() {
+        "model" => Ok(SetEffect::DaemonRpc(SetRpcAction::SwitchModel(value))),
+        "thinkingbudget" => {
+            if let Some(preset) = ThinkingPreset::by_name(&value) {
+                Ok(SetEffect::DaemonRpc(SetRpcAction::SetThinkingBudget(Some(
+                    preset.to_budget(),
+                ))))
+            } else {
+                let valid = ThinkingPreset::names().collect::<Vec<_>>().join(", ");
+                Err(SetError::InvalidValue {
+                    key,
+                    message: format!("unknown preset '{}'. Valid: {}", value, valid),
+                })
             }
-            "executiontimeout" => {
-                let timeout_secs =
-                    if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
-                        None
-                    } else {
-                        match value.parse::<u64>() {
-                            Ok(n) => Some(n),
-                            Err(_) => {
-                                return Err(SetError::InvalidValue {
-                                    key,
-                                    message: format!(
-                                    "invalid executiontimeout value: {} (use seconds or 'none')",
-                                    value
-                                ),
-                                });
-                            }
-                        }
-                    };
-
-                Ok(SetEffect::DaemonRpc(SetRpcAction::SetExecutionTimeout(
-                    timeout_secs,
-                )))
-            }
-            "contextbudget" | "context_budget" => {
-                let budget =
-                    if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
-                        None
-                    } else {
-                        match value.parse::<usize>() {
-                            Ok(n) => Some(n),
-                            Err(_) => {
-                                return Err(SetError::InvalidValue {
-                                    key,
-                                    message: format!(
-                                        "invalid context_budget value: {} (use a number or 'none')",
-                                        value
-                                    ),
-                                });
-                            }
-                        }
-                    };
-                Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextBudget(budget)))
-            }
-            "autocompactthreshold" | "autocompact_threshold" => {
-                let v = if value.eq_ignore_ascii_case("off")
-                    || value == "0"
-                    || value.eq_ignore_ascii_case("false")
-                {
-                    Some(0.0_f32)
-                } else if value.eq_ignore_ascii_case("none")
-                    || value.eq_ignore_ascii_case("null")
-                    || value.eq_ignore_ascii_case("default")
-                {
+        }
+        "maxiterations" => {
+            let max_iterations =
+                if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
                     None
                 } else {
-                    match value.parse::<f32>() {
-                        Ok(t) if (0.0..=1.0).contains(&t) => Some(t),
-                        Ok(_) => {
-                            return Err(SetError::InvalidValue {
-                                key,
-                                message: format!(
-                                    "autocompact_threshold {} out of range; expected 0.0..=1.0, 'off', or 'default'",
-                                    value
-                                ),
-                            });
-                        }
+                    match value.parse::<u32>() {
+                        Ok(n) => Some(n),
                         Err(_) => {
                             return Err(SetError::InvalidValue {
                                 key,
                                 message: format!(
-                                    "invalid autocompact_threshold {}; expected a number in 0.0..=1.0, 'off', or 'default'",
+                                    "invalid maxiterations value: {} (use a number or 'none')",
                                     value
                                 ),
                             });
                         }
                     }
                 };
-                Ok(SetEffect::DaemonRpc(SetRpcAction::SetAutocompactThreshold(
-                    v,
-                )))
-            }
-            "contextstrategy" | "context_strategy" => {
-                // Validate the strategy value
-                match value.to_lowercase().as_str() {
-                    "truncate" | "sliding_window" | "slidingwindow" | "summarize" => {
-                        let normalized = if value.to_lowercase() == "slidingwindow" {
-                            "sliding_window".to_string()
-                        } else {
-                            value.to_lowercase()
-                        };
-                        Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextStrategy(
-                            normalized,
-                        )))
-                    }
-                    _ => Err(SetError::InvalidValue {
-                        key,
-                        message: format!(
-                            "unknown strategy '{}'. Valid: truncate, sliding_window, summarize",
-                            value
-                        ),
-                    }),
-                }
-            }
-            "contextwindow" | "context_window" => {
-                let window =
-                    if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
-                        None
-                    } else {
-                        match value.parse::<usize>() {
-                            Ok(n) => Some(n),
-                            Err(_) => {
-                                return Err(SetError::InvalidValue {
-                                    key,
-                                    message: format!(
-                                        "invalid context_window value: {} (use a number or 'none')",
-                                        value
-                                    ),
-                                });
-                            }
+
+            Ok(SetEffect::DaemonRpc(SetRpcAction::SetMaxIterations(
+                max_iterations,
+            )))
+        }
+        "executiontimeout" => {
+            let timeout_secs =
+                if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null") {
+                    None
+                } else {
+                    match value.parse::<u64>() {
+                        Ok(n) => Some(n),
+                        Err(_) => {
+                            return Err(SetError::InvalidValue {
+                                key,
+                                message: format!(
+                                    "invalid executiontimeout value: {} (use seconds or 'none')",
+                                    value
+                                ),
+                            });
                         }
+                    }
+                };
+
+            Ok(SetEffect::DaemonRpc(SetRpcAction::SetExecutionTimeout(
+                timeout_secs,
+            )))
+        }
+        "contextbudget" | "context_budget" => {
+            let budget = if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null")
+            {
+                None
+            } else {
+                match value.parse::<usize>() {
+                    Ok(n) => Some(n),
+                    Err(_) => {
+                        return Err(SetError::InvalidValue {
+                            key,
+                            message: format!(
+                                "invalid context_budget value: {} (use a number or 'none')",
+                                value
+                            ),
+                        });
+                    }
+                }
+            };
+            Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextBudget(budget)))
+        }
+        "autocompactthreshold" | "autocompact_threshold" => {
+            let v = if value.eq_ignore_ascii_case("off")
+                || value == "0"
+                || value.eq_ignore_ascii_case("false")
+            {
+                Some(0.0_f32)
+            } else if value.eq_ignore_ascii_case("none")
+                || value.eq_ignore_ascii_case("null")
+                || value.eq_ignore_ascii_case("default")
+            {
+                None
+            } else {
+                match value.parse::<f32>() {
+                    Ok(t) if (0.0..=1.0).contains(&t) => Some(t),
+                    Ok(_) => {
+                        return Err(SetError::InvalidValue {
+                                key,
+                                message: format!(
+                                    "autocompact_threshold {} out of range; expected 0.0..=1.0, 'off', or 'default'",
+                                    value
+                                ),
+                            });
+                    }
+                    Err(_) => {
+                        return Err(SetError::InvalidValue {
+                                key,
+                                message: format!(
+                                    "invalid autocompact_threshold {}; expected a number in 0.0..=1.0, 'off', or 'default'",
+                                    value
+                                ),
+                            });
+                    }
+                }
+            };
+            Ok(SetEffect::DaemonRpc(SetRpcAction::SetAutocompactThreshold(
+                v,
+            )))
+        }
+        "contextstrategy" | "context_strategy" => {
+            // Validate the strategy value
+            match value.to_lowercase().as_str() {
+                "truncate" | "sliding_window" | "slidingwindow" | "summarize" => {
+                    let normalized = if value.to_lowercase() == "slidingwindow" {
+                        "sliding_window".to_string()
+                    } else {
+                        value.to_lowercase()
                     };
-                Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextWindow(window)))
-            }
-            "outputvalidation" | "output_validation" => {
-                // Validate the value parses correctly
-                value
-                    .parse::<crucible_core::session::OutputValidation>()
-                    .map_err(|message| SetError::InvalidValue {
-                        key: key.clone(),
-                        message,
-                    })?;
-                Ok(SetEffect::DaemonRpc(SetRpcAction::SetOutputValidation(
-                    value,
-                )))
-            }
-            "validationretries" | "validation_retries" => {
-                let retries = value.parse::<u32>().map_err(|_| SetError::InvalidValue {
-                    key: key.clone(),
+                    Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextStrategy(
+                        normalized,
+                    )))
+                }
+                _ => Err(SetError::InvalidValue {
+                    key,
                     message: format!(
-                        "invalid validation_retries value: {} (use a non-negative integer)",
+                        "unknown strategy '{}'. Valid: truncate, sliding_window, summarize",
                         value
                     ),
-                })?;
-                Ok(SetEffect::DaemonRpc(SetRpcAction::SetValidationRetries(
-                    retries,
-                )))
+                }),
             }
-            "perm.show_diff" | "perm.autoconfirm_session" => {
-                parse_bool(&value).map_err(|message| SetError::InvalidValue {
+        }
+        "contextwindow" | "context_window" => {
+            let window = if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("null")
+            {
+                None
+            } else {
+                match value.parse::<usize>() {
+                    Ok(n) => Some(n),
+                    Err(_) => {
+                        return Err(SetError::InvalidValue {
+                            key,
+                            message: format!(
+                                "invalid context_window value: {} (use a number or 'none')",
+                                value
+                            ),
+                        });
+                    }
+                }
+            };
+            Ok(SetEffect::DaemonRpc(SetRpcAction::SetContextWindow(window)))
+        }
+        "outputvalidation" | "output_validation" => {
+            // Validate the value parses correctly
+            value
+                .parse::<crucible_core::session::OutputValidation>()
+                .map_err(|message| SetError::InvalidValue {
                     key: key.clone(),
                     message,
                 })?;
-                Ok(SetEffect::TuiLocal {
-                    key,
-                    value: CliValue::Set(value),
-                })
-            }
-            "thinking" | "precognition" | "verbose" | "theme" => Ok(SetEffect::TuiLocal {
+            Ok(SetEffect::DaemonRpc(SetRpcAction::SetOutputValidation(
+                value,
+            )))
+        }
+        "validationretries" | "validation_retries" => {
+            let retries = value.parse::<u32>().map_err(|_| SetError::InvalidValue {
+                key: key.clone(),
+                message: format!(
+                    "invalid validation_retries value: {} (use a non-negative integer)",
+                    value
+                ),
+            })?;
+            Ok(SetEffect::DaemonRpc(SetRpcAction::SetValidationRetries(
+                retries,
+            )))
+        }
+        "perm.show_diff" | "perm.autoconfirm_session" => {
+            parse_bool(&value).map_err(|message| SetError::InvalidValue {
+                key: key.clone(),
+                message,
+            })?;
+            Ok(SetEffect::TuiLocal {
                 key,
                 value: CliValue::Set(value),
-            }),
-            "precognition.results" => {
-                let parsed = value.parse::<usize>().map_err(|_| SetError::InvalidValue {
-                    key: key.clone(),
+            })
+        }
+        "thinking" | "precognition" | "verbose" | "theme" => Ok(SetEffect::TuiLocal {
+            key,
+            value: CliValue::Set(value),
+        }),
+        "precognition.results" => {
+            let parsed = value.parse::<usize>().map_err(|_| SetError::InvalidValue {
+                key: key.clone(),
+                message: "precognition.results must be 1-20".to_string(),
+            })?;
+            if !(1..=20).contains(&parsed) {
+                return Err(SetError::InvalidValue {
+                    key,
                     message: "precognition.results must be 1-20".to_string(),
-                })?;
-                if !(1..=20).contains(&parsed) {
-                    return Err(SetError::InvalidValue {
-                        key,
-                        message: "precognition.results must be 1-20".to_string(),
-                    });
-                }
-                Ok(SetEffect::DaemonRpc(SetRpcAction::SetPrecognitionResults(
-                    parsed,
-                )))
+                });
             }
-            _ => Err(SetError::UnknownKey(key)),
-        },
+            Ok(SetEffect::DaemonRpc(SetRpcAction::SetPrecognitionResults(
+                parsed,
+            )))
+        }
+        _ => Err(SetError::UnknownKey(key)),
+    }
+}
+
+impl SetRpcAction {
+    /// Map to the TUI message that performs the daemon sync.
+    ///
+    /// `None` for actions with no message equivalent (clearing the thinking
+    /// budget is a CLI-only no-op).
+    pub fn into_chat_msg(self) -> Option<crate::tui::oil::chat_app::ChatAppMsg> {
+        use crate::tui::oil::chat_app::ChatAppMsg;
+        match self {
+            SetRpcAction::SwitchModel(m) => Some(ChatAppMsg::SwitchModel(m)),
+            SetRpcAction::SetThinkingBudget(Some(b)) => Some(ChatAppMsg::SetThinkingBudget(b)),
+            SetRpcAction::SetThinkingBudget(None) => None,
+            SetRpcAction::SetMaxIterations(n) => Some(ChatAppMsg::SetMaxIterations(n)),
+            SetRpcAction::SetExecutionTimeout(n) => Some(ChatAppMsg::SetExecutionTimeout(n)),
+            SetRpcAction::SetContextBudget(n) => Some(ChatAppMsg::SetContextBudget(n)),
+            SetRpcAction::SetContextStrategy(s) => Some(ChatAppMsg::SetContextStrategy(s)),
+            SetRpcAction::SetContextWindow(n) => Some(ChatAppMsg::SetContextWindow(n)),
+            SetRpcAction::SetOutputValidation(v) => Some(ChatAppMsg::SetOutputValidation(v)),
+            SetRpcAction::SetValidationRetries(n) => Some(ChatAppMsg::SetValidationRetries(n)),
+            SetRpcAction::SetPrecognitionResults(n) => Some(ChatAppMsg::SetPrecognitionResults(n)),
+            SetRpcAction::SetAutocompactThreshold(t) => {
+                Some(ChatAppMsg::SetAutocompactThreshold(t))
+            }
+        }
     }
 }
 

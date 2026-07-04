@@ -6,7 +6,9 @@
 use std::path::PathBuf;
 
 use crate::tui::oil::app::Action;
-use crate::tui::oil::commands::SetCommand;
+use crate::tui::oil::commands::{
+    classify_set_value, SetCommand, SetEffect, SetError, SetRpcAction,
+};
 use crate::tui::oil::config::{ConfigValue, ModSource};
 
 use super::messages::ChatAppMsg;
@@ -418,206 +420,102 @@ impl OilChatApp {
         }
     }
 
-    /// Dispatches `:set key=value` to the appropriate per-key handler.
+    /// Dispatches `:set key=value` through the shared classifier so the live
+    /// TUI and CLI `--set` accept exactly the same keys and values. Keys the
+    /// classifier doesn't know stay TUI-local (plugin/dynamic runtime keys).
     fn dispatch_set_key(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
-        match key {
-            "model" => self.handle_set_model(key, value),
-            "thinkingbudget" => self.handle_set_thinking_budget(key, value),
-            "maxiterations" => self.handle_set_max_iterations(key, value),
-            "executiontimeout" => self.handle_set_execution_timeout(key, value),
-            "contextbudget" | "context_budget" => self.handle_set_context_budget(key, value),
-            "contextstrategy" | "context_strategy" => self.handle_set_context_strategy(key, value),
-            "contextwindow" | "context_window" => self.handle_set_context_window(key, value),
-            "outputvalidation" | "output_validation" => {
-                self.handle_set_output_validation(key, value)
-            }
-            "validationretries" | "validation_retries" => {
-                self.handle_set_validation_retries(key, value)
-            }
-            "precognition.results" => self.handle_set_precognition_results(key, value),
-            k if k.starts_with("perm.") => self.handle_perm_set(key, &value),
-            _ => {
+        if key.starts_with("perm.") {
+            return self.handle_perm_set(key, &value);
+        }
+        match classify_set_value(key.to_string(), value.clone()) {
+            Ok(SetEffect::DaemonRpc(action)) => self.apply_daemon_set_action(key, &value, action),
+            Ok(SetEffect::TuiLocal { .. }) | Err(SetError::UnknownKey(_)) => {
                 self.runtime_config.set_str(key, &value, ModSource::Command);
                 self.sync_runtime_to_fields(key);
                 self.send_setting_ack(key, &value);
                 Action::Continue
             }
-        }
-    }
-
-    fn handle_set_model(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
-        self.model = value.clone();
-        self.runtime_config.set_dynamic(
-            key,
-            ConfigValue::String(value.clone()),
-            ModSource::Command,
-            &self.current_provider.clone(),
-        );
-        self.send_setting_ack("model", &value);
-        Action::Send(ChatAppMsg::SwitchModel(value))
-    }
-
-    fn handle_set_thinking_budget(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
-        use crate::tui::oil::config::ThinkingPreset;
-        if let Some(preset) = ThinkingPreset::by_name(&value) {
-            let budget = preset.to_budget();
-            self.runtime_config.set_str(key, &value, ModSource::Command);
-            self.add_system_message(format!("  thinkingbudget={} ({})", value, budget));
-            Action::Send(ChatAppMsg::SetThinkingBudget(budget))
-        } else {
-            let valid = ThinkingPreset::names().collect::<Vec<_>>().join(", ");
-            self.warn_invalid(format!("Unknown preset '{}'. Valid: {}", value, valid));
-            Action::Continue
-        }
-    }
-
-    fn handle_set_max_iterations(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
-        let max_iterations = if value == "none" || value == "null" {
-            None
-        } else {
-            match value.parse::<u32>() {
-                Ok(n) => Some(n),
-                Err(_) => {
-                    self.warn_invalid(format!(
-                        "Invalid max_iterations value: {} (use a number or 'none')",
-                        value
-                    ));
-                    return Action::Continue;
-                }
-            }
-        };
-        self.runtime_config.set_str(key, &value, ModSource::Command);
-        let display = max_iterations.map_or("none".to_string(), |n| n.to_string());
-        self.send_setting_ack("maxiterations", &display);
-        Action::Send(ChatAppMsg::SetMaxIterations(max_iterations))
-    }
-
-    fn handle_set_execution_timeout(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
-        let timeout_secs = if value == "none" || value == "null" {
-            None
-        } else {
-            match value.parse::<u64>() {
-                Ok(n) => Some(n),
-                Err(_) => {
-                    self.warn_invalid(format!(
-                        "Invalid execution_timeout value: {} (use seconds or 'none')",
-                        value
-                    ));
-                    return Action::Continue;
-                }
-            }
-        };
-        self.runtime_config.set_str(key, &value, ModSource::Command);
-        let display = timeout_secs.map_or("none".to_string(), |n| format!("{}s", n));
-        self.send_setting_ack("executiontimeout", &display);
-        Action::Send(ChatAppMsg::SetExecutionTimeout(timeout_secs))
-    }
-
-    fn handle_set_context_budget(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
-        let budget = if value == "none" || value == "null" {
-            None
-        } else {
-            match value.parse::<usize>() {
-                Ok(n) => Some(n),
-                Err(_) => {
-                    self.warn_invalid(format!(
-                        "Invalid context_budget value: {} (use a number or 'none')",
-                        value
-                    ));
-                    return Action::Continue;
-                }
-            }
-        };
-        self.runtime_config.set_str(key, &value, ModSource::Command);
-        let display = budget.map_or("none".to_string(), |n| n.to_string());
-        self.send_setting_ack("context_budget", &display);
-        Action::Send(ChatAppMsg::SetContextBudget(budget))
-    }
-
-    fn handle_set_context_strategy(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
-        let normalized = match value.to_lowercase().as_str() {
-            "truncate" => "truncate".to_string(),
-            "sliding_window" | "slidingwindow" => "sliding_window".to_string(),
-            _ => {
-                self.warn_invalid(format!(
-                    "Unknown context strategy '{}'. Valid: truncate, sliding_window",
-                    value
-                ));
-                return Action::Continue;
-            }
-        };
-        self.runtime_config
-            .set_str(key, &normalized, ModSource::Command);
-        self.send_setting_ack("context_strategy", &normalized);
-        Action::Send(ChatAppMsg::SetContextStrategy(normalized))
-    }
-
-    fn handle_set_context_window(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
-        let window = if value == "none" || value == "null" {
-            None
-        } else {
-            match value.parse::<usize>() {
-                Ok(n) => Some(n),
-                Err(_) => {
-                    self.warn_invalid(format!(
-                        "Invalid context_window value: {} (use a number or 'none')",
-                        value
-                    ));
-                    return Action::Continue;
-                }
-            }
-        };
-        self.runtime_config.set_str(key, &value, ModSource::Command);
-        let display = window.map_or("none".to_string(), |n| n.to_string());
-        self.send_setting_ack("context_window", &display);
-        Action::Send(ChatAppMsg::SetContextWindow(window))
-    }
-
-    fn handle_set_output_validation(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
-        // Validate the value parses before sending
-        match value.parse::<crucible_core::session::OutputValidation>() {
-            Ok(v) => {
-                let display = v.to_string();
-                self.runtime_config
-                    .set_str(key, &display, ModSource::Command);
-                self.send_setting_ack("output_validation", &display);
-                Action::Send(ChatAppMsg::SetOutputValidation(display))
-            }
             Err(e) => {
-                self.warn_invalid(format!("Invalid output_validation: {}", e));
+                self.warn_invalid(e.to_string());
                 Action::Continue
             }
         }
     }
 
-    fn handle_set_validation_retries(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
-        match value.parse::<u32>() {
-            Ok(n) => {
-                self.runtime_config.set_str(key, &value, ModSource::Command);
-                self.send_setting_ack("validation_retries", &value);
-                Action::Send(ChatAppMsg::SetValidationRetries(n))
+    /// Record a validated session-scoped setting locally (runtime config +
+    /// ack message), then emit the daemon-sync message for it.
+    fn apply_daemon_set_action(
+        &mut self,
+        key: &str,
+        value: &str,
+        action: SetRpcAction,
+    ) -> Action<ChatAppMsg> {
+        match &action {
+            SetRpcAction::SwitchModel(model) => {
+                self.model = model.clone();
+                self.runtime_config.set_dynamic(
+                    key,
+                    ConfigValue::String(model.clone()),
+                    ModSource::Command,
+                    &self.current_provider.clone(),
+                );
+                self.send_setting_ack("model", model);
             }
-            Err(_) => {
-                self.warn_invalid(format!(
-                    "Invalid validation_retries value: {} (use a non-negative integer)",
-                    value
-                ));
-                Action::Continue
+            SetRpcAction::SetThinkingBudget(budget) => {
+                self.runtime_config.set_str(key, value, ModSource::Command);
+                let budget = budget.unwrap_or_default();
+                self.add_system_message(format!("  thinkingbudget={} ({})", value, budget));
             }
-        }
-    }
-
-    fn handle_set_precognition_results(&mut self, key: &str, value: String) -> Action<ChatAppMsg> {
-        match value.parse::<usize>() {
-            Ok(n) if (1..=20).contains(&n) => {
-                self.runtime_config.set_str(key, &value, ModSource::Command);
+            SetRpcAction::SetMaxIterations(n) => {
+                self.runtime_config.set_str(key, value, ModSource::Command);
+                let display = n.map_or("none".to_string(), |n| n.to_string());
+                self.send_setting_ack("maxiterations", &display);
+            }
+            SetRpcAction::SetExecutionTimeout(n) => {
+                self.runtime_config.set_str(key, value, ModSource::Command);
+                let display = n.map_or("none".to_string(), |n| format!("{}s", n));
+                self.send_setting_ack("executiontimeout", &display);
+            }
+            SetRpcAction::SetContextBudget(n) => {
+                self.runtime_config.set_str(key, value, ModSource::Command);
+                let display = n.map_or("none".to_string(), |n| n.to_string());
+                self.send_setting_ack("context_budget", &display);
+            }
+            SetRpcAction::SetContextStrategy(normalized) => {
+                self.runtime_config
+                    .set_str(key, normalized, ModSource::Command);
+                self.send_setting_ack("context_strategy", normalized);
+            }
+            SetRpcAction::SetContextWindow(n) => {
+                self.runtime_config.set_str(key, value, ModSource::Command);
+                let display = n.map_or("none".to_string(), |n| n.to_string());
+                self.send_setting_ack("context_window", &display);
+            }
+            SetRpcAction::SetOutputValidation(v) => {
+                self.runtime_config.set_str(key, v, ModSource::Command);
+                self.send_setting_ack("output_validation", v);
+            }
+            SetRpcAction::SetValidationRetries(n) => {
+                self.runtime_config.set_str(key, value, ModSource::Command);
+                self.send_setting_ack("validation_retries", n);
+            }
+            SetRpcAction::SetPrecognitionResults(n) => {
+                self.runtime_config.set_str(key, value, ModSource::Command);
                 self.send_setting_ack("precognition.results", n);
-                Action::Send(ChatAppMsg::SetPrecognitionResults(n))
             }
-            _ => {
-                self.warn_invalid("precognition.results must be 1-20");
-                Action::Continue
+            SetRpcAction::SetAutocompactThreshold(t) => {
+                self.runtime_config.set_str(key, value, ModSource::Command);
+                let display = match t {
+                    Some(v) if *v == 0.0 => "off".to_string(),
+                    Some(v) => v.to_string(),
+                    None => "default".to_string(),
+                };
+                self.send_setting_ack("autocompact_threshold", &display);
             }
+        }
+        match action.into_chat_msg() {
+            Some(msg) => Action::Send(msg),
+            None => Action::Continue,
         }
     }
 
@@ -1026,6 +924,9 @@ mod tests {
     #[test_case("outputvalidation=off" ; "output validation")]
     #[test_case("validationretries=2" ; "validation retries")]
     #[test_case("precognition.results=8" ; "precognition results")]
+    #[test_case("autocompact_threshold=0.8" ; "autocompact threshold")]
+    #[test_case("autocompactthreshold=0.8" ; "autocompact threshold alias")]
+    #[test_case("contextstrategy=summarize" ; "context strategy summarize")]
     fn set_session_key_emits_daemon_sync(body: &str) {
         let mut app = app();
         let action = run_set(&mut app, body);
@@ -1052,6 +953,44 @@ mod tests {
         assert!(matches!(
             run_set(&mut app, "model=gpt-4o"),
             Action::Send(ChatAppMsg::SwitchModel(m)) if m == "gpt-4o"
+        ));
+    }
+
+    // Regression: `:set autocompact_threshold=…` used to fall through to the
+    // generic runtime-config arm and silently skip the daemon RPC while the
+    // CLI `--set` path handled it (routing-seam drift).
+    #[test]
+    fn set_autocompact_threshold_maps_to_daemon_msg() {
+        let mut app = app();
+        assert!(matches!(
+            run_set(&mut app, "autocompact_threshold=0.8"),
+            Action::Send(ChatAppMsg::SetAutocompactThreshold(Some(t))) if (t - 0.8).abs() < f32::EPSILON
+        ));
+        assert!(matches!(
+            run_set(&mut app, "autocompact_threshold=off"),
+            Action::Send(ChatAppMsg::SetAutocompactThreshold(Some(t))) if t == 0.0
+        ));
+        assert!(matches!(
+            run_set(&mut app, "autocompact_threshold=default"),
+            Action::Send(ChatAppMsg::SetAutocompactThreshold(None))
+        ));
+    }
+
+    #[test]
+    fn set_autocompact_threshold_out_of_range_warns() {
+        let mut app = app();
+        let action = run_set(&mut app, "autocompact_threshold=1.5");
+        assert!(matches!(action, Action::Continue));
+        assert!(app.has_notifications());
+    }
+
+    // Regression: live `:set` rejected `summarize` while `--set` accepted it.
+    #[test]
+    fn set_contextstrategy_summarize_accepted() {
+        let mut app = app();
+        assert!(matches!(
+            run_set(&mut app, "contextstrategy=summarize"),
+            Action::Send(ChatAppMsg::SetContextStrategy(s)) if s == "summarize"
         ));
     }
 
