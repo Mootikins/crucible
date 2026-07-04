@@ -109,7 +109,6 @@ impl Vt100TestRuntime {
 
     /// Get the screen contents with ANSI escape codes preserved.
     /// Use this for "raw" snapshot tests that verify styling (colors, bold, etc.).
-    #[allow(dead_code)] // available for styled snapshot tests
     pub fn screen_contents_styled(&self) -> String {
         String::from_utf8_lossy(&self.vt.screen().contents_formatted()).into_owned()
     }
@@ -146,7 +145,6 @@ impl Vt100TestRuntime {
     /// Get the full history from the tall parser (scrollback + screen).
     /// Since the tall parser has 1000 rows, nothing scrolls off — this
     /// captures everything the terminal has ever displayed.
-    #[allow(dead_code)]
     pub fn full_history(&self) -> String {
         self.tall_vt.screen().contents()
     }

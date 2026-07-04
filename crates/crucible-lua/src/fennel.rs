@@ -102,7 +102,6 @@ impl FennelCompiler {
 ///
 /// Use this for one-off compilations. For repeated compilations,
 /// use `FennelCompiler` with a persistent Lua state.
-#[allow(dead_code)]
 pub fn compile_fennel(source: &str) -> Result<String, LuaError> {
     // Fennel requires the debug library for proper compilation
     // SAFETY: We're only loading Fennel and compiling, no user code execution

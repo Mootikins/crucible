@@ -135,7 +135,6 @@ impl SubscriptionManager {
         self.subscribe(client_id, WILDCARD_SESSION);
     }
 
-    #[allow(dead_code)] // query API, exercised by tests
     pub fn get_subscribers(&self, session_id: &str) -> Vec<ClientId> {
         let mut subscribers = HashSet::new();
 
