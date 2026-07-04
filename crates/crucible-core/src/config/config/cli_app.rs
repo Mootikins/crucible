@@ -879,9 +879,12 @@ mod tests {
     /// A config with every Option-typed tracked field populated, so coverage
     /// tests exercise the set-value path for all of TRACKED_FIELDS.
     fn fully_populated_config() -> CliAppConfig {
-        let mut config = CliAppConfig::default();
-        config.session_kiln = Some("/tmp/sessions".into());
-        config.agent_directories = vec!["/tmp/agents".into()];
+        let mut config = CliAppConfig {
+            session_kiln: Some("/tmp/sessions".into()),
+            agent_directories: vec!["/tmp/agents".into()],
+            logging: Some(LoggingConfig::default()),
+            ..Default::default()
+        };
         config.llm.default = Some("test-provider".into());
         config.acp.default_agent = Some("claude".into());
         config.chat.model = Some("test-model".into());
@@ -889,7 +892,6 @@ mod tests {
         config.chat.temperature = Some(0.7);
         config.chat.max_tokens = Some(2048);
         config.chat.timeout_secs = Some(30);
-        config.logging = Some(LoggingConfig::default());
         config.processing.parallel_workers = Some(4);
         config
     }
