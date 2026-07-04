@@ -250,14 +250,11 @@ fn render_popup(
     let item_count = visible_items.len();
     let blank_lines = max_visible.saturating_sub(item_count);
 
-    let mut current_y = y;
-
-    // Render blank lines first (for bottom-aligned popups)
-    for _ in 0..blank_lines {
-        let blank_line = apply_style(&" ".repeat(width), &Style::new().bg(popup_bg));
-        grid.blit_line(&blank_line, x, current_y);
-        current_y += 1;
-    }
+    // Skip past the filler rows that bottom-align the items — left
+    // unblitted so they stay transparent to overlay compositing. Painting
+    // them with the popup bg renders a colored bar of empty space over
+    // the chat viewport.
+    let mut current_y = y + blank_lines;
 
     // Render visible items
     for (i, item) in visible_items.iter().enumerate() {
@@ -603,6 +600,41 @@ mod tests {
         assert!(result.contains("Item 3"));
         // Selected item should have indicator
         assert!(result.contains("▸"));
+    }
+
+    #[test]
+    fn popup_filler_rows_above_items_stay_unstyled() {
+        // 2 items in a 5-row popup: the 3 filler rows exist only to
+        // bottom-align the items and must stay transparent. A painted bg
+        // reads as a colored bar of empty space over the chat viewport,
+        // since overlay compositing treats styled cells as opaque.
+        let items = vec![PopupItem::new("Item 1"), PopupItem::new("Item 2")];
+
+        let tree = LayoutTree::new(LayoutBox::new(
+            Rect::new(0, 0, 30, 5),
+            LayoutContent::Popup {
+                items,
+                selected: 0,
+                viewport_offset: 0,
+                max_visible: 5,
+                bg_style: Style::new(),
+                selected_style: Style::new(),
+            },
+        ));
+
+        let (result, _) = render_layout_tree(&tree);
+        let lines: Vec<&str> = result.lines().collect();
+        for (i, line) in lines.iter().take(3).enumerate() {
+            assert!(
+                !line.contains('\x1b'),
+                "filler row {} must carry no styling, got {:?}",
+                i,
+                line
+            );
+        }
+        // Items stay bottom-aligned below the filler rows.
+        assert!(lines[3].contains("Item 1"));
+        assert!(lines[4].contains("Item 2"));
     }
 
     #[test]
