@@ -1,33 +1,12 @@
 //! LanceDB integration for Crucible lightweight storage mode
 //!
-//! Provides vector search and a NoteStore implementation backed by LanceDB -
-//! a vector-native database optimized for embedding search.
-//!
-//! # Features
-//!
-//! - **NoteStore implementation**: Full CRUD operations for note metadata
-//! - **Native vector search**: Uses LanceDB's optimized vector similarity search
-//!
-//! # Example
-//!
-//! ```rust,ignore
-//! use crucible_daemon::storage::lance::{LanceNoteStore, create_note_store};
-//! use crucible_core::storage::NoteStore;
-//!
-//! // Create a new store
-//! let store = create_note_store("/path/to/lance.db").await?;
-//!
-//! // Use via the NoteStore trait
-//! let note = store.get("notes/example.md").await?;
-//! let results = store.search(&query_embedding, 10, None).await?;
-//! ```
+//! Provides native vector search backed by LanceDB - a vector-native database
+//! optimized for embedding search.
 
-pub mod note_store;
 pub mod store;
 pub mod vector_index;
 pub mod vector_search;
 
-pub use note_store::{create_note_store, create_note_store_with_dimensions, LanceNoteStore};
 pub use store::LanceStore;
 pub use vector_index::LanceVectorIndex;
 pub use vector_search::VectorSearchResult;
