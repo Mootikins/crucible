@@ -8,20 +8,7 @@ async fn test_list_models_dynamic_discovery_openai_succeeds() {
 
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let _env_guards = clear_provider_env();
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     // Mock server returns OpenAI-style models
     let (endpoint, server) = start_mock_openai_models_server(
@@ -90,20 +77,7 @@ async fn test_list_models_dynamic_discovery_zai_succeeds() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let (endpoint, server) = start_mock_openai_models_server(
         200,
@@ -168,20 +142,7 @@ async fn test_list_models_dynamic_discovery_openrouter_succeeds() {
 
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let _env_guards = clear_provider_env();
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let (endpoint, server) = start_mock_openai_models_server(
         200,
@@ -239,20 +200,7 @@ async fn test_list_models_dynamic_discovery_failure_returns_empty() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     // Mock server returns 503 error
     let (openai_endpoint, openai_server) = start_mock_openai_models_server(
@@ -311,20 +259,7 @@ async fn test_list_models_explicit_config_skips_dynamic_discovery() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     // No mock server needed — explicit config should bypass API call entirely
     let mut providers = HashMap::new();
@@ -391,20 +326,7 @@ async fn test_list_models_integration_multi_provider() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let (ollama_endpoint, ollama_server) =
         start_mock_ollama_tags_server(vec!["llama3.3", "qwen2.5"]).await;
@@ -478,20 +400,7 @@ async fn test_list_models_integration_dynamic_discovery() {
 
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let _env_guards = clear_provider_env();
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let (endpoint, server) = start_mock_openai_models_server(
         200,
@@ -558,20 +467,7 @@ async fn test_list_models_integration_override_precedence() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let dead_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let dead_addr = dead_listener.local_addr().unwrap();
@@ -649,20 +545,7 @@ async fn test_list_models_integration_partial_failure() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let ollama_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let ollama_addr = ollama_listener.local_addr().unwrap();
@@ -740,20 +623,7 @@ async fn test_openai_model_discovery_returns_all_models() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     // Mock server returns 20 models including non-chat models
     let (endpoint, server) = start_mock_openai_models_server(
@@ -857,20 +727,7 @@ async fn test_list_models_ollama_failure() {
 
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let _env_guards = clear_provider_env();
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     // Ollama endpoint that refuses connection (bind then drop)
     let ollama_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -941,20 +798,7 @@ async fn test_list_models_ollama_failure() {
 async fn test_model_cache_hit() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut providers = std::collections::HashMap::new();
     providers.insert(
@@ -995,20 +839,7 @@ async fn test_model_cache_hit() {
 async fn test_model_cache_invalidation() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut providers = std::collections::HashMap::new();
     providers.insert(
@@ -1057,20 +888,7 @@ async fn test_model_cache_invalidation() {
 async fn test_model_cache_does_not_cache_errors() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut providers = std::collections::HashMap::new();
     // Configure provider with models

@@ -5,20 +5,7 @@ async fn test_list_models_returns_all_providers() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut providers = HashMap::new();
     providers.insert(
@@ -85,20 +72,7 @@ async fn test_list_models_trust_excludes_cloud_for_confidential_kiln() {
     };
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut local = LlmProviderConfig::builder(BackendType::Custom)
         .available_models(vec!["local-model".to_string()])
@@ -151,20 +125,7 @@ async fn test_list_models_trust_returns_all_for_public_kiln() {
     };
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut local = LlmProviderConfig::builder(BackendType::Custom)
         .available_models(vec!["local-model".to_string()])
@@ -215,20 +176,7 @@ async fn test_list_models_trust_returns_all_when_no_classification() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig, TrustLevel};
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut local = LlmProviderConfig::builder(BackendType::Custom)
         .available_models(vec!["local-model".to_string()])
@@ -278,20 +226,7 @@ async fn test_list_models_trust_includes_cloud_for_internal_kiln() {
     };
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut local = LlmProviderConfig::builder(BackendType::Custom)
         .available_models(vec!["local-model".to_string()])
@@ -353,20 +288,7 @@ async fn test_list_models_all_chat_backends_with_explicit_models() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     // With available_models set, discover_models short-circuits without HTTP.
     // The mock server is kept for the endpoint URL but never contacted.
@@ -471,20 +393,7 @@ async fn test_list_models_discovery_failure_returns_empty() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     // Use dead endpoints to force discovery failure
     let dead_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -540,20 +449,7 @@ async fn test_list_models_count_matches_sum() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut providers = HashMap::new();
     providers.insert(
@@ -606,20 +502,7 @@ async fn test_list_models_no_llm_config() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let _env_guards = clear_provider_env();
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
@@ -661,20 +544,7 @@ async fn test_list_models_includes_env_discovered_providers() {
     let _env_guards = clear_provider_env();
     let _glm_guard = EnvVarGuard::set("GLM_AUTH_TOKEN", "test-token".to_string());
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     // Configure ZAI provider with static available_models (no network needed)
     let mut providers = HashMap::new();
@@ -717,20 +587,7 @@ async fn test_list_models_classification_filters_env_providers() {
     let _env_guards = clear_provider_env();
     let _glm_guard = EnvVarGuard::set("GLM_AUTH_TOKEN", "test-token".to_string());
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     // Configure ZAI provider with Cloud trust level (simulates env-discovered provider)
     let mut providers = HashMap::new();
@@ -768,20 +625,7 @@ async fn test_list_models_prefixes_with_provider_key() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut providers = HashMap::new();
     providers.insert(
@@ -829,20 +673,7 @@ async fn test_list_models_multi_provider_with_zai() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut providers = HashMap::new();
     providers.insert(
@@ -912,20 +743,7 @@ async fn test_list_models_multi_provider_with_zai() {
 async fn test_list_models_legacy_providers_config() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut providers = std::collections::HashMap::new();
     providers.insert(
@@ -979,20 +797,7 @@ async fn test_list_models_both_configs() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut llm_providers = HashMap::new();
     llm_providers.insert(

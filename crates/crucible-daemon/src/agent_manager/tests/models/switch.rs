@@ -4,20 +4,7 @@ use super::super::*;
 async fn test_switch_model_zai_llm_config() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut providers = std::collections::HashMap::new();
     providers.insert(
@@ -72,20 +59,7 @@ async fn test_switch_model_zai_llm_config() {
 async fn test_switch_model_legacy_still_works() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut llm_providers = std::collections::HashMap::new();
     llm_providers.insert(
@@ -143,20 +117,7 @@ async fn test_switch_model_legacy_still_works() {
 async fn test_switch_model_llm_config_invalidates_cache() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut providers = std::collections::HashMap::new();
     providers.insert(
@@ -192,20 +153,7 @@ async fn test_switch_model_llm_config_invalidates_cache() {
 
 #[tokio::test]
 async fn test_switch_model_unknown_provider_prefix() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
 
@@ -240,20 +188,7 @@ async fn test_switch_model_unknown_provider_prefix() {
 
 #[tokio::test]
 async fn test_switch_model_org_slash_model_format() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
 
@@ -286,20 +221,7 @@ async fn test_switch_model_to_zai_provider() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashMap;
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let mut providers = HashMap::new();
     providers.insert(

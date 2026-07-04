@@ -38,20 +38,7 @@ impl AgentHandle for PendingMockAgent {
 
 #[tokio::test]
 async fn concurrent_send_to_same_session_returns_error() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager
@@ -82,20 +69,7 @@ async fn concurrent_send_to_same_session_returns_error() {
 
 #[tokio::test]
 async fn cancel_during_streaming_emits_ended_event() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager
@@ -129,20 +103,7 @@ async fn cancel_during_streaming_emits_ended_event() {
 
 #[tokio::test]
 async fn empty_stream_without_done_cleans_up_request_state() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager
@@ -183,20 +144,7 @@ async fn parallel_workflow_steps_serialize_llm_turns_on_one_session() {
     use crucible_core::parser::types::WorkflowStep;
     use crucible_core::workflow::{ExecContext, OutputScope, StepHandler, StepOutcome};
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
     agent_manager

@@ -2,20 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn test_configure_agent() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
 
@@ -44,20 +31,7 @@ async fn test_configure_agent_not_found() {
 
 #[tokio::test]
 async fn test_send_message_no_agent() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager);
     let (event_tx, _) = broadcast::channel(16);
@@ -81,20 +55,7 @@ async fn test_cancel_nonexistent() {
 
 #[tokio::test]
 async fn test_switch_model() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
 
@@ -117,20 +78,7 @@ async fn test_switch_model() {
 
 #[tokio::test]
 async fn test_switch_model_no_agent() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager);
 
@@ -167,20 +115,7 @@ async fn test_switch_model_rejects_empty_model_id() {
 
 #[tokio::test]
 async fn test_switch_model_rejected_during_active_request() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
 
@@ -212,20 +147,7 @@ async fn test_switch_model_rejected_during_active_request() {
 
 #[tokio::test]
 async fn test_switch_model_invalidates_cache() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
 
@@ -284,20 +206,7 @@ async fn test_broadcast_send_with_receiver_succeeds() {
 
 #[tokio::test]
 async fn test_switch_model_multiple_times_updates_each_time() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
 
@@ -329,20 +238,7 @@ async fn test_switch_model_multiple_times_updates_each_time() {
 
 #[tokio::test]
 async fn test_switch_model_preserves_other_agent_config() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
 
@@ -372,20 +268,7 @@ async fn test_switch_model_preserves_other_agent_config() {
 
 #[tokio::test]
 async fn test_switch_model_emits_event() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
 

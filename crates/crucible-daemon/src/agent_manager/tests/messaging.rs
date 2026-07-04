@@ -2,20 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn send_message_emits_text_delta_events_in_order() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager
@@ -93,20 +80,7 @@ async fn send_message_emits_text_delta_events_in_order() {
 
 #[tokio::test]
 async fn send_message_emits_thinking_before_text_delta() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager
@@ -156,20 +130,7 @@ async fn send_message_emits_thinking_before_text_delta() {
 /// event must reach the scheduler before text_delta.
 #[tokio::test]
 async fn same_chunk_thinking_emitted_before_text_delta() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager
@@ -230,20 +191,7 @@ async fn same_chunk_thinking_emitted_before_text_delta() {
 /// tool call must pass through and the agent's own follow-up text must arrive.
 #[tokio::test]
 async fn owns_history_agent_tool_call_passes_through_without_truncating_turn() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager
@@ -437,20 +385,7 @@ async fn display_hook_lua_tool_enriches_tool_call_metadata() {
 
 #[tokio::test]
 async fn test_execute_agent_stream_empty_response_emits_error_event() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager
@@ -501,20 +436,7 @@ async fn test_execute_agent_stream_empty_response_emits_error_event() {
 
 #[tokio::test]
 async fn test_execute_agent_stream_tool_call_only_is_not_error() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager
@@ -725,20 +647,7 @@ async fn depth_cap_triggers_depth_prompt_and_completes_with_text() {
     // prompt, the mock replies with final text, and the turn finishes
     // normally — no "error: max_tool_depth exceeded" ended event.
 
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     let mut agent_cfg = test_agent();
@@ -849,20 +758,7 @@ async fn tool_dispatch_has_timeout() {
 /// the validation-exhausted marker — no second turn is attempted.
 #[tokio::test]
 async fn test_validate_retry_zero_retries_emits_exhausted_ended() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     let mut agent = test_agent();
@@ -912,20 +808,7 @@ async fn test_validate_retry_zero_retries_emits_exhausted_ended() {
 /// flow through normally — no validation, no retry, no ended-error.
 #[tokio::test]
 async fn test_validate_retry_none_validation_passes_freely() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager
@@ -971,20 +854,7 @@ fn lua_validator_runtime() -> (Arc<mlua::Lua>, Arc<crucible_lua::LuaValidatorReg
 /// exhaustion emit the standard validation-exhausted ended event.
 #[tokio::test]
 async fn test_lua_validator_failure_triggers_retry_and_exhausts() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     let (lua, registry) = lua_validator_runtime();
@@ -1042,20 +912,7 @@ async fn test_lua_validator_failure_triggers_retry_and_exhausts() {
 /// `true` — the response should flow through normally without retry.
 #[tokio::test]
 async fn test_lua_validator_pass_no_retry() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     let (lua, registry) = lua_validator_runtime();
@@ -1099,20 +956,7 @@ async fn test_lua_validator_pass_no_retry() {
 /// problem is that `name` was never `register_validator`'d.
 #[tokio::test]
 async fn test_lua_validator_unregistered_name_errors() {
-    let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     // Registry is bound but no validator named "missing" was registered.

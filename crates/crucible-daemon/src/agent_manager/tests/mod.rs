@@ -568,6 +568,28 @@ impl ReactorTestHarness {
     }
 }
 
+/// Standard test scaffold: a `TempDir`-backed `FileSessionStorage`, a
+/// `SessionManager`, and a freshly created `Chat` session in that temp dir.
+/// The `TempDir` is returned so callers keep it alive for the test's duration.
+async fn setup_session_manager() -> (TempDir, Arc<SessionManager>, crucible_core::session::Session) {
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    (tmp, session_manager, session)
+}
+
 fn test_agent() -> SessionAgent {
     SessionAgent {
         agent_type: "internal".to_string(),
