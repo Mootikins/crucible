@@ -380,93 +380,23 @@ impl CliAppConfig {
         Ok(config)
     }
 
-    /// Detect which fields are present in a TOML table
+    /// Detect which [`TRACKED_FIELDS`] are present in a TOML table.
+    ///
+    /// Each tracked path is either top-level (`"kiln_path"`) or one level
+    /// deep (`"acp.default_agent"`); the walk mirrors the const's order.
     #[cfg(feature = "toml")]
     fn detect_present_fields(table: &toml::Table) -> Vec<String> {
-        let mut fields = Vec::new();
-
-        // Top-level fields
-        if table.contains_key("kiln_path") {
-            fields.push("kiln_path".to_string());
-        }
-        if table.contains_key("agent_directories") {
-            fields.push("agent_directories".to_string());
-        }
-        if table.contains_key("session_kiln") {
-            fields.push("session_kiln".to_string());
-        }
-        if let Some(toml::Value::Table(llm)) = table.get("llm") {
-            if llm.contains_key("default") {
-                fields.push("llm.default".to_string());
-            }
-        }
-
-        // ACP section
-        if let Some(toml::Value::Table(acp)) = table.get("acp") {
-            if acp.contains_key("default_agent") {
-                fields.push("acp.default_agent".to_string());
-            }
-            if acp.contains_key("enable_discovery") {
-                fields.push("acp.enable_discovery".to_string());
-            }
-            if acp.contains_key("session_timeout_minutes") {
-                fields.push("acp.session_timeout_minutes".to_string());
-            }
-            if acp.contains_key("max_message_size_mb") {
-                fields.push("acp.max_message_size_mb".to_string());
-            }
-        }
-
-        // Chat section
-        if let Some(toml::Value::Table(chat)) = table.get("chat") {
-            if chat.contains_key("model") {
-                fields.push("chat.model".to_string());
-            }
-            if chat.contains_key("enable_markdown") {
-                fields.push("chat.enable_markdown".to_string());
-            }
-            if chat.contains_key("endpoint") {
-                fields.push("chat.endpoint".to_string());
-            }
-            if chat.contains_key("temperature") {
-                fields.push("chat.temperature".to_string());
-            }
-            if chat.contains_key("max_tokens") {
-                fields.push("chat.max_tokens".to_string());
-            }
-            if chat.contains_key("timeout_secs") {
-                fields.push("chat.timeout_secs".to_string());
-            }
-        }
-
-        // CLI section
-        if let Some(toml::Value::Table(cli)) = table.get("cli") {
-            if cli.contains_key("show_progress") {
-                fields.push("cli.show_progress".to_string());
-            }
-            if cli.contains_key("confirm_destructive") {
-                fields.push("cli.confirm_destructive".to_string());
-            }
-            if cli.contains_key("verbose") {
-                fields.push("cli.verbose".to_string());
-            }
-        }
-
-        // Logging section
-        if let Some(toml::Value::Table(logging)) = table.get("logging") {
-            if logging.contains_key("level") {
-                fields.push("logging.level".to_string());
-            }
-        }
-
-        // Processing section
-        if let Some(toml::Value::Table(processing)) = table.get("processing") {
-            if processing.contains_key("parallel_workers") {
-                fields.push("processing.parallel_workers".to_string());
-            }
-        }
-
-        fields
+        TRACKED_FIELDS
+            .iter()
+            .filter(|(path, _)| match path.split_once('.') {
+                None => table.contains_key(*path),
+                Some((section, key)) => matches!(
+                    table.get(section),
+                    Some(toml::Value::Table(t)) if t.contains_key(key)
+                ),
+            })
+            .map(|(path, _)| path.to_string())
+            .collect()
     }
 
     /// Log the effective configuration for debugging
