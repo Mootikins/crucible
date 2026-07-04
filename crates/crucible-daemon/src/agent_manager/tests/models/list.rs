@@ -1,4 +1,5 @@
 use super::super::*;
+use test_case::test_case;
 
 #[tokio::test]
 async fn test_list_models_returns_all_providers() {
@@ -65,114 +66,32 @@ async fn test_list_models_returns_all_providers() {
     );
 }
 
+#[test_case(
+    Some(crucible_core::config::DataClassification::Confidential), false,
+    &[("local-custom/local-model", true), ("cloud-openai/", false)]
+    ; "confidential excludes cloud"
+)]
+#[test_case(
+    Some(crucible_core::config::DataClassification::Public), false,
+    &[("local-custom/local-model", true), ("cloud-openai/gpt-4o", true)]
+    ; "public includes all"
+)]
+#[test_case(
+    None, false,
+    &[("local-custom/local-model", true), ("cloud-openai/gpt-4o", true)]
+    ; "no classification includes all"
+)]
+#[test_case(
+    Some(crucible_core::config::DataClassification::Internal), true,
+    &[("local-custom/local-model", true), ("cloud-openai/gpt-4o", true), ("untrusted-custom/", false)]
+    ; "internal includes cloud excludes untrusted"
+)]
 #[tokio::test]
-async fn test_list_models_trust_excludes_cloud_for_confidential_kiln() {
-    use crucible_core::config::{
-        BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel,
-    };
-    use std::collections::HashMap;
-
-    let (_tmp, session_manager, session) = setup_session_manager().await;
-
-    let mut local = LlmProviderConfig::builder(BackendType::Custom)
-        .available_models(vec!["local-model".to_string()])
-        .build();
-    local.trust_level = Some(TrustLevel::Local);
-
-    let mut cloud = LlmProviderConfig::builder(BackendType::OpenAI)
-        .available_models(vec!["gpt-4o".to_string()])
-        .build();
-    cloud.trust_level = Some(TrustLevel::Cloud);
-
-    let mut providers = HashMap::new();
-    providers.insert("local-custom".to_string(), local);
-    providers.insert("cloud-openai".to_string(), cloud);
-
-    let llm_config = LlmConfig {
-        default: Some("local-custom".to_string()),
-        providers,
-    };
-
-    let agent_manager =
-        create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
-
-    agent_manager
-        .configure_agent(&session.id, test_agent())
-        .await
-        .unwrap();
-
-    let models = agent_manager
-        .list_models(&session.id, Some(DataClassification::Confidential))
-        .await
-        .unwrap();
-
-    assert!(
-        models.contains(&"local-custom/local-model".to_string()),
-        "Confidential should keep Local provider models, got: {:?}",
-        models
-    );
-    assert!(
-        !models.iter().any(|m| m.starts_with("cloud-openai/")),
-        "Confidential should exclude Cloud provider models, got: {:?}",
-        models
-    );
-}
-
-#[tokio::test]
-async fn test_list_models_trust_returns_all_for_public_kiln() {
-    use crucible_core::config::{
-        BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel,
-    };
-    use std::collections::HashMap;
-
-    let (_tmp, session_manager, session) = setup_session_manager().await;
-
-    let mut local = LlmProviderConfig::builder(BackendType::Custom)
-        .available_models(vec!["local-model".to_string()])
-        .build();
-    local.trust_level = Some(TrustLevel::Local);
-
-    let mut cloud = LlmProviderConfig::builder(BackendType::OpenAI)
-        .available_models(vec!["gpt-4o".to_string()])
-        .build();
-    cloud.trust_level = Some(TrustLevel::Cloud);
-
-    let mut providers = HashMap::new();
-    providers.insert("local-custom".to_string(), local);
-    providers.insert("cloud-openai".to_string(), cloud);
-
-    let llm_config = LlmConfig {
-        default: Some("local-custom".to_string()),
-        providers,
-    };
-
-    let agent_manager =
-        create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
-
-    agent_manager
-        .configure_agent(&session.id, test_agent())
-        .await
-        .unwrap();
-
-    let models = agent_manager
-        .list_models(&session.id, Some(DataClassification::Public))
-        .await
-        .unwrap();
-
-    assert!(
-        models.contains(&"local-custom/local-model".to_string()),
-        "Public should include Local provider models, got: {:?}",
-        models
-    );
-    assert!(
-        models.contains(&"cloud-openai/gpt-4o".to_string()),
-        "Public should include Cloud provider models, got: {:?}",
-        models
-    );
-}
-
-#[tokio::test]
-async fn test_list_models_trust_returns_all_when_no_classification() {
+async fn list_models_trust_classification(
+    classification: Option<crucible_core::config::DataClassification>,
+    include_untrusted: bool,
+    expected: &[(&str, bool)],
+) {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig, TrustLevel};
     use std::collections::HashMap;
 
@@ -192,61 +111,13 @@ async fn test_list_models_trust_returns_all_when_no_classification() {
     providers.insert("local-custom".to_string(), local);
     providers.insert("cloud-openai".to_string(), cloud);
 
-    let llm_config = LlmConfig {
-        default: Some("local-custom".to_string()),
-        providers,
-    };
-
-    let agent_manager =
-        create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
-
-    agent_manager
-        .configure_agent(&session.id, test_agent())
-        .await
-        .unwrap();
-
-    let models = agent_manager.list_models(&session.id, None).await.unwrap();
-
-    assert!(
-        models.contains(&"local-custom/local-model".to_string()),
-        "No classification should include Local provider models, got: {:?}",
-        models
-    );
-    assert!(
-        models.contains(&"cloud-openai/gpt-4o".to_string()),
-        "No classification should include Cloud provider models, got: {:?}",
-        models
-    );
-}
-
-#[tokio::test]
-async fn test_list_models_trust_includes_cloud_for_internal_kiln() {
-    use crucible_core::config::{
-        BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel,
-    };
-    use std::collections::HashMap;
-
-    let (_tmp, session_manager, session) = setup_session_manager().await;
-
-    let mut local = LlmProviderConfig::builder(BackendType::Custom)
-        .available_models(vec!["local-model".to_string()])
-        .build();
-    local.trust_level = Some(TrustLevel::Local);
-
-    let mut cloud = LlmProviderConfig::builder(BackendType::OpenAI)
-        .available_models(vec!["gpt-4o".to_string()])
-        .build();
-    cloud.trust_level = Some(TrustLevel::Cloud);
-
-    let mut untrusted = LlmProviderConfig::builder(BackendType::Custom)
-        .available_models(vec!["unsafe-model".to_string()])
-        .build();
-    untrusted.trust_level = Some(TrustLevel::Untrusted);
-
-    let mut providers = HashMap::new();
-    providers.insert("local-custom".to_string(), local);
-    providers.insert("cloud-openai".to_string(), cloud);
-    providers.insert("untrusted-custom".to_string(), untrusted);
+    if include_untrusted {
+        let mut untrusted = LlmProviderConfig::builder(BackendType::Custom)
+            .available_models(vec!["unsafe-model".to_string()])
+            .build();
+        untrusted.trust_level = Some(TrustLevel::Untrusted);
+        providers.insert("untrusted-custom".to_string(), untrusted);
+    }
 
     let llm_config = LlmConfig {
         default: Some("local-custom".to_string()),
@@ -262,25 +133,29 @@ async fn test_list_models_trust_includes_cloud_for_internal_kiln() {
         .unwrap();
 
     let models = agent_manager
-        .list_models(&session.id, Some(DataClassification::Internal))
+        .list_models(&session.id, classification)
         .await
         .unwrap();
 
-    assert!(
-        models.contains(&"local-custom/local-model".to_string()),
-        "Internal should include Local provider models, got: {:?}",
-        models
-    );
-    assert!(
-        models.contains(&"cloud-openai/gpt-4o".to_string()),
-        "Internal should include Cloud provider models, got: {:?}",
-        models
-    );
-    assert!(
-        !models.iter().any(|m| m.starts_with("untrusted-custom/")),
-        "Internal should exclude Untrusted provider models, got: {:?}",
-        models
-    );
+    for (needle, present) in expected {
+        if *present {
+            assert!(
+                models.contains(&needle.to_string()),
+                "classification {:?} should include {}, got: {:?}",
+                classification,
+                needle,
+                models
+            );
+        } else {
+            assert!(
+                !models.iter().any(|m| m.starts_with(needle)),
+                "classification {:?} should exclude {}, got: {:?}",
+                classification,
+                needle,
+                models
+            );
+        }
+    }
 }
 
 #[tokio::test]
