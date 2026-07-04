@@ -187,18 +187,6 @@ pub enum InternalSessionEvent {
         duration_ms: u64,
     },
 
-    /// Stored embedding model differs from currently configured model.
-    EmbeddingModelMismatch {
-        /// Path to the kiln with the mismatch.
-        kiln_path: String,
-        /// The embedding model stored in the kiln.
-        stored_model: String,
-        /// The currently configured embedding model.
-        current_model: String,
-        /// Number of notes with embeddings in the kiln.
-        note_count: usize,
-    },
-
     // ─────────────────────────────────────────────────────────────────────
     // Pre/post events (handler interception points)
     // ─────────────────────────────────────────────────────────────────────
@@ -434,7 +422,6 @@ impl InternalSessionEvent {
             Self::EmbeddingStored { .. } => "embedding_stored",
             Self::EmbeddingFailed { .. } => "embedding_failed",
             Self::EmbeddingBatchComplete { .. } => "embedding_batch_complete",
-            Self::EmbeddingModelMismatch { .. } => "embedding_model_mismatch",
             Self::PreToolCall { .. } => "pre_tool_call",
             Self::PreParse { .. } => "pre_parse",
             Self::PreLlmCall { .. } => "pre_llm_call",
@@ -479,7 +466,6 @@ impl InternalSessionEvent {
             Self::EmbeddingStored { .. } => "EmbeddingStored",
             Self::EmbeddingFailed { .. } => "EmbeddingFailed",
             Self::EmbeddingBatchComplete { .. } => "EmbeddingBatchComplete",
-            Self::EmbeddingModelMismatch { .. } => "EmbeddingModelMismatch",
             Self::PreToolCall { .. } => "PreToolCall",
             Self::PreParse { .. } => "PreParse",
             Self::PreLlmCall { .. } => "PreLlmCall",
@@ -554,9 +540,6 @@ impl InternalSessionEvent {
                 }
             }
             Self::EmbeddingBatchComplete { entity_id, .. } => entity_id.clone(),
-            Self::EmbeddingModelMismatch { kiln_path, .. } => {
-                format!("embedding:mismatch:{}", kiln_path)
-            }
             Self::PreToolCall { name, .. } => format!("pre:tool:{}", name),
             Self::PreParse { path, .. } => format!("pre:parse:{}", path.display()),
             Self::PreLlmCall { model, .. } => format!("pre:llm:{}", model),
@@ -618,8 +601,7 @@ impl InternalSessionEvent {
             Self::EmbeddingRequested { .. }
             | Self::EmbeddingStored { .. }
             | Self::EmbeddingFailed { .. }
-            | Self::EmbeddingBatchComplete { .. }
-            | Self::EmbeddingModelMismatch { .. } => EventCategory::Embedding,
+            | Self::EmbeddingBatchComplete { .. } => EventCategory::Embedding,
 
             Self::EntityStored { .. }
             | Self::EntityDeleted { .. }
@@ -674,12 +656,6 @@ impl InternalSessionEvent {
             Self::EmbeddingStored { .. } => 50,
             Self::EmbeddingFailed { error, .. } => error.len() + 50,
             Self::EmbeddingBatchComplete { .. } => 50,
-            Self::EmbeddingModelMismatch {
-                kiln_path,
-                stored_model,
-                current_model,
-                ..
-            } => kiln_path.len() + stored_model.len() + current_model.len() + 50,
             Self::PreToolCall { name, .. } => name.len() + 50,
             Self::PreParse { .. } => 50,
             Self::PreLlmCall { prompt, .. } => prompt.len(),
@@ -797,15 +773,6 @@ impl InternalSessionEvent {
             } => format!(
                 "entity_id={}, count={}, duration={}ms",
                 entity_id, count, duration_ms
-            ),
-            Self::EmbeddingModelMismatch {
-                kiln_path,
-                stored_model,
-                current_model,
-                note_count,
-            } => format!(
-                "kiln={}, stored={}, current={}, notes={}",
-                kiln_path, stored_model, current_model, note_count
             ),
             Self::PreToolCall { name, args } => {
                 format!("tool={}, args_size={}", name, args.to_string().len())
@@ -999,15 +966,6 @@ impl InternalSessionEvent {
             } => Some(format!(
                 "{}: {} embeddings in {}ms",
                 entity_id, count, duration_ms
-            )),
-            Self::EmbeddingModelMismatch {
-                kiln_path,
-                stored_model,
-                current_model,
-                note_count,
-            } => Some(format!(
-                "kiln={}, stored={}, current={}, notes={}",
-                kiln_path, stored_model, current_model, note_count
             )),
             Self::PreToolCall { args, .. } => Some(args.to_string()),
             Self::PreParse { path } => Some(path.display().to_string()),

@@ -292,9 +292,6 @@ impl KilnManager {
             }
         }
 
-        // Check for embedding model mismatch (non-blocking diagnostic)
-        self.check_embedding_model_mismatch(&canonical).await;
-
         Ok(())
     }
 
@@ -522,20 +519,6 @@ impl KilnManager {
             .filter(|kiln_path| canonical.starts_with(kiln_path))
             .max_by_key(|p| p.components().count())
             .cloned()
-    }
-
-    /// Check whether the kiln's vector index was populated by a different
-    /// embedding model than what's currently configured.
-    ///
-    /// Currently a no-op: the LanceDB vector index doesn't track which
-    /// model produced each embedding. If a mismatch happens, the user
-    /// re-runs `cru index` and the new vectors overwrite the old. Cheap
-    /// because the kiln owner is the only consumer.
-    ///
-    /// TODO: if multi-tenant kilns ever appear, store embedding model in
-    /// a sqlite-side `vector_index_metadata` table and validate here.
-    async fn check_embedding_model_mismatch(&self, _canonical: &Path) {
-        // intentionally empty
     }
 
     /// Open kilns by name from a registry. Returns names of successfully opened kilns.
@@ -803,36 +786,6 @@ mod tests {
             crucible_core::config::default_max_precognition_chars(),
         );
         assert!(km.enrichment_config().is_some());
-    }
-
-    #[tokio::test]
-    async fn enrichment_config_none_skips_mismatch_check() {
-        let (tx, mut rx) = broadcast::channel(16);
-        let km = KilnManager::with_event_tx(
-            tx,
-            None,
-            crucible_core::config::default_max_precognition_chars(),
-        );
-        let tmp = TempDir::new().unwrap();
-        let kiln_path = tmp.path().join("test_kiln");
-
-        km.open(&kiln_path).await.unwrap();
-
-        let mut saw_mismatch = false;
-        loop {
-            match rx.try_recv() {
-                Ok(message) => {
-                    if message.event == "embedding_model_mismatch" {
-                        saw_mismatch = true;
-                    }
-                }
-                Err(tokio::sync::broadcast::error::TryRecvError::Empty) => break,
-                Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => continue,
-                Err(tokio::sync::broadcast::error::TryRecvError::Closed) => break,
-            }
-        }
-
-        assert!(!saw_mismatch);
     }
 
     #[tokio::test]
