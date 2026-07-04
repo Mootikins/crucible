@@ -500,19 +500,62 @@ impl CliAppConfig {
         map
     }
 
-    /// Display the current configuration as JSON with source tracking
+    /// Current value of a [`TRACKED_FIELDS`] path as JSON.
+    ///
+    /// Returns `None` when the field is `Option`-typed and unset — callers
+    /// render those as explicit "unset" entries rather than omitting them.
+    /// The `tracked_value_covers_every_tracked_field` test keeps this match
+    /// in sync with the const.
+    fn tracked_value(&self, path: &str) -> Option<serde_json::Value> {
+        use serde_json::json;
+        match path {
+            "kiln_path" => Some(json!(self.kiln_path.to_string_lossy())),
+            "agent_directories" => Some(json!(self
+                .agent_directories
+                .iter()
+                .map(|p| p.to_string_lossy())
+                .collect::<Vec<_>>())),
+            "session_kiln" => self
+                .session_kiln
+                .as_ref()
+                .map(|p| json!(p.to_string_lossy())),
+            "llm.default" => self.llm.default.as_ref().map(|v| json!(v)),
+            "acp.default_agent" => self.acp.default_agent.as_ref().map(|v| json!(v)),
+            "acp.enable_discovery" => Some(json!(self.acp.enable_discovery)),
+            "acp.session_timeout_minutes" => Some(json!(self.acp.session_timeout_minutes)),
+            "acp.max_message_size_mb" => Some(json!(self.acp.max_message_size_mb)),
+            "chat.model" => self.chat.model.as_ref().map(|v| json!(v)),
+            "chat.enable_markdown" => Some(json!(self.chat.enable_markdown)),
+            "chat.endpoint" => self.chat.endpoint.as_ref().map(|v| json!(v)),
+            "chat.temperature" => self.chat.temperature.map(|v| json!(v)),
+            "chat.max_tokens" => self.chat.max_tokens.map(|v| json!(v)),
+            "chat.timeout_secs" => self.chat.timeout_secs.map(|v| json!(v)),
+            "cli.show_progress" => Some(json!(self.cli.show_progress)),
+            "cli.confirm_destructive" => Some(json!(self.cli.confirm_destructive)),
+            "cli.verbose" => Some(json!(self.cli.verbose)),
+            "logging.level" => self.logging.as_ref().map(|l| json!(l.level)),
+            "processing.parallel_workers" => self.processing.parallel_workers.map(|v| json!(v)),
+            _ => None,
+        }
+    }
+
+    /// Display the current configuration as JSON with source tracking.
+    ///
+    /// Every [`TRACKED_FIELDS`] entry appears in the output (unset fields get
+    /// a `null` value) so the trace can't silently drop fields.
     pub fn display_as_json_with_sources(&self) -> Result<String, ConfigError> {
         use crate::config::value_source::ValueSource;
 
         let source_map = self.get_source_map();
-
-        // Create a comprehensive output with sources for all tracked fields
         let mut output = serde_json::Map::new();
 
-        // Helper to create a value item with source
-        let make_item = |value: serde_json::Value, source: &ValueSource| -> serde_json::Value {
+        for (path, _) in TRACKED_FIELDS {
+            let source = source_map.get(path).unwrap_or(&ValueSource::Default);
             let mut item = serde_json::Map::new();
-            item.insert("value".to_string(), value);
+            item.insert(
+                "value".to_string(),
+                self.tracked_value(path).unwrap_or(serde_json::Value::Null),
+            );
             item.insert(
                 "source".to_string(),
                 serde_json::Value::String(source.detail()),
@@ -521,244 +564,59 @@ impl CliAppConfig {
                 "source_short".to_string(),
                 serde_json::Value::String(source.short().to_string()),
             );
-            serde_json::Value::Object(item)
-        };
+            let item = serde_json::Value::Object(item);
 
-        // kiln_path
-        let kiln_source = source_map.get("kiln_path").unwrap_or(&ValueSource::Default);
-        output.insert(
-            "kiln_path".to_string(),
-            make_item(
-                serde_json::Value::String(self.kiln_path.to_string_lossy().to_string()),
-                kiln_source,
-            ),
-        );
-
-        let llm_source = source_map
-            .get("llm.default")
-            .unwrap_or(&ValueSource::Default);
-        let mut llm_section = serde_json::Map::new();
-        if let Some(default_key) = &self.llm.default {
-            llm_section.insert(
-                "default".to_string(),
-                make_item(serde_json::Value::String(default_key.clone()), llm_source),
-            );
+            match path.split_once('.') {
+                None => {
+                    output.insert(path.to_string(), item);
+                }
+                Some((section, key)) => {
+                    output
+                        .entry(section.to_string())
+                        .or_insert_with(|| serde_json::Value::Object(Default::default()))
+                        .as_object_mut()
+                        .expect("section entries are always objects")
+                        .insert(key.to_string(), item);
+                }
+            }
         }
-        output.insert("llm".to_string(), serde_json::Value::Object(llm_section));
-
-        // acp section
-        let mut acp_section = serde_json::Map::new();
-        if let Some(ref agent) = self.acp.default_agent {
-            let agent_source = source_map
-                .get("acp.default_agent")
-                .unwrap_or(&ValueSource::Default);
-            acp_section.insert(
-                "default_agent".to_string(),
-                make_item(serde_json::Value::String(agent.clone()), agent_source),
-            );
-        }
-
-        let discovery_source = source_map
-            .get("acp.enable_discovery")
-            .unwrap_or(&ValueSource::Default);
-        acp_section.insert(
-            "enable_discovery".to_string(),
-            make_item(
-                serde_json::Value::Bool(self.acp.enable_discovery),
-                discovery_source,
-            ),
-        );
-
-        let timeout_source = source_map
-            .get("acp.session_timeout_minutes")
-            .unwrap_or(&ValueSource::Default);
-        acp_section.insert(
-            "session_timeout_minutes".to_string(),
-            make_item(
-                serde_json::Value::Number(self.acp.session_timeout_minutes.into()),
-                timeout_source,
-            ),
-        );
-
-        output.insert("acp".to_string(), serde_json::Value::Object(acp_section));
-
-        // chat section
-        let mut chat_section = serde_json::Map::new();
-        if let Some(ref model) = self.chat.model {
-            let model_source = source_map
-                .get("chat.model")
-                .unwrap_or(&ValueSource::Default);
-            chat_section.insert(
-                "model".to_string(),
-                make_item(serde_json::Value::String(model.clone()), model_source),
-            );
-        }
-
-        let markdown_source = source_map
-            .get("chat.enable_markdown")
-            .unwrap_or(&ValueSource::Default);
-        chat_section.insert(
-            "enable_markdown".to_string(),
-            make_item(
-                serde_json::Value::Bool(self.chat.enable_markdown),
-                markdown_source,
-            ),
-        );
-
-        output.insert("chat".to_string(), serde_json::Value::Object(chat_section));
-
-        // cli section
-        let mut cli_section = serde_json::Map::new();
-
-        let progress_source = source_map
-            .get("cli.show_progress")
-            .unwrap_or(&ValueSource::Default);
-        cli_section.insert(
-            "show_progress".to_string(),
-            make_item(
-                serde_json::Value::Bool(self.cli.show_progress),
-                progress_source,
-            ),
-        );
-
-        let confirm_source = source_map
-            .get("cli.confirm_destructive")
-            .unwrap_or(&ValueSource::Default);
-        cli_section.insert(
-            "confirm_destructive".to_string(),
-            make_item(
-                serde_json::Value::Bool(self.cli.confirm_destructive),
-                confirm_source,
-            ),
-        );
-
-        let verbose_source = source_map
-            .get("cli.verbose")
-            .unwrap_or(&ValueSource::Default);
-        cli_section.insert(
-            "verbose".to_string(),
-            make_item(serde_json::Value::Bool(self.cli.verbose), verbose_source),
-        );
-
-        output.insert("cli".to_string(), serde_json::Value::Object(cli_section));
 
         Ok(serde_json::to_string_pretty(&output)?)
     }
 
-    /// Display the current configuration as TOML with source tracking
+    /// Display the current configuration as TOML with source tracking.
+    ///
+    /// Every [`TRACKED_FIELDS`] entry appears in the output; unset fields
+    /// render as `# key = <unset>` comments so the document stays valid TOML.
     pub fn display_as_toml_with_sources(&self) -> Result<String, ConfigError> {
         use crate::config::value_source::ValueSource;
 
         let source_map = self.get_source_map();
-
-        // Generate TOML with inline comments for sources
         let mut output = String::new();
-
-        // Add header comment
         output.push_str("# Effective Configuration with Value Sources\n");
         output.push_str("# Sources: file (<path>), cli, env (<var>), default\n\n");
 
-        // kiln_path
-        let kiln_source = source_map.get("kiln_path").unwrap_or(&ValueSource::Default);
-        output.push_str(&format!(
-            "kiln_path = \"{}\"  # from: {}\n",
-            self.kiln_path.display(),
-            kiln_source.detail()
-        ));
-
-        output.push_str("\n[llm]\n");
-        let llm_source = source_map
-            .get("llm.default")
-            .unwrap_or(&ValueSource::Default);
-        if let Some(default_key) = &self.llm.default {
-            output.push_str(&format!(
-                "default = \"{}\"  # from: {}\n",
-                default_key,
-                llm_source.detail()
-            ));
+        // TRACKED_FIELDS keeps each section's fields contiguous, so emitting a
+        // header on section change yields one [section] block per section.
+        let mut current_section = "";
+        for (path, _) in TRACKED_FIELDS {
+            let (section, key) = path.split_once('.').unwrap_or(("", path));
+            if section != current_section {
+                output.push_str(&format!("\n[{section}]\n"));
+                current_section = section;
+            }
+            let source = source_map.get(path).unwrap_or(&ValueSource::Default);
+            match self.tracked_value(path) {
+                // Compact JSON encoding of the tracked scalar/string-array
+                // types is also valid TOML.
+                Some(value) => {
+                    output.push_str(&format!("{key} = {value}  # from: {}\n", source.detail()));
+                }
+                None => {
+                    output.push_str(&format!("# {key} = <unset>  # from: {}\n", source.detail()));
+                }
+            }
         }
-
-        // ACP section
-        output.push_str("\n[acp]\n");
-        if let Some(ref agent) = self.acp.default_agent {
-            let agent_source = source_map
-                .get("acp.default_agent")
-                .unwrap_or(&ValueSource::Default);
-            output.push_str(&format!(
-                "default_agent = \"{}\"  # from: {}\n",
-                agent,
-                agent_source.detail()
-            ));
-        }
-
-        let discovery_source = source_map
-            .get("acp.enable_discovery")
-            .unwrap_or(&ValueSource::Default);
-        output.push_str(&format!(
-            "enable_discovery = {}  # from: {}\n",
-            self.acp.enable_discovery,
-            discovery_source.detail()
-        ));
-
-        let timeout_source = source_map
-            .get("acp.session_timeout_minutes")
-            .unwrap_or(&ValueSource::Default);
-        output.push_str(&format!(
-            "session_timeout_minutes = {}  # from: {}\n",
-            self.acp.session_timeout_minutes,
-            timeout_source.detail()
-        ));
-
-        // Chat section
-        output.push_str("\n[chat]\n");
-        if let Some(ref model) = self.chat.model {
-            let model_source = source_map
-                .get("chat.model")
-                .unwrap_or(&ValueSource::Default);
-            output.push_str(&format!(
-                "model = \"{}\"  # from: {}\n",
-                model,
-                model_source.detail()
-            ));
-        }
-
-        let markdown_source = source_map
-            .get("chat.enable_markdown")
-            .unwrap_or(&ValueSource::Default);
-        output.push_str(&format!(
-            "enable_markdown = {}  # from: {}\n",
-            self.chat.enable_markdown,
-            markdown_source.detail()
-        ));
-
-        // CLI section
-        output.push_str("\n[cli]\n");
-        let progress_source = source_map
-            .get("cli.show_progress")
-            .unwrap_or(&ValueSource::Default);
-        output.push_str(&format!(
-            "show_progress = {}  # from: {}\n",
-            self.cli.show_progress,
-            progress_source.detail()
-        ));
-
-        let confirm_source = source_map
-            .get("cli.confirm_destructive")
-            .unwrap_or(&ValueSource::Default);
-        output.push_str(&format!(
-            "confirm_destructive = {}  # from: {}\n",
-            self.cli.confirm_destructive,
-            confirm_source.detail()
-        ));
-
-        let verbose_source = source_map
-            .get("cli.verbose")
-            .unwrap_or(&ValueSource::Default);
-        output.push_str(&format!(
-            "verbose = {}  # from: {}\n",
-            self.cli.verbose,
-            verbose_source.detail()
-        ));
 
         Ok(output)
     }
@@ -1017,6 +875,88 @@ mod tests {
     use crate::test_support::EnvVarGuard;
 
     use tempfile::NamedTempFile;
+
+    /// A config with every Option-typed tracked field populated, so coverage
+    /// tests exercise the set-value path for all of TRACKED_FIELDS.
+    fn fully_populated_config() -> CliAppConfig {
+        let mut config = CliAppConfig::default();
+        config.session_kiln = Some("/tmp/sessions".into());
+        config.agent_directories = vec!["/tmp/agents".into()];
+        config.llm.default = Some("test-provider".into());
+        config.acp.default_agent = Some("claude".into());
+        config.chat.model = Some("test-model".into());
+        config.chat.endpoint = Some("http://localhost:11434".into());
+        config.chat.temperature = Some(0.7);
+        config.chat.max_tokens = Some(2048);
+        config.chat.timeout_secs = Some(30);
+        config.logging = Some(LoggingConfig::default());
+        config.processing.parallel_workers = Some(4);
+        config
+    }
+
+    #[test]
+    fn tracked_value_covers_every_tracked_field() {
+        let config = fully_populated_config();
+        for (path, _) in TRACKED_FIELDS {
+            assert!(
+                config.tracked_value(path).is_some(),
+                "tracked_value has no accessor for TRACKED_FIELDS entry {path:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn json_with_sources_covers_every_tracked_field() {
+        let config = fully_populated_config();
+        let json = config.display_as_json_with_sources().unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        for (path, _) in TRACKED_FIELDS {
+            let item = match path.split_once('.') {
+                None => parsed.get(path),
+                Some((section, key)) => parsed.get(section).and_then(|s| s.get(key)),
+            };
+            let item = item.unwrap_or_else(|| panic!("{path} missing from JSON trace output"));
+            assert!(
+                item.get("source").is_some(),
+                "{path} has no source annotation"
+            );
+        }
+    }
+
+    #[test]
+    fn toml_with_sources_covers_every_tracked_field() {
+        let config = fully_populated_config();
+        let toml = config.display_as_toml_with_sources().unwrap();
+        for (path, _) in TRACKED_FIELDS {
+            let key = match path.split_once('.') {
+                None => path,
+                Some((_, key)) => key,
+            };
+            assert!(
+                toml.contains(&format!("{key} = ")),
+                "{path} missing from TOML trace output:\n{toml}"
+            );
+        }
+    }
+
+    #[test]
+    fn with_sources_render_unset_fields_instead_of_omitting() {
+        let config = CliAppConfig::default();
+
+        let json = config.display_as_json_with_sources().unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let model = parsed
+            .get("chat")
+            .and_then(|c| c.get("model"))
+            .expect("unset chat.model should still appear in JSON trace");
+        assert!(model.get("value").unwrap().is_null());
+
+        let toml = config.display_as_toml_with_sources().unwrap();
+        assert!(
+            toml.contains("# model = <unset>"),
+            "unset chat.model should render as a comment in TOML trace:\n{toml}"
+        );
+    }
 
     #[test]
     fn test_load_resolves_env_var_in_api_key() {
