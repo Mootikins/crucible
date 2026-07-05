@@ -98,15 +98,17 @@ fn render_box(
                         .map(|(i, _)| i)
                         .unwrap_or(value.len())],
                 ) as u16;
-                // If value overflows the input rect, clamp cursor to the last
-                // visible column. Without this, an over-wide value would put
-                // the cursor past the grid's right edge (where blit_line
-                // already truncated content), placing cursor.col outside the
-                // rendered line's visible width.
-                let max_col = layout_box.rect.width.saturating_sub(1);
-                let cursor_col = raw_col.min(max_col);
+                // While typing, the cursor legitimately sits one cell PAST the
+                // text. Taffy sizes the Input rect exactly to its value, so a
+                // rect-relative clamp (rect.width - 1) would pull an
+                // end-of-line cursor back onto the last character. What
+                // actually bounds the rendered line is the grid's right edge —
+                // clamp there instead (covers the over-wide-value case where
+                // blit_line already truncated content).
+                let max_col = (grid.width() as u16).saturating_sub(1);
+                let abs_col = (layout_box.rect.x + raw_col).min(max_col);
 
-                *cursor_position = Some((layout_box.rect.x + cursor_col, layout_box.rect.y));
+                *cursor_position = Some((abs_col, layout_box.rect.y));
             }
         }
 

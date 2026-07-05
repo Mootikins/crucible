@@ -30,6 +30,45 @@ fn popup_renders_items() {
     assert!(output.contains("/help"), "should show third item label");
 }
 
+/// A uniform kind column (every visible item tagged the same, e.g. the model
+/// picker where each row is kind="model") is pure noise — the renderer must
+/// suppress it. Mixed kinds still render so the column can disambiguate.
+#[test]
+fn popup_hides_kind_column_when_uniform() {
+    let items = vec![
+        PopupItemNode {
+            label: "llama3.2".into(),
+            description: None,
+            kind: Some("model".into()),
+        },
+        PopupItemNode {
+            label: "gpt-4o".into(),
+            description: None,
+            kind: Some("model".into()),
+        },
+    ];
+    let node = popup(items, 0, 10);
+    let output = render_to_string(&node, 80);
+
+    assert!(output.contains("llama3.2"), "labels must render: {output}");
+    assert!(
+        !output.contains("model llama3.2"),
+        "uniform kind must not prefix labels: {output}"
+    );
+}
+
+#[test]
+fn popup_shows_kind_column_when_mixed() {
+    // sample_items has kinds tool/tool/command — mixed, so kinds render.
+    let node = popup(sample_items(), 0, 10);
+    let output = render_to_string(&node, 80);
+
+    assert!(
+        output.contains("tool search"),
+        "mixed kinds keep the kind column: {output}"
+    );
+}
+
 #[test]
 fn popup_renders_descriptions() {
     let node = popup(sample_items(), 0, 10);

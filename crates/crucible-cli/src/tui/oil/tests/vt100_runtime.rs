@@ -1448,4 +1448,48 @@ mod tests {
         );
         vt.assert_no_spinners_in_scrollback();
     }
+
+    /// TEMP capture (not for CI): dump the model-completion popup with full
+    /// ANSI styling so the colors can be inspected offline.
+    #[test]
+    fn temp_capture_model_popup_styled() {
+        use crate::tui::oil::event::Event;
+        let mut app = OilChatApp::init();
+        let mut vt = Vt100TestRuntime::new(100, 30);
+
+        app.on_message(ChatAppMsg::UserMessage("hello".into()));
+        app.on_message(ChatAppMsg::TextDelta("Hi there!".into()));
+        app.on_message(ChatAppMsg::StreamComplete);
+        vt.render_frame(&mut app);
+
+        app.on_message(ChatAppMsg::ModelsLoaded(vec![
+            "llama3.2".into(),
+            "gpt-4o".into(),
+            "claude-sonnet-4".into(),
+            "GLM-4.7".into(),
+            "qwen2.5-coder".into(),
+        ]));
+        for c in ":model".chars() {
+            let _ = app.update(Event::Key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char(c),
+                crossterm::event::KeyModifiers::NONE,
+            )));
+        }
+        let _ = app.update(Event::Key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Enter,
+            crossterm::event::KeyModifiers::NONE,
+        )));
+        vt.render_frame(&mut app);
+
+        std::fs::write(
+            "/home/moot/.claude/jobs/026723c1/tmp/model_popup.ansi",
+            vt.screen_contents_styled(),
+        )
+        .unwrap();
+        std::fs::write(
+            "/home/moot/.claude/jobs/026723c1/tmp/model_popup.txt",
+            vt.screen_contents(),
+        )
+        .unwrap();
+    }
 }

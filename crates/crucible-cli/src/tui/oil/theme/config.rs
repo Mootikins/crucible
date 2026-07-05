@@ -119,7 +119,7 @@ mod tests {
 
         assert_eq!(
             config.resolve_color(config.colors.popup_bg),
-            Color::Rgb(30, 34, 42)
+            Color::Rgb(40, 44, 52)
         );
         assert_eq!(
             config.resolve_color(config.colors.popup_selected_bg),

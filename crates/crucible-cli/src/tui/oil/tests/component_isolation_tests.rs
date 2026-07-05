@@ -863,11 +863,11 @@ mod popup_overlay_tests {
         let popup = PopupOverlay::new(sample_items()).selected(0);
         let ansi = render_ansi(&popup, 80);
 
-        // ThemeConfig popup_bg is Rgb(30, 34, 42)
-        // ANSI escape for background: \x1b[48;2;30;34;42m
+        // ThemeConfig popup_bg is Rgb(40, 44, 52)
+        // ANSI escape for background: \x1b[48;2;40;44;52m
         assert!(
-            ansi.contains("\x1b[48;2;30;34;42m"),
-            "Popup should use theme popup_bg color Rgb(30,34,42). Got: {:?}",
+            ansi.contains("\x1b[48;2;40;44;52m"),
+            "Popup should use theme popup_bg color Rgb(40,44,52). Got: {:?}",
             ansi
         );
     }

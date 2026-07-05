@@ -207,6 +207,41 @@ mod tests {
         }
     }
 
+    /// Regression: while typing (cursor at end of the text), the terminal
+    /// cursor must sit on the empty cell AFTER the last character, not on the
+    /// character itself. Taffy sizes the Input rect exactly to its value, so
+    /// a rect-relative clamp pulled the end-of-line cursor back one cell.
+    #[test]
+    fn cursor_sits_after_last_char_at_end_of_typing() {
+        let style = TestStyle {
+            bg: Color::Rgb(40, 44, 52),
+            prompt_text: " > ",
+        };
+        let area = InputArea::new("hello", 5, 80);
+        let node = area.view(&style, &FocusContext::default());
+        let result = crate::render::render_with_cursor(&node, 80);
+
+        assert!(result.cursor.visible);
+        // " > hello" — prompt is 3 cells, text is 5; end-of-line cursor → col 8.
+        assert_eq!(
+            result.cursor.col, 8,
+            "cursor must be one past the last typed char"
+        );
+    }
+
+    #[test]
+    fn cursor_mid_text_is_unaffected() {
+        let style = TestStyle {
+            bg: Color::Rgb(40, 44, 52),
+            prompt_text: " > ",
+        };
+        let area = InputArea::new("hello", 2, 80);
+        let node = area.view(&style, &FocusContext::default());
+        let result = crate::render::render_with_cursor(&node, 80);
+
+        assert_eq!(result.cursor.col, 5, "prompt(3) + cursor offset 2");
+    }
+
     #[test]
     fn wrap_content_handles_empty() {
         assert_eq!(wrap_content("", 10), vec![""]);
