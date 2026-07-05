@@ -258,6 +258,11 @@ fn render_popup(
     // the chat viewport.
     let mut current_y = y + blank_lines;
 
+    // A kind column only earns its width when it disambiguates: if every
+    // visible item carries the same kind (e.g. the model picker, where each
+    // row would read "model <name>"), suppress it.
+    let uniform_kind = visible_items.windows(2).all(|w| w[0].kind == w[1].kind);
+
     // Render visible items
     for (i, item) in visible_items.iter().enumerate() {
         let actual_index = viewport_offset + i;
@@ -266,7 +271,7 @@ fn render_popup(
 
         let line = format_popup_item_line(
             is_selected,
-            item.kind.as_deref(),
+            item.kind.as_deref().filter(|_| !uniform_kind),
             &item.label,
             item.description.as_deref(),
             width,

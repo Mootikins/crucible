@@ -1449,47 +1449,50 @@ mod tests {
         vt.assert_no_spinners_in_scrollback();
     }
 
-    /// TEMP capture (not for CI): dump the model-completion popup with full
-    /// ANSI styling so the colors can be inspected offline.
+    /// The completion popup is a visual extension of the prompt it sits on,
+    /// so its rows must use the CURRENT input mode's bg (command mode here —
+    /// whatever the user themes it to), with the selected row a derived
+    /// variant of that same surface. Regression for the popup rendering with
+    /// a fixed default bg unrelated to the prompt.
     #[test]
-    fn temp_capture_model_popup_styled() {
+    fn model_popup_bg_matches_command_prompt_bg() {
         use crate::tui::oil::event::Event;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
         let mut app = OilChatApp::init();
         let mut vt = Vt100TestRuntime::new(100, 30);
-
-        app.on_message(ChatAppMsg::UserMessage("hello".into()));
-        app.on_message(ChatAppMsg::TextDelta("Hi there!".into()));
-        app.on_message(ChatAppMsg::StreamComplete);
-        vt.render_frame(&mut app);
 
         app.on_message(ChatAppMsg::ModelsLoaded(vec![
             "llama3.2".into(),
             "gpt-4o".into(),
-            "claude-sonnet-4".into(),
-            "GLM-4.7".into(),
-            "qwen2.5-coder".into(),
         ]));
         for c in ":model".chars() {
-            let _ = app.update(Event::Key(crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Char(c),
-                crossterm::event::KeyModifiers::NONE,
+            let _ = app.update(Event::Key(KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::NONE,
             )));
         }
-        let _ = app.update(Event::Key(crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Enter,
-            crossterm::event::KeyModifiers::NONE,
+        let _ = app.update(Event::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
         )));
         vt.render_frame(&mut app);
 
-        std::fs::write(
-            "/home/moot/.claude/jobs/026723c1/tmp/model_popup.ansi",
-            vt.screen_contents_styled(),
-        )
-        .unwrap();
-        std::fs::write(
-            "/home/moot/.claude/jobs/026723c1/tmp/model_popup.txt",
-            vt.screen_contents(),
-        )
-        .unwrap();
+        let styled = vt.screen_contents_styled();
+        // Default command-mode bg is Rgb(60, 50, 20); the popup body must use it…
+        assert!(
+            styled.contains("\x1b[48;2;60;50;20m"),
+            "popup/input should carry the command-mode bg.\nStyled:\n{styled:?}"
+        );
+        // …the selected row must use the derived variant of the same surface…
+        assert!(
+            styled.contains("\x1b[48;2;74;64;34m"),
+            "selected popup row should use the derived selection variant.\nStyled:\n{styled:?}"
+        );
+        // …and nothing should fall back to the fixed default popup bg.
+        assert!(
+            !styled.contains("\x1b[48;2;40;44;52m"),
+            "popup must not use the mode-independent default bg.\nStyled:\n{styled:?}"
+        );
     }
 }

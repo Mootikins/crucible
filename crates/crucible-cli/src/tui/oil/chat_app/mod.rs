@@ -408,11 +408,19 @@ impl OilChatApp {
             return Node::Empty;
         }
 
-        use crate::tui::oil::components::PopupOverlay;
+        use crate::tui::oil::components::{InputMode as ComponentInputMode, PopupOverlay};
+
+        // The popup sits on the prompt and must read as the same surface, so
+        // its bg tracks the CURRENT input mode's (possibly user-themed) bg —
+        // command-mode completions match the `:` prompt, shell the `!` prompt.
+        let prompt_bg = crucible_oil::components::InputStyle::bg_color(
+            &ComponentInputMode::from_content(self.input.content()),
+        );
 
         PopupOverlay::new(items)
             .selected(self.popup.selected)
             .max_visible(POPUP_HEIGHT)
+            .bg(prompt_bg)
             .view(&crucible_oil::focus::FocusContext::default())
     }
 

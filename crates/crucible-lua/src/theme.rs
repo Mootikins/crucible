@@ -175,7 +175,7 @@ impl Default for ThemeColors {
             diff_context: AdaptiveColor::from_single(Rgb(100, 110, 130)), // diff_ctx
 
             // Overlay
-            popup_bg: AdaptiveColor::from_single(Rgb(30, 34, 42)), // popup_bg
+            popup_bg: AdaptiveColor::from_single(Rgb(40, 44, 52)), // popup_bg — matches chrome surface (input/bubble) so the panel reads as elevated, not darker-than-app
             popup_selected_bg: AdaptiveColor::from_single(Rgb(50, 56, 68)), // popup_selected_bg
             toast_bg: AdaptiveColor::from_single(Rgb(45, 40, 55)), // thinking_bg
             overlay_text: AdaptiveColor::from_single(Rgb(192, 202, 245)),

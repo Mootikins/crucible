@@ -149,6 +149,36 @@ pub enum Color {
 }
 
 impl Color {
+    /// Derive a selection-highlight surface from an arbitrary base color:
+    /// step toward white on dark surfaces and toward black on light ones, so
+    /// a selected row reads as "the same surface, raised" for ANY themed bg
+    /// (e.g. a popup matching the command prompt's user-configured color).
+    /// Non-RGB colors have no channel math to do; fall back to the default
+    /// selection bg.
+    pub fn selection_variant(self) -> Color {
+        const STEP: u8 = 14;
+        match self {
+            Color::Rgb(r, g, b) => {
+                let luminance =
+                    (299 * u32::from(r) + 587 * u32::from(g) + 114 * u32::from(b)) / 1000;
+                if luminance < 128 {
+                    Color::Rgb(
+                        r.saturating_add(STEP),
+                        g.saturating_add(STEP),
+                        b.saturating_add(STEP),
+                    )
+                } else {
+                    Color::Rgb(
+                        r.saturating_sub(STEP),
+                        g.saturating_sub(STEP),
+                        b.saturating_sub(STEP),
+                    )
+                }
+            }
+            _ => crate::node::DEFAULT_POPUP_SELECTED_BG,
+        }
+    }
+
     pub fn to_crossterm(self) -> CtColor {
         match self {
             Color::Black => CtColor::Black,

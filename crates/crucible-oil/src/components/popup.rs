@@ -1,5 +1,6 @@
 use crate::focus::FocusContext;
 use crate::node::{overlay_from_bottom, popup, Node, PopupItemNode};
+use crate::style::Color;
 
 pub const POPUP_MAX_VISIBLE: usize = 10;
 pub const FOCUS_POPUP: &str = "popup";
@@ -10,6 +11,7 @@ pub struct PopupOverlay {
     visible: bool,
     offset_from_bottom: usize,
     max_visible: usize,
+    bg: Option<Color>,
 }
 
 impl PopupOverlay {
@@ -20,7 +22,17 @@ impl PopupOverlay {
             visible: true,
             offset_from_bottom: 3,
             max_visible: POPUP_MAX_VISIBLE,
+            bg: None,
         }
+    }
+
+    /// Surface color for the popup body — pass the bg of the element the
+    /// popup visually extends (e.g. the input prompt's mode bg) so the two
+    /// read as one panel. The selected row derives from the same surface.
+    #[must_use]
+    pub fn bg(mut self, color: Color) -> Self {
+        self.bg = Some(color);
+        self
     }
 
     #[must_use]
@@ -96,7 +108,15 @@ impl PopupOverlay {
             return Node::Empty;
         }
 
-        let popup_node = popup(self.items.clone(), self.selected, self.max_visible);
+        let popup_node = match self.bg {
+            Some(bg) => match popup(self.items.clone(), self.selected, self.max_visible) {
+                Node::Popup(node) => {
+                    Node::Popup(node.bg_color(bg).selected_color(bg.selection_variant()))
+                }
+                other => other,
+            },
+            None => popup(self.items.clone(), self.selected, self.max_visible),
+        };
         overlay_from_bottom(popup_node, self.offset_from_bottom)
     }
 }

@@ -2,7 +2,7 @@ use crate::overlay::OverlayAnchor;
 use crate::style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
 
 /// Default popup background color (dark blue-gray).
-pub const DEFAULT_POPUP_BG: Color = Color::Rgb(30, 34, 42);
+pub const DEFAULT_POPUP_BG: Color = Color::Rgb(40, 44, 52);
 
 /// Default popup selected-item background color (lighter blue-gray).
 pub const DEFAULT_POPUP_SELECTED_BG: Color = Color::Rgb(50, 56, 68);
