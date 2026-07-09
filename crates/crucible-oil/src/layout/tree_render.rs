@@ -14,7 +14,9 @@ use crate::cell_grid::CellGrid;
 use crate::utils::visible_width;
 
 use crate::render::CursorInfo;
-use crate::render_helpers::{format_popup_item_line, select_spinner_frame, wrap_and_style_padded};
+use crate::render_helpers::{
+    format_popup_item_line, select_spinner_frame, truncate_with_ellipsis, wrap_and_style_padded,
+};
 use crate::style::{Border, Style};
 
 use super::types::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
@@ -128,6 +130,7 @@ fn render_box(
             max_visible,
             bg_style,
             selected_style,
+            anchor_col,
         } => {
             render_popup(
                 items,
@@ -136,6 +139,7 @@ fn render_box(
                 *max_visible,
                 bg_style,
                 selected_style,
+                *anchor_col,
                 x,
                 y,
                 width,
@@ -237,6 +241,7 @@ fn render_popup(
     max_visible: usize,
     bg_style: &Style,
     selected_style: &Style,
+    anchor_col: Option<u16>,
     x: usize,
     y: usize,
     width: usize,
@@ -257,6 +262,34 @@ fn render_popup(
     // them with the popup bg renders a colored bar of empty space over
     // the chat viewport.
     let mut current_y = y + blank_lines;
+
+    // Minimal (nvim-pmenu-style) mode: a content-width box at the anchor
+    // column, labels only — the rest of the strip stays transparent. The
+    // 1-cell pad puts labels at anchor + 1, aligned with the completed word.
+    if let Some(anchor) = anchor_col {
+        let box_w = visible_items
+            .iter()
+            .map(|item| visible_width(&item.label))
+            .max()
+            .unwrap_or(0)
+            .saturating_add(2)
+            .min(width);
+        let bx = x + (anchor as usize).min(width.saturating_sub(box_w));
+
+        for (i, item) in visible_items.iter().enumerate() {
+            let is_selected = viewport_offset + i == selected;
+            let bg = if is_selected { selected_bg } else { popup_bg };
+            let label_w = visible_width(&item.label);
+            let line = if label_w + 2 > box_w {
+                format!(" {}", truncate_with_ellipsis(&item.label, box_w - 1))
+            } else {
+                format!(" {}{}", item.label, " ".repeat(box_w - label_w - 1))
+            };
+            grid.blit_line(&apply_style(&line, &Style::new().bg(bg)), bx, current_y);
+            current_y += 1;
+        }
+        return;
+    }
 
     // A kind column only earns its width when it disambiguates: if every
     // visible item carries the same kind (e.g. the model picker, where each
@@ -598,6 +631,7 @@ mod tests {
                 max_visible: 3,
                 bg_style: Style::new(),
                 selected_style: Style::new(),
+                anchor_col: None,
             },
         ));
 
@@ -626,6 +660,7 @@ mod tests {
                 max_visible: 5,
                 bg_style: Style::new(),
                 selected_style: Style::new(),
+                anchor_col: None,
             },
         ));
 
@@ -661,6 +696,7 @@ mod tests {
                 max_visible: 3,
                 bg_style: Style::new(),
                 selected_style: Style::new(),
+                anchor_col: None,
             },
         ));
 

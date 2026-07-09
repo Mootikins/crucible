@@ -141,6 +141,11 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Acceptance:** all 9 trigger kinds produce candidates; filtering narrows as I type; Esc dismisses without inserting; accepted completion replaces the token correctly.
 **Tests:** T1 candidate-generation matrix inline in `chat_app/autocomplete.rs` (every trigger kind, filter narrowing, dismiss, token replacement), T2 (popup snapshots), T4 (one Tab-cycle smoke).
 
+### US-504: Minimal (pmenu) popups for inline completions
+**As a user**, inline completions (`@` files, `[[` notes) show a compact nvim-pmenu-style box anchored at the word I'm completing, sized to its content — while command completions (`/`, `:`) keep the full-width strip that extends the prompt. `:set completion_style=auto|panel|minimal` overrides the split.
+**Acceptance:** `auto` (default) anchors inline popups at the trigger column with labels aligned to the completed word; `panel` forces the strip everywhere; `minimal` forces anchored boxes everywhere; minimal popups float on the themed `popup_bg`/`popup_selected_bg` surface, panel popups share the prompt's mode bg.
+**Tests:** T1 knob classification in `commands/set.rs`; T1 anchored rendering in `tests/popup_tests.rs` (`popup_anchored_renders_content_width_at_anchor_column`); T2 composited-frame behavior in `tests/popup_tests.rs::completion_style_behavior` (default minimal + panel override).
+
 ### US-502: Command palette
 **As a user**, F1 opens a palette of every command; typing filters; Enter executes the selection.
 **Acceptance:** palette lists slash + REPL commands with descriptions; execution matches typing the command; F1 again / Esc closes.

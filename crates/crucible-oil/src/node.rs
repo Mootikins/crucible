@@ -136,6 +136,10 @@ pub struct PopupNode {
     pub selected_style: Style,
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub unselected_style: Style,
+    /// Minimal (nvim-pmenu-style) mode: anchor the popup at this column and
+    /// size it to its content instead of painting full-width rows.
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
+    pub anchor_col: Option<u16>,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -309,7 +313,18 @@ impl PopupNode {
             bg_style: Style::new().bg(DEFAULT_POPUP_BG),
             selected_style: Style::new().bg(DEFAULT_POPUP_SELECTED_BG),
             unselected_style: Style::new().bg(DEFAULT_POPUP_BG),
+            anchor_col: None,
         }
+    }
+
+    /// Switch to the minimal anchored (nvim-pmenu-style) presentation: the
+    /// popup is sized to its longest visible item and starts at `col`, so a
+    /// 1-cell pad puts item labels at `col + 1` — aligned with the word being
+    /// completed when `col` is the trigger character's display column.
+    #[must_use]
+    pub fn anchored(mut self, col: u16) -> Self {
+        self.anchor_col = Some(col);
+        self
     }
 
     /// Set background color.

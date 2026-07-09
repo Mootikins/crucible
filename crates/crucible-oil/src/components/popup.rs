@@ -12,6 +12,8 @@ pub struct PopupOverlay {
     offset_from_bottom: usize,
     max_visible: usize,
     bg: Option<Color>,
+    selected_bg: Option<Color>,
+    anchor_col: Option<u16>,
 }
 
 impl PopupOverlay {
@@ -23,6 +25,8 @@ impl PopupOverlay {
             offset_from_bottom: 3,
             max_visible: POPUP_MAX_VISIBLE,
             bg: None,
+            selected_bg: None,
+            anchor_col: None,
         }
     }
 
@@ -32,6 +36,20 @@ impl PopupOverlay {
     #[must_use]
     pub fn bg(mut self, color: Color) -> Self {
         self.bg = Some(color);
+        self
+    }
+
+    /// Explicit selected-row surface; defaults to a variant derived from `bg`.
+    #[must_use]
+    pub fn selected_bg(mut self, color: Color) -> Self {
+        self.selected_bg = Some(color);
+        self
+    }
+
+    /// Minimal anchored (nvim-pmenu-style) presentation at this column.
+    #[must_use]
+    pub fn anchor_col(mut self, col: u16) -> Self {
+        self.anchor_col = Some(col);
         self
     }
 
@@ -108,14 +126,21 @@ impl PopupOverlay {
             return Node::Empty;
         }
 
-        let popup_node = match self.bg {
-            Some(bg) => match popup(self.items.clone(), self.selected, self.max_visible) {
-                Node::Popup(node) => {
-                    Node::Popup(node.bg_color(bg).selected_color(bg.selection_variant()))
+        let popup_node = match popup(self.items.clone(), self.selected, self.max_visible) {
+            Node::Popup(mut node) => {
+                if let Some(bg) = self.bg {
+                    node = node.bg_color(bg);
+                    node = node
+                        .selected_color(self.selected_bg.unwrap_or_else(|| bg.selection_variant()));
+                } else if let Some(sel) = self.selected_bg {
+                    node = node.selected_color(sel);
                 }
-                other => other,
-            },
-            None => popup(self.items.clone(), self.selected, self.max_visible),
+                if let Some(col) = self.anchor_col {
+                    node = node.anchored(col);
+                }
+                Node::Popup(node)
+            }
+            other => other,
         };
         overlay_from_bottom(popup_node, self.offset_from_bottom)
     }

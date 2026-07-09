@@ -174,6 +174,8 @@ pub enum LayoutContent {
         bg_style: Style,
         /// Background style for selected item.
         selected_style: Style,
+        /// Minimal-mode anchor column (content-width box) — None = full-width rows.
+        anchor_col: Option<u16>,
     },
 
     /// Container box (column or row).

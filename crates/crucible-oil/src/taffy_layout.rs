@@ -440,6 +440,7 @@ impl LayoutEngine {
                     max_visible: popup.max_visible,
                     bg_style: popup.bg_style,
                     selected_style: popup.selected_style,
+                    anchor_col: popup.anchor_col,
                 },
             ),
 

@@ -294,6 +294,21 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
             key,
             value: CliValue::Set(value),
         }),
+        // Popup presentation: auto = minimal for inline (@file/[[note) triggers,
+        // panel strip for command-line (`:` and `/`) completions.
+        "completionstyle" | "completion_style" => match value.to_lowercase().as_str() {
+            "auto" | "panel" | "minimal" => Ok(SetEffect::TuiLocal {
+                key,
+                value: CliValue::Set(value.to_lowercase()),
+            }),
+            _ => Err(SetError::InvalidValue {
+                key,
+                message: format!(
+                    "unknown completion_style '{}'. Valid: auto, panel, minimal",
+                    value
+                ),
+            }),
+        },
         "precognition.results" => {
             let parsed = value.parse::<usize>().map_err(|_| SetError::InvalidValue {
                 key: key.clone(),
@@ -805,6 +820,31 @@ mod tests {
     #[test]
     fn validate_set_for_cli_empty_not_supported() {
         assert_eq!(validate_set_for_cli(""), Err(SetError::NotSupportedAsCli));
+    }
+
+    #[test]
+    fn completion_style_valid_values_are_tui_local() {
+        for v in ["auto", "panel", "minimal"] {
+            assert_eq!(
+                validate_set_for_cli(&format!("completion_style={v}")),
+                Ok(SetEffect::TuiLocal {
+                    key: "completion_style".to_string(),
+                    value: CliValue::Set(v.to_string()),
+                })
+            );
+        }
+        assert!(matches!(
+            validate_set_for_cli("completionstyle=minimal"),
+            Ok(SetEffect::TuiLocal { .. })
+        ));
+    }
+
+    #[test]
+    fn completion_style_invalid_value_rejected() {
+        assert!(matches!(
+            validate_set_for_cli("completion_style=fancy"),
+            Err(SetError::InvalidValue { .. })
+        ));
     }
 
     #[test]

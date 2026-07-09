@@ -126,6 +126,7 @@ fn format_box_info(box_node: &LayoutBox) -> String {
             max_visible,
             bg_style: _,
             selected_style: _,
+            anchor_col: _,
         } => {
             format!(
                 "Popup items={} selected={} viewport_offset={} max_visible={}",
@@ -304,6 +305,7 @@ mod tests {
                 max_visible: 5,
                 bg_style: Style::new(),
                 selected_style: Style::new(),
+                anchor_col: None,
             },
         );
         let tree = LayoutTree::new(box_node);

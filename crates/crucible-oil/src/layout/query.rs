@@ -335,6 +335,7 @@ mod tests {
                 max_visible: 5,
                 bg_style: Style::new(),
                 selected_style: Style::new(),
+                anchor_col: None,
             },
         );
 

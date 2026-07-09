@@ -764,6 +764,7 @@ mod tests {
                 max_visible: 5,
                 bg_style: crucible_oil::style::Style::new(),
                 selected_style: crucible_oil::style::Style::new(),
+                anchor_col: None,
             },
         )
         .with_key("popup");

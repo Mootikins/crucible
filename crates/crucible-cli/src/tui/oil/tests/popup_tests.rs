@@ -69,6 +69,46 @@ fn popup_shows_kind_column_when_mixed() {
     );
 }
 
+/// Minimal (nvim-pmenu-style) popup: anchored at a column, sized to its
+/// content, so it only occludes its own rectangle instead of a full strip.
+#[test]
+fn popup_anchored_renders_content_width_at_anchor_column() {
+    let items = vec![
+        PopupItemNode {
+            label: "alpha.md".into(),
+            description: None,
+            kind: Some("file".into()),
+        },
+        PopupItemNode {
+            label: "beta_notes.md".into(),
+            description: None,
+            kind: Some("file".into()),
+        },
+    ];
+    let node = match popup(items, 0, 10) {
+        Node::Popup(p) => Node::Popup(p.anchored(10)),
+        other => other,
+    };
+    let output = render_to_string(&node, 80);
+    let stripped = crucible_oil::ansi::strip_ansi(&output);
+    let line = stripped
+        .lines()
+        .find(|l| l.contains("beta_notes.md"))
+        .expect("item rendered");
+
+    // 1-cell pad inside the box: label starts at anchor + 1.
+    assert_eq!(
+        line.find("beta_notes.md"),
+        Some(11),
+        "label should sit at anchor column + 1: {line:?}"
+    );
+    // Content-width box: longest label (13) + 2 pad = 15 wide from col 10.
+    assert!(
+        line.trim_end().len() <= 10 + 15,
+        "anchored popup must not paint a full-width strip: {line:?}"
+    );
+}
+
 #[test]
 fn popup_renders_descriptions() {
     let node = popup(sample_items(), 0, 10);
@@ -601,5 +641,86 @@ mod composer_stability_tests {
             max_growth,
             height_empty
         );
+    }
+}
+
+mod completion_style_behavior {
+    use crate::tui::oil::app::App;
+    use crate::tui::oil::chat_app::OilChatApp;
+    use crate::tui::oil::event::Event;
+    use crate::tui::oil::tests::helpers::view_with_default_ctx;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crucible_oil::ansi::strip_ansi;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::empty())
+    }
+
+    /// Inline (@file) completion uses the minimal anchored popup by default:
+    /// label aligned with the word being completed, not a full-width strip.
+    #[test]
+    fn file_popup_is_minimal_and_anchored_by_default() {
+        use crucible_oil::planning::FramePlanner;
+
+        let mut app = OilChatApp::default();
+        app.set_workspace_files(vec!["alpha.rs".to_string(), "beta.rs".to_string()]);
+
+        for c in "hello @".chars() {
+            app.update(Event::Key(key(KeyCode::Char(c))));
+        }
+
+        let tree = view_with_default_ctx(&app);
+        let mut planner = FramePlanner::new(80, 24);
+        let snapshot = planner.plan(&tree);
+        let stripped = strip_ansi(&snapshot.viewport_with_overlays(80));
+
+        let line = stripped
+            .lines()
+            .find(|l| l.contains("beta.rs") && !l.contains("hello"))
+            .expect("popup item rendered");
+        // trigger '@' is at display col 9 (" > hello @"); word start = col 10.
+        let col = line
+            .find("beta.rs")
+            .map(|b| line[..b].chars().count())
+            .expect("label present");
+        assert_eq!(
+            col, 10,
+            "minimal popup label should align with the completed word: {line:?}"
+        );
+    }
+
+    /// `:set completion_style=panel` forces the classic full-width strip for
+    /// inline completions too.
+    #[test]
+    fn completion_style_panel_forces_strip_for_inline() {
+        use crucible_oil::planning::FramePlanner;
+
+        let mut app = OilChatApp::default();
+        app.set_workspace_files(vec!["alpha.rs".to_string(), "beta.rs".to_string()]);
+
+        for c in ":set completion_style=panel".chars() {
+            app.update(Event::Key(key(KeyCode::Char(c))));
+        }
+        app.update(Event::Key(key(KeyCode::Enter)));
+
+        for c in "hello @".chars() {
+            app.update(Event::Key(key(KeyCode::Char(c))));
+        }
+
+        let tree = view_with_default_ctx(&app);
+        let mut planner = FramePlanner::new(80, 24);
+        let snapshot = planner.plan(&tree);
+        let stripped = strip_ansi(&snapshot.viewport_with_overlays(80));
+
+        let line = stripped
+            .lines()
+            .find(|l| l.contains("beta.rs") && !l.contains("hello"))
+            .expect("popup item rendered");
+        // Panel strip: " ▸ "/"   " prefix puts the label at col 3.
+        let col = line
+            .find("beta.rs")
+            .map(|b| line[..b].chars().count())
+            .expect("label present");
+        assert_eq!(col, 3, "panel style should left-anchor the strip: {line:?}");
     }
 }

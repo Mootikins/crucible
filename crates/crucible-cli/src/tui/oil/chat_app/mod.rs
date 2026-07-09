@@ -398,7 +398,24 @@ impl OilChatApp {
     }
 
     /// Popup overlay for command completion.
-    fn popup_overlay_view(&self, _ctx: &ViewContext<'_>) -> Node {
+    /// Effective completion popup presentation from the `:set` knob.
+    /// `auto` (default) = minimal for inline triggers, panel for commands.
+    fn completion_style(&self) -> &'static str {
+        // Both key spellings are accepted by `:set`; stored under whichever
+        // the user typed.
+        for key in ["completion_style", "completionstyle"] {
+            if let Some(v) = self.runtime_config.get(key) {
+                match v.as_string() {
+                    Some("panel") => return "panel",
+                    Some("minimal") => return "minimal",
+                    _ => {}
+                }
+            }
+        }
+        "auto"
+    }
+
+    fn popup_overlay_view(&self, ctx: &ViewContext<'_>) -> Node {
         if !self.popup.show {
             return Node::Empty;
         }
@@ -409,19 +426,54 @@ impl OilChatApp {
         }
 
         use crate::tui::oil::components::{InputMode as ComponentInputMode, PopupOverlay};
+        use crucible_oil::components::InputStyle;
+        use state::AutocompleteKind;
 
-        // The popup sits on the prompt and must read as the same surface, so
-        // its bg tracks the CURRENT input mode's (possibly user-themed) bg —
-        // command-mode completions match the `:` prompt, shell the `!` prompt.
-        let prompt_bg = crucible_oil::components::InputStyle::bg_color(
-            &ComponentInputMode::from_content(self.input.content()),
+        // Inline triggers complete a word inside the message being written;
+        // command triggers (`:` and `/`) change the message type and complete
+        // a whole entry line.
+        let inline_trigger = matches!(
+            self.popup.kind,
+            AutocompleteKind::File | AutocompleteKind::Note
         );
+        let minimal = match self.completion_style() {
+            "panel" => false,
+            "minimal" => true,
+            _ => inline_trigger,
+        };
 
-        PopupOverlay::new(items)
+        let mode = ComponentInputMode::from_content(self.input.content());
+        let overlay = PopupOverlay::new(items)
             .selected(self.popup.selected)
-            .max_visible(POPUP_HEIGHT)
-            .bg(prompt_bg)
-            .view(&crucible_oil::focus::FocusContext::default())
+            .max_visible(POPUP_HEIGHT);
+
+        let overlay = if minimal {
+            // nvim-pmenu style: content-width box anchored at the trigger's
+            // display column so item labels align with the word being
+            // completed; floats on the themed popup surface.
+            let t = crate::tui::oil::theme::active();
+            let prompt_width = InputStyle::prompt(&mode).len();
+            let content_width = (ctx.terminal_size.0 as usize)
+                .saturating_sub(prompt_width + 1)
+                .max(1);
+            let chars_before = self.input.content()[..self.popup.trigger_pos]
+                .chars()
+                .count();
+            let display_pos = InputStyle::display_cursor(&mode, chars_before);
+            let anchor = prompt_width + (display_pos % content_width);
+
+            overlay
+                .bg(t.resolve_color(t.colors.popup_bg))
+                .selected_bg(t.resolve_color(t.colors.popup_selected_bg))
+                .anchor_col(anchor as u16)
+        } else {
+            // Panel strip: the popup extends the prompt, so it shares the
+            // CURRENT input mode's (possibly user-themed) bg — command-mode
+            // completions match the `:` prompt, shell the `!` prompt.
+            overlay.bg(InputStyle::bg_color(&mode))
+        };
+
+        overlay.view(&crucible_oil::focus::FocusContext::default())
     }
 
     /// Periodic maintenance called each render frame.
