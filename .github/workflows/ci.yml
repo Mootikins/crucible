@@ -57,6 +57,10 @@ jobs:
         run: cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent
       - name: Run tests with nextest
         run: cargo nextest run --profile ci --workspace
+      # Oil's serde JSON contract (consumed by the web UI) and its proptests
+      # are feature-gated off the default build — run them explicitly.
+      - name: Run oil feature-gated tests (serde contract + proptests)
+        run: cargo nextest run --profile ci -p crucible-oil --features serde,test-utils
       - name: Verify Lua stubs are not stale
         run: cargo nextest run --profile ci -p crucible-lua -E 'test(stubs)' --no-capture
 

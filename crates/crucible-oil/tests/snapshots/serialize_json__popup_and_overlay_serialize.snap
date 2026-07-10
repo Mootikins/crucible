@@ -22,9 +22,9 @@ expression: to_json(&node)
         "bg_style": {
           "bg": {
             "rgb": [
-              30,
-              34,
-              42
+              40,
+              44,
+              52
             ]
           }
         },
@@ -40,9 +40,9 @@ expression: to_json(&node)
         "unselected_style": {
           "bg": {
             "rgb": [
-              30,
-              34,
-              42
+              40,
+              44,
+              52
             ]
           }
         }
