@@ -58,6 +58,11 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Acceptance:** each documented key round-trips (set → query shows new value); invalid keys error with a message; session-scoped keys sync to the daemon; `:set key?` shows value, `&` resets.
 **Tests:** T1 per-key dispatch matrix in `chat_app/command_handling.rs` (test-case over every session-scoped key: daemon-sync emission, invalid-value warnings, query round-trip, reset), T2 (`:set` result notification render).
 
+### US-108: `:lua` escape hatch
+**As a power user**, `:lua <expr>` (or `:= <expr>`) evaluates a Lua expression in the daemon's plugin runtime and shows the result as a system message, so I can poke config/state beyond the `:set` knobs without leaving the chat. The default command line never evals implicitly — unknown `:` input still gets command suggestions, not execution.
+**Acceptance:** `:lua 1+1` renders `2` in the viewport; runtime errors surface as a `lua:`-prefixed warning notification; `:lua` with no body shows usage; works identically via `:=`.
+**Tests:** T1 dispatch + result/error rendering in `chat_app/command_handling.rs` (US-108 block); daemon `lua.eval` RPC has its own coverage.
+
 ### US-105: Double Ctrl+C quit
 **As a user**, one Ctrl+C clears input or warns; a second within 300ms quits, so I can't quit by accident.
 **Acceptance:** first press with text clears it; with empty input shows the quit warning in the status bar; second within window exits cleanly.

@@ -515,6 +515,52 @@ impl OilChatRunner {
                             }
                         }
                     }
+                    // Gated on `!self.is_replay`: opens a fresh
+                    // `DaemonClient::connect()` and must not fire during replay.
+                    ChatAppMsg::EvalLua(ref code) if !self.is_replay => {
+                        let code = code.clone();
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
+                            let evaled = match crucible_daemon::DaemonClient::connect().await {
+                                Ok(client) => client
+                                    .call("lua.eval", serde_json::json!({ "code": code }))
+                                    .await
+                                    .map(|resp| {
+                                        resp.get("result")
+                                            .and_then(|r| r.as_str())
+                                            .unwrap_or("nil")
+                                            .to_string()
+                                    })
+                                    .map_err(|e| {
+                                        // Surface just the daemon's message, not
+                                        // the raw `RPC error: {json}` wrapper.
+                                        let raw = e.to_string();
+                                        raw.strip_prefix("RPC error: ")
+                                            .and_then(|j| {
+                                                serde_json::from_str::<serde_json::Value>(j).ok()
+                                            })
+                                            .and_then(|v| {
+                                                v.get("message")
+                                                    .and_then(|m| m.as_str())
+                                                    .map(String::from)
+                                            })
+                                            .unwrap_or(raw)
+                                    }),
+                                Err(e) => Err(format!("daemon connect failed: {}", e)),
+                            };
+                            let msg = match evaled {
+                                Ok(output) => ChatAppMsg::LuaEvaled {
+                                    output,
+                                    is_error: false,
+                                },
+                                Err(output) => ChatAppMsg::LuaEvaled {
+                                    output,
+                                    is_error: true,
+                                },
+                            };
+                            let _ = tx.send(msg);
+                        }));
+                    }
                     // Gated on `!self.is_replay`: plugin reload opens a fresh
                     // `DaemonClient::connect()` and must not fire during replay.
                     ChatAppMsg::ReloadPlugin(ref name) if !self.is_replay => {
@@ -660,6 +706,7 @@ impl OilChatRunner {
                     // side-effect for these variants must stay behind that
                     // guard so the TUI-only guarantee holds.
                     ChatAppMsg::ReloadPlugin(_)
+                    | ChatAppMsg::EvalLua(_)
                     | ChatAppMsg::ExecuteSlashCommand(_)
                     | ChatAppMsg::ExportSession(_)
                     | ChatAppMsg::FetchModels => {

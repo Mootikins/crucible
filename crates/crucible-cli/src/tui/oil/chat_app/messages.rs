@@ -193,6 +193,11 @@ pub enum ChatAppMsg {
     },
     /// **Command** (TUI → daemon): Reload a Lua/Fennel plugin.
     ReloadPlugin(String),
+    /// **Command** (TUI → daemon): Evaluate a Lua expression via `lua.eval`
+    /// (the `:lua` / `:=` escape hatch).
+    EvalLua(String),
+    /// **Event** (daemon → TUI): Result of a `:lua` evaluation.
+    LuaEvaled { output: String, is_error: bool },
     /// **Command** (TUI → daemon): Execute a slash command (/:command args).
     ExecuteSlashCommand(String),
     /// **Command** (TUI → daemon): Export session to markdown file.
@@ -302,6 +307,8 @@ impl ChatAppMsg {
             | Self::ExecuteSlashCommand(_)
             | Self::ExportSession(_)
             | Self::ReloadPlugin(_)
+            | Self::EvalLua(_)
+            | Self::LuaEvaled { .. }
             | Self::Undo(_)
             | Self::UndoComplete { .. }
             | Self::SessionInitialized(_)

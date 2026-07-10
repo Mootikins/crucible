@@ -236,6 +236,17 @@ impl OilChatApp {
             ChatAppMsg::Status(status) => {
                 self.status = status;
             }
+            ChatAppMsg::LuaEvaled { output, is_error } => {
+                if is_error {
+                    self.notification_area
+                        .add(crucible_core::types::Notification::warning(format!(
+                            "lua: {}",
+                            output
+                        )));
+                } else {
+                    self.add_system_message(output);
+                }
+            }
             ChatAppMsg::ModeChanged(mode) => {
                 self.mode = super::state::ChatMode::parse(&mode);
             }
@@ -325,6 +336,7 @@ impl OilChatApp {
 
             // Command-only: side effects handled by chat_runner::process_action
             ChatAppMsg::ReloadPlugin(_)
+            | ChatAppMsg::EvalLua(_)
             | ChatAppMsg::ExecuteSlashCommand(_)
             | ChatAppMsg::ExportSession(_)
             | ChatAppMsg::Undo(_) => {}

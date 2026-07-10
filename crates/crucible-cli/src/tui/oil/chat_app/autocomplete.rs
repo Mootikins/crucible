@@ -104,6 +104,14 @@ impl OilChatApp {
                 let after_colon = &before_cursor[colon_pos + 1..];
                 if let Some(space_pos) = after_colon.find(char::is_whitespace) {
                     let command = after_colon[..space_pos].to_string();
+
+                    // `:lua` / `:=` bodies are Lua expressions — never
+                    // arg-complete them (Enter must submit the eval, not
+                    // accept a file completion).
+                    if command == "lua" || command.starts_with('=') {
+                        return None;
+                    }
+
                     let args_part = after_colon[space_pos..].trim_start();
                     let filter = args_part
                         .split_whitespace()
@@ -206,6 +214,7 @@ impl OilChatApp {
                     (":export", "Export session to file", "core"),
                     (":messages", "Toggle notification drawer", "core"),
                     (":reload", "Reload plugin(s)", "core"),
+                    (":lua", "Evaluate Lua expression", "core"),
                     (":set", "View/modify runtime options", "core"),
                 ],
                 &filter,
@@ -689,6 +698,26 @@ mod tests {
         let (kind, labels) = probe(&mut app, ":set ");
         assert!(matches!(kind, AutocompleteKind::SetOption { option: None }));
         assert!(!labels.is_empty(), "set options should be non-empty");
+    }
+
+    /// `:lua` / `:=` bodies are Lua expressions, not command arguments —
+    /// arg-completing them hijacks Enter (accepting a file completion instead
+    /// of submitting the eval).
+    #[test]
+    fn lua_body_does_not_trigger_arg_completion() {
+        let mut app = app();
+        let (kind, _) = probe(&mut app, ":lua 21 * 2");
+        assert_eq!(
+            kind,
+            AutocompleteKind::None,
+            ":lua body must not autocomplete"
+        );
+        let (kind, _) = probe(&mut app, ":= cru.config");
+        assert_eq!(
+            kind,
+            AutocompleteKind::None,
+            ":= body must not autocomplete"
+        );
     }
 
     #[test]

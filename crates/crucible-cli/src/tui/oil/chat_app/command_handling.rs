@@ -37,6 +37,7 @@ const KNOWN_REPL_COMMANDS: &[&str] = &[
     "reload",
     "config",
     "pick",
+    "lua",
 ];
 
 /// Minimal Levenshtein distance for command suggestions.
@@ -87,6 +88,7 @@ fn help_text(category: Option<&str>) -> String {
              :mcp            — Show MCP server status\n\
              :plugins        — Show loaded plugins\n\
              :reload <name>  — Reload a plugin\n\
+             :lua <expr>     — Evaluate Lua (daemon-side; := shorthand)\n\
              :palette        — Open command palette (F1)\n\
              :config         — Show current configuration\n\
              :help [topic]   — Show help"
@@ -169,6 +171,30 @@ impl OilChatApp {
 
         if command == "config show" || command == "config" {
             return self.handle_config_show_command();
+        }
+
+        // `:lua <expr>` / `:= <expr>` — Lua escape hatch (evaluated daemon-side
+        // via lua.eval; the default command line never evals implicitly).
+        if command == "lua" {
+            self.notification_area
+                .add(crucible_core::types::Notification::warning(
+                    "Usage: :lua <expr>  (or := <expr>)".to_string(),
+                ));
+            return Action::Continue;
+        }
+        if let Some(code) = command
+            .strip_prefix("lua ")
+            .or_else(|| command.strip_prefix('='))
+        {
+            let code = code.trim();
+            if code.is_empty() {
+                self.notification_area
+                    .add(crucible_core::types::Notification::warning(
+                        "Usage: :lua <expr>  (or := <expr>)".to_string(),
+                    ));
+                return Action::Continue;
+            }
+            return Action::Send(ChatAppMsg::EvalLua(code.to_string()));
         }
 
         match command {
@@ -1093,6 +1119,65 @@ mod tests {
         let mut app = app();
         assert!(matches!(app.handle_repl_command(":quit"), Action::Quit));
         assert!(matches!(app.handle_repl_command(":q"), Action::Quit));
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // US-108: `:lua` escape hatch
+    // ════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn repl_lua_dispatches_eval() {
+        let mut app = app();
+        assert!(matches!(
+            app.handle_repl_command(":lua 1 + 1"),
+            Action::Send(ChatAppMsg::EvalLua(code)) if code == "1 + 1"
+        ));
+    }
+
+    #[test]
+    fn repl_eq_shorthand_dispatches_eval() {
+        let mut app = app();
+        assert!(matches!(
+            app.handle_repl_command(":= cru.config.get('model')"),
+            Action::Send(ChatAppMsg::EvalLua(code)) if code == "cru.config.get('model')"
+        ));
+    }
+
+    #[test]
+    fn repl_lua_without_body_warns_usage() {
+        let mut app = app();
+        let action = app.handle_repl_command(":lua");
+        assert!(matches!(action, Action::Continue));
+        assert!(
+            app.has_notifications(),
+            ":lua with no code should show usage"
+        );
+    }
+
+    #[test]
+    fn lua_evaled_success_renders_system_message() {
+        let mut app = app();
+        app.on_message(ChatAppMsg::LuaEvaled {
+            output: "2".to_string(),
+            is_error: false,
+        });
+        // Rendered into the viewport as a system message, not just statusline.
+        let tree = crate::tui::oil::tests::helpers::view_with_default_ctx(&app);
+        let output = crucible_oil::ansi::strip_ansi(&crucible_oil::render_to_string(&tree, 80));
+        assert!(
+            output.contains('2'),
+            "eval result should be visible: {output}"
+        );
+    }
+
+    #[test]
+    fn lua_evaled_error_surfaces_notification() {
+        let mut app = app();
+        app.on_message(ChatAppMsg::LuaEvaled {
+            output: "attempt to index a nil value".to_string(),
+            is_error: true,
+        });
+        assert!(app.has_notifications());
     }
 
     #[test]
