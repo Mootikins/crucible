@@ -25,49 +25,28 @@ release-cli:
 
 # === Test ===
 
-# Run tests by tier (quick|fixtures|infra|slow|full|all)
-# - quick: Fast unit tests, no external deps (default)
-# - fixtures: Tests using docs/ or examples/test-kiln
-# - infra: Tests requiring Ollama, ACP agents
-# - slow: Performance benchmarks and timing-sensitive tests
-# - full: All tests including ignored
-# - all: Quick + fixtures + infra + slow (no ignored)
+# Run tests (quick|ignored|full). Slow/external tests are gated with
+# #[ignore], not cargo features — there is no feature-based tier system.
+# - quick: everything not #[ignore]d (default)
+# - ignored: only #[ignore]d tests (need daemon/Ollama/agent binaries; see
+#   each test's ignore reason for its prerequisites)
+# - full: quick + ignored
 test tier="quick":
     #!/usr/bin/env bash
     set -euo pipefail
     case "{{tier}}" in
         quick)
-            echo "Running quick tests (no features)..."
-            cargo nextest run --workspace 2>/dev/null || cargo test --workspace
+            cargo nextest run --workspace
             ;;
-        fixtures)
-            echo "Running fixture tests..."
-            cargo nextest run --workspace --features test-fixtures 2>/dev/null || \
-            cargo test --workspace --features test-fixtures
-            ;;
-        infra)
-            echo "Running infrastructure tests..."
-            cargo nextest run --workspace --features test-infrastructure 2>/dev/null || \
-            cargo test --workspace --features test-infrastructure
-            ;;
-        slow)
-            echo "Running slow tests..."
-            cargo nextest run --workspace --features test-slow 2>/dev/null || \
-            cargo test --workspace --features test-slow
+        ignored)
+            cargo nextest run --workspace --run-ignored ignored-only
             ;;
         full)
-            echo "Running ALL tests including ignored..."
-            cargo nextest run --workspace --features test-fixtures,test-infrastructure,test-slow -- --include-ignored 2>/dev/null || \
-            cargo test --workspace --features test-fixtures,test-infrastructure,test-slow -- --ignored
-            ;;
-        all)
-            echo "Running all tiered tests (quick + fixtures + infra + slow)..."
-            cargo nextest run --workspace --features test-fixtures,test-infrastructure,test-slow 2>/dev/null || \
-            cargo test --workspace --features test-fixtures,test-infrastructure,test-slow
+            cargo nextest run --workspace --run-ignored all
             ;;
         *)
             echo "Unknown tier: {{tier}}"
-            echo "Valid tiers: quick, fixtures, infra, slow, full, all"
+            echo "Valid tiers: quick, ignored, full"
             exit 1
             ;;
     esac

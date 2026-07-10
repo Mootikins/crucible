@@ -646,7 +646,7 @@ async fn test_dry_run_with_verbose() -> Result<()> {
 // 4. Verify behavior via timeout completion (Err = timed out = watch was running)
 
 #[tokio::test]
-#[ignore = "slow watch integration test - run with just test slow"]
+#[ignore = "slow watch integration test - run with just test ignored"]
 async fn test_watch_mode_starts_and_runs() -> Result<()> {
     // GIVEN: A test kiln with initial processing complete
     let temp_dir = create_test_kiln()?;
@@ -676,7 +676,7 @@ async fn test_watch_mode_starts_and_runs() -> Result<()> {
 }
 
 #[tokio::test]
-#[ignore = "slow watch integration test - run with just test slow"]
+#[ignore = "slow watch integration test - run with just test ignored"]
 async fn test_watch_detects_file_modification() -> Result<()> {
     // GIVEN: A test kiln with initial processing
     let temp_dir = create_test_kiln()?;
@@ -732,7 +732,7 @@ async fn test_watch_detects_file_modification() -> Result<()> {
 }
 
 #[tokio::test]
-#[ignore = "slow watch integration test - run with just test slow"]
+#[ignore = "slow watch integration test - run with just test ignored"]
 async fn test_watch_detects_new_file_creation() -> Result<()> {
     // GIVEN: A test kiln with watch mode starting
     let temp_dir = create_test_kiln()?;
@@ -774,7 +774,7 @@ async fn test_watch_detects_new_file_creation() -> Result<()> {
 }
 
 #[tokio::test]
-#[ignore = "slow watch integration test - run with just test slow"]
+#[ignore = "slow watch integration test - run with just test ignored"]
 async fn test_watch_detects_file_deletion() -> Result<()> {
     // GIVEN: A test kiln with initial processing
     let temp_dir = create_test_kiln()?;

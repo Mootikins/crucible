@@ -329,7 +329,9 @@ Features are declared per-crate. The notable ones:
 | `web` | daemon | No | Web UI server support |
 | `serde` | oil | No | Serialize/deserialize render nodes |
 | `test-utils` | core, cli, daemon, oil | No | Mock providers / test helpers |
-| `test-fixtures`, `test-slow` | cli, daemon | No | Test tier gating (see justfile) |
+
+Slow/external tests are gated with `#[ignore]` (run via `just test ignored`
+or `just test full`), not cargo features.
 
 ### Vendored Dependencies
 
@@ -343,14 +345,20 @@ When patching: add `NOTE(crucible):` comments, update `vendor/README.md`, add re
 
 ### Testing
 
-Tests use **cargo-nextest** with tier profiles:
+Tests use **cargo-nextest**. Profiles select retry/timeout behavior only —
+none of them filter the test set. To scope a run, filter by package
+(`-p crucible-daemon`) or nextest expression (`-E 'test(sqlite)'`).
 
-| Tier | Purpose | Command |
-|------|---------|---------|
-| **Unit** | Fast, isolated, mocked I/O | `cargo nextest run --profile unit` |
-| **Integration** | Real DB, real files | `cargo nextest run --profile integration` |
-| **Contract** | API/trait verification | `cargo nextest run --profile contract` |
-| **CI** | All non-slow tests | `cargo nextest run --profile ci` |
+| Profile | Behavior | Command |
+|---------|----------|---------|
+| **unit** | Tight timeouts, bail on first failure | `cargo nextest run --profile unit` |
+| **integration** | Long timeouts for real I/O, no bail | `cargo nextest run --profile integration` |
+| **contract** | Strict: no retries | `cargo nextest run --profile contract` |
+| **ci** | 1 retry, no bail | `cargo nextest run --profile ci` |
+
+Tests needing external prerequisites (daemon, Ollama, agent binaries) are
+`#[ignore]`d with the prerequisite in the reason string; run them with
+`just test ignored` / `just test full`.
 
 Guidelines:
 - Mock external dependencies in unit tests

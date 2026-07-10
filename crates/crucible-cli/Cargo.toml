@@ -34,9 +34,6 @@ default = ["fastembed"]
 fastembed = ["crucible-daemon/fastembed"]
 
 
-# Test tier flags (see justfile for usage)
-test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln
-test-slow = []           # Performance benchmarks and timing tests
 test-utils = []          # Expose testing utilities for integration tests
 
 [dependencies]
