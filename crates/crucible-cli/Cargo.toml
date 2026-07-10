@@ -34,7 +34,9 @@ default = ["fastembed"]
 fastembed = ["crucible-daemon/fastembed"]
 
 
-test-utils = []          # Expose testing utilities for integration tests
+# Expose testing utilities (web mock daemon, proptest strategies) for
+# integration tests; pulls the otherwise dev-only deps they need.
+test-utils = ["dep:tempfile", "dep:proptest"]
 
 [dependencies]
 crucible-core = { path = "../crucible-core" }
@@ -55,6 +57,11 @@ agent-client-protocol = { version = "0.10.4", features = [
     "unstable_session_close",
 ] }
 tokio-util = { version = "0.7", features = ["compat"] }
+
+# Only compiled under `test-utils` (web test_support); dev-dependencies
+# cannot be referenced from library code, so they're optional real deps.
+tempfile = { workspace = true, optional = true }
+proptest = { version = "1.11", optional = true }
 
 # Web UI server (src/web — Axum routes over daemon RPC, embedded frontend)
 axum = { workspace = true, features = ["macros"] }

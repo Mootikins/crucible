@@ -1,24 +1,31 @@
-#[cfg(test)]
+// The mock daemon + router helpers are shared with integration tests
+// (tests/route_contract_tests/) via the `test-utils` feature — crucible-cli
+// dev-depends on itself with that feature, so they compile in every test
+// build without CI feature flags. Do NOT fork a second copy: the two copies
+// this replaced drifted (different resume_from_storage shapes).
+#[cfg(any(test, feature = "test-utils"))]
 use crate::web::routes::{
     chat_routes, health_routes, project_routes, search_routes, session_routes,
 };
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 use crate::web::services::daemon::{AppState, EventBroker, ReconnectingDaemon};
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 use axum::Router;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 use crucible_core::config::CliAppConfig;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 use crucible_daemon::DaemonClient;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 use serde_json::{json, Value};
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
+use std::collections::HashMap;
+#[cfg(any(test, feature = "test-utils"))]
 use std::sync::Arc;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 use tempfile::TempDir;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 use tokio::net::UnixListener;
 
 use std::net::Ipv4Addr;
@@ -114,25 +121,40 @@ pub fn arb_safe_path() -> impl Strategy<Value = String> {
         })
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 /// A mock daemon that listens on a Unix socket and responds to JSON-RPC calls
 /// with canned responses. This allows testing HTTP routes without a real daemon.
 pub struct MockDaemon {
     _tmp: TempDir,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
+/// Per-method scripted error envelopes: method name → (code, message).
+/// Methods present here answer `{"error": {...}}` instead of a result, so
+/// tests can exercise the daemon-error → HTTP-status surface.
+pub type MockErrors = HashMap<String, (i64, String)>;
+
+#[cfg(any(test, feature = "test-utils"))]
 /// Start a mock daemon on a temporary Unix socket. Returns the mock daemon
 /// handle (holds TempDir alive) and a connected DaemonClient.
 pub async fn start_mock_daemon() -> (MockDaemon, DaemonClient) {
+    start_mock_daemon_with_errors(MockErrors::new()).await
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// Like [`start_mock_daemon`], but methods listed in `errors` respond with a
+/// JSON-RPC error envelope instead of their canned result.
+pub async fn start_mock_daemon_with_errors(errors: MockErrors) -> (MockDaemon, DaemonClient) {
     let tmp = tempfile::tempdir().expect("Failed to create temp dir");
     let socket_path = tmp.path().join("mock-daemon.sock");
 
     let listener = UnixListener::bind(&socket_path).expect("Failed to bind mock socket");
 
     // Spawn mock daemon server
+    let errors = Arc::new(errors);
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
+            let errors = errors.clone();
             tokio::spawn(async move {
                 let (read, mut write) = stream.into_split();
                 let mut reader = BufReader::new(read);
@@ -151,13 +173,19 @@ pub async fn start_mock_daemon() -> (MockDaemon, DaemonClient) {
                             let id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
                             let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
 
-                            let result = mock_rpc_response(method, &msg);
-
-                            let response = json!({
-                                "jsonrpc": "2.0",
-                                "id": id,
-                                "result": result
-                            });
+                            let response = if let Some((code, message)) = errors.get(method) {
+                                json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "error": { "code": code, "message": message }
+                                })
+                            } else {
+                                json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": mock_rpc_response(method, &msg)
+                                })
+                            };
 
                             let mut resp_str = serde_json::to_string(&response).unwrap();
                             resp_str.push('\n');
@@ -183,9 +211,9 @@ pub async fn start_mock_daemon() -> (MockDaemon, DaemonClient) {
     (MockDaemon { _tmp: tmp }, client)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 /// Generate mock RPC responses based on method name.
-fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
+pub fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
     match method {
         "kiln.list" => json!([]),
         "list_notes" => json!([]),
@@ -304,11 +332,40 @@ fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
             "plugins_toml": "/tmp/plugins.toml",
             "purged_dir": Value::Null,
         }),
+        "skills.list" => json!({
+            "skills": [
+                {
+                    "name": "test-skill",
+                    "scope": "user",
+                    "description": "A test skill",
+                    "shadowed_count": 0,
+                }
+            ]
+        }),
+        "skills.get" => json!({
+            "name": "test-skill",
+            "scope": "user",
+            "description": "A test skill",
+            "source_path": "/tmp/skill.md",
+            "agent": Value::Null,
+            "license": Value::Null,
+            "body": "# Test Skill\n\nContent.",
+        }),
+        "skills.search" => json!({
+            "skills": [
+                {
+                    "name": "matched-skill",
+                    "scope": "user",
+                    "description": "Matched",
+                    "shadowed_count": 0,
+                }
+            ]
+        }),
         _ => json!(null),
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 /// Build an AppState using a mock daemon client.
 pub fn build_mock_state(client: DaemonClient) -> AppState {
     AppState {
@@ -320,7 +377,7 @@ pub fn build_mock_state(client: DaemonClient) -> AppState {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 /// Per-call unique layout path so parallel tests never share a file.
 /// Layout-specific tests build their own AppState over a TempDir instead.
 pub fn unique_test_layout_path() -> std::path::PathBuf {
@@ -333,7 +390,7 @@ pub fn unique_test_layout_path() -> std::path::PathBuf {
     ))
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 /// Build the full app router with mock state.
 pub fn build_test_app(state: AppState) -> Router {
     Router::new()

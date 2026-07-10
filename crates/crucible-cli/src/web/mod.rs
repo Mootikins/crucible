@@ -1,7 +1,7 @@
 pub mod routes;
 pub mod server;
 pub mod services;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod test_support;
 
 mod assets;

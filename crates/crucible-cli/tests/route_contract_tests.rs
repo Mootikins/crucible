@@ -11,6 +11,8 @@ mod shared;
 mod chat;
 #[path = "route_contract_tests/commands.rs"]
 mod commands;
+#[path = "route_contract_tests/daemon_errors.rs"]
+mod daemon_errors;
 #[path = "route_contract_tests/errors.rs"]
 mod errors;
 #[path = "route_contract_tests/health.rs"]
