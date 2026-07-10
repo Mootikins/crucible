@@ -193,10 +193,7 @@ impl ChatEvent {
                     .or_else(|| data["title"].as_str())
                     .unwrap_or("")
                     .to_string(),
-                arguments: data
-                    .get("args")
-                    .or_else(|| data.get("arguments"))
-                    .cloned(),
+                arguments: data.get("args").or_else(|| data.get("arguments")).cloned(),
             },
 
             "tool_result" => ChatEvent::ToolResult {

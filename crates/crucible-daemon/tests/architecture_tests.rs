@@ -361,10 +361,22 @@ fn config_methods_table_covers_every_knob() {
         .collect();
 
     let sides = [
-        ("client set", captures(r"fn session_set_([a-z0-9_]+)\(", &client)),
-        ("client get", captures(r"fn session_get_([a-z0-9_]+)\(", &client)),
-        ("server set", captures(r"handle_session_set_([a-z0-9_]+)", &server)),
-        ("server get", captures(r"handle_session_get_([a-z0-9_]+)", &server)),
+        (
+            "client set",
+            captures(r"fn session_set_([a-z0-9_]+)\(", &client),
+        ),
+        (
+            "client get",
+            captures(r"fn session_get_([a-z0-9_]+)\(", &client),
+        ),
+        (
+            "server set",
+            captures(r"handle_session_set_([a-z0-9_]+)", &server),
+        ),
+        (
+            "server get",
+            captures(r"handle_session_get_([a-z0-9_]+)", &server),
+        ),
     ];
 
     let mut failures = Vec::new();

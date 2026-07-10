@@ -115,7 +115,10 @@ fn type_and_submit(app: &mut OilChatApp, line: &str) -> Action<ChatAppMsg> {
             KeyModifiers::NONE,
         )));
     }
-    app.update(Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)))
+    app.update(Event::Key(KeyEvent::new(
+        KeyCode::Enter,
+        KeyModifiers::NONE,
+    )))
 }
 
 /// Run an action through the real `process_action` and return the recorded
