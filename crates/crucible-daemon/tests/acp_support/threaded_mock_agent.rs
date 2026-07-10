@@ -254,6 +254,13 @@ impl ThreadedMockAgent {
                 // end the turn with `stopReason: cancelled` per ACP. The
                 // client's overall streaming timeout bounds a test that never
                 // cancels.
+                //
+                // NOTE: this inner loop does not poll the outer shutdown
+                // oneshot — a handle-drop only unblocks it via the transport
+                // closing (read_line → Ok(0)). Dropping the client closes the
+                // duplex stream, so that path is what every current test
+                // exercises; a shutdown signal without a client drop would
+                // wait out the nextest timeout instead.
                 let mut line = String::new();
                 loop {
                     line.clear();
