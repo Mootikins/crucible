@@ -10,25 +10,47 @@ static SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(SyntaxSet::load_defaults_newlines
 static THEME_SET: Lazy<ThemeSet> = Lazy::new(ThemeSet::load_defaults);
 
 /// Process-wide highlighting state, mirroring how render code reads the TUI
-/// palette from `theme::active()`. Seeded from `cli.highlighting` at startup;
-/// `:set theme` updates it at runtime. `None` fields fall back to the
+/// palette from `theme::active()`. The config-seeded values and the `:set
+/// theme` override are kept separate so `:set theme&` (reset) can revert
+/// rendering to the seed. `None` fields fall back to the
 /// `SyntaxHighlighter::new()` defaults.
-static ACTIVE_HIGHLIGHTING: std::sync::RwLock<(Option<String>, Option<bool>)> =
-    std::sync::RwLock::new((None, None));
+#[derive(Default)]
+struct HighlightingState {
+    seeded_theme: Option<String>,
+    seeded_enabled: Option<bool>,
+    override_theme: Option<String>,
+}
+
+static ACTIVE_HIGHLIGHTING: std::sync::RwLock<HighlightingState> =
+    std::sync::RwLock::new(HighlightingState {
+        seeded_theme: None,
+        seeded_enabled: None,
+        override_theme: None,
+    });
 
 /// Set the active syntax-highlight theme for subsequent renders.
 pub fn set_active_theme(name: &str) {
     ACTIVE_HIGHLIGHTING
         .write()
         .expect("highlighting lock poisoned")
-        .0 = Some(name.to_string());
+        .override_theme = Some(name.to_string());
+}
+
+/// Drop the `:set theme` override, reverting to the config-seeded theme.
+pub fn clear_theme_override() {
+    ACTIVE_HIGHLIGHTING
+        .write()
+        .expect("highlighting lock poisoned")
+        .override_theme = None;
 }
 
 /// Seed the active highlighting state from config (theme + enabled).
 pub fn seed_from_config(config: &HighlightingConfig) {
-    *ACTIVE_HIGHLIGHTING
+    let mut state = ACTIVE_HIGHLIGHTING
         .write()
-        .expect("highlighting lock poisoned") = (Some(config.theme.clone()), Some(config.enabled));
+        .expect("highlighting lock poisoned");
+    state.seeded_theme = Some(config.theme.clone());
+    state.seeded_enabled = Some(config.enabled);
 }
 
 /// Serializes tests that mutate ACTIVE_HIGHLIGHTING. Isolated per test under
@@ -37,13 +59,15 @@ pub fn seed_from_config(config: &HighlightingConfig) {
 #[cfg(test)]
 pub(crate) static ACTIVE_STATE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// The theme name renders currently use.
+/// The theme name renders currently use (override > seed > built-in default).
 pub fn active_theme_name() -> String {
-    ACTIVE_HIGHLIGHTING
+    let state = ACTIVE_HIGHLIGHTING
         .read()
-        .expect("highlighting lock poisoned")
-        .0
+        .expect("highlighting lock poisoned");
+    state
+        .override_theme
         .clone()
+        .or_else(|| state.seeded_theme.clone())
         .unwrap_or_else(|| "base16-ocean.dark".to_string())
 }
 
@@ -70,14 +94,11 @@ impl SyntaxHighlighter {
     /// config-seeded, `:set theme`-updatable counterpart of `new()`).
     /// Render code should prefer this over `new()`.
     pub fn active() -> Self {
-        let (theme, enabled) = ACTIVE_HIGHLIGHTING
+        let enabled = ACTIVE_HIGHLIGHTING
             .read()
             .expect("highlighting lock poisoned")
-            .clone();
-        let mut h = Self::new();
-        if let Some(theme) = theme {
-            h.theme_name = theme;
-        }
+            .seeded_enabled;
+        let mut h = Self::new().with_theme(&active_theme_name());
         if let Some(enabled) = enabled {
             h.enabled = enabled;
         }
@@ -344,6 +365,8 @@ mod tests {
             theme: "Solarized (light)".to_string(),
         };
         seed_from_config(&config);
+        // An override from a prior same-process test would shadow the seed.
+        clear_theme_override();
         let h = SyntaxHighlighter::active();
         assert_eq!(h.theme_name, "Solarized (light)");
         assert!(!h.is_enabled());

@@ -759,11 +759,14 @@ impl OilChatApp {
                     self.permission.perm_autoconfirm_session = val.as_bool().unwrap_or(false);
                 }
             }
-            "theme" => {
-                if let Some(ConfigValue::String(name)) = self.runtime_config.get("theme") {
+            "theme" => match self.runtime_config.get("theme") {
+                Some(ConfigValue::String(name)) => {
                     crate::formatting::syntax::set_active_theme(&name);
                 }
-            }
+                // Reset (`:set theme&`) removed the entry — rendering must
+                // revert to the config-seeded theme, not keep the override.
+                _ => crate::formatting::syntax::clear_theme_override(),
+            },
             "precognition" => {
                 if let Some(val) = self.runtime_config.get("precognition") {
                     self.precognition.precognition = val.as_bool().unwrap_or(true);
@@ -1153,6 +1156,32 @@ mod tests {
         );
         let stored = app.runtime_config.get("theme").expect("stored");
         assert_eq!(stored.as_string(), Some("Solarized (dark)"));
+    }
+
+    /// `:set theme&` must revert the RENDERED theme, not just the stored
+    /// value — otherwise the query reports the default while diffs/code
+    /// blocks keep highlighting with the old override.
+    #[test]
+    fn set_theme_reset_reverts_active_theme_to_seed() {
+        let _guard = crate::formatting::syntax::ACTIVE_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::formatting::syntax::seed_from_config(&crucible_core::config::HighlightingConfig {
+            enabled: true,
+            theme: "base16-eighties.dark".to_string(),
+        });
+        let mut app = app();
+        run_set(&mut app, "theme=InspiredGitHub");
+        assert_eq!(
+            crate::formatting::syntax::active_theme_name(),
+            "InspiredGitHub"
+        );
+        run_set(&mut app, "theme&");
+        assert_eq!(
+            crate::formatting::syntax::active_theme_name(),
+            "base16-eighties.dark",
+            "reset must revert rendering to the config-seeded theme"
+        );
     }
 
     #[test]

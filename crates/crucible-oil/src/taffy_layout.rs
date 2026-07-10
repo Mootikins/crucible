@@ -280,6 +280,14 @@ impl LayoutEngine {
         // A childless flex box in a row is a spacer(). When the row overflows
         // it would collapse to zero and the sections it separates would abut —
         // keep one cell so shrunk neighbors stay visually separated.
+        //
+        // Non-empty nested boxes keep Taffy's `auto` min, which pins them at
+        // content size: their shrinkable children never give up width, so at
+        // pathological widths (< ~30) a trailing section clips at the grid
+        // edge. Zero min was tried and rejected — it lets rigid (no_shrink)
+        // children overflow their shrunk parent and mangles moderate widths,
+        // which matter more. Real fix: min-content via Taffy measure
+        // functions (see backlog "Layout engine consolidation").
         let min_width = if content_sized && flex_grow > 0.0 && boxnode.children.is_empty() {
             length(1.0)
         } else {

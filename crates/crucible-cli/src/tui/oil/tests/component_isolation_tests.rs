@@ -355,6 +355,37 @@ mod status_bar_tests {
         assert_snapshot!("statusline_ctrlc_notification_narrow_width_50", ansi);
     }
 
+    /// US-205: the count-badge state (no toast, accumulated notification
+    /// counts) also degrades gracefully — every badge AND its count stay
+    /// intact at narrow widths; only the model span elides.
+    #[test]
+    fn snapshot_statusline_count_badges_narrow_width_40() {
+        use crate::tui::oil::components::NotificationToastKind;
+
+        let bar = StatusBar::new()
+            .mode(ChatMode::Normal)
+            .model("glm-4.7-flash-iq4")
+            .counts(vec![
+                (NotificationToastKind::Warning, 2),
+                (NotificationToastKind::Error, 1),
+            ]);
+
+        let ansi = render_configured_bar_ansi(&bar, 40);
+        assert_fits_width(&ansi, 40);
+
+        let plain = render_configured_bar(&bar, 40);
+        assert!(
+            plain.contains(" WARN ") && plain.contains(" ERROR "),
+            "count badges must survive narrow widths intact: {plain:?}"
+        );
+        assert!(
+            plain.contains(" 2 ") && plain.contains(" 1 "),
+            "badge COUNTS are the payload — they must not shrink away: {plain:?}"
+        );
+
+        assert_snapshot!("statusline_count_badges_narrow_width_40", ansi);
+    }
+
     /// US-205: at extreme narrow widths the badges (mode, WARN) stay intact
     /// and shrinkable spans (model, toast) absorb the overflow with ellipses —
     /// nothing overlaps and nothing lands past the right edge.

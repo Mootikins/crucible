@@ -83,6 +83,53 @@ fn no_shrink_span_keeps_width_when_row_overflows() {
     );
 }
 
+/// Shrink truncation must be terminal-column aware, not char-count aware:
+/// double-width glyphs (CJK) count two columns when ellipsizing.
+#[test]
+fn row_shrink_is_width_aware_for_wide_glyphs() {
+    let node = row([text("日本語のテキストです"), text("second column here")]);
+    let plain = render_to_plain_text(&node, 20);
+    let first_line = plain.lines().next().unwrap_or("");
+    assert!(
+        crucible_oil::ansi::visible_width(first_line) <= 20,
+        "wide glyphs must not push the row past 20 columns: {first_line:?}"
+    );
+    assert!(
+        first_line.contains("日本語") && first_line.contains("second"),
+        "both children stay visible under width-aware shrink: {plain:?}"
+    );
+    assert!(first_line.contains('…'));
+}
+
+/// Documents the degenerate case: a no_shrink span wider than the whole row
+/// wins over its siblings and hard-clips at the grid edge. no_shrink is for
+/// SHORT decorations — oversized rigid spans are the caller's bug, and the
+/// engine guarantees only that nothing renders past the grid.
+#[test]
+fn no_shrink_wider_than_row_clips_at_grid_edge() {
+    let node = row([text(" A VERY LONG RIGID BADGE ").no_shrink(), text("x")]);
+    let plain = render_to_plain_text(&node, 10);
+    let first_line = plain.lines().next().unwrap_or("");
+    assert_eq!(
+        first_line, " A VERY LO",
+        "rigid overflow clips at the grid edge; the shrinkable sibling yields fully"
+    );
+}
+
+/// Column gaps survive shrink: the gap is layout, not content, so it is never
+/// absorbed by overflowing children.
+#[test]
+fn row_gap_preserved_under_shrink() {
+    use crucible_oil::style::Gap;
+    let node = row([text("aaaaaaaaaa"), text("bbbbbbbbbb")]).gap(Gap::column(2));
+    let plain = render_to_plain_text(&node, 15);
+    assert_eq!(
+        plain.lines().next().unwrap_or(""),
+        "aaaaaa…  bbbbb…",
+        "2-cell gap intact, both sides ellipsized to fit 15"
+    );
+}
+
 /// A row that fits keeps its exact content — shrink support must not disturb
 /// the non-overflowing case.
 #[test]
