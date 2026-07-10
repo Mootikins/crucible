@@ -11,7 +11,7 @@ use tabled::{settings::Style, Table, Tabled};
 mod markdown_renderer;
 pub use markdown_renderer::render_markdown;
 
-mod syntax;
+pub mod syntax;
 pub use syntax::{HighlightedLine, HighlightedSpan, SyntaxHighlighter};
 
 /// Standard output format types supported across all commands

@@ -290,10 +290,29 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                 value: CliValue::Set(value),
             })
         }
-        "thinking" | "precognition" | "verbose" | "theme" => Ok(SetEffect::TuiLocal {
+        "thinking" | "precognition" => Ok(SetEffect::TuiLocal {
             key,
             value: CliValue::Set(value),
         }),
+        // Syntax-highlight theme (syntect). Validated against the loaded
+        // theme set so a typo fails loudly instead of silently falling back.
+        "theme" => {
+            if crate::formatting::SyntaxHighlighter::available_themes()
+                .iter()
+                .any(|t| *t == value)
+            {
+                Ok(SetEffect::TuiLocal {
+                    key,
+                    value: CliValue::Set(value),
+                })
+            } else {
+                let valid = crate::formatting::SyntaxHighlighter::available_themes().join(", ");
+                Err(SetError::InvalidValue {
+                    key,
+                    message: format!("unknown theme '{}'. Valid: {}", value, valid),
+                })
+            }
+        }
         // Popup presentation: auto = minimal for inline (@file/[[note) triggers,
         // panel strip for command-line (`:` and `/`) completions.
         "completionstyle" | "completion_style" => match value.to_lowercase().as_str() {
@@ -370,12 +389,7 @@ fn classify_key_without_value(key: String, effect: CliValue) -> Result<SetEffect
 fn is_tui_local_key(key: &str) -> bool {
     matches!(
         key,
-        "thinking"
-            | "precognition"
-            | "perm.show_diff"
-            | "perm.autoconfirm_session"
-            | "theme"
-            | "verbose"
+        "thinking" | "precognition" | "perm.show_diff" | "perm.autoconfirm_session" | "theme"
     )
 }
 
@@ -850,11 +864,44 @@ mod tests {
     #[test]
     fn validate_set_for_cli_toggle_tui_local() {
         assert_eq!(
-            validate_set_for_cli("verbose!"),
+            validate_set_for_cli("thinking!"),
             Ok(SetEffect::TuiLocal {
-                key: "verbose".to_string(),
+                key: "thinking".to_string(),
                 value: CliValue::Toggle,
             })
+        );
+    }
+
+    #[test]
+    fn theme_valid_syntect_theme_is_tui_local() {
+        assert_eq!(
+            validate_set_for_cli("theme=InspiredGitHub"),
+            Ok(SetEffect::TuiLocal {
+                key: "theme".to_string(),
+                value: CliValue::Set("InspiredGitHub".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn theme_unknown_value_rejected_with_valid_list() {
+        match validate_set_for_cli("theme=no-such-theme") {
+            Err(SetError::InvalidValue { message, .. }) => assert!(
+                message.contains("base16-ocean.dark"),
+                "error should list valid themes: {message}"
+            ),
+            other => panic!("expected InvalidValue, got {other:?}"),
+        }
+    }
+
+    /// `verbose` had no consumer in a running TUI — it is no longer a handled
+    /// key. (Via `:set` it now mirrors to the daemon config store like any
+    /// unknown key; via `--set` it is rejected.)
+    #[test]
+    fn verbose_is_no_longer_a_handled_key() {
+        assert_eq!(
+            validate_set_for_cli("verbose=true"),
+            Err(SetError::UnknownKey("verbose".to_string()))
         );
     }
 }

@@ -20,8 +20,8 @@
 //!
 //! // Get the target path (None for Dynamic/Virtual)
 //! assert_eq!(
-//!     registry.target_path("verbose"),
-//!     Some("cli.verbose")
+//!     registry.target_path("theme"),
+//!     Some("cli.highlighting.theme")
 //! );
 //! ```
 
@@ -96,12 +96,6 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         target: ShortcutTarget::Path("cli.highlighting.theme"),
         completions: CompletionSource::Themes,
         description: "Syntax highlighting theme",
-    },
-    ConfigShortcut {
-        short: "verbose",
-        target: ShortcutTarget::Path("cli.verbose"),
-        completions: CompletionSource::None,
-        description: "Verbose output",
     },
     ConfigShortcut {
         short: "precognition",
@@ -297,7 +291,6 @@ mod tests {
         let registry = ShortcutRegistry::new();
 
         // Path target returns the path
-        assert_eq!(registry.target_path("verbose"), Some("cli.verbose"));
         assert_eq!(
             registry.target_path("theme"),
             Some("cli.highlighting.theme")
@@ -322,7 +315,6 @@ mod tests {
         let registry = ShortcutRegistry::new();
 
         // Find short name from path
-        assert_eq!(registry.reverse_lookup("cli.verbose"), Some("verbose"));
         assert_eq!(
             registry.reverse_lookup("cli.highlighting.theme"),
             Some("theme")
@@ -347,7 +339,7 @@ mod tests {
 
         // Should have all defined shortcuts
         assert_eq!(all.len(), SHORTCUTS.len());
-        assert_eq!(all.len(), 17);
+        assert_eq!(all.len(), 16);
 
         // Verify we have expected shortcuts
         let shorts: Vec<_> = all.iter().map(|s| s.short).collect();
@@ -356,7 +348,6 @@ mod tests {
         assert!(shorts.contains(&"show_diffs"));
         assert!(shorts.contains(&"thinkingbudget"));
         assert!(shorts.contains(&"theme"));
-        assert!(shorts.contains(&"verbose"));
         assert!(shorts.contains(&"precognition"));
         assert!(shorts.contains(&"precognition.results"));
         assert!(shorts.contains(&"maxiterations"));
@@ -376,9 +367,10 @@ mod tests {
 
         assert!(registry.is_shortcut("model"));
         assert!(registry.is_shortcut("theme"));
-        assert!(registry.is_shortcut("verbose"));
+        // verbose was removed 2026-07-10: no consumer in a running TUI
+        assert!(!registry.is_shortcut("verbose"));
         assert!(!registry.is_shortcut("nonexistent"));
-        assert!(!registry.is_shortcut("cli.verbose")); // Full path, not shortcut
+        assert!(!registry.is_shortcut("cli.highlighting.theme")); // Full path, not shortcut
     }
 
     #[test]
@@ -391,7 +383,6 @@ mod tests {
             registry.completions_for("thinkingbudget"),
             CompletionSource::ThinkingPresets
         );
-        assert_eq!(registry.completions_for("verbose"), CompletionSource::None);
         assert_eq!(registry.completions_for("thinking"), CompletionSource::None);
         // Non-existent defaults to None
         assert_eq!(

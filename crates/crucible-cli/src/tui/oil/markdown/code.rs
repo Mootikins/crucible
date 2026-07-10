@@ -80,7 +80,7 @@ fn build_highlighted_code_lines(
         return result;
     }
 
-    let highlighter = SyntaxHighlighter::new();
+    let highlighter = SyntaxHighlighter::active();
     let highlighted_lines = highlighter.highlight(content, lang);
 
     for highlighted_line in highlighted_lines {

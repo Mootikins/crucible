@@ -243,10 +243,10 @@ mod tests {
 
     #[test]
     fn validate_toggle_produces_tui_local_toggle_sentinel() {
-        let effect = validate_set_for_cli("verbose!").unwrap();
+        let effect = validate_set_for_cli("thinking!").unwrap();
         assert!(matches!(
             effect,
-            SetEffect::TuiLocal { key, value: CliValue::Toggle } if key == "verbose"
+            SetEffect::TuiLocal { key, value: CliValue::Toggle } if key == "thinking"
         ));
     }
 
@@ -260,9 +260,9 @@ mod tests {
 
     #[test]
     fn collect_rpc_actions_rejects_tui_local_key() {
-        let err = collect_rpc_actions(&["verbose=true".to_string()]).unwrap_err();
+        let err = collect_rpc_actions(&["thinking=true".to_string()]).unwrap_err();
         assert!(
-            matches!(err, (input, SetError::InvalidValue { key, .. }) if input == "verbose=true" && key == "verbose")
+            matches!(err, (input, SetError::InvalidValue { key, .. }) if input == "thinking=true" && key == "thinking")
         );
     }
 

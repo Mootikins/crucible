@@ -9,6 +9,44 @@ use syntect::util::LinesWithEndings;
 static SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(SyntaxSet::load_defaults_newlines);
 static THEME_SET: Lazy<ThemeSet> = Lazy::new(ThemeSet::load_defaults);
 
+/// Process-wide highlighting state, mirroring how render code reads the TUI
+/// palette from `theme::active()`. Seeded from `cli.highlighting` at startup;
+/// `:set theme` updates it at runtime. `None` fields fall back to the
+/// `SyntaxHighlighter::new()` defaults.
+static ACTIVE_HIGHLIGHTING: std::sync::RwLock<(Option<String>, Option<bool>)> =
+    std::sync::RwLock::new((None, None));
+
+/// Set the active syntax-highlight theme for subsequent renders.
+pub fn set_active_theme(name: &str) {
+    ACTIVE_HIGHLIGHTING
+        .write()
+        .expect("highlighting lock poisoned")
+        .0 = Some(name.to_string());
+}
+
+/// Seed the active highlighting state from config (theme + enabled).
+pub fn seed_from_config(config: &HighlightingConfig) {
+    *ACTIVE_HIGHLIGHTING
+        .write()
+        .expect("highlighting lock poisoned") = (Some(config.theme.clone()), Some(config.enabled));
+}
+
+/// Serializes tests that mutate ACTIVE_HIGHLIGHTING. Isolated per test under
+/// nextest; required for correctness under the shared-process `cargo test`
+/// fallback. Any test (in any module) that writes the global must hold this.
+#[cfg(test)]
+pub(crate) static ACTIVE_STATE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The theme name renders currently use.
+pub fn active_theme_name() -> String {
+    ACTIVE_HIGHLIGHTING
+        .read()
+        .expect("highlighting lock poisoned")
+        .0
+        .clone()
+        .unwrap_or_else(|| "base16-ocean.dark".to_string())
+}
+
 pub struct SyntaxHighlighter {
     theme_name: String,
     enabled: bool,
@@ -26,6 +64,24 @@ impl SyntaxHighlighter {
             theme_name: "base16-ocean.dark".to_string(),
             enabled: true,
         }
+    }
+
+    /// Highlighter configured from the process-wide active state (the
+    /// config-seeded, `:set theme`-updatable counterpart of `new()`).
+    /// Render code should prefer this over `new()`.
+    pub fn active() -> Self {
+        let (theme, enabled) = ACTIVE_HIGHLIGHTING
+            .read()
+            .expect("highlighting lock poisoned")
+            .clone();
+        let mut h = Self::new();
+        if let Some(theme) = theme {
+            h.theme_name = theme;
+        }
+        if let Some(enabled) = enabled {
+            h.enabled = enabled;
+        }
+        h
     }
 
     pub fn from_config(config: &HighlightingConfig) -> Self {
@@ -262,5 +318,49 @@ mod tests {
         let highlighter = SyntaxHighlighter::from_config(&config);
 
         assert!(!highlighter.is_enabled());
+    }
+
+    // ACTIVE_HIGHLIGHTING is process-global. Isolated per test under nextest;
+    // under the `cargo test` fallback these tests serialize on the shared
+    // lock and only assert their OWN writes, never the ambient default.
+
+    #[test]
+    fn active_reflects_set_active_theme() {
+        let _guard = ACTIVE_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        set_active_theme("InspiredGitHub");
+        assert_eq!(active_theme_name(), "InspiredGitHub");
+        assert_eq!(SyntaxHighlighter::active().theme_name, "InspiredGitHub");
+    }
+
+    #[test]
+    fn seed_from_config_sets_theme_and_enabled() {
+        let _guard = ACTIVE_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let config = HighlightingConfig {
+            enabled: false,
+            theme: "Solarized (light)".to_string(),
+        };
+        seed_from_config(&config);
+        let h = SyntaxHighlighter::active();
+        assert_eq!(h.theme_name, "Solarized (light)");
+        assert!(!h.is_enabled());
+    }
+
+    /// Pure-core proof that the theme knob changes rendered colors: the same
+    /// code highlighted under two themes must produce different styles.
+    #[test]
+    fn different_themes_produce_different_styles() {
+        let code = "fn main() { let x = 42; }";
+        let default_lines = SyntaxHighlighter::new().highlight(code, "rs");
+        let github_lines = SyntaxHighlighter::new()
+            .with_theme("InspiredGitHub")
+            .highlight(code, "rs");
+        assert_ne!(
+            default_lines, github_lines,
+            "InspiredGitHub must highlight differently than base16-ocean.dark"
+        );
     }
 }

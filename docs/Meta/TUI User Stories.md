@@ -55,7 +55,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### US-104: REPL `:set` runtime config
 **As a user**, I use vim-style `:set key=value` (and `?`, `??`, `&`, `<`) to change runtime config (thinking budget, context strategy/budget/window, autocompact threshold, precognition, perm.*).
-**Acceptance:** each documented key round-trips (set → query shows new value); invalid keys error with a message; session-scoped keys sync to the daemon; `:set key?` shows value, `&` resets; unknown (plugin/dynamic) keys store locally AND mirror into the daemon app-config store, so `:lua cru.config.get(key)` and plugins see the same typed value.
+**Acceptance:** each documented key round-trips (set → query shows new value); invalid keys error with a message; session-scoped keys sync to the daemon; `:set key?` shows value, `&` resets; unknown (plugin/dynamic) keys store locally AND mirror into the daemon app-config store, so `:lua cru.config.get(key)` and plugins see the same typed value. Every advertised key must be REAL: `:set theme=<syntect theme>` switches diff/code-block highlighting live (validated against the loaded theme set; seeded from `cli.highlighting` at startup); the inert `verbose` knob was removed 2026-07-10.
 **Tests:** T1 per-key dispatch matrix in `chat_app/command_handling.rs` (test-case over every session-scoped key: daemon-sync emission, invalid-value warnings, query round-trip, reset), T2 (`:set` result notification render).
 
 ### US-108: `:lua` escape hatch

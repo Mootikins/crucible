@@ -582,9 +582,9 @@ mod tests {
     fn test_shortcut_resolution() {
         let config = make_config();
 
-        // "verbose" should resolve to "cli.verbose"
-        let (path, is_virtual) = config.resolve_path("verbose");
-        assert_eq!(path, "cli.verbose");
+        // "theme" should resolve to "cli.highlighting.theme"
+        let (path, is_virtual) = config.resolve_path("theme");
+        assert_eq!(path, "cli.highlighting.theme");
         assert!(!is_virtual);
 
         // "thinking" is virtual
@@ -601,10 +601,10 @@ mod tests {
     #[test]
     fn test_format_query() {
         let mut config = make_config();
-        config.set("verbose", ConfigValue::Bool(true), ModSource::Command);
+        config.set("show_diffs", ConfigValue::Bool(true), ModSource::Command);
 
-        let output = config.format_query("verbose");
-        assert!(output.contains("verbose=true"));
+        let output = config.format_query("show_diffs");
+        assert!(output.contains("show_diffs=true"));
     }
 
     #[test]

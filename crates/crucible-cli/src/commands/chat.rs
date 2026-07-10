@@ -73,6 +73,10 @@ pub struct RunOneshotChatParams {
 }
 
 pub async fn execute(params: ExecuteParams) -> Result<()> {
+    // Seed the render-time highlighting state (theme + enabled) from config
+    // before any frame renders; `:set theme` updates it later.
+    crate::formatting::syntax::seed_from_config(&params.config.cli.highlighting);
+
     if let Some(ref replay_path) = params.replay {
         if !replay_path.exists() {
             anyhow::bail!("replay file not found: {}", replay_path.display());

@@ -124,7 +124,7 @@ pub fn render_diff(diff: &FileDiff, opts: &DiffOptions) -> Node {
     }
 
     let language = infer_language(&diff.path);
-    let highlighter = SyntaxHighlighter::new();
+    let highlighter = SyntaxHighlighter::active();
 
     let body = match opts.resolved_layout() {
         DiffLayout::Unified => render_unified(

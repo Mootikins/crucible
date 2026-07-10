@@ -759,6 +759,11 @@ impl OilChatApp {
                     self.permission.perm_autoconfirm_session = val.as_bool().unwrap_or(false);
                 }
             }
+            "theme" => {
+                if let Some(ConfigValue::String(name)) = self.runtime_config.get("theme") {
+                    crate::formatting::syntax::set_active_theme(&name);
+                }
+            }
             "precognition" => {
                 if let Some(val) = self.runtime_config.get("precognition") {
                     self.precognition.precognition = val.as_bool().unwrap_or(true);
@@ -1129,6 +1134,40 @@ mod tests {
         let action = run_set(&mut app, "perm.bogus=true");
         assert!(matches!(action, Action::Continue));
         assert!(app.has_notifications());
+    }
+
+    /// `:set theme=<valid syntect theme>` updates the process-wide
+    /// highlighting state that diff/code renders read (US-104 honesty: the
+    /// knob must do what its ack claims).
+    #[test]
+    fn set_theme_updates_active_syntax_theme() {
+        let _guard = crate::formatting::syntax::ACTIVE_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut app = app();
+        let action = run_set(&mut app, "theme=Solarized (dark)");
+        assert!(matches!(action, Action::Continue));
+        assert_eq!(
+            crate::formatting::syntax::active_theme_name(),
+            "Solarized (dark)"
+        );
+        let stored = app.runtime_config.get("theme").expect("stored");
+        assert_eq!(stored.as_string(), Some("Solarized (dark)"));
+    }
+
+    #[test]
+    fn set_theme_invalid_value_warns_and_leaves_state() {
+        let mut app = app();
+        let action = run_set(&mut app, "theme=no-such-theme");
+        assert!(matches!(action, Action::Continue));
+        assert!(
+            app.has_notifications(),
+            "invalid theme should surface a warning listing valid themes"
+        );
+        assert!(
+            app.runtime_config.get("theme").is_none(),
+            "rejected value must not be stored"
+        );
     }
 
     #[test]
