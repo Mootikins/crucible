@@ -6,34 +6,35 @@ experimental = ["setup-scripts"]
 [store]
 dir = "target/nextest"
 
-# Default profile - runs all non-slow tests
+# NOTE: profiles select retry/timeout behavior only — none of them filter the
+# test set. Slow/external tests are gated with #[ignore], not profiles.
+
 [profile.default]
 retries = 0
 fail-fast = true
 slow-timeout = { period = "30s", terminate-after = 2 }
 
-# Unit tests only - fast feedback loop
-# Matches: tests in src/ (#[cfg(test)]) and tests/unit/
+# Fast feedback loop: tight timeouts, bail on first failure
 [profile.unit]
 retries = 0
 fail-fast = true
 slow-timeout = { period = "10s", terminate-after = 1 }
 
-# Integration tests - real I/O, real DB
+# Longer timeouts for real I/O / real DB tests
 [profile.integration]
 retries = 0
 fail-fast = false
 slow-timeout = { period = "60s", terminate-after = 2 }
 
-# CI profile - everything except slow/manual tests
+# CI profile - everything except #[ignore]d tests (slow/manual gating is via
+# #[ignore], not name filters; a name filter here once silently dropped a real
+# test whose name contained "manual")
 [profile.ci]
 retries = 1
 fail-fast = false
 slow-timeout = { period = "60s", terminate-after = 2 }
-# Exclude slow and manual tests from CI runs
-default-filter = "not (test(/slow/) | test(/manual/))"
 
-# Contract tests - API/trait verification
+# API/trait verification runs: strict, no retries
 [profile.contract]
 retries = 0
 fail-fast = true
@@ -62,13 +63,3 @@ setup = 'build-test-fixtures'
 [[profile.integration.scripts]]
 filter = 'package(crucible-daemon)'
 setup = 'build-test-fixtures'
-
-# Test groups for filtering
-# Usage: cargo nextest run --profile ci -E 'not test(/slow/)'
-[test-groups.slow]
-# Tests that require manual execution
-max-threads = 1
-
-[[profile.default.overrides]]
-filter = "test(/slow/) or test(/manual/)"
-slow-timeout = { period = "300s", terminate-after = 1 }
