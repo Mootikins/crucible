@@ -1459,6 +1459,12 @@ mod tests {
     /// `config.set` merges into the same store `cru.config.get` reads (the
     /// crucible-lua app-config store), and `config.get` reads it back — the
     /// :set/:lua shared-store bridge.
+    ///
+    /// NOTE: that store is process-global. Under nextest each test gets its
+    /// own process, but under plain `cargo test` (the justfile fallback)
+    /// tests in this binary share it — so config tests here must use
+    /// test-unique keys and never reset or read the whole store expecting
+    /// exclusivity.
     #[tokio::test]
     async fn dispatch_config_set_then_get_round_trips() {
         let dispatcher = RpcDispatcher::new(test_context());
