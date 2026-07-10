@@ -26,6 +26,7 @@ pub mod node;
 pub mod output;
 pub mod overlay;
 pub mod planning;
+pub mod popup_node;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod proptest_strategies;
 pub mod render;

@@ -83,6 +83,7 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
             permission_config: config.permissions.clone(),
             web_config: None,
             schedules: config.schedules.clone(),
+            app_config: serde_json::to_value(&config).ok(),
         })
         .await?;
 

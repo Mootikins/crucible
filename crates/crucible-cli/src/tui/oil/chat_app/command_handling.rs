@@ -67,6 +67,24 @@ fn suggest_command<'a>(input: &str, known: &[&'a str]) -> Option<&'a str> {
         .map(|(cmd, _)| cmd)
 }
 
+/// Parse a `:set` value string into the JSON scalar it reads as: bool,
+/// integer, float, else string. Keeps `:set x=3` and Lua `cru.config.get`
+/// agreeing on types.
+fn parse_config_scalar(value: &str) -> serde_json::Value {
+    if let Ok(b) = value.parse::<bool>() {
+        return serde_json::Value::Bool(b);
+    }
+    if let Ok(n) = value.parse::<i64>() {
+        return serde_json::Value::Number(n.into());
+    }
+    if let Ok(f) = value.parse::<f64>() {
+        if let Some(n) = serde_json::Number::from_f64(f) {
+            return serde_json::Value::Number(n);
+        }
+    }
+    serde_json::Value::String(value.to_string())
+}
+
 /// Categorized help text for the :help system.
 fn help_text(category: Option<&str>) -> String {
     match category {
@@ -455,11 +473,23 @@ impl OilChatApp {
         }
         match classify_set_value(key.to_string(), value.clone()) {
             Ok(SetEffect::DaemonRpc(action)) => self.apply_daemon_set_action(key, &value, action),
-            Ok(SetEffect::TuiLocal { .. }) | Err(SetError::UnknownKey(_)) => {
+            Ok(SetEffect::TuiLocal { .. }) => {
                 self.runtime_config.set_str(key, &value, ModSource::Command);
                 self.sync_runtime_to_fields(key);
                 self.send_setting_ack(key, &value);
                 Action::Continue
+            }
+            // Unknown (plugin/dynamic) keys: store locally for `:set key?`
+            // round-trips AND mirror into the daemon app-config store so
+            // `:lua cru.config.get(key)` and plugins see the same value.
+            Err(SetError::UnknownKey(_)) => {
+                self.runtime_config.set_str(key, &value, ModSource::Command);
+                self.sync_runtime_to_fields(key);
+                self.send_setting_ack(key, &value);
+                Action::Send(ChatAppMsg::ConfigSet {
+                    key: key.to_string(),
+                    value: parse_config_scalar(&value),
+                })
             }
             Err(e) => {
                 self.warn_invalid(e.to_string());
@@ -1058,6 +1088,39 @@ mod tests {
             app.has_notifications(),
             "invalid `:set {body}` should surface a warning"
         );
+    }
+
+    /// Unknown (plugin/dynamic) keys are stored locally AND mirrored to the
+    /// daemon app-config store, so `:lua cru.config.get(key)` sees them.
+    #[test]
+    fn set_unknown_key_mirrors_to_daemon_config() {
+        let mut app = app();
+        let action = run_set(&mut app, "myplugin.debug=true");
+        assert!(
+            matches!(
+                action,
+                Action::Send(ChatAppMsg::ConfigSet { ref key, ref value })
+                    if key == "myplugin.debug" && *value == serde_json::json!(true)
+            ),
+            "unknown :set keys should mirror to the daemon config store"
+        );
+        // Still stored locally for `:set key?` round-trips (set_str infers bool).
+        let stored = app.runtime_config.get("myplugin.debug").expect("stored");
+        assert_eq!(stored.as_bool(), Some(true));
+    }
+
+    #[test]
+    fn set_unknown_key_value_typing() {
+        let mut app = app();
+        assert!(matches!(
+            run_set(&mut app, "myplugin.retries=3"),
+            Action::Send(ChatAppMsg::ConfigSet { value, .. }) if value == serde_json::json!(3)
+        ));
+        assert!(matches!(
+            run_set(&mut app, "myplugin.name=hello world"),
+            Action::Send(ChatAppMsg::ConfigSet { value, .. })
+                if value == serde_json::json!("hello world")
+        ));
     }
 
     #[test]

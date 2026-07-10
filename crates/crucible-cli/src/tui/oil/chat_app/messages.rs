@@ -198,6 +198,12 @@ pub enum ChatAppMsg {
     EvalLua(String),
     /// **Event** (daemon → TUI): Result of a `:lua` evaluation.
     LuaEvaled { output: String, is_error: bool },
+    /// **Command** (TUI → daemon): Mirror an unknown/dynamic `:set` key into
+    /// the daemon app-config store (`config.set`) so Lua/plugins see it.
+    ConfigSet {
+        key: String,
+        value: serde_json::Value,
+    },
     /// **Command** (TUI → daemon): Execute a slash command (/:command args).
     ExecuteSlashCommand(String),
     /// **Command** (TUI → daemon): Export session to markdown file.
@@ -309,6 +315,7 @@ impl ChatAppMsg {
             | Self::ReloadPlugin(_)
             | Self::EvalLua(_)
             | Self::LuaEvaled { .. }
+            | Self::ConfigSet { .. }
             | Self::Undo(_)
             | Self::UndoComplete { .. }
             | Self::SessionInitialized(_)

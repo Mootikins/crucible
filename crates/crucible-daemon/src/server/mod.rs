@@ -117,6 +117,9 @@ pub struct BindWithPluginConfigParams {
     pub permission_config: Option<crucible_core::config::components::permissions::PermissionConfig>,
     pub web_config: Option<crucible_core::config::WebConfig>,
     pub schedules: Vec<crucible_core::config::ScheduleEntry>,
+    /// Full loaded app config as JSON — seeds the Lua `cru.config` store
+    /// before init.lua runs (TOML seeds, Lua overrides, RPC merges).
+    pub app_config: Option<serde_json::Value>,
 }
 
 impl Server {
@@ -140,6 +143,7 @@ impl Server {
             permission_config: None,
             web_config: None,
             schedules: Vec::new(),
+            app_config: None,
         })
         .await
     }
@@ -180,6 +184,13 @@ impl Server {
         } else {
             None
         };
+
+        // Seed the Lua app-config store BEFORE init.lua runs so plugin code
+        // (and later `cru.config.set` / `config.set` merges) layer on top of
+        // the TOML-loaded values.
+        if let Some(app_config) = params.app_config.clone() {
+            crucible_lua::seed_app_config(app_config);
+        }
 
         let plugin_loader = Arc::new(Mutex::new(
             match DaemonPluginLoader::new(params.plugin_config.clone()) {

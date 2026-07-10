@@ -337,6 +337,7 @@ impl OilChatApp {
             // Command-only: side effects handled by chat_runner::process_action
             ChatAppMsg::ReloadPlugin(_)
             | ChatAppMsg::EvalLua(_)
+            | ChatAppMsg::ConfigSet { .. }
             | ChatAppMsg::ExecuteSlashCommand(_)
             | ChatAppMsg::ExportSession(_)
             | ChatAppMsg::Undo(_) => {}

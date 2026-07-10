@@ -88,6 +88,26 @@ pub fn seed_app_config(config: serde_json::Value) {
     }
 }
 
+/// Merge values into app_config from Rust (same top-level-override semantics
+/// as Lua's `cru.config.set`). Used by the daemon's `config.set` RPC so the
+/// TUI/CLI write into the SAME store `:lua` and plugins read.
+pub fn merge_app_config(overlay: serde_json::Value) {
+    if let Ok(mut state) = get_config().write() {
+        match &mut state.app_config {
+            Some(serde_json::Value::Object(base)) => {
+                if let serde_json::Value::Object(overlay) = overlay {
+                    for (k, v) in overlay {
+                        base.insert(k, v);
+                    }
+                }
+            }
+            _ => {
+                state.app_config = Some(overlay);
+            }
+        }
+    }
+}
+
 /// Register `cru.config.set(table)` and `cru.config.get(key)` on the cru namespace.
 ///
 /// - `set(table)`: Deep-merges the table into app_config (TOML values as base, Lua overrides)

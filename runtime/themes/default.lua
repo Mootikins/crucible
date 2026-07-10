@@ -56,7 +56,7 @@ return {
     diff_context    = "#646e82",  -- Diff context line color
 
     -- Overlay
-    popup_bg          = "#1e222a",  -- Popup/overlay background
+    popup_bg          = "#282c34",  -- Popup/overlay background (matches chrome surface)
     popup_selected_bg = "#323844",  -- Popup selected item background
     toast_bg          = "#2d2837",  -- Toast notification background
     overlay_text      = "#c0caf5",  -- overlay/popup primary text (Rgb(192, 202, 245))

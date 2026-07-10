@@ -110,7 +110,7 @@ pub use auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
 pub use capability_gate::{check_module_access, module_capability_map, ModuleCapabilityMapping};
 pub use config::{
     get_app_config, get_statusline_config, get_theme_config, list_available_themes,
-    seed_app_config, ConfigLoader, ConfigState,
+    merge_app_config, seed_app_config, ConfigLoader, ConfigState,
 };
 pub use context::{
     register_context_module, register_context_module_stub, register_context_validators,

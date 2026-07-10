@@ -108,6 +108,8 @@ pub const METHODS: &[&str] = &[
     "lua.run_plugin_tests",
     "lua.register_commands",
     "lua.eval",
+    "config.get",
+    "config.set",
     "project.register",
     "project.unregister",
     "project.list",
@@ -347,6 +349,10 @@ impl RpcDispatcher {
                 to_response(id, self.handle_lua_register_commands(&req).await)
             }
             "lua.eval" => to_response(id, self.handle_lua_eval(&req).await),
+
+            // App-config store (the same store `cru.config.*` reads in Lua)
+            "config.get" => to_response(id, self.handle_config_get(&req)),
+            "config.set" => to_response(id, self.handle_config_set(&req)),
 
             // Plugin RPC handlers
             "plugin.reload" => to_response(id, self.handle_plugin_reload(&req).await),
@@ -1085,6 +1091,52 @@ impl RpcDispatcher {
         }
     }
 
+    /// Read from the app-config store — the same store `cru.config.get`
+    /// exposes to Lua (seeded from TOML at daemon startup, merged by
+    /// `cru.config.set` / `config.set`). With `key`: one top-level value
+    /// (null if absent); without: the whole object.
+    fn handle_config_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        use crate::rpc::params::parse_params;
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct Params {
+            #[serde(default)]
+            key: Option<String>,
+        }
+
+        let params: Params = parse_params(req)?;
+        let config = crucible_lua::get_app_config();
+        Ok(match params.key {
+            Some(key) => {
+                let value = config
+                    .as_ref()
+                    .and_then(|c| c.get(&key))
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                serde_json::json!({ "value": value })
+            }
+            None => serde_json::json!({ "config": config }),
+        })
+    }
+
+    /// Merge top-level values into the app-config store (same semantics as
+    /// Lua's `cru.config.set`). Typed transport for `:set` forwarding — the
+    /// TUI must never build Lua source from user input.
+    fn handle_config_set(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        use crate::rpc::params::parse_params;
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct Params {
+            values: serde_json::Map<String, serde_json::Value>,
+        }
+
+        let params: Params = parse_params(req)?;
+        crucible_lua::merge_app_config(serde_json::Value::Object(params.values));
+        Ok(serde_json::json!({ "ok": true }))
+    }
+
     // ── Plugin RPC wrappers ──────────────────────────────────────────────
 
     async fn handle_plugin_reload(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -1402,6 +1454,44 @@ mod tests {
             unreachable.is_empty(),
             "in METHODS but no dispatch arm: {unreachable:?}"
         );
+    }
+
+    /// `config.set` merges into the same store `cru.config.get` reads (the
+    /// crucible-lua app-config store), and `config.get` reads it back — the
+    /// :set/:lua shared-store bridge.
+    #[tokio::test]
+    async fn dispatch_config_set_then_get_round_trips() {
+        let dispatcher = RpcDispatcher::new(test_context());
+
+        let set_req = make_request(
+            "config.set",
+            serde_json::json!({ "values": { "myplugin.debug": true, "answer": 42 } }),
+        );
+        let resp = dispatcher.dispatch(ClientId::new(), set_req).await;
+        assert!(resp.error.is_none(), "config.set failed: {:?}", resp.error);
+
+        let get_req = make_request("config.get", serde_json::json!({ "key": "myplugin.debug" }));
+        let resp = dispatcher.dispatch(ClientId::new(), get_req).await;
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap()["value"], serde_json::json!(true));
+
+        // No key → the whole (merged) config object.
+        let all_req = make_request("config.get", serde_json::json!({}));
+        let resp = dispatcher.dispatch(ClientId::new(), all_req).await;
+        let config = resp.result.unwrap();
+        assert_eq!(config["config"]["answer"], serde_json::json!(42));
+    }
+
+    #[tokio::test]
+    async fn dispatch_config_get_missing_key_returns_null() {
+        let dispatcher = RpcDispatcher::new(test_context());
+        let req = make_request(
+            "config.get",
+            serde_json::json!({ "key": "no.such.key.xyz" }),
+        );
+        let resp = dispatcher.dispatch(ClientId::new(), req).await;
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result.unwrap()["value"], serde_json::Value::Null);
     }
 
     #[tokio::test]

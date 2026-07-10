@@ -515,6 +515,34 @@ impl OilChatRunner {
                             }
                         }
                     }
+                    // Gated on `!self.is_replay`: best-effort mirror of an
+                    // unknown `:set` key into the daemon app-config store so
+                    // Lua/plugins observe it. Failure is non-fatal (the local
+                    // store already has the value) — surfaced via statusline.
+                    ChatAppMsg::ConfigSet { ref key, ref value } if !self.is_replay => {
+                        let key = key.clone();
+                        let value = value.clone();
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
+                            let result = match crucible_daemon::DaemonClient::connect().await {
+                                Ok(client) => client
+                                    .call(
+                                        "config.set",
+                                        serde_json::json!({ "values": { key.clone(): value } }),
+                                    )
+                                    .await
+                                    .map(|_| ()),
+                                Err(e) => Err(e),
+                            };
+                            if let Err(e) = result {
+                                tracing::warn!(key = %key, error = %e, "config.set mirror failed");
+                                let _ = tx.send(ChatAppMsg::Status(format!(
+                                    "config sync failed for '{}'",
+                                    key
+                                )));
+                            }
+                        }));
+                    }
                     // Gated on `!self.is_replay`: opens a fresh
                     // `DaemonClient::connect()` and must not fire during replay.
                     ChatAppMsg::EvalLua(ref code) if !self.is_replay => {
@@ -707,6 +735,7 @@ impl OilChatRunner {
                     // guard so the TUI-only guarantee holds.
                     ChatAppMsg::ReloadPlugin(_)
                     | ChatAppMsg::EvalLua(_)
+                    | ChatAppMsg::ConfigSet { .. }
                     | ChatAppMsg::ExecuteSlashCommand(_)
                     | ChatAppMsg::ExportSession(_)
                     | ChatAppMsg::FetchModels => {
