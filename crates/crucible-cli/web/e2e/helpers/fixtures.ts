@@ -50,36 +50,3 @@ export const MOCK_PROJECT = {
   kilns: [{ path: '/home/user/.crucible/kiln', name: 'My Kiln' }],
   last_accessed: '2026-01-01T00:00:00Z',
 };
-
-/** Build token + message_complete events for a chat response */
-export function chatTokenEvents(
-  content: string,
-  messageId = 'msg-001',
-): Array<{ type: string; data: object }> {
-  // Split content into ~10-char chunks
-  const chunks: string[] = [];
-  for (let i = 0; i < content.length; i += 10) {
-    chunks.push(content.slice(i, i + 10));
-  }
-  return [
-    ...chunks.map((chunk) => ({ type: 'token', data: { content: chunk } })),
-    {
-      type: 'message_complete',
-      data: { id: messageId, content, tool_calls: [] },
-    },
-  ];
-}
-
-/** Build tool call lifecycle events */
-export function toolCallEvents(
-  toolName: string,
-  args: object,
-  result: string,
-  toolId = 'tool-001',
-): Array<{ type: string; data: object }> {
-  return [
-    { type: 'tool_call_start', data: { id: toolId, name: toolName, arguments: args } },
-    { type: 'tool_result_delta', data: { id: toolId, delta: result } },
-    { type: 'tool_result_complete', data: { id: toolId } },
-  ];
-}

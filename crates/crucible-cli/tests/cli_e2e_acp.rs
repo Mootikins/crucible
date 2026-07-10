@@ -12,11 +12,11 @@ use predicates::prelude::*;
 use std::path::PathBuf;
 
 fn mock_agent_path() -> PathBuf {
-    if let Some(path) = option_env!("CARGO_BIN_EXE_mock-acp-agent") {
-        return PathBuf::from(path);
-    }
-
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/mock-acp-agent")
+    // mock-acp-agent is a crucible-daemon bin, so CARGO_BIN_EXE_mock-acp-agent
+    // is never set for this crate's tests. It lands in the same directory as
+    // cru, whose CARGO_BIN_EXE_cru is set — resolving relative to it stays
+    // correct under a redirected CARGO_TARGET_DIR (shared cargo cache).
+    PathBuf::from(env!("CARGO_BIN_EXE_cru")).with_file_name("mock-acp-agent")
 }
 
 #[test]
