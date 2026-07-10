@@ -207,18 +207,7 @@ impl ThreadedMockAgent {
                                         tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
                                     }
 
-                                    // Handle request
-                                    let response = agent.handle_request(&request);
-
-                                    // Send response
-                                    let response_json = serde_json::to_string(&response).unwrap();
-                                    if writer.write_all(response_json.as_bytes()).await.is_err() {
-                                        break;
-                                    }
-                                    if writer.write_all(b"\n").await.is_err() {
-                                        break;
-                                    }
-                                    if writer.flush().await.is_err() {
+                                    if Self::handle_one_request(&mut agent, &request, &mut reader, &mut writer).await.is_err() {
                                         break;
                                     }
                                 }
@@ -235,6 +224,77 @@ impl ThreadedMockAgent {
                 }
             }
         }
+    }
+
+    /// Dispatch one parsed request, writing however many wire messages it
+    /// produces. Returns Err when the transport is gone.
+    async fn handle_one_request(
+        agent: &mut MockStdioAgent,
+        request: &Value,
+        reader: &mut BufReader<tokio::io::ReadHalf<DuplexStream>>,
+        writer: &mut tokio::io::WriteHalf<DuplexStream>,
+    ) -> Result<(), ()> {
+        let method = request.get("method").and_then(|m| m.as_str());
+
+        // `session/cancel` is a notification: record it, send nothing.
+        if method == Some("session/cancel") {
+            agent.note_cancel(request);
+            return Ok(());
+        }
+
+        if method == Some("session/prompt") && !agent.config.inject_errors {
+            let turn = agent.handle_prompt_turn(request);
+            for notification in &turn.notifications {
+                Self::write_line(writer, notification).await?;
+            }
+
+            if agent.config.hold_turn_until_cancel {
+                // Model a long-running turn: keep reading (serving any
+                // interleaved requests) until `session/cancel` arrives, then
+                // end the turn with `stopReason: cancelled` per ACP. The
+                // client's overall streaming timeout bounds a test that never
+                // cancels.
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line).await {
+                        Ok(0) | Err(_) => return Err(()),
+                        Ok(_) => {}
+                    }
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    let Ok(inner) = serde_json::from_str::<Value>(trimmed) else {
+                        continue;
+                    };
+                    if inner.get("method").and_then(|m| m.as_str()) == Some("session/cancel") {
+                        agent.note_cancel(&inner);
+                        return Self::write_line(writer, &turn.cancelled).await;
+                    }
+                    let response = agent.handle_request(&inner);
+                    Self::write_line(writer, &response).await?;
+                }
+            }
+
+            return Self::write_line(writer, &turn.end_turn).await;
+        }
+
+        let response = agent.handle_request(request);
+        Self::write_line(writer, &response).await
+    }
+
+    async fn write_line(
+        writer: &mut tokio::io::WriteHalf<DuplexStream>,
+        message: &Value,
+    ) -> Result<(), ()> {
+        let json = serde_json::to_string(message).map_err(|_| ())?;
+        for bytes in [json.as_bytes(), b"\n"] {
+            if writer.write_all(bytes).await.is_err() {
+                return Err(());
+            }
+        }
+        writer.flush().await.map_err(|_| ())
     }
 }
 

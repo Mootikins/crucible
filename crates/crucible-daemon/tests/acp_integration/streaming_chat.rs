@@ -37,62 +37,116 @@ async fn test_streaming_chat_with_mock_agent() {
     );
 }
 
-/// Test the actual streaming response accumulation
-///
-/// This test will send a PromptRequest and verify:
-/// 1. Multiple session/update notifications are received
-/// 2. Content from AgentMessageChunk is accumulated
-/// 3. Final PromptResponse triggers completion
-/// 4. Result contains all accumulated content
-///
-/// Note: This test is ignored because the mock agent doesn't implement
-/// proper streaming responses. It handles handshake but doesn't send
-/// the session/update notifications with AgentMessageChunk that the
-/// client expects for streaming.
+/// Build a PromptRequest for the given session.
+fn prompt_request(session_id: &str) -> agent_client_protocol::PromptRequest {
+    serde_json::from_value(serde_json::json!({
+        "sessionId": session_id,
+        "prompt": [{"type": "text", "text": "What is 2+2?"}],
+        "_meta": null
+    }))
+    .expect("Failed to create PromptRequest")
+}
+
+/// Streaming accumulation: multiple `session/update` `agent_message_chunk`
+/// notifications from the agent must be concatenated by the client, and the
+/// final PromptResponse must end the turn.
 #[tokio::test]
-#[ignore = "requires mock agent with full streaming simulation support"]
 async fn test_prompt_with_streaming_response() {
-    // Spawn threaded mock agent with OpenCode behavior
-    let config = MockStdioAgentConfig::opencode();
+    let mut config = MockStdioAgentConfig::opencode();
+    config.stream_chunks = vec!["The ".into(), "answer ".into(), "is 4".into()];
     let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
 
-    // Connect and get session
     let session = client
         .connect_with_best_mcp(None)
         .await
         .expect("Should complete handshake");
 
-    // Create a PromptRequest
-    use agent_client_protocol::PromptRequest;
-    let prompt_request: PromptRequest = serde_json::from_value(serde_json::json!({
-        "sessionId": session.id().to_string(),
-        "prompt": [{"type": "text", "text": "What is 2+2?"}],
-        "_meta": null
-    }))
-    .expect("Failed to create PromptRequest");
+    let (content, tool_calls, response) = client
+        .send_prompt_with_streaming(prompt_request(&session.id().to_string()))
+        .await
+        .expect("Should successfully receive streaming response");
 
-    // Send prompt with streaming (request ID is generated internally)
-    let result = client.send_prompt_with_streaming(prompt_request).await;
-
-    assert!(
-        result.is_ok(),
-        "Should successfully receive streaming response: {:?}",
-        result.err()
+    assert_eq!(
+        content, "The answer is 4",
+        "chunks must accumulate in order into the final content"
     );
+    assert!(tool_calls.is_empty(), "no tool calls were streamed");
+    assert_eq!(
+        response.stop_reason,
+        agent_client_protocol::StopReason::EndTurn
+    );
+}
 
-    let (content, _tool_calls, stop_reason) = result.unwrap();
+/// A streamed `tool_call` + completed `tool_call_update` pair must surface
+/// in the client's recorded tool calls alongside the text chunks.
+#[tokio::test]
+async fn test_prompt_with_streamed_tool_call() {
+    let mut config = MockStdioAgentConfig::opencode();
+    config.stream_chunks = vec!["Calculating…".into()];
+    config.stream_tool_call = true;
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
 
-    // Verify we got content
-    assert!(!content.is_empty(), "Should receive non-empty response");
-    println!("Received content: {}", content);
+    let session = client
+        .connect_with_best_mcp(None)
+        .await
+        .expect("Should complete handshake");
 
-    // Verify stop reason
-    println!("Stop reason: {:?}", stop_reason);
+    let (content, tool_calls, response) = client
+        .send_prompt_with_streaming(prompt_request(&session.id().to_string()))
+        .await
+        .expect("Should successfully receive streaming response");
 
-    // Expected content based on mock agent behavior
-    // The mock should send multiple chunks that concat to "The answer is 4"
+    // formatted_output() interleaves a rendered tool-call line into the text.
     assert!(
-        content.contains("answer"),
-        "Response should contain 'answer'"
+        content.starts_with("Calculating…"),
+        "text chunks must precede the tool call rendering: {content:?}"
+    );
+    assert!(
+        content.contains("Mock Tool"),
+        "the tool call must be rendered into the formatted output: {content:?}"
+    );
+    assert_eq!(
+        tool_calls.len(),
+        1,
+        "the streamed tool_call must be recorded"
+    );
+    assert_eq!(tool_calls[0].title, "mock_tool");
+    assert_eq!(
+        response.stop_reason,
+        agent_client_protocol::StopReason::EndTurn
+    );
+}
+
+/// Cancellation propagation: when the streaming callback reports a dropped
+/// receiver (returns `false`), the client must send `session/cancel` to the
+/// agent, and the agent's `cancelled` final response must end the turn.
+/// The mock holds the turn open until cancel arrives, so this test hangs
+/// into the client timeout (and fails) if the cancel is never sent.
+#[tokio::test]
+async fn test_cancel_mid_stream_reaches_agent() {
+    let mut config = MockStdioAgentConfig::opencode();
+    config.stream_chunks = vec!["partial ".into(), "answer".into()];
+    config.hold_turn_until_cancel = true;
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+
+    let session = client
+        .connect_with_best_mcp(None)
+        .await
+        .expect("Should complete handshake");
+
+    // A callback that refuses the first chunk models the daemon's turn
+    // stream being dropped — the user cancelled.
+    let callback: crucible_daemon::acp::StreamingCallback = Box::new(|_chunk| false);
+
+    let (_content, _tool_calls, response) = client
+        .send_prompt_with_callback(prompt_request(&session.id().to_string()), callback)
+        .await
+        .expect("cancelled turn should still complete cleanly");
+
+    assert_eq!(
+        response.stop_reason,
+        agent_client_protocol::StopReason::Cancelled,
+        "the agent only sends `cancelled` after receiving session/cancel, \
+         so this proves the client propagated the cancellation"
     );
 }

@@ -49,6 +49,19 @@ pub struct MockStdioAgentConfig {
     pub mcp_http: bool,
     /// Whether agent advertises SSE MCP support (ACP spec: McpCapabilities.sse)
     pub mcp_sse: bool,
+    /// Text chunks streamed as `session/update` `agent_message_chunk`
+    /// notifications before the final PromptResponse. Empty = respond
+    /// with a bare `end_turn` and no notifications (legacy behavior).
+    pub stream_chunks: Vec<String>,
+    /// Emit a `tool_call` + completed `tool_call_update` notification pair
+    /// (after the text chunks) before the final PromptResponse.
+    pub stream_tool_call: bool,
+    /// After emitting the notifications, hold the turn open until a
+    /// `session/cancel` notification arrives, then finish with
+    /// `stopReason: cancelled` (per ACP, cancel MUST end the turn that way).
+    /// Models a long-running turn so cancellation propagation is testable.
+    /// Honored by `ThreadedMockAgent`; the stdio binary ignores it.
+    pub hold_turn_until_cancel: bool,
 }
 
 impl Default for MockStdioAgentConfig {
@@ -66,6 +79,9 @@ impl Default for MockStdioAgentConfig {
             ],
             mcp_http: false,
             mcp_sse: false,
+            stream_chunks: Vec::new(),
+            stream_tool_call: false,
+            hold_turn_until_cancel: false,
         }
     }
 }
@@ -86,6 +102,9 @@ impl MockStdioAgentConfig {
             ],
             mcp_http: true,
             mcp_sse: false,
+            stream_chunks: Vec::new(),
+            stream_tool_call: false,
+            hold_turn_until_cancel: false,
         }
     }
 
@@ -105,6 +124,9 @@ impl MockStdioAgentConfig {
             ],
             mcp_http: true,
             mcp_sse: true,
+            stream_chunks: Vec::new(),
+            stream_tool_call: false,
+            hold_turn_until_cancel: false,
         }
     }
 
@@ -122,6 +144,9 @@ impl MockStdioAgentConfig {
             ],
             mcp_http: false,
             mcp_sse: false,
+            stream_chunks: Vec::new(),
+            stream_tool_call: false,
+            hold_turn_until_cancel: false,
         }
     }
 
@@ -140,6 +165,9 @@ impl MockStdioAgentConfig {
             ],
             mcp_http: true,
             mcp_sse: false,
+            stream_chunks: Vec::new(),
+            stream_tool_call: false,
+            hold_turn_until_cancel: false,
         }
     }
 }
@@ -152,6 +180,18 @@ pub struct MockStdioAgent {
     /// Agent configuration (public for threaded mock access)
     pub config: MockStdioAgentConfig,
     pub session_id: Option<String>,
+    /// Whether a `session/cancel` notification has been received.
+    pub cancel_received: bool,
+}
+
+/// The ordered wire messages for one `session/prompt` turn.
+pub struct PromptTurn {
+    /// `session/update` notifications to emit before the final response.
+    pub notifications: Vec<Value>,
+    /// Final response ending the turn normally.
+    pub end_turn: Value,
+    /// Final response after a `session/cancel` (ACP: MUST be `cancelled`).
+    pub cancelled: Value,
 }
 
 impl MockStdioAgent {
@@ -160,6 +200,7 @@ impl MockStdioAgent {
         Self {
             config,
             session_id: None,
+            cancel_received: false,
         }
     }
 
@@ -190,6 +231,26 @@ impl MockStdioAgent {
                 std::thread::sleep(std::time::Duration::from_millis(delay_ms));
             }
 
+            let method = request.get("method").and_then(|m| m.as_str());
+
+            // `session/cancel` is a notification: record it, send nothing.
+            if method == Some("session/cancel") {
+                self.note_cancel(&request);
+                continue;
+            }
+
+            // A streaming prompt turn emits notifications before the final
+            // response. (`hold_turn_until_cancel` needs interleaved IO and is
+            // only honored by ThreadedMockAgent.)
+            if method == Some("session/prompt") && !self.config.inject_errors {
+                let turn = self.handle_prompt_turn(&request);
+                for message in turn.notifications.iter().chain([&turn.end_turn]) {
+                    writeln!(stdout, "{}", serde_json::to_string(message)?)?;
+                }
+                stdout.flush()?;
+                continue;
+            }
+
             // Handle the request and generate response
             let response = self.handle_request(&request);
 
@@ -200,6 +261,21 @@ impl MockStdioAgent {
         }
 
         Ok(())
+    }
+
+    /// Record receipt of a `session/cancel` notification. Also writes the
+    /// cancelled session id to the file named by `CRU_MOCK_CANCEL_CAPTURE`
+    /// (when set) so subprocess-based tests can assert propagation.
+    pub fn note_cancel(&mut self, request: &Value) {
+        self.cancel_received = true;
+        if let Ok(path) = env::var("CRU_MOCK_CANCEL_CAPTURE") {
+            let session_id = request
+                .get("params")
+                .and_then(|p| p.get("sessionId"))
+                .and_then(|s| s.as_str())
+                .unwrap_or_default();
+            let _ = fs::write(path, session_id);
+        }
     }
 
     /// Handle a JSON-RPC request and generate appropriate response
@@ -346,12 +422,23 @@ impl MockStdioAgent {
         })
     }
 
-    /// Handle prompt request (chat message)
+    /// Handle prompt request (chat message) as a single final response.
+    ///
+    /// Kept for callers that only need the turn-ending message; the run
+    /// loops use `handle_prompt_turn` so configured streaming notifications
+    /// reach the wire first.
     fn handle_prompt(&self, request: &Value) -> Value {
         if self.config.inject_errors {
             return self.error_response(request, -32000, "Simulated prompt error");
         }
+        self.handle_prompt_turn(request).end_turn
+    }
 
+    /// Build the full wire script for a `session/prompt` turn: streaming
+    /// `session/update` notifications (per config) followed by the final
+    /// response, in the exact shapes `CrucibleAcpClient` parses
+    /// (`SessionNotification` / `PromptResponse`).
+    pub fn handle_prompt_turn(&self, request: &Value) -> PromptTurn {
         // Test hook: capture the concatenated prompt text to a file so tests
         // can assert exactly what reached the agent over the ACP wire (e.g.
         // daemon-injected Precognition context). Gated on an env var set via
@@ -372,19 +459,71 @@ impl MockStdioAgent {
             let _ = fs::write(path, text);
         }
 
-        // Construct proper PromptResponse using ACP types
-        let response: PromptResponse = serde_json::from_value(json!({
-            "stopReason": "end_turn",
-            "_meta": null
-        }))
-        .expect("Failed to create PromptResponse");
+        let session_id = request
+            .get("params")
+            .and_then(|p| p.get("sessionId"))
+            .and_then(|s| s.as_str())
+            .map(str::to_string)
+            .or_else(|| self.session_id.clone())
+            .unwrap_or_else(|| "mock-session".to_string());
 
-        // Wrap in JSON-RPC 2.0 response format
-        json!({
-            "jsonrpc": "2.0",
-            "id": request.get("id"),
-            "result": response
-        })
+        let update = |update: Value| {
+            json!({
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {
+                    "sessionId": session_id,
+                    "update": update
+                }
+            })
+        };
+
+        let mut notifications: Vec<Value> = self
+            .config
+            .stream_chunks
+            .iter()
+            .map(|chunk| {
+                update(json!({
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": { "type": "text", "text": chunk }
+                }))
+            })
+            .collect();
+
+        if self.config.stream_tool_call {
+            notifications.push(update(json!({
+                "sessionUpdate": "tool_call",
+                "toolCallId": "mock-tool-call-1",
+                "title": "mock_tool",
+                "status": "pending",
+                "rawInput": { "query": "2+2" }
+            })));
+            notifications.push(update(json!({
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "mock-tool-call-1",
+                "status": "completed",
+                "rawOutput": { "result": "4" }
+            })));
+        }
+
+        let final_response = |stop_reason: &str| {
+            let response: PromptResponse = serde_json::from_value(json!({
+                "stopReason": stop_reason,
+                "_meta": null
+            }))
+            .expect("Failed to create PromptResponse");
+            json!({
+                "jsonrpc": "2.0",
+                "id": request.get("id"),
+                "result": response
+            })
+        };
+
+        PromptTurn {
+            notifications,
+            end_turn: final_response("end_turn"),
+            cancelled: final_response("cancelled"),
+        }
     }
 
     /// Handle authentication request
@@ -550,6 +689,54 @@ mod tests {
         let response = agent.handle_request(&request);
         assert!(response.get("error").is_some());
         assert_eq!(response["error"]["code"], -32000);
+    }
+
+    /// The mock's streamed notifications must parse with the exact types the
+    /// real client uses (`SessionNotification`) — otherwise streaming tests
+    /// would exercise a wire shape no production code accepts.
+    #[test]
+    fn streamed_notifications_parse_as_session_notifications() {
+        use agent_client_protocol::SessionNotification;
+
+        let mut config = MockStdioAgentConfig::opencode();
+        config.stream_chunks = vec!["a".into(), "b".into()];
+        config.stream_tool_call = true;
+        let agent = MockStdioAgent::new(config);
+
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "session/prompt",
+            "params": {
+                "sessionId": "sess-1",
+                "prompt": [{"type": "text", "text": "hi"}]
+            }
+        });
+
+        let turn = agent.handle_prompt_turn(&request);
+        assert_eq!(
+            turn.notifications.len(),
+            4,
+            "2 chunks + tool_call + tool_call_update"
+        );
+        for notification in &turn.notifications {
+            assert_eq!(notification["method"], "session/update");
+            let params = notification["params"].clone();
+            serde_json::from_value::<SessionNotification>(params.clone()).unwrap_or_else(|e| {
+                panic!("notification params must parse as SessionNotification: {e}\n{params}")
+            });
+        }
+
+        // Final responses must parse as PromptResponse with the right reasons.
+        let end: PromptResponse =
+            serde_json::from_value(turn.end_turn["result"].clone()).expect("end_turn parses");
+        assert_eq!(end.stop_reason, agent_client_protocol::StopReason::EndTurn);
+        let cancelled: PromptResponse =
+            serde_json::from_value(turn.cancelled["result"].clone()).expect("cancelled parses");
+        assert_eq!(
+            cancelled.stop_reason,
+            agent_client_protocol::StopReason::Cancelled
+        );
     }
 
     #[test]
