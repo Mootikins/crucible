@@ -6,7 +6,7 @@ import { createSSEStream } from './helpers/mock-sse';
  * E2E: Tool Call Display
  *
  * Verifies tool call lifecycle rendering:
- * tool_call_start → tool_result_delta → tool_result_complete → message_complete
+ * tool_call → tool_result_delta → tool_result_complete → message_complete
  *
  * Uses deferred SSE delivery (same pattern as chat-happy-path):
  *   1. Send message → POST completes
@@ -21,7 +21,8 @@ test.describe('Tool call display', () => {
   test('displays tool call card during execution', async ({ page }) => {
     // Build SSE events with type embedded in data (matching real backend format)
     const sseBody = createSSEStream([
-      { type: 'tool_call_start', data: { type: 'tool_call_start', id: 'tool-001', name: 'read_file', arguments: { path: '/test.txt' } } },
+      // Real backend shape: event `tool_call` with `title` (src/web/events.rs)
+      { type: 'tool_call', data: { type: 'tool_call', id: 'tool-001', title: 'read_file', arguments: { path: '/test.txt' } } },
       { type: 'tool_result_delta', data: { type: 'tool_result_delta', id: 'tool-001', delta: 'File contents here' } },
       { type: 'tool_result_complete', data: { type: 'tool_result_complete', id: 'tool-001' } },
       { type: 'token', data: { type: 'token', content: 'I read the file for you.' } },

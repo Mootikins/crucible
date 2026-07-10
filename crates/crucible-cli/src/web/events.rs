@@ -172,18 +172,31 @@ impl ChatEvent {
                 content: data["content"].as_str().unwrap_or("").to_string(),
             },
 
-            "thinking_delta" => ChatEvent::Thinking {
+            // The daemon broadcast name is `thinking` (SessionEventMessage::
+            // thinking); `thinking_delta` kept for older recordings.
+            "thinking" | "thinking_delta" => ChatEvent::Thinking {
                 content: data["content"].as_str().unwrap_or("").to_string(),
             },
 
+            // Canonical payload is `{call_id, tool, args}` (SessionEvent
+            // Message::tool_call); id/name/arguments kept for older
+            // recordings.
             "tool_call_start" | "tool_call" => ChatEvent::ToolCall {
-                id: data["id"].as_str().unwrap_or("").to_string(),
-                title: data["name"]
+                id: data["call_id"]
                     .as_str()
+                    .or_else(|| data["id"].as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                title: data["tool"]
+                    .as_str()
+                    .or_else(|| data["name"].as_str())
                     .or_else(|| data["title"].as_str())
                     .unwrap_or("")
                     .to_string(),
-                arguments: data.get("arguments").cloned(),
+                arguments: data
+                    .get("args")
+                    .or_else(|| data.get("arguments"))
+                    .cloned(),
             },
 
             "tool_result" => ChatEvent::ToolResult {
@@ -192,7 +205,13 @@ impl ChatEvent {
                     .or_else(|| data["call_id"].as_str())
                     .unwrap_or("")
                     .to_string(),
-                result: data["result"].as_str().map(String::from),
+                // Results are arbitrary JSON; pass strings through verbatim
+                // and stringify anything else rather than dropping it.
+                result: match &data["result"] {
+                    serde_json::Value::Null => None,
+                    serde_json::Value::String(s) => Some(s.clone()),
+                    other => Some(other.to_string()),
+                },
                 terminate: data["terminate"].as_bool().unwrap_or(false),
             },
 
@@ -379,6 +398,7 @@ impl ChatEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::protocol::SessionEventMessage;
     use crucible_daemon::SessionEvent;
 
     fn make_event(event_type: &str, data: serde_json::Value) -> SessionEvent {
@@ -386,6 +406,136 @@ mod tests {
             event_type: event_type.to_string(),
             session_id: "test-session".to_string(),
             data,
+        }
+    }
+
+    /// Convert a canonical daemon broadcast message into the client-side
+    /// `SessionEvent` exactly as the subscription path does (event →
+    /// event_type, data verbatim) — so these tests consume the REAL wire
+    /// shapes, not hand-invented ones.
+    fn from_wire(msg: SessionEventMessage) -> SessionEvent {
+        SessionEvent {
+            event_type: msg.event,
+            session_id: msg.session_id,
+            data: msg.data,
+        }
+    }
+
+    /// The daemon announces tool calls as `tool_call` with
+    /// `{call_id, tool, args}` (SessionEventMessage::tool_call). The web
+    /// mapping must read THOSE fields — reading `id`/`name`/`arguments`
+    /// renders every live tool card blank.
+    #[test]
+    fn real_tool_call_event_maps_id_title_and_arguments() {
+        let event = from_wire(SessionEventMessage::tool_call(
+            "s1",
+            "call-1",
+            "read_file",
+            serde_json::json!({ "path": "foo.rs" }),
+        ));
+
+        let chat_event = ChatEvent::from_daemon_event(&event);
+        assert_eq!(chat_event.event_name(), "tool_call");
+        match chat_event {
+            ChatEvent::ToolCall {
+                id,
+                title,
+                arguments,
+            } => {
+                assert_eq!(id, "call-1");
+                assert_eq!(title, "read_file");
+                assert_eq!(arguments, Some(serde_json::json!({ "path": "foo.rs" })));
+            }
+            other => panic!("expected ToolCall, got {other:?}"),
+        }
+    }
+
+    /// The daemon's thinking stream event is named `thinking`
+    /// (SessionEventMessage::thinking) — not `thinking_delta`. Falling
+    /// through to the generic passthrough silently drops thinking from
+    /// the web UI.
+    #[test]
+    fn real_thinking_event_maps_to_thinking() {
+        let event = from_wire(SessionEventMessage::thinking("s1", "pondering…"));
+
+        let chat_event = ChatEvent::from_daemon_event(&event);
+        assert_eq!(chat_event.event_name(), "thinking");
+        match chat_event {
+            ChatEvent::Thinking { content } => assert_eq!(content, "pondering…"),
+            other => panic!("expected Thinking, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn real_text_delta_event_maps_to_token() {
+        let event = from_wire(SessionEventMessage::text_delta("s1", "hel"));
+
+        let chat_event = ChatEvent::from_daemon_event(&event);
+        assert_eq!(chat_event.event_name(), "token");
+        match chat_event {
+            ChatEvent::Token { content } => assert_eq!(content, "hel"),
+            other => panic!("expected Token, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn real_message_complete_event_maps_content_and_usage() {
+        let usage = crucible_core::traits::llm::TokenUsage {
+            prompt_tokens: 10,
+            completion_tokens: 5,
+            total_tokens: 15,
+            cache_read_tokens: None,
+            cache_creation_tokens: None,
+        };
+        let event = from_wire(SessionEventMessage::message_complete(
+            "s1",
+            "msg-1",
+            "final answer",
+            Some(&usage),
+        ));
+
+        let chat_event = ChatEvent::from_daemon_event(&event);
+        assert_eq!(chat_event.event_name(), "message_complete");
+        match chat_event {
+            ChatEvent::MessageComplete {
+                id,
+                content,
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+                ..
+            } => {
+                assert_eq!(id, "msg-1");
+                assert_eq!(content, "final answer");
+                assert_eq!(prompt_tokens, Some(10));
+                assert_eq!(completion_tokens, Some(5));
+                assert_eq!(total_tokens, Some(15));
+            }
+            other => panic!("expected MessageComplete, got {other:?}"),
+        }
+    }
+
+    /// Real tool results are arbitrary JSON (SessionEventMessage::tool_result
+    /// takes a Value); non-string results must be stringified, not dropped.
+    #[test]
+    fn real_tool_result_with_object_payload_is_stringified() {
+        let event = from_wire(SessionEventMessage::tool_result(
+            "s1",
+            "call-1",
+            "search",
+            serde_json::json!({ "matches": 3 }),
+        ));
+
+        match ChatEvent::from_daemon_event(&event) {
+            ChatEvent::ToolResult { id, result, .. } => {
+                assert_eq!(id, "call-1");
+                assert_eq!(
+                    result.as_deref(),
+                    Some(r#"{"matches":3}"#),
+                    "object results must reach the UI as JSON text, not None"
+                );
+            }
+            other => panic!("expected ToolResult, got {other:?}"),
         }
     }
 

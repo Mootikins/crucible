@@ -26,9 +26,11 @@ function tokenFrames(text: string): Frame[] {
 const COMPLETE_STREAM: Frame[] = [
   ...tokenFrames('Here is the answer.'),
   { type: 'thinking', data: { type: 'thinking', content: 'Considering the options carefully.' } },
+  // Real backend shape: ChatEvent::ToolCall serializes as event `tool_call`
+  // with a `title` field (src/web/events.rs) — not tool_call_start/name.
   {
-    type: 'tool_call_start',
-    data: { type: 'tool_call_start', id: 't1', name: 'read_file', arguments: { path: 'notes/x.md' } },
+    type: 'tool_call',
+    data: { type: 'tool_call', id: 't1', title: 'read_file', arguments: { path: 'notes/x.md' } },
   },
   { type: 'tool_result_delta', data: { type: 'tool_result_delta', id: 't1', delta: 'file contents' } },
   { type: 'tool_result_complete', data: { type: 'tool_result_complete', id: 't1' } },

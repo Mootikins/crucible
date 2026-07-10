@@ -8,7 +8,7 @@ import { HARNESS_KILN, setupEditorHarness, typeInEditor } from './_helpers/edito
  * Drives the REAL editor components (EditorProvider + EditorPanel + CodeMirror)
  * via the dev-only harness at /editor-harness.html — no registry bypass (cf.
  * e2e/file-tab.spec.ts). Asserts the genuine round-trip: open → dirty ● on the
- * tab → PUT /api/notes body → clean.
+ * tab → PUT /api/kiln/file body → clean.
  *
  * KNOWN PRODUCT GAPS (documented, not worked around — see docs/Meta/Web User
  * Stories.md WS-202/204 GAP markers):
