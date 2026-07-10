@@ -484,7 +484,139 @@ async fn test_precognition_default_value() {
 }
 
 // =============================================================================
-// 11. Config get on nonexistent session fails
+// 11. Every config knob round-trips over the real wire
+// =============================================================================
+
+/// One set→get round-trip per session config knob, through real JSON-RPC
+/// serialization against a live server. This is the runtime companion to the
+/// static field-name parity gate in architecture_tests.rs: a serde rename or
+/// repr change the source-text scan can't see fails here. Every knob in the
+/// gate's CONFIG_METHODS table must round-trip a non-default value below.
+#[tokio::test]
+async fn all_config_knobs_round_trip_over_the_wire() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let (sid, client) = setup_session_with_agent(&server).await;
+    let mut failures: Vec<String> = Vec::new();
+
+    macro_rules! round_trip {
+        ($knob:literal, $set:expr, $get:expr, $expected:expr) => {{
+            if let Err(e) = $set.await {
+                failures.push(format!("{}: set failed: {e}", $knob));
+            } else {
+                match $get.await {
+                    Ok(actual) if actual == $expected => {}
+                    Ok(actual) => failures.push(format!(
+                        "{}: set value did not survive the wire: got {actual:?}, expected {:?}",
+                        $knob, $expected
+                    )),
+                    Err(e) => failures.push(format!("{}: get failed: {e}", $knob)),
+                }
+            }
+        }};
+    }
+
+    round_trip!(
+        "thinking_budget",
+        client.session_set_thinking_budget(&sid, Some(1024)),
+        client.session_get_thinking_budget(&sid),
+        Some(1024)
+    );
+    round_trip!(
+        "system_prompt",
+        client.session_set_system_prompt(&sid, "Round-trip prompt."),
+        client.session_get_system_prompt(&sid),
+        Some("Round-trip prompt.".to_string())
+    );
+    round_trip!(
+        "precognition_results",
+        client.session_set_precognition_results(&sid, 9),
+        client.session_get_precognition_results(&sid),
+        Some(9)
+    );
+    round_trip!(
+        "temperature",
+        client.session_set_temperature(&sid, 0.3),
+        client.session_get_temperature(&sid),
+        Some(0.3)
+    );
+    round_trip!(
+        "max_tokens",
+        client.session_set_max_tokens(&sid, Some(8192)),
+        client.session_get_max_tokens(&sid),
+        Some(8192)
+    );
+    round_trip!(
+        "max_iterations",
+        client.session_set_max_iterations(&sid, Some(7)),
+        client.session_get_max_iterations(&sid),
+        Some(7)
+    );
+    round_trip!(
+        "execution_timeout",
+        client.session_set_execution_timeout(&sid, Some(120)),
+        client.session_get_execution_timeout(&sid),
+        Some(120)
+    );
+    round_trip!(
+        "context_budget",
+        client.session_set_context_budget(&sid, Some(32000)),
+        client.session_get_context_budget(&sid),
+        Some(32000)
+    );
+    round_trip!(
+        "context_strategy",
+        client.session_set_context_strategy(&sid, "sliding_window"),
+        client.session_get_context_strategy(&sid),
+        Some("sliding_window".to_string())
+    );
+    round_trip!(
+        "context_window",
+        client.session_set_context_window(&sid, Some(20)),
+        client.session_get_context_window(&sid),
+        Some(20)
+    );
+    round_trip!(
+        "output_validation",
+        client.session_set_output_validation(&sid, "json"),
+        client.session_get_output_validation(&sid),
+        Some("json".to_string())
+    );
+    round_trip!(
+        "validation_retries",
+        client.session_set_validation_retries(&sid, 5),
+        client.session_get_validation_retries(&sid),
+        Some(5)
+    );
+    round_trip!(
+        "autocompact_threshold",
+        client.session_set_autocompact_threshold(&sid, Some(0.75)),
+        client.session_get_autocompact_threshold(&sid),
+        Some(0.75)
+    );
+
+    // precognition's getter returns bool (not Option) — check it directly.
+    if let Err(e) = client.session_set_precognition(&sid, false).await {
+        failures.push(format!("precognition: set failed: {e}"));
+    } else {
+        match client.session_get_precognition(&sid).await {
+            Ok(false) => {}
+            Ok(true) => failures
+                .push("precognition: set(false) did not survive the wire (got true)".to_string()),
+            Err(e) => failures.push(format!("precognition: get failed: {e}")),
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "config knobs failed the wire round-trip:\n  - {}",
+        failures.join("\n  - ")
+    );
+
+    server.shutdown().await;
+}
+
+// =============================================================================
+// 12. Config get on nonexistent session fails
 // =============================================================================
 
 #[tokio::test]

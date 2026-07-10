@@ -343,6 +343,53 @@ fn rpc_config_field_names_match_across_the_wire() {
     );
 }
 
+/// Completeness companion to the parity gate above: CONFIG_METHODS is
+/// hand-maintained, so a newly added knob would otherwise escape the
+/// field-name check silently. Discover every `session_{set,get}_*` accessor
+/// on the client and every `handle_session_{set,get}_*` handler on the server
+/// and require each to have a CONFIG_METHODS row (and vice versa — a row
+/// whose knob was deleted must be removed).
+#[test]
+fn config_methods_table_covers_every_knob() {
+    let root = workspace_root();
+    let client = read(&root.join("crates/crucible-daemon/src/rpc_client/client/agent.rs"));
+    let server = read(&root.join("crates/crucible-daemon/src/server/session/params.rs"));
+
+    let table: BTreeSet<String> = CONFIG_METHODS
+        .iter()
+        .map(|m| m.suffix.to_string())
+        .collect();
+
+    let sides = [
+        ("client set", captures(r"fn session_set_([a-z0-9_]+)\(", &client)),
+        ("client get", captures(r"fn session_get_([a-z0-9_]+)\(", &client)),
+        ("server set", captures(r"handle_session_set_([a-z0-9_]+)", &server)),
+        ("server get", captures(r"handle_session_get_([a-z0-9_]+)", &server)),
+    ];
+
+    let mut failures = Vec::new();
+    for (side, discovered) in &sides {
+        for missing in discovered.difference(&table) {
+            failures.push(format!(
+                "{side} knob `{missing}` has no CONFIG_METHODS row — add one so the \
+                 field-name parity gate covers it"
+            ));
+        }
+        for stale in table.difference(discovered) {
+            failures.push(format!(
+                "CONFIG_METHODS row `{stale}` has no matching {side} accessor — \
+                 remove the row or restore the knob"
+            ));
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "CONFIG_METHODS drift:\n  - {}",
+        failures.join("\n  - ")
+    );
+}
+
 // ===========================================================================
 // A3 — wire-mock seam: LLM SDK access stays behind the provider module.
 //
