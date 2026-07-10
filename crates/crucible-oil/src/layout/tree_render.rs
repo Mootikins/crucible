@@ -15,7 +15,8 @@ use crate::utils::visible_width;
 
 use crate::render::CursorInfo;
 use crate::render_helpers::{
-    format_popup_item_line, select_spinner_frame, truncate_with_ellipsis, wrap_and_style_padded,
+    format_popup_item_line, select_spinner_frame, truncate_with_ellipsis,
+    wrap_and_style_padded_clamped,
 };
 use crate::style::{Border, Style};
 
@@ -79,7 +80,7 @@ fn render_box(
         }
 
         LayoutContent::Text { content, style } => {
-            render_text(content, style, x, y, width, grid);
+            render_text(content, style, x, y, width, height, grid);
         }
 
         LayoutContent::Input {
@@ -167,20 +168,27 @@ fn render_box(
 }
 
 /// Render styled text at the given position, wrapping within width bounds.
+///
+/// Rendering is clamped to the laid-out `height`: when a row sibling shrank
+/// this text below its natural width, the extra wrapped rows would otherwise
+/// bleed over whatever Taffy placed below. A height of 0 means the layout
+/// carries no height information (legacy paths) — render unclamped.
+#[allow(clippy::too_many_arguments)]
 fn render_text(
     content: &str,
     style: &Style,
     x: usize,
     y: usize,
     width: usize,
+    height: usize,
     grid: &mut CellGrid,
 ) {
     if content.is_empty() || width == 0 {
         return;
     }
 
-    // Use the shared helper to wrap and style the text
-    let styled_lines = wrap_and_style_padded(content, style, width);
+    let max_rows = if height == 0 { usize::MAX } else { height };
+    let styled_lines = wrap_and_style_padded_clamped(content, style, width, max_rows);
 
     for (row_idx, line) in styled_lines.iter().enumerate() {
         let target_y = y + row_idx;

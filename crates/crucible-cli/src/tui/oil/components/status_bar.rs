@@ -194,7 +194,7 @@ impl StatusBar {
     pub fn emergency_view(&self) -> Node {
         let t = crate::tui::oil::theme::active();
         row(vec![
-            styled(self.mode_label().to_string(), self.mode_style()),
+            styled(self.mode_label().to_string(), self.mode_style()).no_shrink(),
             styled(
                 " ".to_string(),
                 Style::new().fg(t.resolve_color(t.colors.text_muted)),

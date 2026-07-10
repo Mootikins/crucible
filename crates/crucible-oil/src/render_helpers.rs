@@ -5,35 +5,45 @@ use crate::ansi::{apply_style, visible_width};
 use crate::style::Style;
 use textwrap::{wrap, Options, WordSplitter};
 
-/// Wraps text to a given width, applies a style, and pads each line to fill the width.
+/// Wraps text to a given width, applies a style, and pads each line to fill
+/// the width. Used by tree_render.rs where background colors need to extend
+/// across the full width.
 ///
-/// This is used by tree_render.rs where background colors need to extend across the full width.
-///
-/// # Arguments
-/// - `content`: The text to wrap and style
-/// - `style`: The style to apply to each line
-/// - `width`: The target width for wrapping and padding (in characters)
-///
-/// # Returns
-/// A vector of styled, padded lines. Each line is:
-/// 1. Wrapped to fit within `width` characters
-/// 2. Styled with `apply_style()`
-/// 3. Right-padded with spaces to exactly `width` characters
-///
-/// If `content` is empty or `width` is 0, returns an empty vector.
-/// If wrapping produces no lines (e.g., all-whitespace input), returns one full-width line of spaces.
-pub(crate) fn wrap_and_style_padded(content: &str, style: &Style, width: usize) -> Vec<String> {
-    if content.is_empty() || width == 0 {
+/// Renders at most `max_rows` lines (pass `usize::MAX` for no clamp). When
+/// the wrapped text exceeds `max_rows`, the last visible line ends in an
+/// ellipsis so truncation is visible instead of silently bleeding past the
+/// laid-out rect (e.g., a shrunk status-bar span whose rect is 1 row tall).
+pub(crate) fn wrap_and_style_padded_clamped(
+    content: &str,
+    style: &Style,
+    width: usize,
+    max_rows: usize,
+) -> Vec<String> {
+    if content.is_empty() || width == 0 || max_rows == 0 {
         return Vec::new();
     }
 
     // Wrap text to the target width
     let options = Options::new(width).word_splitter(WordSplitter::NoHyphenation);
-    let wrapped: Vec<_> = wrap(content, options);
+    let mut wrapped: Vec<_> = wrap(content, options);
 
     // If wrapping produced no lines (e.g., all-whitespace input), return one full-width line of spaces
     if wrapped.is_empty() {
         return vec![apply_style(&" ".repeat(width), style)];
+    }
+
+    if wrapped.len() > max_rows {
+        wrapped.truncate(max_rows);
+        let last = wrapped
+            .last_mut()
+            .expect("max_rows > 0 guarantees a last line");
+        let mut clamped = last.to_string();
+        if visible_width(&clamped) >= width {
+            clamped = crate::utils::truncate_to_width(&clamped, width.saturating_sub(1), false)
+                .into_owned();
+        }
+        clamped.push('\u{2026}');
+        *last = clamped.into();
     }
 
     // Style each line and pad to fill the width. Padding cells inherit

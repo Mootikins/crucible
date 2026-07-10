@@ -99,7 +99,7 @@ pub fn render_component_node(component: &StatuslineComponent, data: &StatusBarDa
                         .bold(),
                 ),
             };
-            styled(label.to_string(), style)
+            styled(label.to_string(), style).no_shrink()
         }
         StatuslineComponent::Model {
             max_length,
@@ -156,16 +156,22 @@ pub fn render_component_node(component: &StatuslineComponent, data: &StatusBarDa
                     Style::new().fg(t.resolve_color(t.colors.overlay_bright)),
                 ));
                 items.push(styled(" ".to_string(), Style::new()));
-                items.push(styled(
-                    format!(" {} ", kind.label()),
-                    Style::new().fg(kind.color()).bold().reverse(),
-                ));
-            } else if !data.notification_counts.is_empty() {
-                for (kind, count) in &data.notification_counts {
-                    items.push(styled(
+                items.push(
+                    styled(
                         format!(" {} ", kind.label()),
                         Style::new().fg(kind.color()).bold().reverse(),
-                    ));
+                    )
+                    .no_shrink(),
+                );
+            } else if !data.notification_counts.is_empty() {
+                for (kind, count) in &data.notification_counts {
+                    items.push(
+                        styled(
+                            format!(" {} ", kind.label()),
+                            Style::new().fg(kind.color()).bold().reverse(),
+                        )
+                        .no_shrink(),
+                    );
                     items.push(styled(
                         format!(" {} ", count),
                         Style::new().fg(kind.color()).bold(),

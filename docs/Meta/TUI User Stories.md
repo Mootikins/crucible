@@ -102,8 +102,8 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### US-205: Context usage + statusline
 **As a user**, the status bar shows mode, model, token usage (used/total), and cache hit rate; Lua `crucible.statusline.setup()` reorders it.
-**Acceptance:** usage updates after each `message_complete`; Lua config drives layout with builtin fallback; overflow degrades gracefully at narrow widths.
-**Tests:** T1 (statusline config), T2 (status_bar width snapshots exist).
+**Acceptance:** usage updates after each `message_complete`; Lua config drives layout with builtin fallback; overflow degrades gracefully at narrow widths (badges stay intact, model/toast spans elide with `…`, sections never overlap).
+**Tests:** T1 (statusline config), T2 (status_bar width snapshots at 40/50/80/120; narrow-width graceful degradation shipped 2026-07-10 via oil row flex-shrink + `no_shrink` badges).
 
 ## 3. Tools, Subagents & MCP
 

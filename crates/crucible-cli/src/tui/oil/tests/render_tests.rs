@@ -378,9 +378,8 @@ fn cursor_row_from_end_uses_visual_rows() {
     );
 }
 
-/// In Taffy, a non-flex/non-fixed child in a row alongside a fixed sibling
-/// gets zero remaining space. Only the fixed child content is rendered.
-/// (Flex content rendering is a known issue; see snapshot_flex_content_not_rendered_known_issue.)
+/// A fixed(height) box in a row sizes its width to content, leaving row
+/// space for siblings — both columns render.
 #[test]
 fn row_with_fixed_child_renders_in_multiline() {
     let node = row([fixed(10, text("Label")), text("Multi\nline\ncontent")]);
@@ -389,8 +388,10 @@ fn row_with_fixed_child_renders_in_multiline() {
         output.contains("Label"),
         "Fixed child 'Label' should be rendered"
     );
-    // The non-fixed sibling gets zero width in Taffy row layout,
-    // so its content does not appear.
+    assert!(
+        output.contains("Multi"),
+        "Sibling text gets the remaining row space"
+    );
 }
 
 #[test]
@@ -412,12 +413,10 @@ fn row_with_multiline_fixed_child_affects_height() {
     );
 }
 
-/// Documents known issue: Flex children don't render their content.
-/// This test captures the BROKEN behavior where only "Label:" appears.
-/// Remove/update this test when Flex content rendering is fixed.
-/// See: .sisyphus/notepads/oil-row-multiline-fix/issues.md
+/// The two-column layout promised by the `Size` doc-comment: a Content col
+/// shrinks to its label, a flex(1) col fills the remaining row space.
 #[test]
-fn snapshot_flex_content_not_rendered_known_issue() {
+fn snapshot_flex_content_fills_remaining_row_space() {
     let node = row([
         col([text("Label:")]),
         flex(
@@ -427,14 +426,11 @@ fn snapshot_flex_content_not_rendered_known_issue() {
             )]),
         ),
     ]);
-    // Expected: "Label:This is a longer description..."
-    // Actual: "Label:" (Flex content missing - this is a bug)
     assert_snapshot!(render_to_string(&node, 80));
 }
 
-/// Two-column layout: fixed-width label + text content.
-/// In Taffy, a non-flex second child in a row gets zero remaining space,
-/// so only the fixed child renders. This documents current Taffy behavior.
+/// Two-column layout: fixed-height label box + text content. The fixed box
+/// takes its natural width; the sibling text renders beside it.
 #[test]
 fn snapshot_two_column_row_layout_with_fixed() {
     let node = row([
@@ -462,23 +458,20 @@ fn empty_fixed_child_produces_no_output() {
     );
 }
 
-/// In Taffy, fixed(0) allocates zero columns but the tree renderer still
-/// outputs the text content at that position. The sibling text node gets
-/// zero width as a non-flex child in a row, so only the fixed child's
-/// content appears.
+/// fixed(0) fixes HEIGHT at zero, not width: the box still takes its content
+/// width in the row (pushing the sibling right) and the tree renderer still
+/// writes the child text, whose own leaf carries a 1-line height.
 #[test]
-fn zero_width_fixed_still_renders_content() {
+fn zero_height_fixed_still_renders_content_and_leaves_row_space() {
     let node = row([fixed(0, text("Hidden")), text("Visible")]);
     let output = render_to_string(&node, 80);
-    // fixed(0) content is still written to output by the tree renderer
     assert!(
         output.contains("Hidden"),
-        "Zero-width fixed child content is still rendered"
+        "fixed(0) child content is still rendered"
     );
-    // The non-flex sibling gets no space in Taffy row layout
     assert!(
-        !output.contains("Visible"),
-        "Non-flex sibling should get zero space in a row with a fixed child"
+        output.contains("Visible"),
+        "Sibling text renders in the remaining row space"
     );
 }
 

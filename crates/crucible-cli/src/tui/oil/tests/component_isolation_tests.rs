@@ -355,6 +355,30 @@ mod status_bar_tests {
         assert_snapshot!("statusline_ctrlc_notification_narrow_width_50", ansi);
     }
 
+    /// US-205: at extreme narrow widths the badges (mode, WARN) stay intact
+    /// and shrinkable spans (model, toast) absorb the overflow with ellipses —
+    /// nothing overlaps and nothing lands past the right edge.
+    #[test]
+    fn snapshot_statusline_ctrlc_notification_narrow_width_40() {
+        use crate::tui::oil::components::NotificationToastKind;
+
+        let bar = StatusBar::new()
+            .mode(ChatMode::Normal)
+            .model("glm-4.7-flash-iq4")
+            .toast("Ctrl+C again to quit", NotificationToastKind::Warning);
+
+        let ansi = render_configured_bar_ansi(&bar, 40);
+        assert_fits_width(&ansi, 40);
+
+        let plain = render_configured_bar(&bar, 40);
+        assert!(
+            plain.contains(" NORMAL ") && plain.contains(" WARN "),
+            "badges must survive extreme narrow widths intact: {plain:?}"
+        );
+
+        assert_snapshot!("statusline_ctrlc_notification_narrow_width_40", ansi);
+    }
+
     #[test]
     fn snapshot_statusline_idle_context_fallback_right_aligned() {
         let bar = StatusBar::new()

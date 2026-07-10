@@ -80,11 +80,22 @@ impl LayoutEngine {
         self.new_leaf_size(available_width, 1.0)
     }
 
-    /// Create a content-sized leaf node (flex_shrink: 0) with the given dimensions.
-    fn new_leaf_content_sized(&mut self, width: f32, height: f32) -> NodeId {
+    /// Create a content-sized leaf node with the given dimensions.
+    ///
+    /// `shrink` lets the leaf give up width when its row overflows — the
+    /// renderer ellipsizes the clipped text (graceful narrow-width
+    /// degradation). Non-shrinking leaves keep their natural width so short
+    /// decorations (spinners, badges) never collapse. `min_size` of zero is
+    /// required either way: Taffy's `auto` min would pin the leaf at its
+    /// declared size and block shrinking entirely.
+    fn new_leaf_content_sized(&mut self, width: f32, height: f32, shrink: bool) -> NodeId {
         self.tree
             .new_leaf(Style {
-                flex_shrink: 0.0,
+                flex_shrink: if shrink { 1.0 } else { 0.0 },
+                min_size: Size {
+                    width: length(0.0),
+                    height: auto(),
+                },
                 size: Size {
                     width: length(width),
                     height: length(height),
@@ -172,7 +183,7 @@ impl LayoutEngine {
             Node::Text(text) => {
                 let content_width = crate::ansi::visible_width(&text.content) as f32;
                 let lines = measure_text_lines(&text.content, content_width as usize);
-                self.new_leaf_content_sized(content_width, lines as f32)
+                self.new_leaf_content_sized(content_width, lines as f32, !text.no_shrink)
             }
 
             Node::Spinner(spinner) => {
@@ -181,12 +192,23 @@ impl LayoutEngine {
                     .as_ref()
                     .map(|l| l.chars().count() + 2)
                     .unwrap_or(1) as f32;
-                self.new_leaf_content_sized(label_width, 1.0)
+                self.new_leaf_content_sized(label_width, 1.0, false)
             }
 
             Node::Input(_) => {
-                // Inputs in rows should still fill remaining space
-                return self.build_node(node, available_width);
+                // Inputs in rows fill the space REMAINING after content-sized
+                // siblings. A definite full-width basis would overflow the row
+                // and force short siblings (e.g., the prompt glyph) to shrink.
+                self.tree
+                    .new_leaf(Style {
+                        flex_grow: 1.0,
+                        size: Size {
+                            width: auto(),
+                            height: length(1.0),
+                        },
+                        ..Default::default()
+                    })
+                    .expect("taffy operation failed")
             }
 
             Node::Box(boxnode) => {
@@ -218,11 +240,17 @@ impl LayoutEngine {
             available_width - padding.left as f32 - padding.right as f32 - border_width * 2.0;
 
         let is_row = matches!(boxnode.direction, Direction::Row);
+        // Inside a row, every descendant must size to content, not to the full
+        // available width — otherwise a nested col's text leaf claims the whole
+        // row and pushes flex siblings to zero (the two-column layout promised
+        // by the `Size` doc-comment). So content-sizing propagates through
+        // boxes that are themselves content-sized.
+        let children_content_sized = is_row || content_sized;
         let child_ids: Vec<NodeId> = boxnode
             .children
             .iter()
             .map(|c| {
-                if is_row {
+                if children_content_sized {
                     self.build_node_content_sized(c, inner_width.max(0.0))
                 } else {
                     self.build_node(c, inner_width.max(0.0))
@@ -238,11 +266,24 @@ impl LayoutEngine {
         let justify_content = convert_justify_content(boxnode.justify);
         let align_items = convert_align_items(boxnode.align);
 
+        // `Size::Fixed` fixes HEIGHT only (see the `fixed()` builder). Width
+        // follows the same rule as Content: full available width in a column
+        // context, natural width when content-sized inside a row.
         let (width, height, flex_grow) = match boxnode.size {
+            OilSize::Fixed(h) if content_sized => (auto(), length(h as f32), 0.0),
             OilSize::Fixed(h) => (length(available_width), length(h as f32), 0.0),
             OilSize::Flex(weight) => (auto(), auto(), weight as f32),
             OilSize::Content if content_sized => (auto(), auto(), 0.0),
             OilSize::Content => (length(available_width), auto(), 0.0),
+        };
+
+        // A childless flex box in a row is a spacer(). When the row overflows
+        // it would collapse to zero and the sections it separates would abut —
+        // keep one cell so shrunk neighbors stay visually separated.
+        let min_width = if content_sized && flex_grow > 0.0 && boxnode.children.is_empty() {
+            length(1.0)
+        } else {
+            auto()
         };
 
         self.tree
@@ -251,6 +292,10 @@ impl LayoutEngine {
                     display: Display::Flex,
                     flex_direction,
                     flex_grow,
+                    min_size: Size {
+                        width: min_width,
+                        height: auto(),
+                    },
                     justify_content: Some(justify_content),
                     align_items: Some(align_items),
                     gap: Size {

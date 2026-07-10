@@ -61,6 +61,10 @@ pub struct TextNode {
     pub content: String,
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub style: Style,
+    /// Keep the natural width when a row overflows. Shrinkable siblings are
+    /// ellipsized instead. For short decorations like statusline badges.
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
+    pub no_shrink: bool,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -193,6 +197,7 @@ pub fn text(content: impl Into<String>) -> Node {
     Node::Text(TextNode {
         content: content.into(),
         style: Style::default(),
+        no_shrink: false,
     })
 }
 
@@ -200,6 +205,7 @@ pub fn styled(content: impl Into<String>, style: Style) -> Node {
     Node::Text(TextNode {
         content: content.into(),
         style,
+        no_shrink: false,
     })
 }
 
@@ -371,6 +377,18 @@ pub fn numbered_list(items: impl IntoIterator<Item = impl Into<String>>) -> Node
 }
 
 impl Node {
+    /// Mark a text node as non-shrinkable in row layouts (see
+    /// [`TextNode::no_shrink`]). No effect on other node kinds.
+    pub fn no_shrink(self) -> Self {
+        match self {
+            Node::Text(mut t) => {
+                t.no_shrink = true;
+                Node::Text(t)
+            }
+            other => other,
+        }
+    }
+
     pub fn with_style(self, style: Style) -> Self {
         match self {
             Node::Text(mut t) => {

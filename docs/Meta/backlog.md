@@ -17,6 +17,9 @@ Context: While implementing AgentComponents for model switching, noticed signifi
 
 ### P0: Horizontal sizing + Overlay positioning
 - Add `width: Size` to `BoxNode` for horizontal sizing (unlocks diff panel, drawer, multi-column layout)
+  - Partial 2026-07-10: boxes inside rows (incl. `fixed()`) now auto-size width to
+    content instead of claiming the full row, so two-column `row([content, flex(1, …)])`
+    layouts work; explicit fixed WIDTH is still unsupported
 - Extend `OverlayAnchor` with `Positioned` variant (h/v anchors, width/height constraints)
 - Add `OverlayLayer` (Float vs Modal) with input routing for permission prompts
 
@@ -26,7 +29,9 @@ Context: While implementing AgentComponents for model switching, noticed signifi
 
 ### P1: Flexbox + constraints
 - Wire `min_size`/`max_size` through to Taffy for drawer constraints
-- Add `flex-shrink` for narrow terminal graceful degradation
+- ~~Add `flex-shrink` for narrow terminal graceful degradation~~ ✅ 2026-07-10: row text
+  leaves shrink (`TextNode.no_shrink` opts out for badges), the renderer ellipsizes at
+  the laid-out rect instead of bleeding, and spacers keep a 1-cell minimum
 
 ### P1: Lua scripting integration
 - Add event callback IDs to NodeSpec for interactive plugin UIs
