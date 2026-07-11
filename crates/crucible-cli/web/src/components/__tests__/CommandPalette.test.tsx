@@ -1,7 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@solidjs/testing-library';
+import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
-import { CommandPalette, type PaletteCommand } from '../CommandPalette';
+import { CommandPalette, parseOmniQuery, type PaletteCommand } from '../CommandPalette';
+import { statusBarActions } from '@/stores/statusBarStore';
+import type { NoteEntry } from '@/lib/types';
+
+const PLACEHOLDER = 'Go anywhere… ( > command · [[ note )';
+
+const mockNotes: NoteEntry[] = [
+  {
+    name: 'Architecture',
+    path: '/kiln/Architecture.md',
+    title: 'Architecture',
+    tags: ['meta'],
+    updated_at: '2026-07-10T10:00:00Z',
+  },
+];
+
+vi.mock('@/lib/api', () => ({
+  listNotes: vi.fn(() => Promise.resolve(mockNotes)),
+}));
 
 // Kobalte's Dialog renders into a Portal appended to document.body. Even
 // though solid-testing-library auto-cleans the render container, the
@@ -10,6 +28,8 @@ import { CommandPalette, type PaletteCommand } from '../CommandPalette';
 // test so `screen.*` queries see only the current test's portal.
 beforeEach(() => {
   document.body.innerHTML = '';
+  statusBarActions.setKilnPath('/kilns/helios');
+  statusBarActions.setActiveSessionTitle(null);
 });
 
 function cmd(overrides: Partial<PaletteCommand> = {}): PaletteCommand {
@@ -24,144 +44,127 @@ function cmd(overrides: Partial<PaletteCommand> = {}): PaletteCommand {
   };
 }
 
+function getInput(): HTMLInputElement {
+  return screen.getByPlaceholderText(PLACEHOLDER) as HTMLInputElement;
+}
+
+describe('parseOmniQuery — prefix routing', () => {
+  it('routes > to commands', () => {
+    expect(parseOmniQuery('>clear')).toEqual({ kinds: ['CMD'], query: 'clear' });
+  });
+  it('routes [[ to notes', () => {
+    expect(parseOmniQuery('[[arch')).toEqual({ kinds: ['NOTE'], query: 'arch' });
+  });
+  it('leaves plain queries unscoped', () => {
+    expect(parseOmniQuery('  inbox ')).toEqual({ kinds: null, query: 'inbox' });
+  });
+});
+
 describe('CommandPalette — open / closed', () => {
   it('renders nothing visible when open is false', () => {
     render(() => (
       <CommandPalette open={false} commands={[cmd()]} onOpenChange={() => {}} />
     ));
-    expect(screen.queryByPlaceholderText('Type a command or search...')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(PLACEHOLDER)).not.toBeInTheDocument();
   });
 
-  it('renders the search input when open is true', () => {
+  it('renders the omnibox input when open is true', () => {
     render(() => (
       <CommandPalette open={true} commands={[cmd()]} onOpenChange={() => {}} />
     ));
-    expect(screen.getByPlaceholderText('Type a command or search...')).toBeInTheDocument();
+    expect(getInput()).toBeInTheDocument();
   });
 });
 
-describe('CommandPalette — grouping', () => {
-  it('renders each command label exactly once', () => {
-    const commands = [
-      cmd({ id: 'a', label: 'Run Tests', category: 'Chat' }),
-      cmd({ id: 'b', label: 'New Session', category: 'Session' }),
-      cmd({ id: 'c', label: 'Go Home', category: 'Navigation' }),
-      cmd({ id: 'd', label: 'Open Settings', category: 'Settings' }),
-    ];
+describe('CommandPalette — omnibox sections', () => {
+  it('always offers the GO surfaces', () => {
     render(() => (
-      <CommandPalette open={true} commands={commands} onOpenChange={() => {}} />
+      <CommandPalette open={true} commands={[]} onOpenChange={() => {}} />
+    ));
+    expect(screen.getByText('Home')).toBeInTheDocument();
+    expect(screen.getByText('Inbox')).toBeInTheDocument();
+    expect(screen.getByText('Editor (✎ Edit mode)')).toBeInTheDocument();
+    expect(screen.getByText('Session (◆ Session mode)')).toBeInTheDocument();
+  });
+
+  it('renders provided commands with a CMD badge', () => {
+    render(() => (
+      <CommandPalette
+        open={true}
+        commands={[cmd({ id: 'a', label: 'Run Tests' })]}
+        onOpenChange={() => {}}
+      />
     ));
     expect(screen.getByText('Run Tests')).toBeInTheDocument();
-    expect(screen.getByText('New Session')).toBeInTheDocument();
-    expect(screen.getByText('Go Home')).toBeInTheDocument();
-    expect(screen.getByText('Open Settings')).toBeInTheDocument();
+    expect(screen.getAllByText('CMD').length).toBeGreaterThan(0);
   });
 
-  it('renders headings in declared CATEGORY_ORDER (Chat → Settings)', () => {
-    const commands = [
-      // Intentionally provided in reverse order — the palette must reorder.
-      cmd({ id: 's', label: 'Settings One', category: 'Settings' }),
-      cmd({ id: 'n', label: 'Nav One', category: 'Navigation' }),
-      cmd({ id: 'sess', label: 'Sess One', category: 'Session' }),
-      cmd({ id: 'c', label: 'Chat One', category: 'Chat' }),
-    ];
+  it('lists kiln notes once loaded', async () => {
     render(() => (
-      <CommandPalette open={true} commands={commands} onOpenChange={() => {}} />
+      <CommandPalette open={true} commands={[]} onOpenChange={() => {}} />
     ));
-    // Kobalte portals into document.body; query there. Also cmdk renders
-    // its own headings (without the [cmdk-group-heading=""] attr we put on
-    // the inner div) — restrict to the divs we explicitly tagged.
-    const headings = Array.from(document.body.querySelectorAll('div[cmdk-group-heading=""].tracking-wide'))
-      .map((el) => el.textContent?.trim());
-    expect(headings).toEqual(['Chat', 'Session', 'Navigation', 'Settings']);
-  });
-
-  it('omits empty category groups', () => {
-    render(() => (
-      <CommandPalette
-        open={true}
-        commands={[cmd({ id: 'a', label: 'Only Chat', category: 'Chat' })]}
-        onOpenChange={() => {}}
-      />
-    ));
-    const headings = Array.from(document.body.querySelectorAll('div[cmdk-group-heading=""].tracking-wide'))
-      .map((el) => el.textContent?.trim());
-    expect(headings).toEqual(['Chat']);
+    await waitFor(() => {
+      expect(screen.getByText('Architecture')).toBeInTheDocument();
+    });
+    expect(screen.getAllByText('NOTE').length).toBe(1);
   });
 });
 
-describe('CommandPalette — filtering', () => {
+describe('CommandPalette — filtering & prefixes', () => {
   const commands = [
-    cmd({ id: 'a', label: 'Compile Project', category: 'Chat', keywords: ['build', 'make'] }),
-    cmd({ id: 'b', label: 'Switch Workspace', category: 'Session' }),
-    cmd({ id: 'c', label: 'Open Files', category: 'Navigation' }),
+    cmd({ id: 'a', label: 'Compile Project', keywords: ['build', 'make'] }),
+    cmd({ id: 'b', label: 'Switch Workspace' }),
   ];
 
-  it('filters by case-insensitive label substring', () => {
+  it('filters by case-insensitive substring across label and keywords', () => {
     render(() => (
       <CommandPalette open={true} commands={commands} onOpenChange={() => {}} />
     ));
-    const input = screen.getByPlaceholderText('Type a command or search...') as HTMLInputElement;
-    fireEvent.input(input, { target: { value: 'workspace' } });
-
-    expect(screen.queryByText('Compile Project')).not.toBeInTheDocument();
-    expect(screen.getByText('Switch Workspace')).toBeInTheDocument();
-    expect(screen.queryByText('Open Files')).not.toBeInTheDocument();
-  });
-
-  it('filters by keyword', () => {
-    render(() => (
-      <CommandPalette open={true} commands={commands} onOpenChange={() => {}} />
-    ));
-    const input = screen.getByPlaceholderText('Type a command or search...') as HTMLInputElement;
-    fireEvent.input(input, { target: { value: 'build' } });
-
-    // "Compile Project" matches via keyword
+    fireEvent.input(getInput(), { target: { value: 'build' } });
     expect(screen.getByText('Compile Project')).toBeInTheDocument();
     expect(screen.queryByText('Switch Workspace')).not.toBeInTheDocument();
+    expect(screen.queryByText('Home')).not.toBeInTheDocument();
   });
 
-  it('description text alone does NOT match — only label and keywords reach cmdk', () => {
-    // The component's matchesQuery helper considers descriptions, but cmdk's
-    // own filter only sees value (= label) and keywords. So a query that
-    // matches only the description filters everything out. This test pins
-    // current behavior; if we ever route description through keywords, flip
-    // the assertion.
+  it('matches description text too (manual filtering, not cmdk)', () => {
     render(() => (
       <CommandPalette
         open={true}
-        commands={[
-          cmd({ id: 'x', label: 'Toggle Mode', category: 'Chat', description: 'flip between plan and normal' }),
-        ]}
+        commands={[cmd({ id: 'x', label: 'Toggle Mode', description: 'flip between plan and normal' })]}
         onOpenChange={() => {}}
       />
     ));
-    const input = screen.getByPlaceholderText('Type a command or search...') as HTMLInputElement;
-    fireEvent.input(input, { target: { value: 'plan' } });
-
-    expect(screen.queryByText('Toggle Mode')).not.toBeInTheDocument();
+    fireEvent.input(getInput(), { target: { value: 'plan' } });
+    expect(screen.getByText('Toggle Mode')).toBeInTheDocument();
   });
 
-  it('shows "No commands match" when the query matches nothing', () => {
+  it('> scopes to commands only', () => {
     render(() => (
       <CommandPalette open={true} commands={commands} onOpenChange={() => {}} />
     ));
-    const input = screen.getByPlaceholderText('Type a command or search...') as HTMLInputElement;
-    fireEvent.input(input, { target: { value: 'zzzznomatch' } });
-
-    expect(screen.getByText(/No commands match/)).toBeInTheDocument();
-  });
-
-  it('treats whitespace-only query as empty (shows everything)', () => {
-    render(() => (
-      <CommandPalette open={true} commands={commands} onOpenChange={() => {}} />
-    ));
-    const input = screen.getByPlaceholderText('Type a command or search...') as HTMLInputElement;
-    fireEvent.input(input, { target: { value: '   ' } });
-
+    fireEvent.input(getInput(), { target: { value: '>' } });
     expect(screen.getByText('Compile Project')).toBeInTheDocument();
-    expect(screen.getByText('Switch Workspace')).toBeInTheDocument();
-    expect(screen.getByText('Open Files')).toBeInTheDocument();
+    expect(screen.queryByText('Home')).not.toBeInTheDocument();
+  });
+
+  it('[[ scopes to notes only', async () => {
+    render(() => (
+      <CommandPalette open={true} commands={commands} onOpenChange={() => {}} />
+    ));
+    fireEvent.input(getInput(), { target: { value: '[[arch' } });
+    await waitFor(() => {
+      expect(screen.getByText('Architecture')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Compile Project')).not.toBeInTheDocument();
+    expect(screen.queryByText('Home')).not.toBeInTheDocument();
+  });
+
+  it('shows the empty message when nothing matches', () => {
+    render(() => (
+      <CommandPalette open={true} commands={commands} onOpenChange={() => {}} />
+    ));
+    fireEvent.input(getInput(), { target: { value: 'zzzznomatch' } });
+    expect(screen.getByText(/Nothing matches/)).toBeInTheDocument();
   });
 });
 
@@ -172,13 +175,11 @@ describe('CommandPalette — selection', () => {
     render(() => (
       <CommandPalette
         open={true}
-        commands={[cmd({ id: 'a', label: 'Trigger Me', category: 'Chat', action })]}
+        commands={[cmd({ id: 'a', label: 'Trigger Me', action })]}
         onOpenChange={onOpenChange}
       />
     ));
-    // Find the rendered item label and click its enclosing item element.
     const labelEl = screen.getByText('Trigger Me');
-    // Walk up to the cmdk Command.Item element (carries data-selected attr).
     const itemEl = labelEl.closest('[cmdk-item]') as HTMLElement;
     expect(itemEl).not.toBeNull();
     fireEvent.click(itemEl);
@@ -193,7 +194,7 @@ describe('CommandPalette — extras', () => {
     render(() => (
       <CommandPalette
         open={true}
-        commands={[cmd({ label: 'Save', category: 'Chat', shortcut: '⌘S' })]}
+        commands={[cmd({ label: 'Save', shortcut: '⌘S' })]}
         onOpenChange={() => {}}
       />
     ));
@@ -205,22 +206,19 @@ describe('CommandPalette — extras', () => {
     render(() => (
       <CommandPalette
         open={true}
-        commands={[cmd({ label: 'Compact', category: 'Chat', description: 'Squash conversation history' })]}
+        commands={[cmd({ label: 'Compact', description: 'Squash conversation history' })]}
         onOpenChange={() => {}}
       />
     ));
     expect(screen.getByText('Squash conversation history')).toBeInTheDocument();
   });
 
-  it('omits the kbd element when no shortcut is set', () => {
-    const { container } = render(() => (
-      <CommandPalette
-        open={true}
-        commands={[cmd({ label: 'NoShortcut', category: 'Chat' })]}
-        onOpenChange={() => {}}
-      />
+  it('shows the prefix hint footer', () => {
+    render(() => (
+      <CommandPalette open={true} commands={[]} onOpenChange={() => {}} />
     ));
-    expect(container.querySelector('kbd')).toBeNull();
+    expect(screen.getByText('command')).toBeInTheDocument();
+    expect(screen.getByText('note')).toBeInTheDocument();
   });
 });
 
@@ -230,19 +228,17 @@ describe('CommandPalette — query reset on close', () => {
     render(() => (
       <CommandPalette
         open={open()}
-        commands={[cmd({ id: 'a', label: 'AAA', category: 'Chat' })]}
+        commands={[cmd({ id: 'a', label: 'AAA' })]}
         onOpenChange={setOpen}
       />
     ));
 
-    const input = screen.getByPlaceholderText('Type a command or search...') as HTMLInputElement;
-    fireEvent.input(input, { target: { value: 'foo' } });
-    expect(input.value).toBe('foo');
+    fireEvent.input(getInput(), { target: { value: 'foo' } });
+    expect(getInput().value).toBe('foo');
 
     setOpen(false);
     setOpen(true);
 
-    const reopenedInput = screen.getByPlaceholderText('Type a command or search...') as HTMLInputElement;
-    expect(reopenedInput.value).toBe('');
+    expect(getInput().value).toBe('');
   });
 });
