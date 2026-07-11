@@ -4,6 +4,7 @@ import { ToolCard } from './ToolCard';
 import { ThinkingBlock } from './ThinkingBlock';
 import { PrecognitionBadge } from './PrecognitionBadge';
 import { useChatSafe } from '@/contexts/ChatContext';
+import { useSessionSafe } from '@/contexts/SessionContext';
 import type { Message as MessageType, ToolCallDisplay, TokenUsage } from '@/lib/types';
 import { renderMarkdown, renderMarkdownAsync } from '@/lib/markdown';
 import { getConfig, getNote } from '@/lib/api';
@@ -11,14 +12,21 @@ import { openFileInEditor } from '@/lib/file-actions';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { notificationActions } from '@/stores/notificationStore';
 
-/** Resolve a wikilink target to its kiln file and open it in the editor. */
-async function openNoteInEditor(name: string): Promise<void> {
+/**
+ * Resolve a wikilink target to its kiln file and open it in the editor.
+ * Prefers the chat session's kiln; falls back to the configured default.
+ */
+async function openNoteInEditor(name: string, sessionKiln?: string): Promise<void> {
   try {
-    const cfg = await getConfig();
-    const note = await getNote(name, cfg.kiln_path);
+    const kiln = sessionKiln ?? (await getConfig()).kiln_path;
+    const note = await getNote(name, kiln);
     openFileInEditor(note.path, note.name);
-  } catch {
-    notificationActions.addNotification('warning', `Note not found: ${name}`);
+  } catch (err) {
+    const message =
+      err instanceof Error && /not found|404/i.test(err.message)
+        ? `Note not found: ${name}`
+        : `Failed to open note: ${name}`;
+    notificationActions.addNotification('warning', message);
   }
 }
 
@@ -102,6 +110,7 @@ interface MessageProps {
 
 export const Message: Component<MessageProps> = (props) => {
   const chat = useChatSafe();
+  const sessionCtx = useSessionSafe();
   const isUser = () => props.message.role === 'user';
   const isSystem = () => props.message.role === 'system';
   const isAssistant = () => props.message.role === 'assistant';
@@ -164,7 +173,9 @@ export const Message: Component<MessageProps> = (props) => {
     event.preventDefault();
     const note = noteElement.dataset.note;
     if (note) {
-      void openNoteInEditor(note);
+      const sid = chat.sessionId?.();
+      const sessionKiln = sessionCtx.sessions().find((s) => s.id === sid)?.kiln;
+      void openNoteInEditor(note, sessionKiln);
     }
   };
 

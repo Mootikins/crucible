@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
-import { windowStore, setStore } from '@/stores/windowStore';
+import { windowStore, setStore, windowActions } from '@/stores/windowStore';
+import { statusBarStore, statusBarActions } from '@/stores/statusBarStore';
 import type { EdgePanelPosition, LayoutNode, Tab, TabGroup } from '@/types/windowTypes';
 import { getGlobalRegistry, resetGlobalRegistry } from '../panel-registry';
 import { openPanelTab, findTabByContentType } from '../panel-actions';
@@ -144,5 +145,39 @@ describe('findTabByContentType', () => {
   it('finds tabs across groups', () => {
     expect(findTabByContentType('sessions')?.groupId).toBe('left-group');
     expect(findTabByContentType('settings')).toBeNull();
+  });
+});
+
+describe('active-session focus tracking', () => {
+  // Session-scoped commands (Ctrl+K clear, switch-model) target
+  // statusBarStore.activeSessionId; it must follow tab/pane focus, not just
+  // the last-bootstrapped chat.
+  it('setActiveTab on a chat tab updates the active session', () => {
+    statusBarActions.setActiveSessionId(null);
+    windowActions.setActiveTab('center-group', 'tab-chat-x');
+    expect(statusBarStore.activeSessionId()).toBe('x');
+  });
+
+  it('addTab with session metadata updates the active session', () => {
+    statusBarActions.setActiveSessionId(null);
+    windowActions.addTab('center-group', {
+      id: 'tab-chat-y',
+      title: 'Chat Y',
+      contentType: 'chat',
+      metadata: { sessionId: 'y' },
+    });
+    expect(statusBarStore.activeSessionId()).toBe('y');
+  });
+
+  it('activating a non-session tab leaves the active session unchanged', () => {
+    statusBarActions.setActiveSessionId('x');
+    windowActions.setActiveTab('left-group', 'sessions-tab');
+    expect(statusBarStore.activeSessionId()).toBe('x');
+  });
+
+  it('focusing a pane adopts its visible chat session', () => {
+    statusBarActions.setActiveSessionId(null);
+    windowActions.setActivePane('pane-1');
+    expect(statusBarStore.activeSessionId()).toBe('x');
   });
 });

@@ -31,7 +31,10 @@ export const DEFAULT_SHORTCUTS: ShortcutAction[] = [
 // Browser conflicts:
 // - Ctrl+W: Close tab (browser default) — works in PWA/Electron, blocked in regular browser
 // - Ctrl+P: Print dialog (browser default) — preventDefault() in handler blocks it
-// - Ctrl+T: New tab (browser default) — preventDefault() in handler blocks it
+// - Ctrl+T (new tab) and Ctrl+Shift+N (incognito): RESERVED by Chrome/Firefox —
+//   the keydown never reaches page JS in a regular browser tab, so these only
+//   work in PWA/Electron windows. The command palette entries are the
+//   universal path for toggle-thinking and new-session.
 // - Escape: May close fullscreen or cancel operations — handled per context
 
 export function matchShortcut(e: KeyboardEvent, shortcuts: ShortcutAction[] = DEFAULT_SHORTCUTS): string | null {

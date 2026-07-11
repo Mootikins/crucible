@@ -7,8 +7,9 @@ import { MicButton } from './MicButton';
 import { ChatModeControl, nextChatMode } from './ChatModeControl';
 import { AutocompletePopup } from './AutocompletePopup';
 import { executeCommand } from '@/lib/api';
+import { statusBarStore } from '@/stores/statusBarStore';
 export const ChatInput: Component = () => {
-  const { sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, setChatMode, addSystemMessage, clearMessages } = useChatSafe();
+  const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, setChatMode, addSystemMessage, clearMessages } = useChatSafe();
   const { currentSession, cancelCurrentOperation, availableModels, switchModel, selectedProvider } = useSessionSafe();
   const [input, setInput] = createSignal('');
   const [isModelPickerOpen, setIsModelPickerOpen] = createSignal(false);
@@ -23,7 +24,11 @@ export const ChatInput: Component = () => {
   };
 
   // Palette "Switch Model" opens the same picker as the button below.
+  // Gate on the focused chat so split panes don't all pop their pickers
+  // (activeSessionId tracks tab/pane focus via the window store).
   const onSwitchModelEvent = () => {
+    const active = statusBarStore.activeSessionId();
+    if (active && sessionId() !== active) return;
     if (session()) setIsModelPickerOpen(true);
   };
   window.addEventListener('crucible:switch-model', onSwitchModelEvent);

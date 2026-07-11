@@ -435,7 +435,14 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   // SessionPanel fallbacks). createSession dispatches crucible:open-session,
   // which opens the chat tab.
   const onNewSessionEvent = () => {
-    if (!props.initialKiln) return;
+    if (!props.initialKiln) {
+      // No silent no-op: without a kiln we cannot create a session.
+      notificationActions.addNotification(
+        'warning',
+        'Cannot create session: no kiln configured (is the daemon config loaded?)'
+      );
+      return;
+    }
     void createSession({
       kiln: props.initialKiln,
       workspace: props.initialWorkspace,

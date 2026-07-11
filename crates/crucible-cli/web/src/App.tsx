@@ -154,14 +154,6 @@ const App: Component = () => {
       keywords: ['toggle', 'right', 'panel'],
       action: () => windowActions.toggleEdgePanel('right'),
     },
-    {
-      id: 'settings-open-panel',
-      label: 'Open Settings Panel',
-      description: 'Jump to settings controls quickly.',
-      category: 'Settings',
-      keywords: ['settings', 'preferences', 'config'],
-      action: openSettingsPanel,
-    },
   ];
 
   onMount(() => {

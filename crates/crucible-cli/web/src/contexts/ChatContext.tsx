@@ -346,6 +346,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   };
 
   const value: ChatContextValue = {
+    sessionId: () => props.sessionId,
     messages: () => messages,
     isLoading,
     isStreaming,
@@ -382,6 +383,7 @@ export function useChat(): ChatContextValue {
 const noopAsync = async () => {};
 
 const fallbackChatContext: ChatContextValue = {
+  sessionId: () => undefined,
   messages: () => [],
   isLoading: () => false,
   isStreaming: () => false,

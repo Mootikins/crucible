@@ -227,9 +227,14 @@ async fn command_clear_returns_cleared() {
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["type"], "success");
+    // Pins the honest wording: /clear only clears the browser view; the
+    // daemon-side history is untouched (TUI end+recreate parity deferred).
     assert!(
-        json["result"].as_str().unwrap().contains("cleared"),
-        "Result should confirm chat cleared"
+        json["result"]
+            .as_str()
+            .unwrap()
+            .contains("server-side history preserved"),
+        "Result must state view-only clear semantics"
     );
 }
 

@@ -16,6 +16,7 @@ import {
   findPaneInLayout,
   findFirstPane,
 } from './windowStoreInternals';
+import { statusBarActions } from './statusBarStore';
 
 export interface LayoutActionDependencies {
   moveTab(
@@ -67,6 +68,18 @@ export function createLayoutActions(
   const setActivePane = (paneId: string | null) => {
     setStore('activePaneId', paneId);
     setStore('focusedRegion', 'center');
+    // Focusing a pane makes its visible chat the target of session-scoped
+    // commands (Ctrl+K clear, switch-model) — see syncActiveSession in
+    // tabActions for the tab-activation half.
+    if (paneId) {
+      const pane = findPaneInLayout(store.layout, paneId);
+      const group = pane?.tabGroupId ? store.tabGroups[pane.tabGroupId] : null;
+      const activeTab = group?.tabs.find((t) => t.id === group.activeTabId);
+      const sessionId = activeTab?.metadata?.sessionId;
+      if (typeof sessionId === 'string') {
+        statusBarActions.setActiveSessionId(sessionId);
+      }
+    }
   };
 
   const toggleEdgePanel = (position: EdgePanelPosition) => {

@@ -37,6 +37,22 @@ vi.mock('@/contexts/ChatContext', () => ({
   }),
 }));
 
+// Note-link navigation: capture the resolve + open calls.
+const getNoteMock = vi.fn();
+const getConfigMock = vi.fn();
+const openFileInEditorMock = vi.fn();
+
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/api')>()),
+  getNote: (...args: unknown[]) => getNoteMock(...args),
+  getConfig: (...args: unknown[]) => getConfigMock(...args),
+}));
+
+vi.mock('@/lib/file-actions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/file-actions')>()),
+  openFileInEditor: (...args: unknown[]) => openFileInEditorMock(...args),
+}));
+
 // Import AFTER mocks.
 import { Message } from '../Message';
 import { statusBarActions } from '@/stores/statusBarStore';
@@ -559,6 +575,63 @@ describe('Message — wikilink click handler', () => {
     const evt = new MouseEvent('click', { bubbles: true, cancelable: true });
     a.dispatchEvent(evt);
     expect(evt.defaultPrevented).toBe(true);
+  });
+
+  it('resolves the note and opens it in the editor', async () => {
+    getConfigMock.mockResolvedValue({ kiln_path: '/kiln' });
+    getNoteMock.mockResolvedValue({
+      name: 'Some Note',
+      path: '/kiln/Some Note.md',
+      content: '',
+      title: null,
+      tags: [],
+      updated_at: '',
+    });
+
+    const { container } = render(() => (
+      <Message
+        message={makeMessage({
+          role: 'assistant',
+          content: '<a data-note="Some Note">link</a>',
+        })}
+      />
+    ));
+    await waitFor(() => {
+      expect(container.querySelector('a[data-note]')).not.toBeNull();
+    });
+    (container.querySelector('a[data-note]') as HTMLAnchorElement).dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true })
+    );
+
+    await waitFor(() => {
+      expect(getNoteMock).toHaveBeenCalledWith('Some Note', '/kiln');
+      expect(openFileInEditorMock).toHaveBeenCalledWith('/kiln/Some Note.md', 'Some Note');
+    });
+  });
+
+  it('surfaces a warning instead of opening when the note cannot be resolved', async () => {
+    getConfigMock.mockResolvedValue({ kiln_path: '/kiln' });
+    getNoteMock.mockRejectedValue(new Error('Failed to get note: 404 Not Found'));
+
+    const { container } = render(() => (
+      <Message
+        message={makeMessage({
+          role: 'assistant',
+          content: '<a data-note="Ghost">link</a>',
+        })}
+      />
+    ));
+    await waitFor(() => {
+      expect(container.querySelector('a[data-note]')).not.toBeNull();
+    });
+    (container.querySelector('a[data-note]') as HTMLAnchorElement).dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true })
+    );
+
+    await waitFor(() => {
+      expect(getNoteMock).toHaveBeenCalled();
+    });
+    expect(openFileInEditorMock).not.toHaveBeenCalled();
   });
 
   it('ignores clicks that are not on a [data-note] element', () => {

@@ -1,8 +1,6 @@
-import { windowActions, windowStore } from '@/stores/windowStore';
+import { findEdgePanelForGroup, windowActions, windowStore } from '@/stores/windowStore';
 import { getGlobalRegistry } from './panel-registry';
-import type { EdgePanelPosition, LayoutNode, Tab, TabContentType } from '@/types/windowTypes';
-
-const EDGE_POSITIONS: readonly EdgePanelPosition[] = ['left', 'right', 'bottom'];
+import type { LayoutNode, Tab, TabContentType } from '@/types/windowTypes';
 
 /** First pane group in the center tiling — where center-zone tabs open. */
 export function findFirstCenterPaneGroupId(): string | null {
@@ -24,13 +22,6 @@ export function findTabByContentType(
   return null;
 }
 
-function edgePositionForGroup(groupId: string): EdgePanelPosition | null {
-  for (const pos of EDGE_POSITIONS) {
-    if (windowStore.edgePanels[pos].tabGroupId === groupId) return pos;
-  }
-  return null;
-}
-
 /**
  * Open a registered panel as a tab (command-palette / gear entry point).
  *
@@ -42,7 +33,7 @@ function edgePositionForGroup(groupId: string): EdgePanelPosition | null {
 export function openPanelTab(contentType: TabContentType): void {
   const existing = findTabByContentType(contentType);
   if (existing) {
-    const pos = edgePositionForGroup(existing.groupId);
+    const pos = findEdgePanelForGroup(existing.groupId);
     if (pos) {
       windowActions.setEdgePanelCollapsed(pos, false);
       windowActions.setEdgePanelActiveTab(pos, existing.tab.id);

@@ -24,6 +24,8 @@ import type { Accessor } from 'solid-js';
 // =============================================================================
 
 export interface ChatContextValue {
+  /** The session this chat panel is bound to (undefined in fallback). */
+  sessionId: Accessor<string | undefined>;
   messages: Accessor<Message[]>;
   isLoading: Accessor<boolean>;
   isStreaming: Accessor<boolean>;

@@ -7,6 +7,17 @@ import type {
 } from '@/types/windowTypes';
 import type { PaneDropPosition } from './windowStoreTypes';
 import type { WindowStoreContext } from './windowStoreInternals';
+import { statusBarActions } from './statusBarStore';
+
+/** Keep the status bar's "active session" in sync with tab focus so
+ * session-scoped commands (Ctrl+K clear, switch-model) hit the chat the
+ * user is looking at, not the one that bootstrapped last. */
+function syncActiveSession(tab: Tab | undefined | null): void {
+  const sessionId = tab?.metadata?.sessionId;
+  if (typeof sessionId === 'string') {
+    statusBarActions.setActiveSessionId(sessionId);
+  }
+}
 import {
   collapseEmptyNodes,
   findEdgePanelForGroup,
@@ -55,6 +66,7 @@ export function createTabActions(context: WindowStoreContext): TabActions {
           ]
         : [...group.tabs, tab];
     setStore('tabGroups', groupId, { tabs: newTabs, activeTabId: tab.id });
+    syncActiveSession(tab);
   };
 
   const removeTab = (groupId: string, tabId: string) => {
@@ -102,6 +114,7 @@ export function createTabActions(context: WindowStoreContext): TabActions {
 
   const setActiveTab = (groupId: string, tabId: string | null) => {
     setStore('tabGroups', groupId, 'activeTabId', tabId);
+    syncActiveSession(store.tabGroups[groupId]?.tabs.find((t) => t.id === tabId));
   };
 
   const moveTab = (
