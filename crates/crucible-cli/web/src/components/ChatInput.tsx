@@ -22,6 +22,13 @@ export const ChatInput: Component = () => {
     return s && s.state === 'active' && !isLoading() && input().trim().length > 0;
   };
 
+  // Palette "Switch Model" opens the same picker as the button below.
+  const onSwitchModelEvent = () => {
+    if (session()) setIsModelPickerOpen(true);
+  };
+  window.addEventListener('crucible:switch-model', onSwitchModelEvent);
+  onCleanup(() => window.removeEventListener('crucible:switch-model', onSwitchModelEvent));
+
   const autocomplete = useAutocomplete({
     input,
     setInput,

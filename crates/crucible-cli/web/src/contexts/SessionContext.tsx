@@ -4,6 +4,7 @@ import {
   ParentComponent,
   createSignal,
   createEffect,
+  onCleanup,
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import type { Session, CreateSessionParams, ProviderInfo } from '@/lib/types';
@@ -428,6 +429,20 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     });
     refreshProviders();
   });
+
+  // Palette "New Chat Session" / Ctrl+Shift+N. Provider defaults are resolved
+  // server-side, so no provider/model is passed here (avoids duplicating the
+  // SessionPanel fallbacks). createSession dispatches crucible:open-session,
+  // which opens the chat tab.
+  const onNewSessionEvent = () => {
+    if (!props.initialKiln) return;
+    void createSession({
+      kiln: props.initialKiln,
+      workspace: props.initialWorkspace,
+    }).catch(() => {}); // surfaced via withSessionAction's error notification
+  };
+  window.addEventListener('crucible:new-session', onNewSessionEvent);
+  onCleanup(() => window.removeEventListener('crucible:new-session', onNewSessionEvent));
 
   const value: SessionContextValue = {
     currentSession,

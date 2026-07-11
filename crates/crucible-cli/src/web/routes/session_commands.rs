@@ -138,8 +138,12 @@ pub(super) async fn execute_command(
                 response_type: "success".to_string(),
             }))
         }
+        // The frontend clears its local view on /clear; nothing is cleared
+        // daemon-side. (TUI :clear ends + recreates the session — full parity
+        // deliberately deferred; ACP sessions reject clear.) The response must
+        // not overclaim.
         "clear" => Ok(Json(CommandResponse {
-            result: "Chat cleared".to_string(),
+            result: "Chat view cleared (server-side history preserved)".to_string(),
             response_type: "success".to_string(),
         })),
         "export" => {

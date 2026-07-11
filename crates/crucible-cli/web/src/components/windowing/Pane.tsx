@@ -207,7 +207,9 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       <Show
         when={tabs().length > 0}
         fallback={
-          <EmptyState />
+          <EmptyState
+            onAction={() => window.dispatchEvent(new CustomEvent('crucible:new-session'))}
+          />
         }
       >
         <TabBar

@@ -47,13 +47,17 @@ function HeaderBar() {
         )}
       </button>
       <div class="flex-1 flex justify-center">
-        <div class="flex items-center gap-1.5 px-3 py-1 bg-zinc-800/50 rounded border border-zinc-700/50 text-xs text-zinc-400 cursor-pointer hover:bg-zinc-800 transition-colors">
+        <button
+          type="button"
+          class="flex items-center gap-1.5 px-3 py-1 bg-zinc-800/50 rounded border border-zinc-700/50 text-xs text-zinc-400 cursor-pointer hover:bg-zinc-800 transition-colors"
+          onClick={() => window.dispatchEvent(new CustomEvent('crucible:open-command-palette'))}
+        >
           <IconZap class="w-3 h-3" />
           <span>Command palette</span>
           <kbd class="ml-1 px-1 py-0.5 bg-zinc-700 rounded text-[10px] text-zinc-500">
             ⌘P
           </kbd>
-        </div>
+        </button>
       </div>
       <div class="flex items-center gap-0.5">
         <button

@@ -29,6 +29,7 @@ import {
 } from '@/lib/api';
 import { findTabBySessionId } from '@/lib/session-actions';
 import { windowActions } from '@/stores/windowStore';
+import { statusBarStore } from '@/stores/statusBarStore';
 import { createChatEventReducer } from './chatEventReducer';
 import { bootstrapSessionWithFallback } from './sessionBootstrap';
 
@@ -221,6 +222,16 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       historyAbortController = null;
     }
   });
+
+  // Palette "Clear Chat" / Ctrl+K. Multiple chat providers can be mounted
+  // (split panes); only the one showing the active session clears its view.
+  const onClearChatEvent = () => {
+    if (props.sessionId && statusBarStore.activeSessionId() === props.sessionId) {
+      clearMessages();
+    }
+  };
+  window.addEventListener('crucible:clear-chat', onClearChatEvent);
+  onCleanup(() => window.removeEventListener('crucible:clear-chat', onClearChatEvent));
 
   const autoGenerateTitle = async () => {
     if (!props.sessionId) return;

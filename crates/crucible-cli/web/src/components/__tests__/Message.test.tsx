@@ -39,6 +39,7 @@ vi.mock('@/contexts/ChatContext', () => ({
 
 // Import AFTER mocks.
 import { Message } from '../Message';
+import { statusBarActions } from '@/stores/statusBarStore';
 
 function makeMessage(overrides: Partial<MessageType> = {}): MessageType {
   return {
@@ -414,6 +415,10 @@ describe('Message — precognition badge', () => {
 // ── Thinking block ─────────────────────────────────────────────────────
 
 describe('Message — thinking block', () => {
+  // showThinking is a module-global signal; reset so a mid-test failure
+  // can't leak a hidden-thinking state into unrelated tests.
+  afterEach(() => statusBarActions.setShowThinking(true));
+
   it('renders the thinking block when content is present', () => {
     render(() => (
       <Message
@@ -440,6 +445,25 @@ describe('Message — thinking block', () => {
     // No element should display the (empty) thinking content. The reasoning
     // header from ThinkingBlock would normally appear; assert it doesn't.
     expect(container.querySelector('[data-thinking-block]')).toBeNull();
+  });
+
+  it('hides the thinking block when show-thinking is toggled off (Ctrl+T)', () => {
+    render(() => (
+      <Message
+        message={makeMessage({
+          role: 'assistant',
+          content: 'reply',
+          thinking: { content: 'reasoning steps here', isStreaming: false, tokenCount: 42 },
+        })}
+      />
+    ));
+    expect(screen.getByText(/reasoning steps here/)).toBeInTheDocument();
+
+    statusBarActions.setShowThinking(false);
+    expect(screen.queryByText(/reasoning steps here/)).not.toBeInTheDocument();
+
+    statusBarActions.setShowThinking(true);
+    expect(screen.getByText(/reasoning steps here/)).toBeInTheDocument();
   });
 });
 

@@ -6,6 +6,21 @@ import { PrecognitionBadge } from './PrecognitionBadge';
 import { useChatSafe } from '@/contexts/ChatContext';
 import type { Message as MessageType, ToolCallDisplay, TokenUsage } from '@/lib/types';
 import { renderMarkdown, renderMarkdownAsync } from '@/lib/markdown';
+import { getConfig, getNote } from '@/lib/api';
+import { openFileInEditor } from '@/lib/file-actions';
+import { statusBarStore } from '@/stores/statusBarStore';
+import { notificationActions } from '@/stores/notificationStore';
+
+/** Resolve a wikilink target to its kiln file and open it in the editor. */
+async function openNoteInEditor(name: string): Promise<void> {
+  try {
+    const cfg = await getConfig();
+    const note = await getNote(name, cfg.kiln_path);
+    openFileInEditor(note.path, note.name);
+  } catch {
+    notificationActions.addNotification('warning', `Note not found: ${name}`);
+  }
+}
 
 function addCopyButtons(container: HTMLDivElement): void {
   const blocks = container.querySelectorAll('pre');
@@ -149,7 +164,7 @@ export const Message: Component<MessageProps> = (props) => {
     event.preventDefault();
     const note = noteElement.dataset.note;
     if (note) {
-      // TODO: navigate to note view when editor panel supports it
+      void openNoteInEditor(note);
     }
   };
 
@@ -229,7 +244,7 @@ export const Message: Component<MessageProps> = (props) => {
             </span>
           }
         >
-          <Show when={hasThinking()}>
+          <Show when={hasThinking() && statusBarStore.showThinking()}>
             <ThinkingBlock
               content={props.message.thinking!.content}
               isStreaming={props.message.thinking!.isStreaming}

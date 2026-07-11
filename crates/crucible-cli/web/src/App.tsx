@@ -206,12 +206,16 @@ const App: Component = () => {
       openFileInEditor(path, name ?? path.split('/').pop() ?? path);
     };
     window.addEventListener('crucible:open-file', onOpenFile);
+    // Header-bar palette pill (WindowManager can't reach the palette signal).
+    const onOpenPalette = () => setIsCommandPaletteOpen(true);
+    window.addEventListener('crucible:open-command-palette', onOpenPalette);
 
     onCleanup(() => {
       document.removeEventListener('keydown', onGlobalKeyDown, true);
       window.removeEventListener('crucible:export-session', onExportSession);
       window.removeEventListener('crucible:open-session', onOpenSession);
       window.removeEventListener('crucible:open-file', onOpenFile);
+      window.removeEventListener('crucible:open-command-palette', onOpenPalette);
     });
   });
 
