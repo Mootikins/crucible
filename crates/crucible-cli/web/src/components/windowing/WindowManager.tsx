@@ -25,6 +25,7 @@ import {
   IconZap,
 } from './icons';
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
+import { openPanelTab } from '@/lib/panel-actions';
 import { smallestIntersecting } from '@/lib/collision-detector';
 import { statusBarStore, statusBarActions } from '@/stores/statusBarStore';
 
@@ -83,6 +84,8 @@ function HeaderBar() {
         <button
           type="button"
           class="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
+          title="Open Settings"
+          onClick={() => openPanelTab('settings')}
         >
           <IconSettings class="w-4 h-4" />
         </button>

@@ -4,6 +4,7 @@ import { ChatPanel } from '@/components/ChatPanel';
 import { ActivityPanel } from '@/components/ActivityPanel';
 import { ShellPanel } from '@/components/ShellPanel';
 import { SessionPanel } from '@/components/SessionPanel';
+import { FilesPanel } from '@/components/FilesPanel';
 import { SkillsPanel } from '@/components/SkillsPanel';
 import { PluginPanel } from '@/components/PluginPanel';
 import FileViewerPanel from '@/components/FileViewerPanel';
@@ -26,6 +27,7 @@ export function registerPanels(): void {
   registry.register('terminal', 'Terminal', ShellPanel, 'bottom', '💻');
   registry.register('file', 'File', FileViewerPanel, 'center', '📄');
   registry.register('explorer', 'Explorer', ExplorerPanel, 'left', '🗂️');
+  registry.register('files', 'Files', FilesPanel, 'left', '📁');
   registry.register('search', 'Search', SearchPanel, 'left', '🔍');
   registry.register('skills', 'Skills', SkillsPanel, 'left', '🎯');
   registry.register('plugins', 'Plugins', PluginPanel, 'left', '🔌');

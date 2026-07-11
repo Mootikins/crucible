@@ -1,5 +1,6 @@
 import { windowActions, windowStore } from '@/stores/windowStore';
-import type { LayoutNode, Tab } from '@/types/windowTypes';
+import type { Tab } from '@/types/windowTypes';
+import { findFirstCenterPaneGroupId } from './panel-actions';
 
 export function findTabBySessionId(sessionId: string): { groupId: string; tab: Tab } | null {
   for (const [groupId, group] of Object.entries(windowStore.tabGroups)) {
@@ -7,15 +8,6 @@ export function findTabBySessionId(sessionId: string): { groupId: string; tab: T
     if (tab) return { groupId, tab };
   }
   return null;
-}
-
-function findFirstCenterPaneGroupId(): string | null {
-  function findFirst(node: LayoutNode): string | null {
-    if (node.type === 'pane') return node.tabGroupId ?? null;
-    return findFirst(node.first) || findFirst(node.second);
-  }
-
-  return findFirst(windowStore.layout);
 }
 
 export function openSessionInChat(sessionId: string, sessionTitle: string): void {

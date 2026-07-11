@@ -11,6 +11,7 @@ import { setupLayoutAutoSave, loadLayoutOnStartup } from '@/lib/layout-persisten
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
 import { openSessionInChat } from '@/lib/session-actions';
 import { openFileInEditor } from '@/lib/file-actions';
+import { openPanelTab } from '@/lib/panel-actions';
 import { statusBarActions, statusBarStore } from '@/stores/statusBarStore';
 import { windowActions } from '@/stores/windowStore';
 import { NotificationToast } from '@/components/NotificationToast';
@@ -25,13 +26,11 @@ function focusChatInput(): void {
 }
 
 function openSettingsPanel(): void {
-  windowActions.setEdgePanelCollapsed('right', false);
-  windowActions.setEdgePanelActiveTab('right', 'outline-tab');
+  openPanelTab('settings');
 }
 
 function openFilesPanel(): void {
-  windowActions.setEdgePanelCollapsed('left', false);
-  windowActions.setEdgePanelActiveTab('left', 'sessions-tab');
+  openPanelTab('files');
 }
 
 const App: Component = () => {
@@ -116,10 +115,26 @@ const App: Component = () => {
     {
       id: 'nav-open-files',
       label: 'Open Files',
-      description: 'Reveal the explorer in the left panel.',
+      description: 'Browse workspace files and kiln notes.',
       category: 'Navigation',
       keywords: ['files', 'explorer', 'left panel'],
       action: openFilesPanel,
+    },
+    {
+      id: 'nav-open-plugins',
+      label: 'Open Plugins',
+      description: 'Manage installed plugins.',
+      category: 'Navigation',
+      keywords: ['plugins', 'install', 'reload', 'panel'],
+      action: () => openPanelTab('plugins'),
+    },
+    {
+      id: 'nav-open-skills',
+      label: 'Open Skills',
+      description: 'Browse and search agent skills.',
+      category: 'Navigation',
+      keywords: ['skills', 'browse', 'panel'],
+      action: () => openPanelTab('skills'),
     },
     {
       id: 'nav-toggle-left',
