@@ -2,7 +2,7 @@
 title: Web User Stories
 description: User stories for the web UI's chat and kiln-editing flows, with acceptance criteria and test-tier mapping
 tags: [meta, ux, web, user-stories, testing]
-updated: 2026-07-02
+updated: 2026-07-11
 ---
 
 # Web User Stories
@@ -125,6 +125,44 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ---
 
+## 3. Shell surfaces (Crucible Shell design)
+
+The four-surface shell from the "Crucible Shell Options" design (turn 5): Home → Inbox → Session ↔ Edit, one connected app. All state stays daemon-side; the surfaces are views over tabs in the window manager.
+
+### WS-301: Land on Home and pick up where I left off
+**As a user**, opening the web UI with an empty workspace lands me on Home: a greeting, kiln stats, resume-a-session, recent notes, and a needs-you strip when something waits on me.
+**Acceptance:** Home tab auto-opens when the restored layout has no center tabs; resume rows open the session; recent notes (sorted by `updated_at`) open in the editor; the needs-you strip appears only when the attention count > 0 and opens the Inbox; new-session and open-editor actions work.
+**Tests:** W1 (`HomePanel.test.tsx` — greeting/relative-time helpers, all-clear vs needs-you, entry points, note ordering via mocked `listNotes`).
+
+### WS-302: See and answer everything waiting on me in the Inbox
+**As a user**, the Inbox shows every pending interaction at the top — answerable in place without switching tabs — and every session with live status below.
+**Acceptance:** pending permissions render the full interaction (args, scope, diff for writes) via the same `InteractionHandler` as the chat; responding POSTs `/api/interaction/respond`, clears the in-chat prompt (via `crucible:interaction-resolved`), drops the badge, and shows a resolved note; session rows show WAITING/STREAMING/state and open the session.
+**Tests:** W1 (`InboxPanel.test.tsx` — all-clear, in-place permission with broadcast + badge drop).
+**GAP:** only sessions with an open chat tab stream events to the browser, so sessions without a tab cannot raise attention — daemon-side pending-interaction aggregation (wildcard subscription or an RPC) is the fix; blocked on daemon support.
+
+### WS-303: The header is the shell — Home, Edit ↔ Session, Inbox badge
+**As a user**, the global header gives me the whole app: logo → Home, an Edit ↔ Session mode pill on the same content, a context line for where I am, and an Inbox button with an attention badge.
+**Acceptance:** the active surface is derived from the focused center tab (chat → session, file → edit, home/inbox → themselves; neutral tabs don't change it); goSession focuses the active session's tab or starts a new session; goEdit focuses a file tab or opens the notes tree + empty editor; the badge equals the number of sessions with a pending interaction.
+**Tests:** W1 (`shellStore.test.ts` surface mapping/sync, `attentionStore.test.ts` badge counting). W2 GAP: header click-through journey (Home → Inbox → Session ↔ Edit) — promote when it breaks once.
+
+### WS-304: Go anywhere from the omnibox
+**As a user**, Ctrl+P opens one omnibox that reaches every surface, note, session, and command, with `>` scoping to commands and `[[` scoping to notes.
+**Acceptance:** GO items always present; kiln notes load on open ([[ quick switcher) and open in the editor; sessions resume; prefix routing scopes sections; filtering matches label/description/keywords; query resets on close.
+**Tests:** W1 (`CommandPalette.test.tsx` — 18 tests incl. prefix routing and note loading).
+
+### WS-305: The composer shows the session's context
+**As a user**, the chat composer shows chips for the workspace the session acts in (⌁) and the kiln it knows (◆).
+**Acceptance:** chips render the session's real `workspace`/`kiln` (basename, full path in the title attr); no chip renders when the field is absent.
+**Tests:** W1 (`ChatInput.test.tsx` chips block).
+**GAP:** attach/detach (`+ kiln`, ✕) from the design is display-only for now — the daemon has no RPC to change a live session's kiln set; blocked on daemon support.
+
+### WS-306: The status bar knows where I am
+**As a user**, the status bar's left side shows the active surface (⌂/▤/✎/◆ + name) and the session's workspace · knows-kiln context.
+**Acceptance:** surface indicator follows the header pill; context segment renders only when a workspace/kiln is known; static filler (Ready/UTF-8/TypeScript) is gone.
+**Tests:** covered indirectly by W1 store tests; W3 baselines pin the rendered bar.
+
+---
+
 ## Infra requirements these stories impose (status)
 
 1. **vitest gates CI** — DONE: `just ci` runs `web-test-unit`; the GitHub `test-web` job runs `bunx vitest run` (617 tests).
@@ -135,3 +173,4 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 ## See Also
 - [[TUI User Stories]] — terminal counterpart
 - [[Meta/Product]] — Web & Desktop feature inventory
+- [[Meta/Web UI Feature Spec]] — long-run web UI feature map and design brief
