@@ -15,6 +15,59 @@ export interface Config {
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
+// =============================================================================
+// API token (Bearer auth for non-localhost access)
+// =============================================================================
+//
+// The server enforces `Authorization: Bearer <key>` on /api/* for non-loopback
+// clients when an API key is configured (~/.config/crucible/api_key). Bootstrap
+// the token by opening the UI once as `/?token=<key>` — it is stored in
+// localStorage and stripped from the URL. SSE carries it as `access_token=`
+// (EventSource cannot set headers); the server accepts both.
+
+const TOKEN_STORAGE_KEY = 'crucible_api_token';
+
+function initApiToken(): string | null {
+  try {
+    const url = new URL(window.location.href);
+    const fromUrl = url.searchParams.get('token');
+    if (fromUrl) {
+      localStorage.setItem(TOKEN_STORAGE_KEY, fromUrl);
+      url.searchParams.delete('token');
+      window.history.replaceState({}, '', url.toString());
+    }
+    return localStorage.getItem(TOKEN_STORAGE_KEY);
+  } catch {
+    return null; // non-browser context (tests) or storage disabled
+  }
+}
+
+let apiToken: string | null = initApiToken();
+
+export function getApiToken(): string | null {
+  return apiToken;
+}
+
+export function setApiToken(token: string | null): void {
+  apiToken = token;
+  try {
+    if (token) {
+      localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    } else {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // storage unavailable — keep the in-memory token
+  }
+}
+
+/** Append the token as `access_token` for endpoints that cannot send headers. */
+export function withAccessToken(url: string): string {
+  if (!apiToken) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}access_token=${encodeURIComponent(apiToken)}`;
+}
+
 interface RequestOptions extends Omit<RequestInit, 'method'> {
   errorMessage?: string;
   parseAs?: 'json' | 'text' | 'none';
@@ -38,14 +91,22 @@ async function request<T>(
   options: RequestOptions = {},
 ): Promise<T> {
   const { errorMessage = 'Request failed', parseAs = 'json', includeErrorText = false, ...init } = options;
-  const res = await fetch(url, { method, ...init });
+  const headers = new Headers(init.headers);
+  if (apiToken && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${apiToken}`);
+  }
+  const res = await fetch(url, { method, ...init, headers });
 
   if (!res.ok) {
     let errorText = '';
     if (includeErrorText) {
       errorText = await res.text().catch(() => '');
     }
-    throw Object.assign(new Error(errorText || `${errorMessage}: HTTP ${res.status}`), {
+    const hint =
+      res.status === 401 && !apiToken
+        ? ' — Unauthorized: open the UI as /?token=<api key> (key lives in ~/.config/crucible/api_key on the server)'
+        : '';
+    throw Object.assign(new Error((errorText || `${errorMessage}: HTTP ${res.status}`) + hint), {
       status: res.status,
     }) as ApiError;
   }
@@ -123,7 +184,7 @@ export function subscribeToEvents(
   sessionId: string,
   onEvent: (event: ChatEvent) => void,
 ): () => void {
-  const url = `/api/chat/events/${encodeURIComponent(sessionId)}`;
+  const url = withAccessToken(`/api/chat/events/${encodeURIComponent(sessionId)}`);
   let source: EventSource | null = null;
   let reconnectAttempts = 0;
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;

@@ -73,17 +73,29 @@ pub async fn bearer_auth(
         .get("authorization")
         .and_then(|v| v.to_str().ok());
 
-    match auth_header {
-        Some(header) if header.starts_with("Bearer ") => {
-            let token = &header[7..];
-            if constant_time_eq(token.as_bytes(), expected_key.as_bytes()) {
+    if let Some(header) = auth_header {
+        return match header.strip_prefix("Bearer ") {
+            Some(token) if constant_time_eq(token.as_bytes(), expected_key.as_bytes()) => {
                 next.run(request).await
-            } else {
-                unauthorized_response()
+            }
+            _ => unauthorized_response(),
+        };
+    }
+
+    // EventSource cannot set request headers, so SSE subscriptions (and the
+    // browser's initial ?token= bootstrap) may carry the key as a query
+    // param instead. Header, when present, always wins above.
+    if let Some(query) = request.uri().query() {
+        for pair in query.split('&') {
+            if let Some(token) = pair.strip_prefix("access_token=") {
+                if constant_time_eq(token.as_bytes(), expected_key.as_bytes()) {
+                    return next.run(request).await;
+                }
             }
         }
-        _ => unauthorized_response(),
     }
+
+    unauthorized_response()
 }
 
 /// Load API key from config, fall back to file, or generate a new one.
@@ -266,6 +278,45 @@ mod tests {
         Router::new()
             .route("/api/test", get(|| async { "ok" }))
             .layer(middleware::from_fn_with_state(state, bearer_auth))
+    }
+
+    #[tokio::test]
+    async fn bearer_auth_accepts_valid_access_token_query_param() {
+        let app = test_router_with_bearer(Some("secret-key".to_string()));
+
+        let req = Request::builder()
+            .uri("/api/test?access_token=secret-key")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn bearer_auth_rejects_wrong_access_token_query_param() {
+        let app = test_router_with_bearer(Some("secret-key".to_string()));
+
+        let req = Request::builder()
+            .uri("/api/test?access_token=wrong")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn bearer_auth_header_wins_over_query_param() {
+        // A wrong header must not fall through to a valid query param —
+        // explicit credentials fail loudly.
+        let app = test_router_with_bearer(Some("secret-key".to_string()));
+
+        let req = Request::builder()
+            .uri("/api/test?access_token=secret-key")
+            .header("authorization", "Bearer wrong")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
