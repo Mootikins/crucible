@@ -164,3 +164,18 @@ describe('ChatInput', () => {
     expect(textarea).toHaveClass('flex-1', 'w-full', 'bg-transparent', 'text-neutral-100');
   });
 });
+
+describe('ChatInput — session context chips', () => {
+  it('shows the kiln chip for the current session', () => {
+    render(() => <ChatInput />);
+    const chips = screen.getByTestId('context-chips');
+    expect(chips).toBeInTheDocument();
+    expect(chips.textContent).toContain('◆ test-kiln');
+  });
+
+  it('omits the workspace chip when the session has no workspace', () => {
+    render(() => <ChatInput />);
+    const chips = screen.getByTestId('context-chips');
+    expect(chips.textContent).not.toContain('⌁');
+  });
+});

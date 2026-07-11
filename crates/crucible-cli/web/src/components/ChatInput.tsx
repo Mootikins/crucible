@@ -7,7 +7,7 @@ import { MicButton } from './MicButton';
 import { ChatModeControl, nextChatMode } from './ChatModeControl';
 import { AutocompletePopup } from './AutocompletePopup';
 import { executeCommand } from '@/lib/api';
-import { statusBarStore } from '@/stores/statusBarStore';
+import { statusBarStore, pathBasename } from '@/stores/statusBarStore';
 export const ChatInput: Component = () => {
   const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, switchMode, addSystemMessage, clearMessages } = useChatSafe();
   const { currentSession, cancelCurrentOperation, availableModels, switchModel, selectedProvider } = useSessionSafe();
@@ -153,7 +153,7 @@ export const ChatInput: Component = () => {
         rgba(59, 130, 246, 0.4) 0%,
         rgba(59, 130, 246, 0.2) ${fillPercent()}%,
         transparent ${fillPercent()}%)`,
-      'border-color': 'rgba(59, 130, 246, 0.6)',
+      'border-color': 'rgba(224, 101, 58, 0.6)',
     };
   };
 
@@ -172,6 +172,31 @@ export const ChatInput: Component = () => {
       <Show when={!session()}>
         <div class="mb-2 px-2 py-1 text-sm text-neutral-500 text-center">
           No active session. Create or select a session to start chatting.
+        </div>
+      </Show>
+
+      {/* Session context strip: the workspace the session acts in and the
+          kiln it knows (Crucible Shell design 4a/5a). Display-only until the
+          daemon supports attaching/detaching kilns on a live session. */}
+      <Show when={session()}>
+        <div class="flex items-center gap-1.5 flex-wrap mb-2" data-testid="context-chips">
+          <Show when={session()!.workspace}>
+            <span
+              title={`workspace · ${session()!.workspace}`}
+              class="font-mono text-[11px] text-attention bg-attention/10 border border-attention/40 rounded-full px-2.5 py-0.5"
+            >
+              ⌁ {pathBasename(session()!.workspace)}
+            </span>
+            <span class="w-px h-4 bg-white/10" />
+          </Show>
+          <Show when={session()!.kiln}>
+            <span
+              title={`kiln · ${session()!.kiln}`}
+              class="text-[11.5px] text-shell-ink bg-primary/10 border border-primary/45 rounded-full px-2.5 py-0.5"
+            >
+              ◆ {pathBasename(session()!.kiln)}
+            </span>
+          </Show>
         </div>
       </Show>
 

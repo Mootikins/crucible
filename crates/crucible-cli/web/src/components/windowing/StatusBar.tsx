@@ -1,7 +1,8 @@
 import { Component, Show, createSignal } from 'solid-js';
 import { createDraggable, createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore } from '@/stores/windowStore';
-import { statusBarStore } from '@/stores/statusBarStore';
+import { statusBarStore, pathBasename } from '@/stores/statusBarStore';
+import { shellStore } from '@/stores/shellStore';
 import { notificationStore } from '@/stores/notificationStore';
 import type { ChatMode } from '@/lib/types';
 import { IconLayout, IconBell } from './icons';
@@ -46,10 +47,44 @@ export const StatusBar: Component = () => {
     return Math.min(100, (u.used / u.total) * 100);
   };
 
+  // Where you are in the shell (Crucible Shell design turn 5 status bar).
+  const surfaceIndicator = () => {
+    const kiln = pathBasename(statusBarStore.kilnPath());
+    switch (shellStore.activeSurface()) {
+      case 'home':
+        return '⌂ home';
+      case 'inbox':
+        return '▤ inbox';
+      case 'edit':
+        return kiln ? `✎ editing ${kiln}` : '✎ editing';
+      case 'session': {
+        const title = statusBarStore.activeSessionTitle();
+        return title ? `◆ ${title}` : '◆ session';
+      }
+    }
+  };
+
+  const contextIndicator = () => {
+    const workspace = pathBasename(statusBarStore.workspacePath());
+    const kiln = pathBasename(statusBarStore.kilnPath());
+    if (workspace && kiln) return `⌁ ${workspace} · knows ${kiln}`;
+    if (workspace) return `⌁ ${workspace}`;
+    if (kiln) return `knows ${kiln}`;
+    return null;
+  };
+
   return (
     <>
       <div class="flex items-center justify-between px-2 h-5 bg-zinc-950 border-t border-zinc-800 text-[10px] text-zinc-500 select-none">
         <div class="flex items-center gap-3">
+          <span class="font-mono text-primary" data-testid="status-surface">
+            {surfaceIndicator()}
+          </span>
+          <Show when={contextIndicator()}>
+            <span class="font-mono text-muted-dark" data-testid="status-context">
+              {contextIndicator()}
+            </span>
+          </Show>
           {/* Mode badge */}
           <span
             class={`px-1.5 rounded-sm font-medium uppercase tracking-wider text-[9px] leading-tight ${modeColor(statusBarStore.chatMode())}`}
@@ -57,7 +92,6 @@ export const StatusBar: Component = () => {
           >
             {statusBarStore.chatMode()}
           </span>
-          <span>Ready</span>
           <span>{totalTabs()} tabs</span>
           {minimizedCount() > 0 && (
             <span class="text-amber-500">{minimizedCount()} minimized</span>
@@ -117,9 +151,6 @@ export const StatusBar: Component = () => {
               </span>
             </Show>
           </button>
-          <div class="w-px h-3 bg-zinc-800" />
-          <span>UTF-8</span>
-          <span>TypeScript</span>
         </div>
       </div>
       <NotificationCenter open={drawerOpen()} onClose={() => setDrawerOpen(false)} />
