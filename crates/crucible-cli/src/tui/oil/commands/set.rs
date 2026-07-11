@@ -280,7 +280,7 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                 retries,
             )))
         }
-        "perm.show_diff" | "perm.autoconfirm_session" => {
+        "perm.show_diff" | "perm.autoconfirm_session" | "perm.full_commands" => {
             parse_bool(&value).map_err(|message| SetError::InvalidValue {
                 key: key.clone(),
                 message,
@@ -389,7 +389,12 @@ fn classify_key_without_value(key: String, effect: CliValue) -> Result<SetEffect
 fn is_tui_local_key(key: &str) -> bool {
     matches!(
         key,
-        "thinking" | "precognition" | "perm.show_diff" | "perm.autoconfirm_session" | "theme"
+        "thinking"
+            | "precognition"
+            | "perm.show_diff"
+            | "perm.autoconfirm_session"
+            | "perm.full_commands"
+            | "theme"
     )
 }
 

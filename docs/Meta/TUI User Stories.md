@@ -139,6 +139,11 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Acceptance:** create/delete/edit render distinctly; oversize falls back with a truncation footer; `:set perm.show_diff` controls initial visibility.
 **Tests:** T2 (11 diff snapshots exist), T1 (perm.* settings — GAP for dispatch).
 
+### US-404: Full command visibility in permission prompts
+**As a user**, the permission prompt shows the *entire* bash command or tool arguments — wrapped across lines, never truncated — so I know exactly what I'm approving. `:set perm.full_commands=false` restores the compact one-line (ellipsized) view.
+**Acceptance:** long bash commands wrap to the panel width with no content loss; tool args show every key and full string values (no `...`/3-key cap); compact mode ellipsizes to one line; knob defaults on and round-trips through `:set`.
+**Tests:** T1 (`:set perm.full_commands` round-trip in `command_handling.rs`), T2 (wrapped-bash snapshot + full/compact render assertions in `interaction_modal/tests/perm.rs`).
+
 ## 5. Autocomplete & Palette
 
 ### US-501: Autocomplete triggers

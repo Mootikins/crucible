@@ -691,7 +691,11 @@ impl OilChatApp {
     }
 
     pub(super) fn handle_perm_set(&mut self, key: &str, value: &str) -> Action<ChatAppMsg> {
-        let valid_keys = ["perm.show_diff", "perm.autoconfirm_session"];
+        let valid_keys = [
+            "perm.show_diff",
+            "perm.autoconfirm_session",
+            "perm.full_commands",
+        ];
 
         if !valid_keys.contains(&key) {
             self.notification_area
@@ -757,6 +761,11 @@ impl OilChatApp {
             "perm.autoconfirm_session" => {
                 if let Some(val) = self.runtime_config.get("perm.autoconfirm_session") {
                     self.permission.perm_autoconfirm_session = val.as_bool().unwrap_or(false);
+                }
+            }
+            "perm.full_commands" => {
+                if let Some(val) = self.runtime_config.get("perm.full_commands") {
+                    self.permission.perm_full_commands = val.as_bool().unwrap_or(true);
                 }
             }
             "theme" => match self.runtime_config.get("theme") {
@@ -1137,6 +1146,23 @@ mod tests {
         let action = run_set(&mut app, "perm.bogus=true");
         assert!(matches!(action, Action::Continue));
         assert!(app.has_notifications());
+    }
+
+    /// `perm.full_commands` defaults on and round-trips through `:set` into
+    /// the permission state that new modals are constructed from.
+    #[test]
+    fn set_perm_full_commands_round_trips() {
+        let mut app = app();
+        assert!(
+            app.permission.perm_full_commands,
+            "full display is the default"
+        );
+
+        run_set(&mut app, "perm.full_commands=false");
+        assert!(!app.permission.perm_full_commands);
+
+        run_set(&mut app, "perm.full_commands=true");
+        assert!(app.permission.perm_full_commands);
     }
 
     /// `:set theme=<valid syntect theme>` updates the process-wide

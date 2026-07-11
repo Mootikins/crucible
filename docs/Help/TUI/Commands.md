@@ -134,6 +134,7 @@ Examples:
 |--------|------|-------------|
 | `perm.show_diff` | bool | Show diffs in permission modals by default |
 | `perm.autoconfirm_session` | bool | Auto-approve all permissions for the session |
+| `perm.full_commands` | bool | Show the full command/args (wrapped) in permission prompts; off = compact one-line view. Default: on |
 
 ## The `:model` Command
 

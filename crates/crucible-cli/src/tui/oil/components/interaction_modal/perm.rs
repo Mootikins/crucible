@@ -1,10 +1,11 @@
-use super::helpers::prettify_tool_args;
+use super::helpers::{prettify_tool_args, prettify_tool_args_full};
 use super::{InteractionModal, InteractionModalOutput, InteractionMode};
 use crate::tui::oil::components::diff_view::{render_diff, DiffOptions};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_core::interaction::{PermAction, PermRequest, PermResponse, PermissionScope};
 use crucible_oil::node::{col, row, styled, Node};
 use crucible_oil::style::Style;
+use unicode_width::UnicodeWidthStr;
 
 impl InteractionModal {
     pub(super) fn handle_perm_key(
@@ -174,7 +175,11 @@ impl InteractionModal {
             PermAction::Read { segments } => ("READ", format!("/{}", segments.join("/")), false),
             PermAction::Write { segments } => ("WRITE", format!("/{}", segments.join("/")), true),
             PermAction::Tool { name, args } => {
-                let args_str = prettify_tool_args(args);
+                let args_str = if self.full_commands {
+                    prettify_tool_args_full(args)
+                } else {
+                    prettify_tool_args(args)
+                };
                 ("TOOL", format!("{} {}", name, args_str), false)
             }
         };
@@ -201,12 +206,35 @@ impl InteractionModal {
             Style::new().fg(border_fg),
         ));
 
-        let action_text = if queue_total > 1 {
-            format!("  [{}/{}] {}", 1, queue_total, action_detail)
+        let queue_prefix = if queue_total > 1 {
+            format!("[{}/{}] ", 1, queue_total)
         } else {
-            format!("  {}", action_detail)
+            String::new()
         };
-        lines.push(pad_line(&action_text, action_text.len()));
+
+        if self.full_commands {
+            // Show the complete command/args: wrap to the panel width so
+            // nothing is clipped at the terminal edge. Each wrapped line is
+            // its own padded row (single overlong text nodes get clipped by
+            // the renderer, not wrapped).
+            let wrap_width = term_width.saturating_sub(4).max(20);
+            let full_text = format!("{}{}", queue_prefix, action_detail);
+            for line in crate::tui::oil::utils::wrap::wrap_words(&full_text, wrap_width) {
+                let text = format!("  {}", line);
+                let width = UnicodeWidthStr::width(text.as_str());
+                lines.push(pad_line(&text, width));
+            }
+        } else {
+            // Compact: first line only, ellipsized to the terminal width.
+            let action_text = format!("  {}{}", queue_prefix, action_detail);
+            let truncated = crate::tui::oil::utils::truncate::truncate_first_line(
+                &action_text,
+                term_width,
+                true,
+            );
+            let width = UnicodeWidthStr::width(truncated.as_ref());
+            lines.push(pad_line(&truncated, width));
+        }
 
         lines.push(styled(" ".repeat(term_width), Style::new().bg(panel_bg)));
 

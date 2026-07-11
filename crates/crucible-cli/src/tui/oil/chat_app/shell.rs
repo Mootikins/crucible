@@ -156,11 +156,14 @@ impl OilChatApp {
     pub(super) fn close_interaction_and_show_next(&mut self) {
         self.interaction_modal = None;
         if let Some((next_id, next_perm)) = self.permission.permission_queue.pop_front() {
-            self.interaction_modal = Some(InteractionModal::new(
-                next_id,
-                InteractionRequest::Permission(next_perm),
-                self.permission.perm_show_diff,
-            ));
+            self.interaction_modal = Some(
+                InteractionModal::new(
+                    next_id,
+                    InteractionRequest::Permission(next_perm),
+                    self.permission.perm_show_diff,
+                )
+                .with_full_commands(self.permission.perm_full_commands),
+            );
         }
     }
 

@@ -164,6 +164,12 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         completions: CompletionSource::None,
         description: "Auto-allow all permission prompts for session",
     },
+    ConfigShortcut {
+        short: "perm.full_commands",
+        target: ShortcutTarget::Virtual,
+        completions: CompletionSource::None,
+        description: "Show full command/args in permission prompts (wrapped)",
+    },
 ];
 
 /// Registry for looking up shortcuts by name.
@@ -339,7 +345,7 @@ mod tests {
 
         // Should have all defined shortcuts
         assert_eq!(all.len(), SHORTCUTS.len());
-        assert_eq!(all.len(), 16);
+        assert_eq!(all.len(), 17);
 
         // Verify we have expected shortcuts
         let shorts: Vec<_> = all.iter().map(|s| s.short).collect();
@@ -359,6 +365,7 @@ mod tests {
         assert!(shorts.contains(&"validationretries"));
         assert!(shorts.contains(&"perm.show_diff"));
         assert!(shorts.contains(&"perm.autoconfirm_session"));
+        assert!(shorts.contains(&"perm.full_commands"));
     }
 
     #[test]

@@ -617,11 +617,10 @@ impl OilChatApp {
 
         self.notification_area.hide();
 
-        self.interaction_modal = Some(InteractionModal::new(
-            request_id,
-            request,
-            self.permission.perm_show_diff,
-        ));
+        self.interaction_modal = Some(
+            InteractionModal::new(request_id, request, self.permission.perm_show_diff)
+                .with_full_commands(self.permission.perm_full_commands),
+        );
         Action::Continue
     }
 

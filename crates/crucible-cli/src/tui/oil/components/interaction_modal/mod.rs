@@ -96,6 +96,9 @@ pub struct InteractionModal {
     pub edit_cursor_col: usize,
     /// Panel tracking state for Panel interaction.
     pub panel_state: Option<PanelState>,
+    /// Whether permission prompts render the full command/args (wrapped)
+    /// instead of a single truncated line. `:set perm.full_commands`.
+    pub full_commands: bool,
 }
 
 impl InteractionModal {
@@ -133,7 +136,15 @@ impl InteractionModal {
             edit_cursor_line: 0,
             edit_cursor_col: 0,
             panel_state,
+            full_commands: true,
         }
+    }
+
+    /// Builder: override full-command rendering (default `true`).
+    #[must_use]
+    pub fn with_full_commands(mut self, full_commands: bool) -> Self {
+        self.full_commands = full_commands;
+        self
     }
 
     /// Process a message and return the output action.
