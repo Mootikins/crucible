@@ -47,6 +47,39 @@ describe('keyboard-shortcuts', () => {
       expect(result).toBe('newSession');
     });
 
+    // Real browsers report 'N' (uppercase) when Shift is held — the
+    // lowercase variant above never occurs live. Regression: shift-modified
+    // character shortcuts silently never matched.
+    it('matches Ctrl+Shift+N with the real uppercase key value', () => {
+      const event = {
+        key: 'N',
+        ctrlKey: true,
+        shiftKey: true,
+        altKey: false,
+        metaKey: false,
+      } as KeyboardEvent;
+
+      expect(matchShortcut(event)).toBe('newSession');
+    });
+
+    it('matches Ctrl+Shift+E / Ctrl+Shift+B panel toggles with uppercase keys', () => {
+      const make = (key: string) =>
+        ({ key, ctrlKey: true, shiftKey: true, altKey: false, metaKey: false }) as KeyboardEvent;
+      expect(matchShortcut(make('E'))).toBe('toggleRightPanel');
+      expect(matchShortcut(make('B'))).toBe('toggleBottomPanel');
+    });
+
+    it('keeps named keys exact (shift+tab is cycleMode, not a char match)', () => {
+      const event = {
+        key: 'Tab',
+        ctrlKey: false,
+        shiftKey: true,
+        altKey: false,
+        metaKey: false,
+      } as KeyboardEvent;
+      expect(matchShortcut(event)).toBe('cycleMode');
+    });
+
     it('matches Ctrl+P to openCommandPalette', () => {
       const event = {
         key: 'p',

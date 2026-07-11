@@ -107,7 +107,7 @@ const App: Component = () => {
     {
       id: 'nav-open-settings',
       label: 'Open Settings',
-      description: 'Show settings in the right side panel.',
+      description: 'Open the settings tab.',
       category: 'Navigation',
       keywords: ['open', 'settings', 'panel'],
       action: openSettingsPanel,

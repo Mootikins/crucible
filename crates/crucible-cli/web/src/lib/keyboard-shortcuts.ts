@@ -39,7 +39,14 @@ export function matchShortcut(e: KeyboardEvent, shortcuts: ShortcutAction[] = DE
     const ctrlMatch = shortcut.modifiers.includes('ctrl') ? (e.ctrlKey || e.metaKey) : (!e.ctrlKey && !e.metaKey);
     const shiftMatch = shortcut.modifiers.includes('shift') ? e.shiftKey : !e.shiftKey;
     const altMatch = shortcut.modifiers.includes('alt') ? e.altKey : !e.altKey;
-    if (ctrlMatch && shiftMatch && altMatch && e.key === shortcut.key) {
+    // Shift changes e.key's case for character keys ('n' arrives as 'N'), so
+    // single-char keys compare case-insensitively; named keys (Tab, Escape)
+    // stay exact.
+    const keyMatch =
+      shortcut.key.length === 1
+        ? e.key.toLowerCase() === shortcut.key.toLowerCase()
+        : e.key === shortcut.key;
+    if (ctrlMatch && shiftMatch && altMatch && keyMatch) {
       return shortcut.action;
     }
   }
