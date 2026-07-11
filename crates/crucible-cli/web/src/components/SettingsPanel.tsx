@@ -5,6 +5,8 @@ import { useSessionSafe } from '@/contexts/SessionContext';
 import type { TranscriptionProvider } from '@/lib/settings';
 import type { PluginInfo } from '@/lib/api';
 import {
+  getApiToken,
+  setApiToken,
   getThinkingBudget,
   setThinkingBudget as apiSetThinkingBudget,
   getTemperature,
@@ -517,6 +519,70 @@ const McpStatusSection: Component = () => {
 // Main Settings Panel
 // =============================================================================
 
+/**
+ * API token for non-localhost access (Bearer auth). The key lives in
+ * `~/.config/crucible/api_key` on the machine running `cru web`; remote
+ * devices paste it here (or bootstrap once via `/?token=<key>`).
+ */
+const ApiAccessSection: Component = () => {
+  const [draft, setDraft] = createSignal('');
+  const hasToken = () => getApiToken() !== null;
+
+  const save = () => {
+    const token = draft().trim();
+    if (!token) return;
+    setApiToken(token);
+    window.location.reload();
+  };
+
+  const clear = () => {
+    setApiToken(null);
+    window.location.reload();
+  };
+
+  return (
+    <>
+      <SectionHeader title="API Access" icon="🔑" />
+      <tr class="border-b border-neutral-700">
+        <td class="py-3 text-neutral-300 text-sm">
+          API token
+          <div class="text-xs text-neutral-500">
+            {hasToken() ? 'A token is stored on this device.' : 'Required for non-localhost access.'}
+          </div>
+        </td>
+        <td class="py-3 text-right">
+          <input
+            type="password"
+            value={draft()}
+            onInput={(e) => setDraft(e.currentTarget.value)}
+            placeholder={hasToken() ? '••••••••' : 'Paste API token'}
+            class="bg-neutral-800 border border-neutral-600 rounded px-2 py-1 text-sm text-white focus:border-blue-500 focus:outline-none w-56"
+            data-testid="settings-api-token-input"
+          />
+          <button
+            type="button"
+            onClick={save}
+            disabled={!draft().trim()}
+            class="ml-2 rounded bg-blue-600 px-2 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+            data-testid="settings-api-token-save"
+          >
+            Save
+          </button>
+          <Show when={hasToken()}>
+            <button
+              type="button"
+              onClick={clear}
+              class="ml-2 rounded px-2 py-1 text-sm text-neutral-400 hover:text-neutral-200"
+            >
+              Clear
+            </button>
+          </Show>
+        </td>
+      </tr>
+    </>
+  );
+};
+
 const SettingsPanelContent: Component = () => {
   const { settings, updateSetting } = useSettings();
 
@@ -611,6 +677,9 @@ const SettingsPanelContent: Component = () => {
               </td>
             </tr>
           </Show>
+
+          {/* API Access Section */}
+          <ApiAccessSection />
 
           {/* Model Settings Section */}
           <ModelSettingsSection />

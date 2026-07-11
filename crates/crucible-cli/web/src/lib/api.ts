@@ -61,6 +61,19 @@ export function setApiToken(token: string | null): void {
   }
 }
 
+// Throttled so a burst of parallel 401s produces one prompt, not a storm.
+let lastAuthNotify = 0;
+function notifyAuthRequired(): void {
+  try {
+    const now = Date.now();
+    if (now - lastAuthNotify < 5000) return;
+    lastAuthNotify = now;
+    window.dispatchEvent(new CustomEvent('crucible:auth-required'));
+  } catch {
+    // non-browser context
+  }
+}
+
 /** Append the token as `access_token` for endpoints that cannot send headers. */
 export function withAccessToken(url: string): string {
   if (!apiToken) return url;
@@ -101,6 +114,9 @@ async function request<T>(
     let errorText = '';
     if (includeErrorText) {
       errorText = await res.text().catch(() => '');
+    }
+    if (res.status === 401) {
+      notifyAuthRequired();
     }
     const hint =
       res.status === 401 && !apiToken

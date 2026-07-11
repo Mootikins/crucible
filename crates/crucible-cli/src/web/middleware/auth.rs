@@ -124,7 +124,17 @@ pub fn resolve_api_key(configured_key: Option<&str>) -> Option<String> {
         }
     }
 
-    // Generate a random key.
+    generate_and_persist_key(&key_path)
+}
+
+/// Path of the persisted API key file (`~/.config/crucible/api_key`).
+pub fn api_key_path() -> Option<std::path::PathBuf> {
+    Some(dirs::config_dir()?.join("crucible").join("api_key"))
+}
+
+/// Generate a fresh random key and persist it (0600 on unix), replacing any
+/// existing one. Used at first startup and by `cru web key --rotate`.
+pub fn generate_and_persist_key(key_path: &std::path::Path) -> Option<String> {
     use rand::RngExt;
     let key: String = rand::rng()
         .sample_iter(rand::distr::Alphanumeric)
@@ -144,13 +154,13 @@ pub fn resolve_api_key(configured_key: Option<&str>) -> Option<String> {
             .create(true)
             .truncate(true)
             .mode(0o600)
-            .open(&key_path)
+            .open(key_path)
             .ok()?;
         f.write_all(key.as_bytes()).ok()?;
     }
     #[cfg(not(unix))]
     {
-        std::fs::write(&key_path, &key).ok()?;
+        std::fs::write(key_path, &key).ok()?;
     }
 
     tracing::info!("Generated new API key at {}", key_path.display());

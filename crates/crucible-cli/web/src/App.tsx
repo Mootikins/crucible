@@ -16,6 +16,7 @@ import { statusBarActions, statusBarStore } from '@/stores/statusBarStore';
 import { windowActions } from '@/stores/windowStore';
 import { NotificationToast } from '@/components/NotificationToast';
 import { ExportDialog } from '@/components/ExportDialog';
+import { AuthTokenPrompt } from '@/components/AuthTokenPrompt';
 
 function focusChatInput(): void {
   const candidate = document.querySelector<HTMLTextAreaElement | HTMLInputElement | HTMLElement>(
@@ -219,6 +220,7 @@ const App: Component = () => {
             <WindowManager />
           </EditorProvider>
           <NotificationToast />
+          <AuthTokenPrompt />
           <ExportDialog
             open={isExportDialogOpen()}
             sessionId={statusBarStore.activeSessionId()}
