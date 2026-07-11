@@ -8,6 +8,7 @@ import type {
 import type { PaneDropPosition } from './windowStoreTypes';
 import type { WindowStoreContext } from './windowStoreInternals';
 import { statusBarActions } from './statusBarStore';
+import { syncShellSurface } from './shellStore';
 
 /** Keep the status bar's "active session" in sync with tab focus so
  * session-scoped commands (Ctrl+K clear, switch-model) hit the chat the
@@ -17,6 +18,7 @@ function syncActiveSession(tab: Tab | undefined | null): void {
   if (typeof sessionId === 'string') {
     statusBarActions.setActiveSessionId(sessionId);
   }
+  syncShellSurface(tab);
 }
 import {
   collapseEmptyNodes,

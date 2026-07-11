@@ -32,6 +32,7 @@ import { findTabBySessionId } from '@/lib/session-actions';
 import { windowActions } from '@/stores/windowStore';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { notificationActions } from '@/stores/notificationStore';
+import { attentionActions } from '@/stores/attentionStore';
 import { createChatEventReducer } from './chatEventReducer';
 import { bootstrapSessionWithFallback } from './sessionBootstrap';
 
@@ -46,8 +47,8 @@ const ChatContext = createContext<ChatContextValue>();
 export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   const [messages, setMessages] = createStore<Message[]>([]);
   const [isLoading, setIsLoading] = createSignal(false);
-  const [isStreaming, setIsStreaming] = createSignal(false);
-  const [pendingInteraction, setPendingInteraction] = createSignal<InteractionRequest | null>(null);
+  const [isStreaming, setIsStreamingRaw] = createSignal(false);
+  const [pendingInteraction, setPendingInteractionRaw] = createSignal<InteractionRequest | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [activeTools, setActiveTools] = createStore<ToolCallDisplay[]>([]);
   const [subagentEvents, setSubagentEvents] = createStore<SubagentEvent[]>([]);
@@ -55,6 +56,25 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   const [chatMode, setChatMode] = createSignal<ChatMode>('normal');
   const [isLoadingHistory, setIsLoadingHistory] = createSignal(false);
   
+  // Mirror interaction/streaming state into the global attention store so
+  // the Inbox and header badge see every session with an open tab, not just
+  // the focused one. Entries are cleared when this provider unmounts.
+  const setIsStreaming = (value: boolean) => {
+    setIsStreamingRaw(value);
+    if (props.sessionId) {
+      attentionActions.report(props.sessionId, { isStreaming: value, title: sessionTitle() });
+    }
+  };
+  const setPendingInteraction = (request: InteractionRequest | null) => {
+    setPendingInteractionRaw(request);
+    if (props.sessionId) {
+      attentionActions.report(props.sessionId, {
+        pendingInteraction: request,
+        title: sessionTitle(),
+      });
+    }
+  };
+
   let eventSourceCleanup: (() => void) | null = null;
   let historyAbortController: AbortController | null = null;
   let currentStreamingMessageId: string | null = null;
@@ -209,6 +229,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     
     if (newSessionId !== previousSessionId && previousSessionId !== null) {
       clearMessages();
+      attentionActions.clear(previousSessionId);
     }
     previousSessionId = newSessionId;
     
@@ -238,6 +259,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     if (historyAbortController) {
       historyAbortController.abort();
       historyAbortController = null;
+    }
+    if (props.sessionId) {
+      attentionActions.clear(props.sessionId);
     }
   });
 

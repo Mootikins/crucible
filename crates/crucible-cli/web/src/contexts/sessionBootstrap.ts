@@ -46,6 +46,8 @@ export async function bootstrapSessionWithFallback({
     // a page reload silently shows "Normal" while the agent stays in plan.
     hydrateMode(session.agent_mode, setChatMode);
     syncPrimaryStatus(session.id, session.title, session.agent_model ?? null);
+    statusBarActions.setKilnPath(session.kiln || null);
+    statusBarActions.setWorkspacePath(session.workspace || null);
     await loadHistory(session.id, session.kiln, signal);
     return;
   } catch (err) {

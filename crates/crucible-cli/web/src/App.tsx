@@ -159,7 +159,13 @@ const App: Component = () => {
 
   onMount(() => {
     getConfig()
-      .then((cfg) => setKilnPath(cfg.kiln_path))
+      .then((cfg) => {
+        setKilnPath(cfg.kiln_path);
+        // Seed the shell header/status bar before any session is selected.
+        if (!statusBarStore.kilnPath()) {
+          statusBarActions.setKilnPath(cfg.kiln_path ?? null);
+        }
+      })
       .catch(() => {});
 
     loadLayoutOnStartup();

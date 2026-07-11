@@ -18,11 +18,11 @@ test('WindowManager renders with all layout regions', async ({ page }) => {
   await page.goto('/');
 
   // Root container: flex flex-col h-screen
-  const rootContainer = page.locator('div.flex.flex-col.h-screen.bg-zinc-950');
+  const rootContainer = page.locator('div.flex.flex-col.h-screen.bg-shell-bg');
   await expect(rootContainer).toBeVisible();
 
-  // Header bar with command palette text
-  const headerBar = page.locator('text=Command palette');
+  // Header bar with command palette pill
+  const headerBar = page.locator('button[title="Command palette (Ctrl+P)"]');
   await expect(headerBar).toBeVisible();
 
   // Status bar at bottom

@@ -9,6 +9,8 @@ export type TabContentType =
   | 'preview'
   | 'settings'
   | 'chat'
+  | 'home'
+  | 'inbox'
   | 'sessions'
   | 'explorer'
   | 'files'

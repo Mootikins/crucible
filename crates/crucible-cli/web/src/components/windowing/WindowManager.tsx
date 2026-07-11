@@ -27,42 +27,134 @@ import {
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
 import { openPanelTab } from '@/lib/panel-actions';
 import { smallestIntersecting } from '@/lib/collision-detector';
-import { statusBarStore, statusBarActions } from '@/stores/statusBarStore';
+import { statusBarStore, statusBarActions, pathBasename } from '@/stores/statusBarStore';
+import { shellStore, shellActions } from '@/stores/shellStore';
+import { attentionStore } from '@/stores/attentionStore';
+
+/** One expandable pill in the Edit ↔ Session mode toggle: icon-only until
+ * hovered, ember-filled when its surface is active. */
+function ModePill(props: {
+  glyph: string;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={props.label}
+      onClick={props.onClick}
+      class="group flex items-center gap-1.5 box-border h-6 rounded-full px-[7px] cursor-pointer max-w-[27px] hover:max-w-[110px] overflow-hidden transition-all duration-300"
+      classList={{
+        'bg-primary text-white': props.active,
+        'text-muted hover:text-shell-ink': !props.active,
+      }}
+    >
+      <span class="text-xs flex-none">{props.glyph}</span>
+      <span class="text-[11px] font-semibold whitespace-nowrap">{props.label}</span>
+    </button>
+  );
+}
 
 function HeaderBar() {
   const edgePanels = () => windowStore.edgePanels;
+  const surface = shellStore.activeSurface;
+  const badge = attentionStore.attentionCount;
+  const kilnName = () => pathBasename(statusBarStore.kilnPath());
+
+  const contextLine = () => {
+    switch (surface()) {
+      case 'home':
+        return 'pick up where you left off';
+      case 'edit':
+        return kilnName() ? `editing ◆ ${kilnName()}` : 'editing';
+      case 'session':
+        return statusBarStore.activeSessionTitle() ?? 'session';
+      case 'inbox':
+        return 'everything waiting on you, one place';
+    }
+  };
 
   return (
-    <div class="flex items-center h-8 bg-zinc-900 border-b border-zinc-800 px-2">
+    <div class="flex items-center h-10 gap-3 bg-shell-bg border-b border-white/[0.07] px-3.5">
       <button
         type="button"
-        class="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
-        title={edgePanels().left.isCollapsed ? 'Show Left Panel' : 'Hide Left Panel'}
-        onClick={() => windowActions.toggleEdgePanel('left')}
+        title="Home"
+        onClick={() => shellActions.goHome()}
+        class="w-[18px] h-[18px] rounded-[5px] bg-primary flex items-center justify-center font-mono font-semibold text-[10px] text-white cursor-pointer hover:ring-[3px] hover:ring-primary/30 transition-shadow"
       >
-        {edgePanels().left.isCollapsed ? (
-          <IconPanelLeft class="w-4 h-4" />
-        ) : (
-          <IconPanelLeftClose class="w-4 h-4" />
-        )}
+        C
       </button>
-      <div class="flex-1 flex justify-center">
+      <Show when={kilnName()}>
         <button
           type="button"
-          class="flex items-center gap-1.5 px-3 py-1 bg-zinc-800/50 rounded border border-zinc-700/50 text-xs text-zinc-400 cursor-pointer hover:bg-zinc-800 transition-colors"
-          onClick={() => window.dispatchEvent(new CustomEvent('crucible:open-command-palette'))}
+          title="Home"
+          onClick={() => shellActions.goHome()}
+          class="font-mono text-xs text-muted hover:text-shell-ink cursor-pointer"
         >
-          <IconZap class="w-3 h-3" />
-          <span>Command palette</span>
-          <kbd class="ml-1 px-1 py-0.5 bg-zinc-700 rounded text-[10px] text-zinc-500">
-            ⌘P
-          </kbd>
+          ◆ {kilnName()}
         </button>
+      </Show>
+      <div class="flex bg-shell-panel border border-white/10 rounded-full p-0.5 gap-0.5">
+        <ModePill
+          glyph="✎"
+          label="Edit"
+          active={surface() === 'edit'}
+          onClick={() => shellActions.goEdit()}
+        />
+        <ModePill
+          glyph="◆"
+          label="Session"
+          active={surface() === 'session'}
+          onClick={() => shellActions.goSession()}
+        />
       </div>
+      <span class="font-mono text-[10.5px] text-muted-dark truncate max-w-[320px]">
+        {contextLine()}
+      </span>
+      <span class="flex-1" />
+      <button
+        type="button"
+        title="Inbox"
+        onClick={() => shellActions.goInbox()}
+        class="relative flex items-center gap-1.5 px-2.5 py-1 rounded-md cursor-pointer text-xs border transition-colors hover:bg-surface-elevated"
+        classList={{
+          'text-primary border-primary/50': surface() === 'inbox',
+          'text-muted border-white/[0.08]': surface() !== 'inbox',
+        }}
+      >
+        ▤ Inbox
+        <Show when={badge() > 0}>
+          <span class="min-w-[15px] h-[15px] rounded-full bg-attention text-black font-mono font-bold text-[9.5px] flex items-center justify-center px-[3px]">
+            {badge()}
+          </span>
+        </Show>
+      </button>
+      <button
+        type="button"
+        title="Command palette (Ctrl+P)"
+        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/[0.08] text-xs text-muted cursor-pointer hover:bg-surface-elevated hover:text-shell-ink transition-colors"
+        onClick={() => window.dispatchEvent(new CustomEvent('crucible:open-command-palette'))}
+      >
+        <IconZap class="w-3 h-3" />
+        <kbd class="font-mono text-[10px]">Ctrl+P</kbd>
+      </button>
       <div class="flex items-center gap-0.5">
         <button
           type="button"
-          class="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
+          class="p-1.5 text-muted-dark hover:text-shell-ink hover:bg-surface-elevated rounded transition-colors"
+          title={edgePanels().left.isCollapsed ? 'Show Left Panel' : 'Hide Left Panel'}
+          onClick={() => windowActions.toggleEdgePanel('left')}
+        >
+          {edgePanels().left.isCollapsed ? (
+            <IconPanelLeft class="w-4 h-4" />
+          ) : (
+            <IconPanelLeftClose class="w-4 h-4" />
+          )}
+        </button>
+        <button
+          type="button"
+          class="p-1.5 text-muted-dark hover:text-shell-ink hover:bg-surface-elevated rounded transition-colors"
           title={edgePanels().bottom.isCollapsed ? 'Show Bottom Panel' : 'Hide Bottom Panel'}
           onClick={() => windowActions.toggleEdgePanel('bottom')}
         >
@@ -74,7 +166,7 @@ function HeaderBar() {
         </button>
         <button
           type="button"
-          class="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
+          class="p-1.5 text-muted-dark hover:text-shell-ink hover:bg-surface-elevated rounded transition-colors"
           title={edgePanels().right.isCollapsed ? 'Show Right Panel' : 'Hide Right Panel'}
           onClick={() => windowActions.toggleEdgePanel('right')}
         >
@@ -84,10 +176,10 @@ function HeaderBar() {
             <IconPanelRightClose class="w-4 h-4" />
           )}
         </button>
-        <div class="w-px h-4 bg-zinc-700 mx-1" />
+        <div class="w-px h-4 bg-white/10 mx-1" />
         <button
           type="button"
-          class="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
+          class="p-1.5 text-muted-dark hover:text-shell-ink hover:bg-surface-elevated rounded transition-colors"
           title="Open Settings"
           onClick={() => openPanelTab('settings')}
         >
@@ -266,7 +358,7 @@ function InnerManager() {
     windowStore.floatingWindows.filter((w) => !w.isMinimized);
 
   return (
-    <div class="flex flex-col h-screen bg-zinc-950 text-zinc-100 overflow-hidden select-none">
+    <div class="flex flex-col h-screen bg-shell-bg text-shell-ink overflow-hidden select-none">
       <HeaderBar />
       <div class="relative z-0 flex flex-1 overflow-hidden min-h-0">
         <EdgePanel position="left" />

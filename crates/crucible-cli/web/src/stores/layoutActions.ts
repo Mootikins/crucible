@@ -17,6 +17,7 @@ import {
   findFirstPane,
 } from './windowStoreInternals';
 import { statusBarActions } from './statusBarStore';
+import { syncShellSurface } from './shellStore';
 
 export interface LayoutActionDependencies {
   moveTab(
@@ -79,6 +80,7 @@ export function createLayoutActions(
       if (typeof sessionId === 'string') {
         statusBarActions.setActiveSessionId(sessionId);
       }
+      syncShellSurface(activeTab);
     }
   };
 
