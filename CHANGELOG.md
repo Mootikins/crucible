@@ -86,6 +86,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Stale `TODO: METHODS array is incomplete` comment
 - Duplicate `#[test]` attribute in config includes tests
 
+## [0.9.0] - 2026-07-10
+
+### Added
+- **Full-visibility permission prompts**: the permission modal shows the entire bash command / tool arguments, word-wrapped — never truncated. `:set perm.full_commands=false` restores the compact one-line view
+- **`cru.config` store wired end to end**: `:set` values mirror into the daemon config store; Lua plugins read the same values via `cru.config.get`
+- **`:lua <expr>` / `:=` escape hatch** on the TUI command line (evaluated daemon-side)
+- **nvim-style minimal completion popups** for inline (`@` file, `[[` note) triggers, anchored at the word being completed; `:set completion_style=auto|panel|minimal`
+
+### Fixed
+- TUI: top screen row no longer freezes during long streaming turns
+- TUI: narrow terminals — status/row content shrinks and ellipsizes instead of dropping off-grid
+- TUI: `:set theme` actually switches syntax highlighting; `:set theme&` reverts to the config-seeded theme
+- TUI: `--set` startup overrides now reach the daemon, and drafts typed while streaming are no longer lost
+- TUI: `:model` reliably lists models (startup prefetch was never spawned)
+- TUI: completion popup surface tracks the prompt background; no background painted on blank filler rows; end-of-line cursor sits after the text
+- TUI: `:set` routes through the shared CLI classifier — the TUI and `--set` accept the same keys
+- Web: SSE handlers map the daemon's real event shapes (status, error envelopes); tests pin the wire contract
+- Web: `/api/layout` GET/POST/DELETE served; auto-title reads the real history shape
+- Web/daemon: keyless custom endpoints (e.g. local llama.cpp) work as session defaults
+- Daemon: `plugin.install`/`plugin.remove` advertised in `daemon.capabilities`
+- Docs site: deploy fixed (stale sidebar slug had failed every deploy since April)
+
+### Changed
+- **~16k net LOC removed**: dead Lance store implementations, manual flex-layout engine, `CompletionBackend`, legacy accessors, dead trait clusters, orphaned snapshots and fixtures
+- **Test infrastructure overhaul**: the fictional feature-based test-tier system is gone (nextest profiles are timeout presets, not filters); RPC parity gates cover all 14 session config knobs; mock daemons deduplicated into a canonical `web/test_support`; vt100 screen-level regression suites for spinner leaks and spacing
+
 ## [0.4.0] - 2026-03-19
 
 ### Added
