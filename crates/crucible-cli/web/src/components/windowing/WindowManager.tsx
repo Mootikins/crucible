@@ -51,7 +51,9 @@ function ModePill(props: {
       }}
     >
       <span class="text-xs flex-none">{props.glyph}</span>
-      <span class="text-[11px] font-semibold whitespace-nowrap">{props.label}</span>
+      <span class="text-[11px] font-semibold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+        {props.label}
+      </span>
     </button>
   );
 }

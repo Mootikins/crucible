@@ -21,8 +21,8 @@ test.describe('Session Management', () => {
     await expect(page.getByTestId('session-item-test-session-002')).toBeVisible();
 
     // Assert session titles are visible in the panel
-    await expect(page.getByText('Test Session')).toBeVisible();
-    await expect(page.getByText('Second Session')).toBeVisible();
+    await expect(page.getByTestId('session-list').getByText('Test Session')).toBeVisible();
+    await expect(page.getByTestId('session-list').getByText('Second Session')).toBeVisible();
   });
 
   test('creates a new session when new session button is clicked', async ({ page }) => {

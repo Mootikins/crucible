@@ -149,14 +149,14 @@ test.describe('Tab reorder within same bar', () => {
     await page.mouse.move(to.x, to.y, { steps: 20 });
     await page.waitForTimeout(800);
 
-    const indicator = page.locator('[class*="bg-blue-500"][class*="rounded-full"][class*="h-5"]');
+    const indicator = page.locator('[class*="bg-primary"][class*="rounded-full"][class*="h-5"]');
     const indicatorCount = await indicator.count();
     expect(indicatorCount).toBeGreaterThanOrEqual(1);
 
     await page.mouse.up();
     await page.waitForTimeout(200);
 
-    const postDragCount = await page.locator('[class*="bg-blue-500"][class*="rounded-full"][class*="h-5"]').count();
+    const postDragCount = await page.locator('[class*="bg-primary"][class*="rounded-full"][class*="h-5"]').count();
     expect(postDragCount).toBe(0);
   });
 
@@ -172,7 +172,9 @@ test.describe('Tab reorder within same bar', () => {
     await page.mouse.move(to.x, to.y, { steps: 10 });
     await page.waitForTimeout(200);
 
-    const insertIndicators = page.locator('.bg-blue-500.rounded-full');
+    // The reorder indicator is the 2px×20px bar from TabBar — the header's
+    // active mode pill is also bg-primary+rounded-full, so match the size.
+    const insertIndicators = page.locator('[class*="w-0.5"][class*="h-5"][class*="bg-primary"]');
     const count = await insertIndicators.count();
     expect(count).toBe(0);
 

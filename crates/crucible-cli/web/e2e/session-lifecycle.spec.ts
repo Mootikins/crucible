@@ -361,7 +361,7 @@ test.describe('Session Lifecycle', () => {
     await expect(page.getByTestId('session-item-external-session-999')).toBeVisible();
 
     // Assert: external session shows its title
-    await expect(page.getByText('External Client Session')).toBeVisible();
+    await expect(page.getByTestId('session-list').getByText('External Client Session')).toBeVisible();
   });
 
   // ── Flow 8: Persistence (Refresh) ─────────────────────────────────
@@ -392,8 +392,8 @@ test.describe('Session Lifecycle', () => {
     await expect(page.getByTestId('session-item-test-session-002')).toBeVisible();
 
     // Assert: session titles still display correctly
-    await expect(page.getByText('Test Session')).toBeVisible();
-    await expect(page.getByText('Second Session')).toBeVisible();
+    await expect(page.getByTestId('session-list').getByText('Test Session')).toBeVisible();
+    await expect(page.getByTestId('session-list').getByText('Second Session')).toBeVisible();
   });
 
   // ── Flow 9: No End Button ──────────────────────────────────────────

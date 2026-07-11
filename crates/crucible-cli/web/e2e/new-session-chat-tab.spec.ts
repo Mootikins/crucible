@@ -56,8 +56,9 @@ test.describe('New Session -> Chat Tab', () => {
       await route.fallback();
     });
 
+    // Fresh load lands on Home (the shell's landing tab)
     const centerBefore = await getCenterPaneState(page);
-    expect(centerBefore.tabs).toHaveLength(0);
+    expect(centerBefore.tabs.filter((t) => t.contentType === 'chat')).toHaveLength(0);
 
     const createRequest = page.waitForRequest(
       (req) => req.url().includes('/api/session') && req.method() === 'POST',
@@ -71,15 +72,15 @@ test.describe('New Session -> Chat Tab', () => {
     await expect
       .poll(async () => {
         const center = await getCenterPaneState(page);
-        return center.tabs.length;
+        return center.tabs.filter((t) => t.contentType === 'chat').length;
       })
       .toBe(1);
 
     const centerAfter = await getCenterPaneState(page);
     expect(centerAfter.groupId).not.toBeNull();
-    expect(centerAfter.tabs[0]?.id).toBe('tab-chat-test-session-new');
-    expect(centerAfter.tabs[0]?.contentType).toBe('chat');
-    expect(centerAfter.tabs[0]?.metadata?.sessionId).toBe('test-session-new');
+    const chatTab = centerAfter.tabs.find((t) => t.contentType === 'chat');
+    expect(chatTab?.id).toBe('tab-chat-test-session-new');
+    expect(chatTab?.metadata?.sessionId).toBe('test-session-new');
     expect(centerAfter.activeTabId).toBe('tab-chat-test-session-new');
   });
 
@@ -87,7 +88,7 @@ test.describe('New Session -> Chat Tab', () => {
     await page.route('**/api/session/test-session-002', (route) => route.fulfill({ json: MOCK_SESSION_2 }));
 
     const centerBefore = await getCenterPaneState(page);
-    expect(centerBefore.tabs).toHaveLength(0);
+    expect(centerBefore.tabs.filter((t) => t.contentType === 'chat')).toHaveLength(0);
 
     const getSessionRequest = page.waitForRequest(
       (req) => req.url().includes('/api/session/test-session-002') && req.method() === 'GET',
@@ -99,9 +100,9 @@ test.describe('New Session -> Chat Tab', () => {
     await expect(page.locator('[data-tab-id="tab-chat-test-session-002"]')).toBeVisible();
 
     const centerAfter = await getCenterPaneState(page);
-    expect(centerAfter.tabs[0]?.id).toBe('tab-chat-test-session-002');
-    expect(centerAfter.tabs[0]?.contentType).toBe('chat');
-    expect(centerAfter.tabs[0]?.metadata?.sessionId).toBe('test-session-002');
+    const chatTab = centerAfter.tabs.find((t) => t.contentType === 'chat');
+    expect(chatTab?.id).toBe('tab-chat-test-session-002');
+    expect(chatTab?.metadata?.sessionId).toBe('test-session-002');
     expect(centerAfter.activeTabId).toBe('tab-chat-test-session-002');
   });
 });

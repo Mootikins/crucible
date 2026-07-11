@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { setupBasicMocks } from './helpers/mock-api';
 
 /**
  * E2E: Windowing System Regression Guard
- * 
+ *
  * Verifies that the core windowing system (WindowManager, layout, edge panels)
  * remains unbroken. This test protects against accidental modifications to:
  * - windowStore.ts
@@ -12,7 +13,15 @@ import { test, expect } from '@playwright/test';
  * - layout-serializer.ts
  * - layout-persistence.ts
  * - windowTypes.ts
+ *
+ * Mocked API throughout: the vite dev server proxies /api to whatever runs
+ * on :3000, so an unmocked run against a live daemon imports a real saved
+ * layout mid-test and races the interactions below.
  */
+
+test.beforeEach(async ({ page }) => {
+  await setupBasicMocks(page);
+});
 
 test('WindowManager renders with all layout regions', async ({ page }) => {
   await page.goto('/');
@@ -63,16 +72,22 @@ test('Header bar is visible with all controls', async ({ page }) => {
   await page.goto('/');
 
   // Header bar should be visible
-  const headerBar = page.locator('div.flex.items-center.h-8.bg-zinc-900');
+  const headerBar = page.locator('div.flex.items-center.h-10.bg-shell-bg');
   await expect(headerBar).toBeVisible();
 
-  // Command palette button should be visible
-  const commandPalette = page.locator('text=Command palette');
+  // Command palette pill should be visible
+  const commandPalette = page.locator('button[title="Command palette (Ctrl+P)"]');
   await expect(commandPalette).toBeVisible();
 
   // Keyboard shortcut indicator should be visible
-  const shortcutKey = page.locator('text=⌘P');
+  const shortcutKey = page.locator('text=Ctrl+P');
   await expect(shortcutKey).toBeVisible();
+
+  // Shell navigation: Home logo, Edit/Session pills, Inbox
+  await expect(page.locator('button[title="Home"]').first()).toBeVisible();
+  await expect(page.locator('button[title="Edit"]')).toBeVisible();
+  await expect(page.locator('button[title="Session"]')).toBeVisible();
+  await expect(page.locator('button[title="Inbox"]')).toBeVisible();
 
   // Edge panel toggle buttons should be visible
   const leftPanelButton = page.locator('button[title*="Left Panel"]');
@@ -103,7 +118,7 @@ test('Layout structure remains stable after interaction', async ({ page }) => {
   await page.goto('/');
 
   // Get initial structure
-  const rootContainer = page.locator('div.flex.flex-col.h-screen.bg-zinc-950');
+  const rootContainer = page.locator('div.flex.flex-col.h-screen.bg-shell-bg');
   await expect(rootContainer).toBeVisible();
 
   // Collapse the left panel
@@ -114,7 +129,7 @@ test('Layout structure remains stable after interaction', async ({ page }) => {
   await expect(rootContainer).toBeVisible();
 
   // Header bar should still be visible
-  const headerBar = page.locator('text=Command palette');
+  const headerBar = page.locator('button[title="Command palette (Ctrl+P)"]');
   await expect(headerBar).toBeVisible();
 
   // Expand the left panel again
