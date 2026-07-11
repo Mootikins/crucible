@@ -13,7 +13,7 @@ proptest! {
     ) {
         let char_count = value.chars().count();
         let cursor_pos = char_count / 2;
-        let input = text_input(value, cursor_pos);
+        let input = text_input(value.clone(), cursor_pos);
         let result = render_with_cursor(&input, width);
 
         if result.cursor.visible {
@@ -26,14 +26,29 @@ proptest! {
                 result.cursor.row_from_end, total_lines
             );
 
-            let line_idx = total_lines.saturating_sub(1).saturating_sub(result.cursor.row_from_end as usize);
-            if line_idx < lines.len() {
-                let line_width = utils::visible_width(lines[line_idx]);
-                prop_assert!(
-                    (result.cursor.col as usize) <= line_width.max(1),
-                    "Cursor col {} should be <= line width {} (line: {:?})",
-                    result.cursor.col, line_width, lines[line_idx]
-                );
+            // The cursor may never leave the terminal.
+            prop_assert!(
+                (result.cursor.col as usize) <= width,
+                "Cursor col {} should be <= terminal width {}",
+                result.cursor.col, width
+            );
+
+            // Rendered lines are right-trimmed of unstyled trailing padding,
+            // and the cursor legitimately sits AFTER trailing spaces it was
+            // typed past (EOL cursor sits after the text, e81e80185) — e.g.
+            // value "a   " with cursor 2 renders line "a" with cursor col 2.
+            // The strict per-line bound therefore only holds for values the
+            // trim cannot have shortened.
+            if !value.contains(' ') {
+                let line_idx = total_lines.saturating_sub(1).saturating_sub(result.cursor.row_from_end as usize);
+                if line_idx < lines.len() {
+                    let line_width = utils::visible_width(lines[line_idx]);
+                    prop_assert!(
+                        (result.cursor.col as usize) <= line_width.max(1),
+                        "Cursor col {} should be <= line width {} (line: {:?})",
+                        result.cursor.col, line_width, lines[line_idx]
+                    );
+                }
             }
         }
     }
@@ -143,4 +158,17 @@ mod input_in_container_tests {
             }
         }
     }
+}
+
+/// CI counterexample (run 29138851287): a value with trailing spaces renders
+/// as a right-trimmed line, and the cursor rests inside the trimmed padding.
+/// The renderer keeps the cursor at its typed position; the trimmed content
+/// must not pull it back onto the last glyph.
+#[test]
+fn cursor_rests_inside_trimmed_trailing_padding() {
+    let input = text_input("a   ".to_string(), 2);
+    let result = render_with_cursor(&input, 20);
+    assert!(result.cursor.visible);
+    assert_eq!(result.content, "a", "trailing padding is right-trimmed");
+    assert_eq!(result.cursor.col, 2, "cursor stays at its typed position");
 }
