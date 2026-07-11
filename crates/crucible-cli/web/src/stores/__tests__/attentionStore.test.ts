@@ -1,7 +1,15 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createRoot } from 'solid-js';
-import { attentionStore, attentionActions } from '../attentionStore';
 import type { PermRequest } from '@/lib/types';
+
+vi.mock('@/lib/api', () => ({
+  listPendingInteractions: vi.fn().mockResolvedValue([]),
+}));
+
+import { attentionStore, attentionActions } from '../attentionStore';
+import { listPendingInteractions } from '@/lib/api';
+
+const mockedList = vi.mocked(listPendingInteractions);
 
 const perm: PermRequest = {
   kind: 'permission',
@@ -11,10 +19,13 @@ const perm: PermRequest = {
   tool_name: 'Bash',
 };
 
-beforeEach(() => {
+beforeEach(async () => {
   for (const id of Object.keys(attentionStore.entries)) {
     attentionActions.clear(id);
   }
+  // Empty the remote (polled) layer too.
+  mockedList.mockResolvedValue([]);
+  await attentionActions.refresh();
 });
 
 describe('attentionStore', () => {
@@ -70,5 +81,49 @@ describe('attentionStore', () => {
       expect(attentionStore.attentionCount()).toBe(0);
       dispose();
     });
+  });
+});
+
+describe('attentionStore — daemon aggregate (refresh)', () => {
+  it('surfaces polled pending interactions for sessions without a tab', async () => {
+    mockedList.mockResolvedValue([
+      { session_id: 's-remote', request_id: 'r1', request: { ...perm, id: 'r1' } },
+    ]);
+    await attentionActions.refresh();
+
+    await createRoot(async (dispose) => {
+      expect(attentionStore.attentionCount()).toBe(1);
+      expect(attentionStore.get('s-remote')?.pendingInteraction?.id).toBe('r1');
+      dispose();
+    });
+  });
+
+  it('local (open tab) state shadows the polled entry for the same session', async () => {
+    mockedList.mockResolvedValue([
+      { session_id: 's1', request_id: 'r1', request: { ...perm, id: 'r1' } },
+      { session_id: 's2', request_id: 'r2', request: { ...perm, id: 'r2' } },
+    ]);
+    await attentionActions.refresh();
+
+    // s1 has an open tab whose reducer already saw the response.
+    attentionActions.report('s1', { pendingInteraction: null, title: 't1' });
+
+    await createRoot(async (dispose) => {
+      expect(attentionStore.attentionCount()).toBe(1);
+      expect(attentionStore.waiting()[0].sessionId).toBe('s2');
+      dispose();
+    });
+  });
+
+  it('a later refresh drops resolved entries', async () => {
+    mockedList.mockResolvedValue([
+      { session_id: 's9', request_id: 'r9', request: { ...perm, id: 'r9' } },
+    ]);
+    await attentionActions.refresh();
+    expect(attentionStore.attentionCount()).toBe(1);
+
+    mockedList.mockResolvedValue([]);
+    await attentionActions.refresh();
+    expect(attentionStore.attentionCount()).toBe(0);
   });
 });

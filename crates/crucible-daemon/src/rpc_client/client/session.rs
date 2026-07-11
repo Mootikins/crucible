@@ -393,6 +393,13 @@ impl DaemonClient {
         Ok(resp.message_id)
     }
 
+    /// All pending interactions across sessions (`{pending: [{session_id,
+    /// request_id, request}]}`) — polled by the web Inbox.
+    pub async fn session_pending_interactions(&self) -> Result<serde_json::Value> {
+        self.call("session.pending_interactions", serde_json::json!({}))
+            .await
+    }
+
     pub async fn session_interaction_respond(
         &self,
         session_id: &str,

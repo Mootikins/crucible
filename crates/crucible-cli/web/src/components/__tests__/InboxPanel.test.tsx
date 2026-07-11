@@ -6,6 +6,7 @@ import type { PermRequest } from '@/lib/types';
 
 vi.mock('@/lib/api', () => ({
   respondToInteraction: vi.fn().mockResolvedValue(undefined),
+  listPendingInteractions: vi.fn().mockResolvedValue([]),
 }));
 
 import { respondToInteraction } from '@/lib/api';

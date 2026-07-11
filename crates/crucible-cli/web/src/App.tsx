@@ -13,6 +13,7 @@ import { openSessionInChat } from '@/lib/session-actions';
 import { openFileInEditor } from '@/lib/file-actions';
 import { openPanelTab, findFirstCenterPaneGroupId } from '@/lib/panel-actions';
 import { statusBarActions, statusBarStore } from '@/stores/statusBarStore';
+import { attentionActions } from '@/stores/attentionStore';
 import { windowActions, windowStore } from '@/stores/windowStore';
 import { NotificationToast } from '@/components/NotificationToast';
 import { ExportDialog } from '@/components/ExportDialog';
@@ -168,6 +169,10 @@ const App: Component = () => {
       })
       .catch(() => {});
 
+    // Poll the daemon's pending-interaction aggregate so the Inbox badge
+    // covers sessions without an open tab (WS-302).
+    const stopAttentionPolling = attentionActions.startPolling();
+
     // Land on Home when the restored layout has no center content — the
     // shell always has somewhere to start (Crucible Shell design turn 5).
     void loadLayoutOnStartup().then(() => {
@@ -218,6 +223,7 @@ const App: Component = () => {
     window.addEventListener('crucible:open-command-palette', onOpenPalette);
 
     onCleanup(() => {
+      stopAttentionPolling();
       document.removeEventListener('keydown', onGlobalKeyDown, true);
       window.removeEventListener('crucible:export-session', onExportSession);
       window.removeEventListener('crucible:open-session', onOpenSession);

@@ -17,6 +17,7 @@ pub fn chat_routes() -> Router<AppState> {
         .route("/api/chat/send", post(send_message))
         .route("/api/chat/events/{session_id}", get(event_stream))
         .route("/api/interaction/respond", post(interaction_respond))
+        .route("/api/interactions/pending", get(pending_interactions))
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,6 +65,43 @@ async fn event_stream(
         });
 
     Ok(Sse::new(stream))
+}
+
+/// Aggregate pending interactions across all sessions, with each request
+/// normalized to the same flat shape the SSE path delivers — the Inbox
+/// renders both sources through one component.
+async fn pending_interactions(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let raw = state
+        .daemon
+        .session_pending_interactions()
+        .await
+        .daemon_err()?;
+
+    let pending: Vec<serde_json::Value> = raw["pending"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| {
+                    // Wrap into the SSE payload shape so normalize_interaction
+                    // applies the identical mapping.
+                    let wire = serde_json::json!({
+                        "request_id": item["request_id"],
+                        "request": item["request"],
+                    });
+                    serde_json::json!({
+                        "session_id": item["session_id"],
+                        "request_id": item["request_id"],
+                        "request": crate::web::events::normalize_interaction(&wire),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(Json(serde_json::json!({ "pending": pending })))
 }
 
 #[derive(Debug, Deserialize)]

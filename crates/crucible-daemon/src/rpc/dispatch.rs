@@ -57,6 +57,7 @@ pub const METHODS: &[&str] = &[
     "session.list_notifications",
     "session.dismiss_notification",
     "session.interaction_respond",
+    "session.pending_interactions",
     "session.set_temperature",
     "session.get_temperature",
     "session.set_max_tokens",
@@ -317,6 +318,9 @@ impl RpcDispatcher {
             "session.cancel" => to_response(id, self.handle_session_cancel(&req).await),
             "session.interaction_respond" => {
                 to_response(id, self.handle_session_interaction_respond(&req).await)
+            }
+            "session.pending_interactions" => {
+                to_response(id, self.handle_session_pending_interactions(&req).await)
             }
             "session.switch_model" => to_response(id, self.handle_session_switch_model(&req).await),
             "session.set_mode" => to_response(id, self.handle_session_set_mode(&req).await),
@@ -910,6 +914,18 @@ impl RpcDispatcher {
             req.clone(),
             &self.ctx.agents,
             &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_pending_interactions(
+        &self,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_pending_interactions(
+            req.clone(),
+            &self.ctx.agents,
         )
         .await;
         map_server_resp(resp)

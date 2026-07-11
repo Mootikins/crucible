@@ -257,6 +257,30 @@ export function subscribeToEvents(
 /**
  * Respond to an interaction request from the agent.
  */
+export interface PendingInteractionEntry {
+  session_id: string;
+  request_id: string;
+  request: import('./types').InteractionRequest;
+}
+
+/**
+ * Aggregate pending interactions across all sessions (Inbox poll).
+ * Returns [] on any failure so callers degrade gracefully against daemons
+ * that predate the endpoint.
+ */
+export async function listPendingInteractions(): Promise<PendingInteractionEntry[]> {
+  try {
+    const resp = await request<{ pending: PendingInteractionEntry[] }>(
+      'GET',
+      '/api/interactions/pending',
+      { errorMessage: 'Failed to list pending interactions' },
+    );
+    return resp.pending ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function respondToInteraction(
   sessionId: string,
   requestId: string,

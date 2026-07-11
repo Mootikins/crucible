@@ -38,21 +38,27 @@ export const InboxPanel: Component = () => {
 
   const waiting = attentionStore.waiting;
 
+  const titleFor = (entry: SessionAttention) =>
+    entry.title ??
+    sessionCtx.sessions().find((s) => s.id === entry.sessionId)?.title ??
+    `Session ${entry.sessionId.slice(0, 8)}`;
+
   const respond = async (entry: SessionAttention, response: InteractionResponse) => {
     const request = entry.pendingInteraction;
     if (!request) return;
     try {
       await respondToInteraction(entry.sessionId, request.id, response);
-      // Tell the owning ChatProvider its interaction is handled so the
-      // in-chat prompt disappears too (it clears the attention entry).
+      // Tell the owning ChatProvider (if a tab is open) its interaction is
+      // handled so the in-chat prompt disappears too.
       window.dispatchEvent(
         new CustomEvent('crucible:interaction-resolved', {
           detail: { sessionId: entry.sessionId, requestId: request.id },
         })
       );
       attentionActions.report(entry.sessionId, { pendingInteraction: null });
-      const title = entry.title ?? entry.sessionId.slice(0, 8);
-      setResolved(`✓ Resolved — ${title}`);
+      // Re-sync the daemon aggregate — the responded entry is gone there.
+      void attentionActions.refresh();
+      setResolved(`✓ Resolved — ${titleFor(entry)}`);
     } catch (err) {
       setResolved(
         `✕ Failed to respond: ${err instanceof Error ? err.message : 'unknown error'}`
@@ -77,9 +83,7 @@ export const InboxPanel: Component = () => {
             <div class="bg-attention/5 border border-attention/40 rounded-lg px-3.5 py-3 mb-2.5">
               <div class="flex items-center gap-2 mb-2">
                 <span class="w-[7px] h-[7px] rounded-full bg-attention animate-pulse" />
-                <span class="text-[12.5px] font-semibold">
-                  {entry.title ?? `Session ${entry.sessionId.slice(0, 8)}`}
-                </span>
+                <span class="text-[12.5px] font-semibold">{titleFor(entry)}</span>
                 <span class="flex-1" />
                 <button
                   type="button"

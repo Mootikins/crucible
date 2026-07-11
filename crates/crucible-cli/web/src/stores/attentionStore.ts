@@ -1,17 +1,21 @@
 import { createMemo } from 'solid-js';
-import { createStore, produce } from 'solid-js/store';
+import { createStore, produce, reconcile } from 'solid-js/store';
 import type { InteractionRequest } from '@/lib/types';
+import { listPendingInteractions } from '@/lib/api';
 
 // ── Cross-session attention state ────────────────────────────────────────
-// Permission/Ask/Popup requests and streaming state live per-session inside
-// each ChatProvider (one per chat tab). The Inbox and the header badge need
-// the aggregate: "which sessions are waiting on me right now?" Each
-// ChatProvider reports into this module store as its SSE reducer fires and
-// clears its entry on dispose.
+// Two sources, one merged view:
 //
-// Honest limitation (recorded in Web User Stories): only sessions with an
-// open chat tab stream events to the browser, so only those can raise
-// attention here. Daemon-side aggregation is the long-run fix.
+// - `local`: reported live by each mounted ChatProvider (one per chat tab)
+//   as its SSE reducer fires; cleared on dispose. Authoritative for any
+//   session with an open tab — it also carries streaming state.
+// - `remote`: the daemon's aggregate (`GET /api/interactions/pending`,
+//   backed by session.pending_interactions), polled so sessions WITHOUT an
+//   open tab still raise the header badge and appear in the Inbox.
+//
+// Merge rule: a local entry shadows the remote one for the same session —
+// the subscribed tab sees interaction events the instant they happen and
+// clears them the instant they're answered.
 
 export interface SessionAttention {
   sessionId: string;
@@ -20,10 +24,11 @@ export interface SessionAttention {
   isStreaming: boolean;
 }
 
-const [entries, setEntries] = createStore<Record<string, SessionAttention>>({});
+const [local, setLocal] = createStore<Record<string, SessionAttention>>({});
+const [remote, setRemote] = createStore<Record<string, SessionAttention>>({});
 
 function report(sessionId: string, patch: Partial<Omit<SessionAttention, 'sessionId'>>): void {
-  setEntries(
+  setLocal(
     produce((s) => {
       const existing = s[sessionId] ?? {
         sessionId,
@@ -37,31 +42,77 @@ function report(sessionId: string, patch: Partial<Omit<SessionAttention, 'sessio
 }
 
 function clear(sessionId: string): void {
-  setEntries(
+  setLocal(
+    produce((s) => {
+      delete s[sessionId];
+    })
+  );
+  setRemote(
     produce((s) => {
       delete s[sessionId];
     })
   );
 }
 
-/** Sessions currently waiting on a human response, oldest-reported first. */
+/** Re-fetch the daemon's pending-interaction aggregate. */
+async function refresh(): Promise<void> {
+  const pending = await listPendingInteractions();
+  const next: Record<string, SessionAttention> = {};
+  for (const entry of pending) {
+    next[entry.session_id] = {
+      sessionId: entry.session_id,
+      title: null,
+      pendingInteraction: entry.request,
+      isStreaming: false,
+    };
+  }
+  setRemote(reconcile(next));
+}
+
+const POLL_INTERVAL_MS = 10_000;
+
+/** Poll the daemon aggregate while the page is visible. Returns a stop fn. */
+function startPolling(): () => void {
+  void refresh();
+  const tick = () => {
+    if (!document.hidden) void refresh();
+  };
+  const interval = setInterval(tick, POLL_INTERVAL_MS);
+  const onVisible = () => {
+    if (!document.hidden) void refresh();
+  };
+  document.addEventListener('visibilitychange', onVisible);
+  return () => {
+    clearInterval(interval);
+    document.removeEventListener('visibilitychange', onVisible);
+  };
+}
+
+/** Merged view: local (open tabs) shadows remote (daemon poll). */
+const merged = createMemo<Record<string, SessionAttention>>(() => ({
+  ...remote,
+  ...local,
+}));
+
+/** Sessions currently waiting on a human response. */
 const waiting = createMemo(() =>
-  Object.values(entries).filter((e) => e.pendingInteraction !== null)
+  Object.values(merged()).filter((e) => e.pendingInteraction !== null)
 );
 
 /** Header/inbox badge count. */
 const attentionCount = createMemo(() => waiting().length);
 
 const streamingCount = createMemo(
-  () => Object.values(entries).filter((e) => e.isStreaming).length
+  () => Object.values(merged()).filter((e) => e.isStreaming).length
 );
 
 function get(sessionId: string): SessionAttention | undefined {
-  return entries[sessionId];
+  return local[sessionId] ?? remote[sessionId];
 }
 
 export const attentionStore = {
-  entries,
+  /** Local (open-tab) entries only — tests and debugging. */
+  entries: local,
   waiting,
   attentionCount,
   streamingCount,
@@ -71,4 +122,6 @@ export const attentionStore = {
 export const attentionActions = {
   report,
   clear,
+  refresh,
+  startPolling,
 } as const;

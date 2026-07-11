@@ -446,6 +446,35 @@ mod permission_channel_tests {
     }
 
     #[tokio::test]
+    async fn list_all_pending_permissions_aggregates_across_sessions() {
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let agent_manager = create_test_agent_manager(session_manager);
+
+        let (id1, _rx1) =
+            agent_manager.await_permission("session-a", PermRequest::bash(["cargo", "test"]));
+        let (id2, _rx2) =
+            agent_manager.await_permission("session-b", PermRequest::bash(["ls"]));
+
+        let all = agent_manager.list_all_pending_permissions();
+        assert_eq!(all.len(), 2, "Should aggregate both sessions");
+
+        let by_session: Vec<_> = all
+            .iter()
+            .map(|(sid, pid, _)| (sid.as_str(), pid.clone()))
+            .collect();
+        assert!(by_session.contains(&("session-a", id1)));
+        assert!(by_session.contains(&("session-b", id2)));
+
+        // Responding removes the entry from the aggregate view.
+        let (sid, pid, _) = all[0].clone();
+        agent_manager
+            .respond_to_permission(&sid, &pid, PermResponse::allow())
+            .expect("respond should succeed");
+        assert_eq!(agent_manager.list_all_pending_permissions().len(), 1);
+    }
+
+    #[tokio::test]
     async fn list_pending_permissions_empty_for_unknown_session() {
         let storage = Arc::new(FileSessionStorage::new());
         let session_manager = Arc::new(SessionManager::with_storage(storage));

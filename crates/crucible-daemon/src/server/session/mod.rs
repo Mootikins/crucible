@@ -30,8 +30,8 @@ pub(crate) use lifecycle::{
 pub(crate) use list::{handle_session_get, handle_session_list, handle_session_search};
 pub(crate) use messaging::{
     handle_session_cancel, handle_session_configure_agent, handle_session_inject_context,
-    handle_session_interaction_respond, handle_session_send_message,
-    handle_session_test_interaction, inject_context_impl,
+    handle_session_interaction_respond, handle_session_pending_interactions,
+    handle_session_send_message, handle_session_test_interaction, inject_context_impl,
 };
 pub(crate) use models::{
     handle_models_list, handle_providers_list, handle_session_fork, handle_session_list_models,

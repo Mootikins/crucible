@@ -24,6 +24,7 @@ const notes: NoteEntry[] = [
 
 vi.mock('@/lib/api', () => ({
   listNotes: vi.fn(() => Promise.resolve(notes)),
+  listPendingInteractions: vi.fn().mockResolvedValue([]),
 }));
 
 function clearAttention() {

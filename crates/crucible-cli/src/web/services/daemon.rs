@@ -595,6 +595,14 @@ impl ReconnectingDaemon {
         .await
     }
 
+    /// Aggregate pending interactions across all sessions (Inbox poll).
+    pub async fn session_pending_interactions(&self) -> anyhow::Result<serde_json::Value> {
+        self.call_with_reconnect("session.pending_interactions", move |daemon| {
+            Box::pin(async move { daemon.session_pending_interactions().await })
+        })
+        .await
+    }
+
     pub async fn session_switch_model(
         &self,
         session_id: &str,

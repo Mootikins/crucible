@@ -157,6 +157,27 @@ pub(crate) async fn handle_session_cancel(req: Request, am: &Arc<AgentManager>) 
     )
 }
 
+/// Every pending interaction across every session — the aggregate the web
+/// Inbox polls so sessions without an open browser tab still surface.
+pub(crate) async fn handle_session_pending_interactions(
+    req: Request,
+    am: &Arc<AgentManager>,
+) -> Response {
+    let pending: Vec<serde_json::Value> = am
+        .list_all_pending_permissions()
+        .into_iter()
+        .map(|(session_id, request_id, request)| {
+            serde_json::json!({
+                "session_id": session_id,
+                "request_id": request_id,
+                "request": crucible_core::interaction::InteractionRequest::Permission(request),
+            })
+        })
+        .collect();
+
+    Response::success(req.id, serde_json::json!({ "pending": pending }))
+}
+
 pub(crate) async fn handle_session_interaction_respond(
     req: Request,
     am: &Arc<AgentManager>,

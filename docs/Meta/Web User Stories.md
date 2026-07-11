@@ -137,8 +137,8 @@ The four-surface shell from the "Crucible Shell Options" design (turn 5): Home �
 ### WS-302: See and answer everything waiting on me in the Inbox
 **As a user**, the Inbox shows every pending interaction at the top — answerable in place without switching tabs — and every session with live status below.
 **Acceptance:** pending permissions render the full interaction (args, scope, diff for writes) via the same `InteractionHandler` as the chat; responding POSTs `/api/interaction/respond`, clears the in-chat prompt (via `crucible:interaction-resolved`), drops the badge, and shows a resolved note; session rows show WAITING/STREAMING/state and open the session.
-**Tests:** W1 (`InboxPanel.test.tsx` — all-clear, in-place permission with broadcast + badge drop).
-**GAP:** only sessions with an open chat tab stream events to the browser, so sessions without a tab cannot raise attention — daemon-side pending-interaction aggregation (wildcard subscription or an RPC) is the fix; blocked on daemon support.
+**Tests:** W1 (`InboxPanel.test.tsx` — all-clear, in-place permission with broadcast + badge drop; `attentionStore.test.ts` — polled-aggregate merge, local-shadows-remote). Rust: `agent_manager::tests::permissions::list_all_pending_permissions_aggregates_across_sessions`, `web::events` wire-parity tests.
+**Resolved GAP (2026-07-11):** sessions without an open tab now surface via `session.pending_interactions` (daemon RPC) → `GET /api/interactions/pending` → attention-store polling (10s, visible-tab only); open-tab state shadows the poll. The same change fixed live interaction rendering: the SSE `interaction_requested` payload is now normalized server-side from the daemon wire shape (`{request_id, request:{kind, action:{type,…}}}`) to the flat shape the frontend renders — previously only the e2e mocks' hand-built flat frames ever rendered.
 
 ### WS-303: The header is the shell — Home, Edit ↔ Session, Inbox badge
 **As a user**, the global header gives me the whole app: logo → Home, an Edit ↔ Session mode pill on the same content, a context line for where I am, and an Inbox button with an attention badge.

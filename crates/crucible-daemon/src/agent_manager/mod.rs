@@ -867,6 +867,23 @@ impl AgentManager {
             .unwrap_or_default()
     }
 
+    /// All pending permission prompts across every session. The web Inbox
+    /// needs the aggregate view: a session waiting on a permission must
+    /// surface even when no browser tab is subscribed to its event stream.
+    pub fn list_all_pending_permissions(&self) -> Vec<(String, PermissionId, PermRequest)> {
+        self.pending_permissions
+            .iter()
+            .flat_map(|entry| {
+                let session_id = entry.key().clone();
+                entry
+                    .value()
+                    .iter()
+                    .map(|(id, p)| (session_id.clone(), id.clone(), p.request.clone()))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
     fn get_or_create_session_state(&self, session_id: &str) -> Arc<Mutex<SessionEventState>> {
         if let Some(state) = self.session_states.get(session_id) {
             return state.clone();

@@ -278,7 +278,7 @@ impl ChatEvent {
                     .or_else(|| data["id"].as_str())
                     .unwrap_or("")
                     .to_string(),
-                request: data.clone(),
+                request: normalize_interaction(data),
             },
 
             "subagent_spawned" => ChatEvent::SubagentSpawned {
@@ -390,6 +390,83 @@ impl ChatEvent {
             },
         }
     }
+}
+
+/// Flatten a daemon `interaction_requested` payload into the shape the
+/// frontend renders (`InteractionRequest` in web/src/lib/types.ts).
+///
+/// The daemon broadcasts `{request_id, request: {kind, ...}}` where a
+/// permission's action is the tagged enum `{type: "bash"|"read"|"write"|
+/// "tool", ...}` (crucible_core::interaction::PermAction). The frontend
+/// expects the flat `{kind, id, action_type, tokens, tool_name?,
+/// tool_args?}` — passing the nested wire shape through renders NO
+/// interaction prompt at all. Payloads that already carry a top-level
+/// `kind` (older recordings, e2e mock frames) pass through unchanged.
+pub(crate) fn normalize_interaction(data: &serde_json::Value) -> serde_json::Value {
+    use serde_json::{json, Value};
+
+    if data.get("kind").is_some() {
+        return data.clone();
+    }
+
+    let id = data["request_id"]
+        .as_str()
+        .or_else(|| data["id"].as_str())
+        .unwrap_or("");
+    let Some(request) = data.get("request") else {
+        return data.clone();
+    };
+    let kind = request["kind"].as_str().unwrap_or("");
+
+    if kind == "permission" {
+        let action = &request["action"];
+        let action_type = action["type"].as_str().unwrap_or("tool");
+        let str_array = |v: &Value| -> Vec<String> {
+            v.as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let mut out = json!({
+            "kind": "permission",
+            "id": id,
+            "action_type": action_type,
+        });
+        match action_type {
+            "bash" => {
+                out["tokens"] = json!(str_array(&action["tokens"]));
+            }
+            // Path segments are stored piecewise for the vim-style pattern
+            // builder; the web modal wants the whole path as one token
+            // (same join as PermissionBridge::to_engine_input).
+            "read" | "write" => {
+                out["tokens"] = json!([str_array(&action["segments"]).join("/")]);
+            }
+            _ => {
+                let name = action["name"].as_str().unwrap_or("unknown");
+                out["tokens"] = json!([name]);
+                out["tool_name"] = json!(name);
+                if !action["args"].is_null() {
+                    out["tool_args"] = action["args"].clone();
+                }
+            }
+        }
+        if let Some(diffs) = request.get("diffs") {
+            out["diffs"] = diffs.clone();
+        }
+        return out;
+    }
+
+    // ask/popup/…: the inner request fields already match the frontend
+    // types — flatten them next to kind and inject the request id.
+    let mut out = request.clone();
+    if let Some(obj) = out.as_object_mut() {
+        obj.insert("id".into(), json!(id));
+    }
+    out
 }
 
 #[cfg(test)]
@@ -605,6 +682,120 @@ mod tests {
                 assert_eq!(notes[0].name, "Note A");
             }
             other => panic!("expected PrecognitionResult, got {other:?}"),
+        }
+    }
+
+    /// The daemon wraps interactions as `{request_id, request: {kind,
+    /// action: {type, tokens}}}` (SessionEventMessage::interaction_requested
+    /// + tagged PermAction). The frontend renders the FLAT shape `{kind, id,
+    /// action_type, tokens}` — forwarding the nested wire shape means no
+    /// permission prompt ever renders in the browser.
+    #[test]
+    fn real_bash_permission_flattens_to_frontend_shape() {
+        use crucible_core::interaction::{InteractionRequest, PermRequest};
+
+        let request = InteractionRequest::Permission(PermRequest::bash(["cargo", "test"]));
+        let event = from_wire(SessionEventMessage::interaction_requested(
+            "s1", "perm-1", &request,
+        ));
+
+        let chat_event = ChatEvent::from_daemon_event(&event);
+        match chat_event {
+            ChatEvent::InteractionRequested { id, request } => {
+                assert_eq!(id, "perm-1");
+                assert_eq!(request["kind"], "permission");
+                assert_eq!(request["id"], "perm-1");
+                assert_eq!(request["action_type"], "bash");
+                assert_eq!(request["tokens"], serde_json::json!(["cargo", "test"]));
+            }
+            other => panic!("expected InteractionRequested, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn real_tool_permission_carries_name_and_args() {
+        use crucible_core::interaction::{InteractionRequest, PermRequest};
+
+        let request = InteractionRequest::Permission(PermRequest::tool(
+            "web_search",
+            serde_json::json!({ "query": "weighted aging" }),
+        ));
+        let event = from_wire(SessionEventMessage::interaction_requested(
+            "s1", "perm-2", &request,
+        ));
+
+        match ChatEvent::from_daemon_event(&event) {
+            ChatEvent::InteractionRequested { request, .. } => {
+                assert_eq!(request["action_type"], "tool");
+                assert_eq!(request["tool_name"], "web_search");
+                assert_eq!(request["tool_args"]["query"], "weighted aging");
+            }
+            other => panic!("expected InteractionRequested, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn real_write_permission_joins_segments_into_one_path_token() {
+        use crucible_core::interaction::{InteractionRequest, PermRequest};
+
+        let request = InteractionRequest::Permission(PermRequest::write(["src", "main.rs"]));
+        let event = from_wire(SessionEventMessage::interaction_requested(
+            "s1", "perm-3", &request,
+        ));
+
+        match ChatEvent::from_daemon_event(&event) {
+            ChatEvent::InteractionRequested { request, .. } => {
+                assert_eq!(request["action_type"], "write");
+                assert_eq!(request["tokens"], serde_json::json!(["src/main.rs"]));
+            }
+            other => panic!("expected InteractionRequested, got {other:?}"),
+        }
+    }
+
+    /// Ask requests flatten too: the inner fields already match the frontend
+    /// type, they just need `kind` kept and the request id injected.
+    #[test]
+    fn real_ask_interaction_flattens_with_id() {
+        use crucible_core::interaction::{AskRequest, InteractionRequest};
+
+        let ask = AskRequest::new("Pin tokio at 1.43?");
+        let request = InteractionRequest::Ask(ask);
+        let event = from_wire(SessionEventMessage::interaction_requested(
+            "s1", "ask-1", &request,
+        ));
+
+        match ChatEvent::from_daemon_event(&event) {
+            ChatEvent::InteractionRequested { id, request } => {
+                assert_eq!(id, "ask-1");
+                assert_eq!(request["kind"], "ask");
+                assert_eq!(request["id"], "ask-1");
+                assert_eq!(request["question"], "Pin tokio at 1.43?");
+            }
+            other => panic!("expected InteractionRequested, got {other:?}"),
+        }
+    }
+
+    /// Already-flat payloads (older recordings, e2e mock frames) pass
+    /// through untouched.
+    #[test]
+    fn flat_interaction_payload_passes_through() {
+        let event = make_event(
+            "interaction_requested",
+            serde_json::json!({
+                "kind": "permission",
+                "id": "perm-9",
+                "action_type": "bash",
+                "tokens": ["ls"],
+            }),
+        );
+
+        match ChatEvent::from_daemon_event(&event) {
+            ChatEvent::InteractionRequested { id, request } => {
+                assert_eq!(id, "perm-9");
+                assert_eq!(request["kind"], "permission");
+                assert_eq!(request["tokens"], serde_json::json!(["ls"]));
+            }
+            other => panic!("expected InteractionRequested, got {other:?}"),
         }
     }
 }
