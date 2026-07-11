@@ -265,6 +265,20 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     }
   });
 
+  // The Inbox answers interactions on this session's behalf (raw API call);
+  // it broadcasts so the owning provider drops its in-chat prompt too.
+  const onInteractionResolved = (e: Event) => {
+    const { sessionId, requestId } = (e as CustomEvent<{ sessionId: string; requestId: string }>)
+      .detail;
+    if (sessionId === props.sessionId && pendingInteraction()?.id === requestId) {
+      setPendingInteraction(null);
+    }
+  };
+  window.addEventListener('crucible:interaction-resolved', onInteractionResolved);
+  onCleanup(() =>
+    window.removeEventListener('crucible:interaction-resolved', onInteractionResolved)
+  );
+
   // Palette "Clear Chat" / Ctrl+K. Multiple chat providers can be mounted
   // (split panes); only the one showing the active session clears its view.
   const onClearChatEvent = () => {

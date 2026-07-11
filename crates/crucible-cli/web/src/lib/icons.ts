@@ -43,4 +43,6 @@ export {
   MessageCircle,
   ClipboardList,
   Trash2,
+  House,
+  Inbox,
 } from 'lucide-solid';

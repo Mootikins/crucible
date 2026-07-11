@@ -11,9 +11,9 @@ import { setupLayoutAutoSave, loadLayoutOnStartup } from '@/lib/layout-persisten
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
 import { openSessionInChat } from '@/lib/session-actions';
 import { openFileInEditor } from '@/lib/file-actions';
-import { openPanelTab } from '@/lib/panel-actions';
+import { openPanelTab, findFirstCenterPaneGroupId } from '@/lib/panel-actions';
 import { statusBarActions, statusBarStore } from '@/stores/statusBarStore';
-import { windowActions } from '@/stores/windowStore';
+import { windowActions, windowStore } from '@/stores/windowStore';
 import { NotificationToast } from '@/components/NotificationToast';
 import { ExportDialog } from '@/components/ExportDialog';
 import { AuthTokenPrompt } from '@/components/AuthTokenPrompt';
@@ -168,7 +168,15 @@ const App: Component = () => {
       })
       .catch(() => {});
 
-    loadLayoutOnStartup();
+    // Land on Home when the restored layout has no center content — the
+    // shell always has somewhere to start (Crucible Shell design turn 5).
+    void loadLayoutOnStartup().then(() => {
+      const groupId = findFirstCenterPaneGroupId();
+      const group = groupId ? windowStore.tabGroups[groupId] : null;
+      if (!group || group.tabs.length === 0) {
+        openPanelTab('home');
+      }
+    });
     setupLayoutAutoSave();
 
     const onGlobalKeyDown = (event: KeyboardEvent) => {
