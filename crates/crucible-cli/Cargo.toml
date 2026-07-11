@@ -66,7 +66,7 @@ proptest = { version = "1.11", optional = true }
 # Web UI server (src/web — Axum routes over daemon RPC, embedded frontend)
 axum = { workspace = true, features = ["macros"] }
 tower = { workspace = true }
-tower-http = { version = "0.6", features = ["fs", "cors"] }
+tower-http = { version = "0.7", features = ["fs", "cors"] }
 tokio-stream = { workspace = true, features = ["sync"] }
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 mime_guess = "2"
@@ -155,7 +155,7 @@ toml = { workspace = true }
 [dev-dependencies]
 crucible-cli = { path = ".", features = ["test-utils"] }  # Enable test utilities
 # MCP client for testing examples
-rmcp = { version = "1.4", features = ["client", "transport-child-process"] }
+rmcp = { version = "2.2", features = ["client", "transport-child-process"] }
 tempfile = { workspace = true }
 assert_cmd = { workspace = true }
 predicates = { workspace = true }
