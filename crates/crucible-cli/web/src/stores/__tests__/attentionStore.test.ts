@@ -115,6 +115,26 @@ describe('attentionStore — daemon aggregate (refresh)', () => {
     });
   });
 
+  it('resolving from the Inbox never shadows future polled pendings (no local tombstone)', async () => {
+    // First pending arrives via poll, answered from the Inbox.
+    mockedList.mockResolvedValue([
+      { session_id: 's1', request_id: 'r1', request: { ...perm, id: 'r1' } },
+    ]);
+    await attentionActions.refresh();
+    expect(attentionStore.attentionCount()).toBe(1);
+
+    attentionActions.resolveInteraction('s1', 'r1');
+    expect(attentionStore.attentionCount()).toBe(0);
+
+    // The SAME session raises a new permission later — it must surface.
+    mockedList.mockResolvedValue([
+      { session_id: 's1', request_id: 'r2', request: { ...perm, id: 'r2' } },
+    ]);
+    await attentionActions.refresh();
+    expect(attentionStore.attentionCount()).toBe(1);
+    expect(attentionStore.get('s1')?.pendingInteraction?.id).toBe('r2');
+  });
+
   it('a later refresh drops resolved entries', async () => {
     mockedList.mockResolvedValue([
       { session_id: 's9', request_id: 'r9', request: { ...perm, id: 'r9' } },

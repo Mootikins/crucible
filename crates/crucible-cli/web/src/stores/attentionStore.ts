@@ -54,6 +54,23 @@ function clear(sessionId: string): void {
   );
 }
 
+/** Mark one interaction answered (Inbox respond path). Updates whichever
+ * layer holds it — never *creates* a local entry: a local tombstone with
+ * `pendingInteraction: null` would permanently shadow every future polled
+ * pending for that session (local shadows remote by design). */
+function resolveInteraction(sessionId: string, requestId: string): void {
+  if (local[sessionId]?.pendingInteraction?.id === requestId) {
+    setLocal(sessionId, 'pendingInteraction', null);
+  }
+  if (remote[sessionId]?.pendingInteraction?.id === requestId) {
+    setRemote(
+      produce((s) => {
+        delete s[sessionId];
+      })
+    );
+  }
+}
+
 /** Re-fetch the daemon's pending-interaction aggregate. */
 async function refresh(): Promise<void> {
   const pending = await listPendingInteractions();
@@ -122,6 +139,7 @@ export const attentionStore = {
 export const attentionActions = {
   report,
   clear,
+  resolveInteraction,
   refresh,
   startPolling,
 } as const;

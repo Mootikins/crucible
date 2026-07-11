@@ -55,7 +55,7 @@ export const InboxPanel: Component = () => {
           detail: { sessionId: entry.sessionId, requestId: request.id },
         })
       );
-      attentionActions.report(entry.sessionId, { pendingInteraction: null });
+      attentionActions.resolveInteraction(entry.sessionId, request.id);
       // Re-sync the daemon aggregate — the responded entry is gone there.
       void attentionActions.refresh();
       setResolved(`✓ Resolved — ${titleFor(entry)}`);
