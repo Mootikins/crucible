@@ -22,6 +22,21 @@ function extractFilePath(request: PermRequest): string | null {
   return request.tokens[0] ?? null;
 }
 
+/**
+ * Full tool arguments as display pairs. A user must be able to see everything
+ * they are approving — structured args (queries, URLs, nested objects) were
+ * previously invisible unless mirrored into `tokens` (TUI parity:
+ * `perm.full_commands`). No truncation; long values wrap.
+ */
+function toolArgPairs(request: PermRequest): [string, string][] {
+  if (request.action_type !== 'tool') return [];
+  if (!request.tool_args || typeof request.tool_args !== 'object') return [];
+  return Object.entries(request.tool_args as Record<string, unknown>).map(([k, v]) => [
+    k,
+    typeof v === 'string' ? v : JSON.stringify(v),
+  ]);
+}
+
 /** Extract new content from tool_args if available */
 function extractNewContent(request: PermRequest): string | null {
   if (!request.tool_args || typeof request.tool_args !== 'object') return null;
@@ -97,6 +112,21 @@ export const PermissionInteraction: Component<Props> = (props) => {
         </p>
       </Show>
 
+      {/* Full tool arguments — everything being approved must be visible */}
+      <Show when={toolArgPairs(props.request).length > 0}>
+        <div
+          class="bg-neutral-900 rounded-md p-3 mb-4 font-mono text-sm text-neutral-100"
+          data-testid="perm-tool-args"
+        >
+          {toolArgPairs(props.request).map(([key, value]) => (
+            <div class="whitespace-pre-wrap break-all">
+              <span class="text-neutral-400">{key}=</span>
+              {value}
+            </div>
+          ))}
+        </div>
+      </Show>
+
       {/* File path display for write actions */}
       <Show when={props.request.action_type === 'write' && filePath()}>
         <p class="text-neutral-300 mb-2 text-sm">
@@ -137,8 +167,9 @@ export const PermissionInteraction: Component<Props> = (props) => {
         </div>
       </Show>
 
-      {/* Fallback: show raw command text when no diff available */}
-      <Show when={!hasDiff()}>
+      {/* Fallback: show raw command text when neither a diff nor the
+          tool-args block already covers the request */}
+      <Show when={!hasDiff() && (commandText() !== '' || toolArgPairs(props.request).length === 0)}>
         <div class="bg-neutral-900 rounded-md p-3 mb-4 font-mono text-sm text-neutral-100 overflow-x-auto">
           {commandText() || '(no arguments)'}
         </div>

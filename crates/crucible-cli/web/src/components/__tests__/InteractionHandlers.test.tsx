@@ -177,6 +177,45 @@ describe('PermissionInteraction', () => {
     expect(screen.getByText('Deny')).toBeInTheDocument();
   });
 
+  it('shows every tool argument in full for tool permissions', () => {
+    const longQuery = 'find all callers of parse_provider_model across the workspace ' + 'x'.repeat(80);
+    const request: PermRequest = {
+      kind: 'permission',
+      id: 'perm-tool-1',
+      action_type: 'tool',
+      tokens: [],
+      tool_name: 'search_vectors',
+      tool_args: {
+        query: longQuery,
+        limit: 20,
+        filters: { kiln: 'docs', tags: ['api'] },
+      },
+    };
+
+    render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
+
+    const args = screen.getByTestId('perm-tool-args');
+    // Every key visible, string values verbatim (no truncation), non-strings JSON-encoded.
+    expect(args.textContent).toContain(`query=${longQuery}`);
+    expect(args.textContent).toContain('limit=20');
+    expect(args.textContent).toContain('filters={"kiln":"docs","tags":["api"]}');
+    // The empty-tokens fallback box must not add a misleading "(no arguments)".
+    expect(screen.queryByText('(no arguments)')).not.toBeInTheDocument();
+  });
+
+  it('keeps the (no arguments) fallback for tool permissions without args', () => {
+    const request: PermRequest = {
+      kind: 'permission',
+      id: 'perm-tool-2',
+      action_type: 'tool',
+      tokens: [],
+      tool_name: 'list_notes',
+    };
+
+    render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
+    expect(screen.getByText('(no arguments)')).toBeInTheDocument();
+  });
+
   it('renders the action type label', () => {
     const request: PermRequest = {
       kind: 'permission',
