@@ -125,7 +125,6 @@ export default defineConfig({
 						{ slug: 'help/query/query-system' },
 						{ slug: 'help/workflows' },
 						{ slug: 'help/workflows/workflow-syntax' },
-						{ slug: 'help/workflows/markup' },
 					],
 				},
 				{
