@@ -111,12 +111,34 @@ struct InteractionResponseRequest {
     response: serde_json::Value,
 }
 
+/// `InteractionResponse` is a `kind`-tagged enum, but the frontend's
+/// response objects are bare (`{allowed, scope}`, `{selected}`, …) — infer
+/// the tag from the discriminating field so live responds don't 400.
+fn tag_interaction_response(mut value: serde_json::Value) -> serde_json::Value {
+    if value.get("kind").is_some() {
+        return value;
+    }
+    let kind = if value.get("allowed").is_some() {
+        "permission"
+    } else if value.get("selected").is_some() {
+        "ask"
+    } else if value.get("selected_index").is_some() || value.get("other").is_some() {
+        "popup"
+    } else {
+        return value;
+    };
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("kind".into(), serde_json::json!(kind));
+    }
+    value
+}
+
 async fn interaction_respond(
     State(state): State<AppState>,
     Json(req): Json<InteractionResponseRequest>,
 ) -> Result<Json<serde_json::Value>, WebError> {
     let response: crucible_core::interaction::InteractionResponse =
-        serde_json::from_value(req.response)
+        serde_json::from_value(tag_interaction_response(req.response))
             .map_err(|e| WebError::Chat(format!("Invalid interaction response: {e}")))?;
 
     state
@@ -126,4 +148,38 @@ async fn interaction_respond(
         .daemon_err()?;
 
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tag_interaction_response;
+    use crucible_core::interaction::InteractionResponse;
+
+    /// The exact objects the frontend POSTs (PermResponse/AskResponse/
+    /// PopupResponse in web/src/lib/types.ts) must deserialize into the
+    /// kind-tagged InteractionResponse after tagging.
+    #[test]
+    fn bare_frontend_responses_deserialize_after_tagging() {
+        let perm = serde_json::json!({ "allowed": true, "scope": "once" });
+        let tagged = tag_interaction_response(perm);
+        let parsed: InteractionResponse = serde_json::from_value(tagged).expect("permission");
+        assert!(matches!(parsed, InteractionResponse::Permission(p) if p.allowed));
+
+        let ask = serde_json::json!({ "selected": [1] });
+        let parsed: InteractionResponse =
+            serde_json::from_value(tag_interaction_response(ask)).expect("ask");
+        assert!(matches!(parsed, InteractionResponse::Ask(a) if a.selected == vec![1]));
+
+        let popup = serde_json::json!({ "selected_index": 0 });
+        let parsed: InteractionResponse =
+            serde_json::from_value(tag_interaction_response(popup)).expect("popup");
+        assert!(matches!(parsed, InteractionResponse::Popup(_)));
+    }
+
+    #[test]
+    fn already_tagged_responses_pass_through() {
+        let tagged = serde_json::json!({ "kind": "permission", "allowed": false, "scope": "once" });
+        let out = tag_interaction_response(tagged.clone());
+        assert_eq!(out, tagged);
+    }
 }
