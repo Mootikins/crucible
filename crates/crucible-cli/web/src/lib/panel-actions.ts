@@ -1,5 +1,6 @@
 import { findEdgePanelForGroup, windowActions, windowStore } from '@/stores/windowStore';
 import { getGlobalRegistry } from './panel-registry';
+import { iconForContentType } from './tab-icons';
 import type { LayoutNode, Tab, TabContentType } from '@/types/windowTypes';
 
 /** First pane group in the center tiling — where center-zone tabs open. */
@@ -53,6 +54,7 @@ export function openPanelTab(contentType: TabContentType): void {
     id: `tab-${contentType}`,
     title: def.title,
     contentType,
+    icon: iconForContentType(contentType),
   };
 
   if (def.defaultZone === 'center') {

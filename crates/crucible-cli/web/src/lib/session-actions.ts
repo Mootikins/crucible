@@ -1,6 +1,7 @@
 import { windowActions, windowStore } from '@/stores/windowStore';
 import type { Tab } from '@/types/windowTypes';
 import { findFirstCenterPaneGroupId } from './panel-actions';
+import { iconForContentType } from './tab-icons';
 
 export function findTabBySessionId(sessionId: string): { groupId: string; tab: Tab } | null {
   for (const [groupId, group] of Object.entries(windowStore.tabGroups)) {
@@ -27,6 +28,7 @@ export function openSessionInChat(sessionId: string, sessionTitle: string): void
     id: `tab-chat-${sessionId}`,
     title: sessionTitle || 'Chat',
     contentType: 'chat',
+    icon: iconForContentType('chat'),
     metadata: { sessionId },
   };
 

@@ -18,6 +18,8 @@ export {
   ChevronDown,
   RefreshCw,
   Plus,
+  Package,
+  Target,
   FileText,
   FileCode,
   File,

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { iconForContentType } from '../tab-icons';
 import { serializeLayout, deserializeLayout } from '../layout-serializer';
 import type { WindowManagerState } from '@/types/windowTypes';
 
@@ -330,5 +331,23 @@ describe('layout-serializer', () => {
     expect(fileTab2.metadata).toBeDefined();
     expect(fileTab2.metadata?.filePath).toBe('/path/to/other.ts');
     expect(fileTab2.metadata?.encoding).toBe('utf-8');
+  });
+
+  it('rehydrates tab icons from content type on deserialize', () => {
+    // Icons are components: stripped by serialize, so restore must resolve
+    // them again — regression for iconless tabs after a persisted-layout
+    // load (previously masked when /api/layout failed with 401).
+    const state = createTestState();
+    state.tabGroups['group-1'].tabs = [
+      { id: 'sessions-tab', title: 'Sessions', contentType: 'sessions', icon: iconForContentType('sessions') },
+      { id: 'tab-chat-x', title: 'Chat', contentType: 'chat', metadata: { sessionId: 'x' } },
+    ];
+
+    const restored = deserializeLayout(serializeLayout(state));
+
+    const tabs = restored.tabGroups['group-1'].tabs;
+    expect(tabs[0].icon).toBe(iconForContentType('sessions'));
+    expect(tabs[1].icon).toBe(iconForContentType('chat'));
+    expect(tabs[0].icon).toBeTypeOf('function');
   });
 });

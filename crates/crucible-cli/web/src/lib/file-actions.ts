@@ -1,6 +1,7 @@
 import { windowActions, windowStore } from '@/stores/windowStore';
 import type { Tab } from '@/types/windowTypes';
 import { findFirstCenterPaneGroupId } from './panel-actions';
+import { iconForContentType } from './tab-icons';
 
 export function findTabByFilePath(filePath: string): { groupId: string; tab: Tab } | null {
   for (const [groupId, group] of Object.entries(windowStore.tabGroups)) {
@@ -24,6 +25,7 @@ export function openFileInEditor(filePath: string, fileName: string): void {
     id: `tab-file-${filePath}`,
     title: fileName,
     contentType: 'file',
+    icon: iconForContentType('file'),
     metadata: { filePath },
   };
 

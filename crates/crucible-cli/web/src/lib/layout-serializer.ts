@@ -7,6 +7,7 @@ import type {
   Tab,
   TabContentType,
 } from '@/types/windowTypes';
+import { iconForContentType } from './tab-icons';
 
 export interface SerializedLayout {
   version: number;
@@ -139,7 +140,9 @@ export function deserializeLayout(json: SerializedLayout): {
   for (const [id, group] of Object.entries(layout.tabGroups)) {
     tabGroups[id] = {
       id: group.id,
-      tabs: group.tabs.map((t) => ({ ...t })),
+      // Icons are components and never survive serialization — resolve them
+      // from the content type on the way back in.
+      tabs: group.tabs.map((t) => ({ ...t, icon: iconForContentType(t.contentType) })),
       activeTabId: group.activeTabId,
     };
   }
