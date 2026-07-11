@@ -42,7 +42,7 @@ export const PopupInteraction: Component<Props> = (props) => {
         placeholder="Search..."
         value={filter()}
         onInput={(e) => setFilter(e.currentTarget.value)}
-        class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
+        class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary mb-3"
       />
 
       <div class="max-h-48 overflow-y-auto space-y-1 mb-3">
@@ -71,12 +71,12 @@ export const PopupInteraction: Component<Props> = (props) => {
             placeholder="Or type custom..."
             value={otherText()}
             onInput={(e) => setOtherText(e.currentTarget.value)}
-            class="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            class="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary"
           />
           <button
             onClick={handleOther}
             disabled={!otherText().trim()}
-            class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Submit
           </button>

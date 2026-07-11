@@ -13,10 +13,10 @@ interface ToastStyle {
 
 const TOAST_STYLES: Record<NotificationType, ToastStyle> = {
   info: {
-    border: 'border-blue-500/40',
-    bg: 'bg-blue-950/80',
+    border: 'border-primary/40',
+    bg: 'bg-primary/15',
     icon: 'ℹ',
-    iconColor: 'text-blue-400',
+    iconColor: 'text-primary',
   },
   success: {
     border: 'border-emerald-500/40',

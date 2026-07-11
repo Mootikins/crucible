@@ -10,7 +10,7 @@ interface Props {
 
 const ACTION_LABELS: Record<string, { label: string; color: string }> = {
   bash: { label: 'Execute', color: 'bg-orange-600' },
-  read: { label: 'Read', color: 'bg-blue-600' },
+  read: { label: 'Read', color: 'bg-primary' },
   write: { label: 'Write', color: 'bg-yellow-600' },
   tool: { label: 'Tool', color: 'bg-purple-600' },
 };
@@ -206,7 +206,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
                 onClick={() => setScope(s)}
                 class={`px-3 py-1 text-sm rounded-md transition-colors ${
                   scope() === s
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-primary text-white'
                     : 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'
                 }`}
               >

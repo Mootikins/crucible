@@ -68,7 +68,7 @@ export const ProjectSection: Component<{
           <div class="flex gap-2 mt-2">
             <button
               onClick={handleRegisterProject}
-              class="flex-1 px-2 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+              class="flex-1 px-2 py-1 bg-primary text-white rounded text-sm hover:bg-primary-hover"
             >
               Add
             </button>

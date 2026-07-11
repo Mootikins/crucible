@@ -34,7 +34,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
     switch (props.toolCall.status) {
       case 'running':
         return (
-          <span class="inline-flex items-center text-blue-400" title="Running">
+          <span class="inline-flex items-center text-primary" title="Running">
             <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -50,7 +50,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
 
   const statusBorderColor = () => {
     switch (props.toolCall.status) {
-      case 'running': return 'border-blue-500/40';
+      case 'running': return 'border-primary/40';
       case 'complete': return 'border-emerald-500/30';
       case 'error': return 'border-red-500/40';
     }
@@ -58,7 +58,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
 
   const statusBgColor = () => {
     switch (props.toolCall.status) {
-      case 'running': return 'bg-blue-950/20';
+      case 'running': return 'bg-primary/10';
       case 'complete': return 'bg-neutral-850';
       case 'error': return 'bg-red-950/20';
     }
@@ -166,7 +166,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
           <Show when={props.toolCall.status === 'running' && !props.toolCall.result}>
             <div class="px-3 py-2 bg-neutral-900/50">
               <span class="inline-flex items-center gap-1.5 text-xs text-neutral-500">
-                <span class="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+                <span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
                 Executing…
               </span>
             </div>

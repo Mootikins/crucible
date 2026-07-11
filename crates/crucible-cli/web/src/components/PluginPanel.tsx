@@ -24,7 +24,7 @@ function looksLikeValidUrl(url: string): boolean {
 function sourceColor(source: string): string {
   switch (source) {
     case 'User':
-      return 'bg-blue-900/40 text-blue-300 border-blue-700/50';
+      return 'bg-primary/20 text-primary border-primary/50';
     case 'Runtime':
       return 'bg-emerald-900/40 text-emerald-300 border-emerald-700/50';
     case 'EnvPath':
@@ -133,7 +133,7 @@ export const PluginPanel: Component = () => {
           <button
             type="button"
             onClick={() => setShowInstall(true)}
-            class="text-[11px] px-2 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-white"
+            class="text-[11px] px-2 py-0.5 rounded bg-primary-active hover:bg-primary-hover text-white"
             data-testid="plugins-install-open"
           >
             Install
@@ -251,7 +251,7 @@ export const PluginPanel: Component = () => {
               type="button"
               onClick={handleInstall}
               disabled={installing()}
-              class="text-xs px-3 py-1 bg-blue-700 hover:bg-blue-600 rounded text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              class="text-xs px-3 py-1 bg-primary-active hover:bg-primary-hover rounded text-white disabled:opacity-50 disabled:cursor-not-allowed"
               data-testid="plugins-install-submit"
             >
               {installing() ? 'Installing…' : 'Install'}

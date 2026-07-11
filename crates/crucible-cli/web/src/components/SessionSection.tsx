@@ -49,7 +49,7 @@ export const StateIndicator: Component<{ state: Session['state'] }> = (props) =>
     switch (props.state) {
       case 'active': return 'bg-green-500';
       case 'paused': return 'bg-yellow-500';
-      case 'compacting': return 'bg-blue-500';
+      case 'compacting': return 'bg-primary';
       case 'ended': return 'bg-neutral-500';
       default: return 'bg-neutral-500';
     }

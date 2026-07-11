@@ -47,7 +47,7 @@ function groupNotifications(notifications: Notification[]): NotificationGroup[] 
 // ── Notification type styling ───────────────────────────────────────────
 
 const TYPE_CONFIG: Record<NotificationType, { icon: string; color: string; bg: string }> = {
-  info: { icon: 'ℹ', color: 'text-blue-400', bg: 'bg-blue-500/10' },
+  info: { icon: 'ℹ', color: 'text-primary', bg: 'bg-primary/10' },
   success: { icon: '✓', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
   warning: { icon: '⚠', color: 'text-amber-400', bg: 'bg-amber-500/10' },
   error: { icon: '✕', color: 'text-red-400', bg: 'bg-red-500/10' },

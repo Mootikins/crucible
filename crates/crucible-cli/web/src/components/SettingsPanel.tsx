@@ -231,7 +231,7 @@ const ModelSettingsSection: Component = () => {
 
   onMount(loadSettings);
 
-  const inputClass = 'bg-neutral-800 border border-neutral-600 rounded px-2 py-1 text-sm text-white focus:border-blue-500 focus:outline-none';
+  const inputClass = 'bg-neutral-800 border border-neutral-600 rounded px-2 py-1 text-sm text-white focus:border-primary focus:outline-none';
 
   const handleBudgetChange = (e: Event) => {
     const val = parseInt((e.target as HTMLInputElement).value, 10);
@@ -334,7 +334,7 @@ const ModelSettingsSection: Component = () => {
           step={0.1}
           value={temperature()}
           onInput={handleTemperatureChange}
-          class="w-32 accent-blue-500"
+          class="w-32 accent-primary"
         />
         <span class="text-xs text-neutral-500">2</span>
       </SettingRow>
@@ -356,7 +356,7 @@ const ModelSettingsSection: Component = () => {
           onClick={handlePrecognitionToggle}
           data-testid="precognition-toggle"
           class={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-            precognition() ? 'bg-blue-600' : 'bg-neutral-600'
+            precognition() ? 'bg-primary' : 'bg-neutral-600'
           }`}
         >
           <span
@@ -556,14 +556,14 @@ const ApiAccessSection: Component = () => {
             value={draft()}
             onInput={(e) => setDraft(e.currentTarget.value)}
             placeholder={hasToken() ? '••••••••' : 'Paste API token'}
-            class="bg-neutral-800 border border-neutral-600 rounded px-2 py-1 text-sm text-white focus:border-blue-500 focus:outline-none w-56"
+            class="bg-neutral-800 border border-neutral-600 rounded px-2 py-1 text-sm text-white focus:border-primary focus:outline-none w-56"
             data-testid="settings-api-token-input"
           />
           <button
             type="button"
             onClick={save}
             disabled={!draft().trim()}
-            class="ml-2 rounded bg-blue-600 px-2 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+            class="ml-2 rounded bg-primary px-2 py-1 text-sm text-white hover:bg-primary-hover disabled:opacity-50"
             data-testid="settings-api-token-save"
           >
             Save
@@ -606,7 +606,7 @@ const SettingsPanelContent: Component = () => {
     updateSetting('transcription', 'language', value);
   };
 
-  const inputClass = 'bg-neutral-800 border border-neutral-600 rounded px-2 py-1 text-sm text-white focus:border-blue-500 focus:outline-none';
+  const inputClass = 'bg-neutral-800 border border-neutral-600 rounded px-2 py-1 text-sm text-white focus:border-primary focus:outline-none';
   const selectClass = `${inputClass} cursor-pointer`;
   const labelClass = 'text-neutral-300 text-sm';
 

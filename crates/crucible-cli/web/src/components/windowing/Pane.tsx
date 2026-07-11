@@ -19,7 +19,7 @@ function PaneDropZone(props: {
       use:droppable
       classList={{
         [props.class]: true,
-        'bg-blue-500/30': droppable.isActiveDroppable,
+        'bg-primary/30': droppable.isActiveDroppable,
       }}
     />
   );
@@ -199,8 +199,8 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       use:centerDroppable
       classList={{
         'relative flex flex-col h-full overflow-hidden transition-all': true,
-        'ring-1 ring-blue-500/30': isActive() && windowStore.focusedRegion === 'center',
-        'bg-blue-500/5': centerDroppable.isActiveDroppable,
+        'ring-1 ring-primary/30': isActive() && windowStore.focusedRegion === 'center',
+        'bg-primary/5': centerDroppable.isActiveDroppable,
       }}
       onClick={() => windowActions.setActivePane(props.paneId)}
     >
@@ -222,7 +222,7 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       </Show>
 
       <Show when={centerDroppable.isActiveDroppable}>
-        <div class="absolute inset-0 bg-blue-500/20 z-10 pointer-events-none" />
+        <div class="absolute inset-0 bg-primary/20 z-10 pointer-events-none" />
       </Show>
 
       <div

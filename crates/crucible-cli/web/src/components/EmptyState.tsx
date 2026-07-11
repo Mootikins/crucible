@@ -23,7 +23,7 @@ export const EmptyState: Component<EmptyStateProps> = (props) => {
       {props.onAction && (
         <button
           onClick={props.onAction}
-          class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+          class="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-hover text-white text-sm font-medium rounded-lg transition-colors"
         >
           <Plus class="w-4 h-4" />
           {props.actionLabel || 'New Session'}

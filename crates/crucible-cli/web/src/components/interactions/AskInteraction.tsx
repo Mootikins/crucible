@@ -44,7 +44,7 @@ export const AskInteraction: Component<Props> = (props) => {
                   name={`ask-${props.request.id}`}
                   checked={selected().includes(index())}
                   onChange={() => toggleChoice(index())}
-                  class="w-4 h-4 text-blue-600 bg-neutral-700 border-neutral-600 focus:ring-blue-500"
+                  class="w-4 h-4 text-primary bg-neutral-700 border-neutral-600 focus:ring-primary"
                 />
                 <span class="text-neutral-300 group-hover:text-neutral-100">
                   {choice}
@@ -61,14 +61,14 @@ export const AskInteraction: Component<Props> = (props) => {
           placeholder={props.request.choices ? 'Or type your own...' : 'Type your answer...'}
           value={otherText()}
           onInput={(e) => setOtherText(e.currentTarget.value)}
-          class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
+          class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary mb-3"
         />
       </Show>
 
       <button
         onClick={handleSubmit}
         disabled={!hasSelection()}
-        class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         Submit
       </button>

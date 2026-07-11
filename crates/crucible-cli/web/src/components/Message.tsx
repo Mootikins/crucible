@@ -275,7 +275,7 @@ export const Message: Component<MessageProps> = (props) => {
               <Show when={!isEditing()} fallback={
                 <div class="flex flex-col gap-2">
                   <textarea
-                    class="w-full rounded border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none resize-y min-h-[60px]"
+                    class="w-full rounded border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-neutral-200 focus:border-primary focus:outline-none resize-y min-h-[60px]"
                     value={editContent()}
                     onInput={(e) => setEditContent(e.currentTarget.value)}
                     onKeyDown={(e) => {
@@ -302,7 +302,7 @@ export const Message: Component<MessageProps> = (props) => {
                     </button>
                     <button
                       type="button"
-                      class="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-500 transition-colors"
+                      class="rounded bg-primary px-3 py-1 text-xs text-white hover:bg-primary-hover transition-colors"
                       onClick={handleEditSave}
                     >
                       Save & Send
@@ -323,7 +323,7 @@ export const Message: Component<MessageProps> = (props) => {
                       prose-code:bg-neutral-700 prose-code:px-1 prose-code:rounded prose-code:text-sm prose-code:before:content-none prose-code:after:content-none
                       prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5
                       prose-headings:my-2 prose-headings:font-semibold
-                      prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline
+                      prose-a:text-primary prose-a:no-underline hover:prose-a:underline
                       prose-blockquote:border-l-2 prose-blockquote:border-neutral-600 prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-neutral-400"
                     innerHTML={renderedContent()}
                   />

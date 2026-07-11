@@ -84,8 +84,8 @@ function EdgePanelResizeHandle(props: { position: EdgePanelPosition }) {
       role="separator"
       aria-orientation={isVertical() ? 'vertical' : 'horizontal'}
       classList={{
-        'group relative flex-shrink-0 bg-zinc-800 hover:bg-zinc-700 active:bg-blue-500 transition-colors cursor-col-resize': isVertical(),
-        'group relative flex-shrink-0 bg-zinc-800 hover:bg-zinc-700 active:bg-blue-500 transition-colors cursor-row-resize': !isVertical(),
+        'group relative flex-shrink-0 bg-zinc-800 hover:bg-zinc-700 active:bg-primary-active transition-colors cursor-col-resize': isVertical(),
+        'group relative flex-shrink-0 bg-zinc-800 hover:bg-zinc-700 active:bg-primary-active transition-colors cursor-row-resize': !isVertical(),
         'w-1.5': isVertical(),
         'h-1.5': !isVertical(),
       }}
@@ -127,7 +127,7 @@ const CollapsedEdgeStrip: Component<{ position: EdgePanelPosition }> = (props) =
         'flex bg-zinc-900/95 border-zinc-800 transition-colors': true,
         'flex-col border-r': isVertical(),
         'flex-row border-t': !isVertical(),
-        'bg-blue-500/20': droppable.isActiveDroppable,
+        'bg-primary/20': droppable.isActiveDroppable,
       }}
     >
       <For each={tabs()}>

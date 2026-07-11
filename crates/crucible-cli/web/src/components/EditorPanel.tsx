@@ -40,13 +40,13 @@ const Tab: Component<{
     <button
       class="flex items-center gap-2 px-3 py-1.5 text-sm border-b-2 transition-colors whitespace-nowrap"
       classList={{
-        'border-blue-500 text-neutral-100 bg-neutral-800': props.active,
+        'border-primary text-neutral-100 bg-neutral-800': props.active,
         'border-transparent text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50': !props.active,
       }}
       onClick={props.onSelect}
     >
       <span class="truncate max-w-[150px]">
-        {props.dirty && <span class="text-blue-400 mr-1">●</span>}
+        {props.dirty && <span class="text-primary mr-1">●</span>}
         {getFilename(props.path)}
       </span>
       <span

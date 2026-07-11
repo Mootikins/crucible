@@ -84,7 +84,7 @@ const TabItem: Component<TabItemProps> = (props) => {
           true,
         'opacity-40 border-transparent bg-zinc-800/50': draggable.isActiveDraggable,
         'bg-zinc-800 text-zinc-100': props.isActive && !draggable.isActiveDraggable,
-        'border-blue-500': props.isActive && props.isFocused && !draggable.isActiveDraggable,
+        'border-primary': props.isActive && props.isFocused && !draggable.isActiveDraggable,
         'border-zinc-600': props.isActive && !props.isFocused && !draggable.isActiveDraggable,
         'border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50':
           !props.isActive && !draggable.isActiveDraggable,
@@ -126,7 +126,7 @@ const TabItem: Component<TabItemProps> = (props) => {
 // ── Insert indicator element ────────────────────────────────────────────
 
 const InsertIndicator: Component = () => (
-  <div class="w-0.5 h-5 bg-blue-500 rounded-full flex-shrink-0 my-auto" />
+  <div class="w-0.5 h-5 bg-primary rounded-full flex-shrink-0 my-auto" />
 );
 
 interface UseTabBarDnDOptions {
@@ -285,7 +285,7 @@ const TabStrip: Component<TabStripProps> = (props) => {
                   <button
                     class={`w-full px-3 py-1.5 text-left text-xs truncate transition-colors ${
                       tab.id === props.activeTabId()
-                        ? 'bg-blue-500/20 text-blue-300 font-medium'
+                        ? 'bg-primary/20 text-primary font-medium'
                         : 'text-zinc-300 hover:bg-zinc-700'
                     }`}
                     onClick={() => {
@@ -337,7 +337,7 @@ const CenterTabBar: Component<{
       use:droppable
       classList={{
         'flex items-center h-9 bg-zinc-900 border-b border-zinc-800 relative': true,
-        'bg-blue-500/5': droppable.isActiveDroppable,
+        'bg-primary/5': droppable.isActiveDroppable,
       }}
     >
       <TabStrip
@@ -372,7 +372,7 @@ const CenterTabBar: Component<{
         )}
       </div>
       {droppable.isActiveDroppable && (
-        <div class="absolute inset-x-0 bottom-0 h-0.5 bg-blue-500" />
+        <div class="absolute inset-x-0 bottom-0 h-0.5 bg-primary" />
       )}
     </div>
   );
@@ -409,7 +409,7 @@ const EdgeTabBar: Component<{
       data-testid={`edge-tabbar-${props.position}`}
       classList={{
         'flex items-center h-9 bg-zinc-900 border-b border-zinc-800 relative': true,
-        'bg-blue-500/5': droppable.isActiveDroppable,
+        'bg-primary/5': droppable.isActiveDroppable,
       }}
     >
       <TabStrip
@@ -435,7 +435,7 @@ const EdgeTabBar: Component<{
         )}
       />
       {droppable.isActiveDroppable && (
-        <div class="absolute inset-x-0 bottom-0 h-0.5 bg-blue-500" />
+        <div class="absolute inset-x-0 bottom-0 h-0.5 bg-primary" />
       )}
     </div>
   );

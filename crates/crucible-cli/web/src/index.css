@@ -1,49 +1,70 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* Crucible shell identity: near-black surfaces + ember accent + IBM Plex
+ * (docs/Meta/Web UI Feature Spec.md §2.3; "Crucible Shell Options" design). */
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-sans/700.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
 @theme {
-  --color-primary: #3b82f6;
-  --color-primary-hover: #2563eb;
-  --color-primary-active: #1e40af;
+  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --color-surface-base: #171717;
-  --color-surface-elevated: #1f1f1f;
-  --color-surface-overlay: #262626;
+  --color-primary: #e0653a;
+  --color-primary-hover: #f08a5e;
+  --color-primary-active: #c4552e;
 
-  --color-muted: #a3a3a3;
-  --color-muted-dark: #737373;
+  --color-surface-base: #141318;
+  --color-surface-elevated: #1a1920;
+  --color-surface-overlay: #211f28;
+
+  --color-muted: #98939e;
+  --color-muted-dark: #6b6673;
 
   --color-error: #ef4444;
   --color-error-dark: #991b1b;
+
+  /* Shell semantic colors from the design system */
+  --color-shell-bg: #0e0d11;
+  --color-shell-panel: #141318;
+  --color-shell-ink: #e7e4df;
+  --color-shell-body: #c9c5bf;
+  --color-attention: #d4a72c;
+  --color-ok: #7bc47f;
+  --color-precog: #a78bda;
 }
 
 /* FlexLayout CSS Custom Properties — Dark Theme Default */
 :root {
-  --fl-color-bg-primary: #171717;
-  --fl-color-bg-surface: #0a0a0a;
-  --fl-color-bg-elevated: #262626;
-  --fl-color-text-primary: #fafafa;
-  --fl-color-text-secondary: #a3a3a3;
-  --fl-color-text-muted: #8a8a8a;
-  --fl-color-text-tertiary: #d4d4d4;
-  --fl-color-accent: #3b82f6;
-  --fl-color-accent-subtle: rgba(59, 130, 246, 0.08);
-  --fl-color-accent-light: rgba(59, 130, 246, 0.1);
-  --fl-color-accent-medium: rgba(59, 130, 246, 0.15);
-  --fl-color-accent-strong: rgba(59, 130, 246, 0.2);
-  --fl-color-accent-selection: rgba(59, 130, 246, 0.4);
-  --fl-color-border-primary: #333333;
-  --fl-color-border-secondary: #404040;
-  --fl-color-border-floating: #555;
-  --fl-color-scrollbar-track: #171717;
-  --fl-color-scrollbar-thumb: #404040;
-  --fl-color-scrollbar-thumb-hover: #525252;
+  --fl-color-bg-primary: #141318;
+  --fl-color-bg-surface: #0e0d11;
+  --fl-color-bg-elevated: #211f28;
+  --fl-color-text-primary: #e7e4df;
+  --fl-color-text-secondary: #98939e;
+  --fl-color-text-muted: #6b6673;
+  --fl-color-text-tertiary: #c9c5bf;
+  --fl-color-accent: #e0653a;
+  --fl-color-accent-subtle: rgba(224, 101, 58, 0.08);
+  --fl-color-accent-light: rgba(224, 101, 58, 0.1);
+  --fl-color-accent-medium: rgba(224, 101, 58, 0.15);
+  --fl-color-accent-strong: rgba(224, 101, 58, 0.2);
+  --fl-color-accent-selection: rgba(224, 101, 58, 0.4);
+  --fl-color-border-primary: #26252b;
+  --fl-color-border-secondary: #322f38;
+  --fl-color-border-floating: #4a4752;
+  --fl-color-scrollbar-track: #141318;
+  --fl-color-scrollbar-thumb: #322f38;
+  --fl-color-scrollbar-thumb-hover: #4a4752;
   --fl-color-error: #ef4444;
-  --fl-color-overlay-bg: rgba(0, 0, 0, 0.5);
+  --fl-color-overlay-bg: rgba(0, 0, 0, 0.55);
   --fl-color-toolbar-hover-bg: rgba(255, 255, 255, 0.08);
-  --fl-color-floating-bg: #1e1e1e;
-  --fl-color-floating-titlebar-bg: #2d2d2d;
-  --fl-color-floating-titlebar-text: #ccc;
+  --fl-color-floating-bg: #1a1920;
+  --fl-color-floating-titlebar-bg: #211f28;
+  --fl-color-floating-titlebar-text: #c9c5bf;
   --fl-color-floating-resize-grip: #888;
   --fl-shadow-popup: 0 4px 12px rgba(0, 0, 0, 0.4);
   --fl-shadow-floating: 0 4px 16px rgba(0, 0, 0, 0.4);
@@ -127,7 +148,7 @@
   }
 
   body {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background-color: var(--fl-color-bg-primary);
     color: var(--fl-color-text-primary);
   }
@@ -158,7 +179,7 @@
 
 @layer components {
   .streaming-cursor {
-    @apply inline-block w-0.5 h-4 bg-blue-400 animate-pulse;
+    @apply inline-block w-0.5 h-4 bg-primary animate-pulse;
   }
 
   /* User messages: compact bubble, right-aligned */
@@ -167,13 +188,13 @@
   }
 
   .message-bubble-user {
-    @apply bg-blue-600 text-white rounded-br-md;
+    @apply bg-surface-overlay text-shell-ink rounded-br-md;
   }
 
   /* Assistant messages: full-width, left border accent */
   .message-assistant {
     @apply w-full px-4 py-3 text-neutral-100;
-    @apply border-l-[3px] border-blue-500;
+    @apply border-l-[3px] border-primary/60;
     @apply bg-neutral-900/30;
   }
 }

@@ -51,7 +51,7 @@ export const AuthTokenPrompt: Component<AuthTokenPromptProps> = (props) => {
               if (e.key === 'Enter') save();
             }}
             placeholder="API token"
-            class="mb-3 w-full rounded border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-blue-500"
+            class="mb-3 w-full rounded border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-primary"
             data-testid="auth-token-input"
           />
           <div class="flex justify-end gap-2">
@@ -66,7 +66,7 @@ export const AuthTokenPrompt: Component<AuthTokenPromptProps> = (props) => {
               type="button"
               onClick={save}
               disabled={!value().trim()}
-              class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              class="rounded bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
               data-testid="auth-token-save"
             >
               Save & reload

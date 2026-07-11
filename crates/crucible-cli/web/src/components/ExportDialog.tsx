@@ -140,7 +140,7 @@ export const ExportDialog: Component<ExportDialogProps> = (props) => {
           <button
             onClick={handleDownload}
             disabled={!markdown() || loading()}
-            class="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            class="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             Download
           </button>

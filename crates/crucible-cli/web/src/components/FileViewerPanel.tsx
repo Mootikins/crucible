@@ -189,7 +189,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
           data-testid="file-save"
           onClick={handleSave}
           disabled={!fileData()?.dirty}
-          class="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+          class="rounded bg-primary px-3 py-1 text-xs text-white hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed"
           title="Save (⌘S)"
         >
           Save

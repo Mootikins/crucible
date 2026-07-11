@@ -95,8 +95,8 @@ const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }
           'group relative flex-shrink-0 z-10 pointer-events-auto transition-colors': true,
           'w-1.5 cursor-col-resize': split().direction === 'horizontal',
           'h-1.5 cursor-row-resize': split().direction !== 'horizontal',
-          'bg-blue-500': isDragging(),
-          'bg-zinc-800 hover:bg-zinc-700 active:bg-blue-500': !isDragging(),
+          'bg-primary': isDragging(),
+          'bg-zinc-800 hover:bg-zinc-700 active:bg-primary-active': !isDragging(),
         }}
         on:pointerdown={handlePointerDown}
       >

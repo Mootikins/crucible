@@ -30,7 +30,7 @@ export const StatusBar: Component = () => {
   const modeColor = (mode: ChatMode): string => {
     switch (mode) {
       case 'normal': return 'bg-emerald-600/80 text-emerald-100';
-      case 'plan': return 'bg-blue-600/80 text-blue-100';
+      case 'plan': return 'bg-primary/80 text-white';
       case 'auto': return 'bg-amber-600/80 text-amber-100';
     }
   };
