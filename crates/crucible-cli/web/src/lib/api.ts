@@ -213,6 +213,7 @@ interface RawSession {
   state: Session['state'];
   title: string | null;
   agent_model?: string | null;
+  agent?: { mode?: string | null } | null;
   started_at: string;
   event_count?: number;
   archived?: boolean;
@@ -227,6 +228,7 @@ function mapSession(raw: RawSession): Session {
     state: raw.state,
     title: raw.title,
     agent_model: raw.agent_model ?? null,
+    agent_mode: raw.agent?.mode ?? null,
     started_at: raw.started_at,
     event_count: raw.event_count ?? 0,
     archived: raw.archived ?? false,
@@ -358,6 +360,16 @@ export async function switchModel(sessionId: string, modelId: string): Promise<v
     errorMessage: 'Failed to switch model',
     parseAs: 'none',
     ...jsonRequest({ model_id: modelId }),
+  });
+}
+
+/** Set the session mode (normal/plan/auto). Confirmation echoes back as a
+ * mode_changed SSE event. */
+export async function setSessionMode(sessionId: string, mode: string): Promise<void> {
+  await request<void>('POST', `/api/session/${encodeURIComponent(sessionId)}/mode`, {
+    errorMessage: 'Failed to set session mode',
+    parseAs: 'none',
+    ...jsonRequest({ mode }),
   });
 }
 

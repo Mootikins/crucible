@@ -573,6 +573,7 @@ mod tests {
 
     fn test_agent_config() -> SessionAgent {
         SessionAgent {
+            mode: None,
             agent_type: "internal".to_string(),
             agent_name: None,
             provider_key: Some("ollama".to_string()),

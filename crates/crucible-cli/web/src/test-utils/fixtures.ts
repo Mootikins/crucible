@@ -18,6 +18,7 @@ export const mockSession = {
   state: 'active' as SessionState,
   title: 'Test Session',
   agent_model: 'ollama:neural-chat',
+  agent_mode: null,
   started_at: '2026-03-10T10:00:00Z',
   event_count: 42,
 } satisfies Session;
@@ -98,6 +99,7 @@ export const mockSearchResults = {
       session_type: 'chat' as SessionType,
       started_at: '2026-03-10T10:00:00Z',
       agent_model: 'ollama:neural-chat',
+      agent_mode: null,
       event_count: 42,
     },
     {
@@ -109,6 +111,7 @@ export const mockSearchResults = {
       session_type: 'agent' as SessionType,
       started_at: '2026-03-09T14:30:00Z',
       agent_model: 'openai:gpt-4',
+      agent_mode: null,
       event_count: 28,
     },
   ],

@@ -101,6 +101,7 @@ pub fn session_routes() -> Router<AppState> {
         .route("/api/session/{id}/cancel", post(cancel_session))
         .route("/api/session/{id}/models", get(list_models))
         .route("/api/session/{id}/model", post(switch_model))
+        .route("/api/session/{id}/mode", post(set_mode))
         .route("/api/session/{id}/title", put(set_session_title))
         .route("/api/session/{id}/auto-title", post(auto_title))
         .route("/api/providers", get(list_providers))
@@ -306,6 +307,7 @@ async fn create_session(
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
+        mode: None,
     };
 
     state
@@ -551,6 +553,27 @@ async fn switch_model(
     state
         .daemon
         .session_switch_model(&id, &req.model_id)
+        .await
+        .daemon_err()?;
+    Ok(OkResponse::success())
+}
+
+#[derive(Debug, Deserialize)]
+struct SetModeRequest {
+    mode: String,
+}
+
+/// Set the session mode (normal/plan/auto). The daemon persists it on the
+/// agent config and applies it to the live handle; confirmation reaches the
+/// UI as a `mode_changed` SSE event.
+async fn set_mode(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<SetModeRequest>,
+) -> Result<Json<OkResponse>, WebError> {
+    state
+        .daemon
+        .session_set_mode(&id, &req.mode)
         .await
         .daemon_err()?;
     Ok(OkResponse::success())

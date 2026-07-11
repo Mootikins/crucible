@@ -262,7 +262,7 @@ impl AgentManager {
         }
 
         // Build the agent handle from configuration
-        let (agent, resolved_config) = self
+        let (mut agent, resolved_config) = self
             .build_agent_from_config(
                 session_id,
                 agent_config,
@@ -272,6 +272,22 @@ impl AgentManager {
                 permission_override,
             )
             .await?;
+
+        // Re-apply the persisted session mode: a mode set before the first
+        // message (or after a handle eviction) must still shape this handle's
+        // behavior (plan mode filters write tools). Best-effort — an agent
+        // that rejects the mode falls back to its default rather than
+        // failing the whole send.
+        if let Some(mode_id) = agent_config.mode.as_deref() {
+            if let Err(e) = agent.set_mode_str(mode_id).await {
+                tracing::warn!(
+                    session_id = %session_id,
+                    mode = %mode_id,
+                    error = %e,
+                    "Persisted session mode not applied to new agent handle"
+                );
+            }
+        }
 
         // Register delegation/permission handlers if configured
         self.setup_permission_handlers(session_id, &resolved_config);

@@ -829,6 +829,7 @@ mod tests {
 
     fn make_test_agent(context_budget: Option<usize>) -> SessionAgent {
         SessionAgent {
+            mode: None,
             agent_type: "internal".to_string(),
             agent_name: None,
             provider_key: Some("ollama".to_string()),

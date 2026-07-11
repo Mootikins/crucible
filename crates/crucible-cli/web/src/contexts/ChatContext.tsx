@@ -18,6 +18,7 @@ import type {
 } from '@/lib/types';
 import type { ChatContextValue } from '@/lib/types/context';
 import {
+  setSessionMode,
   sendChatMessage,
   subscribeToEvents,
   respondToInteraction as apiRespondToInteraction,
@@ -30,6 +31,7 @@ import {
 import { findTabBySessionId } from '@/lib/session-actions';
 import { windowActions } from '@/stores/windowStore';
 import { statusBarStore } from '@/stores/statusBarStore';
+import { notificationActions } from '@/stores/notificationStore';
 import { createChatEventReducer } from './chatEventReducer';
 import { bootstrapSessionWithFallback } from './sessionBootstrap';
 
@@ -95,6 +97,21 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
      currentStreamingMessageId = null;
      firstUserMessage = null;
      hasReceivedFirstResponse = false;
+   };
+
+   /** UI-optimistic mode switch that also persists daemon-side. The daemon
+    * echoes a mode_changed SSE event; on failure the UI reverts and surfaces
+    * the error (plan mode that isn't enforced server-side must not look on). */
+   const switchMode = (mode: ChatMode) => {
+     const previous = chatMode();
+     setChatMode(mode);
+     void setSessionMode(props.sessionId, mode).catch((err) => {
+       setChatMode(previous);
+       notificationActions.addNotification(
+         'error',
+         err instanceof Error ? err.message : 'Failed to set session mode'
+       );
+     });
    };
 
    const addSystemMessage = (content: string) => {
@@ -206,6 +223,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       sessionId: newSessionId,
       signal: abortController.signal,
       setSessionTitle,
+      setChatMode,
       loadHistory,
     });
 
@@ -358,6 +376,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     chatMode,
     isLoadingHistory,
     setChatMode,
+    switchMode,
     sendMessage,
     respondToInteraction,
     clearMessages,
@@ -395,6 +414,7 @@ const fallbackChatContext: ChatContextValue = {
   chatMode: () => 'normal',
   isLoadingHistory: () => false,
   setChatMode: () => {},
+  switchMode: () => {},
   sendMessage: noopAsync,
   respondToInteraction: noopAsync,
   clearMessages: () => {},

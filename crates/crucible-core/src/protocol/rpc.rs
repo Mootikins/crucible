@@ -261,6 +261,16 @@ impl SessionEventMessage {
         )
     }
 
+    /// Session mode changed (normal/plan/auto). `data.mode` is the field the
+    /// web SSE mapper and TUI reducers read — keep the name stable.
+    pub fn mode_changed(session_id: impl Into<String>, mode: impl Into<String>) -> Self {
+        Self::new(
+            session_id,
+            "mode_changed",
+            serde_json::json!({ "mode": mode.into() }),
+        )
+    }
+
     pub fn message_complete(
         session_id: impl Into<String>,
         message_id: impl Into<String>,
@@ -637,6 +647,14 @@ mod tests {
         assert_eq!(evt.event, "model_switched");
         assert_eq!(evt.data["model_id"], "gpt-4o");
         assert_eq!(evt.data["provider"], "openai");
+    }
+
+    #[test]
+    fn event_mode_changed_factory() {
+        let evt = SessionEventMessage::mode_changed("s1", "plan");
+        assert_eq!(evt.event, "mode_changed");
+        // Wire contract: web events.rs and the SSE reducer read data["mode"].
+        assert_eq!(evt.data["mode"], "plan");
     }
 
     #[test]

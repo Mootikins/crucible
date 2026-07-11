@@ -164,6 +164,27 @@ async fn switch_model_returns_200() {
 }
 
 #[tokio::test]
+async fn set_mode_returns_200() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/session/test-session-001/mode")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"mode": "plan"}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn set_session_title_returns_200() {
     let (_mock, client) = start_mock_daemon().await;
     let state = build_mock_state(client);

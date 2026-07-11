@@ -23,6 +23,13 @@ pub struct SessionSwitchModelRequest {
     pub model_id: String,
 }
 
+/// Request for `session.set_mode`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetModeRequest {
+    pub session_id: String,
+    pub mode_id: String,
+}
+
 /// Request for `session.set_thinking_budget`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionSetThinkingBudgetRequest {
@@ -171,6 +178,17 @@ impl DaemonClient {
             SessionSwitchModelRequest {
                 session_id: session_id.to_string(),
                 model_id: model_id.to_string(),
+            },
+        )
+        .await
+    }
+
+    pub async fn session_set_mode(&self, session_id: &str, mode_id: &str) -> Result<()> {
+        self.typed_unit_call_with_retry(
+            "session.set_mode",
+            SessionSetModeRequest {
+                session_id: session_id.to_string(),
+                mode_id: mode_id.to_string(),
             },
         )
         .await
@@ -366,6 +384,13 @@ impl DaemonClient {
                 temperature,
             },
         )
+        .await
+    }
+
+    pub async fn session_get_mode(&self, session_id: &str) -> Result<Option<String>> {
+        self.get_session_option("session.get_mode", session_id, "mode", |v| {
+            v.as_str().map(|s| s.to_string())
+        })
         .await
     }
 

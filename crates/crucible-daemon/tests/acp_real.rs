@@ -79,6 +79,7 @@ pub fn find_delegation_pair() -> Option<((String, PathBuf), (String, PathBuf))> 
 /// `resolve_agent_command()` maps it to the correct binary + args.
 fn real_session_agent(agent_name: &str) -> SessionAgent {
     SessionAgent {
+        mode: None,
         agent_type: "acp".to_string(),
         agent_name: Some(agent_name.to_string()),
         provider_key: None,

@@ -189,6 +189,11 @@ struct ConfigMethod {
 
 const CONFIG_METHODS: &[ConfigMethod] = &[
     ConfigMethod {
+        suffix: "mode",
+        request_field: "mode_id",
+        result_field: "mode",
+    },
+    ConfigMethod {
         suffix: "thinking_budget",
         request_field: "thinking_budget",
         result_field: "thinking_budget",

@@ -241,6 +241,7 @@ pub fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
         "session.interaction_respond" => json!(null),
         "session.list_models" => json!({"models": ["llama3.2", "mistral"]}),
         "session.switch_model" => json!(null),
+        "session.set_mode" => json!(null),
         "session.set_title" => json!(null),
         "session.search" => json!([{"session_id": "s1", "title": "Test Session"}]),
         // Mirrors the daemon's real response shape: a `history` array of

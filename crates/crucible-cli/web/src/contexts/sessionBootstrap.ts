@@ -5,7 +5,19 @@ interface BootstrapSessionParams {
   sessionId: string;
   signal: AbortSignal;
   setSessionTitle: (title: string | null) => void;
+  /** Hydrate the persisted session mode (normal/plan/auto) into the chat UI. */
+  setChatMode?: (mode: 'normal' | 'plan' | 'auto') => void;
   loadHistory: (sessionId: string, kiln: string, signal?: AbortSignal) => Promise<void>;
+}
+
+function hydrateMode(
+  mode: string | null,
+  setChatMode?: (mode: 'normal' | 'plan' | 'auto') => void
+): void {
+  if (!setChatMode) return;
+  if (mode === 'normal' || mode === 'plan' || mode === 'auto') {
+    setChatMode(mode);
+  }
 }
 
 function syncPrimaryStatus(sessionId: string, title: string | null, model: string | null) {
@@ -24,11 +36,15 @@ export async function bootstrapSessionWithFallback({
   sessionId,
   signal,
   setSessionTitle,
+  setChatMode,
   loadHistory,
 }: BootstrapSessionParams): Promise<void> {
   try {
     const session = await getSession(sessionId);
     setSessionTitle(session.title);
+    // The daemon persists the session mode on the agent config; without this
+    // a page reload silently shows "Normal" while the agent stays in plan.
+    hydrateMode(session.agent_mode, setChatMode);
     syncPrimaryStatus(session.id, session.title, session.agent_model ?? null);
     await loadHistory(session.id, session.kiln, signal);
     return;

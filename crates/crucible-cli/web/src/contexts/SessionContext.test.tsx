@@ -73,6 +73,7 @@ describe('selectSession auto-resume', () => {
       state,
       title: 'Test Session',
       agent_model: 'test-model',
+      agent_mode: null,
       started_at: new Date().toISOString(),
       event_count: 0,
     };

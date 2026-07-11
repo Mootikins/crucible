@@ -97,6 +97,38 @@ macro_rules! session_config_getter {
 
 // ── Setters (uniform shape: extract → set → echo the value back) ────────────
 
+pub(crate) async fn handle_session_set_mode(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let mode_id = require_param!(req, "mode_id", as_str);
+
+    match am.set_mode(session_id, mode_id, Some(event_tx)).await {
+        Ok(()) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "mode_id": mode_id,
+                "set": true,
+            }),
+        ),
+        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
+            Response::error(req.id, INVALID_PARAMS, format!("Session not found: {}", id))
+        }
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => Response::error(
+            req.id,
+            INVALID_PARAMS,
+            format!("No agent configured for session: {}", id),
+        ),
+        Err(crate::agent_manager::AgentError::NotSupported(msg)) => {
+            Response::error(req.id, INVALID_PARAMS, msg)
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
 session_config_setter!(
     handle_session_set_system_prompt,
     req,
@@ -215,6 +247,8 @@ session_config_getter!(
     get_temperature,
     "temperature"
 );
+
+session_config_getter!(handle_session_get_mode, get_mode, "mode");
 session_config_getter!(handle_session_get_max_tokens, get_max_tokens, "max_tokens");
 session_config_getter!(
     handle_session_get_max_iterations,

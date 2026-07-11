@@ -37,6 +37,8 @@ export interface ChatContextValue {
   chatMode: Accessor<ChatMode>;
   isLoadingHistory: Accessor<boolean>;
   setChatMode: (mode: ChatMode) => void;
+  /** Set the mode UI-side AND persist it daemon-side (POST /mode). */
+  switchMode: (mode: ChatMode) => void;
   sendMessage: (content: string) => Promise<void>;
   respondToInteraction: (response: InteractionResponse) => Promise<void>;
   clearMessages: () => void;

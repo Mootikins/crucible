@@ -396,6 +396,11 @@ impl AgentManager {
         .await
     }
 
+    pub fn get_mode(&self, session_id: &str) -> Result<Option<String>, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.mode)
+    }
+
     pub fn get_thinking_budget(&self, session_id: &str) -> Result<Option<i64>, AgentError> {
         let (_, agent_config) = self.get_session_with_agent(session_id)?;
         Ok(agent_config.thinking_budget)
@@ -1099,5 +1104,76 @@ impl AgentManager {
             .await;
         let mut t = tree.lock().await;
         Ok(t.remove_range(range))
+    }
+}
+
+impl AgentManager {
+    /// Set the session mode (normal/plan/auto), mirroring `switch_model`.
+    ///
+    /// The mode is persisted on `SessionAgent.mode` so it applies at handle
+    /// creation (a mode set before the first message must still take effect)
+    /// and survives handle eviction. When a live handle exists it is updated
+    /// in place — internal handles re-filter their tool set; ACP handles
+    /// forward via `session/set_mode`.
+    pub async fn set_mode(
+        &self,
+        session_id: &str,
+        mode_id: &str,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        let mode_id = mode_id.trim();
+        let modes = crucible_core::types::mode::default_internal_modes();
+        if !modes
+            .available_modes
+            .iter()
+            .any(|m| m.id.0.as_ref() == mode_id)
+        {
+            let valid: Vec<&str> = modes
+                .available_modes
+                .iter()
+                .map(|m| m.id.0.as_ref())
+                .collect();
+            return Err(AgentError::NotSupported(format!(
+                "unknown mode '{}'. Valid: {}",
+                mode_id,
+                valid.join(", ")
+            )));
+        }
+
+        let mut session = self
+            .session_manager
+            .get_session(session_id)
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
+
+        let mut agent_config = session
+            .agent
+            .clone()
+            .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?;
+
+        // Apply to the live handle first: if the agent rejects the mode
+        // (e.g. an ACP agent without that mode), nothing is persisted.
+        if let Some(handle) = self.agent_cache.get(session_id).map(|r| r.value().clone()) {
+            handle
+                .lock()
+                .await
+                .set_mode_str(mode_id)
+                .await
+                .map_err(|e| AgentError::NotSupported(e.to_string()))?;
+        }
+
+        agent_config.mode = Some(mode_id.to_string());
+        session.agent = Some(agent_config);
+        self.session_manager
+            .update_session(&session)
+            .await
+            .map_err(AgentError::Session)?;
+
+        if let Some(tx) = event_tx {
+            if !emit_event(tx, SessionEventMessage::mode_changed(session_id, mode_id)) {
+                tracing::debug!("Failed to emit mode_changed event (no subscribers)");
+            }
+        }
+        info!(session_id = %session_id, mode = %mode_id, "Session mode set");
+        Ok(())
     }
 }

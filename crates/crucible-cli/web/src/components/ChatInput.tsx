@@ -9,7 +9,7 @@ import { AutocompletePopup } from './AutocompletePopup';
 import { executeCommand } from '@/lib/api';
 import { statusBarStore } from '@/stores/statusBarStore';
 export const ChatInput: Component = () => {
-  const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, setChatMode, addSystemMessage, clearMessages } = useChatSafe();
+  const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, switchMode, addSystemMessage, clearMessages } = useChatSafe();
   const { currentSession, cancelCurrentOperation, availableModels, switchModel, selectedProvider } = useSessionSafe();
   const [input, setInput] = createSignal('');
   const [isModelPickerOpen, setIsModelPickerOpen] = createSignal(false);
@@ -78,7 +78,7 @@ export const ChatInput: Component = () => {
     if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault();
       e.stopPropagation();
-      setChatMode(nextChatMode(chatMode()));
+      switchMode(nextChatMode(chatMode()));
       return;
     }
     if (e.key === 'Enter' && !e.shiftKey) {

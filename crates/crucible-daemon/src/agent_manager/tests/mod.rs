@@ -558,6 +558,7 @@ async fn setup_session_manager() -> (
 
 fn test_agent() -> SessionAgent {
     SessionAgent {
+        mode: None,
         agent_type: "internal".to_string(),
         agent_name: None,
         provider_key: Some("ollama".to_string()),

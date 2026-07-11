@@ -17,18 +17,15 @@ export function nextChatMode(current: ChatMode): ChatMode {
 }
 
 export const ChatModeControl: Component = () => {
-  const { chatMode, setChatMode } = useChatSafe();
+  const { chatMode, switchMode } = useChatSafe();
 
   return (
     <div class="flex items-center rounded-lg border border-neutral-700 overflow-hidden">
       {MODES.map((mode) => (
         <button
           type="button"
-          onClick={() => setChatMode(mode.value)}
-          // Honesty stopgap: mode is display-local until the daemon grows a
-          // session.set_mode RPC (plan phase 3) — the agent does not yet
-          // change behavior when this is toggled from the web.
-          title={`${mode.label} mode (display only — not yet enforced server-side)`}
+          onClick={() => switchMode(mode.value)}
+          title={`${mode.label} mode`}
           class="px-2.5 py-1 text-xs font-medium transition-colors outline-none"
           classList={{
             'bg-primary/80 text-white': chatMode() === mode.value,

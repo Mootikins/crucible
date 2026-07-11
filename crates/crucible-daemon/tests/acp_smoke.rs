@@ -59,6 +59,7 @@ pub fn mock_agent_path() -> PathBuf {
 /// - All other fields set to sensible defaults
 pub fn mock_session_agent(agent_path: &str) -> SessionAgent {
     SessionAgent {
+        mode: None,
         agent_type: "acp".to_string(),
         agent_name: Some(agent_path.to_string()),
         provider_key: None,

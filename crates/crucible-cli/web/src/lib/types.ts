@@ -53,6 +53,8 @@ export interface Session {
   state: SessionState;
   title: string | null;
   agent_model: string | null;
+  /** Persisted session mode (normal/plan/auto); null when never set. */
+  agent_mode: string | null;
   started_at: string; // ISO datetime
   event_count: number;
   archived?: boolean;

@@ -165,6 +165,7 @@ async fn test_session_configure_agent() {
         .to_string();
 
     let agent = SessionAgent {
+        mode: None,
         agent_type: "internal".to_string(),
         agent_name: None,
         provider_key: Some("ollama".to_string()),

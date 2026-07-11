@@ -7,6 +7,7 @@ const mockSendMessage = vi.fn();
 const mockCancelStream = vi.fn();
 const mockCancelCurrentOperation = vi.fn();
 const mockSetChatMode = vi.fn();
+const mockSwitchMode = vi.fn();
 const mockAddSystemMessage = vi.fn();
 const mockClearMessages = vi.fn();
 const mockSwitchModel = vi.fn();
@@ -21,6 +22,8 @@ vi.mock('@/contexts/ChatContext', () => ({
     error: () => null,
     chatMode: () => 'normal',
     setChatMode: mockSetChatMode,
+    switchMode: mockSwitchMode,
+    sessionId: () => 'test-session',
     addSystemMessage: mockAddSystemMessage,
     clearMessages: mockClearMessages,
     activeTools: () => [],

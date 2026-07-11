@@ -78,6 +78,26 @@ async fn chat_send_daemon_error_maps_to_502() {
 }
 
 #[tokio::test]
+async fn set_mode_daemon_error_maps_to_502() {
+    let (_mock, client) = start_mock_daemon_with_errors(errors_for(&["session.set_mode"])).await;
+    let app = build_test_app(build_mock_state(client));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/session/test-session-001/mode")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"mode":"yolo"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+}
+
+#[tokio::test]
 async fn session_list_daemon_error_maps_to_502() {
     let (_mock, client) = start_mock_daemon_with_errors(errors_for(&["session.list"])).await;
     let app = build_test_app(build_mock_state(client));

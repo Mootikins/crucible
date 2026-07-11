@@ -45,6 +45,8 @@ pub const METHODS: &[&str] = &[
     "session.send_message",
     "session.cancel",
     "session.switch_model",
+    "session.set_mode",
+    "session.get_mode",
     "session.list_models",
     "session.set_thinking_budget",
     "session.get_thinking_budget",
@@ -228,6 +230,7 @@ impl RpcDispatcher {
             }
             "session.get_thinking_budget"
             | "session.get_temperature"
+            | "session.get_mode"
             | "session.get_max_tokens"
             | "session.get_max_iterations"
             | "session.get_execution_timeout"
@@ -316,6 +319,7 @@ impl RpcDispatcher {
                 to_response(id, self.handle_session_interaction_respond(&req).await)
             }
             "session.switch_model" => to_response(id, self.handle_session_switch_model(&req).await),
+            "session.set_mode" => to_response(id, self.handle_session_set_mode(&req).await),
             "session.list_models" => to_response(id, self.handle_session_list_models(&req).await),
             "session.add_notification" => {
                 to_response(id, self.handle_session_add_notification(&req).await)
@@ -553,6 +557,7 @@ impl RpcDispatcher {
         let resp = dispatch_session_getter!(req, &self.ctx.agents, {
             "session.get_thinking_budget" => handle_session_get_thinking_budget,
             "session.get_temperature" => handle_session_get_temperature,
+            "session.get_mode" => handle_session_get_mode,
             "session.get_max_tokens" => handle_session_get_max_tokens,
             "session.get_max_iterations" => handle_session_get_max_iterations,
             "session.get_execution_timeout" => handle_session_get_execution_timeout,
@@ -912,6 +917,16 @@ impl RpcDispatcher {
 
     async fn handle_session_switch_model(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::session::handle_session_switch_model(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_set_mode(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_set_mode(
             req.clone(),
             &self.ctx.agents,
             &self.ctx.event_tx,

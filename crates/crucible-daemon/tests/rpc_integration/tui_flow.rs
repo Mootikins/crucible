@@ -149,6 +149,7 @@ async fn test_tui_daemon_agent_full_flow() {
         .expect("subscribe failed");
 
     let agent = SessionAgent {
+        mode: None,
         agent_type: "internal".to_string(),
         agent_name: None,
         provider_key: Some("ollama".to_string()),

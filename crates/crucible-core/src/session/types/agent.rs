@@ -124,6 +124,12 @@ pub struct SessionAgent {
     /// parsers) to disable. Range: 0.0..=1.0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub autocompact_threshold: Option<f32>,
+
+    /// Session mode id ("normal" | "plan" | "auto"). Persisted so a mode set
+    /// before the first message (no live handle yet) still applies when the
+    /// agent handle is created, and survives handle eviction. `None` = normal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
 }
 
 impl SessionAgent {
@@ -171,6 +177,7 @@ impl SessionAgent {
             output_validation: OutputValidation::default(),
             validation_retries: default_validation_retries(),
             autocompact_threshold: None,
+            mode: None,
         }
     }
 }

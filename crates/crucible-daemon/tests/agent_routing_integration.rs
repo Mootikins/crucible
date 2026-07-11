@@ -36,6 +36,7 @@ fn make_session_agent(
     provider: BackendType,
 ) -> SessionAgent {
     SessionAgent {
+        mode: None,
         agent_type: agent_type.to_string(),
         agent_name: agent_name.map(|s| s.to_string()),
         provider_key: None,

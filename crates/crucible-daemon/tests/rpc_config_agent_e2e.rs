@@ -77,6 +77,7 @@ async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient)
         .to_string();
 
     let agent = SessionAgent {
+        mode: None,
         agent_type: "internal".to_string(),
         agent_name: None,
         provider_key: Some("ollama".to_string()),
@@ -309,6 +310,7 @@ async fn test_configure_agent_sets_agent() {
         .to_string();
 
     let agent = SessionAgent {
+        mode: None,
         agent_type: "internal".to_string(),
         agent_name: None,
         provider_key: Some("openai".to_string()),

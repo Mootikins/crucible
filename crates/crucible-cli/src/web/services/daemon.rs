@@ -610,6 +610,17 @@ impl ReconnectingDaemon {
         .await
     }
 
+    pub async fn session_set_mode(&self, session_id: &str, mode_id: &str) -> anyhow::Result<()> {
+        let session_id = session_id.to_string();
+        let mode_id = mode_id.to_string();
+        self.call_with_reconnect("session.set_mode", move |daemon| {
+            let session_id = session_id.clone();
+            let mode_id = mode_id.clone();
+            Box::pin(async move { daemon.session_set_mode(&session_id, &mode_id).await })
+        })
+        .await
+    }
+
     pub async fn session_set_title(&self, session_id: &str, title: &str) -> anyhow::Result<()> {
         let session_id = session_id.to_string();
         let title = title.to_string();

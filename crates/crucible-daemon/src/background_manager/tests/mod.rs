@@ -21,6 +21,7 @@ pub(super) use crate::test_support::{MockSubagentBehavior, MockSubagentHandle};
 
 pub(super) fn test_session_agent(delegation_config: Option<DelegationConfig>) -> SessionAgent {
     SessionAgent {
+        mode: None,
         agent_type: "acp".to_string(),
         agent_name: Some("test-agent".to_string()),
         provider_key: None,

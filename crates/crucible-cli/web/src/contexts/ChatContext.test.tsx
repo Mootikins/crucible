@@ -31,6 +31,7 @@ const mockSession: Session = {
   state: 'active',
   title: 'Test Session',
   agent_model: 'test-model',
+  agent_mode: null,
   started_at: new Date().toISOString(),
   event_count: 0,
 };
@@ -160,6 +161,7 @@ describe('session switching', () => {
     state: 'active',
     title: 'Test Session 2',
     agent_model: 'test-model',
+    agent_mode: null,
     started_at: new Date().toISOString(),
     event_count: 0,
   };

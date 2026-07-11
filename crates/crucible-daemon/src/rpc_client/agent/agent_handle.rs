@@ -44,6 +44,13 @@ impl AgentHandle for DaemonAgentHandle {
     }
 
     async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
+        // Propagate to the daemon-side agent: modes shape behavior there
+        // (plan mode filters write tools). Setting only the local field made
+        // TUI mode switches cosmetic for daemon-backed sessions.
+        self.client
+            .session_set_mode(&self.session_id, mode_id)
+            .await
+            .map_err(|e| ChatError::ModeChange(format!("session.set_mode failed: {}", e)))?;
         self.mode_id = mode_id.to_string();
         Ok(())
     }

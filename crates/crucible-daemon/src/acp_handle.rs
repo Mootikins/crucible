@@ -807,6 +807,7 @@ mod tests {
 
     fn test_session_agent(agent_name: &str) -> SessionAgent {
         SessionAgent {
+            mode: None,
             agent_type: "acp".to_string(),
             agent_name: Some(agent_name.to_string()),
             provider_key: None,
