@@ -2,6 +2,7 @@ mod generators;
 pub(crate) mod helpers;
 mod layout_test_helpers;
 pub(crate) mod vt100_runtime;
+mod vt100_runtime_tests;
 
 // Surviving framework tests
 mod component_isolation_tests;
