@@ -321,8 +321,11 @@ fn check_ansi_round_trips_through_vt100(
     let stripped = strip_ansi(&result.content);
 
     // Size vt100 to match the render's width exactly so cells align.
-    // Use the actual line count to size height — content fits without scroll.
-    let line_count = result.content.lines().count().max(1) as u16;
+    // Row count must include a trailing empty row: a blank last line renders
+    // as a trailing \r\n, which `lines()` does not count — undersizing the
+    // emulator by one makes it scroll the first row into (absent) scrollback.
+    // `split("\r\n")` counts that final empty segment.
+    let line_count = result.content.split("\r\n").count().max(1) as u16;
     let mut vt = vt100::Parser::new(line_count.max(1), width.max(1), 0);
     vt.process(result.content.as_bytes());
 
