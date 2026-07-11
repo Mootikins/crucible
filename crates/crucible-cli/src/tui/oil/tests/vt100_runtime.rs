@@ -1495,4 +1495,48 @@ mod tests {
             "popup must not use the mode-independent default bg.\nStyled:\n{styled:?}"
         );
     }
+
+    /// Regression: the in-place streaming redraw must repaint the top screen
+    /// row. The viewport was clamped to `terminal_height - 1` rows, so screen
+    /// row 0 was never rewritten between graduations — it kept showing the
+    /// last line of the most recent graduation (the graduated thinking block)
+    /// for the entire turn while the response scrolled discontinuously below.
+    /// Sequence mirrors a real session: thinking → tool (graduates the
+    /// thinking AR, then the ToolGroup blocks graduation until turn end) →
+    /// long streamed response.
+    #[test]
+    fn graduated_thinking_scrolls_off_top_row_during_long_stream() {
+        let mut app = OilChatApp::init();
+        let mut vt = Vt100TestRuntime::new(80, 24);
+
+        app.on_message(ChatAppMsg::UserMessage("go".into()));
+        vt.render_frame(&mut app);
+
+        // Thinking with a distinctive tail so we can spot the frozen line.
+        think(&mut app, "planning the approach zz-marker-tail");
+        vt.render_frame(&mut app);
+
+        // Tool arrives → the thinking AR graduates; from here the leading
+        // ToolGroup blocks all further graduation until the turn ends.
+        tool(&mut app, "bash", "c1");
+        vt.render_frame(&mut app);
+
+        // Stream a response far taller than the 24-row terminal.
+        for i in 0..60 {
+            app.on_message(ChatAppMsg::TextDelta(format!("response line {i:02}\n")));
+            vt.render_frame(&mut app);
+        }
+
+        let screen = crucible_oil::ansi::strip_ansi(&vt.screen_contents());
+        assert!(
+            screen.contains("response line 59"),
+            "latest streamed content must be visible.\nScreen:\n{screen}"
+        );
+        assert!(
+            !screen.contains("zz-marker-tail"),
+            "graduated thinking must scroll off screen once the response \
+             overflows the viewport — a surviving line means the top row was \
+             not repainted.\nScreen:\n{screen}"
+        );
+    }
 }

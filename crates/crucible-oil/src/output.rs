@@ -90,7 +90,13 @@ impl<W: Write> OutputBuffer<W> {
             .collect();
 
         let total_visual_rows: usize = line_visual_rows.iter().sum();
-        let available_rows = self.terminal_height.saturating_sub(1);
+        // Use the full terminal height. Reserving a row here (height - 1)
+        // would leave screen row 0 outside the in-place repaint region
+        // (MoveUp(prev - 1) from the bottom reaches row 0, not above it), so
+        // a stale scrollback line would sit frozen at the top of the screen
+        // for as long as no graduation scrolls the terminal — an entire
+        // streaming turn once a ToolGroup blocks graduation.
+        let available_rows = self.terminal_height;
 
         let (mut viewport_lines, _base_visual_rows) = self.clamp_to_viewport_with_scroll(
             &all_lines,
