@@ -164,13 +164,68 @@ async fn test_sweep_and_archive_stale_sessions_archives_inactive_sessions_withou
         .await
         .unwrap();
 
-    let archived = sweep_and_archive_stale_sessions(&session_manager, &subscription_manager, 72)
-        .await
-        .unwrap();
+    let kiln_manager = KilnManager::new();
+    let archived = sweep_and_archive_stale_sessions(
+        &session_manager,
+        &kiln_manager,
+        &subscription_manager,
+        72,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(archived, 1);
     assert!(session_manager.get_session(&session.id).is_none());
 
+    let persisted = FileSessionStorage::new()
+        .load(&session.id, tmp.path())
+        .await
+        .unwrap();
+    assert!(persisted.archived);
+}
+
+/// The sweep must reach sessions that are only in storage (ended sessions
+/// are evicted from memory) — this was the gap that let hundreds of stale
+/// ended sessions accumulate in listings forever.
+#[tokio::test]
+async fn test_sweep_archives_stale_persisted_sessions_not_in_memory() {
+    let tmp = TempDir::new().unwrap();
+    let session_manager = SessionManager::new();
+    let subscription_manager = SubscriptionManager::new();
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    session_manager
+        .update_last_activity(&session.id, Utc::now() - ChronoDuration::hours(80))
+        .await
+        .unwrap();
+    session_manager.end_session(&session.id).await.unwrap();
+    assert!(
+        session_manager.get_session(&session.id).is_none(),
+        "precondition: ended session must be evicted from memory"
+    );
+
+    let kiln_manager = KilnManager::new();
+    kiln_manager.open(tmp.path()).await.unwrap();
+
+    let archived = sweep_and_archive_stale_sessions(
+        &session_manager,
+        &kiln_manager,
+        &subscription_manager,
+        72,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(archived, 1);
     let persisted = FileSessionStorage::new()
         .load(&session.id, tmp.path())
         .await
@@ -203,9 +258,15 @@ async fn test_sweep_and_archive_stale_sessions_skips_sessions_with_active_subscr
     let client = ClientId::new();
     subscription_manager.subscribe(client, &session.id);
 
-    let archived = sweep_and_archive_stale_sessions(&session_manager, &subscription_manager, 72)
-        .await
-        .unwrap();
+    let kiln_manager = KilnManager::new();
+    let archived = sweep_and_archive_stale_sessions(
+        &session_manager,
+        &kiln_manager,
+        &subscription_manager,
+        72,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(archived, 0);
     let still_active = session_manager.get_session(&session.id).unwrap();

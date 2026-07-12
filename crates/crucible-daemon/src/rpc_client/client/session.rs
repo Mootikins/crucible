@@ -441,6 +441,18 @@ impl DaemonClient {
         .await
     }
 
+    /// Generate a topic-based title for a session (idempotent — returns the
+    /// existing title if one is already set).
+    pub async fn session_generate_title(&self, session_id: &str) -> Result<serde_json::Value> {
+        self.typed_call(
+            "session.generate_title",
+            SessionIdRequest {
+                session_id: session_id.to_string(),
+            },
+        )
+        .await
+    }
+
     pub async fn session_search(
         &self,
         query: &str,

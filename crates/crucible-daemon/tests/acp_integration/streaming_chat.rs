@@ -62,7 +62,7 @@ async fn test_prompt_with_streaming_response() {
         .expect("Should complete handshake");
 
     let (content, tool_calls, response) = client
-        .send_prompt_with_streaming(prompt_request(&session.id().to_string()))
+        .send_prompt_with_streaming(prompt_request(session.id()))
         .await
         .expect("Should successfully receive streaming response");
 
@@ -92,7 +92,7 @@ async fn test_prompt_with_streamed_tool_call() {
         .expect("Should complete handshake");
 
     let (content, tool_calls, response) = client
-        .send_prompt_with_streaming(prompt_request(&session.id().to_string()))
+        .send_prompt_with_streaming(prompt_request(session.id()))
         .await
         .expect("Should successfully receive streaming response");
 
@@ -139,7 +139,7 @@ async fn test_cancel_mid_stream_reaches_agent() {
     let callback: crucible_daemon::acp::StreamingCallback = Box::new(|_chunk| false);
 
     let (_content, _tool_calls, response) = client
-        .send_prompt_with_callback(prompt_request(&session.id().to_string()), callback)
+        .send_prompt_with_callback(prompt_request(session.id()), callback)
         .await
         .expect("cancelled turn should still complete cleanly");
 

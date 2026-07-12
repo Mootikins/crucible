@@ -312,66 +312,15 @@ fn build_enriched_prompt(
     enriched_prompt
 }
 
-/// Create an agent handle from session configuration.
-///
-/// This takes the fully-resolved `SessionAgent` and creates a ready-to-use
-/// `Box<dyn AgentHandle>`. Unlike the CLI factory, this doesn't need to:
-/// - Discover skills (already in system_prompt)
-/// - Load rules files (already in system_prompt)
-///
-/// # Arguments
-///
-/// * `agent_config` - The session agent configuration
-/// * `workspace` - Working directory for the agent (for workspace tools)
-/// * `background_spawner` - Optional spawner for background tasks (subagents, long bash)
-/// * `event_tx` - Broadcast sender for session events (used for InteractionContext)
-/// * `knowledge_repo` - Optional knowledge repository for search tools (used by CrucibleMcpServer)
-/// * `embedding_provider` - Optional embedding provider for semantic search (used by CrucibleMcpServer)
-/// # Returns
-///
-/// A boxed `AgentHandle` ready for streaming messages.
-pub async fn create_agent_from_session_config(
-    params: CreateAgentFromSessionConfigParams<'_>,
-) -> Result<Box<dyn AgentHandle + Send + Sync>, AgentFactoryError> {
-    let CreateAgentFromSessionConfigParams {
-        agent_config,
-        lua,
-        workspace,
-        kiln_path,
-        connected_kilns,
-        parent_session_id,
-        background_spawner,
-        mcp_gateway,
-        acp_permission_handler,
-        acp_config,
-        knowledge_repo,
-        embedding_provider,
-    } = params;
-    if agent_config.agent_type == "acp" {
-        let handle = AcpAgentHandle::new(AcpAgentHandleParams {
-            agent_config,
-            workspace,
-            kiln_path,
-            knowledge_repo,
-            embedding_provider,
-            background_spawner,
-            parent_session_id,
-            delegation_config: agent_config.delegation_config.as_ref(),
-            acp_config,
-            permission_handler: acp_permission_handler,
-        })
-        .await
-        .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
-        return Ok(Box::new(handle));
-    }
-
-    if agent_config.agent_type != "internal" {
-        return Err(AgentFactoryError::UnsupportedAgentType(format!(
-            "Daemon only supports 'internal' and 'acp' agents, got '{}'",
-            agent_config.agent_type
-        )));
-    }
-
+/// Build a bare genai chat client + model identity from a session's agent
+/// config, resolving credentials the same way full agent construction does
+/// (env var → Lua auth hooks → Copilot OAuth exchange). Shared by agent
+/// creation and one-shot completions (e.g. session title generation) that
+/// must not spin up tools or touch conversation history.
+pub(crate) fn build_chat_client_for_agent(
+    agent_config: &SessionAgent,
+    lua: Option<&Lua>,
+) -> Result<(genai::Client, genai::ModelIden), AgentFactoryError> {
     let provider_type = agent_config.provider;
 
     let mut llm_config = LlmProviderConfig::builder(provider_type);
@@ -457,6 +406,83 @@ pub async fn create_agent_from_session_config(
         }
     }
 
+    if agent_config.provider == BackendType::GitHubCopilot {
+        if let Some(oauth_token) = resolve_copilot_oauth_token(llm_config.api_key.as_deref()) {
+            llm_config.api_key = Some(oauth_token);
+        }
+    }
+
+    let chat_client = ChatClient::new(&llm_config);
+    let model_iden = chat_client.model_iden(&agent_config.model).ok_or_else(|| {
+        AgentFactoryError::ClientCreation(format!(
+            "Unsupported provider for chat: {:?}",
+            provider_type
+        ))
+    })?;
+    let genai_client = chat_client.inner().clone();
+    Ok((genai_client, model_iden))
+}
+
+/// Create an agent handle from session configuration.
+///
+/// This takes the fully-resolved `SessionAgent` and creates a ready-to-use
+/// `Box<dyn AgentHandle>`. Unlike the CLI factory, this doesn't need to:
+/// - Discover skills (already in system_prompt)
+/// - Load rules files (already in system_prompt)
+///
+/// # Arguments
+///
+/// * `agent_config` - The session agent configuration
+/// * `workspace` - Working directory for the agent (for workspace tools)
+/// * `background_spawner` - Optional spawner for background tasks (subagents, long bash)
+/// * `event_tx` - Broadcast sender for session events (used for InteractionContext)
+/// * `knowledge_repo` - Optional knowledge repository for search tools (used by CrucibleMcpServer)
+/// * `embedding_provider` - Optional embedding provider for semantic search (used by CrucibleMcpServer)
+/// # Returns
+///
+/// A boxed `AgentHandle` ready for streaming messages.
+pub async fn create_agent_from_session_config(
+    params: CreateAgentFromSessionConfigParams<'_>,
+) -> Result<Box<dyn AgentHandle + Send + Sync>, AgentFactoryError> {
+    let CreateAgentFromSessionConfigParams {
+        agent_config,
+        lua,
+        workspace,
+        kiln_path,
+        connected_kilns,
+        parent_session_id,
+        background_spawner,
+        mcp_gateway,
+        acp_permission_handler,
+        acp_config,
+        knowledge_repo,
+        embedding_provider,
+    } = params;
+    if agent_config.agent_type == "acp" {
+        let handle = AcpAgentHandle::new(AcpAgentHandleParams {
+            agent_config,
+            workspace,
+            kiln_path,
+            knowledge_repo,
+            embedding_provider,
+            background_spawner,
+            parent_session_id,
+            delegation_config: agent_config.delegation_config.as_ref(),
+            acp_config,
+            permission_handler: acp_permission_handler,
+        })
+        .await
+        .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;
+        return Ok(Box::new(handle));
+    }
+
+    if agent_config.agent_type != "internal" {
+        return Err(AgentFactoryError::UnsupportedAgentType(format!(
+            "Daemon only supports 'internal' and 'acp' agents, got '{}'",
+            agent_config.agent_type
+        )));
+    }
+
     let mode = "auto";
     let delegation_context = build_internal_delegation_context(
         agent_config,
@@ -486,20 +512,7 @@ pub async fn create_agent_from_session_config(
         "Creating agent from session config"
     );
 
-    if agent_config.provider == BackendType::GitHubCopilot {
-        if let Some(oauth_token) = resolve_copilot_oauth_token(llm_config.api_key.as_deref()) {
-            llm_config.api_key = Some(oauth_token);
-        }
-    }
-
-    let chat_client = ChatClient::new(&llm_config);
-    let model_iden = chat_client.model_iden(&agent_config.model).ok_or_else(|| {
-        AgentFactoryError::ClientCreation(format!(
-            "Unsupported provider for chat: {:?}",
-            provider_type
-        ))
-    })?;
-    let genai_client = chat_client.inner().clone();
+    let (genai_client, model_iden) = build_chat_client_for_agent(agent_config, lua)?;
 
     // Skills are surfaced via the kiln-scoped `skill_view` tool, so only inject
     // the catalog when a kiln is present (keeps catalog and tool in lockstep).

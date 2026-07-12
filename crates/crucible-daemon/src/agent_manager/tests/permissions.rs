@@ -453,8 +453,7 @@ mod permission_channel_tests {
 
         let (id1, _rx1) =
             agent_manager.await_permission("session-a", PermRequest::bash(["cargo", "test"]));
-        let (id2, _rx2) =
-            agent_manager.await_permission("session-b", PermRequest::bash(["ls"]));
+        let (id2, _rx2) = agent_manager.await_permission("session-b", PermRequest::bash(["ls"]));
 
         let all = agent_manager.list_all_pending_permissions();
         assert_eq!(all.len(), 2, "Should aggregate both sessions");

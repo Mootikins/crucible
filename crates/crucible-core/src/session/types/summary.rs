@@ -34,6 +34,9 @@ pub struct SessionSummary {
     /// Whether this session is archived
     #[serde(default)]
     pub archived: bool,
+    /// Last activity timestamp (None for legacy sessions that predate it)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity: Option<DateTime<Utc>>,
 }
 impl From<&Session> for SessionSummary {
     fn from(session: &Session) -> Self {
@@ -48,6 +51,7 @@ impl From<&Session> for SessionSummary {
             event_count: 0, // Would be populated from storage
             agent_model: session.agent.as_ref().map(|a| a.model.clone()),
             archived: session.archived,
+            last_activity: session.last_activity,
         }
     }
 }

@@ -86,6 +86,7 @@ pub const METHODS: &[&str] = &[
     "session.test_interaction",
     "session.fork",
     "session.set_title",
+    "session.generate_title",
     "session.search",
     "session.load_events",
     "session.list_persisted",
@@ -210,6 +211,7 @@ impl RpcDispatcher {
 
             // Session title handler
             "session.set_title" => to_response(id, self.handle_set_title(&req).await),
+            "session.generate_title" => to_response(id, self.handle_generate_title(&req).await),
 
             // Session config get/set handlers — each pair delegates to
             // server::session::handle_session_{set,get}_<name> with uniform signatures.
@@ -527,6 +529,33 @@ impl RpcDispatcher {
         Ok(serde_json::json!({
             "session_id": p.session_id,
             "title": p.title,
+        }))
+    }
+
+    async fn handle_generate_title(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        use crate::rpc::params::parse_params;
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct Params {
+            session_id: String,
+        }
+        let p: Params = parse_params(req)?;
+
+        let title = self
+            .ctx
+            .agents
+            .generate_session_title(&p.session_id, &self.ctx.event_tx)
+            .await
+            .map_err(|e| RpcError {
+                code: crate::protocol::INVALID_PARAMS,
+                message: format!("Failed to generate title: {}", e),
+                data: None,
+            })?;
+
+        Ok(serde_json::json!({
+            "session_id": p.session_id,
+            "title": title,
         }))
     }
 

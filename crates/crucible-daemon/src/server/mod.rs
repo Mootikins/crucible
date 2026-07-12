@@ -24,7 +24,7 @@ use anyhow::Result;
 use chrono::Utc;
 use crucible_core::config::{DataClassification, LlmConfig, TrustLevel};
 use crucible_core::events::SessionEvent;
-use crucible_core::session::{RecordingMode, SessionState};
+use crucible_core::session::RecordingMode;
 use crucible_lua::stubs::StubGenerator;
 use crucible_lua::{
     register_crucible_on_api, LuaExecutor, LuaScriptHandlerRegistry, PluginManager,
@@ -637,6 +637,7 @@ impl Server {
         });
 
         let sweep_session_manager = self.session_manager.clone();
+        let sweep_kiln_manager = self.kiln_manager.clone();
         let sweep_subscription_manager = self.subscription_manager.clone();
         let sweep_cancel = CancellationToken::new();
         let sweep_cancel_clone = sweep_cancel.clone();
@@ -651,6 +652,7 @@ impl Server {
                     _ = interval.tick() => {
                         match sweep_and_archive_stale_sessions(
                             &sweep_session_manager,
+                            &sweep_kiln_manager,
                             &sweep_subscription_manager,
                             auto_archive_hours,
                         ).await {
@@ -661,6 +663,56 @@ impl Server {
                             Err(e) => {
                                 warn!(error = %e, "Auto-archive sweep failed");
                             }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Auto-title task: when a turn completes in a still-untitled session,
+        // generate a topic-based title daemon-side so every client (TUI, web,
+        // ACP) gets titled sessions without asking for it.
+        let title_sm = self.session_manager.clone();
+        let title_am = self.agent_manager.clone();
+        let title_event_tx = self.event_tx.clone();
+        let mut title_rx = self.event_tx.subscribe();
+        let title_cancel = CancellationToken::new();
+        let title_cancel_clone = title_cancel.clone();
+
+        let auto_title_task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = title_cancel_clone.cancelled() => break,
+                    result = title_rx.recv() => {
+                        match result {
+                            Ok(event) if event.event == "message_complete" => {
+                                let untitled = title_sm
+                                    .get_session(&event.session_id)
+                                    .map(|s| s.title.as_deref().is_none_or(|t| t.trim().is_empty()))
+                                    .unwrap_or(false);
+                                if untitled {
+                                    let am = title_am.clone();
+                                    let tx = title_event_tx.clone();
+                                    let session_id = event.session_id.clone();
+                                    tokio::spawn(async move {
+                                        if let Err(e) =
+                                            am.generate_session_title(&session_id, &tx).await
+                                        {
+                                            debug!(
+                                                session_id = %session_id,
+                                                error = %e,
+                                                "Auto-title generation skipped"
+                                            );
+                                        }
+                                    });
+                                }
+                            }
+                            Ok(_) => {}
+                            Err(broadcast::error::RecvError::Lagged(n)) => {
+                                warn!("Auto-title task lagged, dropped {} events", n);
+                            }
+                            Err(broadcast::error::RecvError::Closed) => break,
                         }
                     }
                 }
@@ -710,6 +762,7 @@ impl Server {
         persist_cancel.cancel();
         reprocess_cancel.cancel();
         sweep_cancel.cancel();
+        title_cancel.cancel();
         match tokio::time::timeout(std::time::Duration::from_secs(5), persist_task).await {
             Ok(Ok(())) => debug!("Persist task completed gracefully"),
             Ok(Err(e)) => warn!("Persist task panicked: {}", e),
@@ -724,6 +777,11 @@ impl Server {
             Ok(Ok(())) => debug!("Auto-archive sweep task completed gracefully"),
             Ok(Err(e)) => warn!("Auto-archive sweep task panicked: {}", e),
             Err(_) => warn!("Auto-archive sweep task did not complete within timeout, aborting"),
+        }
+        match tokio::time::timeout(std::time::Duration::from_secs(5), auto_title_task).await {
+            Ok(Ok(())) => debug!("Auto-title task completed gracefully"),
+            Ok(Err(e)) => warn!("Auto-title task panicked: {}", e),
+            Err(_) => warn!("Auto-title task did not complete within timeout, aborting"),
         }
 
         Ok(())

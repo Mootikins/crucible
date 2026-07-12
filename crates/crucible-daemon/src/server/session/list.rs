@@ -89,7 +89,11 @@ pub(crate) async fn handle_session_list(
                 "workspace": s.workspace,
                 "state": format!("{}", s.state),
                 "started_at": s.started_at.to_rfc3339(),
+                "last_activity": s.last_activity.map(|t| t.to_rfc3339()),
                 "title": s.title,
+                "agent_model": s.agent_model,
+                "event_count": s.event_count,
+                "archived": s.archived,
             })
         })
         .collect();

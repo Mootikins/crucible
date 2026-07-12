@@ -496,6 +496,9 @@ pub struct AgentManager {
     /// it empty and `OutputValidation::Lua` surfaces as a validation
     /// failure with a clear reason instead of panicking.
     lua_validators: std::sync::OnceLock<(Arc<LuaValidatorRegistry>, Arc<Lua>)>,
+    /// Sessions with a title generation currently in flight — the RPC path
+    /// and the message_complete auto-trigger can race.
+    titles_in_flight: Arc<DashMap<String, ()>>,
     /// Per-session, per-turn workspace snapshots indexed by the
     /// conversation-tree node id that was `current` at the moment the
     /// snapshot was captured (i.e. the parent of the soon-to-be-added
@@ -541,6 +544,7 @@ impl AgentManager {
             session_trees: Arc::new(DashMap::new()),
             cache_stats: Arc::new(DashMap::new()),
             lua_validators: std::sync::OnceLock::new(),
+            titles_in_flight: Arc::new(DashMap::new()),
             snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),
         }
     }
@@ -1010,6 +1014,7 @@ mod messaging;
 mod models;
 pub(crate) mod precognition;
 pub mod providers;
+mod title;
 pub mod tool_tracking;
 
 #[cfg(test)]

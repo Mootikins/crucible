@@ -200,6 +200,7 @@ pub(super) async fn persist_event(
 
 pub(super) async fn sweep_and_archive_stale_sessions(
     session_manager: &SessionManager,
+    kiln_manager: &KilnManager,
     subscription_manager: &SubscriptionManager,
     auto_archive_hours: u64,
 ) -> Result<usize> {
@@ -207,39 +208,72 @@ pub(super) async fn sweep_and_archive_stale_sessions(
     let stale_after = ChronoDuration::hours(auto_archive_hours as i64);
     let mut archived = 0;
 
-    let active_sessions = session_manager
+    // Storage-aware listing: the in-memory map only holds live sessions,
+    // but the stale ones are exactly the persisted, no-longer-loaded ones.
+    // Mirror handle_session_list's kiln coverage (open kilns + crucible home).
+    let mut kiln_paths: Vec<PathBuf> = kiln_manager
+        .list()
+        .await
+        .into_iter()
+        .map(|(path, _, _)| path)
+        .collect();
+    let home = crucible_core::config::crucible_home();
+    if !kiln_paths.contains(&home) {
+        kiln_paths.push(home);
+    }
+
+    // In-memory sessions first (covers sessions whose kiln isn't open),
+    // then persisted sessions from each kiln's storage.
+    let mut candidates: Vec<_> = session_manager
         .list_sessions()
         .into_iter()
-        .filter_map(|summary| session_manager.get_session(&summary.id))
-        .filter(|session| session.state == SessionState::Active && !session.archived)
-        .collect::<Vec<_>>();
+        .filter(|s| !s.archived)
+        .collect();
+    let mut seen_ids: std::collections::HashSet<String> =
+        candidates.iter().map(|s| s.id.clone()).collect();
+    for kiln_path in &kiln_paths {
+        for summary in session_manager
+            .list_sessions_filtered_async(Some(kiln_path), None, None, None, false)
+            .await
+        {
+            if seen_ids.insert(summary.id.clone()) {
+                candidates.push(summary);
+            }
+        }
+    }
 
-    for session in active_sessions {
-        if !subscription_manager.get_subscribers(&session.id).is_empty() {
+    for summary in candidates {
+        // Never archive out from under a connected client, regardless of idleness.
+        if !subscription_manager.get_subscribers(&summary.id).is_empty() {
             continue;
         }
 
-        let last_activity = session.last_activity.unwrap_or(session.started_at);
-
+        let last_activity = summary.last_activity.unwrap_or(summary.started_at);
         if now - last_activity < stale_after {
             continue;
         }
 
-        // Re-check last_activity before archiving to avoid TOCTOU race
-        // where session could receive new activity between staleness check and archive
-        let fresh_session = session_manager.get_session(&session.id);
-        if let Some(fresh) = fresh_session {
+        // Re-check last_activity for in-memory sessions to avoid a TOCTOU race
+        // where the session receives new activity between staleness check and archive.
+        if let Some(fresh) = session_manager.get_session(&summary.id) {
             let fresh_last_activity = fresh.last_activity.unwrap_or(fresh.started_at);
             if now - fresh_last_activity < stale_after {
                 continue;
             }
         }
 
-        session_manager
-            .archive_session(&session.id, &session.kiln)
+        // One unreadable meta.json must not wedge the whole sweep.
+        match session_manager
+            .archive_session(&summary.id, &summary.kiln)
             .await
-            .map_err(|e| anyhow::anyhow!("archive_session failed for {}: {}", session.id, e))?;
-        archived += 1;
+        {
+            Ok(_) => archived += 1,
+            Err(e) => warn!(
+                session_id = %summary.id,
+                error = %e,
+                "Auto-archive sweep: failed to archive session"
+            ),
+        }
     }
 
     Ok(archived)
