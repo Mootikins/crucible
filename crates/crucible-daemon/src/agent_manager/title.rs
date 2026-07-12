@@ -96,10 +96,10 @@ impl AgentManager {
                     agent_config,
                     lua_handle.as_ref(),
                 ) {
-                    Ok((client, _model_iden)) => {
+                    Ok((client, model_iden)) => {
                         match crate::provider::title::generate_title_via_backend(
                             &client,
-                            &agent_config.model,
+                            &model_iden,
                             &first_user,
                             first_agent.as_deref(),
                         )

@@ -645,6 +645,21 @@ fn drained_transcript(drained: &[ChatMessage]) -> String {
 /// any error this returns `Err`; the caller falls back to keeping the
 /// static placeholder rather than propagating the failure into the
 /// user's turn.
+/// Explicit routing name for a model: if it already carries a namespace
+/// (contains `::`), use it as-is; otherwise prefix the adapter kind so
+/// genai routes by configuration, not by model-name prefix heuristics.
+pub(crate) fn explicit_model_name(model: &ModelIden) -> String {
+    if model.model_name.contains("::") {
+        model.model_name.to_string()
+    } else {
+        format!(
+            "{}::{}",
+            model.adapter_kind.as_lower_str(),
+            &*model.model_name
+        )
+    }
+}
+
 pub(crate) async fn summarize_via_backend(
     client: &genai::Client,
     model_name: &str,
@@ -830,17 +845,7 @@ impl GenaiAgentHandle {
     }
 
     fn explicit_model_name(&self) -> String {
-        // If model_name already has a namespace (contains ::), use it as-is.
-        // Otherwise prefix with adapter kind for explicit routing.
-        if self.model.model_name.contains("::") {
-            self.model.model_name.to_string()
-        } else {
-            format!(
-                "{}::{}",
-                self.model.adapter_kind.as_lower_str(),
-                &*self.model.model_name
-            )
-        }
+        explicit_model_name(&self.model)
     }
 
     /// Stream a single LLM call for an explicit message list as a

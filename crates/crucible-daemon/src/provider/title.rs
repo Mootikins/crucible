@@ -15,10 +15,11 @@ const TITLE_CONTEXT_CLIP: usize = 1500;
 
 pub(crate) async fn generate_title_via_backend(
     client: &genai::Client,
-    model: &str,
+    model: &genai::ModelIden,
     user_msg: &str,
     assistant_msg: Option<&str>,
 ) -> Result<String, String> {
+    let model_name = super::genai_handle::explicit_model_name(model);
     let mut exchange = format!("User: {}", clip_chars(user_msg, TITLE_CONTEXT_CLIP));
     if let Some(assistant) = assistant_msg {
         exchange.push_str("\n\nAssistant: ");
@@ -31,7 +32,7 @@ pub(crate) async fn generate_title_via_backend(
     ]);
     let options = ChatOptions::default().with_capture_content(true);
     let resp = client
-        .exec_chat(model, request, Some(&options))
+        .exec_chat(&model_name, request, Some(&options))
         .await
         .map_err(|e| format!("title call failed: {e}"))?;
     Ok(sanitize_title(&resp.content.texts().join("")))
