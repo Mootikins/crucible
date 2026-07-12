@@ -126,7 +126,15 @@ export const SplitPane: Component<{ node: LayoutNode }> = (props) => {
   return (
     <Show
       when={props.node.type === 'split' ? props.node : undefined}
-      fallback={<Pane paneId={props.node.id} />}
+      fallback={
+        // Keyed: a layout restore (server /api/layout) replaces pane ids under
+        // a surviving component instance. Pane registers its solid-dnd
+        // droppables with the id captured at mount — without a remount every
+        // pane drop carries the stale boot-time id and silently no-ops.
+        <Show when={props.node.id} keyed>
+          {(paneId) => <Pane paneId={paneId} />}
+        </Show>
+      }
     >
       {(split) => <SplitPaneInner node={split()} />}
     </Show>

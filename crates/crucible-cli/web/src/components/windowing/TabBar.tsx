@@ -445,12 +445,19 @@ const EdgeTabBar: Component<{
 
 export const TabBar: Component<TabBarProps> = (props) => {
   if (props.mode === 'center') {
+    // Keyed: CenterTabBar registers its `tabgroup:` droppable with the group
+    // id captured at mount. Layout restores and group churn swap the id under
+    // a surviving instance, leaving a stale drop target — remount instead.
     return (
-      <CenterTabBar
-        groupId={props.groupId}
-        paneId={props.paneId}
-        onPopOut={props.onPopOut}
-      />
+      <Show when={props.mode === 'center' ? props.groupId : undefined} keyed>
+        {(groupId) => (
+          <CenterTabBar
+            groupId={groupId}
+            paneId={(props as Extract<TabBarProps, { mode: 'center' }>).paneId}
+            onPopOut={(props as Extract<TabBarProps, { mode: 'center' }>).onPopOut}
+          />
+        )}
+      </Show>
     );
   }
   return (

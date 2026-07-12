@@ -300,7 +300,13 @@ export function createTabActions(context: WindowStoreContext): TabActions {
     tabId: string
   ) => {
     const pane = findPaneInLayout(store.layout, paneId);
-    if (!pane) return;
+    if (!pane) {
+      // A miss here means a drop target carried a pane id that's no longer
+      // in the layout (historically: stale droppable after a layout restore).
+      // Never swallow it silently — the drag just "does nothing" otherwise.
+      console.warn(`splitPaneAndDrop: pane ${paneId} not found in layout`);
+      return;
+    }
     const newPaneId = generateId();
     const newGroupId = generateId();
     setStore(
