@@ -25,8 +25,6 @@ import {
   cancelSession as apiCancelSession,
   generateMessageId,
   getSessionHistory,
-  setSessionTitle as apiSetSessionTitle,
-  generateSessionTitle,
 } from '@/lib/api';
 import { findTabBySessionId } from '@/lib/session-actions';
 import { windowActions } from '@/stores/windowStore';
@@ -154,8 +152,23 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     setHasReceivedFirstResponse: (value) => {
       hasReceivedFirstResponse = value;
     },
-    onFirstResponse: () => {
-      autoGenerateTitle();
+    // Titles are daemon-owned: on the first completed turn of an untitled
+    // session the daemon generates a topic-based title and broadcasts
+    // title_changed, handled below. Nothing to do client-side.
+    onFirstResponse: () => {},
+    onTitleChanged: (title: string) => {
+      setSessionTitle(title);
+      const tabInfo = findTabBySessionId(props.sessionId);
+      if (tabInfo) {
+        windowActions.updateTab(tabInfo.groupId, tabInfo.tab.id, { title });
+      }
+      attentionActions.report(props.sessionId, { title });
+      // Let the session list (Home resume, Inbox) pick up the new name.
+      window.dispatchEvent(
+        new CustomEvent('crucible:session-title-changed', {
+          detail: { sessionId: props.sessionId, title },
+        })
+      );
     },
     addMessage,
     updateMessage,
@@ -288,40 +301,6 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   };
   window.addEventListener('crucible:clear-chat', onClearChatEvent);
   onCleanup(() => window.removeEventListener('crucible:clear-chat', onClearChatEvent));
-
-  const autoGenerateTitle = async () => {
-    if (!props.sessionId) return;
-
-    const currentTitle = sessionTitle();
-    if (currentTitle && currentTitle.trim() !== '') return;
-
-    try {
-      const title = await generateSessionTitle(props.sessionId);
-      await apiSetSessionTitle(props.sessionId, title);
-      setSessionTitle(title);
-      const tabInfo = findTabBySessionId(props.sessionId);
-      if (tabInfo) {
-        windowActions.updateTab(tabInfo.groupId, tabInfo.tab.id, { title });
-      }
-    } catch (err) {
-      // Fallback to truncation on API failure
-      if (firstUserMessage) {
-        const truncated = firstUserMessage.slice(0, 50);
-        const lastSpace = truncated.lastIndexOf(' ');
-        const title = lastSpace > 0 ? truncated.slice(0, lastSpace) + '...' : truncated;
-        try {
-          await apiSetSessionTitle(props.sessionId, title);
-          setSessionTitle(title);
-          const tabInfo = findTabBySessionId(props.sessionId);
-          if (tabInfo) {
-            windowActions.updateTab(tabInfo.groupId, tabInfo.tab.id, { title });
-          }
-        } catch {
-          console.error('Failed to auto-generate title:', err);
-        }
-      }
-    }
-  };
 
   const sendMessage = async (content: string) => {
     if (!content.trim() || isLoading() || !props.sessionId) return;

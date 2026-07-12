@@ -451,6 +451,24 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   window.addEventListener('crucible:new-session', onNewSessionEvent);
   onCleanup(() => window.removeEventListener('crucible:new-session', onNewSessionEvent));
 
+  // Daemon auto-titles sessions on their first completed turn; the owning
+  // ChatProvider rebroadcasts the title so the session list stays current.
+  const onTitleChangedEvent = (e: Event) => {
+    const { sessionId, title } = (e as CustomEvent<{ sessionId: string; title: string }>).detail;
+    setSessions(produce((list) => {
+      const session = list.find((s) => s.id === sessionId);
+      if (session) session.title = title;
+    }));
+    const current = currentSession();
+    if (current?.id === sessionId) {
+      setCurrentSession({ ...current, title });
+    }
+  };
+  window.addEventListener('crucible:session-title-changed', onTitleChangedEvent);
+  onCleanup(() =>
+    window.removeEventListener('crucible:session-title-changed', onTitleChangedEvent)
+  );
+
   const value: SessionContextValue = {
     currentSession,
     sessions: () => sessions,

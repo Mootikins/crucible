@@ -640,6 +640,18 @@ impl ReconnectingDaemon {
         .await
     }
 
+    pub async fn session_generate_title(
+        &self,
+        session_id: &str,
+    ) -> anyhow::Result<serde_json::Value> {
+        let session_id = session_id.to_string();
+        self.call_with_reconnect("session.generate_title", move |daemon| {
+            let session_id = session_id.clone();
+            Box::pin(async move { daemon.session_generate_title(&session_id).await })
+        })
+        .await
+    }
+
     pub async fn session_list_models(&self, session_id: &str) -> anyhow::Result<Vec<String>> {
         let session_id = session_id.to_string();
         self.call_with_reconnect("session.list_models", move |daemon| {

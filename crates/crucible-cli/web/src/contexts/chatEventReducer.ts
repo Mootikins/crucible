@@ -27,6 +27,7 @@ interface ChatEventReducerDeps {
   setSubagentEvents: ArraySetter<SubagentEvent>;
   setContextUsage: (usage: ContextUsage | null) => void;
   setChatMode: (mode: ChatMode) => void;
+  onTitleChanged: (title: string) => void;
   setPendingInteraction: (request: InteractionRequest | null) => void;
   setError: (value: string | null) => void;
   setIsLoading: (value: boolean) => void;
@@ -286,6 +287,10 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
       case 'mode_changed':
         deps.setChatMode(event.mode);
         statusBarActions.setChatMode(event.mode);
+        break;
+
+      case 'title_changed':
+        deps.onTitleChanged(event.title);
         break;
 
       case 'session_event':

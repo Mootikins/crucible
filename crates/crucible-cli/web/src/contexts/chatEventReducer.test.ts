@@ -56,6 +56,7 @@ interface ReducerHarness {
   };
   spies: {
     onFirstResponse: ReturnType<typeof vi.fn>;
+    onTitleChanged: ReturnType<typeof vi.fn>;
     addMessage: ReturnType<typeof vi.fn>;
     updateMessage: ReturnType<typeof vi.fn>;
     appendToMessage: ReturnType<typeof vi.fn>;
@@ -85,6 +86,7 @@ function createHarness(): ReducerHarness {
 
   const spies = {
     onFirstResponse: vi.fn(),
+    onTitleChanged: vi.fn(),
     addMessage: vi.fn((message: Message) => {
       state.messages.push(message);
     }),
@@ -115,6 +117,7 @@ function createHarness(): ReducerHarness {
       state.hasReceivedFirstResponse = value;
     },
     onFirstResponse: spies.onFirstResponse,
+    onTitleChanged: spies.onTitleChanged,
     addMessage: spies.addMessage,
     updateMessage: spies.updateMessage,
     appendToMessage: spies.appendToMessage,
@@ -577,6 +580,12 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(mockedStatusBar.setChatMode).toHaveBeenCalledWith('plan');
   });
 
+  it('title_changed: forwards the daemon-generated title', () => {
+    const h = createHarness();
+    h.reducer({ type: 'title_changed', title: 'Merkle tree sync design' });
+    expect(h.spies.onTitleChanged).toHaveBeenCalledWith('Merkle tree sync design');
+  });
+
   it('session_event: no-op (acknowledged but not surfaced)', () => {
     const h = createHarness();
     expect(() =>
@@ -928,6 +937,7 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
     'context_usage',
     'precognition_result',
     'mode_changed',
+    'title_changed',
   ] as const;
 
   it('SSE_EVENT_TYPES and reducer-handled types are identical', () => {
@@ -957,13 +967,14 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
       const minimal: Record<string, unknown> = { type: t };
       if (t !== 'token' && t !== 'thinking' && t !== 'context_usage' &&
           t !== 'precognition_result' && t !== 'mode_changed' &&
-          t !== 'session_event' && t !== 'error') {
+          t !== 'title_changed' && t !== 'session_event' && t !== 'error') {
         minimal.id = 'placeholder';
       }
       if (t === 'token' || t === 'thinking') minimal.content = '';
       if (t === 'context_usage') { minimal.used = 0; minimal.total = 0; }
       if (t === 'precognition_result') { minimal.notes_count = 0; minimal.notes = []; }
       if (t === 'mode_changed') minimal.mode = 'normal';
+      if (t === 'title_changed') minimal.title = 'A generated title';
       if (t === 'session_event') { minimal.event_type = 'x'; minimal.data = null; }
       if (t === 'error') { minimal.code = 'x'; minimal.message = ''; }
       if (t === 'message_complete') { minimal.content = ''; minimal.tool_calls = []; }

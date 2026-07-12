@@ -161,6 +161,16 @@ The four-surface shell from the "Crucible Shell Options" design (turn 5): Home �
 **Acceptance:** surface indicator follows the header pill; context segment renders only when a workspace/kiln is known; static filler (Ready/UTF-8/TypeScript) is gone.
 **Tests:** covered indirectly by W1 store tests; W3 baselines pin the rendered bar.
 
+### WS-307: Sessions name themselves after their topic
+**As a user**, once a session's first turn completes, it gets a short topic-based title everywhere (tab, Home resume, Inbox) — I never see a wall of "Session chat-202…" again.
+**Acceptance:** the daemon generates the title with the session's own LLM provider on the first `message_complete` of an untitled session (truncation of the first user message as fallback) and broadcasts `title_changed`; the open tab, Home resume card, and Inbox lists update without a refresh; untitled sessions fall back to "Untitled · <date>" instead of colliding id slices.
+**Tests:** daemon `agent_manager::title` unit tests (sanitize/truncate); web route `auto_title_delegates_to_daemon_generate_title`; reducer `title_changed` matrix + SSE parity tests.
+
+### WS-308: Old sessions archive themselves out of my way
+**As a user**, sessions idle for 3 days disappear from Home and the Inbox into a collapsed ARCHIVED section, where I can restore, delete one, or clear the whole history.
+**Acceptance:** the daemon sweep archives idle sessions in storage (not just in-memory ones) after `auto_archive_hours` (default 72); Home resume and Inbox RECENT list only non-archived sessions sorted by last activity (Inbox capped at 30 with a count); the ARCHIVED section lazy-loads on expand and offers RESTORE, two-click DELETE, and a two-click CLEAR HISTORY bulk delete.
+**Tests:** daemon `test_sweep_archives_stale_persisted_sessions_not_in_memory` pins the storage-sweep gap; sort/fallback helpers in `lib/session-display.ts`. GAP: no component test drives the ARCHIVED section UI yet (manual + live verification only).
+
 ---
 
 ## Infra requirements these stories impose (status)

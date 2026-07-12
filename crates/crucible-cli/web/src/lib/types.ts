@@ -56,6 +56,8 @@ export interface Session {
   /** Persisted session mode (normal/plan/auto); null when never set. */
   agent_mode: string | null;
   started_at: string; // ISO datetime
+  /** ISO datetime of the last session event; null/absent for legacy sessions. */
+  last_activity?: string | null;
   event_count: number;
   archived?: boolean;
 }
@@ -343,6 +345,12 @@ export interface ModeChangedEvent {
   mode: 'normal' | 'plan' | 'auto';
 }
 
+/** Session title changed (daemon-side topic auto-title or manual rename) */
+export interface TitleChangedEvent {
+  type: 'title_changed';
+  title: string;
+}
+
 /** Message is complete */
 export interface MessageCompleteEvent {
   type: 'message_complete';
@@ -399,7 +407,8 @@ export type ChatEvent =
   | DelegationFailedEvent
   | ContextUsageEvent
   | PrecognitionResultEvent
-  | ModeChangedEvent;
+  | ModeChangedEvent
+  | TitleChangedEvent;
 
 /** SSE event type discriminator */
 export type ChatEventType = ChatEvent['type'];

@@ -243,6 +243,10 @@ pub fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
         "session.switch_model" => json!(null),
         "session.set_mode" => json!(null),
         "session.set_title" => json!(null),
+        "session.generate_title" => json!({
+            "session_id": "test-session-001",
+            "title": "Merkle tree sync design"
+        }),
         "session.search" => json!([{"session_id": "s1", "title": "Test Session"}]),
         // Mirrors the daemon's real response shape: a `history` array of
         // SessionEventMessage entries, NOT a `messages` array. Session id

@@ -5,6 +5,7 @@ import { statusBarStore, pathBasename } from '@/stores/statusBarStore';
 import { shellActions } from '@/stores/shellStore';
 import { listNotes } from '@/lib/api';
 import { openFileInEditor } from '@/lib/file-actions';
+import { sortByRecency, sessionDisplayTitle } from '@/lib/session-display';
 import type { Session } from '@/lib/types';
 
 // ── Home — the landing surface ───────────────────────────────────────────
@@ -57,10 +58,7 @@ export const HomePanel: Component = () => {
   );
 
   const resumeSessions = createMemo(() =>
-    [...sessionCtx.sessions()]
-      .filter((s) => !s.archived)
-      .sort((a, b) => Date.parse(b.started_at || '') - Date.parse(a.started_at || ''))
-      .slice(0, 4)
+    sortByRecency(sessionCtx.sessions().filter((s) => !s.archived)).slice(0, 4)
   );
 
   const sessionSub = (session: Session) => {
@@ -142,7 +140,7 @@ export const HomePanel: Component = () => {
                     <span class={`w-[7px] h-[7px] rounded-full flex-none ${sessionDot(session)}`} />
                     <span class="flex-1 min-w-0">
                       <span class="block text-[12.5px] font-semibold truncate">
-                        {session.title || `Session ${session.id.slice(0, 8)}`}
+                        {sessionDisplayTitle(session)}
                       </span>
                       <span class="block text-[10.5px] text-muted-dark truncate">
                         {sessionSub(session)}

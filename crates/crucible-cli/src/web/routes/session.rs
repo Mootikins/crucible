@@ -599,85 +599,27 @@ async fn set_session_title(
 
 /// Auto-generate a title for a session from its conversation history.
 ///
-/// This is a simple string-truncation-based auto-title (not LLM generation).
-/// Falls back to "Untitled Session" if no messages are available.
+/// Delegates to the daemon's `session.generate_title`, which produces a
+/// topic-based title via the session's own LLM provider (falling back to
+/// first-message truncation daemon-side). Idempotent: an already-titled
+/// session returns its existing title.
 async fn auto_title(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<TitleResponse>, WebError> {
-    // Get session info to find kiln path
-    let session = state.daemon.session_get(&id).await.daemon_err()?;
-    let kiln_str = session.get("kiln").and_then(|v| v.as_str()).unwrap_or("");
-
-    // Try to get conversation history for title generation
-    let first_user_message = if !kiln_str.is_empty() {
-        let history = state
-            .daemon
-            .session_resume_from_storage(&id, std::path::Path::new(kiln_str), Some(10), None)
-            .await
-            .ok();
-
-        // The daemon returns a `history` array of session events; user turns
-        // are entries with event == "user_message" and the text in data.content.
-        history
-            .as_ref()
-            .and_then(|h| h.get("history"))
-            .and_then(|v| v.as_array())
-            .and_then(|events| {
-                events.iter().find_map(|e| {
-                    if e.get("event").and_then(|v| v.as_str()) == Some("user_message") {
-                        e.get("data")
-                            .and_then(|d| d.get("content"))
-                            .and_then(|c| c.as_str())
-                            .map(String::from)
-                    } else {
-                        None
-                    }
-                })
-            })
-    } else {
-        None
-    };
-
-    let title = match first_user_message {
-        Some(msg) => truncate_to_title(&msg),
-        None => "Untitled Session".to_string(),
-    };
-
-    // Update the session title
-    state
+    let result = state
         .daemon
-        .session_set_title(&id, &title)
+        .session_generate_title(&id)
         .await
         .daemon_err()?;
 
+    let title = result
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Untitled Session")
+        .to_string();
+
     Ok(Json(TitleResponse { title }))
-}
-
-/// Create a concise title from a message by smart truncation.
-///
-/// This function truncates at character boundaries (not byte boundaries) to safely
-/// handle multi-byte UTF-8 characters like CJK, emoji, etc. It keeps the first ~60
-/// characters, breaking at word boundaries when possible.
-fn truncate_to_title(message: &str) -> String {
-    const MAX_LEN: usize = 60;
-
-    // Clean up: collapse whitespace, trim
-    let cleaned: String = message.split_whitespace().collect::<Vec<_>>().join(" ");
-
-    if cleaned.len() <= MAX_LEN {
-        return cleaned;
-    }
-
-    // Truncate at word boundary
-    let truncated = cleaned.chars().take(MAX_LEN).collect::<String>();
-    if let Some(last_space) = truncated.rfind(' ') {
-        if last_space > MAX_LEN / 2 {
-            return format!("{}...", &truncated[..last_space]);
-        }
-    }
-
-    format!("{}...", truncated)
 }
 
 async fn export_session(
@@ -1106,10 +1048,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn auto_title_uses_first_user_message_from_history() {
-        // The daemon returns a `history` array of events (event: "user_message",
-        // data.content), NOT a `messages` array with role/content. The handler
-        // must extract the first user message from that real shape.
+    async fn auto_title_delegates_to_daemon_generate_title() {
+        // Title generation is daemon-owned (topic-based LLM with truncation
+        // fallback); the web route only forwards and unwraps the result.
         let (_mock, client) = crate::web::test_support::start_mock_daemon().await;
         let state = crate::web::test_support::build_mock_state(client);
         let app = crate::web::test_support::build_test_app(state);
@@ -1134,105 +1075,9 @@ mod tests {
 
         assert_eq!(
             json["title"].as_str().unwrap(),
-            "Explain the merkle tree sync design",
-            "Title should come from the first user_message event in history"
+            "Merkle tree sync design",
+            "Title should come from the daemon's session.generate_title"
         );
-    }
-
-    #[tokio::test]
-    async fn auto_title_fallback_when_no_messages() {
-        // Mock daemon returns empty history for this id, so fallback to "Untitled Session"
-        let (_mock, client) = crate::web::test_support::start_mock_daemon().await;
-        let state = crate::web::test_support::build_mock_state(client);
-        let app = crate::web::test_support::build_test_app(state);
-
-        let response = app
-            .oneshot(
-                axum::http::Request::builder()
-                    .method("POST")
-                    .uri("/api/session/empty-session-001/auto-title")
-                    .body(axum::body::Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), axum::http::StatusCode::OK);
-
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-        assert_eq!(
-            json["title"].as_str().unwrap(),
-            "Untitled Session",
-            "Should fall back to 'Untitled Session' when no messages"
-        );
-    }
-
-    #[test]
-    fn truncate_to_title_short_message() {
-        assert_eq!(truncate_to_title("Hello world"), "Hello world");
-    }
-
-    #[test]
-    fn truncate_to_title_exact_limit() {
-        let msg = "a".repeat(60);
-        assert_eq!(truncate_to_title(&msg), msg);
-    }
-
-    #[test]
-    fn truncate_to_title_long_message_breaks_at_word() {
-        let msg = "How do I implement a binary search tree in Rust with proper lifetime annotations and borrowing";
-        let title = truncate_to_title(msg);
-        assert!(title.ends_with("..."), "Long titles should end with '...'");
-        assert!(
-            title.len() <= 65,
-            "Title should be ~60 chars + '...': got {}",
-            title.len()
-        );
-        // Should break at a word boundary
-        assert!(!title.contains("  "), "Should not have double spaces");
-    }
-
-    #[test]
-    fn truncate_to_title_collapses_whitespace() {
-        assert_eq!(truncate_to_title("  hello   world  "), "hello world");
-    }
-
-    #[test]
-    fn truncate_to_title_multiline_message() {
-        let msg = "First line\nSecond line\nThird line";
-        let title = truncate_to_title(msg);
-        // split_whitespace treats \n as whitespace, so this becomes single-line
-        assert!(!title.contains('\n'), "Title should not contain newlines");
-    }
-
-    #[test]
-    fn truncate_to_title_handles_cjk_input() {
-        // Test with Chinese characters
-        let msg = "学习Rust编程语言";
-        let title = truncate_to_title(msg);
-        // Should not panic and should be valid UTF-8
-        assert!(!title.is_empty(), "Title should not be empty");
-        // Verify it's valid UTF-8 by checking we can iterate chars
-        let char_count = title.chars().count();
-        assert!(char_count > 0, "Title should contain valid characters");
-        // Verify no truncation happened (message is shorter than MAX_LEN)
-        assert_eq!(title, msg, "Short CJK message should not be truncated");
-    }
-
-    #[test]
-    fn truncate_to_title_handles_emoji() {
-        // Test with emoji
-        let msg = "Hello 👋 world 🌍 this is a test message with emoji";
-        let title = truncate_to_title(msg);
-        // Should not panic and should be valid UTF-8
-        assert!(!title.is_empty(), "Title should not be empty");
-        // Verify it's valid UTF-8
-        let char_count = title.chars().count();
-        assert!(char_count > 0, "Title should contain valid characters");
     }
 
     // =========================================================================

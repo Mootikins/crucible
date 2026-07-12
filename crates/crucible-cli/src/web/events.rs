@@ -119,6 +119,10 @@ pub enum ChatEvent {
         mode: String,
     },
 
+    TitleChanged {
+        title: String,
+    },
+
     SessionEvent {
         event_type: String,
         data: serde_json::Value,
@@ -160,6 +164,7 @@ impl ChatEvent {
             ChatEvent::ContextUsage { .. } => "context_usage",
             ChatEvent::PrecognitionResult { .. } => "precognition_result",
             ChatEvent::ModeChanged { .. } => "mode_changed",
+            ChatEvent::TitleChanged { .. } => "title_changed",
             ChatEvent::SessionEvent { .. } => "session_event",
         }
     }
@@ -382,6 +387,10 @@ impl ChatEvent {
 
             "mode_changed" => ChatEvent::ModeChanged {
                 mode: data["mode"].as_str().unwrap_or("normal").to_string(),
+            },
+
+            "title_changed" => ChatEvent::TitleChanged {
+                title: data["title"].as_str().unwrap_or("").to_string(),
             },
 
             _ => ChatEvent::SessionEvent {
@@ -687,7 +696,7 @@ mod tests {
 
     /// The daemon wraps interactions as `{request_id, request: {kind,
     /// action: {type, tokens}}}` (SessionEventMessage::interaction_requested
-    /// + tagged PermAction). The frontend renders the FLAT shape `{kind, id,
+    /// plus tagged PermAction). The frontend renders the FLAT shape `{kind, id,
     /// action_type, tokens}` — forwarding the nested wire shape means no
     /// permission prompt ever renders in the browser.
     #[test]

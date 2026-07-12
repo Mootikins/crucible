@@ -194,6 +194,7 @@ export const SSE_EVENT_TYPES = [
   'context_usage',
   'precognition_result',
   'mode_changed',
+  'title_changed',
 ] as const;
 
 export function subscribeToEvents(
@@ -316,6 +317,7 @@ interface RawSession {
   agent_model?: string | null;
   agent?: { mode?: string | null } | null;
   started_at: string;
+  last_activity?: string | null;
   event_count?: number;
   archived?: boolean;
 }
@@ -331,6 +333,7 @@ function mapSession(raw: RawSession): Session {
     agent_model: raw.agent_model ?? null,
     agent_mode: raw.agent?.mode ?? null,
     started_at: raw.started_at,
+    last_activity: raw.last_activity ?? null,
     event_count: raw.event_count ?? 0,
     archived: raw.archived ?? false,
   };
