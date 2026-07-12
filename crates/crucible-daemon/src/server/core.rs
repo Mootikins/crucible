@@ -223,26 +223,34 @@ pub(super) async fn sweep_and_archive_stale_sessions(
     }
 
     // In-memory sessions first (covers sessions whose kiln isn't open),
-    // then persisted sessions from each kiln's storage.
-    let mut candidates: Vec<_> = session_manager
+    // then persisted sessions from each kiln's storage. Each candidate is
+    // paired with the kiln directory to archive under: legacy meta.json
+    // files can carry RELATIVE kiln paths ("./docs"), which resolve against
+    // the daemon's cwd and miss — so for storage hits, trust the directory
+    // we actually scanned, never the file's self-reported kiln.
+    let mut candidates: Vec<(_, PathBuf)> = session_manager
         .list_sessions()
         .into_iter()
         .filter(|s| !s.archived)
+        .map(|s| {
+            let kiln = s.kiln.clone();
+            (s, kiln)
+        })
         .collect();
     let mut seen_ids: std::collections::HashSet<String> =
-        candidates.iter().map(|s| s.id.clone()).collect();
+        candidates.iter().map(|(s, _)| s.id.clone()).collect();
     for kiln_path in &kiln_paths {
         for summary in session_manager
             .list_sessions_filtered_async(Some(kiln_path), None, None, None, false)
             .await
         {
             if seen_ids.insert(summary.id.clone()) {
-                candidates.push(summary);
+                candidates.push((summary, kiln_path.clone()));
             }
         }
     }
 
-    for summary in candidates {
+    for (summary, archive_kiln) in candidates {
         // Never archive out from under a connected client, regardless of idleness.
         if !subscription_manager.get_subscribers(&summary.id).is_empty() {
             continue;
@@ -264,7 +272,7 @@ pub(super) async fn sweep_and_archive_stale_sessions(
 
         // One unreadable meta.json must not wedge the whole sweep.
         match session_manager
-            .archive_session(&summary.id, &summary.kiln)
+            .archive_session(&summary.id, &archive_kiln)
             .await
         {
             Ok(_) => archived += 1,

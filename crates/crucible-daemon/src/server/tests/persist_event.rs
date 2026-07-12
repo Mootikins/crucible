@@ -233,6 +233,64 @@ async fn test_sweep_archives_stale_persisted_sessions_not_in_memory() {
     assert!(persisted.archived);
 }
 
+/// Legacy meta.json files can carry a RELATIVE kiln path ("./docs") from
+/// before kiln paths were canonicalized. Archiving with the file's
+/// self-reported kiln resolves against the daemon's cwd and misses — the
+/// sweep must archive under the kiln directory it actually scanned.
+#[tokio::test]
+async fn test_sweep_archives_sessions_whose_meta_has_relative_kiln_path() {
+    let tmp = TempDir::new().unwrap();
+    let session_manager = SessionManager::new();
+    let subscription_manager = SubscriptionManager::new();
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    session_manager
+        .update_last_activity(&session.id, Utc::now() - ChronoDuration::hours(80))
+        .await
+        .unwrap();
+    session_manager.end_session(&session.id).await.unwrap();
+
+    // Rewrite the persisted meta.json with a legacy relative kiln path.
+    let meta_path = tmp
+        .path()
+        .join(".crucible")
+        .join("sessions")
+        .join(&session.id)
+        .join("meta.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
+    meta["kiln"] = serde_json::json!("./docs");
+    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+
+    let kiln_manager = KilnManager::new();
+    kiln_manager.open(tmp.path()).await.unwrap();
+
+    let archived = sweep_and_archive_stale_sessions(
+        &session_manager,
+        &kiln_manager,
+        &subscription_manager,
+        72,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(archived, 1);
+    let persisted = FileSessionStorage::new()
+        .load(&session.id, tmp.path())
+        .await
+        .unwrap();
+    assert!(persisted.archived);
+}
+
 #[tokio::test]
 async fn test_sweep_and_archive_stale_sessions_skips_sessions_with_active_subscribers() {
     let tmp = TempDir::new().unwrap();
