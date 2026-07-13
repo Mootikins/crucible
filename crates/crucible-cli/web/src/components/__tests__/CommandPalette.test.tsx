@@ -126,6 +126,39 @@ describe('CommandPalette — filtering & prefixes', () => {
     expect(screen.queryByText('Home')).not.toBeInTheDocument();
   });
 
+  it('fuzzy: subsequence queries match (WS-304 fuzzy matching)', () => {
+    render(() => (
+      <CommandPalette
+        open={true}
+        commands={[cmd({ id: 'cc', label: 'Clear Chat' }), cmd({ id: 'sw', label: 'Switch Workspace' })]}
+        onOpenChange={() => {}}
+      />
+    ));
+    // "clch" is not a substring of anything but is a subsequence of "Clear Chat".
+    fireEvent.input(getInput(), { target: { value: 'clch' } });
+    expect(screen.getByText('Clear Chat')).toBeInTheDocument();
+    expect(screen.queryByText('Switch Workspace')).not.toBeInTheDocument();
+  });
+
+  it('fuzzy: label matches rank above keyword-only matches', () => {
+    render(() => (
+      <CommandPalette
+        open={true}
+        commands={[
+          cmd({ id: 'kw', label: 'Toggle Theme', keywords: ['export'] }),
+          cmd({ id: 'lbl', label: 'Export Session' }),
+        ]}
+        onOpenChange={() => {}}
+      />
+    ));
+    fireEvent.input(getInput(), { target: { value: 'export' } });
+    const labels = screen
+      .getAllByText(/Export Session|Toggle Theme/)
+      .map((el) => el.textContent);
+    expect(labels[0]).toBe('Export Session');
+    expect(labels[1]).toBe('Toggle Theme');
+  });
+
   it('matches description text too (manual filtering, not cmdk)', () => {
     render(() => (
       <CommandPalette

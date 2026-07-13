@@ -5,6 +5,7 @@ import { statusBarStore } from '@/stores/statusBarStore';
 import { shellActions } from '@/stores/shellStore';
 import { listNotes } from '@/lib/api';
 import { openFileInEditor } from '@/lib/file-actions';
+import { fuzzyScore } from '@/lib/fuzzy';
 
 export type CommandCategory = 'Chat' | 'Session' | 'Navigation' | 'Settings';
 
@@ -59,12 +60,20 @@ export function parseOmniQuery(raw: string): { kinds: OmniKind[] | null; query: 
   return { kinds: null, query: raw.trim() };
 }
 
-function matches(item: OmniItem, query: string): boolean {
-  if (!query) return true;
-  const haystack = [item.label, item.description ?? '', item.shortcut ?? '', ...(item.keywords ?? [])]
-    .join(' ')
-    .toLowerCase();
-  return haystack.includes(query.toLowerCase());
+/**
+ * Score an item for the query: label hits dominate (a command whose *name*
+ * matches beats one where only a keyword does), otherwise the best score
+ * across description/shortcut/keywords counts. Null = filtered out.
+ */
+function scoreItem(item: OmniItem, query: string): number | null {
+  if (!query) return 0;
+  const label = fuzzyScore(item.label, query);
+  const rest = fuzzyScore(
+    [item.description ?? '', item.shortcut ?? '', ...(item.keywords ?? [])].join(' '),
+    query
+  );
+  if (label === null && rest === null) return null;
+  return Math.max(label !== null ? label + 2000 : -Infinity, rest ?? -Infinity);
 }
 
 export const CommandPalette: Component<CommandPaletteProps> = (props) => {
@@ -143,7 +152,11 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     };
     return KIND_ORDER.filter((kind) => !kinds || kinds.includes(kind))
       .map((kind) => {
-        let items = sections[kind].filter((item) => matches(item, q));
+        let items = sections[kind]
+          .map((item) => ({ item, score: scoreItem(item, q) }))
+          .filter((x): x is { item: OmniItem; score: number } => x.score !== null)
+          .sort((a, b) => b.score - a.score)
+          .map((x) => x.item);
         if (!q) items = items.slice(0, IDLE_LIMITS[kind]);
         return { kind, items };
       })
