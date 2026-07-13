@@ -99,7 +99,7 @@ export interface EditorContextValue {
   openFiles: Accessor<EditorFile[]>;
   activeFile: Accessor<string | null>;
   openFile: (path: string) => Promise<void>;
-  closeFile: (path: string) => void;
+  closeFile: (path: string, opts?: { force?: boolean }) => void;
   saveFile: (path: string) => Promise<void>;
   setActiveFile: (path: string) => void;
   updateFileContent: (path: string, content: string) => void;

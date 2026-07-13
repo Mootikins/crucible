@@ -2,124 +2,15 @@ import {
   Component,
   Show,
   createEffect,
-  onMount,
   onCleanup,
   untrack,
 } from 'solid-js';
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightSpecialChars, drawSelection } from '@codemirror/view';
-import { EditorState, StateEffect, Extension } from '@codemirror/state';
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-import { oneDark } from '@codemirror/theme-one-dark';
-import { markdown } from '@codemirror/lang-markdown';
 import { useEditorSafe } from '@/contexts/EditorContext';
+import { CodeMirrorEditor } from './editor/CodeMirrorEditor';
 import { findTabByFilePath } from '@/lib/file-actions';
 import { windowActions } from '@/stores/windowStore';
 import { PanelShell } from './PanelShell';
 
-
-type LanguageSupport = ReturnType<typeof markdown>;
-
-const getLanguageExtension = (path: string): LanguageSupport | null => {
-  const ext = path.split('.').pop()?.toLowerCase() ?? '';
-  return ext === 'md' ? markdown() : null;
-};
-
-// Inlined CodeMirror editor component (mirrors EditorPanel's CodeMirrorEditor)
-const CodeMirrorEditor: Component<{
-  content: string;
-  path: string;
-  onChange: (content: string) => void;
-  onSave: () => void;
-}> = (props) => {
-  let containerRef: HTMLDivElement | undefined;
-  let view: EditorView | undefined;
-
-  const createExtensions = (): Extension[] => {
-    const extensions: Extension[] = [
-      lineNumbers(),
-      highlightActiveLine(),
-      highlightSpecialChars(),
-      drawSelection(),
-      history(),
-      // Cmd/Ctrl-S saves through the real EditorContext.saveFile path. Placed
-      // before defaultKeymap so it wins, and preventDefault stops the browser
-      // "save page" dialog.
-      keymap.of([
-        {
-          key: 'Mod-s',
-          preventDefault: true,
-          run: () => {
-            props.onSave();
-            return true;
-          },
-        },
-      ]),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
-      oneDark,
-      EditorView.updateListener.of((update) => {
-        if (update.docChanged) {
-          props.onChange(update.state.doc.toString());
-        }
-      }),
-      EditorView.theme({
-        '&': { height: '100%' },
-        '.cm-scroller': { overflow: 'auto' },
-      }),
-    ];
-
-    const langExt = getLanguageExtension(props.path);
-    if (langExt) {
-      extensions.push(langExt);
-    }
-
-    return extensions;
-  };
-
-  onMount(() => {
-    if (!containerRef) return;
-
-    const state = EditorState.create({
-      doc: props.content,
-      extensions: createExtensions(),
-    });
-
-    view = new EditorView({
-      state,
-      parent: containerRef,
-    });
-  });
-
-  createEffect(() => {
-    const newContent = props.content;
-    if (view && view.state.doc.toString() !== newContent) {
-      view.dispatch({
-        changes: {
-          from: 0,
-          to: view.state.doc.length,
-          insert: newContent,
-        },
-      });
-    }
-  });
-
-  createEffect(() => {
-    const currentPath = props.path;
-    if (view) {
-      const langExt = getLanguageExtension(currentPath);
-      if (langExt) {
-        view.dispatch({
-          effects: StateEffect.reconfigure.of(createExtensions()),
-        });
-      }
-    }
-  });
-
-  onCleanup(() => {
-    view?.destroy();
-  });
-
-  return <div ref={containerRef} class="h-full w-full" />;
-};
 
 interface FileViewerPanelProps {
   filePath?: string;
@@ -142,7 +33,10 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
 
   onCleanup(() => {
     if (props.filePath) {
-      closeFile(props.filePath);
+      // Force: by unmount time the window tab is already gone, so a prompt
+      // here could not veto anything — the confirm lives at the tab-close
+      // call sites (confirmTabClose).
+      closeFile(props.filePath, { force: true });
     }
   });
 

@@ -76,3 +76,66 @@ describe('EditorContext — content load path (bug 8)', () => {
     await waitFor(() => expect(editor.openFiles()[0].dirty).toBe(false));
   });
 });
+
+describe('EditorContext — unsaved-changes guard on close (bug 6)', () => {
+  beforeEach(() => {
+    getFileContent.mockClear();
+    vi.restoreAllMocks();
+  });
+
+  const openDirtyFile = async (path: string) => {
+    getFileContent.mockResolvedValueOnce('original\n');
+    const editor = withEditor(() => {});
+    await editor.openFile(path);
+    await waitFor(() => expect(editor.openFiles().length).toBe(1));
+    editor.updateFileContent(path, 'edited\n');
+    expect(editor.openFiles()[0].dirty).toBe(true);
+    return editor;
+  };
+
+  it('closing a dirty file asks for confirmation and keeps it open on cancel', async () => {
+    const path = `${KILN}/notes/dirty.md`;
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const editor = await openDirtyFile(path);
+
+    editor.closeFile(path);
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(editor.openFiles().length).toBe(1);
+  });
+
+  it('closing a dirty file discards when the user confirms', async () => {
+    const path = `${KILN}/notes/dirty.md`;
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const editor = await openDirtyFile(path);
+
+    editor.closeFile(path);
+
+    expect(editor.openFiles().length).toBe(0);
+  });
+
+  it('closing a clean file never prompts', async () => {
+    const path = `${KILN}/notes/clean.md`;
+    const confirm = vi.spyOn(window, 'confirm');
+    getFileContent.mockResolvedValueOnce('content\n');
+    const editor = withEditor(() => {});
+    await editor.openFile(path);
+    await waitFor(() => expect(editor.openFiles().length).toBe(1));
+
+    editor.closeFile(path);
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(editor.openFiles().length).toBe(0);
+  });
+
+  it('force-close skips the prompt (tab-level guard already ran)', async () => {
+    const path = `${KILN}/notes/dirty.md`;
+    const confirm = vi.spyOn(window, 'confirm');
+    const editor = await openDirtyFile(path);
+
+    editor.closeFile(path, { force: true });
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(editor.openFiles().length).toBe(0);
+  });
+});

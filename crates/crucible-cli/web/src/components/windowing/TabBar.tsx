@@ -8,6 +8,7 @@ import type { Tab as TabType, EdgePanelPosition, TabBarProps, DragSource } from 
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { IconGripVertical, IconClose, IconLayout } from './icons';
 import { ChevronDown } from '@/lib/icons';
+import { confirmTabClose } from '@/lib/tab-guards';
 
 // ── Module-level reorder state (shared with WindowManager) ──────────────
 
@@ -356,7 +357,7 @@ const CenterTabBar: Component<{
             isActive={tab.id === activeTabId()}
             isFocused={isFocused()}
             onClick={() => windowActions.setActiveTab(props.groupId, tab.id)}
-            onClose={() => windowActions.removeTab(props.groupId, tab.id)}
+            onClose={() => confirmTabClose(tab) && windowActions.removeTab(props.groupId, tab.id)}
           />
         )}
       />
@@ -428,7 +429,7 @@ const EdgeTabBar: Component<{
             isActive={activeTabId() === tab.id}
             isFocused={isFocused()}
             onClick={() => windowActions.setActiveTab(groupId(), tab.id)}
-            onClose={() => windowActions.removeTab(groupId(), tab.id)}
+            onClose={() => confirmTabClose(tab) && windowActions.removeTab(groupId(), tab.id)}
             testId={`edge-tab-${props.position}-${tab.id}`}
             onDragStart={() => { if (windowStore.flyoutState?.isOpen) windowActions.closeFlyout(); }}
           />

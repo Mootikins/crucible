@@ -49,9 +49,18 @@ export const EditorProvider: ParentComponent = (props) => {
     }
   };
 
-  const closeFile = (path: string) => {
+  const closeFile = (path: string, opts?: { force?: boolean }) => {
     const idx = openFilesStore.findIndex((f) => f.path === path);
     if (idx === -1) return;
+
+    // Data-loss guard (bug 6): closing a dirty file must not silently discard
+    // edits. `force` skips the prompt for callers whose close was already
+    // confirmed upstream (e.g. a window tab close that can't be vetoed by the
+    // time the panel unmounts).
+    if (openFilesStore[idx].dirty && !opts?.force) {
+      const filename = path.split('/').pop() ?? path;
+      if (!window.confirm(`Discard unsaved changes to ${filename}?`)) return;
+    }
 
     setOpenFiles(produce((files) => files.splice(idx, 1)));
 

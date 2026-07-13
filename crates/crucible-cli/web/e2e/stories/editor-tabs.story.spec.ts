@@ -7,17 +7,11 @@ import { HARNESS_KILN, setupEditorHarness, typeInEditor } from './_helpers/edito
  * content. Drives the real EditorPanel tab bar via the dev-only harness. See
  * editor-roundtrip.story.spec.ts for the editor's product-gap notes.
  *
- * PRODUCT BUG this story exposes (documented, NOT fixed per plan):
- *   EditorPanel renders a single reused <CodeMirrorEditor>; when the active
- *   file changes, its `content` prop changes and a createEffect re-dispatches
- *   the whole document. The view's updateListener treats that programmatic
- *   replacement as a user edit and calls updateFileContent(), so:
- *     (a) opening a SECOND file immediately marks it dirty (●), and
- *     (b) switching to a tab marks the file you switch TO dirty.
- *   Content is preserved correctly; only the dirty flag is wrong. The tests
- *   below pin this CURRENT behavior with TODO(product) markers.
- *   Fix sketch: gate the updateListener while doing programmatic doc swaps, or
- *   key one CodeMirror instance per file instead of reusing one.
+ * History: bugs 5 (spurious dirty flag on the reused CodeMirror instance) and
+ * 6 (dirty tab close silently discards) were pinned here as TODO(product)
+ * tests until fixed on 2026-07-12. Programmatic doc swaps are now tagged with
+ * the `contentSync` annotation so the update listener ignores them, and
+ * closeFile() confirms before discarding a dirty file.
  */
 
 const NOTE_A = { name: 'Note A', path: `${HARNESS_KILN}/Note A.md`, content: 'alpha content\n' };
@@ -54,7 +48,7 @@ test.describe('WS-203 multi-file tabs', () => {
     await story.step(page, 'switched back to B - edit intact');
   });
 
-  test('TODO(product): opening a second file spuriously marks it dirty', async ({ page }) => {
+  test('opening a second file leaves both files clean (bug 5 regression)', async ({ page }) => {
     const harness = await setupEditorHarness(page, [NOTE_A, NOTE_B]);
     await harness.open(NOTE_A);
     await expect(page.getByRole('button', { name: /Note A\.md/ })).toBeVisible();
@@ -63,41 +57,65 @@ test.describe('WS-203 multi-file tabs', () => {
 
     await harness.open(NOTE_B);
     await expect(page.getByRole('button', { name: /Note B\.md/ })).toBeVisible();
-    // BUG: B is dirty immediately, with zero edits. Should be 0.
-    await expect(page.getByText('●')).toHaveCount(1);
-    // The dirty one is B (the just-opened, just-activated file).
-    await expect(page.getByRole('button', { name: /●.*Note B\.md/ })).toBeVisible();
-    // No save was ever issued — the dirtiness is purely a UI-state artifact.
+    // The programmatic doc swap into the reused CodeMirror instance is not a
+    // user edit — no dirty marker anywhere.
+    await expect(page.getByText('●')).toHaveCount(0);
     expect(harness.saves).toHaveLength(0);
   });
 
-  test('TODO(product): switching tabs marks the incoming file dirty', async ({ page }) => {
+  test('switching tabs does not mark the incoming file dirty (bug 5 regression)', async ({ page }) => {
     const harness = await setupEditorHarness(page, [NOTE_A, NOTE_B]);
     await harness.open(NOTE_A);
-    await harness.open(NOTE_B); // B now (spuriously) dirty → 1 marker
-    await expect(page.getByText('●')).toHaveCount(1);
+    await harness.open(NOTE_B);
+    await expect(page.getByText('●')).toHaveCount(0);
 
-    // Switch to A. BUG: A becomes dirty too → 2 markers.
     await page.getByRole('button', { name: /Note A\.md/ }).click();
-    await expect(page.getByText('●')).toHaveCount(2);
+    await expect(page.locator('.cm-content')).toContainText('alpha content');
+    await expect(page.getByText('●')).toHaveCount(0);
+
+    // A real edit still marks exactly the edited file dirty.
+    await typeInEditor(page, 'REAL_EDIT');
+    await expect(page.getByRole('button', { name: /●.*Note A\.md/ })).toBeVisible();
+    await expect(page.getByText('●')).toHaveCount(1);
     expect(harness.saves).toHaveLength(0);
   });
 
-  test('closing a dirty tab discards without a warning (WS-203 gap)', async ({ page }) => {
+  test('closing a dirty tab asks before discarding (bug 6 regression)', async ({ page }) => {
     const harness = await setupEditorHarness(page, [NOTE_A, NOTE_B]);
     await harness.open(NOTE_A);
     await harness.open(NOTE_B);
     await typeInEditor(page, 'UNSAVED');
     await expect(page.locator('.cm-content')).toContainText('UNSAVED');
 
-    // Close the active (dirty) tab via its "×" affordance.
+    // Decline the confirm: the tab must survive with its edit intact.
+    page.once('dialog', (dialog) => void dialog.dismiss());
     await page.getByRole('button', { name: /Note B\.md/ }).getByText('×').click();
+    await expect(page.getByRole('button', { name: /Note B\.md/ })).toBeVisible();
+    await expect(page.locator('.cm-content')).toContainText('UNSAVED');
 
-    // TODO(product): WS-203 wants a confirm prompt before discarding unsaved
-    // work. There is none — closeFile() just splices the tab. Pin that:
+    // Accept the confirm: now the tab closes and the edit is discarded.
+    page.once('dialog', (dialog) => void dialog.accept());
+    await page.getByRole('button', { name: /Note B\.md/ }).getByText('×').click();
     await expect(page.getByRole('button', { name: /Note B\.md/ })).toHaveCount(0);
     await expect(page.locator('.cm-content')).toContainText('alpha content');
     // Nothing was saved during the discard.
+    expect(harness.saves).toHaveLength(0);
+  });
+
+  test('closing a clean tab never prompts', async ({ page }) => {
+    const harness = await setupEditorHarness(page, [NOTE_A, NOTE_B]);
+    await harness.open(NOTE_A);
+    await harness.open(NOTE_B);
+    await expect(page.getByText('●')).toHaveCount(0);
+
+    let sawDialog = false;
+    page.on('dialog', (dialog) => {
+      sawDialog = true;
+      return void dialog.accept();
+    });
+    await page.getByRole('button', { name: /Note B\.md/ }).getByText('×').click();
+    await expect(page.getByRole('button', { name: /Note B\.md/ })).toHaveCount(0);
+    expect(sawDialog).toBe(false);
     expect(harness.saves).toHaveLength(0);
   });
 });

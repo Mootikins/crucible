@@ -1,24 +1,6 @@
-import {
-  Component,
-  For,
-  Show,
-  createEffect,
-  onMount,
-  onCleanup,
-} from 'solid-js';
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightSpecialChars, drawSelection } from '@codemirror/view';
-import { EditorState, StateEffect, Extension } from '@codemirror/state';
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-import { oneDark } from '@codemirror/theme-one-dark';
-import { markdown } from '@codemirror/lang-markdown';
+import { Component, For, Show } from 'solid-js';
 import { useEditorSafe } from '@/contexts/EditorContext';
-
-type LanguageSupport = ReturnType<typeof markdown>;
-
-const getLanguageExtension = (path: string): LanguageSupport | null => {
-  const ext = path.split('.').pop()?.toLowerCase() ?? '';
-  return ext === 'md' ? markdown() : null;
-};
+import { CodeMirrorEditor } from './editor/CodeMirrorEditor';
 
 const getFilename = (path: string): string => {
   return path.split('/').pop() ?? path;
@@ -59,90 +41,8 @@ const Tab: Component<{
   );
 };
 
-const CodeMirrorEditor: Component<{
-  content: string;
-  path: string;
-  onChange: (content: string) => void;
-}> = (props) => {
-  let containerRef: HTMLDivElement | undefined;
-  let view: EditorView | undefined;
-
-  const createExtensions = (): Extension[] => {
-    const extensions: Extension[] = [
-      lineNumbers(),
-      highlightActiveLine(),
-      highlightSpecialChars(),
-      drawSelection(),
-      history(),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
-      oneDark,
-      EditorView.updateListener.of((update) => {
-        if (update.docChanged) {
-          props.onChange(update.state.doc.toString());
-        }
-      }),
-      EditorView.theme({
-        '&': { height: '100%' },
-        '.cm-scroller': { overflow: 'auto' },
-      }),
-    ];
-
-    const langExt = getLanguageExtension(props.path);
-    if (langExt) {
-      extensions.push(langExt);
-    }
-
-    return extensions;
-  };
-
-  onMount(() => {
-    if (!containerRef) return;
-
-    const state = EditorState.create({
-      doc: props.content,
-      extensions: createExtensions(),
-    });
-
-    view = new EditorView({
-      state,
-      parent: containerRef,
-    });
-  });
-
-  createEffect(() => {
-    const newContent = props.content;
-    if (view && view.state.doc.toString() !== newContent) {
-      view.dispatch({
-        changes: {
-          from: 0,
-          to: view.state.doc.length,
-          insert: newContent,
-        },
-      });
-    }
-  });
-
-  createEffect(() => {
-    const currentPath = props.path;
-    if (view) {
-      const langExt = getLanguageExtension(currentPath);
-      if (langExt) {
-        view.dispatch({
-          effects: StateEffect.reconfigure.of(createExtensions()),
-        });
-      }
-    }
-  });
-
-  onCleanup(() => {
-    view?.destroy();
-  });
-
-  return <div ref={containerRef} class="h-full w-full" />;
-};
-
 export const EditorPanel: Component = () => {
-  const { openFiles, activeFile, setActiveFile, closeFile, updateFileContent, isLoading, error } = useEditorSafe();
+  const { openFiles, activeFile, setActiveFile, closeFile, saveFile, updateFileContent, isLoading, error } = useEditorSafe();
 
   const activeFileData = () => {
     const path = activeFile();
@@ -203,6 +103,7 @@ export const EditorPanel: Component = () => {
                 content={file().content}
                 path={file().path}
                 onChange={(content) => updateFileContent(file().path, content)}
+                onSave={() => void saveFile(file().path)}
               />
             )}
           </Show>

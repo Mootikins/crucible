@@ -25,6 +25,7 @@ import {
   IconZap,
 } from './icons';
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
+import { confirmTabClose } from '@/lib/tab-guards';
 import { openPanelTab } from '@/lib/panel-actions';
 import { smallestIntersecting } from '@/lib/collision-detector';
 import { statusBarStore, statusBarActions, pathBasename } from '@/stores/statusBarStore';
@@ -298,6 +299,8 @@ function InnerManager() {
       if (!pane?.tabGroupId) return;
       const group = windowActions.getTabGroup(pane.tabGroupId);
       if (!group?.activeTabId) return;
+      const activeTab = group.tabs.find((t) => t.id === group.activeTabId);
+      if (activeTab && !confirmTabClose(activeTab)) return;
       windowActions.removeTab(pane.tabGroupId, group.activeTabId);
     } else if (action === 'nextTab') {
       const activePaneId = windowStore.activePaneId;

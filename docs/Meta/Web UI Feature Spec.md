@@ -140,9 +140,9 @@ This is where "Obsidian, if the vault could act" is won or lost. Currently the t
 
 **Editor**
 - [x] CodeMirror 6, markdown mode, dirty-state tabs, Ctrl+S save via `/api/kiln/file` (byte-exact, kiln-contained)
-- [-] Multi-file tabs — open bugs: spurious dirty flag on reused CM instance (bug 5), close discards unsaved silently (bug 6)
-- [ ] `NOW` Syntax highlighting beyond markdown (bug 7 — langs are installed, `getLanguageExtension()` only handles `.md`)
-- [ ] `NOW` **Unsaved-changes guard** on close (bug 6) — data loss is disqualifying for a knowledge app
+- [x] Multi-file tabs — bugs 5 (spurious dirty flag on reused CM instance) and 6 (silent discard on close) FIXED 2026-07-12; shared `CodeMirrorEditor` component, `contentSync` annotation, close confirms
+- [x] Syntax highlighting beyond markdown — FIXED 2026-07-12 (was bug 7): md/js/jsx/ts/tsx/rs mapped in the shared `getLanguageExtension()`
+- [x] **Unsaved-changes guard** on close — FIXED 2026-07-12 (was bug 6): `closeFile()` + `confirmTabClose()` prompt before discarding dirty files
 - [ ] `NEXT` **Live-preview markdown editing** — Obsidian-style WYSIWYG-ish mode (rendered inline with source under cursor), or at minimum a rendered preview pane. Wikilinks render as links, callouts/LaTeX/tables render. The parser already produces all the structure; this is a frontend renderer.
 - [ ] `NEXT` **Wikilink intelligence in the editor** — `[[` autocomplete (composer already has it), click-to-navigate, create-on-click for missing targets, rename-updates-backlinks (daemon-side refactor op)
 - [ ] `NEXT` **Frontmatter/properties editor** — structured key/value UI over YAML frontmatter (Obsidian Properties); tags editable as chips

@@ -99,14 +99,14 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 ### WS-203: Multi-file tabs with unsaved-changes safety
 **As a user**, multiple open files show as tabs; each tracks its own dirty state; closing a dirty tab warns me.
 **Acceptance:** switching tabs preserves per-file undo/content; dirty markers independent; close-with-unsaved prompts (or documents that it discards).
-**Tests:** W2 via the real editor harness (`editor-tabs.story.spec.ts` — content preserved across tab switches).
-**Product bugs found (still open — bugs 5/6):** (5) the reused single CodeMirror instance re-dispatches its doc on active-file change, so the update listener spuriously marks the incoming/second-opened file dirty; (6) `closeFile` has no unsaved-changes guard (silent discard).
+**Tests:** W2 via the real editor harness (`editor-tabs.story.spec.ts` — content preserved across tab switches, clean tabs stay clean across open/switch, dirty-close confirm dismiss/accept, clean-close never prompts) + W1 (`CodeMirrorEditor.test.tsx` sync-vs-edit, `EditorContext.test.tsx` close guard, `tab-guards.test.ts`).
+**Product bugs — FIXED 2026-07-12 (were bugs 5/6):** (5) programmatic doc swaps into the reused CodeMirror instance are now tagged with a `contentSync` annotation and ignored by the update listener, so only real user edits mark a file dirty. Both panels' duplicated inline editors were consolidated into one shared `components/editor/CodeMirrorEditor.tsx` (which also initializes the view from the ref callback — vitest's solid pipeline fires `onMount` before refs, so an onMount-based init never mounts under jsdom). (6) `closeFile()` now confirms before discarding a dirty file (`{force}` opt for callers whose close was already confirmed), and window-tab close paths (`TabBar`, `WindowManager` closeActiveTab) route through `confirmTabClose()`, which checks the tab's `isModified` mirror.
 
 ### WS-204: Syntax-aware editing
 **As a user**, markdown, rust, and js/ts files highlight appropriately in the editor.
 **Acceptance:** language detected by extension; theme consistent (one-dark); large files stay responsive.
-**Tests:** W1 (exists), W3 markdown highlight baseline (`editor-roundtrip.story.spec.ts`).
-**Product gap found (still open — bug 7):** `getLanguageExtension()` handles only `.md`; rust/js highlighting is unimplemented despite the CodeMirror lang deps being installed. The baseline is markdown-only for that reason.
+**Tests:** W1 (`CodeMirrorEditor.test.tsx` — per-extension language table), W3 markdown highlight baseline (`editor-roundtrip.story.spec.ts`).
+**Product gap — FIXED 2026-07-12 (was bug 7):** `getLanguageExtension()` (now in the shared `components/editor/CodeMirrorEditor.tsx`) maps md/markdown, js/jsx/mjs/cjs, ts/tsx, and rs onto the installed CodeMirror language packages; unknown extensions fall back to plain text.
 
 ### WS-205: Writes are kiln-safe
 **As a user/operator**, the browser can never write outside the kiln or workspace roots.
