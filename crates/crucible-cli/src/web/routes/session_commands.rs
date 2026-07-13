@@ -40,7 +40,7 @@ pub(super) async fn execute_command(
                 "/help — Show available commands",
                 "/search <query> — Search notes by title",
                 "/models — List available models",
-                "/clear — Clear the chat",
+                "/clear — Clear the chat view (server history preserved)",
                 "/export — Export session to markdown",
                 "/model <name> — Switch to a different model",
             ]

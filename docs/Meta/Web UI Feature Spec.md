@@ -65,7 +65,7 @@ The shell is a bespoke SolidJS window manager (VS Code / FlexLayout hybrid). Its
 ### 2.2 Command palette & keyboard
 
 - [x] Ctrl+P palette (cmdk) with Chat/Session/Navigation/Settings categories; shortcut table (splits, panel toggles, Shift+Tab mode cycle, Esc)
-- [-] `NOW` **Unified omnibox** — SHIPPED 2026-07-11 (Crucible Shell): GO surfaces + note quick-switcher + sessions + commands with `>`/`[[` prefixes (WS-304). Remaining: `@` files, `#` tags, `:set`-style knobs, fuzzy (vs substring) matching.
+- [-] `NOW` **Unified omnibox** — SHIPPED 2026-07-11 (Crucible Shell): GO surfaces + note quick-switcher + sessions + commands with `>`/`[[` prefixes (WS-304). Remaining: `@` files, `#` tags, `:set`-style knobs. Fuzzy matching shipped 2026-07-12 (scored subsequence in `lib/fuzzy.ts`: substring > word-start > position, label hits outrank keyword hits).
 - [ ] `NEXT` **User-definable keybindings** — JSON/Lua keymap with chord support; plugin-contributed palette commands
 - [ ] `NEXT` **Slash-command parity with TUI** — the composer's `/` commands and the TUI registry should be one list served by the daemon, not two hardcoded sets
 
@@ -154,7 +154,7 @@ This is where "Obsidian, if the vault could act" is won or lost. Currently the t
 **Knowledge navigation**
 - [x] Files/notes tree (workspace + kiln sections), click-to-open
 - [ ] `NOW` **Backlinks panel** — for the focused note: linked mentions (graph edges exist in storage) + unlinked mentions (`suggest_links` RPC already does word-boundary detection, with one-click link insertion)
-- [x] **Quick switcher** — note-open inside the omnibox (§2.2, `[[` prefix; substring match, fuzzy still open)
+- [x] **Quick switcher** — note-open inside the omnibox (§2.2, `[[` prefix; fuzzy scored matching since 2026-07-12)
 - [ ] `NEXT` **Knowledge Graph view** — interactive force-directed wikilink graph (global + local "this note's neighborhood"), filters by tag/folder/type, **sessions render as nodes** (sessions-as-notes means conversations are part of the graph — no competitor has this), semantic-similarity edges as an optional overlay from embeddings. This is the demo moment; treat it as a first-class panel, not a plugin afterthought.
 - [ ] `NEXT` **Unified search panel** — one search UI over semantic (`search_vectors`), full-text, and property/tag search, with scope chips (kiln/sessions/files), result previews, and "open all in graph." Session search API already exists.
 - [ ] `NEXT` **Outline panel** — headings of the focused note/session (the stub already sits in the default layout)
@@ -165,7 +165,7 @@ This is where "Obsidian, if the vault could act" is won or lost. Currently the t
 ### 3.4 Sessions & history
 
 - [x] Create/switch/resume with full history hydration; pause/resume/end/archive; search; export; title edit + auto-title
-- [ ] `NOW` Honest `/clear` (server-side history op or remove the claim) — currently view-only
+- [x] Honest `/clear` — DONE: the command response and /help state view-only semantics (server history preserved); an actual server-side history op stays deferred (TUI :clear ends + recreates the session; ACP sessions reject clear)
 - [ ] `NEXT` **Session browser as notes** — sessions are markdown in the kiln; the note browser/graph should treat them as notes (tagging, linking a session from a note, "sessions that touched this note")
 - [ ] `NEXT` **`cru share` in the UI** — export a session as a self-contained HTML artifact with one click. Default private, explicit opt-in, easy unshare — Amp *removed* public thread sharing after it leaked sensitive code; design for that failure up front.
 - [ ] `NEXT` **Project grouping in the sessions panel** — group/filter by project/kiln with per-group collapse; auto-archive policy for ended sessions
@@ -298,7 +298,7 @@ Beyond parity — ordered roughly by (differentiation × feasibility). The first
 
 ## 7. Sequencing summary
 
-- **NOW (finish the shipped story):** omnibox/quick-switcher · Agent Inbox landing page · light theme · knob parity + agent selection · editor data-safety bugs (5/6/7) · note-write embedding · backlinks panel · message queueing/regenerate · turn-undo affordance · honest `/clear` · popouts
+- **NOW (finish the shipped story):** omnibox `@`/`#` prefixes · Agent Inbox landing page · light theme · knob parity + agent selection · note-write embedding · backlinks panel · message queueing/regenerate · turn-undo affordance · popouts *(done: editor data-safety bugs 5/6/7, honest `/clear`, omnibox fuzzy — 2026-07-12)*
 - **NEXT (the knowledge-console arc):** graph view · unified search · live-preview editor + properties + transclusion · proposals inbox · precognition transparency/citations · memory browser · plugin panel hosting + Oil renderer + renderer registry · artifacts · diff review center · delegation tree · workflow runs · scheduled agents · attachments · branching + side chat · deny-with-feedback · MCP management · agent-card/skills authoring · mobile mode + push · config editor + provider mgmt · onboarding · `cru tunnel`
 - **LATER (mature product):** bases/structured views · canvas · agent-driven UI · Lua playground · session replay + audit trail · usage dashboard + budget caps · misleading-knowledge feedback · session distillation · incognito · TTS/compare · Tauri desktop · community themes · multi-user
 
