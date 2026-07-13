@@ -90,7 +90,10 @@ export default defineConfig({
     },
     server: {
       deps: {
-        inline: [/solid-js/],
+        // Solid-consuming deps must be inlined so they share the test's
+        // browser build of solid-js — externalized, they'd load the SSR build
+        // and their reactivity silently dies (Key rows never updating).
+        inline: [/solid-js/, /@solid-primitives/],
       },
     },
     coverage: {

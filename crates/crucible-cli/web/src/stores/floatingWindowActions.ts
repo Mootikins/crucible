@@ -6,6 +6,8 @@ import type {
 } from '@/types/windowTypes';
 import type { WindowStoreContext } from './windowStoreInternals';
 import {
+  collapseEmptyNodes,
+  findFirstPane,
   findPaneInLayout,
   generateId,
   replacePaneWithSplit,
@@ -20,7 +22,9 @@ export interface FloatingWindowActions {
     width?: number,
     height?: number
   ): string;
+  popOutPane(paneId: string): string | null;
   removeFloatingWindow(windowId: string): void;
+  closeFloatingWindow(windowId: string): void;
   updateFloatingWindow(windowId: string, updates: Partial<FloatingWindow>): void;
   bringToFront(windowId: string): void;
   minimizeFloatingWindow(windowId: string): void;
@@ -67,6 +71,60 @@ export function createFloatingWindowActions(
       })
     );
     return windowId;
+  };
+
+  // Pop a pane's tab group out into a floating window. The group MOVES: the
+  // pane is detached (and collapsed out of its split) so the same group is
+  // never rendered by two tab bars at once — duplicate tab strips, and
+  // duplicate solid-dnd draggable/droppable ids, which corrupt the DnD
+  // registry ("Cannot remove nonexistent draggable").
+  const popOutPane = (paneId: string): string | null => {
+    const pane = findPaneInLayout(store.layout, paneId);
+    const groupId = pane?.tabGroupId;
+    if (!pane || !groupId) return null;
+    const group = store.tabGroups[groupId];
+    if (!group || group.tabs.length === 0) return null;
+
+    const activeTab = group.tabs.find((t) => t.id === group.activeTabId) ?? group.tabs[0];
+    // Detach FIRST, in its own store write: the pane's tab bar must unmount
+    // (and unregister its solid-dnd ids) before the floating window's tab bar
+    // registers the same group's ids. Batched together, the new bar registers
+    // first and the old bar's cleanup then deletes those registrations —
+    // leaving the floating window undraggable/undroppable.
+    setStore(
+      produce((s) => {
+        s.layout = updatePaneInLayout(s.layout, paneId, (p) => ({
+          ...p,
+          tabGroupId: null,
+        }));
+        s.layout = collapseEmptyNodes(s.layout, s.tabGroups);
+        if (!s.activePaneId || !findPaneInLayout(s.layout, s.activePaneId)) {
+          s.activePaneId = findFirstPane(s.layout)?.id ?? null;
+        }
+      })
+    );
+    const windowId = createFloatingWindow(groupId, 150, 150, 500, 400);
+    setStore(
+      produce((s) => {
+        const w = s.floatingWindows.find((x) => x.id === windowId);
+        if (w) w.title = activeTab.title;
+      })
+    );
+    return windowId;
+  };
+
+  // Closing a floating window closes its tabs with it — the group must not
+  // linger invisibly in tabGroups (orphaned tabs still count in "N tabs",
+  // still match findTabByFilePath, and can never be reached again).
+  const closeFloatingWindow = (windowId: string) => {
+    const window = store.floatingWindows.find((w) => w.id === windowId);
+    if (!window) return;
+    setStore(
+      produce((s) => {
+        s.floatingWindows = s.floatingWindows.filter((w) => w.id !== windowId);
+        delete s.tabGroups[window.tabGroupId];
+      })
+    );
   };
 
   const updateFloatingWindow = (
@@ -134,13 +192,15 @@ export function createFloatingWindowActions(
     if (targetPaneId) {
       const pane = findPaneInLayout(store.layout, targetPaneId);
       if (pane) {
+        // Window unmounts first so its tab bar unregisters before the pane's
+        // tab bar re-registers the same group ids (see popOutPane).
+        removeFloatingWindow(windowId);
         setStore(
           produce((s) => {
             s.layout = updatePaneInLayout(s.layout, targetPaneId, () => ({
               ...pane,
               tabGroupId: window.tabGroupId,
             }));
-            s.floatingWindows = s.floatingWindows.filter((w) => w.id !== windowId);
             s.activePaneId = targetPaneId;
             s.focusedRegion = 'center';
           })
@@ -160,13 +220,13 @@ export function createFloatingWindowActions(
 
     const firstEmpty = findEmptyPane(store.layout);
     if (firstEmpty) {
+      removeFloatingWindow(windowId);
       setStore(
         produce((s) => {
           s.layout = updatePaneInLayout(s.layout, firstEmpty.id, () => ({
             ...firstEmpty,
             tabGroupId: window.tabGroupId,
           }));
-          s.floatingWindows = s.floatingWindows.filter((w) => w.id !== windowId);
           s.activePaneId = firstEmpty.id;
           s.focusedRegion = 'center';
         })
@@ -193,13 +253,13 @@ export function createFloatingWindowActions(
           tabGroupId: window.tabGroupId,
         },
       };
+      removeFloatingWindow(windowId);
       setStore(
         produce((s) => {
           s.layout =
             s.layout.type === 'pane'
               ? newSplit
               : replacePaneWithSplit(s.layout, mainPane.id, newSplit);
-          s.floatingWindows = s.floatingWindows.filter((w) => w.id !== windowId);
           s.activePaneId = newPaneId;
           s.focusedRegion = 'center';
         })
@@ -209,7 +269,9 @@ export function createFloatingWindowActions(
 
   return {
     createFloatingWindow,
+    popOutPane,
     removeFloatingWindow,
+    closeFloatingWindow,
     updateFloatingWindow,
     bringToFront,
     minimizeFloatingWindow,

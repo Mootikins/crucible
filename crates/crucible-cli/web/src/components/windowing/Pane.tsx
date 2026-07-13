@@ -30,8 +30,8 @@ export const Pane: Component<{ paneId: string }> = (props) => {
   const isTabDragging = () => {
     if (!dndContext) return false;
     const [dndState] = dndContext;
-    return typeof dndState.active.draggableId === 'string' &&
-      dndState.active.draggableId.startsWith('tab:');
+    const id = dndState.active.draggableId;
+    return typeof id === 'string' && (id.startsWith('tab:') || id.startsWith('edgetab:'));
   };
 
   const tabGroupId = () => windowActions.findPaneById(props.paneId)?.tabGroupId ?? null;
@@ -71,11 +71,11 @@ export const Pane: Component<{ paneId: string }> = (props) => {
     position: 'bottom',
   });
 
+  // Pop-out MOVES the group (popOutPane detaches it from this pane) — sharing
+  // one group between a pane and a floating window would register duplicate
+  // solid-dnd draggable ids and mirror the tab strip in two places.
   const handlePopOut = () => {
-    const gid = tabGroupId();
-    if (gid && tabs().length > 0) {
-      windowActions.createFloatingWindow(gid, 150, 150, 500, 400);
-    }
+    windowActions.popOutPane(props.paneId);
   };
 
   // Re-render the panel only when the active tab's identity or content type

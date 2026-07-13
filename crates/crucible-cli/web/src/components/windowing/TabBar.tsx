@@ -1,4 +1,5 @@
 import { Component, For, JSX, Show, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
+import { Key } from '@solid-primitives/keyed';
 import {
   createDraggable,
   createDroppable,
@@ -171,6 +172,11 @@ function useTabBarDnD(options: UseTabBarDnDOptions) {
       if (!inBounds) {
         setInsertIdx(null);
         setReorderState(null);
+        // Also drop the non-reactive copy: leaving it set would apply a stale
+        // reorder when the tab is released outside the bar. Safe to clear here
+        // (unlike the no-active-draggable path) because this branch only runs
+        // mid-drag for this bar's own tab.
+        pendingReorder = null;
         return;
       }
       const result = computeInsertIndex(tabsContainerRef, x, draggedTabId());
@@ -205,7 +211,7 @@ interface TabStripProps {
   insertIdx: () => number | null;
   onSelectTab: (tabId: string) => void;
   onTabsContainerRef?: (el: HTMLDivElement) => void;
-  renderTab: (tab: TabType, index: () => number) => JSX.Element;
+  renderTab: (tab: () => TabType, index: () => number) => JSX.Element;
 }
 
 const TabStrip: Component<TabStripProps> = (props) => {
@@ -256,7 +262,13 @@ const TabStrip: Component<TabStripProps> = (props) => {
         }}
         class="flex-1 flex items-end gap-0.5 overflow-x-auto scrollbar-hide px-1 min-w-0 [scrollbar-width:none] [-ms-overflow-style:none]"
       >
-        <For each={props.tabs()}>
+        {/* Keyed by tab id, NOT object identity: updateTab replaces the tab
+            object on every write (dirty flag, title), and a remounting row
+            re-registers its solid-dnd draggable under the same id — the old
+            row's cleanup then deletes the NEW registration, leaving the tab
+            silently undraggable ("Cannot remove nonexistent draggable" at
+            unmount). Key keeps the row alive across object replacement. */}
+        <Key each={props.tabs()} by={(t) => t.id}>
           {(tab, i) => (
             <>
               <Show when={props.insertIdx() === i()}>
@@ -265,7 +277,7 @@ const TabStrip: Component<TabStripProps> = (props) => {
               {props.renderTab(tab, i)}
             </>
           )}
-        </For>
+        </Key>
         <Show when={props.insertIdx() === props.tabs().length}>
           <InsertIndicator />
         </Show>
@@ -351,13 +363,13 @@ const CenterTabBar: Component<{
         }}
         renderTab={(tab) => (
           <TabItem
-            tab={tab}
-            draggableId={`tab:${props.groupId}:${tab.id}`}
-            draggableData={{ type: 'tab', tab, sourceGroupId: props.groupId }}
-            isActive={tab.id === activeTabId()}
+            tab={tab()}
+            draggableId={`tab:${props.groupId}:${tab().id}`}
+            draggableData={{ type: 'tab', tab: tab(), sourceGroupId: props.groupId }}
+            isActive={tab().id === activeTabId()}
             isFocused={isFocused()}
-            onClick={() => windowActions.setActiveTab(props.groupId, tab.id)}
-            onClose={() => confirmTabClose(tab) && windowActions.removeTab(props.groupId, tab.id)}
+            onClick={() => windowActions.setActiveTab(props.groupId, tab().id)}
+            onClose={() => confirmTabClose(tab()) && windowActions.removeTab(props.groupId, tab().id)}
           />
         )}
       />
@@ -423,14 +435,14 @@ const EdgeTabBar: Component<{
         }}
         renderTab={(tab) => (
           <TabItem
-            tab={tab}
-            draggableId={`edgetab:${props.position}:${tab.id}`}
-            draggableData={{ type: 'tab', tab, sourceGroupId: groupId() }}
-            isActive={activeTabId() === tab.id}
+            tab={tab()}
+            draggableId={`edgetab:${props.position}:${tab().id}`}
+            draggableData={{ type: 'tab', tab: tab(), sourceGroupId: groupId() }}
+            isActive={activeTabId() === tab().id}
             isFocused={isFocused()}
-            onClick={() => windowActions.setActiveTab(groupId(), tab.id)}
-            onClose={() => confirmTabClose(tab) && windowActions.removeTab(groupId(), tab.id)}
-            testId={`edge-tab-${props.position}-${tab.id}`}
+            onClick={() => windowActions.setActiveTab(groupId(), tab().id)}
+            onClose={() => confirmTabClose(tab()) && windowActions.removeTab(groupId(), tab().id)}
+            testId={`edge-tab-${props.position}-${tab().id}`}
             onDragStart={() => { if (windowStore.flyoutState?.isOpen) windowActions.closeFlyout(); }}
           />
         )}

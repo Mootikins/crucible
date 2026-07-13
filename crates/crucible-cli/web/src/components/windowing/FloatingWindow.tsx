@@ -1,9 +1,10 @@
-import { Component, createSignal, createEffect, onCleanup, For } from 'solid-js';
+import { Component, createMemo, createSignal, createEffect, onCleanup, untrack, For } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import type { FloatingWindow as FloatingWindowType } from '@/types/windowTypes';
 import { TabBar } from './TabBar';
-import { IconClose, IconMinimize } from './icons';
+import { IconClose, IconLayout, IconMinimize } from './icons';
+import { confirmTabClose } from '@/lib/tab-guards';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 
 type ResizeEdge = 'n' | 's' | 'e' | 'w' | 'nw' | 'ne' | 'sw' | 'se';
@@ -28,9 +29,24 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
   const w = () => props.window;
   const group = () => windowStore.tabGroups[w().tabGroupId];
   const tabs = () => group()?.tabs ?? [];
+  const activeTab = () => {
+    const g = group();
+    if (!g) return null;
+    return g.tabs.find((t) => t.id === g.activeTabId) ?? g.tabs[0] ?? null;
+  };
+  // Same guard as Pane.renderContent: re-render the panel only when the
+  // active tab's identity/type changes, NOT when updateTab churns the tab
+  // object (dirty-flag sync would otherwise remount the editor in a loop).
+  const activeTabId = createMemo(() => activeTab()?.id ?? null);
+  const activeContentType = createMemo(() => activeTab()?.contentType ?? null);
   const [isDragging, setIsDragging] = createSignal(false);
   const [dragStart, setDragStart] = createSignal({ x: 0, y: 0, windowX: 0, windowY: 0 });
   const [isHovered, setIsHovered] = createSignal(false);
+  let resizeCleanup: (() => void) | null = null;
+  onCleanup(() => {
+    resizeCleanup?.();
+    resizeCleanup = null;
+  });
 
   const handleResizePointerDown = (edge: ResizeEdge, e: PointerEvent) => {
     if (w().isMaximized) return;
@@ -88,10 +104,25 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
       el.releasePointerCapture(ev.pointerId);
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
+      resizeCleanup = null;
     };
 
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
+    resizeCleanup = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+  };
+
+  // Closing the window closes its tabs — same unsaved-changes contract as
+  // every other tab-close path (confirmTabClose per modified tab).
+  const handleClose = () => {
+    const modified = tabs().filter((t) => t.isModified);
+    for (const tab of modified) {
+      if (!confirmTabClose(tab)) return;
+    }
+    windowActions.closeFloatingWindow(w().id);
   };
 
   const handleTitleMouseDown = (e: MouseEvent) => {
@@ -163,6 +194,14 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
           <button
             type="button"
             class="p-1 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700"
+            onClick={() => windowActions.dockFloatingWindow(w().id)}
+            title="Dock back into the layout"
+          >
+            <IconLayout class="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            class="p-1 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700"
             onClick={() => windowActions.minimizeFloatingWindow(w().id)}
             title="Minimize"
           >
@@ -171,8 +210,8 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
           <button
             type="button"
             class="p-1 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700"
-            onClick={() => windowActions.removeFloatingWindow(w().id)}
-            title="Close"
+            onClick={handleClose}
+            title="Close (closes its tabs)"
           >
             <IconClose class="w-3 h-3" />
           </button>
@@ -180,24 +219,29 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
       </div>
       <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
         <TabBar mode="center" groupId={w().tabGroupId} paneId="" />
-        <div class="flex-1 bg-zinc-900 overflow-auto p-2 text-xs text-zinc-400" data-testid={`panel-content-${tabs()[0]?.contentType ?? 'unknown'}`}>
-          {tabs().length > 0 ? (() => {
-            const activeTab = tabs()[0];
-            const panel = getGlobalRegistry().get(activeTab.contentType);
+        <div class="flex-1 bg-zinc-900 overflow-auto p-2 text-xs text-zinc-400" data-testid={`panel-content-${activeContentType() ?? 'unknown'}`}>
+          {(() => {
+            const id = activeTabId();
+            const contentType = activeContentType();
+            if (!id || !contentType) {
+              return (
+                <div class="flex-1 bg-zinc-900 overflow-auto p-2 text-xs text-zinc-400">
+                  <span>No tabs</span>
+                </div>
+              );
+            }
+            const tab = untrack(() => activeTab());
+            const panel = getGlobalRegistry().get(contentType);
             if (panel) {
-              const panelProps = (activeTab.metadata ?? {}) as Record<string, unknown>;
+              const panelProps = (tab?.metadata ?? {}) as Record<string, unknown>;
               return <Dynamic component={panel.component} {...panelProps} />;
             }
             return (
               <div class="flex-1 bg-zinc-900 overflow-auto p-2 text-xs text-zinc-400">
-                <span>Content for {activeTab.title}</span>
+                <span>Content for {tab?.title}</span>
               </div>
             );
-          })() : (
-            <div class="flex-1 bg-zinc-900 overflow-auto p-2 text-xs text-zinc-400">
-              <span>No tabs</span>
-            </div>
-          )}
+          })()}
         </div>
       </div>
     </div>
