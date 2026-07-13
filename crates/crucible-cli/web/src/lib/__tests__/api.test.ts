@@ -24,7 +24,6 @@ import {
   unarchiveSession,
   cancelSession,
   setSessionTitle,
-  generateSessionTitle,
   getSessionHistory,
   getTemperature,
   setTemperature,
@@ -586,19 +585,6 @@ describe('session title endpoints', () => {
     expect(JSON.parse(init!.body as string)).toEqual({ title: 'New title' });
   });
 
-  it('generateSessionTitle returns the generated title', async () => {
-    global.fetch = createMockFetch({
-      'POST /api/session/ses-1/auto-title': { body: { title: 'Auto title' } },
-    });
-    expect(await generateSessionTitle('ses-1')).toBe('Auto title');
-  });
-
-  it('generateSessionTitle throws on error', async () => {
-    global.fetch = createMockFetch({
-      'POST /api/session/ses-1/auto-title': { status: 503 },
-    });
-    await expect(generateSessionTitle('ses-1')).rejects.toThrow('Failed to generate title: HTTP 503');
-  });
 });
 
 // =============================================================================

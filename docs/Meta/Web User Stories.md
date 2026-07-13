@@ -69,8 +69,8 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### WS-107: Sessions: create, switch, resume, auto-title
 **As a user**, I create sessions, switch between them, resume old ones with full history, and see auto-generated titles I can override.
-**Acceptance:** first user message triggers auto-title exactly once (never overwrites manual titles); switching loads `/history` correctly; end/archive states visible.
-**Tests:** W2 (partial), W4 (resume against real persistence — GAP).
+**Acceptance:** the daemon auto-titles a session on its first completed turn and broadcasts `title_changed`; the web renders the pushed title everywhere (tab, session list, inbox) and never generates titles client-side (never overwrites manual titles); switching loads `/history` correctly; end/archive states visible.
+**Tests:** W2 (partial; `title-generation.spec.ts` — `title_changed` SSE renames tab+list, untitled fallback label, no client calls to the title endpoints — realigned 2026-07-12 after the daemon took ownership of titling), W4 (resume against real persistence — GAP).
 
 ### WS-108: Cancel a turn
 **As a user**, a stop control cancels the in-flight turn, preserving partial output.
