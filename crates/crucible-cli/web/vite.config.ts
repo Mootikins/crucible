@@ -36,6 +36,13 @@ export default defineConfig({
         // transformers) exceed the 2 MiB default and are intentionally
         // skipped — they load from network exactly as before.
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        // A new SW must take over immediately, or the old one keeps serving
+        // the previous precache and users see stale bundles until every tab
+        // is closed. registerType 'autoUpdate' reloads the page once the new
+        // SW activates — these make that activation immediate.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         // SPA navigation fallback, but NEVER for API paths. /api/* (including
         // SSE chat event streams) must hit the network untouched. generateSW
         // adds no other fetch routes since we define no runtimeCaching, so
