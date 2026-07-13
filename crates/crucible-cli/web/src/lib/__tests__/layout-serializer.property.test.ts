@@ -2,14 +2,14 @@ import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import { serializeLayout, deserializeLayout } from '../layout-serializer';
 import type {
-  WindowManagerState,
   TabGroup,
   EdgePanel,
   LayoutNode,
   PaneNode,
 } from '@/types/windowTypes';
+import type { WindowState } from '@/stores/windowStore';
 
-// Arbitraries for building random WindowManagerState
+// Arbitraries for building random WindowState
 
 const arbTabContentType = fc.constantFrom('file', 'document', 'tool', 'terminal', 'preview', 'settings', 'chat', 'sessions', 'explorer', 'search', 'source-control', 'outline', 'problems', 'output');
 
@@ -58,7 +58,7 @@ const arbPaneNode = (tabGroupId: string): fc.Arbitrary<PaneNode> =>
 const arbLayoutNode = (tabGroupId: string): fc.Arbitrary<LayoutNode> =>
   arbPaneNode(tabGroupId);
 
-const arbWindowManagerState = fc
+const arbWindowState = fc
   .tuple(
     fc.array(fc.uuid(), { minLength: 1, maxLength: 4 }),
     fc.uuid(),
@@ -99,17 +99,16 @@ const arbWindowManagerState = fc
         ),
         activePaneId: fc.option(fc.uuid(), { freq: 2 }),
         focusedRegion: fc.constantFrom('center', 'left', 'right', 'bottom'),
-        dragState: fc.constant(null),
         flyoutState: fc.constant(null),
         nextZIndex: fc.integer({ min: 1, max: 1000 }),
       })
-      .map((state) => state as WindowManagerState);
+      .map((state) => state as WindowState);
   });
 
 describe('layout-serializer property tests', () => {
   it('round-trip: deserializeLayout(serializeLayout(state)) deep-equals state', () => {
     fc.assert(
-      fc.property(arbWindowManagerState, (state) => {
+      fc.property(arbWindowState, (state) => {
         const serialized = serializeLayout(state);
         const deserialized = deserializeLayout(serialized);
 
@@ -129,7 +128,7 @@ describe('layout-serializer property tests', () => {
 
   it('idempotency: serializing twice gives same result', () => {
     fc.assert(
-      fc.property(arbWindowManagerState, (state) => {
+      fc.property(arbWindowState, (state) => {
         const serialized1 = serializeLayout(state);
         const deserialized1 = deserializeLayout(serialized1);
         const serialized2 = serializeLayout({
@@ -159,7 +158,7 @@ describe('layout-serializer property tests', () => {
           const allGroupIds = [...centerGroupIds, leftGroupId, rightGroupId, bottomGroupId];
           const centerGroupId = centerGroupIds[0] || leftGroupId;
 
-          const state: WindowManagerState = {
+          const state: WindowState = {
             tabGroups: Object.fromEntries(
               allGroupIds.map((id) => [id, fc.sample(arbTabGroup(id), 1)[0]]),
             ),
@@ -172,7 +171,6 @@ describe('layout-serializer property tests', () => {
             floatingWindows: [],
             activePaneId: null,
             focusedRegion: 'center',
-            dragState: null,
             flyoutState: null,
             nextZIndex: 1,
           };

@@ -23,11 +23,7 @@ export function findEdgePanelForGroup(groupId: string) {
 const context = { store, setStore };
 const tabActions = createTabActions(context);
 const floatingWindowActions = createFloatingWindowActions(context);
-const layoutActions = createLayoutActions(context, {
-  moveTab: tabActions.moveTab,
-  createTabGroup: tabActions.createTabGroup,
-  createFloatingWindow: floatingWindowActions.createFloatingWindow,
-});
+const layoutActions = createLayoutActions(context);
 
 export const windowActions = {
   ...tabActions,

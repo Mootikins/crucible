@@ -31,7 +31,6 @@ function resetToState(overrides: Partial<{
       if (overrides.activePaneId !== undefined) s.activePaneId = overrides.activePaneId;
       if (overrides.focusedRegion !== undefined) s.focusedRegion = overrides.focusedRegion;
       if (overrides.flyoutState !== undefined) s.flyoutState = overrides.flyoutState as any;
-      s.dragState = null;
       if (!('flyoutState' in overrides)) s.flyoutState = null;
     })
   );

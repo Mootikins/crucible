@@ -232,15 +232,7 @@ function InnerManager() {
       }
     }
 
-    if (!source || !target) {
-      if (source?.type === 'tab' && draggable.id === 'newFloating') {
-        // Dropped on "New Window" chip or similar - create floating
-        const newGroupId = windowActions.createTabGroup();
-        windowActions.moveTab(source.sourceGroupId, newGroupId, source.tab.id);
-        windowActions.createFloatingWindow(newGroupId, 100, 100, 400, 300);
-      }
-      return;
-    }
+    if (!source || !target) return;
     if (source.type === 'tab') {
       if (target.type === 'pane') {
         const paneId = target.paneId;

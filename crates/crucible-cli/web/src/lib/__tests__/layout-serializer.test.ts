@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { iconForContentType } from '../tab-icons';
 import { serializeLayout, deserializeLayout } from '../layout-serializer';
-import type { WindowManagerState } from '@/types/windowTypes';
+import type { WindowState } from '@/stores/windowStore';
 
-function createTestState(): WindowManagerState {
+function createTestState(): WindowState {
   const tabGroupId1 = 'group-1';
   const leftGroupId = 'edge-left-group';
   const rightGroupId = 'edge-right-group';
@@ -68,7 +68,6 @@ function createTestState(): WindowManagerState {
     floatingWindows: [],
     activePaneId: 'pane-1',
     focusedRegion: 'center',
-    dragState: null,
     flyoutState: null,
     nextZIndex: 1,
   };
@@ -258,7 +257,7 @@ describe('layout-serializer', () => {
 
   it('file tab metadata survives round-trip serialization', () => {
     const tabGroupId = 'group-with-file-tabs';
-    const state: WindowManagerState = {
+    const state: WindowState = {
       layout: {
         id: 'pane-1',
         type: 'pane',
@@ -307,7 +306,6 @@ describe('layout-serializer', () => {
       floatingWindows: [],
       activePaneId: 'pane-1',
       focusedRegion: 'center',
-      dragState: null,
       flyoutState: null,
       nextZIndex: 1,
     };

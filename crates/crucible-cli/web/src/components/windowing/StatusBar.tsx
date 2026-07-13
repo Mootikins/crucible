@@ -1,5 +1,5 @@
 import { Component, Show, createSignal } from 'solid-js';
-import { createDraggable, createDroppable } from '@thisbeyond/solid-dnd';
+import { createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore } from '@/stores/windowStore';
 import { statusBarStore, pathBasename } from '@/stores/statusBarStore';
 import { shellStore } from '@/stores/shellStore';
@@ -17,12 +17,10 @@ export const StatusBar: Component = () => {
   const minimizedCount = () =>
     windowStore.floatingWindows.filter((w) => w.isMinimized).length;
 
-  const newFloatingId = 'newFloating';
-  const dropNewFloatingId = 'dropNewFloating';
-  // SolidJS directives: variables referenced via use:draggable / use:droppable in JSX
-  const draggable = createDraggable(newFloatingId, { type: 'newFloating' });
-  void draggable;
-  const droppable = createDroppable(dropNewFloatingId, { type: 'newFloating' });
+  // Drop target only: dropping a tab here moves it into a new floating
+  // window (onDragEnd's 'newFloating' branch). The chip itself was never a
+  // working drag source — its data type matched no drop handler.
+  const droppable = createDroppable('dropNewFloating', { type: 'newFloating' });
   void droppable;
 
   const [drawerOpen, setDrawerOpen] = createSignal(false);
@@ -102,10 +100,7 @@ export const StatusBar: Component = () => {
             use:droppable
             class="flex items-center gap-2 px-2 py-1 rounded"
           >
-            <div
-              use:draggable
-              class="flex items-center gap-2 px-2 py-1 text-xs text-zinc-500 hover:text-zinc-300 cursor-grab active:cursor-grabbing transition-colors"
-            >
+            <div class="flex items-center gap-2 px-2 py-1 text-xs text-zinc-500 transition-colors">
               <IconLayout class="w-3.5 h-3.5" />
               <span>New Window</span>
             </div>

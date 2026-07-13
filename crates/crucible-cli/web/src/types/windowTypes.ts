@@ -87,9 +87,7 @@ export interface FloatingWindow {
 }
 
 // Drag and drop types
-export type DragSource =
-  | { type: 'tab'; tab: Tab; sourceGroupId: string; sourcePaneId?: string }
-  | { type: 'tabGroup'; groupId: string; sourcePaneId?: string };
+export type DragSource = { type: 'tab'; tab: Tab; sourceGroupId: string };
 
 export type DropTarget =
   | {
@@ -99,94 +97,8 @@ export type DropTarget =
     }
   | { type: 'tabGroup'; groupId: string; insertIndex?: number }
   | { type: 'edgePanel'; panelId: EdgePanelPosition; insertIndex?: number }
-  | { type: 'floatingWindow'; windowId: string }
-  | { type: 'empty'; position: EdgePanelPosition }
   | { type: 'newFloating' };
 
-// Window manager state
-export interface WindowManagerState {
-  layout: LayoutNode;
-  tabGroups: Record<string, TabGroup>;
-  edgePanels: Record<EdgePanelPosition, EdgePanel>;
-  floatingWindows: FloatingWindow[];
-  activePaneId: string | null;
-  focusedRegion: FocusedRegion;
-  dragState: {
-    isDragging: boolean;
-    source: DragSource | null;
-    target: DropTarget | null;
-  } | null;
-  flyoutState: {
-    isOpen: boolean;
-    position: EdgePanelPosition;
-    tabId: string | null;
-  } | null;
-  nextZIndex: number;
-}
-
-// Action types
-export interface WindowManagerActions {
-  addTab: (groupId: string, tab: Tab, insertIndex?: number) => void;
-  removeTab: (groupId: string, tabId: string) => void;
-  setActiveTab: (groupId: string, tabId: string | null) => void;
-  moveTab: (
-    sourceGroupId: string,
-    targetGroupId: string,
-    tabId: string,
-    insertIndex?: number
-  ) => void;
-  updateTab: (groupId: string, tabId: string, updates: Partial<Tab>) => void;
-  createTabGroup: (paneId?: string) => string;
-  deleteTabGroup: (groupId: string) => void;
-  splitPane: (paneId: string, direction: SplitDirection) => void;
-  splitPaneAndDrop: (
-    paneId: string,
-    position: 'left' | 'right' | 'top' | 'bottom',
-    sourceGroupId: string,
-    tabId: string
-  ) => void;
-  setActivePane: (paneId: string | null) => void;
-  toggleEdgePanel: (position: EdgePanelPosition) => void;
-  setEdgePanelCollapsed: (
-    position: EdgePanelPosition,
-    collapsed: boolean
-  ) => void;
-  setEdgePanelActiveTab: (
-    position: EdgePanelPosition,
-    tabId: string | null
-  ) => void;
-  setEdgePanelSize: (position: EdgePanelPosition, size: number) => void;
-
-  openFlyout: (position: EdgePanelPosition, tabId: string) => void;
-  closeFlyout: () => void;
-  createFloatingWindow: (
-    tabGroupId: string,
-    x: number,
-    y: number,
-    width?: number,
-    height?: number
-  ) => string;
-  removeFloatingWindow: (windowId: string) => void;
-  updateFloatingWindow: (
-    windowId: string,
-    updates: Partial<FloatingWindow>
-  ) => void;
-  bringToFront: (windowId: string) => void;
-  minimizeFloatingWindow: (windowId: string) => void;
-  maximizeFloatingWindow: (windowId: string) => void;
-  restoreFloatingWindow: (windowId: string) => void;
-  dockFloatingWindow: (windowId: string, targetPaneId?: string) => void;
-  startDrag: (source: DragSource) => void;
-  setDropTarget: (target: DropTarget | null) => void;
-  endDrag: () => void;
-  executeDrop: () => void;
-
-  getTabGroup: (groupId: string) => TabGroup | undefined;
-  getPaneTabGroupId: (paneId: string) => string | null;
-  findPaneById: (paneId: string) => PaneNode | null;
-}
-
-export type WindowManagerStore = WindowManagerState & WindowManagerActions;
 
 // TabBar props discriminated union
 export type TabBarProps =

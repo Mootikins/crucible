@@ -1,6 +1,4 @@
 import type {
-  DragSource,
-  DropTarget,
   EdgePanel as EdgePanelType,
   EdgePanelPosition,
   FloatingWindow,
@@ -18,11 +16,6 @@ export interface WindowState {
   floatingWindows: FloatingWindow[];
   activePaneId: string | null;
   focusedRegion: FocusedRegion;
-  dragState: {
-    isDragging: boolean;
-    source: DragSource | null;
-    target: DropTarget | null;
-  } | null;
   flyoutState: {
     isOpen: boolean;
     position: EdgePanelPosition;
