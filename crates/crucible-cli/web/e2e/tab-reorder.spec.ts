@@ -83,7 +83,16 @@ test.describe('Tab reorder within same bar', () => {
     const from = await getCenterOf(page, firstTab);
     const thirdBox = await thirdTab.boundingBox();
     expect(thirdBox).toBeTruthy();
-    const to = { x: thirdBox!.x + thirdBox!.width - 2, y: thirdBox!.y + thirdBox!.height / 2 };
+    // Drop targeting is pointer-based: keep the pointer inside the edge bar
+    // (the tab strip overflows the 279px panel, so the third tab's right edge
+    // can sit over the CENTER pane's tab bar — releasing there is a
+    // legitimate cross-bar move, not this test's reorder).
+    const barBox = await page.locator('[data-testid="edge-tabbar-left"]').boundingBox();
+    expect(barBox).toBeTruthy();
+    const to = {
+      x: Math.min(thirdBox!.x + thirdBox!.width - 2, barBox!.x + barBox!.width - 8),
+      y: thirdBox!.y + thirdBox!.height / 2,
+    };
 
     await pointerDrag(page, from, to, 20);
     await page.waitForTimeout(300);

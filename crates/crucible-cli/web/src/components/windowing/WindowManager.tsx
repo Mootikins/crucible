@@ -198,12 +198,19 @@ function DragOverlayContent() {
   const draggable = () => dndContext?.[0].active.draggable;
   const data = () => draggable()?.data as DragSource | undefined;
 
+  // The drag data is a registration-time snapshot; read the live tab from the
+  // store so a mid-session rename (daemon title push) shows in the overlay.
+  const title = () => {
+    const d = data();
+    if (d?.type !== 'tab') return '';
+    const live = windowStore.tabGroups[d.sourceGroupId]?.tabs.find((t) => t.id === d.tab.id);
+    return (live ?? d.tab).title;
+  };
+
   return (
     <Show when={data()?.type === 'tab'}>
       <div class="px-2.5 py-1.5 bg-zinc-800 border border-zinc-600 rounded shadow-lg text-xs text-zinc-200 flex items-center gap-1.5 opacity-90">
-        <span class="font-medium truncate max-w-[120px]">
-          {(() => { const d = data(); return d?.type === 'tab' ? d.tab.title : ''; })()}
-        </span>
+        <span class="font-medium truncate max-w-[120px]">{title()}</span>
       </div>
     </Show>
   );
