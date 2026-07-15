@@ -176,7 +176,7 @@ There is **no escape mechanism** for wikilink syntax. If you need to display lit
 
 **Type definition:** `crates/crucible-core/src/parser/types/links.rs`
 
-**Edge case tests:** `crates/crucible-core/tests/wikilink_edge_cases.rs`
+**Edge case tests:** `crates/crucible-core/src/parser/wikilinks.rs` (inline test module)
 
 ## See Also
 

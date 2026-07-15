@@ -528,7 +528,6 @@ async fn dev_kiln_code_references_exist() {
     // Exclude them from code reference validation since they capture
     // the codebase state at the time they were written.
     let excluded_prefixes: Vec<PathBuf> = vec![
-        dev_kiln.join("Meta/plans"),
         dev_kiln.join("Meta/Analysis"),
         dev_kiln.join("Meta/Research"),
         dev_kiln.join("research"),

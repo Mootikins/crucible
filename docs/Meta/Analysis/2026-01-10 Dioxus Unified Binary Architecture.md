@@ -195,7 +195,7 @@ The monolithic binary with fork-based daemon is architecturally sound:
 
 ## Relationship to DB Daemon Plan
 
-The [[Meta/plans/2024-12-31 Single Binary DB Daemon|Single Binary DB Daemon Plan]] covers the **storage layer**:
+The Single Binary DB Daemon plan (superseded; see [[Meta/Systems]]) covered the **storage layer**:
 - Fork-based daemon for SurrealDB
 - Multi-session kiln access
 - Embedded vs daemon storage modes
@@ -234,4 +234,3 @@ The DB daemon plan is a prerequisite - it provides the RPC layer that thick clie
 - [Dioxus Desktop Guide](https://dioxuslabs.com/learn/0.7/guides/platforms/desktop/)
 - [Blitz Native Renderer Discussion](https://github.com/DioxusLabs/dioxus/discussions/1519)
 - [Rink TUI (abandoned)](https://github.com/DioxusLabs/rink)
-- [[Meta/plans/2024-12-31 Single Binary DB Daemon|Single Binary DB Daemon Plan]]
