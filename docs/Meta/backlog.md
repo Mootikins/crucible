@@ -44,10 +44,3 @@ Context: While implementing AgentComponents for model switching, noticed signifi
 
 Context: Oracle consultation during oil-overlay-update plan execution
 
-## 2026-07-15 - Second-brain workflow ideas (natural20.com LLM-wiki article)
-
-Source: [Using Claude Code to set up a second brain](https://natural20.com/using-claude-code-to-setup-a-second-brain-aka-llm-wiki) — an agent-maintained wiki design. Mostly validates existing roadmap (precognition citations, kiln-digest-to-inbox); three ideas worth adopting:
-
-- **Ripple ingest skill**: on ingesting a source note, the agent doesn't just file a summary — it updates the 5-15 connected entity/concept pages (backlinks + suggest_links give the fan-out). Ship as a `SKILL.md` + guide, not core code. Pairs with the proposals inbox so ripple edits stay reviewable.
-- **`cru kiln lint`** (or a skill): kiln health check — orphan notes, broken wikilinks, missing frontmatter, stale [[deprecated]] markers; contradictions detection is the agent-powered tier. Cheap mechanical version first (parser already has all the data).
-- **Second-brain kiln guide/template**: docs/Guides page (or `cru kiln init --template second-brain`) codifying the conventions that make agent maintenance work: `Raw/` immutable sources, `Inbox/` captures, entity/concept pages, deprecate-don't-delete, unverified-claim markers, answer-with-citations + separate graph knowledge from model knowledge (the citation half is the [[Web UI Feature Spec]] precognition-transparency item).
