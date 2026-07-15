@@ -54,6 +54,21 @@ async function selectSession(page: Page) {
   await expect(page.getByTestId('chat-input')).toBeEnabled({ timeout: 5000 });
 }
 
+// Pin the captured element to a fixed box: its natural height is the sum of
+// text line heights, which drifts ±1px between font stacks (CI vs local
+// freetype) — and a size mismatch fails toHaveScreenshot before any diff
+// ratio applies. Both baselines have empty space at the bottom, so the crop
+// loses nothing.
+async function pinCaptureBox(page: Page) {
+  await page.getByTestId('message-list').evaluate((el) => {
+    el.style.height = '480px';
+    el.style.minHeight = '480px';
+    el.style.maxHeight = '480px';
+    el.style.flex = 'none';
+    el.style.overflow = 'hidden';
+  });
+}
+
 function maskDynamic(page: Page) {
   // Relative-time labels (e.g. "just now") are the only dynamic text in the
   // conversation; they render as `.text-xs.text-neutral-500` divs.
@@ -77,9 +92,11 @@ test.describe('WS-101/102/103 streaming chat', () => {
     await expect(page.getByTestId('message-user').first()).toContainText('What is the answer?');
     await story.step(page, 'turn in flight');
 
+    await pinCaptureBox(page);
     await expect(page.getByTestId('message-list')).toHaveScreenshot('chat-mid-stream.png', {
       mask: [maskDynamic(page)],
-      maxDiffPixelRatio: 0.02,
+      // Headroom for cross-environment text antialiasing/advance drift.
+      maxDiffPixelRatio: 0.03,
     });
   });
 
@@ -129,9 +146,11 @@ test.describe('WS-101/102/103 streaming chat', () => {
     await expect(page.getByTestId('send-button')).toBeVisible();
     await story.step(page, 'completed with thinking + tool card');
 
+    await pinCaptureBox(page);
     await expect(page.getByTestId('message-list')).toHaveScreenshot('chat-complete.png', {
       mask: [maskDynamic(page)],
-      maxDiffPixelRatio: 0.02,
+      // Headroom for cross-environment text antialiasing/advance drift.
+      maxDiffPixelRatio: 0.03,
     });
   });
 });
