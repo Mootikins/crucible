@@ -109,6 +109,28 @@ export interface NoteContent {
   updated_at: string;
 }
 
+/** A note that wikilinks to the focused note. */
+export interface BacklinkEntry {
+  name: string;
+  path: string;
+  abs_path: string;
+  title: string | null;
+}
+
+/** A plain-text mention of another note inside the focused note. */
+export interface UnlinkedMention {
+  mention: string;
+  target: string;
+  offset: number;
+}
+
+/** Response of `GET /api/backlinks` — linked + unlinked mentions for a note. */
+export interface BacklinksResponse {
+  note: { path: string; abs_path: string; title: string | null };
+  linked: BacklinkEntry[];
+  unlinked: UnlinkedMention[];
+}
+
 // =============================================================================
 // Project Types
 // =============================================================================

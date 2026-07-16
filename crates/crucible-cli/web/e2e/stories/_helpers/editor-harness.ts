@@ -41,9 +41,15 @@ export interface EditorHarness {
  * Route the note endpoints and navigate to the harness. GET returns the seeded
  * content; PUT records the save and 200s (like a successful daemon write).
  */
+export interface HarnessOptions {
+  /** Dock the real BacklinksPanel beside the editor (`?backlinks=1`). */
+  backlinks?: boolean;
+}
+
 export async function setupEditorHarness(
   page: Page,
   files: HarnessFile[],
+  options: HarnessOptions = {},
 ): Promise<EditorHarness> {
   const project = {
     path: '/home/user/project',
@@ -75,7 +81,7 @@ export async function setupEditorHarness(
     return route.continue();
   });
 
-  await page.goto('/editor-harness.html');
+  await page.goto(options.backlinks ? '/editor-harness.html?backlinks=1' : '/editor-harness.html');
   await page.waitForFunction(() => Boolean(window.__editorHarness));
 
   return {

@@ -16,11 +16,19 @@
  * providers and adds the one missing affordance (a Save button wired to the
  * real saveFile) so the genuine round-trip code path is exercised end-to-end.
  */
+import '@/index.css';
 import { render } from 'solid-js/web';
-import { Show, type Component } from 'solid-js';
+import { Show, onMount, onCleanup, type Component } from 'solid-js';
 import { ProjectProvider } from '@/contexts/ProjectContext';
 import { EditorProvider, useEditor } from '@/contexts/EditorContext';
 import { EditorPanel } from '@/components/EditorPanel';
+import { BacklinksPanel } from '@/components/BacklinksPanel';
+import { WikilinkHoverPreview } from '@/components/WikilinkHoverPreview';
+
+// `?backlinks=1` docks the real BacklinksPanel beside the editor so the
+// backlinks/wikilink story specs can drive it against the real EditorContext.
+const withBacklinks = () =>
+  new URLSearchParams(window.location.search).get('backlinks') === '1';
 
 interface HarnessApi {
   open: (path: string) => Promise<void>;
@@ -50,6 +58,18 @@ const HarnessInner: Component = () => {
     if (p) void editor.saveFile(p);
   };
 
+  // The app routes crucible:open-file to its window-tab editor (App.tsx);
+  // here the same event opens the file as an EditorPanel tab, so panels that
+  // dispatch it (BacklinksPanel linked mentions) work under the harness.
+  onMount(() => {
+    const onOpenFile = (e: Event) => {
+      const { path } = (e as CustomEvent<{ path: string }>).detail;
+      void editor.openFile(path);
+    };
+    window.addEventListener('crucible:open-file', onOpenFile);
+    onCleanup(() => window.removeEventListener('crucible:open-file', onOpenFile));
+  });
+
   return (
     <div class="h-screen flex flex-col bg-neutral-950 text-neutral-100">
       <div class="flex items-center gap-2 border-b border-neutral-800 px-3 py-2">
@@ -70,9 +90,17 @@ const HarnessInner: Component = () => {
           </span>
         </Show>
       </div>
-      <div class="flex-1 overflow-hidden">
-        <EditorPanel />
+      <div class="flex flex-1 overflow-hidden">
+        <div class="flex-1 overflow-hidden">
+          <EditorPanel />
+        </div>
+        <Show when={withBacklinks()}>
+          <div class="w-80 shrink-0 border-l border-neutral-800" data-testid="harness-backlinks">
+            <BacklinksPanel />
+          </div>
+        </Show>
       </div>
+      <WikilinkHoverPreview />
     </div>
   );
 };

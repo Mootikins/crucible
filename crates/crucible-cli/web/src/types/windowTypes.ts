@@ -20,6 +20,7 @@ export type TabContentType =
   | 'activity'
   | 'source-control'
   | 'outline'
+  | 'backlinks'
   | 'problems'
   | 'output';
 

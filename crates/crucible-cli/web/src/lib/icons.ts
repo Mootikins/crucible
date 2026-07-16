@@ -45,4 +45,5 @@ export {
   Trash2,
   House,
   Inbox,
+  Link2,
 } from 'lucide-solid';

@@ -11,6 +11,7 @@ import FileViewerPanel from '@/components/FileViewerPanel';
 import PlaceholderPanel from '@/components/PlaceholderPanel';
 import InboxPanel from '@/components/InboxPanel';
 import HomePanel from '@/components/HomePanel';
+import { BacklinksPanel } from '@/components/BacklinksPanel';
 
 // Wrapper components for placeholder panels with specific names
 function ExplorerPanel() { return <PlaceholderPanel name="Explorer" />; }
@@ -37,6 +38,7 @@ export function registerPanels(): void {
   registry.register('plugins', 'Plugins', PluginPanel, 'left', '🔌');
   registry.register('source-control', 'Source Control', SourceControlPanel, 'left', '🌿');
   registry.register('outline', 'Outline', OutlinePanel, 'right', '📑');
+  registry.register('backlinks', 'Backlinks', BacklinksPanel, 'right', '🔗');
   registry.register('problems', 'Problems', ProblemsPanel, 'bottom', '⚠️');
   registry.register('output', 'Output', OutputPanel, 'bottom', '📤');
 }

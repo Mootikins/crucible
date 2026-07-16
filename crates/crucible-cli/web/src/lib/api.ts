@@ -6,6 +6,7 @@ import type {
   FileEntry,
   NoteEntry,
   NoteContent,
+  BacklinksResponse,
   ProviderInfo,
 } from './types';
 
@@ -947,6 +948,18 @@ export async function getNote(name: string, kiln: string): Promise<NoteContent> 
   const params = new URLSearchParams({ kiln });
   return request<NoteContent>('GET', `/api/notes/${encodeURIComponent(name)}?${params.toString()}`, {
     errorMessage: 'Failed to get note',
+    includeErrorText: true,
+  });
+}
+
+/**
+ * Linked + unlinked mentions for a note. `note` accepts a note name or
+ * kiln-relative path (fuzzy-resolved server-side).
+ */
+export async function getBacklinks(kiln: string, note: string): Promise<BacklinksResponse> {
+  const params = new URLSearchParams({ kiln, note });
+  return request<BacklinksResponse>('GET', `/api/backlinks?${params.toString()}`, {
+    errorMessage: 'Failed to get backlinks',
     includeErrorText: true,
   });
 }

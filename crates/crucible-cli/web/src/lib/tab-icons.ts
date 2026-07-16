@@ -9,6 +9,7 @@ import {
   GitBranch,
   House,
   Inbox,
+  Link2,
   ListTree,
   MessageCircle,
   Package,
@@ -25,6 +26,7 @@ import {
  */
 const TAB_ICONS: Partial<Record<TabContentType, Component<{ class?: string }>>> = {
   sessions: ClipboardList,
+  backlinks: Link2,
   explorer: FolderTree,
   files: FolderTree,
   search: Search,
