@@ -13,6 +13,18 @@ describe('markdown renderer', () => {
     expect(html).toContain('data-note="My Note"');
   });
 
+  it('aliased wikilinks display the alias but resolve the target', () => {
+    const html = renderMarkdown('[[My Note|shown text]]');
+    expect(html).toContain('data-note="My Note"');
+    expect(html).toContain('>shown text</a>');
+    expect(html).not.toContain('data-note="My Note|shown text"');
+  });
+
+  it('heading and block fragments are stripped from the resolution target', () => {
+    expect(renderMarkdown('[[My Note#Section]]')).toContain('data-note="My Note"');
+    expect(renderMarkdown('[[My Note#^block-id]]')).toContain('data-note="My Note"');
+  });
+
   it('renders heading markdown', () => {
     const html = renderMarkdown('# Hello');
     expect(html).toContain('<h1>Hello</h1>');

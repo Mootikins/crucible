@@ -3,6 +3,18 @@ import DOMPurify from 'dompurify';
 import { initializeHighlighter, SHIKI_THEME } from './shiki';
 
 const WIKILINK_PATTERN = /\[\[([^\[\]\n]+)\]\]/g;
+
+/**
+ * Split a raw wikilink inner text into its resolution target and display text.
+ * `[[Note|alias]]` displays "alias" but resolves "Note"; heading/block
+ * fragments (`#heading`, `#^block`) are shown but stripped from the target.
+ */
+export function parseWikilinkInner(inner: string): { target: string; display: string } {
+  const [rawTarget, ...aliasParts] = inner.split('|');
+  const display = aliasParts.length > 0 ? aliasParts.join('|').trim() : inner.trim();
+  const target = (rawTarget.split('#')[0] ?? rawTarget).trim();
+  return { target, display };
+}
 const CODE_BLOCK_PATTERN = /<pre><code(?: class="language-([^"]+)")?>([\s\S]*?)<\/code><\/pre>/g;
 
 let markdownRenderer: MarkdownIt | null = null;
@@ -75,9 +87,9 @@ function wikilinkPlugin(md: MarkdownIt): void {
             nextChildren.push(textToken);
           }
 
-          const trimmedName = noteName.trim();
-          const safeText = escapeHtml(trimmedName);
-          const safeAttr = escapeHtml(trimmedName);
+          const { target, display } = parseWikilinkInner(noteName);
+          const safeText = escapeHtml(display);
+          const safeAttr = escapeHtml(target);
           const linkToken = new state.Token('html_inline', '', 0);
           linkToken.content = `<a class="wikilink" href="#" data-note="${safeAttr}">${safeText}</a>`;
           nextChildren.push(linkToken);
