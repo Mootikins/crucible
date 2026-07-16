@@ -27,7 +27,8 @@ import {
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
 import { confirmTabClose } from '@/lib/tab-guards';
 import { openPanelTab } from '@/lib/panel-actions';
-import { placeNewTab } from '@/lib/tab-placement';
+import { placeNewTab, resolveNewTabTarget } from '@/lib/tab-placement';
+import { lastPointerPosition } from '@/lib/collision-detector';
 import { WikilinkHoverPreview } from '@/components/WikilinkHoverPreview';
 import { smallestIntersecting } from '@/lib/collision-detector';
 import { statusBarStore, statusBarActions, pathBasename } from '@/stores/statusBarStore';
@@ -243,11 +244,13 @@ function InnerManager() {
       }
     }
 
-    if (!source || !target) return;
-    if (source.type === 'newTab') {
-      placeNewTab(target, source.tab);
+    if (source?.type === 'newTab') {
+      // Hover-editor semantics: dock on explicit targets, otherwise tear
+      // off into a floating window at the release point.
+      placeNewTab(resolveNewTabTarget(target, lastPointerPosition()), source.tab);
       return;
     }
+    if (!source || !target) return;
     if (source.type === 'tab') {
       if (target.type === 'pane') {
         const paneId = target.paneId;

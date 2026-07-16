@@ -37,10 +37,12 @@ type PreviewState =
   | { kind: 'ready'; name: string; preview: NotePreview };
 
 /**
- * Ready-card header: the title opens the note; the grip drags a file-tab
- * payload (DragSource 'newTab') into the window system — panes, tab bars,
- * and edge panels accept it exactly like a dragged tab. Without a DnD
- * provider (unit tests, harness pages) the grip simply isn't rendered.
+ * Ready-card header — a Hover-Editor-style drag handle bar. The WHOLE bar
+ * drags a file-tab payload (DragSource 'newTab'): release on a tab bar,
+ * edge panel, or split zone to dock; release anywhere else to tear the
+ * card off into a floating editor window at the drop point. Clicking the
+ * title still opens the note in the center pane. Without a DnD provider
+ * (unit tests, harness pages) the bar is a plain header.
  */
 const ReadyCardHeader: Component<{
   preview: NotePreview;
@@ -65,26 +67,27 @@ const ReadyCardHeader: Component<{
   });
 
   return (
-    <div class="flex items-stretch border-b border-white/10">
+    <div
+      ref={draggable ? (el) => draggable(el, () => ({})) : undefined}
+      {...(draggable ? { 'data-testid': 'wikilink-preview-drag' } : {})}
+      classList={{
+        'flex items-center border-b border-white/10 bg-white/[0.04] select-none': true,
+        'cursor-grab active:cursor-grabbing': !!draggable,
+      }}
+      title={draggable ? 'Drag to a pane or panel to dock, anywhere else to float' : undefined}
+    >
+      <Show when={draggable}>
+        <IconGripVertical class="ml-2 h-3.5 w-3.5 flex-none text-zinc-500" />
+      </Show>
       <button
         type="button"
-        class="min-w-0 flex-1 px-3 py-2 text-left hover:bg-white/5"
+        class="min-w-0 flex-1 cursor-pointer px-2.5 py-2 text-left hover:bg-white/5"
         onClick={() => props.onOpen()}
         data-testid="wikilink-preview-title"
       >
         <span class="text-sm font-medium text-shell-ink">{props.preview.title}</span>
         <span class="ml-2 truncate text-[11px] text-muted">{props.preview.path}</span>
       </button>
-      <Show when={draggable}>
-        <div
-          ref={(el) => draggable!(el, () => ({}))}
-          data-testid="wikilink-preview-drag"
-          title="Drag into a pane or panel"
-          class="flex items-center px-2 text-zinc-500 hover:text-zinc-300 cursor-grab active:cursor-grabbing"
-        >
-          <IconGripVertical class="w-3.5 h-3.5" />
-        </div>
-      </Show>
     </div>
   );
 };

@@ -33,6 +33,11 @@ if (typeof document !== 'undefined') {
   document.addEventListener('pointermove', track, { passive: true });
 }
 
+/** Last tracked pointer position — where a drag was released (drop point). */
+export function lastPointerPosition(): Point | null {
+  return pointer;
+}
+
 function intersectionArea(a: Rect, b: Rect): number {
   const left = Math.max(a.x, b.x);
   const top = Math.max(a.y, b.y);

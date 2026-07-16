@@ -51,8 +51,35 @@ export function placeNewTab(target: DropTarget, tab: Tab): void {
     case 'newFloating': {
       const groupId = windowActions.createTabGroup();
       windowActions.addTab(groupId, tab);
-      windowActions.createFloatingWindow(groupId, 100, 100, 400, 300);
+      const w = 520;
+      const h = 420;
+      // Spawn under the drop point (drag handle roughly where released),
+      // clamped so the window stays reachable.
+      const maxX = Math.max(8, (globalThis.innerWidth || 1280) - w - 8);
+      const maxY = Math.max(8, (globalThis.innerHeight || 800) - h - 8);
+      const x = Math.min(Math.max(8, (target.at?.x ?? 140) - 40), maxX);
+      const y = Math.min(Math.max(8, (target.at?.y ?? 116) - 16), maxY);
+      windowActions.createFloatingWindow(groupId, x, y, w, h);
       break;
     }
   }
+}
+
+/**
+ * Hover-editor drop policy for group-less sources: explicit dock targets
+ * (tab bars, edge panels, directional split zones) dock; releasing over a
+ * pane BODY or over nothing tears off into a floating window at the drop
+ * point — the popover becomes a real, movable, resizable editor window.
+ */
+export function resolveNewTabTarget(
+  target: DropTarget | undefined,
+  dropPoint: { x: number; y: number } | null,
+): DropTarget {
+  if (
+    !target ||
+    (target.type === 'pane' && (!target.position || target.position === 'center'))
+  ) {
+    return { type: 'newFloating', at: dropPoint ?? undefined };
+  }
+  return target;
 }

@@ -104,7 +104,8 @@ export type DropTarget =
     }
   | { type: 'tabGroup'; groupId: string; insertIndex?: number }
   | { type: 'edgePanel'; panelId: EdgePanelPosition; insertIndex?: number }
-  | { type: 'newFloating' };
+  // `at` = viewport point to spawn the window at (hover-card tear-off).
+  | { type: 'newFloating'; at?: { x: number; y: number } };
 
 
 // TabBar props discriminated union
