@@ -27,11 +27,13 @@ function PaneDropZone(props: {
 
 export const Pane: Component<{ paneId: string }> = (props) => {
   const dndContext = useDragDropContext();
+  // Match by payload type, not draggable-id prefix: anything carrying a Tab
+  // ('tab' moves, 'newTab' spawns from e.g. a hover card) targets panes.
   const isTabDragging = () => {
     if (!dndContext) return false;
     const [dndState] = dndContext;
-    const id = dndState.active.draggableId;
-    return typeof id === 'string' && (id.startsWith('tab:') || id.startsWith('edgetab:'));
+    const type = (dndState.active.draggable?.data as { type?: string } | undefined)?.type;
+    return type === 'tab' || type === 'newTab';
   };
 
   const tabGroupId = () => windowActions.findPaneById(props.paneId)?.tabGroupId ?? null;

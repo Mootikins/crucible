@@ -16,7 +16,6 @@ import { statusBarActions, statusBarStore } from '@/stores/statusBarStore';
 import { attentionActions } from '@/stores/attentionStore';
 import { windowActions, windowStore } from '@/stores/windowStore';
 import { NotificationToast } from '@/components/NotificationToast';
-import { WikilinkHoverPreview } from '@/components/WikilinkHoverPreview';
 import { ExportDialog } from '@/components/ExportDialog';
 import { AuthTokenPrompt } from '@/components/AuthTokenPrompt';
 
@@ -249,7 +248,8 @@ const App: Component = () => {
             <WindowManager />
           </EditorProvider>
           <NotificationToast />
-          <WikilinkHoverPreview />
+          {/* WikilinkHoverPreview mounts inside WindowManager's DnD provider
+              so hover cards can drag file tabs into panes/panels. */}
           <AuthTokenPrompt />
           <ExportDialog
             open={isExportDialogOpen()}

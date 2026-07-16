@@ -7,10 +7,23 @@
  * One component makes every surface knowledge-native — no per-surface
  * wiring beyond emitting `data-note`.
  */
-import { Component, Show, Switch, Match, createSignal, onMount, onCleanup } from 'solid-js';
+import {
+  Component,
+  Show,
+  Switch,
+  Match,
+  createSignal,
+  createEffect,
+  onMount,
+  onCleanup,
+} from 'solid-js';
+import { createDraggable, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { fetchNotePreview, openNoteInEditor, type NotePreview } from '@/lib/note-actions';
 import { renderMarkdown } from '@/lib/markdown';
 import { statusBarStore } from '@/stores/statusBarStore';
+import { iconForContentType } from '@/lib/tab-icons';
+import { IconGripVertical } from './windowing/icons';
+import type { Tab } from '@/types/windowTypes';
 
 const SHOW_DELAY_MS = 300;
 const HIDE_DELAY_MS = 200;
@@ -22,6 +35,59 @@ type PreviewState =
   | { kind: 'loading' }
   | { kind: 'missing'; name: string }
   | { kind: 'ready'; name: string; preview: NotePreview };
+
+/**
+ * Ready-card header: the title opens the note; the grip drags a file-tab
+ * payload (DragSource 'newTab') into the window system — panes, tab bars,
+ * and edge panels accept it exactly like a dragged tab. Without a DnD
+ * provider (unit tests, harness pages) the grip simply isn't rendered.
+ */
+const ReadyCardHeader: Component<{
+  preview: NotePreview;
+  onOpen: () => void;
+  onDragActive: (active: boolean) => void;
+}> = (props) => {
+  const tab: Tab = {
+    id: `tab-file-${props.preview.absPath}`,
+    title: props.preview.title,
+    contentType: 'file',
+    icon: iconForContentType('file'),
+    metadata: { filePath: props.preview.absPath },
+  };
+  const dnd = useDragDropContext();
+  const draggable = dnd
+    ? // eslint-disable-next-line solid/reactivity -- registration-time snapshot by design
+      createDraggable(`hovercard:${props.preview.absPath}`, { type: 'newTab', tab })
+    : null;
+
+  createEffect(() => {
+    if (draggable) props.onDragActive(draggable.isActiveDraggable);
+  });
+
+  return (
+    <div class="flex items-stretch border-b border-white/10">
+      <button
+        type="button"
+        class="min-w-0 flex-1 px-3 py-2 text-left hover:bg-white/5"
+        onClick={() => props.onOpen()}
+        data-testid="wikilink-preview-title"
+      >
+        <span class="text-sm font-medium text-shell-ink">{props.preview.title}</span>
+        <span class="ml-2 truncate text-[11px] text-muted">{props.preview.path}</span>
+      </button>
+      <Show when={draggable}>
+        <div
+          ref={(el) => draggable!(el, () => ({}))}
+          data-testid="wikilink-preview-drag"
+          title="Drag into a pane or panel"
+          class="flex items-center px-2 text-zinc-500 hover:text-zinc-300 cursor-grab active:cursor-grabbing"
+        >
+          <IconGripVertical class="w-3.5 h-3.5" />
+        </div>
+      </Show>
+    </div>
+  );
+};
 
 export const WikilinkHoverPreview: Component = () => {
   const [state, setState] = createSignal<PreviewState | null>(null);
@@ -35,6 +101,10 @@ export const WikilinkHoverPreview: Component = () => {
   let showTimer: number | undefined;
   let hideTimer: number | undefined;
   let fetchSeq = 0;
+  // While a card drag is in flight the pointer roams the whole window —
+  // hover-away must not unmount the card (that would unregister the
+  // draggable mid-drag). Pin it, and close once the drag resolves.
+  let dragActive = false;
 
   const clearTimers = () => {
     window.clearTimeout(showTimer);
@@ -71,7 +141,18 @@ export const WikilinkHoverPreview: Component = () => {
     setState(preview ? { kind: 'ready', name, preview } : { kind: 'missing', name });
   };
 
+  const onDragActive = (active: boolean) => {
+    if (active) {
+      clearTimers();
+      dragActive = true;
+    } else if (dragActive) {
+      dragActive = false;
+      hide();
+    }
+  };
+
   const onMouseOver = (event: MouseEvent) => {
+    if (dragActive) return;
     const target = event.target as Element | null;
     if (!target) return;
 
@@ -146,15 +227,11 @@ export const WikilinkHoverPreview: Component = () => {
                 const ready = readyState() as { kind: 'ready'; name: string; preview: NotePreview };
                 return (
                   <>
-                    <button
-                      type="button"
-                      class="block w-full border-b border-white/10 px-3 py-2 text-left hover:bg-white/5"
-                      onClick={openCurrent}
-                      data-testid="wikilink-preview-title"
-                    >
-                      <span class="text-sm font-medium text-shell-ink">{ready.preview.title}</span>
-                      <span class="ml-2 truncate text-[11px] text-muted">{ready.preview.path}</span>
-                    </button>
+                    <ReadyCardHeader
+                      preview={ready.preview}
+                      onOpen={openCurrent}
+                      onDragActive={onDragActive}
+                    />
                     <div
                       class="prose prose-invert prose-sm max-w-none overflow-hidden px-3 py-2 text-[13px] leading-snug
                         prose-headings:my-1 prose-headings:text-sm prose-p:my-1 prose-a:text-primary

@@ -27,6 +27,8 @@ import {
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
 import { confirmTabClose } from '@/lib/tab-guards';
 import { openPanelTab } from '@/lib/panel-actions';
+import { placeNewTab } from '@/lib/tab-placement';
+import { WikilinkHoverPreview } from '@/components/WikilinkHoverPreview';
 import { smallestIntersecting } from '@/lib/collision-detector';
 import { statusBarStore, statusBarActions, pathBasename } from '@/stores/statusBarStore';
 import { shellStore, shellActions } from '@/stores/shellStore';
@@ -200,15 +202,17 @@ function DragOverlayContent() {
 
   // The drag data is a registration-time snapshot; read the live tab from the
   // store so a mid-session rename (daemon title push) shows in the overlay.
+  // 'newTab' sources have no group yet — their snapshot IS the live tab.
   const title = () => {
     const d = data();
+    if (d?.type === 'newTab') return d.tab.title;
     if (d?.type !== 'tab') return '';
     const live = windowStore.tabGroups[d.sourceGroupId]?.tabs.find((t) => t.id === d.tab.id);
     return (live ?? d.tab).title;
   };
 
   return (
-    <Show when={data()?.type === 'tab'}>
+    <Show when={data()?.type === 'tab' || data()?.type === 'newTab'}>
       <div class="px-2.5 py-1.5 bg-zinc-800 border border-zinc-600 rounded shadow-lg text-xs text-zinc-200 flex items-center gap-1.5 opacity-90">
         <span class="font-medium truncate max-w-[120px]">{title()}</span>
       </div>
@@ -240,6 +244,10 @@ function InnerManager() {
     }
 
     if (!source || !target) return;
+    if (source.type === 'newTab') {
+      placeNewTab(target, source.tab);
+      return;
+    }
     if (source.type === 'tab') {
       if (target.type === 'pane') {
         const paneId = target.paneId;
@@ -396,6 +404,9 @@ export const WindowManager: Component = () => {
     <DragDropProvider collisionDetector={smallestIntersecting}>
       <DragDropSensors>
         <InnerManager />
+        {/* Inside the provider so hover cards can drag file tabs into the
+            window system (DragSource 'newTab'). */}
+        <WikilinkHoverPreview />
       </DragDropSensors>
     </DragDropProvider>
   );

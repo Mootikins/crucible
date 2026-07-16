@@ -88,7 +88,13 @@ export interface FloatingWindow {
 }
 
 // Drag and drop types
-export type DragSource = { type: 'tab'; tab: Tab; sourceGroupId: string };
+// 'tab' moves an existing tab between groups; 'newTab' spawns a tab that has
+// no source group yet (e.g. dragging a file out of a wikilink hover card) —
+// every drop target treats both alike, so any surface can join the window
+// system by carrying a Tab payload.
+export type DragSource =
+  | { type: 'tab'; tab: Tab; sourceGroupId: string }
+  | { type: 'newTab'; tab: Tab };
 
 export type DropTarget =
   | {

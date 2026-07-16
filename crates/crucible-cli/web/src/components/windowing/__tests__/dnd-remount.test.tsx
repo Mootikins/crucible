@@ -100,8 +100,10 @@ it('a genuinely new tab id still mounts its own draggable', () => {
 // boot-time sourceGroupId and moveTab silently no-ops — this is why dragging
 // tabs out of collapsed edge strips (and expanded edge bars) did nothing in
 // the shipped app.
-const dragData = (id: string): DragSource | undefined =>
-  (registry()[id] as { data?: DragSource } | undefined)?.data;
+const dragData = (id: string) => {
+  const data = (registry()[id] as { data?: DragSource } | undefined)?.data;
+  return data?.type === 'tab' ? data : undefined;
+};
 
 const swapEdgeGroupId = (position: 'left' | 'bottom'): string => {
   const oldGid = windowStore.edgePanels[position].tabGroupId;

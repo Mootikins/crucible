@@ -126,4 +126,61 @@ describe('WikilinkHoverPreview', () => {
       expect(fetchNotePreviewMock).toHaveBeenCalledWith('rust', '/other-kiln');
     });
   });
+
+  it('renders no drag grip outside a DnD provider (tests, harness pages)', async () => {
+    fetchNotePreviewMock.mockResolvedValue({
+      title: 'Rust',
+      path: 'notes/rust.md',
+      absPath: '/kiln/notes/rust.md',
+      excerpt: 'x',
+    });
+
+    const host = mountWithAnchor('<a data-note="rust">rust</a>');
+    hover(host.querySelector('a[data-note]')!);
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="wikilink-preview-title"]')).not.toBeNull();
+    });
+    expect(document.querySelector('[data-testid="wikilink-preview-drag"]')).toBeNull();
+  });
+
+  it('inside a DnD provider, the card registers a newTab draggable carrying the file tab', async () => {
+    const { DragDropProvider, useDragDropContext } = await import('@thisbeyond/solid-dnd');
+    fetchNotePreviewMock.mockResolvedValue({
+      title: 'Rust',
+      path: 'notes/rust.md',
+      absPath: '/kiln/notes/rust.md',
+      excerpt: 'x',
+    });
+
+    let registry: () => Record<string, { data?: { type?: string; tab?: { title: string; metadata?: { filePath?: string } } } }> = () => ({});
+    const Probe = () => {
+      const ctx = useDragDropContext()!;
+      registry = () => ctx[0].draggables as ReturnType<typeof registry>;
+      return null;
+    };
+
+    const host = document.createElement('div');
+    host.innerHTML = '<a data-note="rust">rust</a>';
+    document.body.appendChild(host);
+    render(
+      () => (
+        <DragDropProvider>
+          <Probe />
+          <WikilinkHoverPreview />
+        </DragDropProvider>
+      ),
+      { container: document.body.appendChild(document.createElement('div')) },
+    );
+
+    hover(host.querySelector('a[data-note]')!);
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="wikilink-preview-drag"]')).not.toBeNull();
+    });
+
+    const entry = registry()['hovercard:/kiln/notes/rust.md'];
+    expect(entry).toBeTruthy();
+    expect(entry.data?.type).toBe('newTab');
+    expect(entry.data?.tab?.title).toBe('Rust');
+    expect(entry.data?.tab?.metadata?.filePath).toBe('/kiln/notes/rust.md');
+  });
 });
