@@ -5,13 +5,13 @@ import { resolve } from 'path';
 describe('EdgePanel - Icon Replacement', () => {
   it('should render icon when available instead of text', () => {
     const source = readFileSync(resolve(__dirname, '../EdgePanel.tsx'), 'utf-8');
-    expect(source).toContain('{tab.icon ? <tab.icon class="w-4 h-4" />');
+    expect(source).toContain('{props.tab.icon ? (');
   });
 
   it('should render tab.icon component in collapsed buttons', () => {
     const source = readFileSync(resolve(__dirname, '../EdgePanel.tsx'), 'utf-8');
     // Verify tab.icon is rendered in the collapsed state
-    expect(source).toContain('<tab.icon');
+    expect(source).toContain('<props.tab.icon');
     // Verify it has proper sizing
     expect(source).toContain('w-4 h-4');
   });
@@ -19,7 +19,7 @@ describe('EdgePanel - Icon Replacement', () => {
   it('should have fallback to text when icon is not available', () => {
     const source = readFileSync(resolve(__dirname, '../EdgePanel.tsx'), 'utf-8');
     // Verify fallback rendering for tabs without icons
-    expect(source).toContain('{tab.title[0]}');
+    expect(source).toContain('{props.tab.title[0]}');
   });
 
   it('should import icons from @/lib/icons in window store internals', () => {

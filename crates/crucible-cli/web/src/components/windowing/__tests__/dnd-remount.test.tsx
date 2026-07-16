@@ -3,8 +3,10 @@ import { render } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
 import { DragDropProvider, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { TabBar } from '../TabBar';
+import { EdgePanel } from '../EdgePanel';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import { createInitialState, findFirstPane, generateId } from '@/stores/windowStoreInternals';
+import type { DragSource } from '@/types/windowTypes';
 
 // Regression: updateTab replaces the tab OBJECT on every write (dirty flag,
 // title). Rows keyed by object identity remount, and a remounting row
@@ -90,4 +92,62 @@ it('a genuinely new tab id still mounts its own draggable', () => {
   const otherId = generateId();
   windowActions.addTab(groupId, { id: otherId, title: 'other', contentType: 'file' });
   expect(registry()[`tab:${groupId}:${otherId}`]).toBeTruthy();
+});
+
+// Regression: a layout restore (server /api/layout) swaps tab-group ids under
+// surviving components. solid-dnd draggable data is a registration-time
+// snapshot, so without a keyed remount every later drag carries the dead
+// boot-time sourceGroupId and moveTab silently no-ops — this is why dragging
+// tabs out of collapsed edge strips (and expanded edge bars) did nothing in
+// the shipped app.
+const dragData = (id: string): DragSource | undefined =>
+  (registry()[id] as { data?: DragSource } | undefined)?.data;
+
+const swapEdgeGroupId = (position: 'left' | 'bottom'): string => {
+  const oldGid = windowStore.edgePanels[position].tabGroupId;
+  const newGid = generateId();
+  setStore(produce((s) => {
+    s.tabGroups[newGid] = { ...s.tabGroups[oldGid]!, id: newGid };
+    delete s.tabGroups[oldGid];
+    s.edgePanels[position].tabGroupId = newGid;
+  }));
+  return newGid;
+};
+
+it('collapsed strip icons re-register their draggable with the live group id after a restore', () => {
+  setStore(produce((s) => { s.edgePanels.bottom.isCollapsed = true; }));
+  const gid = windowStore.edgePanels.bottom.tabGroupId;
+  windowActions.addTab(gid, { id: 'strip-tab', title: 'Terminal', contentType: 'terminal' });
+
+  render(() => (
+    <DragDropProvider>
+      <Probe />
+      <EdgePanel position="bottom" />
+    </DragDropProvider>
+  ));
+
+  const id = 'edgetab-collapsed:bottom:strip-tab';
+  expect(dragData(id)?.sourceGroupId).toBe(windowStore.edgePanels.bottom.tabGroupId);
+
+  const newGid = swapEdgeGroupId('bottom');
+  expect(dragData(id)?.sourceGroupId).toBe(newGid);
+});
+
+it('expanded edge tab bars re-register draggables with the live group id after a restore', () => {
+  setStore(produce((s) => { s.edgePanels.left.isCollapsed = false; }));
+  const gid = windowStore.edgePanels.left.tabGroupId;
+  windowActions.addTab(gid, { id: 'edge-tab', title: 'Files', contentType: 'files' });
+
+  render(() => (
+    <DragDropProvider>
+      <Probe />
+      <TabBar mode="edge" position="left" />
+    </DragDropProvider>
+  ));
+
+  const id = 'edgetab:left:edge-tab';
+  expect(dragData(id)?.sourceGroupId).toBe(windowStore.edgePanels.left.tabGroupId);
+
+  const newGid = swapEdgeGroupId('left');
+  expect(dragData(id)?.sourceGroupId).toBe(newGid);
 });

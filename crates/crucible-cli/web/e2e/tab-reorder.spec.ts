@@ -114,7 +114,16 @@ test.describe('Tab reorder within same bar', () => {
     const from = await getCenterOf(page, lastTab);
     const firstBox = await firstTab.boundingBox();
     expect(firstBox).toBeTruthy();
-    const to = { x: firstBox!.x + 2, y: firstBox!.y + firstBox!.height / 2 };
+    // The strip overflows and scrollIntoViewIfNeeded(lastTab) can scroll the
+    // first tab's box left of the bar — clamp the drop point inside the bar
+    // (same reasoning as the "past third tab" test above), otherwise the
+    // reorder is cancelled as an out-of-bounds release.
+    const barBox = await page.locator('[data-testid="edge-tabbar-left"]').boundingBox();
+    expect(barBox).toBeTruthy();
+    const to = {
+      x: Math.max(firstBox!.x + 2, barBox!.x + 8),
+      y: firstBox!.y + firstBox!.height / 2,
+    };
 
     await pointerDrag(page, from, to, 25);
     await page.waitForTimeout(500);

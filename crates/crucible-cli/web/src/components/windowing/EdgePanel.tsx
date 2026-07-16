@@ -1,14 +1,13 @@
-import { Component, Show, For, onCleanup } from 'solid-js';
+import { Component, Show, createEffect, onCleanup } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import { createDroppable } from '@thisbeyond/solid-dnd';
+import { Key } from '@solid-primitives/keyed';
+import { createDraggable, createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore, windowActions } from '@/stores/windowStore';
-import type { EdgePanelPosition } from '@/types/windowTypes';
+import type { EdgePanelPosition, Tab } from '@/types/windowTypes';
 import {
   IconPanelLeft,
   IconPanelRight,
   IconPanelBottom,
-  IconGripVertical,
-  IconGripHorizontal,
 } from './icons';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import { TabBar } from './TabBar';
@@ -79,33 +78,72 @@ function EdgePanelResizeHandle(props: { position: EdgePanelPosition }) {
     };
   };
 
+  // 1px visible line; the after: pseudo extends the pointer target ±4px so
+  // the thin separator is still comfortable to grab (Obsidian-style).
   return (
     <div
       role="separator"
       aria-orientation={isVertical() ? 'vertical' : 'horizontal'}
       classList={{
-        'group relative flex-shrink-0 bg-zinc-800 hover:bg-zinc-700 active:bg-primary-active transition-colors cursor-col-resize': isVertical(),
-        'group relative flex-shrink-0 bg-zinc-800 hover:bg-zinc-700 active:bg-primary-active transition-colors cursor-row-resize': !isVertical(),
-        'w-1.5': isVertical(),
-        'h-1.5': !isVertical(),
+        'relative flex-shrink-0 z-10 bg-zinc-800 hover:bg-zinc-600 active:bg-primary transition-colors after:content-[\'\'] after:absolute': true,
+        'w-px cursor-col-resize after:inset-y-0 after:-inset-x-1': isVertical(),
+        'h-px cursor-row-resize after:inset-x-0 after:-inset-y-1': !isVertical(),
       }}
-      style={isVertical() ? { 'min-width': '6px' } : { 'min-height': '6px' }}
       on:pointerdown={handlePointerDown}
-    >
-      <div
-        classList={{
-          'absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-zinc-500': true,
-        }}
-      >
-        {isVertical() ? (
-          <IconGripVertical class="w-1 h-4" />
-        ) : (
-          <IconGripHorizontal class="w-4 h-1" />
-        )}
-      </div>
-    </div>
+    />
   );
 }
+
+/** One icon in the collapsed strip. Draggable with the same payload as an
+ * expanded tab row, so a collapsed pane's tabs can be dragged to any drop
+ * target without expanding first. */
+const CollapsedTabButton: Component<{
+  position: EdgePanelPosition;
+  tab: Tab;
+  groupId: string;
+  isActive: boolean;
+  isVertical: boolean;
+}> = (props) => {
+  const draggable = createDraggable(
+    `edgetab-collapsed:${props.position}:${props.tab.id}`,
+    { type: 'tab', tab: props.tab, sourceGroupId: props.groupId },
+  );
+
+  // Mirror TabItem: an open flyout must not linger over the drag.
+  createEffect(() => {
+    if (draggable.isActiveDraggable && windowStore.flyoutState?.isOpen) {
+      windowActions.closeFlyout();
+    }
+  });
+
+  return (
+    <button
+      use:draggable
+      type="button"
+      data-testid={`collapsed-tab-button-${props.position}`}
+      classList={{
+        'flex items-center justify-center transition-all duration-150': true,
+        'w-10 h-10': props.isVertical,
+        'h-9 px-3': !props.isVertical,
+        'opacity-40': draggable.isActiveDraggable,
+        'bg-zinc-800 text-zinc-100': props.isActive && !draggable.isActiveDraggable,
+        'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50':
+          !props.isActive && !draggable.isActiveDraggable,
+      }}
+      title={props.tab.title}
+      onClick={() => {
+        windowActions.setActiveTab(props.groupId, props.tab.id);
+        windowActions.openFlyout(props.position, props.tab.id);
+      }}
+    >
+      {props.tab.icon ? (
+        <props.tab.icon class="w-4 h-4" />
+      ) : (
+        <span class="text-xs truncate max-w-[2rem]">{props.tab.title[0]}</span>
+      )}
+    </button>
+  );
+};
 
 const CollapsedEdgeStrip: Component<{ position: EdgePanelPosition }> = (props) => {
   const panel = () => windowStore.edgePanels[props.position];
@@ -125,40 +163,23 @@ const CollapsedEdgeStrip: Component<{ position: EdgePanelPosition }> = (props) =
       data-testid={`edge-collapsed-drop-${props.position}`}
       classList={{
         'flex bg-zinc-900/95 border-zinc-800 transition-colors': true,
-        'flex-col border-r': isVertical(),
+        // Border faces the center, matching the expanded panel's separator.
+        'flex-col border-r': props.position === 'left',
+        'flex-col border-l': props.position === 'right',
         'flex-row border-t': !isVertical(),
         'bg-primary/20': droppable.isActiveDroppable,
       }}
     >
-      <For each={tabs()}>
-        {(tab) => (
-          <button
-            type="button"
-            data-testid={`collapsed-tab-button-${props.position}`}
-            classList={{
-              'flex items-center justify-center transition-all duration-150': true,
-              'w-10 h-10': isVertical(),
-              'h-9 px-3': !isVertical(),
-              'bg-zinc-800 text-zinc-100': activeTabId() === tab.id,
-              'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50':
-                activeTabId() !== tab.id,
-            }}
-            title={tab.title}
-            onClick={() => {
-              windowActions.setActiveTab(panel().tabGroupId, tab.id);
-              windowActions.openFlyout(props.position, tab.id);
-            }}
-          >
-            {tab.icon ? <tab.icon class="w-4 h-4" /> : <span class="text-xs truncate max-w-[2rem]">{tab.title[0]}</span>}
-          </button>
-        )}
-      </For>
+      {/* Expand control keeps a fixed home: the h-9 top slot mirrors the tab
+          bar row it replaces on vertical panels; on the bottom strip it pins
+          to the right end so it doesn't drift as tabs come and go. */}
       <button
         type="button"
+        data-testid={`edge-expand-${props.position}`}
         classList={{
           'flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors': true,
-          'w-10 h-10 mt-auto': isVertical(),
-          'h-9 px-2': !isVertical(),
+          'w-10 h-9 border-b border-zinc-800': isVertical(),
+          'order-last ml-auto h-9 px-2': !isVertical(),
         }}
         title="Expand panel"
         onClick={() => windowActions.toggleEdgePanel(props.position)}
@@ -167,6 +188,28 @@ const CollapsedEdgeStrip: Component<{ position: EdgePanelPosition }> = (props) =
         {props.position === 'right' && <IconPanelRight />}
         {props.position === 'bottom' && <IconPanelBottom />}
       </button>
+      {/* Outer Show keyed on the group id: a layout restore swaps group ids
+          under surviving components, and solid-dnd draggable data is a
+          registration-time snapshot — without a remount every drag would
+          carry a dead sourceGroupId and moveTab would silently no-op.
+          Inner Key by tab id: updateTab replaces the tab object on every
+          write, and a remounting row re-registers its draggable under the
+          same id, leaving it silently undraggable (same trap as TabStrip). */}
+      <Show when={panel().tabGroupId} keyed>
+        {(groupId) => (
+          <Key each={tabs()} by={(t) => t.id}>
+            {(tab) => (
+              <CollapsedTabButton
+                position={props.position}
+                tab={tab()}
+                groupId={groupId}
+                isActive={activeTabId() === tab().id}
+                isVertical={isVertical()}
+              />
+            )}
+          </Key>
+        )}
+      </Show>
     </div>
   );
 };
@@ -196,12 +239,9 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
       >
         {props.position === 'right' && <EdgePanelResizeHandle position={props.position} />}
         {props.position === 'bottom' && <EdgePanelResizeHandle position={props.position} />}
+        {/* No border here — the resize handle's 1px line is the separator. */}
         <div
-          classList={{
-            'flex flex-col overflow-hidden': true,
-            'border-r border-zinc-800': isVertical(),
-            'border-t border-zinc-800': !isVertical(),
-          }}
+          class="flex flex-col overflow-hidden"
           style={
             isVertical()
               ? { width: panel().width ? `${panel().width}px` : '250px', 'min-width': '0' }

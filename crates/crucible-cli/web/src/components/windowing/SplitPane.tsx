@@ -3,7 +3,6 @@ import { produce, unwrap } from 'solid-js/store';
 import { Pane } from './Pane';
 import { setStore, updateSplitRatio, windowStore } from '@/stores/windowStore';
 import type { LayoutNode } from '@/types/windowTypes';
-import { IconGripVertical, IconGripHorizontal } from './icons';
 
 const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }> = (props) => {
   const split = () => props.node;
@@ -88,30 +87,20 @@ const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }
       >
         <SplitPane node={split().first} />
       </div>
+      {/* 1px visible line; the after: pseudo extends the pointer target ±4px
+          so the thin separator is still comfortable to grab. */}
       <div
         data-testid="resize-splitter"
         data-split-id={split().id}
         classList={{
-          'group relative flex-shrink-0 z-10 pointer-events-auto transition-colors': true,
-          'w-1.5 cursor-col-resize': split().direction === 'horizontal',
-          'h-1.5 cursor-row-resize': split().direction !== 'horizontal',
+          'relative flex-shrink-0 z-10 pointer-events-auto transition-colors after:content-[\'\'] after:absolute': true,
+          'w-px cursor-col-resize after:inset-y-0 after:-inset-x-1': split().direction === 'horizontal',
+          'h-px cursor-row-resize after:inset-x-0 after:-inset-y-1': split().direction !== 'horizontal',
           'bg-primary': isDragging(),
-          'bg-zinc-800 hover:bg-zinc-700 active:bg-primary-active': !isDragging(),
+          'bg-zinc-800 hover:bg-zinc-600': !isDragging(),
         }}
         on:pointerdown={handlePointerDown}
-      >
-        <div
-          classList={{
-            'absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-zinc-500': true,
-          }}
-        >
-          {split().direction === 'horizontal' ? (
-            <IconGripVertical class="w-1 h-4" />
-          ) : (
-            <IconGripHorizontal class="w-4 h-1" />
-          )}
-        </div>
-      </div>
+      />
       <div
         class="relative z-0 overflow-hidden min-w-0 min-h-0"
         style={{ flex: `${1 - effectiveRatio()} 1 0` }}
