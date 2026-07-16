@@ -384,10 +384,10 @@ const CenterTabBar: Component<{
         {props.onPopOut && tabs().length > 0 && (
           <button
             onClick={props.onPopOut}
-            class="w-6 h-6 flex items-center justify-center rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
+            class="w-6 h-6 flex items-center justify-center rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors"
             title="Pop out to floating window"
           >
-            <IconLayout class="w-3 h-3" />
+            <IconLayout class="w-4 h-4" />
           </button>
         )}
       </div>
@@ -467,13 +467,13 @@ const EdgeTabBar: Component<{
         <button
           type="button"
           data-testid={`edge-collapse-${props.position}`}
-          class="w-6 h-6 flex items-center justify-center rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
+          class="w-6 h-6 flex items-center justify-center rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors"
           title="Collapse panel"
           onClick={() => windowActions.toggleEdgePanel(props.position)}
         >
-          {props.position === 'left' && <IconPanelLeftClose class="w-3.5 h-3.5" />}
-          {props.position === 'right' && <IconPanelRightClose class="w-3.5 h-3.5" />}
-          {props.position === 'bottom' && <IconPanelBottomClose class="w-3.5 h-3.5" />}
+          {props.position === 'left' && <IconPanelLeftClose class="w-4 h-4" />}
+          {props.position === 'right' && <IconPanelRightClose class="w-4 h-4" />}
+          {props.position === 'bottom' && <IconPanelBottomClose class="w-4 h-4" />}
         </button>
       </div>
       {droppable.isActiveDroppable && (

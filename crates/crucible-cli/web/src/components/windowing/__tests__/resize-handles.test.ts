@@ -91,6 +91,16 @@ describe('stable panel toggle placement', () => {
     const source = readFileSync(resolve(__dirname, '../TabBar.tsx'), 'utf-8');
     expect(source).toMatch(/'order-first':\s*props\.position === 'left'/);
   });
+
+  it('every panel toggle glyph is w-4 (Lucide bare default is a jarring 24px)', () => {
+    const edgePanel = readFileSync(resolve(__dirname, '../EdgePanel.tsx'), 'utf-8');
+    const tabBar = readFileSync(resolve(__dirname, '../TabBar.tsx'), 'utf-8');
+    // No bare panel-toggle icons anywhere in the chrome.
+    expect(edgePanel).not.toMatch(/<IconPanel(Left|Right|Bottom)(Close)? \/>/);
+    expect(tabBar).not.toMatch(/<IconPanel(Left|Right|Bottom)(Close)? \/>/);
+    expect(edgePanel).toMatch(/<IconPanelLeft class="w-4 h-4" \/>/);
+    expect(tabBar).toMatch(/<IconPanelLeftClose class="w-4 h-4" \/>/);
+  });
 });
 
 describe('EdgePanel pointer events', () => {

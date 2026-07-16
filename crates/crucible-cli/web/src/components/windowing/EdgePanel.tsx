@@ -173,20 +173,22 @@ const CollapsedEdgeStrip: Component<{ position: EdgePanelPosition }> = (props) =
       {/* Expand control keeps a fixed home: the h-9 top slot mirrors the tab
           bar row it replaces on vertical panels; on the bottom strip it pins
           to the right end so it doesn't drift as tabs come and go. */}
+      {/* Toggle glyphs are w-4 everywhere (header, strips, tab bars) —
+          Lucide's bare default is 24px and reads as a different control. */}
       <button
         type="button"
         data-testid={`edge-expand-${props.position}`}
         classList={{
-          'flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors': true,
+          'flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors': true,
           'w-10 h-9 border-b border-zinc-800': isVertical(),
           'order-last ml-auto h-9 px-2': !isVertical(),
         }}
         title="Expand panel"
         onClick={() => windowActions.toggleEdgePanel(props.position)}
       >
-        {props.position === 'left' && <IconPanelLeft />}
-        {props.position === 'right' && <IconPanelRight />}
-        {props.position === 'bottom' && <IconPanelBottom />}
+        {props.position === 'left' && <IconPanelLeft class="w-4 h-4" />}
+        {props.position === 'right' && <IconPanelRight class="w-4 h-4" />}
+        {props.position === 'bottom' && <IconPanelBottom class="w-4 h-4" />}
       </button>
       {/* Outer Show keyed on the group id: a layout restore swaps group ids
           under surviving components, and solid-dnd draggable data is a
