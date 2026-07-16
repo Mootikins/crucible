@@ -93,7 +93,11 @@ export default defineConfig({
         // Solid-consuming deps must be inlined so they share the test's
         // browser build of solid-js — externalized, they'd load the SSR build
         // and their reactivity silently dies (Key rows never updating).
-        inline: [/solid-js/, /@solid-primitives/],
+        // @solidjs/* (testing-library) does NOT match /solid-js/ — leaving it
+        // externalized breaks top-level structural reactivity in every test:
+        // a component whose ROOT is a conditional <Show> mounts through the
+        // SSR copy's insert and never re-renders when the signal flips.
+        inline: [/solid-js/, /@solidjs\//, /@solid-primitives/],
       },
     },
     coverage: {
