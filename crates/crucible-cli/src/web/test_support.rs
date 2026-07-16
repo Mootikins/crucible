@@ -218,6 +218,34 @@ pub fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
         "kiln.list" => json!([]),
         "list_notes" => json!([]),
         "get_note_by_name" => Value::Null,
+        // Note name "missing" resolves to nothing (404 path); anything else
+        // resolves to a focused note with one linked mention.
+        "get_backlinks" => {
+            let name = _msg
+                .get("params")
+                .and_then(|p| p.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if name == "missing" {
+                Value::Null
+            } else {
+                json!({
+                    "path": "notes/focused.md",
+                    "title": "Focused Note",
+                    "backlinks": [
+                        {"name": "linker", "path": "notes/linker.md", "title": "Linker Note"}
+                    ]
+                })
+            }
+        }
+        // Includes a self-mention ("Focused Note") that the backlinks route
+        // must filter out of `unlinked`.
+        "suggest_links" => json!({
+            "suggestions": [
+                {"mention": "Other Note", "target": "Other Note", "offset": 0},
+                {"mention": "Focused Note", "target": "Focused Note", "offset": 20}
+            ]
+        }),
         "note.upsert" => json!({}),
         "search_vectors" => json!([]),
         "session.create" => json!({"session_id": "test-session-001"}),

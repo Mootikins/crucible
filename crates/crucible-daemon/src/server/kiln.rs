@@ -355,6 +355,41 @@ pub(crate) async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>)
     }
 }
 
+pub(crate) async fn handle_get_backlinks(req: Request, km: &Arc<KilnManager>) -> Response {
+    let kiln_path = require_param!(req, "kiln", as_str);
+    let name = require_param!(req, "name", as_str);
+
+    let scope = match decode_request_scope(&req, Path::new(kiln_path)) {
+        Ok(s) => s,
+        Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
+    };
+
+    let handle = match km.get_or_open(Path::new(kiln_path)).await {
+        Ok(c) => c,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    match handle.get_backlinks(name, &scope).await {
+        Ok(Some((note, backlinks))) => Response::success(
+            req.id,
+            serde_json::json!({
+                "path": note.path,
+                "title": note.title,
+                "backlinks": backlinks
+                    .into_iter()
+                    .map(|b| serde_json::json!({
+                        "name": b.name,
+                        "path": b.path,
+                        "title": b.title,
+                    }))
+                    .collect::<Vec<_>>()
+            }),
+        ),
+        Ok(None) => Response::success(req.id, serde_json::Value::Null),
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
 // =============================================================================
 // NoteStore RPC Handlers
 // =============================================================================

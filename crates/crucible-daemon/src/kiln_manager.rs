@@ -175,10 +175,89 @@ impl StorageHandle {
         }))
     }
 
+    /// Resolve a note by name and collect the notes that wikilink to it.
+    ///
+    /// Returns `None` if `name` resolves to no note. The second element is
+    /// the backlink sources as [`NoteInfo`], sorted by path for stable output.
+    ///
+    /// `authority` is the request authority — see [`crucible_core::storage::Scope`].
+    pub async fn get_backlinks(
+        &self,
+        name: &str,
+        authority: &crucible_core::storage::Scope,
+    ) -> Result<Option<(NoteRecord, Vec<NoteInfo>)>> {
+        let records = self.sqlite.as_note_store().list(authority).await?;
+        let name_lower = name.to_lowercase();
+        let Some(target) = records
+            .iter()
+            .find(|r| {
+                r.path.to_lowercase().contains(&name_lower)
+                    || r.title.to_lowercase().contains(&name_lower)
+            })
+            .cloned()
+        else {
+            return Ok(None);
+        };
+
+        let candidates = wikilink_target_candidates(&target.path, &target.title);
+        let mut backlinks: Vec<NoteInfo> = records
+            .into_iter()
+            .filter(|r| r.path != target.path)
+            .filter(|r| {
+                r.links_to
+                    .iter()
+                    .any(|t| candidates.contains(&normalize_wikilink_target(t)))
+            })
+            .map(|r| NoteInfo {
+                name: Path::new(&r.path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&r.path)
+                    .to_string(),
+                path: r.path,
+                title: Some(r.title),
+                tags: r.tags,
+                created_at: None,
+                updated_at: Some(r.updated_at),
+            })
+            .collect();
+        backlinks.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(Some((target, backlinks)))
+    }
+
     /// Knowledge repository trait surface (SQLite-backed).
     pub fn as_knowledge_repository(&self) -> Arc<dyn KnowledgeRepository> {
         self.sqlite.as_knowledge_repository()
     }
+}
+
+/// The lowercase strings under which a note can be addressed by a wikilink.
+///
+/// Wikilink targets are stored *as written* (`[[rust]]`, `[[notes/rust]]`,
+/// `[[notes/rust.md]]`, `[[Rust]]`), not resolved to paths — so backlink
+/// matching compares a normalized target against every form that identifies
+/// the note: file stem, extension-less path, full path, and title.
+fn wikilink_target_candidates(path: &str, title: &str) -> std::collections::HashSet<String> {
+    let mut candidates = std::collections::HashSet::new();
+    let lower = path.to_lowercase();
+    candidates.insert(lower.trim_end_matches(".md").to_string());
+    candidates.insert(lower.clone());
+    if let Some(stem) = Path::new(&lower).file_stem().and_then(|s| s.to_str()) {
+        candidates.insert(stem.to_string());
+    }
+    if !title.is_empty() {
+        candidates.insert(title.to_lowercase());
+    }
+    candidates
+}
+
+/// Normalize a stored wikilink target for candidate matching: lowercase and
+/// strip any heading (`#heading`) or block (`#^id`) fragment. Fragments are
+/// parsed into separate fields for new notes, but stored targets from older
+/// index runs may still carry them.
+fn normalize_wikilink_target(target: &str) -> String {
+    let base = target.split('#').next().unwrap_or(target).trim();
+    base.to_lowercase()
 }
 
 // ===========================================================================
@@ -746,6 +825,41 @@ mod tests {
         let base = tmp.path().to_path_buf();
         drop(tmp); // Remove the temp dir
         base.join("nonexistent").join("path")
+    }
+
+    #[test]
+    fn wikilink_candidates_cover_stem_path_and_title() {
+        let candidates = wikilink_target_candidates("Help/Wikilinks.md", "Wikilink Syntax");
+        assert!(candidates.contains("wikilinks"), "file stem");
+        assert!(candidates.contains("help/wikilinks"), "extension-less path");
+        assert!(candidates.contains("help/wikilinks.md"), "full path");
+        assert!(candidates.contains("wikilink syntax"), "title");
+    }
+
+    #[test]
+    fn normalize_target_lowercases_and_strips_fragments() {
+        assert_eq!(normalize_wikilink_target("Rust"), "rust");
+        assert_eq!(normalize_wikilink_target("Notes/Rust#Setup"), "notes/rust");
+        assert_eq!(normalize_wikilink_target("Rust#^block-id"), "rust");
+    }
+
+    #[test]
+    fn backlink_matching_accepts_all_target_forms() {
+        let candidates = wikilink_target_candidates("Help/Wikilinks.md", "Wikilink Syntax");
+        for written in [
+            "Wikilinks",
+            "wikilinks",
+            "Help/Wikilinks",
+            "Help/Wikilinks.md",
+            "Wikilink Syntax",
+            "Wikilinks#Aliases",
+        ] {
+            assert!(
+                candidates.contains(&normalize_wikilink_target(written)),
+                "expected [[{written}]] to resolve as a backlink"
+            );
+        }
+        assert!(!candidates.contains(&normalize_wikilink_target("Tags")));
     }
 
     #[test]

@@ -22,6 +22,7 @@ pub fn search_routes() -> Router<AppState> {
         .route("/api/notes", get(list_notes))
         .route("/api/notes/{name}", get(get_note))
         .route("/api/notes/{name}", put(put_note))
+        .route("/api/backlinks", get(get_backlinks))
         .route("/api/search/vectors", post(search_vectors))
 }
 
@@ -75,6 +76,114 @@ async fn get_note(
 #[derive(Debug, Deserialize)]
 struct KilnQuery {
     kiln: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+struct BacklinksQuery {
+    kiln: PathBuf,
+    /// Note name or kiln-relative path (same fuzzy resolution as `get_note_by_name`).
+    note: String,
+}
+
+/// Join a daemon note path (kiln-relative in normal operation, but absolute
+/// records exist) onto the kiln root for `/api/kiln/file` consumers.
+fn absolute_note_path(kiln: &std::path::Path, note_path: &str) -> String {
+    if std::path::Path::new(note_path).is_absolute() {
+        note_path.to_string()
+    } else {
+        kiln.join(note_path).to_string_lossy().to_string()
+    }
+}
+
+/// `GET /api/backlinks?kiln=&note=` — linked + unlinked mentions for a note.
+///
+/// `linked` is the notes whose wikilinks point at the focused note (daemon
+/// `get_backlinks`). `unlinked` is plain-text mentions of *other* notes inside
+/// the focused note's content (daemon `suggest_links`) — candidates for
+/// one-click link insertion. Self-mentions are filtered out.
+async fn get_backlinks(
+    State(state): State<AppState>,
+    axum::extract::Query(query): axum::extract::Query<BacklinksQuery>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    validate_note_name(&query.note)?;
+
+    let resolved = state
+        .daemon
+        .get_backlinks(&query.kiln, &query.note)
+        .await
+        .daemon_err()?
+        .ok_or_else(|| WebError::NotFound(format!("Note '{}' not found", query.note)))?;
+
+    let note_path = resolved
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let note_title = resolved
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    let linked: Vec<serde_json::Value> = resolved
+        .get("backlinks")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|mut b| {
+            if let Some(obj) = b.as_object_mut() {
+                let rel = obj
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                obj.insert(
+                    "abs_path".to_string(),
+                    serde_json::Value::String(absolute_note_path(&query.kiln, &rel)),
+                );
+            }
+            b
+        })
+        .collect();
+
+    // Unlinked mentions: scan the focused note's content. A missing or
+    // unreadable file degrades to "no suggestions" rather than failing the
+    // whole panel — linked mentions come from the index, not the file.
+    let abs_path = absolute_note_path(&query.kiln, &note_path);
+    let unlinked = match fs::read_to_string(&abs_path).await {
+        Ok(content) => {
+            let mut self_names: Vec<String> = vec![note_title.to_lowercase()];
+            let trimmed = note_path.trim_end_matches(".md");
+            self_names.push(trimmed.to_lowercase());
+            if let Some(stem) = std::path::Path::new(trimmed)
+                .file_name()
+                .and_then(|s| s.to_str())
+            {
+                self_names.push(stem.to_lowercase());
+            }
+            state
+                .daemon
+                .suggest_links(&query.kiln, &content)
+                .await
+                .daemon_err()?
+                .into_iter()
+                .filter(|s| {
+                    s.get("target")
+                        .and_then(|t| t.as_str())
+                        .map(|t| !self_names.contains(&t.to_lowercase()))
+                        .unwrap_or(false)
+                })
+                .collect::<Vec<_>>()
+        }
+        Err(_) => Vec::new(),
+    };
+
+    Ok(Json(serde_json::json!({
+        "note": { "path": note_path, "abs_path": abs_path, "title": note_title },
+        "linked": linked,
+        "unlinked": unlinked,
+    })))
 }
 
 #[derive(Debug, Deserialize)]

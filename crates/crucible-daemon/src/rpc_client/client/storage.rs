@@ -36,6 +36,30 @@ pub struct GetNoteByNameRequest {
     pub scope: Option<crucible_core::storage::Scope>,
 }
 
+/// Request for `get_backlinks`.
+///
+/// `scope` is the request authority — defaults server-side to
+/// `Scope::Workspace { path: kiln }` when absent.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GetBacklinksRequest {
+    pub kiln: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<crucible_core::storage::Scope>,
+}
+
+/// Request for `suggest_links`.
+///
+/// `scope` is the request authority — defaults server-side to
+/// `Scope::Workspace { path: kiln }` when absent.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SuggestLinksRequest {
+    pub kiln: String,
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<crucible_core::storage::Scope>,
+}
+
 /// Request for `note.upsert`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct NoteUpsertRequest {
@@ -336,6 +360,61 @@ impl DaemonClient {
         } else {
             Ok(Some(result))
         }
+    }
+
+    /// Resolve a note by name and return the notes that wikilink to it.
+    ///
+    /// Returns `None` when the name resolves to no note. On success the
+    /// value is `{ path, title, backlinks: [{ name, path, title }] }`.
+    pub async fn get_backlinks(
+        &self,
+        kiln_path: &Path,
+        name: &str,
+        scope: Option<crucible_core::storage::Scope>,
+    ) -> Result<Option<serde_json::Value>> {
+        let result: serde_json::Value = self
+            .typed_call(
+                "get_backlinks",
+                GetBacklinksRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    name: name.to_string(),
+                    scope,
+                },
+            )
+            .await?;
+
+        if result.is_null() {
+            Ok(None)
+        } else {
+            Ok(Some(result))
+        }
+    }
+
+    /// Detect unlinked mentions of existing notes in `text`.
+    ///
+    /// Returns the raw `[{ mention, target, offset }]` suggestion array.
+    pub async fn suggest_links(
+        &self,
+        kiln_path: &Path,
+        text: &str,
+        scope: Option<crucible_core::storage::Scope>,
+    ) -> Result<Vec<serde_json::Value>> {
+        let result: serde_json::Value = self
+            .typed_call(
+                "suggest_links",
+                SuggestLinksRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    text: text.to_string(),
+                    scope,
+                },
+            )
+            .await?;
+
+        Ok(result
+            .get("suggestions")
+            .and_then(|s| s.as_array())
+            .cloned()
+            .unwrap_or_default())
     }
 
     // =========================================================================

@@ -170,6 +170,36 @@ impl ReconnectingDaemon {
         .await
     }
 
+    pub async fn get_backlinks(
+        &self,
+        kiln_path: &Path,
+        name: &str,
+    ) -> anyhow::Result<Option<serde_json::Value>> {
+        let kiln_path = kiln_path.to_path_buf();
+        let name = name.to_string();
+        self.call_with_reconnect("get_backlinks", move |daemon| {
+            let kiln_path = kiln_path.clone();
+            let name = name.clone();
+            Box::pin(async move { daemon.get_backlinks(&kiln_path, &name, None).await })
+        })
+        .await
+    }
+
+    pub async fn suggest_links(
+        &self,
+        kiln_path: &Path,
+        text: &str,
+    ) -> anyhow::Result<Vec<serde_json::Value>> {
+        let kiln_path = kiln_path.to_path_buf();
+        let text = text.to_string();
+        self.call_with_reconnect("suggest_links", move |daemon| {
+            let kiln_path = kiln_path.clone();
+            let text = text.clone();
+            Box::pin(async move { daemon.suggest_links(&kiln_path, &text, None).await })
+        })
+        .await
+    }
+
     pub async fn note_upsert(
         &self,
         kiln_path: &Path,
