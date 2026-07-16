@@ -18,9 +18,16 @@ export interface TranscriptionSettings {
   language: string;
 }
 
+/** Settings for the CodeMirror note/file editor */
+export interface EditorSettings {
+  /** Modal vim keybindings (@replit/codemirror-vim) */
+  vimMode: boolean;
+}
+
 /** Root application settings structure */
 export interface AppSettings {
   transcription: TranscriptionSettings;
+  editor: EditorSettings;
 }
 
 /** Default settings values */
@@ -30,6 +37,9 @@ export const defaultSettings: AppSettings = {
     serverUrl: '',
     model: 'whisper-large-v3-turbo',
     language: 'auto',
+  },
+  editor: {
+    vimMode: true,
   },
 };
 
@@ -52,12 +62,19 @@ export function loadSettings(): AppSettings {
           ...defaultSettings.transcription,
           ...parsed.transcription,
         },
+        editor: {
+          ...defaultSettings.editor,
+          ...parsed.editor,
+        },
       };
     }
   } catch (e) {
     console.warn('Failed to load settings:', e);
   }
-  return { transcription: { ...defaultSettings.transcription } };
+  return {
+    transcription: { ...defaultSettings.transcription },
+    editor: { ...defaultSettings.editor },
+  };
 }
 
 /**

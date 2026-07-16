@@ -51,18 +51,23 @@ export interface NotePreview {
   excerpt: string;
 }
 
+/** Note body without its YAML frontmatter block (for rendered views). */
+export function stripFrontmatter(content: string): string {
+  if (content.startsWith('---')) {
+    const end = content.indexOf('\n---', 3);
+    if (end !== -1) {
+      return content.slice(end + 4);
+    }
+  }
+  return content;
+}
+
 /**
  * First ~`maxChars` of note content with YAML frontmatter stripped —
  * enough for a hover card without rendering the whole note.
  */
 export function noteExcerpt(content: string, maxChars = 1200): string {
-  let body = content;
-  if (body.startsWith('---')) {
-    const end = body.indexOf('\n---', 3);
-    if (end !== -1) {
-      body = body.slice(end + 4);
-    }
-  }
+  let body = stripFrontmatter(content);
   body = body.trim();
   if (body.length <= maxChars) return body;
   // Cut on a line boundary so we don't render half a markdown construct.

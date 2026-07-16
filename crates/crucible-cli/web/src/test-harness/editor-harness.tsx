@@ -20,6 +20,7 @@ import '@/index.css';
 import { render } from 'solid-js/web';
 import { Show, onMount, onCleanup, type Component } from 'solid-js';
 import { ProjectProvider } from '@/contexts/ProjectContext';
+import { SettingsProvider } from '@/contexts/SettingsContext';
 import { EditorProvider, useEditor } from '@/contexts/EditorContext';
 import { EditorPanel } from '@/components/EditorPanel';
 import { BacklinksPanel } from '@/components/BacklinksPanel';
@@ -107,9 +108,12 @@ const HarnessInner: Component = () => {
 
 const EditorHarness: Component = () => (
   <ProjectProvider>
-    <EditorProvider>
-      <HarnessInner />
-    </EditorProvider>
+    {/* Real SettingsProvider so persisted editor settings (vim mode) apply. */}
+    <SettingsProvider>
+      <EditorProvider>
+        <HarnessInner />
+      </EditorProvider>
+    </SettingsProvider>
   </ProjectProvider>
 );
 

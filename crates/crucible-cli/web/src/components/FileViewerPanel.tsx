@@ -6,7 +6,8 @@ import {
   untrack,
 } from 'solid-js';
 import { useEditorSafe } from '@/contexts/EditorContext';
-import { CodeMirrorEditor } from './editor/CodeMirrorEditor';
+import { EditorWithPreview } from './editor/EditorWithPreview';
+import { useSettingsSafe } from '@/contexts/SettingsContext';
 import { findTabByFilePath } from '@/lib/file-actions';
 import { openNoteInEditor } from '@/lib/note-actions';
 import { windowActions } from '@/stores/windowStore';
@@ -20,6 +21,7 @@ interface FileViewerPanelProps {
 
 const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   const { openFile, closeFile, openFiles, isLoading, error, updateFileContent, saveFile } = useEditorSafe();
+  const { settings } = useSettingsSafe();
 
   const fileData = () => openFiles().find(f => f.path === props.filePath) ?? null;
 
@@ -127,7 +129,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
           }
         >
           {(file) => (
-            <CodeMirrorEditor
+            <EditorWithPreview
               content={file().content}
               path={file().path}
               onChange={(content) => updateFileContent(file().path, content)}
@@ -135,6 +137,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
               onFollowLink={(target) =>
                 void openNoteInEditor(target, statusBarStore.kilnPath() ?? undefined)
               }
+              vimMode={settings.editor.vimMode}
             />
           )}
         </Show>

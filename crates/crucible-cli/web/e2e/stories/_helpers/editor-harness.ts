@@ -44,6 +44,8 @@ export interface EditorHarness {
 export interface HarnessOptions {
   /** Dock the real BacklinksPanel beside the editor (`?backlinks=1`). */
   backlinks?: boolean;
+  /** Keep the product default (vim ON) instead of the test default (off). */
+  vim?: boolean;
 }
 
 export async function setupEditorHarness(
@@ -80,6 +82,15 @@ export async function setupEditorHarness(
     }
     return route.continue();
   });
+
+  // Vim keybindings default ON in the product; most stories type plain text,
+  // so they run with vim disabled via the persisted setting. The vim story
+  // passes { vim: true } to exercise the real default.
+  if (!options.vim) {
+    await page.addInitScript(() => {
+      localStorage.setItem('crucible:settings', JSON.stringify({ editor: { vimMode: false } }));
+    });
+  }
 
   await page.goto(options.backlinks ? '/editor-harness.html?backlinks=1' : '/editor-harness.html');
   await page.waitForFunction(() => Boolean(window.__editorHarness));

@@ -1,6 +1,7 @@
 import { Component, For, Show } from 'solid-js';
 import { useEditorSafe } from '@/contexts/EditorContext';
-import { CodeMirrorEditor } from './editor/CodeMirrorEditor';
+import { EditorWithPreview } from './editor/EditorWithPreview';
+import { useSettingsSafe } from '@/contexts/SettingsContext';
 import { getConfig, getNote } from '@/lib/api';
 import { noteAbsolutePath } from '@/lib/note-actions';
 import { notificationActions } from '@/stores/notificationStore';
@@ -47,6 +48,7 @@ const Tab: Component<{
 
 export const EditorPanel: Component = () => {
   const { openFiles, activeFile, setActiveFile, closeFile, saveFile, updateFileContent, isLoading, error, openFile } = useEditorSafe();
+  const { settings } = useSettingsSafe();
 
   const activeFileData = () => {
     const path = activeFile();
@@ -116,12 +118,13 @@ export const EditorPanel: Component = () => {
         <div class="flex-1 overflow-hidden relative">
           <Show when={activeFileData()}>
             {(file) => (
-              <CodeMirrorEditor
+              <EditorWithPreview
                 content={file().content}
                 path={file().path}
                 onChange={(content) => updateFileContent(file().path, content)}
                 onSave={() => void saveFile(file().path)}
                 onFollowLink={(target) => void followLink(target)}
+                vimMode={settings.editor.vimMode}
               />
             )}
           </Show>

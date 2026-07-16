@@ -44,6 +44,10 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
       return route.continue();
     });
 
+    // Stories type plain text; run with the vim default disabled.
+    await page.addInitScript(() => {
+      localStorage.setItem('crucible:settings', JSON.stringify({ editor: { vimMode: false } }));
+    });
     await page.goto('/');
 
     // Open the file through the product's own file-open function (what
@@ -103,6 +107,10 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
       return route.continue();
     });
 
+    // Stories type plain text; run with the vim default disabled.
+    await page.addInitScript(() => {
+      localStorage.setItem('crucible:settings', JSON.stringify({ editor: { vimMode: false } }));
+    });
     await page.goto('/');
     await page.evaluate(
       ({ filePath, fileName }) => {

@@ -88,3 +88,18 @@ export function useSettings(): SettingsContextValue {
   }
   return context;
 }
+
+/**
+ * Settings access with a defaults fallback for contexts mounted without a
+ * SettingsProvider (test harnesses); writes are no-ops there.
+ */
+export function useSettingsSafe(): SettingsContextValue {
+  const context = useContext(SettingsContext);
+  return (
+    context ?? {
+      settings: defaultSettings,
+      updateSetting: () => {},
+      resetSettings: () => {},
+    }
+  );
+}

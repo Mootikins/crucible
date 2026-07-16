@@ -13,7 +13,9 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import { markdown } from '@codemirror/lang-markdown';
 import { javascript } from '@codemirror/lang-javascript';
 import { rust } from '@codemirror/lang-rust';
+import { vim } from '@replit/codemirror-vim';
 import { wikilinkNavigation } from './wikilink-extension';
+import { crucibleEditorChrome } from './editor-theme';
 
 type LanguageSupport = ReturnType<typeof markdown>;
 
@@ -52,11 +54,17 @@ export const CodeMirrorEditor: Component<{
   onSave?: () => void;
   /** Follow a [[wikilink]] (Ctrl/Cmd+Click or Mod-Enter); markdown files only. */
   onFollowLink?: (target: string) => void;
+  /** Modal vim editing (@replit/codemirror-vim). */
+  vimMode?: boolean;
+  /** Switch to the rendered preview (Mod-Shift-E). */
+  onTogglePreview?: () => void;
 }> = (props) => {
   let view: EditorView | undefined;
 
   const createExtensions = (): Extension[] => {
     const extensions: Extension[] = [
+      // vim() must precede other keymaps so modal keys win while active.
+      ...(props.vimMode ? [vim()] : []),
       lineNumbers(),
       highlightActiveLine(),
       highlightSpecialChars(),
@@ -74,8 +82,21 @@ export const CodeMirrorEditor: Component<{
             return true;
           },
         },
+        // Mod-Shift-E, not Mod-E: vim owns Ctrl-E (scroll line) when active.
+        {
+          key: 'Mod-Shift-e',
+          preventDefault: true,
+          run: () => {
+            if (!props.onTogglePreview) return false;
+            props.onTogglePreview();
+            return true;
+          },
+        },
       ]),
       keymap.of([...defaultKeymap, ...historyKeymap]),
+      // Chrome BEFORE oneDark: earlier extensions take precedence in CM6,
+      // so the shell background/gutter overrides win over oneDark's.
+      crucibleEditorChrome,
       oneDark,
       EditorView.updateListener.of((update) => {
         if (
@@ -137,8 +158,10 @@ export const CodeMirrorEditor: Component<{
 
   createEffect(() => {
     // Reconfigure unconditionally so switching to a language-less file drops
-    // the previous file's highlighting instead of keeping it.
+    // the previous file's highlighting instead of keeping it. Also tracks
+    // vimMode so the Settings toggle applies to open editors.
     props.path;
+    props.vimMode;
     if (view) {
       view.dispatch({
         effects: StateEffect.reconfigure.of(createExtensions()),

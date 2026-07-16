@@ -47,13 +47,20 @@ const wikilinkHighlighter = ViewPlugin.fromClass(
   { decorations: (v) => v.decorations },
 );
 
+// Ember-tinted pill rather than an underline: reads as "knowledge link",
+// stays distinct from markdown's own [link](url) styling, and the underline
+// only appears on hover as the follow affordance.
 const wikilinkTheme = EditorView.baseTheme({
   '.cm-wikilink': {
-    color: 'var(--color-primary, #7dd3fc)',
+    color: 'var(--color-primary, #e0653a)',
+    backgroundColor: 'rgba(224, 101, 58, 0.10)',
+    borderRadius: '3px',
     cursor: 'pointer',
+  },
+  '.cm-wikilink:hover': {
     textDecoration: 'underline',
-    textDecorationStyle: 'dotted',
     textUnderlineOffset: '3px',
+    backgroundColor: 'rgba(224, 101, 58, 0.18)',
   },
 });
 

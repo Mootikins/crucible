@@ -524,6 +524,28 @@ const McpStatusSection: Component = () => {
  * a URL and is never stored where page JS can read it. It lives in
  * `~/.config/crucible/api_key` on the machine running `cru web`.
  */
+/** Editor preferences (persisted locally, applied to open editors live). */
+const EditorSettingsSection: Component = () => {
+  const { settings, updateSetting } = useSettings();
+  return (
+    <>
+      <SectionHeader title="Editor" icon="✎" />
+      <SettingRow
+        label="Vim keybindings"
+        description="Modal editing in the note/file editor."
+      >
+        <input
+          type="checkbox"
+          checked={settings.editor.vimMode}
+          onChange={(e) => updateSetting('editor', 'vimMode', e.currentTarget.checked)}
+          class="h-4 w-4 accent-[--color-primary] cursor-pointer"
+          data-testid="settings-editor-vim"
+        />
+      </SettingRow>
+    </>
+  );
+};
+
 const ApiAccessSection: Component = () => {
   const [draft, setDraft] = createSignal('');
   const [rejected, setRejected] = createSignal(false);
@@ -671,6 +693,9 @@ const SettingsPanelContent: Component = () => {
               </td>
             </tr>
           </Show>
+
+          {/* Editor Section */}
+          <EditorSettingsSection />
 
           {/* API Access Section */}
           <ApiAccessSection />

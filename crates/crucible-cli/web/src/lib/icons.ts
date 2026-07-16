@@ -46,4 +46,6 @@ export {
   House,
   Inbox,
   Link2,
+  Eye,
+  Pencil,
 } from 'lucide-solid';
