@@ -1,3 +1,4 @@
+mod auth;
 mod chat;
 mod config;
 mod health;
@@ -15,6 +16,7 @@ mod shell;
 mod skills;
 mod webhook;
 
+pub use auth::auth_routes;
 pub use chat::chat_routes;
 pub use config::config_routes;
 pub use health::health_routes;

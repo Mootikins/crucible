@@ -17,48 +17,39 @@ export interface Config {
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
 // =============================================================================
-// API token (Bearer auth for non-localhost access)
+// API auth (browser: HttpOnly session cookie; programmatic: Bearer header)
 // =============================================================================
 //
-// The server enforces `Authorization: Bearer <key>` on /api/* for non-loopback
-// clients when an API key is configured (~/.config/crucible/api_key). Bootstrap
-// the token by opening the UI once as `/?token=<key>` — it is stored in
-// localStorage and stripped from the URL. SSE carries it as `access_token=`
-// (EventSource cannot set headers); the server accepts both.
+// The server enforces auth on /api/* for non-loopback clients when an API key
+// is configured (~/.config/crucible/api_key). The browser signs in once via
+// POST /api/auth/login, which mints an HttpOnly session cookie that rides on
+// every request — including SSE, where EventSource cannot set headers. Keys
+// deliberately never travel in URLs (the old `?token=` bootstrap and
+// `?access_token=` SSE fallback leaked via history, server logs, and
+// referrers) and are never stored where page JS can read them.
 
-const TOKEN_STORAGE_KEY = 'crucible_api_token';
-
-function initApiToken(): string | null {
-  try {
-    const url = new URL(window.location.href);
-    const fromUrl = url.searchParams.get('token');
-    if (fromUrl) {
-      localStorage.setItem(TOKEN_STORAGE_KEY, fromUrl);
-      url.searchParams.delete('token');
-      window.history.replaceState({}, '', url.toString());
-    }
-    return localStorage.getItem(TOKEN_STORAGE_KEY);
-  } catch {
-    return null; // non-browser context (tests) or storage disabled
-  }
+// One-time hygiene: purge the key the pre-cookie flow kept in localStorage.
+try {
+  localStorage.removeItem('crucible_api_token');
+} catch {
+  // non-browser context (tests) or storage disabled
 }
 
-let apiToken: string | null = initApiToken();
-
-export function getApiToken(): string | null {
-  return apiToken;
-}
-
-export function setApiToken(token: string | null): void {
-  apiToken = token;
+/**
+ * Exchange the API key for the HttpOnly session cookie. Returns whether the
+ * server accepted the key; on success the caller should reload so every
+ * context refetches with credentials.
+ */
+export async function login(key: string): Promise<boolean> {
   try {
-    if (token) {
-      localStorage.setItem(TOKEN_STORAGE_KEY, token);
-    } else {
-      localStorage.removeItem(TOKEN_STORAGE_KEY);
-    }
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key }),
+    });
+    return res.ok;
   } catch {
-    // storage unavailable — keep the in-memory token
+    return false;
   }
 }
 
@@ -73,13 +64,6 @@ function notifyAuthRequired(): void {
   } catch {
     // non-browser context
   }
-}
-
-/** Append the token as `access_token` for endpoints that cannot send headers. */
-export function withAccessToken(url: string): string {
-  if (!apiToken) return url;
-  const sep = url.includes('?') ? '&' : '?';
-  return `${url}${sep}access_token=${encodeURIComponent(apiToken)}`;
 }
 
 interface RequestOptions extends Omit<RequestInit, 'method'> {
@@ -105,11 +89,7 @@ async function request<T>(
   options: RequestOptions = {},
 ): Promise<T> {
   const { errorMessage = 'Request failed', parseAs = 'json', includeErrorText = false, ...init } = options;
-  const headers = new Headers(init.headers);
-  if (apiToken && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${apiToken}`);
-  }
-  const res = await fetch(url, { method, ...init, headers });
+  const res = await fetch(url, { method, ...init });
 
   if (!res.ok) {
     let errorText = '';
@@ -120,8 +100,8 @@ async function request<T>(
       notifyAuthRequired();
     }
     const hint =
-      res.status === 401 && !apiToken
-        ? ' — Unauthorized: open the UI as /?token=<api key> (key lives in ~/.config/crucible/api_key on the server)'
+      res.status === 401
+        ? ' — Unauthorized: sign in with the API key (from `cru web key` on the host)'
         : '';
     throw Object.assign(new Error((errorText || `${errorMessage}: HTTP ${res.status}`) + hint), {
       status: res.status,
@@ -202,7 +182,9 @@ export function subscribeToEvents(
   sessionId: string,
   onEvent: (event: ChatEvent) => void,
 ): () => void {
-  const url = withAccessToken(`/api/chat/events/${encodeURIComponent(sessionId)}`);
+  // EventSource cannot set headers; the HttpOnly session cookie (set by
+  // login()) authenticates the stream for non-localhost clients.
+  const url = `/api/chat/events/${encodeURIComponent(sessionId)}`;
   let source: EventSource | null = null;
   let reconnectAttempts = 0;
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;

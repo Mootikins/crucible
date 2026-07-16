@@ -199,7 +199,7 @@ The learning system (kiln-notes-as-memory, reflection proposals, precognition) i
 ### 3.7 Settings, config & ops
 
 - [x] Settings panel — thinking budget, temperature, max tokens, precognition (+result count), plugins, MCP status, transcription, API access token
-- [x] Auth — Bearer token, localhost bypass, `?access_token=` for SSE, 401 → in-UI key prompt, Settings field, `cru web key` CLI, connect URLs at startup
+- [x] Auth — Bearer token (programmatic), localhost bypass, browser sign-in via `POST /api/auth/login` → HttpOnly session cookie (covers SSE; replaced the `?token=`/`?access_token=` URL flows 2026-07-16 — query-string tokens leak via history/logs/referrers), 401 → in-UI sign-in prompt, Settings sign-in, `cru web key` CLI
 - [ ] `NOW` **Session-knob parity** — 9 of 14 session knobs are RPC-only (max_iterations, execution_timeout, context_budget, context_strategy, output_validation, validation_retries, autocompact_threshold, system_prompt…); mirror them in Settings (routes are macro-friendly)
 - [ ] `NOW` **Agent selection at session create** — `create_session` hardcodes the internal agent; expose agent cards + ACP agents (claude/opencode/gemini) in the new-session flow. Unlocks "Crucible as command center for external agents" in the browser — a headline capability that works in the TUI today.
 - [ ] `NEXT` **Config editor** — schema-driven form over `config.toml` (schema generated from config types), with raw-TOML escape hatch

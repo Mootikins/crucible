@@ -1,63 +1,57 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { setApiToken, getApiToken, withAccessToken, getConfig } from '../api';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { login, getConfig } from '../api';
 
-describe('API token handling', () => {
-  beforeEach(() => {
-    localStorage.clear();
-    setApiToken(null);
-  });
-
+describe('API auth (cookie session via /api/auth/login)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    setApiToken(null);
   });
 
-  it('withAccessToken appends the token only when one is set', () => {
-    expect(withAccessToken('/api/chat/events/s1')).toBe('/api/chat/events/s1');
+  it('login POSTs the key as JSON and reports acceptance', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 204 }));
 
-    setApiToken('secret-key');
-    expect(withAccessToken('/api/chat/events/s1')).toBe(
-      '/api/chat/events/s1?access_token=secret-key'
-    );
-    expect(withAccessToken('/api/x?a=1')).toBe('/api/x?a=1&access_token=secret-key');
+    expect(await login('secret-key')).toBe(true);
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/auth/login');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ key: 'secret-key' });
   });
 
-  it('requests attach Authorization: Bearer when a token is set', async () => {
-    setApiToken('secret-key');
+  it('login reports rejection on 401 and on network failure', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 401 }));
+    expect(await login('wrong')).toBe(false);
+
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
+    expect(await login('secret-key')).toBe(false);
+  });
+
+  it('the key never appears in a request URL', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 204 }));
+
+    await login('secret-key');
+
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain('secret-key');
+  });
+
+  it('requests carry no Authorization header (cookie is the credential)', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(new Response(JSON.stringify({ kiln_path: '/k' }), { status: 200 }));
 
     await getConfig();
 
-    const headers = new Headers((fetchMock.mock.calls[0][1] as RequestInit).headers);
-    expect(headers.get('Authorization')).toBe('Bearer secret-key');
-  });
-
-  it('requests carry no Authorization header without a token', async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(new Response(JSON.stringify({ kiln_path: '/k' }), { status: 200 }));
-
-    await getConfig();
-
-    const headers = new Headers((fetchMock.mock.calls[0][1] as RequestInit).headers);
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = new Headers(init?.headers);
     expect(headers.get('Authorization')).toBeNull();
   });
 
-  it('401 without a token surfaces the ?token= bootstrap hint', async () => {
+  it('401 surfaces the sign-in hint', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 401 }));
 
-    await expect(getConfig()).rejects.toThrow(/\?token=<api key>/);
-  });
-
-  it('setApiToken persists to and clears localStorage', () => {
-    setApiToken('abc');
-    expect(localStorage.getItem('crucible_api_token')).toBe('abc');
-    expect(getApiToken()).toBe('abc');
-
-    setApiToken(null);
-    expect(localStorage.getItem('crucible_api_token')).toBeNull();
-    expect(getApiToken()).toBeNull();
+    await expect(getConfig()).rejects.toThrow(/sign in with the API key/);
   });
 });

@@ -10,6 +10,11 @@ use std::sync::Arc;
 
 const ALLOW_REMOTE_SHELL_ENV: &str = "CRUCIBLE_ALLOW_REMOTE_SHELL";
 
+/// Session cookie carrying the API key for browser clients (set by
+/// `POST /api/auth/login`). HttpOnly, so page JS never touches it, and it
+/// rides along on EventSource/SSE requests that cannot set headers.
+pub const AUTH_COOKIE: &str = "crucible_auth";
+
 // ---------------------------------------------------------------------------
 // Bearer token auth
 // ---------------------------------------------------------------------------
@@ -82,20 +87,36 @@ pub async fn bearer_auth(
         };
     }
 
-    // EventSource cannot set request headers, so SSE subscriptions (and the
-    // browser's initial ?token= bootstrap) may carry the key as a query
-    // param instead. Header, when present, always wins above.
-    if let Some(query) = request.uri().query() {
-        for pair in query.split('&') {
-            if let Some(token) = pair.strip_prefix("access_token=") {
-                if constant_time_eq(token.as_bytes(), expected_key.as_bytes()) {
-                    return next.run(request).await;
-                }
-            }
+    // Browser clients authenticate with the HttpOnly session cookie set by
+    // POST /api/auth/login (EventSource cannot set headers; cookies ride along
+    // automatically). Header, when present, always wins above. Tokens are
+    // deliberately NOT accepted in the URL — query strings leak through
+    // browser history, server logs, and referrers.
+    if let Some(cookie_key) = auth_cookie_value(request.headers()) {
+        if constant_time_eq(cookie_key.as_bytes(), expected_key.as_bytes()) {
+            return next.run(request).await;
         }
     }
 
     unauthorized_response()
+}
+
+/// Extract the value of the [`AUTH_COOKIE`] from the `Cookie` header, if any.
+fn auth_cookie_value(headers: &HeaderMap) -> Option<String> {
+    let raw = headers.get(axum::http::header::COOKIE)?.to_str().ok()?;
+    raw.split(';').find_map(|pair| {
+        let (name, value) = pair.trim().split_once('=')?;
+        (name == AUTH_COOKIE).then(|| value.to_string())
+    })
+}
+
+/// Constant-time check of a provided key against the configured one.
+/// `None` configured key means auth is disabled — everything verifies.
+pub fn verify_api_key(state: &ApiKeyState, provided: &str) -> bool {
+    match &state.api_key {
+        Some(expected) => constant_time_eq(provided.as_bytes(), expected.as_bytes()),
+        None => true,
+    }
 }
 
 /// Load API key from config, fall back to file, or generate a new one.
@@ -291,11 +312,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bearer_auth_accepts_valid_access_token_query_param() {
+    async fn bearer_auth_accepts_valid_session_cookie() {
         let app = test_router_with_bearer(Some("secret-key".to_string()));
 
         let req = Request::builder()
-            .uri("/api/test?access_token=secret-key")
+            .uri("/api/test")
+            .header("cookie", format!("other=1; {AUTH_COOKIE}=secret-key"))
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
@@ -303,11 +325,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bearer_auth_rejects_wrong_access_token_query_param() {
+    async fn bearer_auth_rejects_wrong_session_cookie() {
         let app = test_router_with_bearer(Some("secret-key".to_string()));
 
         let req = Request::builder()
-            .uri("/api/test?access_token=wrong")
+            .uri("/api/test")
+            .header("cookie", format!("{AUTH_COOKIE}=wrong"))
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
@@ -315,18 +338,45 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bearer_auth_header_wins_over_query_param() {
-        // A wrong header must not fall through to a valid query param —
+    async fn bearer_auth_header_wins_over_cookie() {
+        // A wrong header must not fall through to a valid cookie —
         // explicit credentials fail loudly.
         let app = test_router_with_bearer(Some("secret-key".to_string()));
 
         let req = Request::builder()
-            .uri("/api/test?access_token=secret-key")
+            .uri("/api/test")
+            .header("cookie", format!("{AUTH_COOKIE}=secret-key"))
             .header("authorization", "Bearer wrong")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn bearer_auth_no_longer_accepts_url_tokens() {
+        // Regression: tokens in URLs leak via history/logs/referrers. The old
+        // ?access_token= fallback must stay dead.
+        let app = test_router_with_bearer(Some("secret-key".to_string()));
+
+        let req = Request::builder()
+            .uri("/api/test?access_token=secret-key&token=secret-key")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn verify_api_key_matches_and_disabled_auth_accepts_all() {
+        let enabled = ApiKeyState {
+            api_key: Some("secret-key".into()),
+        };
+        assert!(verify_api_key(&enabled, "secret-key"));
+        assert!(!verify_api_key(&enabled, "wrong"));
+
+        let disabled = ApiKeyState { api_key: None };
+        assert!(verify_api_key(&disabled, "anything"));
     }
 
     #[tokio::test]

@@ -102,19 +102,16 @@ fn handle_key(config: &WebConfig, rotate: bool) -> Result<()> {
 
     println!("API key: {}", key);
     println!();
-    println!("Localhost needs no key. Connect a remote device with:");
-    println!(
-        "  http://{}:{}/?token={}",
-        host_for_url(config),
-        config.port,
-        key
-    );
+    println!("Localhost needs no key. On a remote device, open:");
+    println!("  http://{}:{}", host_for_url(config), config.port);
+    println!("and paste the key into the sign-in prompt.");
     Ok(())
 }
 
-/// Print ready-to-open URLs after startup — the remote one carries the token
-/// (Jupyter-style) since non-localhost clients cannot fetch the key
-/// themselves.
+/// Print ready-to-open URLs after startup. The key is deliberately NOT
+/// embedded in the URL — query-string tokens leak through browser history,
+/// server logs, and referrers. Remote devices sign in once via the in-UI
+/// prompt (POST /api/auth/login → HttpOnly session cookie).
 fn print_connect_urls(config: &WebConfig) {
     println!("  Local:  http://localhost:{}", config.port);
 
@@ -122,11 +119,10 @@ fn print_connect_urls(config: &WebConfig) {
         return;
     }
     match resolve_api_key(config.api_key.as_deref()) {
-        Some(key) => println!(
-            "  Remote: http://{}:{}/?token={}",
+        Some(_) => println!(
+            "  Remote: http://{}:{}  (sign in with the key from `cru web key`)",
             host_for_url(config),
-            config.port,
-            key
+            config.port
         ),
         None => println!(
             "  Remote: http://{}:{}  (WARNING: API auth disabled)",

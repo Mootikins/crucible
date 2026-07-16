@@ -5,8 +5,7 @@ import { useSessionSafe } from '@/contexts/SessionContext';
 import type { TranscriptionProvider } from '@/lib/settings';
 import type { PluginInfo } from '@/lib/api';
 import {
-  getApiToken,
-  setApiToken,
+  login,
   getThinkingBudget,
   setThinkingBudget as apiSetThinkingBudget,
   getTemperature,
@@ -520,24 +519,23 @@ const McpStatusSection: Component = () => {
 // =============================================================================
 
 /**
- * API token for non-localhost access (Bearer auth). The key lives in
- * `~/.config/crucible/api_key` on the machine running `cru web`; remote
- * devices paste it here (or bootstrap once via `/?token=<key>`).
+ * API access for non-localhost clients. The pasted key is exchanged for an
+ * HttpOnly session cookie (POST /api/auth/login) — the key never travels in
+ * a URL and is never stored where page JS can read it. It lives in
+ * `~/.config/crucible/api_key` on the machine running `cru web`.
  */
 const ApiAccessSection: Component = () => {
   const [draft, setDraft] = createSignal('');
-  const hasToken = () => getApiToken() !== null;
+  const [rejected, setRejected] = createSignal(false);
 
-  const save = () => {
-    const token = draft().trim();
-    if (!token) return;
-    setApiToken(token);
-    window.location.reload();
-  };
-
-  const clear = () => {
-    setApiToken(null);
-    window.location.reload();
+  const save = async () => {
+    const key = draft().trim();
+    if (!key) return;
+    if (await login(key)) {
+      window.location.reload();
+    } else {
+      setRejected(true);
+    }
   };
 
   return (
@@ -545,38 +543,34 @@ const ApiAccessSection: Component = () => {
       <SectionHeader title="API Access" icon="🔑" />
       <tr class="border-b border-neutral-700">
         <td class="py-3 text-neutral-300 text-sm">
-          API token
+          Sign in with API key
           <div class="text-xs text-neutral-500">
-            {hasToken() ? 'A token is stored on this device.' : 'Required for non-localhost access.'}
+            Required for non-localhost access; sets a session cookie.
           </div>
+          <Show when={rejected()}>
+            <div class="text-xs text-red-400" data-testid="settings-api-token-rejected">
+              The server rejected that key.
+            </div>
+          </Show>
         </td>
         <td class="py-3 text-right">
           <input
             type="password"
             value={draft()}
             onInput={(e) => setDraft(e.currentTarget.value)}
-            placeholder={hasToken() ? '••••••••' : 'Paste API token'}
+            placeholder="Paste API key"
             class="bg-neutral-800 border border-neutral-600 rounded px-2 py-1 text-sm text-white focus:border-primary focus:outline-none w-56"
             data-testid="settings-api-token-input"
           />
           <button
             type="button"
-            onClick={save}
+            onClick={() => void save()}
             disabled={!draft().trim()}
             class="ml-2 rounded bg-primary px-2 py-1 text-sm text-white hover:bg-primary-hover disabled:opacity-50"
             data-testid="settings-api-token-save"
           >
-            Save
+            Sign in
           </button>
-          <Show when={hasToken()}>
-            <button
-              type="button"
-              onClick={clear}
-              class="ml-2 rounded px-2 py-1 text-sm text-neutral-400 hover:text-neutral-200"
-            >
-              Clear
-            </button>
-          </Show>
         </td>
       </tr>
     </>

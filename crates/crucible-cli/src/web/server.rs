@@ -3,7 +3,7 @@ use crate::web::middleware::auth::{
     bearer_auth, localhost_only_shell_auth, resolve_api_key, ApiKeyState,
 };
 use crate::web::routes::{
-    chat_routes, config_routes, health_routes, kiln_routes, layout_routes, mcp_routes,
+    auth_routes, chat_routes, config_routes, health_routes, kiln_routes, layout_routes, mcp_routes,
     plugin_routes, project_routes, search_routes, session_routes, shell_routes, skills_routes,
     webhook_routes,
 };
@@ -63,11 +63,16 @@ pub async fn start_server(web_config: &WebConfig, app_config: &CliAppConfig) -> 
         .merge(skills_routes())
         .merge(webhook_routes())
         .with_state(state)
-        .layer(middleware::from_fn_with_state(api_key_state, bearer_auth));
+        .layer(middleware::from_fn_with_state(
+            api_key_state.clone(),
+            bearer_auth,
+        ));
 
-    // Health and static routes are public (no Bearer auth).
+    // Health, static, and the login bootstrap are public (no Bearer auth) —
+    // login validates the key itself and mints the HttpOnly session cookie.
     let app = api_routes
         .merge(health_routes())
+        .merge(auth_routes(api_key_state))
         .merge(static_routes(web_config.static_dir.as_deref()))
         .layer(DefaultBodyLimit::max(MAX_BODY_SIZE_10MB))
         .layer(cors);
