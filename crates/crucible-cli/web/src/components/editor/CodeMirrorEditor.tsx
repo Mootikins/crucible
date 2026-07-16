@@ -13,6 +13,7 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import { markdown } from '@codemirror/lang-markdown';
 import { javascript } from '@codemirror/lang-javascript';
 import { rust } from '@codemirror/lang-rust';
+import { wikilinkNavigation } from './wikilink-extension';
 
 type LanguageSupport = ReturnType<typeof markdown>;
 
@@ -49,6 +50,8 @@ export const CodeMirrorEditor: Component<{
   path: string;
   onChange: (content: string) => void;
   onSave?: () => void;
+  /** Follow a [[wikilink]] (Ctrl/Cmd+Click or Mod-Enter); markdown files only. */
+  onFollowLink?: (target: string) => void;
 }> = (props) => {
   let view: EditorView | undefined;
 
@@ -91,6 +94,11 @@ export const CodeMirrorEditor: Component<{
     const langExt = getLanguageExtension(props.path);
     if (langExt) {
       extensions.push(langExt);
+    }
+
+    const ext = props.path.split('.').pop()?.toLowerCase() ?? '';
+    if (props.onFollowLink && (ext === 'md' || ext === 'markdown')) {
+      extensions.push(wikilinkNavigation((target) => props.onFollowLink?.(target)));
     }
 
     return extensions;

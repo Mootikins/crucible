@@ -1,6 +1,9 @@
 import { Component, For, Show } from 'solid-js';
 import { useEditorSafe } from '@/contexts/EditorContext';
 import { CodeMirrorEditor } from './editor/CodeMirrorEditor';
+import { getConfig, getNote } from '@/lib/api';
+import { noteAbsolutePath } from '@/lib/note-actions';
+import { notificationActions } from '@/stores/notificationStore';
 
 const getFilename = (path: string): string => {
   return path.split('/').pop() ?? path;
@@ -20,6 +23,7 @@ const Tab: Component<{
 
   return (
     <button
+      data-testid="editor-tab"
       class="flex items-center gap-2 px-3 py-1.5 text-sm border-b-2 transition-colors whitespace-nowrap"
       classList={{
         'border-primary text-neutral-100 bg-neutral-800': props.active,
@@ -42,12 +46,25 @@ const Tab: Component<{
 };
 
 export const EditorPanel: Component = () => {
-  const { openFiles, activeFile, setActiveFile, closeFile, saveFile, updateFileContent, isLoading, error } = useEditorSafe();
+  const { openFiles, activeFile, setActiveFile, closeFile, saveFile, updateFileContent, isLoading, error, openFile } = useEditorSafe();
 
   const activeFileData = () => {
     const path = activeFile();
     if (!path) return null;
     return openFiles().find((f) => f.path === path) ?? null;
+  };
+
+  // Follow a [[wikilink]]: resolve the target note and open it as another
+  // editor tab (this panel owns its own tab strip, unlike FileViewerPanel
+  // which opens window tabs via openNoteInEditor).
+  const followLink = async (target: string) => {
+    try {
+      const kiln = (await getConfig()).kiln_path;
+      const note = await getNote(target, kiln);
+      openFile(noteAbsolutePath(note.path, kiln));
+    } catch {
+      notificationActions.addNotification('warning', `Note not found: ${target}`);
+    }
   };
 
   return (
@@ -104,6 +121,7 @@ export const EditorPanel: Component = () => {
                 path={file().path}
                 onChange={(content) => updateFileContent(file().path, content)}
                 onSave={() => void saveFile(file().path)}
+                onFollowLink={(target) => void followLink(target)}
               />
             )}
           </Show>

@@ -8,7 +8,9 @@ import {
 import { useEditorSafe } from '@/contexts/EditorContext';
 import { CodeMirrorEditor } from './editor/CodeMirrorEditor';
 import { findTabByFilePath } from '@/lib/file-actions';
+import { openNoteInEditor } from '@/lib/note-actions';
 import { windowActions } from '@/stores/windowStore';
+import { statusBarStore } from '@/stores/statusBarStore';
 import { PanelShell } from './PanelShell';
 
 
@@ -130,6 +132,9 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
               path={file().path}
               onChange={(content) => updateFileContent(file().path, content)}
               onSave={handleSave}
+              onFollowLink={(target) =>
+                void openNoteInEditor(target, statusBarStore.kilnPath() ?? undefined)
+              }
             />
           )}
         </Show>
