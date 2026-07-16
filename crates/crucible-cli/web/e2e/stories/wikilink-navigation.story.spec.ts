@@ -59,11 +59,24 @@ test.describe('Editor wikilink navigation', () => {
     await harness.open(NOTE_A);
     await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 5000 });
 
-    // 1. The link is decorated with the resolution target.
+    // 1. The link is decorated with the resolution target. Live preview
+    // (the markdown default) hides the [[ ]] marks; the buffer still holds
+    // them — clicking into the link reveals the raw source.
     const link = page.locator('.cm-wikilink');
     await expect(link).toHaveCount(1);
     await expect(link).toHaveAttribute('data-note', 'Other Note');
-    await expect(link).toHaveText('[[Other Note]]');
+    await expect(link).toHaveText('Other Note');
+    // Clicking into the link reveals its raw source (the mark splits into
+    // multiple spans around the revealed brackets — assert on the content).
+    await link.click();
+    await expect(page.locator('.cm-content')).toContainText('[[Other Note]]');
+    // Park the cursor away from the link so the styled form is back for
+    // the baseline — and the pointer too, so the hover card doesn't leak
+    // into the screenshot.
+    await page.locator('.cm-content').press('End');
+    await expect(page.locator('.cm-wikilink').first()).toHaveText('Other Note');
+    await page.mouse.move(0, 400);
+    await expect(page.getByTestId('wikilink-preview')).toBeHidden();
     await story.step(page, 'wikilink decorated');
     await expect(page.locator('.cm-editor')).toHaveScreenshot('editor-wikilink-decorated.png', {
       maxDiffPixelRatio: 0.02,

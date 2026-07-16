@@ -82,11 +82,23 @@ test.describe('Backlinks panel', () => {
       maxDiffPixelRatio: 0.02,
     });
 
-    // 4. One-click link insertion rewrites the open buffer.
+    // 4. One-click link insertion rewrites the open buffer. The unfocused
+    // editor's cursor sits at 0, touching the fresh link, so live preview
+    // shows its raw source; parking the cursor elsewhere styles it into a
+    // pill with the [[ ]] marks hidden.
     await panel.getByTestId('backlinks-link-button').click();
     await expect(page.locator('.cm-content')).toContainText(
       '[[Other Note]] is mentioned here without a link.',
     );
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+End');
+    await expect(page.locator('.cm-content')).toContainText(
+      'Other Note is mentioned here without a link.',
+    );
+    await expect(page.locator('.cm-content')).not.toContainText('[[Other Note]]');
+    const pill = page.locator('.cm-wikilink').first();
+    await expect(pill).toBeVisible();
+    await expect(pill).toHaveAttribute('data-note', 'Other Note');
     // Buffer went dirty (unsaved-dot on the editor tab).
     await expect(page.getByText('●')).toHaveCount(1);
     // The applied suggestion left the list.

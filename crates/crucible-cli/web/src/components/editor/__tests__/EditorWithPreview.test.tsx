@@ -84,6 +84,40 @@ describe('EditorWithPreview', () => {
       <EditorWithPreview content="fn main() {}" path="/src/main.rs" onChange={noop} />
     ));
     expect(queryByTestId('preview-toggle')).toBeNull();
+    expect(queryByTestId('mode-toggle')).toBeNull();
+  });
+
+  it('markdown defaults to live preview: styled prose, syntax marks hidden', () => {
+    const { container } = render(() => (
+      <EditorWithPreview content="Some **bold** text." path="/kiln/note.md" onChange={noop} />
+    ));
+    expect(container.querySelector('.cm-lp-strong')).not.toBeNull();
+    expect(container.querySelector('.cm-content')?.textContent).not.toContain('**');
+  });
+
+  it('the mode toggle switches to raw source and back', async () => {
+    const { getByTestId, container } = render(() => (
+      <EditorWithPreview content="Some **bold** text." path="/kiln/note.md" onChange={noop} />
+    ));
+
+    fireEvent.click(getByTestId('mode-toggle'));
+    await waitFor(() => {
+      expect(container.querySelector('.cm-content')?.textContent).toContain('**bold**');
+      expect(container.querySelector('.cm-lp-strong')).toBeNull();
+    });
+
+    fireEvent.click(getByTestId('mode-toggle'));
+    await waitFor(() => {
+      expect(container.querySelector('.cm-lp-strong')).not.toBeNull();
+    });
+  });
+
+  it('non-markdown files never get the live-preview extension', () => {
+    const { container } = render(() => (
+      <EditorWithPreview content="let x = 1; // **not md**" path="/src/main.rs" onChange={noop} />
+    ));
+    expect(container.querySelector('.cm-lp-strong')).toBeNull();
+    expect(container.querySelector('.cm-content')?.textContent).toContain('**not md**');
   });
 
   it('switching files drops back to edit mode', async () => {

@@ -10,12 +10,13 @@ import {
 import { EditorState, StateEffect, Extension, Annotation } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { markdown } from '@codemirror/lang-markdown';
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { javascript } from '@codemirror/lang-javascript';
 import { rust } from '@codemirror/lang-rust';
 import { vim } from '@replit/codemirror-vim';
 import { wikilinkNavigation } from './wikilink-extension';
 import { crucibleEditorChrome } from './editor-theme';
+import { livePreview } from './live-preview';
 
 type LanguageSupport = ReturnType<typeof markdown>;
 
@@ -24,7 +25,9 @@ export const getLanguageExtension = (path: string): LanguageSupport | null => {
   switch (ext) {
     case 'md':
     case 'markdown':
-      return markdown();
+      // GFM base (strikethrough, tables, task lists) — the commonmark
+      // default has no Strikethrough node for live preview to style.
+      return markdown({ base: markdownLanguage });
     case 'js':
     case 'mjs':
     case 'cjs':
@@ -56,6 +59,8 @@ export const CodeMirrorEditor: Component<{
   onFollowLink?: (target: string) => void;
   /** Modal vim editing (@replit/codemirror-vim). */
   vimMode?: boolean;
+  /** Obsidian-style live preview (markdown files only). */
+  livePreview?: boolean;
   /** Switch to the rendered preview (Mod-Shift-E). */
   onTogglePreview?: () => void;
 }> = (props) => {
@@ -121,6 +126,9 @@ export const CodeMirrorEditor: Component<{
     if (props.onFollowLink && (ext === 'md' || ext === 'markdown')) {
       extensions.push(wikilinkNavigation((target) => props.onFollowLink?.(target)));
     }
+    if (props.livePreview && (ext === 'md' || ext === 'markdown')) {
+      extensions.push(livePreview());
+    }
 
     return extensions;
   };
@@ -159,9 +167,10 @@ export const CodeMirrorEditor: Component<{
   createEffect(() => {
     // Reconfigure unconditionally so switching to a language-less file drops
     // the previous file's highlighting instead of keeping it. Also tracks
-    // vimMode so the Settings toggle applies to open editors.
+    // vimMode and livePreview so mode toggles apply to open editors.
     props.path;
     props.vimMode;
+    props.livePreview;
     if (view) {
       view.dispatch({
         effects: StateEffect.reconfigure.of(createExtensions()),

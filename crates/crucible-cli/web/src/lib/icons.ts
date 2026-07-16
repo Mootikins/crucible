@@ -48,4 +48,5 @@ export {
   Link2,
   Eye,
   Pencil,
+  Code,
 } from 'lucide-solid';
