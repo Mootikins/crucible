@@ -5,6 +5,7 @@ import { statusBarStore, pathBasename } from '@/stores/statusBarStore';
 import { shellActions } from '@/stores/shellStore';
 import { listNotes } from '@/lib/api';
 import { openFileInEditor } from '@/lib/file-actions';
+import { noteAbsolutePath } from '@/lib/note-actions';
 import { sortByRecency, sessionDisplayTitle } from '@/lib/session-display';
 import type { Session } from '@/lib/types';
 
@@ -164,7 +165,14 @@ export const HomePanel: Component = () => {
                 {(note) => (
                   <button
                     type="button"
-                    onClick={() => openFileInEditor(note.path, note.name)}
+                    onClick={() =>
+                      // Note records carry kiln-relative paths; the file API
+                      // addresses files absolutely.
+                      openFileInEditor(
+                        noteAbsolutePath(note.path, statusBarStore.kilnPath() ?? ''),
+                        note.name,
+                      )
+                    }
                     class="flex justify-between gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-surface-elevated transition-colors text-left"
                   >
                     <span class="truncate">{note.title || note.name}</span>

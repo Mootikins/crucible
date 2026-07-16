@@ -5,6 +5,7 @@ import { statusBarStore } from '@/stores/statusBarStore';
 import { shellActions } from '@/stores/shellStore';
 import { listNotes } from '@/lib/api';
 import { openFileInEditor } from '@/lib/file-actions';
+import { noteAbsolutePath } from '@/lib/note-actions';
 import { fuzzyScore } from '@/lib/fuzzy';
 
 export type CommandCategory = 'Chat' | 'Session' | 'Navigation' | 'Settings';
@@ -115,7 +116,12 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
       kind: 'NOTE' as const,
       label: note.title || note.name,
       keywords: note.tags,
-      action: () => openFileInEditor(note.path, note.name),
+      // Note records carry kiln-relative paths; the file API is absolute.
+      action: () =>
+        openFileInEditor(
+          noteAbsolutePath(note.path, statusBarStore.kilnPath() ?? ''),
+          note.name,
+        ),
     }));
 
   const sessionItems = (): OmniItem[] =>

@@ -27,6 +27,12 @@ vi.mock('@/lib/api', () => ({
   listPendingInteractions: vi.fn().mockResolvedValue([]),
 }));
 
+const openFileInEditorMock = vi.fn();
+vi.mock('@/lib/file-actions', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  openFileInEditor: (...args: unknown[]) => openFileInEditorMock(...args),
+}));
+
 function clearAttention() {
   for (const id of Object.keys(attentionStore.entries)) {
     attentionActions.clear(id);
@@ -87,6 +93,30 @@ describe('HomePanel', () => {
     expect(getByText('1 need you')).toBeTruthy();
     expect(getByText(/open inbox/)).toBeTruthy();
     expect(queryByText(/all clear/)).toBeNull();
+  });
+
+  it('opens recent notes by absolute path (records are kiln-relative)', async () => {
+    // Regression: the daemon's note records carry kiln-relative paths, but
+    // /api/kiln/file addresses files absolutely — passing the raw record
+    // path 404'd every recent-note click.
+    notes.push({
+      name: 'Relative Note',
+      path: 'Guides/Relative Note.md',
+      title: 'Relative Note',
+      tags: [],
+      updated_at: '2026-07-12T09:00:00Z',
+    });
+    const { getByText } = render(() => <HomePanel />);
+    await waitFor(() => {
+      expect(getByText('Relative Note')).toBeTruthy();
+    });
+
+    getByText('Relative Note').closest('button')!.click();
+    expect(openFileInEditorMock).toHaveBeenCalledWith(
+      '/home/user/kilns/helios/Guides/Relative Note.md',
+      'Relative Note',
+    );
+    notes.pop();
   });
 
   it('always offers new session and editor entry points', () => {
