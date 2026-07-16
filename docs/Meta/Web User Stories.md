@@ -2,7 +2,7 @@
 title: Web User Stories
 description: User stories for the web UI's chat and kiln-editing flows, with acceptance criteria and test-tier mapping
 tags: [meta, ux, web, user-stories, testing]
-updated: 2026-07-11
+updated: 2026-07-15
 ---
 
 # Web User Stories
@@ -117,6 +117,22 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **As a user**, a note the agent creates in chat appears in the file tree, and a note I edit is what the agent reads next turn.
 **Acceptance:** tree refreshes on note creation events; agent tool reads reflect saved edits (through daemon, no cache staleness).
 **Tests:** W4 (the flagship live-stack story — `kiln-truth.live.spec.ts`: a note written through the browser is the one shared truth — appears in the kiln tree and is byte-exact on disk, what an agent tool reads next turn).
+
+### WS-207: Backlinks panel for the focused note
+**As a user**, with a note focused in the editor, a Backlinks panel shows which notes link here (linked mentions) and which notes this note mentions without linking (unlinked mentions), each unlinked mention convertible to a real wikilink in one click.
+**Acceptance:** panel fetches `GET /api/backlinks?kiln=&note=` for the focused note's kiln-relative key; linked mentions list source title + path and open the source on click (`crucible:open-file`); unlinked mentions come from the daemon's `suggest_links` over the note's content, with self-mentions filtered server-side; clicking **Link** rewrites the *open editor buffer* (`[[target]]` or `[[target|mention]]`), marks it dirty, and removes the suggestion; non-markdown/absent focus shows an empty state.
+**Tests:** W1 (`BacklinksPanel.test.tsx` — sections, note-key derivation, empty states, open-event, one-click insertion; `note-actions.test.ts` — `insertWikilink` offset/drift/double-wrap cases), W2+W3 (`backlinks-panel.story.spec.ts` — real panel beside the real editor via the harness `?backlinks=1`; visual baselines `backlinks-panel.png` + `backlinks-after-link.png`; asserts the buffer rewrite, dirty ●, suggestion removal, and linked-mention open), Rust route contract tests (`route_contract_tests/kilns.rs::backlinks_*` — param validation, 404, traversal rejection, self-mention filtering, degraded unlinked on missing file). Daemon side: `get_backlinks` RPC over the `note_links` reverse index with candidate matching (stem / path / extension-less path / title, case-insensitive, fragment-stripped) — unit-tested in `kiln_manager.rs`.
+**Scope note:** "unlinked mentions" are *in this note* (what `suggest_links` computes). Obsidian-style *incoming* unlinked mentions (other notes mentioning this title) would need a kiln-wide text scan — deferred.
+
+### WS-208: Wikilink hover previews everywhere
+**As a user**, hovering any `[[wikilink]]` — in a chat message, in the editor, or on a backlinks row — floats a preview card with the note's title, path, and a rendered excerpt; clicking the card title opens the note.
+**Acceptance:** one document-level controller (`WikilinkHoverPreview`, mounted once in `App`) reacts to any element carrying `data-note`; preview resolves via `getNote` + `/api/kiln/file` with frontmatter stripped and the excerpt truncated on a line boundary; misses render "Note not found"; results cached per kiln+name; card dismisses on hover-away and survives hovering the card itself; aliased links (`[[note|alias]]`) display the alias but resolve the target.
+**Tests:** W1 (`WikilinkHoverPreview.test.tsx` — show/dismiss/missing/click-through/data-kiln; `note-actions.test.ts` — excerpt, caching, degradation; `markdown.test.ts` — alias + fragment target parsing), W2+W3 chat surface (`wikilink-hover.story.spec.ts` — anchor renders in a streamed assistant turn, preview shows rendered markdown, dismisses, click opens an editor tab; baseline `chat-wikilink-hover-preview.png`), W2+W3 editor surface (`wikilink-navigation.story.spec.ts` — baseline `editor-wikilink-hover-preview.png`).
+
+### WS-209: Follow wikilinks in the editor
+**As a user**, `[[wikilinks]]` in a markdown buffer are visibly link-styled; Ctrl/Cmd+Click or **Mod-Enter** (cursor inside the link) opens the target note; a plain click just moves the cursor.
+**Acceptance:** CodeMirror `MatchDecorator` marks links (`.cm-wikilink` + `data-note`, alias/fragment-normalized) in markdown files only; Ctrl/Cmd+mousedown and a `Prec.high` Mod-Enter keymap (so `insertBlankLine` from defaultKeymap doesn't shadow it — and still runs outside links) call the panel's follow handler; following is navigation, not an edit (buffer stays clean); missing targets warn via toast.
+**Tests:** W1 (`wikilink-extension.test.ts` — decorations incl. incremental edits, alias/fragment targets, target-at-cursor, both gestures, plain-click inertness), W2+W3 (`wikilink-navigation.story.spec.ts` — decorated baseline `editor-wikilink-decorated.png`, hover preview, Ctrl+Click opens a tab, Mod-Enter follows with the source staying clean).
 
 ### WS-HERO: One session across web and terminal (cross-surface)
 **As a user**, a session and its kiln notes are shared truth across the browser and the terminal — the daemon is the hypervisor, the consoles are stateless.

@@ -102,7 +102,7 @@ The core loop. Most of it is shipped and story-tested (WS-101…109).
 - [x] Voice input (Whisper — local WebGPU or server)
 - [x] Export dialog (markdown); auto-title on first message
 - [x] Composer autocomplete: `/` commands, `@` files, `#` tags, `[[` wikilinks
-- [-] `[[note]]` links in messages navigate to the editor (shipped); `NOW` add **hover previews** (see §5)
+- [x] `[[note]]` links in messages navigate to the editor (shipped); **hover previews** SHIPPED 2026-07-15: one document-level `WikilinkHoverPreview` reacts to any `data-note` element (chat anchors, editor decorations, backlinks rows) with title/path/rendered-excerpt card, click-to-open, per-kiln caching (WS-208). Aliased `[[note|alias]]` links now display the alias and resolve the target.
 - [ ] `NOW` **Message queueing while streaming** — TUI has it; web composer should queue-and-send identically (queued messages steer the run — Claude Code/Codex "real-time steering")
 - [ ] `NOW` **Regenerate / retry a turn** — table stakes in every chat UI; daemon `undo_turns` + resend covers it. Include regenerate-with-a-different-model (pick a model in the retry affordance).
 - [ ] `NOW` **Turn undo UI** — the daemon has `/undo` with real file rollback (`WorkspaceSnapshot`). Surface it: an undo affordance on the last agent turn showing *what will be reverted* (messages + files). No competitor ties chat undo to actual workspace rollback this cleanly.
@@ -144,7 +144,7 @@ This is where "Obsidian, if the vault could act" is won or lost. Currently the t
 - [x] Syntax highlighting beyond markdown — FIXED 2026-07-12 (was bug 7): md/js/jsx/ts/tsx/rs mapped in the shared `getLanguageExtension()`
 - [x] **Unsaved-changes guard** on close — FIXED 2026-07-12 (was bug 6): `closeFile()` + `confirmTabClose()` prompt before discarding dirty files
 - [ ] `NEXT` **Live-preview markdown editing** — Obsidian-style WYSIWYG-ish mode (rendered inline with source under cursor), or at minimum a rendered preview pane. Wikilinks render as links, callouts/LaTeX/tables render. The parser already produces all the structure; this is a frontend renderer.
-- [ ] `NEXT` **Wikilink intelligence in the editor** — `[[` autocomplete (composer already has it), click-to-navigate, create-on-click for missing targets, rename-updates-backlinks (daemon-side refactor op)
+- [-] `NEXT` **Wikilink intelligence in the editor** — PARTIAL 2026-07-15: link decorations + Ctrl/Cmd+Click and Mod-Enter follow + hover previews shipped (CodeMirror `wikilink-extension`, WS-209). Remaining: `[[` autocomplete (composer already has it), create-on-click for missing targets, rename-updates-backlinks (daemon-side refactor op)
 - [ ] `NEXT` **Frontmatter/properties editor** — structured key/value UI over YAML frontmatter (Obsidian Properties); tags editable as chips
 - [ ] `NEXT` **Transclusion rendering** — `![[Note#block]]` embeds render in preview (the parser already resolves block refs)
 - [ ] `LATER` **AI-enhance selection** — select text in a note → improve/summarize/expand via a session-less agent call (Open WebUI Notes pattern)
@@ -153,7 +153,7 @@ This is where "Obsidian, if the vault could act" is won or lost. Currently the t
 
 **Knowledge navigation**
 - [x] Files/notes tree (workspace + kiln sections), click-to-open
-- [ ] `NOW` **Backlinks panel** — for the focused note: linked mentions (graph edges exist in storage) + unlinked mentions (`suggest_links` RPC already does word-boundary detection, with one-click link insertion)
+- [x] `NOW` **Backlinks panel** — SHIPPED 2026-07-15 (WS-207): dockable right panel for the focused note; linked mentions via new `get_backlinks` RPC (reverse `note_links` index, stem/path/title candidate matching) + `GET /api/backlinks`; unlinked mentions via `suggest_links` over the note's content with one-click wikilink insertion into the open buffer. Scope note: unlinked = mentions *in this note*; Obsidian-style incoming unlinked mentions (kiln-wide text scan) deferred.
 - [x] **Quick switcher** — note-open inside the omnibox (§2.2, `[[` prefix; fuzzy scored matching since 2026-07-12)
 - [ ] `NEXT` **Knowledge Graph view** — interactive force-directed wikilink graph (global + local "this note's neighborhood"), filters by tag/folder/type, **sessions render as nodes** (sessions-as-notes means conversations are part of the graph — no competitor has this), semantic-similarity edges as an optional overlay from embeddings. This is the demo moment; treat it as a first-class panel, not a plugin afterthought.
 - [ ] `NEXT` **Unified search panel** — one search UI over semantic (`search_vectors`), full-text, and property/tag search, with scope chips (kiln/sessions/files), result previews, and "open all in graph." Session search API already exists.
@@ -270,7 +270,7 @@ Beyond parity — ordered roughly by (differentiation × feasibility). The first
 2. **Precognition transparency panel** (§3.6) — turn the differentiator from invisible magic into an inspectable, trust-building surface. Also the retrieval debugger.
 3. **Turn undo + diff review center** (§3.1/3.2) — chat-integrated *workspace* rollback; competitors' checkpoints don't tie into a knowledge graph or show what a turn touched across kiln + workspace.
 4. **Sessions in the graph** (§3.3) — conversations as first-class graph nodes: "show me every session that touched this note." Retrieval, provenance, and a demo moment in one.
-5. **Wikilink hover-preview everywhere** — chat messages, editor, graph tooltips, permission diffs. One component; makes the whole app feel knowledge-native (Obsidian page preview, but in agent output too).
+5. **Wikilink hover-preview everywhere** — SHIPPED for chat messages, editor decorations, and backlinks rows 2026-07-15 (one `data-note`-driven component, WS-208); remaining surfaces: graph tooltips, permission diffs.
 6. **Graph trail during a turn** — live mini-graph in the session showing notes read/written as the agent works; precognition edges pulse. Uniquely honest "watch it think with your knowledge."
 7. **One UI DSL, two surfaces** — Oil renderer means every plugin modal/panel works in TUI and browser. That's a plugin-ecosystem multiplier no TUI-or-web-only competitor can copy.
 8. **Agent-driven panels (generative UI)** — agent tool emits a declarative panel (table/form/chart) rendered live; combined with kiln data queries this is "ask for a dashboard, get a dashboard."
@@ -298,7 +298,7 @@ Beyond parity — ordered roughly by (differentiation × feasibility). The first
 
 ## 7. Sequencing summary
 
-- **NOW (finish the shipped story):** omnibox `@`/`#` prefixes · Agent Inbox landing page · light theme · knob parity + agent selection · note-write embedding · backlinks panel · message queueing/regenerate · turn-undo affordance · popouts *(done: editor data-safety bugs 5/6/7, honest `/clear`, omnibox fuzzy — 2026-07-12)*
+- **NOW (finish the shipped story):** omnibox `@`/`#` prefixes · Agent Inbox landing page · light theme · knob parity + agent selection · note-write embedding · message queueing/regenerate · turn-undo affordance · popouts *(done: editor data-safety bugs 5/6/7, honest `/clear`, omnibox fuzzy — 2026-07-12 · backlinks panel + wikilink hover previews + editor follow-links — 2026-07-15)*
 - **NEXT (the knowledge-console arc):** graph view · unified search · live-preview editor + properties + transclusion · proposals inbox · precognition transparency/citations · memory browser · plugin panel hosting + Oil renderer + renderer registry · artifacts · diff review center · delegation tree · workflow runs · scheduled agents · attachments · branching + side chat · deny-with-feedback · MCP management · agent-card/skills authoring · mobile mode + push · config editor + provider mgmt · onboarding · `cru tunnel`
 - **LATER (mature product):** bases/structured views · canvas · agent-driven UI · Lua playground · session replay + audit trail · usage dashboard + budget caps · misleading-knowledge feedback · session distillation · incognito · TTS/compare · Tauri desktop · community themes · multi-user
 
