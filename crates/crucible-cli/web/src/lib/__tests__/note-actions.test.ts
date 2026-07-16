@@ -136,7 +136,7 @@ describe('openNoteInEditor', () => {
     });
 
     await openNoteInEditor('rust', '/kiln');
-    expect(openFileInEditorMock).toHaveBeenCalledWith('/kiln/notes/rust.md', 'rust');
+    expect(openFileInEditorMock).toHaveBeenCalledWith('/kiln/notes/rust.md', 'Rust');
   });
 
   it('falls back to the configured kiln when none is given', async () => {
@@ -151,7 +151,23 @@ describe('openNoteInEditor', () => {
 
     await openNoteInEditor('rust');
     expect(getNoteMock).toHaveBeenCalledWith('rust', '/default-kiln');
-    expect(openFileInEditorMock).toHaveBeenCalledWith('/default-kiln/notes/rust.md', 'rust');
+    expect(openFileInEditorMock).toHaveBeenCalledWith('/default-kiln/notes/rust.md', 'Rust');
+  });
+
+  // Regression: the real GET /api/notes/{name} payload has NO `name` field
+  // (path/title/tags/links only) — passing note.name straight through minted
+  // tabs literally titled "undefined" ("Discard unsaved changes to
+  // undefined?" on close).
+  it('derives a tab title when the payload has no name field', async () => {
+    getNoteMock.mockResolvedValue({
+      path: 'Help/Wikilinks.md',
+      title: null,
+      tags: [],
+      updated_at: '',
+    });
+
+    await openNoteInEditor('Wikilinks', '/kiln');
+    expect(openFileInEditorMock).toHaveBeenCalledWith('/kiln/Help/Wikilinks.md', 'Wikilinks');
   });
 });
 

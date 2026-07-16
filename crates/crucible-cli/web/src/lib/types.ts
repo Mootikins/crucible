@@ -101,7 +101,9 @@ export interface NoteEntry {
 }
 
 export interface NoteContent {
-  name: string;
+  /** NOT sent by GET /api/notes/{name} — the daemon payload carries only
+   * path/title/tags/links. Derive display names via noteDisplayName. */
+  name?: string;
   path: string;
   content: string;
   title: string | null;

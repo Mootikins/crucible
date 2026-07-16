@@ -11,7 +11,7 @@ export function findTabByFilePath(filePath: string): { groupId: string; tab: Tab
   return null;
 }
 
-export function openFileInEditor(filePath: string, fileName: string): void {
+export function openFileInEditor(filePath: string, fileName?: string): void {
   const existing = findTabByFilePath(filePath);
   if (existing) {
     windowActions.setActiveTab(existing.groupId, existing.tab.id);
@@ -23,7 +23,9 @@ export function openFileInEditor(filePath: string, fileName: string): void {
 
   const newTab: Tab = {
     id: `tab-file-${filePath}`,
-    title: fileName,
+    // Last-resort basename fallback: a falsy caller value would otherwise
+    // mint a tab literally titled "undefined" (save prompts included).
+    title: fileName || filePath.split('/').pop() || filePath,
     contentType: 'file',
     icon: iconForContentType('file'),
     metadata: { filePath },

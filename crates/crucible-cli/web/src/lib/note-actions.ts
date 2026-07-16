@@ -16,6 +16,24 @@ async function resolveKiln(kiln?: string): Promise<string> {
 }
 
 /**
+ * Display name for a note payload. GET /api/notes/{name} sends no `name`
+ * field, so a tab titled from it directly reads "undefined" — fall through
+ * title → name → file stem.
+ */
+export function noteDisplayName(note: {
+  name?: string;
+  title?: string | null;
+  path: string;
+}): string {
+  return (
+    note.title ??
+    note.name ??
+    note.path.split('/').pop()?.replace(/\.md$/i, '') ??
+    note.path
+  );
+}
+
+/**
  * Resolve a wikilink target to its kiln file and open it in the editor.
  * Prefers the given kiln (e.g. the chat session's); falls back to the
  * configured default.
@@ -24,7 +42,7 @@ export async function openNoteInEditor(name: string, kiln?: string): Promise<voi
   try {
     const resolvedKiln = await resolveKiln(kiln);
     const note = await getNote(name, resolvedKiln);
-    openFileInEditor(noteAbsolutePath(note.path, resolvedKiln), note.name);
+    openFileInEditor(noteAbsolutePath(note.path, resolvedKiln), noteDisplayName(note));
   } catch (err) {
     const message =
       err instanceof Error && /not found|404/i.test(err.message)
@@ -137,7 +155,7 @@ export async function fetchNotePreview(name: string, kiln?: string): Promise<Not
       // Metadata-only preview when the content read fails.
     }
     preview = {
-      title: note.title ?? note.name,
+      title: noteDisplayName(note),
       path: note.path,
       absPath,
       excerpt,
