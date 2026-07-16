@@ -115,13 +115,16 @@ test.describe('Tab reorder within same bar', () => {
     const firstBox = await firstTab.boundingBox();
     expect(firstBox).toBeTruthy();
     // The strip overflows and scrollIntoViewIfNeeded(lastTab) can scroll the
-    // first tab's box left of the bar — clamp the drop point inside the bar
-    // (same reasoning as the "past third tab" test above), otherwise the
-    // reorder is cancelled as an out-of-bounds release.
-    const barBox = await page.locator('[data-testid="edge-tabbar-left"]').boundingBox();
-    expect(barBox).toBeTruthy();
+    // first tab's box left of the strip — clamp the drop point inside the
+    // TAB STRIP container (not the bar: the bar's left edge holds the
+    // collapse-button cluster, which sits outside the reorder bounds),
+    // otherwise the reorder is cancelled as an out-of-bounds release.
+    const stripBox = await firstTab.evaluate((el) => {
+      const r = el.parentElement!.getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height };
+    });
     const to = {
-      x: Math.max(firstBox!.x + 2, barBox!.x + 8),
+      x: Math.max(firstBox!.x + 2, stripBox.x + 8),
       y: firstBox!.y + firstBox!.height / 2,
     };
 

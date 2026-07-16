@@ -86,6 +86,11 @@ describe('stable panel toggle placement', () => {
     expect(source).toMatch(/data-testid=\{`edge-collapse-\$\{props\.position\}`\}/);
     expect(source).toMatch(/IconPanelLeftClose|IconPanelRightClose|IconPanelBottomClose/);
   });
+
+  it('the collapse button anchors to the window-edge side (order-first on the left panel)', () => {
+    const source = readFileSync(resolve(__dirname, '../TabBar.tsx'), 'utf-8');
+    expect(source).toMatch(/'order-first':\s*props\.position === 'left'/);
+  });
 });
 
 describe('EdgePanel pointer events', () => {

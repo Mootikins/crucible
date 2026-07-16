@@ -454,9 +454,16 @@ const EdgeTabBar: Component<{
           />
         )}
       />
-      {/* In-place collapse: the same corner that holds the expand control in
-          the collapsed strip, so the toggle never vanishes on expand. */}
-      <div class="flex-shrink-0 flex items-center gap-0.5 px-1">
+      {/* In-place collapse, anchored to the WINDOW-EDGE side of the bar
+          (order-first for the left panel) — the same corner that holds the
+          expand control in the collapsed strip, so the toggle stays put
+          across collapse/expand instead of swinging the panel's width. */}
+      <div
+        classList={{
+          'flex-shrink-0 flex items-center gap-0.5 px-1': true,
+          'order-first': props.position === 'left',
+        }}
+      >
         <button
           type="button"
           data-testid={`edge-collapse-${props.position}`}
