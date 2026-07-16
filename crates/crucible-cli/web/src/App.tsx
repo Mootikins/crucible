@@ -140,6 +140,14 @@ const App: Component = () => {
       action: () => openPanelTab('skills'),
     },
     {
+      id: 'nav-open-backlinks',
+      label: 'Open Backlinks',
+      description: 'Linked and unlinked mentions for the focused note.',
+      category: 'Navigation',
+      keywords: ['backlinks', 'mentions', 'wikilinks', 'panel'],
+      action: () => openPanelTab('backlinks'),
+    },
+    {
       id: 'nav-toggle-left',
       label: 'Toggle Left Panel',
       description: 'Collapse or expand the left edge panel.',
