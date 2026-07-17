@@ -5,7 +5,19 @@ import { createDraggable, createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import type { EdgePanelPosition, Tab } from '@/types/windowTypes';
 import { getGlobalRegistry } from '@/lib/panel-registry';
+import { openPanelTab } from '@/lib/panel-actions';
 import { TabBar } from './TabBar';
+import {
+  IconPanelLeft,
+  IconPanelLeftClose,
+  IconPanelRight,
+  IconPanelRightClose,
+  IconPanelBottom,
+  IconPanelBottomClose,
+  IconZap,
+  IconSettings,
+} from './icons';
+import { Plus } from '@/lib/icons';
 
 const EDGE_PANEL_MIN_WIDTH = 120;
 const EDGE_PANEL_MAX_WIDTH = 600;
@@ -146,8 +158,32 @@ const RibbonTabButton: Component<{
   );
 };
 
+const ribbonBtn =
+  'flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors';
+
+/** One command button on the ribbon (opens a modal/panel — Obsidian puts
+ * these on the ribbon: palette, quick actions, settings gear at bottom). */
+const RibbonCommand: Component<{
+  title: string;
+  testId: string;
+  onClick: () => void;
+  bottom?: boolean;
+  children: ReturnType<Component>;
+}> = (props) => (
+  <button
+    type="button"
+    data-testid={props.testId}
+    classList={{ [`${ribbonBtn} w-10 h-9 flex-none`]: true, 'mt-auto': props.bottom }}
+    title={props.title}
+    onClick={() => props.onClick()}
+  >
+    {props.children}
+  </button>
+);
+
 /** The always-visible icon bar at the window edge (Obsidian's ribbon):
- * panels grow out of it, so the toggles never move or disappear. */
+ * panels grow out of it, so the toggles never move or disappear. The top
+ * (or leading, for the bottom bar) button expands/collapses the panel. */
 const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
   const panel = () => windowStore.edgePanels[props.position];
   const group = () => windowStore.tabGroups[panel().tabGroupId];
@@ -159,6 +195,18 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
     type: 'edgePanel',
     panelId: props.position,
   });
+
+  const toggleIcon = () => {
+    const collapsed = panel().isCollapsed;
+    switch (props.position) {
+      case 'left':
+        return collapsed ? <IconPanelLeft class="w-4 h-4" /> : <IconPanelLeftClose class="w-4 h-4" />;
+      case 'right':
+        return collapsed ? <IconPanelRight class="w-4 h-4" /> : <IconPanelRightClose class="w-4 h-4" />;
+      default:
+        return collapsed ? <IconPanelBottom class="w-4 h-4" /> : <IconPanelBottomClose class="w-4 h-4" />;
+    }
+  };
 
   return (
     <div
@@ -173,6 +221,37 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
         'bg-primary/20': droppable.isActiveDroppable,
       }}
     >
+      {/* Top/leading slot: this bar's panel toggle — always in view. */}
+      <button
+        type="button"
+        data-testid={`ribbon-toggle-${props.position}`}
+        classList={{
+          [`${ribbonBtn} flex-none`]: true,
+          'w-10 h-9 border-b border-zinc-800': isVertical(),
+          'h-9 px-2 border-r border-zinc-800': !isVertical(),
+        }}
+        title={panel().isCollapsed ? 'Expand panel' : 'Collapse panel'}
+        onClick={() => windowActions.toggleEdgePanel(props.position)}
+      >
+        {toggleIcon()}
+      </button>
+      <Show when={props.position === 'left'}>
+        <RibbonCommand
+          title="Command palette (Ctrl+P)"
+          testId="ribbon-cmd-palette"
+          onClick={() => window.dispatchEvent(new CustomEvent('crucible:open-command-palette'))}
+        >
+          <IconZap class="w-4 h-4" />
+        </RibbonCommand>
+        <RibbonCommand
+          title="New session"
+          testId="ribbon-cmd-new-session"
+          onClick={() => window.dispatchEvent(new CustomEvent('crucible:new-session'))}
+        >
+          <Plus class="w-4 h-4" />
+        </RibbonCommand>
+        <div class="mx-2 my-1 h-px flex-none bg-zinc-800" />
+      </Show>
       {/* Outer Show keyed on the group id: a layout restore swaps group ids
           under surviving components, and solid-dnd draggable data is a
           registration-time snapshot — without a remount every drag would
@@ -194,6 +273,17 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
             )}
           </Key>
         )}
+      </Show>
+      <Show when={props.position === 'left'}>
+        {/* Settings pinned at the ribbon's bottom, like Obsidian's gear. */}
+        <RibbonCommand
+          title="Open Settings"
+          testId="ribbon-cmd-settings"
+          bottom
+          onClick={() => openPanelTab('settings')}
+        >
+          <IconSettings class="w-4 h-4" />
+        </RibbonCommand>
       </Show>
     </div>
   );

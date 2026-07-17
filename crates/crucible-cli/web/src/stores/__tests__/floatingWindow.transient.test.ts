@@ -52,6 +52,26 @@ describe('transient (hover) floating windows', () => {
     expect(exported2).toContain('tab-hoverfile-');
   });
 
+  it('closing the last tab auto-closes the floating window (no zombie shells)', () => {
+    const id = spawnTransient();
+    const groupId = windowStore.floatingWindows[0].tabGroupId;
+    windowActions.removeTab(groupId, 'tab-hoverfile-/k/x.md');
+    expect(windowStore.floatingWindows.find((w) => w.id === id)).toBeUndefined();
+    expect(windowStore.tabGroups[groupId]).toBeUndefined();
+  });
+
+  it('dragging the last tab out auto-closes the floating window', () => {
+    const id = spawnTransient();
+    const groupId = windowStore.floatingWindows[0].tabGroupId;
+    const centerGroup = Object.keys(windowStore.tabGroups).find((g) => g !== groupId)!;
+    windowActions.moveTab(groupId, centerGroup, 'tab-hoverfile-/k/x.md');
+    expect(windowStore.floatingWindows.find((w) => w.id === id)).toBeUndefined();
+    expect(windowStore.tabGroups[groupId]).toBeUndefined();
+    expect(
+      windowStore.tabGroups[centerGroup].tabs.some((t) => t.id === 'tab-hoverfile-/k/x.md'),
+    ).toBe(true);
+  });
+
   it('maximize stores restore bounds; restore reapplies them', () => {
     const id = spawnTransient();
     windowActions.maximizeFloatingWindow(id);

@@ -23,10 +23,17 @@ import {
   type DecorationSet,
   ViewPlugin,
   type ViewUpdate,
+  WidgetType,
 } from '@codemirror/view';
-import { type EditorState, type Extension, type Range } from '@codemirror/state';
+import {
+  StateField,
+  type EditorState,
+  type Extension,
+  type Range,
+} from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
+import { renderMarkdown } from '@/lib/markdown';
 
 const HIDE = Decoration.replace({});
 
@@ -178,6 +185,69 @@ function buildDecorations(view: EditorView): DecorationSet {
   return Decoration.set(decorations, true);
 }
 
+/** A markdown table rendered as a real HTML table (sanitized through the
+ * chat markdown pipeline). Clicking it drops the cursor into the source,
+ * which reveals the raw table for editing. */
+class TableWidget extends WidgetType {
+  constructor(readonly source: string) {
+    super();
+  }
+
+  override eq(other: TableWidget): boolean {
+    return other.source === this.source;
+  }
+
+  override toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'cm-lp-table';
+    wrap.setAttribute('data-testid', 'lp-table');
+    // eslint-disable-next-line solid/no-innerhtml -- DOMPurify-sanitized
+    wrap.innerHTML = renderMarkdown(this.source);
+    wrap.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const pos = view.posAtDOM(wrap);
+      view.dispatch({ selection: { anchor: pos } });
+      view.focus();
+    });
+    return wrap;
+  }
+
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+function buildTableDecorations(state: EditorState): DecorationSet {
+  const decorations: Range<Decoration>[] = [];
+  syntaxTree(state).iterate({
+    enter: (nodeRef) => {
+      if (nodeRef.name !== 'Table') return;
+      // Selection in the table = editing: show the raw source.
+      if (selectionTouches(state, nodeRef.from, nodeRef.to)) return false;
+      const source = state.doc.sliceString(nodeRef.from, nodeRef.to);
+      decorations.push(
+        Decoration.replace({ widget: new TableWidget(source), block: true }).range(
+          nodeRef.from,
+          nodeRef.to,
+        ),
+      );
+      return false;
+    },
+  });
+  return Decoration.set(decorations, true);
+}
+
+// Tables replace whole line blocks, and CM6 forbids block decorations from
+// ViewPlugins — they live in a StateField instead.
+const tableField = StateField.define<DecorationSet>({
+  create: buildTableDecorations,
+  update(deco, tr) {
+    if (tr.docChanged || tr.selection) return buildTableDecorations(tr.state);
+    return deco.map(tr.changes);
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
 const livePreviewPlugin = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
@@ -230,6 +300,21 @@ const livePreviewTheme = EditorView.baseTheme({
     fontStyle: 'italic',
   },
   '.cm-lp-bullet': { color: 'var(--color-primary, #e0653a)' },
+  '.cm-lp-table': { cursor: 'text', padding: '2px 0' },
+  '.cm-lp-table table': {
+    borderCollapse: 'collapse',
+    margin: '2px 0',
+    fontSize: '0.95em',
+  },
+  '.cm-lp-table th, .cm-lp-table td': {
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    padding: '3px 10px',
+    textAlign: 'left',
+  },
+  '.cm-lp-table th': {
+    background: 'rgba(255, 255, 255, 0.05)',
+    fontWeight: '600',
+  },
 });
 
 export function livePreview(): Extension {
@@ -237,6 +322,7 @@ export function livePreview(): Extension {
     // Scope the prose font to live-preview editors only.
     EditorView.editorAttributes.of({ class: 'cm-lp' }),
     livePreviewPlugin,
+    tableField,
     livePreviewTheme,
   ];
 }

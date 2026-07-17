@@ -84,7 +84,13 @@ export function createTabActions(context: WindowStoreContext): TabActions {
       produce((s) => {
         if (newTabs.length === 0) {
           const pos = findEdgePanelForGroup(store, groupId);
-          if (pos) {
+          const floating = s.floatingWindows.find((w) => w.tabGroupId === groupId);
+          if (floating) {
+            // A floating window with no tabs is a zombie — close it with its
+            // group instead of leaving an empty shell.
+            s.floatingWindows = s.floatingWindows.filter((w) => w.id !== floating.id);
+            delete s.tabGroups[groupId];
+          } else if (pos) {
             s.tabGroups[groupId] = { ...group, tabs: [], activeTabId: null };
             s.edgePanels[pos].isCollapsed = true;
           } else {
@@ -157,7 +163,12 @@ export function createTabActions(context: WindowStoreContext): TabActions {
       produce((s) => {
         if (newSourceTabs.length === 0) {
           const sourcePos = findEdgePanelForGroup(store, sourceGroupId);
-          if (sourcePos) {
+          const floating = s.floatingWindows.find((w) => w.tabGroupId === sourceGroupId);
+          if (floating) {
+            // Last tab dragged out of a floating window: the window goes too.
+            s.floatingWindows = s.floatingWindows.filter((w) => w.id !== floating.id);
+            delete s.tabGroups[sourceGroupId];
+          } else if (sourcePos) {
             s.tabGroups[sourceGroupId] = {
               ...sourceGroup,
               tabs: [],

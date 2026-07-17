@@ -152,9 +152,9 @@ test('hero flow: TUI → web → TUI, one session across three consoles', async 
   await page.locator('.cm-content').first().click();
   await page.keyboard.press('ControlOrMeta+End');
   await page.keyboard.type('browser was here');
-  await expect(page.getByTestId('file-dirty-indicator')).toBeVisible();
-  await page.getByTestId('file-save').click();
-  await expect(page.getByTestId('file-save')).toBeDisabled();
+  await expect(page.getByTestId('status-save')).toBeVisible();
+  await page.getByTestId('status-save').click();
+  await expect(page.getByTestId('status-save')).toHaveCount(0);
   await expect
     .poll(() => readFileSync(notePath, 'utf-8'), { timeout: 10_000 })
     .toContain('browser was here');

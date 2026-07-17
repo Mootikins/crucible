@@ -75,9 +75,11 @@ describe('ribbon chrome (Obsidian-style persistent edge bars)', () => {
     // OUTSIDE the collapsed-state <Show> so they never disappear.
     expect(source).toMatch(/\{props\.position === 'left' && <EdgeRibbon position="left" \/>\}/);
     expect(source).toMatch(/\{props\.position !== 'left' && <EdgeRibbon position=\{props\.position\} \/>\}/);
-    // The old expand-slot button is gone: ribbon icons ARE the toggles.
+    // The old expand-slot button is gone: ribbon icons + the fixed top
+    // toggle cover it. (mt-auto is reserved for the bottom-pinned settings
+    // gear — Obsidian's own layout.)
     expect(source).not.toMatch(/edge-expand-/);
-    expect(source).not.toMatch(/mt-auto|order-last ml-auto/);
+    expect(source).not.toMatch(/order-last ml-auto/);
   });
 
   it('ribbon icons toggle their panel: expand + activate, collapse on active click', () => {
@@ -85,6 +87,17 @@ describe('ribbon chrome (Obsidian-style persistent edge bars)', () => {
     expect(source).toMatch(/setEdgePanelCollapsed\(props\.position, false\)/);
     expect(source).toMatch(/setEdgePanelCollapsed\(props\.position, true\)/);
     expect(source).not.toMatch(/openFlyout/);
+  });
+
+  it('every ribbon leads with its panel toggle; the left ribbon hosts command buttons', () => {
+    const source = readFileSync(resolve(__dirname, '../EdgePanel.tsx'), 'utf-8');
+    // Explicit expand/collapse at the top (leading, for the bottom bar).
+    expect(source).toMatch(/data-testid=\{`ribbon-toggle-\$\{props\.position\}`\}/);
+    // Obsidian-style command buttons: palette + new session up top,
+    // settings gear pinned at the bottom.
+    expect(source).toMatch(/ribbon-cmd-palette/);
+    expect(source).toMatch(/ribbon-cmd-new-session/);
+    expect(source).toMatch(/testId="ribbon-cmd-settings"\n          bottom/);
   });
 
   it('ribbon borders face the panel/center for each position', () => {

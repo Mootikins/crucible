@@ -87,6 +87,19 @@ export const CodeMirrorEditor: Component<{
             return true;
           },
         },
+        // Mod-Enter also saves. The wikilink follow keymap sits at Prec.high
+        // and claims Mod-Enter when the cursor is ON a link; elsewhere it
+        // returns false and this binding wins (shadowing insertBlankLine —
+        // deliberate: save is the more useful default here).
+        {
+          key: 'Mod-Enter',
+          preventDefault: true,
+          run: () => {
+            if (!props.onSave) return false;
+            props.onSave();
+            return true;
+          },
+        },
         // Mod-Shift-E, not Mod-E: vim owns Ctrl-E (scroll line) when active.
         {
           key: 'Mod-Shift-e',

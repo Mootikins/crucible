@@ -65,9 +65,9 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
     // Content hydrates through the real EditorContext → CodeMirror.
     await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 10000 });
     await expect(page.locator('.cm-content')).toContainText('terminal was here');
-    // Clean on open: Save disabled, no dirty indicator.
-    await expect(page.getByTestId('file-save')).toBeDisabled();
-    await expect(page.getByTestId('file-dirty-indicator')).toHaveCount(0);
+    // Clean on open: no status-bar save affordance (only dirty buffers
+    // surface it — the in-panel save toolbar is gone).
+    await expect(page.getByTestId('status-save')).toHaveCount(0);
     await story.step(page, 'file opened clean');
 
     // Edit: append text at end of document.
@@ -75,25 +75,23 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
     await page.keyboard.press('ControlOrMeta+End');
     await page.keyboard.type('browser was here\n');
 
-    // Dirty state surfaces: indicator shown, Save enabled.
-    await expect(page.getByTestId('file-dirty-indicator')).toBeVisible();
-    await expect(page.getByTestId('file-save')).toBeEnabled();
+    // Dirty state surfaces in the status bar.
+    await expect(page.getByTestId('status-save')).toBeVisible();
     await story.step(page, 'edited - dirty');
 
-    // Save through the product Save button → real saveFile → PUT /api/kiln/file.
+    // Save through the status-bar Save → real saveFile → PUT /api/kiln/file.
     const putPromise = page.waitForRequest(
       (r) => r.method() === 'PUT' && r.url().includes('/api/kiln/file'),
     );
-    await page.getByTestId('file-save').click();
+    await page.getByTestId('status-save').click();
     const put = await putPromise;
     const body = put.postDataJSON() as { path: string; content: string };
     expect(body.path).toBe(FILE_PATH);
     expect(body.content).toContain('terminal was here');
     expect(body.content).toContain('browser was here');
 
-    // On success the panel returns to clean.
-    await expect(page.getByTestId('file-dirty-indicator')).toHaveCount(0);
-    await expect(page.getByTestId('file-save')).toBeDisabled();
+    // On success the affordance leaves the status bar.
+    await expect(page.getByTestId('status-save')).toHaveCount(0);
     expect(saves[saves.length - 1]?.content).toContain('browser was here');
     await story.step(page, 'saved - clean');
   });
@@ -125,13 +123,13 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
     await page.locator('.cm-content').first().click();
     await page.keyboard.press('ControlOrMeta+End');
     await page.keyboard.type(' EDIT');
-    await expect(page.getByTestId('file-save')).toBeEnabled();
+    await expect(page.getByTestId('status-save')).toBeVisible();
 
     const putPromise = page.waitForRequest(
       (r) => r.method() === 'PUT' && r.url().includes('/api/kiln/file'),
     );
     await page.keyboard.press('ControlOrMeta+s');
     await putPromise;
-    await expect(page.getByTestId('file-save')).toBeDisabled();
+    await expect(page.getByTestId('status-save')).toHaveCount(0);
   });
 });

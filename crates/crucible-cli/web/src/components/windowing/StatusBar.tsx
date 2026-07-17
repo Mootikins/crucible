@@ -2,6 +2,8 @@ import { Component, Show, createSignal } from 'solid-js';
 import { createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore } from '@/stores/windowStore';
 import { statusBarStore, pathBasename } from '@/stores/statusBarStore';
+import { useEditorSafe } from '@/contexts/EditorContext';
+import { useSettingsSafe } from '@/contexts/SettingsContext';
 import { shellStore } from '@/stores/shellStore';
 import { notificationStore } from '@/stores/notificationStore';
 import type { ChatMode } from '@/lib/types';
@@ -25,6 +27,17 @@ export const StatusBar: Component = () => {
 
   const [drawerOpen, setDrawerOpen] = createSignal(false);
   const unreadCount = () => notificationStore.notificationCount();
+
+  // Configurable save affordance (Settings → Editor): the active buffer's
+  // dirty state + one-click save, replacing the per-panel save toolbar.
+  const editor = useEditorSafe();
+  const { settings } = useSettingsSafe();
+  const activeDirtyFile = () => {
+    const path = editor.activeFile();
+    if (!path) return null;
+    const file = editor.openFiles().find((f) => f.path === path);
+    return file?.dirty ? file : null;
+  };
 
   const modeColor = (mode: ChatMode): string => {
     switch (mode) {
@@ -96,6 +109,20 @@ export const StatusBar: Component = () => {
           )}
         </div>
         <div class="flex items-center gap-3">
+          <Show when={settings.editor.showSaveButton && activeDirtyFile()}>
+            {(file) => (
+              <button
+                type="button"
+                data-testid="status-save"
+                class="flex items-center gap-1.5 px-2 rounded text-amber-500 hover:text-amber-300 hover:bg-zinc-800/60 transition-colors"
+                title={`Save ${file().path.split('/').pop()} (Ctrl+S / Ctrl+Enter)`}
+                onClick={() => void editor.saveFile(file().path)}
+              >
+                <span>●</span>
+                <span>Save</span>
+              </button>
+            )}
+          </Show>
           <div
             use:droppable
             class="flex items-center gap-2 px-2 py-1 rounded"

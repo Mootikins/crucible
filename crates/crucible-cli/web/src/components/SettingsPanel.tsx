@@ -542,6 +542,38 @@ const EditorSettingsSection: Component = () => {
           data-testid="settings-editor-vim"
         />
       </SettingRow>
+      <SettingRow
+        label="Autosave interval"
+        description="Save dirty buffers after this many idle seconds. 0 disables autosave."
+      >
+        <input
+          type="number"
+          min="0"
+          max="600"
+          value={settings.editor.autosaveSeconds}
+          onChange={(e) =>
+            updateSetting(
+              'editor',
+              'autosaveSeconds',
+              Math.max(0, Number(e.currentTarget.value) || 0),
+            )
+          }
+          class="w-20 rounded border border-white/10 bg-surface-base px-2 py-1 text-sm"
+          data-testid="settings-editor-autosave"
+        />
+      </SettingRow>
+      <SettingRow
+        label="Save button in status bar"
+        description="Show a dirty indicator + Save action for the active buffer."
+      >
+        <input
+          type="checkbox"
+          checked={settings.editor.showSaveButton}
+          onChange={(e) => updateSetting('editor', 'showSaveButton', e.currentTarget.checked)}
+          class="h-4 w-4 accent-[--color-primary] cursor-pointer"
+          data-testid="settings-editor-save-button"
+        />
+      </SettingRow>
     </>
   );
 };

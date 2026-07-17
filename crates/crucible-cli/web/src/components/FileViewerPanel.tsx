@@ -44,6 +44,20 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
     }
   });
 
+  // Autosave: a dirty buffer saves after `autosaveSeconds` of idle (each
+  // edit resets the timer via the content dependency). 0 disables.
+  createEffect(() => {
+    const seconds = settings.editor.autosaveSeconds;
+    const file = fileData();
+    if (!seconds || seconds <= 0 || !file?.dirty) return;
+    // Depend on content so every keystroke restarts the countdown.
+    void file.content;
+    const timer = window.setTimeout(() => {
+      if (props.filePath) void saveFile(props.filePath);
+    }, seconds * 1000);
+    onCleanup(() => window.clearTimeout(timer));
+  });
+
   // Sync EditorContext dirty state → windowStore tab isModified.
   // Depend ONLY on the editor's dirty flag: the tab lookup + updateTab write
   // must be untracked, otherwise findTabByFilePath reads windowStore.tabGroups
@@ -72,28 +86,8 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
 
   return (
     <PanelShell class="overflow-hidden relative">
-      {/* Toolbar: Save affordance (Cmd/Ctrl-S also saves via the editor keymap). */}
-      <div class="flex items-center justify-end gap-2 border-b border-neutral-800 px-3 py-1.5 shrink-0">
-        <Show when={fileData()?.dirty}>
-          <span
-            data-testid="file-dirty-indicator"
-            class="text-xs text-amber-500"
-            title="Unsaved changes"
-          >
-            ●
-          </span>
-        </Show>
-        <button
-          data-testid="file-save"
-          onClick={handleSave}
-          disabled={!fileData()?.dirty}
-          class="rounded bg-primary px-3 py-1 text-xs text-white hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed"
-          title="Save (⌘S)"
-        >
-          Save
-        </button>
-      </div>
-
+      {/* No save toolbar: saving is Mod-S / Mod-Enter in the editor, the
+          (configurable) status-bar save affordance, or autosave. */}
       {/* Loading overlay — only while THIS file has no content yet.
           EditorContext.isLoading is context-global: any other panel opening
           a file (e.g. a hover popover) would otherwise flash this overlay

@@ -24,6 +24,10 @@ const NOTE = {
     '',
     'A link to [[Other Note|the other note]].',
     '',
+    '| Col A | Col B |',
+    '| ----- | ----- |',
+    '| one   | two   |',
+    '',
   ].join('\n'),
 };
 
@@ -48,6 +52,11 @@ test.describe('Editor live preview (markdown default)', () => {
     await expect(content).not.toContainText('# Live Heading');
     // Aliased wikilink shows only its display text.
     await expect(page.locator('.cm-wikilink')).toHaveText('the other note');
+    // The markdown table renders as a real HTML table.
+    const table = page.getByTestId('lp-table');
+    await expect(table.locator('th').first()).toHaveText('Col A');
+    await expect(table.locator('td').first()).toHaveText('one');
+    await expect(content).not.toContainText('| ----- |');
     await story.step(page, 'live preview styled');
     await expect(page.locator('.cm-editor')).toHaveScreenshot('editor-live-preview.png', {
       maxDiffPixelRatio: 0.02,
@@ -62,7 +71,13 @@ test.describe('Editor live preview (markdown default)', () => {
       maxDiffPixelRatio: 0.02,
     });
 
-    // 3. Source mode: everything raw, mono, no live-preview styling.
+    // 3. Clicking the rendered table drops the cursor in and reveals raw
+    // markdown for editing.
+    await table.click();
+    await expect(content).toContainText('| ----- |');
+    await story.step(page, 'table revealed for editing');
+
+    // 4. Source mode: everything raw, mono, no live-preview styling.
     await page.getByTestId('mode-toggle').click();
     await expect(content).toContainText('# Live Heading');
     await expect(content).toContainText('**bold**');

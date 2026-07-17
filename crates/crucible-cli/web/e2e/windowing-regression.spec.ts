@@ -38,7 +38,7 @@ test('WindowManager renders with all layout regions', async ({ page }) => {
   await expect(rootContainer).toBeVisible();
 
   // Header bar with command palette pill
-  const headerBar = page.locator('button[title="Command palette (Ctrl+P)"]');
+  const headerBar = page.locator('button[title="Command palette (Ctrl+P)"]').first();
   await expect(headerBar).toBeVisible();
 
   // Status bar at bottom
@@ -83,7 +83,7 @@ test('Header bar is visible with all controls', async ({ page }) => {
   await expect(headerBar).toBeVisible();
 
   // Command palette pill should be visible
-  const commandPalette = page.locator('button[title="Command palette (Ctrl+P)"]');
+  const commandPalette = page.locator('button[title="Command palette (Ctrl+P)"]').first();
   await expect(commandPalette).toBeVisible();
 
   // Keyboard shortcut indicator should be visible
@@ -136,7 +136,7 @@ test('Layout structure remains stable after interaction', async ({ page }) => {
   await expect(rootContainer).toBeVisible();
 
   // Header bar should still be visible
-  const headerBar = page.locator('button[title="Command palette (Ctrl+P)"]');
+  const headerBar = page.locator('button[title="Command palette (Ctrl+P)"]').first();
   await expect(headerBar).toBeVisible();
 
   // Expand the left panel again

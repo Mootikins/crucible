@@ -137,6 +137,18 @@ describe('EditorWithPreview', () => {
   });
 });
 
+describe('save keybinds', () => {
+  it('Mod-Enter saves (off a wikilink)', async () => {
+    const onSave = vi.fn();
+    const { container } = render(() => (
+      <EditorWithPreview content="plain text" path="/kiln/note.md" onChange={noop} onSave={onSave} />
+    ));
+    const content = container.querySelector('.cm-content') as HTMLElement;
+    fireEvent.keyDown(content, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+  });
+});
+
 describe('vim mode', () => {
   it('vimMode starts in normal mode: x deletes the character under the cursor', async () => {
     const onChange = vi.fn();

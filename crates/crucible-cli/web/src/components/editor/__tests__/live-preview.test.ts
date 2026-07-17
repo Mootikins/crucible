@@ -101,6 +101,33 @@ describe('live preview: styled everywhere except the construct at the cursor', (
     expect(text(view)).toContain('**bolder**');
   });
 
+  it('markdown tables render as real HTML tables until the cursor enters', () => {
+    const TABLE_DOC = [
+      'Before.',
+      '',
+      '| Col A | Col B |',
+      '| ----- | ----- |',
+      '| one   | two   |',
+      '',
+      'After.',
+    ].join('\n');
+    const view = track(makeView(TABLE_DOC));
+    cursorAt(view, 0);
+
+    // Rendered: a real <table> with header + cells, raw pipes hidden.
+    const widget = view.dom.querySelector('[data-testid="lp-table"]');
+    expect(widget).not.toBeNull();
+    expect(widget!.querySelector('table')).not.toBeNull();
+    expect(widget!.querySelector('th')?.textContent).toBe('Col A');
+    expect(widget!.querySelector('td')?.textContent).toBe('one');
+    expect(text(view)).not.toContain('| ----- |');
+
+    // Cursor inside the table reveals the raw source for editing.
+    cursorAt(view, TABLE_DOC.indexOf('one'));
+    expect(view.dom.querySelector('[data-testid="lp-table"]')).toBeNull();
+    expect(text(view)).toContain('| one   | two   |');
+  });
+
   it('without the extension nothing is hidden (source mode)', () => {
     const parent = document.createElement('div');
     document.body.appendChild(parent);

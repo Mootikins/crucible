@@ -22,6 +22,10 @@ export interface TranscriptionSettings {
 export interface EditorSettings {
   /** Modal vim keybindings (@replit/codemirror-vim) */
   vimMode: boolean;
+  /** Autosave dirty buffers after this many idle seconds (0 = off). */
+  autosaveSeconds: number;
+  /** Show the save affordance (dirty dot + Save) in the status bar. */
+  showSaveButton: boolean;
 }
 
 /** Root application settings structure */
@@ -40,6 +44,8 @@ export const defaultSettings: AppSettings = {
   },
   editor: {
     vimMode: true,
+    autosaveSeconds: 0,
+    showSaveButton: true,
   },
 };
 
