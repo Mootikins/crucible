@@ -8,9 +8,9 @@ describe('FloatingWindow title deduplication', () => {
     const filePath = path.join(__dirname, '../FloatingWindow.tsx');
     const source = fs.readFileSync(filePath, 'utf-8');
 
-    // Find the title bar span (line 157-159)
+    // Find the title bar span (class list carries truncate + text-zinc-300)
     const titleBarMatch = source.match(
-      /<span[^>]*class="text-xs font-medium text-zinc-300 truncate">\s*\{([^}]+)\}\s*<\/span>/
+      /<span[^>]*class="[^"]*truncate[^"]*text-zinc-300[^"]*">\s*\{([^}]+)\}\s*<\/span>/
     );
 
     expect(titleBarMatch).toBeDefined();
@@ -26,7 +26,7 @@ describe('FloatingWindow title deduplication', () => {
     const source = fs.readFileSync(filePath, 'utf-8');
 
     const titleBarMatch = source.match(
-      /<span[^>]*class="text-xs font-medium text-zinc-300 truncate">\s*\{([^}]+)\}\s*<\/span>/
+      /<span[^>]*class="[^"]*truncate[^"]*text-zinc-300[^"]*">\s*\{([^}]+)\}\s*<\/span>/
     );
 
     expect(titleBarMatch).toBeDefined();

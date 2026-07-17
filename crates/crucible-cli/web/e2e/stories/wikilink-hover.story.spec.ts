@@ -4,18 +4,20 @@ import { createSSEStream } from '../helpers/mock-sse';
 import { createStory } from './_helpers/story';
 
 /**
- * Story: wikilink hover previews in chat messages.
+ * Story: wikilink hover popovers in chat messages (Hover Editor pattern).
  *
  * Full app (real ChatContext + Message renderer + WikilinkHoverPreview).
- * An assistant turn containing `[[Kiln Note]]` streams in; the rendered
- * anchor previews on hover and opens the note in the editor on click.
+ * An assistant turn containing `[[Kiln Note]]` streams in; hovering the
+ * rendered anchor spawns a TRANSIENT FloatingWindow — the same window as
+ * pop-outs — holding a real editor of the note.
  *
  * Validated behaviors:
  *  1. `[[Kiln Note]]` renders as a .wikilink anchor with data-note.
- *  2. Hovering it floats the preview card: note title, path, and a rendered
- *     markdown excerpt of the note content (visual baseline).
- *  3. Hovering away dismisses the card.
- *  4. Clicking the anchor opens the note in an editor tab.
+ *  2. Hovering it spawns a floating editor window titled with the note,
+ *     rendering its content in live preview (visual baseline).
+ *  3. Hovering away closes the popover window.
+ *  4. Pinning (titlebar pin) keeps it open through hover-away.
+ *  5. Clicking the anchor opens the note in an editor tab.
  */
 
 const KILN = '/home/user/.crucible/kiln';
@@ -103,28 +105,40 @@ test.describe('Chat wikilink hover previews', () => {
     await expect(anchor).toHaveText('Kiln Note');
     await story.step(page, 'wikilink in assistant message');
 
-    // 2. Hover → preview card with title, path, and rendered excerpt.
+    // 2. Hover → a transient floating editor window titled with the note.
     await anchor.hover();
-    const preview = page.getByTestId('wikilink-preview');
-    await expect(preview).toBeVisible({ timeout: 5000 });
-    await expect(preview.getByTestId('wikilink-preview-title')).toContainText('Kiln Note');
-    await expect(preview.getByTestId('wikilink-preview-title')).toContainText('Kiln Note.md');
-    // The excerpt is rendered markdown: the H1 became a heading, body text intact.
-    await expect(preview.getByTestId('wikilink-preview-body').locator('h1')).toHaveText(
-      'Kiln Note',
-    );
-    await expect(preview.getByTestId('wikilink-preview-body')).toContainText(
+    const popover = page.locator('[data-window-id]');
+    await expect(popover).toBeVisible({ timeout: 5000 });
+    await expect(popover).toContainText('Kiln Note');
+    // Real editor inside (live preview renders the H1 styled, no `#`).
+    await expect(popover.locator('.cm-content')).toContainText(
       'Stored knowledge that grounds the agent.',
+      { timeout: 5000 },
     );
-    await story.step(page, 'hover preview open');
-    await expect(preview).toHaveScreenshot('chat-wikilink-hover-preview.png', {
+    await expect(popover.getByTestId('float-pin')).toBeVisible();
+    await story.step(page, 'hover popover open');
+    await expect(popover).toHaveScreenshot('chat-wikilink-hover-preview.png', {
       maxDiffPixelRatio: 0.02,
     });
 
-    // 3. Hovering away dismisses the card.
+    // 3. Hovering away closes the popover.
     await page.getByTestId('chat-input').hover();
-    await expect(preview).toHaveCount(0);
-    await story.step(page, 'preview dismissed');
+    await expect(popover).toHaveCount(0, { timeout: 5000 });
+    await story.step(page, 'popover dismissed');
+
+    // 4. Pinning keeps it open through hover-away: the pin control leaves
+    // the titlebar (the window is no longer transient — the unit suite pins
+    // the survives-hover-away behavior) and the window stays visible.
+    await anchor.hover();
+    await expect(popover).toBeVisible({ timeout: 5000 });
+    await popover.getByTestId('float-pin').click();
+    await expect(popover.getByTestId('float-pin')).toHaveCount(0);
+    await page.getByTestId('chat-input').hover();
+    await expect(popover).toBeVisible();
+    await story.step(page, 'popover pinned');
+    // Clean up the pinned window so the click-through step starts fresh.
+    await popover.locator('[title="Close (closes its tabs)"]').click();
+    await expect(popover).toHaveCount(0);
 
     // 4. Clicking the anchor opens the note in an editor (file) tab.
     await anchor.click();

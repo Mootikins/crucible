@@ -1,166 +1,135 @@
 /**
- * App-wide wikilink hover previews.
+ * App-wide wikilink hover popovers — Obsidian Hover Editor semantics.
  *
  * Mounted once; listens at the document level for hover on any element
  * carrying a `data-note` attribute (chat message anchors, editor
- * decorations, panel rows) and floats a note-preview card next to it.
- * One component makes every surface knowledge-native — no per-surface
- * wiring beyond emitting `data-note`.
+ * decorations, panel rows). A resolved note spawns a TRANSIENT floating
+ * window — the same FloatingWindow as pop-outs and tear-offs, with a real
+ * editor inside — positioned next to the anchor. It auto-closes when the
+ * pointer leaves the anchor and the window, unless pinned (titlebar pin,
+ * or auto-pin on drag/resize). Loading and note-not-found states render a
+ * small card, since there is nothing to put in a window yet.
  */
-import {
-  Component,
-  Show,
-  Switch,
-  Match,
-  createSignal,
-  createEffect,
-  onMount,
-  onCleanup,
-} from 'solid-js';
-import { createDraggable, useDragDropContext } from '@thisbeyond/solid-dnd';
-import { fetchNotePreview, openNoteInEditor, type NotePreview } from '@/lib/note-actions';
-import { renderMarkdown } from '@/lib/markdown';
+import { Component, Show, createSignal, onMount, onCleanup } from 'solid-js';
+import { fetchNotePreview, type NotePreview } from '@/lib/note-actions';
 import { statusBarStore } from '@/stores/statusBarStore';
+import { windowStore, windowActions } from '@/stores/windowStore';
 import { iconForContentType } from '@/lib/tab-icons';
-import { IconGripVertical } from './windowing/icons';
-import type { Tab } from '@/types/windowTypes';
 
 const SHOW_DELAY_MS = 300;
-const HIDE_DELAY_MS = 200;
-const CARD_WIDTH_PX = 384; // w-96
-const CARD_MAX_HEIGHT_PX = 288; // max-h-72
-const EDGE_GAP_PX = 12;
+const HIDE_DELAY_MS = 300;
+const WINDOW_WIDTH = 460;
+const WINDOW_HEIGHT = 320;
+const EDGE_GAP_PX = 8;
 
-type PreviewState =
-  | { kind: 'loading' }
-  | { kind: 'missing'; name: string }
-  | { kind: 'ready'; name: string; preview: NotePreview };
-
-/**
- * Ready-card header — a Hover-Editor-style drag handle bar. The WHOLE bar
- * drags a file-tab payload (DragSource 'newTab'): release on a tab bar,
- * edge panel, or split zone to dock; release anywhere else to tear the
- * card off into a floating editor window at the drop point. Clicking the
- * title still opens the note in the center pane. Without a DnD provider
- * (unit tests, harness pages) the bar is a plain header.
- */
-const ReadyCardHeader: Component<{
-  preview: NotePreview;
-  onOpen: () => void;
-  onDragActive: (active: boolean) => void;
-}> = (props) => {
-  const tab: Tab = {
-    id: `tab-file-${props.preview.absPath}`,
-    title: props.preview.title,
-    contentType: 'file',
-    icon: iconForContentType('file'),
-    metadata: { filePath: props.preview.absPath },
-  };
-  const dnd = useDragDropContext();
-  const draggable = dnd
-    ? // eslint-disable-next-line solid/reactivity -- registration-time snapshot by design
-      createDraggable(`hovercard:${props.preview.absPath}`, { type: 'newTab', tab })
-    : null;
-
-  createEffect(() => {
-    if (draggable) props.onDragActive(draggable.isActiveDraggable);
-  });
-
-  return (
-    <div
-      ref={draggable ? (el) => draggable(el, () => ({})) : undefined}
-      {...(draggable ? { 'data-testid': 'wikilink-preview-drag' } : {})}
-      classList={{
-        'flex items-center border-b border-white/10 bg-white/[0.04] select-none': true,
-        'cursor-grab active:cursor-grabbing': !!draggable,
-      }}
-      title={draggable ? 'Drag to a pane or panel to dock, anywhere else to float' : undefined}
-    >
-      <Show when={draggable}>
-        <IconGripVertical class="ml-2 h-3.5 w-3.5 flex-none text-zinc-500" />
-      </Show>
-      <button
-        type="button"
-        class="min-w-0 flex-1 cursor-pointer px-2.5 py-2 text-left hover:bg-white/5"
-        onClick={() => props.onOpen()}
-        data-testid="wikilink-preview-title"
-      >
-        <span class="text-sm font-medium text-shell-ink">{props.preview.title}</span>
-        <span class="ml-2 truncate text-[11px] text-muted">{props.preview.path}</span>
-      </button>
-    </div>
-  );
-};
+type CardState = { kind: 'loading' } | { kind: 'missing'; name: string };
 
 export const WikilinkHoverPreview: Component = () => {
-  const [state, setState] = createSignal<PreviewState | null>(null);
-  const [position, setPosition] = createSignal<{ left: number; top?: number; bottom?: number }>({
-    left: 0,
-    top: 0,
-  });
+  const [card, setCard] = createSignal<CardState | null>(null);
+  const [cardPos, setCardPos] = createSignal<{ left: number; top: number }>({ left: 0, top: 0 });
 
-  let cardEl: HTMLDivElement | undefined;
   let currentAnchor: Element | null = null;
+  // Identity of the open hover: CodeMirror rebuilds decoration spans on any
+  // editor update, so the anchor ELEMENT goes stale while the pointer never
+  // moved — track the note name and the anchor's rect instead.
+  let currentName: string | null = null;
+  let anchorRect: DOMRect | null = null;
+  let hoverWindowId: string | null = null;
   let showTimer: number | undefined;
   let hideTimer: number | undefined;
   let fetchSeq = 0;
-  // While a card drag is in flight the pointer roams the whole window —
-  // hover-away must not unmount the card (that would unregister the
-  // draggable mid-drag). Pin it, and close once the drag resolves.
-  let dragActive = false;
 
   const clearTimers = () => {
     window.clearTimeout(showTimer);
     window.clearTimeout(hideTimer);
   };
 
-  const hide = () => {
+  const hoverWindow = () =>
+    hoverWindowId ? windowStore.floatingWindows.find((w) => w.id === hoverWindowId) : undefined;
+
+  /** Close the transient window (if still transient) and drop all state. */
+  const dismiss = () => {
     currentAnchor = null;
-    setState(null);
+    currentName = null;
+    anchorRect = null;
+    setCard(null);
+    const win = hoverWindow();
+    hoverWindowId = null;
+    if (win?.transient) {
+      windowActions.closeFloatingWindow(win.id);
+    }
   };
 
-  const positionFor = (anchor: Element) => {
+  const spawnHoverWindow = (anchor: Element, preview: NotePreview) => {
+    // Already showing this note (or the user pinned one for it)? Done.
+    const open = windowStore.floatingWindows.find((fw) =>
+      windowStore.tabGroups[fw.tabGroupId]?.tabs.some(
+        (t) => t.metadata?.filePath === preview.absPath,
+      ),
+    );
+    if (open) {
+      if (open.transient) hoverWindowId = open.id;
+      return;
+    }
+
     const rect = anchor.getBoundingClientRect();
     const left = Math.max(
       EDGE_GAP_PX,
-      Math.min(rect.left, window.innerWidth - CARD_WIDTH_PX - EDGE_GAP_PX),
+      Math.min(rect.left, window.innerWidth - WINDOW_WIDTH - EDGE_GAP_PX),
     );
-    const fitsBelow = rect.bottom + CARD_MAX_HEIGHT_PX + EDGE_GAP_PX <= window.innerHeight;
-    return fitsBelow
-      ? { left, top: rect.bottom + 6 }
-      : { left, bottom: window.innerHeight - rect.top + 6 };
+    const fitsBelow = rect.bottom + WINDOW_HEIGHT + EDGE_GAP_PX <= window.innerHeight;
+    const top = fitsBelow
+      ? rect.bottom + 6
+      : Math.max(EDGE_GAP_PX, rect.top - WINDOW_HEIGHT - 6);
+
+    const groupId = windowActions.createTabGroup();
+    windowActions.addTab(groupId, {
+      // Distinct id from center-pane file tabs: hovering a note that's open
+      // elsewhere must not be treated as "the same tab in two groups".
+      id: `tab-hoverfile-${preview.absPath}`,
+      title: preview.title,
+      contentType: 'file',
+      icon: iconForContentType('file'),
+      metadata: { filePath: preview.absPath },
+    });
+    hoverWindowId = windowActions.createFloatingWindow(
+      groupId,
+      left,
+      top,
+      WINDOW_WIDTH,
+      WINDOW_HEIGHT,
+      { transient: true, showTabBar: false, title: preview.title },
+    );
   };
 
   const show = async (anchor: Element, name: string) => {
     currentAnchor = anchor;
-    setPosition(positionFor(anchor));
-    setState({ kind: 'loading' });
+    currentName = name;
+    const rect = anchor.getBoundingClientRect();
+    anchorRect = rect;
+    setCardPos({ left: rect.left, top: rect.bottom + 6 });
+    setCard({ kind: 'loading' });
 
     const seq = ++fetchSeq;
     const kiln = anchor.getAttribute('data-kiln') ?? statusBarStore.kilnPath() ?? undefined;
     const preview = await fetchNotePreview(name, kiln);
-    // A newer hover superseded this fetch, or the card was dismissed.
+    // A newer hover superseded this fetch, or the hover was dismissed.
     if (seq !== fetchSeq || currentAnchor !== anchor) return;
-    setState(preview ? { kind: 'ready', name, preview } : { kind: 'missing', name });
-  };
-
-  const onDragActive = (active: boolean) => {
-    if (active) {
-      clearTimers();
-      dragActive = true;
-    } else if (dragActive) {
-      dragActive = false;
-      hide();
+    if (!preview) {
+      setCard({ kind: 'missing', name });
+      return;
     }
+    setCard(null);
+    spawnHoverWindow(anchor, preview);
   };
 
   const onMouseOver = (event: MouseEvent) => {
-    if (dragActive) return;
     const target = event.target as Element | null;
     if (!target) return;
 
-    // Moving onto the card keeps it open.
-    if (cardEl && cardEl.contains(target)) {
+    // Pointer over the hover window keeps it open.
+    const winId = hoverWindowId;
+    if (winId && target.closest?.(`[data-window-id="${winId}"]`)) {
       window.clearTimeout(hideTimer);
       return;
     }
@@ -170,17 +139,54 @@ export const WikilinkHoverPreview: Component = () => {
       const name = anchor.getAttribute('data-note');
       if (!name) return;
       window.clearTimeout(hideTimer);
-      if (anchor === currentAnchor) return;
+      // Same note (possibly a rebuilt decoration span): just refresh the
+      // tracked anchor, the popover stays.
+      if (anchor === currentAnchor || name === currentName) {
+        currentAnchor = anchor;
+        currentName = name;
+        anchorRect = anchor.getBoundingClientRect();
+        return;
+      }
       window.clearTimeout(showTimer);
+      // Hovering a different link: retire the previous popover first.
+      if (hoverWindowId || card()) {
+        hideTimer = window.setTimeout(dismiss, HIDE_DELAY_MS);
+      }
       showTimer = window.setTimeout(() => void show(anchor, name), SHOW_DELAY_MS);
       return;
     }
 
-    // Hovering anything else: cancel a pending show, schedule a hide.
+    // A DOM change under a STATIONARY pointer (loading overlays, CodeMirror
+    // redecoration) re-fires mouseover with a non-anchor target at the same
+    // coordinates — that is not "hovering away". Only pointer positions
+    // outside the anchor's rect count as leaving.
+    if (
+      anchorRect &&
+      event.clientX >= anchorRect.left - 8 &&
+      event.clientX <= anchorRect.right + 8 &&
+      event.clientY >= anchorRect.top - 8 &&
+      event.clientY <= anchorRect.bottom + 8
+    ) {
+      return;
+    }
+
+    // Hovering anything else: cancel a pending show, schedule dismissal.
     window.clearTimeout(showTimer);
-    if (currentAnchor) {
+    if (currentAnchor || hoverWindowId) {
       window.clearTimeout(hideTimer);
-      hideTimer = window.setTimeout(hide, HIDE_DELAY_MS);
+      hideTimer = window.setTimeout(() => {
+        // Pinned (or already closed) windows are no longer ours to manage.
+        const win = hoverWindow();
+        if (win && !win.transient) {
+          hoverWindowId = null;
+          currentAnchor = null;
+          currentName = null;
+          anchorRect = null;
+          setCard(null);
+          return;
+        }
+        dismiss();
+      }, HIDE_DELAY_MS);
     }
   };
 
@@ -193,61 +199,21 @@ export const WikilinkHoverPreview: Component = () => {
     clearTimers();
   });
 
-  const openCurrent = () => {
-    const s = state();
-    if (s && s.kind === 'ready') {
-      void openNoteInEditor(s.name, statusBarStore.kilnPath() ?? undefined);
-      hide();
-    }
-  };
-
   return (
-    <Show when={state()} keyed>
+    <Show when={card()} keyed>
       {(s) => (
         <div
-          ref={cardEl}
           data-testid="wikilink-preview"
-          class="fixed z-[80] w-96 max-h-72 overflow-hidden rounded-lg border border-white/10 bg-surface-overlay shadow-xl"
-          style={{
-            left: `${position().left}px`,
-            ...(position().top !== undefined ? { top: `${position().top}px` } : {}),
-            ...(position().bottom !== undefined ? { bottom: `${position().bottom}px` } : {}),
-          }}
+          class="fixed z-[80] rounded-md border border-white/10 bg-surface-overlay px-3 py-2 text-xs text-muted shadow-lg"
+          style={{ left: `${cardPos().left}px`, top: `${cardPos().top}px` }}
         >
-          <Switch>
-            <Match when={s.kind === 'loading'}>
-              <div class="px-3 py-2 text-xs text-muted">Loading preview…</div>
-            </Match>
-            <Match when={s.kind === 'missing' && s}>
-              {(missing) => (
-                <div class="px-3 py-2 text-xs text-muted" data-testid="wikilink-preview-missing">
-                  Note not found: {(missing() as { kind: 'missing'; name: string }).name}
-                </div>
-              )}
-            </Match>
-            <Match when={s.kind === 'ready' && s}>
-              {(readyState) => {
-                const ready = readyState() as { kind: 'ready'; name: string; preview: NotePreview };
-                return (
-                  <>
-                    <ReadyCardHeader
-                      preview={ready.preview}
-                      onOpen={openCurrent}
-                      onDragActive={onDragActive}
-                    />
-                    <div
-                      class="prose prose-invert prose-sm max-w-none overflow-hidden px-3 py-2 text-[13px] leading-snug
-                        prose-headings:my-1 prose-headings:text-sm prose-p:my-1 prose-a:text-primary
-                        prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5"
-                      data-testid="wikilink-preview-body"
-                      // eslint-disable-next-line solid/no-innerhtml
-                      innerHTML={renderMarkdown(ready.preview.excerpt || '*Empty note*')}
-                    />
-                  </>
-                );
-              }}
-            </Match>
-          </Switch>
+          <Show when={s.kind === 'missing' && s} fallback={<>Loading preview…</>}>
+            {(missing) => (
+              <span data-testid="wikilink-preview-missing">
+                Note not found: {(missing() as { kind: 'missing'; name: string }).name}
+              </span>
+            )}
+          </Show>
         </div>
       )}
     </Show>

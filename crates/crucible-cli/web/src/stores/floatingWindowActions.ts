@@ -20,7 +20,8 @@ export interface FloatingWindowActions {
     x: number,
     y: number,
     width?: number,
-    height?: number
+    height?: number,
+    opts?: Pick<FloatingWindow, 'transient' | 'showTabBar' | 'title'>
   ): string;
   popOutPane(paneId: string): string | null;
   removeFloatingWindow(windowId: string): void;
@@ -30,6 +31,8 @@ export interface FloatingWindowActions {
   minimizeFloatingWindow(windowId: string): void;
   maximizeFloatingWindow(windowId: string): void;
   restoreFloatingWindow(windowId: string): void;
+  /** Promote a transient (hover) window to a normal, persisted one. */
+  pinFloatingWindow(windowId: string): void;
   dockFloatingWindow(windowId: string, targetPaneId?: string): void;
 }
 
@@ -50,7 +53,8 @@ export function createFloatingWindowActions(
     x: number,
     y: number,
     width = 400,
-    height = 300
+    height = 300,
+    opts?: Pick<FloatingWindow, 'transient' | 'showTabBar' | 'title'>
   ): string => {
     const windowId = generateId();
     const nextZ = store.nextZIndex;
@@ -66,6 +70,7 @@ export function createFloatingWindowActions(
           isMinimized: false,
           isMaximized: false,
           zIndex: nextZ,
+          ...opts,
         });
         s.nextZIndex = nextZ + 1;
       })
@@ -163,7 +168,10 @@ export function createFloatingWindowActions(
     setStore(
       produce((s) => {
         const w = s.floatingWindows.find((x) => x.id === windowId);
-        if (w) w.isMaximized = true;
+        if (w && !w.isMaximized) {
+          w.restoreBounds = { x: w.x, y: w.y, width: w.width, height: w.height };
+          w.isMaximized = true;
+        }
       })
     );
   };
@@ -174,8 +182,21 @@ export function createFloatingWindowActions(
         const w = s.floatingWindows.find((x) => x.id === windowId);
         if (w) {
           w.isMinimized = false;
+          if (w.isMaximized && w.restoreBounds) {
+            Object.assign(w, w.restoreBounds);
+            delete w.restoreBounds;
+          }
           w.isMaximized = false;
         }
+      })
+    );
+  };
+
+  const pinFloatingWindow = (windowId: string) => {
+    setStore(
+      produce((s) => {
+        const w = s.floatingWindows.find((x) => x.id === windowId);
+        if (w) w.transient = false;
       })
     );
   };
@@ -277,6 +298,7 @@ export function createFloatingWindowActions(
     minimizeFloatingWindow,
     maximizeFloatingWindow,
     restoreFloatingWindow,
+    pinFloatingWindow,
     dockFloatingWindow,
   };
 }

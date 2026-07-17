@@ -118,11 +118,19 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
   };
 
   const exportLayout = (): SerializedLayout => {
+    // Transient (hover) windows are popovers, not workspace state — a saved
+    // layout must not resurrect them (or their tab groups) on reload.
+    const transientGroups = new Set(
+      store.floatingWindows.filter((w) => w.transient).map((w) => w.tabGroupId)
+    );
+    const tabGroups = Object.fromEntries(
+      Object.entries(store.tabGroups).filter(([id]) => !transientGroups.has(id))
+    );
     return serializeLayout({
       layout: store.layout,
-      tabGroups: { ...store.tabGroups },
+      tabGroups,
       edgePanels: { ...store.edgePanels } as Record<EdgePanelPosition, EdgePanelType>,
-      floatingWindows: [...store.floatingWindows],
+      floatingWindows: store.floatingWindows.filter((w) => !w.transient),
     });
   };
 

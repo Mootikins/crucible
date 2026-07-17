@@ -12,4 +12,6 @@ export { GripHorizontal as IconGripHorizontal } from '@/lib/icons';
 export { X as IconClose } from '@/lib/icons';
 export { Maximize2 as IconMaximize } from '@/lib/icons';
 export { Minimize2 as IconMinimize } from '@/lib/icons';
+export { Pin as IconPin } from '@/lib/icons';
+export { PanelTop as IconTabBar } from '@/lib/icons';
 export { Bell as IconBell } from '@/lib/icons';

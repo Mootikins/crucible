@@ -49,4 +49,6 @@ export {
   Eye,
   Pencil,
   Code,
+  Pin,
+  PanelTop,
 } from 'lucide-solid';

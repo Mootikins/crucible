@@ -77,30 +77,38 @@ test.describe('Editor wikilink navigation', () => {
     await expect(page.locator('.cm-wikilink').first()).toHaveText('Other Note');
     await page.mouse.move(0, 400);
     await expect(page.getByTestId('wikilink-preview')).toBeHidden();
+    await expect(page.locator('[data-window-id]')).toHaveCount(0, { timeout: 5000 });
     await story.step(page, 'wikilink decorated');
     await expect(page.locator('.cm-editor')).toHaveScreenshot('editor-wikilink-decorated.png', {
       maxDiffPixelRatio: 0.02,
     });
 
-    // 2. Hover floats the preview card with title, path, and excerpt.
+    // 2. Hover spawns a transient floating editor window (Hover Editor).
     await link.hover();
-    const preview = page.getByTestId('wikilink-preview');
-    await expect(preview).toBeVisible({ timeout: 5000 });
-    await expect(preview.getByTestId('wikilink-preview-title')).toContainText('Other Note');
-    await expect(preview.getByTestId('wikilink-preview-body')).toContainText(
+    const popover = page.locator('[data-window-id]');
+    await expect(popover).toBeVisible({ timeout: 5000 });
+    await expect(popover).toContainText('Other Note');
+    await expect(popover.locator('.cm-content')).toContainText(
       'The target of the wikilink jump.',
+      { timeout: 5000 },
     );
-    await story.step(page, 'hover preview');
-    await expect(preview).toHaveScreenshot('editor-wikilink-hover-preview.png', {
+    await story.step(page, 'hover popover');
+    await expect(popover).toHaveScreenshot('editor-wikilink-hover-preview.png', {
       maxDiffPixelRatio: 0.02,
     });
+
+    // Park the pointer away so the popover closes before the click-through.
+    await page.mouse.move(4, 400);
+    await expect(popover).toHaveCount(0, { timeout: 5000 });
 
     // 3. Ctrl/Cmd+Click follows the link into a new editor tab.
     await link.click({ modifiers: ['ControlOrMeta'] });
     await expect(
       page.getByTestId('editor-tab').filter({ hasText: 'Other Note.md' }),
     ).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('.cm-content')).toContainText('The target of the wikilink jump.');
+    await expect(page.locator('.cm-content').first()).toContainText(
+      'The target of the wikilink jump.',
+    );
     await story.step(page, 'ctrl+click followed');
   });
 

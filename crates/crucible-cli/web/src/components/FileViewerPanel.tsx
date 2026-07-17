@@ -94,8 +94,11 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
         </button>
       </div>
 
-      {/* Loading overlay */}
-      <Show when={isLoading()}>
+      {/* Loading overlay — only while THIS file has no content yet.
+          EditorContext.isLoading is context-global: any other panel opening
+          a file (e.g. a hover popover) would otherwise flash this overlay
+          over every open editor. */}
+      <Show when={isLoading() && !fileData()}>
         <div class="absolute inset-0 flex items-center justify-center bg-neutral-900/80 z-10">
           <div class="flex items-center gap-3">
             <div class="w-5 h-5 border-2 border-neutral-600 border-t-neutral-300 rounded-full animate-spin" />

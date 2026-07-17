@@ -18,13 +18,21 @@
  */
 import '@/index.css';
 import { render } from 'solid-js/web';
-import { Show, onMount, onCleanup, type Component } from 'solid-js';
+import { Show, For, onMount, onCleanup, type Component } from 'solid-js';
+import { DragDropProvider, DragDropSensors } from '@thisbeyond/solid-dnd';
 import { ProjectProvider } from '@/contexts/ProjectContext';
 import { SettingsProvider } from '@/contexts/SettingsContext';
 import { EditorProvider, useEditor } from '@/contexts/EditorContext';
 import { EditorPanel } from '@/components/EditorPanel';
 import { BacklinksPanel } from '@/components/BacklinksPanel';
 import { WikilinkHoverPreview } from '@/components/WikilinkHoverPreview';
+import { FloatingWindow } from '@/components/windowing/FloatingWindow';
+import { windowStore } from '@/stores/windowStore';
+import { registerPanels } from '@/lib/register-panels';
+
+// Floating windows resolve their content through the panel registry — the
+// hover popover's 'file' tab needs FileViewerPanel registered here too.
+registerPanels();
 
 // `?backlinks=1` docks the real BacklinksPanel beside the editor so the
 // backlinks/wikilink story specs can drive it against the real EditorContext.
@@ -102,6 +110,18 @@ const HarnessInner: Component = () => {
         </Show>
       </div>
       <WikilinkHoverPreview />
+      {/* Hover popovers are transient FloatingWindows — the harness hosts
+          the same floating layer as the app so hover stories exercise the
+          real window, not a mock. */}
+      <div class="fixed inset-0 z-30 pointer-events-none">
+        <For each={windowStore.floatingWindows.filter((w) => !w.isMinimized)}>
+          {(w) => (
+            <div class="pointer-events-auto">
+              <FloatingWindow window={w} />
+            </div>
+          )}
+        </For>
+      </div>
     </div>
   );
 };
@@ -111,7 +131,12 @@ const EditorHarness: Component = () => (
     {/* Real SettingsProvider so persisted editor settings (vim mode) apply. */}
     <SettingsProvider>
       <EditorProvider>
-        <HarnessInner />
+        {/* FloatingWindow tab bars register solid-dnd droppables. */}
+        <DragDropProvider>
+          <DragDropSensors>
+            <HarnessInner />
+          </DragDropSensors>
+        </DragDropProvider>
       </EditorProvider>
     </SettingsProvider>
   </ProjectProvider>

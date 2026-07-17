@@ -1,9 +1,16 @@
-import { Component, createMemo, createSignal, createEffect, onCleanup, untrack, For } from 'solid-js';
+import { Component, Show, createMemo, createSignal, createEffect, onCleanup, untrack, For } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import type { FloatingWindow as FloatingWindowType } from '@/types/windowTypes';
 import { TabBar } from './TabBar';
-import { IconClose, IconLayout, IconMinimize } from './icons';
+import {
+  IconClose,
+  IconLayout,
+  IconMinimize,
+  IconMaximize,
+  IconPin,
+  IconTabBar,
+} from './icons';
 import { confirmTabClose } from '@/lib/tab-guards';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 
@@ -48,8 +55,15 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
     resizeCleanup = null;
   });
 
+  // Hover Editor auto-pin: interacting with a transient popover's geometry
+  // (drag or resize) means the user wants to keep it.
+  const autoPin = () => {
+    if (w().transient) windowActions.pinFloatingWindow(w().id);
+  };
+
   const handleResizePointerDown = (edge: ResizeEdge, e: PointerEvent) => {
     if (w().isMaximized) return;
+    autoPin();
     e.preventDefault();
     e.stopPropagation();
     const el = e.currentTarget as HTMLElement;
@@ -127,6 +141,7 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
 
   const handleTitleMouseDown = (e: MouseEvent) => {
     if (w().isMaximized) return;
+    autoPin();
     e.preventDefault();
     setIsDragging(true);
     setDragStart({
@@ -156,16 +171,32 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
     });
   });
 
+  const titleBtn =
+    'p-0.5 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60';
+
   return (
     <div
-      class="absolute flex flex-col bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl"
-      style={{
-        left: `${w().x}px`,
-        top: `${w().y}px`,
-        width: `${w().width}px`,
-        height: `${w().height}px`,
-        'z-index': `${w().zIndex}`,
-      }}
+      data-window-id={w().id}
+      class="absolute flex flex-col bg-zinc-900 border border-white/10 rounded-md shadow-lg"
+      style={
+        w().isMaximized
+          ? {
+              // Hover Editor maximize: cover the workspace, keeping the
+              // far-left ribbon, header, and status bar visible.
+              left: '44px',
+              top: '44px',
+              width: 'calc(100vw - 48px)',
+              height: 'calc(100vh - 72px)',
+              'z-index': `${w().zIndex}`,
+            }
+          : {
+              left: `${w().x}px`,
+              top: `${w().y}px`,
+              width: `${w().width}px`,
+              height: `${w().height}px`,
+              'z-index': `${w().zIndex}`,
+            }
+      }
       onMouseDown={() => windowActions.bringToFront(w().id)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -183,17 +214,47 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
           />
         )}
       </For>
+      {/* Hover Editor titlebar: pin | title (drag) | tab-bar toggle, dock,
+          roll up, maximize/restore, close. */}
       <div
-        class="flex items-center justify-between px-2 py-1 bg-zinc-800 border-b border-zinc-700 cursor-grab active:cursor-grabbing select-none"
+        class="flex h-7 items-center gap-1 border-b border-white/10 bg-zinc-800/80 px-1.5 cursor-grab active:cursor-grabbing select-none"
         onMouseDown={handleTitleMouseDown}
       >
-         <span class="text-xs font-medium text-zinc-300 truncate">
-           {w().title ?? 'Window'}
-         </span>
-        <div class="flex items-center gap-0.5">
+        <Show when={w().transient}>
           <button
             type="button"
-            class="p-1 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700"
+            class={titleBtn}
+            data-testid="float-pin"
+            onClick={(e) => {
+              e.stopPropagation();
+              windowActions.pinFloatingWindow(w().id);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            title="Pin (keep open when the cursor leaves)"
+          >
+            <IconPin class="w-3 h-3" />
+          </button>
+        </Show>
+        <span class="min-w-0 flex-1 truncate text-xs font-medium text-zinc-300">
+          {w().title ?? 'Window'}
+        </span>
+        <div class="flex items-center gap-0.5" onMouseDown={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            class={titleBtn}
+            data-testid="float-tabbar-toggle"
+            onClick={() =>
+              windowActions.updateFloatingWindow(w().id, {
+                showTabBar: w().showTabBar === false,
+              })
+            }
+            title={w().showTabBar === false ? 'Show tab bar' : 'Hide tab bar'}
+          >
+            <IconTabBar class="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            class={titleBtn}
             onClick={() => windowActions.dockFloatingWindow(w().id)}
             title="Dock back into the layout"
           >
@@ -201,24 +262,34 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
           </button>
           <button
             type="button"
-            class="p-1 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700"
+            class={titleBtn}
             onClick={() => windowActions.minimizeFloatingWindow(w().id)}
-            title="Minimize"
+            title="Roll up into the window bar"
           >
             <IconMinimize class="w-3 h-3" />
           </button>
           <button
             type="button"
-            class="p-1 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700"
-            onClick={handleClose}
-            title="Close (closes its tabs)"
+            class={titleBtn}
+            data-testid="float-maximize"
+            onClick={() =>
+              w().isMaximized
+                ? windowActions.restoreFloatingWindow(w().id)
+                : windowActions.maximizeFloatingWindow(w().id)
+            }
+            title={w().isMaximized ? 'Restore previous size' : 'Maximize'}
           >
+            <IconMaximize class="w-3 h-3" />
+          </button>
+          <button type="button" class={titleBtn} onClick={handleClose} title="Close (closes its tabs)">
             <IconClose class="w-3 h-3" />
           </button>
         </div>
       </div>
       <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
-        <TabBar mode="center" groupId={w().tabGroupId} paneId="" />
+        <Show when={w().showTabBar !== false}>
+          <TabBar mode="center" groupId={w().tabGroupId} paneId="" />
+        </Show>
         <div class="flex-1 bg-zinc-900 overflow-auto p-2 text-xs text-zinc-400" data-testid={`panel-content-${activeContentType() ?? 'unknown'}`}>
           {(() => {
             const id = activeTabId();

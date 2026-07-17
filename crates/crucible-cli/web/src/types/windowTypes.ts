@@ -85,6 +85,15 @@ export interface FloatingWindow {
   isMaximized: boolean;
   zIndex: number;
   title?: string;
+  /** Hover-spawned popover: auto-closes on hover-away and is excluded from
+   * layout persistence. Pinning (or dragging/resizing — Hover Editor's
+   * auto-pin) clears it, promoting the popover to a normal window. */
+  transient?: boolean;
+  /** false hides the tab bar (compact hover-editor look); the titlebar
+   * toggle brings it back for native tab drag-and-drop. */
+  showTabBar?: boolean;
+  /** Bounds to restore when un-maximizing. */
+  restoreBounds?: { x: number; y: number; width: number; height: number };
 }
 
 // Drag and drop types
