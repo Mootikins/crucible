@@ -147,8 +147,9 @@ impl AgentManager {
 }
 
 /// Fallback: a concise title by smart truncation of the first user message.
-/// Char-boundary safe for multi-byte UTF-8 (CJK, emoji).
-fn truncate_to_title(message: &str) -> String {
+/// Char-boundary safe for multi-byte UTF-8 (CJK, emoji). Also used by the
+/// startup catch-up sweep, which titles persisted sessions without an LLM.
+pub(crate) fn truncate_to_title(message: &str) -> String {
     const MAX_LEN: usize = 60;
 
     let cleaned: String = message.split_whitespace().collect::<Vec<_>>().join(" ");

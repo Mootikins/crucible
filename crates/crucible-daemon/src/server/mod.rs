@@ -719,6 +719,44 @@ impl Server {
             }
         });
 
+        // Startup catch-up: title persisted sessions that already have
+        // content but no title (see SessionManager::title_untitled_sessions).
+        // Kiln coverage mirrors the archive sweep (open kilns + crucible
+        // home) plus registered project kilns, whose entries point at the
+        // `.crucible` data dir — normalize to the kiln root.
+        {
+            let sm = self.session_manager.clone();
+            let km = self.kiln_manager.clone();
+            let pm = self.project_manager.clone();
+            let tx = self.event_tx.clone();
+            tokio::spawn(async move {
+                let mut kilns: Vec<std::path::PathBuf> =
+                    km.list().await.into_iter().map(|(path, _, _)| path).collect();
+                let home = crucible_core::config::crucible_home();
+                if !kilns.contains(&home) {
+                    kilns.push(home);
+                }
+                for project in pm.list() {
+                    for kiln in project.kilns {
+                        let root = if kiln.path.file_name().is_some_and(|n| n == ".crucible") {
+                            kiln.path.parent().map(|p| p.to_path_buf())
+                        } else {
+                            Some(kiln.path)
+                        };
+                        if let Some(root) = root {
+                            if !kilns.contains(&root) {
+                                kilns.push(root);
+                            }
+                        }
+                    }
+                }
+                let titled = sm.title_untitled_sessions(&kilns, &tx).await;
+                if titled > 0 {
+                    info!(titled, "Startup title catch-up completed");
+                }
+            });
+        }
+
         loop {
             tokio::select! {
                 accept_result = self.listener.accept() => {

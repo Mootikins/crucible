@@ -1,4 +1,5 @@
 import { Component, For, Show, createMemo } from 'solid-js';
+import { sessionDisplayTitle } from '@/lib/session-display';
 import type { Session, KilnInfo } from '@/lib/types';
 import { Search, X, Plus, Archive, Trash2 } from '@/lib/icons';
 
@@ -80,7 +81,7 @@ const SessionItem: Component<{
       <div class="flex items-center gap-2">
         <StateIndicator state={props.session.state} />
         <span class="font-medium truncate flex-1">
-          {props.session.title || `Session ${props.session.id?.slice(0, 8) ?? 'unknown'}`}
+          {sessionDisplayTitle(props.session)}
         </span>
       </div>
       <div class="text-xs text-muted-dark mt-1">

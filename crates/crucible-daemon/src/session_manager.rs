@@ -506,6 +506,75 @@ impl SessionManager {
         Ok(())
     }
 
+    /// Catch-up titling: persisted, non-archived sessions with content but
+    /// no title get the truncation fallback. The LLM title path only fires
+    /// on a live `message_complete`, so a daemon restart, a wedged task, or
+    /// a pre-feature session would otherwise stay "Untitled" forever.
+    ///
+    /// Returns how many sessions were titled. Emits `title_changed` per hit.
+    pub async fn title_untitled_sessions(
+        &self,
+        kilns: &[PathBuf],
+        event_tx: &tokio::sync::broadcast::Sender<SessionEventMessage>,
+    ) -> usize {
+        let mut titled = 0;
+        let mut seen = std::collections::HashSet::new();
+        for kiln in kilns {
+            for summary in self
+                .list_sessions_filtered_async(Some(kiln), None, None, None, false)
+                .await
+            {
+                if !seen.insert(summary.id.clone()) {
+                    continue;
+                }
+                if summary
+                    .title
+                    .as_deref()
+                    .is_some_and(|t| !t.trim().is_empty())
+                {
+                    continue;
+                }
+                // First user message from the log; empty sessions stay untitled
+                // (the archive sweep owns those).
+                let Ok(events) = self
+                    .storage
+                    .load_events(&summary.id, kiln, Some(200), None)
+                    .await
+                else {
+                    continue;
+                };
+                let first_user = events.iter().find_map(|e| {
+                    if e.get("event").and_then(|v| v.as_str()) != Some("user_message") {
+                        return None;
+                    }
+                    e.get("data")?.get("content")?.as_str().map(str::to_string)
+                });
+                let Some(first_user) = first_user else { continue };
+                let title = crate::agent_manager::title::truncate_to_title(&first_user);
+
+                // In-memory sessions go through set_title (persists too);
+                // cold ones get patched directly in storage.
+                if self.set_title(&summary.id, title.clone()).await.is_err() {
+                    let Ok(mut session) = self.storage.load(&summary.id, kiln).await else {
+                        continue;
+                    };
+                    session.title = Some(title.clone());
+                    if self.storage.save(&session).await.is_err() {
+                        continue;
+                    }
+                }
+                let _ = event_tx.send(SessionEventMessage::new(
+                    &summary.id,
+                    "title_changed",
+                    serde_json::json!({ "title": title }),
+                ));
+                info!(session_id = %summary.id, title = %title, "Catch-up title applied");
+                titled += 1;
+            }
+        }
+        titled
+    }
+
     pub async fn update_last_activity(
         &self,
         session_id: &str,
@@ -567,6 +636,47 @@ impl From<serde_json::Error> for SessionError {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn title_sweep_titles_untitled_sessions_with_content() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().to_path_buf();
+        let manager = SessionManager::new();
+        let session = manager
+            .create_session(SessionType::Chat, kiln.clone(), None, vec![], None)
+            .await
+            .unwrap();
+        manager
+            .storage
+            .append_event(
+                &session,
+                r#"{"type":"event","event":"user_message","data":{"content":"how do wikilinks resolve?"},"seq":1}"#,
+            )
+            .await
+            .unwrap();
+        // An empty session in the same kiln must stay untitled.
+        let empty = manager
+            .create_session(SessionType::Chat, kiln.clone(), None, vec![], None)
+            .await
+            .unwrap();
+
+        let (tx, mut rx) = tokio::sync::broadcast::channel(8);
+        let titled = manager.title_untitled_sessions(&[kiln], &tx).await;
+
+        assert_eq!(titled, 1);
+        let updated = manager.get_session(&session.id).unwrap();
+        assert_eq!(updated.title.as_deref(), Some("how do wikilinks resolve?"));
+        assert!(manager
+            .get_session(&empty.id)
+            .unwrap()
+            .title
+            .as_deref()
+            .unwrap_or("")
+            .is_empty());
+        let event = rx.try_recv().unwrap();
+        assert_eq!(event.event, "title_changed");
+        assert_eq!(event.session_id, session.id);
+    }
 
     #[tokio::test]
     async fn test_create_session() {
