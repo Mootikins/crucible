@@ -20,7 +20,7 @@ export const ChatModeControl: Component = () => {
   const { chatMode, switchMode } = useChatSafe();
 
   return (
-    <div class="flex items-center rounded-lg border border-neutral-700 overflow-hidden">
+    <div class="flex items-center rounded-lg border border-hairline overflow-hidden">
       {MODES.map((mode) => (
         <button
           type="button"
@@ -29,7 +29,7 @@ export const ChatModeControl: Component = () => {
           class="px-2.5 py-1 text-xs font-medium transition-colors outline-none"
           classList={{
             'bg-primary/80 text-white': chatMode() === mode.value,
-            'text-neutral-400 hover:text-neutral-200 hover:bg-white/5': chatMode() !== mode.value,
+            'text-muted hover:text-shell-ink hover:bg-hover-wash': chatMode() !== mode.value,
           }}
           data-testid={`mode-${mode.value}`}
         >

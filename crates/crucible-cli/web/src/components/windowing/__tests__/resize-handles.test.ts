@@ -49,8 +49,8 @@ describe('1px separators with widened grab zones', () => {
 
   it('expanded EdgePanel content has no border of its own (the handle line is the separator)', () => {
     const source = readFileSync(resolve(__dirname, '../EdgePanel.tsx'), 'utf-8');
-    expect(source).not.toMatch(/'border-r border-zinc-800'/);
-    expect(source).not.toMatch(/'border-t border-zinc-800'/);
+    expect(source).not.toMatch(/'border-r border-hairline'/);
+    expect(source).not.toMatch(/'border-t border-hairline'/);
   });
 
   it('collapsed strip border faces the center for each position', () => {

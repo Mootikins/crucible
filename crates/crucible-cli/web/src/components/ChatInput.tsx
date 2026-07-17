@@ -160,7 +160,7 @@ export const ChatInput: Component = () => {
   return (
     <form
       onSubmit={handleSubmit}
-      class="border-t border-neutral-800 p-4"
+      class="border-t border-hairline p-4"
       data-testid="chat-input-form"
     >
        <Show when={error()}>
@@ -170,7 +170,7 @@ export const ChatInput: Component = () => {
        </Show>
       
       <Show when={!session()}>
-        <div class="mb-2 px-2 py-1 text-sm text-neutral-500 text-center">
+        <div class="mb-2 px-2 py-1 text-sm text-muted-dark text-center">
           No active session. Create or select a session to start chatting.
         </div>
       </Show>
@@ -213,7 +213,7 @@ export const ChatInput: Component = () => {
             placeholder={session() ? "Type a message..." : "Select a session first..."}
             disabled={!session() || isLoading() || session()?.state === 'ended'}
             rows={1}
-            class="flex-1 w-full bg-transparent text-neutral-100 placeholder-neutral-500 resize-none outline-none px-2 py-1 max-h-32 min-h-[2.5rem] disabled:opacity-50"
+            class="flex-1 w-full bg-transparent text-shell-ink placeholder-muted-dark resize-none outline-none px-2 py-1 max-h-32 min-h-[2.5rem] disabled:opacity-50"
             data-testid="chat-input"
           />
           <Show when={autocomplete.isOpen()}>
@@ -231,7 +231,7 @@ export const ChatInput: Component = () => {
               type="button"
               onClick={() => setIsModelPickerOpen(!isModelPickerOpen())}
               disabled={!session() || isLoading()}
-               class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-300 bg-surface-elevated hover:bg-surface-overlay rounded-lg border border-neutral-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+               class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-shell-body bg-surface-elevated hover:bg-surface-overlay rounded-lg border border-hairline transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               data-testid="model-picker-button"
             >
               <span class="max-w-[140px] truncate">{truncateModel(currentModel())}</span>
@@ -247,11 +247,11 @@ export const ChatInput: Component = () => {
             </button>
 
              <Show when={isModelPickerOpen()}>
-               <div class="absolute bottom-full left-0 mb-1 w-56 max-h-64 overflow-y-auto bg-surface-elevated border border-neutral-700 rounded-lg shadow-xl z-50">
+               <div class="absolute bottom-full left-0 mb-1 w-56 max-h-64 overflow-y-auto bg-surface-elevated border border-hairline rounded-lg shadow-xl z-50">
                 <Show
                   when={availableModels().length > 0}
                   fallback={
-                    <div class="px-3 py-2 text-xs text-neutral-500">No models available</div>
+                    <div class="px-3 py-2 text-xs text-muted-dark">No models available</div>
                   }
                 >
                   <For each={availableModels()}>
@@ -259,7 +259,7 @@ export const ChatInput: Component = () => {
                        <button
                          type="button"
                          onClick={() => handleModelSelect(model)}
-                         class="w-full px-3 py-2 text-left text-sm text-neutral-200 hover:bg-surface-overlay transition-colors first:rounded-t-lg last:rounded-b-lg"
+                         class="w-full px-3 py-2 text-left text-sm text-shell-ink hover:bg-surface-overlay transition-colors first:rounded-t-lg last:rounded-b-lg"
                          classList={{ 'bg-surface-overlay/50': model === currentSession()?.agent_model }}
                          data-testid={`model-option-${model}`}
                       >

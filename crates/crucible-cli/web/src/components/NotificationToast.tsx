@@ -19,22 +19,22 @@ const TOAST_STYLES: Record<NotificationType, ToastStyle> = {
     iconColor: 'text-primary',
   },
   success: {
-    border: 'border-emerald-500/40',
-    bg: 'bg-emerald-950/80',
+    border: 'border-ok/40',
+    bg: 'bg-ok/15',
     icon: '✓',
-    iconColor: 'text-emerald-400',
+    iconColor: 'text-ok',
   },
   warning: {
-    border: 'border-amber-500/40',
-    bg: 'bg-amber-950/80',
+    border: 'border-attention/40',
+    bg: 'bg-attention/15',
     icon: '⚠',
-    iconColor: 'text-amber-400',
+    iconColor: 'text-attention',
   },
   error: {
-    border: 'border-red-500/40',
-    bg: 'bg-red-950/80',
+    border: 'border-error/40',
+    bg: 'bg-error/15',
     icon: '✕',
-    iconColor: 'text-red-400',
+    iconColor: 'text-error',
   },
 };
 
@@ -67,7 +67,7 @@ const Toast: Component<{ id: string; type: NotificationType; message: string }> 
       </span>
 
       {/* Message */}
-      <p class="text-sm text-neutral-200 flex-1 break-words leading-snug">
+      <p class="text-sm text-shell-ink flex-1 break-words leading-snug">
         {props.message}
       </p>
 
@@ -75,7 +75,7 @@ const Toast: Component<{ id: string; type: NotificationType; message: string }> 
       <button
         type="button"
         onClick={() => notificationActions.dismiss(props.id)}
-        class="flex-shrink-0 text-neutral-500 hover:text-neutral-200 transition-colors p-0.5 -mr-1 -mt-0.5"
+        class="flex-shrink-0 text-muted-dark hover:text-shell-ink transition-colors p-0.5 -mr-1 -mt-0.5"
         aria-label="Dismiss notification"
       >
         <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">

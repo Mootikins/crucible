@@ -28,15 +28,15 @@ describe('TabBar - Close Button Visibility', () => {
     
     // Verify the button has the base classes
     expect(source).toContain('flex-shrink-0 p-0.5 rounded-sm transition-all');
-    expect(source).toContain('hover:bg-zinc-700 hover:text-zinc-200');
+    expect(source).toContain('hover:bg-hover-wash hover:text-shell-ink');
   });
 
   it('should render close button with proper hover and focus states', () => {
     const source = readFileSync(resolve(__dirname, '../TabBar.tsx'), 'utf-8');
     
     // Verify close button has hover and focus styling
-    expect(source).toContain('hover:bg-zinc-700');
-    expect(source).toContain('hover:text-zinc-200');
+    expect(source).toContain('hover:bg-hover-wash');
+    expect(source).toContain('hover:text-shell-ink');
     expect(source).toContain('focus:opacity-100');
   });
 });

@@ -172,12 +172,12 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
   });
 
   const titleBtn =
-    'p-0.5 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60';
+    'p-0.5 rounded text-muted-dark hover:text-shell-body hover:bg-hover-wash';
 
   return (
     <div
       data-window-id={w().id}
-      class="absolute flex flex-col bg-zinc-900 border border-white/10 rounded-md shadow-lg"
+      class="absolute flex flex-col bg-surface-overlay border border-hairline-strong rounded-md shadow-lg"
       style={
         w().isMaximized
           ? {
@@ -217,7 +217,7 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
       {/* Hover Editor titlebar: pin | title (drag) | tab-bar toggle, dock,
           roll up, maximize/restore, close. */}
       <div
-        class="flex h-7 items-center gap-1 border-b border-white/10 bg-zinc-800/80 px-1.5 cursor-grab active:cursor-grabbing select-none"
+        class="flex h-7 items-center gap-1 border-b border-hairline bg-surface-overlay px-1.5 cursor-grab active:cursor-grabbing select-none"
         onMouseDown={handleTitleMouseDown}
       >
         <Show when={w().transient}>
@@ -235,7 +235,7 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
             <IconPin class="w-3 h-3" />
           </button>
         </Show>
-        <span class="min-w-0 flex-1 truncate text-xs font-medium text-zinc-300">
+        <span class="min-w-0 flex-1 truncate text-xs font-medium text-shell-body">
           {w().title ?? 'Window'}
         </span>
         <div class="flex items-center gap-0.5" onMouseDown={(e) => e.stopPropagation()}>
@@ -290,13 +290,13 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
         <Show when={w().showTabBar !== false}>
           <TabBar mode="center" groupId={w().tabGroupId} paneId="" />
         </Show>
-        <div class="flex-1 bg-zinc-900 overflow-auto p-2 text-xs text-zinc-400" data-testid={`panel-content-${activeContentType() ?? 'unknown'}`}>
+        <div class="flex-1 bg-surface-base overflow-auto p-2 text-xs text-muted" data-testid={`panel-content-${activeContentType() ?? 'unknown'}`}>
           {(() => {
             const id = activeTabId();
             const contentType = activeContentType();
             if (!id || !contentType) {
               return (
-                <div class="flex-1 bg-zinc-900 overflow-auto p-2 text-xs text-zinc-400">
+                <div class="flex-1 bg-surface-base overflow-auto p-2 text-xs text-muted">
                   <span>No tabs</span>
                 </div>
               );
@@ -308,7 +308,7 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
               return <Dynamic component={panel.component} {...panelProps} />;
             }
             return (
-              <div class="flex-1 bg-zinc-900 overflow-auto p-2 text-xs text-zinc-400">
+              <div class="flex-1 bg-surface-base overflow-auto p-2 text-xs text-muted">
                 <span>Content for {tab?.title}</span>
               </div>
             );

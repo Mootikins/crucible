@@ -9,11 +9,11 @@ const ProjectItem: Component<{ project: Project; selected: boolean; onSelect: ()
        class={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
          props.selected
            ? 'bg-primary/20 text-primary-hover'
-           : 'hover:bg-surface-elevated text-neutral-300'
+           : 'hover:bg-surface-elevated text-shell-body'
        }`}
      >
       <div class="font-medium truncate">{props.project.name}</div>
-      <div class="text-xs text-neutral-500 truncate">{props.project.path}</div>
+      <div class="text-xs text-muted-dark truncate">{props.project.path}</div>
     </button>
   );
 };
@@ -53,17 +53,17 @@ export const ProjectSection: Component<{
       </For>
 
       <Show when={props.projects.length === 0 && !showNewProject()}>
-        <p class="text-neutral-500 text-sm text-center py-4">No projects registered</p>
+        <p class="text-muted-dark text-sm text-center py-4">No projects registered</p>
       </Show>
 
       <Show when={showNewProject()}>
-        <div class="mt-2 p-2 bg-neutral-800 rounded-lg">
+        <div class="mt-2 p-2 bg-surface-elevated rounded-lg">
           <input
             type="text"
             value={newProjectPath()}
             onInput={(e) => setNewProjectPath(e.currentTarget.value)}
             placeholder="/path/to/project"
-            class="w-full bg-neutral-700 text-neutral-100 px-2 py-1 rounded text-sm"
+            class="w-full bg-control text-shell-ink px-2 py-1 rounded text-sm"
           />
           <div class="flex gap-2 mt-2">
             <button
@@ -74,7 +74,7 @@ export const ProjectSection: Component<{
             </button>
             <button
               onClick={() => setShowNewProject(false)}
-              class="px-2 py-1 bg-neutral-700 text-neutral-300 rounded text-sm hover:bg-neutral-600"
+              class="px-2 py-1 bg-control text-shell-body rounded text-sm hover:bg-hover-wash"
             >
               Cancel
             </button>
@@ -84,7 +84,7 @@ export const ProjectSection: Component<{
 
       <button
         onClick={() => setShowNewProject(true)}
-        class="w-full mt-2 px-3 py-2 text-sm text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg transition-colors flex items-center justify-center gap-2"
+        class="w-full mt-2 px-3 py-2 text-sm text-muted hover:text-shell-ink hover:bg-hover-wash rounded-lg transition-colors flex items-center justify-center gap-2"
       >
         <Plus class="w-3.5 h-3.5" />
         Add Project

@@ -34,15 +34,15 @@ export const PopupInteraction: Component<Props> = (props) => {
   };
 
   return (
-    <div class="bg-neutral-800 rounded-lg p-4 mb-4 border border-neutral-700">
-      <p class="text-neutral-100 font-medium mb-3">{props.request.title}</p>
+    <div class="bg-surface-elevated rounded-lg p-4 mb-4 border border-hairline">
+      <p class="text-shell-ink font-medium mb-3">{props.request.title}</p>
 
       <input
         type="text"
         placeholder="Search..."
         value={filter()}
         onInput={(e) => setFilter(e.currentTarget.value)}
-        class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary mb-3"
+        class="w-full px-3 py-2 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted-dark focus:outline-none focus:ring-2 focus:ring-primary mb-3"
       />
 
       <div class="max-h-48 overflow-y-auto space-y-1 mb-3">
@@ -50,17 +50,17 @@ export const PopupInteraction: Component<Props> = (props) => {
           {(entry, index) => (
             <button
               onClick={() => handleSelect(index())}
-              class="w-full text-left px-3 py-2 rounded-md hover:bg-neutral-700 transition-colors"
+              class="w-full text-left px-3 py-2 rounded-md hover:bg-hover-wash transition-colors"
             >
-              <span class="text-neutral-100">{entry.label}</span>
+              <span class="text-shell-ink">{entry.label}</span>
               <Show when={entry.description}>
-                <span class="text-neutral-500 text-sm block">{entry.description}</span>
+                <span class="text-muted-dark text-sm block">{entry.description}</span>
               </Show>
             </button>
           )}
         </For>
         <Show when={filteredEntries().length === 0}>
-          <p class="text-neutral-500 text-sm px-3 py-2">No matches found</p>
+          <p class="text-muted-dark text-sm px-3 py-2">No matches found</p>
         </Show>
       </div>
 
@@ -71,7 +71,7 @@ export const PopupInteraction: Component<Props> = (props) => {
             placeholder="Or type custom..."
             value={otherText()}
             onInput={(e) => setOtherText(e.currentTarget.value)}
-            class="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary"
+            class="flex-1 px-3 py-2 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted-dark focus:outline-none focus:ring-2 focus:ring-primary"
           />
           <button
             onClick={handleOther}

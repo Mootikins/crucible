@@ -32,22 +32,22 @@ export const MultiEditDiff: Component<Props> = (props) => {
   });
 
   return (
-    <div class="rounded-lg border border-zinc-700/80 overflow-hidden">
-      <div class="flex items-center gap-3 px-3 py-2 bg-zinc-800/80 border-b border-zinc-700/50 text-xs">
-        <span class="font-mono text-zinc-300 truncate">{props.fileName}</span>
-        <span class="text-zinc-500 text-[10px] uppercase tracking-wider">
+    <div class="rounded-lg border border-hairline overflow-hidden">
+      <div class="flex items-center gap-3 px-3 py-2 bg-surface-elevated border-b border-hairline text-xs">
+        <span class="font-mono text-shell-body truncate">{props.fileName}</span>
+        <span class="text-muted-dark text-[10px] uppercase tracking-wider">
           {props.edits.length} edits
         </span>
         <div class="flex items-center gap-2 ml-auto">
-          <span class="text-emerald-400 font-mono">+{stats().add}</span>
-          <span class="text-red-400 font-mono">-{stats().remove}</span>
+          <span class="text-ok font-mono">+{stats().add}</span>
+          <span class="text-error font-mono">-{stats().remove}</span>
         </div>
       </div>
-      <div class="divide-y divide-zinc-700/30">
+      <div class="divide-y divide-hairline">
         <For each={props.edits}>
           {(edit, i) => (
             <div>
-              <div class="px-3 py-1 bg-zinc-900/40 text-[10px] uppercase tracking-wider text-zinc-500 font-mono">
+              <div class="px-3 py-1 bg-surface-base text-[10px] uppercase tracking-wider text-muted-dark font-mono">
                 Edit {i() + 1} of {props.edits.length}
               </div>
               <DiffViewer

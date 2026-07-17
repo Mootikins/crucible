@@ -190,25 +190,25 @@ export const ShellPanel: Component = () => {
   function lineClass(type: OutputLine['type']): string {
     switch (type) {
       case 'stdout':
-        return 'text-zinc-100';
+        return 'text-shell-ink';
       case 'stderr':
-        return 'text-red-400';
+        return 'text-error';
       case 'exit':
         return ''; // handled per-block
       case 'prompt':
-        return 'text-emerald-400';
+        return 'text-ok';
       default:
-        return 'text-zinc-100';
+        return 'text-shell-ink';
     }
   }
 
   function exitCodeClass(code: number | undefined): string {
-    if (code === undefined) return 'text-zinc-500';
-    return code === 0 ? 'text-emerald-400' : 'text-red-400';
+    if (code === undefined) return 'text-muted-dark';
+    return code === 0 ? 'text-ok' : 'text-error';
   }
 
   return (
-    <div class="h-full flex flex-col bg-zinc-950 font-mono text-sm">
+    <div class="h-full flex flex-col bg-shell-bg font-mono text-sm">
       {/* Output area */}
       <div
         ref={outputRef}
@@ -217,11 +217,11 @@ export const ShellPanel: Component = () => {
         <Show
           when={blocks().length > 0}
           fallback={
-            <div class="h-full flex items-center justify-center text-zinc-600 text-xs">
+            <div class="h-full flex items-center justify-center text-muted-dark text-xs">
               <div class="text-center">
                 <div class="text-lg mb-1">💻</div>
                 <div>Shell</div>
-                <div class="mt-1 text-zinc-700">
+                <div class="mt-1 text-muted-dark">
                   Type a command below • Ctrl+C to cancel • Ctrl+L to clear
                 </div>
               </div>
@@ -233,10 +233,10 @@ export const ShellPanel: Component = () => {
               <div class="mb-3">
                 {/* Command prompt line */}
                 <div class="flex items-baseline gap-1">
-                  <span class="text-emerald-400 select-none">$</span>
-                  <span class="text-zinc-100 font-semibold">{block.command}</span>
+                  <span class="text-ok select-none">$</span>
+                  <span class="text-shell-ink font-semibold">{block.command}</span>
                   <Show when={block.running}>
-                    <span class="text-amber-400 text-xs animate-pulse ml-2">
+                    <span class="text-attention text-xs animate-pulse ml-2">
                       running…
                     </span>
                   </Show>
@@ -272,8 +272,8 @@ export const ShellPanel: Component = () => {
       </div>
 
       {/* Input area */}
-      <div class="border-t border-zinc-800 px-3 py-2 flex items-center gap-2 bg-zinc-900/50">
-        <span class="text-emerald-400 select-none font-semibold">$</span>
+      <div class="border-t border-hairline px-3 py-2 flex items-center gap-2 bg-surface-base">
+        <span class="text-ok select-none font-semibold">$</span>
         <input
           ref={inputRef}
           type="text"
@@ -285,7 +285,7 @@ export const ShellPanel: Component = () => {
           onKeyDown={handleKeyDown}
           placeholder={isRunning() ? 'Command running…' : 'Enter command…'}
           disabled={isRunning()}
-          class="flex-1 bg-transparent text-zinc-100 placeholder-zinc-600 outline-none caret-emerald-400 disabled:opacity-50"
+          class="flex-1 bg-transparent text-shell-ink placeholder-muted-dark outline-none caret-ok disabled:opacity-50"
           spellcheck={false}
           autocomplete="off"
         />
@@ -296,7 +296,7 @@ export const ShellPanel: Component = () => {
               activeController = null;
               setIsRunning(false);
             }}
-            class="text-xs text-red-400 hover:text-red-300 px-1.5 py-0.5 border border-red-800 rounded hover:border-red-600 transition-colors"
+            class="text-xs text-error hover:text-error px-1.5 py-0.5 border border-error rounded hover:border-error transition-colors"
             title="Cancel (Ctrl+C)"
           >
             Cancel

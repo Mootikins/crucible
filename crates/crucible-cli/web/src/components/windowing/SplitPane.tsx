@@ -97,7 +97,7 @@ const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }
           'w-px cursor-col-resize after:inset-y-0 after:-inset-x-1': split().direction === 'horizontal',
           'h-px cursor-row-resize after:inset-x-0 after:-inset-y-1': split().direction !== 'horizontal',
           'bg-primary': isDragging(),
-          'bg-zinc-800 hover:bg-zinc-600': !isDragging(),
+          'bg-control hover:bg-hover-wash': !isDragging(),
         }}
         on:pointerdown={handlePointerDown}
       />

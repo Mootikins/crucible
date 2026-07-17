@@ -24,7 +24,7 @@ function addCopyButtons(container: HTMLDivElement): void {
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = 'Copy';
-    button.className = 'absolute top-2 right-2 rounded border border-neutral-600 bg-neutral-900/90 px-2 py-1 text-[10px] font-medium text-neutral-200 hover:bg-neutral-800';
+    button.className = 'absolute top-2 right-2 rounded border border-hairline bg-surface-overlay px-2 py-1 text-[10px] font-medium text-shell-ink hover:bg-hover-wash';
 
     button.addEventListener('click', async (event) => {
       event.preventDefault();
@@ -215,7 +215,7 @@ export const Message: Component<MessageProps> = (props) => {
           isUser()
             ? 'message-bubble message-bubble-user'
             : isSystem()
-              ? 'max-w-3xl rounded-md border border-neutral-800/60 bg-neutral-900/40 px-3 py-2 text-xs italic text-neutral-400'
+              ? 'max-w-3xl rounded-md border border-hairline bg-surface-base px-3 py-2 text-xs italic text-muted'
               : 'message-assistant'
         }
       >
@@ -255,7 +255,7 @@ export const Message: Component<MessageProps> = (props) => {
               <Show when={!isEditing()} fallback={
                 <div class="flex flex-col gap-2">
                   <textarea
-                    class="w-full rounded border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-neutral-200 focus:border-primary focus:outline-none resize-y min-h-[60px]"
+                    class="w-full rounded border border-hairline bg-control px-3 py-2 text-sm text-shell-ink focus:border-primary focus:outline-none resize-y min-h-[60px]"
                     value={editContent()}
                     onInput={(e) => setEditContent(e.currentTarget.value)}
                     onKeyDown={(e) => {
@@ -275,7 +275,7 @@ export const Message: Component<MessageProps> = (props) => {
                   <div class="flex gap-2 justify-end">
                     <button
                       type="button"
-                      class="rounded px-3 py-1 text-xs text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700 transition-colors"
+                      class="rounded px-3 py-1 text-xs text-muted hover:text-shell-ink hover:bg-hover-wash transition-colors"
                       onClick={handleEditCancel}
                     >
                       Cancel
@@ -299,12 +299,12 @@ export const Message: Component<MessageProps> = (props) => {
                     onClick={handleRenderedClick}
                     class="prose prose-invert prose-sm max-w-none
                       prose-p:my-1 prose-p:leading-relaxed
-                      prose-pre:bg-neutral-900 prose-pre:rounded-lg prose-pre:p-3 prose-pre:text-sm
-                      prose-code:bg-neutral-700 prose-code:px-1 prose-code:rounded prose-code:text-sm prose-code:before:content-none prose-code:after:content-none
+                      prose-pre:bg-surface-base prose-pre:rounded-lg prose-pre:p-3 prose-pre:text-sm
+                      prose-code:bg-surface-elevated prose-code:px-1 prose-code:rounded prose-code:text-sm prose-code:before:content-none prose-code:after:content-none
                       prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5
                       prose-headings:my-2 prose-headings:font-semibold
                       prose-a:text-primary prose-a:no-underline hover:prose-a:underline
-                      prose-blockquote:border-l-2 prose-blockquote:border-neutral-600 prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-neutral-400"
+                      prose-blockquote:border-l-2 prose-blockquote:border-hairline prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-muted"
                     innerHTML={renderedContent()}
                   />
                 </Show>
@@ -324,14 +324,14 @@ export const Message: Component<MessageProps> = (props) => {
 
         {/* Token usage — assistant messages only */}
         <Show when={isAssistant() && props.message.usage}>
-          <div class="mt-1 text-[11px] text-neutral-500">
+          <div class="mt-1 text-[11px] text-muted-dark">
             {formatTokenUsage(props.message.usage!)}
           </div>
         </Show>
 
         {/* Timestamp */}
         <Show when={props.message.timestamp && !isSystem()}>
-          <div class={`mt-1 text-xs text-neutral-500 ${isUser() ? 'text-right' : 'text-left'}`}>
+          <div class={`mt-1 text-xs text-muted-dark ${isUser() ? 'text-right' : 'text-left'}`}>
             {formatRelativeTime(props.message.timestamp)}
           </div>
         </Show>
@@ -345,12 +345,12 @@ export const Message: Component<MessageProps> = (props) => {
           {/* Copy — all messages */}
           <button
             type="button"
-            class="rounded p-1 text-neutral-500 hover:text-neutral-200 hover:bg-neutral-700/60 transition-colors"
+            class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
             title={copied() ? 'Copied!' : 'Copy message'}
             onClick={handleCopy}
           >
             <Show when={copied()} fallback={<Copy size={14} />}>
-              <Check size={14} class="text-emerald-400" />
+              <Check size={14} class="text-ok" />
             </Show>
           </button>
 
@@ -358,7 +358,7 @@ export const Message: Component<MessageProps> = (props) => {
           <Show when={isUser()}>
             <button
               type="button"
-              class="rounded p-1 text-neutral-500 hover:text-neutral-200 hover:bg-neutral-700/60 transition-colors"
+              class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
               title="Edit message"
               onClick={handleEditStart}
             >
@@ -370,7 +370,7 @@ export const Message: Component<MessageProps> = (props) => {
           <Show when={isAssistant() && props.isLast}>
             <button
               type="button"
-              class="rounded p-1 text-neutral-500 hover:text-neutral-200 hover:bg-neutral-700/60 transition-colors"
+              class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
               title="Regenerate response"
               onClick={handleRegenerate}
             >

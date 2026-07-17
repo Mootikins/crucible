@@ -91,15 +91,15 @@ function buildSections(lines: DiffLine[]): DiffSection[] {
 }
 
 const lineStyles = {
-  add: 'bg-emerald-950/70 text-emerald-300',
-  remove: 'bg-red-950/70 text-red-300',
-  context: 'bg-zinc-900 text-zinc-400',
+  add: 'bg-ok/15 text-ok',
+  remove: 'bg-error/15 text-error',
+  context: 'bg-surface-base text-muted',
 };
 
 const gutterStyles = {
-  add: 'text-emerald-600/60',
-  remove: 'text-red-600/60',
-  context: 'text-zinc-600',
+  add: 'text-ok/60',
+  remove: 'text-error/60',
+  context: 'text-muted-dark',
 };
 
 const prefixChar = {
@@ -183,13 +183,13 @@ export const DiffViewer: Component<Props> = (props) => {
     return (
       <div class={`flex ${lineStyles[line.type]} leading-5`}>
         <span
-          class={`shrink-0 select-none text-right pr-1 border-r border-zinc-700/50 ${gutterStyles[line.type]}`}
+          class={`shrink-0 select-none text-right pr-1 border-r border-hairline ${gutterStyles[line.type]}`}
           style={{ width: `${gw + 1}ch` }}
         >
           {line.oldLineNum ?? ''}
         </span>
         <span
-          class={`shrink-0 select-none text-right pr-1 border-r border-zinc-700/50 ${gutterStyles[line.type]}`}
+          class={`shrink-0 select-none text-right pr-1 border-r border-hairline ${gutterStyles[line.type]}`}
           style={{ width: `${gw + 1}ch` }}
         >
           {line.newLineNum ?? ''}
@@ -211,16 +211,16 @@ export const DiffViewer: Component<Props> = (props) => {
   };
 
   return (
-    <div class={props.hideHeader ? '' : 'rounded-lg border border-zinc-700/80 overflow-hidden'}>
+    <div class={props.hideHeader ? '' : 'rounded-lg border border-hairline overflow-hidden'}>
       {/* Header */}
       <Show when={!props.hideHeader}>
-        <div class="flex items-center gap-3 px-3 py-2 bg-zinc-800/80 border-b border-zinc-700/50 text-xs">
+        <div class="flex items-center gap-3 px-3 py-2 bg-surface-elevated border-b border-hairline text-xs">
           <Show when={props.fileName}>
-            <span class="font-mono text-zinc-300 truncate">{props.fileName}</span>
+            <span class="font-mono text-shell-body truncate">{props.fileName}</span>
           </Show>
           <div class="flex items-center gap-2 ml-auto">
-            <span class="text-emerald-400 font-mono">+{stats().additions}</span>
-            <span class="text-red-400 font-mono">-{stats().deletions}</span>
+            <span class="text-ok font-mono">+{stats().additions}</span>
+            <span class="text-error font-mono">-{stats().deletions}</span>
           </div>
         </div>
       </Show>
@@ -237,7 +237,7 @@ export const DiffViewer: Component<Props> = (props) => {
             >
               <button
                 onClick={() => toggleSection((section as CollapsedSection).startIndex)}
-                class="w-full px-3 py-1 text-center text-xs text-zinc-500 bg-zinc-800/50 hover:bg-zinc-800 hover:text-zinc-300 transition-colors border-y border-zinc-700/30 cursor-pointer"
+                class="w-full px-3 py-1 text-center text-xs text-muted-dark bg-surface-elevated hover:bg-hover-wash hover:text-shell-body transition-colors border-y border-hairline cursor-pointer"
               >
                 ··· {section.lines.length} lines unchanged ···
               </button>

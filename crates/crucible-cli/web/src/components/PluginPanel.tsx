@@ -26,26 +26,26 @@ function sourceColor(source: string): string {
     case 'User':
       return 'bg-primary/20 text-primary border-primary/50';
     case 'Runtime':
-      return 'bg-emerald-900/40 text-emerald-300 border-emerald-700/50';
+      return 'bg-ok/15 text-ok border-ok/50';
     case 'EnvPath':
-      return 'bg-purple-900/40 text-purple-300 border-purple-700/50';
+      return 'bg-precog/15 text-precog border-precog/50';
     case 'Builtin':
-      return 'bg-neutral-700/40 text-neutral-300 border-neutral-600/50';
+      return 'bg-surface-elevated text-shell-body border-hairline';
     default:
-      return 'bg-neutral-800 text-neutral-400 border-neutral-700';
+      return 'bg-surface-elevated text-muted border-hairline';
   }
 }
 
 function stateColor(state: string): string {
   switch (state) {
     case 'Active':
-      return 'bg-emerald-900/40 text-emerald-300 border-emerald-700/50';
+      return 'bg-ok/15 text-ok border-ok/50';
     case 'Error':
-      return 'bg-red-900/40 text-red-300 border-red-700/50';
+      return 'bg-error/15 text-error border-error/50';
     case 'Disabled':
-      return 'bg-neutral-800 text-neutral-500 border-neutral-700';
+      return 'bg-surface-elevated text-muted-dark border-hairline';
     default:
-      return 'bg-neutral-800 text-neutral-400 border-neutral-700';
+      return 'bg-surface-elevated text-muted border-hairline';
   }
 }
 
@@ -141,7 +141,7 @@ export const PluginPanel: Component = () => {
           <button
             type="button"
             onClick={() => refetch()}
-            class="text-[11px] text-neutral-400 hover:text-neutral-200"
+            class="text-[11px] text-muted hover:text-shell-ink"
             data-testid="plugins-refresh"
           >
             Refresh
@@ -152,12 +152,12 @@ export const PluginPanel: Component = () => {
       <div class="flex-1 overflow-y-auto">
         <Show
           when={!plugins.loading}
-          fallback={<div class="p-4 text-sm text-neutral-500">Loading…</div>}
+          fallback={<div class="p-4 text-sm text-muted-dark">Loading…</div>}
         >
           <Show
             when={(plugins() ?? []).length > 0}
             fallback={
-              <div class="p-4 text-sm text-neutral-500">
+              <div class="p-4 text-sm text-muted-dark">
                 No plugins discovered. Try <code>cru install &lt;repo&gt;</code>.
               </div>
             }
@@ -165,17 +165,17 @@ export const PluginPanel: Component = () => {
             <For each={plugins()}>
               {(plugin) => (
                 <div
-                  class="px-3 py-2 border-b border-hairline hover:bg-neutral-800/30"
+                  class="px-3 py-2 border-b border-hairline hover:bg-hover-wash"
                   data-testid={`plugin-row-${plugin.name}`}
                 >
                   <div class="flex items-center gap-2">
-                    <span class="flex-1 text-sm font-mono text-neutral-200 truncate">
+                    <span class="flex-1 text-sm font-mono text-shell-ink truncate">
                       {plugin.name}
                     </span>
-                    <span class="text-xs text-neutral-500">v{plugin.version}</span>
+                    <span class="text-xs text-muted-dark">v{plugin.version}</span>
                     <button
                       type="button"
-                      class="text-xs px-2 py-0.5 bg-neutral-800 hover:bg-neutral-700 rounded border border-neutral-700 text-neutral-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                      class="text-xs px-2 py-0.5 bg-control hover:bg-hover-wash rounded border border-hairline text-shell-ink disabled:opacity-50 disabled:cursor-not-allowed"
                       onClick={() => handleReload(plugin.name)}
                       disabled={reloading() === plugin.name}
                       data-testid={`plugin-reload-${plugin.name}`}
@@ -184,7 +184,7 @@ export const PluginPanel: Component = () => {
                     </button>
                     <button
                       type="button"
-                      class="text-xs px-2 py-0.5 bg-red-900/40 hover:bg-red-800/60 rounded border border-red-800/60 text-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                      class="text-xs px-2 py-0.5 bg-error/15 hover:bg-error-dark rounded border border-error/60 text-error disabled:opacity-50 disabled:cursor-not-allowed"
                       onClick={() => setConfirmRemove({ name: plugin.name, purge: false })}
                       disabled={removing() === plugin.name}
                       data-testid={`plugin-remove-${plugin.name}`}
@@ -203,7 +203,7 @@ export const PluginPanel: Component = () => {
                     >
                       {plugin.state}
                     </span>
-                    <span class="text-[11px] text-neutral-500" title="Tools · Commands · Handlers · Services">
+                    <span class="text-[11px] text-muted-dark" title="Tools · Commands · Handlers · Services">
                       {plugin.tools}T {plugin.commands}C {plugin.handlers}H {plugin.services}S
                     </span>
                   </div>
@@ -217,11 +217,11 @@ export const PluginPanel: Component = () => {
       {/* Install modal */}
       <Show when={showInstall()}>
         <div
-          class="absolute inset-0 bg-neutral-900/95 z-10 flex flex-col p-4"
+          class="absolute inset-0 bg-surface-overlay z-10 flex flex-col p-4"
           data-testid="plugins-install-modal"
         >
-          <h3 class="text-sm font-semibold text-neutral-200 mb-2">Install plugin</h3>
-          <p class="text-xs text-neutral-500 mb-2">
+          <h3 class="text-sm font-semibold text-shell-ink mb-2">Install plugin</h3>
+          <p class="text-xs text-muted-dark mb-2">
             Accepts <code>user/repo</code>, <code>github:user/repo</code>,
             <code> https://…</code>, or <code>git@…</code>.
           </p>
@@ -231,7 +231,7 @@ export const PluginPanel: Component = () => {
             onInput={(e) => setInstallUrl(e.currentTarget.value)}
             placeholder="user/repo or https://…"
             disabled={installing()}
-            class="w-full bg-neutral-800 text-neutral-100 text-sm rounded px-2 py-1.5 border border-neutral-700 focus:outline-none focus:border-neutral-500 disabled:opacity-50"
+            class="w-full bg-control text-shell-ink text-sm rounded px-2 py-1.5 border border-hairline focus:outline-none focus:border-muted-dark disabled:opacity-50"
             data-testid="plugins-install-url"
           />
           <div class="mt-3 flex items-center justify-end gap-2">
@@ -242,7 +242,7 @@ export const PluginPanel: Component = () => {
                 setInstallUrl('');
               }}
               disabled={installing()}
-              class="text-xs px-3 py-1 text-neutral-400 hover:text-neutral-200 disabled:opacity-50"
+              class="text-xs px-3 py-1 text-muted hover:text-shell-ink disabled:opacity-50"
               data-testid="plugins-install-cancel"
             >
               Cancel
@@ -264,17 +264,17 @@ export const PluginPanel: Component = () => {
       <Show when={confirmRemove()}>
         {(target) => (
           <div
-            class="absolute inset-0 bg-neutral-900/95 z-10 flex flex-col p-4"
+            class="absolute inset-0 bg-surface-overlay z-10 flex flex-col p-4"
             data-testid="plugins-remove-modal"
           >
-            <h3 class="text-sm font-semibold text-neutral-200 mb-2">
+            <h3 class="text-sm font-semibold text-shell-ink mb-2">
               Uninstall {target().name}?
             </h3>
-            <p class="text-xs text-neutral-500 mb-3">
+            <p class="text-xs text-muted-dark mb-3">
               This removes the entry from <code>plugins.toml</code>. Optionally also
               delete the cloned plugin directory.
             </p>
-            <label class="flex items-center gap-2 text-xs text-neutral-300 mb-3">
+            <label class="flex items-center gap-2 text-xs text-shell-body mb-3">
               <input
                 type="checkbox"
                 checked={target().purge}
@@ -287,7 +287,7 @@ export const PluginPanel: Component = () => {
               <button
                 type="button"
                 onClick={() => setConfirmRemove(null)}
-                class="text-xs px-3 py-1 text-neutral-400 hover:text-neutral-200"
+                class="text-xs px-3 py-1 text-muted hover:text-shell-ink"
                 data-testid="plugins-remove-cancel"
               >
                 Cancel
@@ -295,7 +295,7 @@ export const PluginPanel: Component = () => {
               <button
                 type="button"
                 onClick={handleRemoveConfirmed}
-                class="text-xs px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-white"
+                class="text-xs px-3 py-1 bg-error hover:bg-error-dark rounded text-white"
                 data-testid="plugins-remove-confirm"
               >
                 Uninstall

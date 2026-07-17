@@ -48,9 +48,9 @@ function groupNotifications(notifications: Notification[]): NotificationGroup[] 
 
 const TYPE_CONFIG: Record<NotificationType, { icon: string; color: string; bg: string }> = {
   info: { icon: 'ℹ', color: 'text-primary', bg: 'bg-primary/10' },
-  success: { icon: '✓', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-  warning: { icon: '⚠', color: 'text-amber-400', bg: 'bg-amber-500/10' },
-  error: { icon: '✕', color: 'text-red-400', bg: 'bg-red-500/10' },
+  success: { icon: '✓', color: 'text-ok', bg: 'bg-ok/10' },
+  warning: { icon: '⚠', color: 'text-attention', bg: 'bg-attention/10' },
+  error: { icon: '✕', color: 'text-error', bg: 'bg-error/10' },
 };
 
 function formatTime(timestamp: number): string {
@@ -67,17 +67,17 @@ const NotificationItem: Component<{ notification: Notification }> = (props) => {
 
   return (
     <div
-      class={`flex items-start gap-2.5 px-3 py-2 rounded-md transition-colors ${cfg().bg} hover:bg-white/5`}
+      class={`flex items-start gap-2.5 px-3 py-2 rounded-md transition-colors ${cfg().bg} hover:bg-hover-wash`}
       classList={{ 'opacity-50': props.notification.dismissed }}
     >
       <span class={`text-sm flex-shrink-0 mt-0.5 ${cfg().color}`}>
         {cfg().icon}
       </span>
       <div class="flex-1 min-w-0">
-        <p class="text-xs text-neutral-200 leading-snug break-words">
+        <p class="text-xs text-shell-ink leading-snug break-words">
           {props.notification.message}
         </p>
-        <span class="text-[10px] text-neutral-500 mt-0.5 block">
+        <span class="text-[10px] text-muted-dark mt-0.5 block">
           {formatTime(props.notification.timestamp)}
         </span>
       </div>
@@ -85,7 +85,7 @@ const NotificationItem: Component<{ notification: Notification }> = (props) => {
         <button
           type="button"
           onClick={() => notificationActions.dismiss(props.notification.id)}
-          class="flex-shrink-0 text-neutral-600 hover:text-neutral-300 transition-colors p-0.5"
+          class="flex-shrink-0 text-muted-dark hover:text-shell-body transition-colors p-0.5"
           aria-label="Dismiss"
         >
           <svg class="w-3 h-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
@@ -157,7 +157,7 @@ export const NotificationCenter: Component<{ open: boolean; onClose: () => void 
         <div
           class={`
             absolute top-0 right-0 h-full w-80 max-w-[90vw]
-            bg-zinc-900 border-l border-zinc-700/60
+            bg-shell-panel border-l border-hairline
             shadow-2xl shadow-black/50
             flex flex-col
             transition-transform duration-300 ease-out
@@ -165,11 +165,11 @@ export const NotificationCenter: Component<{ open: boolean; onClose: () => void 
           `}
         >
           {/* Header */}
-          <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-hairline">
             <div class="flex items-center gap-2">
-              <span class="text-sm font-medium text-neutral-200">Notifications</span>
+              <span class="text-sm font-medium text-shell-ink">Notifications</span>
               <Show when={allNotifications().length > 0}>
-                <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-800 text-neutral-400 tabular-nums">
+                <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-elevated text-muted tabular-nums">
                   {allNotifications().length}
                 </span>
               </Show>
@@ -179,7 +179,7 @@ export const NotificationCenter: Component<{ open: boolean; onClose: () => void 
                 <button
                   type="button"
                   onClick={handleClearAll}
-                  class="text-[11px] px-2 py-1 rounded text-neutral-400 hover:text-neutral-200 hover:bg-zinc-800 transition-colors"
+                  class="text-[11px] px-2 py-1 rounded text-muted hover:text-shell-ink hover:bg-hover-wash transition-colors"
                 >
                   Clear All
                 </button>
@@ -187,7 +187,7 @@ export const NotificationCenter: Component<{ open: boolean; onClose: () => void 
               <button
                 type="button"
                 onClick={() => props.onClose()}
-                class="p-1 text-neutral-500 hover:text-neutral-200 hover:bg-zinc-800 rounded transition-colors"
+                class="p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash rounded transition-colors"
                 aria-label="Close notifications"
               >
                 <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
@@ -202,7 +202,7 @@ export const NotificationCenter: Component<{ open: boolean; onClose: () => void 
             <Show
               when={hasNotifications()}
               fallback={
-                <div class="flex flex-col items-center justify-center h-full text-neutral-500">
+                <div class="flex flex-col items-center justify-center h-full text-muted-dark">
                   <span class="text-2xl mb-2">🔔</span>
                   <span class="text-xs">No notifications</span>
                 </div>
@@ -213,7 +213,7 @@ export const NotificationCenter: Component<{ open: boolean; onClose: () => void 
                   {(group) => (
                     <div class="mb-1">
                       <div class="px-4 py-1.5">
-                        <span class="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                        <span class="text-[10px] font-semibold uppercase tracking-widest text-muted-dark">
                           {group.label}
                         </span>
                       </div>

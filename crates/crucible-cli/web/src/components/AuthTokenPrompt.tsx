@@ -42,14 +42,14 @@ export const AuthTokenPrompt: Component<AuthTokenPromptProps> = (props) => {
     <div>
       <Show when={open()}>
       <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" data-testid="auth-token-prompt">
-        <div class="w-full max-w-md rounded-lg border border-neutral-700 bg-neutral-900 p-5 shadow-xl">
-          <h2 class="mb-1 text-base font-semibold text-neutral-100">Sign in</h2>
-          <p class="mb-3 text-sm text-neutral-400">
+        <div class="w-full max-w-md rounded-lg border border-hairline bg-surface-overlay p-5 shadow-xl">
+          <h2 class="mb-1 text-base font-semibold text-shell-ink">Sign in</h2>
+          <p class="mb-3 text-sm text-muted">
             This server requires an API key for non-localhost access. Paste the key from{' '}
-            <code class="text-neutral-300">cru web key</code> on the host machine.
+            <code class="text-shell-body">cru web key</code> on the host machine.
           </p>
           <Show when={rejected()}>
-            <p class="mb-3 text-sm text-red-400" data-testid="auth-token-rejected">
+            <p class="mb-3 text-sm text-error" data-testid="auth-token-rejected">
               The server rejected that key.
             </p>
           </Show>
@@ -61,14 +61,14 @@ export const AuthTokenPrompt: Component<AuthTokenPromptProps> = (props) => {
               if (e.key === 'Enter') void save();
             }}
             placeholder="API key"
-            class="mb-3 w-full rounded border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-primary"
+            class="mb-3 w-full rounded border border-hairline bg-control px-3 py-2 text-sm text-shell-ink outline-none focus:border-primary"
             data-testid="auth-token-input"
           />
           <div class="flex justify-end gap-2">
             <button
               type="button"
               onClick={() => setOpen(false)}
-              class="rounded px-3 py-1.5 text-sm text-neutral-400 hover:text-neutral-200"
+              class="rounded px-3 py-1.5 text-sm text-muted hover:text-shell-ink"
             >
               Cancel
             </button>

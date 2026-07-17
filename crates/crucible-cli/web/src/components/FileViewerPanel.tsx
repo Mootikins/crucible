@@ -81,7 +81,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   // No file path provided — nothing to render
   if (!props.filePath) {
     return (
-      <div class="h-full bg-neutral-900 p-4 flex items-center justify-center text-neutral-400 text-sm">
+      <div class="h-full bg-shell-panel p-4 flex items-center justify-center text-muted text-sm">
         No file selected
       </div>
     );
@@ -96,16 +96,16 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
           a file (e.g. a hover popover) would otherwise flash this overlay
           over every open editor. */}
       <Show when={isLoading() && !fileData()}>
-        <div class="absolute inset-0 flex items-center justify-center bg-neutral-900/80 z-10">
+        <div class="absolute inset-0 flex items-center justify-center bg-surface-base/80 z-10">
           <div class="flex items-center gap-3">
-            <div class="w-5 h-5 border-2 border-neutral-600 border-t-neutral-300 rounded-full animate-spin" />
-            <span class="text-neutral-400 text-sm">Loading file...</span>
+            <div class="w-5 h-5 border-2 border-hairline border-t-shell-body rounded-full animate-spin" />
+            <span class="text-muted text-sm">Loading file...</span>
           </div>
         </div>
       </Show>
       {/* Error bar */}
       <Show when={error()}>
-        <div class="mx-4 mt-2 px-3 py-2 text-sm text-red-400 bg-red-900/20 rounded border border-red-900/30 flex items-center gap-2">
+        <div class="mx-4 mt-2 px-3 py-2 text-sm text-error bg-error/10 rounded border border-error/30 flex items-center gap-2">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 shrink-0">
             <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
           </svg>
@@ -119,7 +119,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
           when={fileData()}
           fallback={
             <Show when={!isLoading()}>
-              <div class="h-full flex items-center justify-center text-neutral-500">
+              <div class="h-full flex items-center justify-center text-muted-dark">
                 <div class="text-center">
                   <div class="text-4xl mb-4">📄</div>
                   <div class="text-sm">Loading file...</div>

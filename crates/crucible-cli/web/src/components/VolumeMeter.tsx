@@ -70,7 +70,7 @@ export const VolumeMeter: Component<VolumeMeterProps> = (props) => {
 export const VolumeMeterBar: Component<VolumeMeterProps> = (props) => {
   return (
     <div
-      class="absolute left-0 bottom-0 w-1 bg-neutral-700 rounded-full overflow-hidden"
+      class="absolute left-0 bottom-0 w-1 bg-control rounded-full overflow-hidden"
       style={{
         height: '100%',
         opacity: props.active ? 1 : 0,
@@ -78,7 +78,7 @@ export const VolumeMeterBar: Component<VolumeMeterProps> = (props) => {
       }}
     >
       <div
-        class="absolute bottom-0 w-full bg-red-500 rounded-full"
+        class="absolute bottom-0 w-full bg-error rounded-full"
         style={{
           height: `${props.level() * 100}%`,
           transition: 'height 50ms ease-out',

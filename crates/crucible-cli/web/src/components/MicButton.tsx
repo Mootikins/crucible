@@ -110,7 +110,7 @@ export const MicButton: Component<MicButtonProps> = (props) => {
    };
 
   const iconColor = () => {
-    return state() === 'recording' ? 'text-neutral-900' : 'text-white';
+    return state() === 'recording' ? 'text-shell-bg' : 'text-white';
   };
 
   const getTitle = () => {

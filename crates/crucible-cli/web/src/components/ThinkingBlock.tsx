@@ -32,7 +32,7 @@ export const ThinkingBlock: Component<ThinkingBlockProps> = (props) => {
       <button
         type="button"
         onClick={toggle}
-        class="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-neutral-300 transition-colors cursor-pointer select-none group"
+        class="flex items-center gap-1.5 text-xs text-muted hover:text-shell-body transition-colors cursor-pointer select-none group"
       >
         <span
           class="transition-transform duration-300 ease-in-out"
@@ -47,13 +47,13 @@ export const ThinkingBlock: Component<ThinkingBlockProps> = (props) => {
 
         <Show when={props.isStreaming}>
           <span class="inline-flex items-center gap-0.5 ml-1">
-            <span class="w-1 h-1 bg-neutral-400 rounded-full animate-pulse" />
+            <span class="w-1 h-1 bg-muted rounded-full animate-pulse" />
             <span
-              class="w-1 h-1 bg-neutral-400 rounded-full animate-pulse"
+              class="w-1 h-1 bg-muted rounded-full animate-pulse"
               style={{ 'animation-delay': '150ms' }}
             />
             <span
-              class="w-1 h-1 bg-neutral-400 rounded-full animate-pulse"
+              class="w-1 h-1 bg-muted rounded-full animate-pulse"
               style={{ 'animation-delay': '300ms' }}
             />
           </span>
@@ -68,8 +68,8 @@ export const ThinkingBlock: Component<ThinkingBlockProps> = (props) => {
         }}
       >
         <div class="overflow-hidden">
-          <div class="mt-2 pl-5 border-l-2 border-neutral-700/50">
-            <p class="text-xs text-neutral-500 italic whitespace-pre-wrap leading-relaxed">
+          <div class="mt-2 pl-5 border-l-2 border-hairline">
+            <p class="text-xs text-muted-dark italic whitespace-pre-wrap leading-relaxed">
               {props.content}
             </p>
           </div>

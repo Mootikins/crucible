@@ -27,8 +27,8 @@ const Tab: Component<{
       data-testid="editor-tab"
       class="flex items-center gap-2 px-3 py-1.5 text-sm border-b-2 transition-colors whitespace-nowrap"
       classList={{
-        'border-primary text-neutral-100 bg-neutral-800': props.active,
-        'border-transparent text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50': !props.active,
+        'border-primary text-shell-ink bg-surface-elevated': props.active,
+        'border-transparent text-muted hover:text-shell-ink hover:bg-hover-wash': !props.active,
       }}
       onClick={props.onSelect}
     >
@@ -37,7 +37,7 @@ const Tab: Component<{
         {getFilename(props.path)}
       </span>
       <span
-        class="text-neutral-500 hover:text-neutral-200 hover:bg-neutral-700 rounded px-1"
+        class="text-muted-dark hover:text-shell-ink hover:bg-hover-wash rounded px-1"
         onClick={handleClose}
       >
         ×
@@ -70,20 +70,20 @@ export const EditorPanel: Component = () => {
   };
 
   return (
-    <div class="h-full flex flex-col bg-neutral-900 text-neutral-100 overflow-hidden">
+    <div class="h-full flex flex-col bg-shell-panel text-shell-ink overflow-hidden">
       <Show
         when={openFiles().length > 0}
         fallback={
-          <div class="flex-1 flex items-center justify-center text-neutral-500">
+          <div class="flex-1 flex items-center justify-center text-muted-dark">
             <div class="text-center">
               <div class="text-4xl mb-4">📄</div>
               <div class="text-sm">No files open</div>
-               <div class="text-xs text-neutral-500 mt-1">Click a note in the sidebar to open it</div>
+               <div class="text-xs text-muted-dark mt-1">Click a note in the sidebar to open it</div>
             </div>
           </div>
         }
       >
-        <div class="flex border-b border-neutral-800 bg-neutral-900 overflow-x-auto shrink-0">
+        <div class="flex border-b border-hairline bg-shell-panel overflow-x-auto shrink-0">
           <For each={openFiles()}>
             {(file) => (
               <Tab
@@ -98,16 +98,16 @@ export const EditorPanel: Component = () => {
         </div>
 
         <Show when={isLoading()}>
-          <div class="absolute inset-0 flex items-center justify-center bg-neutral-900/80 z-10">
+          <div class="absolute inset-0 flex items-center justify-center bg-surface-base/80 z-10">
             <div class="flex items-center gap-3">
-              <div class="w-5 h-5 border-2 border-neutral-600 border-t-neutral-300 rounded-full animate-spin" />
-              <span class="text-neutral-400 text-sm">Loading file...</span>
+              <div class="w-5 h-5 border-2 border-hairline border-t-shell-body rounded-full animate-spin" />
+              <span class="text-muted text-sm">Loading file...</span>
             </div>
           </div>
         </Show>
 
         <Show when={error()}>
-          <div class="mx-4 mt-2 px-3 py-2 text-sm text-red-400 bg-red-900/20 rounded border border-red-900/30 flex items-center gap-2">
+          <div class="mx-4 mt-2 px-3 py-2 text-sm text-error bg-error/10 rounded border border-error/30 flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 shrink-0">
               <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
             </svg>

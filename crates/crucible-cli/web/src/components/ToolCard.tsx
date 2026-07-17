@@ -42,17 +42,17 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
           </span>
         );
       case 'complete':
-        return <span class="text-emerald-400 text-sm font-bold" title="Complete">✓</span>;
+        return <span class="text-ok text-sm font-bold" title="Complete">✓</span>;
       case 'error':
-        return <span class="text-red-400 text-sm font-bold" title="Error">✗</span>;
+        return <span class="text-error text-sm font-bold" title="Error">✗</span>;
     }
   };
 
   const statusBorderColor = () => {
     switch (props.toolCall.status) {
       case 'running': return 'border-primary/40';
-      case 'complete': return 'border-emerald-500/30';
-      case 'error': return 'border-red-500/40';
+      case 'complete': return 'border-ok/30';
+      case 'error': return 'border-error/40';
     }
   };
 
@@ -60,7 +60,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
     switch (props.toolCall.status) {
       case 'running': return 'bg-primary/10';
       case 'complete': return 'bg-surface-elevated';
-      case 'error': return 'bg-red-950/20';
+      case 'error': return 'bg-error/10';
     }
   };
 
@@ -81,34 +81,34 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
     <div class={`border ${statusBorderColor()} rounded-lg ${statusBgColor()} overflow-hidden my-2`}>
       <button
         onClick={() => setExpanded(!expanded())}
-        class="w-full flex items-center gap-2 px-3 py-2 hover:bg-neutral-700/30 transition-colors text-left"
+        class="w-full flex items-center gap-2 px-3 py-2 hover:bg-hover-wash transition-colors text-left"
       >
         <span class="text-base leading-none">{iconForTool(props.toolCall.name)}</span>
-        <span class="flex-1 text-sm font-medium text-neutral-200 truncate font-mono">
+        <span class="flex-1 text-sm font-medium text-shell-ink truncate font-mono">
           {props.toolCall.name}
         </span>
         <Show when={props.toolCall.terminate}>
           <span
-            class="flex-shrink-0 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-300 border border-amber-700/50 font-semibold"
+            class="flex-shrink-0 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-attention/15 text-attention border border-attention/50 font-semibold"
             title="This tool ended the agent turn early."
           >
             Terminated
           </span>
         </Show>
         <span class="flex-shrink-0">{statusIcon()}</span>
-        <span class="text-neutral-500 text-xs ml-1">
+        <span class="text-muted-dark text-xs ml-1">
           {expanded() ? '▼' : '▶'}
         </span>
       </button>
 
       <Show when={expanded()}>
-        <div class="border-t border-neutral-700/50">
+        <div class="border-t border-hairline">
           {/* Args section — suppressed when a diff renders, since the diff header
               shows the file path and the diff body shows the old/new content. */}
           <Show when={formattedArgs() && !diff()}>
-            <div class="px-3 py-2 bg-neutral-900/50">
-              <div class="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 font-semibold">Arguments</div>
-              <pre class="text-xs text-neutral-300 font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-48 overflow-y-auto">
+            <div class="px-3 py-2 bg-surface-base">
+              <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">Arguments</div>
+              <pre class="text-xs text-shell-body font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-48 overflow-y-auto">
                 {formattedArgs()}
               </pre>
             </div>
@@ -117,11 +117,11 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
           {/* Error result section — rendered BEFORE the diff so users see why a
               tool failed before scrolling past the failed-attempt diff. */}
           <Show when={props.toolCall.result && props.toolCall.status === 'error'}>
-            <div class={`px-3 py-2 ${formattedArgs() && !diff() ? 'border-t border-neutral-700/30' : ''} bg-neutral-900/50`}>
-              <div class="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 font-semibold">
+            <div class={`px-3 py-2 ${formattedArgs() && !diff() ? 'border-t border-hairline' : ''} bg-surface-base`}>
+              <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">
                 Error
               </div>
-              <pre class="text-xs font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-64 overflow-y-auto text-red-300">
+              <pre class="text-xs font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-64 overflow-y-auto text-error">
                 {props.toolCall.result}
               </pre>
             </div>
@@ -130,7 +130,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
           {/* Diff rendering for Edit/Write/MultiEdit when args parse cleanly */}
           <Show when={diff()}>
             {(d) => (
-              <div class={`px-3 py-2 ${props.toolCall.status === 'error' && props.toolCall.result ? 'border-t border-neutral-700/30' : ''} bg-neutral-900/50`}>
+              <div class={`px-3 py-2 ${props.toolCall.status === 'error' && props.toolCall.result ? 'border-t border-hairline' : ''} bg-surface-base`}>
                 <Show
                   when={d().kind === 'single'}
                   fallback={
@@ -152,11 +152,11 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
 
           {/* Plain-text result section (kept for non-diff tools on success). */}
           <Show when={props.toolCall.result && !diff() && props.toolCall.status !== 'error'}>
-            <div class={`px-3 py-2 ${formattedArgs() ? 'border-t border-neutral-700/30' : ''} bg-neutral-900/50`}>
-              <div class="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 font-semibold">
+            <div class={`px-3 py-2 ${formattedArgs() ? 'border-t border-hairline' : ''} bg-surface-base`}>
+              <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">
                 Result
               </div>
-              <pre class="text-xs font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-64 overflow-y-auto text-neutral-300">
+              <pre class="text-xs font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-64 overflow-y-auto text-shell-body">
                 {props.toolCall.result}
               </pre>
             </div>
@@ -164,8 +164,8 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
 
           {/* Running with no result yet — show waiting indicator */}
           <Show when={props.toolCall.status === 'running' && !props.toolCall.result}>
-            <div class="px-3 py-2 bg-neutral-900/50">
-              <span class="inline-flex items-center gap-1.5 text-xs text-neutral-500">
+            <div class="px-3 py-2 bg-surface-base">
+              <span class="inline-flex items-center gap-1.5 text-xs text-muted-dark">
                 <span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
                 Executing…
               </span>
@@ -173,7 +173,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
           </Show>
 
           {/* ID for debugging */}
-          <div class="px-3 py-1.5 text-[10px] text-neutral-600 border-t border-neutral-800/50">
+          <div class="px-3 py-1.5 text-[10px] text-muted-dark border-t border-hairline">
             ID: {props.toolCall.callId ?? props.toolCall.id}
           </div>
         </div>

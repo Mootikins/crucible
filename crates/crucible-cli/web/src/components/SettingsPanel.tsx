@@ -29,7 +29,7 @@ const SectionHeader: Component<{ title: string; icon: string }> = (props) => (
   <tr>
     <td
       colSpan={2}
-      class="pt-6 pb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400 border-b border-neutral-700"
+      class="pt-6 pb-2 text-xs font-semibold uppercase tracking-wider text-muted border-b border-hairline"
     >
       <span class="mr-1.5">{props.icon}</span>
       {props.title}
@@ -48,8 +48,8 @@ const StatusRow: Component<{ variant?: 'error'; children: JSX.Element }> = (prop
       colSpan={2}
       class={
         props.variant === 'error'
-          ? 'py-2 text-center text-red-400 text-xs'
-          : 'py-3 text-center text-neutral-500 text-sm'
+          ? 'py-2 text-center text-error text-xs'
+          : 'py-3 text-center text-muted-dark text-sm'
       }
     >
       {props.children}
@@ -64,11 +64,11 @@ const SettingRow: Component<{
   controlClass?: string;
   children: JSX.Element;
 }> = (props) => (
-  <tr class="border-b border-neutral-700">
-    <td class="py-3 text-neutral-300 text-sm">
+  <tr class="border-b border-hairline">
+    <td class="py-3 text-shell-body text-sm">
       <div>{props.label}</div>
       <Show when={props.description}>
-        <div class="text-xs text-neutral-500">{props.description}</div>
+        <div class="text-xs text-muted-dark">{props.description}</div>
       </Show>
     </td>
     <td class={props.controlClass ?? 'py-3 text-right'}>
@@ -115,12 +115,12 @@ const SettingsSectionState: Component<{
       <Show when={props.error}>
         <tr>
           <td colSpan={2} class="py-2">
-            <div class="text-center text-red-400 text-xs">{props.error}</div>
+            <div class="text-center text-error text-xs">{props.error}</div>
             <Show when={props.onRetry}>
               <div class="text-center mt-1">
                 <button
                   onClick={props.onRetry}
-                  class="px-2 py-1 text-xs rounded bg-neutral-700 hover:bg-neutral-600 text-neutral-300 transition-colors"
+                  class="px-2 py-1 text-xs rounded bg-control hover:bg-hover-wash text-shell-body transition-colors"
                 >
                   Retry
                 </button>
@@ -230,7 +230,7 @@ const ModelSettingsSection: Component = () => {
 
   onMount(loadSettings);
 
-  const inputClass = 'bg-neutral-800 border border-neutral-600 rounded px-2 py-1 text-sm text-white focus:border-primary focus:outline-none';
+  const inputClass = 'bg-control border border-hairline rounded px-2 py-1 text-sm text-white focus:border-primary focus:outline-none';
 
   const handleBudgetChange = (e: Event) => {
     const val = parseInt((e.target as HTMLInputElement).value, 10);
@@ -325,7 +325,7 @@ const ModelSettingsSection: Component = () => {
         description={temperature().toFixed(1)}
         controlClass="py-3 text-right flex items-center justify-end gap-2"
       >
-        <span class="text-xs text-neutral-500">0</span>
+        <span class="text-xs text-muted-dark">0</span>
         <input
           type="range"
           min={0}
@@ -335,7 +335,7 @@ const ModelSettingsSection: Component = () => {
           onInput={handleTemperatureChange}
           class="w-32 accent-primary"
         />
-        <span class="text-xs text-neutral-500">2</span>
+        <span class="text-xs text-muted-dark">2</span>
       </SettingRow>
 
       <SettingRow label="Max Tokens" description="Empty = unlimited">
@@ -355,7 +355,7 @@ const ModelSettingsSection: Component = () => {
           onClick={handlePrecognitionToggle}
           data-testid="precognition-toggle"
           class={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-            precognition() ? 'bg-primary' : 'bg-neutral-600'
+            precognition() ? 'bg-primary' : 'bg-muted-dark'
           }`}
         >
           <span
@@ -433,18 +433,18 @@ const PluginsSection: Component = () => {
     >
       <For each={plugins()}>
         {(plugin) => (
-          <tr class="border-b border-neutral-700">
-            <td class="py-2.5 text-neutral-300 text-sm">
+          <tr class="border-b border-hairline">
+            <td class="py-2.5 text-shell-body text-sm">
               <div class="flex items-center gap-2">
                 <span
                   class={`inline-block w-2 h-2 rounded-full ${
-                    plugin.state === 'Active' ? 'bg-emerald-500' : 'bg-red-500'
+                    plugin.state === 'Active' ? 'bg-ok' : 'bg-error'
                   }`}
                   title={`State: ${plugin.state}`}
                 />
                 <div>
-                  <div class="text-sm">{plugin.name} <span class="text-xs text-neutral-500">v{plugin.version}</span></div>
-                  <div class="text-xs text-neutral-500">{plugin.source} · {plugin.tools}T {plugin.commands}C {plugin.handlers}H {plugin.services}S</div>
+                  <div class="text-sm">{plugin.name} <span class="text-xs text-muted-dark">v{plugin.version}</span></div>
+                  <div class="text-xs text-muted-dark">{plugin.source} · {plugin.tools}T {plugin.commands}C {plugin.handlers}H {plugin.services}S</div>
                 </div>
               </div>
             </td>
@@ -452,7 +452,7 @@ const PluginsSection: Component = () => {
               <button
                 onClick={() => handleReload(plugin.name)}
                 disabled={reloadingPlugin() === plugin.name}
-                class="px-2 py-1 text-xs rounded bg-neutral-700 hover:bg-neutral-600 text-neutral-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                class="px-2 py-1 text-xs rounded bg-control hover:bg-hover-wash text-shell-body transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {reloadingPlugin() === plugin.name ? '↻' : 'Reload'}
               </button>
@@ -502,9 +502,9 @@ const McpStatusSection: Component = () => {
     >
       <For each={Object.entries(status()!)}>
         {([key, value]) => (
-          <tr class="border-b border-neutral-700">
-            <td class="py-2.5 text-neutral-300 text-sm">{key}</td>
-            <td class="py-2.5 text-right text-sm text-neutral-400 max-w-[200px] truncate">
+          <tr class="border-b border-hairline">
+            <td class="py-2.5 text-shell-body text-sm">{key}</td>
+            <td class="py-2.5 text-right text-sm text-muted max-w-[200px] truncate">
               {typeof value === 'object' ? JSON.stringify(value) : String(value ?? '—')}
             </td>
           </tr>
@@ -558,7 +558,7 @@ const EditorSettingsSection: Component = () => {
               Math.max(0, Number(e.currentTarget.value) || 0),
             )
           }
-          class="w-20 rounded border border-white/10 bg-surface-base px-2 py-1 text-sm"
+          class="w-20 rounded border border-hairline bg-surface-base px-2 py-1 text-sm"
           data-testid="settings-editor-autosave"
         />
       </SettingRow>
@@ -579,7 +579,7 @@ const EditorSettingsSection: Component = () => {
               Math.max(0, Number(e.currentTarget.value) || 0),
             )
           }
-          class="w-24 rounded border border-white/10 bg-surface-base px-2 py-1 text-sm"
+          class="w-24 rounded border border-hairline bg-surface-base px-2 py-1 text-sm"
           data-testid="settings-editor-line-width"
         />
       </SettingRow>
@@ -596,7 +596,7 @@ const EditorSettingsSection: Component = () => {
               e.currentTarget.value as 'reading' | 'live' | 'source',
             )
           }
-          class="rounded border border-white/10 bg-surface-base px-2 py-1 text-sm"
+          class="rounded border border-hairline bg-surface-base px-2 py-1 text-sm"
           data-testid="settings-editor-hover-mode"
         >
           <option value="reading">Reading view</option>
@@ -637,14 +637,14 @@ const ApiAccessSection: Component = () => {
   return (
     <>
       <SectionHeader title="API Access" icon="🔑" />
-      <tr class="border-b border-neutral-700">
-        <td class="py-3 text-neutral-300 text-sm">
+      <tr class="border-b border-hairline">
+        <td class="py-3 text-shell-body text-sm">
           Sign in with API key
-          <div class="text-xs text-neutral-500">
+          <div class="text-xs text-muted-dark">
             Required for non-localhost access; sets a session cookie.
           </div>
           <Show when={rejected()}>
-            <div class="text-xs text-red-400" data-testid="settings-api-token-rejected">
+            <div class="text-xs text-error" data-testid="settings-api-token-rejected">
               The server rejected that key.
             </div>
           </Show>
@@ -655,7 +655,7 @@ const ApiAccessSection: Component = () => {
             value={draft()}
             onInput={(e) => setDraft(e.currentTarget.value)}
             placeholder="Paste API key"
-            class="bg-neutral-800 border border-neutral-600 rounded px-2 py-1 text-sm text-white focus:border-primary focus:outline-none w-56"
+            class="bg-control border border-hairline rounded px-2 py-1 text-sm text-white focus:border-primary focus:outline-none w-56"
             data-testid="settings-api-token-input"
           />
           <button
@@ -696,18 +696,18 @@ const SettingsPanelContent: Component = () => {
     updateSetting('transcription', 'language', value);
   };
 
-  const inputClass = 'bg-neutral-800 border border-neutral-600 rounded px-2 py-1 text-sm text-white focus:border-primary focus:outline-none';
+  const inputClass = 'bg-control border border-hairline rounded px-2 py-1 text-sm text-white focus:border-primary focus:outline-none';
   const selectClass = `${inputClass} cursor-pointer`;
-  const labelClass = 'text-neutral-300 text-sm';
+  const labelClass = 'text-shell-body text-sm';
 
   return (
-    <div class="h-full bg-neutral-900 p-4 overflow-auto">
+    <div class="h-full bg-shell-panel p-4 overflow-auto">
       <table class="w-full">
         <tbody>
           {/* Transcription Settings */}
           <SectionHeader title="Transcription" icon="🎙️" />
 
-          <tr class="border-b border-neutral-700">
+          <tr class="border-b border-hairline">
             <td class={`py-3 ${labelClass}`}>Provider</td>
             <td class="py-3 text-right">
               <select
@@ -722,7 +722,7 @@ const SettingsPanelContent: Component = () => {
           </tr>
 
           <Show when={settings.transcription.provider === 'server'}>
-            <tr class="border-b border-neutral-700">
+            <tr class="border-b border-hairline">
               <td class={`py-3 ${labelClass}`}>Whisper URL</td>
               <td class="py-3 text-right">
                 <input
@@ -735,7 +735,7 @@ const SettingsPanelContent: Component = () => {
               </td>
             </tr>
 
-            <tr class="border-b border-neutral-700">
+            <tr class="border-b border-hairline">
               <td class={`py-3 ${labelClass}`}>Whisper Model</td>
               <td class="py-3 text-right">
                 <input
@@ -748,7 +748,7 @@ const SettingsPanelContent: Component = () => {
               </td>
             </tr>
 
-            <tr class="border-b border-neutral-700">
+            <tr class="border-b border-hairline">
               <td class={`py-3 ${labelClass}`}>Language</td>
               <td class="py-3 text-right">
                 <select
@@ -795,10 +795,10 @@ const SettingsPanelContent: Component = () => {
 export const SettingsPanel: Component = () => {
   return (
     <ErrorBoundary fallback={(err) => (
-      <div class="h-full bg-neutral-900 p-4 flex items-center justify-center">
-        <div class="text-center text-neutral-400">
+      <div class="h-full bg-shell-panel p-4 flex items-center justify-center">
+        <div class="text-center text-muted">
           <div class="text-sm mb-2">⚠️ Settings Error</div>
-          <div class="text-xs text-neutral-500">{String(err)}</div>
+          <div class="text-xs text-muted-dark">{String(err)}</div>
         </div>
       </div>
     )}>

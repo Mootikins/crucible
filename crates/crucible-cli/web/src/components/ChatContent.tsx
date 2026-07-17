@@ -18,10 +18,10 @@ export const ChatContent: Component = () => {
       <div class="flex-1 min-h-0 flex flex-col">
         <Show when={isLoadingHistory()}>
           <div class="flex flex-col gap-3 p-4">
-            <div class="animate-pulse bg-neutral-700 rounded-lg h-12 w-3/4" />
-            <div class="animate-pulse bg-neutral-700 rounded-lg h-16 w-full ml-auto" style="max-width: 80%" />
-            <div class="animate-pulse bg-neutral-700 rounded-lg h-12 w-2/3" />
-            <div class="animate-pulse bg-neutral-700 rounded-lg h-20 w-full ml-auto" style="max-width: 85%" />
+            <div class="animate-pulse bg-surface-elevated rounded-lg h-12 w-3/4" />
+            <div class="animate-pulse bg-surface-elevated rounded-lg h-16 w-full ml-auto" style="max-width: 80%" />
+            <div class="animate-pulse bg-surface-elevated rounded-lg h-12 w-2/3" />
+            <div class="animate-pulse bg-surface-elevated rounded-lg h-20 w-full ml-auto" style="max-width: 85%" />
           </div>
         </Show>
         <Show when={!isLoadingHistory()}>
@@ -31,7 +31,7 @@ export const ChatContent: Component = () => {
 
       {/* Active tool calls during streaming — shown above input */}
       <Show when={hasActiveTools()}>
-        <div class="px-4 py-2 border-t border-neutral-800/50 max-h-64 overflow-y-auto">
+        <div class="px-4 py-2 border-t border-hairline max-h-64 overflow-y-auto">
           <For each={chatCtx.activeTools()}>
             {(tool) => <ToolCard toolCall={tool} />}
           </For>
@@ -39,7 +39,7 @@ export const ChatContent: Component = () => {
       </Show>
 
       <Show when={hasSubagentEvents()}>
-        <div class="px-4 py-2 border-t border-neutral-800/50 max-h-64 overflow-y-auto">
+        <div class="px-4 py-2 border-t border-hairline max-h-64 overflow-y-auto">
           <For each={chatCtx.subagentEvents()}>
             {(evt) => (
               <Show when={evt.targetAgent} fallback={<SubagentCard event={evt} />}>

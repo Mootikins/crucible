@@ -12,10 +12,10 @@ interface EmptyStateProps {
  */
 export const EmptyState: Component<EmptyStateProps> = (props) => {
   return (
-    <div class="flex-1 flex flex-col items-center justify-center bg-zinc-900/50 gap-6 p-8">
+    <div class="flex-1 flex flex-col items-center justify-center bg-surface-base gap-6 p-8">
       <div class="text-center space-y-2">
-        <h2 class="text-lg font-semibold text-zinc-100">No session open</h2>
-        <p class="text-sm text-zinc-400">
+        <h2 class="text-lg font-semibold text-shell-ink">No session open</h2>
+        <p class="text-sm text-muted">
           Select a session from the left panel or create a new one to get started.
         </p>
       </div>

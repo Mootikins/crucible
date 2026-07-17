@@ -28,17 +28,17 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
           </span>
         );
       case 'completed':
-        return <Check class="w-3.5 h-3.5 text-emerald-400" />;
+        return <Check class="w-3.5 h-3.5 text-ok" />;
       case 'failed':
-        return <X class="w-3.5 h-3.5 text-red-400" />;
+        return <X class="w-3.5 h-3.5 text-error" />;
     }
   };
 
   const borderColor = () => {
     switch (props.event.status) {
       case 'spawned': return 'border-sky-500/40';
-      case 'completed': return 'border-emerald-500/30';
-      case 'failed': return 'border-red-500/40';
+      case 'completed': return 'border-ok/30';
+      case 'failed': return 'border-error/40';
     }
   };
 
@@ -46,15 +46,15 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
     switch (props.event.status) {
       case 'spawned': return 'bg-sky-950/15';
       case 'completed': return 'bg-surface-elevated';
-      case 'failed': return 'bg-red-950/20';
+      case 'failed': return 'bg-error/10';
     }
   };
 
   const accentColor = () => {
     switch (props.event.status) {
       case 'spawned': return 'text-sky-400';
-      case 'completed': return 'text-emerald-400';
-      case 'failed': return 'text-red-400';
+      case 'completed': return 'text-ok';
+      case 'failed': return 'text-error';
     }
   };
 
@@ -76,32 +76,32 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
     <div class={`border ${borderColor()} rounded-lg ${bgColor()} overflow-hidden my-2`}>
       <button
         onClick={() => setExpanded(!expanded())}
-        class="w-full flex items-center gap-2 px-3 py-2 hover:bg-neutral-700/20 transition-colors text-left group"
+        class="w-full flex items-center gap-2 px-3 py-2 hover:bg-hover-wash transition-colors text-left group"
       >
         <Bot class={`w-4 h-4 flex-shrink-0 ${accentColor()}`} />
-        <span class="flex-1 text-sm text-neutral-300 truncate">
+        <span class="flex-1 text-sm text-shell-body truncate">
           <Show
             when={props.event.status !== 'spawned'}
-            fallback={<span class="text-neutral-400">{promptPreview()}</span>}
+            fallback={<span class="text-muted">{promptPreview()}</span>}
           >
             <span class="font-medium">Subagent</span>
-            <span class="text-neutral-500 mx-1.5">·</span>
+            <span class="text-muted-dark mx-1.5">·</span>
             <span class={`text-xs ${accentColor()}`}>{statusLabel()}</span>
           </Show>
         </span>
         <span class="flex-shrink-0">{statusIcon()}</span>
-        <span class="text-neutral-600 text-xs ml-0.5 group-hover:text-neutral-400 transition-colors">
+        <span class="text-muted-dark text-xs ml-0.5 group-hover:text-shell-body transition-colors">
           {expanded() ? '▼' : '▶'}
         </span>
       </button>
 
       <Show when={expanded()}>
-        <div class="border-t border-neutral-700/50">
+        <div class="border-t border-hairline">
           {/* Prompt */}
           <Show when={props.event.prompt}>
-            <div class="px-3 py-2 bg-neutral-900/50">
-              <div class="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 font-semibold">Prompt</div>
-              <p class="text-xs text-neutral-300 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+            <div class="px-3 py-2 bg-surface-base">
+              <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">Prompt</div>
+              <p class="text-xs text-shell-body whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
                 {props.event.prompt}
               </p>
             </div>
@@ -109,9 +109,9 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
 
           {/* Summary (completed) */}
           <Show when={props.event.status === 'completed' && props.event.summary}>
-            <div class={`px-3 py-2 bg-neutral-900/50 ${props.event.prompt ? 'border-t border-neutral-700/30' : ''}`}>
-              <div class="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 font-semibold">Summary</div>
-              <p class="text-xs text-neutral-300 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
+            <div class={`px-3 py-2 bg-surface-base ${props.event.prompt ? 'border-t border-hairline' : ''}`}>
+              <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">Summary</div>
+              <p class="text-xs text-shell-body whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
                 {props.event.summary}
               </p>
             </div>
@@ -119,9 +119,9 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
 
           {/* Error (failed) */}
           <Show when={props.event.status === 'failed' && props.event.error}>
-            <div class={`px-3 py-2 bg-red-950/20 ${props.event.prompt ? 'border-t border-neutral-700/30' : ''}`}>
-              <div class="text-[10px] uppercase tracking-wider text-red-400/70 mb-1 font-semibold">Error</div>
-              <pre class="text-xs text-red-300 font-mono whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
+            <div class={`px-3 py-2 bg-error/10 ${props.event.prompt ? 'border-t border-hairline' : ''}`}>
+              <div class="text-[10px] uppercase tracking-wider text-error/70 mb-1 font-semibold">Error</div>
+              <pre class="text-xs text-error font-mono whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
                 {props.event.error}
               </pre>
             </div>
@@ -129,8 +129,8 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
 
           {/* Running indicator */}
           <Show when={props.event.status === 'spawned'}>
-            <div class="px-3 py-2 bg-neutral-900/50">
-              <span class="inline-flex items-center gap-1.5 text-xs text-neutral-500">
+            <div class="px-3 py-2 bg-surface-base">
+              <span class="inline-flex items-center gap-1.5 text-xs text-muted-dark">
                 <span class="w-1.5 h-1.5 bg-sky-400 rounded-full animate-pulse" />
                 Processing…
               </span>
@@ -138,7 +138,7 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
           </Show>
 
           {/* ID */}
-          <div class="px-3 py-1.5 text-[10px] text-neutral-600 border-t border-neutral-800/50">
+          <div class="px-3 py-1.5 text-[10px] text-muted-dark border-t border-hairline">
             ID: {props.event.id}
           </div>
         </div>

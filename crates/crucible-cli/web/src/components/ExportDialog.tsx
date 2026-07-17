@@ -86,13 +86,13 @@ export const ExportDialog: Component<ExportDialogProps> = (props) => {
       />
 
       {/* Dialog */}
-      <div class="fixed left-1/2 top-16 z-[120] w-[min(720px,92vw)] max-h-[80vh] -translate-x-1/2 overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-900/95 shadow-2xl backdrop-blur flex flex-col">
+      <div class="fixed left-1/2 top-16 z-[120] w-[min(720px,92vw)] max-h-[80vh] -translate-x-1/2 overflow-hidden rounded-xl border border-hairline bg-surface-overlay shadow-2xl backdrop-blur flex flex-col">
         {/* Header */}
-        <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
-          <h2 class="text-sm font-semibold text-zinc-100">Export Session</h2>
+        <div class="flex items-center justify-between border-b border-hairline px-5 py-3">
+          <h2 class="text-sm font-semibold text-shell-ink">Export Session</h2>
           <button
             onClick={() => props.onClose()}
-            class="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+            class="rounded p-1 text-muted hover:bg-hover-wash hover:text-shell-ink transition-colors"
             aria-label="Close"
           >
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -105,35 +105,35 @@ export const ExportDialog: Component<ExportDialogProps> = (props) => {
         <div class="flex-1 overflow-y-auto p-5">
           <Show when={loading()}>
             <div class="flex items-center justify-center py-12">
-              <div class="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
-              <span class="ml-3 text-sm text-zinc-400">Generating export...</span>
+              <div class="h-5 w-5 animate-spin rounded-full border-2 border-hairline border-t-shell-body" />
+              <span class="ml-3 text-sm text-muted">Generating export...</span>
             </div>
           </Show>
 
           <Show when={error()}>
-            <div class="rounded-lg border border-red-800/50 bg-red-950/30 p-4 text-sm text-red-300">
+            <div class="rounded-lg border border-error/50 bg-error/10 p-4 text-sm text-error">
               {error()}
             </div>
           </Show>
 
           <Show when={!loading() && !error() && markdown()}>
             <div class="mb-3 flex items-center justify-between">
-              <span class="text-xs text-zinc-500">
+              <span class="text-xs text-muted-dark">
                 Preview (first 50 lines) &middot; {markdown().split('\n').length} total lines
               </span>
-              <span class="text-xs font-mono text-zinc-600">{downloadFileName()}</span>
+              <span class="text-xs font-mono text-muted-dark">{downloadFileName()}</span>
             </div>
-            <pre class="max-h-[50vh] overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950 p-4 text-xs leading-relaxed text-zinc-300 font-mono whitespace-pre-wrap">
+            <pre class="max-h-[50vh] overflow-y-auto rounded-lg border border-hairline bg-shell-bg p-4 text-xs leading-relaxed text-shell-body font-mono whitespace-pre-wrap">
               {previewLines()}
             </pre>
           </Show>
         </div>
 
         {/* Footer */}
-        <div class="flex items-center justify-end gap-3 border-t border-zinc-800 px-5 py-3">
+        <div class="flex items-center justify-end gap-3 border-t border-hairline px-5 py-3">
           <button
             onClick={() => props.onClose()}
-            class="rounded-md px-3 py-1.5 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+            class="rounded-md px-3 py-1.5 text-sm text-muted hover:bg-hover-wash hover:text-shell-ink transition-colors"
           >
             Close
           </button>

@@ -158,9 +158,9 @@ describe('ToolCard integration — real DiffViewer + Shiki', () => {
     expect(screen.getByText('Arguments')).toBeInTheDocument();
     expect(container.textContent).toContain('"command"');
 
-    // No DiffViewer file-name header (zinc-300 mono span) means no diff is
+    // No DiffViewer file-name header (shell-body mono span) means no diff is
     // present — Bash doesn't map to a diff and should not render one.
-    const diffHeaderFileSpans = container.querySelectorAll('.font-mono.text-zinc-300');
+    const diffHeaderFileSpans = container.querySelectorAll('span.font-mono.text-shell-body');
     expect(diffHeaderFileSpans.length).toBe(0);
   });
 });

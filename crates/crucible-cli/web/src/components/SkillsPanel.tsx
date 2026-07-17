@@ -105,13 +105,13 @@ export const SkillsPanel: Component = () => {
   return (
     <PanelShell class="relative">
       <PanelHeader title="Skills" />
-      <div class="px-3 py-2 border-b border-neutral-800">
+      <div class="px-3 py-2 border-b border-hairline">
         <input
           type="search"
           value={query()}
           onInput={(e) => onQueryInput(e.currentTarget.value)}
           placeholder="Search skills…"
-          class="w-full bg-neutral-800 text-neutral-100 text-sm rounded px-2 py-1.5 placeholder-neutral-500 border border-neutral-700 focus:outline-none focus:border-neutral-500"
+          class="w-full bg-control text-shell-ink text-sm rounded px-2 py-1.5 placeholder-muted-dark border border-hairline focus:outline-none focus:border-muted-dark"
           data-testid="skills-search-input"
         />
       </div>
@@ -119,16 +119,16 @@ export const SkillsPanel: Component = () => {
       <div class="flex-1 overflow-y-auto">
         <Show
           when={kilnPath()}
-          fallback={<div class="p-4 text-sm text-neutral-500">No kiln selected.</div>}
+          fallback={<div class="p-4 text-sm text-muted-dark">No kiln selected.</div>}
         >
           <Show
             when={!skills.loading}
-            fallback={<div class="p-4 text-sm text-neutral-500">Loading…</div>}
+            fallback={<div class="p-4 text-sm text-muted-dark">Loading…</div>}
           >
             <Show
               when={(skills() ?? []).length > 0}
               fallback={
-                <div class="p-4 text-sm text-neutral-500">
+                <div class="p-4 text-sm text-muted-dark">
                   {query() ? 'No matching skills.' : 'No skills discovered.'}
                 </div>
               }
@@ -136,31 +136,31 @@ export const SkillsPanel: Component = () => {
               <For each={groupedSkills()}>
                 {([scope, items]) => (
                   <div class="mb-2">
-                    <div class="px-3 py-1 text-[10px] uppercase tracking-wider text-neutral-500 bg-surface-elevated">
+                    <div class="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-dark bg-surface-elevated">
                       {scope}
                     </div>
                     <For each={items}>
                       {(skill) => (
                         <button
                           type="button"
-                          class="w-full text-left px-3 py-2 hover:bg-neutral-800 border-b border-hairline focus:outline-none focus:bg-neutral-800"
+                          class="w-full text-left px-3 py-2 hover:bg-hover-wash border-b border-hairline focus:outline-none focus:bg-hover-wash"
                           onClick={() => openDetail(skill)}
                           data-testid={`skill-row-${skill.name}`}
                         >
                           <div class="flex items-center gap-2">
-                            <span class="text-sm font-mono text-neutral-200 truncate flex-1">
+                            <span class="text-sm font-mono text-shell-ink truncate flex-1">
                               {skill.name}
                             </span>
                             <Show when={skill.shadowed_count > 0}>
                               <span
-                                class="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-300 border border-amber-700/50"
+                                class="text-[10px] px-1.5 py-0.5 rounded bg-attention/15 text-attention border border-attention/50"
                                 title={`Shadows ${skill.shadowed_count} other skill(s) with the same name`}
                               >
                                 +{skill.shadowed_count}
                               </span>
                             </Show>
                           </div>
-                          <div class="text-xs text-neutral-500 truncate mt-0.5">
+                          <div class="text-xs text-muted-dark truncate mt-0.5">
                             {skill.description || 'No description'}
                           </div>
                         </button>
@@ -177,20 +177,20 @@ export const SkillsPanel: Component = () => {
       <Show when={selected()}>
         {(s) => (
           <div
-            class="absolute inset-0 bg-neutral-900 z-10 flex flex-col"
+            class="absolute inset-0 bg-surface-overlay z-10 flex flex-col"
             data-testid="skills-drawer"
           >
-            <div class="flex items-center gap-2 px-3 py-2 border-b border-neutral-800">
+            <div class="flex items-center gap-2 px-3 py-2 border-b border-hairline">
               <button
                 type="button"
                 onClick={closeDetail}
-                class="text-neutral-400 hover:text-neutral-200 text-sm"
+                class="text-muted hover:text-shell-ink text-sm"
                 data-testid="skills-drawer-close"
               >
                 ← Back
               </button>
-              <span class="flex-1 text-sm font-mono text-neutral-200 truncate">{s().name}</span>
-              <span class="text-[10px] uppercase tracking-wider text-neutral-500">
+              <span class="flex-1 text-sm font-mono text-shell-ink truncate">{s().name}</span>
+              <span class="text-[10px] uppercase tracking-wider text-muted-dark">
                 {s().scope}
               </span>
             </div>
@@ -198,19 +198,19 @@ export const SkillsPanel: Component = () => {
               <button
                 type="button"
                 onClick={() => copyInvocation(s().name)}
-                class="mb-3 text-xs px-2 py-1 bg-neutral-800 hover:bg-neutral-700 rounded border border-neutral-700 text-neutral-200"
+                class="mb-3 text-xs px-2 py-1 bg-control hover:bg-hover-wash rounded border border-hairline text-shell-ink"
                 data-testid="skills-copy-invocation"
               >
                 Copy /{s().name}
               </button>
-              <Show when={!detailLoading()} fallback={<div class="text-sm text-neutral-500">Loading…</div>}>
+              <Show when={!detailLoading()} fallback={<div class="text-sm text-muted-dark">Loading…</div>}>
                 <Show when={detail()}>
                   {(d) => (
                     <>
                       <Show when={d().description}>
-                        <p class="text-sm text-neutral-300 mb-3">{d().description}</p>
+                        <p class="text-sm text-shell-body mb-3">{d().description}</p>
                       </Show>
-                      <pre class="text-xs font-mono text-neutral-300 whitespace-pre-wrap break-words bg-neutral-950 p-3 rounded border border-neutral-800">
+                      <pre class="text-xs font-mono text-shell-body whitespace-pre-wrap break-words bg-shell-bg p-3 rounded border border-hairline">
                         {d().body}
                       </pre>
                     </>

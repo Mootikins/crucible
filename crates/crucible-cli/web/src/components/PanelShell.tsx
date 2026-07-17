@@ -11,7 +11,7 @@ interface PanelShellProps {
  * Supports optional additional classes for overflow/positioning variants.
  */
 export const PanelShell: Component<PanelShellProps> = (props) => (
-  <div class={`h-full flex flex-col bg-neutral-900 text-neutral-100 ${props.class || ''}`}>
+  <div class={`h-full flex flex-col bg-shell-panel text-shell-ink ${props.class || ''}`}>
     {props.children}
   </div>
 );

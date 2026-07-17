@@ -100,7 +100,7 @@ function HeaderBar() {
           ◆ {kilnName()}
         </button>
       </Show>
-      <div class="flex bg-shell-panel border border-white/10 rounded-full p-0.5 gap-0.5">
+      <div class="flex bg-shell-panel border border-hairline rounded-full p-0.5 gap-0.5">
         <ModePill
           glyph="✎"
           label="Edit"
@@ -213,7 +213,7 @@ function DragOverlayContent() {
 
   return (
     <Show when={data()?.type === 'tab' || data()?.type === 'newTab'}>
-      <div class="px-2.5 py-1.5 bg-zinc-800 border border-zinc-600 rounded shadow-lg text-xs text-zinc-200 flex items-center gap-1.5 opacity-90">
+      <div class="px-2.5 py-1.5 bg-surface-overlay border border-hairline-strong rounded shadow-lg text-xs text-shell-ink flex items-center gap-1.5 opacity-90">
         <span class="font-medium truncate max-w-[120px]">{title()}</span>
       </div>
     </Show>

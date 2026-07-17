@@ -33,7 +33,7 @@ const SearchIcon: Component<{ class?: string }> = (props) => (
 );
 
 const SlashIcon: Component = () => (
-  <span class="text-neutral-600 mx-1 select-none">/</span>
+  <span class="text-muted-dark mx-1 select-none">/</span>
 );
 
 interface DropdownProps<T> {
@@ -97,28 +97,28 @@ function Dropdown<T>(props: DropdownProps<T>) {
     <div ref={dropdownRef} class="relative">
       <button
         onClick={(e) => handleOpen(e)}
-        class="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-neutral-700/50 transition-colors text-sm font-medium text-neutral-200"
+        class="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-hover-wash transition-colors text-sm font-medium text-shell-ink"
       >
-        <props.icon class="w-4 h-4 text-neutral-400" />
+        <props.icon class="w-4 h-4 text-muted" />
         <span class="max-w-[140px] truncate">
           {props.selected ? props.getLabel(props.selected) : props.placeholder}
         </span>
-        <ChevronDownIcon class="w-3 h-3 text-neutral-500" />
+        <ChevronDownIcon class="w-3 h-3 text-muted-dark" />
       </button>
 
       <Show when={isOpen()}>
-        <div class="absolute top-full left-0 mt-1 w-64 bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl z-50 overflow-hidden">
+        <div class="absolute top-full left-0 mt-1 w-64 bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl z-50 overflow-hidden">
           <Show when={props.searchable}>
-            <div class="p-2 border-b border-neutral-700">
-              <div class="flex items-center gap-2 px-2 py-1.5 bg-neutral-900 rounded border border-neutral-700 focus-within:border-neutral-500">
-                <SearchIcon class="w-4 h-4 text-neutral-500" />
+            <div class="p-2 border-b border-hairline">
+              <div class="flex items-center gap-2 px-2 py-1.5 bg-control rounded border border-hairline focus-within:border-muted-dark">
+                <SearchIcon class="w-4 h-4 text-muted-dark" />
                 <input
                   ref={inputRef}
                   type="text"
                   placeholder="Search..."
                   value={searchQuery()}
                   onInput={(e) => setSearchQuery(e.currentTarget.value)}
-                  class="flex-1 bg-transparent text-sm text-neutral-200 placeholder-neutral-500 outline-none"
+                  class="flex-1 bg-transparent text-sm text-shell-ink placeholder-muted-dark outline-none"
                 />
               </div>
             </div>
@@ -126,7 +126,7 @@ function Dropdown<T>(props: DropdownProps<T>) {
 
           <div class="max-h-64 overflow-y-auto">
             <Show when={filteredItems().length === 0}>
-              <div class="px-3 py-4 text-sm text-neutral-500 text-center">
+              <div class="px-3 py-4 text-sm text-muted-dark text-center">
                 No items found
               </div>
             </Show>
@@ -134,13 +134,13 @@ function Dropdown<T>(props: DropdownProps<T>) {
               {(item) => (
                 <button
                   onClick={(e) => handleSelect(item, e)}
-                  class={`w-full px-3 py-2 text-left text-sm hover:bg-neutral-700/50 transition-colors flex items-center gap-2 ${
+                  class={`w-full px-3 py-2 text-left text-sm hover:bg-hover-wash transition-colors flex items-center gap-2 ${
                     props.selected && props.getId(props.selected) === props.getId(item)
-                      ? 'bg-neutral-700/30 text-white'
-                      : 'text-neutral-300'
+                      ? 'bg-surface-elevated text-white'
+                      : 'text-shell-body'
                   }`}
                 >
-                  <props.icon class="w-4 h-4 text-neutral-500" />
+                  <props.icon class="w-4 h-4 text-muted-dark" />
                   <span class="truncate">{props.getLabel(item)}</span>
                 </button>
               )}
@@ -182,7 +182,7 @@ export const BreadcrumbNav: Component = () => {
   };
 
   return (
-    <nav class="h-10 bg-neutral-900 border-b border-neutral-800 flex items-center px-3 gap-1 shrink-0">
+    <nav class="h-10 bg-shell-panel border-b border-hairline flex items-center px-3 gap-1 shrink-0">
       <Dropdown
         items={projectCtx.projects()}
         selected={projectCtx.currentProject()}
@@ -209,7 +209,7 @@ export const BreadcrumbNav: Component = () => {
       <button
         onClick={handleNewSession}
         disabled={!projectCtx.currentProject()}
-        class="ml-2 flex items-center gap-1 px-2 py-1 rounded text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700"
+        class="ml-2 flex items-center gap-1 px-2 py-1 rounded text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-control hover:bg-hover-wash text-shell-body hover:text-white border border-hairline"
         title="New Session"
       >
         <PlusIcon class="w-4 h-4" />
@@ -219,11 +219,11 @@ export const BreadcrumbNav: Component = () => {
       <div class="flex-1" />
 
       <Show when={projectCtx.isLoading() || sessionCtx.isLoading()}>
-        <div class="w-4 h-4 border-2 border-neutral-600 border-t-neutral-300 rounded-full animate-spin" />
+        <div class="w-4 h-4 border-2 border-hairline border-t-shell-body rounded-full animate-spin" />
       </Show>
 
       <Show when={projectCtx.error() || sessionCtx.error()}>
-        <span class="text-xs text-red-400 truncate max-w-[200px]" title={projectCtx.error() ?? sessionCtx.error() ?? ''}>
+        <span class="text-xs text-error truncate max-w-[200px]" title={projectCtx.error() ?? sessionCtx.error() ?? ''}>
           {projectCtx.error() ?? sessionCtx.error()}
         </span>
       </Show>

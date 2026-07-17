@@ -30,9 +30,9 @@ describe('MultiEditDiff', () => {
     const { container } = render(() => (
       <MultiEditDiff fileName="src/foo.rs" edits={edits} />
     ));
-    // Outer header has one .font-mono.text-zinc-300 (file name).
+    // Outer header has one .font-mono.text-shell-body (file name).
     // Inner DiffViewers should have none (hideHeader=true).
-    const fileNameSpans = container.querySelectorAll('.font-mono.text-zinc-300');
+    const fileNameSpans = container.querySelectorAll('.font-mono.text-shell-body');
     expect(fileNameSpans.length).toBe(1);
   });
 });

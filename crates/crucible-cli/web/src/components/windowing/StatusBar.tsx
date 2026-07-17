@@ -41,9 +41,9 @@ export const StatusBar: Component = () => {
 
   const modeColor = (mode: ChatMode): string => {
     switch (mode) {
-      case 'normal': return 'bg-emerald-600/80 text-emerald-100';
+      case 'normal': return 'bg-ok/15 text-ok';
       case 'plan': return 'bg-primary/80 text-white';
-      case 'auto': return 'bg-amber-600/80 text-amber-100';
+      case 'auto': return 'bg-attention/15 text-attention';
     }
   };
 
@@ -86,7 +86,7 @@ export const StatusBar: Component = () => {
 
   return (
     <>
-      <div class="flex items-center justify-between px-2 h-5 bg-zinc-950 border-t border-zinc-800 text-[10px] text-zinc-500 select-none">
+      <div class="flex items-center justify-between px-2 h-5 bg-shell-bg border-t border-hairline text-[10px] text-muted-dark select-none">
         <div class="flex items-center gap-3">
           <span class="font-mono text-primary" data-testid="status-surface">
             {surfaceIndicator()}
@@ -105,7 +105,7 @@ export const StatusBar: Component = () => {
           </span>
           <span>{totalTabs()} tabs</span>
           {minimizedCount() > 0 && (
-            <span class="text-amber-500">{minimizedCount()} minimized</span>
+            <span class="text-attention">{minimizedCount()} minimized</span>
           )}
         </div>
         <div class="flex items-center gap-3">
@@ -114,7 +114,7 @@ export const StatusBar: Component = () => {
               <button
                 type="button"
                 data-testid="status-save"
-                class="flex items-center gap-1.5 px-2 rounded text-amber-500 hover:text-amber-300 hover:bg-zinc-800/60 transition-colors"
+                class="flex items-center gap-1.5 px-2 rounded text-attention hover:text-attention hover:bg-hover-wash transition-colors"
                 title={`Save ${file().path.split('/').pop()} (Ctrl+S / Ctrl+Enter)`}
                 onClick={() => void editor.saveFile(file().path)}
               >
@@ -127,7 +127,7 @@ export const StatusBar: Component = () => {
             use:droppable
             class="flex items-center gap-2 px-2 py-1 rounded"
           >
-            <div class="flex items-center gap-2 px-2 py-1 text-xs text-zinc-500 transition-colors">
+            <div class="flex items-center gap-2 px-2 py-1 text-xs text-muted-dark transition-colors">
               <IconLayout class="w-3.5 h-3.5" />
               <span>New Window</span>
             </div>
@@ -136,16 +136,16 @@ export const StatusBar: Component = () => {
           <Show when={statusBarStore.contextUsage()}>
             {(usage) => (
               <div class="flex items-center gap-1.5" data-testid="status-context-usage">
-                <span class="text-zinc-400 tabular-nums">
+                <span class="text-muted tabular-nums">
                   {formatTokens(usage().used)} / {formatTokens(usage().total)}
                 </span>
-                <div class="w-12 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div class="w-12 h-1.5 bg-control rounded-full overflow-hidden">
                   <div
                     class="h-full rounded-full transition-all duration-300"
                     classList={{
-                      'bg-emerald-500': usagePercent() < 60,
-                      'bg-amber-500': usagePercent() >= 60 && usagePercent() < 85,
-                      'bg-red-500': usagePercent() >= 85,
+                      'bg-ok': usagePercent() < 60,
+                      'bg-attention': usagePercent() >= 60 && usagePercent() < 85,
+                      'bg-error': usagePercent() >= 85,
                     }}
                     style={{ width: `${usagePercent()}%` }}
                   />
@@ -156,19 +156,19 @@ export const StatusBar: Component = () => {
           {/* Active model */}
           <Show when={statusBarStore.activeModel()}>
             {(model) => (
-              <span class="text-zinc-400 font-mono" data-testid="status-model">{model()}</span>
+              <span class="text-muted font-mono" data-testid="status-model">{model()}</span>
             )}
           </Show>
           {/* Notification bell */}
           <button
             type="button"
-            class="relative p-0.5 text-zinc-500 hover:text-zinc-300 transition-colors"
+            class="relative p-0.5 text-muted-dark hover:text-shell-body transition-colors"
             onClick={() => setDrawerOpen(!drawerOpen())}
             aria-label="Toggle notifications"
           >
             <IconBell class="w-3.5 h-3.5" />
             <Show when={unreadCount() > 0}>
-              <span class="absolute -top-1 -right-1 px-0.5 min-w-[12px] text-center rounded-full bg-red-600 text-white text-[8px] font-bold leading-[12px]">
+              <span class="absolute -top-1 -right-1 px-0.5 min-w-[12px] text-center rounded-full bg-error text-white text-[8px] font-bold leading-[12px]">
                 {unreadCount() > 99 ? '99+' : unreadCount()}
               </span>
             </Show>

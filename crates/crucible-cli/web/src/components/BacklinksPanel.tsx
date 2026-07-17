@@ -110,14 +110,14 @@ export const BacklinksPanel: Component = () => {
     <PanelShell>
       <PanelHeader title="Backlinks" class="shrink-0">
         <div class="mt-1 flex items-center justify-between gap-2">
-          <span class="truncate text-xs text-neutral-500" data-testid="backlinks-note-title">
+          <span class="truncate text-xs text-muted-dark" data-testid="backlinks-note-title">
             {backlinks()?.note.title || (focusedFile() ? focusedFile()!.split('/').pop() : '')}
           </span>
           <Show when={focusedFile()}>
             <button
               type="button"
               data-testid="backlinks-refresh"
-              class="rounded p-1 text-neutral-500 hover:bg-white/5 hover:text-neutral-300"
+              class="rounded p-1 text-muted-dark hover:bg-hover-wash hover:text-shell-body"
               title="Refresh backlinks"
               onClick={() => setRefreshTick((t) => t + 1)}
             >
@@ -131,19 +131,19 @@ export const BacklinksPanel: Component = () => {
         <Show
           when={focusedFile()}
           fallback={
-            <div class="px-2 py-4 text-sm text-neutral-500" data-testid="backlinks-empty">
+            <div class="px-2 py-4 text-sm text-muted-dark" data-testid="backlinks-empty">
               Open a note to see its backlinks.
             </div>
           }
         >
           {/* Linked mentions — incoming wikilink edges */}
-          <div class="mb-1 px-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+          <div class="mb-1 px-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-dark">
             Linked mentions ({backlinks()?.linked.length ?? 0})
           </div>
           <Show
             when={(backlinks()?.linked.length ?? 0) > 0}
             fallback={
-              <div class="px-2 pb-2 text-xs text-neutral-600">
+              <div class="px-2 pb-2 text-xs text-muted-dark">
                 No notes link here yet.
               </div>
             }
@@ -154,7 +154,7 @@ export const BacklinksPanel: Component = () => {
                   type="button"
                   data-testid="backlinks-linked-item"
                   data-note={entry.name}
-                  class="block w-full rounded px-2 py-1.5 text-left hover:bg-white/5"
+                  class="block w-full rounded px-2 py-1.5 text-left hover:bg-hover-wash"
                   onClick={() =>
                     // Global open event: the app routes it to the window-tab
                     // editor; harnesses route it to their own EditorContext.
@@ -168,20 +168,20 @@ export const BacklinksPanel: Component = () => {
                   <span class="block truncate text-sm text-shell-ink">
                     {entry.title || entry.name}
                   </span>
-                  <span class="block truncate text-[11px] text-neutral-500">{entry.path}</span>
+                  <span class="block truncate text-[11px] text-muted-dark">{entry.path}</span>
                 </button>
               )}
             </For>
           </Show>
 
           {/* Unlinked mentions — plain-text references in this note */}
-          <div class="mb-1 mt-3 px-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+          <div class="mb-1 mt-3 px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-dark">
             Unlinked mentions in this note ({visibleUnlinked().length})
           </div>
           <Show
             when={visibleUnlinked().length > 0}
             fallback={
-              <div class="px-2 pb-2 text-xs text-neutral-600">
+              <div class="px-2 pb-2 text-xs text-muted-dark">
                 No unlinked mentions found.
               </div>
             }
@@ -190,18 +190,18 @@ export const BacklinksPanel: Component = () => {
               {(s) => (
                 <div
                   data-testid="backlinks-unlinked-item"
-                  class="flex items-center justify-between gap-2 rounded px-2 py-1.5 hover:bg-white/5"
+                  class="flex items-center justify-between gap-2 rounded px-2 py-1.5 hover:bg-hover-wash"
                 >
                   <div class="min-w-0">
                     <span class="block truncate text-sm text-shell-body">“{s.mention}”</span>
-                    <span class="block truncate text-[11px] text-neutral-500" data-note={s.target}>
+                    <span class="block truncate text-[11px] text-muted-dark" data-note={s.target}>
                       → {s.target}
                     </span>
                   </div>
                   <button
                     type="button"
                     data-testid="backlinks-link-button"
-                    class="shrink-0 rounded border border-white/10 px-2 py-0.5 text-xs text-primary hover:bg-white/5"
+                    class="shrink-0 rounded border border-hairline px-2 py-0.5 text-xs text-primary hover:bg-hover-wash"
                     title={`Convert to [[${s.target}]]`}
                     onClick={() => applySuggestion(s)}
                   >

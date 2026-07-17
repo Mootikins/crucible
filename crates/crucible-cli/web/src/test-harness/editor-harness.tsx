@@ -80,9 +80,9 @@ const HarnessInner: Component = () => {
   });
 
   return (
-    <div class="h-screen flex flex-col bg-neutral-950 text-neutral-100">
-      <div class="flex items-center gap-2 border-b border-neutral-800 px-3 py-2">
-        <span class="text-xs text-neutral-500">editor-harness</span>
+    <div class="h-screen flex flex-col bg-shell-bg text-shell-ink">
+      <div class="flex items-center gap-2 border-b border-hairline px-3 py-2">
+        <span class="text-xs text-muted-dark">editor-harness</span>
         <button
           data-testid="harness-save"
           onClick={saveActive}
@@ -90,11 +90,11 @@ const HarnessInner: Component = () => {
         >
           Save
         </button>
-        <span data-testid="harness-open-count" class="text-xs text-neutral-500">
+        <span data-testid="harness-open-count" class="text-xs text-muted-dark">
           {editor.openFiles().length} open
         </span>
         <Show when={editor.error()}>
-          <span data-testid="harness-error" class="text-xs text-red-400">
+          <span data-testid="harness-error" class="text-xs text-error">
             {editor.error()}
           </span>
         </Show>
@@ -104,7 +104,7 @@ const HarnessInner: Component = () => {
           <EditorPanel />
         </div>
         <Show when={withBacklinks()}>
-          <div class="w-80 shrink-0 border-l border-neutral-800" data-testid="harness-backlinks">
+          <div class="w-80 shrink-0 border-l border-hairline" data-testid="harness-backlinks">
             <BacklinksPanel />
           </div>
         </Show>

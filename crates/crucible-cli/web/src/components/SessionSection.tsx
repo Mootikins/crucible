@@ -17,12 +17,12 @@ const KilnSelector: Component<{
 
   return (
     <Show when={props.kilns.length > 0}>
-      <div class="px-3 py-2 border-b border-neutral-800">
-        <label class="text-xs text-neutral-500 block mb-1">Kiln</label>
+      <div class="px-3 py-2 border-b border-hairline">
+        <label class="text-xs text-muted-dark block mb-1">Kiln</label>
         <Show
           when={props.kilns.length > 1}
           fallback={
-            <div class="text-sm text-neutral-300 truncate" title={props.kilns[0].path}>
+            <div class="text-sm text-shell-body truncate" title={props.kilns[0].path}>
               {getKilnDisplayName(props.kilns[0])}
             </div>
           }
@@ -30,7 +30,7 @@ const KilnSelector: Component<{
           <select
             value={props.selected}
             onChange={(e) => props.onSelect(e.currentTarget.value)}
-            class="w-full bg-surface-elevated text-neutral-200 text-sm px-2 py-1.5 rounded border border-neutral-700 focus:border-primary focus:outline-none"
+            class="w-full bg-surface-elevated text-shell-ink text-sm px-2 py-1.5 rounded border border-hairline focus:border-primary focus:outline-none"
           >
             <For each={props.kilns}>
               {(kiln) => (
@@ -47,11 +47,11 @@ const KilnSelector: Component<{
 export const StateIndicator: Component<{ state: Session['state'] }> = (props) => {
   const colorClass = () => {
     switch (props.state) {
-      case 'active': return 'bg-green-500';
-      case 'paused': return 'bg-yellow-500';
+      case 'active': return 'bg-ok';
+      case 'paused': return 'bg-attention';
       case 'compacting': return 'bg-primary';
-      case 'ended': return 'bg-neutral-500';
-      default: return 'bg-neutral-500';
+      case 'ended': return 'bg-muted-dark';
+      default: return 'bg-muted-dark';
     }
   };
 
@@ -73,7 +73,7 @@ const SessionItem: Component<{
       class={`group relative w-full text-left px-3 py-2 rounded-lg transition-colors cursor-pointer ${
         props.selected
           ? 'bg-primary/20 text-primary-hover'
-          : 'hover:bg-surface-elevated text-neutral-300'
+          : 'hover:bg-surface-elevated text-shell-body'
       }`}
        data-testid={`session-item-${props.session.id}`}
      >
@@ -83,7 +83,7 @@ const SessionItem: Component<{
           {props.session.title || `Session ${props.session.id?.slice(0, 8) ?? 'unknown'}`}
         </span>
       </div>
-      <div class="text-xs text-neutral-500 mt-1">
+      <div class="text-xs text-muted-dark mt-1">
         {props.session.agent_model || 'No model'}
       </div>
 
@@ -92,7 +92,7 @@ const SessionItem: Component<{
         <Show when={props.onArchive}>
           <button
             type="button"
-            class="rounded p-1 text-neutral-500 hover:text-neutral-200 hover:bg-neutral-700/60 transition-colors"
+            class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
             title="Archive session"
             onClick={(e) => { e.stopPropagation(); props.onArchive?.(); }}
           >
@@ -102,7 +102,7 @@ const SessionItem: Component<{
         <Show when={props.onDelete}>
           <button
             type="button"
-            class="rounded p-1 text-neutral-500 hover:text-neutral-200 hover:bg-neutral-700/60 transition-colors"
+            class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
             title="Delete session"
             onClick={(e) => { e.stopPropagation(); props.onDelete?.(); }}
           >
@@ -137,7 +137,7 @@ export const SessionSection: Component<{
   const isDisabled = createMemo(() => props.isLoading || !props.selectedKiln || !props.hasProviders);
 
   return (
-    <div class="border-t border-neutral-800">
+    <div class="border-t border-hairline">
       <KilnSelector
         kilns={props.kilns}
         selected={props.selectedKiln}
@@ -145,12 +145,12 @@ export const SessionSection: Component<{
       />
 
       <div class="p-3 flex items-center justify-between">
-        <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wide">Sessions</h2>
+        <h2 class="text-sm font-semibold text-muted uppercase tracking-wide">Sessions</h2>
         <select
           data-testid="session-filter-dropdown"
           value={props.sessionFilter}
           onChange={(e) => props.onSessionFilterChange(e.target.value as 'active' | 'all' | 'archived')}
-          class="text-xs bg-neutral-800 text-neutral-300 border border-neutral-700 rounded px-1 py-0.5"
+          class="text-xs bg-surface-elevated text-shell-body border border-hairline rounded px-1 py-0.5"
         >
           <option value="active">Active</option>
           <option value="all">All</option>
@@ -160,20 +160,20 @@ export const SessionSection: Component<{
 
       <div class="px-3 pb-2">
         <div class="relative">
-          <Search class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-500" />
+          <Search class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-dark" />
           <input
             ref={props.setSearchInputRef}
             type="text"
             value={props.searchQuery}
             onInput={(e) => props.onSearchInput(e.currentTarget.value)}
             placeholder="Search sessions..."
-            class="w-full bg-neutral-800 text-neutral-200 text-sm pl-8 pr-7 py-1.5 rounded border border-neutral-700 focus:border-primary focus:outline-none placeholder:text-neutral-500"
+            class="w-full bg-control text-shell-ink text-sm pl-8 pr-7 py-1.5 rounded border border-hairline focus:border-primary focus:outline-none placeholder:text-muted-dark"
             data-testid="session-search-input"
           />
           <Show when={props.searchQuery}>
             <button
               onClick={props.onClearSearch}
-              class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-neutral-500 hover:text-neutral-300 rounded"
+              class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-muted-dark hover:text-shell-body rounded"
             >
               <X class="w-3 h-3" />
             </button>
@@ -183,20 +183,20 @@ export const SessionSection: Component<{
 
       <div class="p-2" data-testid="session-list">
         <Show when={props.isSearching}>
-          <p class="text-neutral-500 text-sm text-center py-2">Searching...</p>
+          <p class="text-muted-dark text-sm text-center py-2">Searching...</p>
         </Show>
 
         <button
           onClick={props.onCreateSession}
           disabled={isDisabled()}
-          class="w-full mt-2 px-3 py-2 text-sm text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          class="w-full mt-2 px-3 py-2 text-sm text-muted hover:text-shell-ink hover:bg-hover-wash rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           data-testid="new-session-button"
         >
           <Plus class="w-3.5 h-3.5" />
           New Session
         </button>
         <Show when={!props.hasProviders}>
-          <p class="text-xs text-neutral-500 text-center mt-1">No LLM providers detected</p>
+          <p class="text-xs text-muted-dark text-center mt-1">No LLM providers detected</p>
         </Show>
 
         <For each={props.displayedSessions}>
@@ -214,9 +214,9 @@ export const SessionSection: Component<{
         <Show when={!props.isSearching && props.displayedSessions.length === 0}>
           <Show
             when={props.searchQuery.trim()}
-            fallback={<p class="text-neutral-500 text-sm text-center py-4">No sessions</p>}
+            fallback={<p class="text-muted-dark text-sm text-center py-4">No sessions</p>}
           >
-            <p class="text-neutral-500 text-sm text-center py-4">No sessions match "{props.searchQuery}"</p>
+            <p class="text-muted-dark text-sm text-center py-4">No sessions match "{props.searchQuery}"</p>
           </Show>
         </Show>
 

@@ -15,12 +15,12 @@ export const PrecognitionBadge: Component<PrecognitionBadgeProps> = (props) => {
 
   return (
     <div
-      class="mt-1 inline-flex flex-col rounded border border-neutral-700/50 bg-neutral-900/40 px-2 py-1 text-neutral-300"
+      class="mt-1 inline-flex flex-col rounded border border-hairline bg-surface-base px-2 py-1 text-shell-body"
       data-testid="precognition-badge"
     >
       <button
         type="button"
-        class="flex items-center gap-1.5 text-[11px] text-neutral-400 hover:text-neutral-200"
+        class="flex items-center gap-1.5 text-[11px] text-muted hover:text-shell-ink"
         onClick={() => setExpanded((v) => !v)}
         title="Click to show injected notes"
         data-testid="precognition-badge-toggle"
@@ -30,7 +30,7 @@ export const PrecognitionBadge: Component<PrecognitionBadgeProps> = (props) => {
           Enriched with {props.notesCount} {props.notesCount === 1 ? 'note' : 'notes'}
         </span>
         <Show when={props.notes.length > 0}>
-          <span class="text-neutral-500">{expanded() ? '▼' : '▶'}</span>
+          <span class="text-muted-dark">{expanded() ? '▼' : '▶'}</span>
         </Show>
       </button>
       <Show when={expanded() && props.notes.length > 0}>
@@ -40,9 +40,9 @@ export const PrecognitionBadge: Component<PrecognitionBadgeProps> = (props) => {
         >
           <For each={props.notes}>
             {(note) => (
-              <li class="flex items-center gap-2 text-[11px] font-mono text-neutral-400">
-                <span class="text-neutral-200 truncate">{note.name}</span>
-                <span class="text-neutral-500">{note.relevance.toFixed(2)}</span>
+              <li class="flex items-center gap-2 text-[11px] font-mono text-muted">
+                <span class="text-shell-ink truncate">{note.name}</span>
+                <span class="text-muted-dark">{note.relevance.toFixed(2)}</span>
               </li>
             )}
           </For>

@@ -16,7 +16,7 @@ describe('DiffViewer — header and stats', () => {
       <DiffViewer oldContent="a" newContent="b" />
     ));
     // No file name span should be rendered in the header
-    const headerSpans = container.querySelectorAll('.font-mono.text-zinc-300');
+    const headerSpans = container.querySelectorAll('.font-mono.text-shell-body');
     expect(headerSpans.length).toBe(0);
   });
 
@@ -206,9 +206,9 @@ describe('DiffViewer — syntax highlighting', () => {
     const { container } = render(() => (
       <DiffViewer oldContent="fn a() {}" newContent="fn b() {}" language="rust" />
     ));
-    // The 'remove' line keeps bg-red-950/70, the 'add' line keeps bg-emerald-950/70
-    expect(container.querySelector('.bg-emerald-950\\/70')).not.toBeNull();
-    expect(container.querySelector('.bg-red-950\\/70')).not.toBeNull();
+    // The 'remove' line keeps bg-error/15, the 'add' line keeps bg-ok/15
+    expect(container.querySelector('.bg-ok\\/15')).not.toBeNull();
+    expect(container.querySelector('.bg-error\\/15')).not.toBeNull();
   });
 
   it('falls back to plain text when language is unknown', () => {

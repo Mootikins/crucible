@@ -24,33 +24,33 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
           </span>
         );
       case 'completed':
-        return <Check class="w-3.5 h-3.5 text-emerald-400" />;
+        return <Check class="w-3.5 h-3.5 text-ok" />;
       case 'failed':
-        return <X class="w-3.5 h-3.5 text-red-400" />;
+        return <X class="w-3.5 h-3.5 text-error" />;
     }
   };
 
   const statusColor = () => {
     switch (props.event.status) {
-      case 'spawned': return isDelegation() ? 'text-violet-400' : 'text-sky-400';
-      case 'completed': return 'text-emerald-400';
-      case 'failed': return 'text-red-400';
+      case 'spawned': return isDelegation() ? 'text-precog' : 'text-sky-400';
+      case 'completed': return 'text-ok';
+      case 'failed': return 'text-error';
     }
   };
 
   const borderColor = () => {
     switch (props.event.status) {
-      case 'spawned': return isDelegation() ? 'border-violet-500/30' : 'border-sky-500/30';
-      case 'completed': return 'border-emerald-500/20';
-      case 'failed': return 'border-red-500/30';
+      case 'spawned': return isDelegation() ? 'border-precog/30' : 'border-sky-500/30';
+      case 'completed': return 'border-ok/20';
+      case 'failed': return 'border-error/30';
     }
   };
 
   const bgColor = () => {
     switch (props.event.status) {
-      case 'spawned': return isDelegation() ? 'bg-violet-950/10' : 'bg-sky-950/10';
-      case 'completed': return 'bg-neutral-800/30';
-      case 'failed': return 'bg-red-950/15';
+      case 'spawned': return isDelegation() ? 'bg-precog/10' : 'bg-sky-950/10';
+      case 'completed': return 'bg-hover-wash';
+      case 'failed': return 'bg-error/10';
     }
   };
 
@@ -87,29 +87,29 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
         {/* Label + status */}
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-1.5">
-            <span class="text-xs font-medium text-neutral-300 truncate">{label()}</span>
+            <span class="text-xs font-medium text-shell-body truncate">{label()}</span>
             <span class={`text-[10px] ${statusColor()}`}>{statusLabel()}</span>
           </div>
-          <div class="text-[11px] text-neutral-500 truncate mt-0.5">{promptPreview()}</div>
+          <div class="text-[11px] text-muted-dark truncate mt-0.5">{promptPreview()}</div>
         </div>
 
         {/* Status icon */}
         <span class={`flex-shrink-0 ${statusColor()}`}>{statusIcon()}</span>
 
         {/* Expand chevron */}
-        <span class="text-neutral-600 text-[10px] group-hover:text-neutral-400 transition-colors">
+        <span class="text-muted-dark text-[10px] group-hover:text-shell-body transition-colors">
           {expanded() ? '▼' : '▶'}
         </span>
       </button>
 
       {/* Expanded detail */}
       <Show when={expanded()}>
-        <div class="border-t border-neutral-700/40">
+        <div class="border-t border-hairline">
           {/* Prompt */}
           <Show when={props.event.prompt}>
-            <div class="px-3 py-2 bg-neutral-900/40">
-              <div class="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 font-semibold">Prompt</div>
-              <p class="text-xs text-neutral-300 whitespace-pre-wrap break-words max-h-40 overflow-y-auto leading-relaxed">
+            <div class="px-3 py-2 bg-surface-base">
+              <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">Prompt</div>
+              <p class="text-xs text-shell-body whitespace-pre-wrap break-words max-h-40 overflow-y-auto leading-relaxed">
                 {props.event.prompt}
               </p>
             </div>
@@ -117,9 +117,9 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
 
           {/* Summary (completed) */}
           <Show when={props.event.status === 'completed' && props.event.summary}>
-            <div class={`px-3 py-2 bg-neutral-900/40 ${props.event.prompt ? 'border-t border-neutral-700/25' : ''}`}>
-              <div class="text-[10px] uppercase tracking-wider text-emerald-500/70 mb-1 font-semibold">Result</div>
-              <p class="text-xs text-neutral-300 whitespace-pre-wrap break-words max-h-56 overflow-y-auto leading-relaxed">
+            <div class={`px-3 py-2 bg-surface-base ${props.event.prompt ? 'border-t border-hairline' : ''}`}>
+              <div class="text-[10px] uppercase tracking-wider text-ok/70 mb-1 font-semibold">Result</div>
+              <p class="text-xs text-shell-body whitespace-pre-wrap break-words max-h-56 overflow-y-auto leading-relaxed">
                 {props.event.summary}
               </p>
             </div>
@@ -127,9 +127,9 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
 
           {/* Error (failed) */}
           <Show when={props.event.status === 'failed' && props.event.error}>
-            <div class={`px-3 py-2 bg-red-950/15 ${props.event.prompt ? 'border-t border-neutral-700/25' : ''}`}>
-              <div class="text-[10px] uppercase tracking-wider text-red-400/70 mb-1 font-semibold">Error</div>
-              <pre class="text-xs text-red-300 font-mono whitespace-pre-wrap break-all max-h-56 overflow-y-auto">
+            <div class={`px-3 py-2 bg-error/10 ${props.event.prompt ? 'border-t border-hairline' : ''}`}>
+              <div class="text-[10px] uppercase tracking-wider text-error/70 mb-1 font-semibold">Error</div>
+              <pre class="text-xs text-error font-mono whitespace-pre-wrap break-all max-h-56 overflow-y-auto">
                 {props.event.error}
               </pre>
             </div>
@@ -137,16 +137,16 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
 
           {/* Running indicator */}
           <Show when={props.event.status === 'spawned'}>
-            <div class="px-3 py-2 bg-neutral-900/40">
-              <span class="inline-flex items-center gap-1.5 text-xs text-neutral-500">
-                <span class={`w-1.5 h-1.5 rounded-full animate-pulse ${isDelegation() ? 'bg-violet-400' : 'bg-sky-400'}`} />
+            <div class="px-3 py-2 bg-surface-base">
+              <span class="inline-flex items-center gap-1.5 text-xs text-muted-dark">
+                <span class={`w-1.5 h-1.5 rounded-full animate-pulse ${isDelegation() ? 'bg-precog' : 'bg-sky-400'}`} />
                 Processing…
               </span>
             </div>
           </Show>
 
           {/* ID footer */}
-          <div class="px-3 py-1 text-[10px] text-neutral-600 border-t border-neutral-800/40 font-mono">
+          <div class="px-3 py-1 text-[10px] text-muted-dark border-t border-hairline font-mono">
             {props.event.id}
           </div>
         </div>
@@ -162,7 +162,7 @@ const TaskSummary: Component<{ events: SubagentEvent[] }> = (props) => {
   const failed = () => props.events.filter((e) => e.status === 'failed').length;
 
   return (
-    <div class="flex items-center gap-3 px-3 py-2 border-b border-neutral-800 text-[11px]">
+    <div class="flex items-center gap-3 px-3 py-2 border-b border-hairline text-[11px]">
       <Show when={active() > 0}>
         <span class="flex items-center gap-1 text-sky-400">
           <span class="w-1.5 h-1.5 bg-sky-400 rounded-full animate-pulse" />
@@ -170,19 +170,19 @@ const TaskSummary: Component<{ events: SubagentEvent[] }> = (props) => {
         </span>
       </Show>
       <Show when={completed() > 0}>
-        <span class="flex items-center gap-1 text-emerald-400">
+        <span class="flex items-center gap-1 text-ok">
           <Check class="w-3 h-3" />
           {completed()}
         </span>
       </Show>
       <Show when={failed() > 0}>
-        <span class="flex items-center gap-1 text-red-400">
+        <span class="flex items-center gap-1 text-error">
           <X class="w-3 h-3" />
           {failed()}
         </span>
       </Show>
       <Show when={active() === 0 && completed() === 0 && failed() === 0}>
-        <span class="text-neutral-500">No tasks</span>
+        <span class="text-muted-dark">No tasks</span>
       </Show>
     </div>
   );
@@ -204,7 +204,7 @@ export const ActivityPanel: Component = () => {
       {/* Header */}
       <PanelHeader title="Activity">
         <div class="flex items-center gap-2">
-          <Activity class="w-4 h-4 text-neutral-400" />
+          <Activity class="w-4 h-4 text-muted" />
         </div>
       </PanelHeader>
 
@@ -220,9 +220,9 @@ export const ActivityPanel: Component = () => {
           when={events().length > 0}
           fallback={
             <div class="flex flex-col items-center justify-center h-full px-4 text-center">
-              <Activity class="w-8 h-8 text-neutral-700 mb-3" />
-              <p class="text-sm text-neutral-500">No background tasks</p>
-              <p class="text-xs text-neutral-600 mt-1">
+              <Activity class="w-8 h-8 text-muted-dark mb-3" />
+              <p class="text-sm text-muted-dark">No background tasks</p>
+              <p class="text-xs text-muted-dark mt-1">
                 Subagent and delegation tasks will appear here
               </p>
             </div>

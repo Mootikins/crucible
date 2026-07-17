@@ -31,8 +31,8 @@ export const AskInteraction: Component<Props> = (props) => {
   const hasSelection = () => selected().length > 0 || otherText().trim().length > 0;
 
   return (
-    <div class="bg-neutral-800 rounded-lg p-4 mb-4 border border-neutral-700">
-      <p class="text-neutral-100 font-medium mb-3">{props.request.question}</p>
+    <div class="bg-surface-elevated rounded-lg p-4 mb-4 border border-hairline">
+      <p class="text-shell-ink font-medium mb-3">{props.request.question}</p>
 
       <Show when={props.request.choices}>
         <div class="space-y-2 mb-3">
@@ -44,9 +44,9 @@ export const AskInteraction: Component<Props> = (props) => {
                   name={`ask-${props.request.id}`}
                   checked={selected().includes(index())}
                   onChange={() => toggleChoice(index())}
-                  class="w-4 h-4 text-primary bg-neutral-700 border-neutral-600 focus:ring-primary"
+                  class="w-4 h-4 text-primary bg-control border-hairline focus:ring-primary"
                 />
-                <span class="text-neutral-300 group-hover:text-neutral-100">
+                <span class="text-shell-body group-hover:text-shell-ink">
                   {choice}
                 </span>
               </label>
@@ -61,7 +61,7 @@ export const AskInteraction: Component<Props> = (props) => {
           placeholder={props.request.choices ? 'Or type your own...' : 'Type your answer...'}
           value={otherText()}
           onInput={(e) => setOtherText(e.currentTarget.value)}
-          class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary mb-3"
+          class="w-full px-3 py-2 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted-dark focus:outline-none focus:ring-2 focus:ring-primary mb-3"
         />
       </Show>
 

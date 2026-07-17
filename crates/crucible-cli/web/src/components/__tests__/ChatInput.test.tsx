@@ -155,13 +155,13 @@ describe('ChatInput', () => {
   it('has correct form structure with border and padding', () => {
     render(() => <ChatInput />);
     const form = screen.getByTestId('chat-input-form');
-    expect(form).toHaveClass('border-t', 'border-neutral-800', 'p-4');
+    expect(form).toHaveClass('border-t', 'border-hairline', 'p-4');
   });
 
   it('renders textarea with correct classes', () => {
     render(() => <ChatInput />);
     const textarea = screen.getByTestId('chat-input');
-    expect(textarea).toHaveClass('flex-1', 'w-full', 'bg-transparent', 'text-neutral-100');
+    expect(textarea).toHaveClass('flex-1', 'w-full', 'bg-transparent', 'text-shell-ink');
   });
 });
 

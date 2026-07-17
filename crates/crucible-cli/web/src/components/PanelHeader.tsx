@@ -12,8 +12,8 @@ interface PanelHeaderProps {
  * Supports optional additional classes (e.g., shrink-0) and additional children.
  */
 export const PanelHeader: Component<PanelHeaderProps> = (props) => (
-  <div class={`p-3 border-b border-neutral-800 ${props.class || ''}`}>
-    <h2 class="text-sm font-semibold text-neutral-400 uppercase tracking-wide">
+  <div class={`p-3 border-b border-hairline ${props.class || ''}`}>
+    <h2 class="text-sm font-semibold text-muted uppercase tracking-wide">
       {props.title}
     </h2>
     {props.children}

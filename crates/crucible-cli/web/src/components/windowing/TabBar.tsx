@@ -76,22 +76,22 @@ const TabItem: Component<TabItemProps> = (props) => {
       classList={{
         'group relative flex items-center gap-1 px-2.5 py-1.5 cursor-pointer transition-all duration-100 border-b-2 rounded-t-sm':
           true,
-        'opacity-40 border-transparent bg-zinc-800/50': draggable.isActiveDraggable,
-        'bg-zinc-800 text-zinc-100': props.isActive && !draggable.isActiveDraggable,
+        'opacity-40 border-transparent bg-surface-elevated': draggable.isActiveDraggable,
+        'bg-surface-elevated text-shell-ink': props.isActive && !draggable.isActiveDraggable,
         'border-primary': props.isActive && props.isFocused && !draggable.isActiveDraggable,
-        'border-zinc-600': props.isActive && !props.isFocused && !draggable.isActiveDraggable,
-        'border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50':
+        'border-hairline': props.isActive && !props.isFocused && !draggable.isActiveDraggable,
+        'border-transparent text-muted hover:text-shell-ink hover:bg-hover-wash':
           !props.isActive && !draggable.isActiveDraggable,
       }}
       onClick={() => props.onClick()}
     >
       <div class="relative w-3.5 h-3.5 flex-shrink-0 cursor-grab active:cursor-grabbing">
         <Show when={Icon} fallback={
-          <IconGripVertical class="w-3.5 h-3.5 text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
+          <IconGripVertical class="w-3.5 h-3.5 text-muted-dark opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
         }>
           <>
-            {Icon && <Icon class={`absolute inset-0 w-3.5 h-3.5 ${props.isActive ? 'text-zinc-300' : 'text-zinc-500'} group-hover:opacity-0 transition-opacity duration-150`} />}
-            <IconGripVertical class="absolute inset-0 w-3.5 h-3.5 text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
+            {Icon && <Icon class={`absolute inset-0 w-3.5 h-3.5 ${props.isActive ? 'text-shell-body' : 'text-muted-dark'} group-hover:opacity-0 transition-opacity duration-150`} />}
+            <IconGripVertical class="absolute inset-0 w-3.5 h-3.5 text-muted-dark opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
           </>
         </Show>
       </div>
@@ -99,7 +99,7 @@ const TabItem: Component<TabItemProps> = (props) => {
         {props.tab.title}
       </span>
       {props.tab.isModified && (
-        <span class="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+        <span class="w-1.5 h-1.5 rounded-full bg-attention flex-shrink-0" />
       )}
       <button
         onClick={(e) => {
@@ -107,7 +107,7 @@ const TabItem: Component<TabItemProps> = (props) => {
           props.onClose(e);
         }}
         classList={{
-          'flex-shrink-0 p-0.5 rounded-sm transition-all hover:bg-zinc-700 hover:text-zinc-200 focus:opacity-100': true,
+          'flex-shrink-0 p-0.5 rounded-sm transition-all hover:bg-hover-wash hover:text-shell-ink focus:opacity-100': true,
           'opacity-0 group-hover:opacity-100': !props.isActive,
         }}
       >
@@ -277,21 +277,21 @@ const TabStrip: Component<TabStripProps> = (props) => {
       <Show when={isOverflowing()}>
         <div class="relative flex-shrink-0">
           <button
-            class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
+            class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-muted-dark hover:text-shell-body hover:bg-hover-wash rounded transition-colors"
             onClick={(e) => { e.stopPropagation(); setShowDropdown(!showDropdown()); }}
             title="Show all tabs"
           >
             <ChevronDown class="w-3.5 h-3.5" />
           </button>
           <Show when={showDropdown()}>
-            <div class="absolute right-0 top-full mt-1 z-50 min-w-[160px] max-w-[280px] bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 max-h-[300px] overflow-y-auto">
+            <div class="absolute right-0 top-full mt-1 z-50 min-w-[160px] max-w-[280px] bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1 max-h-[300px] overflow-y-auto">
               <For each={props.tabs()}>
                 {(tab) => (
                   <button
                     class={`w-full px-3 py-1.5 text-left text-xs truncate transition-colors ${
                       tab.id === props.activeTabId()
                         ? 'bg-primary/20 text-primary font-medium'
-                        : 'text-zinc-300 hover:bg-zinc-700'
+                        : 'text-shell-body hover:bg-hover-wash'
                     }`}
                     onClick={() => {
                       props.onSelectTab(tab.id);
@@ -301,7 +301,7 @@ const TabStrip: Component<TabStripProps> = (props) => {
                     }}
                   >
                     {tab.title}
-                    {tab.isModified && <span class="ml-1 text-amber-500">●</span>}
+                    {tab.isModified && <span class="ml-1 text-attention">●</span>}
                   </button>
                 )}
               </For>
@@ -341,7 +341,7 @@ const CenterTabBar: Component<{
     <div
       use:droppable
       classList={{
-        'flex items-center h-9 bg-zinc-900 border-b border-zinc-800 relative': true,
+        'flex items-center h-9 bg-shell-panel border-b border-hairline relative': true,
         'bg-primary/5': droppable.isActiveDroppable,
       }}
     >
@@ -369,7 +369,7 @@ const CenterTabBar: Component<{
         {props.onPopOut && tabs().length > 0 && (
           <button
             onClick={props.onPopOut}
-            class="w-6 h-6 flex items-center justify-center rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors"
+            class="w-6 h-6 flex items-center justify-center rounded text-muted-dark hover:text-shell-body hover:bg-hover-wash transition-colors"
             title="Pop out to floating window"
           >
             <IconLayout class="w-4 h-4" />
@@ -413,7 +413,7 @@ const EdgeTabBar: Component<{
       ref={containerRef}
       data-testid={`edge-tabbar-${props.position}`}
       classList={{
-        'flex items-center h-9 bg-zinc-900 border-b border-zinc-800 relative': true,
+        'flex items-center h-9 bg-shell-panel border-b border-hairline relative': true,
         'bg-primary/5': droppable.isActiveDroppable,
       }}
     >

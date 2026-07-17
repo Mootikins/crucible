@@ -92,7 +92,7 @@ function EdgePanelResizeHandle(props: { position: EdgePanelPosition }) {
       role="separator"
       aria-orientation={isVertical() ? 'vertical' : 'horizontal'}
       classList={{
-        'relative flex-shrink-0 z-10 bg-zinc-800 hover:bg-zinc-600 active:bg-primary transition-colors after:content-[\'\'] after:absolute': true,
+        'relative flex-shrink-0 z-10 bg-control hover:bg-hover-wash active:bg-primary transition-colors after:content-[\'\'] after:absolute': true,
         'w-px cursor-col-resize after:inset-y-0 after:-inset-x-1': isVertical(),
         'h-px cursor-row-resize after:inset-x-0 after:-inset-y-1': !isVertical(),
       }}
@@ -142,8 +142,8 @@ const RibbonTabButton: Component<{
         'w-10 h-10': props.isVertical,
         'h-9 px-3': !props.isVertical,
         'opacity-40': draggable.isActiveDraggable,
-        'bg-zinc-800 text-zinc-100': highlighted() && !draggable.isActiveDraggable,
-        'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50':
+        'bg-surface-elevated text-shell-ink': highlighted() && !draggable.isActiveDraggable,
+        'text-muted-dark hover:text-shell-body hover:bg-hover-wash':
           !highlighted() && !draggable.isActiveDraggable,
       }}
       title={props.tab.title}
@@ -159,7 +159,7 @@ const RibbonTabButton: Component<{
 };
 
 const ribbonBtn =
-  'flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors';
+  'flex items-center justify-center text-muted-dark hover:text-shell-body hover:bg-hover-wash transition-colors';
 
 /** One command button on the ribbon (opens a modal/panel — Obsidian puts
  * these on the ribbon: palette, quick actions, settings gear at bottom). */
@@ -213,7 +213,7 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
       use:droppable
       data-testid={`edge-collapsed-drop-${props.position}`}
       classList={{
-        'flex bg-zinc-900/95 border-zinc-800 transition-colors': true,
+        'flex bg-surface-overlay border-hairline transition-colors': true,
         // Border faces the center/panel it grows toward.
         'flex-col border-r': props.position === 'left',
         'flex-col border-l': props.position === 'right',
@@ -227,8 +227,8 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
         data-testid={`ribbon-toggle-${props.position}`}
         classList={{
           [`${ribbonBtn} flex-none`]: true,
-          'w-10 h-9 border-b border-zinc-800': isVertical(),
-          'h-9 px-2 border-r border-zinc-800': !isVertical(),
+          'w-10 h-9 border-b border-hairline': isVertical(),
+          'h-9 px-2 border-r border-hairline': !isVertical(),
         }}
         title={panel().isCollapsed ? 'Expand panel' : 'Collapse panel'}
         onClick={() => windowActions.toggleEdgePanel(props.position)}
@@ -250,7 +250,7 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
         >
           <Plus class="w-4 h-4" />
         </RibbonCommand>
-        <div class="mx-2 my-1 h-px flex-none bg-zinc-800" />
+        <div class="mx-2 my-1 h-px flex-none bg-hairline" />
       </Show>
       {/* Outer Show keyed on the group id: a layout restore swaps group ids
           under surviving components, and solid-dnd draggable data is a
@@ -318,7 +318,7 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
           mode="edge"
           position={props.position}
         />
-        <div class="flex-1 overflow-auto p-2 text-xs text-zinc-400" data-testid={`panel-content-${activeTab()?.contentType ?? 'unknown'}`}>
+        <div class="flex-1 overflow-auto p-2 text-xs text-muted" data-testid={`panel-content-${activeTab()?.contentType ?? 'unknown'}`}>
           {(() => {
             const tab = activeTab();
             if (!tab) return <span>Select a tab</span>;
@@ -341,7 +341,7 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
   return (
     <div
       classList={{
-        'flex bg-zinc-900/95 overflow-hidden': true,
+        'flex bg-surface-overlay overflow-hidden': true,
         'flex-row': isVertical(),
         'flex-col': !isVertical(),
       }}

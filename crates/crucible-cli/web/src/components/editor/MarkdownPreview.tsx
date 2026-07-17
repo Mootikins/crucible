@@ -34,7 +34,7 @@ export const MarkdownPreview: Component<{ content: string; maxWidth?: number }> 
       <div
         class="prose prose-invert prose-sm mx-auto
           prose-headings:text-shell-ink prose-p:leading-relaxed prose-a:text-primary
-          prose-pre:bg-neutral-900 prose-pre:rounded-lg
+          prose-pre:bg-surface-base prose-pre:rounded-lg
           prose-code:before:content-none prose-code:after:content-none"
         // Readable line length setting; falls back to the classic prose column.
         style={{ 'max-width': props.maxWidth ? `${props.maxWidth}px` : '768px' }}

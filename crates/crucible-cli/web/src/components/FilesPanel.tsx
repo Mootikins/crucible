@@ -84,7 +84,7 @@ const FileItem: Component<{
       when={props.node.is_dir}
       fallback={
         <button
-          class="flex items-center w-full px-2 py-1 rounded cursor-pointer hover:bg-neutral-800 text-neutral-300 text-sm"
+          class="flex items-center w-full px-2 py-1 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-sm"
           style={{ "padding-left": paddingLeft() }}
           onClick={() => props.onFileClick(props.node.path)}
         >
@@ -95,7 +95,7 @@ const FileItem: Component<{
     >
       <Collapsible.Root open={isOpen()} onOpenChange={({ open }) => setIsOpen(open)}>
         <Collapsible.Trigger
-          class="flex items-center w-full px-2 py-1 rounded cursor-pointer hover:bg-neutral-800 text-neutral-300 text-sm"
+          class="flex items-center w-full px-2 py-1 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-sm"
           style={{ "padding-left": paddingLeft() }}
         >
           <ChevronIcon open={isOpen()} />
@@ -120,13 +120,13 @@ const FileItem: Component<{
 
 const LoadingSpinner: Component = () => (
   <div class="flex items-center gap-2 px-3 py-2">
-    <div class="w-4 h-4 border-2 border-neutral-600 border-t-neutral-300 rounded-full animate-spin" />
-    <span class="text-neutral-500 text-sm">Loading...</span>
+    <div class="w-4 h-4 border-2 border-hairline border-t-shell-body rounded-full animate-spin" />
+    <span class="text-muted-dark text-sm">Loading...</span>
   </div>
 );
 
 const ErrorMessage: Component<{ message: string }> = (props) => (
-  <div class="mx-3 my-2 px-3 py-2 text-sm text-red-400 bg-red-900/20 rounded border border-red-900/30">
+  <div class="mx-3 my-2 px-3 py-2 text-sm text-error bg-error/10 rounded border border-error/30">
     {props.message}
   </div>
 );
@@ -140,7 +140,7 @@ const FileTree: Component<{
 }> = (props) => {
   return (
     <div class="mb-4">
-      <div class="px-3 py-2 text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+      <div class="px-3 py-2 text-xs font-semibold text-muted-dark uppercase tracking-wide">
         {props.title}
       </div>
       <Show when={props.error}>
@@ -154,7 +154,7 @@ const FileTree: Component<{
           <Show
             when={props.files.length > 0}
             fallback={
-              <div class="px-3 py-2 text-neutral-500 text-sm">No files</div>
+              <div class="px-3 py-2 text-muted-dark text-sm">No files</div>
             }
           >
             <div class="px-1">
@@ -241,7 +241,7 @@ export const FilesPanel: Component = () => {
         <Show
           when={currentProject()}
            fallback={
-             <div class="px-3 py-8 text-center text-neutral-500 text-sm">
+             <div class="px-3 py-8 text-center text-muted-dark text-sm">
                Select a project to browse notes
              </div>
            }
