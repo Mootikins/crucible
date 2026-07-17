@@ -26,7 +26,6 @@ function resetToState(overrides: Partial<{
       if (overrides.edgePanels !== undefined) s.edgePanels = overrides.edgePanels as never;
       if (overrides.layout !== undefined) s.layout = overrides.layout;
       if (overrides.activePaneId !== undefined) s.activePaneId = overrides.activePaneId;
-      s.flyoutState = null;
     })
   );
 }

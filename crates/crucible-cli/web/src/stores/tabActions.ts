@@ -106,10 +106,6 @@ export function createTabActions(context: WindowStoreContext): TabActions {
             activeTabId: newActiveTabId,
           };
         }
-
-        if (s.flyoutState?.tabId === tabId) {
-          s.flyoutState = null;
-        }
       })
     );
   };
@@ -198,10 +194,6 @@ export function createTabActions(context: WindowStoreContext): TabActions {
 
         if (targetPos && s.edgePanels[targetPos].isCollapsed) {
           s.edgePanels[targetPos].isCollapsed = false;
-        }
-
-        if (s.flyoutState?.tabId === tabId) {
-          s.flyoutState = null;
         }
       })
     );

@@ -23,8 +23,6 @@ export interface LayoutActions {
   setEdgePanelCollapsed(position: EdgePanelPosition, collapsed: boolean): void;
   setEdgePanelActiveTab(position: EdgePanelPosition, tabId: string | null): void;
   setEdgePanelSize(position: EdgePanelPosition, size: number): void;
-  openFlyout(position: EdgePanelPosition, tabId: string): void;
-  closeFlyout(): void;
   getTabGroup(groupId: string): TabGroup | undefined;
   getPaneTabGroupId(paneId: string): string | null;
   findPaneById(paneId: string): ReturnType<typeof findPaneInLayout>;
@@ -57,7 +55,6 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
     setStore(
       produce((s) => {
         s.edgePanels[position].isCollapsed = !s.edgePanels[position].isCollapsed;
-        s.flyoutState = null;
       })
     );
   };
@@ -92,16 +89,6 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
         }
       })
     );
-  };
-
-  const openFlyout = (position: EdgePanelPosition, tabId: string) => {
-    setStore({
-      flyoutState: { isOpen: true, position, tabId },
-    });
-  };
-
-  const closeFlyout = () => {
-    setStore('flyoutState', null);
   };
 
   const getTabGroup = (groupId: string) => {
@@ -144,7 +131,6 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
         s.floatingWindows = restored.floatingWindows;
         s.activePaneId = null;
         s.focusedRegion = 'center';
-        s.flyoutState = null;
         s.nextZIndex = 100;
         const firstPane = findFirstPane(s.layout);
         if (firstPane) s.activePaneId = firstPane.id;
@@ -158,8 +144,6 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
     setEdgePanelCollapsed,
     setEdgePanelActiveTab,
     setEdgePanelSize,
-    openFlyout,
-    closeFlyout,
     getTabGroup,
     getPaneTabGroupId,
     findPaneById,

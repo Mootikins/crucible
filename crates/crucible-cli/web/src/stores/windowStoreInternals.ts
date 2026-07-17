@@ -257,7 +257,6 @@ export function createInitialState(): WindowState {
     floatingWindows: [],
     activePaneId: mainPaneId,
     focusedRegion: 'center',
-    flyoutState: null,
     nextZIndex: 100,
   };
 }

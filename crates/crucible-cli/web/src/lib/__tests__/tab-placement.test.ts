@@ -24,7 +24,6 @@ beforeEach(() => {
     s.floatingWindows = [];
     s.activePaneId = fresh.activePaneId;
     s.focusedRegion = 'center';
-    s.flyoutState = null;
     s.nextZIndex = 100;
   }));
   const pane = findFirstPane(windowStore.layout)!;

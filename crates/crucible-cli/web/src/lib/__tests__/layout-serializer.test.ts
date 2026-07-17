@@ -68,7 +68,6 @@ function createTestState(): WindowState {
     floatingWindows: [],
     activePaneId: 'pane-1',
     focusedRegion: 'center',
-    flyoutState: null,
     nextZIndex: 1,
   };
 }
@@ -306,7 +305,6 @@ describe('layout-serializer', () => {
       floatingWindows: [],
       activePaneId: 'pane-1',
       focusedRegion: 'center',
-      flyoutState: null,
       nextZIndex: 1,
     };
 

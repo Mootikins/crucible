@@ -66,11 +66,14 @@ async function getCenterPaneDropPoint(page: Page): Promise<{ x: number; y: numbe
 }
 
 async function ensureBottomPanelExpanded(page: Page) {
-  const collapsedStripBottom = page.locator('[data-testid="edge-collapsed-drop-bottom"]');
-  if (await collapsedStripBottom.isVisible()) {
-    await collapsedStripBottom.locator('button[title="Expand panel"]').click();
-    await page.waitForTimeout(300);
-  }
+  // The ribbon is always visible; clicking a ribbon icon expands the panel
+  // (Obsidian-style). Skip if the panel's tab bar is already showing.
+  if (await page.locator('[data-testid="edge-tabbar-bottom"]').isVisible()) return;
+  await page
+    .locator('[data-testid="edge-collapsed-drop-bottom"] [data-testid="collapsed-tab-button-bottom"]')
+    .first()
+    .click();
+  await expect(page.locator('[data-testid="edge-tabbar-bottom"]')).toBeVisible({ timeout: 3000 });
 }
 
 test.describe('Cross-zone tab drag and drop', () => {

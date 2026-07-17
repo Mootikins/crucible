@@ -148,8 +148,9 @@ test.describe('Comprehensive windowing behavior', () => {
 
     await expect(page.locator('[data-testid="edge-collapsed-drop-left"]')).toBeVisible({ timeout: 3000 });
     await expect(page.locator('[data-testid="edge-tabbar-left"]')).not.toBeVisible({ timeout: 3000 });
+    // The ribbon persists but has nothing to show for an empty panel —
+    // no tab icons, and no expand affordance (icons ARE the toggles now).
     await expect(page.locator('[data-testid="edge-collapsed-drop-left"] [data-testid="collapsed-tab-button-left"]')).toHaveCount(0, { timeout: 3000 });
-    await expect(page.locator('[data-testid="edge-collapsed-drop-left"] button[title="Expand panel"]')).toBeVisible({ timeout: 3000 });
   });
 
   test('creates a floating window at requested position', async ({ page }) => {

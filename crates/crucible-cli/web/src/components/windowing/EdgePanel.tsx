@@ -1,14 +1,9 @@
-import { Component, Show, createEffect, onCleanup } from 'solid-js';
+import { Component, Show, onCleanup } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { Key } from '@solid-primitives/keyed';
 import { createDraggable, createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import type { EdgePanelPosition, Tab } from '@/types/windowTypes';
-import {
-  IconPanelLeft,
-  IconPanelRight,
-  IconPanelBottom,
-} from './icons';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import { TabBar } from './TabBar';
 
@@ -94,10 +89,11 @@ function EdgePanelResizeHandle(props: { position: EdgePanelPosition }) {
   );
 }
 
-/** One icon in the collapsed strip. Draggable with the same payload as an
- * expanded tab row, so a collapsed pane's tabs can be dragged to any drop
- * target without expanding first. */
-const CollapsedTabButton: Component<{
+/** One icon in the ribbon. Click toggles its panel (Obsidian-style: the
+ * panel grows out of the always-visible bar); draggable with the same
+ * payload as an expanded tab row, so a panel's tabs can be dragged to any
+ * drop target without expanding first. */
+const RibbonTabButton: Component<{
   position: EdgePanelPosition;
   tab: Tab;
   groupId: string;
@@ -109,12 +105,20 @@ const CollapsedTabButton: Component<{
     { type: 'tab', tab: props.tab, sourceGroupId: props.groupId },
   );
 
-  // Mirror TabItem: an open flyout must not linger over the drag.
-  createEffect(() => {
-    if (draggable.isActiveDraggable && windowStore.flyoutState?.isOpen) {
-      windowActions.closeFlyout();
+  const handleClick = () => {
+    const panel = windowStore.edgePanels[props.position];
+    if (panel.isCollapsed) {
+      windowActions.setActiveTab(props.groupId, props.tab.id);
+      windowActions.setEdgePanelCollapsed(props.position, false);
+    } else if (props.isActive) {
+      windowActions.setEdgePanelCollapsed(props.position, true);
+    } else {
+      windowActions.setActiveTab(props.groupId, props.tab.id);
     }
-  });
+  };
+
+  const highlighted = () =>
+    props.isActive && !windowStore.edgePanels[props.position].isCollapsed;
 
   return (
     <button
@@ -126,15 +130,12 @@ const CollapsedTabButton: Component<{
         'w-10 h-10': props.isVertical,
         'h-9 px-3': !props.isVertical,
         'opacity-40': draggable.isActiveDraggable,
-        'bg-zinc-800 text-zinc-100': props.isActive && !draggable.isActiveDraggable,
+        'bg-zinc-800 text-zinc-100': highlighted() && !draggable.isActiveDraggable,
         'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50':
-          !props.isActive && !draggable.isActiveDraggable,
+          !highlighted() && !draggable.isActiveDraggable,
       }}
       title={props.tab.title}
-      onClick={() => {
-        windowActions.setActiveTab(props.groupId, props.tab.id);
-        windowActions.openFlyout(props.position, props.tab.id);
-      }}
+      onClick={handleClick}
     >
       {props.tab.icon ? (
         <props.tab.icon class="w-4 h-4" />
@@ -145,7 +146,9 @@ const CollapsedTabButton: Component<{
   );
 };
 
-const CollapsedEdgeStrip: Component<{ position: EdgePanelPosition }> = (props) => {
+/** The always-visible icon bar at the window edge (Obsidian's ribbon):
+ * panels grow out of it, so the toggles never move or disappear. */
+const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
   const panel = () => windowStore.edgePanels[props.position];
   const group = () => windowStore.tabGroups[panel().tabGroupId];
   const tabs = () => group()?.tabs ?? [];
@@ -163,33 +166,13 @@ const CollapsedEdgeStrip: Component<{ position: EdgePanelPosition }> = (props) =
       data-testid={`edge-collapsed-drop-${props.position}`}
       classList={{
         'flex bg-zinc-900/95 border-zinc-800 transition-colors': true,
-        // Border faces the center, matching the expanded panel's separator.
+        // Border faces the center/panel it grows toward.
         'flex-col border-r': props.position === 'left',
         'flex-col border-l': props.position === 'right',
         'flex-row border-t': !isVertical(),
         'bg-primary/20': droppable.isActiveDroppable,
       }}
     >
-      {/* Expand control keeps a fixed home: the h-9 top slot mirrors the tab
-          bar row it replaces on vertical panels; on the bottom strip it pins
-          to the right end so it doesn't drift as tabs come and go. */}
-      {/* Toggle glyphs are w-4 everywhere (header, strips, tab bars) —
-          Lucide's bare default is 24px and reads as a different control. */}
-      <button
-        type="button"
-        data-testid={`edge-expand-${props.position}`}
-        classList={{
-          'flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors': true,
-          'w-10 h-9 border-b border-zinc-800': isVertical(),
-          'order-last ml-auto h-9 px-2': !isVertical(),
-        }}
-        title="Expand panel"
-        onClick={() => windowActions.toggleEdgePanel(props.position)}
-      >
-        {props.position === 'left' && <IconPanelLeft class="w-4 h-4" />}
-        {props.position === 'right' && <IconPanelRight class="w-4 h-4" />}
-        {props.position === 'bottom' && <IconPanelBottom class="w-4 h-4" />}
-      </button>
       {/* Outer Show keyed on the group id: a layout restore swaps group ids
           under surviving components, and solid-dnd draggable data is a
           registration-time snapshot — without a remount every drag would
@@ -201,7 +184,7 @@ const CollapsedEdgeStrip: Component<{ position: EdgePanelPosition }> = (props) =
         {(groupId) => (
           <Key each={tabs()} by={(t) => t.id}>
             {(tab) => (
-              <CollapsedTabButton
+              <RibbonTabButton
                 position={props.position}
                 tab={tab()}
                 groupId={groupId}
@@ -227,48 +210,65 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
     return g.tabs.find((t) => t.id === g.activeTabId) ?? null;
   };
 
-  return (
-    <Show
-      when={!isCollapsed()}
-      fallback={<CollapsedEdgeStrip position={props.position} />}
-    >
+  const expandedPanel = () => (
+    <>
+      {(props.position === 'right' || props.position === 'bottom') && (
+        <EdgePanelResizeHandle position={props.position} />
+      )}
+      {/* No border here — the ribbon and handle lines are the separators. */}
       <div
-        classList={{
-          'flex bg-zinc-900/95 border-zinc-800 overflow-hidden': true,
-          'flex-row': isVertical(),
-          'flex-col': !isVertical(),
-        }}
+        class="flex flex-col overflow-hidden"
+        style={
+          isVertical()
+            ? { width: panel().width ? `${panel().width}px` : '250px', 'min-width': '0' }
+            : { height: panel().height ? `${panel().height}px` : '200px', 'min-height': '0' }
+        }
       >
-        {props.position === 'right' && <EdgePanelResizeHandle position={props.position} />}
-        {props.position === 'bottom' && <EdgePanelResizeHandle position={props.position} />}
-        {/* No border here — the resize handle's 1px line is the separator. */}
-        <div
-          class="flex flex-col overflow-hidden"
-          style={
-            isVertical()
-              ? { width: panel().width ? `${panel().width}px` : '250px', 'min-width': '0' }
-              : { height: panel().height ? `${panel().height}px` : '200px', 'min-height': '0' }
-          }
-        >
-          <TabBar
-            mode="edge"
-            position={props.position}
-          />
-          <div class="flex-1 overflow-auto p-2 text-xs text-zinc-400" data-testid={`panel-content-${activeTab()?.contentType ?? 'unknown'}`}>
-            {(() => {
-              const tab = activeTab();
-              if (!tab) return <span>Select a tab</span>;
-              const panel = getGlobalRegistry().get(tab.contentType);
-              if (panel) {
-                const panelProps = (tab.metadata ?? {}) as Record<string, unknown>;
-                return <Dynamic component={panel.component} {...panelProps} />;
-              }
-              return <div>{tab.title} content</div>;
-            })()}
-          </div>
+        <TabBar
+          mode="edge"
+          position={props.position}
+        />
+        <div class="flex-1 overflow-auto p-2 text-xs text-zinc-400" data-testid={`panel-content-${activeTab()?.contentType ?? 'unknown'}`}>
+          {(() => {
+            const tab = activeTab();
+            if (!tab) return <span>Select a tab</span>;
+            const panelDef = getGlobalRegistry().get(tab.contentType);
+            if (panelDef) {
+              const panelProps = (tab.metadata ?? {}) as Record<string, unknown>;
+              return <Dynamic component={panelDef.component} {...panelProps} />;
+            }
+            return <div>{tab.title} content</div>;
+          })()}
         </div>
-        {props.position === 'left' && <EdgePanelResizeHandle position={props.position} />}
       </div>
-    </Show>
+      {props.position === 'left' && <EdgePanelResizeHandle position={props.position} />}
+    </>
+  );
+
+  // Ribbon at the window edge, always; the panel grows out of it toward the
+  // center. Left: [ribbon][panel][handle]; right: [handle][panel][ribbon];
+  // bottom: [handle][panel] over [ribbon].
+  return (
+    <div
+      classList={{
+        'flex bg-zinc-900/95 overflow-hidden': true,
+        'flex-row': isVertical(),
+        'flex-col': !isVertical(),
+      }}
+    >
+      {props.position === 'left' && <EdgeRibbon position="left" />}
+      <Show when={!isCollapsed()}>
+        <div
+          classList={{
+            'flex overflow-hidden': true,
+            'flex-row': isVertical(),
+            'flex-col': !isVertical(),
+          }}
+        >
+          {expandedPanel()}
+        </div>
+      </Show>
+      {props.position !== 'left' && <EdgeRibbon position={props.position} />}
+    </div>
   );
 };

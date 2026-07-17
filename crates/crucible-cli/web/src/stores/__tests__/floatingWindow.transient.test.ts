@@ -12,7 +12,6 @@ beforeEach(() => {
       s.edgePanels = fresh.edgePanels;
       s.floatingWindows = [];
       s.activePaneId = fresh.activePaneId;
-      s.flyoutState = null;
       s.nextZIndex = 100;
     }),
   );

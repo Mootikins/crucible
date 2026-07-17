@@ -17,11 +17,6 @@ function resetToState(overrides: Partial<{
   layout: LayoutNode;
   activePaneId: string | null;
   focusedRegion: 'left' | 'right' | 'bottom' | 'center';
-  flyoutState: {
-    isOpen: boolean;
-    position: EdgePanelPosition;
-    tabId: string | null;
-  } | null;
 }>) {
   setStore(
     produce((s) => {
@@ -30,8 +25,6 @@ function resetToState(overrides: Partial<{
       if (overrides.layout !== undefined) s.layout = overrides.layout;
       if (overrides.activePaneId !== undefined) s.activePaneId = overrides.activePaneId;
       if (overrides.focusedRegion !== undefined) s.focusedRegion = overrides.focusedRegion;
-      if (overrides.flyoutState !== undefined) s.flyoutState = overrides.flyoutState as any;
-      if (!('flyoutState' in overrides)) s.flyoutState = null;
     })
   );
 }
@@ -348,42 +341,6 @@ describe('moveTab: same-group reorder', () => {
   });
 });
 
-describe('moveTab: flyout guard', () => {
-  beforeEach(() => {
-    resetToState({
-      tabGroups: {
-        'group-1': makeTabGroup('group-1', [makeTab('center-1')]),
-        'left-group': makeTabGroup('left-group', [
-          { id: 'left-1', title: 'Explorer', contentType: 'tool' },
-          { id: 'left-2', title: 'Search', contentType: 'tool' },
-        ], 'left-1'),
-        'right-group': makeTabGroup('right-group', [], null),
-        'bottom-group': makeTabGroup('bottom-group', [], null),
-      },
-      edgePanels: {
-        left: makeEdgePanel('left', 'left-group'),
-        right: makeEdgePanel('right', 'right-group'),
-        bottom: makeEdgePanel('bottom', 'bottom-group'),
-      },
-      layout: simpleLayout('pane-1', 'group-1'),
-      activePaneId: 'pane-1',
-      focusedRegion: 'center',
-      flyoutState: { isOpen: true, position: 'left', tabId: 'left-1' },
-    });
-  });
-
-  it('dismisses flyout when moved tab matches flyoutState.tabId', () => {
-    expect(windowStore.flyoutState).not.toBeNull();
-    windowActions.moveTab('left-group', 'group-1', 'left-1');
-    expect(windowStore.flyoutState).toBeNull();
-  });
-
-  it('preserves flyout when moved tab does not match', () => {
-    windowActions.moveTab('left-group', 'group-1', 'left-2');
-    expect(windowStore.flyoutState).not.toBeNull();
-  });
-});
-
 describe('removeTab: edge-aware', () => {
   beforeEach(() => {
     resetToState({
@@ -407,7 +364,6 @@ describe('removeTab: edge-aware', () => {
       layout: splitLayout('pane-1', 'group-1', 'pane-2', 'group-2'),
       activePaneId: 'pane-1',
       focusedRegion: 'center',
-      flyoutState: { isOpen: true, position: 'left', tabId: 'left-1' },
     });
   });
 
@@ -447,16 +403,6 @@ describe('removeTab: edge-aware', () => {
     expect(windowStore.tabGroups['group-1']!.activeTabId).toBe('center-2');
   });
 
-  it('dismisses flyout when removed tab matches flyoutState.tabId', () => {
-    expect(windowStore.flyoutState).not.toBeNull();
-    windowActions.removeTab('left-group', 'left-1');
-    expect(windowStore.flyoutState).toBeNull();
-  });
-
-  it('preserves flyout when removed tab does not match', () => {
-    windowActions.removeTab('right-group', 'right-1');
-    expect(windowStore.flyoutState).not.toBeNull();
-  });
 });
 
 describe('setEdgePanelActiveTab', () => {

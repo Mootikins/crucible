@@ -3,7 +3,6 @@ export { SplitPane } from './SplitPane';
 export { Pane } from './Pane';
 export { TabBar } from './TabBar';
 export { EdgePanel } from './EdgePanel';
-export { FlyoutPanel } from './FlyoutPanel';
 export { FloatingWindow } from './FloatingWindow';
 export { StatusBar } from './StatusBar';
 export { MinimizedBar } from './MinimizedBar';

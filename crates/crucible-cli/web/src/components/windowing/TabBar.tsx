@@ -69,19 +69,11 @@ interface TabItemProps {
   onClick: () => void;
   onClose: (e: MouseEvent) => void;
   testId?: string;
-  onDragStart?: () => void;
 }
 
 const TabItem: Component<TabItemProps> = (props) => {
   const draggable = createDraggable(props.draggableId, props.draggableData);
   const Icon = props.tab.icon;
-
-  // Fire onDragStart callback when this tab becomes the active draggable
-  createEffect(() => {
-    if (draggable.isActiveDraggable) {
-      props.onDragStart?.();
-    }
-  });
 
   return (
     <div
@@ -450,7 +442,6 @@ const EdgeTabBar: Component<{
             onClick={() => windowActions.setActiveTab(groupId(), tab().id)}
             onClose={() => confirmTabClose(tab()) && windowActions.removeTab(groupId(), tab().id)}
             testId={`edge-tab-${props.position}-${tab().id}`}
-            onDragStart={() => { if (windowStore.flyoutState?.isOpen) windowActions.closeFlyout(); }}
           />
         )}
       />

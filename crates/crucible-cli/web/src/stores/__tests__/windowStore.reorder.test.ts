@@ -23,7 +23,6 @@ function resetToState(overrides: Partial<{
       if (overrides.layout !== undefined) s.layout = overrides.layout;
       if (overrides.activePaneId !== undefined) s.activePaneId = overrides.activePaneId;
       if (overrides.focusedRegion !== undefined) s.focusedRegion = overrides.focusedRegion;
-      s.flyoutState = null;
     })
   );
 }

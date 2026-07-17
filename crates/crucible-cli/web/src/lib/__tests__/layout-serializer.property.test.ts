@@ -99,7 +99,6 @@ const arbWindowState = fc
         ),
         activePaneId: fc.option(fc.uuid(), { freq: 2 }),
         focusedRegion: fc.constantFrom('center', 'left', 'right', 'bottom'),
-        flyoutState: fc.constant(null),
         nextZIndex: fc.integer({ min: 1, max: 1000 }),
       })
       .map((state) => state as WindowState);
@@ -171,7 +170,6 @@ describe('layout-serializer property tests', () => {
             floatingWindows: [],
             activePaneId: null,
             focusedRegion: 'center',
-            flyoutState: null,
             nextZIndex: 1,
           };
 

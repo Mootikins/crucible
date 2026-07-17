@@ -68,17 +68,30 @@ describe('1px separators with widened grab zones', () => {
   });
 });
 
-describe('stable panel toggle placement', () => {
-  it('collapsed strip anchors the expand button in a top h-9 slot on vertical panels', () => {
+describe('ribbon chrome (Obsidian-style persistent edge bars)', () => {
+  it('the ribbon renders unconditionally — panels grow out of an always-visible bar', () => {
     const source = readFileSync(resolve(__dirname, '../EdgePanel.tsx'), 'utf-8');
-    expect(source).toMatch(/'w-10 h-9 border-b border-zinc-800':\s*isVertical\(\)/);
-    // Old design pinned it to the bottom with mt-auto — must not come back.
-    expect(source).not.toMatch(/mt-auto/);
+    // Left ribbon before the panel, right/bottom ribbons after it, all
+    // OUTSIDE the collapsed-state <Show> so they never disappear.
+    expect(source).toMatch(/\{props\.position === 'left' && <EdgeRibbon position="left" \/>\}/);
+    expect(source).toMatch(/\{props\.position !== 'left' && <EdgeRibbon position=\{props\.position\} \/>\}/);
+    // The old expand-slot button is gone: ribbon icons ARE the toggles.
+    expect(source).not.toMatch(/edge-expand-/);
+    expect(source).not.toMatch(/mt-auto|order-last ml-auto/);
   });
 
-  it('bottom strip pins the expand button to the right end so it does not drift with tab count', () => {
+  it('ribbon icons toggle their panel: expand + activate, collapse on active click', () => {
     const source = readFileSync(resolve(__dirname, '../EdgePanel.tsx'), 'utf-8');
-    expect(source).toMatch(/'order-last ml-auto h-9 px-2':\s*!isVertical\(\)/);
+    expect(source).toMatch(/setEdgePanelCollapsed\(props\.position, false\)/);
+    expect(source).toMatch(/setEdgePanelCollapsed\(props\.position, true\)/);
+    expect(source).not.toMatch(/openFlyout/);
+  });
+
+  it('ribbon borders face the panel/center for each position', () => {
+    const source = readFileSync(resolve(__dirname, '../EdgePanel.tsx'), 'utf-8');
+    expect(source).toMatch(/'flex-col border-r':\s*props\.position === 'left'/);
+    expect(source).toMatch(/'flex-col border-l':\s*props\.position === 'right'/);
+    expect(source).toMatch(/'flex-row border-t':\s*!isVertical\(\)/);
   });
 
   it('expanded edge tab bars keep an in-place collapse button', () => {
@@ -93,12 +106,8 @@ describe('stable panel toggle placement', () => {
   });
 
   it('every panel toggle glyph is w-4 (Lucide bare default is a jarring 24px)', () => {
-    const edgePanel = readFileSync(resolve(__dirname, '../EdgePanel.tsx'), 'utf-8');
     const tabBar = readFileSync(resolve(__dirname, '../TabBar.tsx'), 'utf-8');
-    // No bare panel-toggle icons anywhere in the chrome.
-    expect(edgePanel).not.toMatch(/<IconPanel(Left|Right|Bottom)(Close)? \/>/);
     expect(tabBar).not.toMatch(/<IconPanel(Left|Right|Bottom)(Close)? \/>/);
-    expect(edgePanel).toMatch(/<IconPanelLeft class="w-4 h-4" \/>/);
     expect(tabBar).toMatch(/<IconPanelLeftClose class="w-4 h-4" \/>/);
   });
 });

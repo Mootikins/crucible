@@ -16,10 +16,5 @@ export interface WindowState {
   floatingWindows: FloatingWindow[];
   activePaneId: string | null;
   focusedRegion: FocusedRegion;
-  flyoutState: {
-    isOpen: boolean;
-    position: EdgePanelPosition;
-    tabId: string | null;
-  } | null;
   nextZIndex: number;
 }

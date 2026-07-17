@@ -7,7 +7,6 @@ import {
 } from '@thisbeyond/solid-dnd';
 import { CenterTiling } from './CenterTiling';
 import { EdgePanel } from './EdgePanel';
-import { FlyoutPanel } from './FlyoutPanel';
 import { FloatingWindow } from './FloatingWindow';
 import { StatusBar } from './StatusBar';
 import { MinimizedBar } from './MinimizedBar';
@@ -337,8 +336,6 @@ function InnerManager() {
     } else if (action === 'focusChatInput') {
       const el = document.querySelector<HTMLTextAreaElement>('textarea[data-testid="chat-input"]');
       el?.focus();
-    } else if (action === 'closeOverlay') {
-      windowActions.closeFlyout();
     } else if (action === 'newSession') {
       window.dispatchEvent(new CustomEvent('crucible:new-session'));
     } else if (action === 'toggleRightPanel') {
@@ -355,10 +352,6 @@ function InnerManager() {
 
   onMount(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        windowActions.closeFlyout();
-        return;
-      }
       const action = matchShortcut(e);
       if (action) {
         e.preventDefault();
@@ -382,7 +375,6 @@ function InnerManager() {
           <EdgePanel position="bottom" />
         </div>
         <EdgePanel position="right" />
-        <FlyoutPanel />
       </div>
       <StatusBar />
       <div class="fixed inset-0 z-30 pointer-events-none">

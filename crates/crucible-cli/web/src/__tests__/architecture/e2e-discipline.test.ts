@@ -47,7 +47,6 @@ describe('e2e architecture discipline', () => {
     'center-resize.spec.ts',
     'cross-zone-dnd.spec.ts',
     'empty-state.spec.ts',
-    'flyout-panel.spec.ts',
     'panel-placeholders.spec.ts',
     'session-lifecycle.spec.ts',
     'tab-reorder.spec.ts',
