@@ -20,6 +20,7 @@ vi.mock('../file-actions', async (importOriginal) => ({
 import {
   noteExcerpt,
   noteAbsolutePath,
+  kilnRoot,
   fetchNotePreview,
   openNoteInEditor,
   clearNotePreviewCache,
@@ -29,6 +30,27 @@ import {
 beforeEach(() => {
   vi.clearAllMocks();
   clearNotePreviewCache();
+});
+
+describe('kilnRoot', () => {
+  it('strips a trailing .crucible config dir to the kiln root', () => {
+    expect(kilnRoot('/home/moot/crucible/docs/.crucible')).toBe(
+      '/home/moot/crucible/docs'
+    );
+  });
+
+  it('leaves a kiln root untouched (no-op once the registry reports the root)', () => {
+    expect(kilnRoot('/home/moot/crucible/docs')).toBe('/home/moot/crucible/docs');
+  });
+
+  it('tolerates a trailing slash', () => {
+    expect(kilnRoot('/vault/.crucible/')).toBe('/vault');
+  });
+
+  it('does not strip a .crucible that is a note name segment, only the config dir', () => {
+    // A directory literally named ".crucible" mid-path is not the config dir suffix.
+    expect(kilnRoot('/vault/.crucible/notes')).toBe('/vault/.crucible/notes');
+  });
 });
 
 describe('noteExcerpt', () => {

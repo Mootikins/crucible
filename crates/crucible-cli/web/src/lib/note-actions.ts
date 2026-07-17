@@ -53,6 +53,18 @@ export async function openNoteInEditor(name: string, kiln?: string): Promise<voi
 }
 
 /**
+ * A kiln's notes live at the kiln root, not inside its `.crucible/` config
+ * directory. The project registry currently reports a project's kiln as the
+ * `.crucible` config dir (e.g. `/vault/.crucible`), which is not where notes
+ * live — listing notes there returns nothing. Normalize to the kiln root (the
+ * parent of `.crucible`). No-op once the registry reports the root directly.
+ */
+export function kilnRoot(kilnPath: string): string {
+  const trimmed = kilnPath.replace(/\/$/, '');
+  return trimmed.replace(/\/\.crucible$/, '');
+}
+
+/**
  * Note paths from the daemon are kiln-relative in normal operation, but the
  * file API addresses files absolutely. Join relative paths onto the kiln.
  */

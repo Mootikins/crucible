@@ -6,7 +6,7 @@ import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
 
 import { listNotes } from '@/lib/api';
-import { noteAbsolutePath } from '@/lib/note-actions';
+import { kilnRoot, noteAbsolutePath } from '@/lib/note-actions';
 import type { FileEntry } from '@/lib/types';
 import {
   FileText,
@@ -200,7 +200,7 @@ export const FilesPanel: Component = () => {
       setLoadingKiln(true);
       setKilnError(null);
 
-      const kilnPath = project.kilns[0].path;
+      const kilnPath = kilnRoot(project.kilns[0].path);
       listNotes(kilnPath)
         .then((notes) => {
           const entries: FileEntry[] = notes.map((n) => ({
