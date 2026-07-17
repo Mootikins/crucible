@@ -783,12 +783,16 @@ verbose = false
 
     /// Returns the kiln path where sessions should be stored.
     ///
-    /// Uses `session_kiln` if explicitly set, otherwise `crucible_home()` (~/.crucible).
-    /// Sessions are user-scoped — they shouldn't be scattered across kiln directories.
+    /// Uses `session_kiln` if explicitly set, otherwise falls back to
+    /// `kiln_path` — matching the field's documented contract. Sessions are
+    /// knowledge (sessions-as-notes feed the graph), so they belong to the
+    /// configured kiln. The old fallback was `crucible_home()`, which made
+    /// the daemon open `~/.crucible` (the global CONFIG directory) as a
+    /// kiln and list it as one.
     pub fn session_storage_path(&self) -> std::path::PathBuf {
         self.session_kiln
             .clone()
-            .unwrap_or_else(super::crucible_home)
+            .unwrap_or_else(|| self.kiln_path.clone())
     }
 }
 

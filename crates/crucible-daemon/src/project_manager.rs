@@ -41,8 +41,41 @@ impl ProjectManager {
             )));
         }
 
-        let (name, kilns) = self.read_project_metadata(&canonical);
+        // `.crucible` directories are Crucible data/config dirs (kiln or
+        // project metadata), never projects themselves. Registering one
+        // produces nonsense like a project named ".crucible" with a nested
+        // ".crucible/.crucible" kiln.
+        if canonical.file_name().is_some_and(|n| n == ".crucible") {
+            return Err(ProjectError::InvalidPath(format!(
+                "{} is a Crucible data directory, not a project",
+                canonical.display()
+            )));
+        }
+
         let repository = self.detect_repository(&canonical);
+
+        // A project is the repo, not whichever subdirectory the CLI happened
+        // to run from: registering from inside a repo resolves to the repo
+        // root (worktrees resolve to their own worktree root). An explicit
+        // `.crucible/project.toml` at the invocation dir opts a subdirectory
+        // out and keeps it a project of its own.
+        let canonical = match repository.as_ref() {
+            Some(repo)
+                if repo.root != canonical
+                    && repo.root.is_dir()
+                    && read_project_config(&canonical).is_none() =>
+            {
+                debug!(
+                    path = %canonical.display(),
+                    root = %repo.root.display(),
+                    "Resolving project registration to repository root"
+                );
+                repo.root.clone()
+            }
+            _ => canonical,
+        };
+
+        let (name, kilns) = self.read_project_metadata(&canonical);
 
         let mut project = Project::new(canonical.clone(), name).with_kilns(kilns);
         if let Some(repo) = repository {
@@ -221,6 +254,8 @@ impl ProjectManager {
                     } else {
                         path.join(&k.path)
                     };
+                    // Relative joins leave "./" segments in the stored path.
+                    let kiln_path = kiln_path.canonicalize().unwrap_or(kiln_path);
 
                     ProjectKiln {
                         path: kiln_path,
@@ -229,11 +264,13 @@ impl ProjectManager {
                 })
                 .collect()
         } else {
-            // Fallback: if .crucible dir exists, use it as a kiln
-            let crucible_dir = path.join(".crucible");
-            if crucible_dir.is_dir() {
+            // Fallback: a `.crucible` dir marks the PROJECT DIR as a kiln
+            // root — the kiln path is the directory containing `.crucible`,
+            // never the config dir itself (clients list notes/sessions from
+            // the root; pointing them at `.crucible` yields empty trees).
+            if path.join(".crucible").is_dir() {
                 vec![ProjectKiln {
-                    path: crucible_dir,
+                    path: path.to_path_buf(),
                     name: None,
                 }]
             } else {
@@ -265,7 +302,19 @@ impl ProjectManager {
         let content = fs::read_to_string(&self.storage_path)?;
         let projects: Vec<Project> = serde_json::from_str(&content)?;
 
-        for project in projects {
+        for mut project in projects {
+            // Heal legacy entries: kiln paths used to be persisted as the
+            // `.crucible` CONFIG dir instead of the kiln root, which gave
+            // clients empty note trees. Normalize on load so old registry
+            // files self-correct.
+            for kiln in &mut project.kilns {
+                if kiln.path.file_name().is_some_and(|n| n == ".crucible") {
+                    if let Some(parent) = kiln.path.parent() {
+                        kiln.path = parent.to_path_buf();
+                    }
+                }
+                kiln.path = kiln.path.canonicalize().unwrap_or_else(|_| kiln.path.clone());
+            }
             if project.path.is_dir() {
                 self.projects.insert(project.path.clone(), project);
             } else {
@@ -356,6 +405,45 @@ path = "./notes"
     }
 
     #[test]
+    fn register_rejects_crucible_data_dirs() {
+        let (tmp, manager) = test_manager();
+        let data_dir = tmp.path().join(".crucible");
+        fs::create_dir(&data_dir).unwrap();
+
+        let err = manager.register(&data_dir).unwrap_err();
+        assert!(matches!(err, ProjectError::InvalidPath(_)));
+        assert!(manager.list().is_empty());
+    }
+
+    #[test]
+    fn register_from_repo_subdir_resolves_to_repo_root() {
+        let (tmp, manager) = test_manager();
+        let repo = tmp.path().join("repo");
+        let subdir = repo.join("crates").join("some-crate");
+        fs::create_dir_all(&subdir).unwrap();
+        gix::init(&repo).unwrap();
+
+        let project = manager.register(&subdir).unwrap();
+        assert_eq!(project.path, repo.canonicalize().unwrap());
+        assert_eq!(project.name, "repo");
+        assert_eq!(manager.list().len(), 1);
+    }
+
+    #[test]
+    fn register_repo_subdir_with_own_project_config_stays_a_project() {
+        let (tmp, manager) = test_manager();
+        let repo = tmp.path().join("repo");
+        let subdir = repo.join("standalone");
+        let crucible_dir = subdir.join(".crucible");
+        fs::create_dir_all(&crucible_dir).unwrap();
+        gix::init(&repo).unwrap();
+        fs::write(crucible_dir.join("project.toml"), "[[kilns]]\npath = \"./notes\"\n").unwrap();
+
+        let project = manager.register(&subdir).unwrap();
+        assert_eq!(project.path, subdir.canonicalize().unwrap());
+    }
+
+    #[test]
     fn unregister() {
         let (tmp, manager) = test_manager();
         let project_dir = tmp.path().join("to-remove");
@@ -418,7 +506,7 @@ path = "./notes"
     }
 
     #[test]
-    fn list_filters_crucible_subdirs() {
+    fn crucible_subdir_never_becomes_a_project() {
         let tmp = TempDir::new().unwrap();
         let storage = tmp.path().join("projects.json");
         let project_dir = tmp.path().join("my-project");
@@ -429,7 +517,10 @@ path = "./notes"
         manager.register(&project_dir).unwrap();
         assert_eq!(manager.list().len(), 1);
 
-        manager.register(&crucible_dir).unwrap();
+        // Registering the `.crucible` data dir is rejected outright, so the
+        // list never grows a bogus ".crucible" project.
+        let err = manager.register(&crucible_dir).unwrap_err();
+        assert!(matches!(err, ProjectError::InvalidPath(_)));
         let list = manager.list();
         assert_eq!(list.len(), 1);
         assert!(!list[0].path.ends_with(".crucible"));

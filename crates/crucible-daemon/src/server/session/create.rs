@@ -64,9 +64,13 @@ pub(crate) async fn handle_session_create(
         .unwrap_or("internal")
         .to_string();
 
-    let project_path = workspace.as_ref().unwrap_or(&kiln);
-    if let Err(e) = pm.register_if_missing(project_path) {
-        tracing::warn!(path = %project_path.display(), error = %e, "Failed to auto-register project");
+    // Only a real workspace registers as a project. Falling back to the
+    // kiln here used to register kiln/config dirs (e.g. ~/.crucible) as
+    // "projects" — a kiln is where knowledge goes, not where work happens.
+    if let Some(project_path) = workspace.as_ref() {
+        if let Err(e) = pm.register_if_missing(project_path) {
+            tracing::warn!(path = %project_path.display(), error = %e, "Failed to auto-register project");
+        }
     }
 
     match sm
