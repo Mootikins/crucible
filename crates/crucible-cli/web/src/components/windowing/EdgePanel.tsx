@@ -213,7 +213,7 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
       use:droppable
       data-testid={`edge-collapsed-drop-${props.position}`}
       classList={{
-        'flex bg-surface-overlay border-hairline transition-colors': true,
+        'flex bg-shell-bg border-hairline transition-colors': true,
         // Border faces the center/panel it grows toward.
         'flex-col border-r': props.position === 'left',
         'flex-col border-l': props.position === 'right',
@@ -341,7 +341,7 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
   return (
     <div
       classList={{
-        'flex bg-surface-overlay overflow-hidden': true,
+        'flex bg-shell-bg overflow-hidden': true,
         'flex-row': isVertical(),
         'flex-col': !isVertical(),
       }}
