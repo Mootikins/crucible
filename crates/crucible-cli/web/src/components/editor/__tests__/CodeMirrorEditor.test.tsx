@@ -48,8 +48,10 @@ describe('CodeMirrorEditor — programmatic sync vs user edits (bug 5)', () => {
 
 describe('getLanguageExtension — language coverage (bug 7)', () => {
   it.each([
-    ['/kiln/note.md', 'markdown'],
-    ['/kiln/note.markdown', 'markdown'],
+    // Markdown is wrapped in yamlFrontmatter so a leading `---` block
+    // parses as YAML — the outer language carries that name.
+    ['/kiln/note.md', 'yaml-frontmatter'],
+    ['/kiln/note.markdown', 'yaml-frontmatter'],
     ['/src/main.rs', 'rust'],
     ['/src/index.js', 'javascript'],
     ['/src/App.jsx', 'javascript'],

@@ -18,6 +18,9 @@ const NOTE = {
   name: 'Live Note',
   path: `${HARNESS_KILN}/Live Note.md`,
   content: [
+    '---',
+    'tags: [kiln, live]',
+    '---',
     '# Live Heading',
     '',
     'Some **bold** prose with `inline_code` and *emphasis*.',
@@ -52,6 +55,11 @@ test.describe('Editor live preview (markdown default)', () => {
     await expect(content).not.toContainText('# Live Heading');
     // Aliased wikilink shows only its display text.
     await expect(page.locator('.cm-wikilink')).toHaveText('the other note');
+    // Frontmatter stays raw mono YAML (delimiters visible, no prose styling).
+    await expect(page.locator('.cm-lp-frontmatter')).toHaveCount(3);
+    await expect(content).toContainText('tags: [kiln, live]');
+    // Prose wraps instead of scrolling horizontally.
+    await expect(content).toHaveClass(/cm-lineWrapping/);
     // The markdown table renders as a real HTML table.
     const table = page.getByTestId('lp-table');
     await expect(table.locator('th').first()).toHaveText('Col A');

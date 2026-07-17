@@ -155,6 +155,23 @@ function buildDecorations(view: EditorView): DecorationSet {
           return;
         }
 
+        // YAML frontmatter (via yamlFrontmatter's outer parser): keep it
+        // raw — mono, dimmed, yaml-highlighted — until a Properties-style
+        // UI replaces it. Skip descending so markdown styling never
+        // applies inside.
+        if (name === 'Frontmatter') {
+          const first = doc.lineAt(nodeRef.from).number;
+          // The node ends AT the next line's start — don't style that line.
+          const endLine = doc.lineAt(nodeRef.to);
+          const last = endLine.from === nodeRef.to ? endLine.number - 1 : endLine.number;
+          for (let n = first; n <= last; n++) {
+            decorations.push(
+              Decoration.line({ class: 'cm-lp-frontmatter' }).range(doc.line(n).from),
+            );
+          }
+          return false;
+        }
+
         if (name === 'ListMark') {
           decorations.push(
             Decoration.mark({ class: 'cm-lp-bullet' }).range(nodeRef.from, nodeRef.to),
@@ -300,6 +317,11 @@ const livePreviewTheme = EditorView.baseTheme({
     fontStyle: 'italic',
   },
   '.cm-lp-bullet': { color: 'var(--color-primary, #e0653a)' },
+  '.cm-lp-frontmatter': {
+    fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+    fontSize: '0.85em',
+    background: 'rgba(255, 255, 255, 0.03)',
+  },
   '.cm-lp-table': { cursor: 'text', padding: '2px 0' },
   '.cm-lp-table table': {
     borderCollapse: 'collapse',
@@ -322,6 +344,8 @@ export function livePreview(opts?: { maxLineWidth?: number }): Extension {
   return [
     // Scope the prose font to live-preview editors only.
     EditorView.editorAttributes.of({ class: 'cm-lp' }),
+    // Prose wraps; horizontal scrolling is a source-mode behavior.
+    EditorView.lineWrapping,
     // Readable line length (Obsidian-style): center a prose column instead
     // of running lines the full window width. Inline style so it is plainly
     // inspectable (and testable) on .cm-content.

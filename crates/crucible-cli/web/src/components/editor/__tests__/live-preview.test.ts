@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { EditorView } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+import { yamlFrontmatter } from '@codemirror/lang-yaml';
 import { livePreview } from '../live-preview';
 
 const DOC = [
@@ -126,6 +127,45 @@ describe('live preview: styled everywhere except the construct at the cursor', (
     cursorAt(view, TABLE_DOC.indexOf('one'));
     expect(view.dom.querySelector('[data-testid="lp-table"]')).toBeNull();
     expect(text(view)).toContain('| one   | two   |');
+  });
+
+  it('wraps long prose lines (live preview only)', () => {
+    const view = track(makeView());
+    expect(view.contentDOM.classList.contains('cm-lineWrapping')).toBe(true);
+  });
+
+  it('frontmatter stays raw mono yaml — no markdown styling inside', () => {
+    // Trailing blank line: the cursor parks there without touching (and
+    // thus revealing) the heading.
+    const FM_DOC = ['---', 'tags: [kiln]', 'title: A **note**', '---', '', '# Title', ''].join(
+      '\n',
+    );
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    const view = track(
+      new EditorView({
+        state: EditorState.create({
+          doc: FM_DOC,
+          // Production language stack for markdown files.
+          extensions: [
+            yamlFrontmatter({ content: markdown({ base: markdownLanguage }) }),
+            livePreview(),
+          ],
+        }),
+        parent,
+      }),
+    );
+    cursorAt(view, FM_DOC.length);
+    // Every frontmatter line carries the mono line class, delimiters included.
+    const fmLines = view.dom.querySelectorAll('.cm-lp-frontmatter');
+    expect(fmLines.length).toBe(4);
+    // Delimiters stay visible; the bold inside frontmatter is NOT styled prose.
+    expect(text(view)).toContain('---');
+    expect(text(view)).toContain('**note**');
+    expect(view.dom.querySelector('.cm-lp-frontmatter .cm-lp-strong')).toBeNull();
+    // The document body below still gets live-preview styling.
+    expect(view.dom.querySelector('.cm-lp-h1')).not.toBeNull();
+    expect(text(view)).not.toContain('# Title');
   });
 
   it('without the extension nothing is hidden (source mode)', () => {

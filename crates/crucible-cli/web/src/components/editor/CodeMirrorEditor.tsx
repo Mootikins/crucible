@@ -11,6 +11,7 @@ import { EditorState, StateEffect, Extension, Annotation } from '@codemirror/sta
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+import { yamlFrontmatter } from '@codemirror/lang-yaml';
 import { javascript } from '@codemirror/lang-javascript';
 import { rust } from '@codemirror/lang-rust';
 import { vim } from '@replit/codemirror-vim';
@@ -27,7 +28,9 @@ export const getLanguageExtension = (path: string): LanguageSupport | null => {
     case 'markdown':
       // GFM base (strikethrough, tables, task lists) — the commonmark
       // default has no Strikethrough node for live preview to style.
-      return markdown({ base: markdownLanguage });
+      // yamlFrontmatter parses a leading `---` block as real YAML instead
+      // of letting it misparse as headings/hr.
+      return yamlFrontmatter({ content: markdown({ base: markdownLanguage }) });
     case 'js':
     case 'mjs':
     case 'cjs':
