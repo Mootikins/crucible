@@ -208,7 +208,7 @@ export const WikilinkHoverPreview: Component = () => {
       {(s) => (
         <div
           data-testid="wikilink-preview"
-          class="fixed z-[80] rounded-md border border-white/10 bg-surface-overlay px-3 py-2 text-xs text-muted shadow-lg"
+          class="fixed z-[80] rounded-md border border-hairline bg-surface-overlay px-3 py-2 text-xs text-muted shadow-lg cru-anim-rise"
           style={{ left: `${cardPos().left}px`, top: `${cardPos().top}px` }}
         >
           <Show when={s.kind === 'missing' && s} fallback={<>Loading preview…</>}>

@@ -377,7 +377,7 @@ const CenterTabBar: Component<{
         )}
       </div>
       {droppable.isActiveDroppable && (
-        <div class="absolute inset-x-0 bottom-0 h-0.5 bg-primary" />
+        <div class="absolute inset-x-0 bottom-0 h-0.5 bg-primary cru-anim-fade" />
       )}
     </div>
   );
@@ -439,7 +439,7 @@ const EdgeTabBar: Component<{
         )}
       />
       {droppable.isActiveDroppable && (
-        <div class="absolute inset-x-0 bottom-0 h-0.5 bg-primary" />
+        <div class="absolute inset-x-0 bottom-0 h-0.5 bg-primary cru-anim-fade" />
       )}
     </div>
   );

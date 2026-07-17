@@ -143,7 +143,7 @@ export const InboxPanel: Component = () => {
     const session = rowProps.session;
     const status = () => sessionStatus(session, attentionStore.get(session.id));
     return (
-      <div class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-white/5 mb-1.5 hover:bg-surface-elevated hover:border-primary/40 transition-colors group">
+      <div class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-hairline mb-1.5 hover:bg-surface-elevated hover:border-primary/40 transition-colors group">
         <span class={`w-2 h-2 rounded-full flex-none ${status().dot}`} />
         <button
           type="button"
@@ -287,7 +287,7 @@ export const InboxPanel: Component = () => {
                   class={`font-mono text-[10px] border rounded-md px-2.5 py-1 cursor-pointer transition-colors ${
                     clearArmed()
                       ? 'border-error text-error'
-                      : 'border-white/10 text-muted-dark hover:text-error hover:border-error/50'
+                      : 'border-hairline text-muted-dark hover:text-error hover:border-error/50'
                   }`}
                   onBlur={() => setClearArmed(false)}
                   onClick={() => void clearArchived()}

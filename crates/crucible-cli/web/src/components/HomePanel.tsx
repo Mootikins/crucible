@@ -118,13 +118,13 @@ export const HomePanel: Component = () => {
           <button
             type="button"
             onClick={() => shellActions.goEdit()}
-            class="flex items-center gap-2 border border-white/10 text-shell-body rounded-[9px] px-4 py-2.5 text-[12.5px] cursor-pointer hover:bg-surface-elevated transition-colors"
+            class="flex items-center gap-2 border border-hairline text-shell-body rounded-[9px] px-4 py-2.5 text-[12.5px] cursor-pointer hover:bg-surface-elevated transition-colors"
           >
             ✎ open editor
           </button>
         </div>
 
-        <div class="bg-shell-panel border border-white/[0.07] rounded-[10px] px-4 py-3.5 overflow-y-auto">
+        <div class="bg-shell-panel border border-hairline rounded-[10px] px-4 py-3.5 overflow-y-auto">
           <CardLabel>RESUME</CardLabel>
           <Show
             when={resumeSessions().length > 0}
@@ -136,7 +136,7 @@ export const HomePanel: Component = () => {
                   <button
                     type="button"
                     onClick={() => void sessionCtx.selectSession(session.id).catch(() => {})}
-                    class="flex items-center gap-2 px-2.5 py-2 rounded-[7px] border border-white/5 cursor-pointer hover:border-primary/50 transition-colors text-left"
+                    class="flex items-center gap-2 px-2.5 py-2 rounded-[7px] border border-hairline cursor-pointer hover:border-primary/50 transition-colors text-left"
                   >
                     <span class={`w-[7px] h-[7px] rounded-full flex-none ${sessionDot(session)}`} />
                     <span class="flex-1 min-w-0">
@@ -154,7 +154,7 @@ export const HomePanel: Component = () => {
           </Show>
         </div>
 
-        <div class="bg-shell-panel border border-white/[0.07] rounded-[10px] px-4 py-3.5 overflow-y-auto">
+        <div class="bg-shell-panel border border-hairline rounded-[10px] px-4 py-3.5 overflow-y-auto">
           <CardLabel>RECENT NOTES</CardLabel>
           <Show
             when={recentNotes().length > 0}
@@ -186,13 +186,13 @@ export const HomePanel: Component = () => {
           </Show>
         </div>
 
-        <div class="bg-shell-panel border border-white/[0.07] rounded-[10px] px-4 py-3.5 flex flex-col min-h-[180px]">
+        <div class="bg-shell-panel border border-hairline rounded-[10px] px-4 py-3.5 flex flex-col min-h-[180px]">
           <CardLabel>GRAPH</CardLabel>
           <button
             type="button"
             onClick={() => shellActions.goEdit()}
             title="Graph view is coming — opens the editor"
-            class="flex-1 border border-dashed border-white/10 rounded-lg relative overflow-hidden cursor-pointer hover:border-primary/50 transition-colors"
+            class="flex-1 border border-dashed border-hairline rounded-lg relative overflow-hidden cursor-pointer hover:border-primary/50 transition-colors"
           >
             <span class="absolute left-[28%] top-[30%] w-2.5 h-2.5 rounded-full bg-shell-ink" />
             <span class="absolute left-[55%] top-[22%] w-[7px] h-[7px] rounded-full bg-muted" />

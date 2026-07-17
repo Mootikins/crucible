@@ -11,6 +11,7 @@ import { FloatingWindow } from './FloatingWindow';
 import { StatusBar } from './StatusBar';
 import { MinimizedBar } from './MinimizedBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
+import { IconButton } from '@/components/ui/IconButton';
 import type { DragSource, DropTarget } from '@/types/windowTypes';
 import { getPendingReorder, clearPendingReorder } from './TabBar';
 import {
@@ -81,7 +82,7 @@ function HeaderBar() {
   };
 
   return (
-    <div class="flex items-center h-10 gap-3 bg-shell-bg border-b border-white/[0.07] px-3.5">
+    <div class="flex items-center h-10 gap-3 bg-shell-bg border-b border-hairline px-3.5">
       <button
         type="button"
         title="Home"
@@ -125,7 +126,7 @@ function HeaderBar() {
         class="relative flex items-center gap-1.5 px-2.5 py-1 rounded-md cursor-pointer text-xs border transition-colors hover:bg-surface-elevated"
         classList={{
           'text-primary border-primary/50': surface() === 'inbox',
-          'text-muted border-white/[0.08]': surface() !== 'inbox',
+          'text-muted border-hairline': surface() !== 'inbox',
         }}
       >
         ▤ Inbox
@@ -138,16 +139,14 @@ function HeaderBar() {
       <button
         type="button"
         title="Command palette (Ctrl+P)"
-        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/[0.08] text-xs text-muted cursor-pointer hover:bg-surface-elevated hover:text-shell-ink transition-colors"
+        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-hairline text-xs text-muted cursor-pointer hover:bg-surface-elevated hover:text-shell-ink transition-colors"
         onClick={() => window.dispatchEvent(new CustomEvent('crucible:open-command-palette'))}
       >
         <IconZap class="w-3 h-3" />
         <kbd class="font-mono text-[10px]">Ctrl+P</kbd>
       </button>
       <div class="flex items-center gap-0.5">
-        <button
-          type="button"
-          class="p-1.5 text-muted-dark hover:text-shell-ink hover:bg-surface-elevated rounded transition-colors"
+        <IconButton
           title={edgePanels().left.isCollapsed ? 'Show Left Panel' : 'Hide Left Panel'}
           onClick={() => windowActions.toggleEdgePanel('left')}
         >
@@ -156,10 +155,8 @@ function HeaderBar() {
           ) : (
             <IconPanelLeftClose class="w-4 h-4" />
           )}
-        </button>
-        <button
-          type="button"
-          class="p-1.5 text-muted-dark hover:text-shell-ink hover:bg-surface-elevated rounded transition-colors"
+        </IconButton>
+        <IconButton
           title={edgePanels().bottom.isCollapsed ? 'Show Bottom Panel' : 'Hide Bottom Panel'}
           onClick={() => windowActions.toggleEdgePanel('bottom')}
         >
@@ -168,10 +165,8 @@ function HeaderBar() {
           ) : (
             <IconPanelBottomClose class="w-4 h-4" />
           )}
-        </button>
-        <button
-          type="button"
-          class="p-1.5 text-muted-dark hover:text-shell-ink hover:bg-surface-elevated rounded transition-colors"
+        </IconButton>
+        <IconButton
           title={edgePanels().right.isCollapsed ? 'Show Right Panel' : 'Hide Right Panel'}
           onClick={() => windowActions.toggleEdgePanel('right')}
         >
@@ -180,16 +175,14 @@ function HeaderBar() {
           ) : (
             <IconPanelRightClose class="w-4 h-4" />
           )}
-        </button>
-        <div class="w-px h-4 bg-white/10 mx-1" />
-        <button
-          type="button"
-          class="p-1.5 text-muted-dark hover:text-shell-ink hover:bg-surface-elevated rounded transition-colors"
+        </IconButton>
+        <div class="w-px h-4 bg-hairline mx-1" />
+        <IconButton
           title="Open Settings"
           onClick={() => openPanelTab('settings')}
         >
           <IconSettings class="w-4 h-4" />
-        </button>
+        </IconButton>
       </div>
     </div>
   );

@@ -176,8 +176,8 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
       open={props.open}
       onOpenChange={props.onOpenChange}
       label="Omnibox"
-      class="fixed left-1/2 top-24 z-[120] w-[min(680px,92vw)] -translate-x-1/2 overflow-hidden rounded-xl border border-white/[0.12] bg-surface-elevated/95 shadow-2xl backdrop-blur"
-      overlayClassName="fixed inset-0 z-[110] bg-black/65"
+      class="fixed left-1/2 top-24 z-[120] w-[min(680px,92vw)] -translate-x-1/2 overflow-hidden rounded-xl border border-hairline-strong bg-surface-elevated/95 shadow-2xl backdrop-blur cru-anim-pop"
+      overlayClassName="fixed inset-0 z-[110] bg-black/65 cru-anim-fade"
       shouldFilter={false}
       loop
     >
@@ -185,7 +185,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
         value={query()}
         onValueChange={setQuery}
         placeholder="Go anywhere… ( > command · [[ note )"
-        class="w-full border-b border-white/[0.08] bg-transparent px-4 py-3 text-sm text-shell-ink outline-none placeholder:text-muted-dark"
+        class="w-full border-b border-hairline bg-transparent px-4 py-3 text-sm text-shell-ink outline-none placeholder:text-muted-dark"
       />
 
       <Command.List class="max-h-[60vh] overflow-y-auto p-1.5">
@@ -222,7 +222,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
                         </Show>
                       </div>
                       <Show when={item.shortcut}>
-                        <kbd class="rounded border border-white/10 bg-surface-overlay px-1.5 py-0.5 text-[10px] text-muted">
+                        <kbd class="rounded border border-hairline bg-surface-overlay px-1.5 py-0.5 text-[10px] text-muted">
                           {item.shortcut}
                         </kbd>
                       </Show>
@@ -235,7 +235,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
         </Show>
       </Command.List>
 
-      <div class="flex gap-3.5 border-t border-white/[0.08] bg-shell-panel px-4 py-2 font-mono text-[10.5px] text-muted-dark">
+      <div class="flex gap-3.5 border-t border-hairline bg-shell-panel px-4 py-2 font-mono text-[10.5px] text-muted-dark">
         <span><span class="text-primary">&gt;</span> command</span>
         <span><span class="text-primary">[[</span> note</span>
         <span><span class="text-primary">◆</span> session</span>

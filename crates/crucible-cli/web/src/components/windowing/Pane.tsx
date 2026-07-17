@@ -224,7 +224,7 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       </Show>
 
       <Show when={centerDroppable.isActiveDroppable}>
-        <div class="absolute inset-0 bg-primary/20 z-10 pointer-events-none" />
+        <div class="absolute inset-0 bg-primary/20 z-10 pointer-events-none cru-anim-fade" />
       </Show>
 
       <div

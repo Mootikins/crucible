@@ -111,15 +111,18 @@
 /* ── Motion primitives ──────────────────────────────────────────────
  * Mount (enter) animations for surfaces that used to pop into place.
  * Exits stay instant — snappy, and Solid's <Show> unmounts immediately.
- * Durations: fast 150ms (small popups), base 200ms (windows/panels). */
+ * Durations: fast 150ms (small popups), base 200ms (windows/panels).
+ * Keyframes animate the individual scale/translate properties, NOT
+ * transform, so they compose with Tailwind transform utilities
+ * (e.g. the palette's -translate-x-1/2 centering). */
 @keyframes cru-pop-in {
-  from { opacity: 0; transform: scale(0.98); }
-  to { opacity: 1; transform: scale(1); }
+  from { opacity: 0; scale: 0.98; }
+  to { opacity: 1; scale: 1; }
 }
 
 @keyframes cru-rise-in {
-  from { opacity: 0; transform: translateY(3px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; translate: 0 3px; }
+  to { opacity: 1; translate: 0 0; }
 }
 
 @keyframes cru-fade-in {
@@ -127,9 +130,28 @@
   to { opacity: 1; }
 }
 
+/* Edge panels grow out of their ribbon: slide in from the owning edge. */
+@keyframes cru-slide-in-l {
+  from { opacity: 0; translate: -6px 0; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+@keyframes cru-slide-in-r {
+  from { opacity: 0; translate: 6px 0; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+@keyframes cru-slide-in-b {
+  from { opacity: 0; translate: 0 6px; }
+  to { opacity: 1; translate: 0 0; }
+}
+
 .cru-anim-pop { animation: cru-pop-in 150ms ease-out; }
 .cru-anim-rise { animation: cru-rise-in 150ms ease-out; }
 .cru-anim-fade { animation: cru-fade-in 200ms ease-out; }
+.cru-anim-slide-l { animation: cru-slide-in-l 150ms ease-out; }
+.cru-anim-slide-r { animation: cru-slide-in-r 150ms ease-out; }
+.cru-anim-slide-b { animation: cru-slide-in-b 150ms ease-out; }
 
 /* Reduced motion support for accessibility */
 @media (prefers-reduced-motion: reduce) {

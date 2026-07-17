@@ -44,7 +44,7 @@ export const EditorWithPreview: Component<{
     setMode(defaultMode());
   });
 
-  const modeButton = 'rounded border border-white/10 bg-surface-elevated/90 p-1.5 text-muted hover:text-shell-ink hover:border-primary/50 transition-colors';
+  const modeButton = 'rounded border border-hairline bg-surface-elevated/90 p-1.5 text-muted hover:text-shell-ink hover:border-primary/50 transition-colors';
 
   return (
     <div class="relative h-full w-full">

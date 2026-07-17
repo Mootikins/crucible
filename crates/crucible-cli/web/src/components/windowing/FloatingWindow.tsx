@@ -177,7 +177,7 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
   return (
     <div
       data-window-id={w().id}
-      class="absolute flex flex-col bg-surface-overlay border border-hairline-strong rounded-md shadow-lg"
+      class="absolute flex flex-col bg-surface-overlay border border-hairline-strong rounded-md shadow-lg cru-anim-pop"
       style={
         w().isMaximized
           ? {

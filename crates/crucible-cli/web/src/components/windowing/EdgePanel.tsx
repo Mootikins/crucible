@@ -353,6 +353,10 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
             'flex overflow-hidden': true,
             'flex-row': isVertical(),
             'flex-col': !isVertical(),
+            // Panels grow out of their ribbon — slide in from the owning edge.
+            'cru-anim-slide-l': props.position === 'left',
+            'cru-anim-slide-r': props.position === 'right',
+            'cru-anim-slide-b': props.position === 'bottom',
           }}
         >
           {expandedPanel()}

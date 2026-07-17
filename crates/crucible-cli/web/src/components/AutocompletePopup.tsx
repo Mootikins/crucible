@@ -9,7 +9,7 @@ interface AutocompletePopupProps {
 
 export const AutocompletePopup: Component<AutocompletePopupProps> = (props) => {
   return (
-    <div class="absolute left-0 right-0 top-full mt-1 z-50 max-h-52 overflow-y-auto rounded-lg border border-hairline bg-surface-elevated shadow-xl">
+    <div class="absolute left-0 right-0 top-full mt-1 z-50 max-h-52 overflow-y-auto rounded-lg border border-hairline bg-surface-elevated shadow-xl cru-anim-rise">
       <For each={props.items}>
         {(item, index) => (
           <button

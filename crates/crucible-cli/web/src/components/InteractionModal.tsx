@@ -18,10 +18,10 @@ export const InteractionModal: Component<Props> = (props) => {
       {(request) => (
         <div class="fixed inset-0 z-[100] flex items-center justify-center">
           {/* Backdrop */}
-          <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div class="absolute inset-0 bg-black/60 backdrop-blur-sm cru-anim-fade" />
 
           {/* Modal card */}
-          <div class="relative z-10 w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto">
+          <div class="relative z-10 w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto cru-anim-pop">
             <InteractionHandler request={request()} onRespond={props.onRespond} />
           </div>
         </div>
