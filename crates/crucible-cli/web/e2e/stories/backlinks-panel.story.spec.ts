@@ -78,9 +78,7 @@ test.describe('Backlinks panel', () => {
     await story.step(page, 'panel populated');
 
     // Visual: the whole panel — header, linked section, unlinked section.
-    await expect(panel).toHaveScreenshot('backlinks-panel.png', {
-      maxDiffPixelRatio: 0.02,
-    });
+    await expect(panel).toHaveScreenshot('backlinks-panel.png');
 
     // 4. One-click link insertion rewrites the open buffer. The unfocused
     // editor's cursor sits at 0, touching the fresh link, so live preview
@@ -107,9 +105,7 @@ test.describe('Backlinks panel', () => {
     await story.step(page, 'mention converted to wikilink');
 
     // Visual: the rewritten buffer with the new wikilink decorated.
-    await expect(page.locator('.cm-editor')).toHaveScreenshot('backlinks-after-link.png', {
-      maxDiffPixelRatio: 0.02,
-    });
+    await expect(page.locator('.cm-editor')).toHaveScreenshot('backlinks-after-link.png');
 
     // 5. Linked mention opens the source note in the editor.
     await linkedRow.click();

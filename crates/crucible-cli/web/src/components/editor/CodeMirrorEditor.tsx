@@ -61,16 +61,21 @@ export const CodeMirrorEditor: Component<{
   vimMode?: boolean;
   /** Obsidian-style live preview (markdown files only). */
   livePreview?: boolean;
+  /** Readable line length in px for live preview (0/undefined = full). */
+  lineWidth?: number;
   /** Switch to the rendered preview (Mod-Shift-E). */
   onTogglePreview?: () => void;
 }> = (props) => {
   let view: EditorView | undefined;
 
   const createExtensions = (): Extension[] => {
+    const ext0 = props.path.split('.').pop()?.toLowerCase() ?? '';
+    const liveMode = !!props.livePreview && (ext0 === 'md' || ext0 === 'markdown');
     const extensions: Extension[] = [
       // vim() must precede other keymaps so modal keys win while active.
       ...(props.vimMode ? [vim()] : []),
-      lineNumbers(),
+      // Live preview reads as prose, like the rendered view — no gutter.
+      ...(liveMode ? [] : [lineNumbers()]),
       highlightActiveLine(),
       highlightSpecialChars(),
       drawSelection(),
@@ -139,8 +144,8 @@ export const CodeMirrorEditor: Component<{
     if (props.onFollowLink && (ext === 'md' || ext === 'markdown')) {
       extensions.push(wikilinkNavigation((target) => props.onFollowLink?.(target)));
     }
-    if (props.livePreview && (ext === 'md' || ext === 'markdown')) {
-      extensions.push(livePreview());
+    if (liveMode) {
+      extensions.push(livePreview({ maxLineWidth: props.lineWidth }));
     }
 
     return extensions;
@@ -184,6 +189,7 @@ export const CodeMirrorEditor: Component<{
     props.path;
     props.vimMode;
     props.livePreview;
+    props.lineWidth;
     if (view) {
       view.dispatch({
         effects: StateEffect.reconfigure.of(createExtensions()),

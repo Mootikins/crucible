@@ -317,10 +317,21 @@ const livePreviewTheme = EditorView.baseTheme({
   },
 });
 
-export function livePreview(): Extension {
+export function livePreview(opts?: { maxLineWidth?: number }): Extension {
+  const width = opts?.maxLineWidth ?? 0;
   return [
     // Scope the prose font to live-preview editors only.
     EditorView.editorAttributes.of({ class: 'cm-lp' }),
+    // Readable line length (Obsidian-style): center a prose column instead
+    // of running lines the full window width. Inline style so it is plainly
+    // inspectable (and testable) on .cm-content.
+    ...(width > 0
+      ? [
+          EditorView.contentAttributes.of({
+            style: `max-width:${width}px;margin:0 auto;`,
+          }),
+        ]
+      : []),
     livePreviewPlugin,
     tableField,
     livePreviewTheme,

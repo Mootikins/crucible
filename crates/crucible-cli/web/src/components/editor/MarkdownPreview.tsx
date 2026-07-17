@@ -9,7 +9,7 @@ import { renderMarkdownAsync } from '@/lib/markdown';
 import { openNoteInEditor, stripFrontmatter } from '@/lib/note-actions';
 import { statusBarStore } from '@/stores/statusBarStore';
 
-export const MarkdownPreview: Component<{ content: string }> = (props) => {
+export const MarkdownPreview: Component<{ content: string; maxWidth?: number }> = (props) => {
   const [html] = createResource(
     () => props.content,
     (content) => renderMarkdownAsync(stripFrontmatter(content)),
@@ -32,10 +32,12 @@ export const MarkdownPreview: Component<{ content: string }> = (props) => {
       onClick={handleClick}
     >
       <div
-        class="prose prose-invert prose-sm mx-auto max-w-3xl
+        class="prose prose-invert prose-sm mx-auto
           prose-headings:text-shell-ink prose-p:leading-relaxed prose-a:text-primary
           prose-pre:bg-neutral-900 prose-pre:rounded-lg
           prose-code:before:content-none prose-code:after:content-none"
+        // Readable line length setting; falls back to the classic prose column.
+        style={{ 'max-width': props.maxWidth ? `${props.maxWidth}px` : '768px' }}
         // eslint-disable-next-line solid/no-innerhtml
         innerHTML={html() ?? ''}
       />

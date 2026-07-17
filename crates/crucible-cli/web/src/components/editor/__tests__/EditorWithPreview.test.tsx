@@ -137,6 +137,59 @@ describe('EditorWithPreview', () => {
   });
 });
 
+describe('reading-view parity (live mode)', () => {
+  it('live preview has no line-number gutter; source mode does', async () => {
+    const { getByTestId, container } = render(() => (
+      <EditorWithPreview content="text" path="/kiln/note.md" onChange={noop} />
+    ));
+    expect(container.querySelector('.cm-lineNumbers')).toBeNull();
+
+    fireEvent.click(getByTestId('mode-toggle'));
+    await waitFor(() => {
+      expect(container.querySelector('.cm-lineNumbers')).not.toBeNull();
+    });
+  });
+
+  it('applies the readable line width to the live-preview content', () => {
+    const { container } = render(() => (
+      <EditorWithPreview content="text" path="/kiln/note.md" onChange={noop} lineWidth={500} />
+    ));
+    const content = container.querySelector('.cm-content') as HTMLElement;
+    expect(content.style.maxWidth).toBe('500px');
+  });
+
+  it('initialMode="reading" opens markdown as the rendered view', async () => {
+    const { container, queryByTestId } = render(() => (
+      <EditorWithPreview
+        content={'# H\n\nBody.'}
+        path="/kiln/note.md"
+        onChange={noop}
+        initialMode="reading"
+      />
+    ));
+    await waitFor(() => {
+      expect(queryByTestId('markdown-preview')).not.toBeNull();
+    });
+    expect(container.querySelector('.cm-editor')).toBeNull();
+  });
+
+  it('reading view honors the readable line width', async () => {
+    const { getByTestId } = render(() => (
+      <EditorWithPreview
+        content="Body."
+        path="/kiln/note.md"
+        onChange={noop}
+        initialMode="reading"
+        lineWidth={640}
+      />
+    ));
+    await waitFor(() => {
+      const prose = getByTestId('markdown-preview').firstElementChild as HTMLElement;
+      expect(prose.style.maxWidth).toBe('640px');
+    });
+  });
+});
+
 describe('save keybinds', () => {
   it('Mod-Enter saves (off a wikilink)', async () => {
     const onSave = vi.fn();

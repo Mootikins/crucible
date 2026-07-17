@@ -17,6 +17,9 @@ import { PanelShell } from './PanelShell';
 
 interface FileViewerPanelProps {
   filePath?: string;
+  /** Mode markdown opens in ('reading' | 'live' | 'source') — hover
+   * popovers set this via tab metadata. */
+  initialMode?: string;
 }
 
 const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
@@ -135,6 +138,12 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
                 void openNoteInEditor(target, statusBarStore.kilnPath() ?? undefined)
               }
               vimMode={settings.editor.vimMode}
+              lineWidth={settings.editor.maxLineWidth}
+              initialMode={
+                props.initialMode === 'reading' || props.initialMode === 'live' || props.initialMode === 'source'
+                  ? props.initialMode
+                  : undefined
+              }
             />
           )}
         </Show>

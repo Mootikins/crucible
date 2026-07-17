@@ -62,9 +62,7 @@ test.describe('Editor markdown preview', () => {
     await expect(preview).not.toContainText('# Preview Heading');
     await story.step(page, 'rendered preview');
 
-    await expect(preview).toHaveScreenshot('editor-markdown-preview.png', {
-      maxDiffPixelRatio: 0.02,
-    });
+    await expect(preview).toHaveScreenshot('editor-markdown-preview.png');
 
     // Back to the source editor.
     await page.getByTestId('preview-toggle').click();

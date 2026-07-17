@@ -79,23 +79,20 @@ test.describe('Editor wikilink navigation', () => {
     await expect(page.getByTestId('wikilink-preview')).toBeHidden();
     await expect(page.locator('[data-window-id]')).toHaveCount(0, { timeout: 5000 });
     await story.step(page, 'wikilink decorated');
-    await expect(page.locator('.cm-editor')).toHaveScreenshot('editor-wikilink-decorated.png', {
-      maxDiffPixelRatio: 0.02,
-    });
+    await expect(page.locator('.cm-editor')).toHaveScreenshot('editor-wikilink-decorated.png');
 
-    // 2. Hover spawns a transient floating editor window (Hover Editor).
+    // 2. Hover spawns a transient floating window (Hover Editor) opening
+    // in the reading view by default.
     await link.hover();
     const popover = page.locator('[data-window-id]');
     await expect(popover).toBeVisible({ timeout: 5000 });
     await expect(popover).toContainText('Other Note');
-    await expect(popover.locator('.cm-content')).toContainText(
+    await expect(popover.getByTestId('markdown-preview')).toContainText(
       'The target of the wikilink jump.',
       { timeout: 5000 },
     );
     await story.step(page, 'hover popover');
-    await expect(popover).toHaveScreenshot('editor-wikilink-hover-preview.png', {
-      maxDiffPixelRatio: 0.02,
-    });
+    await expect(popover).toHaveScreenshot('editor-wikilink-hover-preview.png');
 
     // Park the pointer away so the popover closes before the click-through.
     await page.mouse.move(4, 400);

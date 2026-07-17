@@ -24,6 +24,11 @@ export interface EditorSettings {
   vimMode: boolean;
   /** Autosave dirty buffers after this many idle seconds (0 = off). */
   autosaveSeconds: number;
+  /** Readable line length for editing/reading views, px (0 = full width). */
+  maxLineWidth: number;
+  /** What hover popovers open as: rendered reading view, live preview, or
+   * raw source. */
+  hoverMode: 'reading' | 'live' | 'source';
   /** Show the save affordance (dirty dot + Save) in the status bar. */
   showSaveButton: boolean;
 }
@@ -46,6 +51,9 @@ export const defaultSettings: AppSettings = {
     vimMode: true,
     autosaveSeconds: 0,
     showSaveButton: true,
+    // Matches the reading view's prose column (max-w-3xl).
+    maxLineWidth: 768,
+    hoverMode: 'reading',
   },
 };
 

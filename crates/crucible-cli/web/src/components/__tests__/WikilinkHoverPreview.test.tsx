@@ -74,6 +74,8 @@ describe('WikilinkHoverPreview (Hover Editor popovers)', () => {
     const tab = hoverTab(win);
     expect(tab?.contentType).toBe('file');
     expect(tab?.metadata?.filePath).toBe('/kiln/notes/rust.md');
+    // Popovers default to the fully rendered reading view (configurable).
+    expect(tab?.metadata?.initialMode).toBe('reading');
     // Popover, not workspace state: never part of the persisted layout.
     expect(fetchNotePreviewMock).toHaveBeenCalledWith('rust', undefined);
   });

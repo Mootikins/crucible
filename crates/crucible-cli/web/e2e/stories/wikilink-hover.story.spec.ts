@@ -105,21 +105,18 @@ test.describe('Chat wikilink hover previews', () => {
     await expect(anchor).toHaveText('Kiln Note');
     await story.step(page, 'wikilink in assistant message');
 
-    // 2. Hover → a transient floating editor window titled with the note.
+    // 2. Hover → a transient floating window titled with the note, opening
+    // in the configured hover mode (default: rendered reading view).
     await anchor.hover();
     const popover = page.locator('[data-window-id]');
     await expect(popover).toBeVisible({ timeout: 5000 });
     await expect(popover).toContainText('Kiln Note');
-    // Real editor inside (live preview renders the H1 styled, no `#`).
-    await expect(popover.locator('.cm-content')).toContainText(
-      'Stored knowledge that grounds the agent.',
-      { timeout: 5000 },
-    );
+    const reading = popover.getByTestId('markdown-preview');
+    await expect(reading.locator('h1')).toHaveText('Kiln Note', { timeout: 5000 });
+    await expect(reading).toContainText('Stored knowledge that grounds the agent.');
     await expect(popover.getByTestId('float-pin')).toBeVisible();
     await story.step(page, 'hover popover open');
-    await expect(popover).toHaveScreenshot('chat-wikilink-hover-preview.png', {
-      maxDiffPixelRatio: 0.02,
-    });
+    await expect(popover).toHaveScreenshot('chat-wikilink-hover-preview.png');
 
     // 3. Hovering away closes the popover.
     await page.getByTestId('chat-input').hover();

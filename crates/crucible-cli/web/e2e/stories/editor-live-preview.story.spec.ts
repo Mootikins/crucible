@@ -58,18 +58,14 @@ test.describe('Editor live preview (markdown default)', () => {
     await expect(table.locator('td').first()).toHaveText('one');
     await expect(content).not.toContainText('| ----- |');
     await story.step(page, 'live preview styled');
-    await expect(page.locator('.cm-editor')).toHaveScreenshot('editor-live-preview.png', {
-      maxDiffPixelRatio: 0.02,
-    });
+    await expect(page.locator('.cm-editor')).toHaveScreenshot('editor-live-preview.png');
 
     // 2. Clicking into the inline code reveals ONLY it — bold stays styled.
     await page.locator('.cm-lp-code').click();
     await expect(content).toContainText('`inline_code`');
     await expect(content).not.toContainText('**bold**');
     await story.step(page, 'cursor reveals inline code');
-    await expect(page.locator('.cm-editor')).toHaveScreenshot('editor-live-reveal.png', {
-      maxDiffPixelRatio: 0.02,
-    });
+    await expect(page.locator('.cm-editor')).toHaveScreenshot('editor-live-reveal.png');
 
     // 3. Clicking the rendered table drops the cursor in and reveals raw
     // markdown for editing.

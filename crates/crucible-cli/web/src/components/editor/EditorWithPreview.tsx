@@ -26,15 +26,22 @@ export const EditorWithPreview: Component<{
   onSave?: () => void;
   onFollowLink?: (target: string) => void;
   vimMode?: boolean;
+  /** Mode a markdown file opens in (hover popovers pass the configured
+   * hover mode; default live). Non-markdown is always source. */
+  initialMode?: EditorMode;
+  /** Readable line length in px (0 = full width). */
+  lineWidth?: number;
 }> = (props) => {
   const isMarkdown = () => isMarkdownPath(props.path);
-  const [mode, setMode] = createSignal<EditorMode>(isMarkdown() ? 'live' : 'source');
+  const defaultMode = (): EditorMode =>
+    isMarkdown() ? (props.initialMode ?? 'live') : 'source';
+  const [mode, setMode] = createSignal<EditorMode>(defaultMode());
 
   // A different file starts back in its default mode — reading is a
   // per-look choice, and markdown always leads with prose.
   createEffect(() => {
     props.path;
-    setMode(isMarkdown() ? 'live' : 'source');
+    setMode(defaultMode());
   });
 
   const modeButton = 'rounded border border-white/10 bg-surface-elevated/90 p-1.5 text-muted hover:text-shell-ink hover:border-primary/50 transition-colors';
@@ -72,7 +79,7 @@ export const EditorWithPreview: Component<{
       </Show>
       <Show
         when={mode() !== 'reading' || !isMarkdown()}
-        fallback={<MarkdownPreview content={props.content} />}
+        fallback={<MarkdownPreview content={props.content} maxWidth={props.lineWidth} />}
       >
         <CodeMirrorEditor
           content={props.content}
@@ -82,6 +89,7 @@ export const EditorWithPreview: Component<{
           onFollowLink={props.onFollowLink}
           vimMode={props.vimMode}
           livePreview={isMarkdown() && mode() === 'live'}
+          lineWidth={props.lineWidth}
           onTogglePreview={isMarkdown() ? () => setMode('reading') : undefined}
         />
       </Show>

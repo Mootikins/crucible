@@ -105,8 +105,6 @@ test.describe('WS-204 syntax-aware editing (markdown)', () => {
     // language layer produced styled tokens (cm-line spans exist).
     await expect(page.locator('.cm-line').first()).toBeVisible();
     await story.step(page, 'markdown highlighted');
-    await expect(page.locator('.cm-editor')).toHaveScreenshot('editor-markdown.png', {
-      maxDiffPixelRatio: 0.02,
-    });
+    await expect(page.locator('.cm-editor')).toHaveScreenshot('editor-markdown.png');
   });
 });

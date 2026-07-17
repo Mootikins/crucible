@@ -563,6 +563,48 @@ const EditorSettingsSection: Component = () => {
         />
       </SettingRow>
       <SettingRow
+        label="Readable line width"
+        description="Max prose column width in px for editing and reading views. 0 = full width."
+      >
+        <input
+          type="number"
+          min="0"
+          max="3000"
+          step="10"
+          value={settings.editor.maxLineWidth}
+          onChange={(e) =>
+            updateSetting(
+              'editor',
+              'maxLineWidth',
+              Math.max(0, Number(e.currentTarget.value) || 0),
+            )
+          }
+          class="w-24 rounded border border-white/10 bg-surface-base px-2 py-1 text-sm"
+          data-testid="settings-editor-line-width"
+        />
+      </SettingRow>
+      <SettingRow
+        label="Hover window mode"
+        description="What wikilink hover windows open as."
+      >
+        <select
+          value={settings.editor.hoverMode}
+          onChange={(e) =>
+            updateSetting(
+              'editor',
+              'hoverMode',
+              e.currentTarget.value as 'reading' | 'live' | 'source',
+            )
+          }
+          class="rounded border border-white/10 bg-surface-base px-2 py-1 text-sm"
+          data-testid="settings-editor-hover-mode"
+        >
+          <option value="reading">Reading view</option>
+          <option value="live">Live preview</option>
+          <option value="source">Source</option>
+        </select>
+      </SettingRow>
+      <SettingRow
         label="Save button in status bar"
         description="Show a dirty indicator + Save action for the active buffer."
       >

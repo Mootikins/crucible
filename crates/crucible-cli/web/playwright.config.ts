@@ -23,6 +23,17 @@ export default defineConfig({
   reporter: 'html',
   snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}{ext}',
 
+  // Visual gates must actually gate: on this dark, sparse UI a full design
+  // change (gutters removed, column centered) moves only ~0.83% of pixels,
+  // so the old per-call 2% tolerances passed EVERYTHING same-size (the
+  // gutter redesign measured 0.44% under Playwright's comparator). 0.3%
+  // fails real content changes while leaving headroom for cross-environment
+  // text antialiasing. The two text-dense chat baselines keep their
+  // battle-tested 3% + masks (CI font-advance drift, see chat-stream spec).
+  expect: {
+    toHaveScreenshot: { maxDiffPixelRatio: 0.003 },
+  },
+
   use: {
     baseURL: 'http://localhost:5173',
     trace: 'on-first-retry',

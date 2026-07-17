@@ -15,6 +15,7 @@ import { fetchNotePreview, type NotePreview } from '@/lib/note-actions';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { iconForContentType } from '@/lib/tab-icons';
+import { useSettingsSafe } from '@/contexts/SettingsContext';
 
 const SHOW_DELAY_MS = 300;
 const HIDE_DELAY_MS = 300;
@@ -25,6 +26,7 @@ const EDGE_GAP_PX = 8;
 type CardState = { kind: 'loading' } | { kind: 'missing'; name: string };
 
 export const WikilinkHoverPreview: Component = () => {
+  const { settings } = useSettingsSafe();
   const [card, setCard] = createSignal<CardState | null>(null);
   const [cardPos, setCardPos] = createSignal<{ left: number; top: number }>({ left: 0, top: 0 });
 
@@ -90,7 +92,9 @@ export const WikilinkHoverPreview: Component = () => {
       title: preview.title,
       contentType: 'file',
       icon: iconForContentType('file'),
-      metadata: { filePath: preview.absPath },
+      // Popovers open in the configured hover mode (default: the fully
+      // rendered reading view, like Obsidian's page preview).
+      metadata: { filePath: preview.absPath, initialMode: settings.editor.hoverMode },
     });
     hoverWindowId = windowActions.createFloatingWindow(
       groupId,

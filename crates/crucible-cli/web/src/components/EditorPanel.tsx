@@ -124,6 +124,7 @@ export const EditorPanel: Component = () => {
                 onChange={(content) => updateFileContent(file().path, content)}
                 onSave={() => void saveFile(file().path)}
                 onFollowLink={(target) => void followLink(target)}
+                lineWidth={settings.editor.maxLineWidth}
                 vimMode={settings.editor.vimMode}
               />
             )}
