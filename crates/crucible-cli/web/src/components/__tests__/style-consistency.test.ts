@@ -30,7 +30,9 @@ describe('semantic color tokens (no raw palettes)', () => {
 
   it('no component uses a raw Tailwind gray or status palette class', () => {
     const offenders: string[] = [];
-    for (const file of walk(SRC)) {
+    // index.html is outside src/ but carries classes too (the body classes
+    // hid a neutral-950 canvas behind the shell for months).
+    for (const file of [...walk(SRC), resolve(SRC, '../index.html')]) {
       const lines = readFileSync(file, 'utf-8').split('\n');
       lines.forEach((line, i) => {
         if (RAW_PALETTE.test(line)) offenders.push(`${file}:${i + 1}: ${line.trim()}`);

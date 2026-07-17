@@ -58,7 +58,8 @@
 
   body {
     font-family: var(--font-sans);
-    background-color: var(--color-surface-base);
+    /* Same canvas as the app root (bg-shell-bg) — visible only pre-mount. */
+    background-color: var(--color-shell-bg);
     color: var(--color-shell-ink);
   }
 
