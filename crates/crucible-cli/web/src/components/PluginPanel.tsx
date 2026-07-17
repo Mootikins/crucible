@@ -165,7 +165,7 @@ export const PluginPanel: Component = () => {
             <For each={plugins()}>
               {(plugin) => (
                 <div
-                  class="px-3 py-2 border-b border-neutral-850 hover:bg-neutral-800/30"
+                  class="px-3 py-2 border-b border-hairline hover:bg-neutral-800/30"
                   data-testid={`plugin-row-${plugin.name}`}
                 >
                   <div class="flex items-center gap-2">

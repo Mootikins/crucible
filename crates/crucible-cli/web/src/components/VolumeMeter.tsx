@@ -52,7 +52,7 @@ export const VolumeMeter: Component<VolumeMeterProps> = (props) => {
           cy={size() / 2}
           r={radius()}
           fill="none"
-          stroke="rgb(239, 68, 68)" /* red-500 */
+          stroke="var(--color-error)"
           stroke-width={strokeWidth}
           stroke-linecap="round"
           stroke-dasharray={String(circumference())}
@@ -103,7 +103,7 @@ export const VolumeGlow: Component<VolumeMeterProps> = (props) => {
       class="absolute inset-0 rounded-lg pointer-events-none"
       style={{
         'box-shadow': props.active
-          ? `0 0 ${glowIntensity()}px ${glowSpread()}px rgba(239, 68, 68, ${opacity()})`
+          ? `0 0 ${glowIntensity()}px ${glowSpread()}px color-mix(in srgb, var(--color-error) ${Math.round(opacity() * 100)}%, transparent)`
           : 'none',
         // No transition - direct updates for instant response
       }}

@@ -45,7 +45,7 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
   const bgColor = () => {
     switch (props.event.status) {
       case 'spawned': return 'bg-sky-950/15';
-      case 'completed': return 'bg-neutral-850';
+      case 'completed': return 'bg-surface-elevated';
       case 'failed': return 'bg-red-950/20';
     }
   };

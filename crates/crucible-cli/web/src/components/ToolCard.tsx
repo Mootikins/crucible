@@ -59,7 +59,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   const statusBgColor = () => {
     switch (props.toolCall.status) {
       case 'running': return 'bg-primary/10';
-      case 'complete': return 'bg-neutral-850';
+      case 'complete': return 'bg-surface-elevated';
       case 'error': return 'bg-red-950/20';
     }
   };

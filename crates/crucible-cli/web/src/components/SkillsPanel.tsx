@@ -136,14 +136,14 @@ export const SkillsPanel: Component = () => {
               <For each={groupedSkills()}>
                 {([scope, items]) => (
                   <div class="mb-2">
-                    <div class="px-3 py-1 text-[10px] uppercase tracking-wider text-neutral-500 bg-neutral-850">
+                    <div class="px-3 py-1 text-[10px] uppercase tracking-wider text-neutral-500 bg-surface-elevated">
                       {scope}
                     </div>
                     <For each={items}>
                       {(skill) => (
                         <button
                           type="button"
-                          class="w-full text-left px-3 py-2 hover:bg-neutral-800 border-b border-neutral-850 focus:outline-none focus:bg-neutral-800"
+                          class="w-full text-left px-3 py-2 hover:bg-neutral-800 border-b border-hairline focus:outline-none focus:bg-neutral-800"
                           onClick={() => openDetail(skill)}
                           data-testid={`skill-row-${skill.name}`}
                         >

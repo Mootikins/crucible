@@ -150,10 +150,10 @@ export const ChatInput: Component = () => {
     if (!isRecording()) return {};
     return {
       background: `linear-gradient(to top,
-        rgba(59, 130, 246, 0.4) 0%,
-        rgba(59, 130, 246, 0.2) ${fillPercent()}%,
+        color-mix(in srgb, var(--color-primary) 40%, transparent) 0%,
+        color-mix(in srgb, var(--color-primary) 20%, transparent) ${fillPercent()}%,
         transparent ${fillPercent()}%)`,
-      'border-color': 'rgba(224, 101, 58, 0.6)',
+      'border-color': 'color-mix(in srgb, var(--color-primary) 60%, transparent)',
     };
   };
 

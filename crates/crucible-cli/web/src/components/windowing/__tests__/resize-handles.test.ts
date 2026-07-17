@@ -107,21 +107,19 @@ describe('ribbon chrome (Obsidian-style persistent edge bars)', () => {
     expect(source).toMatch(/'flex-row border-t':\s*!isVertical\(\)/);
   });
 
-  it('expanded edge tab bars keep an in-place collapse button', () => {
+  it('the ribbon toggle is the ONLY in-panel collapse control (no duplicate in the tab bar)', () => {
+    // An expanded panel used to show the ribbon toggle AND an in-tab-bar
+    // collapse button in the same corner with the same icon. The ribbon
+    // toggle (always visible, never moves) is canonical.
     const source = readFileSync(resolve(__dirname, '../TabBar.tsx'), 'utf-8');
-    expect(source).toMatch(/data-testid=\{`edge-collapse-\$\{props\.position\}`\}/);
-    expect(source).toMatch(/IconPanelLeftClose|IconPanelRightClose|IconPanelBottomClose/);
-  });
-
-  it('the collapse button anchors to the window-edge side (order-first on the left panel)', () => {
-    const source = readFileSync(resolve(__dirname, '../TabBar.tsx'), 'utf-8');
-    expect(source).toMatch(/'order-first':\s*props\.position === 'left'/);
+    expect(source).not.toMatch(/edge-collapse-/);
+    expect(source).not.toMatch(/IconPanel(Left|Right|Bottom)Close/);
   });
 
   it('every panel toggle glyph is w-4 (Lucide bare default is a jarring 24px)', () => {
-    const tabBar = readFileSync(resolve(__dirname, '../TabBar.tsx'), 'utf-8');
-    expect(tabBar).not.toMatch(/<IconPanel(Left|Right|Bottom)(Close)? \/>/);
-    expect(tabBar).toMatch(/<IconPanelLeftClose class="w-4 h-4" \/>/);
+    const edgePanel = readFileSync(resolve(__dirname, '../EdgePanel.tsx'), 'utf-8');
+    expect(edgePanel).not.toMatch(/<IconPanel(Left|Right|Bottom)(Close)? \/>/);
+    expect(edgePanel).toMatch(/<IconPanelLeftClose class="w-4 h-4" \/>/);
   });
 });
 

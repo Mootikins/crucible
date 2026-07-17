@@ -25,6 +25,16 @@
   --color-muted: #98939e;
   --color-muted-dark: #6b6673;
 
+  /* The one hairline separator color (panel borders, splitters). */
+  --color-hairline: #26252b;
+  /* Stronger outline for elevated surfaces (popups, floating windows). */
+  --color-hairline-strong: #322f38;
+  /* Solid fill for controls that need a visible resting state (buttons,
+   * inputs, sliders) — distinct from surface-* which are backgrounds. */
+  --color-control: #322f38;
+  /* Translucent hover fill that reads on any surface. */
+  --color-hover-wash: rgba(255, 255, 255, 0.07);
+
   --color-error: #ef4444;
   --color-error-dark: #991b1b;
 
@@ -38,33 +48,35 @@
   --color-precog: #a78bda;
 }
 
-/* FlexLayout CSS Custom Properties — Dark Theme Default */
+/* FlexLayout CSS Custom Properties — Dark Theme Default.
+ * Colors REFERENCE the @theme tokens above (single source of truth);
+ * only values with no semantic-token counterpart carry hex here. */
 :root {
-  --fl-color-bg-primary: #141318;
-  --fl-color-bg-surface: #0e0d11;
-  --fl-color-bg-elevated: #211f28;
-  --fl-color-text-primary: #e7e4df;
-  --fl-color-text-secondary: #98939e;
-  --fl-color-text-muted: #6b6673;
-  --fl-color-text-tertiary: #c9c5bf;
-  --fl-color-accent: #e0653a;
+  --fl-color-bg-primary: var(--color-surface-base);
+  --fl-color-bg-surface: var(--color-shell-bg);
+  --fl-color-bg-elevated: var(--color-surface-overlay);
+  --fl-color-text-primary: var(--color-shell-ink);
+  --fl-color-text-secondary: var(--color-muted);
+  --fl-color-text-muted: var(--color-muted-dark);
+  --fl-color-text-tertiary: var(--color-shell-body);
+  --fl-color-accent: var(--color-primary);
   --fl-color-accent-subtle: rgba(224, 101, 58, 0.08);
   --fl-color-accent-light: rgba(224, 101, 58, 0.1);
   --fl-color-accent-medium: rgba(224, 101, 58, 0.15);
   --fl-color-accent-strong: rgba(224, 101, 58, 0.2);
   --fl-color-accent-selection: rgba(224, 101, 58, 0.4);
-  --fl-color-border-primary: #26252b;
+  --fl-color-border-primary: var(--color-hairline);
   --fl-color-border-secondary: #322f38;
   --fl-color-border-floating: #4a4752;
-  --fl-color-scrollbar-track: #141318;
+  --fl-color-scrollbar-track: var(--color-surface-base);
   --fl-color-scrollbar-thumb: #322f38;
   --fl-color-scrollbar-thumb-hover: #4a4752;
-  --fl-color-error: #ef4444;
+  --fl-color-error: var(--color-error);
   --fl-color-overlay-bg: rgba(0, 0, 0, 0.55);
-  --fl-color-toolbar-hover-bg: rgba(255, 255, 255, 0.08);
-  --fl-color-floating-bg: #1a1920;
-  --fl-color-floating-titlebar-bg: #211f28;
-  --fl-color-floating-titlebar-text: #c9c5bf;
+  --fl-color-toolbar-hover-bg: var(--color-hover-wash);
+  --fl-color-floating-bg: var(--color-surface-elevated);
+  --fl-color-floating-titlebar-bg: var(--color-surface-overlay);
+  --fl-color-floating-titlebar-text: var(--color-shell-body);
   --fl-color-floating-resize-grip: #888;
   --fl-shadow-popup: 0 4px 12px rgba(0, 0, 0, 0.4);
   --fl-shadow-floating: 0 4px 16px rgba(0, 0, 0, 0.4);

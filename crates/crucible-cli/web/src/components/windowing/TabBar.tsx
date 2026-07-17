@@ -7,14 +7,7 @@ import {
 } from '@thisbeyond/solid-dnd';
 import type { Tab as TabType, EdgePanelPosition, TabBarProps, DragSource } from '@/types/windowTypes';
 import { windowStore, windowActions } from '@/stores/windowStore';
-import {
-  IconGripVertical,
-  IconClose,
-  IconLayout,
-  IconPanelLeftClose,
-  IconPanelRightClose,
-  IconPanelBottomClose,
-} from './icons';
+import { IconGripVertical, IconClose, IconLayout } from './icons';
 import { ChevronDown } from '@/lib/icons';
 import { confirmTabClose } from '@/lib/tab-guards';
 
@@ -445,28 +438,6 @@ const EdgeTabBar: Component<{
           />
         )}
       />
-      {/* In-place collapse, anchored to the WINDOW-EDGE side of the bar
-          (order-first for the left panel) — the same corner that holds the
-          expand control in the collapsed strip, so the toggle stays put
-          across collapse/expand instead of swinging the panel's width. */}
-      <div
-        classList={{
-          'flex-shrink-0 flex items-center gap-0.5 px-1': true,
-          'order-first': props.position === 'left',
-        }}
-      >
-        <button
-          type="button"
-          data-testid={`edge-collapse-${props.position}`}
-          class="w-6 h-6 flex items-center justify-center rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors"
-          title="Collapse panel"
-          onClick={() => windowActions.toggleEdgePanel(props.position)}
-        >
-          {props.position === 'left' && <IconPanelLeftClose class="w-4 h-4" />}
-          {props.position === 'right' && <IconPanelRightClose class="w-4 h-4" />}
-          {props.position === 'bottom' && <IconPanelBottomClose class="w-4 h-4" />}
-        </button>
-      </div>
       {droppable.isActiveDroppable && (
         <div class="absolute inset-x-0 bottom-0 h-0.5 bg-primary" />
       )}
