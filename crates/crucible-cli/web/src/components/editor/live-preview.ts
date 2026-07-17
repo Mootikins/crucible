@@ -312,8 +312,8 @@ const livePreviewTheme = EditorView.baseTheme({
     background: 'rgba(255, 255, 255, 0.04)',
   },
   '.cm-lp-quote': {
-    borderLeft: '2px solid rgba(224, 101, 58, 0.5)',
-    color: 'rgba(232, 230, 227, 0.75)',
+    borderLeft: '2px solid color-mix(in srgb, var(--color-primary, #e0653a) 50%, transparent)',
+    color: 'color-mix(in srgb, var(--color-shell-ink, #e7e4df) 75%, transparent)',
     fontStyle: 'italic',
   },
   '.cm-lp-bullet': { color: 'var(--color-primary, #e0653a)' },
@@ -329,7 +329,7 @@ const livePreviewTheme = EditorView.baseTheme({
     fontSize: '0.95em',
   },
   '.cm-lp-table th, .cm-lp-table td': {
-    border: '1px solid rgba(255, 255, 255, 0.12)',
+    border: '1px solid var(--color-hairline-strong, #322f38)',
     padding: '3px 10px',
     textAlign: 'left',
   },

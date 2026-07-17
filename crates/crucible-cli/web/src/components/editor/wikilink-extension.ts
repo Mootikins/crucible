@@ -53,14 +53,14 @@ const wikilinkHighlighter = ViewPlugin.fromClass(
 const wikilinkTheme = EditorView.baseTheme({
   '.cm-wikilink': {
     color: 'var(--color-primary, #e0653a)',
-    backgroundColor: 'rgba(224, 101, 58, 0.10)',
+    backgroundColor: 'color-mix(in srgb, var(--color-primary, #e0653a) 10%, transparent)',
     borderRadius: '3px',
     cursor: 'pointer',
   },
   '.cm-wikilink:hover': {
     textDecoration: 'underline',
     textUnderlineOffset: '3px',
-    backgroundColor: 'rgba(224, 101, 58, 0.18)',
+    backgroundColor: 'color-mix(in srgb, var(--color-primary, #e0653a) 18%, transparent)',
   },
 });
 
