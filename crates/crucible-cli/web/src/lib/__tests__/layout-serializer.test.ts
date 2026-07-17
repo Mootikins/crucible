@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { iconForContentType } from '../tab-icons';
 import { serializeLayout, deserializeLayout } from '../layout-serializer';
+import { getGlobalRegistry, resetGlobalRegistry } from '../panel-registry';
 import type { WindowState } from '@/stores/windowStore';
 
 function createTestState(): WindowState {
@@ -78,7 +79,7 @@ describe('layout-serializer', () => {
     const serialized = serializeLayout(state);
     const deserialized = deserializeLayout(serialized);
 
-    expect(serialized.version).toBe(2);
+    expect(serialized.version).toBe(3);
 
     expect(deserialized.edgePanels.left.tabGroupId).toBeDefined();
     expect(deserialized.edgePanels.right.tabGroupId).toBeDefined();
@@ -242,13 +243,13 @@ describe('layout-serializer', () => {
     expect(() => deserializeLayout(badJson)).toThrow('Unsupported layout version: 99');
   });
 
-  it('v2 format is preserved on round-trip', () => {
+  it('serialized format is preserved on round-trip', () => {
     const state = createTestState();
     const serialized1 = serializeLayout(state);
     const deserialized1 = deserializeLayout(serialized1);
     const serialized2 = serializeLayout(deserialized1);
 
-    expect(serialized2.version).toBe(2);
+    expect(serialized2.version).toBe(3);
     expect(serialized2.edgePanels.left.tabGroupId).toBe(serialized1.edgePanels.left.tabGroupId);
     expect((serialized2.edgePanels.left as any).tabs).toBeUndefined();
     expect((serialized2.edgePanels.left as any).position).toBeUndefined();
@@ -345,5 +346,91 @@ describe('layout-serializer', () => {
     expect(tabs[0].icon).toBe(iconForContentType('sessions'));
     expect(tabs[1].icon).toBe(iconForContentType('chat'));
     expect(tabs[0].icon).toBeTypeOf('function');
+  });
+});
+
+describe('layout v2→v3 migration prunes removed content types', () => {
+  const Dummy = () => null;
+
+  // A v2 layout persisted before the placeholder panels were deleted: the
+  // left group mixes a live panel (sessions) with ghosts (explorer/search),
+  // and the right group is nothing but a ghost (outline).
+  const v2WithGhosts = () => ({
+    version: 2 as const,
+    layout: { id: 'p', type: 'pane' as const, tabGroupId: 'center' },
+    tabGroups: {
+      center: { id: 'center', tabs: [{ id: 'home', title: 'Home', contentType: 'home' }], activeTabId: 'home' },
+      left: {
+        id: 'left',
+        tabs: [
+          { id: 'sessions-tab', title: 'Sessions', contentType: 'sessions' },
+          { id: 'explorer-tab', title: 'Explorer', contentType: 'explorer' },
+          { id: 'search-tab', title: 'Search', contentType: 'search' },
+        ],
+        activeTabId: 'explorer-tab',
+      },
+      right: { id: 'right', tabs: [{ id: 'outline-tab', title: 'Outline', contentType: 'outline' }], activeTabId: 'outline-tab' },
+      orphan: { id: 'orphan', tabs: [{ id: 'output-tab', title: 'Output', contentType: 'output' }], activeTabId: 'output-tab' },
+    },
+    edgePanels: {
+      left: { id: 'left-panel', tabGroupId: 'left', isCollapsed: false, width: 250 },
+      right: { id: 'right-panel', tabGroupId: 'right', isCollapsed: true, width: 250 },
+      bottom: { id: 'bottom-panel', tabGroupId: 'center', isCollapsed: true, height: 200 },
+    },
+    floatingWindows: [],
+  });
+
+  function withRegistry(fn: () => void) {
+    resetGlobalRegistry();
+    const reg = getGlobalRegistry();
+    for (const id of ['home', 'sessions', 'terminal', 'chat']) {
+      reg.register(id, id, Dummy, 'center', '•');
+    }
+    try {
+      fn();
+    } finally {
+      resetGlobalRegistry();
+    }
+  }
+
+  it('drops tabs whose content type is no longer registered', () => {
+    withRegistry(() => {
+      const restored = deserializeLayout(v2WithGhosts() as never);
+      const left = restored.tabGroups['left'].tabs.map((t) => t.contentType);
+      expect(left).toEqual(['sessions']);
+    });
+  });
+
+  it('fixes an activeTabId that pointed at a pruned tab', () => {
+    withRegistry(() => {
+      const restored = deserializeLayout(v2WithGhosts() as never);
+      // was 'explorer-tab' (pruned) → falls back to the first surviving tab
+      expect(restored.tabGroups['left'].activeTabId).toBe('sessions-tab');
+    });
+  });
+
+  it('keeps a referenced group that emptied out (edge ref stays valid)', () => {
+    withRegistry(() => {
+      const restored = deserializeLayout(v2WithGhosts() as never);
+      const right = restored.tabGroups['right'];
+      expect(right).toBeDefined();
+      expect(right.tabs).toEqual([]);
+      expect(right.activeTabId).toBeNull();
+      expect(restored.edgePanels.right.tabGroupId).toBe('right');
+    });
+  });
+
+  it('drops an emptied group that nothing references', () => {
+    withRegistry(() => {
+      const restored = deserializeLayout(v2WithGhosts() as never);
+      expect(restored.tabGroups['orphan']).toBeUndefined();
+    });
+  });
+
+  it('does not prune when the registry is empty (defensive)', () => {
+    resetGlobalRegistry();
+    const restored = deserializeLayout(v2WithGhosts() as never);
+    // Nothing registered → every tab is treated as unknown-but-kept.
+    expect(restored.tabGroups['left'].tabs.length).toBe(3);
   });
 });
