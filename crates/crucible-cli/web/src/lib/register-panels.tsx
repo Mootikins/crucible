@@ -2,24 +2,15 @@ import { getGlobalRegistry } from './panel-registry';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import { ChatPanel } from '@/components/ChatPanel';
 import { ActivityPanel } from '@/components/ActivityPanel';
-import { ShellPanel } from '@/components/ShellPanel';
+import { TerminalPanel } from '@/components/TerminalPanel';
 import { SessionPanel } from '@/components/SessionPanel';
 import { FilesPanel } from '@/components/FilesPanel';
 import { SkillsPanel } from '@/components/SkillsPanel';
 import { PluginPanel } from '@/components/PluginPanel';
 import FileViewerPanel from '@/components/FileViewerPanel';
-import PlaceholderPanel from '@/components/PlaceholderPanel';
 import InboxPanel from '@/components/InboxPanel';
 import HomePanel from '@/components/HomePanel';
 import { BacklinksPanel } from '@/components/BacklinksPanel';
-
-// Wrapper components for placeholder panels with specific names
-function ExplorerPanel() { return <PlaceholderPanel name="Explorer" />; }
-function SearchPanel() { return <PlaceholderPanel name="Search" />; }
-function SourceControlPanel() { return <PlaceholderPanel name="Source Control" />; }
-function OutlinePanel() { return <PlaceholderPanel name="Outline" />; }
-function ProblemsPanel() { return <PlaceholderPanel name="Problems" />; }
-function OutputPanel() { return <PlaceholderPanel name="Output" />; }
 
 export function registerPanels(): void {
   const registry = getGlobalRegistry();
@@ -29,16 +20,10 @@ export function registerPanels(): void {
   registry.register('inbox', 'Inbox', InboxPanel, 'center', '📥');
   registry.register('home', 'Home', HomePanel, 'center', '⌂');
   registry.register('activity', 'Activity', ActivityPanel, 'right', '📊');
-  registry.register('terminal', 'Terminal', ShellPanel, 'bottom', '💻');
+  registry.register('terminal', 'Terminal', TerminalPanel, 'bottom', '💻');
   registry.register('file', 'File', FileViewerPanel, 'center', '📄');
-  registry.register('explorer', 'Explorer', ExplorerPanel, 'left', '🗂️');
   registry.register('files', 'Files', FilesPanel, 'left', '📁');
-  registry.register('search', 'Search', SearchPanel, 'left', '🔍');
   registry.register('skills', 'Skills', SkillsPanel, 'left', '🎯');
   registry.register('plugins', 'Plugins', PluginPanel, 'left', '🔌');
-  registry.register('source-control', 'Source Control', SourceControlPanel, 'left', '🌿');
-  registry.register('outline', 'Outline', OutlinePanel, 'right', '📑');
   registry.register('backlinks', 'Backlinks', BacklinksPanel, 'right', '🔗');
-  registry.register('problems', 'Problems', ProblemsPanel, 'bottom', '⚠️');
-  registry.register('output', 'Output', OutputPanel, 'bottom', '📤');
 }

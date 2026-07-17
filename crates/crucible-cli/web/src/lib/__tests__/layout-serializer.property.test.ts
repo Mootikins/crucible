@@ -11,7 +11,7 @@ import type { WindowState } from '@/stores/windowStore';
 
 // Arbitraries for building random WindowState
 
-const arbTabContentType = fc.constantFrom('file', 'document', 'tool', 'terminal', 'preview', 'settings', 'chat', 'sessions', 'explorer', 'search', 'source-control', 'outline', 'problems', 'output');
+const arbTabContentType = fc.constantFrom('file', 'tool', 'terminal', 'settings', 'chat', 'sessions', 'files', 'skills', 'plugins', 'activity', 'backlinks');
 
 const arbTab = fc.record({
   id: fc.uuid(),

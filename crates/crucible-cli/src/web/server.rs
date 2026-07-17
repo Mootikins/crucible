@@ -4,7 +4,7 @@ use crate::web::middleware::auth::{
 };
 use crate::web::routes::{
     auth_routes, chat_routes, config_routes, health_routes, kiln_routes, layout_routes, mcp_routes,
-    plugin_routes, project_routes, search_routes, session_routes, shell_routes, skills_routes,
+    plugin_routes, project_routes, search_routes, session_routes, shell_routes, skills_routes, terminal_routes,
     webhook_routes,
 };
 use crate::web::services::daemon;
@@ -50,6 +50,11 @@ pub async fn start_server(web_config: &WebConfig, app_config: &CliAppConfig) -> 
         .nest(
             "/api/shell",
             shell_routes().layer(middleware::from_fn(localhost_only_shell_auth)),
+        )
+        // A PTY is full shell access — same localhost-only gate as /api/shell.
+        .nest(
+            "/api/terminal",
+            terminal_routes().layer(middleware::from_fn(localhost_only_shell_auth)),
         )
         .merge(chat_routes())
         .merge(config_routes())

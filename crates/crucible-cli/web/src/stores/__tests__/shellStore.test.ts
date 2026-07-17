@@ -16,9 +16,8 @@ describe('shellStore — surface mapping', () => {
     expect(surfaceForContentType('chat')).toBe('session');
   });
 
-  it('maps file and document tabs to the edit surface', () => {
+  it('maps file tabs to the edit surface', () => {
     expect(surfaceForContentType('file')).toBe('edit');
-    expect(surfaceForContentType('document')).toBe('edit');
   });
 
   it('maps home and inbox tabs to their surfaces', () => {

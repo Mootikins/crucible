@@ -1,28 +1,21 @@
 import type { Component } from 'solid-js';
 
-// Tab types
+// Tab types — every entry is a REGISTERED panel (register-panels.tsx),
+// except 'tool', a neutral dummy the windowing unit tests use.
 export type TabContentType =
   | 'file'
-  | 'document'
   | 'tool'
   | 'terminal'
-  | 'preview'
   | 'settings'
   | 'chat'
   | 'home'
   | 'inbox'
   | 'sessions'
-  | 'explorer'
   | 'files'
-  | 'search'
   | 'skills'
   | 'plugins'
   | 'activity'
-  | 'source-control'
-  | 'outline'
-  | 'backlinks'
-  | 'problems'
-  | 'output';
+  | 'backlinks';
 
 export interface Tab {
   id: string;

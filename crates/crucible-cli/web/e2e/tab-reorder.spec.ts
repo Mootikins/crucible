@@ -74,10 +74,10 @@ test.describe('Tab reorder within same bar', () => {
 
   test('reorder edge tab: drag first tab past third tab', async ({ page }) => {
     const firstTab = page.locator('[data-testid="edge-tab-left-sessions-tab"]');
-    const thirdTab = page.locator('[data-testid="edge-tab-left-search-tab"]');
+    const thirdTab = page.locator('[data-testid="edge-tab-left-files-tab"]');
 
     const initialOrder = await getEdgeTabOrder(page, 'left');
-    expect(initialOrder.indexOf('sessions-tab')).toBeLessThan(initialOrder.indexOf('search-tab'));
+    expect(initialOrder.indexOf('sessions-tab')).toBeLessThan(initialOrder.indexOf('files-tab'));
     const initialSessionsIndex = initialOrder.indexOf('sessions-tab');
 
     const from = await getCenterOf(page, firstTab);
@@ -102,11 +102,11 @@ test.describe('Tab reorder within same bar', () => {
   });
 
   test('reorder edge tab: drag last tab to first position', async ({ page }) => {
-    const lastTab = page.locator('[data-testid="edge-tab-left-source-control-tab"]');
-    const firstTab = page.locator('[data-testid="edge-tab-left-search-tab"]');
+    const lastTab = page.locator('[data-testid="edge-tab-left-files-tab"]');
+    const firstTab = page.locator('[data-testid="edge-tab-left-sessions-tab"]');
 
     const initialOrder = await getEdgeTabOrder(page, 'left');
-    expect(initialOrder.indexOf('source-control-tab')).toBeGreaterThan(initialOrder.indexOf('search-tab'));
+    expect(initialOrder.indexOf('files-tab')).toBeGreaterThan(initialOrder.indexOf('sessions-tab'));
 
     await lastTab.scrollIntoViewIfNeeded();
     await page.waitForTimeout(100);
@@ -132,7 +132,7 @@ test.describe('Tab reorder within same bar', () => {
     await page.waitForTimeout(500);
 
     const newOrder = await getEdgeTabOrder(page, 'left');
-    expect(newOrder.indexOf('source-control-tab')).toBeLessThan(newOrder.indexOf('search-tab'));
+    expect(newOrder.indexOf('files-tab')).toBeLessThan(newOrder.indexOf('sessions-tab'));
   });
 
   test('reorder edge tab within left panel', async ({ page }) => {
@@ -182,7 +182,7 @@ test.describe('Tab reorder within same bar', () => {
   });
 
   test('no insert indicator during cross-zone drag', async ({ page }) => {
-    const edgeTab = page.locator('[data-testid="edge-tab-left-explorer-tab"]');
+    const edgeTab = page.locator('[data-testid="edge-tab-left-files-tab"]');
     const centerTab = page.locator('[data-tab-id^="tab-chat-"]').first();
 
     const from = await getCenterOf(page, edgeTab);
@@ -203,13 +203,13 @@ test.describe('Tab reorder within same bar', () => {
   });
 
   test('cross-zone DnD still works after reorder implementation (regression)', async ({ page }) => {
-    const from = await getCenter(page, '[data-testid="edge-tab-left-explorer-tab"]');
+    const from = await getCenter(page, '[data-testid="edge-tab-left-files-tab"]');
     const to = await getCenterPaneDropPoint(page);
 
     await pointerDrag(page, from, to);
     await page.waitForTimeout(300);
 
-    await expect(page.locator('[data-testid="edge-tab-left-explorer-tab"]')).not.toBeVisible({ timeout: 2000 });
-    await expect(page.locator('[data-tab-id="explorer-tab"]:not([data-testid^="edge-tab-"])')).toBeVisible({ timeout: 2000 });
+    await expect(page.locator('[data-testid="edge-tab-left-files-tab"]')).not.toBeVisible({ timeout: 2000 });
+    await expect(page.locator('[data-tab-id="files-tab"]:not([data-testid^="edge-tab-"])')).toBeVisible({ timeout: 2000 });
   });
 });

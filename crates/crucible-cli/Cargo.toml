@@ -64,7 +64,8 @@ tempfile = { workspace = true, optional = true }
 proptest = { version = "1.11", optional = true }
 
 # Web UI server (src/web — Axum routes over daemon RPC, embedded frontend)
-axum = { workspace = true, features = ["macros"] }
+axum = { workspace = true, features = ["macros", "ws"] }
+portable-pty = "0.9"
 tower = { workspace = true }
 tower-http = { version = "0.6", features = ["fs", "cors"] }
 tokio-stream = { workspace = true, features = ["sync"] }

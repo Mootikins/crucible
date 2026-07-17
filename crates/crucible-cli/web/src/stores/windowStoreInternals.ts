@@ -7,14 +7,11 @@ import type {
   TabGroup,
 } from '@/types/windowTypes';
 import {
-  AlertTriangle,
+  Activity,
   ClipboardList,
-  FileOutput,
   FolderTree,
-  GitBranch,
-  ListTree,
+  Link2,
   MessageCircle,
-  Search,
   Terminal,
 } from '@/lib/icons';
 import type { PaneDropPosition, WindowState } from './windowStoreTypes';
@@ -137,6 +134,7 @@ export function findEdgePanelForGroup(
 
 const createSampleTabs = (): Tab[] => [];
 
+// Only IMPLEMENTED panels ship in the default layout — no placeholder tabs.
 const createLeftPanelTabs = (): Tab[] => [
   {
     id: 'sessions-tab',
@@ -145,31 +143,25 @@ const createLeftPanelTabs = (): Tab[] => [
     icon: ClipboardList,
   },
   {
-    id: 'explorer-tab',
-    title: 'Explorer',
-    contentType: 'explorer',
+    id: 'files-tab',
+    title: 'Files',
+    contentType: 'files',
     icon: FolderTree,
-  },
-  {
-    id: 'search-tab',
-    title: 'Search',
-    contentType: 'search',
-    icon: Search,
-  },
-  {
-    id: 'source-control-tab',
-    title: 'Source Control',
-    contentType: 'source-control',
-    icon: GitBranch,
   },
 ];
 
 const createRightPanelTabs = (): Tab[] => [
   {
-    id: 'outline-tab',
-    title: 'Outline',
-    contentType: 'outline',
-    icon: ListTree,
+    id: 'backlinks-tab',
+    title: 'Backlinks',
+    contentType: 'backlinks',
+    icon: Link2,
+  },
+  {
+    id: 'activity-tab',
+    title: 'Activity',
+    contentType: 'activity',
+    icon: Activity,
   },
 ];
 
@@ -179,18 +171,6 @@ const createBottomPanelTabs = (): Tab[] => [
     title: 'Terminal',
     contentType: 'terminal',
     icon: Terminal,
-  },
-  {
-    id: 'problems-tab',
-    title: 'Problems',
-    contentType: 'problems',
-    icon: AlertTriangle,
-  },
-  {
-    id: 'output-tab',
-    title: 'Output',
-    contentType: 'output',
-    icon: FileOutput,
   },
   {
     id: 'chat-tab',

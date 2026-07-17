@@ -105,95 +105,13 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       const panelProps = (tab?.metadata ?? {}) as Record<string, unknown>;
       return <Dynamic component={panel.component} {...panelProps} />;
     }
-    switch (contentType) {
-      case 'file':
-        return (
-          <div class="flex-1 bg-shell-panel overflow-auto p-4">
-            <pre class="text-sm font-mono text-shell-body whitespace-pre-wrap">
-              {`// ${tab?.title ?? ''}\nimport { createRoot } from 'solid-js/web'\nimport App from './App'\n\nconst root = document.getElementById('root')\nif (root) createRoot(root).render(() => <App />)\n`}
-            </pre>
-          </div>
-        );
-      case 'document':
-        return (
-          <div class="flex-1 bg-shell-panel overflow-auto p-6">
-            <h1 class="text-2xl font-bold text-shell-ink mb-4">Document Preview</h1>
-            <div class="prose prose-invert max-w-none">
-              <p class="text-shell-body leading-relaxed">
-                This is a sample document. Drag tabs between panes, split panes, and pop out to
-                floating windows.
-              </p>
-            </div>
-          </div>
-        );
-      case 'preview':
-        return (
-          <div class="flex-1 bg-shell-panel flex items-center justify-center p-8">
-            <div class="bg-gradient-to-br from-surface-elevated to-surface-base rounded-xl p-8 border border-hairline">
-              <div class="w-64 h-40 bg-surface-elevated rounded-lg flex items-center justify-center">
-                <span class="text-muted-dark">Preview</span>
-              </div>
-            </div>
-          </div>
-        );
-      case 'terminal':
-        return (
-          <div class="flex-1 bg-black font-mono text-sm p-3 overflow-auto">
-            <div class="text-ok mb-2">$ bun run dev</div>
-            <div class="text-shell-body mb-1">Starting dev server...</div>
-            <div class="text-muted-dark mb-2">
-              <span class="text-ok">$</span> <span class="animate-pulse">|</span>
-            </div>
-          </div>
-        );
-      case 'tool':
-        return (
-          <div class="flex-1 bg-shell-panel overflow-auto p-4">
-          </div>
-        );
-      case 'explorer':
-        return (
-          <div class="flex-1 bg-shell-panel flex items-center justify-center">
-            <div class="text-muted-dark text-sm">📁 Explorer (Coming Soon)</div>
-          </div>
-        );
-      case 'search':
-        return (
-          <div class="flex-1 bg-shell-panel flex items-center justify-center">
-            <div class="text-muted-dark text-sm">🔍 Search (Coming Soon)</div>
-          </div>
-        );
-      case 'source-control':
-        return (
-          <div class="flex-1 bg-shell-panel flex items-center justify-center">
-            <div class="text-muted-dark text-sm">⎇ Source Control (Coming Soon)</div>
-          </div>
-        );
-      case 'outline':
-        return (
-          <div class="flex-1 bg-shell-panel flex items-center justify-center">
-            <div class="text-muted-dark text-sm">📋 Outline (Coming Soon)</div>
-          </div>
-        );
-      case 'problems':
-        return (
-          <div class="flex-1 bg-shell-panel flex items-center justify-center">
-            <div class="text-muted-dark text-sm">⚠️ Problems (Coming Soon)</div>
-          </div>
-        );
-      case 'output':
-        return (
-          <div class="flex-1 bg-shell-panel flex items-center justify-center">
-            <div class="text-muted-dark text-sm">📄 Output (Coming Soon)</div>
-          </div>
-        );
-      default:
-        return (
-          <div class="flex-1 bg-shell-panel flex items-center justify-center">
-            <div class="text-muted-dark text-sm">Unknown content type</div>
-          </div>
-        );
-    }
+    // Every shipped content type is registry-backed; anything else is a
+    // stale persisted layout entry.
+    return (
+      <div class="flex-1 bg-shell-panel flex items-center justify-center">
+        <div class="text-muted-dark text-sm">Unknown content type</div>
+      </div>
+    );
   };
 
   return (

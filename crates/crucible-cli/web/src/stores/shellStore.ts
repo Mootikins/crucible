@@ -23,7 +23,6 @@ export function surfaceForContentType(contentType: TabContentType): ShellSurface
     case 'chat':
       return 'session';
     case 'file':
-    case 'document':
       return 'edit';
     case 'home':
       return 'home';

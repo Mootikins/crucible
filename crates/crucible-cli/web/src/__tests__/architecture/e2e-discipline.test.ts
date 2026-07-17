@@ -47,7 +47,6 @@ describe('e2e architecture discipline', () => {
     'center-resize.spec.ts',
     'cross-zone-dnd.spec.ts',
     'empty-state.spec.ts',
-    'panel-placeholders.spec.ts',
     'session-lifecycle.spec.ts',
     'tab-reorder.spec.ts',
     'windowing-comprehensive.spec.ts',
@@ -76,10 +75,11 @@ describe('e2e architecture discipline', () => {
 
   // -- A5b: story specs use semantic locators -----------------------------
   //
-  // CodeMirror renders its editor surface with `.cm-*` classes and exposes no
-  // roles/testids for content or lines; those are the only allowed raw-class
-  // locators in a story spec.
-  const CM_LOCATOR = /locator\((['"])\.cm-[^'"]*\1/;
+  // CodeMirror (`.cm-*`) and xterm.js (`.xterm`) render their editor/terminal
+  // surfaces with framework classes and expose no roles/testids on the
+  // rendered layer; those are the only allowed raw-class locators in a story
+  // spec (assert `.xterm`/`.cm-*` is present to prove the surface mounted).
+  const CM_LOCATOR = /locator\((['"])\.(cm-[^'"]*|xterm[^'"]*)\1/;
   // Any `locator('.foo')` or `locator('[class...]')`.
   const RAW_CLASS_LOCATOR = /locator\((['"])(?:\.[A-Za-z_-]|\[class)/g;
 
