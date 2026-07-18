@@ -719,11 +719,14 @@ impl Server {
             }
         });
 
-        // Startup catch-up: title persisted sessions that already have
-        // content but no title (see SessionManager::title_untitled_sessions).
-        // Kiln coverage mirrors the archive sweep (open kilns + crucible
-        // home) plus registered project kilns, whose entries point at the
-        // `.crucible` data dir — normalize to the kiln root.
+        // Startup: open the registered project kilns (+ crucible home) so a
+        // client that never runs `cru chat` — e.g. `cru web` on a fresh
+        // daemon — can still resolve notes. Note-open and other file APIs
+        // gate on the daemon's OPEN-kiln set (find_enclosing_kiln); with an
+        // empty set every note-open 404s ("File not within any open kiln").
+        // The same list then feeds the title catch-up sweep (persisted
+        // sessions with content but no title). Project kiln entries may point
+        // at the `.crucible` data dir — normalize to the kiln root.
         {
             let sm = self.session_manager.clone();
             let km = self.kiln_manager.clone();
@@ -750,6 +753,21 @@ impl Server {
                         }
                     }
                 }
+
+                // Open each (idempotent; already-open kilns are a no-op). A
+                // failure to open one kiln must not block the others or the
+                // title sweep.
+                let mut opened = 0;
+                for kiln in &kilns {
+                    match km.open(kiln).await {
+                        Ok(()) => opened += 1,
+                        Err(e) => warn!(kiln = %kiln.display(), error = %e, "Startup kiln open failed"),
+                    }
+                }
+                if opened > 0 {
+                    info!(opened, "Opened registered kilns on startup");
+                }
+
                 let titled = sm.title_untitled_sessions(&kilns, &tx).await;
                 if titled > 0 {
                     info!(titled, "Startup title catch-up completed");
