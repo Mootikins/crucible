@@ -102,12 +102,13 @@ const TabItem: Component<TabItemProps> = (props) => {
         <span class="w-1.5 h-1.5 rounded-full bg-attention flex-shrink-0" />
       )}
       <button
+        aria-label="Close tab"
         onClick={(e) => {
           e.stopPropagation();
           props.onClose(e);
         }}
         classList={{
-          'flex-shrink-0 p-0.5 rounded-sm transition-all hover:bg-hover-wash hover:text-shell-ink focus:opacity-100': true,
+          'flex-shrink-0 p-0.5 rounded-sm transition-all hover:bg-hover-wash hover:text-shell-ink focus:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary': true,
           'opacity-0 group-hover:opacity-100': !props.isActive,
         }}
       >
@@ -277,7 +278,8 @@ const TabStrip: Component<TabStripProps> = (props) => {
       <Show when={isOverflowing()}>
         <div class="relative flex-shrink-0">
           <button
-            class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-muted-dark hover:text-shell-body hover:bg-hover-wash rounded transition-colors"
+            class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-muted-dark hover:text-shell-body hover:bg-hover-wash rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            aria-label="Show all tabs"
             onClick={(e) => { e.stopPropagation(); setShowDropdown(!showDropdown()); }}
             title="Show all tabs"
           >
@@ -369,8 +371,9 @@ const CenterTabBar: Component<{
         {props.onPopOut && tabs().length > 0 && (
           <button
             onClick={props.onPopOut}
-            class="w-6 h-6 flex items-center justify-center rounded text-muted-dark hover:text-shell-body hover:bg-hover-wash transition-colors"
+            class="w-6 h-6 flex items-center justify-center rounded text-muted-dark hover:text-shell-body hover:bg-hover-wash transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             title="Pop out to floating window"
+            aria-label="Pop out to floating window"
           >
             <IconLayout class="w-4 h-4" />
           </button>
