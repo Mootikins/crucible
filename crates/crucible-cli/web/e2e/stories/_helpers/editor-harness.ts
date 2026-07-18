@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import { waitForFonts } from './fonts';
 
 declare global {
   interface Window {
@@ -94,6 +95,8 @@ export async function setupEditorHarness(
 
   await page.goto(options.backlinks ? '/editor-harness.html?backlinks=1' : '/editor-harness.html');
   await page.waitForFunction(() => Boolean(window.__editorHarness));
+  // Guard visual baselines against FOUT (fallback-font capture in the dev-server).
+  await waitForFonts(page);
 
   return {
     saves,

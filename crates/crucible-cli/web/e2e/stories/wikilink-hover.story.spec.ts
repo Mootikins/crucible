@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from '../helpers/mock-api';
 import { createSSEStream } from '../helpers/mock-sse';
 import { createStory } from './_helpers/story';
+import { waitForFonts } from './_helpers/fonts';
 
 /**
  * Story: wikilink hover popovers in chat messages (Hover Editor pattern).
@@ -93,6 +94,7 @@ test.describe('Chat wikilink hover previews', () => {
     await streamTurn(page);
 
     await page.goto('/');
+    await waitForFonts(page);
     await page.getByTestId('session-item-test-session-001').click();
     await expect(page.getByTestId('chat-input')).toBeEnabled({ timeout: 5000 });
 
