@@ -2,8 +2,8 @@
 //! Integrates PulldownParser with file watching for real-time note processing.
 //!
 //! This handler emits `SessionEvent` variants (FileChanged, FileDeleted, FileMoved)
-//! to the event bus. Embedding generation is handled downstream by `EmbeddingHandler`
-//! in `crucible-daemon::enrichment` which listens for `NoteParsed` events.
+//! to the event bus. Embedding generation is owned by the `NotePipeline`
+//! (`crucible-daemon::pipeline`), which parses and embeds notes on change.
 
 #![allow(clippy::ptr_arg)]
 

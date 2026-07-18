@@ -138,7 +138,6 @@ impl ProjectManager {
     /// Filters out:
     /// - Paths ending with `.crucible` (kiln subdirectories)
     /// - Non-existent paths
-    /// - Known temp paths like `/tmp` or `/tmp/test-kiln`
     fn is_valid_project(&self, project: &Project) -> bool {
         let path = &project.path;
 
@@ -149,12 +148,6 @@ impl ProjectManager {
 
         // Filter out non-existent paths
         if !path.exists() {
-            return false;
-        }
-
-        // Filter out known temp paths
-        let path_str = path.to_string_lossy();
-        if path_str == "/tmp" || path_str == "/tmp/test-kiln" {
             return false;
         }
 
