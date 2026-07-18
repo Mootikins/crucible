@@ -27,12 +27,8 @@ pub struct EmbeddingResponse {
 /// Indicates the **type** of model (embedding, chat, image, etc.) at the provider
 /// abstraction layer. Used by [`UnifiedModelInfo`] for provider capability discovery.
 ///
-/// This is distinct from [`crate::traits::llm::ModelFeature`] which describes
-/// **features** of text/chat models (function calling, streaming, JSON mode, etc.).
-///
 /// # When to Use
 /// - Use this enum when categorizing models by their primary function
-/// - Use `llm::ModelFeature` when describing chat model feature sets
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ModelCapability {

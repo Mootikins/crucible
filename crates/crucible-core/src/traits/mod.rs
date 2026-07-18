@@ -27,11 +27,7 @@ pub use chat::{AgentHandle, ChatError, ChatResult, ChatToolCall};
 pub use context_ops::{ContextMessage, MessageMetadata, Position, Range};
 pub use knowledge::{KnowledgeRepository, NoteInfo};
 pub use llm::{
-    ChatCompletionChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
-    ChatMessageDelta, CompletionChoice, CompletionChunk, CompletionRequest, CompletionResponse,
-    FunctionCall, FunctionCallBehavior, FunctionCallDelta, FunctionDefinition, LlmToolDefinition,
-    LogProbs, MessageRole, ModelFeature, ModelStatus, ProviderCapabilities, ResponseFormat,
-    TextModelInfo, TokenUsage, ToolCall, ToolCallDelta, ToolChoice,
+    FunctionCall, FunctionDefinition, LlmToolDefinition, MessageRole, TokenUsage, ToolCall,
 };
 pub use parser::MarkdownParser;
 pub use provider::EmbeddingResponse;
