@@ -501,7 +501,26 @@ impl CrucibleMcpServer {
         );
         let body = match discovery.discover() {
             Ok(skills) => match skills.get(&name) {
-                Some(resolved) => resolved.skill.body.clone(),
+                Some(resolved) => {
+                    let mut body = resolved.skill.body.clone();
+                    // Advisory tool restriction: Crucible skills are context
+                    // injection with no activation lifecycle, so allowed-tools is
+                    // surfaced as a soft instruction rather than a hard gate. The
+                    // agent is asked to self-restrict for the duration of the skill.
+                    if let Some(tools) = resolved
+                        .skill
+                        .allowed_tools
+                        .as_ref()
+                        .filter(|t| !t.is_empty())
+                    {
+                        body.push_str(&format!(
+                            "\n\n---\n**Tool restriction (skill `{name}`):** While working on \
+                             this skill, use only these tools: {}.",
+                            tools.join(", ")
+                        ));
+                    }
+                    body
+                }
                 None => {
                     let mut names: Vec<&str> = skills.keys().map(String::as_str).collect();
                     names.sort_unstable();
@@ -826,6 +845,41 @@ mod tests {
         );
 
         // Server should create successfully
+    }
+
+    #[tokio::test]
+    async fn skill_view_appends_allowed_tools_advisory() {
+        let ws = TempDir::new().unwrap();
+        let kiln = TempDir::new().unwrap();
+
+        let skill = ws.path().join(".crucible").join("skills").join("scoped");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(
+            skill.join("SKILL.md"),
+            "---\nname: scoped\ndescription: scoped skill\nallowed-tools: search_notes get_note\n---\n\nSCOPED-BODY.",
+        )
+        .unwrap();
+
+        let server = CrucibleMcpServer::new_with_workspace_and_delegation(
+            kiln.path().to_str().unwrap().to_string(),
+            ws.path().to_path_buf(),
+            Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
+            Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+            None,
+        );
+
+        let found = server
+            .skill_view(Parameters(SkillViewParams {
+                name: "scoped".to_string(),
+            }))
+            .await
+            .unwrap();
+        let json = serde_json::to_string(&found).unwrap();
+        assert!(json.contains("SCOPED-BODY"), "body should be present: {json}");
+        assert!(
+            json.contains("Tool restriction") && json.contains("search_notes, get_note"),
+            "advisory listing the allowed tools should be appended, got: {json}"
+        );
     }
 
     #[tokio::test]
