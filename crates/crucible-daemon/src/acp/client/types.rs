@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tokio::process::Child;
 
 use crucible_core::types::acp::ToolCallInfo;
 
@@ -25,28 +24,6 @@ pub struct ClientConfig {
 
     /// Maximum number of retry attempts
     pub max_retries: Option<u32>,
-}
-
-/// Represents a spawned agent process
-///
-/// This struct wraps a child process and provides methods to interact with it.
-#[derive(Debug)]
-pub struct AgentProcess {
-    #[allow(dead_code)]
-    pub(super) child: Child,
-}
-
-impl AgentProcess {
-    /// Check if the agent process is still running
-    ///
-    /// # Returns
-    ///
-    /// `true` if the process is running, `false` otherwise
-    pub fn is_running(&self) -> bool {
-        // For now, we assume the process is running if we have a handle to it
-        // In a full implementation, we would check the process status
-        true
-    }
 }
 
 pub(super) enum ResponseSegment {

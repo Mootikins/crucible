@@ -3,7 +3,7 @@ use std::process::Stdio;
 use tokio::io::BufReader;
 use tokio::process::Command;
 
-use super::types::{AgentProcess, ClientConfig};
+use super::types::ClientConfig;
 use super::{BoxedReader, BoxedWriter, CrucibleAcpClient};
 use crate::acp::session::AcpSession;
 use crate::acp::{ClientError, Result};
@@ -69,7 +69,7 @@ impl CrucibleAcpClient {
     /// - Connection times out
     pub async fn connect(&mut self) -> Result<AcpSession> {
         // Spawn the agent process
-        let _process = self.spawn_agent().await?;
+        self.spawn_agent().await?;
 
         // Mark as connected
         self.mark_connected();
@@ -101,11 +101,8 @@ impl CrucibleAcpClient {
     /// and captures stdin/stdout for communication.
     ///
     /// If a transport is already available (e.g., via `with_transport`), this method
-    /// returns immediately without spawning a process.
-    ///
-    /// # Returns
-    ///
-    /// An `AgentProcess` handle that can be used to interact with the spawned process
+    /// returns immediately without spawning a process. The spawned child is
+    /// retained in `self.agent_process` and killed on disconnect/drop.
     ///
     /// # Errors
     ///
@@ -113,28 +110,20 @@ impl CrucibleAcpClient {
     /// - The agent executable does not exist
     /// - The process cannot be spawned
     /// - Permissions are insufficient
-    pub async fn spawn_agent(&mut self) -> Result<AgentProcess> {
+    pub async fn spawn_agent(&mut self) -> Result<()> {
         // If we already have a transport (e.g., from with_transport), skip spawning
         if self.has_transport() {
             tracing::debug!(agent = %self.agent_name, "Using pre-configured transport, skipping spawn");
-            return Ok(AgentProcess {
-                child: {
-                    #[cfg(target_os = "windows")]
-                    let mut cmd = Command::new("cmd");
-                    #[cfg(target_os = "windows")]
-                    cmd.args(["/C", "exit 0"]);
-
-                    #[cfg(not(target_os = "windows"))]
-                    let mut cmd = Command::new("true");
-
-                    cmd.spawn().unwrap()
-                }, // Dummy process
-            });
+            return Ok(());
         }
 
         tracing::info!(agent = %self.agent_name, path = %self.config.agent_path.display(), "Spawning ACP agent process");
 
         let mut cmd = Command::new(&self.config.agent_path);
+        // SIGKILL the agent if this client is dropped without an explicit
+        // disconnect — otherwise a hung agent (or one that ignores stdin EOF)
+        // leaks, since nothing else retains a handle capable of killing it.
+        cmd.kill_on_drop(true);
 
         // Add command-line arguments if specified
         if let Some(ref args) = self.config.agent_args {
@@ -198,14 +187,15 @@ impl CrucibleAcpClient {
             });
         }
 
-        // Store stdio handles and process in the client
+        // Store stdio handles AND the child in the client. Retaining the child
+        // is the actual fix: it was previously returned and dropped immediately,
+        // so `agent_process` stayed None and the daemon had no way to terminate
+        // a hung agent. Now it lives with the client (killed on disconnect/drop).
         self.agent_stdin = Some(stdin);
         self.agent_stdout = Some(BufReader::new(stdout));
+        self.agent_process = Some(child);
 
-        // Create a handle before storing the child
-        let process = AgentProcess { child };
-
-        Ok(process)
+        Ok(())
     }
 
     /// Disconnect from the agent and clean up resources
@@ -221,12 +211,14 @@ impl CrucibleAcpClient {
         // Mark as disconnected
         self.mark_disconnected();
 
-        // Clean up stdio handles
+        // Clean up stdio handles and force-kill the agent process. Closing the
+        // pipes only sends EOF (a well-behaved agent exits; a hung one does not),
+        // so explicitly SIGKILL the retained child.
         self.agent_stdin = None;
         self.agent_stdout = None;
-
-        // Note: agent_process will be dropped, which will terminate the process
-        // In a full implementation, we would send a shutdown message first
+        if let Some(mut child) = self.agent_process.take() {
+            let _ = child.start_kill();
+        }
 
         Ok(())
     }
@@ -267,7 +259,7 @@ impl CrucibleAcpClient {
         tracing::debug!(agent = %self.agent_name, mcp_url = ?mcp_url, "Starting capability-aware ACP handshake");
 
         // 1. Spawn agent process (no-op if transport already connected)
-        let _process = self.spawn_agent().await?;
+        self.spawn_agent().await?;
 
         // 2. Initialize — this stores agent capabilities on self
         let init_request = InitializeRequest::new(1u16.into());

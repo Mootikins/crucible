@@ -25,9 +25,12 @@ async fn test_agent_process_spawning() {
     // Should successfully spawn process
     assert!(result.is_ok(), "Should spawn agent process");
 
-    // Process should be running
-    let process = result.unwrap();
-    assert!(process.is_running(), "Agent process should be running");
+    // The child must be RETAINED on the client (not returned + dropped) so the
+    // daemon can kill a hung agent; disconnect/drop then terminates it.
+    assert!(
+        client.agent_process.is_some(),
+        "Agent child should be retained on the client"
+    );
 }
 
 #[tokio::test]

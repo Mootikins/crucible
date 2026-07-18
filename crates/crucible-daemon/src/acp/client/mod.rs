@@ -48,7 +48,7 @@ pub use usage::extract_usage;
 mod tests;
 
 pub use recording::{Direction, FixtureHeader, FrameRecord, Recorder};
-pub use types::{AgentProcess, ClientConfig};
+pub use types::ClientConfig;
 
 /// Type-erased async writer for agent communication
 pub type BoxedWriter = Pin<Box<dyn AsyncWrite + Send + Sync + Unpin>>;

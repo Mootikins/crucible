@@ -665,8 +665,8 @@ impl Drop for AcpAgentHandle {
         let agent = self.agent_name.clone();
         let session_id = self.session_id.clone();
         // try_current() returns None if tokio runtime is gone (shutdown, sync context).
-        // In that case CrucibleAcpClient drops synchronously — child process gets
-        // SIGKILL when its stdin/stdout handles close.
+        // In that case CrucibleAcpClient drops synchronously — the retained child
+        // is SIGKILLed via kill_on_drop (pipe close alone only sends EOF).
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {
                 if let Some(client) = client_arc.lock().await.take() {
