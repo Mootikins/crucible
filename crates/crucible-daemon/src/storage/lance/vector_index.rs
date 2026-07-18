@@ -29,7 +29,7 @@ use crucible_core::storage::{
 };
 
 const TABLE_NAME: &str = "vectors";
-const DEFAULT_EMBEDDING_DIM: usize = 768;
+pub(crate) const DEFAULT_EMBEDDING_DIM: usize = 768;
 
 fn vectors_schema(dim: usize) -> Schema {
     Schema::new(vec![

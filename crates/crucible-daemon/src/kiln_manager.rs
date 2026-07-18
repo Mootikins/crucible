@@ -49,6 +49,7 @@ pub fn normalize_note_path(file_path: &Path, kiln_path: &Path) -> Option<String>
 }
 
 // Backend-specific imports
+use crate::storage::lance::vector_index::DEFAULT_EMBEDDING_DIM;
 use crate::storage::lance::LanceVectorIndex;
 use crate::storage::sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteConfig};
 
@@ -327,7 +328,8 @@ impl KilnManager {
 
         info!("Opening kiln at {:?}", db_path);
 
-        let handle = create_storage_handle(&db_path, &canonical).await?;
+        let handle =
+            create_storage_handle(&db_path, &canonical, self.enrichment_config.as_ref()).await?;
         info!(
             "Kiln opened with {} backend at {:?}",
             handle.backend_name(),
@@ -746,7 +748,11 @@ async fn create_pipeline(
 /// `kiln_path` is the kiln root (canonicalized by `open()`); the SQLite
 /// handle is bound to it so `as_knowledge_repository()` enforces
 /// `Scope::Workspace(kiln_path)` authority on reads.
-async fn create_storage_handle(sqlite_db_path: &Path, kiln_path: &Path) -> Result<StorageHandle> {
+async fn create_storage_handle(
+    sqlite_db_path: &Path,
+    kiln_path: &Path,
+    enrichment_config: Option<&EmbeddingProviderConfig>,
+) -> Result<StorageHandle> {
     let sqlite_config = SqliteConfig::new(sqlite_db_path);
     let sqlite = sqlite_adapters::create_sqlite_client(sqlite_config)
         .await?
@@ -756,7 +762,19 @@ async fn create_storage_handle(sqlite_db_path: &Path, kiln_path: &Path) -> Resul
         .parent()
         .map(|p| p.join("crucible-vectors.lance"))
         .unwrap_or_else(|| PathBuf::from("crucible-vectors.lance"));
-    let vectors = Arc::new(LanceVectorIndex::open(lance_dir.to_string_lossy().as_ref()).await?);
+
+    // The Lance index dimension is fixed at open time and must match the
+    // configured embedding model, or every upsert fails the length check and
+    // semantic search silently returns nothing (the default fastembed model is
+    // 384-dim, OpenAI 1536 — not the old hardcoded 768).
+    let dimension = enrichment_config
+        .and_then(|c| c.dimensions())
+        .map(|d| d as usize)
+        .unwrap_or(DEFAULT_EMBEDDING_DIM);
+    let vectors = Arc::new(
+        LanceVectorIndex::open_with_dimension(lance_dir.to_string_lossy().as_ref(), dimension)
+            .await?,
+    );
 
     Ok(StorageHandle { sqlite, vectors })
 }
@@ -1333,6 +1351,38 @@ mod tests {
             .upsert(path, emb)
             .await
             .expect("Lance upsert");
+    }
+
+    #[tokio::test]
+    async fn storage_handle_uses_configured_embedding_dimension() {
+        use crucible_core::config::FastEmbedConfig;
+
+        // Configured 384-dim model (the default fastembed) must open a 384-dim
+        // index — the old code hardcoded 768, so every non-768 upsert silently
+        // failed the length check and semantic search returned nothing.
+        let tmp = TempDir::new().unwrap();
+        let db = tmp.path().join(".crucible").join("crucible-sqlite.db");
+        std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+        let cfg = EmbeddingProviderConfig::FastEmbed(FastEmbedConfig {
+            dimensions: 384,
+            ..Default::default()
+        });
+        let handle = create_storage_handle(&db, tmp.path(), Some(&cfg))
+            .await
+            .unwrap();
+        assert_eq!(handle.vectors.dimension(), 384);
+        handle
+            .vectors
+            .upsert("notes/x.md", vec![0.1_f32; 384])
+            .await
+            .expect("384-dim upsert lands");
+
+        // No enrichment config → default dimension (fresh dir, index dim is fixed at open).
+        let tmp2 = TempDir::new().unwrap();
+        let db2 = tmp2.path().join(".crucible").join("crucible-sqlite.db");
+        std::fs::create_dir_all(db2.parent().unwrap()).unwrap();
+        let handle2 = create_storage_handle(&db2, tmp2.path(), None).await.unwrap();
+        assert_eq!(handle2.vectors.dimension(), DEFAULT_EMBEDDING_DIM);
     }
 
     #[tokio::test]

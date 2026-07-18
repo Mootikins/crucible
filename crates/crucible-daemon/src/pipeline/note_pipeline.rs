@@ -263,7 +263,10 @@ impl NotePipeline {
             (self.vector_store.as_ref(), embedding_for_vectors)
         {
             if let Err(e) = vectors.upsert(&path_str, embedding).await {
-                tracing::warn!(
+                // Surfaced at error level: a persistent upsert failure (e.g. an
+                // embedding/index dimension mismatch) silently voids semantic
+                // search for this note, so it must not hide in warn noise.
+                tracing::error!(
                     path = %path_str,
                     ?e,
                     "vector index upsert failed; metadata persisted but search will miss this note"
