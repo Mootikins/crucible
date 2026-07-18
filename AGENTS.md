@@ -369,6 +369,29 @@ Guidelines:
 - Descriptive test names that explain the scenario
 - **NEVER dismiss test failures as "pre-existing" or "unrelated"** — investigate every failure. If tests fail after your changes, the default assumption is your change broke them. Verify causality before moving on.
 
+#### Test hermeticity (env / config)
+
+Never mutate the test process's environment with raw `std::env::set_var` — it is
+process-global and races under parallel runs (see `tests/tui_e2e_harness.rs`).
+Two sanctioned patterns:
+
+- **In-process** (a test that constructs `Server`/managers directly): the daemon
+  reads `crucible_home()` (data root, default `~/.crucible`) at ~5 sites during
+  construction and at runtime (`server/session/list.rs`, `server/core.rs` sweep,
+  `ProjectManager` `projects.json`). A test that does not isolate it loads the
+  developer's real registry → non-empty kiln/session lists that pass on clean CI
+  but fail locally. Isolate it with the RAII `crucible_core::test_support::EnvVarGuard::set("CRUCIBLE_HOME", tempdir)`,
+  held in the fixture struct (declare it **first** so it outlives the server).
+  Fixtures that list providers must also call the rustls `install_default()`
+  helper or they panic under parallelism.
+- **Out-of-process** (a test that spawns `cru daemon serve`): pass the isolation as
+  child-scoped process env — `Command::env("CRUCIBLE_HOME", tempdir)` — never a
+  global mutation. This is `TestDaemon` in `tests/common/mod.rs`.
+
+> EnvVarGuard is the interim mechanism. The planned end-state makes the data-home a
+> config value threaded through `RpcContext` (env-free DI); see
+> `thoughts/shared/plans/test-hermeticity-config-di_2026-07-18.md`.
+
 ### Snapshot and Golden File Policy
 
 **⚠️ NEVER update snapshots or golden files until the output is verified correct.**
