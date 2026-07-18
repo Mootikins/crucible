@@ -115,6 +115,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                 web_config: None,
                 schedules: config.schedules.clone(),
                 app_config: serde_json::to_value(&config).ok(),
+                data_home: config.data_home.clone(),
             },
         )
         .await?;

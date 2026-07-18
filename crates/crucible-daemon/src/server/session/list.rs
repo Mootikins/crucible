@@ -7,6 +7,7 @@ pub(crate) async fn handle_session_list(
     req: Request,
     sm: &Arc<SessionManager>,
     km: &Arc<KilnManager>,
+    data_home: &std::path::Path,
 ) -> Response {
     // Parse optional filters
     let kiln = optional_param!(req, "kiln", as_str).map(PathBuf::from);
@@ -51,8 +52,8 @@ pub(crate) async fn handle_session_list(
             collect_from(filtered);
         }
 
-        // Also load from crucible home if not already included
-        let home = crucible_core::config::crucible_home();
+        // Also load from the daemon data home if not already included
+        let home = data_home.to_path_buf();
         if !kilns.iter().any(|(k, _, _)| k == &home) {
             let _ = km.open(&home).await;
             let home_sessions = sm

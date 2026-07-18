@@ -78,6 +78,9 @@ pub struct Server {
     auto_archive_hours: Option<u64>,
     llm_config: Option<LlmConfig>,
     schedules: Vec<crucible_core::config::ScheduleEntry>,
+    /// Resolved daemon data root (see `BindWithPluginConfigParams::data_home`);
+    /// `run()`'s open-kilns/archive-sweep read this instead of `crucible_home()`.
+    data_home: std::path::PathBuf,
     #[cfg(feature = "web")]
     #[allow(dead_code)] // web server started externally by crucible-web crate
     web_config: Option<crucible_core::config::WebConfig>,
@@ -170,6 +173,11 @@ pub struct BindWithPluginConfigParams {
     /// Full loaded app config as JSON — seeds the Lua `cru.config` store
     /// before init.lua runs (TOML seeds, Lua overrides, RPC merges).
     pub app_config: Option<serde_json::Value>,
+    /// Daemon data root — registry (`projects.json`), default session storage,
+    /// the home kiln, logs. `None` resolves to `crucible_home()` (the
+    /// `$CRUCIBLE_HOME`/`~/.crucible` default). Injected as a TempDir in tests so
+    /// the in-process daemon never reads the developer's real `~/.crucible`.
+    pub data_home: Option<std::path::PathBuf>,
 }
 
 impl Server {
@@ -194,6 +202,33 @@ impl Server {
             web_config: None,
             schedules: Vec::new(),
             app_config: None,
+            data_home: None,
+        })
+        .await
+    }
+
+    /// Test constructor: bind with an isolated data root injected as a value
+    /// (no `CRUCIBLE_HOME` env mutation). The daemon reads registry, sessions,
+    /// and the home kiln from `data_home` instead of the developer's real
+    /// `~/.crucible`.
+    #[allow(dead_code)] // used by in-process integration-test fixtures
+    pub async fn bind_with_data_home(path: &Path, data_home: std::path::PathBuf) -> Result<Self> {
+        Self::bind_with_plugin_config(BindWithPluginConfigParams {
+            path: path.to_path_buf(),
+            mcp_config: None,
+            plugin_config: std::collections::HashMap::new(),
+            runtimepath: Vec::new(),
+            plugin_watch: false,
+            auto_archive_hours: None,
+            llm_config: None,
+            enrichment_config: None,
+            max_precognition_chars: crucible_core::config::default_max_precognition_chars(),
+            acp_config: None,
+            permission_config: None,
+            web_config: None,
+            schedules: Vec::new(),
+            app_config: None,
+            data_home: Some(data_home),
         })
         .await
     }
@@ -270,7 +305,16 @@ impl Server {
         ));
         let session_manager = Arc::new(SessionManager::new());
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
-        let workspace_root = crucible_core::config::crucible_home();
+        // Resolve the daemon data root ONCE. Every crucible_home() read below and
+        // in the runtime handlers (session list, archive sweep) now goes through
+        // this value instead of calling the global; `None` keeps the
+        // crucible_home() default so production behavior is unchanged, while tests
+        // inject a TempDir (no env mutation).
+        let data_home = params
+            .data_home
+            .clone()
+            .unwrap_or_else(crucible_core::config::crucible_home);
+        let workspace_root = data_home.clone();
         let workspace_tools = Arc::new(WorkspaceTools::new(&workspace_root));
         let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
             kiln_manager: kiln_manager.clone(),
@@ -284,9 +328,7 @@ impl Server {
             workspace_tools: Arc::clone(&workspace_tools),
         }));
         let subscription_manager = Arc::new(SubscriptionManager::new());
-        let project_manager = Arc::new(ProjectManager::new(
-            crucible_core::config::crucible_home().join("projects.json"),
-        ));
+        let project_manager = Arc::new(ProjectManager::new(data_home.join("projects.json")));
         let lua_sessions = Arc::new(DashMap::new());
         let mcp_server_manager = Arc::new(McpServerManager::new());
 
@@ -303,6 +345,7 @@ impl Server {
             params.llm_config.clone(),
             mcp_server_manager.clone(),
             params.mcp_config.clone(),
+            data_home.clone(),
         );
         let dispatcher = Arc::new(RpcDispatcher::new(ctx));
 
@@ -326,6 +369,7 @@ impl Server {
             auto_archive_hours: params.auto_archive_hours,
             llm_config: params.llm_config.clone(),
             schedules: params.schedules,
+            data_home,
             mcp_server_manager,
             socket_lock,
             #[cfg(feature = "web")]
@@ -702,6 +746,7 @@ impl Server {
         let sweep_cancel = CancellationToken::new();
         let sweep_cancel_clone = sweep_cancel.clone();
         let auto_archive_hours = self.auto_archive_hours.unwrap_or(72);
+        let sweep_data_home = self.data_home.clone();
 
         let archive_sweep_task = tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(30 * 60));
@@ -716,6 +761,7 @@ impl Server {
                             &sweep_subscription_manager,
                             &sweep_agent_manager,
                             auto_archive_hours,
+                            &sweep_data_home,
                         ).await {
                             Ok(archived) if archived > 0 => {
                                 info!(archived, auto_archive_hours, "Auto-archived stale sessions");
@@ -824,7 +870,7 @@ impl Server {
             // sessions live at ~/.crucible/sessions) but never OPENS home as a
             // kiln — that is the leak this split fixes.
             let mut sweep_kilns = open_kilns.clone();
-            let home = crucible_core::config::crucible_home();
+            let home = self.data_home.clone();
             if !sweep_kilns.contains(&home) {
                 sweep_kilns.push(home);
             }

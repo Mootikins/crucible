@@ -65,6 +65,13 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub session_kiln: Option<std::path::PathBuf>,
 
+    /// Daemon data root — where the registry (`projects.json`), default session
+    /// storage, and the home kiln live. `None` uses `crucible_home()` (the
+    /// `$CRUCIBLE_HOME`/`~/.crucible` default). Set it to relocate daemon state
+    /// without an env var.
+    #[serde(default)]
+    pub data_home: Option<std::path::PathBuf>,
+
     /// Named kilns registry. Each entry maps a name to a path (+ options).
     /// If empty, falls back to `kiln_path` for backward compatibility.
     #[serde(default)]
@@ -177,6 +184,7 @@ impl Default for CliAppConfig {
         Self {
             kiln_path: default_kiln_path(),
             session_kiln: None,
+            data_home: None,
             kilns: HashMap::new(),
             projects: HashMap::new(),
             default_kiln: None,

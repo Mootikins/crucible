@@ -734,6 +734,7 @@ impl RpcDispatcher {
             req.clone(),
             &self.ctx.sessions,
             &self.ctx.kiln,
+            &self.ctx.data_home,
         )
         .await;
         map_server_resp(resp)
@@ -1460,6 +1461,7 @@ mod tests {
             None,
             Arc::new(McpServerManager::new()),
             None,
+            std::path::PathBuf::from("/tmp"),
         )
     }
 

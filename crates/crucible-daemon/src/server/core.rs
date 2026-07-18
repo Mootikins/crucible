@@ -204,6 +204,7 @@ pub(super) async fn sweep_and_archive_stale_sessions(
     subscription_manager: &SubscriptionManager,
     agent_manager: &AgentManager,
     auto_archive_hours: u64,
+    data_home: &std::path::Path,
 ) -> Result<usize> {
     let now = Utc::now();
     let stale_after = ChronoDuration::hours(auto_archive_hours as i64);
@@ -218,7 +219,7 @@ pub(super) async fn sweep_and_archive_stale_sessions(
         .into_iter()
         .map(|(path, _, _)| path)
         .collect();
-    let home = crucible_core::config::crucible_home();
+    let home = data_home.to_path_buf();
     if !kiln_paths.contains(&home) {
         kiln_paths.push(home);
     }

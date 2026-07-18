@@ -29,6 +29,10 @@ pub struct RpcContext {
     /// task (Task 1.2f) can surface the configured servers as a setup event
     /// without a round-trip through the MCP gateway.
     pub mcp_config: Option<McpConfig>,
+    /// Resolved daemon data root (see `BindWithPluginConfigParams::data_home`).
+    /// Runtime handlers (session list) read this instead of calling
+    /// `crucible_home()`, so they honor the injected data_home in tests.
+    pub data_home: std::path::PathBuf,
     /// Active workflow executions keyed by session id (Phase 3a).
     pub workflows: Arc<WorkflowRegistry>,
 }
@@ -48,6 +52,7 @@ impl RpcContext {
         llm_config: Option<LlmConfig>,
         mcp_server_manager: Arc<McpServerManager>,
         mcp_config: Option<McpConfig>,
+        data_home: std::path::PathBuf,
     ) -> Self {
         Self {
             kiln,
@@ -62,6 +67,7 @@ impl RpcContext {
             llm_config,
             mcp_server_manager,
             mcp_config,
+            data_home,
             workflows: Arc::new(WorkflowRegistry::new()),
         }
     }
