@@ -11,6 +11,23 @@ export const MOCK_SESSION = {
   event_count: 0,
 };
 
+// The single-session GET (session.get) shape, distinct from the list shape
+// above: model/mode live in a nested `agent` object, there is NO top-level
+// `agent_model`, and there's `connected_kilns`/`continued_from` (see
+// handle_session_get). Returning this from the GET mock keeps getSession()
+// mapping bugs (e.g. reading model from the wrong level) from hiding.
+export const MOCK_SESSION_DETAIL = {
+  session_id: 'test-session-001',
+  type: 'chat' as const,
+  kiln: '/home/user/.crucible/kiln',
+  workspace: '/home/user/project',
+  connected_kilns: ['/home/user/.crucible/kiln'],
+  state: 'active' as const,
+  title: 'Test Session',
+  continued_from: null,
+  agent: { model: 'llama3.2', mode: 'chat' },
+  started_at: '2026-01-01T00:00:00Z',
+};
 export const MOCK_SESSION_2 = {
   session_id: 'test-session-002',
   type: 'chat' as const,

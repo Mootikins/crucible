@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { MOCK_SESSION, MOCK_PROVIDERS, MOCK_KILNS, MOCK_CONFIG, MOCK_PROJECT } from './fixtures';
+import { MOCK_SESSION, MOCK_SESSION_DETAIL, MOCK_PROVIDERS, MOCK_KILNS, MOCK_CONFIG, MOCK_PROJECT } from './fixtures';
 import { mockSSERoute } from './mock-sse';
 
 export interface MockOverrides {
@@ -30,7 +30,8 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
 
   await page.route('**/api/session/test-session-*', async (route) => {
     if (route.request().method() === 'GET') {
-      route.fulfill({ json: MOCK_SESSION });
+      // session.get returns the nested-agent detail shape, not the list shape.
+      route.fulfill({ json: MOCK_SESSION_DETAIL });
     } else {
       route.continue();
     }

@@ -301,8 +301,12 @@ interface RawSession {
   workspace: string;
   state: Session['state'];
   title: string | null;
+  // Two endpoint shapes: session.list sends a flattened top-level `agent_model`;
+  // session.get sends the nested `agent` object (model/mode live inside it) and
+  // NO top-level agent_model. mapSession reads both so getSession()'s model
+  // isn't silently null.
   agent_model?: string | null;
-  agent?: { mode?: string | null } | null;
+  agent?: { model?: string | null; mode?: string | null } | null;
   started_at: string;
   last_activity?: string | null;
   event_count?: number;
@@ -317,7 +321,7 @@ function mapSession(raw: RawSession): Session {
     workspace: raw.workspace,
     state: raw.state,
     title: raw.title,
-    agent_model: raw.agent_model ?? null,
+    agent_model: raw.agent_model ?? raw.agent?.model ?? null,
     agent_mode: raw.agent?.mode ?? null,
     started_at: raw.started_at,
     last_activity: raw.last_activity ?? null,

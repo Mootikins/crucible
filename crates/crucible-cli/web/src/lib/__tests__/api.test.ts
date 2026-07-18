@@ -238,6 +238,32 @@ describe('getSession', () => {
     expect(session.id).toBe('ses-abc');
     expect(session.session_type).toBe('chat');
   });
+
+  // Regression: session.get returns the NESTED agent shape (`agent.model`) with
+  // no top-level `agent_model` — unlike session.list. mapSession must read the
+  // nested model or getSession()'s model is silently null against the real daemon.
+  it('maps model/mode from the nested agent object (session.get shape)', async () => {
+    const mockFetch = createMockFetch({
+      'GET /api/session/ses-get': {
+        body: {
+          session_id: 'ses-get',
+          type: 'chat',
+          kiln: '/k',
+          workspace: '/w',
+          state: 'active',
+          title: null,
+          agent: { model: 'ollama:mistral', mode: 'edit' },
+          started_at: '2026-01-01T00:00:00Z',
+        },
+      },
+    });
+    global.fetch = mockFetch;
+
+    const session = await getSession('ses-get');
+
+    expect(session.agent_model).toBe('ollama:mistral');
+    expect(session.agent_mode).toBe('edit');
+  });
 });
 
 // =============================================================================
@@ -967,13 +993,16 @@ describe('MCP / kilns / notes / search', () => {
   });
 
   it('getNote fetches and returns the note content', async () => {
+    // GET /api/notes/{name} serializes a ParsedNote: it carries path/title/
+    // tags/links_to/content_hash and does NOT send name/content/updated_at
+    // (see NoteContent doc in types.ts). The fixture mirrors the real payload
+    // so a getNote passthrough/mapping regression can actually surface.
     const note = {
-      name: 'Hello',
       path: '/hello.md',
-      content: '# Hi',
       title: 'Hi',
       tags: [],
-      updated_at: '2026-05-17T00:00:00Z',
+      links_to: [],
+      content_hash: 'sha256:abc',
     };
     global.fetch = createMockFetch({
       'GET /api/notes/Hello': { body: note },
