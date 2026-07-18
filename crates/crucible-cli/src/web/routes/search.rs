@@ -9,10 +9,7 @@ use axum::{
     Json, Router,
 };
 use chrono::Utc;
-use crucible_core::parser::types::BlockHash;
-use crucible_core::storage::NoteRecord;
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::fs;
 
@@ -256,39 +253,23 @@ async fn put_note(
     // final component (the lexical check above does NOT resolve symlinks).
     validate_write_target_within_kiln(&file_path, &canonical_kiln)?;
 
-    // Write content to filesystem (source of truth)
+    // Write content to filesystem (source of truth). The file watcher then runs
+    // the note through the daemon pipeline (real content hash, tags, wikilinks,
+    // embedding), same as PUT /api/kiln/file. We deliberately do NOT upsert a
+    // NoteRecord here: the old code wrote a stub (default hash, empty tags/links,
+    // null embedding) that CLOBBERED the properly-enriched record — dropping the
+    // note from vector search and backlinks until the watcher re-enriched it.
     fs::write(&file_path, &req.content)
         .await
         .map_err(WebError::Io)?;
 
-    // Extract metadata and update database
     let title = extract_title(&req.content);
-    let now = Utc::now();
-
-    let note = NoteRecord {
-        path: note_filename.clone(),
-        content_hash: BlockHash::default(), // TODO: compute actual hash
-        embedding: None,
-        embedding_model: None,
-        embedding_dimensions: None,
-        title: title.clone(),
-        tags: vec![],
-        links_to: vec![],
-        properties: HashMap::new(),
-        updated_at: now,
-    };
-
-    state
-        .daemon
-        .note_upsert(&req.kiln, &note)
-        .await
-        .daemon_err()?;
 
     Ok(Json(serde_json::json!({
         "success": true,
         "name": note_filename,
         "title": title,
-        "updated_at": now
+        "updated_at": Utc::now()
     })))
 }
 
