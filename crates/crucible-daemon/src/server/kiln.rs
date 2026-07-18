@@ -4,6 +4,7 @@ use crucible_core::config::{
     DataClassification, KilnConfig, KilnMeta, ProjectConfig,
 };
 use crucible_core::storage::Scope;
+use crucible_core::storage::VectorStore;
 
 /// Decode an optional `scope` JSON field from an RPC request. Falls back
 /// to `Scope::Workspace { path: kiln_path }` when absent — the broadest
@@ -469,7 +470,13 @@ pub(crate) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> R
 
     let note_store = handle.as_note_store();
     match note_store.delete(path).await {
-        Ok(_event) => Response::success(req.id, serde_json::json!({"status": "ok"})),
+        Ok(_event) => {
+            // Remove the note's vector too so it doesn't orphan in Lance.
+            if let Err(e) = handle.vectors.delete(path).await {
+                tracing::warn!(path, ?e, "failed to remove deleted note from vector index");
+            }
+            Response::success(req.id, serde_json::json!({"status": "ok"}))
+        }
         Err(e) => internal_error(req.id, e),
     }
 }

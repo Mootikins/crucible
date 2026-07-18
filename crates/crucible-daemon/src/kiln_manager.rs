@@ -498,6 +498,12 @@ impl KilnManager {
         };
         let event = conn.handle.as_note_store().delete(&relative_path).await?;
 
+        // Drop the note's vector too, or it orphans in the Lance index and can
+        // eat the similarity over-fetch window for later searches.
+        if let Err(e) = conn.handle.vectors.delete(&relative_path).await {
+            tracing::warn!(path = %relative_path, ?e, "failed to remove deleted note from vector index");
+        }
+
         match event {
             SessionEvent::Internal(inner) => {
                 if let InternalSessionEvent::NoteDeleted { existed, .. } = inner.as_ref() {
