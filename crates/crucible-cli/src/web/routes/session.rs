@@ -12,10 +12,9 @@ use axum::{
     Json, Router,
 };
 use crucible_core::config::BackendType;
-use crucible_core::session::{OutputValidation, SessionAgent};
+use crucible_core::session::SessionAgent;
 use crucible_daemon::agent_manager::providers::ProviderInfo;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -279,35 +278,16 @@ async fn create_session(
     let provider_type = BackendType::from_str(&target.provider)
         .map_err(|e| WebError::Validation(format!("Invalid provider: {}", e)))?;
 
+    // Base the agent on the SAME canonical builder the CLI uses so web and CLI
+    // sessions get identical config-derived defaults (temperature, max_tokens,
+    // endpoint, MCP servers, precognition). The web is request-driven for the
+    // provider/model/endpoint, so override only those.
     let agent = SessionAgent {
-        agent_type: "internal".to_string(),
-        agent_name: None,
         provider_key: Some(target.provider_key),
         provider: provider_type,
         model: target.model,
-        system_prompt: String::new(),
-        temperature: None,
-        max_tokens: None,
-        max_context_tokens: None,
-        thinking_budget: None,
         endpoint: target.endpoint,
-        env_overrides: HashMap::new(),
-        mcp_servers: vec![],
-        agent_card_name: None,
-        capabilities: None,
-        agent_description: None,
-        delegation_config: None,
-        precognition_enabled: true,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
-        context_budget: None,
-        context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
-        mode: None,
+        ..crate::factories::agent::build_internal_session_agent(&state.config)
     };
 
     state
