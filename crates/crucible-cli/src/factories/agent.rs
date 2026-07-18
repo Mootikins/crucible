@@ -282,6 +282,21 @@ pub async fn create_daemon_agent_with_events(
     Ok((handle, session_id, raw_rx))
 }
 
+/// The single internal-vs-ACP rule, shared by every entry point (interactive
+/// chat, one-shot chat, `session create`, config preference). A present agent
+/// name (`chat -a claude`) implies ACP — previously only the interactive path
+/// set the ACP type, so one-shot `chat -a <agent>` silently ran the internal
+/// agent.
+pub(crate) fn resolve_is_acp(
+    agent_type: Option<AgentType>,
+    agent_name: Option<&str>,
+    preference: &crucible_core::config::AgentPreference,
+) -> bool {
+    agent_type == Some(AgentType::Acp)
+        || agent_name.is_some()
+        || *preference == crucible_core::config::AgentPreference::Acp
+}
+
 async fn create_daemon_agent_inner(
     config: &CliAppConfig,
     params: &AgentInitParams,
@@ -322,12 +337,11 @@ async fn create_daemon_agent_inner(
 
     // Compute up-front so `session.create` can tell the daemon which agent type
     // this will be (Task 1.2f's setup task branches on it).
-    let is_acp = params
-        .agent_type
-        .map(|t| t == AgentType::Acp)
-        .unwrap_or_else(|| {
-            config.chat.agent_preference == crucible_core::config::AgentPreference::Acp
-        });
+    let is_acp = resolve_is_acp(
+        params.agent_type,
+        params.agent_name.as_deref(),
+        &config.chat.agent_preference,
+    );
     let create_agent_type = if is_acp { "acp" } else { "internal" };
 
     let (session_id, is_new_session) = match &params.resume_session_id {
@@ -474,7 +488,20 @@ pub async fn create_agent(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::config::{AgentProfile, DelegationConfig};
+    use crucible_core::config::{AgentPreference, AgentProfile, DelegationConfig};
+
+    #[test]
+    fn is_acp_rule_converges_across_entry_points() {
+        // A named agent (`chat -a claude`) implies ACP even with the default
+        // Crucible preference and no explicit type — the one-shot bug.
+        assert!(resolve_is_acp(None, Some("claude"), &AgentPreference::Crucible));
+        // Explicit ACP type.
+        assert!(resolve_is_acp(Some(AgentType::Acp), None, &AgentPreference::Crucible));
+        // Config preference.
+        assert!(resolve_is_acp(None, None, &AgentPreference::Acp));
+        // Bare `cru chat`: no name, no type, default preference → internal.
+        assert!(!resolve_is_acp(None, None, &AgentPreference::Crucible));
+    }
 
     fn test_delegation_config() -> DelegationConfig {
         DelegationConfig {
