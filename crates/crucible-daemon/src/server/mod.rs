@@ -793,43 +793,56 @@ impl Server {
             let km = self.kiln_manager.clone();
             let pm = self.project_manager.clone();
             let tx = self.event_tx.clone();
-            tokio::spawn(async move {
-                let mut kilns: Vec<std::path::PathBuf> =
-                    km.list().await.into_iter().map(|(path, _, _)| path).collect();
-                let home = crucible_core::config::crucible_home();
-                if !kilns.contains(&home) {
-                    kilns.push(home);
-                }
-                for project in pm.list() {
-                    for kiln in project.kilns {
-                        let root = if kiln.path.file_name().is_some_and(|n| n == ".crucible") {
-                            kiln.path.parent().map(|p| p.to_path_buf())
-                        } else {
-                            Some(kiln.path)
-                        };
-                        if let Some(root) = root {
-                            if !kilns.contains(&root) {
-                                kilns.push(root);
-                            }
+
+            // Kilns to OPEN: already-open kilns + registered project kiln roots.
+            // Deliberately NOT ~/.crucible — opening the config dir as a kiln
+            // leaked it into km.list()/`/api/kilns` forever and spun a watcher
+            // over it. Project entries may point at the `.crucible` data dir;
+            // normalize to the kiln root.
+            let mut open_kilns: Vec<std::path::PathBuf> =
+                km.list().await.into_iter().map(|(path, _, _)| path).collect();
+            for project in pm.list() {
+                for kiln in project.kilns {
+                    let root = if kiln.path.file_name().is_some_and(|n| n == ".crucible") {
+                        kiln.path.parent().map(|p| p.to_path_buf())
+                    } else {
+                        Some(kiln.path)
+                    };
+                    if let Some(root) = root {
+                        if !open_kilns.contains(&root) {
+                            open_kilns.push(root);
                         }
                     }
                 }
+            }
 
-                // Open each (idempotent; already-open kilns are a no-op). A
-                // failure to open one kiln must not block the others or the
-                // title sweep.
+            // Title catch-up scans the open kilns PLUS ~/.crucible (legacy
+            // sessions live at ~/.crucible/sessions) but never OPENS home as a
+            // kiln — that is the leak this split fixes.
+            let mut sweep_kilns = open_kilns.clone();
+            let home = crucible_core::config::crucible_home();
+            if !sweep_kilns.contains(&home) {
+                sweep_kilns.push(home);
+            }
+
+            tokio::spawn(async move {
+                // Open registered project kilns (idempotent) so note-open can
+                // resolve them; a failure to open one must not block the others
+                // or the title sweep.
                 let mut opened = 0;
-                for kiln in &kilns {
+                for kiln in &open_kilns {
                     match km.open(kiln).await {
                         Ok(()) => opened += 1,
-                        Err(e) => warn!(kiln = %kiln.display(), error = %e, "Startup kiln open failed"),
+                        Err(e) => {
+                            warn!(kiln = %kiln.display(), error = %e, "Startup kiln open failed")
+                        }
                     }
                 }
                 if opened > 0 {
                     info!(opened, "Opened registered kilns on startup");
                 }
 
-                let titled = sm.title_untitled_sessions(&kilns, &tx).await;
+                let titled = sm.title_untitled_sessions(&sweep_kilns, &tx).await;
                 if titled > 0 {
                     info!(titled, "Startup title catch-up completed");
                 }
