@@ -11,31 +11,38 @@ import '@xterm/xterm/css/xterm.css';
  */
 
 // Ember-shell ANSI theme. xterm renders into a canvas/DOM layer that can't
-// consume CSS custom properties, so the token VALUES are inlined here —
-// keep in sync with @theme in index.css.
-const EMBER_THEME = {
-  background: '#141318', // --color-shell-panel (panel content bg)
-  foreground: '#e7e4df', // --color-shell-ink
-  cursor: '#e0653a', // --color-primary
-  cursorAccent: '#141318',
-  selectionBackground: 'rgba(224, 101, 58, 0.35)',
-  black: '#26252b',
-  red: '#ef4444',
-  green: '#7bc47f',
-  yellow: '#d4a72c',
-  blue: '#7aa2f7',
-  magenta: '#a78bda',
-  cyan: '#76c7c0',
-  white: '#c9c5bf',
-  brightBlack: '#6b6673',
-  brightRed: '#f87171',
-  brightGreen: '#9ed9a2',
-  brightYellow: '#e3bd52',
-  brightBlue: '#9db8f9',
-  brightMagenta: '#c1a8ee',
-  brightCyan: '#98dbd5',
-  brightWhite: '#e7e4df',
-};
+// consume CSS custom properties, so the tokened entries are READ from the
+// design tokens at mount (single source of truth in index.css); each falls
+// back to its literal if the var is unresolved. The two untokened ANSI slots
+// (blue, cyan) stay as literals.
+function buildEmberTheme() {
+  const css = getComputedStyle(document.documentElement);
+  const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+  const bg = v('--color-shell-panel', '#141318');
+  return {
+    background: bg,
+    foreground: v('--color-shell-ink', '#e7e4df'),
+    cursor: v('--color-primary', '#e0653a'),
+    cursorAccent: bg,
+    selectionBackground: 'rgba(224, 101, 58, 0.35)',
+    black: '#26252b',
+    red: v('--color-error', '#ef4444'),
+    green: v('--color-ok', '#7bc47f'),
+    yellow: v('--color-attention', '#d4a72c'),
+    blue: '#7aa2f7',
+    magenta: v('--color-precog', '#a78bda'),
+    cyan: '#76c7c0',
+    white: '#c9c5bf',
+    brightBlack: '#6b6673',
+    brightRed: '#f87171',
+    brightGreen: '#9ed9a2',
+    brightYellow: '#e3bd52',
+    brightBlue: '#9db8f9',
+    brightMagenta: '#c1a8ee',
+    brightCyan: '#98dbd5',
+    brightWhite: '#e7e4df',
+  };
+}
 
 function wsUrl(): string {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -91,7 +98,7 @@ export const TerminalPanel: Component = () => {
   const init = (el: HTMLDivElement) => {
     container = el;
     const t = new Terminal({
-      theme: EMBER_THEME,
+      theme: buildEmberTheme(),
       fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
       fontSize: 13,
       cursorBlink: true,

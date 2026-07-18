@@ -2,10 +2,10 @@ import { Component } from 'solid-js';
 import { useChatSafe } from '@/contexts/ChatContext';
 import type { ChatMode } from '@/lib/types';
 
-const MODES: { value: ChatMode; label: string }[] = [
-  { value: 'normal', label: 'Normal' },
-  { value: 'plan', label: 'Plan' },
-  { value: 'auto', label: 'Auto' },
+const MODES: { value: ChatMode; label: string; hint: string }[] = [
+  { value: 'normal', label: 'Normal', hint: 'Agent acts directly' },
+  { value: 'plan', label: 'Plan', hint: 'Agent drafts a plan before acting' },
+  { value: 'auto', label: 'Auto', hint: 'Agent runs autonomously' },
 ];
 
 const MODE_ORDER: ChatMode[] = ['normal', 'plan', 'auto'];
@@ -25,7 +25,7 @@ export const ChatModeControl: Component = () => {
         <button
           type="button"
           onClick={() => switchMode(mode.value)}
-          title={`${mode.label} mode`}
+          title={`${mode.label}: ${mode.hint} (Shift+Tab to cycle)`}
           class="px-2.5 py-1 text-xs font-medium transition-colors outline-none"
           classList={{
             'bg-primary/80 text-white': chatMode() === mode.value,

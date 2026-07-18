@@ -77,7 +77,7 @@ export const HomePanel: Component = () => {
   };
 
   return (
-    <div class="h-full overflow-y-auto text-shell-ink [background:radial-gradient(ellipse_at_50%_0%,#16151a_0%,#0e0d11_60%)]">
+    <div class="h-full overflow-y-auto text-shell-ink bg-shell-bg">
       <div class="flex items-baseline gap-2.5 px-7 pt-5 flex-wrap">
         <span class="text-xl font-bold">{greetingForHour(new Date().getHours())}</span>
         <Show when={kilnName()}>
@@ -197,7 +197,7 @@ export const HomePanel: Component = () => {
             <span class="absolute left-[28%] top-[30%] w-2.5 h-2.5 rounded-full bg-shell-ink" />
             <span class="absolute left-[55%] top-[22%] w-[7px] h-[7px] rounded-full bg-muted" />
             <span class="absolute left-[62%] top-[55%] w-[7px] h-[7px] rounded-full bg-muted" />
-            <span class="absolute left-[40%] top-[65%] w-2 h-2 rounded-sm bg-primary shadow-[0_0_10px_rgba(224,101,58,0.6)]" />
+            <span class="absolute left-[40%] top-[65%] w-2 h-2 rounded-sm bg-primary shadow-[0_0_10px] shadow-primary/60" />
             <span class="font-mono text-[10.5px] text-muted-dark absolute bottom-2.5 left-0 right-0 text-center">
               open →
             </span>
