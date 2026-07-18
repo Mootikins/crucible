@@ -28,19 +28,9 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use tracing::{debug, info};
 
-/// Parser backend selection
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ParserBackend {
-    /// Use CrucibleParser (default, regex-based extraction)
-    #[default]
-    Default,
-}
-
 /// Configuration for pipeline behavior
 #[derive(Debug, Clone, Default)]
 pub struct NotePipelineConfig {
-    /// Which markdown parser to use
-    pub parser: ParserBackend,
     /// Skip enrichment phase (useful for testing or when embeddings not needed)
     pub skip_enrichment: bool,
     /// Force full reprocessing even if file hash matches
@@ -89,11 +79,6 @@ pub struct NotePipeline {
 }
 
 impl NotePipeline {
-    /// Create a parser instance based on the configured backend
-    fn create_parser(_backend: ParserBackend) -> Arc<dyn MarkdownParser> {
-        Arc::new(CrucibleParser::new())
-    }
-
     /// Create a new pipeline with dependencies (uses default config)
     pub fn new(
         change_detector: Arc<dyn ChangeDetectionStore>,
@@ -101,7 +86,7 @@ impl NotePipeline {
         note_store: Arc<dyn NoteStore>,
     ) -> Self {
         let config = NotePipelineConfig::default();
-        let parser = Self::create_parser(config.parser);
+        let parser = Arc::new(CrucibleParser::new()) as Arc<dyn MarkdownParser>;
 
         Self {
             parser,
@@ -121,7 +106,7 @@ impl NotePipeline {
         note_store: Arc<dyn NoteStore>,
         config: NotePipelineConfig,
     ) -> Self {
-        let parser = Self::create_parser(config.parser);
+        let parser = Arc::new(CrucibleParser::new()) as Arc<dyn MarkdownParser>;
 
         Self {
             parser,
@@ -744,17 +729,10 @@ mod tests {
     }
 
     #[test]
-    fn parser_backend_default_is_default() {
-        let backend = ParserBackend::default();
-        assert_eq!(backend, ParserBackend::Default);
-    }
-
-    #[test]
     fn pipeline_config_default_values() {
         let config = NotePipelineConfig::default();
         assert!(!config.skip_enrichment);
         assert!(!config.force_reprocess);
-        assert_eq!(config.parser, ParserBackend::Default);
     }
 
     #[tokio::test]

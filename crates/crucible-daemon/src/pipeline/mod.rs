@@ -27,7 +27,7 @@
 pub mod note_pipeline;
 
 // Re-export pipeline types
-pub use note_pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
+pub use note_pipeline::{NotePipeline, NotePipelineConfig};
 
 // Re-export core types for convenience (defined in crucible-core)
 pub use crucible_core::processing::ProcessingResult;

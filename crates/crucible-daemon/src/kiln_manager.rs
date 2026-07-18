@@ -13,7 +13,7 @@ use std::time::Instant;
 use tokio::sync::{broadcast, RwLock};
 use tracing::{info, warn};
 
-use crate::pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
+use crate::pipeline::{NotePipeline, NotePipelineConfig};
 use crate::watch::{EventFilter, WatchManager, WatchManagerConfig};
 use crucible_core::processing::InMemoryChangeDetectionStore;
 use crucible_core::storage::note_store::NoteRecord;
@@ -703,7 +703,6 @@ impl Default for KilnManager {
 /// - NoteStore from the storage handle
 fn pipeline_config(enrichment_config: Option<&EmbeddingProviderConfig>) -> NotePipelineConfig {
     NotePipelineConfig {
-        parser: ParserBackend::default(),
         skip_enrichment: enrichment_config.is_none(),
         force_reprocess: false,
     }
