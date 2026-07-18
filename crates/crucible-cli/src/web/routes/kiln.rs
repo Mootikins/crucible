@@ -87,22 +87,10 @@ async fn get_kiln_file(
     let kiln = find_enclosing_kiln(&state, &file_path).await?;
     let canonical_file = validate_file_within_kiln(&file_path, &kiln, &query.path)?;
 
-    // Try daemon get_note_by_name first (structured data)
-    let relative = canonical_file
-        .strip_prefix(&kiln)
-        .map_err(|_| WebError::Validation("Path not within kiln".to_string()))?;
-    let note_name = relative
-        .to_string_lossy()
-        .trim_end_matches(".md")
-        .to_string();
-
-    if let Ok(Some(note)) = state.daemon.get_note_by_name(&kiln, &note_name).await {
-        if let Some(content) = note.get("content").and_then(|v| v.as_str()) {
-            return Ok(Json(serde_json::json!({ "content": content })));
-        }
-    }
-
-    // Fallback: read from filesystem directly
+    // Read the file directly. GET /api/notes/{name} (get_note_by_name) returns
+    // only path/title/tags/links_to/content_hash — never a "content" field — so
+    // a daemon-first content branch here was statically unreachable and a
+    // footgun (it would have served stale DB text over the file bytes).
     let content = fs::read_to_string(&canonical_file)
         .await
         .map_err(|e| WebError::NotFound(format!("File not found: {e}")))?;
