@@ -1,11 +1,11 @@
 /**
  * Shared wikilink → note actions: resolve a `data-note` target to a kiln
- * note, open it in the editor, or fetch a hover-preview excerpt.
+ * note, open it in the editor, or fetch a hover preview.
  *
  * Used by chat messages, the editor's wikilink decorations, and the
  * backlinks panel so every surface resolves links the same way.
  */
-import { getConfig, getNote, getFileContent } from './api';
+import { getConfig, getNote } from './api';
 import { openFileInEditor } from './file-actions';
 import { notificationActions } from '@/stores/notificationStore';
 import type { NoteContent } from './types';
@@ -78,7 +78,6 @@ export interface NotePreview {
   title: string;
   path: string;
   absPath: string;
-  excerpt: string;
 }
 
 /** Note body without its YAML frontmatter block (for rendered views). */
@@ -90,19 +89,6 @@ export function stripFrontmatter(content: string): string {
     }
   }
   return content;
-}
-
-/**
- * First ~`maxChars` of note content with YAML frontmatter stripped —
- * enough for a hover card without rendering the whole note.
- */
-export function noteExcerpt(content: string, maxChars = 1200): string {
-  let body = stripFrontmatter(content);
-  body = body.trim();
-  if (body.length <= maxChars) return body;
-  // Cut on a line boundary so we don't render half a markdown construct.
-  const cut = body.lastIndexOf('\n', maxChars);
-  return body.slice(0, cut > 0 ? cut : maxChars).trimEnd() + '\n…';
 }
 
 /**
@@ -159,18 +145,10 @@ export async function fetchNotePreview(name: string, kiln?: string): Promise<Not
   try {
     const note: NoteContent = await getNote(name, resolvedKiln);
     const absPath = noteAbsolutePath(note.path, resolvedKiln);
-    let excerpt = '';
-    try {
-      const content = await getFileContent(absPath);
-      excerpt = noteExcerpt(content);
-    } catch {
-      // Metadata-only preview when the content read fails.
-    }
     preview = {
       title: noteDisplayName(note),
       path: note.path,
       absPath,
-      excerpt,
     };
   } catch {
     preview = null;
