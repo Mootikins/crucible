@@ -77,7 +77,7 @@ const TabItem: Component<TabItemProps> = (props) => {
         'group relative flex items-center gap-1 px-2.5 py-1.5 cursor-pointer transition-all duration-100 border-b-2 rounded-t-sm':
           true,
         'opacity-40 border-transparent bg-surface-elevated': draggable.isActiveDraggable,
-        'bg-shell-panel text-shell-ink': props.isActive && !draggable.isActiveDraggable,
+        'bg-shell-bg text-shell-ink': props.isActive && !draggable.isActiveDraggable,
         'border-primary': props.isActive && props.isFocused && !draggable.isActiveDraggable,
         'border-hairline': props.isActive && !props.isFocused && !draggable.isActiveDraggable,
         'border-transparent text-muted hover:text-shell-ink hover:bg-hover-wash':
