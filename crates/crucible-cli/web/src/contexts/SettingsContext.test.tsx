@@ -1,7 +1,8 @@
 // src/contexts/SettingsContext.test.tsx
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createRoot } from 'solid-js';
-import { SettingsProvider, useSettings } from './SettingsContext';
+import { render } from '@solidjs/testing-library';
+import { SettingsProvider, useSettings, type SettingsContextValue } from './SettingsContext';
 import { SETTINGS_STORAGE_KEY } from '@/lib/settings';
 
 describe('SettingsContext', () => {
@@ -106,5 +107,55 @@ describe('SettingsContext', () => {
         dispose();
       });
     }).toThrow('useSettings must be used within a SettingsProvider');
+  });
+});
+
+describe('SettingsContext — appearance fonts apply to CSS vars', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.style.removeProperty('--font-sans');
+    document.documentElement.style.removeProperty('--font-mono');
+  });
+  afterEach(() => localStorage.clear());
+
+  it('applies persisted fontSans/fontMono to the root CSS vars on load', () => {
+    localStorage.setItem(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({ appearance: { fontSans: '"Inter", sans-serif', fontMono: '"Fira Code", monospace' } }),
+    );
+    render(() => (
+      <SettingsProvider>
+        <div />
+      </SettingsProvider>
+    ));
+    const style = document.documentElement.style;
+    expect(style.getPropertyValue('--font-sans')).toBe('"Inter", sans-serif');
+    expect(style.getPropertyValue('--font-mono')).toBe('"Fira Code", monospace');
+  });
+
+  it('leaves the CSS var unset when the setting is empty (built-in default applies)', () => {
+    render(() => (
+      <SettingsProvider>
+        <div />
+      </SettingsProvider>
+    ));
+    expect(document.documentElement.style.getPropertyValue('--font-sans')).toBe('');
+  });
+
+  it('removes the override when the font is changed back to empty', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ appearance: { fontSans: 'Georgia, serif' } }));
+    let ctx!: SettingsContextValue;
+    const Probe = () => {
+      ctx = useSettings();
+      return null;
+    };
+    render(() => (
+      <SettingsProvider>
+        <Probe />
+      </SettingsProvider>
+    ));
+    expect(document.documentElement.style.getPropertyValue('--font-sans')).toBe('Georgia, serif');
+    ctx.updateSetting('appearance', 'fontSans', '');
+    expect(document.documentElement.style.getPropertyValue('--font-sans')).toBe('');
   });
 });

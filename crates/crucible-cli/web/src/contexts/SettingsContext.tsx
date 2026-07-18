@@ -2,6 +2,7 @@
 import {
   createContext,
   useContext,
+  createEffect,
   ParentComponent,
 } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
@@ -34,6 +35,20 @@ const SettingsContext = createContext<SettingsContextValue>();
  */
 export const SettingsProvider: ParentComponent = (props) => {
   const [settings, setSettings] = createStore<AppSettings>(loadSettings());
+
+  // Apply the chosen fonts by overriding the --font-sans/--font-mono CSS vars
+  // (defined in index.css @theme). Empty setting = remove the override so the
+  // built-in IBM Plex default applies. Reactive: re-runs when the setting changes.
+  createEffect(() => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    const sans = settings.appearance.fontSans.trim();
+    const mono = settings.appearance.fontMono.trim();
+    if (sans) root.style.setProperty('--font-sans', sans);
+    else root.style.removeProperty('--font-sans');
+    if (mono) root.style.setProperty('--font-mono', mono);
+    else root.style.removeProperty('--font-mono');
+  });
 
   const updateSetting = <K extends keyof AppSettings>(
     section: K,

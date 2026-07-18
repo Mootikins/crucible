@@ -620,6 +620,73 @@ const EditorSettingsSection: Component = () => {
   );
 };
 
+const SANS_PRESETS: { label: string; value: string }[] = [
+  { label: 'IBM Plex Sans (default)', value: '' },
+  { label: 'System UI', value: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' },
+  { label: 'Serif', value: 'Georgia, Cambria, "Times New Roman", serif' },
+];
+const MONO_PRESETS: { label: string; value: string }[] = [
+  { label: 'IBM Plex Mono (default)', value: '' },
+  { label: 'System Mono', value: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' },
+];
+const CUSTOM_FONT = '__custom__';
+
+/** Preset dropdown + a "Custom…" free-text CSS font-family for one font var. */
+const FontControl: Component<{
+  field: 'fontSans' | 'fontMono';
+  presets: { label: string; value: string }[];
+  testid: string;
+}> = (props) => {
+  const { settings, updateSetting } = useSettings();
+  const val = () => settings.appearance[props.field];
+  const isPreset = () => props.presets.some((p) => p.value === val());
+  const [custom, setCustom] = createSignal(val() !== '' && !isPreset());
+  return (
+    <div class="flex flex-col items-end gap-2">
+      <select
+        value={custom() && !isPreset() ? CUSTOM_FONT : val()}
+        onChange={(e) => {
+          const v = e.currentTarget.value;
+          if (v === CUSTOM_FONT) {
+            setCustom(true);
+          } else {
+            setCustom(false);
+            updateSetting('appearance', props.field, v);
+          }
+        }}
+        class="rounded border border-hairline bg-surface-base px-2 py-1 text-sm"
+        data-testid={props.testid}
+      >
+        <For each={props.presets}>{(p) => <option value={p.value}>{p.label}</option>}</For>
+        <option value={CUSTOM_FONT}>Custom…</option>
+      </select>
+      <Show when={custom()}>
+        <input
+          type="text"
+          value={isPreset() ? '' : val()}
+          onInput={(e) => updateSetting('appearance', props.field, e.currentTarget.value)}
+          placeholder='e.g. "Inter", sans-serif'
+          class="w-56 rounded border border-hairline bg-surface-base px-2 py-1 text-sm"
+          data-testid={`${props.testid}-custom`}
+        />
+      </Show>
+    </div>
+  );
+};
+
+/** Typography: choose the UI + code fonts (applied live via CSS vars). */
+const AppearanceSettingsSection: Component = () => (
+  <>
+    <SectionHeader title="Appearance" icon="🅰" />
+    <SettingRow label="UI font" description="Font for the interface and prose. Applies instantly.">
+      <FontControl field="fontSans" presets={SANS_PRESETS} testid="settings-font-sans" />
+    </SettingRow>
+    <SettingRow label="Code font" description="Monospace font for code and the editor.">
+      <FontControl field="fontMono" presets={MONO_PRESETS} testid="settings-font-mono" />
+    </SettingRow>
+  </>
+);
+
 const ApiAccessSection: Component = () => {
   const [draft, setDraft] = createSignal('');
   const [rejected, setRejected] = createSignal(false);
@@ -770,6 +837,9 @@ const SettingsPanelContent: Component = () => {
 
           {/* Editor Section */}
           <EditorSettingsSection />
+
+          {/* Appearance Section */}
+          <AppearanceSettingsSection />
 
           {/* API Access Section */}
           <ApiAccessSection />

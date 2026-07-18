@@ -32,6 +32,11 @@ describe('settings', () => {
     it('has auto as default language', () => {
       expect(defaultSettings.transcription.language).toBe('auto');
     });
+
+    it('defaults appearance fonts to empty (use built-in IBM Plex)', () => {
+      expect(defaultSettings.appearance.fontSans).toBe('');
+      expect(defaultSettings.appearance.fontMono).toBe('');
+    });
   });
 
   describe('loadSettings', () => {
@@ -64,6 +69,15 @@ describe('settings', () => {
       localStorage.setItem(SETTINGS_STORAGE_KEY, 'not valid json');
       const settings = loadSettings();
       expect(settings).toEqual(defaultSettings);
+    });
+
+    it('loads a custom appearance font and merges the missing one', () => {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+        appearance: { fontSans: '"Inter", sans-serif' }
+      }));
+      const settings = loadSettings();
+      expect(settings.appearance.fontSans).toBe('"Inter", sans-serif');
+      expect(settings.appearance.fontMono).toBe(''); // merged from defaults
     });
   });
 

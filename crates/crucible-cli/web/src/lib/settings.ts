@@ -33,10 +33,19 @@ export interface EditorSettings {
   showSaveButton: boolean;
 }
 
+/** Appearance / typography settings */
+export interface AppearanceSettings {
+  /** CSS font-family for UI + prose text. Empty = built-in default (IBM Plex Sans). */
+  fontSans: string;
+  /** CSS font-family for code / monospace. Empty = built-in default (IBM Plex Mono). */
+  fontMono: string;
+}
+
 /** Root application settings structure */
 export interface AppSettings {
   transcription: TranscriptionSettings;
   editor: EditorSettings;
+  appearance: AppearanceSettings;
 }
 
 /** Default settings values */
@@ -54,6 +63,11 @@ export const defaultSettings: AppSettings = {
     // Matches the reading view's prose column (max-w-3xl).
     maxLineWidth: 768,
     hoverMode: 'reading',
+  },
+  // Empty = use the built-in @theme defaults (IBM Plex) from index.css.
+  appearance: {
+    fontSans: '',
+    fontMono: '',
   },
 };
 
@@ -80,6 +94,10 @@ export function loadSettings(): AppSettings {
           ...defaultSettings.editor,
           ...parsed.editor,
         },
+        appearance: {
+          ...defaultSettings.appearance,
+          ...parsed.appearance,
+        },
       };
     }
   } catch (e) {
@@ -88,6 +106,7 @@ export function loadSettings(): AppSettings {
   return {
     transcription: { ...defaultSettings.transcription },
     editor: { ...defaultSettings.editor },
+    appearance: { ...defaultSettings.appearance },
   };
 }
 
