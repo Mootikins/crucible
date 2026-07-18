@@ -109,23 +109,22 @@ impl SubscriptionManager {
     ///
     /// The client will no longer receive events for this session.
     pub fn unsubscribe(&self, client_id: ClientId, session_id: &str) {
-        // Remove from subscriptions map
+        // Remove from subscriptions map. Prune the now-empty entry with
+        // remove_if so the emptiness check runs UNDER the write lock — a plain
+        // drop-then-remove would let a concurrent subscribe() re-add a client
+        // into the gap only to be clobbered by the unconditional remove.
         if let Some(mut clients) = self.subscriptions.get_mut(session_id) {
             clients.remove(&client_id);
-            if clients.is_empty() {
-                drop(clients); // Release the lock before removing
-                self.subscriptions.remove(session_id);
-            }
         }
+        self.subscriptions
+            .remove_if(session_id, |_, clients| clients.is_empty());
 
-        // Remove from reverse map
+        // Remove from reverse map (same race, same fix).
         if let Some(mut sessions) = self.client_sessions.get_mut(&client_id) {
             sessions.remove(session_id);
-            if sessions.is_empty() {
-                drop(sessions); // Release the lock before removing
-                self.client_sessions.remove(&client_id);
-            }
         }
+        self.client_sessions
+            .remove_if(&client_id, |_, sessions| sessions.is_empty());
     }
 
     /// Subscribe a client to all sessions (wildcard subscription).
@@ -175,15 +174,14 @@ impl SubscriptionManager {
             .map(|(_, s)| s.into_iter().collect())
             .unwrap_or_default();
 
-        // Remove client from each session's subscriber set
+        // Remove client from each session's subscriber set, pruning empties
+        // atomically (see unsubscribe) so a concurrent subscribe isn't clobbered.
         for session_id in sessions_to_clean {
             if let Some(mut clients) = self.subscriptions.get_mut(&session_id) {
                 clients.remove(&client_id);
-                if clients.is_empty() {
-                    drop(clients); // Release the lock before removing
-                    self.subscriptions.remove(&session_id);
-                }
             }
+            self.subscriptions
+                .remove_if(&session_id, |_, clients| clients.is_empty());
         }
     }
 
@@ -407,6 +405,29 @@ mod tests {
         // client2 should still be subscribed
         assert!(!manager.is_subscribed(client1, session_id));
         assert!(manager.is_subscribed(client2, session_id));
+        assert_eq!(manager.subscription_count(session_id), 1);
+    }
+
+    #[test]
+    fn test_unsubscribe_prunes_only_when_empty_and_resubscribe_survives() {
+        let manager = SubscriptionManager::new();
+        let a = ClientId::new();
+        let b = ClientId::new();
+        let session_id = "s";
+
+        manager.subscribe(a, session_id);
+        manager.subscribe(b, session_id);
+
+        // Removing one of two must NOT prune the entry (remove_if predicate).
+        manager.unsubscribe(a, session_id);
+        assert_eq!(manager.subscription_count(session_id), 1);
+        assert!(manager.is_subscribed(b, session_id));
+
+        // Removing the last prunes it; a fresh subscribe re-creates it cleanly.
+        manager.unsubscribe(b, session_id);
+        assert_eq!(manager.subscription_count(session_id), 0);
+        manager.subscribe(a, session_id);
+        assert!(manager.is_subscribed(a, session_id));
         assert_eq!(manager.subscription_count(session_id), 1);
     }
 
