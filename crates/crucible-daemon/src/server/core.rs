@@ -202,6 +202,7 @@ pub(super) async fn sweep_and_archive_stale_sessions(
     session_manager: &SessionManager,
     kiln_manager: &KilnManager,
     subscription_manager: &SubscriptionManager,
+    agent_manager: &AgentManager,
     auto_archive_hours: u64,
 ) -> Result<usize> {
     let now = Utc::now();
@@ -275,7 +276,14 @@ pub(super) async fn sweep_and_archive_stale_sessions(
             .archive_session(&summary.id, &archive_kiln)
             .await
         {
-            Ok(_) => archived += 1,
+            Ok(_) => {
+                // Mirror the RPC end/delete/archive handlers: free the archived
+                // session's agent state (cache, Lua, dispatchers, trees,
+                // snapshots, pending requests). The sweep is SessionManager-only,
+                // so without this the agent state orphaned for the daemon's life.
+                agent_manager.cleanup_session(&summary.id);
+                archived += 1;
+            }
             Err(e) => warn!(
                 session_id = %summary.id,
                 error = %e,

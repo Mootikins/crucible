@@ -698,6 +698,7 @@ impl Server {
         let sweep_session_manager = self.session_manager.clone();
         let sweep_kiln_manager = self.kiln_manager.clone();
         let sweep_subscription_manager = self.subscription_manager.clone();
+        let sweep_agent_manager = self.agent_manager.clone();
         let sweep_cancel = CancellationToken::new();
         let sweep_cancel_clone = sweep_cancel.clone();
         let auto_archive_hours = self.auto_archive_hours.unwrap_or(72);
@@ -713,6 +714,7 @@ impl Server {
                             &sweep_session_manager,
                             &sweep_kiln_manager,
                             &sweep_subscription_manager,
+                            &sweep_agent_manager,
                             auto_archive_hours,
                         ).await {
                             Ok(archived) if archived > 0 => {

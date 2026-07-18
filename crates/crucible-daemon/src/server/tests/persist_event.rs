@@ -4,6 +4,22 @@ use crate::session_storage::SessionStorage;
 use async_trait::async_trait;
 use crucible_core::session::{SessionSummary, SessionType};
 
+/// Minimal AgentManager for exercising the sweep's cleanup call.
+fn sweep_test_agent_manager() -> AgentManager {
+    let (event_tx, _) = broadcast::channel(16);
+    AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager: Arc::new(SessionManager::new()),
+        background_manager: Arc::new(BackgroundJobManager::new(event_tx)),
+        mcp_gateway: None,
+        llm_config: None,
+        acp_config: None,
+        permission_config: None,
+        plugin_loader: None,
+        workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
+    })
+}
+
 struct FailingStorage;
 
 #[async_trait]
@@ -169,6 +185,7 @@ async fn test_sweep_and_archive_stale_sessions_archives_inactive_sessions_withou
         &session_manager,
         &kiln_manager,
         &subscription_manager,
+        &sweep_test_agent_manager(),
         72,
     )
     .await
@@ -182,6 +199,48 @@ async fn test_sweep_and_archive_stale_sessions_archives_inactive_sessions_withou
         .await
         .unwrap();
     assert!(persisted.archived);
+}
+
+#[tokio::test]
+async fn test_sweep_cleans_up_agent_state_for_archived_sessions() {
+    let tmp = TempDir::new().unwrap();
+    let session_manager = SessionManager::new();
+    let subscription_manager = SubscriptionManager::new();
+    let kiln_manager = KilnManager::new();
+
+    let session = session_manager
+        .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+        .await
+        .unwrap();
+    session_manager
+        .update_last_activity(&session.id, Utc::now() - ChronoDuration::hours(80))
+        .await
+        .unwrap();
+
+    // Simulate per-turn agent state that the sweep must free.
+    let agent_manager = sweep_test_agent_manager();
+    agent_manager.snapshots.insert(
+        session.id.clone(),
+        0,
+        crate::workspace_snapshot::WorkspaceSnapshot::default(),
+    );
+    assert!(!agent_manager.snapshots.is_empty());
+
+    let archived = sweep_and_archive_stale_sessions(
+        &session_manager,
+        &kiln_manager,
+        &subscription_manager,
+        &agent_manager,
+        72,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(archived, 1);
+    assert!(
+        agent_manager.snapshots.is_empty(),
+        "sweep must free the archived session's agent state"
+    );
 }
 
 /// The sweep must reach sessions that are only in storage (ended sessions
@@ -220,6 +279,7 @@ async fn test_sweep_archives_stale_persisted_sessions_not_in_memory() {
         &session_manager,
         &kiln_manager,
         &subscription_manager,
+        &sweep_test_agent_manager(),
         72,
     )
     .await
@@ -278,6 +338,7 @@ async fn test_sweep_archives_sessions_whose_meta_has_relative_kiln_path() {
         &session_manager,
         &kiln_manager,
         &subscription_manager,
+        &sweep_test_agent_manager(),
         72,
     )
     .await
@@ -321,6 +382,7 @@ async fn test_sweep_and_archive_stale_sessions_skips_sessions_with_active_subscr
         &session_manager,
         &kiln_manager,
         &subscription_manager,
+        &sweep_test_agent_manager(),
         72,
     )
     .await
