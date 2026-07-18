@@ -5,7 +5,9 @@ async fn test_server_ping() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
 
     // Spawn server
@@ -38,7 +40,9 @@ async fn test_kiln_open_missing_path_param() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(async move { server.run().await });
 
@@ -67,7 +71,9 @@ async fn test_kiln_close_missing_path_param() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(async move { server.run().await });
 
@@ -130,7 +136,9 @@ async fn test_search_vectors_rpc_success_and_missing_vector_error() {
     let kiln_path = tmp.path().join("kiln");
     std::fs::create_dir_all(&kiln_path).unwrap();
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(async move { server.run().await });
 
@@ -198,7 +206,9 @@ async fn test_session_list_rpc_returns_shape_and_accepts_invalid_filters() {
     let kiln_path = tmp.path().join("kiln");
     std::fs::create_dir_all(&kiln_path).unwrap();
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(async move { server.run().await });
 
@@ -253,7 +263,9 @@ async fn test_method_not_found() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(async move { server.run().await });
 
@@ -281,7 +293,9 @@ async fn test_parse_error() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(async move { server.run().await });
 
@@ -307,7 +321,9 @@ async fn test_shutdown_method() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let server_task = tokio::spawn(async move { server.run().await });
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -335,7 +351,9 @@ async fn test_kiln_open_nonexistent_path_fails() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(async move { server.run().await });
 
@@ -364,7 +382,9 @@ async fn test_client_disconnect_closes_connection() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(async move { server.run().await });
 

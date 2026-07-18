@@ -5,7 +5,9 @@ async fn test_server_has_event_broadcast() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let event_tx = server.event_sender();
 
     // Subscribe a receiver so send() succeeds
@@ -26,7 +28,9 @@ async fn test_session_subscribe_rpc() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(server.run());
 
@@ -55,7 +59,9 @@ async fn test_session_subscribe_multiple_sessions() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(server.run());
 
@@ -85,7 +91,9 @@ async fn test_session_subscribe_wildcard() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(server.run());
 
@@ -113,7 +121,9 @@ async fn test_session_subscribe_missing_session_ids() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(server.run());
 
@@ -144,7 +154,9 @@ async fn test_session_subscribe_invalid_session_ids_type() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(server.run());
 
@@ -178,7 +190,9 @@ async fn test_session_unsubscribe_rpc() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(server.run());
 
@@ -217,7 +231,9 @@ async fn test_session_unsubscribe_missing_session_ids() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(server.run());
 
@@ -250,7 +266,9 @@ async fn test_event_broadcast_to_subscriber() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let event_tx = server.event_sender();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(server.run());
@@ -305,7 +323,9 @@ async fn test_event_not_sent_to_non_subscriber() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let event_tx = server.event_sender();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(server.run());

@@ -429,7 +429,9 @@ async fn test_session_create_with_granular_recording_mode() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(server.run());
 
@@ -465,7 +467,9 @@ async fn test_session_create_default_no_recording_mode() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(server.run());
 
@@ -500,7 +504,9 @@ async fn test_session_get_includes_recording_mode() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(server.run());
 
@@ -560,7 +566,9 @@ async fn test_granular_session_creates_recording_file() {
     let kiln_path = tmp.path().join("kiln");
     std::fs::create_dir_all(&kiln_path).unwrap();
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let event_tx = server.event_sender();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(server.run());
@@ -622,7 +630,9 @@ async fn test_non_granular_session_has_no_recording_file() {
     let kiln_path = tmp.path().join("kiln");
     std::fs::create_dir_all(&kiln_path).unwrap();
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let event_tx = server.event_sender();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(server.run());
@@ -675,7 +685,9 @@ async fn test_granular_recording_stops_on_session_end() {
     let kiln_path = tmp.path().join("kiln");
     std::fs::create_dir_all(&kiln_path).unwrap();
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let event_tx = server.event_sender();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(server.run());

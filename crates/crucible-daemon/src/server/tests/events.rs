@@ -96,7 +96,9 @@ async fn test_file_deleted_event_removes_note_from_store() {
     let kiln_path = tmp.path().join("kiln");
     std::fs::create_dir_all(kiln_path.join("notes")).unwrap();
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let km = server.kiln_manager.clone();
     let event_tx = server.event_sender();
     let shutdown_handle = server.shutdown_handle();
@@ -207,7 +209,9 @@ async fn test_events_auto_persisted() {
     let kiln_path = tmp.path().join("kiln");
     std::fs::create_dir_all(&kiln_path).unwrap();
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let event_tx = server.event_sender();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(server.run());

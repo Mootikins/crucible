@@ -7,7 +7,9 @@ async fn test_session_switch_model_rpc_success_and_empty_model_error() {
     let kiln_path = tmp.path().join("kiln");
     std::fs::create_dir_all(&kiln_path).unwrap();
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(async move { server.run().await });
 
@@ -68,7 +70,9 @@ async fn test_session_list_models_rpc_success_and_missing_param_error() {
     let kiln_path = tmp.path().join("kiln");
     std::fs::create_dir_all(&kiln_path).unwrap();
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(async move { server.run().await });
 
@@ -116,7 +120,9 @@ async fn test_models_list_rpc_no_session() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(async move { server.run().await });
 
@@ -174,7 +180,9 @@ async fn test_session_set_thinking_budget_rpc_success_and_missing_session_id_err
     let kiln_path = tmp.path().join("kiln");
     std::fs::create_dir_all(&kiln_path).unwrap();
 
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(async move { server.run().await });
 

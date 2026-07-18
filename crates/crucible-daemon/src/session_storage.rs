@@ -719,7 +719,14 @@ not json at all
 
     #[tokio::test]
     async fn test_crucible_home_avoids_double_nesting() {
-        // When kiln IS crucible_home, sessions go to {kiln}/sessions/ (no .crucible prefix)
+        // When kiln IS crucible_home, sessions go to {kiln}/sessions/ (no .crucible prefix).
+        // Pin crucible_home() to a TempDir so the path check is deterministic and
+        // doesn't depend on the developer's real home.
+        let home_tmp = TempDir::new().unwrap();
+        let _home_guard = crucible_core::test_support::EnvVarGuard::set(
+            "CRUCIBLE_HOME",
+            home_tmp.path().to_string_lossy().into_owned(),
+        );
         let home = crucible_core::config::crucible_home();
         let base = FileSessionStorage::sessions_base(&home);
         // Should be {home}/sessions, NOT {home}/.crucible/sessions
@@ -744,7 +751,15 @@ not json at all
 
     #[tokio::test]
     async fn test_session_storage_save_load_with_crucible_home() {
-        // Use the real crucible_home path for this test
+        // Redirect crucible_home() to a TempDir so this exercises the "kiln IS
+        // crucible_home" branch WITHOUT writing to the developer's real
+        // ~/.crucible/sessions. This test is ABOUT the home-detection logic, so
+        // setting the env is the correct isolation (EnvVarGuard restores on drop).
+        let home_tmp = TempDir::new().unwrap();
+        let _home_guard = crucible_core::test_support::EnvVarGuard::set(
+            "CRUCIBLE_HOME",
+            home_tmp.path().to_string_lossy().into_owned(),
+        );
         let home = crucible_core::config::crucible_home();
         let storage = FileSessionStorage::new();
 

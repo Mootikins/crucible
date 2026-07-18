@@ -358,7 +358,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        let server = Server::bind(&sock_path, None).await.unwrap();
+        let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+            .await
+            .unwrap();
         let _shutdown_handle = server.shutdown_handle();
 
         tokio::spawn(async move {
