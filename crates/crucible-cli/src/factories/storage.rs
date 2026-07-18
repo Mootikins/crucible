@@ -15,23 +15,17 @@ use tracing::info;
 ///
 /// Wraps a `DaemonStorageClient` — the daemon is the only storage backend.
 #[derive(Clone)]
-pub enum StorageHandle {
-    Daemon(Arc<DaemonStorageClient>),
-}
+pub struct StorageHandle(Arc<DaemonStorageClient>);
 
 impl StorageHandle {
     /// Execute a raw query and return JSON
     pub async fn query_raw(&self, sql: &str) -> Result<serde_json::Value> {
-        match self {
-            Self::Daemon(client) => client.query_raw(sql).await,
-        }
+        self.0.query_raw(sql).await
     }
 
     /// Get the inner `DaemonStorageClient`.
     pub fn as_daemon_client(&self) -> &Arc<DaemonStorageClient> {
-        match self {
-            Self::Daemon(client) => client,
-        }
+        &self.0
     }
 
     /// List notes in the kiln.
@@ -41,9 +35,7 @@ impl StorageHandle {
     ) -> Result<Vec<crucible_core::traits::NoteInfo>> {
         use crucible_core::traits::KnowledgeRepository;
 
-        let repo = match self {
-            Self::Daemon(client) => Arc::clone(client) as Arc<dyn KnowledgeRepository>,
-        };
+        let repo = Arc::clone(&self.0) as Arc<dyn KnowledgeRepository>;
         repo.list_notes(path_filter)
             .await
             .map_err(|e| anyhow::anyhow!("list_notes failed: {}", e))
@@ -51,17 +43,11 @@ impl StorageHandle {
 
     /// Get NoteStore trait object.
     pub fn note_store(&self) -> Arc<dyn NoteStore> {
-        match self {
-            Self::Daemon(client) => Arc::new(DaemonNoteStore::new(Arc::clone(client))),
-        }
+        Arc::new(DaemonNoteStore::new(Arc::clone(&self.0)))
     }
 
     pub fn as_knowledge_repository(&self) -> Arc<dyn crucible_core::traits::KnowledgeRepository> {
-        match self {
-            Self::Daemon(client) => {
-                Arc::clone(client) as Arc<dyn crucible_core::traits::KnowledgeRepository>
-            }
-        }
+        Arc::clone(&self.0) as Arc<dyn crucible_core::traits::KnowledgeRepository>
     }
 }
 
@@ -82,7 +68,7 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
         .await?;
 
     let client = Arc::new(client);
-    Ok(StorageHandle::Daemon(Arc::new(DaemonStorageClient::new(
+    Ok(StorageHandle(Arc::new(DaemonStorageClient::new(
         client, kiln_path,
     ))))
 }
