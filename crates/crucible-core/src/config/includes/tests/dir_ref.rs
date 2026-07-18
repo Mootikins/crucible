@@ -200,6 +200,10 @@ settings = "{dir:conf.d}"
 fn test_dir_ref_with_home_path() {
     // Test that ~ paths are resolved (will fail with DirNotFound since dir doesn't exist)
     let temp = TempDir::new().unwrap();
+    // Pin HOME to the (empty) TempDir so `~/.config/crucible/nonexistent.d/`
+    // deterministically does NOT exist regardless of the dev machine's real
+    // ~/.config. EnvVarGuard restores HOME on drop.
+    let _home = EnvVarGuard::set("HOME", temp.path().to_string_lossy().into_owned());
 
     let config_content = r#"
 settings = "{dir:~/.config/crucible/nonexistent.d/}"
@@ -214,9 +218,8 @@ settings = "{dir:~/.config/crucible/nonexistent.d/}"
 
     // Verify path was resolved to home directory
     if let IncludeError::DirNotFound(path) = &errors[0] {
-        if let Some(home) = dirs::home_dir() {
-            assert!(path.starts_with(home), "Path should start with home dir");
-        }
+        let home = dirs::home_dir().expect("HOME is pinned to the TempDir");
+        assert!(path.starts_with(home), "Path should start with home dir");
     }
 }
 

@@ -161,6 +161,14 @@ async fn test_should_persist_filters_correctly() {
 #[tokio::test]
 async fn test_sweep_and_archive_stale_sessions_archives_inactive_sessions_without_subscribers() {
     let tmp = TempDir::new().unwrap();
+    // Isolate crucible_home() to a separate empty TempDir so the sweep's home
+    // session scan can't pick up the developer's real ~/.crucible sessions and
+    // inflate the archived count (EnvVarGuard restores the previous value on drop).
+    let home_dir = TempDir::new().unwrap();
+    let _home_guard = crucible_core::test_support::EnvVarGuard::set(
+        "CRUCIBLE_HOME",
+        home_dir.path().to_string_lossy().into_owned(),
+    );
     let session_manager = SessionManager::new();
     let subscription_manager = SubscriptionManager::new();
 
@@ -204,6 +212,14 @@ async fn test_sweep_and_archive_stale_sessions_archives_inactive_sessions_withou
 #[tokio::test]
 async fn test_sweep_cleans_up_agent_state_for_archived_sessions() {
     let tmp = TempDir::new().unwrap();
+    // Isolate crucible_home() to a separate empty TempDir so the sweep's home
+    // session scan can't pick up the developer's real ~/.crucible sessions and
+    // inflate the archived count (EnvVarGuard restores the previous value on drop).
+    let home_dir = TempDir::new().unwrap();
+    let _home_guard = crucible_core::test_support::EnvVarGuard::set(
+        "CRUCIBLE_HOME",
+        home_dir.path().to_string_lossy().into_owned(),
+    );
     let session_manager = SessionManager::new();
     let subscription_manager = SubscriptionManager::new();
     let kiln_manager = KilnManager::new();
@@ -255,6 +271,14 @@ async fn test_sweep_cleans_up_agent_state_for_archived_sessions() {
 #[tokio::test]
 async fn test_sweep_archives_stale_persisted_sessions_not_in_memory() {
     let tmp = TempDir::new().unwrap();
+    // Isolate crucible_home() to a separate empty TempDir so the sweep's home
+    // session scan can't pick up the developer's real ~/.crucible sessions and
+    // inflate the archived count (EnvVarGuard restores the previous value on drop).
+    let home_dir = TempDir::new().unwrap();
+    let _home_guard = crucible_core::test_support::EnvVarGuard::set(
+        "CRUCIBLE_HOME",
+        home_dir.path().to_string_lossy().into_owned(),
+    );
     let session_manager = SessionManager::new();
     let subscription_manager = SubscriptionManager::new();
 
@@ -306,6 +330,14 @@ async fn test_sweep_archives_stale_persisted_sessions_not_in_memory() {
 #[tokio::test]
 async fn test_sweep_archives_sessions_whose_meta_has_relative_kiln_path() {
     let tmp = TempDir::new().unwrap();
+    // Isolate crucible_home() to a separate empty TempDir so the sweep's home
+    // session scan can't pick up the developer's real ~/.crucible sessions and
+    // inflate the archived count (EnvVarGuard restores the previous value on drop).
+    let home_dir = TempDir::new().unwrap();
+    let _home_guard = crucible_core::test_support::EnvVarGuard::set(
+        "CRUCIBLE_HOME",
+        home_dir.path().to_string_lossy().into_owned(),
+    );
     let session_manager = SessionManager::new();
     let subscription_manager = SubscriptionManager::new();
 
@@ -361,6 +393,14 @@ async fn test_sweep_archives_sessions_whose_meta_has_relative_kiln_path() {
 #[tokio::test]
 async fn test_sweep_and_archive_stale_sessions_skips_sessions_with_active_subscribers() {
     let tmp = TempDir::new().unwrap();
+    // Isolate crucible_home() to a separate empty TempDir so the sweep's home
+    // session scan can't pick up the developer's real ~/.crucible sessions and
+    // inflate the archived count (EnvVarGuard restores the previous value on drop).
+    let home_dir = TempDir::new().unwrap();
+    let _home_guard = crucible_core::test_support::EnvVarGuard::set(
+        "CRUCIBLE_HOME",
+        home_dir.path().to_string_lossy().into_owned(),
+    );
     let session_manager = SessionManager::new();
     let subscription_manager = SubscriptionManager::new();
 

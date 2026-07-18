@@ -99,10 +99,13 @@ async fn test_kiln_list_returns_array() {
     // Hermetic config root: without this the daemon loads the developer's real
     // ~/.crucible registry and opens those kilns at startup. Because that load
     // is async, it races this 50ms-later kiln.list — empty if the sleep wins,
-    // populated if the load wins — which is exactly the observed flakiness. An
-    // isolated (empty) home makes the list deterministically empty. nextest's
-    // per-test process isolation keeps this env write from racing other tests.
-    std::env::set_var("CRUCIBLE_HOME", tmp.path());
+    // populated if the load wins — the observed flakiness. Point crucible_home()
+    // at an isolated TempDir via the RAII EnvVarGuard (restored on drop) so the
+    // list is deterministically empty.
+    let _home_guard = crucible_core::test_support::EnvVarGuard::set(
+        "CRUCIBLE_HOME",
+        tmp.path().to_string_lossy().into_owned(),
+    );
 
     let server = Server::bind(&sock_path, None).await.unwrap();
     let shutdown_handle = server.shutdown_handle();

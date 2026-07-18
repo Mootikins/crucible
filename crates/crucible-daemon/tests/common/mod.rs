@@ -39,6 +39,10 @@ impl TestDaemon {
         let process = Command::new(&cru_exe)
             .args(["daemon", "serve"])
             .env("CRUCIBLE_SOCKET", &socket_path)
+            // Scope the config home to this test's TempDir (child-process env, no
+            // global mutation) so the spawned daemon never reads the developer's
+            // real ~/.crucible registry.
+            .env("CRUCIBLE_HOME", temp_dir.path())
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -83,6 +87,9 @@ impl TestDaemon {
         let mut cmd = Command::new(&cru_exe);
         cmd.args(["daemon", "serve"])
             .env("CRUCIBLE_SOCKET", &socket_path)
+            // Default the config home to this test's TempDir; a caller-supplied
+            // CRUCIBLE_HOME in env_vars still overrides via the loop below.
+            .env("CRUCIBLE_HOME", temp_dir.path())
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());

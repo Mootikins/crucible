@@ -1,4 +1,5 @@
 use super::super::{process_file_references, IncludeError, ResolveMode};
+use crate::test_support::EnvVarGuard;
 use std::fs;
 use tempfile::TempDir;
 
@@ -145,6 +146,10 @@ fn test_file_ref_with_home_path() {
     // This test just verifies the path is resolved correctly
     // (actual file won't exist, so we check the error path)
     let temp = TempDir::new().unwrap();
+    // Pin HOME to the (empty) TempDir so `~/.secrets/test.key` deterministically
+    // does NOT exist — a real ~/.secrets/test.key on the dev machine would
+    // otherwise resolve and flip this test. EnvVarGuard restores HOME on drop.
+    let _home = EnvVarGuard::set("HOME", temp.path().to_string_lossy().into_owned());
 
     let config_content = r#"
 api_key = "{file:~/.secrets/test.key}"
@@ -160,8 +165,7 @@ api_key = "{file:~/.secrets/test.key}"
 
     // Verify the path was resolved to home directory
     if let IncludeError::FileNotFound(path) = &errors[0] {
-        if let Some(home) = dirs::home_dir() {
-            assert!(path.starts_with(home));
-        }
+        let home = dirs::home_dir().expect("HOME is pinned to the TempDir");
+        assert!(path.starts_with(home));
     }
 }

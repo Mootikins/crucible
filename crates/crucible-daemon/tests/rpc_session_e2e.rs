@@ -5,6 +5,7 @@
 //! session.unarchive — the full session lifecycle.
 
 use anyhow::Result;
+use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::DaemonClient;
 use crucible_daemon::Server;
 use std::path::PathBuf;
@@ -14,16 +15,28 @@ use tokio::task::JoinHandle;
 
 /// In-process test server (same pattern as rpc_integration.rs).
 struct TestServer {
+    _home_guard: EnvVarGuard,
     _temp_dir: TempDir,
     socket_path: PathBuf,
     _server_handle: JoinHandle<()>,
     shutdown_handle: tokio::sync::broadcast::Sender<()>,
 }
 
+fn ensure_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 impl TestServer {
     async fn start() -> Result<Self> {
+        ensure_crypto_provider();
         let temp_dir = tempfile::tempdir()?;
         let socket_path = temp_dir.path().join("daemon.sock");
+
+        // Isolate crucible_home() to a TempDir so the daemon never loads the
+        // developer's real ~/.crucible registry (EnvVarGuard restores on drop).
+        // session.list/get read crucible_home() at runtime, so this matters here.
+        let home_guard =
+            EnvVarGuard::set("CRUCIBLE_HOME", temp_dir.path().to_string_lossy().into_owned());
 
         let server = Server::bind(&socket_path, None).await?;
         let shutdown_handle = server.shutdown_handle();
@@ -36,6 +49,7 @@ impl TestServer {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         Ok(Self {
+            _home_guard: home_guard,
             _temp_dir: temp_dir,
             socket_path,
             _server_handle: server_handle,
