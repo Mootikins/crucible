@@ -1,19 +1,20 @@
 import { createEffect, onCleanup } from 'solid-js';
-import { windowStore, windowActions } from '@/stores/windowStore';
+import { windowActions } from '@/stores/windowStore';
 import { saveLayout, loadLayout } from './api';
 
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
 export function setupLayoutAutoSave(): void {
   createEffect(() => {
-    void windowStore.layout;
-    void windowStore.tabGroups;
-    void windowStore.edgePanels;
-    void windowStore.floatingWindows;
+    // Serialize INSIDE the tracking scope. SolidJS stores are fine-grained:
+    // reading only the top-level keys (layout/tabGroups/edgePanels/…) does not
+    // re-run the effect on nested mutations, so collapses, active-tab switches,
+    // renames, and same-group reorders silently never persisted. exportLayout()
+    // walks every nested node, so any mutation now re-triggers the save.
+    const serialized = windowActions.exportLayout();
 
     if (saveTimeout) clearTimeout(saveTimeout);
     saveTimeout = setTimeout(() => {
-      const serialized = windowActions.exportLayout();
       saveLayout(serialized).catch((err) => {
         console.warn('Auto-save layout failed:', err);
       });
