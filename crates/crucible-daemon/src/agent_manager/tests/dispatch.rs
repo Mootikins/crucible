@@ -504,6 +504,39 @@ async fn cleanup_session_removes_lua_state() {
 }
 
 #[tokio::test]
+async fn cleanup_session_frees_snapshots_and_cache_stats() {
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let agent_manager = create_test_agent_manager(session_manager);
+
+    let session_id = "test-session";
+
+    // Simulate a turn's per-session accumulation (send.rs inserts a snapshot
+    // every user message; cache stats accrue per session).
+    agent_manager.snapshots.insert(
+        session_id.to_string(),
+        0,
+        crate::workspace_snapshot::WorkspaceSnapshot::default(),
+    );
+    agent_manager
+        .cache_stats
+        .insert(session_id.to_string(), Default::default());
+    assert!(!agent_manager.snapshots.is_empty());
+    assert!(agent_manager.cache_stats.contains_key(session_id));
+
+    agent_manager.cleanup_session(session_id);
+
+    assert!(
+        agent_manager.snapshots.is_empty(),
+        "workspace snapshots should be freed on session end"
+    );
+    assert!(
+        !agent_manager.cache_stats.contains_key(session_id),
+        "cache stats should be pruned on session end"
+    );
+}
+
+#[tokio::test]
 async fn cleanup_session_removes_agent_cache() {
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));

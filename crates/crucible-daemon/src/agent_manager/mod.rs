@@ -791,6 +791,12 @@ impl AgentManager {
         if self.pending_permissions.remove(session_id).is_some() {
             debug!(session_id = %session_id, "Cleaned up pending permissions for session");
         }
+
+        // Free the per-session workspace-snapshot journal (up to a few MiB per
+        // turn) and the cache-stats entry. Both grow per turn and, before this,
+        // were never released — snapshots leaked for the daemon's whole lifetime.
+        self.snapshots.clear_session(session_id);
+        self.cache_stats.remove(session_id);
     }
 
     #[allow(dead_code)] // permission system API, exercised by tests
