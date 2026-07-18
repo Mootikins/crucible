@@ -64,25 +64,18 @@ impl OilChatRunner {
     pub(super) async fn process_message<A: AgentHandle>(
         msg: &ChatAppMsg,
         app: &mut OilChatApp,
-        agent: &mut A,
-        bridge: &AgentEventBridge,
-        is_replay: bool,
+        _agent: &mut A,
+        _bridge: &AgentEventBridge,
+        _is_replay: bool,
     ) -> Action<ChatAppMsg> {
         match msg {
-            ChatAppMsg::UserMessage(content) => {
-                // Daemon-side precognition handles enrichment; the TUI just
-                // forwards the raw user message. (Older code gated this on
-                // `!app.precognition()` and waited for an EnrichedMessage
-                // that no longer has a producer — every message was dropped.)
-                if !is_replay && !app.is_streaming() {
-                    bridge.ring.push(SessionEvent::MessageReceived {
-                        content: content.clone(),
-                        participant_id: "user".to_string(),
-                    });
-                    if let Err(e) = agent.send_message_fire_and_forget(content.clone()).await {
-                        tracing::warn!(error = %e, "send_message_fire_and_forget failed");
-                    }
-                }
+            ChatAppMsg::UserMessage(_) => {
+                // Pure display signal. Live typed messages send via
+                // `process_action`; messages that reach the drain are either
+                // replay/resume history (already executed on the daemon) or
+                // the daemon's own broadcast feedback. Re-sending here made
+                // *resume* re-run every historical prompt (is_replay is false
+                // on a live resume), so this arm must never call the agent.
             }
             ChatAppMsg::FetchModels => {
                 tracing::debug!(target: "crucible_cli::tui::oil::model_flow", "drain_pending_messages: received FetchModels");
@@ -227,6 +220,9 @@ impl OilChatRunner {
                                 );
                             }
                         }
+                        // Handled in-arm (reset already applied); don't fall
+                        // through to the on_message dispatch, which resets again.
+                        return Ok(false);
                     }
                     ChatAppMsg::StreamCancelled => {
                         if params.app.is_streaming() {

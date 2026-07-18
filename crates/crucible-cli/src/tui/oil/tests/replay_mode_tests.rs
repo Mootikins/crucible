@@ -61,15 +61,20 @@ async fn replay_user_message_does_not_invoke_send() {
     assert_eq!(agent.sends.load(Ordering::Relaxed), 0);
 }
 
+/// Regression: a `UserMessage` reaching the drain must NEVER send, even with
+/// `is_replay == false`. Resume hydration pumps stored user turns through this
+/// path with `is_replay == false`; the old code re-sent each one, re-running
+/// the whole conversation on the daemon. Live typed messages send via
+/// `process_action`, not this path.
 #[tokio::test]
-async fn live_user_message_invokes_send_once() {
+async fn drain_user_message_never_sends_even_when_not_replay() {
     let mut agent = CountingAgent::new();
     let mut app = OilChatApp::default();
     app.set_precognition(false);
     let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
 
     let _ = OilChatRunner::process_message_for_test(
-        &ChatAppMsg::UserMessage("hi".into()),
+        &ChatAppMsg::UserMessage("historical prompt".into()),
         &mut app,
         &mut agent,
         &bridge,
@@ -77,7 +82,11 @@ async fn live_user_message_invokes_send_once() {
     )
     .await;
 
-    assert_eq!(agent.sends.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        agent.sends.load(Ordering::Relaxed),
+        0,
+        "resume/drain user messages must not be re-sent to the daemon"
+    );
 }
 
 /// Regression test for the first-message hang fix (5e21776a5).
