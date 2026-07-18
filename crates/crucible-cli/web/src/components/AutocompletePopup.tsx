@@ -8,22 +8,30 @@ interface AutocompletePopupProps {
 }
 
 export const AutocompletePopup: Component<AutocompletePopupProps> = (props) => {
-  const refs: (HTMLButtonElement | undefined)[] = [];
+  let listRef: HTMLDivElement | undefined;
 
-  // Keep the keyboard-selected row visible when the list overflows.
+  // Keep the keyboard-selected row visible when the list overflows. Query the
+  // selected option from the DOM rather than a positional index→ref map: the
+  // fuzzy re-sort reorders <For> rows by moving existing nodes without
+  // re-running their ref callbacks, so a creation-order ref array points at
+  // the wrong row after a re-sort. aria-selected always marks the live row.
   createEffect(() => {
-    refs[props.selectedIndex]?.scrollIntoView({ block: 'nearest' });
+    props.selectedIndex;
+    props.items;
+    listRef
+      ?.querySelector<HTMLElement>('[aria-selected="true"]')
+      ?.scrollIntoView({ block: 'nearest' });
   });
 
   return (
     <div
+      ref={listRef}
       role="listbox"
       class="absolute left-0 right-0 top-full mt-1 z-50 max-h-52 overflow-y-auto rounded-lg border border-hairline bg-surface-elevated shadow-xl cru-anim-rise"
     >
       <For each={props.items}>
         {(item, index) => (
           <button
-            ref={(el) => (refs[index()] = el)}
             type="button"
             role="option"
             aria-selected={index() === props.selectedIndex}
