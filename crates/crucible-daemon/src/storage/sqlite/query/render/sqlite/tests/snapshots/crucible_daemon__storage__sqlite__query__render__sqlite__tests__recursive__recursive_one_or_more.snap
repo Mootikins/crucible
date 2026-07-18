@@ -1,0 +1,26 @@
+---
+source: crates/crucible-sqlite/src/query/render/sqlite.rs
+assertion_line: 1359
+expression: result.sql
+---
+WITH RECURSIVE traverse(path, depth, visited) AS (
+    -- Base case: starting node
+    SELECT :source, 0, :source
+
+    UNION ALL
+
+    -- Recursive case: follow edges
+    SELECT
+        e.target,
+        t.depth + 1,
+        t.visited || ',' || e.target
+    FROM traverse t
+    JOIN edges e ON e.source = t.path
+    WHERE instr(',' || t.visited || ',', ',' || e.target || ',') = 0  -- cycle prevention
+        
+)
+SELECT DISTINCT n.*
+FROM notes n
+JOIN traverse t ON n.path = t.path
+WHERE t.depth >= 1
+  AND t.path != :source
