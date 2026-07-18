@@ -10,22 +10,24 @@ import { render, waitFor } from '@solidjs/testing-library';
 const EMOJI = ['📝', '🔷', '🟨', '🦀', '📋', '⚙️', '🎨', '🌐', '🌙', '📄', '📂', '📁'];
 
 const listNotesMock = vi.fn();
+const listKilnsMock = vi.fn();
 
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   listNotes: (...args: unknown[]) => listNotesMock(...args),
+  listKilns: (...args: unknown[]) => listKilnsMock(...args),
+  // No SSE in jsdom: return a no-op unsubscribe so onMount doesn't open a
+  // real EventSource.
+  subscribeToFsEvents: () => () => {},
 }));
 
-// FilesPanel reads the current project from ProjectContext to decide which
-// kiln to list. Provide a stable project with one kiln.
+// The file tree builds its roster from projects + kilns. Use a KILN-only
+// roster (no projects) so the deterministic fallback selects the kiln root and
+// the panel loads notes via listNotes (the migrated Notes view).
 vi.mock('@/contexts/ProjectContext', () => ({
   useProjectSafe: () => ({
-    currentProject: () => ({
-      path: '/project',
-      name: 'Project',
-      kilns: [{ path: '/project/kiln', name: 'kiln' }],
-      last_accessed: '',
-    }),
+    currentProject: () => null,
+    projects: () => [],
   }),
 }));
 
@@ -47,6 +49,8 @@ const NOTE_NAMES = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
+  listKilnsMock.mockResolvedValue([{ path: '/project/kiln', name: 'kiln' }]);
   listNotesMock.mockResolvedValue(
     NOTE_NAMES.map((name) => ({
       name,

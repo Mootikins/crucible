@@ -110,6 +110,27 @@ export type DropTarget =
   | { type: 'newFloating'; at?: { x: number; y: number } };
 
 
+// ---------------------------------------------------------------------------
+// PHASE-2 SEAM — file-tree drag-and-drop payloads (TYPES ONLY).
+//
+// No handlers, no `<DragDropProvider>` mounted in Phase 1. The Phase-2 file
+// tree gets its OWN provider inside `FilesPanel`, sibling to (never nested in)
+// the window/tab provider in `WindowManager.tsx` — @thisbeyond/solid-dnd
+// matches within the nearest provider, so a file drag never enters the
+// tab-move pipeline. Node identity is `rootId` + `relPath` (never display
+// name), matching the file-tree node model.
+// ---------------------------------------------------------------------------
+export type FileDragSource = {
+  type: 'fileNode';
+  rootId: string;
+  relPath: string;
+  isDir: boolean;
+};
+
+export type FileDropTarget =
+  | { type: 'folder'; rootId: string; relPath: string }
+  | { type: 'between'; rootId: string; parentRelPath: string; index: number };
+
 // TabBar props discriminated union
 export type TabBarProps =
   | { mode: 'center'; groupId: string; paneId: string; onPopOut?: () => void }

@@ -151,6 +151,51 @@ export interface Project {
   last_accessed: string; // ISO datetime
 }
 
+/**
+ * One entry of `GET /api/kilns`. The daemon's `handle_kiln_list`
+ * (crucible-daemon/src/server/kiln.rs) emits objects — `{ path, name,
+ * last_access_secs_ago }` — surfaced verbatim by the web route
+ * (routes/search.rs). NOT a bare string (the pre-file-tree `listKilns` mock
+ * asserted a fictional string payload; see api.test.ts).
+ */
+export interface KilnListEntry {
+  path: string;
+  name: string | null;
+  last_access_secs_ago?: number;
+}
+
+// =============================================================================
+// File-System Explorer Types (Phase 1 web file tree)
+// =============================================================================
+
+/**
+ * One directory entry from `GET /api/fs/list` (daemon `fs.list_dir`).
+ * Wire shape is snake_case (Rust `FsEntry`); every field name is part of the
+ * cross-language contract and must not drift.
+ */
+export interface FsEntry {
+  name: string;
+  rel_path: string;
+  is_dir: boolean;
+  size: number;
+  /** Unix epoch seconds; `null` when the platform cannot report it. */
+  modified: number | null;
+  /** Phase-2/3 git/diff decoration seam — always `null` in Phase 1. */
+  status: string | null;
+}
+
+/**
+ * A live filesystem-change event delivered over `GET /api/fs/events` (SSE).
+ * Discriminated union mirroring the Rust `FsEvent` (web/fs_events.rs); paths
+ * are ABSOLUTE. `moved` is decomposed into remove+add by the reconciler, so a
+ * platform that emits `deleted`+`changed{created}` instead converges to the
+ * same tree.
+ */
+export type FsEvent =
+  | { type: 'changed'; path: string; kind: 'created' | 'modified' }
+  | { type: 'deleted'; path: string }
+  | { type: 'moved'; from: string; to: string };
+
 // =============================================================================
 // TUI Feature Types (for web port)
 // =============================================================================

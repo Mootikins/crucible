@@ -44,6 +44,7 @@ import {
   getSkill,
   searchSkills,
   listKilns,
+  listDir,
   listNotes,
   getNote,
   searchVectors,
@@ -957,11 +958,44 @@ describe('MCP / kilns / notes / search', () => {
     expect(await getMcpStatus()).toEqual({ running: true, port: 3847 });
   });
 
-  it('listKilns returns the kilns array', async () => {
+  // Replaces a DRIFTED mock that asserted a fictional string payload
+  // (`{ kilns: ['default','docs'] }`). The real `handle_kiln_list`
+  // (crucible-daemon/src/server/kiln.rs) returns objects — path/name/
+  // last_access_secs_ago — surfaced verbatim by GET /api/kilns.
+  it('listKilns returns KilnListEntry[] (object shape, matches handle_kiln_list)', async () => {
     global.fetch = createMockFetch({
-      'GET /api/kilns': { body: { kilns: ['default', 'docs'] } },
+      'GET /api/kilns': {
+        body: {
+          kilns: [
+            { path: '/vault', name: 'default', last_access_secs_ago: 5 },
+            { path: '/docs', name: null, last_access_secs_ago: 99 },
+          ],
+        },
+      },
     });
-    expect(await listKilns()).toEqual(['default', 'docs']);
+    expect(await listKilns()).toEqual([
+      { path: '/vault', name: 'default', last_access_secs_ago: 5 },
+      { path: '/docs', name: null, last_access_secs_ago: 99 },
+    ]);
+  });
+
+  it('listDir sends root/rel_path/show_ignored and returns FsEntry[]', async () => {
+    const entries = [
+      { name: 'web', rel_path: 'src/web', is_dir: true, size: 0, modified: 1721270400, status: null },
+      { name: 'api.ts', rel_path: 'src/web/api.ts', is_dir: false, size: 20481, modified: 1721270511, status: null },
+    ];
+    const mockFetch = createMockFetch({ 'GET /api/fs/list': { body: entries } });
+    global.fetch = mockFetch;
+    expect(await listDir('/proj', 'src/web', true)).toEqual(entries);
+    const url = mockFetch.mock.calls[0][0] as string;
+    expect(url).toContain('root=%2Fproj');
+    expect(url).toContain('rel_path=src%2Fweb');
+    expect(url).toContain('show_ignored=true');
+  });
+
+  it('listDir throws on a non-ok response', async () => {
+    global.fetch = createMockFetch({ 'GET /api/fs/list': { status: 400 } });
+    await expect(listDir('/proj')).rejects.toThrow(/listDir failed: 400/);
   });
 
   it('listNotes passes kiln + optional pathFilter', async () => {

@@ -1,258 +1,349 @@
-import { Component, For, Show, createSignal, createEffect, createMemo } from 'solid-js';
-import { Collapsible } from '@ark-ui/solid';
+import { Component, Show, createSignal, createEffect, createMemo, onMount, onCleanup } from 'solid-js';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { openFileInEditor } from '@/lib/file-actions';
 import { PanelShell } from './PanelShell';
-import { PanelHeader } from './PanelHeader';
-
-import { listNotes } from '@/lib/api';
-import { kilnRoot, noteAbsolutePath } from '@/lib/note-actions';
-import type { FileEntry } from '@/lib/types';
+import { listNotes, listDir, listKilns, subscribeToFsEvents } from '@/lib/api';
+import type { KilnListEntry, FsEntry } from '@/lib/types';
+import { buildRoster, rosterIndex, rootKey, type TreeRoot } from '@/lib/tree-root';
+import { selectedRootKey, treeRootActions } from '@/stores/treeRootStore';
+import type { FileTreeNode as Node } from '@/lib/file-tree/types';
+import type { SortSpec } from '@/lib/file-tree/types';
+import { makeFileCollection, sortTree } from '@/lib/file-tree/collection';
+import { notesToTree } from '@/lib/file-tree/kiln-builder';
 import {
-  FileText,
-  FileCode,
-  File,
-  Folder,
-  FolderOpen,
-  FileJson,
-  Palette,
-  Globe,
-  Moon,
-  Cog,
-  ChevronDown,
-} from '@/lib/icons';
+  createFsEventBatcher,
+  reconcileMount,
+  type RootMount,
+} from '@/lib/file-tree/reconcile';
+import { FileTreeView } from './files/FileTreeView';
+import { RootDropdown } from './files/RootDropdown';
+import type { ContextAction } from './files/FileTreeContextMenu';
+import { currentOpenFilePath, revealLoadedPath, revealLazyPath } from './files/file-tree-a11y';
+import type { UseTreeViewReturn } from '@ark-ui/solid';
+import { ChevronsDownUp, Target, RefreshCw, ArrowUpDown } from '@/lib/icons';
 
-interface FileNode {
-  id: string;
-  name: string;
-  path: string;
-  is_dir: boolean;
-  children?: FileNode[];
+// ---- localStorage helpers (per-root expanded state, global sort) ----------
+const EXPANDED_KEY = (rootId: string) => `crucible.filetree.expanded.${rootId}`;
+const SORT_KEY = 'crucible.filetree.sort';
+const EXPANDED_CAP = 500;
+
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function writeJson(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* private mode */
+  }
 }
 
-const FileIcon: Component<{ extension: string }> = (props) => {
-  const ext = createMemo(() => props.extension.toLowerCase());
+const DEFAULT_SORT: SortSpec = { key: 'name', dir: 'asc' };
 
-  return (
-    <>
-      {ext() === 'md' && <FileText class="w-4 h-4 mr-1.5 shrink-0" />}
-      {(ext() === 'ts' || ext() === 'tsx') && <FileCode class="w-4 h-4 mr-1.5 shrink-0" />}
-      {(ext() === 'js' || ext() === 'jsx') && <FileCode class="w-4 h-4 mr-1.5 shrink-0" />}
-      {ext() === 'rs' && <FileCode class="w-4 h-4 mr-1.5 shrink-0" />}
-      {ext() === 'json' && <FileJson class="w-4 h-4 mr-1.5 shrink-0" />}
-      {(ext() === 'toml' || ext() === 'yaml' || ext() === 'yml') && <Cog class="w-4 h-4 mr-1.5 shrink-0" />}
-      {(ext() === 'css' || ext() === 'scss') && <Palette class="w-4 h-4 mr-1.5 shrink-0" />}
-      {ext() === 'html' && <Globe class="w-4 h-4 mr-1.5 shrink-0" />}
-      {(ext() === 'lua' || ext() === 'fnl') && <Moon class="w-4 h-4 mr-1.5 shrink-0" />}
-      {!['md', 'ts', 'tsx', 'js', 'jsx', 'rs', 'json', 'toml', 'yaml', 'yml', 'css', 'scss', 'html', 'lua', 'fnl'].includes(ext()) && <File class="w-4 h-4 mr-1.5 shrink-0" />}
-    </>
-  );
-};
-
-const FolderIcon: Component<{ open?: boolean }> = (props) => (
-  <>
-    {props.open ? (
-      <FolderOpen class="w-4 h-4 mr-1.5 shrink-0" />
-    ) : (
-      <Folder class="w-4 h-4 mr-1.5 shrink-0" />
-    )}
-  </>
-);
-
-const ChevronIcon: Component<{ open?: boolean }> = (props) => (
-  <ChevronDown
-    class="w-3.5 h-3.5 transition-transform shrink-0"
-    classList={{ 'rotate-90': props.open }}
-  />
-);
-
-const getExtension = (filename: string): string => {
-  const parts = filename.split('.');
-  return parts.length > 1 ? parts[parts.length - 1] : '';
-};
-
-const FileItem: Component<{
-  node: FileNode;
-  depth: number;
-  onFileClick: (path: string) => void;
-}> = (props) => {
-  const [isOpen, setIsOpen] = createSignal(false);
-  const paddingLeft = () => `${props.depth * 12 + 8}px`;
-
-  return (
-    <Show
-      when={props.node.is_dir}
-      fallback={
-        <button
-          class="flex items-center w-full px-2 py-1 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-sm"
-          style={{ "padding-left": paddingLeft() }}
-          onClick={() => props.onFileClick(props.node.path)}
-        >
-          <FileIcon extension={getExtension(props.node.name)} />
-          <span class="truncate">{props.node.name}</span>
-        </button>
-      }
-    >
-      <Collapsible.Root open={isOpen()} onOpenChange={({ open }) => setIsOpen(open)}>
-        <Collapsible.Trigger
-          class="flex items-center w-full px-2 py-1 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-sm"
-          style={{ "padding-left": paddingLeft() }}
-        >
-          <ChevronIcon open={isOpen()} />
-          <FolderIcon open={isOpen()} />
-          <span class="truncate">{props.node.name}</span>
-        </Collapsible.Trigger>
-        <Collapsible.Content>
-          <For each={props.node.children}>
-            {(child) => (
-              <FileItem
-                node={child}
-                depth={props.depth + 1}
-                onFileClick={props.onFileClick}
-              />
-            )}
-          </For>
-        </Collapsible.Content>
-      </Collapsible.Root>
-    </Show>
-  );
-};
-
-const LoadingSpinner: Component = () => (
-  <div class="flex items-center gap-2 px-3 py-2">
-    <div class="w-4 h-4 border-2 border-hairline border-t-shell-body rounded-full animate-spin" />
-    <span class="text-muted-dark text-sm">Loading...</span>
-  </div>
-);
-
-const ErrorMessage: Component<{ message: string }> = (props) => (
-  <div class="mx-3 my-2 px-3 py-2 text-sm text-error bg-error/10 rounded border border-error/30">
-    {props.message}
-  </div>
-);
-
-const FileTree: Component<{
-  title: string;
-  files: FileNode[];
-  onFileClick: (path: string) => void;
-  loading?: boolean;
-  error?: string | null;
-}> = (props) => {
-  return (
-    <div class="mb-4">
-      <div class="px-3 py-2 text-xs font-semibold text-muted-dark uppercase tracking-wide">
-        {props.title}
-      </div>
-      <Show when={props.error}>
-        <ErrorMessage message={props.error!} />
-      </Show>
-      <Show when={!props.error}>
-        <Show
-          when={!props.loading}
-          fallback={<LoadingSpinner />}
-        >
-          <Show
-            when={props.files.length > 0}
-            fallback={
-              <div class="px-3 py-2 text-muted-dark text-sm">No files</div>
-            }
-          >
-            <div class="px-1">
-              <For each={props.files}>
-                {(node) => (
-                  <FileItem node={node} depth={0} onFileClick={props.onFileClick} />
-                )}
-              </For>
-            </div>
-          </Show>
-        </Show>
-      </Show>
-    </div>
-  );
-};
-
-const filesToNodes = (files: FileEntry[]): FileNode[] => {
-  return files.map((file) => ({
-    id: file.path,
-    name: file.name,
-    path: file.path,
-    is_dir: file.is_dir,
-    children: file.is_dir ? [] : undefined,
-  }));
-};
+/** FsEntry (wire) -> FileTreeNode. Dirs get `children: undefined` (lazy). */
+function fsEntryToNode(e: FsEntry, rootPath: string): Node {
+  return {
+    relPath: e.rel_path,
+    name: e.name,
+    isDir: e.is_dir,
+    absPath: `${rootPath}/${e.rel_path}`,
+    modified: e.modified ?? undefined,
+  };
+}
 
 export const FilesPanel: Component = () => {
-  const { currentProject } = useProjectSafe();
+  const { projects } = useProjectSafe();
 
-  const [kilnFiles, setKilnFiles] = createSignal<FileNode[]>([]);
-  const [loadingKiln, setLoadingKiln] = createSignal(false);
-  const [kilnError, setKilnError] = createSignal<string | null>(null);
+  const [kilns, setKilns] = createSignal<KilnListEntry[]>([]);
+  const [rawRoot, setRawRoot] = createSignal<Node | null>(null);
+  const [error, setError] = createSignal<string | null>(null);
+  const [loading, setLoading] = createSignal(false);
+  const [sort, setSort] = createSignal<SortSpec>(readJson<SortSpec>(SORT_KEY, DEFAULT_SORT));
 
-  createEffect(() => {
-    const project = currentProject();
-    if (!project) {
-      setKilnFiles([]);
-      setKilnError(null);
-      return;
-    }
+  // Live machine api (set by FileTreeView.apiRef); powers toolbar actions.
+  let treeApi: UseTreeViewReturn<Node> | null = null;
 
-    if (project.kilns.length > 0) {
-      setLoadingKiln(true);
-      setKilnError(null);
-
-      const kilnPath = kilnRoot(project.kilns[0].path);
-      listNotes(kilnPath)
-        .then((notes) => {
-          const entries: FileEntry[] = notes.map((n) => ({
-            name: n.name,
-            // Note records carry kiln-relative paths; the file API (and
-            // openFileInEditor) address files absolutely.
-            path: noteAbsolutePath(n.path, kilnPath),
-            is_dir: false,
-          }));
-          setKilnFiles(filesToNodes(entries));
-        })
-        .catch((err) => {
-          console.error('Failed to load kiln notes:', err);
-          setKilnFiles([]);
-          setKilnError(err instanceof Error ? err.message : 'Failed to load notes');
-        })
-        .finally(() => {
-          setLoadingKiln(false);
-        });
-    } else {
-      setKilnFiles([]);
-      setKilnError(null);
+  onMount(async () => {
+    try {
+      setKilns(await listKilns());
+    } catch (e) {
+      console.error('Failed to list kilns:', e);
     }
   });
 
-  const handleFileClick = (path: string) => {
-    const fileName = path.split('/').pop() ?? path;
-    openFileInEditor(path, fileName);
+  const roster = createMemo(() => buildRoster(projects(), kilns()));
+
+  const activeRoot = createMemo<TreeRoot | null>(() => {
+    const groups = roster();
+    const idx = rosterIndex(groups);
+    const persisted = selectedRootKey();
+    if (persisted && idx.has(persisted)) return idx.get(persisted)!;
+    const firstProject = groups.find((g) => g.kind === 'project')?.roots[0];
+    const firstKiln = groups.find((g) => g.kind === 'kiln')?.roots[0];
+    return firstProject ?? firstKiln ?? null; // deterministic fallback
+  });
+
+  // Keep the persisted key in sync with the resolved fallback (silent, no persist).
+  createEffect(() => {
+    const r = activeRoot();
+    if (r) treeRootActions.setSelectedRootKey(selectedRootKey() ?? rootKey(r));
+  });
+
+  // ---- data-source discriminant --------------------------------------------
+  async function loadKilnTree(kilnPath: string) {
+    setLoading(true);
+    setError(null);
+    try {
+      const notes = await listNotes(kilnPath);
+      setRawRoot(notesToTree(notes, kilnPath));
+    } catch (e) {
+      setRawRoot(null);
+      setError(e instanceof Error ? e.message : 'Failed to load notes');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadProjectDir(rootPath: string, rel: string) {
+    setLoading(true);
+    setError(null);
+    try {
+      const entries = await listDir(rootPath, rel);
+      const children = entries.map((e) => fsEntryToNode(e, rootPath));
+      setRawRoot({ relPath: '', name: '', isDir: true, absPath: rootPath, children });
+    } catch (e) {
+      setRawRoot(null);
+      setError(e instanceof Error ? e.message : 'Failed to list directory');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  createEffect(() => {
+    const root = activeRoot();
+    setRawRoot(null);
+    if (!root) return;
+    if (root.kind === 'kiln') void loadKilnTree(root.path);
+    else void loadProjectDir(root.path, '');
+  });
+
+  // Displayed collection = sorted view of the raw tree. New identity on
+  // raw-tree or sort change -> FileTreeView re-mounts (keyed <Show>).
+  const collection = createMemo(() => {
+    const raw = rawRoot();
+    return raw ? makeFileCollection(sortTree(raw, sort())) : null;
+  });
+
+  const openFilePath = createMemo(() => currentOpenFilePath());
+
+  const expandedFor = (r: TreeRoot) => readJson<string[]>(EXPANDED_KEY(rootKey(r)), []);
+  const persistExpanded = (r: TreeRoot, values: string[]) =>
+    writeJson(EXPANDED_KEY(rootKey(r)), values.slice(0, EXPANDED_CAP));
+
+  // Project lazy loader (kilns build the whole tree so they pass undefined).
+  const loadChildren = (root: TreeRoot) => async (details: { node: Node }) => {
+    const entries = await listDir(root.path, details.node.relPath);
+    return entries.map((e) => fsEntryToNode(e, root.path));
   };
 
+  const onOpenLeaf = (node: Node) => openFileInEditor(node.absPath, node.name);
 
+  const onContextAction = (action: ContextAction, node: Node) => {
+    const root = activeRoot();
+    if (!root) return;
+    switch (action) {
+      case 'open':
+        openFileInEditor(node.absPath, node.name);
+        break;
+      case 'reveal-in-tree':
+        revealActive(node.relPath);
+        break;
+      case 'copy-path':
+        void navigator.clipboard?.writeText(node.absPath);
+        break;
+      case 'copy-relative-path':
+        void navigator.clipboard?.writeText(node.relPath);
+        break;
+      case 'refresh':
+        // Project-only: refetch this folder (top-level refetch keeps it simple).
+        if (root.kind === 'project') void loadProjectDir(root.path, '');
+        break;
+    }
+  };
+
+  // ---- toolbar actions -----------------------------------------------------
+  const collapseAll = () => treeApi?.().collapse();
+
+  function revealActive(relPathOverride?: string) {
+    const root = activeRoot();
+    const col = collection();
+    if (!root || !treeApi || !col) return;
+    let rel = relPathOverride;
+    if (!rel) {
+      const open = openFilePath();
+      if (!open) return;
+      const base = root.path.replace(/\/+$/, '');
+      if (open !== base && !open.startsWith(base + '/')) return;
+      rel = open === base ? '' : open.slice(base.length + 1);
+    }
+    if (!rel) return;
+    const api = treeApi();
+    if (root.kind === 'kiln') {
+      revealLoadedPath(api, col, rel);
+    } else {
+      void revealLazyPath(
+        {
+          expand: (v) => api.expand(v),
+          focus: (v) => api.focus(v),
+          onLoaded: async () => Promise.resolve(),
+        },
+        rel,
+      );
+    }
+  }
+
+  const cycleSort = () => {
+    const s = sort();
+    // name-asc -> name-desc -> modified-desc -> modified-asc -> name-asc
+    const order: SortSpec[] = [
+      { key: 'name', dir: 'asc' },
+      { key: 'name', dir: 'desc' },
+      { key: 'modified', dir: 'desc' },
+      { key: 'modified', dir: 'asc' },
+    ];
+    const i = order.findIndex((o) => o.key === s.key && o.dir === s.dir);
+    const next = order[(i + 1) % order.length];
+    setSort(next);
+    writeJson(SORT_KEY, next);
+  };
+
+  // ---- live SSE reconcile (kilns patch in-memory; projects refetch) --------
+  const batcher = createFsEventBatcher(150, (events) => {
+    const root = activeRoot();
+    const raw = rawRoot();
+    if (!root || !raw) return;
+    const mount: RootMount = {
+      rootId: rootKey(root),
+      kind: root.kind,
+      basePath: root.path,
+      root: raw,
+    };
+    const { root: patched, invalidate } = reconcileMount(mount, events);
+    if (patched) setRawRoot(patched);
+    if (invalidate && invalidate.length > 0 && root.kind === 'project') {
+      // Defensive path (unused in P1: only kiln dirs are watched). Any loaded
+      // folder change -> refetch the whole top level (keeps it simple).
+      void loadProjectDir(root.path, '');
+    }
+  });
+
+  onMount(() => {
+    const unsub = subscribeToFsEvents((ev) => batcher.push(ev));
+    // Project roots are refresh-on-interaction: refetch expanded folders on focus.
+    const onFocus = () => {
+      const root = activeRoot();
+      if (root?.kind === 'project') void loadProjectDir(root.path, '');
+    };
+    window.addEventListener('focus', onFocus);
+    onCleanup(() => {
+      unsub();
+      batcher.dispose();
+      window.removeEventListener('focus', onFocus);
+    });
+  });
 
   return (
     <PanelShell class="overflow-hidden">
-      <PanelHeader title="Notes" class="shrink-0" />
+      <div class="p-3 border-b border-hairline shrink-0 flex items-center justify-between gap-2">
+        <h2 class="text-sm font-semibold text-muted uppercase tracking-wide">Files</h2>
+        <div class="flex items-center gap-1">
+          <button
+            type="button"
+            aria-label="Sort"
+            title="Cycle sort (name / modified)"
+            onClick={cycleSort}
+            class="p-1 rounded hover:bg-hover-wash text-muted"
+          >
+            <ArrowUpDown class="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="Collapse all"
+            title="Collapse all"
+            onClick={collapseAll}
+            class="p-1 rounded hover:bg-hover-wash text-muted"
+          >
+            <ChevronsDownUp class="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="Reveal active file"
+            title="Reveal active file"
+            onClick={() => revealActive()}
+            class="p-1 rounded hover:bg-hover-wash text-muted"
+          >
+            <Target class="w-3.5 h-3.5" />
+          </button>
+          <Show when={activeRoot()?.kind === 'project'}>
+            <button
+              type="button"
+              aria-label="Refresh"
+              title="Refresh"
+              onClick={() => {
+                const r = activeRoot();
+                if (r) void loadProjectDir(r.path, '');
+              }}
+              class="p-1 rounded hover:bg-hover-wash text-muted"
+            >
+              <RefreshCw class="w-3.5 h-3.5" />
+            </button>
+          </Show>
+          <RootDropdown
+            groups={roster()}
+            selectedKey={selectedRootKey()}
+            onSelect={(r) => treeRootActions.selectRoot(r)}
+          />
+        </div>
+      </div>
 
       <div class="flex-1 overflow-y-auto py-2">
         <Show
-          when={currentProject()}
-           fallback={
-             <div class="px-3 py-8 text-center text-muted-dark text-sm">
-               Select a project to browse notes
-             </div>
-           }
+          when={error()}
         >
-          <FileTree
-            title="Kiln"
-            files={kilnFiles()}
-            onFileClick={handleFileClick}
-            loading={loadingKiln()}
-            error={kilnError()}
-          />
+          <div class="mx-3 my-2 px-3 py-2 text-sm text-error bg-error/10 rounded border border-error/30">
+            {error()}
+          </div>
+        </Show>
+        <Show when={loading() && !rawRoot()}>
+          <div class="px-3 py-2 text-muted-dark text-sm">Loading…</div>
+        </Show>
+        <Show when={!activeRoot()}>
+          <div class="px-3 py-8 text-center text-muted-dark text-sm">
+            No project or kiln to browse
+          </div>
+        </Show>
+        <Show when={collection()} keyed>
+          {(col) => {
+            const root = activeRoot()!;
+            return (
+              <FileTreeView
+                collection={col}
+                rootKind={root.kind}
+                openFilePath={openFilePath()}
+                defaultExpandedValue={expandedFor(root)}
+                loadChildren={root.kind === 'project' ? loadChildren(root) : undefined}
+                onOpenLeaf={onOpenLeaf}
+                onExpandedChange={(values) => persistExpanded(root, values)}
+                onContextAction={onContextAction}
+                apiRef={(api) => (treeApi = api)}
+              />
+            );
+          }}
         </Show>
       </div>
     </PanelShell>

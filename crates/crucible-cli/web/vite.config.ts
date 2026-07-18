@@ -103,7 +103,11 @@ export default defineConfig({
         // externalized breaks top-level structural reactivity in every test:
         // a component whose ROOT is a conditional <Show> mounts through the
         // SSR copy's insert and never re-renders when the signal flips.
-        inline: [/solid-js/, /@solidjs\//, /@solid-primitives/],
+        // @zag-js/@ark-ui (the TreeView/Menu state machines) must also be
+        // inlined: externalized, their compiled machine.mjs hits a TDZ
+        // ("Cannot access 'send' before initialization") under vitest's ESM
+        // loader, and they must share the test's browser build of solid-js.
+        inline: [/solid-js/, /@solidjs\//, /@solid-primitives/, /@zag-js/, /@ark-ui/],
       },
     },
     coverage: {

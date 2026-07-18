@@ -8,6 +8,9 @@ import type {
   NoteContent,
   BacklinksResponse,
   ProviderInfo,
+  KilnListEntry,
+  FsEntry,
+  FsEvent,
 } from './types';
 
 export interface Config {
@@ -915,9 +918,13 @@ export async function getMcpStatus(): Promise<Record<string, unknown>> {
 // Search Endpoints
 // =============================================================================
 
-/** List available kilns. */
-export async function listKilns(): Promise<string[]> {
-  return (await request<{ kilns: string[] }>('GET', '/api/kilns', {
+/**
+ * List available kilns. Returns the daemon's object shape verbatim
+ * (`{ path, name, last_access_secs_ago }`) — see `KilnListEntry`. The route
+ * (`GET /api/kilns`) wraps the array under `{ kilns }`.
+ */
+export async function listKilns(): Promise<KilnListEntry[]> {
+  return (await request<{ kilns: KilnListEntry[] }>('GET', '/api/kilns', {
     errorMessage: 'Failed to list kilns',
   })).kilns;
 }
@@ -1131,4 +1138,90 @@ export async function resetLayout(): Promise<void> {
   } catch (err) {
     console.warn(err instanceof Error ? err.message : 'Failed to reset layout');
   }
+}
+
+// =============================================================================
+// File-System Explorer Endpoints (Phase 1 web file tree)
+// =============================================================================
+
+/**
+ * List one directory level inside a registered project (daemon `fs.list_dir`,
+ * read-only). Kilns never use this path — their tree is built client-side from
+ * `listNotes`. `relPath` is project-root-relative POSIX (`''` = the root).
+ * `showIgnored=false` hides gitignored entries and all dotfiles/dot-dirs.
+ *
+ * Bypasses `request()` to preserve the exact query-string contract the daemon
+ * route parses (`root` / `rel_path` / `show_ignored`).
+ */
+export async function listDir(
+  root: string,
+  relPath = '',
+  showIgnored = false,
+): Promise<FsEntry[]> {
+  const q = new URLSearchParams({
+    root,
+    rel_path: relPath,
+    show_ignored: String(showIgnored),
+  });
+  const res = await fetch(`/api/fs/list?${q}`, { credentials: 'same-origin' });
+  if (!res.ok) {
+    if (res.status === 401) notifyAuthRequired();
+    throw new Error(`listDir failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * SSE event names the `/api/fs/events` stream emits. Kept in lockstep with the
+ * Rust `FsEvent::event_name()` (web/fs_events.rs). Each event's `data` parses
+ * to the `FsEvent` discriminated union.
+ */
+export const FS_SSE_EVENT_TYPES = ['fs_changed', 'fs_deleted', 'fs_moved'] as const;
+
+/**
+ * Subscribe to live filesystem-change events (`GET /api/fs/events`). Mirrors
+ * `subscribeToEvents`: one `EventSource`, exponential-backoff reconnect, cookie
+ * auth. In Phase 1 only watched kiln directories emit these. Returns a cleanup
+ * function that closes the stream.
+ */
+export function subscribeToFsEvents(onEvent: (event: FsEvent) => void): () => void {
+  const url = '/api/fs/events';
+  let source: EventSource | null = null;
+  let reconnectAttempts = 0;
+  let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+  let closed = false;
+
+  function connect() {
+    if (closed) return;
+
+    source = new EventSource(url);
+
+    for (const eventType of FS_SSE_EVENT_TYPES) {
+      source.addEventListener(eventType, (e: MessageEvent) => {
+        reconnectAttempts = 0;
+        try {
+          onEvent(JSON.parse(e.data) as FsEvent);
+        } catch {
+          console.warn(`Failed to parse FS SSE event (${eventType}):`, e.data);
+        }
+      });
+    }
+
+    source.onerror = () => {
+      if (closed) return;
+      source?.close();
+      source = null;
+      reconnectAttempts++;
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 30000);
+      reconnectTimeout = setTimeout(connect, delay);
+    };
+  }
+
+  connect();
+
+  return () => {
+    closed = true;
+    if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    source?.close();
+  };
 }
