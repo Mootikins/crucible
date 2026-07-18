@@ -17,7 +17,8 @@ const dismissTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const AUTO_DISMISS_MS = 5000;
 
 function recalcCount() {
-  const count = notifications.filter((n) => !n.dismissed).length;
+  // The badge counts UNREAD notifications (still listed, not yet seen).
+  const count = notifications.filter((n) => !n.dismissed && !n.read).length;
   setNotificationCount(count);
   statusBarActions.setNotificationCount(count);
 }
@@ -32,6 +33,7 @@ function addNotification(type: NotificationType, message: string): string {
     message,
     timestamp: Date.now(),
     dismissed: false,
+    read: false,
   };
 
   setNotifications(produce((list) => list.push(notification)));
@@ -83,16 +85,13 @@ function clearAll() {
 }
 
 function markAllRead() {
-  // Cancel all pending timers
-  for (const timer of dismissTimers.values()) {
-    clearTimeout(timer);
-  }
-  dismissTimers.clear();
-
+  // Opening the Notification Center marks everything READ (zeroes the badge)
+  // but keeps entries visible — it must NOT dismiss them like clearAll does.
+  // Auto-dismiss timers are left running so info/success toasts still fade.
   setNotifications(
     produce((list) => {
       for (const n of list) {
-        n.dismissed = true;
+        n.read = true;
       }
     }),
   );

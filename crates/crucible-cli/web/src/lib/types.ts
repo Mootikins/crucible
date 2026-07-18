@@ -101,14 +101,16 @@ export interface NoteEntry {
 }
 
 export interface NoteContent {
-  /** NOT sent by GET /api/notes/{name} — the daemon payload carries only
-   * path/title/tags/links. Derive display names via noteDisplayName. */
+  /** Several fields are NOT sent by GET /api/notes/{name} — the daemon payload
+   * carries only path/title/tags/links_to/content_hash. Deriving display names
+   * via noteDisplayName; content/updated_at are absent (typing them required
+   * yielded `undefined` at runtime). */
   name?: string;
   path: string;
-  content: string;
+  content?: string;
   title: string | null;
   tags: string[];
-  updated_at: string;
+  updated_at?: string;
 }
 
 /** A note that wikilinks to the focused note. */
@@ -203,7 +205,10 @@ export interface Notification {
   type: NotificationType;
   message: string;
   timestamp: number;
+  /** Removed from the visible list. */
   dismissed: boolean;
+  /** Seen by the user (clears the unread badge) but still listed. */
+  read?: boolean;
 }
 
 /** Precognition result (auto-injected context) */
