@@ -211,6 +211,17 @@ impl Server {
     /// (no `CRUCIBLE_HOME` env mutation). The daemon reads registry, sessions,
     /// and the home kiln from `data_home` instead of the developer's real
     /// `~/.crucible`.
+    ///
+    /// CAVEAT: this injects the *value* threaded through `Server`/`RpcContext`,
+    /// but it does NOT change the process-global `crucible_home()` that
+    /// `is_crucible_home()`/`FileSessionStorage::sessions_base()` still read. So
+    /// the injected home is treated as a *regular* kiln: sessions created under
+    /// it land at `{data_home}/.crucible/sessions`, whereas production (where
+    /// `data_home == crucible_home()`) uses the no-prefix `{home}/sessions`. A
+    /// test that seeds a session into the injected home kiln and expects the
+    /// production layout must instead pin `CRUCIBLE_HOME` via `EnvVarGuard` (see
+    /// the `session_storage` home-detection tests). Untangling that global is a
+    /// separate follow-up.
     #[allow(dead_code)] // used by in-process integration-test fixtures
     pub async fn bind_with_data_home(path: &Path, data_home: std::path::PathBuf) -> Result<Self> {
         Self::bind_with_plugin_config(BindWithPluginConfigParams {
@@ -314,8 +325,7 @@ impl Server {
             .data_home
             .clone()
             .unwrap_or_else(crucible_core::config::crucible_home);
-        let workspace_root = data_home.clone();
-        let workspace_tools = Arc::new(WorkspaceTools::new(&workspace_root));
+        let workspace_tools = Arc::new(WorkspaceTools::new(&data_home));
         let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
             kiln_manager: kiln_manager.clone(),
             session_manager: session_manager.clone(),

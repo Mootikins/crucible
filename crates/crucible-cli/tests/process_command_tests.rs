@@ -105,7 +105,10 @@ impl TestServer {
             temp_dir.path().to_str().unwrap().to_string(),
         );
         let socket_path = lifecycle::default_socket_path();
-        let server = Server::bind(&socket_path, None).await?;
+        // Inject an isolated data root (no CRUCIBLE_HOME env) so the in-process
+        // daemon never reads the developer's real ~/.crucible registry.
+        let server =
+            Server::bind_with_data_home(&socket_path, temp_dir.path().to_path_buf()).await?;
         let shutdown_handle = server.shutdown_handle();
         let server_handle = tokio::spawn(async move {
             let _ = server.run().await;
