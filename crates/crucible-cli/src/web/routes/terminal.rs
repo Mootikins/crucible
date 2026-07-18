@@ -15,8 +15,14 @@ use axum::{
 };
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::Deserialize;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Semaphore};
 use tracing::{debug, warn};
+
+/// Cap on concurrent PTY sessions. Each session spawns a shell child plus a
+/// dedicated blocking OS thread, so an unbounded count is a fork-bomb / thread
+/// exhaustion vector. Excess upgrades are rejected rather than queued.
+const MAX_TERMINALS: usize = 8;
+static TERMINAL_SLOTS: Semaphore = Semaphore::const_new(MAX_TERMINALS);
 
 pub fn terminal_routes() -> Router<AppState> {
     Router::new().route("/ws", get(terminal_ws))
@@ -32,7 +38,22 @@ enum ClientMsg {
 }
 
 async fn terminal_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
-    ws.on_upgrade(handle_terminal)
+    // Bound concurrent PTYs; hold the permit for the connection's lifetime.
+    let permit = match TERMINAL_SLOTS.try_acquire() {
+        Ok(permit) => permit,
+        Err(_) => {
+            warn!(max = MAX_TERMINALS, "Rejecting terminal: session limit reached");
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "Terminal session limit reached",
+            )
+                .into_response();
+        }
+    };
+    ws.on_upgrade(move |socket| async move {
+        handle_terminal(socket).await;
+        drop(permit);
+    })
 }
 
 async fn handle_terminal(mut socket: WebSocket) {
@@ -157,6 +178,17 @@ async fn handle_terminal(mut socket: WebSocket) {
         }
     }
 
+    // Kill the whole process group, not just the shell: a PTY spawn makes the
+    // shell a session leader (pgid == pid), and backgrounded grandchildren can
+    // keep the slave open. If only the shell is killed, the blocking reader
+    // thread never sees EOF on the master and leaks (thread + fd) for the
+    // grandchild's lifetime.
+    #[cfg(unix)]
+    if let Some(pid) = child.process_id() {
+        use nix::sys::signal::{killpg, Signal};
+        use nix::unistd::Pid;
+        let _ = killpg(Pid::from_raw(pid as i32), Signal::SIGKILL);
+    }
     let _ = child.kill();
     let _ = child.wait();
 }

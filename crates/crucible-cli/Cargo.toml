@@ -173,9 +173,13 @@ vt100 = "0.15"  # Terminal emulation for queryable screen buffer in E2E tests
 proptest = "1.11"  # Property-based testing for graduation invariants
 test-case = "3.3"  # Parameterized tests
 
+# Unix-only: process-group signals for the PTY terminal teardown.
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31", features = ["signal"] }
+
 # Unix-only resource constraint testing
 [target.'cfg(unix)'.dev-dependencies]
-nix = { version = "0.31", features = ["fs"] }
+nix = { version = "0.31", features = ["fs", "signal"] }
 
 # File locking for concurrent test serialization
 fs2 = "0.4"

@@ -1,6 +1,6 @@
 use axum::body::Body;
-use axum::extract::ConnectInfo;
-use axum::http::{HeaderMap, Request, StatusCode};
+use axum::extract::{ConnectInfo, State};
+use axum::http::{header, HeaderMap, HeaderValue, Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -223,6 +223,34 @@ fn unauthorized_response() -> Response {
 // Localhost-only shell auth (pre-existing)
 // ---------------------------------------------------------------------------
 
+/// Rejects WebSocket upgrades whose `Origin` isn't in the allow-list.
+///
+/// Browsers do not apply CORS/same-origin policy to WebSocket handshakes, so
+/// `CorsLayer` never fires for them — a malicious page could otherwise open
+/// `ws://localhost:PORT/api/terminal/ws` and, because the request originates
+/// from loopback, sail past the localhost auth bypass into a real shell
+/// (Cross-Site WebSocket Hijacking → RCE). Browsers *do* always send `Origin`
+/// on WS handshakes, so validating it against the same list used for CORS
+/// blocks cross-site pages while allowing the app's own frontend. A missing
+/// `Origin` means a non-browser client (e.g. a native ws tool), which the
+/// route's localhost gate already covers.
+pub async fn websocket_origin_guard(
+    State(allowed): State<Arc<Vec<HeaderValue>>>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    if let Some(origin) = request.headers().get(header::ORIGIN) {
+        if !allowed.iter().any(|a| a == origin) {
+            tracing::warn!(
+                ?origin,
+                "Rejecting WebSocket upgrade from disallowed Origin"
+            );
+            return (StatusCode::FORBIDDEN, "Origin not allowed").into_response();
+        }
+    }
+    next.run(request).await
+}
+
 pub async fn localhost_only_shell_auth(request: Request<Body>, next: Next) -> Response {
     if allow_remote_shell() {
         return next.run(request).await;
@@ -301,6 +329,53 @@ mod tests {
     use axum::routing::get;
     use axum::{middleware, Router};
     use tower::ServiceExt;
+
+    // --- WebSocket Origin guard tests (CSWSH defense) ---
+
+    fn test_router_with_origin_guard() -> Router {
+        let allowed = Arc::new(vec![HeaderValue::from_static("http://127.0.0.1:8080")]);
+        Router::new()
+            .route("/api/terminal/ws", get(|| async { "ok" }))
+            .layer(middleware::from_fn_with_state(
+                allowed,
+                websocket_origin_guard,
+            ))
+    }
+
+    #[tokio::test]
+    async fn origin_guard_allows_matching_origin() {
+        let req = Request::builder()
+            .uri("/api/terminal/ws")
+            .header(header::ORIGIN, "http://127.0.0.1:8080")
+            .body(Body::empty())
+            .unwrap();
+        let response = test_router_with_origin_guard().oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn origin_guard_rejects_cross_site_origin() {
+        // The CSWSH attack: a malicious page's Origin must be rejected even
+        // though the request itself comes from loopback.
+        let req = Request::builder()
+            .uri("/api/terminal/ws")
+            .header(header::ORIGIN, "https://evil.example")
+            .body(Body::empty())
+            .unwrap();
+        let response = test_router_with_origin_guard().oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn origin_guard_allows_missing_origin_non_browser() {
+        // Non-browser clients send no Origin; the route's localhost gate covers them.
+        let req = Request::builder()
+            .uri("/api/terminal/ws")
+            .body(Body::empty())
+            .unwrap();
+        let response = test_router_with_origin_guard().oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
 
     // --- Bearer auth tests ---
 

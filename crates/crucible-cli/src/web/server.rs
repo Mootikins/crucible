@@ -1,6 +1,6 @@
 use crate::web::assets::static_routes;
 use crate::web::middleware::auth::{
-    bearer_auth, localhost_only_shell_auth, resolve_api_key, ApiKeyState,
+    bearer_auth, localhost_only_shell_auth, resolve_api_key, websocket_origin_guard, ApiKeyState,
 };
 use crate::web::routes::{
     auth_routes, chat_routes, config_routes, health_routes, kiln_routes, layout_routes, mcp_routes,
@@ -26,8 +26,11 @@ pub async fn start_server(web_config: &WebConfig, app_config: &CliAppConfig) -> 
 
     // Wildcard CORS is dangerous here because `/api/shell/exec` can execute host shell commands.
     // Restricting origins prevents arbitrary websites from triggering command execution via browsers.
+    // Shared allow-list: CORS uses it for HTTP, and the terminal WebSocket
+    // guard reuses it (browsers bypass CORS on WS handshakes).
+    let allowed_origins = Arc::new(build_cors_origins(web_config));
     let cors = CorsLayer::new()
-        .allow_origin(AllowOrigin::list(build_cors_origins(web_config)))
+        .allow_origin(AllowOrigin::list((*allowed_origins).clone()))
         .allow_methods([
             Method::GET,
             Method::POST,
@@ -51,10 +54,17 @@ pub async fn start_server(web_config: &WebConfig, app_config: &CliAppConfig) -> 
             "/api/shell",
             shell_routes().layer(middleware::from_fn(localhost_only_shell_auth)),
         )
-        // A PTY is full shell access — same localhost-only gate as /api/shell.
+        // A PTY is full shell access: localhost gate + an Origin allow-list on
+        // the WS upgrade to block Cross-Site WebSocket Hijacking (CORS doesn't
+        // apply to WS handshakes).
         .nest(
             "/api/terminal",
-            terminal_routes().layer(middleware::from_fn(localhost_only_shell_auth)),
+            terminal_routes()
+                .layer(middleware::from_fn(localhost_only_shell_auth))
+                .layer(middleware::from_fn_with_state(
+                    allowed_origins.clone(),
+                    websocket_origin_guard,
+                )),
         )
         .merge(chat_routes())
         .merge(config_routes())
