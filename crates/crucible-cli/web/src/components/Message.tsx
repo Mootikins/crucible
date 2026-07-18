@@ -6,7 +6,7 @@ import { PrecognitionBadge } from './PrecognitionBadge';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import type { Message as MessageType, ToolCallDisplay, TokenUsage } from '@/lib/types';
-import { renderMarkdown, renderMarkdownAsync } from '@/lib/markdown';
+import { renderMarkdown, renderMarkdownAsync, renderPlainWithWikilinks } from '@/lib/markdown';
 import { openNoteInEditor } from '@/lib/note-actions';
 import { statusBarStore } from '@/stores/statusBarStore';
 
@@ -292,7 +292,13 @@ export const Message: Component<MessageProps> = (props) => {
               }>
                 <Show
                   when={!isUser()}
-                  fallback={<p class="whitespace-pre-wrap break-words">{props.message.content}</p>}
+                  fallback={
+                    <p
+                      class="whitespace-pre-wrap break-words"
+                      onClick={handleRenderedClick}
+                      innerHTML={renderPlainWithWikilinks(props.message.content)}
+                    />
+                  }
                 >
                   <div
                     ref={markdownRef}

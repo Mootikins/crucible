@@ -10,6 +10,7 @@ vi.mock('@/lib/markdown', () => ({
   renderMarkdown: (s: string) => `<p data-md-sync>${s}</p>`,
   renderMarkdownAsync: (s: string) =>
     Promise.resolve(`<p data-md-async>${s}</p>`),
+  renderPlainWithWikilinks: (s: string) => `${s}`,
 }));
 
 // ChatContext: capture what handlers do without spinning up a real provider.

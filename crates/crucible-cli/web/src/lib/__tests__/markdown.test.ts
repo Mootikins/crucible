@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { renderMarkdown } from '../markdown';
+import { renderMarkdown, renderPlainWithWikilinks } from '../markdown';
+
+describe('renderPlainWithWikilinks (user bubbles)', () => {
+  it('turns a user-authored [[link]] into a .wikilink anchor', () => {
+    const html = renderPlainWithWikilinks('see [[My Note]] please');
+    expect(html).toContain('class="wikilink"');
+    expect(html).toContain('data-note="My Note"');
+    expect(html).toContain('see ');
+  });
+
+  it('escapes surrounding HTML (no markdown, no injection)', () => {
+    const html = renderPlainWithWikilinks('<b>hi</b> [[N]]');
+    expect(html).toContain('&lt;b&gt;hi&lt;/b&gt;');
+    expect(html).not.toContain('<b>hi</b>');
+    expect(html).toContain('data-note="N"');
+  });
+});
 
 describe('markdown renderer', () => {
   it('renders strong tags for bold markdown', () => {

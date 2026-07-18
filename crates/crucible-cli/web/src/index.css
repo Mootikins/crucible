@@ -154,6 +154,20 @@
 .cru-anim-slide-r { animation: cru-slide-in-r 150ms ease-out; }
 .cru-anim-slide-b { animation: cru-slide-in-b 150ms ease-out; }
 
+/* Rendered [[wikilinks]] (chat + previews). Mirrors the editor's .cm-wikilink
+   ember pill so a knowledge link reads as one identity across every surface. */
+.wikilink {
+  color: var(--color-primary, #e0653a);
+  background-color: color-mix(in srgb, var(--color-primary, #e0653a) 10%, transparent);
+  border-radius: 3px;
+  padding: 0 2px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.wikilink:hover {
+  text-decoration: underline;
+}
+
 /* Reduced motion support for accessibility */
 @media (prefers-reduced-motion: reduce) {
   *,

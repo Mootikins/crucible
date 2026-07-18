@@ -22,6 +22,26 @@ export function parseWikilinkInner(inner: string): { target: string; display: st
   const target = (rawTarget.split('#')[0] ?? rawTarget).trim();
   return { target, display };
 }
+/**
+ * Escape user-authored text and turn `[[wikilinks]]` into `.wikilink` anchors,
+ * WITHOUT the full markdown pipeline. User bubbles show text verbatim, but a
+ * link the user just inserted should still read as (and be) a knowledge link.
+ */
+export function renderPlainWithWikilinks(content: string): string {
+  const re = wikilinkRe();
+  let out = '';
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    out += escapeHtml(content.slice(last, m.index));
+    const { target, display } = parseWikilinkInner(m[1]);
+    out += `<a class="wikilink" href="#" data-note="${escapeHtml(target)}">${escapeHtml(display)}</a>`;
+    last = m.index + m[0].length;
+  }
+  out += escapeHtml(content.slice(last));
+  return out;
+}
+
 const CODE_BLOCK_PATTERN = /<pre><code(?: class="language-([^"]+)")?>([\s\S]*?)<\/code><\/pre>/g;
 
 let markdownRenderer: MarkdownIt | null = null;
