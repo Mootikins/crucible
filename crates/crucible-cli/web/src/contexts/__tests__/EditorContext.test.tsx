@@ -99,6 +99,7 @@ describe('EditorContext — unsaved-changes guard on close (bug 6)', () => {
     const editor = await openDirtyFile(path);
 
     editor.closeFile(path);
+    await Promise.resolve(); // eviction is deferred a microtask (see refcount)
 
     expect(confirm).toHaveBeenCalledOnce();
     expect(editor.openFiles().length).toBe(1);
@@ -110,6 +111,7 @@ describe('EditorContext — unsaved-changes guard on close (bug 6)', () => {
     const editor = await openDirtyFile(path);
 
     editor.closeFile(path);
+    await Promise.resolve();
 
     expect(editor.openFiles().length).toBe(0);
   });
@@ -123,6 +125,7 @@ describe('EditorContext — unsaved-changes guard on close (bug 6)', () => {
     await waitFor(() => expect(editor.openFiles().length).toBe(1));
 
     editor.closeFile(path);
+    await Promise.resolve();
 
     expect(confirm).not.toHaveBeenCalled();
     expect(editor.openFiles().length).toBe(0);
@@ -134,8 +137,50 @@ describe('EditorContext — unsaved-changes guard on close (bug 6)', () => {
     const editor = await openDirtyFile(path);
 
     editor.closeFile(path, { force: true });
+    await Promise.resolve();
 
     expect(confirm).not.toHaveBeenCalled();
     expect(editor.openFiles().length).toBe(0);
+  });
+
+  // Regression: moving/popping-out a dirty tab unmounts the source panel
+  // (closeFile) and remounts a new one (openFile) for the same path. The buffer
+  // must survive — no disk re-read, no silent loss of unsaved edits.
+  it('preserves a dirty buffer across a move/pop-out remount (refcount)', async () => {
+    const path = `${KILN}/notes/dirty.md`;
+    const editor = await openDirtyFile(path); // content 'edited\n', dirty
+    getFileContent.mockClear();
+
+    // Target panel mounts (2nd holder) then source panel unmounts (force close).
+    await editor.openFile(path);
+    editor.closeFile(path, { force: true });
+    await Promise.resolve();
+
+    // Still open, still dirty, and disk was NOT re-read.
+    expect(editor.openFiles().length).toBe(1);
+    expect(editor.openFiles()[0].content).toBe('edited\n');
+    expect(editor.openFiles()[0].dirty).toBe(true);
+    expect(getFileContent).not.toHaveBeenCalled();
+
+    // Last holder releases → evicted.
+    editor.closeFile(path, { force: true });
+    await Promise.resolve();
+    expect(editor.openFiles().length).toBe(0);
+  });
+
+  // Even when the source unmounts BEFORE the target remounts, the deferred
+  // eviction must be cancelled by the re-open.
+  it('preserves the buffer when unmount precedes remount', async () => {
+    const path = `${KILN}/notes/dirty.md`;
+    const editor = await openDirtyFile(path);
+    getFileContent.mockClear();
+
+    editor.closeFile(path, { force: true }); // source unmounts first (refcount 0, deferred)
+    await editor.openFile(path); // target remounts same tick, re-refs
+    await Promise.resolve();
+
+    expect(editor.openFiles().length).toBe(1);
+    expect(editor.openFiles()[0].dirty).toBe(true);
+    expect(getFileContent).not.toHaveBeenCalled();
   });
 });

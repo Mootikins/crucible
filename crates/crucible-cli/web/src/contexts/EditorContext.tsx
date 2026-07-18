@@ -18,9 +18,17 @@ export const EditorProvider: ParentComponent = (props) => {
   const [isLoading, setIsLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
+    // Number of live panels holding each open path. A file's edited buffer
+    // lives only here, so it must survive a panel unmount+remount (tab move or
+    // pop-out) — we only evict when the last holder releases it.
+    const openCounts = new Map<string, number>();
+
   const openFile = async (path: string) => {
     const existing = openFilesStore.find((f) => f.path === path);
     if (existing) {
+      // Already open — take another reference and reuse the (possibly dirty)
+      // buffer instead of re-reading disk and clobbering unsaved edits.
+      openCounts.set(path, (openCounts.get(path) ?? 0) + 1);
       setActiveFileSignal(path);
       return;
     }
@@ -39,6 +47,7 @@ export const EditorProvider: ParentComponent = (props) => {
           files.push({ path, content, dirty: false });
         })
       );
+      openCounts.set(path, 1);
       setActiveFileSignal(path);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to open file';
@@ -49,15 +58,14 @@ export const EditorProvider: ParentComponent = (props) => {
     }
   };
 
-  const closeFile = (path: string, opts?: { force?: boolean }) => {
+  const evictFile = (path: string, force?: boolean) => {
     const idx = openFilesStore.findIndex((f) => f.path === path);
     if (idx === -1) return;
 
     // Data-loss guard (bug 6): closing a dirty file must not silently discard
     // edits. `force` skips the prompt for callers whose close was already
-    // confirmed upstream (e.g. a window tab close that can't be vetoed by the
-    // time the panel unmounts).
-    if (openFilesStore[idx].dirty && !opts?.force) {
+    // confirmed upstream (e.g. a window tab close vetted by confirmTabClose).
+    if (openFilesStore[idx].dirty && !force) {
       const filename = path.split('/').pop() ?? path;
       if (!window.confirm(`Discard unsaved changes to ${filename}?`)) return;
     }
@@ -73,6 +81,27 @@ export const EditorProvider: ParentComponent = (props) => {
         setActiveFileSignal(null);
       }
     }
+  };
+
+  const closeFile = (path: string, opts?: { force?: boolean }) => {
+    const remaining = (openCounts.get(path) ?? 1) - 1;
+    if (remaining > 0) {
+      // Another panel still holds this file open (e.g. mid tab-move). Keep the
+      // buffer; just drop this reference.
+      openCounts.set(path, remaining);
+      return;
+    }
+    openCounts.set(path, 0);
+
+    // Defer the actual eviction: a tab move / pop-out unmounts the source panel
+    // and remounts a new one for the same path in the same tick. If openFile
+    // re-takes a reference before this runs, we must NOT evict (that remount
+    // would otherwise re-read disk and lose unsaved edits).
+    queueMicrotask(() => {
+      if ((openCounts.get(path) ?? 0) > 0) return;
+      openCounts.delete(path);
+      evictFile(path, opts?.force);
+    });
   };
 
   const saveFile = async (path: string) => {
