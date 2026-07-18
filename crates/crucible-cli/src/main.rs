@@ -84,6 +84,15 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         (_, result) => result?,
     };
 
+    // Forward an explicit --config to an auto-spawned daemon. Without this, a
+    // command that cold-starts the daemon (e.g. `cru chat --config X`) would run
+    // the daemon on the default config — wrong providers/kilns/permissions.
+    // start_daemon reads this and appends `--config <path>` to `cru daemon serve`.
+    if let Some(cfg_path) = &cli.config {
+        // SAFETY: set before any daemon auto-spawn reads it; single-writer here.
+        std::env::set_var("CRUCIBLE_CONFIG", cfg_path);
+    }
+
     // Standalone mode: start the in-process daemon on the pre-configured socket.
     let _standalone_guard = if let Some(sock) = standalone_sock {
         let server = crucible_daemon::Server::bind_with_plugin_config(

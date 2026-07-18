@@ -82,6 +82,56 @@ pub struct Server {
     #[allow(dead_code)] // web server started externally by crucible-web crate
     web_config: Option<crucible_core::config::WebConfig>,
     mcp_server_manager: Arc<McpServerManager>,
+    /// Held open for the daemon's lifetime; the flock on it enforces that only
+    /// one daemon binds this socket. Dropped (unlocked) when the Server drops.
+    #[allow(dead_code)]
+    socket_lock: Option<std::fs::File>,
+}
+
+/// Acquire an exclusive, non-blocking advisory lock on `<socket>.lock`.
+///
+/// Returns an error only when another process already holds the lock (i.e. a
+/// daemon is running) — the caller should connect to it instead of binding.
+/// Any other lock-infrastructure problem fails open (returns `Ok(None)`) so a
+/// filesystem quirk can't wedge daemon startup.
+#[cfg(unix)]
+fn acquire_socket_lock(socket_path: &std::path::Path) -> Result<Option<std::fs::File>> {
+    use std::os::unix::io::AsRawFd;
+
+    let lock_path = socket_path.with_extension("lock");
+    let file = match std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+    {
+        Ok(f) => f,
+        Err(e) => {
+            warn!(?lock_path, error = %e, "could not open daemon lock file; proceeding without it");
+            return Ok(None);
+        }
+    };
+
+    let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    if rc == 0 {
+        return Ok(Some(file));
+    }
+
+    let err = std::io::Error::last_os_error();
+    if err.raw_os_error() == Some(libc::EWOULDBLOCK) {
+        anyhow::bail!(
+            "another daemon already holds {:?}; connect to it instead of binding",
+            lock_path
+        );
+    }
+    warn!(?lock_path, error = %err, "flock failed for a non-contention reason; proceeding without the lock");
+    Ok(None)
+}
+
+#[cfg(not(unix))]
+fn acquire_socket_lock(_socket_path: &std::path::Path) -> Result<Option<std::fs::File>> {
+    Ok(None)
 }
 
 struct NoopSessionRpc;
@@ -150,15 +200,23 @@ impl Server {
 
     /// Bind to a Unix socket path with plugin configuration
     pub async fn bind_with_plugin_config(params: BindWithPluginConfigParams) -> Result<Self> {
-        // Remove stale socket
-        if params.path.exists() {
-            std::fs::remove_file(&params.path)?;
-        }
-
-        // Create parent directory
+        // Create the socket's parent dir first (needed for both the lock and
+        // the socket itself).
         if let Some(parent) = params.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+
+        // Exclusive advisory lock: exactly one daemon owns this socket. Acquired
+        // BEFORE unlinking the stale socket, so two daemons racing to start can't
+        // both unlink+bind (the TOCTOU that orphaned a live daemon and let a
+        // second open the same storage). Held for the daemon's lifetime — the
+        // File drops with Server, releasing the flock.
+        let socket_lock = acquire_socket_lock(&params.path)?;
+
+        // Safe to reclaim the stale socket now that we hold the lock. Single
+        // removal path (crucible_core::protocol::remove_socket) — it ignores a
+        // missing file.
+        crucible_core::protocol::remove_socket(&params.path);
 
         let listener = UnixListener::bind(&params.path)?;
         let (shutdown_tx, _) = broadcast::channel(1);
@@ -269,6 +327,7 @@ impl Server {
             llm_config: params.llm_config.clone(),
             schedules: params.schedules,
             mcp_server_manager,
+            socket_lock,
             #[cfg(feature = "web")]
             web_config: params.web_config.clone(),
         })

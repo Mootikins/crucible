@@ -177,6 +177,20 @@ impl DaemonClient {
         )
     }
 
+    /// Build the args for `cru <...> daemon serve`, forwarding `--config` (which
+    /// is a global flag, so it must precede the subcommand) when a config path
+    /// was resolved by the caller.
+    fn daemon_serve_args(config: Option<&str>) -> Vec<String> {
+        let mut args = Vec::new();
+        if let Some(cfg) = config.filter(|c| !c.is_empty()) {
+            args.push("--config".to_string());
+            args.push(cfg.to_string());
+        }
+        args.push("daemon".to_string());
+        args.push("serve".to_string());
+        args
+    }
+
     async fn start_daemon() -> Result<()> {
         use std::process::Command;
 
@@ -196,10 +210,15 @@ impl DaemonClient {
             );
         }
 
-        tracing::info!("Starting daemon: {:?} daemon serve", exe);
+        // Forward the caller's --config (stashed by the CLI in CRUCIBLE_CONFIG)
+        // so the cold-started daemon runs on the same config as the command that
+        // spawned it.
+        let args = Self::daemon_serve_args(std::env::var("CRUCIBLE_CONFIG").ok().as_deref());
+
+        tracing::info!("Starting daemon: {:?} {:?}", exe, args);
 
         Command::new(&exe)
-            .args(["daemon", "serve"])
+            .args(&args)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -702,6 +721,23 @@ mod tests {
     use super::*;
     use crate::Server;
     use tempfile::TempDir;
+
+    #[test]
+    fn daemon_serve_args_forwards_config() {
+        assert_eq!(
+            DaemonClient::daemon_serve_args(Some("/etc/crucible.toml")),
+            vec!["--config", "/etc/crucible.toml", "daemon", "serve"]
+        );
+        // No/empty config → plain `daemon serve`.
+        assert_eq!(
+            DaemonClient::daemon_serve_args(None),
+            vec!["daemon", "serve"]
+        );
+        assert_eq!(
+            DaemonClient::daemon_serve_args(Some("")),
+            vec!["daemon", "serve"]
+        );
+    }
 
     async fn setup_test_server() -> (TempDir, std::path::PathBuf, tokio::task::JoinHandle<()>) {
         let tmp = TempDir::new().unwrap();
