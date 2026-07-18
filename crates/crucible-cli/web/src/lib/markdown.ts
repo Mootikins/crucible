@@ -2,7 +2,14 @@ import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
 import { initializeHighlighter, SHIKI_THEME } from './shiki';
 
-const WIKILINK_PATTERN = /\[\[([^\[\]\n]+)\]\]/g;
+/**
+ * Fresh global regex matching `[[wikilink]]` bodies (capture group 1 = inner
+ * text). A factory, not a shared literal, because `/g` regexes carry mutable
+ * `lastIndex` — callers that `matchAll`/`exec` need their own instance.
+ */
+export const wikilinkRe = (): RegExp => /\[\[([^[\]\n]+)\]\]/g;
+
+const WIKILINK_PATTERN = wikilinkRe();
 
 /**
  * Split a raw wikilink inner text into its resolution target and display text.

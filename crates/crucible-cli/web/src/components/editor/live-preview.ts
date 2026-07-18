@@ -33,7 +33,7 @@ import {
 } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
-import { renderMarkdown } from '@/lib/markdown';
+import { renderMarkdown, wikilinkRe } from '@/lib/markdown';
 
 const HIDE = Decoration.replace({});
 
@@ -79,7 +79,7 @@ function hideChildMarks(
   }
 }
 
-const WIKILINK_RE = /\[\[([^[\]\n]+)\]\]/g;
+const WIKILINK_RE = wikilinkRe();
 
 function buildDecorations(view: EditorView): DecorationSet {
   const { state } = view;

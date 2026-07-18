@@ -17,12 +17,10 @@ import {
   keymap,
 } from '@codemirror/view';
 import { Prec, type EditorState, type Extension } from '@codemirror/state';
-import { parseWikilinkInner } from '@/lib/markdown';
-
-const WIKILINK_RE = /\[\[([^\[\]\n]+)\]\]/g;
+import { parseWikilinkInner, wikilinkRe } from '@/lib/markdown';
 
 const wikilinkDecorator = new MatchDecorator({
-  regexp: WIKILINK_RE,
+  regexp: wikilinkRe(),
   decoration: (match) => {
     const { target } = parseWikilinkInner(match[1]);
     return Decoration.mark({
@@ -67,7 +65,7 @@ const wikilinkTheme = EditorView.baseTheme({
 /** The wikilink target under `pos`, or `null` when the cursor isn't in one. */
 export function wikilinkTargetAt(state: EditorState, pos: number): string | null {
   const line = state.doc.lineAt(pos);
-  for (const match of line.text.matchAll(WIKILINK_RE)) {
+  for (const match of line.text.matchAll(wikilinkRe())) {
     const from = line.from + (match.index ?? 0);
     const to = from + match[0].length;
     if (pos >= from && pos <= to) {
