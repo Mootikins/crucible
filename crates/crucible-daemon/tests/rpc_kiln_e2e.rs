@@ -14,6 +14,14 @@ use std::time::Duration;
 use tempfile::TempDir;
 use tokio::task::JoinHandle;
 
+/// Install the rustls CryptoProvider before any TLS usage. rustls 0.23 refuses
+/// to auto-pick a provider when the dependency graph offers more than one, so
+/// the in-process daemon panics on its first TLS handshake unless we install
+/// one explicitly (idempotent; ignored if already set).
+fn ensure_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 /// In-process test server (mirrors TestServer from rpc_integration.rs).
 struct TestServer {
     _temp_dir: TempDir,
@@ -24,8 +32,16 @@ struct TestServer {
 
 impl TestServer {
     async fn start() -> Result<Self> {
+        ensure_crypto_provider();
         let temp_dir = tempfile::tempdir()?;
         let socket_path = temp_dir.path().join("daemon.sock");
+
+        // Hermetic config root — point crucible_home() at this test's TempDir so
+        // the daemon never loads the developer's real ~/.crucible registry
+        // (registered projects there make kiln.list non-empty and fail these
+        // assertions; CI passes only because its home is clean). nextest runs
+        // each test in its own process, so this env write cannot race a sibling.
+        std::env::set_var("CRUCIBLE_HOME", temp_dir.path());
 
         let server = Server::bind(&socket_path, None).await?;
         let shutdown_handle = server.shutdown_handle();

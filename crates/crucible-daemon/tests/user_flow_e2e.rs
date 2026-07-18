@@ -41,6 +41,15 @@ impl TestServer {
         let temp_dir = tempfile::tempdir()?;
         let socket_path = temp_dir.path().join("daemon.sock");
 
+        // Hermetic config root. crucible_home() — read by ProjectManager
+        // (projects.json), session listing, and startup kiln sweeps — honors
+        // CRUCIBLE_HOME. Point it at this test's TempDir so the daemon never
+        // loads the developer's real ~/.crucible registry (registered projects
+        // there would make kiln.list non-empty and fail these assertions; CI
+        // passes only because its home is clean). nextest runs each test in its
+        // own process, so this env write cannot race a sibling test.
+        std::env::set_var("CRUCIBLE_HOME", temp_dir.path());
+
         let server = Server::bind(&socket_path, None).await?;
         let shutdown_handle = server.shutdown_handle();
 
