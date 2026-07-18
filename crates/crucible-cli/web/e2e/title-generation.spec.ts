@@ -63,16 +63,17 @@ test.describe('daemon session auto-titles', () => {
 
     await page.goto('/');
 
-    // Untitled sessions render the id-based fallback until a title arrives.
+    // Untitled sessions render the "Untitled · <date>" fallback (session-
+    // display.ts) until a title arrives.
     const sessionButton = page.getByTestId(`session-item-${SESSION_ID}`);
     await expect(sessionButton).toBeVisible({ timeout: 5000 });
-    await expect(sessionButton).toContainText(/Session test-ses/);
+    await expect(sessionButton).toContainText(/Untitled/);
 
     // Opening the session connects its SSE stream, which delivers the
     // daemon's title_changed event.
     await sessionButton.click();
     await expect(sessionButton).toContainText(generatedTitle, { timeout: 5000 });
-    await expect(sessionButton).not.toContainText(/Session test-ses/);
+    await expect(sessionButton).not.toContainText(/Untitled/);
 
     // The daemon owns titling — the client must not call the title endpoints.
     expect(legacyCalls).toHaveLength(0);
@@ -93,7 +94,7 @@ test.describe('daemon session auto-titles', () => {
     // client-side title generation is attempted.
     const chatInput = page.getByTestId('chat-input');
     await expect(chatInput).toBeVisible({ timeout: 5000 });
-    await expect(sessionButton).toContainText(/Session test-ses/);
+    await expect(sessionButton).toContainText(/Untitled/);
     expect(legacyCalls).toHaveLength(0);
   });
 });
