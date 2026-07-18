@@ -6,7 +6,6 @@
 use anyhow::Result;
 use crucible_core::parser::BlockHash;
 use crucible_core::storage::NoteRecord;
-use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::storage::sqlite::{create_sqlite_client, SqliteConfig};
 use crucible_daemon::DaemonClient;
 use crucible_daemon::Server;
@@ -25,8 +24,6 @@ fn ensure_crypto_provider() {
 
 /// In-process test server (mirrors TestServer from rpc_integration.rs).
 struct TestServer {
-    // Restores CRUCIBLE_HOME on drop; first field so it outlives the server.
-    _home_guard: EnvVarGuard,
     _temp_dir: TempDir,
     socket_path: PathBuf,
     _server_handle: JoinHandle<()>,
@@ -39,17 +36,8 @@ impl TestServer {
         let temp_dir = tempfile::tempdir()?;
         let socket_path = temp_dir.path().join("daemon.sock");
 
-        // Hermetic config root — point crucible_home() at this test's TempDir
-        // (via the RAII EnvVarGuard, restored on drop) so the daemon never loads
-        // the developer's real ~/.crucible registry (registered projects there
-        // make kiln.list non-empty and fail these assertions; CI passes only
-        // because its home is clean).
-        let home_guard = EnvVarGuard::set(
-            "CRUCIBLE_HOME",
-            temp_dir.path().to_string_lossy().into_owned(),
-        );
-
-        let server = Server::bind(&socket_path, None).await?;
+        let server =
+            Server::bind_with_data_home(&socket_path, temp_dir.path().to_path_buf()).await?;
         let shutdown_handle = server.shutdown_handle();
 
         let server_handle = tokio::spawn(async move {
@@ -59,7 +47,6 @@ impl TestServer {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         Ok(Self {
-            _home_guard: home_guard,
             _temp_dir: temp_dir,
             socket_path,
             _server_handle: server_handle,

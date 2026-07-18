@@ -720,7 +720,6 @@ impl DaemonClient {
 mod tests {
     use super::*;
     use crate::Server;
-    use crucible_core::test_support::EnvVarGuard;
     use tempfile::TempDir;
 
     #[test]
@@ -740,23 +739,16 @@ mod tests {
         );
     }
 
-    async fn setup_test_server() -> (
-        TempDir,
-        EnvVarGuard,
-        std::path::PathBuf,
-        tokio::task::JoinHandle<()>,
-    ) {
+    async fn setup_test_server() -> (TempDir, std::path::PathBuf, tokio::task::JoinHandle<()>) {
         let tmp = TempDir::new().unwrap();
         let sock_path = tmp.path().join("test.sock");
 
-        // Isolate crucible_home() to the TempDir so the daemon never loads the
-        // developer's real ~/.crucible registry (else kiln.list is non-empty and
-        // test_client_kiln_list_initially_empty fails). Returned so the caller
-        // holds it for the test's duration; EnvVarGuard restores on drop.
-        let home_guard =
-            EnvVarGuard::set("CRUCIBLE_HOME", tmp.path().to_string_lossy().into_owned());
-
-        let server = Server::bind(&sock_path, None).await.unwrap();
+        // Inject an isolated data root (no env) so the daemon never loads the
+        // developer's real ~/.crucible registry — else test_client_kiln_list_
+        // initially_empty sees the real registered kilns.
+        let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+            .await
+            .unwrap();
         let _shutdown_handle = server.shutdown_handle();
 
         let handle = tokio::spawn(async move {
@@ -765,12 +757,12 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        (tmp, home_guard, sock_path.clone(), handle)
+        (tmp, sock_path.clone(), handle)
     }
 
     #[tokio::test]
     async fn test_client_ping() {
-        let (_tmp, _home_guard, sock_path, _handle) = setup_test_server().await;
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
 
         let client = DaemonClient::connect_to(&sock_path).await.unwrap();
         let result = client.ping().await.unwrap();
@@ -864,7 +856,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_capabilities() {
-        let (_tmp, _home_guard, sock_path, _handle) = setup_test_server().await;
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
 
         let client = DaemonClient::connect_to(&sock_path).await.unwrap();
         let caps = client.capabilities().await.unwrap();
@@ -884,7 +876,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_version_check_matches() {
-        let (_tmp, _home_guard, sock_path, _handle) = setup_test_server().await;
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
 
         let client = DaemonClient::connect_to(&sock_path).await.unwrap();
         let check = client.check_version().await.unwrap();
@@ -894,7 +886,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_ping_event_mode() {
-        let (_tmp, _home_guard, sock_path, _handle) = setup_test_server().await;
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
 
         let (client, _event_rx) = DaemonClient::connect_to_with_events(&sock_path)
             .await
@@ -905,7 +897,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_kiln_list_initially_empty() {
-        let (_tmp, _home_guard, sock_path, _handle) = setup_test_server().await;
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
 
         let client = DaemonClient::connect_to(&sock_path).await.unwrap();
         let list = client.kiln_list().await.unwrap();
@@ -923,7 +915,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_connect_to_with_events() {
-        let (_tmp, _home_guard, sock_path, _handle) = setup_test_server().await;
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
 
         let (client, _event_rx) = DaemonClient::connect_to_with_events(&sock_path)
             .await
@@ -935,7 +927,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_multiple_sequential_calls_event_mode() {
-        let (_tmp, _home_guard, sock_path, _handle) = setup_test_server().await;
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
 
         let (client, _event_rx) = DaemonClient::connect_to_with_events(&sock_path)
             .await
@@ -949,7 +941,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_subscribe_process_events() {
-        let (_tmp, _home_guard, sock_path, _handle) = setup_test_server().await;
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
 
         let (client, _event_rx) = DaemonClient::connect_to_with_events(&sock_path)
             .await
@@ -1144,7 +1136,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_call_with_retry_succeeds_on_valid_method() {
-        let (_tmp, _home_guard, sock_path, _handle) = setup_test_server().await;
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
 
         let client = DaemonClient::connect_to(&sock_path).await.unwrap();
         let result = client
@@ -1156,7 +1148,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_call_with_retry_does_not_retry_rpc_errors() {
-        let (_tmp, _home_guard, sock_path, _handle) = setup_test_server().await;
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
 
         let client = DaemonClient::connect_to(&sock_path).await.unwrap();
         let result = client

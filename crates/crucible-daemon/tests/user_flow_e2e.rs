@@ -11,7 +11,6 @@
 use anyhow::Result;
 use crucible_core::config::BackendType;
 use crucible_core::session::{OutputValidation, SessionAgent};
-use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::{DaemonClient, Server};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -30,9 +29,6 @@ fn ensure_crypto_provider() {
 // ---------------------------------------------------------------------------
 
 struct TestServer {
-    // Restores CRUCIBLE_HOME on drop; declared first so it outlives the server
-    // fields (fields drop in declaration order).
-    _home_guard: EnvVarGuard,
     _temp_dir: TempDir,
     socket_path: PathBuf,
     _server_handle: JoinHandle<()>,
@@ -45,19 +41,8 @@ impl TestServer {
         let temp_dir = tempfile::tempdir()?;
         let socket_path = temp_dir.path().join("daemon.sock");
 
-        // Hermetic config root. crucible_home() — read by ProjectManager
-        // (projects.json), session listing, and startup kiln sweeps — honors
-        // CRUCIBLE_HOME. Point it at this test's TempDir (via the RAII
-        // EnvVarGuard, which restores the previous value on drop) so the daemon
-        // never loads the developer's real ~/.crucible registry, which would
-        // make kiln.list non-empty and fail these assertions (CI passes only
-        // because its home is clean).
-        let home_guard = EnvVarGuard::set(
-            "CRUCIBLE_HOME",
-            temp_dir.path().to_string_lossy().into_owned(),
-        );
-
-        let server = Server::bind(&socket_path, None).await?;
+        let server =
+            Server::bind_with_data_home(&socket_path, temp_dir.path().to_path_buf()).await?;
         let shutdown_handle = server.shutdown_handle();
 
         let server_handle = tokio::spawn(async move {
@@ -68,7 +53,6 @@ impl TestServer {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         Ok(Self {
-            _home_guard: home_guard,
             _temp_dir: temp_dir,
             socket_path,
             _server_handle: server_handle,

@@ -96,18 +96,12 @@ async fn test_kiln_list_returns_array() {
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
-    // Hermetic config root: without this the daemon loads the developer's real
-    // ~/.crucible registry and opens those kilns at startup. Because that load
-    // is async, it races this 50ms-later kiln.list — empty if the sleep wins,
-    // populated if the load wins — the observed flakiness. Point crucible_home()
-    // at an isolated TempDir via the RAII EnvVarGuard (restored on drop) so the
-    // list is deterministically empty.
-    let _home_guard = crucible_core::test_support::EnvVarGuard::set(
-        "CRUCIBLE_HOME",
-        tmp.path().to_string_lossy().into_owned(),
-    );
-
-    let server = Server::bind(&sock_path, None).await.unwrap();
+    // Inject an isolated data root (no env) so the daemon never loads the
+    // developer's real ~/.crucible registry — the async startup load would
+    // otherwise race this 50ms-later kiln.list and make it non-empty.
+    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+        .await
+        .unwrap();
     let shutdown_handle = server.shutdown_handle();
     let server_task = tokio::spawn(async move { server.run().await });
 

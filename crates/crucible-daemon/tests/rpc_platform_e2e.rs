@@ -4,7 +4,6 @@
 //! RPC methods through a real daemon server with DaemonClient.
 
 use anyhow::Result;
-use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::DaemonClient;
 use crucible_daemon::Server;
 use std::path::PathBuf;
@@ -14,7 +13,6 @@ use tokio::task::JoinHandle;
 
 /// In-process test server (same pattern as rpc_integration.rs)
 struct TestServer {
-    _home_guard: EnvVarGuard,
     _temp_dir: TempDir,
     socket_path: PathBuf,
     _server_handle: JoinHandle<()>,
@@ -31,14 +29,8 @@ impl TestServer {
         let temp_dir = tempfile::tempdir()?;
         let socket_path = temp_dir.path().join("daemon.sock");
 
-        // Isolate crucible_home() to a TempDir so the daemon never loads the
-        // developer's real ~/.crucible registry (EnvVarGuard restores on drop).
-        let home_guard = EnvVarGuard::set(
-            "CRUCIBLE_HOME",
-            temp_dir.path().to_string_lossy().into_owned(),
-        );
-
-        let server = Server::bind(&socket_path, None).await?;
+        let server =
+            Server::bind_with_data_home(&socket_path, temp_dir.path().to_path_buf()).await?;
         let shutdown_handle = server.shutdown_handle();
 
         let server_handle = tokio::spawn(async move {
@@ -48,7 +40,6 @@ impl TestServer {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         Ok(Self {
-            _home_guard: home_guard,
             _temp_dir: temp_dir,
             socket_path,
             _server_handle: server_handle,
