@@ -8,6 +8,10 @@ use axum::{
 };
 use std::collections::HashMap;
 
+/// Internal-only webhook ingress. Mounted INSIDE the bearer-auth layer (see
+/// `server.rs`), so it is not an external, unauthenticated sender surface — a
+/// caller must present the API key. If external webhook delivery is ever needed,
+/// mount a separate route outside bearer auth with a per-webhook signature.
 pub fn webhook_routes() -> Router<AppState> {
     Router::new().route("/api/webhook/{name}", post(handle_webhook))
 }

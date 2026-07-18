@@ -1,5 +1,5 @@
 use crate::web::services::daemon::AppState;
-use crate::web::{error::WebResultExt, WebError};
+use crate::web::WebError;
 use axum::{
     extract::State,
     response::sse::{Event, Sse},
@@ -49,7 +49,7 @@ impl ShellEvent {
 }
 
 async fn shell_exec(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Json(req): Json<ShellExecRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, WebError> {
     let command = req.command.trim();
@@ -64,25 +64,15 @@ async fn shell_exec(
         ));
     }
 
-    let daemon_caps = state.daemon.capabilities().await.daemon_err()?;
-    let has_shell_exec_rpc = daemon_caps
-        .methods
-        .iter()
-        .any(|method| method == "shell.exec");
-
+    // Always run locally: the daemon has no shell.exec RPC yet. The previous
+    // capability check was inverted — it errored *when the daemon gained
+    // shell.exec* and only ran local while it was absent, so implementing the
+    // RPC would have broken the web terminal. Restore the local path
+    // unconditionally until an RPC is actually wired in.
     let (tx, rx) = mpsc::channel::<ShellEvent>(128);
     let command = command.to_string();
 
     tokio::spawn(async move {
-        if has_shell_exec_rpc {
-            let _ = tx
-                .send(ShellEvent::Error {
-                    message: "Daemon shell.exec RPC is not wired in web yet".to_string(),
-                })
-                .await;
-            return;
-        }
-
         let _ = run_local_shell_command(command, Duration::from_secs(timeout_secs), tx).await;
     });
 

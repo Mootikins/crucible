@@ -38,7 +38,7 @@ pub(super) async fn execute_command(
         "help" => {
             let help_text = [
                 "/help — Show available commands",
-                "/search <query> — Search notes by title",
+                "/search <query> — Search sessions by title",
                 "/models — List available models",
                 "/clear — Clear the chat view (server history preserved)",
                 "/export — Export session to markdown",
