@@ -104,8 +104,6 @@ pub struct OilChatApp {
     message_queue: MessageQueueState,
     /// Files attached as extra context for the next message
     attached_context: Vec<String>,
-    /// When true, discard incoming TextDelta events (stale events after cancel).
-    drop_stream_deltas: bool,
     pending_delegate_supersessions: HashSet<String>,
 
     // ─── I/O / Lifecycle (tech debt — future extraction) ──────────────

@@ -31,20 +31,16 @@ impl OilChatApp {
     pub(super) fn handle_stream_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
         match msg {
             ChatAppMsg::TextDelta(delta) => {
-                if !self.drop_stream_deltas {
-                    if !self.container_list.is_streaming() {
-                        self.container_list.mark_turn_active();
-                    }
-                    self.container_list.append_text(&delta);
+                if !self.container_list.is_streaming() {
+                    self.container_list.mark_turn_active();
                 }
+                self.container_list.append_text(&delta);
             }
             ChatAppMsg::ThinkingDelta(delta) => {
-                if !self.drop_stream_deltas {
-                    if !self.container_list.is_streaming() {
-                        self.container_list.mark_turn_active();
-                    }
-                    self.container_list.append_thinking(&delta);
+                if !self.container_list.is_streaming() {
+                    self.container_list.mark_turn_active();
                 }
+                self.container_list.append_thinking(&delta);
             }
             ChatAppMsg::ToolCall {
                 name,
@@ -104,12 +100,10 @@ impl OilChatApp {
             ChatAppMsg::StreamComplete => {
                 self.container_list.complete_response();
                 self.finalize_streaming();
-                self.drop_stream_deltas = false;
             }
             ChatAppMsg::StreamCancelled => {
                 self.container_list.cancel_streaming();
                 self.finalize_streaming();
-                self.drop_stream_deltas = false;
             }
             _ => {
                 tracing::trace!("[stub] stream msg: {:?}", msg.category());
@@ -221,7 +215,7 @@ impl OilChatApp {
         Action::Continue
     }
 
-    /// Handle UI messages (ClearHistory, ToggleMessages, Status, etc.)
+    /// Handle UI messages (ClearHistory, Status, etc.)
     pub(super) fn handle_ui_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
         match msg {
             ChatAppMsg::Error(err) => {
@@ -229,9 +223,6 @@ impl OilChatApp {
             }
             ChatAppMsg::ClearHistory => {
                 self.reset_session();
-            }
-            ChatAppMsg::ToggleMessages => {
-                self.toggle_messages();
             }
             ChatAppMsg::Status(status) => {
                 self.status = status;

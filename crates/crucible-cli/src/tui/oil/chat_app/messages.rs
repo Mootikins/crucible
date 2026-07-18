@@ -179,8 +179,6 @@ pub enum ChatAppMsg {
     /// **Event** (daemon → TUI): Delegation failed with error.
     DelegationFailed { id: String, error: String },
     // --- UI State & Interaction Events ---
-    /// **Command** (TUI → daemon): Toggle message visibility in chat.
-    ToggleMessages,
     /// **Event** (daemon → TUI): Open interaction popup (user input required).
     OpenInteraction {
         request_id: String,
@@ -306,7 +304,6 @@ impl ChatAppMsg {
             | Self::ContextUsage { .. }
             | Self::CacheHitRate(_)
             | Self::ClearHistory
-            | Self::ToggleMessages
             | Self::OpenInteraction { .. }
             | Self::CloseInteraction { .. }
             | Self::PrecognitionResult { .. }
