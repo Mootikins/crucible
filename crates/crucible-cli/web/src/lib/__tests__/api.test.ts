@@ -1429,8 +1429,8 @@ describe('executeShell', () => {
     let done = false;
     executeShell('echo hello', (e) => events.push(e), () => { done = true; });
 
-    // Allow microtasks to drain the stream.
-    await new Promise((r) => setTimeout(r, 10));
+    // Wait for the stream to fully drain (deterministic, no fixed sleep).
+    await vi.waitFor(() => expect(done).toBe(true));
 
     expect(events).toEqual([
       { type: 'stdout', data: 'hello\n' },
@@ -1444,7 +1444,7 @@ describe('executeShell', () => {
     const events: unknown[] = [];
     let done = false;
     executeShell('bad', (e) => events.push(e), () => { done = true; });
-    await new Promise((r) => setTimeout(r, 10));
+    await vi.waitFor(() => expect(done).toBe(true));
     expect(events[0]).toMatchObject({ type: 'error' });
     expect(done).toBe(true);
   });
@@ -1456,16 +1456,15 @@ describe('executeShell', () => {
     ])) as typeof fetch;
     const events: unknown[] = [];
     executeShell('cmd', (e) => events.push(e));
-    await new Promise((r) => setTimeout(r, 10));
     // Only the parseable line came through.
-    expect(events).toEqual([{ type: 'exit', code: 0 }]);
+    await vi.waitFor(() => expect(events).toEqual([{ type: 'exit', code: 0 }]));
   });
 
   it('passes cwd and timeout in body when provided', async () => {
     const mockFetch = vi.fn(async () => streamResponse([])) as ReturnType<typeof vi.fn>;
     global.fetch = mockFetch as typeof fetch;
     executeShell('ls', () => {}, undefined, '/tmp', 30);
-    await new Promise((r) => setTimeout(r, 10));
+    await vi.waitFor(() => expect(mockFetch.mock.calls.length).toBe(1));
     const [, init] = mockFetch.mock.calls[0];
     expect(JSON.parse(init.body as string)).toEqual({
       command: 'ls',
@@ -1490,8 +1489,8 @@ describe('executeShell', () => {
     const controller = executeShell('sleep 100', (e) => events.push(e), () => { done = true; });
 
     controller.abort();
-    // Allow rejection handler to run.
-    await new Promise((r) => setTimeout(r, 10));
+    // Wait for the rejection handler to run (deterministic).
+    await vi.waitFor(() => expect(done).toBe(true));
 
     expect(aborted).toBe(true);
     // Abort should NOT emit an error event — it's user-initiated.
@@ -1506,7 +1505,7 @@ describe('executeShell', () => {
     const events: unknown[] = [];
     let done = false;
     executeShell('cmd', (e) => events.push(e), () => { done = true; });
-    await new Promise((r) => setTimeout(r, 10));
+    await vi.waitFor(() => expect(done).toBe(true));
     expect(events[0]).toMatchObject({ type: 'error', message: expect.stringContaining('network unreachable') });
     expect(done).toBe(true);
   });
@@ -1521,7 +1520,7 @@ describe('executeShell', () => {
     const events: unknown[] = [];
     let done = false;
     executeShell('cmd', (e) => events.push(e), () => { done = true; });
-    await new Promise((r) => setTimeout(r, 10));
+    await vi.waitFor(() => expect(done).toBe(true));
     expect(events).toEqual([{ type: 'error', message: 'No response body' }]);
     expect(done).toBe(true);
   });

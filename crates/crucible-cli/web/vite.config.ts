@@ -79,6 +79,12 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    // Reset mock call-history and any vi.stubGlobal between tests so a mock or
+    // global stubbed in one test can't leak into the next (several suites relied
+    // on execution order for this). clearMocks keeps implementations, only
+    // wiping recorded calls; unstubGlobals undoes stubGlobal.
+    clearMocks: true,
+    unstubGlobals: true,
     exclude: ['e2e/**', 'node_modules/**'],
     setupFiles: ['./src/test/setup.ts'],
     deps: {
