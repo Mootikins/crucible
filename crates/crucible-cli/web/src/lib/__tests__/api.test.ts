@@ -1298,16 +1298,18 @@ describe('subscribeToEvents', () => {
     expect(warnSpy.mock.calls[0][0]).toContain('Failed to parse SSE event');
   });
 
-  it('emits a synthetic reconnect error event and schedules reconnect on disconnect', () => {
+  it('emits a transient connection event (not a daemon error) and schedules reconnect on disconnect', () => {
     const events: unknown[] = [];
     subscribeToEvents('ses-1', (e) => events.push(e));
 
     const first = MockEventSource.instances[0];
     first.triggerError();
 
-    // Synthetic error fired on the user callback.
+    // A transport reconnect must be a distinct 'connection' event — NOT a
+    // daemon 'error', which the reducer routes through the destructive path
+    // that corrupts an in-flight streaming turn.
     expect(events).toEqual([
-      { type: 'error', code: 'sse_reconnecting', message: 'Reconnecting...' },
+      { type: 'connection', status: 'reconnecting', message: 'Reconnecting…' },
     ]);
     expect(first.closed).toBe(true);
 
