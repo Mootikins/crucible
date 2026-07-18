@@ -43,5 +43,9 @@ pub fn crucible_home() -> std::path::PathBuf {
 /// Used by storage code to avoid double `.crucible/` nesting when the
 /// persist kiln is the default crucible home.
 pub fn is_crucible_home(path: &std::path::Path) -> bool {
-    path == crucible_home()
+    // Canonicalize both sides (falling back to the as-given path when the path
+    // doesn't exist yet) so a symlinked or trailing-slash home still matches —
+    // otherwise sessions_base routes to `<home>/.crucible/.crucible/sessions`.
+    let canon = |p: &std::path::Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    canon(path) == canon(&crucible_home())
 }
