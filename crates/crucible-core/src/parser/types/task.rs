@@ -205,21 +205,16 @@ impl TaskFile {
         })
     }
 
-    /// Extract frontmatter from content
+    /// Extract frontmatter from content.
+    ///
+    /// Delegates to the shared [`crate::parser::extract_frontmatter`] so task files
+    /// get the same TOML/CRLF/EOF handling as notes (previously this was a
+    /// divergent YAML-`---\n`-only copy).
     fn extract_frontmatter(content: &str) -> (Option<Frontmatter>, String) {
-        // Simple YAML frontmatter extraction
-        if let Some(rest) = content.strip_prefix("---\n") {
-            if let Some(end_idx) = rest.find("\n---\n") {
-                let yaml_content = &rest[..end_idx];
-                let body = &rest[end_idx + 5..];
-                let frontmatter = Frontmatter::new(
-                    yaml_content.to_string(),
-                    super::frontmatter::FrontmatterFormat::Yaml,
-                );
-                return (Some(frontmatter), body.to_string());
-            }
+        match crate::parser::extract_frontmatter(content) {
+            Ok(result) => (result.frontmatter, result.body),
+            Err(_) => (None, content.to_string()),
         }
-        (None, content.to_string())
     }
 
     /// Parse all tasks from markdown body
@@ -474,6 +469,22 @@ impl TaskGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Regression: TaskFile frontmatter now shares the note extractor, so it must
+    // handle TOML (+++) and CRLF / no-trailing-newline files that the old
+    // YAML-`---\n`-only copy silently dropped.
+    #[test]
+    fn task_frontmatter_handles_toml_and_crlf() {
+        let toml = "+++\ntitle = \"TOML Task\"\n+++\n- [ ] do a thing";
+        let tf = TaskFile::from_markdown("t.md".into(), toml).expect("toml task parses");
+        assert_eq!(tf.title.as_deref(), Some("TOML Task"));
+
+        // CRLF endings, no trailing newline after the body.
+        let crlf = "---\r\ntitle: CRLF Task\r\n---\r\n- [ ] do a thing";
+        let tf = TaskFile::from_markdown("t.md".into(), crlf).expect("crlf task parses");
+        assert_eq!(tf.title.as_deref(), Some("CRLF Task"));
+        assert_eq!(tf.tasks.len(), 1);
+    }
 
     #[test]
     fn task_item_from_list_item() {

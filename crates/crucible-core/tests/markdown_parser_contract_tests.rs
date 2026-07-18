@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crucible_core::parser::{CrucibleParser, MarkdownItParser, MarkdownParser};
+use crucible_core::parser::{CrucibleParser, MarkdownParser};
 use tempfile::tempdir;
 use tokio::fs;
 
@@ -75,27 +75,14 @@ async fn contract_crucible_parser_populates_plain_text() {
 }
 
 #[tokio::test]
-async fn contract_markdown_it_parser_satisfies_markdown_parser_contract() {
-    let parser = MarkdownItParser::new();
-    assert_markdown_parser_contract(&parser).await;
-}
-
-#[tokio::test]
 async fn contract_parse_file_returns_error_for_missing_path() {
     let missing = Path::new("definitely_missing_contract_file.md");
 
     let crucible = CrucibleParser::new();
-    let markdown_it = MarkdownItParser::new();
-
     let crucible_result = crucible.parse_file(missing).await;
-    let markdown_it_result = markdown_it.parse_file(missing).await;
 
     assert!(
         crucible_result.is_err(),
         "parse_file should return an error for missing files"
-    );
-    assert!(
-        markdown_it_result.is_err(),
-        "all parser implementations should return an error for missing files"
     );
 }

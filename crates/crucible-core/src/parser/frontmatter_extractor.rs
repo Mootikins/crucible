@@ -66,23 +66,8 @@ pub struct FrontmatterResult {
     pub format: FrontmatterFormat,
     /// Any warnings or errors encountered
     pub warnings: Vec<String>,
-    /// Statistics about the extraction
-    pub stats: ExtractionStats,
-}
-
-/// Statistics about frontmatter extraction
-#[derive(Debug, Clone, Default)]
-pub struct ExtractionStats {
-    /// Length of frontmatter section
-    pub frontmatter_size: usize,
-    /// Length of body content
-    pub body_size: usize,
-    /// Number of lines in frontmatter
-    pub frontmatter_lines: usize,
-    /// Detected line ending style
+    /// Detected line ending style of the source content
     pub line_ending_style: LineEndingStyle,
-    /// Time taken for extraction (in microseconds)
-    pub extraction_time_us: u64,
 }
 
 /// Detected line ending style
@@ -124,30 +109,22 @@ impl FrontmatterExtractor {
     /// This method handles all edge cases and returns detailed information
     /// about the extraction process.
     pub fn extract(&self, content: &str) -> ParserResult<FrontmatterResult> {
-        let start_time = std::time::Instant::now();
         let mut warnings = Vec::new();
-        let mut stats = ExtractionStats::default();
+        let line_ending_style = self.detect_line_ending_style(content);
 
         // Early exit optimization: check if content has any frontmatter delimiters
         if !self.has_frontmatter_delimiters(content) {
-            stats.body_size = content.len();
-            stats.line_ending_style = self.detect_line_ending_style(content);
-            stats.extraction_time_us = start_time.elapsed().as_micros() as u64;
-
             return Ok(FrontmatterResult {
                 frontmatter: None,
                 body: content.to_string(),
                 format: FrontmatterFormat::None,
                 warnings,
-                stats,
+                line_ending_style,
             });
         }
 
-        // Detect line ending style
-        stats.line_ending_style = self.detect_line_ending_style(content);
-
         // Normalize line endings for processing
-        let normalized = self.normalize_line_endings(content, stats.line_ending_style);
+        let normalized = self.normalize_line_endings(content, line_ending_style);
 
         // Extract frontmatter based on detected format
         let (frontmatter_content, body, format) =
@@ -155,21 +132,6 @@ impl FrontmatterExtractor {
 
         // Validate frontmatter size
         if let Some(fm_content) = &frontmatter_content {
-            // Calculate actual delimiter lengths based on the content structure
-            let delimiters_len = match format {
-                FrontmatterFormat::Yaml => {
-                    // Opening: "---\n" (4 bytes) + Closing: "\n---\n" (5 bytes) = 9 bytes
-                    9
-                }
-                FrontmatterFormat::Toml => {
-                    // Opening: "+++\n" (4 bytes) + Closing: "\n+++\n" (5 bytes) = 9 bytes
-                    9
-                }
-                FrontmatterFormat::None => 0,
-            };
-            stats.frontmatter_size = fm_content.len() + delimiters_len;
-            stats.frontmatter_lines = fm_content.lines().count();
-
             if fm_content.len() > self.config.max_size {
                 return Err(ParserError::FrontmatterTooLarge {
                     size: fm_content.len(),
@@ -177,29 +139,22 @@ impl FrontmatterExtractor {
                 });
             }
 
-            // Create frontmatter object
             let frontmatter = Frontmatter::new(fm_content.clone(), format);
-
-            stats.body_size = body.len();
-            stats.extraction_time_us = start_time.elapsed().as_micros() as u64;
 
             Ok(FrontmatterResult {
                 frontmatter: Some(frontmatter),
                 body: body.to_string(),
                 format,
                 warnings,
-                stats,
+                line_ending_style,
             })
         } else {
-            stats.body_size = body.len();
-            stats.extraction_time_us = start_time.elapsed().as_micros() as u64;
-
             Ok(FrontmatterResult {
                 frontmatter: None,
                 body: body.to_string(),
                 format: FrontmatterFormat::None,
                 warnings,
-                stats,
+                line_ending_style,
             })
         }
     }
@@ -494,7 +449,7 @@ mod tests {
         let result = extract_frontmatter(content).unwrap();
 
         assert!(result.frontmatter.is_some());
-        assert_eq!(result.stats.line_ending_style, LineEndingStyle::Windows);
+        assert_eq!(result.line_ending_style, LineEndingStyle::Windows);
     }
 
     #[test]

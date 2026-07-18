@@ -13,7 +13,7 @@
 //! - `block_extractor` - AST block extraction
 //! - `block_hasher` - Block-level hashing
 //! - `frontmatter_extractor` - Frontmatter parsing utilities
-//! - `markdown_it` - markdown-it based parser (feature-gated)
+//! - `markdown_it` - markdown-it AST converter + syntax plugins (feature-gated)
 //! - Extension modules: `wikilinks`, `callouts`, `blockquotes`, etc.
 
 pub mod error;
@@ -37,7 +37,7 @@ pub mod latex;
 pub mod test_utils;
 pub mod wikilinks;
 
-// markdown-it based parser (default)
+// AST converter + custom syntax plugins backing basic_markdown_it
 #[cfg(feature = "markdown-it-parser")]
 pub mod markdown_it;
 
@@ -53,16 +53,14 @@ pub use traits::{MarkdownParser, ParserCapabilities, ParserRequirements};
 pub use block_extractor::{BlockExtractor, ExtractionConfig};
 pub use block_hasher::SimpleBlockHasher;
 pub use frontmatter_extractor::{
-    extract_frontmatter, ExtractionStats, FrontmatterExtractor, FrontmatterExtractorConfig,
-    FrontmatterResult, LineEndingStyle,
+    extract_frontmatter, FrontmatterExtractor, FrontmatterExtractorConfig, FrontmatterResult,
+    LineEndingStyle,
 };
 pub use implementation::{BlockProcessingConfig, CrucibleParser};
 
 // Re-export markdown-it parser when feature is enabled (default)
 #[cfg(feature = "markdown-it-parser")]
 pub use basic_markdown_it::create_basic_markdown_it_extension;
-#[cfg(feature = "markdown-it-parser")]
-pub use markdown_it::MarkdownItParser;
 
 // Convenience factory functions
 pub use blockquotes::create_blockquote_extension;
