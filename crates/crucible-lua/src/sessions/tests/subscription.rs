@@ -258,7 +258,7 @@ async fn subscribe_next_event_receives_async_events() {
             let _ = tx.send(serde_json::json!({
                 "type": "text_delta",
                 "session_id": "test-session",
-                "data": { "text": "async-hello" }
+                "data": { "content": "async-hello" }
             }));
             // Drop the sender so next_event eventually returns nil
             drop(tx);
@@ -278,7 +278,7 @@ async fn subscribe_next_event_receives_async_events() {
 
             return {
                 event_type = event.type,
-                text = event.data and event.data.text or "none",
+                text = event.data and event.data.content or "none",
             }
             "#,
         )
@@ -325,7 +325,7 @@ async fn subscribe_send_message_then_next_event() {
             let _ = tx.send(serde_json::json!({
                 "type": "text_delta",
                 "session_id": "test-session",
-                "data": { "text": "response chunk" }
+                "data": { "content": "response chunk" }
             }));
             let _ = tx.send(serde_json::json!({
                 "type": "stream_end",
@@ -401,7 +401,7 @@ async fn subscribe_next_event_inside_timeout() {
         if let Some(tx) = api_clone.get_sender() {
             let _ = tx.send(serde_json::json!({
                 "type": "text_delta",
-                "data": { "text": "timed" }
+                "data": { "content": "timed" }
             }));
             drop(tx);
         }
@@ -420,7 +420,7 @@ async fn subscribe_next_event_inside_timeout() {
 
             return {
                 timed_out = not ok,
-                text = ok and event and event.data and event.data.text or "none",
+                text = ok and event and event.data and event.data.content or "none",
             }
             "#,
         )
@@ -460,7 +460,7 @@ async fn subscribe_receiver_not_dropped_prematurely() {
         if let Some(tx) = api_clone.get_sender() {
             let _ = tx.send(serde_json::json!({
                 "type": "text_delta",
-                "data": { "text": "delayed-event" }
+                "data": { "content": "delayed-event" }
             }));
             drop(tx);
         }
@@ -483,7 +483,7 @@ async fn subscribe_receiver_not_dropped_prematurely() {
 
             return {
                 timed_out = not ok,
-                text = ok and event and event.data and event.data.text or "none",
+                text = ok and event and event.data and event.data.content or "none",
             }
             "#,
         )
@@ -531,7 +531,7 @@ async fn subscribe_next_event_via_cru_spawn() {
         if let Some(tx) = api_clone.get_sender() {
             let _ = tx.send(serde_json::json!({
                 "type": "text_delta",
-                "data": { "text": "spawned-event" }
+                "data": { "content": "spawned-event" }
             }));
             drop(tx);
         }
@@ -556,7 +556,7 @@ async fn subscribe_next_event_via_cru_spawn() {
 
                 local event = next_event()
                 if event then
-                    _G.spawn_result.text = event.data and event.data.text or "no-text"
+                    _G.spawn_result.text = event.data and event.data.content or "no-text"
                 else
                     _G.spawn_result.text = "nil-event"
                 end
@@ -620,7 +620,7 @@ async fn subscribe_multiple_next_event_calls_receive_in_order() {
                 tokio::time::sleep(std::time::Duration::from_millis(20)).await;
                 let _ = tx.send(serde_json::json!({
                     "type": "text_delta",
-                    "data": { "text": format!("chunk-{}", i) }
+                    "data": { "content": format!("chunk-{}", i) }
                 }));
             }
             drop(tx);
@@ -640,7 +640,7 @@ async fn subscribe_multiple_next_event_calls_receive_in_order() {
                 while true do
                     local event = next_event()
                     if event == nil then break end
-                    texts[#texts + 1] = event.data.text
+                    texts[#texts + 1] = event.data.content
                 end
             end)
 
