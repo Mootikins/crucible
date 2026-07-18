@@ -37,13 +37,25 @@ pub fn default_layout_path() -> std::path::PathBuf {
 pub struct ReconnectingDaemon {
     daemon: Arc<RwLock<DaemonClient>>,
     generation: AtomicU64,
+    /// The SSE fan-out target. Held so a reconnect can rewire a fresh event
+    /// stream into it instead of leaving SSE permanently dead.
+    broker: Arc<EventBroker>,
+    /// Handle to the current event-router task, aborted and replaced on reconnect.
+    router: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl ReconnectingDaemon {
-    pub fn new(daemon: DaemonClient) -> Self {
+    pub fn new(
+        daemon: DaemonClient,
+        event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+        broker: Arc<EventBroker>,
+    ) -> Self {
+        let router = spawn_event_router(event_rx, broker.clone());
         Self {
             daemon: Arc::new(RwLock::new(daemon)),
             generation: AtomicU64::new(0),
+            broker,
+            router: std::sync::Mutex::new(Some(router)),
         }
     }
 
@@ -85,12 +97,27 @@ impl ReconnectingDaemon {
             return Ok(());
         }
 
-        let new_daemon = DaemonClient::connect_or_start().await?;
+        // Reconnect in EVENT mode (matching the initial connect). A simple-mode
+        // client returns the next line with ANY id without matching the request,
+        // so under the web server's concurrent RPC load two calls could swap
+        // responses (silent wrong data). Event mode keeps responses id-matched.
+        let (new_daemon, event_rx) = DaemonClient::connect_or_start_with_events().await?;
         *daemon = new_daemon;
+
+        // Rewire SSE: abort the old router (its event_rx died with the old
+        // connection) and point a fresh one at the same broker, so fan-out
+        // survives a daemon restart instead of staying dead until a manual
+        // restart. (Live per-session subscriptions still need re-issuing by the
+        // client after a reconnect.)
+        let new_router = spawn_event_router(event_rx, self.broker.clone());
+        if let Ok(mut guard) = self.router.lock() {
+            if let Some(old) = guard.replace(new_router) {
+                old.abort();
+            }
+        }
+
         self.generation.fetch_add(1, Ordering::AcqRel);
-        tracing::warn!(
-            "Daemon reconnected; event stream may be stale — restart web server to restore SSE"
-        );
+        tracing::warn!("Daemon reconnected; SSE fan-out rewired to the new event stream");
         Ok(())
     }
 
@@ -962,8 +989,9 @@ pub async fn init_daemon(config: CliAppConfig) -> Result<AppState> {
         .await
         .map_err(|e| WebError::Daemon(format!("Failed to connect to daemon: {e}")))?;
 
-    let daemon = Arc::new(ReconnectingDaemon::new(daemon));
     let broker = Arc::new(EventBroker::new());
+    // The daemon owns the event router now, so it can rewire SSE on reconnect.
+    let daemon = Arc::new(ReconnectingDaemon::new(daemon, event_rx, broker.clone()));
 
     // Auto-register the configured kiln so the frontend has a project on startup
     let kiln_path = config.kiln_path_str().unwrap_or_default();
@@ -975,8 +1003,6 @@ pub async fn init_daemon(config: CliAppConfig) -> Result<AppState> {
             tracing::warn!("Failed to auto-register kiln {kiln_path}: {e}");
         }
     }
-
-    spawn_event_router(event_rx, broker.clone());
 
     let http_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
@@ -995,13 +1021,13 @@ pub async fn init_daemon(config: CliAppConfig) -> Result<AppState> {
 fn spawn_event_router(
     mut event_rx: mpsc::UnboundedReceiver<SessionEvent>,
     broker: Arc<EventBroker>,
-) {
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
             broker.dispatch(event).await;
         }
         tracing::warn!("Daemon event stream ended");
-    });
+    })
 }
 
 #[cfg(test)]

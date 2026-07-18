@@ -401,9 +401,12 @@ pub fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
 #[cfg(any(test, feature = "test-utils"))]
 /// Build an AppState using a mock daemon client.
 pub fn build_mock_state(client: DaemonClient) -> AppState {
+    let broker = Arc::new(EventBroker::new());
+    // Mock client has no live event stream; a dropped sender ends the router.
+    let (_tx, event_rx) = tokio::sync::mpsc::unbounded_channel::<crucible_daemon::SessionEvent>();
     AppState {
-        daemon: Arc::new(ReconnectingDaemon::new(client)),
-        events: Arc::new(EventBroker::new()),
+        daemon: Arc::new(ReconnectingDaemon::new(client, event_rx, broker.clone())),
+        events: broker,
         config: Arc::new(CliAppConfig::default()),
         http_client: reqwest::Client::new(),
         layout_path: Arc::new(unique_test_layout_path()),
