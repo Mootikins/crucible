@@ -23,6 +23,35 @@ const WhisperContext = createContext<WhisperContextValue>();
 let pipelineFactory: ((...args: unknown[]) => Promise<unknown>) | null = null;
 let transcriber: ((...args: unknown[]) => Promise<unknown>) | null = null;
 
+// Pure DSP helpers, extracted from decodeAudioBlob so they're unit-testable
+// (Whisper expects 16 kHz mono PCM). Nearest-neighbour resample matches the
+// original inline implementation.
+export function mixToMono(channels: Float32Array[]): Float32Array {
+  if (channels.length <= 1) return channels[0] ?? new Float32Array(0);
+  const left = channels[0];
+  const right = channels[1];
+  const out = new Float32Array(left.length);
+  for (let i = 0; i < left.length; i++) {
+    out[i] = (left[i] + right[i]) / 2;
+  }
+  return out;
+}
+
+export function resampleTo(
+  data: Float32Array,
+  fromRate: number,
+  toRate: number,
+): Float32Array {
+  if (fromRate === toRate) return data;
+  const ratio = fromRate / toRate;
+  const newLength = Math.round(data.length / ratio);
+  const out = new Float32Array(newLength);
+  for (let i = 0; i < newLength; i++) {
+    out[i] = data[Math.floor(i * ratio)];
+  }
+  return out;
+}
+
 export const WhisperProvider: ParentComponent = (props) => {
   const { settings } = useSettings();
   const [localStatus, setLocalStatus] = createSignal<WhisperStatus>('idle');
@@ -104,33 +133,12 @@ export const WhisperProvider: ParentComponent = (props) => {
     try {
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-      // Get mono channel (use first channel or mix down)
-      let audioData: Float32Array;
-      if (audioBuffer.numberOfChannels === 1) {
-        audioData = audioBuffer.getChannelData(0);
-      } else {
-        // Mix stereo to mono
-        const left = audioBuffer.getChannelData(0);
-        const right = audioBuffer.getChannelData(1);
-        audioData = new Float32Array(left.length);
-        for (let i = 0; i < left.length; i++) {
-          audioData[i] = (left[i] + right[i]) / 2;
-        }
-      }
-
-      // Resample to 16kHz if needed
-      if (audioBuffer.sampleRate !== 16000) {
-        const ratio = audioBuffer.sampleRate / 16000;
-        const newLength = Math.round(audioData.length / ratio);
-        const resampled = new Float32Array(newLength);
-        for (let i = 0; i < newLength; i++) {
-          const srcIndex = Math.floor(i * ratio);
-          resampled[i] = audioData[srcIndex];
-        }
-        return resampled;
-      }
-
-      return audioData;
+      const channels =
+        audioBuffer.numberOfChannels === 1
+          ? [audioBuffer.getChannelData(0)]
+          : [audioBuffer.getChannelData(0), audioBuffer.getChannelData(1)];
+      const audioData = mixToMono(channels);
+      return resampleTo(audioData, audioBuffer.sampleRate, 16000);
     } finally {
       await audioContext.close();
     }
