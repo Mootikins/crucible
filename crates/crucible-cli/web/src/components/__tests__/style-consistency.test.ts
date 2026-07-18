@@ -13,7 +13,8 @@ const SRC = resolve(__dirname, '../..');
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
-    if (entry === 'node_modules' || entry.startsWith('.')) continue;
+    // test-harness/ is test scaffolding, not shipped UI.
+    if (entry === 'node_modules' || entry === 'test-harness' || entry.startsWith('.')) continue;
     const p = join(dir, entry);
     if (statSync(p).isDirectory()) walk(p, out);
     else if (/\.(tsx|ts)$/.test(entry) && !/\.test\.tsx?$/.test(entry)) out.push(p);
@@ -24,28 +25,45 @@ function walk(dir: string, out: string[] = []): string[] {
 const read = (rel: string) => readFileSync(resolve(SRC, rel), 'utf-8');
 
 describe('semantic color tokens (no raw palettes)', () => {
-  // sky-* is deliberately exempt: it marks spawned/running agents, distinct
-  // from precog (delegation), and the theme has no blue token yet.
-  const RAW_PALETTE = /\b(?:neutral|zinc|gray|slate|stone|emerald|green|amber|yellow|red|purple|violet)-[0-9]{2,3}\b/;
+  // Allowlist, not a denylist: ANY Tailwind palette color-NNN is an offender
+  // unless its hue is approved. A denylist that grows one hue at a time gives a
+  // false green — whole families (orange, blue, indigo, teal, …) slipped through.
+  // sky-* is deliberately allowed: it marks spawned/running agents (the theme
+  // has no blue token yet).
+  const ALL_TW_COLORS = [
+    'slate', 'gray', 'zinc', 'neutral', 'stone', 'red', 'orange', 'amber',
+    'yellow', 'lime', 'green', 'emerald', 'teal', 'cyan', 'sky', 'blue',
+    'indigo', 'violet', 'purple', 'fuchsia', 'pink', 'rose',
+  ];
+  const APPROVED_HUES = new Set([
+    'neutral', 'zinc', 'gray', 'slate', 'stone', 'emerald', 'green', 'amber',
+    'yellow', 'red', 'purple', 'violet', 'sky',
+  ]);
+  const PALETTE_RE = new RegExp(`\\b(${ALL_TW_COLORS.join('|')})-[0-9]{2,3}\\b`, 'g');
 
-  it('no component uses a raw Tailwind gray or status palette class', () => {
+  it('no component uses an off-token Tailwind palette class', () => {
     const offenders: string[] = [];
     // index.html is outside src/ but carries classes too (the body classes
     // hid a neutral-950 canvas behind the shell for months).
     for (const file of [...walk(SRC), resolve(SRC, '../index.html')]) {
       const lines = readFileSync(file, 'utf-8').split('\n');
       lines.forEach((line, i) => {
-        if (RAW_PALETTE.test(line)) offenders.push(`${file}:${i + 1}: ${line.trim()}`);
+        for (const m of line.matchAll(PALETTE_RE)) {
+          if (!APPROVED_HUES.has(m[1])) {
+            offenders.push(`${file}:${i + 1}: ${line.trim()}`);
+            break;
+          }
+        }
       });
     }
     expect(offenders).toEqual([]);
   });
 
-  it('separators use the hairline token, not white-alpha borders', () => {
+  it('surfaces use tokens, not white-alpha (bg/text/border)', () => {
     const offenders: string[] = [];
     for (const file of walk(SRC)) {
       const src = readFileSync(file, 'utf-8');
-      if (/border-white\//.test(src)) offenders.push(file);
+      if (/\b(?:bg|text|border)-white\//.test(src)) offenders.push(file);
     }
     expect(offenders).toEqual([]);
   });

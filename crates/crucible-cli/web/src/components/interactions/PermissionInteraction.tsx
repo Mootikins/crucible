@@ -9,7 +9,7 @@ interface Props {
 }
 
 const ACTION_LABELS: Record<string, { label: string; color: string }> = {
-  bash: { label: 'Execute', color: 'bg-orange-600' },
+  bash: { label: 'Execute', color: 'bg-attention' },
   read: { label: 'Read', color: 'bg-primary' },
   write: { label: 'Write', color: 'bg-attention' },
   tool: { label: 'Tool', color: 'bg-precog' },

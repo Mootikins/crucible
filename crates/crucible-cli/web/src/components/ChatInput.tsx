@@ -187,7 +187,7 @@ export const ChatInput: Component = () => {
             >
               ⌁ {pathBasename(session()!.workspace)}
             </span>
-            <span class="w-px h-4 bg-white/10" />
+            <span class="w-px h-4 bg-hairline" />
           </Show>
           <Show when={session()!.kiln}>
             <span

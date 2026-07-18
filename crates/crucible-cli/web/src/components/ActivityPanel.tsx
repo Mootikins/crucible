@@ -77,7 +77,7 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
     <div class={`border ${borderColor()} rounded-lg ${bgColor()} overflow-hidden`}>
       <button
         onClick={() => setExpanded(!expanded())}
-        class="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/[0.03] transition-colors text-left group"
+        class="w-full flex items-center gap-2 px-3 py-2 hover:bg-hover-wash transition-colors text-left group"
       >
         {/* Icon */}
         <Show when={isDelegation()} fallback={<Bot class={`w-3.5 h-3.5 flex-shrink-0 ${statusColor()}`} />}>
