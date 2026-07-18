@@ -21,7 +21,7 @@ async fn test_protocol_initialize_handshake() {
     let mut client = CrucibleAcpClient::new(config);
 
     // Spawn agent
-    let _process = client.spawn_agent().await.unwrap();
+    client.spawn_agent().await.unwrap();
 
     // Send initialize request
     let init_request = InitializeRequest::new(1u16.into());
@@ -50,7 +50,7 @@ async fn test_protocol_new_session() {
     let mut client = CrucibleAcpClient::new(config);
 
     // Spawn agent
-    let _process = client.spawn_agent().await.unwrap();
+    client.spawn_agent().await.unwrap();
 
     // Create new session request
     let session_request = NewSessionRequest::new(PathBuf::from("/test"));

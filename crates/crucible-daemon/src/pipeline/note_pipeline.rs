@@ -603,7 +603,6 @@ mod tests {
         let config = NotePipelineConfig {
             skip_enrichment: false,
             force_reprocess: true,
-            ..Default::default()
         };
         NotePipeline::with_config(change_detector, enricher, note_store, config)
     }
@@ -644,7 +643,6 @@ mod tests {
         let config = NotePipelineConfig {
             skip_enrichment: true,
             force_reprocess: false,
-            ..Default::default()
         };
         let pipeline =
             NotePipeline::with_config(change_detector, passing_enricher(), store, config);
@@ -705,7 +703,6 @@ mod tests {
         let config = NotePipelineConfig {
             skip_enrichment: true,
             force_reprocess: true,
-            ..Default::default()
         };
         // Enrichment is configured to fail, but skip_enrichment=true means it
         // never runs — the pipeline should still succeed.
@@ -743,7 +740,6 @@ mod tests {
         let config = NotePipelineConfig {
             skip_enrichment: true,
             force_reprocess: true,
-            ..Default::default()
         };
         let pipeline =
             NotePipeline::with_config(change_detector, passing_enricher(), store, config);

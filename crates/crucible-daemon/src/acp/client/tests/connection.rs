@@ -147,7 +147,7 @@ async fn test_connection_state_tracking() {
     assert!(!client.is_connected(), "Should not be connected initially");
 
     // After spawning, should track connection
-    let _process = client.spawn_agent().await.unwrap();
+    client.spawn_agent().await.unwrap();
 
     // Mark as connected (this will be part of connect() implementation)
     client.mark_connected();
@@ -201,7 +201,7 @@ async fn test_disconnect_cleanup() {
     let mut client = CrucibleAcpClient::new(config);
 
     // Spawn manually for testing
-    let _process = client.spawn_agent().await.unwrap();
+    client.spawn_agent().await.unwrap();
     client.mark_connected();
 
     // Create a session for testing

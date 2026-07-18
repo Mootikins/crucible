@@ -78,7 +78,7 @@ async fn test_read_agent_response() {
     let mut client = CrucibleAcpClient::new(config);
 
     // Spawn agent
-    let _process = client.spawn_agent().await.unwrap();
+    client.spawn_agent().await.unwrap();
 
     // Try to read a line from stdout
     // Echo may send empty line or close stdout immediately
@@ -103,7 +103,7 @@ async fn test_write_agent_request() {
     let mut client = CrucibleAcpClient::new(config);
 
     // Spawn agent
-    let _process = client.spawn_agent().await.unwrap();
+    client.spawn_agent().await.unwrap();
 
     // Try to write a JSON-RPC message
     let request = serde_json::json!({
@@ -158,7 +158,7 @@ async fn test_full_request_response_cycle() {
     let mut client = CrucibleAcpClient::new(config);
 
     // Spawn and mark connected
-    let _process = client.spawn_agent().await.unwrap();
+    client.spawn_agent().await.unwrap();
     client.mark_connected();
 
     // Verify connected
@@ -191,7 +191,7 @@ async fn test_send_message_with_json() {
     let mut client = CrucibleAcpClient::new(config);
 
     // Spawn and connect
-    let _process = client.spawn_agent().await.unwrap();
+    client.spawn_agent().await.unwrap();
     client.mark_connected();
 
     // Send a simple JSON message
