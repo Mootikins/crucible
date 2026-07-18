@@ -3,6 +3,11 @@ import { windowActions } from '@/stores/windowStore';
 import { saveLayout, loadLayout } from './api';
 
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+// The startup load runs concurrently with auto-save setup. Until it finishes,
+// the store still holds the DEFAULT layout — persisting it would race a slow
+// load (HTTP slower than the 500ms debounce) and overwrite the user's saved
+// layout before importLayout applies it. Gate saves until the load resolves.
+let startupLoaded = false;
 
 export function setupLayoutAutoSave(): void {
   createEffect(() => {
@@ -12,6 +17,9 @@ export function setupLayoutAutoSave(): void {
     // renames, and same-group reorders silently never persisted. exportLayout()
     // walks every nested node, so any mutation now re-triggers the save.
     const serialized = windowActions.exportLayout();
+
+    // Read above (subscribe now) but don't persist pre-load — see startupLoaded.
+    if (!startupLoaded) return;
 
     if (saveTimeout) clearTimeout(saveTimeout);
     saveTimeout = setTimeout(() => {
@@ -34,5 +42,8 @@ export async function loadLayoutOnStartup(): Promise<void> {
     }
   } catch (err) {
     console.warn('Failed to restore layout, using defaults:', err);
+  } finally {
+    // Load done (restored or defaulted) — later mutations are genuine edits.
+    startupLoaded = true;
   }
 }
