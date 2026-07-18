@@ -1,28 +1,28 @@
-//\! Chat framework abstraction traits
-//\!
-//\! Following SOLID principles, this module defines backend-agnostic chat abstractions.
-//\!
-//\! ## Architecture
-//\!
-//\! - **AgentHandle**: Runtime handle to an active agent (ACP, internal, direct LLM)
-//\! - **CommandHandler**: Trait for implementing slash commands
-//\! - **ChatContext**: Execution context for command handlers
-//\!
-//\! ## Mode Handling
-//\!
-//\! Modes are now handled via string IDs (e.g., "plan", "act", "auto") with
-//\! `SessionModeState` providing the list of available modes from the agent.
-//\!
-//\! ## Naming Convention
-//\!
-//\! - **AgentCard**: Static definition (prompt + metadata) - see `agent::types`
-//\! - **AgentHandle**: Runtime handle to active agent - this module
-//\!
-//\! ## Design Principles
-//\!
-//\! **Dependency Inversion**: Core defines interfaces, implementations live in CLI/agent crates
-//\! **Interface Segregation**: Separate traits for distinct capabilities
-//\! **Protocol Independence**: Abstracts over ACP, internal agents, direct LLM APIs
+//! Chat framework abstraction traits
+//!
+//! Following SOLID principles, this module defines backend-agnostic chat abstractions.
+//!
+//! ## Architecture
+//!
+//! - **AgentHandle**: Runtime handle to an active agent (ACP, internal, direct LLM)
+//! - **CommandHandler**: Trait for implementing slash commands
+//! - **ChatContext**: Execution context for command handlers
+//!
+//! ## Mode Handling
+//!
+//! Modes are now handled via string IDs (e.g., "plan", "act", "auto") with
+//! `SessionModeState` providing the list of available modes from the agent.
+//!
+//! ## Naming Convention
+//!
+//! - **AgentCard**: Static definition (prompt + metadata) - see `agent::types`
+//! - **AgentHandle**: Runtime handle to active agent - this module
+//!
+//! ## Design Principles
+//!
+//! **Dependency Inversion**: Core defines interfaces, implementations live in CLI/agent crates
+//! **Interface Segregation**: Separate traits for distinct capabilities
+//! **Protocol Independence**: Abstracts over ACP, internal agents, direct LLM APIs
 
 use async_trait::async_trait;
 use futures::stream::BoxStream;

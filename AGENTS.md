@@ -146,12 +146,11 @@ use crucible_core::traits::provider::{Provider, CanEmbed, CanChat};
 use crucible_core::traits::ContextMessage;
 use crucible_core::traits::{StorageResult, ChatResult, ToolResult};
 use crucible_core::protocol::{Request, Response, RpcError, SessionEventMessage};
-use crucible_daemon::enrichment::{EmbeddingHandler, Enricher};
+use crucible_daemon::enrichment::Enricher;
 use crucible_daemon::pipeline::{NotePipeline, NotePipelineConfig};
 use crucible_daemon::rpc_client::{DaemonClient, DaemonStorageClient};
 use crucible_daemon::observe::{SessionWriter, SessionMetadata};
 use crucible_daemon::skills::{Skill, SkillSource, SkillScope};
-use crucible_daemon::storage::sqlite::query::{SqlSugarSyntax, JaqSyntax};
 use crucible_core::config::AppConfig;
 ```
 

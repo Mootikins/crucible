@@ -1,4 +1,4 @@
-//\! Configuration for embedding providers
+//! Configuration for embedding providers
 
 use serde::{Deserialize, Serialize};
 
