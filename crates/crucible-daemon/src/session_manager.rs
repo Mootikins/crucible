@@ -549,7 +549,9 @@ impl SessionManager {
                     }
                     e.get("data")?.get("content")?.as_str().map(str::to_string)
                 });
-                let Some(first_user) = first_user else { continue };
+                let Some(first_user) = first_user else {
+                    continue;
+                };
                 let title = crate::agent_manager::title::truncate_to_title(&first_user);
 
                 // In-memory sessions go through set_title (persists too);

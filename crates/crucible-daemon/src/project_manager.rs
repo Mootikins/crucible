@@ -306,7 +306,10 @@ impl ProjectManager {
                         kiln.path = parent.to_path_buf();
                     }
                 }
-                kiln.path = kiln.path.canonicalize().unwrap_or_else(|_| kiln.path.clone());
+                kiln.path = kiln
+                    .path
+                    .canonicalize()
+                    .unwrap_or_else(|_| kiln.path.clone());
             }
             if project.path.is_dir() {
                 self.projects.insert(project.path.clone(), project);
@@ -430,7 +433,11 @@ path = "./notes"
         let crucible_dir = subdir.join(".crucible");
         fs::create_dir_all(&crucible_dir).unwrap();
         gix::init(&repo).unwrap();
-        fs::write(crucible_dir.join("project.toml"), "[[kilns]]\npath = \"./notes\"\n").unwrap();
+        fs::write(
+            crucible_dir.join("project.toml"),
+            "[[kilns]]\npath = \"./notes\"\n",
+        )
+        .unwrap();
 
         let project = manager.register(&subdir).unwrap();
         assert_eq!(project.path, subdir.canonicalize().unwrap());

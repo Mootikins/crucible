@@ -209,7 +209,13 @@ async fn test_sweep_cleans_up_agent_state_for_archived_sessions() {
     let kiln_manager = KilnManager::new();
 
     let session = session_manager
-        .create_session(SessionType::Chat, tmp.path().to_path_buf(), None, vec![], None)
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
         .await
         .unwrap();
     session_manager

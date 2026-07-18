@@ -57,5 +57,4 @@ mod tests {
         std::fs::write(&socket, "not a socket").unwrap();
         assert!(!is_daemon_running(&socket));
     }
-
 }

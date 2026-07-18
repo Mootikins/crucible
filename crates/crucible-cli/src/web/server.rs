@@ -4,8 +4,8 @@ use crate::web::middleware::auth::{
 };
 use crate::web::routes::{
     auth_routes, chat_routes, config_routes, health_routes, kiln_routes, layout_routes, mcp_routes,
-    plugin_routes, project_routes, search_routes, session_routes, shell_routes, skills_routes, terminal_routes,
-    webhook_routes,
+    plugin_routes, project_routes, search_routes, session_routes, shell_routes, skills_routes,
+    terminal_routes, webhook_routes,
 };
 use crate::web::services::daemon;
 use crate::web::{Result, WebError};

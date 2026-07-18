@@ -799,8 +799,12 @@ impl Server {
             // leaked it into km.list()/`/api/kilns` forever and spun a watcher
             // over it. Project entries may point at the `.crucible` data dir;
             // normalize to the kiln root.
-            let mut open_kilns: Vec<std::path::PathBuf> =
-                km.list().await.into_iter().map(|(path, _, _)| path).collect();
+            let mut open_kilns: Vec<std::path::PathBuf> = km
+                .list()
+                .await
+                .into_iter()
+                .map(|(path, _, _)| path)
+                .collect();
             for project in pm.list() {
                 for kiln in project.kilns {
                     let root = if kiln.path.file_name().is_some_and(|n| n == ".crucible") {

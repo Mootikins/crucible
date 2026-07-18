@@ -29,6 +29,6 @@ pub use project::project_routes;
 pub use search::search_routes;
 pub use session::session_routes;
 pub use shell::shell_routes;
-pub use terminal::terminal_routes;
 pub use skills::skills_routes;
+pub use terminal::terminal_routes;
 pub use webhook::webhook_routes;

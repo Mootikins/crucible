@@ -90,7 +90,10 @@ fn enforce_delegation_capabilities_allows_first_level_at_default_max_depth() {
         "session-1",
     );
 
-    assert!(result.is_ok(), "first-level delegation must be allowed at max_depth=1");
+    assert!(
+        result.is_ok(),
+        "first-level delegation must be allowed at max_depth=1"
+    );
 }
 
 #[test]

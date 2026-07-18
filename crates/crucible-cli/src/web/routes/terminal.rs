@@ -42,7 +42,10 @@ async fn terminal_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
     let permit = match TERMINAL_SLOTS.try_acquire() {
         Ok(permit) => permit,
         Err(_) => {
-            warn!(max = MAX_TERMINALS, "Rejecting terminal: session limit reached");
+            warn!(
+                max = MAX_TERMINALS,
+                "Rejecting terminal: session limit reached"
+            );
             return (
                 axum::http::StatusCode::SERVICE_UNAVAILABLE,
                 "Terminal session limit reached",
@@ -68,7 +71,9 @@ async fn handle_terminal(mut socket: WebSocket) {
         Err(e) => {
             warn!(error = %e, "Failed to open PTY");
             let _ = socket
-                .send(Message::Text(format!("\r\nFailed to open PTY: {e}\r\n").into()))
+                .send(Message::Text(
+                    format!("\r\nFailed to open PTY: {e}\r\n").into(),
+                ))
                 .await;
             return;
         }
@@ -86,7 +91,9 @@ async fn handle_terminal(mut socket: WebSocket) {
         Err(e) => {
             warn!(error = %e, shell = %shell, "Failed to spawn shell in PTY");
             let _ = socket
-                .send(Message::Text(format!("\r\nFailed to spawn {shell}: {e}\r\n").into()))
+                .send(Message::Text(
+                    format!("\r\nFailed to spawn {shell}: {e}\r\n").into(),
+                ))
                 .await;
             return;
         }

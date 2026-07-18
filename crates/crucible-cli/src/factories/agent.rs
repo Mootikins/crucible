@@ -494,9 +494,17 @@ mod tests {
     fn is_acp_rule_converges_across_entry_points() {
         // A named agent (`chat -a claude`) implies ACP even with the default
         // Crucible preference and no explicit type — the one-shot bug.
-        assert!(resolve_is_acp(None, Some("claude"), &AgentPreference::Crucible));
+        assert!(resolve_is_acp(
+            None,
+            Some("claude"),
+            &AgentPreference::Crucible
+        ));
         // Explicit ACP type.
-        assert!(resolve_is_acp(Some(AgentType::Acp), None, &AgentPreference::Crucible));
+        assert!(resolve_is_acp(
+            Some(AgentType::Acp),
+            None,
+            &AgentPreference::Crucible
+        ));
         // Config preference.
         assert!(resolve_is_acp(None, None, &AgentPreference::Acp));
         // Bare `cru chat`: no name, no type, default preference → internal.

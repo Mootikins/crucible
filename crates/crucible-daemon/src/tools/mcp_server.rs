@@ -875,7 +875,10 @@ mod tests {
             .await
             .unwrap();
         let json = serde_json::to_string(&found).unwrap();
-        assert!(json.contains("SCOPED-BODY"), "body should be present: {json}");
+        assert!(
+            json.contains("SCOPED-BODY"),
+            "body should be present: {json}"
+        );
         assert!(
             json.contains("Tool restriction") && json.contains("search_notes, get_note"),
             "advisory listing the allowed tools should be appended, got: {json}"
