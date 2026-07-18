@@ -704,7 +704,7 @@ async fn test_delegation_depth_limit_enforced() {
     ));
 
     let session_id = "session-depth-limit";
-    // Register context at depth 2; child will be depth 3 which hits hard cap (>= 3)
+    // Register context at depth 2; child will be depth 3, exceeding max_depth = 2.
     manager.register_subagent_context(
         session_id,
         SubagentContext {
@@ -736,8 +736,8 @@ async fn test_delegation_depth_limit_enforced() {
         "error should mention depth limit, got: {msg}"
     );
     assert!(
-        msg.contains("hard cap at 3"),
-        "error should mention hard cap value, got: {msg}"
+        msg.contains("max_depth = 2"),
+        "error should mention the configured max_depth, got: {msg}"
     );
 }
 

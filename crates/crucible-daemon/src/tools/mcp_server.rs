@@ -123,6 +123,8 @@ pub struct DelegationContext {
     pub targets: Vec<String>,
     pub enabled: bool,
     pub depth: u32,
+    /// Max bytes of a blocking delegation's result, from DelegationConfig.
+    pub result_max_bytes: usize,
     pub data_classification: DataClassification,
 }
 
@@ -591,7 +593,10 @@ impl CrucibleMcpServer {
                 &delegation.session_id,
                 params.prompt,
                 context,
-                SubagentBlockingConfig::default(),
+                SubagentBlockingConfig {
+                    result_max_bytes: delegation.result_max_bytes,
+                    ..SubagentBlockingConfig::default()
+                },
                 None,
             )
             .await
@@ -802,6 +807,7 @@ mod tests {
                 targets: vec![],
                 enabled: true,
                 depth: 0,
+                result_max_bytes: 51200,
                 data_classification: DataClassification::Public,
             }
         }

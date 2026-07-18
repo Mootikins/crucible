@@ -142,6 +142,9 @@ impl AcpAgentHandle {
                     .unwrap_or_default(),
                 enabled: delegation_config.map(|c| c.enabled).unwrap_or(false),
                 depth: 0,
+                result_max_bytes: delegation_config
+                    .map(|c| c.result_max_bytes)
+                    .unwrap_or(51200),
                 data_classification: kiln_path
                     .and_then(|kiln| {
                         crate::trust_resolution::resolve_kiln_classification(workspace, kiln)

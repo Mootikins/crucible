@@ -206,6 +206,7 @@ fn test_delegation_context_construction() {
         targets: targets.clone(),
         enabled: true,
         depth: 0,
+        result_max_bytes: 51200,
         data_classification: DataClassification::default(),
     };
 
@@ -224,6 +225,7 @@ fn test_delegation_context_construction() {
         targets: vec![],
         enabled: false,
         depth: 0,
+        result_max_bytes: 51200,
         data_classification: DataClassification::default(),
     };
 
@@ -333,6 +335,7 @@ async fn test_mcp_host_initializes_with_delegation_context() {
         targets: vec!["claude".to_string()],
         enabled: true,
         depth: 0,
+        result_max_bytes: 51200,
         data_classification: DataClassification::default(),
     };
 

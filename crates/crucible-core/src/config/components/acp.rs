@@ -39,7 +39,10 @@ pub struct DelegationConfig {
     /// Whether delegation is enabled for this agent
     #[serde(default)]
     pub enabled: bool,
-    /// Maximum delegation depth (default 1, no nested delegation)
+    /// Maximum delegation depth: a delegation whose child would exceed this
+    /// depth is rejected, and `max_depth = 0` disables delegation entirely.
+    /// Note: nested delegation (a subagent spawning its own subagent) is
+    /// intentionally not supported yet, so values > 1 currently behave as 1.
     #[serde(default = "default_max_depth")]
     pub max_depth: u32,
     /// List of agent names this agent can delegate to

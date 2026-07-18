@@ -71,6 +71,7 @@ fn delegation_context(enabled: bool) -> DelegationContext {
         targets: vec!["claude".to_string()],
         enabled,
         depth: 0,
+        result_max_bytes: 51200,
         data_classification: DataClassification::default(),
     }
 }

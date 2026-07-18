@@ -349,12 +349,6 @@ impl BackgroundJobManager {
         delegation_depth: u32,
         parent_session_id: &str,
     ) -> Result<(), BackgroundError> {
-        if delegation_depth >= 3 {
-            return Err(BackgroundError::SpawnFailed(
-                "Delegation depth limit exceeded (hard cap at 3)".to_string(),
-            ));
-        }
-
         let delegation = session_agent
             .delegation_config
             .as_ref()
@@ -362,6 +356,19 @@ impl BackgroundJobManager {
             .ok_or_else(|| {
                 BackgroundError::SpawnFailed("Delegation is disabled for this agent".to_string())
             })?;
+
+        // Honor the configured max_depth as the entry cap instead of a magic
+        // hardcoded 3. `delegation_depth` is the depth the child would occupy
+        // (1 for a first-level delegation), so a first-level delegation is
+        // allowed iff max_depth >= 1, and max_depth = 0 disables delegation.
+        // (Nested delegation beyond depth 1 is still intentionally blocked by
+        // clearing the child's delegation_config in prepare_subagent_execution.)
+        if delegation_depth > delegation.max_depth {
+            return Err(BackgroundError::SpawnFailed(format!(
+                "Delegation depth limit exceeded (max_depth = {})",
+                delegation.max_depth
+            )));
+        }
 
         let active_delegations = self
             .running
