@@ -30,8 +30,10 @@ impl TestServer {
         // Isolate crucible_home() to a TempDir so the daemon never loads the
         // developer's real ~/.crucible registry (EnvVarGuard restores on drop).
         // This fixture backs the whole rpc_integration/ submodule tree.
-        let home_guard =
-            EnvVarGuard::set("CRUCIBLE_HOME", temp_dir.path().to_string_lossy().into_owned());
+        let home_guard = EnvVarGuard::set(
+            "CRUCIBLE_HOME",
+            temp_dir.path().to_string_lossy().into_owned(),
+        );
 
         let server = Server::bind(&socket_path, None).await?;
         let shutdown_handle = server.shutdown_handle();

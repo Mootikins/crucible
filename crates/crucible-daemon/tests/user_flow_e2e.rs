@@ -52,8 +52,10 @@ impl TestServer {
         // never loads the developer's real ~/.crucible registry, which would
         // make kiln.list non-empty and fail these assertions (CI passes only
         // because its home is clean).
-        let home_guard =
-            EnvVarGuard::set("CRUCIBLE_HOME", temp_dir.path().to_string_lossy().into_owned());
+        let home_guard = EnvVarGuard::set(
+            "CRUCIBLE_HOME",
+            temp_dir.path().to_string_lossy().into_owned(),
+        );
 
         let server = Server::bind(&socket_path, None).await?;
         let shutdown_handle = server.shutdown_handle();
