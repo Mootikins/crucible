@@ -38,10 +38,15 @@ vi.mock('@/stores/windowStore', () => ({
 // Dynamically import after mocks are in place
 const { default: FileViewerPanel } = await import('../FileViewerPanel');
 
+// The panel registry is a module-level singleton. The first describe seeds it
+// via registerPanels(); reset it before EVERY test (not just that describe) so
+// the "rendering" describe can never inherit a registry populated by an earlier
+// run, regardless of describe order.
+beforeEach(() => {
+  resetGlobalRegistry();
+});
+
 describe('FileViewerPanel — panel registry', () => {
-  beforeEach(() => {
-    resetGlobalRegistry();
-  });
 
   it('registers "file" content type via registerPanels()', () => {
     registerPanels();

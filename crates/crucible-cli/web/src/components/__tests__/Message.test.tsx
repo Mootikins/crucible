@@ -307,7 +307,12 @@ describe('Message — token usage', () => {
         })}
       />
     ));
-    expect(screen.getByText(/1,234 tokens/)).toBeInTheDocument();
+    // The component formats via Number.toLocaleString(), whose grouping
+    // separator is locale-dependent (comma/space/'.'), so build the expected
+    // string the same way instead of hard-coding a comma.
+    expect(
+      screen.getByText(`${(1234).toLocaleString()} tokens`),
+    ).toBeInTheDocument();
   });
 
   it('appends the cached count when cache tokens are present', () => {
@@ -325,7 +330,12 @@ describe('Message — token usage', () => {
         })}
       />
     ));
-    expect(screen.getByText(/1,500 tokens \(250 cached\)/)).toBeInTheDocument();
+    // Locale-robust: mirror the component's toLocaleString() grouping.
+    expect(
+      screen.getByText(
+        `${(1500).toLocaleString()} tokens (${(250).toLocaleString()} cached)`,
+      ),
+    ).toBeInTheDocument();
   });
 
   it('omits token usage on user messages even if usage is present', () => {
@@ -391,9 +401,15 @@ describe('Message — relative time', () => {
   it('falls back to a locale date for older timestamps', () => {
     const old = new Date('2026-01-10T00:00:00').getTime();
     render(() => <Message message={makeMessage({ timestamp: old })} />);
-    // Format is locale-dependent; just assert "2026" + "Jan" appear
-    expect(screen.getByText(/Jan/)).toBeInTheDocument();
-    expect(screen.getByText(/2026/)).toBeInTheDocument();
+    // The month name and separators vary by ICU locale ("Jan" is English
+    // only), so build the expected string exactly as the component does
+    // rather than asserting English-specific text.
+    const expected = new Date(old).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    expect(screen.getByText(expected)).toBeInTheDocument();
   });
 });
 
@@ -487,31 +503,6 @@ describe('Message — thinking block', () => {
 // ── Code-block copy buttons (addCopyButtons side-effect) ──────────────
 
 describe('Message — code-block copy buttons', () => {
-  it('appends a Copy button to <pre> blocks emitted by the markdown renderer', async () => {
-    const { container } = render(() => (
-      <Message message={makeMessage({ role: 'assistant', content: 'snippet' })} />
-    ));
-    await waitFor(() =>
-      expect(container.querySelector('[data-md-async]')).not.toBeNull(),
-    );
-
-    // Simulate the next render emitting a <pre><code>. The effect that
-    // watches renderedContent will fire again because we replace the
-    // innerHTML of the markdown ref directly is not possible; instead use
-    // the helper through its observable side: append a pre and call the
-    // exported behavior via DOM dispatch on a fresh element.
-    const pre = document.createElement('pre');
-    pre.innerHTML = '<code>echo hi</code>';
-    const md = container.querySelector('[data-md-async]')!.parentElement as HTMLElement;
-    md.append(pre);
-
-    // The createEffect won't auto-rerun for direct DOM mutation, but we can
-    // verify the helper's idempotent dataset.copyButton flag behavior by
-    // calling it indirectly: assert the pre starts WITHOUT a button.
-    expect(pre.querySelector('button')).toBeNull();
-    expect(pre.dataset.copyButton).toBeUndefined();
-  });
-
   it('initial render with code in mocked markdown attaches a copy button via the effect', async () => {
     // Our markdown mock wraps the input in <p>${s}</p>, so feeding a raw
     // <pre><code> into content lets us exercise the addCopyButtons effect

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { windowStore, setStore, windowActions, findEdgePanelForGroup } from '../windowStore';
+import { createInitialState } from '@/stores/windowStoreInternals';
 import type { Tab, EdgePanelPosition, TabGroup, LayoutNode } from '@/types/windowTypes';
 
 const LEGACY_EDGE_TAB_FIELD = 'panel' + 'Position';
@@ -61,6 +62,27 @@ const splitLayout = (pane1Id: string, group1Id: string, pane2Id: string, group2I
   splitRatio: 0.5,
   first: { id: pane1Id, type: 'pane' as const, tabGroupId: group1Id },
   second: { id: pane2Id, type: 'pane' as const, tabGroupId: group2Id },
+});
+
+// The windowStore is a module-level singleton. The mutating describes below
+// seed it via resetToState() in their own beforeEach, but the read-only
+// "initial state structure" and "findEdgePanelForGroup" describes assert
+// against the pristine default — which only held because they happened to run
+// first. Reset every test to a fresh createInitialState() so their assertions
+// are independent of execution order.
+beforeEach(() => {
+  const fresh = createInitialState();
+  setStore(
+    produce((s) => {
+      s.layout = fresh.layout;
+      s.tabGroups = fresh.tabGroups;
+      s.edgePanels = fresh.edgePanels;
+      s.floatingWindows = fresh.floatingWindows;
+      s.activePaneId = fresh.activePaneId;
+      s.focusedRegion = fresh.focusedRegion;
+      s.nextZIndex = fresh.nextZIndex;
+    })
+  );
 });
 
 describe('initial state structure', () => {

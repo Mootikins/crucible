@@ -32,8 +32,17 @@ describe('markdown property tests', () => {
       fc.property(fc.string(), (input) => {
         const withJsProtocol = `${input}<a href="javascript:alert(1)">click</a>`;
         const output = renderMarkdown(withJsProtocol);
-        // Raw javascript: protocol in href should not appear unescaped
-        expect(output).not.toContain('<a href="javascript:');
+        // Parse the rendered HTML and inspect every anchor's real href. This
+        // catches quoting/casing/entity variants (e.g. ` JavaScript:` or
+        // `&#106;avascript:`) that a single exact-substring check would miss —
+        // DOMParser decodes the attribute the way a browser would before we
+        // test the scheme.
+        const doc = new DOMParser().parseFromString(output, 'text/html');
+        const dangerousAnchors = Array.from(doc.querySelectorAll('a[href]')).filter((a) => {
+          const href = (a.getAttribute('href') ?? '').trim().toLowerCase();
+          return href.startsWith('javascript:');
+        });
+        expect(dangerousAnchors).toEqual([]);
       }),
       { numRuns: 100 }
     );

@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 import fc from 'fast-check';
 import type {
   ChatEvent,
@@ -967,18 +969,36 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
   });
 
   it('every reducer-handled type has a matrix test above', () => {
-    // The describe block above ("event matrix — covers every ChatEvent
-    // variant") must contain a test per type. If a new variant gets added
-    // to REDUCER_HANDLED_TYPES but not to the matrix, this catches it by
-    // scanning the test names.
-    const matrixTests = new Set<string>();
-    // Each matrix test name starts with the variant + ':' (e.g. "token: ...").
-    // This is a lightweight runtime extraction from the file.
-    // Read the test file at module-eval time isn't trivial in vitest, so we
-    // verify by exercising each variant through the reducer: it must not
-    // throw on a minimal example. If a developer adds a variant but skips
-    // the matrix, the example call here at least catches "reducer never
-    // handles it" via the no-throw contract.
+    // Extract the actual `it(...)` names from the "event matrix" describe block
+    // by reading this test file's source. Each matrix test name is prefixed
+    // with its variant and a colon (e.g. "token: appends..."). Asserting that
+    // every REDUCER_HANDLED_TYPES entry appears as a matrix-test prefix means a
+    // newly-handled variant added without a matrix test FAILS here — the old
+    // version only checked "reducer doesn't throw", which a missing matrix
+    // entry passed silently.
+    const source = fs.readFileSync(path.join(__dirname, 'chatEventReducer.test.ts'), 'utf-8');
+    const matrixStart = source.indexOf("describe('event matrix");
+    const matrixEnd = source.indexOf("describe('property: totality'");
+    expect(matrixStart).toBeGreaterThanOrEqual(0);
+    expect(matrixEnd).toBeGreaterThan(matrixStart);
+    const matrixBlock = source.slice(matrixStart, matrixEnd);
+
+    const matrixPrefixes = new Set<string>();
+    const itNameRe = /\bit\(\s*'([^:']+):/g;
+    let m: RegExpExecArray | null;
+    while ((m = itNameRe.exec(matrixBlock)) !== null) {
+      matrixPrefixes.add(m[1].trim());
+    }
+
+    // Containment (not strict equality): the matrix may legitimately carry
+    // extra tests for reducer-handled variants that are intentionally absent
+    // from the SSE parity list (e.g. the client-only 'connection' event). What
+    // must hold is that no REDUCER_HANDLED_TYPES entry is missing a matrix test.
+    const missing = REDUCER_HANDLED_TYPES.filter((t) => !matrixPrefixes.has(t));
+    expect(missing).toEqual([]);
+
+    // Belt-and-suspenders: each handled type also survives a minimal example
+    // through the real reducer without throwing.
     for (const t of REDUCER_HANDLED_TYPES) {
       const h = createHarness();
       // Build a minimal placeholder event — most variants need at least an id.
@@ -1004,8 +1024,6 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
       if (t === 'subagent_completed' || t === 'delegation_completed') minimal.summary = '';
       if (t === 'subagent_spawned' || t === 'delegation_spawned') minimal.prompt = '';
       expect(() => h.reducer(minimal as ChatEvent)).not.toThrow();
-      matrixTests.add(t);
     }
-    expect(matrixTests.size).toBe(REDUCER_HANDLED_TYPES.length);
   });
 });

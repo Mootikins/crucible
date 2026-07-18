@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
 // Spy on initializeHighlighter before importing index.tsx
 const initSpy = vi.fn().mockResolvedValue(undefined);
@@ -13,6 +13,13 @@ vi.mock('@/lib/shiki', async (importOriginal) => {
 vi.mock('../App', () => ({
   default: () => null,
 }));
+
+// index.tsx renders into a manually-appended #root; testing-library's
+// auto-cleanup only unmounts render() output it created, so this element would
+// otherwise persist in document.body and bleed into later tests.
+afterEach(() => {
+  document.getElementById('root')?.remove();
+});
 
 describe('app boot', () => {
   it('calls initializeHighlighter during app startup', async () => {

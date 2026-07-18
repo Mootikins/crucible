@@ -13,7 +13,10 @@ describe('FloatingWindow title deduplication', () => {
       /<span[^>]*class="[^"]*truncate[^"]*text-shell-body[^"]*">\s*\{([^}]+)\}\s*<\/span>/
     );
 
-    expect(titleBarMatch).toBeDefined();
+    // A non-match is `null` (which IS defined), so guard against null before
+    // indexing — otherwise `titleBarMatch![1]` throws a TypeError instead of
+    // failing with a readable assertion.
+    expect(titleBarMatch).not.toBeNull();
     const titleExpression = titleBarMatch![1];
 
     // Assert that the title expression does NOT fall back to tabs()[0]?.title
@@ -29,7 +32,7 @@ describe('FloatingWindow title deduplication', () => {
       /<span[^>]*class="[^"]*truncate[^"]*text-shell-body[^"]*">\s*\{([^}]+)\}\s*<\/span>/
     );
 
-    expect(titleBarMatch).toBeDefined();
+    expect(titleBarMatch).not.toBeNull();
     const titleExpression = titleBarMatch![1];
 
     // Should show either:

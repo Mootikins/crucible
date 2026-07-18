@@ -22,10 +22,17 @@ const notes: NoteEntry[] = [
   },
 ];
 
+// Hand out a copy so a component can never retain (and later observe mutations
+// to) the shared `notes` array.
 vi.mock('@/lib/api', () => ({
-  listNotes: vi.fn(() => Promise.resolve(notes)),
+  listNotes: vi.fn(() => Promise.resolve([...notes])),
   listPendingInteractions: vi.fn().mockResolvedValue([]),
 }));
+
+// Snapshot the pristine fixture so per-test mutations (a push to exercise the
+// relative-path click) can't leak into later tests — even if an assertion
+// throws before an inline restore.
+const pristineNotes = notes.map((n) => ({ ...n }));
 
 const openFileInEditorMock = vi.fn();
 vi.mock('@/lib/file-actions', async (importOriginal) => ({
@@ -48,6 +55,9 @@ afterEach(() => {
   clearAttention();
   statusBarActions.setKilnPath(null);
   vi.clearAllMocks();
+  // Restore the shared fixture in case a test mutated it.
+  notes.length = 0;
+  notes.push(...pristineNotes.map((n) => ({ ...n })));
 });
 
 describe('HomePanel helpers', () => {
@@ -116,7 +126,8 @@ describe('HomePanel', () => {
       '/home/user/kilns/helios/Guides/Relative Note.md',
       'Relative Note',
     );
-    notes.pop();
+    // No inline pop(): the afterEach restore reverts the fixture even if an
+    // assertion above throws first.
   });
 
   it('always offers new session and editor entry points', () => {

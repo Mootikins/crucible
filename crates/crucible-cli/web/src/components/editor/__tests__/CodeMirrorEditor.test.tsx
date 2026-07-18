@@ -1,15 +1,26 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { EditorView } from '@codemirror/view';
 
 import { CodeMirrorEditor, getLanguageExtension } from '../CodeMirrorEditor';
 
+// EditorView holds real DOM listeners and observers; testing-library's cleanup
+// unmounts the Solid tree but never calls view.destroy(). Track every view we
+// resolve and tear them down so instances don't leak across tests.
+const openViews: EditorView[] = [];
+
+afterEach(() => {
+  for (const view of openViews) view.destroy();
+  openViews.length = 0;
+});
+
 const findView = (container: HTMLElement): EditorView => {
   const content = container.querySelector('.cm-content');
   expect(content).not.toBeNull();
   const view = EditorView.findFromDOM(content as HTMLElement);
   expect(view).not.toBeNull();
+  openViews.push(view!);
   return view!;
 };
 
@@ -19,9 +30,11 @@ describe('CodeMirrorEditor — programmatic sync vs user edits (bug 5)', () => {
     const [content, setContent] = createSignal('# first file\n');
     const [path, setPath] = createSignal('/kiln/first.md');
 
-    render(() => (
+    const { container } = render(() => (
       <CodeMirrorEditor content={content()} path={path()} onChange={onChange} />
     ));
+    // Track the mounted view so afterEach can destroy it.
+    findView(container);
 
     // Simulate the active-file switch: EditorPanel feeds the reused instance
     // the next file's content. This is a sync, not a user edit — it must not

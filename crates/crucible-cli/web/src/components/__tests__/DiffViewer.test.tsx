@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { render, screen, fireEvent } from '@solidjs/testing-library';
 import { DiffViewer } from '../DiffViewer';
-import { initializeHighlighter } from '@/lib/shiki';
+import { initializeHighlighter, highlighter } from '@/lib/shiki';
 
 describe('DiffViewer — header and stats', () => {
   it('renders the file name when provided', () => {
@@ -165,7 +165,18 @@ describe('DiffViewer — upgrades to highlighted output when Shiki resolves', ()
   // Placement: this describe MUST run before the "syntax highlighting" block
   // below, because that block's beforeAll pre-warms Shiki for the file's
   // module instance. Vitest runs describes top-to-bottom within a file.
+  //
+  // The `highlighter` singleton has no public reset (setHighlighter isn't
+  // exported and initializeHighlighter() is a one-way, memoized null→ready
+  // transition), so this test cannot restore it per-run. Instead of silently
+  // depending on describe order, it asserts the uninitialized precondition
+  // up front: if anything pre-warms Shiki before this runs, the failure names
+  // the real cause instead of surfacing as a confusing span-count mismatch.
   it('renders plain text initially, then upgrades to colored tokens after init', async () => {
+    // Precondition: Shiki must not be initialized yet, or "plain text
+    // initially" is untestable. Fails loud if an earlier test warmed it.
+    expect(highlighter()).toBeNull();
+
     const { container } = render(() => (
       <DiffViewer oldContent="fn old() {}" newContent="fn new() {}" language="rust" />
     ));

@@ -1225,12 +1225,23 @@ describe('generateMessageId', () => {
     expect(id).toMatch(/^msg_\d+_[a-z0-9]+$/);
   });
 
-  it('returns unique ids across consecutive calls', () => {
-    const ids = new Set<string>();
-    for (let i = 0; i < 20; i++) ids.add(generateMessageId());
-    // Not strictly guaranteed (Math.random collision), but should be unique in
-    // any realistic run.
-    expect(ids.size).toBeGreaterThan(15);
+  it('returns fully unique ids across a fixed-size batch', () => {
+    // Date.now() is constant within a tight loop, so uniqueness rests entirely
+    // on the random suffix. Pin Math.random to a deterministic, well-separated
+    // sequence so we can assert *full* uniqueness (size === count) instead of a
+    // probabilistic ">15 of 20" threshold that could flake.
+    const count = 50;
+    let n = 0;
+    const randomSpy = vi
+      .spyOn(Math, 'random')
+      .mockImplementation(() => (n++ + 1) / (count + 1));
+    try {
+      const ids = new Set<string>();
+      for (let i = 0; i < count; i++) ids.add(generateMessageId());
+      expect(ids.size).toBe(count);
+    } finally {
+      randomSpy.mockRestore();
+    }
   });
 });
 
@@ -1367,17 +1378,29 @@ describe('subscribeToEvents', () => {
     );
   });
 
-  it('onopen handler resets reconnect attempts', () => {
-    subscribeToEvents('ses-1', () => {});
-    const source = MockEventSource.instances[0];
-    // Trigger error to bump reconnectAttempts, then onopen on the new source.
-    source.triggerError();
+  it('onopen resets the backoff so the next disconnect uses the base delay', () => {
+    const events: unknown[] = [];
+    subscribeToEvents('ses-1', (e) => events.push(e));
+
+    // First disconnect: attempt 1 → 1000ms backoff, then reconnect fires.
+    MockEventSource.instances[0].triggerError();
     vi.advanceTimersByTime(1000);
+    expect(MockEventSource.instances).toHaveLength(2);
+
+    // A successful (re)connection resets the attempt counter and emits a
+    // distinct 'connected' event — the first observable effect.
     const second = MockEventSource.instances[1];
     expect(second.onopen).toBeTruthy();
     second.onopen!(new Event('open'));
-    // No observable state from the outside; this primarily exercises the
-    // handler so v8 records it as covered.
+    expect(events).toContainEqual({ type: 'connection', status: 'connected' });
+
+    // Second observable effect: because the counter reset to 0, the NEXT
+    // disconnect schedules at the base 1000ms delay again rather than the
+    // escalated 2000ms of attempt 2. Advancing exactly 1000ms fires the
+    // reconnect, proving the reset actually happened.
+    second.triggerError();
+    vi.advanceTimersByTime(1000);
+    expect(MockEventSource.instances).toHaveLength(3);
   });
 
   it('cleanup while reconnect is pending clears the timer', () => {

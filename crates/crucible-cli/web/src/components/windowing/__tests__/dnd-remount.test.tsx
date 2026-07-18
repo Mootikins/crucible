@@ -116,6 +116,11 @@ const swapEdgeGroupId = (position: 'left' | 'bottom'): string => {
 };
 
 it('collapsed strip icons re-register their draggable with the live group id after a restore', () => {
+  // createInitialState() already ships bottom.isCollapsed=true, so setting it
+  // to true is a no-op that Solid's store setter never notifies on. Force the
+  // opposite first so the collapse is a real transition even if the default
+  // flips later.
+  setStore(produce((s) => { s.edgePanels.bottom.isCollapsed = false; }));
   setStore(produce((s) => { s.edgePanels.bottom.isCollapsed = true; }));
   const gid = windowStore.edgePanels.bottom.tabGroupId;
   windowActions.addTab(gid, { id: 'strip-tab', title: 'Terminal', contentType: 'terminal' });
@@ -135,6 +140,10 @@ it('collapsed strip icons re-register their draggable with the live group id aft
 });
 
 it('expanded edge tab bars re-register draggables with the live group id after a restore', () => {
+  // createInitialState() already ships left.isCollapsed=false, so setting it to
+  // false is a no-op Solid never notifies on. Force the opposite first so the
+  // expand is a real transition even if the default flips later.
+  setStore(produce((s) => { s.edgePanels.left.isCollapsed = true; }));
   setStore(produce((s) => { s.edgePanels.left.isCollapsed = false; }));
   const gid = windowStore.edgePanels.left.tabGroupId;
   windowActions.addTab(gid, { id: 'edge-tab', title: 'Files', contentType: 'files' });

@@ -7,10 +7,11 @@ describe('lib/shiki — singleton', () => {
   });
 
   it('returns null from highlighter() before initialization', () => {
-    // Note: this test relies on Vitest module isolation between files.
-    // If another test has already initialized, this becomes a no-op assertion.
-    const h = highlighter();
-    expect(h === null || typeof h.codeToTokens === 'function').toBe(true);
+    // Vitest isolates modules per test file, and this test runs before the
+    // init tests below, so the singleton is guaranteed uninitialized here.
+    // Assert that strictly — the old `h === null || typeof ... === 'function'`
+    // was a tautology that passed in every state.
+    expect(highlighter()).toBeNull();
   });
 
   it('initializeHighlighter resolves and makes highlighter() return a Highlighter', async () => {

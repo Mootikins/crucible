@@ -83,7 +83,10 @@ vi.mock('../AutocompletePopup', () => ({
 }));
 
 vi.mock('@/lib/api', () => ({
-  executeCommand: vi.fn(async () => ({ result: 'Command executed' })),
+  // Mock must match CommandResult (api.ts): { result, type }. The daemon's
+  // CommandResponse (web/routes/session_commands.rs) always sets `type` to
+  // "success" | "error"; a successful command returns "success".
+  executeCommand: vi.fn(async () => ({ result: 'Command executed', type: 'success' })),
 }));
 
 describe('ChatInput', () => {

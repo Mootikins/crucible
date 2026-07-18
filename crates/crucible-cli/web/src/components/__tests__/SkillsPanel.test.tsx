@@ -1,9 +1,27 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
+import type { Session } from '@/lib/types';
 
 vi.mock('@/contexts/SessionContext', () => ({
   useSessionSafe: () => ({
-    currentSession: () => ({ id: 's1', session_type: 'chat', kiln: '/tmp/k', workspace: '/tmp/k', state: 'active', title: null, agent_model: null, started_at: '', event_count: 0 }),
+    // Typed against the full Session contract (types.ts) so the mock can't
+    // silently drift from the daemon payload — the return annotation forces
+    // every required field (agent_mode) plus the optional last_activity /
+    // archived to be present.
+    currentSession: (): Session => ({
+      id: 's1',
+      session_type: 'chat',
+      kiln: '/tmp/k',
+      workspace: '/tmp/k',
+      state: 'active',
+      title: null,
+      agent_model: null,
+      agent_mode: null,
+      started_at: '',
+      last_activity: null,
+      event_count: 0,
+      archived: false,
+    }),
   }),
 }));
 

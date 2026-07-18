@@ -224,8 +224,13 @@ describe('vim mode', () => {
     ));
     const content = container.querySelector('.cm-content') as HTMLElement;
 
+    // Without vim, 'x' is not a command — the document is untouched. CodeMirror
+    // dispatches doc changes synchronously in response to the key event, so we
+    // can assert immediately rather than racing an arbitrary sleep: the editor
+    // still reads "hello" (not the vim-deleted "ello") and onChange never fired
+    // with the deleted text.
     fireEvent.keyDown(content, { key: 'x' });
-    await new Promise((r) => setTimeout(r, 50));
+    expect(content.textContent).toContain('hello');
     expect(onChange).not.toHaveBeenCalledWith('ello');
   });
 });

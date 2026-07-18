@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createRoot } from 'solid-js';
 import { useMediaRecorder } from './useMediaRecorder';
 
@@ -85,9 +85,10 @@ describe('useMediaRecorder', () => {
     mockGetUserMedia.mockResolvedValue(new MockMediaStream());
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+  // No afterEach needed: the global `clearMocks` wipes mock call history and
+  // `unstubGlobals` (vite.config.ts) undoes the vi.stubGlobal calls above
+  // between tests. There are no vi.spyOn spies here for restoreAllMocks to
+  // undo, so the old afterEach was a no-op.
 
   it('starts in non-recording state with zero audio level', () => {
     createRoot((dispose) => {
@@ -125,17 +126,27 @@ describe('useMediaRecorder', () => {
   });
 
   it('returns audio blob on stopRecording', async () => {
-    await createRoot(async (dispose) => {
-      const { startRecording, stopRecording } = useMediaRecorder();
-      await startRecording();
+    vi.useFakeTimers();
+    try {
+      await createRoot(async (dispose) => {
+        const { startRecording, stopRecording } = useMediaRecorder();
+        await startRecording();
 
-      // Wait for data to be collected
-      await new Promise((r) => setTimeout(r, 20));
+        // The mock emits its ondataavailable chunk on a 10ms timer. Drive that
+        // timer deterministically instead of racing it with a real 20ms sleep,
+        // which flakes under event-loop starvation.
+        await vi.advanceTimersByTimeAsync(10);
 
-      const blob = await stopRecording();
-      expect(blob).toBeInstanceOf(Blob);
-      dispose();
-    });
+        const blob = await stopRecording();
+        expect(blob).toBeInstanceOf(Blob);
+        // The collected chunk actually made it into the blob — not an empty
+        // placeholder produced when no data event ever fired.
+        expect(blob.size).toBeGreaterThan(0);
+        dispose();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('sets isRecording to false after stopping', async () => {

@@ -99,30 +99,50 @@ describe('WikilinkHoverPreview (Hover Editor popovers)', () => {
   });
 
   it('a pinned window survives hover-away (Hover Editor pin)', async () => {
-    fetchNotePreviewMock.mockResolvedValue(PREVIEW);
-    const host = mountWithAnchor('<a data-note="rust">rust</a><span>away</span>');
-    hover(host.querySelector('a[data-note]')!);
-    await waitFor(() => expect(hoverWindows()).toHaveLength(1));
+    vi.useFakeTimers();
+    try {
+      fetchNotePreviewMock.mockResolvedValue(PREVIEW);
+      const host = mountWithAnchor('<a data-note="rust">rust</a><span>away</span>');
+      hover(host.querySelector('a[data-note]')!);
+      // Drive the SHOW_DELAY gate deterministically instead of polling: the
+      // popover opens once the show timer fires and the (mocked) preview fetch
+      // settles.
+      await vi.advanceTimersByTimeAsync(300);
+      expect(hoverWindows()).toHaveLength(1);
 
-    const { windowActions } = await import('@/stores/windowStore');
-    windowActions.pinFloatingWindow(hoverWindows()[0].id);
+      const { windowActions } = await import('@/stores/windowStore');
+      windowActions.pinFloatingWindow(hoverWindows()[0].id);
 
-    hover(host.querySelector('span')!, AWAY);
-    await new Promise((r) => setTimeout(r, 500));
-    expect(hoverWindows()).toHaveLength(1);
-    expect(hoverWindows()[0].transient).toBe(false);
+      hover(host.querySelector('span')!, AWAY);
+      // Advance well past HIDE_DELAY — a pinned (non-transient) window must
+      // survive the hover-away close timer.
+      await vi.advanceTimersByTimeAsync(600);
+      expect(hoverWindows()).toHaveLength(1);
+      expect(hoverWindows()[0].transient).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not spawn a second window while one for the note is open', async () => {
-    fetchNotePreviewMock.mockResolvedValue(PREVIEW);
-    const host = mountWithAnchor(
-      '<a id="a" data-note="rust">one</a><a id="b" data-note="rust">two</a>',
-    );
-    hover(host.querySelector('#a')!);
-    await waitFor(() => expect(hoverWindows()).toHaveLength(1));
-    hover(host.querySelector('#b')!);
-    await new Promise((r) => setTimeout(r, 500));
-    expect(hoverWindows()).toHaveLength(1);
+    vi.useFakeTimers();
+    try {
+      fetchNotePreviewMock.mockResolvedValue(PREVIEW);
+      const host = mountWithAnchor(
+        '<a id="a" data-note="rust">one</a><a id="b" data-note="rust">two</a>',
+      );
+      hover(host.querySelector('#a')!);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(hoverWindows()).toHaveLength(1);
+      hover(host.querySelector('#b')!);
+      // Advance past both the hide and show delays so any duplicate spawn the
+      // second hover could schedule would have fired — the negative assert is
+      // now deterministic, not merely "nothing happened within this tick".
+      await vi.advanceTimersByTimeAsync(600);
+      expect(hoverWindows()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('shows a small not-found card for unresolvable notes (no window)', async () => {
@@ -138,11 +158,18 @@ describe('WikilinkHoverPreview (Hover Editor popovers)', () => {
   });
 
   it('does nothing for elements without data-note', async () => {
-    const host = mountWithAnchor('<span>plain text</span>');
-    hover(host.querySelector('span')!, AWAY);
-    await new Promise((r) => setTimeout(r, 450));
-    expect(hoverWindows()).toHaveLength(0);
-    expect(fetchNotePreviewMock).not.toHaveBeenCalled();
+    vi.useFakeTimers();
+    try {
+      const host = mountWithAnchor('<span>plain text</span>');
+      hover(host.querySelector('span')!, AWAY);
+      // Past every hover delay: a non-anchor hover must never schedule a
+      // fetch or a window.
+      await vi.advanceTimersByTimeAsync(600);
+      expect(hoverWindows()).toHaveLength(0);
+      expect(fetchNotePreviewMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('passes an explicit data-kiln through to resolution', async () => {
