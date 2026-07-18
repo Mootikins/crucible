@@ -23,7 +23,6 @@ test('center splitter resize updates pane width', async ({ page }) => {
       windowActions.splitPane(layout.id, 'horizontal');
     }
   });
-  await page.waitForTimeout(200);
 
   const splitter = page.locator('[data-split-id]').first();
   await splitter.waitFor({ state: 'visible', timeout: 3000 });

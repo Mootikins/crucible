@@ -233,13 +233,13 @@ test.describe('Session Lifecycle', () => {
     await page.getByTestId('session-item-test-session-001').click();
 
 
-    // Assert: "This session has ended" message is NOT visible (removed)
-    await expect(page.getByText('This session has ended')).toHaveCount(0);
-
-    // Assert: chat input IS visible (always shown, even for ended sessions)
+    // Positive load signal FIRST: the session panel actually rendered its
+    // chat input. Without this, the absence checks below would pass vacuously
+    // on an empty/unmounted panel.
     await expect(page.getByTestId('chat-input')).toBeVisible({ timeout: 5000 });
 
-    // Assert: "Continue as new session" button is NOT visible (removed)
+    // Now that the ended session is loaded: no ended-state affordances remain.
+    await expect(page.getByText('This session has ended')).toHaveCount(0);
     const continueButton = page.getByRole('button', { name: /Continue as new session/ });
     await expect(continueButton).toHaveCount(0);
   });
@@ -407,10 +407,11 @@ test.describe('Session Lifecycle', () => {
     // Click session to open it
     await page.getByTestId('session-item-test-session-001').click();
 
-    // Wait a moment for the session to load
-    await page.waitForTimeout(1000);
+    // Positive load signal FIRST: the session panel rendered its chat input.
+    // Otherwise `toHaveCount(0)` below is a false pass on an unloaded panel.
+    await expect(page.getByTestId('chat-input')).toBeVisible({ timeout: 5000 });
 
-    // Assert no End button exists anywhere on the page
+    // Assert no End button exists anywhere on the loaded session panel.
     const endButton = page.locator('button:has-text("End")');
     await expect(endButton).toHaveCount(0);
   });
@@ -437,13 +438,14 @@ test.describe('Session Lifecycle', () => {
     await page.getByTestId('session-filter-dropdown').selectOption('all');
     await page.getByTestId('session-item-test-session-001').click();
 
+    // Positive load signal FIRST: the ended session's chat input rendered.
+    // The absence checks below are only meaningful once the panel is loaded.
+    await expect(page.getByTestId('chat-input')).toBeVisible({ timeout: 5000 });
+
     // Assert: "Continue as new session" button is NOT visible
     await expect(page.getByRole('button', { name: /Continue as new session/ })).toHaveCount(0);
 
     // Assert: "This session has ended" text is NOT visible
     await expect(page.getByText('This session has ended')).toHaveCount(0);
-
-    // Assert: chat input IS visible (always shown)
-    await expect(page.getByTestId('chat-input')).toBeVisible({ timeout: 5000 });
   });
 });

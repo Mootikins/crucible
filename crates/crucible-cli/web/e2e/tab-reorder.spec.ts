@@ -17,7 +17,8 @@ async function waitForApp(page: Page) {
     await route.continue();
   });
   await page.goto('/');
-  await page.waitForTimeout(500);
+  // Readiness is asserted by the beforeEach (session-item visible), which only
+  // renders once the app has fully mounted — no fixed settle needed.
 }
 
 async function pointerDrag(
@@ -95,10 +96,11 @@ test.describe('Tab reorder within same bar', () => {
     };
 
     await pointerDrag(page, from, to, 20);
-    await page.waitForTimeout(300);
 
-    const newOrder = await getEdgeTabOrder(page, 'left');
-    expect(newOrder.indexOf('sessions-tab')).toBeGreaterThan(initialSessionsIndex);
+    // Poll the live tab order until the reorder lands.
+    await expect
+      .poll(async () => (await getEdgeTabOrder(page, 'left')).indexOf('sessions-tab'), { timeout: 3000 })
+      .toBeGreaterThan(initialSessionsIndex);
   });
 
   test('reorder edge tab: drag last tab to first position', async ({ page }) => {
@@ -109,7 +111,6 @@ test.describe('Tab reorder within same bar', () => {
     expect(initialOrder.indexOf('files-tab')).toBeGreaterThan(initialOrder.indexOf('sessions-tab'));
 
     await lastTab.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(100);
 
     const from = await getCenterOf(page, lastTab);
     const firstBox = await firstTab.boundingBox();
@@ -129,10 +130,17 @@ test.describe('Tab reorder within same bar', () => {
     };
 
     await pointerDrag(page, from, to, 25);
-    await page.waitForTimeout(500);
 
-    const newOrder = await getEdgeTabOrder(page, 'left');
-    expect(newOrder.indexOf('files-tab')).toBeLessThan(newOrder.indexOf('sessions-tab'));
+    // Poll until files-tab has moved ahead of sessions-tab.
+    await expect
+      .poll(
+        async () => {
+          const order = await getEdgeTabOrder(page, 'left');
+          return order.indexOf('files-tab') < order.indexOf('sessions-tab');
+        },
+        { timeout: 3000 },
+      )
+      .toBe(true);
   });
 
   test('reorder edge tab within left panel', async ({ page }) => {
@@ -148,10 +156,17 @@ test.describe('Tab reorder within same bar', () => {
     const to = { x: secondBox!.x + secondBox!.width - 2, y: secondBox!.y + secondBox!.height / 2 };
 
     await pointerDrag(page, from, to);
-    await page.waitForTimeout(300);
 
-    const newOrder = await getEdgeTabOrder(page, 'left');
-    expect(newOrder.indexOf(initialOrder[0]!)).toBeGreaterThan(newOrder.indexOf(initialOrder[1]!));
+    // Poll until the first tab has moved past the second.
+    await expect
+      .poll(
+        async () => {
+          const order = await getEdgeTabOrder(page, 'left');
+          return order.indexOf(initialOrder[0]!) > order.indexOf(initialOrder[1]!);
+        },
+        { timeout: 3000 },
+      )
+      .toBe(true);
   });
 
   test('insert indicator appears during edge tab reorder drag', async ({ page }) => {
@@ -168,17 +183,16 @@ test.describe('Tab reorder within same bar', () => {
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();
     await page.mouse.move(to.x, to.y, { steps: 20 });
-    await page.waitForTimeout(800);
 
+    // Mid-drag, the insert indicator renders — poll for it while the pointer
+    // is held rather than sleeping a fixed interval.
     const indicator = page.locator('[class*="bg-primary"][class*="rounded-full"][class*="h-5"]');
-    const indicatorCount = await indicator.count();
-    expect(indicatorCount).toBeGreaterThanOrEqual(1);
+    await expect(indicator.first()).toBeVisible({ timeout: 3000 });
 
     await page.mouse.up();
-    await page.waitForTimeout(200);
 
-    const postDragCount = await page.locator('[class*="bg-primary"][class*="rounded-full"][class*="h-5"]').count();
-    expect(postDragCount).toBe(0);
+    // Once the drag ends, the indicator is torn down.
+    await expect(page.locator('[class*="bg-primary"][class*="rounded-full"][class*="h-5"]')).toHaveCount(0, { timeout: 3000 });
   });
 
   test('no insert indicator during cross-zone drag', async ({ page }) => {
@@ -191,7 +205,12 @@ test.describe('Tab reorder within same bar', () => {
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();
     await page.mouse.move(to.x, to.y, { steps: 10 });
-    await page.waitForTimeout(200);
+
+    // Positive signal that the cross-zone drag is active and past the drag
+    // threshold: the drag overlay renders the tab title. Assert on that before
+    // checking the reorder indicator is absent (otherwise the absence check is
+    // vacuous — it would pass before the drag even engages).
+    await expect(page.locator('text="Files"').last()).toBeVisible({ timeout: 3000 });
 
     // The reorder indicator is the 2px×20px bar from TabBar — the header's
     // active mode pill is also bg-primary+rounded-full, so match the size.
@@ -207,7 +226,6 @@ test.describe('Tab reorder within same bar', () => {
     const to = await getCenterPaneDropPoint(page);
 
     await pointerDrag(page, from, to);
-    await page.waitForTimeout(300);
 
     await expect(page.locator('[data-testid="edge-tab-left-files-tab"]')).not.toBeVisible({ timeout: 2000 });
     await expect(page.locator('[data-tab-id="files-tab"]:not([data-testid^="edge-tab-"])')).toBeVisible({ timeout: 2000 });

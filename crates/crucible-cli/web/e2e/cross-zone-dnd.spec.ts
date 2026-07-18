@@ -2,8 +2,6 @@ import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 
 
-type PanelPosition = 'left' | 'right' | 'bottom';
-
 async function waitForApp(page: Page) {
   await setupBasicMocks(page);
   await page.route('**/api/layout', async (route) => {
@@ -19,11 +17,8 @@ async function waitForApp(page: Page) {
     await route.continue();
   });
   await page.goto('/');
-  await page.waitForTimeout(500);
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
+  // Readiness is asserted by each caller's beforeEach (session-item visible),
+  // which only renders once the app has fully mounted — no fixed settle needed.
 }
 
 /**
@@ -92,7 +87,6 @@ test.describe('Cross-zone tab drag and drop', () => {
     const to = await getCenterPaneDropPoint(page);
 
     await pointerDrag(page, from, to, 50);
-    await page.waitForTimeout(1000);
 
     await expect(page.locator('[data-testid="edge-tab-left-files-tab"]')).not.toBeVisible({ timeout: 2000 });
     await expect(page.locator('[data-tab-id="files-tab"]:not([data-testid^="edge-tab-"])')).toBeVisible({ timeout: 2000 });
@@ -104,7 +98,6 @@ test.describe('Cross-zone tab drag and drop', () => {
     const to = await getCenter(page, '[data-testid="edge-tabbar-left"]');
 
     await pointerDrag(page, from, to, 30);
-    await page.waitForTimeout(300);
 
     const edgeTab = page.locator('[data-testid^="edge-tab-left-tab-chat-"]');
     await expect(edgeTab).toBeVisible({ timeout: 2000 });
@@ -118,7 +111,6 @@ test.describe('Cross-zone tab drag and drop', () => {
     const to = await getCenter(page, '[data-testid="edge-tabbar-bottom"]');
 
     await pointerDrag(page, from, to);
-    await page.waitForTimeout(300);
 
     await expect(page.locator('[data-testid="edge-tab-left-files-tab"]')).not.toBeVisible({ timeout: 2000 });
     await expect(page.locator('[data-testid="edge-tab-bottom-files-tab"]')).toBeVisible({ timeout: 2000 });
@@ -154,7 +146,8 @@ test.describe('Cross-zone tab drag and drop', () => {
         windowActions.moveTab(leftGroupId, centerGroupId, tabId);
       }
     });
-    await page.waitForTimeout(300);
+    // The moved tab lands in the center pane; assert on that state instead of sleeping.
+    await expect(page.locator('[data-tab-id="files-tab"]:not([data-testid^="edge-tab-"])')).toBeVisible({ timeout: 2000 });
 
     const centerTarget = await getCenterPaneDropPoint(page);
 
@@ -162,7 +155,6 @@ test.describe('Cross-zone tab drag and drop', () => {
     await expect(leftTabBar).toBeVisible({ timeout: 2000 });
 
     await pointerDrag(page, await getCenter(page, '[data-testid="edge-tab-left-sessions-tab"]'), centerTarget, 50);
-    await page.waitForTimeout(500);
 
     // Then: left panel auto-collapses
     await expect(leftTabBar).not.toBeVisible({ timeout: 2000 });
@@ -175,7 +167,6 @@ test.describe('Cross-zone tab drag and drop', () => {
 
     // When: drag center tab onto collapsed strip
     await pointerDrag(page, from, to);
-    await page.waitForTimeout(300);
 
     // Then: right panel expands with the dropped tab
     await expect(page.locator('[data-testid="edge-tabbar-right"]')).toBeVisible({ timeout: 2000 });
@@ -188,13 +179,13 @@ test.describe('Cross-zone tab drag and drop', () => {
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();
     await page.mouse.move(from.x + 30, from.y + 30, { steps: 5 });
-    await page.waitForTimeout(200);
 
+    // While the pointer is held down mid-drag, the drag overlay renders the
+    // tab title — poll for it rather than sleeping a fixed interval.
     const overlay = page.locator('text="Files"').last();
-    expect(await overlay.isVisible()).toBe(true);
+    await expect(overlay).toBeVisible({ timeout: 2000 });
 
     await page.mouse.up();
-    await page.waitForTimeout(200);
 
     await expect(page.locator('[data-testid="edge-tab-left-files-tab"]')).toBeVisible({ timeout: 2000 });
   });
@@ -206,7 +197,6 @@ test.describe('Cross-zone tab drag and drop', () => {
     const to = await getCenterOf(page, page.locator('[data-tab-id^="tab-chat-"]').first());
 
     await pointerDrag(page, from, to);
-    await page.waitForTimeout(300);
 
     await expect(page.locator('[data-testid="edge-tab-bottom-terminal-tab-1"]')).not.toBeVisible({ timeout: 2000 });
     await expect(page.locator('[data-tab-id="terminal-tab-1"]')).toBeVisible({ timeout: 2000 });

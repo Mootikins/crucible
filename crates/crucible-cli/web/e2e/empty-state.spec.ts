@@ -26,7 +26,8 @@ test('Empty state appears when all center tabs are closed', async ({ page }) => 
     const closeButton = firstTab.locator('button').last(); // The close button is the last button in the tab
     if (await closeButton.isVisible()) {
       await closeButton.click();
-      await page.waitForTimeout(100);
+      // Wait for the close to actually remove a tab before re-reading the count.
+      await expect(tabItems).toHaveCount(count - 1, { timeout: 2000 });
     }
     count = await tabItems.count();
   }

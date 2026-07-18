@@ -41,7 +41,8 @@ async function waitForApp(page: Page) {
     await route.continue();
   });
   await page.goto('/');
-  await page.waitForTimeout(500);
+  // Readiness is asserted by the beforeEach (session-item visible), which only
+  // renders once the app has fully mounted — no fixed settle needed.
 }
 
 test.describe('Comprehensive windowing behavior', () => {
@@ -61,7 +62,6 @@ test.describe('Comprehensive windowing behavior', () => {
         windowActions.splitPane(windowStore.layout.id, 'vertical');
       }
     });
-    await page.waitForTimeout(250);
 
     const splitter = page.locator('[data-split-id]').first();
     await expect(splitter).toBeVisible({ timeout: 3000 });
@@ -96,7 +96,6 @@ test.describe('Comprehensive windowing behavior', () => {
       return root.type === 'split' && root.first?.type === 'split';
     });
 
-    await page.waitForTimeout(300);
     await expect(page.locator('[data-split-id]')).toHaveCount(2, { timeout: 3000 });
     expect(nested).toBe(true);
 
@@ -144,7 +143,6 @@ test.describe('Comprehensive windowing behavior', () => {
         windowActions.removeTab(leftGroupId, tab.id);
       }
     });
-    await page.waitForTimeout(250);
 
     await expect(page.locator('[data-testid="edge-collapsed-drop-left"]')).toBeVisible({ timeout: 3000 });
     await expect(page.locator('[data-testid="edge-tabbar-left"]')).not.toBeVisible({ timeout: 3000 });
@@ -246,7 +244,6 @@ test.describe('Comprehensive windowing behavior', () => {
         windowActions.splitPane(windowStore.layout.id, 'horizontal');
       }
     });
-    await page.waitForTimeout(200);
 
     const splitter = page.locator('[data-split-id]').first();
     await splitter.waitFor({ state: 'visible', timeout: 3000 });
@@ -259,13 +256,16 @@ test.describe('Comprehensive windowing behavior', () => {
     await page.mouse.down();
     await page.mouse.move(startX + 110, startY, { steps: 8 });
     await page.mouse.up();
-    await page.waitForTimeout(250);
 
-    const ratio = await page.evaluate(() => {
-      const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
-      return windowStore.layout.type === 'split' ? windowStore.layout.splitRatio ?? 0.5 : 0.5;
-    });
-    expect(ratio).toBeGreaterThan(0.5);
+    // Poll the store until the drag-updated split ratio settles past the default.
+    const readRatio = () =>
+      page.evaluate(() => {
+        const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
+        return windowStore.layout.type === 'split' ? windowStore.layout.splitRatio ?? 0.5 : 0.5;
+      });
+    await expect.poll(readRatio, { timeout: 3000 }).toBeGreaterThan(0.5);
+
+    const ratio = await readRatio();
     expect(Math.abs(ratio - 0.5)).toBeGreaterThan(0.02);
   });
 

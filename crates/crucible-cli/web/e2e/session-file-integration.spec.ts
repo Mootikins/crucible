@@ -84,14 +84,15 @@ test.describe('Session and file tab integration', () => {
     await page.getByTestId('session-filter-dropdown').selectOption('all');
     await page.getByTestId('session-item-test-session-001').click();
 
+    // Positive load signal FIRST: chat input is shown regardless of state.
+    // The absence checks below are only meaningful once the panel is loaded.
+    await expect(page.getByTestId('chat-input')).toBeVisible({ timeout: 5000 });
+
     // Assert: no 'Continue as new session' button (removed in lifecycle redesign)
     await expect(page.getByRole('button', { name: /Continue as new session/ })).toHaveCount(0);
 
     // Assert: 'This session has ended' text is NOT visible (removed in lifecycle redesign)
     await expect(page.getByText('This session has ended')).toHaveCount(0);
-
-    // Assert: chat input IS visible (always shown regardless of session state)
-    await expect(page.getByTestId('chat-input')).toBeVisible({ timeout: 5000 });
   });
 
   test('ended session does not show continue button (lifecycle redesign)', async ({ page }) => {
