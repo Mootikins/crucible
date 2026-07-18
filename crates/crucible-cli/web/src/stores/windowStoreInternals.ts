@@ -206,7 +206,10 @@ export function createInitialState(): WindowState {
       [rightGroupId]: {
         id: rightGroupId,
         tabs: createRightPanelTabs(),
-        activeTabId: 'outline-tab',
+        // 'backlinks-tab' is the first tab createRightPanelTabs produces;
+        // 'outline-tab' was removed in the clean-slate roster refactor, so the
+        // right panel opened to an empty "Select a tab" instead of Backlinks.
+        activeTabId: 'backlinks-tab',
       },
       [bottomGroupId]: {
         id: bottomGroupId,
