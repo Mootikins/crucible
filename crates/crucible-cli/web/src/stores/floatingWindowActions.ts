@@ -33,7 +33,7 @@ export interface FloatingWindowActions {
   restoreFloatingWindow(windowId: string): void;
   /** Promote a transient (hover) window to a normal, persisted one. */
   pinFloatingWindow(windowId: string): void;
-  dockFloatingWindow(windowId: string, targetPaneId?: string): void;
+  dockFloatingWindow(windowId: string): void;
 }
 
 export function createFloatingWindowActions(
@@ -201,33 +201,13 @@ export function createFloatingWindowActions(
     );
   };
 
-  const dockFloatingWindow = (windowId: string, targetPaneId?: string) => {
+  const dockFloatingWindow = (windowId: string) => {
     const window = store.floatingWindows.find((w) => w.id === windowId);
     if (!window) return;
     const tabGroup = store.tabGroups[window.tabGroupId];
     if (!tabGroup || tabGroup.tabs.length === 0) {
       removeFloatingWindow(windowId);
       return;
-    }
-
-    if (targetPaneId) {
-      const pane = findPaneInLayout(store.layout, targetPaneId);
-      if (pane) {
-        // Window unmounts first so its tab bar unregisters before the pane's
-        // tab bar re-registers the same group ids (see popOutPane).
-        removeFloatingWindow(windowId);
-        setStore(
-          produce((s) => {
-            s.layout = updatePaneInLayout(s.layout, targetPaneId, () => ({
-              ...pane,
-              tabGroupId: window.tabGroupId,
-            }));
-            s.activePaneId = targetPaneId;
-            s.focusedRegion = 'center';
-          })
-        );
-        return;
-      }
     }
 
     const findEmptyPane = (node: LayoutNode): PaneNode | null => {

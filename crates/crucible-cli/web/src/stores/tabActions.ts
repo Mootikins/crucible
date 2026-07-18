@@ -43,7 +43,6 @@ export interface TabActions {
   ): void;
   updateTab(groupId: string, tabId: string, updates: Partial<Tab>): void;
   createTabGroup(paneId?: string): string;
-  deleteTabGroup(groupId: string): void;
   splitPane(paneId: string, direction: SplitDirection): void;
   splitPaneAndDrop(
     paneId: string,
@@ -244,14 +243,6 @@ export function createTabActions(context: WindowStoreContext): TabActions {
     return groupId;
   };
 
-  const deleteTabGroup = (groupId: string) => {
-    setStore(
-      produce((s) => {
-        delete s.tabGroups[groupId];
-      })
-    );
-  };
-
   const splitPane = (paneId: string, direction: SplitDirection) => {
     const pane = findPaneInLayout(store.layout, paneId);
     if (!pane) return;
@@ -334,7 +325,6 @@ export function createTabActions(context: WindowStoreContext): TabActions {
     moveTab,
     updateTab,
     createTabGroup,
-    deleteTabGroup,
     splitPane,
     splitPaneAndDrop,
   };

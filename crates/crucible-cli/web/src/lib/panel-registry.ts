@@ -10,8 +10,6 @@ export interface PanelDefinition {
   icon: string;
 }
 
-export type DefaultLayout = Record<Zone, string[]>;
-
 export class PanelRegistry {
   private panels = new Map<string, PanelDefinition>();
 
@@ -25,14 +23,6 @@ export class PanelRegistry {
 
   list(): PanelDefinition[] {
     return Array.from(this.panels.values());
-  }
-
-  getDefaultLayout(): DefaultLayout {
-    const layout: DefaultLayout = { left: [], center: [], right: [], bottom: [] };
-    for (const panel of this.panels.values()) {
-      layout[panel.defaultZone].push(panel.id);
-    }
-    return layout;
   }
 
   /** Get the internal component map for SolidContentRenderer compatibility */

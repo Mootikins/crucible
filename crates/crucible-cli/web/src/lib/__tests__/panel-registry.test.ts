@@ -36,30 +36,6 @@ describe('PanelRegistry', () => {
     expect(panels.map(p => p.id)).toEqual(['sessions', 'files', 'chat']);
   });
 
-  it('returns default layout grouped by zone', () => {
-    registry.register('sessions', 'Sessions', StubComponent, 'left', 'list');
-    registry.register('files', 'Files', AnotherStub, 'left', 'folder');
-    registry.register('chat', 'Chat', StubComponent, 'center', 'message');
-    registry.register('editor', 'Editor', StubComponent, 'right', 'code');
-    registry.register('terminal', 'Terminal', StubComponent, 'bottom', 'terminal');
-
-    const layout = registry.getDefaultLayout();
-    expect(layout.left).toEqual(['sessions', 'files']);
-    expect(layout.center).toEqual(['chat']);
-    expect(layout.right).toEqual(['editor']);
-    expect(layout.bottom).toEqual(['terminal']);
-  });
-
-  it('returns empty arrays for zones with no panels', () => {
-    registry.register('chat', 'Chat', StubComponent, 'center', 'message');
-
-    const layout = registry.getDefaultLayout();
-    expect(layout.left).toEqual([]);
-    expect(layout.right).toEqual([]);
-    expect(layout.bottom).toEqual([]);
-    expect(layout.center).toEqual(['chat']);
-  });
-
   it('overwrites panel when re-registered with same id', () => {
     registry.register('chat', 'Chat', StubComponent, 'center', 'message');
     registry.register('chat', 'Chat Updated', AnotherStub, 'right', 'chat');
