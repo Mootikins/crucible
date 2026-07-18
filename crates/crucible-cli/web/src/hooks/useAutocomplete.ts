@@ -1,5 +1,6 @@
 import { Accessor, Setter, createSignal } from 'solid-js';
 import { listFiles, listKilnNotes } from '@/lib/api';
+import { fuzzyScore } from '@/lib/fuzzy';
 import type { FileEntry } from '@/lib/types';
 
 type TriggerType = '@' | '#' | '/' | '[[';
@@ -57,10 +58,16 @@ function extractTagItems(entries: FileEntry[]): AutocompleteItem[] {
     }));
 }
 
-function fuzzyFilter(items: AutocompleteItem[], query: string): AutocompleteItem[] {
-  const normalizedQuery = query.toLowerCase();
-  if (!normalizedQuery) return items;
-  return items.filter((item) => item.label.toLowerCase().includes(normalizedQuery));
+export function fuzzyFilter(items: AutocompleteItem[], query: string): AutocompleteItem[] {
+  if (!query.trim()) return items;
+  // Rank with the same fuzzy scorer the command palette uses (subsequence match
+  // + contiguity/word-boundary bonuses), not a naive substring includes, so the
+  // note picker ranks results by relevance instead of raw daemon order.
+  return items
+    .map((item, index) => ({ item, index, score: fuzzyScore(item.label, query) }))
+    .filter((r) => r.score !== null)
+    .sort((a, b) => b.score! - a.score! || a.index - b.index)
+    .map((r) => r.item);
 }
 
 function isWordTriggerBoundary(value: string, index: number): boolean {
