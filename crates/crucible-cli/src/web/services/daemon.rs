@@ -42,6 +42,12 @@ pub struct ReconnectingDaemon {
     broker: Arc<EventBroker>,
     /// Handle to the current event-router task, aborted and replaced on reconnect.
     router: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Session ids that must be re-subscribed on every reconnect. Chat sessions
+    /// re-subscribe themselves via the browser `EventSource`; process-wide
+    /// channels with no browser-driven re-subscribe (e.g. the file-watch
+    /// `"system"` channel) live here so a daemon restart doesn't silently kill
+    /// them. See `subscribe_sticky`.
+    sticky_subscriptions: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 
 impl ReconnectingDaemon {
@@ -56,7 +62,25 @@ impl ReconnectingDaemon {
             generation: AtomicU64::new(0),
             broker,
             router: std::sync::Mutex::new(Some(router)),
+            sticky_subscriptions: std::sync::Mutex::new(std::collections::HashSet::new()),
         }
+    }
+
+    /// Subscribe the daemon client to `session_id` and record it so the
+    /// subscription is re-issued on every reconnect. Idempotent.
+    ///
+    /// Callers (the `/api/fs/events` handler) call this once per SSE connection
+    /// with the shared key `"system"`. The `"system"` entry is intentionally
+    /// NEVER removed: it is one cheap, process-wide subscription shared by all
+    /// browser SSE connections, and the daemon's only cost is keeping one
+    /// broadcast fan-out key alive. Refcounted teardown would buy nothing, so
+    /// this is an accepted, bounded single-entry "leak" for Phase 1.
+    pub async fn subscribe_sticky(&self, session_id: &str) -> anyhow::Result<()> {
+        self.sticky_subscriptions
+            .lock()
+            .unwrap()
+            .insert(session_id.to_string());
+        self.session_subscribe(&[session_id]).await.map(|_| ())
     }
 
     async fn call_with_reconnect<T>(
@@ -113,6 +137,26 @@ impl ReconnectingDaemon {
         if let Ok(mut guard) = self.router.lock() {
             if let Some(old) = guard.replace(new_router) {
                 old.abort();
+            }
+        }
+
+        // Re-issue sticky subscriptions (e.g. the file-watch "system" channel)
+        // on the fresh connection, directly through the held write guard so we
+        // don't re-enter `call_with_reconnect` (which would deadlock on the
+        // read lock). Best-effort: a failure here is retried on the next
+        // reconnect. Browser-driven per-session subscriptions re-issue
+        // themselves via `EventSource`, so they are NOT in this set.
+        let sticky: Vec<String> = self
+            .sticky_subscriptions
+            .lock()
+            .unwrap()
+            .iter()
+            .cloned()
+            .collect();
+        if !sticky.is_empty() {
+            let borrowed: Vec<&str> = sticky.iter().map(String::as_str).collect();
+            if let Err(e) = daemon.session_subscribe(&borrowed).await {
+                tracing::warn!(error = %e, "Failed to re-issue sticky subscriptions after reconnect");
             }
         }
 
@@ -883,6 +927,22 @@ impl ReconnectingDaemon {
     pub async fn project_list(&self) -> anyhow::Result<Vec<crucible_core::Project>> {
         self.call_with_reconnect("project.list", |daemon| Box::pin(daemon.project_list()))
             .await
+    }
+
+    pub async fn fs_list_dir(
+        &self,
+        root: &str,
+        rel_path: &str,
+        show_ignored: bool,
+    ) -> anyhow::Result<Vec<serde_json::Value>> {
+        let root = root.to_string();
+        let rel_path = rel_path.to_string();
+        self.call_with_reconnect("fs.list_dir", move |daemon| {
+            let root = root.clone();
+            let rel_path = rel_path.clone();
+            Box::pin(async move { daemon.fs_list_dir(&root, &rel_path, show_ignored).await })
+        })
+        .await
     }
 
     pub async fn project_get(&self, path: &Path) -> anyhow::Result<Option<crucible_core::Project>> {

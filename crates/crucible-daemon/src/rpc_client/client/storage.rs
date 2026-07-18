@@ -146,6 +146,14 @@ pub struct EmbedQueryRequest {
     pub text: String,
 }
 
+/// Request for `fs.list_dir`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FsListDirRequest {
+    pub root: String,
+    pub rel_path: String,
+    pub show_ignored: bool,
+}
+
 /// Request for `list_notes`.
 ///
 /// `scope` is the request authority — defaults server-side to
@@ -674,6 +682,27 @@ impl DaemonClient {
     pub async fn project_list(&self) -> Result<Vec<crucible_core::Project>> {
         self.typed_call_with_retry("project.list", EmptyParams {})
             .await
+    }
+
+    /// List one directory level inside a registered project. Read-only,
+    /// metadata only. Returns the raw entry array (`FsEntry` JSON objects).
+    pub async fn fs_list_dir(
+        &self,
+        root: &str,
+        rel_path: &str,
+        show_ignored: bool,
+    ) -> Result<Vec<serde_json::Value>> {
+        let v: serde_json::Value = self
+            .typed_call(
+                "fs.list_dir",
+                FsListDirRequest {
+                    root: root.to_string(),
+                    rel_path: rel_path.to_string(),
+                    show_ignored,
+                },
+            )
+            .await?;
+        Ok(v.as_array().cloned().unwrap_or_default())
     }
 
     pub async fn project_get(&self, path: &Path) -> Result<Option<crucible_core::Project>> {

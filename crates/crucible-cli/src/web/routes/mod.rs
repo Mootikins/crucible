@@ -1,6 +1,7 @@
 mod auth;
 mod chat;
 mod config;
+mod fs;
 mod health;
 mod helpers;
 mod kiln;
@@ -20,6 +21,7 @@ mod webhook;
 pub use auth::auth_routes;
 pub use chat::chat_routes;
 pub use config::config_routes;
+pub use fs::fs_routes;
 pub use health::health_routes;
 pub use kiln::kiln_routes;
 pub use layout::layout_routes;

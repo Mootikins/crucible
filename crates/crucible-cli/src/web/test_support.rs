@@ -5,7 +5,7 @@
 // this replaced drifted (different resume_from_storage shapes).
 #[cfg(any(test, feature = "test-utils"))]
 use crate::web::routes::{
-    chat_routes, health_routes, project_routes, search_routes, session_routes,
+    chat_routes, fs_routes, health_routes, project_routes, search_routes, session_routes,
 };
 #[cfg(any(test, feature = "test-utils"))]
 use crate::web::services::daemon::{AppState, EventBroker, ReconnectingDaemon};
@@ -434,6 +434,7 @@ pub fn build_test_app(state: AppState) -> Router {
         .merge(session_routes())
         .merge(project_routes())
         .merge(search_routes())
+        .merge(fs_routes())
         .with_state(state)
         .merge(health_routes())
 }

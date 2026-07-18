@@ -7,6 +7,7 @@ pub mod test_support;
 mod assets;
 mod error;
 mod events;
+pub mod fs_events;
 pub mod middleware;
 
 pub use crucible_core::config::WebConfig;

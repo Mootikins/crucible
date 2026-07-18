@@ -46,6 +46,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 mod core;
+pub mod fs;
 pub mod kiln;
 pub mod lua;
 pub mod observe;
