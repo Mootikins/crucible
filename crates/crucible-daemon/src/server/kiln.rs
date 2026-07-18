@@ -463,12 +463,27 @@ pub(crate) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> R
     let kiln_path = require_param!(req, "kiln", as_str);
     let path = require_param!(req, "path", as_str);
 
+    let scope = match decode_request_scope(&req, Path::new(kiln_path)) {
+        Ok(s) => s,
+        Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
+    };
+
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
         Err(e) => return internal_error(req.id, e),
     };
 
     let note_store = handle.as_note_store();
+
+    // Enforce the same authority boundary reads use: only delete a note the
+    // request scope can actually see. Otherwise a narrower authority could
+    // delete notes it isn't allowed to read.
+    match note_store.get(path, &scope).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return Response::success(req.id, serde_json::json!({"status": "not_found"})),
+        Err(e) => return internal_error(req.id, e),
+    }
+
     match note_store.delete(path).await {
         Ok(_event) => {
             // Remove the note's vector too so it doesn't orphan in Lance.
