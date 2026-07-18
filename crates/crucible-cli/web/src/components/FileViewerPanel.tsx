@@ -32,9 +32,18 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
     if (props.filePath) void saveFile(props.filePath);
   };
 
+  // Track ONLY props.filePath. openFile() begins with openFilesStore.find(),
+  // a reactive store read; left tracked, this effect would subscribe to the
+  // whole open-files array and re-run — re-entering the `existing` branch and
+  // re-incrementing the open refcount — whenever ANY panel mutates the store
+  // (even this file's own async load push, or a hover-preview popover opening
+  // another file). The count then never returns to zero, so closeFile never
+  // evicts and a "closed" dirty buffer resurrects with stale edits. untrack
+  // keeps the reference-taking out of the tracking scope.
   createEffect(() => {
-    if (props.filePath) {
-      openFile(props.filePath);
+    const path = props.filePath;
+    if (path) {
+      untrack(() => openFile(path));
     }
   });
 
