@@ -431,6 +431,24 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.state.error).toBe('y (x)');
   });
 
+  it('connection: reconnect does NOT corrupt the in-flight streaming turn', () => {
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'token', content: 'partial answer' });
+
+    // A transport reconnect mid-stream must not touch the message or its id.
+    h.reducer({ type: 'connection', status: 'reconnecting', message: 'Reconnecting…' });
+    expect(h.state.messages[0].content).toBe('partial answer');
+    expect(h.state.currentStreamingMessageId).toBe('asst-1');
+    expect(h.state.error).toBe('Reconnecting…');
+
+    // Reconnecting clears the transient banner without disturbing the stream.
+    h.reducer({ type: 'connection', status: 'connected' });
+    expect(h.state.error).toBeNull();
+    expect(h.state.currentStreamingMessageId).toBe('asst-1');
+    expect(h.state.messages[0].content).toBe('partial answer');
+  });
+
   it('interaction_requested: stores request stripped of type discriminator', () => {
     const h = createHarness();
     h.reducer({

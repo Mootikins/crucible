@@ -64,7 +64,9 @@ async fn event_stream(
             Ok(Event::default().event(event_name).data(data))
         });
 
-    Ok(Sse::new(stream))
+    // Keep-alive comments stop idle proxies/load balancers from dropping the
+    // stream, which the client would otherwise treat as a reconnect.
+    Ok(Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default()))
 }
 
 /// Aggregate pending interactions across all sessions, with each request

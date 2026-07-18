@@ -181,6 +181,18 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         break;
       }
 
+      case 'connection': {
+        // Transport reconnect — a transient banner ONLY. Must not touch the
+        // streaming message, its content, or currentStreamingMessageId, or a
+        // routine idle reconnect would corrupt/drop an in-flight turn.
+        if (event.status === 'connected') {
+          deps.setError(null);
+        } else {
+          deps.setError(event.message ?? 'Reconnecting…');
+        }
+        break;
+      }
+
       case 'interaction_requested': {
         const { type: _eventType, ...requestData } = event;
         deps.setPendingInteraction(requestData as unknown as InteractionRequest);

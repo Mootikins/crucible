@@ -217,13 +217,17 @@ export function subscribeToEvents(
       const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 30000);
       
       console.warn(`SSE disconnected, reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
-      onEvent({ type: 'error', code: 'sse_reconnecting', message: 'Reconnecting...' });
-      
+      // Transient transport status — NOT a daemon 'error' (that path overwrites
+      // the streaming message and nulls the streaming id, permanently losing
+      // the in-flight turn on a routine idle reconnect).
+      onEvent({ type: 'connection', status: 'reconnecting', message: 'Reconnecting…' });
+
       reconnectTimeout = setTimeout(connect, delay);
     };
 
     source.onopen = () => {
       reconnectAttempts = 0;
+      onEvent({ type: 'connection', status: 'connected' });
     };
   }
 

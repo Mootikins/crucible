@@ -395,6 +395,17 @@ export interface ErrorEvent {
   message: string;
 }
 
+/**
+ * Transport-level connection status (SSE reconnecting/connected). Client-synthesized,
+ * never from the daemon. Must NOT be routed through the daemon-error path — a
+ * reconnect must not corrupt an in-flight streaming message.
+ */
+export interface ConnectionEvent {
+  type: 'connection';
+  status: 'reconnecting' | 'connected';
+  message?: string;
+}
+
 /** An interaction is requested from the user */
 export interface InteractionRequestedEvent {
   type: 'interaction_requested';
@@ -421,6 +432,7 @@ export type ChatEvent =
   | ThinkingEvent
   | MessageCompleteEvent
   | ErrorEvent
+  | ConnectionEvent
   | InteractionRequestedEvent
   | SessionEventData
   | SubagentSpawnedEvent
