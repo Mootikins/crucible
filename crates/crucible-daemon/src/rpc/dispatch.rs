@@ -121,6 +121,8 @@ pub const METHODS: &[&str] = &[
     "project.get",
     "fs.list_dir",
     "fs.move",
+    "fs.mkdir",
+    "fs.trash",
     "note.rename",
     "note.move",
     "storage.verify",
@@ -383,6 +385,8 @@ impl RpcDispatcher {
             "project.get" => to_response(id, self.handle_project_get(&req).await),
             "fs.list_dir" => to_response(id, self.handle_fs_list_dir(&req).await),
             "fs.move" => to_response(id, self.handle_fs_move(&req).await),
+            "fs.mkdir" => to_response(id, self.handle_fs_mkdir(&req).await),
+            "fs.trash" => to_response(id, self.handle_fs_trash(&req).await),
             "note.rename" | "note.move" => to_response(id, self.handle_note_rename(&req).await),
 
             // Storage RPC handlers
@@ -1277,6 +1281,26 @@ impl RpcDispatcher {
 
     async fn handle_fs_move(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::fs::handle_fs_move(
+            req.clone(),
+            &self.ctx.project_manager,
+            &self.ctx.kiln,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_fs_mkdir(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::fs::handle_fs_mkdir(
+            req.clone(),
+            &self.ctx.project_manager,
+            &self.ctx.kiln,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_fs_trash(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::fs::handle_fs_trash(
             req.clone(),
             &self.ctx.project_manager,
             &self.ctx.kiln,

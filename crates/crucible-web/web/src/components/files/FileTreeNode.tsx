@@ -154,6 +154,7 @@ export const FileTreeNode: Component<{
             >
               <FileIcon extension={getExtension(props.node.name)} />
               <TreeView.ItemText class="truncate">{props.node.name}</TreeView.ItemText>
+              <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 rounded border border-primary outline-none min-w-0 flex-1" />
             </TreeView.Item>
           </FileTreeContextMenu>
         }
@@ -171,6 +172,7 @@ export const FileTreeNode: Component<{
               </TreeView.BranchIndicator>
               <FolderIcon />
               <TreeView.BranchText class="truncate">{props.node.name}</TreeView.BranchText>
+              <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 rounded border border-primary outline-none min-w-0 flex-1" />
             </TreeView.BranchControl>
           </FileTreeContextMenu>
           <TreeView.BranchContent>

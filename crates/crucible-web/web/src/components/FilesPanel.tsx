@@ -1,8 +1,18 @@
 import { Component, Show, createSignal, createEffect, createMemo, onMount, onCleanup } from 'solid-js';
 import { useProjectSafe } from '@/contexts/ProjectContext';
-import { openFileInEditor } from '@/lib/file-actions';
+import { openFileInEditor, closeTabsUnder } from '@/lib/file-actions';
 import { PanelShell } from './PanelShell';
-import { listNotes, listDir, listKilns, subscribeToFsEvents, fsMove } from '@/lib/api';
+import {
+  listNotes,
+  listDir,
+  listKilns,
+  subscribeToFsEvents,
+  fsMove,
+  fsMkdir,
+  fsTrash,
+  saveFileContent,
+} from '@/lib/api';
+import { renamedRel, isValidName } from '@/lib/file-tree/mutations';
 import { moveTargetRel, type FileDragData } from '@/lib/file-dnd';
 import type { KilnListEntry, FsEntry } from '@/lib/types';
 import { buildRoster, rosterIndex, rootKey, type TreeRoot } from '@/lib/tree-root';
@@ -21,7 +31,7 @@ import { RootDropdown } from './files/RootDropdown';
 import type { ContextAction } from './files/FileTreeContextMenu';
 import { currentOpenFilePath, revealLoadedPath, revealLazyPath } from './files/file-tree-a11y';
 import type { UseTreeViewReturn } from '@ark-ui/solid';
-import { ChevronsDownUp, Target, RefreshCw, ArrowUpDown } from '@/lib/icons';
+import { ChevronsDownUp, Target, RefreshCw, ArrowUpDown, Plus } from '@/lib/icons';
 
 // ---- localStorage helpers (per-root expanded state, global sort) ----------
 const EXPANDED_KEY = (rootId: string) => `crucible.filetree.expanded.${rootId}`;
@@ -191,6 +201,60 @@ export const FilesPanel: Component = () => {
     expandBranch: (relPath: string) => treeApi?.().expand([relPath]),
   });
 
+  const reloadRoot = async (root: TreeRoot) => {
+    if (root.kind === 'kiln') await loadKilnTree(root.path);
+    else await loadProjectDir(root.path, '');
+  };
+
+  /** Surface a mutation failure in the banner without killing the tree. */
+  const runMutation = (root: TreeRoot, op: () => Promise<void>) => {
+    void (async () => {
+      try {
+        await op();
+        setError(null);
+        await reloadRoot(root);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Operation failed');
+      }
+    })();
+  };
+
+  /** Inline-rename commit (ark machine → fs.move; kiln .md renames rewrite links daemon-side). */
+  const onRenameNode = (relPath: string, newLabel: string) => {
+    const root = activeRoot();
+    if (!root || !isValidName(newLabel)) return;
+    const toRel = renamedRel(relPath, newLabel);
+    if (toRel === relPath) return;
+    void (async () => {
+      try {
+        const outcome = await fsMove(root.path, root.kind, relPath, toRel);
+        const skipped = outcome.skipped?.length ?? 0;
+        setError(
+          skipped > 0
+            ? `Renamed, but ${skipped} link${skipped === 1 ? '' : 's'} not auto-updated (ambiguous target)`
+            : null,
+        );
+        await reloadRoot(root);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Rename failed');
+      }
+    })();
+  };
+
+  /** Create a note inside `dirRel` (kiln only — projects have no write API). */
+  const newNoteIn = (root: TreeRoot, dirRel: string) => {
+    const name = window.prompt('Note name', 'Untitled');
+    if (name === null || !isValidName(name)) return;
+    const file = name.includes('.') ? name : `${name}.md`;
+    const rel = dirRel ? `${dirRel}/${file}` : file;
+    const abs = `${root.path}/${rel}`;
+    runMutation(root, async () => {
+      await saveFileContent(abs, '');
+      if (dirRel) treeApi?.().expand([dirRel]);
+      openFileInEditor(abs, file);
+    });
+  };
+
   const onContextAction = (action: ContextAction, node: Node) => {
     const root = activeRoot();
     if (!root) return;
@@ -211,6 +275,33 @@ export const FilesPanel: Component = () => {
         // Project-only: refetch this folder (top-level refetch keeps it simple).
         if (root.kind === 'project') void loadProjectDir(root.path, '');
         break;
+      case 'rename':
+        // Defer past the context menu's close + focus restoration: the menu
+        // returns focus to the row AFTER onSelect, which blurs a just-mounted
+        // rename input and silently cancels the rename.
+        window.setTimeout(() => treeApi?.().startRenaming(node.relPath), 120);
+        break;
+      case 'new-note':
+        newNoteIn(root, node.relPath);
+        break;
+      case 'new-folder': {
+        const name = window.prompt('Folder name', 'New folder');
+        if (name === null || !isValidName(name)) break;
+        const rel = node.relPath ? `${node.relPath}/${name}` : name;
+        runMutation(root, async () => {
+          await fsMkdir(root.path, root.kind, rel);
+          treeApi?.().expand([node.relPath]);
+        });
+        break;
+      }
+      case 'delete': {
+        if (!window.confirm(`Move "${node.name}" to trash?`)) break;
+        runMutation(root, async () => {
+          await fsTrash(root.path, root.kind, node.relPath);
+          closeTabsUnder(node.absPath, node.isDir);
+        });
+        break;
+      }
     }
   };
 
@@ -327,6 +418,20 @@ export const FilesPanel: Component = () => {
           >
             <Target class="w-3.5 h-3.5" />
           </button>
+          <Show when={activeRoot()?.kind === 'kiln'}>
+            <button
+              type="button"
+              aria-label="New note"
+              title="New note"
+              onClick={() => {
+                const r = activeRoot();
+                if (r) newNoteIn(r, '');
+              }}
+              class="p-1 rounded hover:bg-hover-wash text-muted"
+            >
+              <Plus class="w-3.5 h-3.5" />
+            </button>
+          </Show>
           <Show when={activeRoot()?.kind === 'project'}>
             <button
               type="button"
@@ -381,6 +486,7 @@ export const FilesPanel: Component = () => {
                 onContextAction={onContextAction}
                 apiRef={(api) => (treeApi = api)}
                 dnd={dndFor(root)}
+                onRenameNode={onRenameNode}
               />
             );
           }}

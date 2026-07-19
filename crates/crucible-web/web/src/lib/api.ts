@@ -1213,6 +1213,46 @@ export async function fsMove(
   return (await res.json()) as FsMoveOutcome;
 }
 
+/** Create a folder (and missing parents) inside one root. */
+export async function fsMkdir(
+  root: string,
+  kind: 'project' | 'kiln',
+  relPath: string,
+): Promise<void> {
+  const res = await fetch('/api/fs/mkdir', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ root, kind, rel_path: relPath }),
+  });
+  if (!res.ok) {
+    if (res.status === 401) notifyAuthRequired();
+    throw new Error(`mkdir failed: ${res.status}`);
+  }
+}
+
+/**
+ * Move a file or directory to the root's `.crucible/trash/` (recoverable by
+ * hand; the trash dir is excluded from indexing/watching). Kiln notes leave
+ * the link index immediately so backlinks re-resolve.
+ */
+export async function fsTrash(
+  root: string,
+  kind: 'project' | 'kiln',
+  relPath: string,
+): Promise<void> {
+  const res = await fetch('/api/fs/trash', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ root, kind, rel_path: relPath }),
+  });
+  if (!res.ok) {
+    if (res.status === 401) notifyAuthRequired();
+    throw new Error(`trash failed: ${res.status}`);
+  }
+}
+
 /**
  * SSE event names the `/api/fs/events` stream emits. Kept in lockstep with the
  * Rust `FsEvent::event_name()` (web/fs_events.rs). Each event's `data` parses

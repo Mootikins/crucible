@@ -736,6 +736,33 @@ impl DaemonClient {
         .await
     }
 
+    /// Create a folder (and missing parents) inside a registered project or
+    /// open kiln.
+    pub async fn fs_mkdir(&self, root: &str, kind: &str, rel_path: &str) -> Result<()> {
+        let _: serde_json::Value = self
+            .typed_call(
+                "fs.mkdir",
+                serde_json::json!({ "root": root, "kind": kind, "rel_path": rel_path }),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Move a file/directory to the root's `.crucible/trash/`. Kiln notes are
+    /// dropped from the index inline (backlinks re-resolve immediately).
+    pub async fn fs_trash(
+        &self,
+        root: &str,
+        kind: &str,
+        rel_path: &str,
+    ) -> Result<serde_json::Value> {
+        self.typed_call(
+            "fs.trash",
+            serde_json::json!({ "root": root, "kind": kind, "rel_path": rel_path }),
+        )
+        .await
+    }
+
     /// Rename/move a NOTE within an open kiln, rewriting unambiguous inbound
     /// wikilinks (daemon `note.move`). Returns the outcome object
     /// (`rewritten_sources`, `skipped`) for caller UX.

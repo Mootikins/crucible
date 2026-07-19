@@ -13,6 +13,9 @@ import { openNoteInEditor } from '@/lib/note-actions';
 import { windowActions } from '@/stores/windowStore';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { PanelShell } from './PanelShell';
+import { Menu } from '@ark-ui/solid';
+import { attachNativeMenuGuard } from '@/lib/context-menu';
+import type { EditorView } from '@codemirror/view';
 
 
 interface FileViewerPanelProps {
@@ -25,6 +28,60 @@ interface FileViewerPanelProps {
 const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   const { openFile, closeFile, openFiles, isLoading, error, updateFileContent, saveFile } = useEditorSafe();
   const { settings } = useSettingsSafe();
+
+  // Live CodeMirror view (source/live modes; undefined in reading mode) for
+  // the context-menu clipboard actions.
+  let editorView: EditorView | undefined;
+
+  type EditorMenuAction = 'cut' | 'copy' | 'paste' | 'select-all' | 'copy-file-path';
+  const onMenuAction = (action: EditorMenuAction) => {
+    void (async () => {
+      if (action === 'copy-file-path') {
+        if (props.filePath) await navigator.clipboard.writeText(props.filePath);
+        return;
+      }
+      const v = editorView;
+      if (!v) {
+        // Reading mode: rendered preview — only copy-selection is meaningful.
+        if (action === 'copy') {
+          const text = String(window.getSelection() ?? '');
+          if (text) await navigator.clipboard.writeText(text);
+        }
+        return;
+      }
+      const sel = v.state.selection.main;
+      const selected = v.state.sliceDoc(sel.from, sel.to);
+      switch (action) {
+        case 'copy':
+          if (selected) await navigator.clipboard.writeText(selected);
+          break;
+        case 'cut':
+          if (selected) {
+            await navigator.clipboard.writeText(selected);
+            v.dispatch({ changes: { from: sel.from, to: sel.to, insert: '' } });
+          }
+          break;
+        case 'paste': {
+          // Prompts for clipboard-read permission on first use.
+          const text = await navigator.clipboard.readText().catch(() => '');
+          if (text) {
+            v.dispatch({
+              changes: { from: sel.from, to: sel.to, insert: text },
+              selection: { anchor: sel.from + text.length },
+            });
+          }
+          break;
+        }
+        case 'select-all':
+          v.dispatch({ selection: { anchor: 0, head: v.state.doc.length } });
+          break;
+      }
+      v.focus();
+    })();
+  };
+
+  const menuItemClass =
+    'flex items-center gap-2 px-3 py-1.5 cursor-pointer data-[highlighted]:bg-hover-wash';
 
   const fileData = () => openFiles().find(f => f.path === props.filePath) ?? null;
 
@@ -122,40 +179,63 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
         </div>
       </Show>
 
-      {/* Editor area */}
-      <div class="flex-1 overflow-hidden">
-        <Show
-          when={fileData()}
-          fallback={
-            <Show when={!isLoading()}>
-              <div class="h-full flex items-center justify-center text-muted-dark">
-                <div class="text-center">
-                  <div class="text-4xl mb-4">📄</div>
-                  <div class="text-sm">Loading file...</div>
-                </div>
-              </div>
+      {/* Editor area. Right-click opens the app menu (clipboard actions for
+          browser-stolen keybind parity); Shift+right-click and images/links
+          inside the rendered preview keep the NATIVE menu so Copy Image /
+          Save As stay available (capture guard). */}
+      <div class="flex-1 overflow-hidden" ref={attachNativeMenuGuard}>
+        <Menu.Root onSelect={(d) => onMenuAction(d.value as EditorMenuAction)}>
+          {/* asChild div: never wrap an editor in the default BUTTON trigger. */}
+          <Menu.ContextTrigger
+            asChild={(triggerProps) => (
+              <div {...triggerProps({ class: 'block h-full w-full text-left' })}>
+            <Show
+              when={fileData()}
+              fallback={
+                <Show when={!isLoading()}>
+                  <div class="h-full flex items-center justify-center text-muted-dark">
+                    <div class="text-center">
+                      <div class="text-4xl mb-4">📄</div>
+                      <div class="text-sm">Loading file...</div>
+                    </div>
+                  </div>
+                </Show>
+              }
+            >
+              {(file) => (
+                <EditorWithPreview
+                  content={file().content}
+                  path={file().path}
+                  onChange={(content) => updateFileContent(file().path, content)}
+                  onSave={handleSave}
+                  onFollowLink={(target) =>
+                    void openNoteInEditor(target, statusBarStore.kilnPath() ?? undefined)
+                  }
+                  vimMode={settings.editor.vimMode}
+                  lineWidth={settings.editor.maxLineWidth}
+                  editorApiRef={(view) => (editorView = view)}
+                  initialMode={
+                    props.initialMode === 'reading' || props.initialMode === 'live' || props.initialMode === 'source'
+                      ? props.initialMode
+                      : undefined
+                  }
+                />
+              )}
             </Show>
-          }
-        >
-          {(file) => (
-            <EditorWithPreview
-              content={file().content}
-              path={file().path}
-              onChange={(content) => updateFileContent(file().path, content)}
-              onSave={handleSave}
-              onFollowLink={(target) =>
-                void openNoteInEditor(target, statusBarStore.kilnPath() ?? undefined)
-              }
-              vimMode={settings.editor.vimMode}
-              lineWidth={settings.editor.maxLineWidth}
-              initialMode={
-                props.initialMode === 'reading' || props.initialMode === 'live' || props.initialMode === 'source'
-                  ? props.initialMode
-                  : undefined
-              }
-            />
-          )}
-        </Show>
+              </div>
+            )}
+          />
+          <Menu.Positioner>
+            <Menu.Content class="min-w-[11rem] rounded border border-hairline bg-surface-elevated py-1 text-xs text-shell-ink shadow-lg focus:outline-none z-50">
+              <Menu.Item value="cut" class={menuItemClass}>Cut</Menu.Item>
+              <Menu.Item value="copy" class={menuItemClass}>Copy</Menu.Item>
+              <Menu.Item value="paste" class={menuItemClass}>Paste</Menu.Item>
+              <Menu.Item value="select-all" class={menuItemClass}>Select All</Menu.Item>
+              <Menu.Separator class="my-1 border-t border-hairline" />
+              <Menu.Item value="copy-file-path" class={menuItemClass}>Copy File Path</Menu.Item>
+            </Menu.Content>
+          </Menu.Positioner>
+        </Menu.Root>
       </div>
     </PanelShell>
   );

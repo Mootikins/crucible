@@ -10,6 +10,8 @@ import { windowStore, windowActions } from '@/stores/windowStore';
 import { IconGripVertical, IconClose, IconLayout } from './icons';
 import { ChevronDown } from '@/lib/icons';
 import { confirmTabClose } from '@/lib/tab-guards';
+import { Menu } from '@ark-ui/solid';
+import { attachNativeMenuGuard, tabsToClose, type TabCloseMode } from '@/lib/context-menu';
 
 // ── Module-level reorder state (shared with WindowManager) ──────────────
 
@@ -315,6 +317,62 @@ const TabStrip: Component<TabStripProps> = (props) => {
   );
 };
 
+// ── Tab context menu ────────────────────────────────────────────────────
+
+/**
+ * Right-click menu on a tab: Close / Close Others / Close to the Right —
+ * the classic victims of browser-owned keybinds (Ctrl+W cannot be
+ * intercepted, so the menu is their discoverable home). Every close routes
+ * through the dirty-tab confirm guard; a declined confirm skips that tab and
+ * continues with the rest.
+ */
+const TabContextMenu: Component<{
+  groupId: () => string;
+  tab: TabType;
+  children: JSX.Element;
+}> = (props) => {
+  const closeWith = (mode: TabCloseMode) => {
+    const group = windowStore.tabGroups[props.groupId()];
+    if (!group) return;
+    for (const t of tabsToClose(group.tabs, props.tab.id, mode)) {
+      if (confirmTabClose(t)) windowActions.removeTab(props.groupId(), t.id);
+    }
+  };
+  return (
+    <Menu.Root onSelect={(d) => closeWith(d.value as TabCloseMode)}>
+      {/* asChild div: the default trigger is a BUTTON and TabItem carries its
+          own close button — button-in-button is invalid HTML. */}
+      <Menu.ContextTrigger
+        asChild={(triggerProps) => (
+          <div {...triggerProps({ class: 'contents' })}>{props.children}</div>
+        )}
+      />
+      <Menu.Positioner>
+        <Menu.Content class="min-w-[10rem] rounded border border-hairline bg-surface-elevated py-1 text-xs text-shell-ink shadow-lg focus:outline-none z-50">
+          <Menu.Item
+            value="close"
+            class="flex items-center gap-2 px-3 py-1.5 cursor-pointer data-[highlighted]:bg-hover-wash"
+          >
+            Close
+          </Menu.Item>
+          <Menu.Item
+            value="close-others"
+            class="flex items-center gap-2 px-3 py-1.5 cursor-pointer data-[highlighted]:bg-hover-wash"
+          >
+            Close Others
+          </Menu.Item>
+          <Menu.Item
+            value="close-right"
+            class="flex items-center gap-2 px-3 py-1.5 cursor-pointer data-[highlighted]:bg-hover-wash"
+          >
+            Close to the Right
+          </Menu.Item>
+        </Menu.Content>
+      </Menu.Positioner>
+    </Menu.Root>
+  );
+};
+
 // ── Center TabBar ───────────────────────────────────────────────────────
 
 const CenterTabBar: Component<{
@@ -342,6 +400,7 @@ const CenterTabBar: Component<{
   return (
     <div
       use:droppable
+      ref={attachNativeMenuGuard}
       classList={{
         'flex items-center h-9 bg-shell-bg border-b border-hairline relative': true,
         'bg-primary/5': droppable.isActiveDroppable,
@@ -356,15 +415,17 @@ const CenterTabBar: Component<{
           tabsContainerRef = el;
         }}
         renderTab={(tab) => (
-          <TabItem
-            tab={tab()}
-            draggableId={`tab:${props.groupId}:${tab().id}`}
-            draggableData={{ type: 'tab', tab: tab(), sourceGroupId: props.groupId }}
-            isActive={tab().id === activeTabId()}
-            isFocused={isFocused()}
-            onClick={() => windowActions.setActiveTab(props.groupId, tab().id)}
-            onClose={() => confirmTabClose(tab()) && windowActions.removeTab(props.groupId, tab().id)}
-          />
+          <TabContextMenu groupId={() => props.groupId} tab={tab()}>
+            <TabItem
+              tab={tab()}
+              draggableId={`tab:${props.groupId}:${tab().id}`}
+              draggableData={{ type: 'tab', tab: tab(), sourceGroupId: props.groupId }}
+              isActive={tab().id === activeTabId()}
+              isFocused={isFocused()}
+              onClick={() => windowActions.setActiveTab(props.groupId, tab().id)}
+              onClose={() => confirmTabClose(tab()) && windowActions.removeTab(props.groupId, tab().id)}
+            />
+          </TabContextMenu>
         )}
       />
       <div class="flex-shrink-0 flex items-center gap-0.5 px-1">
@@ -429,16 +490,18 @@ const EdgeTabBar: Component<{
           tabsContainerRef = el;
         }}
         renderTab={(tab) => (
-          <TabItem
-            tab={tab()}
-            draggableId={`edgetab:${props.position}:${tab().id}`}
-            draggableData={{ type: 'tab', tab: tab(), sourceGroupId: groupId() }}
-            isActive={activeTabId() === tab().id}
-            isFocused={isFocused()}
-            onClick={() => windowActions.setActiveTab(groupId(), tab().id)}
-            onClose={() => confirmTabClose(tab()) && windowActions.removeTab(groupId(), tab().id)}
-            testId={`edge-tab-${props.position}-${tab().id}`}
-          />
+          <TabContextMenu groupId={groupId} tab={tab()}>
+            <TabItem
+              tab={tab()}
+              draggableId={`edgetab:${props.position}:${tab().id}`}
+              draggableData={{ type: 'tab', tab: tab(), sourceGroupId: groupId() }}
+              isActive={activeTabId() === tab().id}
+              isFocused={isFocused()}
+              onClick={() => windowActions.setActiveTab(groupId(), tab().id)}
+              onClose={() => confirmTabClose(tab()) && windowActions.removeTab(groupId(), tab().id)}
+              testId={`edge-tab-${props.position}-${tab().id}`}
+            />
+          </TabContextMenu>
         )}
       />
       {droppable.isActiveDroppable && (

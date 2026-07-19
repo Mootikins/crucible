@@ -70,6 +70,8 @@ export const CodeMirrorEditor: Component<{
   lineWidth?: number;
   /** Switch to the rendered preview (Mod-Shift-E). */
   onTogglePreview?: () => void;
+  /** Hand the live EditorView to the parent (context-menu clipboard ops). */
+  apiRef?: (view: EditorView) => void;
 }> = (props) => {
   let view: EditorView | undefined;
 
@@ -175,6 +177,7 @@ export const CodeMirrorEditor: Component<{
       }),
       parent: el,
     });
+    props.apiRef?.(view);
 
     // File-tree drops (pragmatic-drag-and-drop 'editor' zone — the innermost
     // file target, so it wins over the pane's open-in-pane zone). Kiln notes

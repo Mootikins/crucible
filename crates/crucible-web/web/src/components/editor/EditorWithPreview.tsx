@@ -31,6 +31,8 @@ export const EditorWithPreview: Component<{
   initialMode?: EditorMode;
   /** Readable line length in px (0 = full width). */
   lineWidth?: number;
+  /** Hand the live EditorView up (context-menu clipboard ops). */
+  editorApiRef?: (view: import('@codemirror/view').EditorView) => void;
 }> = (props) => {
   const isMarkdown = () => isMarkdownPath(props.path);
   const defaultMode = (): EditorMode =>
@@ -82,6 +84,7 @@ export const EditorWithPreview: Component<{
         fallback={<MarkdownPreview content={props.content} maxWidth={props.lineWidth} />}
       >
         <CodeMirrorEditor
+          apiRef={props.editorApiRef}
           content={props.content}
           path={props.path}
           onChange={props.onChange}

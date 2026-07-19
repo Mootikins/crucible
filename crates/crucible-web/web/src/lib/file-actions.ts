@@ -44,3 +44,21 @@ export function openFileInGroup(
 
   windowActions.addTab(groupId, newTab);
 }
+
+/**
+ * Close every open file tab at `absPath` (or, for a trashed directory, any
+ * tab under it). The file is already gone from disk — the tabs would show
+ * stale, unsavable content.
+ */
+export function closeTabsUnder(absPath: string, isDir: boolean): void {
+  const prefix = `${absPath}/`;
+  for (const [groupId, group] of Object.entries(windowStore.tabGroups)) {
+    for (const tab of [...group.tabs]) {
+      const fp = tab.metadata?.filePath;
+      if (typeof fp !== 'string') continue;
+      if (fp === absPath || (isDir && fp.startsWith(prefix))) {
+        windowActions.removeTab(groupId, tab.id);
+      }
+    }
+  }
+}

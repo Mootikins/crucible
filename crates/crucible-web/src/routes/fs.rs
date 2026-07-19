@@ -1,5 +1,6 @@
 //! File-tree explorer routes: `GET /api/fs/list` (project dir listing proxy),
-//! `POST /api/fs/move` (drag-and-drop move/rename), and `GET /api/fs/events`
+//! `POST /api/fs/move` (DnD move / rename), `POST /api/fs/mkdir`,
+//! `POST /api/fs/trash` (context-menu mutations), and `GET /api/fs/events`
 //! (live filesystem-change SSE).
 
 use crate::fs_events::FsEvent;
@@ -20,6 +21,8 @@ pub fn fs_routes() -> Router<AppState> {
     Router::new()
         .route("/api/fs/list", get(list_dir))
         .route("/api/fs/move", post(move_path))
+        .route("/api/fs/mkdir", post(mkdir_path))
+        .route("/api/fs/trash", post(trash_path))
         .route("/api/fs/events", get(fs_event_stream))
 }
 
@@ -71,6 +74,41 @@ async fn move_path(
         .daemon_err()?;
     // Kiln .md moves carry the link-rewrite outcome (rewritten_sources /
     // skipped) so the tree can tell the user what happened to their links.
+    Ok(Json(outcome))
+}
+
+#[derive(Debug, Deserialize)]
+struct FsPathBody {
+    root: String,
+    /// `"project"` or `"kiln"` — selects the daemon-side allowlist.
+    kind: String,
+    rel_path: String,
+}
+
+/// Create a folder inside one root (tree "New folder"). Thin daemon proxy.
+async fn mkdir_path(
+    State(state): State<AppState>,
+    Json(body): Json<FsPathBody>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    state
+        .daemon
+        .fs_mkdir(&body.root, &body.kind, &body.rel_path)
+        .await
+        .daemon_err()?;
+    Ok(Json(serde_json::json!({ "created": true })))
+}
+
+/// Move a file/directory to the root's `.crucible/trash/` (tree "Delete").
+/// Thin daemon proxy; kiln notes leave the index inline.
+async fn trash_path(
+    State(state): State<AppState>,
+    Json(body): Json<FsPathBody>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let outcome = state
+        .daemon
+        .fs_trash(&body.root, &body.kind, &body.rel_path)
+        .await
+        .daemon_err()?;
     Ok(Json(outcome))
 }
 

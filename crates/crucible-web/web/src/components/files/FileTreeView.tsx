@@ -6,6 +6,7 @@ import {
   type UseTreeViewReturn,
   type TreeViewLoadChildrenDetails,
   type TreeViewLoadChildrenCompleteDetails,
+  type TreeViewRenameCompleteDetails,
   type TreeViewExpandedChangeDetails,
   type TreeViewSelectionChangeDetails,
 } from '@ark-ui/solid';
@@ -13,6 +14,7 @@ import type { FileTreeNode as Node } from '@/lib/file-tree/types';
 import type { TreeRootKind } from '@/lib/tree-root';
 import { FileTreeNode, type FileTreeDnd } from './FileTreeNode';
 import { attachFileDropTarget, canDropIntoFolder } from '@/lib/file-dnd';
+import { attachNativeMenuGuard } from '@/lib/context-menu';
 import type { ContextAction } from './FileTreeContextMenu';
 
 /** DOM-id-safe encoding of a relPath (slashes/dots are awkward in ids/selectors). */
@@ -41,14 +43,20 @@ export interface FileTreeViewProps {
   apiRef?: (api: UseTreeViewReturn<Node>) => void;
   /** Drag-and-drop wiring (absent → tree is drag-inert, e.g. in tests). */
   dnd?: FileTreeDnd;
+  /**
+   * Inline-rename commit (absent → F2/rename disabled). `relPath` is the
+   * node's CURRENT identity; `newLabel` is the typed name (a single path
+   * segment — the machine's input, not a path).
+   */
+  onRenameNode?: (relPath: string, newLabel: string) => void;
 }
 
 /**
  * `TreeView` shell. Selection is single; opening a leaf is routed exclusively
  * through `onSelectionChange` so mouse and keyboard share one code path (avoids
  * the routing-seam duplicate-side-effect bug class). Branches never "open" a
- * file — they expand (via `expandOnClick`). `canRename` is a no-op in Phase 1
- * (F2 reserved for Phase 2).
+ * file — they expand (via `expandOnClick`). Rename (F2 or the context menu) commits
+ * through `onRenameNode`.
  */
 export const FileTreeView: Component<FileTreeViewProps> = (props) => {
   const handleSelection = (d: TreeViewSelectionChangeDetails<Node>) => {
@@ -65,7 +73,9 @@ export const FileTreeView: Component<FileTreeViewProps> = (props) => {
     loadChildren: props.loadChildren,
     onLoadChildrenComplete: (d: TreeViewLoadChildrenCompleteDetails<Node>) =>
       props.onLoadedTree?.(d.collection.rootNode),
-    canRename: () => false,
+    canRename: () => props.onRenameNode !== undefined,
+    onRenameComplete: (d: TreeViewRenameCompleteDetails) =>
+      props.onRenameNode?.(d.value, d.label),
     ids: { node: (v: string) => `filetree-node-${cssId(v)}` },
     onSelectionChange: handleSelection,
     onExpandedChange: (d: TreeViewExpandedChangeDetails<Node>) =>
@@ -98,7 +108,10 @@ export const FileTreeView: Component<FileTreeViewProps> = (props) => {
     <TreeView.RootProvider value={api}>
       <TreeView.Tree
         aria-label="File tree"
-        ref={attachRootDrop}
+        ref={(el: HTMLElement) => {
+          attachRootDrop(el);
+          attachNativeMenuGuard(el); // Shift+right-click → native menu
+        }}
         data-file-drop={rootDropOver() ? 'true' : undefined}
         class="px-1 min-h-full data-[file-drop=true]:bg-primary/5"
       >

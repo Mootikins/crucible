@@ -966,6 +966,37 @@ impl ReconnectingDaemon {
         .await
     }
 
+    pub async fn fs_mkdir(&self, root: &str, kind: &str, rel_path: &str) -> anyhow::Result<()> {
+        let root = root.to_string();
+        let kind = kind.to_string();
+        let rel_path = rel_path.to_string();
+        self.call_with_reconnect("fs.mkdir", move |daemon| {
+            let root = root.clone();
+            let kind = kind.clone();
+            let rel_path = rel_path.clone();
+            Box::pin(async move { daemon.fs_mkdir(&root, &kind, &rel_path).await })
+        })
+        .await
+    }
+
+    pub async fn fs_trash(
+        &self,
+        root: &str,
+        kind: &str,
+        rel_path: &str,
+    ) -> anyhow::Result<serde_json::Value> {
+        let root = root.to_string();
+        let kind = kind.to_string();
+        let rel_path = rel_path.to_string();
+        self.call_with_reconnect("fs.trash", move |daemon| {
+            let root = root.clone();
+            let kind = kind.clone();
+            let rel_path = rel_path.clone();
+            Box::pin(async move { daemon.fs_trash(&root, &kind, &rel_path).await })
+        })
+        .await
+    }
+
     pub async fn project_get(&self, path: &Path) -> anyhow::Result<Option<crucible_core::Project>> {
         let path = path.to_path_buf();
         self.call_with_reconnect("project.get", move |daemon| {

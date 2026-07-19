@@ -216,8 +216,6 @@ fn walk_one_level(
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum FsMoveError {
-    #[error("root is not a registered project or open kiln")]
-    NotRegistered,
     #[error("path escapes root")]
     Escape,
     #[error("source does not exist")]
@@ -256,22 +254,9 @@ pub(crate) async fn handle_fs_move(
     let from_rel = require_param!(req, "from_rel", as_str);
     let to_rel = require_param!(req, "to_rel", as_str);
 
-    let base = match kind {
-        "project" => pm.get(Path::new(root)).map(|p| p.path),
-        "kiln" => match Path::new(root).canonicalize() {
-            Ok(canon) if km.get(&canon).await.is_some() => Some(canon),
-            _ => None,
-        },
-        _ => {
-            return Response::error(req.id, INVALID_PARAMS, "kind must be 'project' or 'kiln'");
-        }
-    };
-    let Some(base) = base else {
-        return Response::error(
-            req.id,
-            INVALID_PARAMS,
-            FsMoveError::NotRegistered.to_string(),
-        );
+    let base = match resolve_root(pm, km, kind, root).await {
+        Ok(base) => base,
+        Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
     };
 
     // Kiln markdown notes route through the wikilink-aware rename: the move
@@ -306,6 +291,26 @@ pub(crate) async fn handle_fs_move(
         Err(FsMoveError::Io(e)) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
         Err(e) => Response::error(req.id, INVALID_PARAMS, e.to_string()),
     }
+}
+
+/// Resolve the mutation root for `kind`: a registered project or an
+/// ALREADY-OPEN kiln (fail-closed — see `handle_fs_move` docs). Returns the
+/// canonical base, or the INVALID_PARAMS message for the caller to wrap.
+async fn resolve_root(
+    pm: &Arc<ProjectManager>,
+    km: &Arc<KilnManager>,
+    kind: &str,
+    root: &str,
+) -> Result<PathBuf, &'static str> {
+    let base = match kind {
+        "project" => pm.get(Path::new(root)).map(|p| p.path),
+        "kiln" => match Path::new(root).canonicalize() {
+            Ok(canon) if km.get(&canon).await.is_some() => Some(canon),
+            _ => None,
+        },
+        _ => return Err("kind must be 'project' or 'kiln'"),
+    };
+    base.ok_or("root is not a registered project or open kiln")
 }
 
 /// Resolve `rel` to `canonical(parent) + leaf name`, containing the PARENT in
@@ -359,6 +364,173 @@ pub(crate) fn move_within(base: &Path, from_rel: &str, to_rel: &str) -> Result<(
     }
     std::fs::rename(&from, &dest)?;
     Ok(())
+}
+
+// ── fs.mkdir / fs.trash ────────────────────────────────────────────────────
+
+/// Handle the `fs.mkdir` RPC — create a folder (and missing parents) inside a
+/// root. Same fail-closed allowlist as `fs.move`; components are whitelisted
+/// and the deepest EXISTING ancestor must canonicalize inside the root (so a
+/// symlinked prefix can never escape).
+pub(crate) async fn handle_fs_mkdir(
+    req: Request,
+    pm: &Arc<ProjectManager>,
+    km: &Arc<KilnManager>,
+) -> Response {
+    let root = require_param!(req, "root", as_str);
+    let kind = require_param!(req, "kind", as_str);
+    let rel_path = require_param!(req, "rel_path", as_str);
+
+    let base = match resolve_root(pm, km, kind, root).await {
+        Ok(base) => base,
+        Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
+    };
+
+    match mkdir_within(&base, rel_path) {
+        Ok(()) => Response::success(req.id, serde_json::json!({ "created": true })),
+        Err(FsMoveError::Io(e)) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => Response::error(req.id, INVALID_PARAMS, e.to_string()),
+    }
+}
+
+fn mkdir_within(base: &Path, rel_path: &str) -> Result<(), FsMoveError> {
+    let rel = Path::new(rel_path);
+    if rel.is_absolute() || rel_path.is_empty() || rel_path.contains('\0') {
+        return Err(FsMoveError::Escape);
+    }
+    for c in rel.components() {
+        if !matches!(c, Component::Normal(_)) {
+            return Err(FsMoveError::Escape);
+        }
+    }
+    let target = base.join(rel);
+    if target.symlink_metadata().is_ok() {
+        return Err(FsMoveError::DestinationExists);
+    }
+    // Contain the deepest existing ancestor (whitelisted components alone
+    // don't stop an existing symlinked prefix from pointing outside).
+    let mut ancestor = target.parent().unwrap_or(base).to_path_buf();
+    while ancestor.symlink_metadata().is_err() {
+        match ancestor.parent() {
+            Some(p) => ancestor = p.to_path_buf(),
+            None => return Err(FsMoveError::Escape),
+        }
+    }
+    let canon = ancestor.canonicalize().map_err(|_| FsMoveError::Escape)?;
+    if !canon.starts_with(base) {
+        return Err(FsMoveError::Escape);
+    }
+    std::fs::create_dir_all(&target)?;
+    Ok(())
+}
+
+/// Handle the `fs.trash` RPC — move a file or directory into the root's
+/// `.crucible/trash/` (timestamped, never overwrites). `.crucible` is in
+/// `EXCLUDED_DIRS`, so trashed notes leave the watcher/discovery universe;
+/// kiln `.md` notes (including a trashed directory's children) are dropped
+/// from the index inline so backlinks re-resolve immediately.
+pub(crate) async fn handle_fs_trash(
+    req: Request,
+    pm: &Arc<ProjectManager>,
+    km: &Arc<KilnManager>,
+) -> Response {
+    let root = require_param!(req, "root", as_str);
+    let kind = require_param!(req, "kind", as_str);
+    let rel_path = require_param!(req, "rel_path", as_str);
+
+    let base = match resolve_root(pm, km, kind, root).await {
+        Ok(base) => base,
+        Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
+    };
+
+    // Collect the kiln notes this trash will remove BEFORE moving anything.
+    let source = match split_contained(&base, rel_path, || FsMoveError::SourceMissing) {
+        Ok(p) => p,
+        Err(e) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
+    };
+    let mut removed_notes: Vec<PathBuf> = Vec::new();
+    if kind == "kiln" {
+        collect_md_files(&source, &mut removed_notes);
+    }
+
+    let trash_rel = match trash_within(&base, rel_path) {
+        Ok(rel) => rel,
+        Err(FsMoveError::Io(e)) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
+    };
+
+    for note in &removed_notes {
+        if let Err(e) = km.handle_file_deleted(&base, note).await {
+            tracing::warn!(path = %note.display(), error = %e, "trash: index cleanup failed");
+        }
+    }
+
+    Response::success(
+        req.id,
+        serde_json::json!({ "trashed": true, "trash_path": trash_rel }),
+    )
+}
+
+/// `.md` files at or under `path` (the pre-move index-cleanup set).
+fn collect_md_files(path: &Path, out: &mut Vec<PathBuf>) {
+    let meta = match path.symlink_metadata() {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+    if meta.is_file() {
+        if path.extension().is_some_and(|e| e == "md") {
+            out.push(path.to_path_buf());
+        }
+        return;
+    }
+    if meta.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                collect_md_files(&entry.path(), out);
+            }
+        }
+    }
+}
+
+/// Move `rel_path` to `.crucible/trash/<unix-secs>-<name>` inside `base`.
+/// Returns the trash-relative destination.
+fn trash_within(base: &Path, rel_path: &str) -> Result<String, FsMoveError> {
+    let source = split_contained(base, rel_path, || FsMoveError::SourceMissing)?;
+    if source.symlink_metadata().is_err() {
+        return Err(FsMoveError::SourceMissing);
+    }
+    // Never trash the trash (or anything already under .crucible).
+    if Path::new(rel_path)
+        .components()
+        .next()
+        .is_some_and(|c| c.as_os_str() == ".crucible")
+    {
+        return Err(FsMoveError::Escape);
+    }
+
+    let trash_dir = base.join(".crucible").join("trash");
+    std::fs::create_dir_all(&trash_dir)?;
+
+    let name = Path::new(rel_path)
+        .file_name()
+        .ok_or(FsMoveError::Escape)?
+        .to_string_lossy()
+        .to_string();
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let mut dest = trash_dir.join(format!("{stamp}-{name}"));
+    let mut n = 1u32;
+    while dest.symlink_metadata().is_ok() {
+        dest = trash_dir.join(format!("{stamp}-{n}-{name}"));
+        n += 1;
+    }
+    std::fs::rename(&source, &dest)?;
+    Ok(format!(
+        ".crucible/trash/{}",
+        dest.file_name().unwrap_or_default().to_string_lossy()
+    ))
 }
 
 #[cfg(test)]
@@ -668,6 +840,106 @@ mod tests {
             Err(FsMoveError::Escape)
         ));
         assert!(outside.path().read_dir().unwrap().next().is_none());
+    }
+
+    // ── mkdir_within / trash_within ────────────────────────────────────
+
+    #[test]
+    fn mkdir_creates_nested_and_rejects_escape_and_existing() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let base = canon_root(&tmp);
+
+        mkdir_within(&base, "a/b/c").unwrap();
+        assert!(base.join("a/b/c").is_dir());
+
+        assert!(matches!(
+            mkdir_within(&base, "a/b/c"),
+            Err(FsMoveError::DestinationExists)
+        ));
+        for bad in ["../x", "/abs", "", "a/../x"] {
+            assert!(
+                matches!(mkdir_within(&base, bad), Err(FsMoveError::Escape)),
+                "expected Escape for {bad:?}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn mkdir_rejects_symlinked_prefix_escape() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let outside = tempfile::TempDir::new().unwrap();
+        let base = canon_root(&tmp);
+        std::os::unix::fs::symlink(outside.path(), base.join("evil")).unwrap();
+
+        assert!(matches!(
+            mkdir_within(&base, "evil/new-dir"),
+            Err(FsMoveError::Escape)
+        ));
+        assert!(outside.path().read_dir().unwrap().next().is_none());
+    }
+
+    #[test]
+    fn trash_moves_into_crucible_trash_without_overwrite() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let base = canon_root(&tmp);
+        fs::write(base.join("a.md"), "one").unwrap();
+
+        let rel1 = trash_within(&base, "a.md").unwrap();
+        assert!(!base.join("a.md").exists());
+        assert_eq!(fs::read_to_string(base.join(&rel1)).unwrap(), "one");
+
+        // Same name trashed again in the same second must not collide.
+        fs::write(base.join("a.md"), "two").unwrap();
+        let rel2 = trash_within(&base, "a.md").unwrap();
+        assert_ne!(rel1, rel2);
+        assert_eq!(fs::read_to_string(base.join(&rel2)).unwrap(), "two");
+    }
+
+    #[test]
+    fn trash_refuses_dot_crucible_and_escapes() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let base = canon_root(&tmp);
+        fs::create_dir_all(base.join(".crucible/trash")).unwrap();
+        fs::write(base.join(".crucible/trash/x.md"), "x").unwrap();
+
+        assert!(matches!(
+            trash_within(&base, ".crucible/trash/x.md"),
+            Err(FsMoveError::Escape)
+        ));
+        assert!(matches!(
+            trash_within(&base, "../escape.md"),
+            Err(FsMoveError::Escape)
+        ));
+        assert!(matches!(
+            trash_within(&base, "ghost.md"),
+            Err(FsMoveError::SourceMissing)
+        ));
+    }
+
+    #[test]
+    fn trash_takes_whole_directories_and_collects_child_notes() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let base = canon_root(&tmp);
+        fs::create_dir_all(base.join("dir/sub")).unwrap();
+        fs::write(base.join("dir/a.md"), "a").unwrap();
+        fs::write(base.join("dir/sub/b.md"), "b").unwrap();
+        fs::write(base.join("dir/other.txt"), "t").unwrap();
+
+        let mut notes = Vec::new();
+        collect_md_files(&base.join("dir"), &mut notes);
+        assert_eq!(notes.len(), 2, "only .md files collected: {notes:?}");
+
+        let rel = trash_within(&base, "dir").unwrap();
+        assert!(!base.join("dir").exists());
+        assert_eq!(
+            fs::read_to_string(base.join(&rel).join("a.md")).unwrap(),
+            "a"
+        );
+        assert_eq!(
+            fs::read_to_string(base.join(&rel).join("sub/b.md")).unwrap(),
+            "b"
+        );
     }
 
     #[cfg(unix)]

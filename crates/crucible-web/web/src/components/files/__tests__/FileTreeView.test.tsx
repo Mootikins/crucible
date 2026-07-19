@@ -87,25 +87,33 @@ describe('FileTreeContextMenu action model (itemsForNode)', () => {
   const fileNode: FileTreeNode = { relPath: 'a.md', name: 'a.md', isDir: false, absPath: '/vault/a.md' };
   const dirNode: FileTreeNode = { relPath: 'd', name: 'd', isDir: true, absPath: '/vault/d', children: [] };
 
-  it('renders only read-only Phase-1 actions (no Rename/Delete/New)', () => {
+  it('offers read actions plus rename/delete on a kiln file', () => {
     const actions = itemsForNode(fileNode, 'kiln').map((i) => i.action);
     expect(actions).toContain('open');
     expect(actions).toContain('reveal-in-tree');
     expect(actions).toContain('copy-path');
     expect(actions).toContain('copy-relative-path');
-    expect(actions).not.toContain('rename');
-    expect(actions).not.toContain('delete');
+    expect(actions).toContain('rename');
+    expect(actions).toContain('delete');
+    // creating INSIDE a file makes no sense — dir-only actions
     expect(actions).not.toContain('new-note');
+    expect(actions).not.toContain('new-folder');
   });
 
-  it('never surfaces any phase-2 item', () => {
-    const all = [
-      ...itemsForNode(fileNode, 'project'),
-      ...itemsForNode(dirNode, 'project'),
-      ...itemsForNode(dirNode, 'kiln'),
-    ];
-    expect(all.every((i) => i.phase === 1)).toBe(true);
-    expect(CONTEXT_ITEMS.some((i) => i.phase === 2)).toBe(true); // seam still declared
+  it('gates new-note to kiln folders (projects have no write API for notes)', () => {
+    expect(itemsForNode(dirNode, 'kiln').map((i) => i.action)).toContain('new-note');
+    expect(itemsForNode(dirNode, 'project').map((i) => i.action)).not.toContain('new-note');
+    // ...but folders/rename/delete work on both root kinds (fs.mkdir/fs.trash)
+    for (const kind of ['kiln', 'project'] as const) {
+      const actions = itemsForNode(dirNode, kind).map((i) => i.action);
+      expect(actions).toContain('new-folder');
+      expect(actions).toContain('rename');
+      expect(actions).toContain('delete');
+    }
+  });
+
+  it('has no menu entry for move (drag-and-drop owns it)', () => {
+    expect(CONTEXT_ITEMS.map((i) => i.action as string)).not.toContain('move');
   });
 
   it('shows Refresh for a project dir but hides it for a kiln dir (SSE-live)', () => {

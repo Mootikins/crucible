@@ -83,3 +83,55 @@ async fn fs_move_rejects_missing_fields() {
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
+
+#[tokio::test]
+async fn fs_mkdir_returns_200_created() {
+    let (_mock, client) = start_mock_daemon().await;
+    let app = build_test_app(build_mock_state(client));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/fs/mkdir")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "root": "/tmp/proj", "kind": "project", "rel_path": "new/dir" })
+                        .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_json(response).await["created"], true);
+}
+
+#[tokio::test]
+async fn fs_trash_returns_200_with_trash_path() {
+    let (_mock, client) = start_mock_daemon().await;
+    let app = build_test_app(build_mock_state(client));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/fs/trash")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "root": "/tmp/k", "kind": "kiln", "rel_path": "a.md" }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_json(response).await;
+    assert_eq!(body["trashed"], true);
+    assert!(body["trash_path"]
+        .as_str()
+        .unwrap()
+        .starts_with(".crucible/trash/"));
+}
