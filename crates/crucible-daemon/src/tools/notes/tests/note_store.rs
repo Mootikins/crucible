@@ -114,6 +114,7 @@ async fn test_read_metadata_uses_note_store() {
         title: "Test Note from Index".to_string(),
         tags: vec!["rust".to_string(), "test".to_string()],
         links_to: vec!["other.md".to_string()],
+        links: Vec::new(),
         properties,
         updated_at: Utc::now(),
     });
@@ -204,6 +205,7 @@ async fn test_list_notes_uses_note_store() {
         title: "Note 1".to_string(),
         tags: vec!["tag1".to_string()],
         links_to: vec![],
+        links: Vec::new(),
         properties: HashMap::new(),
         updated_at: Utc::now(),
     });
@@ -217,6 +219,7 @@ async fn test_list_notes_uses_note_store() {
         title: "Note 2".to_string(),
         tags: vec!["tag2".to_string()],
         links_to: vec![],
+        links: Vec::new(),
         properties: HashMap::new(),
         updated_at: Utc::now(),
     });
@@ -267,6 +270,7 @@ async fn test_list_notes_filters_by_folder() {
         title: "Root Note".to_string(),
         tags: vec![],
         links_to: vec![],
+        links: Vec::new(),
         properties: HashMap::new(),
         updated_at: Utc::now(),
     });
@@ -280,6 +284,7 @@ async fn test_list_notes_filters_by_folder() {
         title: "Rust Project".to_string(),
         tags: vec![],
         links_to: vec![],
+        links: Vec::new(),
         properties: HashMap::new(),
         updated_at: Utc::now(),
     });
@@ -293,6 +298,7 @@ async fn test_list_notes_filters_by_folder() {
         title: "Python Project".to_string(),
         tags: vec![],
         links_to: vec![],
+        links: Vec::new(),
         properties: HashMap::new(),
         updated_at: Utc::now(),
     });
@@ -343,6 +349,7 @@ async fn test_list_notes_non_recursive_with_store() {
         title: "Root".to_string(),
         tags: vec![],
         links_to: vec![],
+        links: Vec::new(),
         properties: HashMap::new(),
         updated_at: Utc::now(),
     });
@@ -356,6 +363,7 @@ async fn test_list_notes_non_recursive_with_store() {
         title: "Deep".to_string(),
         tags: vec![],
         links_to: vec![],
+        links: Vec::new(),
         properties: HashMap::new(),
         updated_at: Utc::now(),
     });

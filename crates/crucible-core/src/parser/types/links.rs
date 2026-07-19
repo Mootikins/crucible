@@ -19,8 +19,19 @@ pub struct Wikilink {
     /// Optional display alias
     pub alias: Option<String>,
 
-    /// Character offset in source note
+    /// BYTE offset of the match start (`[[` or `![[`) in the parsed body.
+    ///
+    /// Offsets are relative to the frontmatter-stripped body the parser hands
+    /// to extensions — add `ParsedNote::body_offset` to get a file-absolute
+    /// position.
     pub offset: usize,
+
+    /// BYTE range `[start, end)` of the *target token* in the parsed body —
+    /// the substring between `[[`/`![[` and the first of `|`, `#`, `]]`.
+    /// This is the exact region a rename rewrite splices; alias, heading,
+    /// block-ref, and embed markers all lie outside it.
+    #[serde(default)]
+    pub target_span: (usize, usize),
 
     /// Whether this is an embed (![[note]])
     pub is_embed: bool,
@@ -33,12 +44,25 @@ pub struct Wikilink {
 }
 
 impl Wikilink {
+    /// Byte length of the opening delimiter (`[[` or `![[`).
+    fn open_len(is_embed: bool) -> usize {
+        if is_embed {
+            3
+        } else {
+            2
+        }
+    }
+
     /// Create a simple wikilink
     pub fn new(target: impl Into<String>, offset: usize) -> Self {
+        let target = target.into();
+        let start = offset + Self::open_len(false);
+        let target_span = (start, start + target.len());
         Self {
-            target: target.into(),
+            target,
             alias: None,
             offset,
+            target_span,
             is_embed: false,
             block_ref: None,
             heading_ref: None,
@@ -47,10 +71,14 @@ impl Wikilink {
 
     /// Create a wikilink with alias
     pub fn with_alias(target: impl Into<String>, alias: impl Into<String>, offset: usize) -> Self {
+        let target = target.into();
+        let start = offset + Self::open_len(false);
+        let target_span = (start, start + target.len());
         Self {
-            target: target.into(),
+            target,
             alias: Some(alias.into()),
             offset,
+            target_span,
             is_embed: false,
             block_ref: None,
             heading_ref: None,
@@ -59,10 +87,14 @@ impl Wikilink {
 
     /// Create an embed wikilink
     pub fn embed(target: impl Into<String>, offset: usize) -> Self {
+        let target = target.into();
+        let start = offset + Self::open_len(true);
+        let target_span = (start, start + target.len());
         Self {
-            target: target.into(),
+            target,
             alias: None,
             offset,
+            target_span,
             is_embed: true,
             block_ref: None,
             heading_ref: None,
@@ -74,7 +106,11 @@ impl Wikilink {
         self.alias.as_deref().unwrap_or(&self.target)
     }
 
-    /// Parse a wikilink from raw text (e.g., "Note#heading|Alias")
+    /// Parse a wikilink from raw text (e.g., "Note#heading|Alias").
+    ///
+    /// `text` is the inner content between the delimiters; `offset` is the
+    /// byte offset of the match start (`[[` / `![[`), so the target token's
+    /// byte span is `offset + open_len` for `target.len()` bytes.
     pub fn parse(text: &str, offset: usize, is_embed: bool) -> Self {
         let (target_part, alias) = if let Some((t, a)) = text.split_once('|') {
             (t, Some(a.to_string()))
@@ -93,10 +129,13 @@ impl Wikilink {
                 (target_part.to_string(), None, None)
             };
 
+        let start = offset + Self::open_len(is_embed);
+        let target_span = (start, start + target.len());
         Self {
             target,
             alias,
             offset,
+            target_span,
             is_embed,
             block_ref,
             heading_ref,

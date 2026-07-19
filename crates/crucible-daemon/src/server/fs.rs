@@ -215,7 +215,7 @@ fn walk_one_level(
 // ── fs.move ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, thiserror::Error)]
-enum FsMoveError {
+pub(crate) enum FsMoveError {
     #[error("root is not a registered project or open kiln")]
     NotRegistered,
     #[error("path escapes root")]
@@ -274,6 +274,33 @@ pub(crate) async fn handle_fs_move(
         );
     };
 
+    // Kiln markdown notes route through the wikilink-aware rename: the move
+    // AND the inbound-link rewrite/reindex happen as one operation, so a DnD
+    // move in the web file tree can never silently break links. Directories
+    // and non-markdown files keep the plain rename (folder-level bulk rewrite
+    // is Phase 3.1; bare-stem links to children keep resolving via key
+    // re-resolution regardless).
+    if kind == "kiln"
+        && from_rel.ends_with(".md")
+        && to_rel.ends_with(".md")
+        && base.join(from_rel).is_file()
+    {
+        return match crate::server::note_refactor::rename_note(km, &base, from_rel, to_rel).await {
+            Ok(outcome) => Response::success(
+                req.id,
+                serde_json::json!({
+                    "moved": true,
+                    "rewritten_sources": outcome.rewritten_sources,
+                    "skipped": outcome.skipped,
+                }),
+            ),
+            Err(crate::server::note_refactor::RenameError::Move(e)) => {
+                Response::error(req.id, INVALID_PARAMS, e.to_string())
+            }
+            Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        };
+    }
+
     match move_within(&base, from_rel, to_rel) {
         Ok(()) => Response::success(req.id, serde_json::json!({ "moved": true })),
         Err(FsMoveError::Io(e)) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
@@ -318,7 +345,7 @@ fn split_contained(
     Ok(parent.join(name))
 }
 
-fn move_within(base: &Path, from_rel: &str, to_rel: &str) -> Result<(), FsMoveError> {
+pub(crate) fn move_within(base: &Path, from_rel: &str, to_rel: &str) -> Result<(), FsMoveError> {
     let from = split_contained(base, from_rel, || FsMoveError::SourceMissing)?;
     if from.symlink_metadata().is_err() {
         return Err(FsMoveError::SourceMissing);

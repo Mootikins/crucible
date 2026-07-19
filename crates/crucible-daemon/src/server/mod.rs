@@ -49,6 +49,7 @@ mod core;
 pub mod fs;
 pub mod kiln;
 pub mod lua;
+pub mod note_refactor;
 pub mod observe;
 pub mod platform;
 pub mod plugins;

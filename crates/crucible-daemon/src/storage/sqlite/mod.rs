@@ -46,6 +46,7 @@ pub mod connection;
 mod error_ext;
 pub mod fts;
 pub mod graph_view;
+pub(crate) mod link_index;
 pub mod note_store;
 pub mod property_store;
 pub mod query;

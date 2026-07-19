@@ -108,7 +108,8 @@ impl NoteRecordDto {
             .map(|(i, w)| Wikilink {
                 target: w.target,
                 alias: w.alias,
-                offset: i, // Placeholder offset
+                offset: i,           // Placeholder offset (no span data on the wire)
+                target_span: (0, 0), // Placeholder span
                 is_embed: w.is_embed.unwrap_or(false),
                 block_ref: w.block_ref,
                 heading_ref: w.heading_ref,

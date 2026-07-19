@@ -11,41 +11,6 @@ fn nonexistent_path() -> PathBuf {
 }
 
 #[test]
-fn wikilink_candidates_cover_stem_path_and_title() {
-    let candidates = wikilink_target_candidates("Help/Wikilinks.md", "Wikilink Syntax");
-    assert!(candidates.contains("wikilinks"), "file stem");
-    assert!(candidates.contains("help/wikilinks"), "extension-less path");
-    assert!(candidates.contains("help/wikilinks.md"), "full path");
-    assert!(candidates.contains("wikilink syntax"), "title");
-}
-
-#[test]
-fn normalize_target_lowercases_and_strips_fragments() {
-    assert_eq!(normalize_wikilink_target("Rust"), "rust");
-    assert_eq!(normalize_wikilink_target("Notes/Rust#Setup"), "notes/rust");
-    assert_eq!(normalize_wikilink_target("Rust#^block-id"), "rust");
-}
-
-#[test]
-fn backlink_matching_accepts_all_target_forms() {
-    let candidates = wikilink_target_candidates("Help/Wikilinks.md", "Wikilink Syntax");
-    for written in [
-        "Wikilinks",
-        "wikilinks",
-        "Help/Wikilinks",
-        "Help/Wikilinks.md",
-        "Wikilink Syntax",
-        "Wikilinks#Aliases",
-    ] {
-        assert!(
-            candidates.contains(&normalize_wikilink_target(written)),
-            "expected [[{written}]] to resolve as a backlink"
-        );
-    }
-    assert!(!candidates.contains(&normalize_wikilink_target("Tags")));
-}
-
-#[test]
 fn test_excluded_dirs_constant() {
     // Verify the constant contains exactly the 5 expected directories
     assert_eq!(EXCLUDED_DIRS.len(), 5);

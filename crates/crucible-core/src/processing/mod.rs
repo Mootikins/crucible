@@ -409,6 +409,7 @@ mod tests {
             content_hash: "test_hash".to_string(),
             file_size: 0,
             parse_errors: Vec::new(),
+            body_offset: 0,
             block_hashes: vec![],
             merkle_root: None,
             metadata: Default::default(),

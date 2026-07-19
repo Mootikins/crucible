@@ -951,7 +951,7 @@ impl ReconnectingDaemon {
         kind: &str,
         from_rel: &str,
         to_rel: &str,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<serde_json::Value> {
         let root = root.to_string();
         let kind = kind.to_string();
         let from_rel = from_rel.to_string();

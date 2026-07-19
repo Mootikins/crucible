@@ -123,6 +123,7 @@ mod tests {
             title: path.to_string(),
             tags: vec![],
             links_to: links_to.into_iter().map(String::from).collect(),
+            links: Vec::new(),
             properties: Default::default(),
             updated_at: Utc::now(),
         }

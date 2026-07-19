@@ -68,6 +68,14 @@ pub struct ParsedNote {
     /// Parsing errors encountered (non-fatal)
     pub parse_errors: Vec<ParseError>,
 
+    /// BYTE offset of the parsed body within the original file — the length
+    /// of the frontmatter block (delimiters included), 0 when there is none.
+    /// All extension offsets/spans (wikilinks, tags, …) are body-relative;
+    /// add this to get file-absolute byte positions (needed by the wikilink
+    /// rewrite engine, which splices raw file bytes).
+    #[serde(default)]
+    pub body_offset: usize,
+
     /// Block-level content hashes for Phase 2 optimize-data-flow
     ///
     /// This field stores hashes of individual content blocks (headings, paragraphs,
@@ -170,6 +178,7 @@ impl ParsedNote {
             content_hash,
             file_size,
             parse_errors: Vec::new(),
+            body_offset: 0,
             block_hashes: Vec::new(), // Phase 2: empty by default for backward compatibility
             merkle_root: None,        // Phase 2: None by default for backward compatibility
             metadata: ParsedNoteMetadata::default(), // Metadata extracted during parsing
@@ -277,6 +286,7 @@ pub struct ParsedNoteBuilder {
     content_hash: String,
     file_size: u64,
     parse_errors: Vec<ParseError>,
+    body_offset: usize,
     block_hashes: Vec<BlockHash>,
     merkle_root: Option<BlockHash>,
     metadata: ParsedNoteMetadata,
@@ -299,6 +309,7 @@ impl ParsedNoteBuilder {
             content_hash: String::new(),
             file_size: 0,
             parse_errors: Vec::new(),
+            body_offset: 0,
             block_hashes: Vec::new(),
             merkle_root: None,
             metadata: ParsedNoteMetadata::default(),
@@ -389,6 +400,12 @@ impl ParsedNoteBuilder {
         self
     }
 
+    /// Set the byte offset of the body within the original file
+    pub fn with_body_offset(mut self, body_offset: usize) -> Self {
+        self.body_offset = body_offset;
+        self
+    }
+
     /// Build the ParsedNote
     pub fn build(self) -> ParsedNote {
         ParsedNote {
@@ -405,6 +422,7 @@ impl ParsedNoteBuilder {
             content_hash: self.content_hash,
             file_size: self.file_size,
             parse_errors: self.parse_errors,
+            body_offset: self.body_offset,
             block_hashes: self.block_hashes,
             merkle_root: self.merkle_root,
             metadata: self.metadata,

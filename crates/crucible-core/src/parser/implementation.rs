@@ -371,8 +371,13 @@ impl MarkdownParser for CrucibleParser {
     }
 
     async fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
-        // Parse frontmatter
+        // Parse frontmatter. The body is always a SUFFIX slice of the input,
+        // so the frontmatter's byte length (the body's file-absolute offset)
+        // is the length delta — recorded as `body_offset` so consumers can
+        // convert body-relative extension offsets to file positions.
+        let original_len = content.len();
         let (frontmatter_raw, content, frontmatter_format) = self.parse_frontmatter(content);
+        let body_offset = original_len - content.len();
 
         let mut parse_errors = Vec::new();
 
@@ -470,6 +475,7 @@ impl MarkdownParser for CrucibleParser {
             .with_latex_expressions(latex_expressions)
             .with_footnotes(footnotes)
             .with_metadata(metadata)
+            .with_body_offset(body_offset)
             .build();
 
         // Apply block-level processing if enabled (Phase 2 optimize-data-flow)
@@ -551,6 +557,36 @@ impl CrucibleParser {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    /// `body_offset` converts body-relative wikilink spans to file-absolute
+    /// bytes — the invariant the rename rewrite engine splices by.
+    #[tokio::test]
+    async fn test_body_offset_makes_spans_file_absolute() {
+        let content = "---\ntitle: T\ntags: [x]\n---\nbody 🎉 [[Target|alias]] end";
+        let path = PathBuf::from("test.md");
+        let parser = CrucibleParser::new();
+
+        let doc = parser.parse_content(content, &path).await.unwrap();
+        assert!(doc.body_offset > 0, "frontmatter present → nonzero offset");
+        assert_eq!(doc.wikilinks.len(), 1);
+        let (start, end) = doc.wikilinks[0].target_span;
+        let abs = (doc.body_offset + start)..(doc.body_offset + end);
+        assert_eq!(&content[abs], "Target");
+    }
+
+    /// No frontmatter → offset 0 and spans are already file-absolute.
+    #[tokio::test]
+    async fn test_body_offset_zero_without_frontmatter() {
+        let content = "plain [[Link]]";
+        let parser = CrucibleParser::new();
+        let doc = parser
+            .parse_content(content, &PathBuf::from("t.md"))
+            .await
+            .unwrap();
+        assert_eq!(doc.body_offset, 0);
+        let (start, end) = doc.wikilinks[0].target_span;
+        assert_eq!(&content[start..end], "Link");
+    }
 
     #[tokio::test]
     async fn test_parse_basic_content() {

@@ -41,6 +41,7 @@ impl SessionContent {
             title: self.title.clone(),
             tags: vec![SESSION_TAG.to_string(), CHAT_TAG.to_string()],
             links_to: Vec::new(),
+            links: Vec::new(),
             properties: Default::default(),
             updated_at: chrono::Utc::now(),
         }

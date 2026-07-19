@@ -1171,18 +1171,29 @@ export async function listDir(
   return res.json();
 }
 
+/** Outcome of a move: kiln `.md` moves carry the wikilink-rewrite report. */
+export interface FsMoveOutcome {
+  moved: boolean;
+  /** Sources whose inbound links were rewritten (kiln .md moves only). */
+  rewritten_sources?: string[];
+  /** Inbound links intentionally left untouched (ambiguous / stale). */
+  skipped?: { source_path: string; raw_target: string; reason: string }[];
+}
+
 /**
  * Move/rename a file or directory within one root (daemon `fs.move` — the
  * file-tree drag-and-drop backend). `kind` selects the daemon-side allowlist:
  * registered projects or already-open kilns. Overwrites are rejected
- * daemon-side; surface the error message to the user, don't retry.
+ * daemon-side; surface the error message to the user, don't retry. Kiln
+ * `.md` moves route through the wikilink-aware rename daemon-side, so links
+ * keep resolving; the outcome reports what was rewritten or skipped.
  */
 export async function fsMove(
   root: string,
   kind: 'project' | 'kiln',
   fromRel: string,
   toRel: string,
-): Promise<void> {
+): Promise<FsMoveOutcome> {
   const res = await fetch('/api/fs/move', {
     method: 'POST',
     credentials: 'same-origin',
@@ -1199,6 +1210,7 @@ export async function fsMove(
     }
     throw new Error(detail || `move failed: ${res.status}`);
   }
+  return (await res.json()) as FsMoveOutcome;
 }
 
 /**

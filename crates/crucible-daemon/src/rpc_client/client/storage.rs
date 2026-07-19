@@ -723,19 +723,33 @@ impl DaemonClient {
         kind: &str,
         from_rel: &str,
         to_rel: &str,
-    ) -> Result<()> {
-        let _: serde_json::Value = self
-            .typed_call(
-                "fs.move",
-                FsMoveRequest {
-                    root: root.to_string(),
-                    kind: kind.to_string(),
-                    from_rel: from_rel.to_string(),
-                    to_rel: to_rel.to_string(),
-                },
-            )
-            .await?;
-        Ok(())
+    ) -> Result<serde_json::Value> {
+        self.typed_call(
+            "fs.move",
+            FsMoveRequest {
+                root: root.to_string(),
+                kind: kind.to_string(),
+                from_rel: from_rel.to_string(),
+                to_rel: to_rel.to_string(),
+            },
+        )
+        .await
+    }
+
+    /// Rename/move a NOTE within an open kiln, rewriting unambiguous inbound
+    /// wikilinks (daemon `note.move`). Returns the outcome object
+    /// (`rewritten_sources`, `skipped`) for caller UX.
+    pub async fn note_move(
+        &self,
+        kiln: &str,
+        from_rel: &str,
+        to_rel: &str,
+    ) -> Result<serde_json::Value> {
+        self.typed_call(
+            "note.move",
+            serde_json::json!({ "kiln": kiln, "from_rel": from_rel, "to_rel": to_rel }),
+        )
+        .await
     }
 
     pub async fn project_get(&self, path: &Path) -> Result<Option<crucible_core::Project>> {

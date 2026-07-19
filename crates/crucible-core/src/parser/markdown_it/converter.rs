@@ -32,10 +32,14 @@ impl AstConverter {
 
         // 1. Wikilinks
         if let Some(wikilink) = node.cast::<super::plugins::wikilink::WikilinkNode>() {
+            // Same span math as Wikilink::parse: the target token starts right
+            // after the `[[` / `![[` delimiter.
+            let start = wikilink.offset + if wikilink.is_embed { 3 } else { 2 };
             content.wikilinks.push(Wikilink {
                 target: wikilink.target.clone(),
                 alias: wikilink.alias.clone(),
                 offset: wikilink.offset,
+                target_span: (start, start + wikilink.target.len()),
                 is_embed: wikilink.is_embed,
                 block_ref: wikilink.block_ref.clone(),
                 heading_ref: wikilink.heading_ref.clone(),

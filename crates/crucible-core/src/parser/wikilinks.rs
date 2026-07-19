@@ -178,6 +178,32 @@ After code: [[after]]"#;
         // This is tested in the integration test
     }
 
+    /// The target token's byte span must address exactly the text a rename
+    /// splice replaces — for every syntax form, and at correct BYTE offsets
+    /// even after multi-byte UTF-8.
+    #[tokio::test]
+    async fn test_target_spans_address_exact_target_bytes() {
+        let extension = WikilinkExtension::new();
+        let content = "a [[plain]] b [[tgt|Alias]] c [[tgt#Head]] d [[tgt#^blk]] e ![[emb]] f 🎉 [[after-emoji]]";
+        let mut doc_content = NoteContent::new();
+        extension.parse(content, &mut doc_content).await;
+
+        assert_eq!(doc_content.wikilinks.len(), 6);
+        for link in &doc_content.wikilinks {
+            let (start, end) = link.target_span;
+            assert_eq!(
+                &content[start..end],
+                link.target,
+                "span must slice exactly the target token for {:?}",
+                link
+            );
+        }
+        // The emoji before the last link forces byte offset > char offset.
+        let last = &doc_content.wikilinks[5];
+        assert_eq!(last.target, "after-emoji");
+        assert!(last.offset > content[..last.offset].chars().count());
+    }
+
     #[tokio::test]
     async fn test_multiple_wikilinks() {
         let extension = WikilinkExtension::new();

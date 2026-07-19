@@ -165,8 +165,16 @@ export const FilesPanel: Component = () => {
     const toRel = moveTargetRel(source, destParentRel);
     void (async () => {
       try {
-        await fsMove(root.path, root.kind, source.relPath, toRel);
-        setError(null);
+        const outcome = await fsMove(root.path, root.kind, source.relPath, toRel);
+        // Kiln .md moves rewrite inbound wikilinks daemon-side; ambiguous
+        // ones are deliberately skipped — tell the user instead of silently
+        // leaving links pointing elsewhere.
+        const skipped = outcome.skipped?.length ?? 0;
+        setError(
+          skipped > 0
+            ? `Moved, but ${skipped} link${skipped === 1 ? '' : 's'} not auto-updated (ambiguous target)`
+            : null,
+        );
         if (root.kind === 'kiln') await loadKilnTree(root.path);
         else await loadProjectDir(root.path, '');
       } catch (e) {

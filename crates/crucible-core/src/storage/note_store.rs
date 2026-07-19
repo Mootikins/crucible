@@ -104,12 +104,53 @@ pub struct NoteRecord {
     #[serde(default)]
     pub links_to: Vec<String>,
 
+    /// Wikilink occurrences with FILE-absolute byte spans of each target
+    /// token — the input to the resolved-link index (`note_links`) that the
+    /// rename rewrite splices by. Populated by the note pipeline from
+    /// `ParsedNote` (`target_span` + `body_offset`); empty for records built
+    /// by legacy paths that lack span data.
+    #[serde(default)]
+    pub links: Vec<LinkOccurrence>,
+
     /// Frontmatter properties (arbitrary key-value pairs)
     #[serde(default)]
     pub properties: HashMap<String, Value>,
 
     /// When this record was last updated
     pub updated_at: DateTime<Utc>,
+}
+
+/// One wikilink occurrence inside a note's raw file bytes.
+///
+/// `span` addresses exactly the *target token* (between `[[`/`![[` and the
+/// first of `|`/`#`/`]]`) so a rename splice preserves alias, heading/block
+/// refs, and the embed marker automatically.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkOccurrence {
+    /// Target text as written (`"async"`, `"notes/async"`, `"Async"`)
+    pub raw_target: String,
+    /// FILE-absolute byte offset of the target token start
+    pub span_start: usize,
+    /// FILE-absolute byte offset (exclusive) of the target token end
+    pub span_end: usize,
+    /// Whether the occurrence is an embed (`![[...]]`)
+    pub is_embed: bool,
+}
+
+/// One inbound link occurrence from the resolved-link index (rewrite input).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboundLink {
+    /// Note containing the link (kiln-relative path)
+    pub source_path: String,
+    /// FILE-absolute byte offset of the target token start (negative =
+    /// span-less legacy row; cannot be spliced, only resolved)
+    pub span_start: i64,
+    /// FILE-absolute byte offset (exclusive) of the target token end
+    pub span_end: i64,
+    /// Target text as written
+    pub raw_target: String,
+    /// Whether the resolution was ambiguous at index time (rewrites skip it)
+    pub is_ambiguous: bool,
 }
 
 impl NoteRecord {
@@ -124,6 +165,7 @@ impl NoteRecord {
             title: String::new(),
             tags: Vec::new(),
             links_to: Vec::new(),
+            links: Vec::new(),
             properties: HashMap::new(),
             updated_at: Utc::now(),
         }
@@ -220,6 +262,7 @@ impl Default for NoteRecord {
             title: String::new(),
             tags: Vec::new(),
             links_to: Vec::new(),
+            links: Vec::new(),
             properties: HashMap::new(),
             updated_at: Utc::now(),
         }
@@ -414,6 +457,32 @@ pub trait NoteStore: Send + Sync {
     /// Backends MUST filter by [`Scope::can_read`] server-side; callers
     /// must not see records they have no authority over.
     async fn list(&self, authority: &Scope) -> StorageResult<Vec<NoteRecord>>;
+
+    /// Source paths of notes with at least one link that RESOLVES to
+    /// `target_path` (deterministic backlinks, via the resolved-link index).
+    /// Backends without such an index return an empty list.
+    async fn backlinks(&self, _target_path: &str) -> StorageResult<Vec<String>> {
+        Ok(Vec::new())
+    }
+
+    /// Every inbound link occurrence resolving to `target_path` — the exact
+    /// rows a rename/move rewrite splices. Empty for backends without a
+    /// resolved-link index.
+    async fn inbound_links(&self, _target_path: &str) -> StorageResult<Vec<InboundLink>> {
+        Ok(Vec::new())
+    }
+
+    /// True when the resolved-link index must be rebuilt (set once by the
+    /// schema migration; cleared by the relink pass).
+    fn needs_link_reindex(&self) -> bool {
+        false
+    }
+
+    /// Rebuild the resolved-link rows for one note without touching the note
+    /// row itself (migration relink pass; embeddings stay intact).
+    async fn reindex_links(&self, _path: &str, _links: &[LinkOccurrence]) -> StorageResult<()> {
+        Ok(())
+    }
 
     /// Find a note by its content hash, scoped by request authority.
     ///

@@ -64,12 +64,14 @@ async fn move_path(
     State(state): State<AppState>,
     Json(body): Json<FsMoveBody>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    state
+    let outcome = state
         .daemon
         .fs_move(&body.root, &body.kind, &body.from_rel, &body.to_rel)
         .await
         .daemon_err()?;
-    Ok(Json(serde_json::json!({ "moved": true })))
+    // Kiln .md moves carry the link-rewrite outcome (rewritten_sources /
+    // skipped) so the tree can tell the user what happened to their links.
+    Ok(Json(outcome))
 }
 
 /// Live filesystem-change stream for the file-tree explorer.

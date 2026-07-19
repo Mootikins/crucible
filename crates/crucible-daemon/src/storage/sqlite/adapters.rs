@@ -294,6 +294,7 @@ mod tests {
             title: "Alien".to_string(),
             tags: vec![],
             links_to: vec![],
+            links: Vec::new(),
             properties: Default::default(),
             updated_at: chrono::Utc::now(),
             ..Default::default()
@@ -313,6 +314,7 @@ mod tests {
             title: "Visible".to_string(),
             tags: vec![],
             links_to: vec![],
+            links: Vec::new(),
             properties: Default::default(),
             updated_at: chrono::Utc::now(),
             ..Default::default()

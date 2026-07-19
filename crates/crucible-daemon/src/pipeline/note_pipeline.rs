@@ -402,6 +402,20 @@ impl NotePipeline {
         // Extract links from wikilinks
         let links_to: Vec<String> = parsed.wikilinks.iter().map(|w| w.target.clone()).collect();
 
+        // Full occurrences with FILE-absolute byte spans (parser spans are
+        // body-relative; body_offset is the frontmatter prefix length) — the
+        // input to the resolved-link index the rename rewrite splices by.
+        let links: Vec<crucible_core::storage::LinkOccurrence> = parsed
+            .wikilinks
+            .iter()
+            .map(|w| crucible_core::storage::LinkOccurrence {
+                raw_target: w.target.clone(),
+                span_start: parsed.body_offset + w.target_span.0,
+                span_end: parsed.body_offset + w.target_span.1,
+                is_embed: w.is_embed,
+            })
+            .collect();
+
         // Extract tags (Tag.name is the string value)
         let tags: Vec<String> = parsed.tags.iter().map(|t| t.name.clone()).collect();
 
@@ -433,6 +447,7 @@ impl NotePipeline {
             title: parsed.title(),
             tags,
             links_to,
+            links,
             properties,
             updated_at: chrono::Utc::now(),
         })

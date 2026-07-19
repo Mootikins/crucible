@@ -41,17 +41,8 @@ CREATE TABLE IF NOT EXISTS notes (
 CREATE INDEX IF NOT EXISTS notes_hash_idx ON notes(content_hash);
 CREATE INDEX IF NOT EXISTS notes_updated_idx ON notes(updated_at);
 
--- Junction table for fast inlinks queries
--- Denormalized from links_to JSON array for O(1) reverse lookups
-CREATE TABLE IF NOT EXISTS note_links (
-    source_path TEXT NOT NULL,
-    target_path TEXT NOT NULL,
-    PRIMARY KEY (source_path, target_path),
-    FOREIGN KEY (source_path) REFERENCES notes(path) ON DELETE CASCADE
-);
-
--- Index for inlinks queries: "what notes link to this path?"
-CREATE INDEX IF NOT EXISTS note_links_target_idx ON note_links(target_path);
+-- note: the resolved-link index (note_links v2) is owned by link_index.rs
+-- and created/migrated in apply_schema.
 "#;
 
 // ============================================================================
@@ -327,6 +318,9 @@ fn row_to_note(row: &rusqlite::Row<'_>) -> Result<NoteRecord, rusqlite::Error> {
         title,
         tags,
         links_to,
+        // Span occurrences live in the note_links table (the resolved-link
+        // index); readers that need them query it directly.
+        links: Vec::new(),
         properties,
         updated_at,
     })
@@ -357,12 +351,19 @@ fn row_to_note(row: &rusqlite::Row<'_>) -> Result<NoteRecord, rusqlite::Error> {
 #[derive(Clone)]
 pub struct SqliteNoteStore {
     pool: SqlitePool,
+    /// Set by `apply_schema` when the note_links v1→v2 migration dropped the
+    /// old raw-text rows: existing notes must be relinked from disk (the kiln
+    /// open path runs the pass and clears this).
+    needs_link_reindex: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl SqliteNoteStore {
     /// Create a new NoteStore with the given connection pool
     pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+        Self {
+            pool,
+            needs_link_reindex: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
     }
 
     /// Get a reference to the underlying connection pool
@@ -376,7 +377,7 @@ impl SqliteNoteStore {
     pub async fn apply_schema(&self) -> StorageResult<()> {
         let pool = self.pool.clone();
 
-        tokio::task::spawn_blocking(move || {
+        let needs_relink = tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
                 conn.execute_batch(NOTES_SCHEMA).sql()?;
                 debug!("Notes schema applied successfully");
@@ -385,11 +386,18 @@ impl SqliteNoteStore {
                 ensure_embedding_metadata_columns(conn).sql()?;
                 debug!("Embedding metadata columns ensured");
 
-                Ok(())
+                // Resolved-link index (note_links v2); true = v1 was dropped
+                // and existing notes need a relink pass.
+                let needs_relink = super::link_index::ensure_note_links_v2(conn).sql()?;
+                Ok(needs_relink)
             })
         })
         .await??;
 
+        if needs_relink {
+            self.needs_link_reindex
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
         Ok(())
     }
 }
@@ -411,12 +419,18 @@ impl NoteStore for SqliteNoteStore {
                 let properties_json = serde_json::to_string(&note.properties)?;
                 let updated_at_str = note.updated_at.to_rfc3339();
 
-                // Check if the note existed before to determine appropriate event
-                let existed = conn.query_row(
-                    "SELECT 1 FROM notes WHERE path = ?1",
-                    [&note.path],
-                    |row| row.get::<_, i32>(0),
-                ).optional().is_ok_and(|opt| opt.is_some());
+                // Check if the note existed before to determine the event,
+                // and capture its previous title: a title change means links
+                // addressed BY the old title must be re-resolved too.
+                let old_title: Option<String> = conn
+                    .query_row(
+                        "SELECT title FROM notes WHERE path = ?1",
+                        [&note.path],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .unwrap_or(None);
+                let existed = old_title.is_some();
 
                 // Upsert the note
                 conn.execute(
@@ -449,25 +463,20 @@ impl NoteStore for SqliteNoteStore {
                 )
                 .sql()?;
 
-                // Update note_links junction table for fast inlinks queries
-                conn.execute(
-                    "DELETE FROM note_links WHERE source_path = ?1",
-                    params![note.path],
-                )
-                .sql()?;
-
-                // Insert new links
-                if !note.links_to.is_empty() {
-                    let mut stmt = conn
-                        .prepare(
-                        "INSERT OR IGNORE INTO note_links (source_path, target_path) VALUES (?1, ?2)",
-                    )
-                        .sql()?;
-                    for target in &note.links_to {
-                        stmt.execute(params![note.path, target])
-                            .sql()?;
+                // Rebuild this note's rows in the resolved-link index, then
+                // re-resolve every row this note's identity could satisfy —
+                // the convergence step that keeps links correct when notes
+                // appear/move (old + new title both matter on a title change).
+                super::link_index::write_links(conn, &note.path, &note.links, &note.links_to)
+                    .sql()?;
+                let mut keys = super::link_index::note_keys(&note.path, &note.title);
+                if let Some(old) = old_title.as_ref() {
+                    let old_l = old.to_lowercase();
+                    if !old_l.is_empty() && !keys.contains(&old_l) {
+                        keys.push(old_l);
                     }
                 }
+                super::link_index::reresolve_keys(conn, &keys).sql()?;
 
                 let event = if existed {
                     SessionEvent::internal(crucible_core::events::InternalSessionEvent::NoteModified {
@@ -535,16 +544,29 @@ impl NoteStore for SqliteNoteStore {
 
         let existed = tokio::task::spawn_blocking(move || {
             pool.with_transaction(|conn| {
-                // Check if the note exists before deletion
-                let existed = conn
-                    .query_row("SELECT 1 FROM notes WHERE path = ?1", [&path_str], |row| {
-                        row.get::<_, i32>(0)
-                    })
+                // Capture the title before deletion: rows addressed by this
+                // note's stem/path/title must be re-resolved once it's gone
+                // (they may now dangle, or repoint to a same-stem survivor).
+                let title: Option<String> = conn
+                    .query_row(
+                        "SELECT title FROM notes WHERE path = ?1",
+                        [&path_str],
+                        |row| row.get(0),
+                    )
                     .optional()
-                    .is_ok_and(|opt| opt.is_some());
+                    .unwrap_or(None);
+                let existed = title.is_some();
 
                 conn.execute("DELETE FROM notes WHERE path = ?1", [&path_str])
                     .sql()?;
+                // Explicit (FK cascade needs pragma foreign_keys, which the
+                // pool may not enable): drop this note's outbound rows.
+                conn.execute("DELETE FROM note_links WHERE source_path = ?1", [&path_str])
+                    .sql()?;
+                if let Some(title) = title.as_ref() {
+                    let keys = super::link_index::note_keys(&path_str, title);
+                    super::link_index::reresolve_keys(conn, &keys).sql()?;
+                }
                 Ok(existed)
             })
         })
@@ -557,6 +579,48 @@ impl NoteStore for SqliteNoteStore {
                 existed,
             });
         Ok(event)
+    }
+
+    async fn backlinks(&self, target_path: &str) -> StorageResult<Vec<String>> {
+        let pool = self.pool.clone();
+        let target = target_path.to_string();
+        tokio::task::spawn_blocking(move || {
+            pool.with_connection(|conn| super::link_index::backlink_sources(conn, &target).sql())
+        })
+        .await?
+    }
+
+    async fn inbound_links(
+        &self,
+        target_path: &str,
+    ) -> StorageResult<Vec<crucible_core::storage::InboundLink>> {
+        let pool = self.pool.clone();
+        let target = target_path.to_string();
+        tokio::task::spawn_blocking(move || {
+            pool.with_connection(|conn| super::link_index::inbound_links(conn, &target).sql())
+        })
+        .await?
+    }
+
+    fn needs_link_reindex(&self) -> bool {
+        self.needs_link_reindex
+            .swap(false, std::sync::atomic::Ordering::AcqRel)
+    }
+
+    async fn reindex_links(
+        &self,
+        path: &str,
+        links: &[crucible_core::storage::LinkOccurrence],
+    ) -> StorageResult<()> {
+        let pool = self.pool.clone();
+        let path = path.to_string();
+        let links = links.to_vec();
+        tokio::task::spawn_blocking(move || {
+            pool.with_transaction(|conn| {
+                super::link_index::write_links(conn, &path, &links, &[]).sql()
+            })
+        })
+        .await?
     }
 
     async fn list(&self, authority: &Scope) -> StorageResult<Vec<NoteRecord>> {
@@ -1169,7 +1233,7 @@ mod tests {
             .await
             .expect("Failed to create store");
 
-        // Create notes with links
+        // Create notes with links (raw links_to fallback path — no spans)
         let note_a = NoteRecord::new("a.md", BlockHash::zero())
             .with_title("Note A")
             .with_links(vec!["b.md".to_string(), "c.md".to_string()]);
@@ -1182,21 +1246,13 @@ mod tests {
         store.upsert(note_b).await.expect("Failed to upsert B");
         store.upsert(note_c).await.expect("Failed to upsert C");
 
-        // Query the junction table directly to verify it's populated
-        let inlinks_to_c: Vec<String> = pool
-            .with_connection(|conn| {
-                let mut stmt = conn
-                    .prepare("SELECT source_path FROM note_links WHERE target_path = ?1")
-                    .unwrap();
-                let rows = stmt.query_map(["c.md"], |row| row.get(0)).unwrap();
-                Ok(rows.filter_map(|r| r.ok()).collect())
-            })
-            .expect("Failed to query");
-
-        // Both a.md and b.md link to c.md
-        assert_eq!(inlinks_to_c.len(), 2);
-        assert!(inlinks_to_c.contains(&"a.md".to_string()));
-        assert!(inlinks_to_c.contains(&"b.md".to_string()));
+        // Resolved-link index answers backlinks deterministically. NOTE: the
+        // first two upserts ran while c.md did not exist yet — the
+        // re-resolution pass on c.md's upsert is what repoints them (the
+        // "note appears" half of the convergence invariant).
+        let mut inlinks_to_c = store.backlinks("c.md").await.expect("backlinks");
+        inlinks_to_c.sort();
+        assert_eq!(inlinks_to_c, vec!["a.md".to_string(), "b.md".to_string()]);
 
         // Update note_a to remove link to c.md
         let updated_a = NoteRecord::new("a.md", BlockHash::zero())
@@ -1204,20 +1260,13 @@ mod tests {
             .with_links(vec!["b.md".to_string()]); // No longer links to c.md
         store.upsert(updated_a).await.expect("Failed to update A");
 
-        // Verify junction table was updated
-        let inlinks_to_c: Vec<String> = pool
-            .with_connection(|conn| {
-                let mut stmt = conn
-                    .prepare("SELECT source_path FROM note_links WHERE target_path = ?1")
-                    .unwrap();
-                let rows = stmt.query_map(["c.md"], |row| row.get(0)).unwrap();
-                Ok(rows.filter_map(|r| r.ok()).collect())
-            })
-            .expect("Failed to query");
-
         // Only b.md links to c.md now
-        assert_eq!(inlinks_to_c.len(), 1);
-        assert!(inlinks_to_c.contains(&"b.md".to_string()));
+        let inlinks_to_c = store.backlinks("c.md").await.expect("backlinks");
+        assert_eq!(inlinks_to_c, vec!["b.md".to_string()]);
+
+        // Deleting c.md leaves the raw links dangling (resolved to nothing)
+        store.delete("c.md").await.expect("delete");
+        assert!(store.backlinks("c.md").await.expect("backlinks").is_empty());
     }
 
     // =========================================================================

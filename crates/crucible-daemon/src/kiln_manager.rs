@@ -200,15 +200,17 @@ impl StorageHandle {
             return Ok(None);
         };
 
-        let candidates = wikilink_target_candidates(&target.path, &target.title);
+        // Deterministic backlinks from the resolved-link index — the same
+        // resolver the rename rewrite uses, so what backlinks show is exactly
+        // what a rename would rewrite. (The old fuzzy candidate matching made
+        // [[async]] structurally match EVERY note whose stem is `async`.)
+        let sources = self.sqlite.as_note_store().backlinks(&target.path).await?;
+        let source_set: std::collections::HashSet<&str> =
+            sources.iter().map(String::as_str).collect();
         let mut backlinks: Vec<NoteInfo> = records
             .into_iter()
             .filter(|r| r.path != target.path)
-            .filter(|r| {
-                r.links_to
-                    .iter()
-                    .any(|t| candidates.contains(&normalize_wikilink_target(t)))
-            })
+            .filter(|r| source_set.contains(r.path.as_str()))
             .map(|r| NoteInfo {
                 name: Path::new(&r.path)
                     .file_stem()
@@ -232,33 +234,53 @@ impl StorageHandle {
     }
 }
 
-/// The lowercase strings under which a note can be addressed by a wikilink.
-///
-/// Wikilink targets are stored *as written* (`[[rust]]`, `[[notes/rust]]`,
-/// `[[notes/rust.md]]`, `[[Rust]]`), not resolved to paths — so backlink
-/// matching compares a normalized target against every form that identifies
-/// the note: file stem, extension-less path, full path, and title.
-fn wikilink_target_candidates(path: &str, title: &str) -> std::collections::HashSet<String> {
-    let mut candidates = std::collections::HashSet::new();
-    let lower = path.to_lowercase();
-    candidates.insert(lower.trim_end_matches(".md").to_string());
-    candidates.insert(lower.clone());
-    if let Some(stem) = Path::new(&lower).file_stem().and_then(|s| s.to_str()) {
-        candidates.insert(stem.to_string());
-    }
-    if !title.is_empty() {
-        candidates.insert(title.to_lowercase());
-    }
-    candidates
-}
+/// Rebuild the resolved-link index for every note in a kiln by re-parsing
+/// the files on disk. Runs once after the note_links v1→v2 migration (the
+/// old rows carried raw text without spans and were unrecoverable in place).
+/// Best-effort: unreadable/unparseable files are skipped with a warning.
+async fn relink_kiln(root: &Path, store: &dyn crucible_core::storage::NoteStore) {
+    use crucible_core::parser::{traits::MarkdownParser, CrucibleParser};
+    use crucible_core::storage::{LinkOccurrence, Scope};
 
-/// Normalize a stored wikilink target for candidate matching: lowercase and
-/// strip any heading (`#heading`) or block (`#^id`) fragment. Fragments are
-/// parsed into separate fields for new notes, but stored targets from older
-/// index runs may still carry them.
-fn normalize_wikilink_target(target: &str) -> String {
-    let base = target.split('#').next().unwrap_or(target).trim();
-    base.to_lowercase()
+    let authority = Scope::workspace_unchecked(root);
+    let records = match store.list(&authority).await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!(error = %e, "link relink: listing notes failed; index stays empty until notes are re-processed");
+            return;
+        }
+    };
+    let parser = CrucibleParser::new();
+    let mut relinked = 0usize;
+    for rec in &records {
+        let file = root.join(&rec.path);
+        let parsed = match parser.parse_file(&file).await {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(path = %rec.path, error = %e, "link relink: parse failed, skipping");
+                continue;
+            }
+        };
+        let links: Vec<LinkOccurrence> = parsed
+            .wikilinks
+            .iter()
+            .map(|w| LinkOccurrence {
+                raw_target: w.target.clone(),
+                span_start: parsed.body_offset + w.target_span.0,
+                span_end: parsed.body_offset + w.target_span.1,
+                is_embed: w.is_embed,
+            })
+            .collect();
+        if let Err(e) = store.reindex_links(&rec.path, &links).await {
+            tracing::warn!(path = %rec.path, error = %e, "link relink: write failed");
+            continue;
+        }
+        relinked += 1;
+    }
+    info!(
+        notes = relinked,
+        "Resolved-link index rebuilt (note_links v2 migration)"
+    );
 }
 
 // ===========================================================================
@@ -335,6 +357,16 @@ impl KilnManager {
             handle.backend_name(),
             db_path
         );
+
+        // Phase-3 one-time migration: note_links v1 stored raw text and was
+        // dropped on upgrade; rebuild the resolved-link index by re-parsing
+        // links from disk (parse only — embeddings are untouched).
+        {
+            let store = handle.as_note_store();
+            if store.needs_link_reindex() {
+                relink_kiln(&canonical, store.as_ref()).await;
+            }
+        }
 
         let mut pipeline = create_pipeline(&handle, self.enrichment_config.as_ref()).await?;
         pipeline.set_kiln_root(canonical.clone());
@@ -470,6 +502,32 @@ impl KilnManager {
             Ok(ProcessingResult::Success { .. }) => Ok(true),
             Ok(ProcessingResult::Skipped) => Ok(false),
             Ok(ProcessingResult::NoChanges) => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Like [`Self::process_file`] but bypassing change detection for this
+    /// one call. A renamed note can land on a path whose change-detection
+    /// state is stale-but-matching (A→B→A round trip), which would skip the
+    /// reindex the rename depends on. Toggling force is safe: the connections
+    /// write-lock is held across the process call, so no other pipeline use
+    /// can observe the flag.
+    pub async fn process_file_forced(&self, kiln_path: &Path, file_path: &Path) -> Result<bool> {
+        self.open(kiln_path).await?;
+        let canonical = canonical_or_self(kiln_path);
+        let mut conns = self.connections.write().await;
+        let conn = conns
+            .get_mut(&canonical)
+            .ok_or_else(|| anyhow::anyhow!("Kiln not found after opening"))?;
+        conn.last_access = Instant::now();
+
+        use crate::pipeline::ProcessingResult;
+        conn.pipeline.set_force_reprocess(true);
+        let result = conn.pipeline.process(file_path).await;
+        conn.pipeline.set_force_reprocess(false);
+        match result {
+            Ok(ProcessingResult::Success { .. }) => Ok(true),
+            Ok(_) => Ok(false),
             Err(e) => Err(e),
         }
     }
