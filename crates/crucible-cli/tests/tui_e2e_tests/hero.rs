@@ -1,7 +1,7 @@
 //! Hero-flow TUI legs (legs 1 and 3 of the cross-surface hero journey).
 //!
 //! These are NOT standalone: they are driven by the Playwright hero spec
-//! (`crates/crucible-cli/web/e2e/live/hero.live.spec.ts`), which stands up an
+//! (`crates/crucible-web/web/e2e/live/hero.live.spec.ts`), which stands up an
 //! isolated daemon + `cru web` + a fake Ollama server, then invokes each leg via
 //! `cargo nextest run --run-ignored ignored-only -E 'test(hero_leg_N)'` with the
 //! daemon's env. The legs attach to that SAME daemon (a session is a VM on the

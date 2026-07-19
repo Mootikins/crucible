@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use crucible_core::config::{CliAppConfig, WebConfig};
 
-use crate::web::middleware::auth::{api_key_path, generate_and_persist_key, resolve_api_key};
+use crucible_web::middleware::auth::{api_key_path, generate_and_persist_key, resolve_api_key};
 
 #[derive(Args)]
 pub struct WebCommand {
@@ -70,7 +70,7 @@ pub async fn handle(cmd: WebCommand) -> Result<()> {
     );
     print_connect_urls(&final_config);
 
-    crate::web::start_server(&final_config, &config).await?;
+    crucible_web::start_server(&final_config, &config).await?;
 
     Ok(())
 }

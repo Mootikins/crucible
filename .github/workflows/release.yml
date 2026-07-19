@@ -127,7 +127,7 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           fi
-      # The `cru` binary embeds the SolidJS web UI (crates/crucible-cli/web/dist)
+      # The `cru` binary embeds the SolidJS web UI (crates/crucible-web/web/dist)
       # at compile time via rust-embed. dist is gitignored, so build the real
       # frontend here before `dist build` compiles the Rust binary.
       - name: "Set up bun"
@@ -135,7 +135,7 @@ jobs:
         with:
           bun-version: latest
       - name: "Build web frontend"
-        working-directory: crates/crucible-cli/web
+        working-directory: crates/crucible-web/web
         run: |
           bun install --frozen-lockfile
           bun run build

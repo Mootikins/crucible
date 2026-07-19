@@ -228,7 +228,7 @@ fn normalize_api_path(raw: &str) -> String {
 }
 
 fn frontend_api_paths(root: &Path) -> BTreeSet<String> {
-    let src = read(&root.join("crates/crucible-cli/web/src/lib/api.ts"));
+    let src = read(&root.join("crates/crucible-web/web/src/lib/api.ts"));
     let re = Regex::new(r#"['"`](/api/[^'"`]*)['"`]"#).unwrap();
     re.captures_iter(&src)
         .map(|c| normalize_api_path(&c[1]))
@@ -240,13 +240,13 @@ fn backend_api_paths(root: &Path) -> BTreeSet<String> {
     let nest_re = Regex::new(r#"\.nest\(\s*"([^"]+)""#).unwrap();
 
     let mut sources = Vec::new();
-    let routes_dir = root.join("crates/crucible-cli/src/web/routes");
+    let routes_dir = root.join("crates/crucible-web/src/routes");
     for entry in WalkDir::new(&routes_dir).into_iter().filter_map(Result::ok) {
         if entry.path().extension().and_then(|e| e.to_str()) == Some("rs") {
             sources.push(read(entry.path()));
         }
     }
-    sources.push(read(&root.join("crates/crucible-cli/src/web/server.rs")));
+    sources.push(read(&root.join("crates/crucible-web/src/server.rs")));
 
     let mut absolute = BTreeSet::new();
     let mut relative = BTreeSet::new();

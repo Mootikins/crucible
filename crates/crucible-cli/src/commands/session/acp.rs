@@ -93,7 +93,7 @@ pub(super) mod rpc {
 
     /// Build a default internal SessionAgent from global config.
     ///
-    /// Same logic as `cru chat` uses via `build_internal_session_agent` in factories,
+    /// Same logic as `cru chat` uses via `SessionAgent::internal_from_config`,
     /// so CLI sessions get the same provider/model defaults.
     fn build_default_session_agent(config: &CliConfig) -> SessionAgent {
         let effective_llm = config.effective_llm_provider().ok();

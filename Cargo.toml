@@ -9,6 +9,7 @@ members = [
     "crates/crucible-lua",
     "crates/crucible-daemon",
     "crates/crucible-oil",
+    "crates/crucible-web",
 ]
 default-members = ["crates/crucible-cli"]
 
@@ -126,6 +127,7 @@ crucible-core = { path = "crates/crucible-core" }
 crucible-lua = { path = "crates/crucible-lua" }
 crucible-daemon = { path = "crates/crucible-daemon" }
 crucible-oil = { path = "crates/crucible-oil" }
+crucible-web = { path = "crates/crucible-web" }
 oq = "0.1"
 
 # Workspace-level test feature flags
@@ -149,10 +151,10 @@ targets = [
 ]
 hosting = ["github"]
 checksum = "sha256"
-# `cru` (crucible-cli) only exposes `fastembed` now — web UI and SQLite are
-# always compiled in since the crate consolidation removed the `web` and
-# `storage-sqlite` features.
-features = ["fastembed"]
+# Release `cru` ships local embeddings AND the web UI (the `web` feature pulls
+# the crucible-web crate with the embedded SolidJS frontend — release.yml
+# builds web/dist before cargo-dist runs).
+features = ["fastembed", "web"]
 default-features = false
 github-build-setup = "../build-setup.yml"
 github-custom-runners = { x86_64-unknown-linux-gnu = "ubuntu-24.04", aarch64-unknown-linux-gnu = "ubuntu-24.04" }

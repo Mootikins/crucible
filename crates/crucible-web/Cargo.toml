@@ -1,0 +1,58 @@
+[package]
+name = "crucible-web"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+description = "Crucible web UI server — Axum routes over daemon RPC with an embedded SolidJS frontend"
+
+[lib]
+doctest = false
+
+[features]
+# Expose the mock daemon + route test helpers for integration tests.
+test-utils = ["dep:tempfile", "dep:proptest"]
+
+[dependencies]
+crucible-core = { path = "../crucible-core" }
+crucible-daemon = { path = "../crucible-daemon", default-features = false }
+
+axum = { workspace = true, features = ["macros", "ws"] }
+tower = { workspace = true }
+tower-http = { version = "0.6", features = ["fs", "cors"] }
+tokio = { workspace = true }
+tokio-stream = { workspace = true, features = ["sync"] }
+futures = { workspace = true }
+
+# Embedded frontend (web/dist) for release builds; debug serves from disk.
+rust-embed = { version = "8", features = ["interpolate-folder-path"] }
+mime_guess = "2"
+
+portable-pty = "0.9"
+
+# Daemon-proxy HTTP client (transcription forwarding etc.)
+reqwest = { workspace = true }
+dirs = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+rand = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# Only compiled under `test-utils` (test_support); dev-dependencies cannot be
+# referenced from library code, so they're optional real deps.
+tempfile = { workspace = true, optional = true }
+proptest = { version = "1.11", optional = true }
+
+# Unix-only: process-group signals for the PTY terminal teardown.
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31", features = ["signal"] }
+
+[dev-dependencies]
+crucible-web = { path = ".", features = ["test-utils"] }
+tokio = { workspace = true, features = ["full"] }

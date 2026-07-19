@@ -193,68 +193,6 @@ fn build_acp_session_agent(params: &AgentInitParams, config: &CliAppConfig) -> S
     }
 }
 
-pub(crate) fn build_internal_session_agent(config: &CliAppConfig) -> SessionAgent {
-    let effective_llm = config.effective_llm_provider().ok();
-    let model = effective_llm
-        .as_ref()
-        .map(|p| p.model.clone())
-        .or_else(|| config.chat.model.clone())
-        .unwrap_or_else(|| crucible_core::config::DEFAULT_CHAT_MODEL.to_string());
-    let mcp_servers = config
-        .mcp
-        .as_ref()
-        .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
-        .unwrap_or_default();
-    let backend_type = effective_llm
-        .as_ref()
-        .map(|p| p.provider_type)
-        .unwrap_or(crucible_core::config::BackendType::Ollama);
-    let provider_key = effective_llm
-        .as_ref()
-        .map(|p| p.key.clone())
-        .unwrap_or_else(|| backend_type.as_str().to_string());
-
-    SessionAgent {
-        agent_type: "internal".to_string(),
-        agent_name: None,
-        provider_key: Some(provider_key),
-        provider: backend_type,
-        model,
-        system_prompt: String::new(),
-        temperature: effective_llm
-            .as_ref()
-            .map(|p| p.temperature as f64)
-            .or_else(|| config.chat.temperature.map(|t| t as f64)),
-        max_tokens: effective_llm
-            .as_ref()
-            .map(|p| p.max_tokens)
-            .or(config.chat.max_tokens),
-        max_context_tokens: None,
-        thinking_budget: None,
-        endpoint: effective_llm
-            .as_ref()
-            .map(|p| p.endpoint.clone())
-            .or_else(|| config.chat.endpoint.clone()),
-        env_overrides: std::collections::HashMap::new(),
-        mcp_servers,
-        agent_card_name: None,
-        capabilities: None,
-        agent_description: None,
-        delegation_config: None,
-        precognition_enabled: true,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
-        context_budget: None,
-        context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
-        mode: None,
-    }
-}
-
 /// Create an agent via daemon (auto-starts daemon if needed)
 pub async fn create_daemon_agent(
     config: &CliAppConfig,
@@ -410,7 +348,7 @@ async fn create_daemon_agent_inner(
         let agent = if is_acp {
             build_acp_session_agent(params, config)
         } else {
-            build_internal_session_agent(config)
+            SessionAgent::internal_from_config(config)
         };
         client.session_configure_agent(&session_id, &agent).await?;
         Some(agent)

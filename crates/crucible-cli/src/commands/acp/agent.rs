@@ -277,7 +277,7 @@ impl Agent for CrucibleAcpAgent {
         // the wildcard is dropped to avoid an event gap.
         narrow_subscription(&client, &daemon_session_id).await;
 
-        let agent = crate::factories::agent::build_internal_session_agent(&self.config);
+        let agent = crucible_core::session::SessionAgent::internal_from_config(&self.config);
         client
             .session_configure_agent(&daemon_session_id, &agent)
             .await

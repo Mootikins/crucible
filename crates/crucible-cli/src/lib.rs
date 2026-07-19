@@ -22,4 +22,3 @@ pub mod provider_detect;
 pub mod search;
 pub mod sync;
 pub mod tui;
-pub mod web;

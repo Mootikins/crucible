@@ -19,7 +19,8 @@
 | Crate | Purpose | Key Types |
 |-------|---------|-----------|
 | `crucible-core` | Domain logic, traits, parser types, config (absorbed from crucible-config) | `Provider`, `CanEmbed`, `CanChat`, `ParsedNote`, `AppConfig` |
-| `crucible-cli` | Terminal UI, REPL, commands, web UI server (`src/web/` — SolidJS + Axum, HTTP/SSE over daemon RPC) | `OilChatApp`, `ChatAppMsg` |
+| `crucible-cli` | Terminal UI, REPL, commands (`cru web` gated behind the default-on `web` feature) | `OilChatApp`, `ChatAppMsg` |
+| `crucible-web` | Web UI server (Axum routes over daemon RPC, `web/` SolidJS frontend embedded via rust-embed) | `start_server`, `AppState` |
 | `crucible-oil` | Terminal rendering primitives | `Node`, `render_to_string` |
 | `crucible-lua` | Lua/Luau with Fennel support | `LuaExecutor`, `FennelCompiler` |
 | `crucible-daemon` | Daemon server: enrichment, note pipeline, RPC, observability, file watching, skills, tools, ACP host (`acp/`), embedding backends (`llm/`), SQLite storage (`storage/sqlite/`), LanceDB vector storage (`storage/lance/`) | `Server`, `SessionManager`, `AgentManager`, `SqliteStorage`, `LanceVectorIndex`, `EmbeddingProvider` |
@@ -230,10 +231,11 @@ env = { ANTHROPIC_BASE_URL = "http://localhost:4000" }
 crucible/
 ├── crates/                      # Rust workspace crates
 │   ├── crucible-core/           # Core domain types, traits, parser, config
-│   ├── crucible-cli/            # Terminal UI, REPL, commands, web UI (src/web + web/ frontend)
+│   ├── crucible-cli/            # Terminal UI, REPL, commands (web behind `web` feature)
 │   ├── crucible-oil/             # Terminal rendering primitives
 │   ├── crucible-daemon/          # Daemon: RPC, sessions, ACP host, embeddings, SQLite + LanceDB storage, skills
-│   └── crucible-lua/             # Lua/Fennel scripting
+│   ├── crucible-lua/             # Lua/Fennel scripting
+│   └── crucible-web/             # Web UI server (Axum routes + web/ SolidJS frontend)
 ├── vendor/                       # Patched upstream dependencies
 ├── docs/                         # Documentation kiln (user guides + test fixture)
 ├── justfile                      # Development recipes
@@ -274,7 +276,7 @@ Conventions: use wikilinks (`[[Help/Wikilinks]]`), add frontmatter with tags, ke
 
 **Don't build release unless installing.** Release builds use LTO and take 5-10 minutes. Use debug builds for iteration.
 
-**Web frontend uses `bun`** (not npm/yarn). See `crates/crucible-cli/web/AGENTS.md`.
+**Web frontend uses `bun`** (not npm/yarn). See `crates/crucible-web/web/AGENTS.md`.
 
 ### Code Principles
 
@@ -326,9 +328,10 @@ Features are declared per-crate. The notable ones:
 | `fastembed` | daemon, cli | Yes | Local ONNX embeddings (pulls `fastembed` + `ort`) |
 | `fennel` | lua | Yes | Fennel → Lua compilation |
 | `keyring` | core | No | Optional OS keyring backend for secrets |
-| `web` | daemon | No | Web UI server support |
+| `web` | cli | Yes | Web UI server (`cru web`, pulls crucible-web) |
+| `web` | daemon | No | Daemon-side web support hooks |
 | `serde` | oil | No | Serialize/deserialize render nodes |
-| `test-utils` | core, cli, daemon, oil | No | Mock providers / test helpers |
+| `test-utils` | core, daemon, oil, web | No | Mock providers / test helpers |
 
 Slow/external tests are gated with `#[ignore]` (run via `just test ignored`
 or `just test full`), not cargo features.

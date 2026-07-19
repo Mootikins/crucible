@@ -148,19 +148,19 @@ web: web-build
 
 # Build only the SolidJS frontend
 web-build:
-    cd crates/crucible-cli/web && bun install && bun run build
+    cd crates/crucible-web/web && bun install && bun run build
 
 # Run Vite dev server (hot reload, localhost only)
 web-vite:
-    cd crates/crucible-cli/web && bun run dev
+    cd crates/crucible-web/web && bun run dev
 
 # Run Vite dev server exposed to network
 web-vite-host:
-    cd crates/crucible-cli/web && bun run dev --host
+    cd crates/crucible-web/web && bun run dev --host
 
 # Run web server pointing to Vite dev server (for API + hot reload)
 web-dev:
-    cargo run -p crucible-cli -- web --host 0.0.0.0 --port 3000 --static-dir crates/crucible-cli/web/dist
+    cargo run -p crucible-cli -- web --host 0.0.0.0 --port 3000 --static-dir crates/crucible-web/web/dist
 
 # Build release with embedded web assets
 release-web: web-build
@@ -168,25 +168,25 @@ release-web: web-build
 
 # Run web E2E tests (Playwright)
 web-test:
-    cd crates/crucible-cli/web && bunx playwright test --reporter=line
+    cd crates/crucible-web/web && bunx playwright test --reporter=line
 
 # Run web unit tests (Vitest)
 web-test-unit:
-    cd crates/crucible-cli/web && bunx vitest run
+    cd crates/crucible-web/web && bunx vitest run
 
-# Run web unit tests with coverage (Vitest + v8). Report at crates/crucible-cli/web/coverage/index.html.
+# Run web unit tests with coverage (Vitest + v8). Report at crates/crucible-web/web/coverage/index.html.
 # Thresholds in vite.config.ts gate against regressions below the 2026-05-17 baseline.
 web-test-coverage:
-    cd crates/crucible-cli/web && bun run test:coverage
+    cd crates/crucible-web/web && bun run test:coverage
 
 # Run the web user-story suites only (video + trace + per-step screenshots)
 web-test-stories:
-    cd crates/crucible-cli/web && bunx playwright test --project=stories --reporter=line
+    cd crates/crucible-web/web && bunx playwright test --project=stories --reporter=line
 
 # Run the live web tier (real `cru web` + daemon + temp kiln). Needs a `cru`
 # binary: set CRU_BIN or build target/debug/cru first. Skips cleanly if absent.
 web-test-live:
-    cd crates/crucible-cli/web && bunx playwright test --config=playwright.live.config.ts
+    cd crates/crucible-web/web && bunx playwright test --config=playwright.live.config.ts
 
 # Run the cross-surface hero flow (TUI → web → TUI, one session; deterministic
 # via a fake Ollama server). Builds `cru`, the web assets, and the TUI test
@@ -194,9 +194,9 @@ web-test-live:
 # is absent.
 hero:
     cargo build -j4 -p crucible-cli --bin cru
-    cd crates/crucible-cli/web && bun install && bun run build
+    cd crates/crucible-web/web && bun install && bun run build
     cargo test -j4 -p crucible-cli --test tui_e2e_tests --no-run
-    cd crates/crucible-cli/web && bunx playwright test --config=playwright.hero.config.ts
+    cd crates/crucible-web/web && bunx playwright test --config=playwright.hero.config.ts
 
 # === Daemon Management ===
 

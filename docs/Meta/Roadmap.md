@@ -40,7 +40,7 @@ A knowledge-grounded agent runtime — agents that draw from a knowledge graph m
 | **3 — Polish & Rich Features** | Web UI polish, Tauri desktop, rich rendering, note types | Wave 10 |
 | **4 — Scale & Collaborate** | Multi-device sync, federation, collaborative cognition | Wave 11 |
 
-> The web UI (SolidJS + Axum, `crucible-cli/src/web`) already provides an early web chat interface; HTTP→RPC bridge, SSE, chat/search/webhook APIs, and auth all shipped. Phase 1+2 work continues iteratively rather than waiting for a single big-bang release.
+> The web UI (SolidJS + Axum, `crucible-web/src`) already provides an early web chat interface; HTTP→RPC bridge, SSE, chat/search/webhook APIs, and auth all shipped. Phase 1+2 work continues iteratively rather than waiting for a single big-bang release.
 
 ---
 

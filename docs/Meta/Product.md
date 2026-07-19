@@ -497,7 +497,7 @@ HTTP Gateway (crucible-web wired to daemon)
 - [ ] **SSE Event Streaming** `P1` — Stream chat tokens, log lines, and daemon events to browser via Server-Sent Events; backpressure handling · **Core Rust** · `crucible-web`
 - [x] **Oil Node Serialization** `P1` — `impl Serialize for Node` — Oil nodes to JSON for browser rendering; foundational primitive for all rich display · **Core Rust** · `crucible-oil` (behind `serde` cargo feature)
 - [ ] **Plugin Panel Hosting** `P1` — iframe sandbox + message-passing protocol for Lua-registered web panels; the "floating window" primitive that P2 features compose on · **Core Rust** · `crucible-web`, `crucible-lua`
-- [x] **Static File Serving** `P1` — Axum serves the SolidJS bundle (PWA manifest + service worker) from `dist/` via rust-embed; static routes are public (no Bearer auth) · **Core Rust** · `crucible-cli` (`src/web`)
+- [x] **Static File Serving** `P1` — Axum serves the SolidJS bundle (PWA manifest + service worker) from `dist/` via rust-embed; static routes are public (no Bearer auth) · **Core Rust** · `crucible-web`
 
 ### Foundation UI (P1 — ships with HTTP gateway)
 

@@ -21,7 +21,7 @@ This document defines the orthogonal systems that make up Crucible. Each system 
 | **agents** | Agent cards, handles, LLM providers, tool registry | `crucible-core/agents`, `crucible-daemon/llm`, `crucible-daemon/tools`, `crucible-daemon/acp` |
 | **workflows** | Definitions (markup) + sessions (logging, resumption) | `crucible-core/workflow` |
 | **plugins** | Extension points, hooks, scripting (Lua) | `crucible-lua` |
-| **apis** | HTTP REST, WebSocket, events | `crucible-cli/src/web` |
+| **apis** | HTTP REST, WebSocket, events | `crucible-web/src` |
 | **cli** | Commands, REPL, TUI, configuration | `crucible-cli`, `crucible-oil`, `crucible-core/config` |
 | **daemon** | Multi-session server, RPC, agent management | `crucible-daemon` |
 | **observe** | Session logging, JSONL event streams, markdown export | `crucible-daemon/observe` |

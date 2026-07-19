@@ -1,4 +1,4 @@
-# The `cru` binary embeds the SolidJS web UI (crates/crucible-cli/web/dist) at
+# The `cru` binary embeds the SolidJS web UI (crates/crucible-web/web/dist) at
 # compile time via rust-embed. dist is gitignored, so build the real frontend
 # here before `dist build` compiles the Rust binary. Runs on both the Linux and
 # macOS local-artifact runners; setup-bun supports both.
@@ -7,7 +7,7 @@
   with:
     bun-version: latest
 - name: Build web frontend
-  working-directory: crates/crucible-cli/web
+  working-directory: crates/crucible-web/web
   run: |
     bun install --frozen-lockfile
     bun run build

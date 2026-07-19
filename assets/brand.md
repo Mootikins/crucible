@@ -10,7 +10,7 @@ It captures both the "vessel" meaning and the transformative/refinement metaphor
 ## Favicon
 
 `assets/favicon.svg` — Stylized alembic flask with amber liquid and bubbles.
-Also deployed at `crates/crucible-cli/web/favicon.svg` for the web UI.
+Also deployed at `crates/crucible-web/web/favicon.svg` for the web UI.
 
 ## Colors
 
