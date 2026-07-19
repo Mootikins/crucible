@@ -1044,6 +1044,14 @@ export async function listKilnNotes(kilnPath: string): Promise<FileEntry[]> {
   })).files;
 }
 
+/** Full note-link graph of a kiln (nodes + resolved/unresolved edges). */
+export async function getKilnGraph(kilnPath: string): Promise<import('./graph/types').GraphDto> {
+  const params = new URLSearchParams({ kiln: kilnPath });
+  return request('GET', `/api/kiln/graph?${params.toString()}`, {
+    errorMessage: 'Failed to load graph',
+  });
+}
+
 /** Get file content by path. */
 export async function getFileContent(path: string): Promise<string> {
   const params = new URLSearchParams({ path });

@@ -15,7 +15,8 @@ export type TabContentType =
   | 'skills'
   | 'plugins'
   | 'activity'
-  | 'backlinks';
+  | 'backlinks'
+  | 'graph';
 
 export interface Tab {
   id: string;

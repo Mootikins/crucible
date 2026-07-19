@@ -2,6 +2,8 @@
 export {
   Activity,
   Archive,
+  ChartNetwork,
+  Crosshair,
   PanelLeft,
   PanelLeftClose,
   PanelRight,

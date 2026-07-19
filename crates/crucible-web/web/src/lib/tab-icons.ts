@@ -2,6 +2,7 @@ import type { Component } from 'solid-js';
 import type { TabContentType } from '@/types/windowTypes';
 import {
   Activity,
+  ChartNetwork,
   ClipboardList,
   FileText,
   FolderTree,
@@ -23,6 +24,7 @@ import {
 const TAB_ICONS: Partial<Record<TabContentType, Component<{ class?: string }>>> = {
   sessions: ClipboardList,
   backlinks: Link2,
+  graph: ChartNetwork,
   files: FolderTree,
   activity: Activity,
   terminal: Terminal,

@@ -147,6 +147,14 @@ const App: Component = () => {
       action: () => openPanelTab('backlinks'),
     },
     {
+      id: 'nav-open-graph',
+      label: 'Open Graph View',
+      description: 'Interactive knowledge graph of the kiln.',
+      category: 'Navigation',
+      keywords: ['graph', 'network', 'links', 'knowledge', 'map'],
+      action: () => openPanelTab('graph'),
+    },
+    {
       id: 'nav-toggle-left',
       label: 'Toggle Left Panel',
       description: 'Collapse or expand the left edge panel.',

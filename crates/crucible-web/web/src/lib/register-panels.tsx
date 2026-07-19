@@ -11,6 +11,7 @@ import FileViewerPanel from '@/components/FileViewerPanel';
 import InboxPanel from '@/components/InboxPanel';
 import HomePanel from '@/components/HomePanel';
 import { BacklinksPanel } from '@/components/BacklinksPanel';
+import { GraphPanel } from '@/components/graph/GraphPanel';
 
 export function registerPanels(): void {
   const registry = getGlobalRegistry();
@@ -26,4 +27,5 @@ export function registerPanels(): void {
   registry.register('skills', 'Skills', SkillsPanel, 'left', '🎯');
   registry.register('plugins', 'Plugins', PluginPanel, 'left', '🔌');
   registry.register('backlinks', 'Backlinks', BacklinksPanel, 'right', '🔗');
+  registry.register('graph', 'Graph', GraphPanel, 'center', '🕸️');
 }
