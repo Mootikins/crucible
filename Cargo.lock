@@ -1765,7 +1765,7 @@ dependencies = [
 
 [[package]]
 name = "crucible-cli"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -1834,7 +1834,7 @@ dependencies = [
 
 [[package]]
 name = "crucible-core"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "agent-client-protocol-schema",
  "anyhow",
@@ -1875,7 +1875,7 @@ dependencies = [
 
 [[package]]
 name = "crucible-daemon"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -1951,7 +1951,7 @@ dependencies = [
 
 [[package]]
 name = "crucible-lua"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1979,7 +1979,7 @@ dependencies = [
 
 [[package]]
 name = "crucible-oil"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "crossterm 0.29.0",
  "html_parser",
