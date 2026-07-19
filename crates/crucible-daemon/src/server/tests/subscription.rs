@@ -2,6 +2,8 @@ use super::*;
 
 #[tokio::test]
 async fn test_server_has_event_broadcast() {
+    // No server spawn/connect needed — exercises the broadcast channel
+    // directly, so this doesn't fit the TestServer fixture.
     let tmp = TempDir::new().unwrap();
     let sock_path = tmp.path().join("test.sock");
 
@@ -25,18 +27,9 @@ async fn test_server_has_event_broadcast() {
 
 #[tokio::test]
 async fn test_session_subscribe_rpc() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
 
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
     client
         .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.subscribe\",\"params\":{\"session_ids\":[\"chat-test\"]}}\n")
         .await
@@ -50,24 +43,14 @@ async fn test_session_subscribe_rpc() {
     assert!(response.contains("chat-test"));
     assert!(response.contains("\"client_id\""));
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_session_subscribe_multiple_sessions() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
 
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
     client
         .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.subscribe\",\"params\":{\"session_ids\":[\"session-1\",\"session-2\",\"session-3\"]}}\n")
         .await
@@ -82,24 +65,14 @@ async fn test_session_subscribe_multiple_sessions() {
     assert!(response.contains("session-2"));
     assert!(response.contains("session-3"));
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_session_subscribe_wildcard() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
 
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
     client
         .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.subscribe\",\"params\":{\"session_ids\":[\"*\"]}}\n")
         .await
@@ -112,24 +85,14 @@ async fn test_session_subscribe_wildcard() {
     assert!(response.contains("\"subscribed\""));
     assert!(response.contains("\"*\""));
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_session_subscribe_missing_session_ids() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
 
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
     client
         .write_all(
             b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.subscribe\",\"params\":{}}\n",
@@ -145,24 +108,14 @@ async fn test_session_subscribe_missing_session_ids() {
     assert!(response.contains("-32602")); // INVALID_PARAMS
     assert!(response.contains("session_ids"));
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_session_subscribe_invalid_session_ids_type() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
 
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
     // session_ids is a string, not an array
     client
         .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.subscribe\",\"params\":{\"session_ids\":\"not-an-array\"}}\n")
@@ -181,24 +134,13 @@ async fn test_session_subscribe_invalid_session_ids_type() {
         response
     );
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_session_unsubscribe_rpc() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
 
     // First subscribe
     client
@@ -222,24 +164,14 @@ async fn test_session_unsubscribe_rpc() {
     assert!(response.contains("\"unsubscribed\""));
     assert!(response.contains("chat-test"));
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_session_unsubscribe_missing_session_ids() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
 
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
     client
         .write_all(
             b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.unsubscribe\",\"params\":{}}\n",
@@ -255,27 +187,15 @@ async fn test_session_unsubscribe_missing_session_ids() {
     assert!(response.contains("-32602")); // INVALID_PARAMS
     assert!(response.contains("session_ids"));
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_event_broadcast_to_subscriber() {
     use std::time::Duration;
 
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let event_tx = server.event_sender();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
 
     // Subscribe to a session
     client
@@ -288,7 +208,7 @@ async fn test_event_broadcast_to_subscriber() {
 
     // Send event through broadcast channel
     let event = SessionEventMessage::text_delta("chat-test", "hello world");
-    event_tx.send(event).unwrap();
+    server.event_tx.send(event).unwrap();
 
     // Client should receive the event
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -312,27 +232,15 @@ async fn test_event_broadcast_to_subscriber() {
     );
     assert!(received.contains("hello world"), "Response: {}", received);
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_event_not_sent_to_non_subscriber() {
     use std::time::Duration;
 
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let event_tx = server.event_sender();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
 
     // Subscribe to session "other-session"
     client
@@ -345,7 +253,7 @@ async fn test_event_not_sent_to_non_subscriber() {
 
     // Send event for "chat-test" (different session)
     let event = SessionEventMessage::text_delta("chat-test", "should not receive");
-    event_tx.send(event).unwrap();
+    server.event_tx.send(event).unwrap();
 
     // Client should NOT receive the event (timeout expected)
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -357,6 +265,5 @@ async fn test_event_not_sent_to_non_subscriber() {
         "Should timeout - client shouldn't receive unsubscribed events"
     );
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }

@@ -426,18 +426,8 @@ async fn test_sweep_and_archive_stale_sessions_skips_sessions_with_active_subscr
 
 #[tokio::test]
 async fn test_session_create_with_granular_recording_mode() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
     client
         .write_all(
             b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.create\",\"params\":{\"recording_mode\":\"granular\"}}\n",
@@ -458,24 +448,13 @@ async fn test_session_create_with_granular_recording_mode() {
         "Should have session_id in response"
     );
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_session_create_default_no_recording_mode() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
     // Create session without recording_mode parameter
     client
         .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.create\",\"params\":{}}\n")
@@ -495,24 +474,13 @@ async fn test_session_create_default_no_recording_mode() {
         "Should have session_id in response"
     );
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_session_get_includes_recording_mode() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
 
     // First, create a session with granular recording mode
     client
@@ -553,29 +521,17 @@ async fn test_session_get_includes_recording_mode() {
         "recording_mode should be 'granular'"
     );
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_granular_session_creates_recording_file() {
     use std::time::Duration;
 
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-    let kiln_path = tmp.path().join("kiln");
-    std::fs::create_dir_all(&kiln_path).unwrap();
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let event_tx = server.event_sender();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
+    let server = TestServer::start().await;
+    let kiln_path = server.kiln_path.clone();
+    let event_tx = server.event_tx.clone();
+    let mut client = server.connect().await;
 
     let create_req = format!(
         r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kiln":"{}","recording_mode":"granular"}}}}"#,
@@ -617,29 +573,17 @@ async fn test_granular_session_creates_recording_file() {
         lines.len()
     );
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_non_granular_session_has_no_recording_file() {
     use std::time::Duration;
 
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-    let kiln_path = tmp.path().join("kiln");
-    std::fs::create_dir_all(&kiln_path).unwrap();
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let event_tx = server.event_sender();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
+    let server = TestServer::start().await;
+    let kiln_path = server.kiln_path.clone();
+    let event_tx = server.event_tx.clone();
+    let mut client = server.connect().await;
 
     let create_req = format!(
         r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kiln":"{}"}}}}"#,
@@ -672,29 +616,17 @@ async fn test_non_granular_session_has_no_recording_file() {
         "recording.jsonl should NOT exist for non-granular session"
     );
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_granular_recording_stops_on_session_end() {
     use std::time::Duration;
 
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-    let kiln_path = tmp.path().join("kiln");
-    std::fs::create_dir_all(&kiln_path).unwrap();
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let event_tx = server.event_sender();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
+    let server = TestServer::start().await;
+    let kiln_path = server.kiln_path.clone();
+    let event_tx = server.event_tx.clone();
+    let mut client = server.connect().await;
 
     let create_req = format!(
         r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kiln":"{}","recording_mode":"granular"}}}}"#,
@@ -751,6 +683,5 @@ async fn test_granular_recording_stops_on_session_end() {
         "Footer should have total_events field"
     );
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }

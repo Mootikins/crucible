@@ -2,21 +2,9 @@ use super::*;
 
 #[tokio::test]
 async fn test_session_pause_rpc_success_and_missing_param_error() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-    let kiln_path = tmp.path().join("kiln");
-    std::fs::create_dir_all(&kiln_path).unwrap();
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(async move { server.run().await });
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
-    let session_id = create_chat_session(&mut client, &kiln_path, 30).await;
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
+    let session_id = create_chat_session(&mut client, &server.kiln_path, 30).await;
 
     let ok_response = rpc_call(
         &mut client,
@@ -46,27 +34,14 @@ async fn test_session_pause_rpc_success_and_missing_param_error() {
     .await;
     assert_eq!(err_response["error"]["code"], INVALID_PARAMS);
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_session_resume_rpc_success_and_missing_param_error() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-    let kiln_path = tmp.path().join("kiln");
-    std::fs::create_dir_all(&kiln_path).unwrap();
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(async move { server.run().await });
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
-    let session_id = create_chat_session(&mut client, &kiln_path, 40).await;
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
+    let session_id = create_chat_session(&mut client, &server.kiln_path, 40).await;
 
     let _pause_response = rpc_call(
         &mut client,
@@ -107,27 +82,14 @@ async fn test_session_resume_rpc_success_and_missing_param_error() {
     .await;
     assert_eq!(err_response["error"]["code"], INVALID_PARAMS);
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_session_lifecycle_create_pause_resume_end() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-    let kiln_path = tmp.path().join("kiln");
-    std::fs::create_dir_all(&kiln_path).unwrap();
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(async move { server.run().await });
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
-    let session_id = create_chat_session(&mut client, &kiln_path, 44_000).await;
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
+    let session_id = create_chat_session(&mut client, &server.kiln_path, 44_000).await;
 
     let pause_response = rpc_call(
         &mut client,
@@ -168,27 +130,14 @@ async fn test_session_lifecycle_create_pause_resume_end() {
     assert!(end_response["error"].is_null());
     assert_eq!(end_response["result"]["state"], "ended");
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_session_resume_active_session_returns_invalid_state_error() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-    let kiln_path = tmp.path().join("kiln");
-    std::fs::create_dir_all(&kiln_path).unwrap();
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(async move { server.run().await });
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
-    let session_id = create_chat_session(&mut client, &kiln_path, 45_000).await;
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
+    let session_id = create_chat_session(&mut client, &server.kiln_path, 45_000).await;
 
     let resume_response = rpc_call(
         &mut client,
@@ -207,27 +156,14 @@ async fn test_session_resume_active_session_returns_invalid_state_error() {
         .unwrap_or("")
         .contains("resume"));
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_session_pause_after_end_returns_invalid_state_error() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-    let kiln_path = tmp.path().join("kiln");
-    std::fs::create_dir_all(&kiln_path).unwrap();
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(async move { server.run().await });
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
-    let session_id = create_chat_session(&mut client, &kiln_path, 46_000).await;
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
+    let session_id = create_chat_session(&mut client, &server.kiln_path, 46_000).await;
 
     let end_response = rpc_call(
         &mut client,
@@ -258,27 +194,14 @@ async fn test_session_pause_after_end_returns_invalid_state_error() {
         .unwrap_or("")
         .contains("pause"));
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_session_configure_agent_rpc_success_and_missing_agent_error() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-    let kiln_path = tmp.path().join("kiln");
-    std::fs::create_dir_all(&kiln_path).unwrap();
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(async move { server.run().await });
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
-    let session_id = create_chat_session(&mut client, &kiln_path, 50).await;
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
+    let session_id = create_chat_session(&mut client, &server.kiln_path, 50).await;
 
     let ok_response =
         configure_internal_mock_agent(&mut client, &session_id, 51, "mock-initial").await;
@@ -302,27 +225,14 @@ async fn test_session_configure_agent_rpc_success_and_missing_agent_error() {
     .await;
     assert_eq!(err_response["error"]["code"], INVALID_PARAMS);
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_session_send_message_rpc_no_agent_configured_error_and_missing_content_error() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-    let kiln_path = tmp.path().join("kiln");
-    std::fs::create_dir_all(&kiln_path).unwrap();
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(async move { server.run().await });
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
-    let session_id = create_chat_session(&mut client, &kiln_path, 60).await;
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
+    let session_id = create_chat_session(&mut client, &server.kiln_path, 60).await;
 
     let no_agent_response = rpc_call(
         &mut client,
@@ -354,27 +264,14 @@ async fn test_session_send_message_rpc_no_agent_configured_error_and_missing_con
     .await;
     assert_eq!(missing_content_response["error"]["code"], INVALID_PARAMS);
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_session_cancel_rpc_success_and_missing_param_error() {
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-    let kiln_path = tmp.path().join("kiln");
-    std::fs::create_dir_all(&kiln_path).unwrap();
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(async move { server.run().await });
-
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
-    let session_id = create_chat_session(&mut client, &kiln_path, 70).await;
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
+    let session_id = create_chat_session(&mut client, &server.kiln_path, 70).await;
 
     let ok_response = rpc_call(
         &mut client,
@@ -404,6 +301,5 @@ async fn test_session_cancel_rpc_success_and_missing_param_error() {
     .await;
     assert_eq!(err_response["error"]["code"], INVALID_PARAMS);
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }

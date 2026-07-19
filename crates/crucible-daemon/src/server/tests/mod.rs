@@ -171,6 +171,74 @@ pub(super) async fn create_chat_session(client: &mut UnixStream, kiln: &Path, id
     extract_session_id(&response)
 }
 
+/// Shared fixture for in-process daemon RPC integration tests.
+///
+/// Centralizes the ~12-line dance every test used to hand-roll: TempDir,
+/// sock/kiln paths, `Server::bind_with_data_home` against the isolated
+/// tempdir data home (never the real `~/.crucible`), spawning `run()`,
+/// waiting for the listener to come up, and (via `shutdown()`) the teardown
+/// send + task await.
+pub(super) struct TestServer {
+    pub tmp: TempDir,
+    pub sock_path: PathBuf,
+    pub kiln_path: PathBuf,
+    pub event_tx: broadcast::Sender<SessionEventMessage>,
+    pub kiln_manager: Arc<KilnManager>,
+    shutdown_tx: broadcast::Sender<()>,
+    task: tokio::task::JoinHandle<Result<()>>,
+}
+
+impl TestServer {
+    /// Binds and spawns a server against a fresh tempdir data home (with a
+    /// `kiln` subdirectory pre-created), then waits for it to start
+    /// accepting connections.
+    pub(super) async fn start() -> Self {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+        let kiln_path = tmp.path().join("kiln");
+        std::fs::create_dir_all(&kiln_path).unwrap();
+
+        let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
+            .await
+            .unwrap();
+        let event_tx = server.event_sender();
+        let kiln_manager = server.kiln_manager.clone();
+        let shutdown_tx = server.shutdown_handle();
+        let task = tokio::spawn(server.run());
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        Self {
+            tmp,
+            sock_path,
+            kiln_path,
+            event_tx,
+            kiln_manager,
+            shutdown_tx,
+            task,
+        }
+    }
+
+    /// Connects a new client to the running server.
+    pub(super) async fn connect(&self) -> UnixStream {
+        UnixStream::connect(&self.sock_path).await.unwrap()
+    }
+
+    /// Standard teardown: sends shutdown and awaits the server task.
+    pub(super) async fn shutdown(self) {
+        let _ = self.shutdown_tx.send(());
+        let _ = self.task.await;
+    }
+
+    /// For tests that trigger shutdown via the `shutdown` RPC method itself
+    /// rather than the out-of-band handle: awaits the server task directly
+    /// with a timeout, without sending on `shutdown_tx`. Returns whether the
+    /// task completed within `timeout`.
+    pub(super) async fn await_shutdown_within(self, timeout: std::time::Duration) -> bool {
+        tokio::time::timeout(timeout, self.task).await.is_ok()
+    }
+}
+
 pub(super) async fn configure_internal_mock_agent(
     client: &mut UnixStream,
     session_id: &str,

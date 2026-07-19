@@ -91,19 +91,12 @@ async fn test_file_deleted_event_removes_note_from_store() {
     use crucible_core::storage::NoteRecord;
     use std::time::Duration;
 
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-    let kiln_path = tmp.path().join("kiln");
+    let server = TestServer::start().await;
+    let kiln_path = server.kiln_path.clone();
     std::fs::create_dir_all(kiln_path.join("notes")).unwrap();
 
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
     let km = server.kiln_manager.clone();
-    let event_tx = server.event_sender();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    let event_tx = server.event_tx.clone();
 
     let handle = km.get_or_open(&kiln_path).await.unwrap();
     let note_store = handle.as_note_store();
@@ -196,29 +189,17 @@ async fn test_file_deleted_event_removes_note_from_store() {
         .unwrap()
         .is_some());
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
 async fn test_events_auto_persisted() {
     use std::time::Duration;
 
-    let tmp = TempDir::new().unwrap();
-    let sock_path = tmp.path().join("test.sock");
-    let kiln_path = tmp.path().join("kiln");
-    std::fs::create_dir_all(&kiln_path).unwrap();
-
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
-    let event_tx = server.event_sender();
-    let shutdown_handle = server.shutdown_handle();
-    let server_task = tokio::spawn(server.run());
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    let mut client = UnixStream::connect(&sock_path).await.unwrap();
+    let server = TestServer::start().await;
+    let kiln_path = server.kiln_path.clone();
+    let event_tx = server.event_tx.clone();
+    let mut client = server.connect().await;
 
     // Create a session
     let create_req = format!(
@@ -255,8 +236,7 @@ async fn test_events_auto_persisted() {
     assert!(content.contains("hello world"));
     assert!(content.contains("user_message"));
 
-    let _ = shutdown_handle.send(());
-    let _ = server_task.await;
+    server.shutdown().await;
 }
 
 #[test]
