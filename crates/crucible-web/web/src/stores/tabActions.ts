@@ -57,7 +57,16 @@ export function createTabActions(context: WindowStoreContext): TabActions {
 
   const addTab = (groupId: string, tab: Tab, insertIndex?: number) => {
     const group = store.tabGroups[groupId];
-    if (!group) return;
+    if (!group) {
+      // Self-heal a ghost reference: a layout pane can point at a tabGroupId
+      // whose group object was lost from persisted state (pre-v3 layouts).
+      // The pane node is the authority for the id, so materialize the group
+      // instead of silently dropping the tab (which made every center open —
+      // click, palette, file drop — a no-op on such layouts).
+      setStore('tabGroups', groupId, { id: groupId, tabs: [tab], activeTabId: tab.id });
+      syncActiveSession(tab);
+      return;
+    }
     const newTabs =
       insertIndex !== undefined
         ? [

@@ -5,6 +5,7 @@ import {
   type TreeCollection,
   type UseTreeViewReturn,
   type TreeViewLoadChildrenDetails,
+  type TreeViewLoadChildrenCompleteDetails,
   type TreeViewExpandedChangeDetails,
   type TreeViewSelectionChangeDetails,
 } from '@ark-ui/solid';
@@ -25,6 +26,13 @@ export interface FileTreeViewProps {
   defaultExpandedValue?: string[];
   /** Project lazy loader; `undefined` for kilns (whole tree pre-built). */
   loadChildren?: (details: TreeViewLoadChildrenDetails<Node>) => Promise<Node[]>;
+  /**
+   * REQUIRED with `loadChildren`: the collection is controlled, so the machine
+   * hands back the merged tree here and the owner must persist it — without
+   * this, lazily loaded children are silently discarded (branch expands
+   * empty).
+   */
+  onLoadedTree?: (rootNode: Node) => void;
   /** Opening a leaf routes through selection (one path for mouse AND keyboard). */
   onOpenLeaf: (node: Node) => void;
   onExpandedChange?: (expandedValue: string[]) => void;
@@ -55,6 +63,8 @@ export const FileTreeView: Component<FileTreeViewProps> = (props) => {
     typeahead: true,
     defaultExpandedValue: props.defaultExpandedValue,
     loadChildren: props.loadChildren,
+    onLoadChildrenComplete: (d: TreeViewLoadChildrenCompleteDetails<Node>) =>
+      props.onLoadedTree?.(d.collection.rootNode),
     canRename: () => false,
     ids: { node: (v: string) => `filetree-node-${cssId(v)}` },
     onSelectionChange: handleSelection,

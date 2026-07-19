@@ -367,6 +367,7 @@ export const FilesPanel: Component = () => {
                 openFilePath={openFilePath()}
                 defaultExpandedValue={expandedFor(root)}
                 loadChildren={root.kind === 'project' ? loadChildren(root) : undefined}
+                onLoadedTree={root.kind === 'project' ? (rootNode) => setRawRoot(rootNode) : undefined}
                 onOpenLeaf={onOpenLeaf}
                 onExpandedChange={(values) => persistExpanded(root, values)}
                 onContextAction={onContextAction}
