@@ -2,7 +2,8 @@ import { Component, Show, createSignal, createEffect, createMemo, onMount, onCle
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { openFileInEditor } from '@/lib/file-actions';
 import { PanelShell } from './PanelShell';
-import { listNotes, listDir, listKilns, subscribeToFsEvents } from '@/lib/api';
+import { listNotes, listDir, listKilns, subscribeToFsEvents, fsMove } from '@/lib/api';
+import { moveTargetRel, type FileDragData } from '@/lib/file-dnd';
 import type { KilnListEntry, FsEntry } from '@/lib/types';
 import { buildRoster, rosterIndex, rootKey, type TreeRoot } from '@/lib/tree-root';
 import { selectedRootKey, treeRootActions } from '@/stores/treeRootStore';
@@ -152,6 +153,35 @@ export const FilesPanel: Component = () => {
   };
 
   const onOpenLeaf = (node: Node) => openFileInEditor(node.absPath, node.name);
+
+  // ---- drag-and-drop move --------------------------------------------------
+  // Refresh-after-move (not optimistic patching): the tree remounts on
+  // collection identity change, persisted expanded state re-expands, and lazy
+  // project folders refetch — so a full reload is both simple and correct.
+  // Kiln SSE events will also arrive; the reconcile path is idempotent.
+  const onDndMove = (source: FileDragData, destParentRel: string) => {
+    const root = activeRoot();
+    if (!root) return;
+    const toRel = moveTargetRel(source, destParentRel);
+    void (async () => {
+      try {
+        await fsMove(root.path, root.kind, source.relPath, toRel);
+        setError(null);
+        if (root.kind === 'kiln') await loadKilnTree(root.path);
+        else await loadProjectDir(root.path, '');
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Move failed');
+      }
+    })();
+  };
+
+  const dndFor = (root: TreeRoot) => ({
+    rootId: rootKey(root),
+    rootKind: root.kind,
+    rootPath: root.path,
+    onMove: onDndMove,
+    expandBranch: (relPath: string) => treeApi?.().expand([relPath]),
+  });
 
   const onContextAction = (action: ContextAction, node: Node) => {
     const root = activeRoot();
@@ -341,6 +371,7 @@ export const FilesPanel: Component = () => {
                 onExpandedChange={(values) => persistExpanded(root, values)}
                 onContextAction={onContextAction}
                 apiRef={(api) => (treeApi = api)}
+                dnd={dndFor(root)}
               />
             );
           }}

@@ -1,4 +1,4 @@
-import { Component, For, onMount } from 'solid-js';
+import { Component, For, createSignal, onCleanup, onMount } from 'solid-js';
 import {
   TreeView,
   useTreeView,
@@ -10,7 +10,8 @@ import {
 } from '@ark-ui/solid';
 import type { FileTreeNode as Node } from '@/lib/file-tree/types';
 import type { TreeRootKind } from '@/lib/tree-root';
-import { FileTreeNode } from './FileTreeNode';
+import { FileTreeNode, type FileTreeDnd } from './FileTreeNode';
+import { attachFileDropTarget, canDropIntoFolder } from '@/lib/file-dnd';
 import type { ContextAction } from './FileTreeContextMenu';
 
 /** DOM-id-safe encoding of a relPath (slashes/dots are awkward in ids/selectors). */
@@ -30,6 +31,8 @@ export interface FileTreeViewProps {
   onContextAction: (action: ContextAction, node: Node) => void;
   /** Hand the live machine api to the parent (toolbar: collapse-all, reveal). */
   apiRef?: (api: UseTreeViewReturn<Node>) => void;
+  /** Drag-and-drop wiring (absent → tree is drag-inert, e.g. in tests). */
+  dnd?: FileTreeDnd;
 }
 
 /**
@@ -61,9 +64,34 @@ export const FileTreeView: Component<FileTreeViewProps> = (props) => {
 
   onMount(() => props.apiRef?.(api));
 
+  // The tree surface itself is a move-to-root target (dropping on empty space
+  // below the rows). Folder rows sit above it in the target stack, so the
+  // innermost-zone protocol in file-dnd keeps this from stealing their drops.
+  const [rootDropOver, setRootDropOver] = createSignal(false);
+  const attachRootDrop = (el: HTMLElement) => {
+    const dnd = props.dnd;
+    if (!dnd) return;
+    const cleanup = attachFileDropTarget(el, {
+      zone: 'tree-root',
+      canDrop: (source) => canDropIntoFolder(source, { rootId: dnd.rootId, relPath: '' }),
+      onDragEnter: () => setRootDropOver(true),
+      onDragLeave: () => setRootDropOver(false),
+      onDrop: (source) => {
+        setRootDropOver(false);
+        dnd.onMove(source, '');
+      },
+    });
+    onCleanup(cleanup);
+  };
+
   return (
     <TreeView.RootProvider value={api}>
-      <TreeView.Tree aria-label="File tree" class="px-1">
+      <TreeView.Tree
+        aria-label="File tree"
+        ref={attachRootDrop}
+        data-file-drop={rootDropOver() ? 'true' : undefined}
+        class="px-1 min-h-full data-[file-drop=true]:bg-primary/5"
+      >
         <For each={api().collection.rootNode.children}>
           {(node, i) => (
             <FileTreeNode
@@ -72,6 +100,7 @@ export const FileTreeView: Component<FileTreeViewProps> = (props) => {
               rootKind={props.rootKind}
               openFilePath={props.openFilePath}
               onContextAction={props.onContextAction}
+              dnd={props.dnd}
             />
           )}
         </For>

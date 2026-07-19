@@ -1172,6 +1172,36 @@ export async function listDir(
 }
 
 /**
+ * Move/rename a file or directory within one root (daemon `fs.move` — the
+ * file-tree drag-and-drop backend). `kind` selects the daemon-side allowlist:
+ * registered projects or already-open kilns. Overwrites are rejected
+ * daemon-side; surface the error message to the user, don't retry.
+ */
+export async function fsMove(
+  root: string,
+  kind: 'project' | 'kiln',
+  fromRel: string,
+  toRel: string,
+): Promise<void> {
+  const res = await fetch('/api/fs/move', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ root, kind, from_rel: fromRel, to_rel: toRel }),
+  });
+  if (!res.ok) {
+    if (res.status === 401) notifyAuthRequired();
+    let detail = '';
+    try {
+      detail = ((await res.json()) as { error?: string }).error ?? '';
+    } catch {
+      // non-JSON error body — status alone is the message
+    }
+    throw new Error(detail || `move failed: ${res.status}`);
+  }
+}
+
+/**
  * SSE event names the `/api/fs/events` stream emits. Kept in lockstep with the
  * Rust `FsEvent::event_name()` (web/fs_events.rs). Each event's `data` parses
  * to the `FsEvent` discriminated union.

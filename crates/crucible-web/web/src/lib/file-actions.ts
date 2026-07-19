@@ -12,13 +12,24 @@ export function findTabByFilePath(filePath: string): { groupId: string; tab: Tab
 }
 
 export function openFileInEditor(filePath: string, fileName?: string): void {
+  openFileInGroup(findFirstCenterPaneGroupId(), filePath, fileName);
+}
+
+/**
+ * Open a file as a tab in a SPECIFIC tab group (drag-a-file-onto-a-pane).
+ * Falls back to activating an existing tab wherever it lives — one file, one
+ * tab, matching `openFileInEditor`.
+ */
+export function openFileInGroup(
+  groupId: string | null,
+  filePath: string,
+  fileName?: string,
+): void {
   const existing = findTabByFilePath(filePath);
   if (existing) {
     windowActions.setActiveTab(existing.groupId, existing.tab.id);
     return;
   }
-
-  const groupId = findFirstCenterPaneGroupId();
   if (!groupId) return;
 
   const newTab: Tab = {

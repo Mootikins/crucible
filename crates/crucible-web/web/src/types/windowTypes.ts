@@ -111,25 +111,14 @@ export type DropTarget =
 
 
 // ---------------------------------------------------------------------------
-// PHASE-2 SEAM — file-tree drag-and-drop payloads (TYPES ONLY).
-//
-// No handlers, no `<DragDropProvider>` mounted in Phase 1. The Phase-2 file
-// tree gets its OWN provider inside `FilesPanel`, sibling to (never nested in)
-// the window/tab provider in `WindowManager.tsx` — @thisbeyond/solid-dnd
-// matches within the nearest provider, so a file drag never enters the
-// tab-move pipeline. Node identity is `rootId` + `relPath` (never display
-// name), matching the file-tree node model.
+// File-tree drag-and-drop lives in `@/lib/file-dnd` (pragmatic-drag-and-drop,
+// native HTML5 drags) — NOT in this solid-dnd pipeline. The original Phase-2
+// plan (a second solid-dnd provider) was superseded: solid-dnd only matches
+// within its nearest provider, which is exactly what blocks the cross-surface
+// drops the feature needs (tree → pane open, tree → editor insert). The two
+// systems coexist because solid-dnd is pointer-event based and pragmatic is
+// native dragstart/drop.
 // ---------------------------------------------------------------------------
-export type FileDragSource = {
-  type: 'fileNode';
-  rootId: string;
-  relPath: string;
-  isDir: boolean;
-};
-
-export type FileDropTarget =
-  | { type: 'folder'; rootId: string; relPath: string }
-  | { type: 'between'; rootId: string; parentRelPath: string; index: number };
 
 // TabBar props discriminated union
 export type TabBarProps =

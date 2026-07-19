@@ -1,9 +1,11 @@
-import { Component, Show, createMemo, untrack } from 'solid-js';
+import { Component, Show, createMemo, createSignal, onCleanup, untrack } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { createDroppable, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { TabBar } from './TabBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { getGlobalRegistry } from '@/lib/panel-registry';
+import { attachFileDropTarget } from '@/lib/file-dnd';
+import { openFileInGroup } from '@/lib/file-actions';
 import { EmptyState } from '@/components/EmptyState';
 
 type PaneDropPosition = 'left' | 'right' | 'top' | 'bottom';
@@ -73,6 +75,27 @@ export const Pane: Component<{ paneId: string }> = (props) => {
     position: 'bottom',
   });
 
+  // Native file drag from the file tree (pragmatic-drag-and-drop, a separate
+  // pipeline from solid-dnd tab drags): dropping a FILE on the pane opens it
+  // here. The editor content area registers its own inner 'editor' zone
+  // (insert-link); the innermost-zone protocol in file-dnd keeps the two
+  // behaviors exclusive.
+  const [fileDropOver, setFileDropOver] = createSignal(false);
+  const attachFileDrop = (el: HTMLElement) => {
+    const cleanup = attachFileDropTarget(el, {
+      zone: 'pane',
+      canDrop: (source) => !source.isDir,
+      onDragEnter: () => setFileDropOver(true),
+      onDragLeave: () => setFileDropOver(false),
+      onDrop: (source) => {
+        setFileDropOver(false);
+        windowActions.setActivePane(props.paneId);
+        openFileInGroup(tabGroupId(), source.absPath, source.name);
+      },
+    });
+    onCleanup(cleanup);
+  };
+
   // Pop-out MOVES the group (popOutPane detaches it from this pane) — sharing
   // one group between a pane and a floating window would register duplicate
   // solid-dnd draggable ids and mirror the tab strip in two places.
@@ -117,10 +140,12 @@ export const Pane: Component<{ paneId: string }> = (props) => {
   return (
     <div
       use:centerDroppable
+      ref={attachFileDrop}
       classList={{
         'relative flex flex-col h-full overflow-hidden transition-all': true,
         'ring-1 ring-primary/30': isActive() && windowStore.focusedRegion === 'center',
         'bg-primary/5': centerDroppable.isActiveDroppable,
+        'ring-1 ring-primary/60': fileDropOver(),
       }}
       onClick={() => windowActions.setActivePane(props.paneId)}
     >

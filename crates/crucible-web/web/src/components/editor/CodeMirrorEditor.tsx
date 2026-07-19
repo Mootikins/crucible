@@ -6,6 +6,7 @@ import {
   highlightActiveLine,
   highlightSpecialChars,
   drawSelection,
+  dropCursor,
 } from '@codemirror/view';
 import { EditorState, StateEffect, Extension, Annotation } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
@@ -16,6 +17,7 @@ import { javascript } from '@codemirror/lang-javascript';
 import { rust } from '@codemirror/lang-rust';
 import { vim } from '@replit/codemirror-vim';
 import { wikilinkNavigation } from './wikilink-extension';
+import { attachFileDropTarget, insertTextFor } from '@/lib/file-dnd';
 import { crucibleEditorChrome } from './editor-theme';
 import { livePreview } from './live-preview';
 
@@ -82,6 +84,8 @@ export const CodeMirrorEditor: Component<{
       highlightActiveLine(),
       highlightSpecialChars(),
       drawSelection(),
+      // Insertion-point feedback while dragging a file (or text) over the doc.
+      dropCursor(),
       history(),
       // Cmd/Ctrl-S saves through EditorContext.saveFile. Placed before
       // defaultKeymap so it wins, and preventDefault stops the browser
@@ -159,6 +163,8 @@ export const CodeMirrorEditor: Component<{
   // reverse), so an onMount-based init silently never mounts under jsdom
   // tests. The ref callback is the only hook guaranteed to have the element
   // in both pipelines.
+  let detachFileDrop: (() => void) | undefined;
+
   const initEditor = (el: HTMLDivElement) => {
     if (view) return;
 
@@ -168,6 +174,27 @@ export const CodeMirrorEditor: Component<{
         extensions: createExtensions(),
       }),
       parent: el,
+    });
+
+    // File-tree drops (pragmatic-drag-and-drop 'editor' zone — the innermost
+    // file target, so it wins over the pane's open-in-pane zone). Kiln notes
+    // dropped into markdown insert a [[wikilink]] at the pointer; anything
+    // else inserts the root-relative path.
+    const v = view;
+    detachFileDrop = attachFileDropTarget(v.dom, {
+      zone: 'editor',
+      canDrop: (source) => !source.isDir,
+      onDrop: (source, input) => {
+        const pos =
+          v.posAtCoords({ x: input.clientX, y: input.clientY }) ??
+          v.state.selection.main.head;
+        const text = insertTextFor(source, props.path);
+        v.dispatch({
+          changes: { from: pos, insert: text },
+          selection: { anchor: pos + text.length },
+        });
+        v.focus();
+      },
     });
   };
 
@@ -201,6 +228,7 @@ export const CodeMirrorEditor: Component<{
   });
 
   onCleanup(() => {
+    detachFileDrop?.();
     view?.destroy();
   });
 
