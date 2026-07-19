@@ -9,7 +9,7 @@ interface ChatPanelProps {
 export const ChatPanel: Component<ChatPanelProps> = (props) => {
   if (!props.sessionId) {
     return (
-      <div class="h-full bg-shell-panel p-4 flex items-center justify-center text-muted text-sm">
+      <div class="h-full bg-shell-bg p-4 flex items-center justify-center text-muted text-sm">
         No session selected for this chat tab.
       </div>
     );

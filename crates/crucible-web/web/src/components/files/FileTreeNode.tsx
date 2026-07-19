@@ -179,8 +179,10 @@ export const FileTreeNode: Component<{
               class="flex items-center pr-2 py-1 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-sm data-[selected]:bg-hover-wash data-[file-drop=true]:bg-primary/15 data-[file-drop=true]:outline data-[file-drop=true]:outline-1 data-[file-drop=true]:outline-primary"
               style={DEPTH_INDENT}
             >
-              <TreeView.BranchIndicator class="shrink-0">
-                <ChevronRight class="w-3.5 h-3.5 transition-transform data-[state=open]:rotate-90" />
+              {/* zag stamps data-state on the INDICATOR, not its children — the
+                  rotate selector must live here or it never matches. */}
+              <TreeView.BranchIndicator class="shrink-0 transition-transform duration-150 data-[state=open]:rotate-90">
+                <ChevronRight class="w-3.5 h-3.5" />
               </TreeView.BranchIndicator>
               <FolderIcon />
               <TreeView.BranchText class="truncate">{props.node.name}</TreeView.BranchText>

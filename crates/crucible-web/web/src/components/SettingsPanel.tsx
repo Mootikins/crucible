@@ -768,7 +768,7 @@ const SettingsPanelContent: Component = () => {
   const labelClass = 'text-shell-body text-sm';
 
   return (
-    <div class="h-full bg-shell-panel p-4 overflow-auto">
+    <div class="h-full bg-shell-bg p-4 overflow-auto">
       <table class="w-full">
         <tbody>
           {/* Transcription Settings */}
@@ -865,7 +865,7 @@ const SettingsPanelContent: Component = () => {
 export const SettingsPanel: Component = () => {
   return (
     <ErrorBoundary fallback={(err) => (
-      <div class="h-full bg-shell-panel p-4 flex items-center justify-center">
+      <div class="h-full bg-shell-bg p-4 flex items-center justify-center">
         <div class="text-center text-muted">
           <div class="text-sm mb-2">⚠️ Settings Error</div>
           <div class="text-xs text-muted-dark">{String(err)}</div>

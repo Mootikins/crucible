@@ -117,7 +117,7 @@ export const Pane: Component<{ paneId: string }> = (props) => {
     const contentType = activeContentType();
     if (!id || !contentType) {
       return (
-        <div class="flex-1 flex items-center justify-center bg-surface-base">
+        <div class="flex-1 flex items-center justify-center bg-shell-bg">
           <div class="text-muted-dark text-sm">No tab selected</div>
         </div>
       );
@@ -131,7 +131,7 @@ export const Pane: Component<{ paneId: string }> = (props) => {
     // Every shipped content type is registry-backed; anything else is a
     // stale persisted layout entry.
     return (
-      <div class="flex-1 bg-shell-panel flex items-center justify-center">
+      <div class="flex-1 bg-shell-bg flex items-center justify-center">
         <div class="text-muted-dark text-sm">Unknown content type</div>
       </div>
     );
