@@ -1,33 +1,24 @@
 use super::*;
 use crucible_oil::ansi::visible_width;
 use crucible_oil::render::render_to_string;
+use test_case::test_case;
 
-#[test]
-fn test_plain_text() {
-    let node = markdown_to_node("Hello world");
+#[test_case("Hello world", &["Hello world"] ; "plain_text")]
+#[test_case("This is **bold** text", &["bold"] ; "bold_text")]
+#[test_case("# Heading 1\n\nSome text", &["Heading 1"] ; "heading")]
+#[test_case("```rust\nfn main() {}\n```", &["fn", "main"] ; "code_block")]
+#[test_case("[click here](https://example.com)", &["click here"] ; "link")]
+fn markdown_renders_expected_content(md: &str, expected: &[&str]) {
+    let node = markdown_to_node(md);
     let output = render_to_string(&node, 80);
-    assert!(output.contains("Hello world"));
-}
-
-#[test]
-fn test_bold_text() {
-    let node = markdown_to_node("This is **bold** text");
-    let output = render_to_string(&node, 80);
-    assert!(output.contains("bold"));
-}
-
-#[test]
-fn test_heading() {
-    let node = markdown_to_node("# Heading 1\n\nSome text");
-    let output = render_to_string(&node, 80);
-    assert!(output.contains("Heading 1"));
-}
-
-#[test]
-fn test_code_block() {
-    let node = markdown_to_node("```rust\nfn main() {}\n```");
-    let output = render_to_string(&node, 80);
-    assert!(output.contains("fn") && output.contains("main"));
+    for e in expected {
+        assert!(
+            output.contains(e),
+            "Expected output to contain {:?}. Output:\n{}",
+            e,
+            output
+        );
+    }
 }
 
 #[test]
@@ -91,13 +82,6 @@ fn test_table_followed_by_paragraph() {
         text_pos > table_end + 1,
         "Should have blank line between table and paragraph"
     );
-}
-
-#[test]
-fn test_link() {
-    let node = markdown_to_node("[click here](https://example.com)");
-    let output = render_to_string(&node, 80);
-    assert!(output.contains("click here"));
 }
 
 #[test]
@@ -354,26 +338,27 @@ fn table_respects_width_constraint() {
     assert!(output.contains("┘"), "Should have table border");
 }
 
-#[test]
-fn table_with_very_narrow_width() {
-    let table = "| Header | Data |\n|---|---|\n| Content | Value |";
-    let node = markdown_to_node_with_width(table, 25);
-    let output = render_to_string(&node, 25);
+#[test_case("| Header | Data |\n|---|---|\n| Content | Value |", 25 ; "very_narrow_width")]
+#[test_case(
+    "| Col1 | Col2 | Col3 | Col4 |\n|---|---|---|---|\n| A | B | C | D |\n| Long content here | More long content | Even more | Final |",
+    60
+    ; "multicolumn_fits_width"
+)]
+#[test_case(
+    "| Feature | Rust | Go |\n|---------|------|-----|\n| Memory | Safe | GC |\n| Speed | Fast | Fast |",
+    67
+    ; "at_67_columns"
+)]
+#[test_case(
+    "| Command | Description | Example Usage |\n|---------|-------------|---------------|\n| search | Search through notes semantically | crucible search \"query\" |\n| semantic | Semantic search with embeddings enabled | crucible semantic \"concept\" |\n| note create | Create a new note in kiln | crucible note create path.md |",
+    67
+    ; "forces_cell_wrap_at_67_columns"
+)]
+fn table_fits_width(table: &str, width: usize) {
+    let node = markdown_to_node_with_width(table, width);
+    let output = render_to_string(&node, width);
 
-    assert_lines_fit_width(&output, 25);
-}
-
-#[test]
-fn table_multicolumn_fits_width() {
-    let table = r#"| Col1 | Col2 | Col3 | Col4 |
-|---|---|---|---|
-| A | B | C | D |
-| Long content here | More long content | Even more | Final |"#;
-
-    let node = markdown_to_node_with_width(table, 60);
-    let output = render_to_string(&node, 60);
-
-    assert_lines_fit_width(&output, 60);
+    assert_lines_fit_width(&output, width);
 }
 
 #[test]
@@ -447,31 +432,6 @@ fn words_not_broken_unnecessarily() {
 }
 
 #[test]
-fn table_at_67_columns() {
-    let table = r#"| Feature | Rust | Go |
-|---------|------|-----|
-| Memory | Safe | GC |
-| Speed | Fast | Fast |"#;
-
-    let node = markdown_to_node_with_width(table, 67);
-    let output = render_to_string(&node, 67);
-    assert_lines_fit_width(&output, 67);
-}
-
-#[test]
-fn table_forces_cell_wrap_at_67_columns() {
-    let table = r#"| Command | Description | Example Usage |
-|---------|-------------|---------------|
-| search | Search through notes semantically | crucible search "query" |
-| semantic | Semantic search with embeddings enabled | crucible semantic "concept" |
-| note create | Create a new note in kiln | crucible note create path.md |"#;
-
-    let node = markdown_to_node_with_width(table, 67);
-    let output = render_to_string(&node, 67);
-    assert_lines_fit_width(&output, 67);
-}
-
-#[test]
 fn table_with_bullet_prefix_at_67_columns() {
     use crucible_oil::node::{row, styled};
     use crucible_oil::style::{Color, Style};
@@ -528,18 +488,15 @@ fn br_tag_in_table_cell() {
     assert!(output.contains("Second"));
 }
 
-#[test]
-fn normalize_br_tags_function() {
+#[test_case("a<br>b", "a  \nb" ; "lowercase")]
+#[test_case("a<br/>b", "a  \nb" ; "self_closing")]
+#[test_case("a<br />b", "a  \nb" ; "self_closing_with_space")]
+#[test_case("a<BR>b", "a  \nb" ; "uppercase")]
+#[test_case("no tags here", "no tags here" ; "no_tags")]
+#[test_case("multi<br>line<br>text", "multi  \nline  \ntext" ; "multiple_tags")]
+fn normalize_br_tags_function(input: &str, expected: &str) {
     use super::render::normalize_br_tags;
-    assert_eq!(normalize_br_tags("a<br>b"), "a  \nb");
-    assert_eq!(normalize_br_tags("a<br/>b"), "a  \nb");
-    assert_eq!(normalize_br_tags("a<br />b"), "a  \nb");
-    assert_eq!(normalize_br_tags("a<BR>b"), "a  \nb");
-    assert_eq!(normalize_br_tags("no tags here"), "no tags here");
-    assert_eq!(
-        normalize_br_tags("multi<br>line<br>text"),
-        "multi  \nline  \ntext"
-    );
+    assert_eq!(normalize_br_tags(input), expected);
 }
 
 #[test]
@@ -567,17 +524,11 @@ fn text_ignores_table_width() {
 mod render_style_tests {
     use super::*;
     use crate::tui::oil::markdown::{markdown_to_node_styled, RenderStyle};
+    use test_case::test_case;
 
-    #[test]
-    fn render_style_viewport_widths() {
-        let style = RenderStyle::viewport(80);
-        assert_eq!(style.text_width(), 80);
-        assert_eq!(style.table_width(), 80);
-    }
-
-    #[test]
-    fn render_style_natural_widths() {
-        let style = RenderStyle::natural(80);
+    #[test_case(RenderStyle::viewport(80) ; "viewport")]
+    #[test_case(RenderStyle::natural(80) ; "natural")]
+    fn render_style_widths_match_input(style: RenderStyle) {
         assert_eq!(style.text_width(), 80);
         assert_eq!(style.table_width(), 80);
     }
@@ -605,20 +556,10 @@ mod render_style_tests {
         assert!(lines.len() > 1, "Natural style should now wrap text");
     }
 
-    #[test]
-    fn viewport_style_table_fits_width() {
+    #[test_case(RenderStyle::viewport(50) ; "viewport")]
+    #[test_case(RenderStyle::natural(50) ; "natural")]
+    fn table_fits_width_for_style(style: RenderStyle) {
         let table = "| Header A | Header B | Header C |\n|----------|----------|----------|\n| Cell 1   | Cell 2   | Cell 3   |";
-        let style = RenderStyle::viewport(50);
-        let node = markdown_to_node_styled(table, style);
-        let output = render_to_string(&node, 50);
-
-        assert_lines_fit_width(&output, 50);
-    }
-
-    #[test]
-    fn natural_style_table_fits_terminal_width() {
-        let table = "| Header A | Header B | Header C |\n|----------|----------|----------|\n| Cell 1   | Cell 2   | Cell 3   |";
-        let style = RenderStyle::natural(50);
         let node = markdown_to_node_styled(table, style);
         let output = render_to_string(&node, 50);
 
@@ -675,6 +616,7 @@ mod render_style_tests {
 
 mod syntax_highlighting {
     use super::*;
+    use test_case::test_case;
 
     #[test]
     fn rust_code_block_has_multiple_colors() {
@@ -696,62 +638,36 @@ mod syntax_highlighting {
         );
     }
 
-    #[test]
-    fn python_code_block_has_highlighting() {
-        let md = "```python\ndef hello():\n    print(\"world\")\n```";
-        let node = markdown_to_node(md);
-        let output = render_to_string(&node, 80);
-
-        let rgb_pattern = regex::Regex::new(r"\x1b\[38;2;\d+;\d+;\d+m").unwrap();
-        let has_rgb_colors = rgb_pattern.is_match(&output);
-
-        assert!(
-            has_rgb_colors,
-            "Python code should have RGB syntax colors. Output:\n{}",
-            output.escape_debug()
-        );
-    }
-
-    #[test]
-    fn unknown_language_still_renders() {
-        let md = "```unknownlang\nsome code here\n```";
-        let node = markdown_to_node(md);
-        let output = render_to_string(&node, 80);
-
-        assert!(output.contains("some code here"));
-    }
-
-    #[test]
-    fn code_block_without_language_renders() {
-        let md = "```\nplain code\n```";
-        let node = markdown_to_node(md);
-        let output = render_to_string(&node, 80);
-
-        assert!(output.contains("plain code"));
-    }
-
-    #[test]
-    fn javascript_code_block_has_highlighting() {
-        let md = "```js\nconst x = 42;\nfunction test() { return x; }\n```";
+    #[test_case("```python\ndef hello():\n    print(\"world\")\n```", "Python" ; "python")]
+    #[test_case("```js\nconst x = 42;\nfunction test() { return x; }\n```", "JavaScript" ; "javascript")]
+    fn code_block_has_syntax_highlighting(md: &str, lang: &str) {
         let node = markdown_to_node(md);
         let output = render_to_string(&node, 80);
 
         let rgb_pattern = regex::Regex::new(r"\x1b\[38;2;\d+;\d+;\d+m").unwrap();
         assert!(
             rgb_pattern.is_match(&output),
-            "JavaScript code should have syntax highlighting"
+            "{} code should have RGB syntax colors. Output:\n{}",
+            lang,
+            output.escape_debug()
         );
     }
 
-    #[test]
-    fn highlighted_code_preserves_content() {
-        let md = "```rust\nlet answer = 42;\n```";
+    #[test_case("```unknownlang\nsome code here\n```", &["some code here"] ; "unknown_language_still_renders")]
+    #[test_case("```\nplain code\n```", &["plain code"] ; "code_block_without_language_renders")]
+    #[test_case("```rust\nlet answer = 42;\n```", &["let", "answer", "42"] ; "highlighted_code_preserves_content")]
+    fn code_block_content_renders(md: &str, expected: &[&str]) {
         let node = markdown_to_node(md);
         let output = render_to_string(&node, 80);
 
-        assert!(output.contains("let"), "Should contain 'let' keyword");
-        assert!(output.contains("answer"), "Should contain variable name");
-        assert!(output.contains("42"), "Should contain number literal");
+        for e in expected {
+            assert!(
+                output.contains(e),
+                "Expected output to contain {:?}. Output:\n{}",
+                e,
+                output
+            );
+        }
     }
 }
 
