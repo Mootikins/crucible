@@ -68,12 +68,22 @@ export interface FileTreeDnd {
 const AUTO_EXPAND_MS = 700;
 
 /**
+ * Row indentation from zag's `--depth` var (1 = top level). Branch rows show
+ * a 14px chevron files lack, so files get one extra step to align names.
+ */
+const DEPTH_INDENT = {
+  'padding-left': 'calc(0.5rem + (var(--depth, 1) - 1) * 0.875rem)',
+} as const;
+
+/**
  * Recursive branch/leaf renderer built on ark-ui `TreeView`. The machine emits
  * `role=tree/treeitem/group` and `aria-expanded/selected/level/setsize/posinset`
  * via `getBranchProps`/`getItemProps` — we never hand-author them. We only
  * AUGMENT (never overwrite) with the open-note markers (`aria-current`,
  * `data-current`) when the node's absolute path is the active editor file.
- * Depth indentation is driven by the machine's `NodeState.depth`.
+ * Depth indentation consumes the machine's `--depth` CSS var (set by zag on
+ * every item/branch-control) via `DEPTH_INDENT` — files sit one chevron-width
+ * deeper than their folder so names align.
  */
 export const FileTreeNode: Component<{
   node: Node;
@@ -150,7 +160,8 @@ export const FileTreeNode: Component<{
             <TreeView.Item
               {...currentAttrs()}
               ref={attachDrag}
-              class="flex items-center px-2 py-1 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-sm data-[selected]:bg-hover-wash data-[current=true]:font-medium data-[current=true]:border-l-2 data-[current=true]:border-primary"
+              class="flex items-center pr-2 py-1 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-sm data-[selected]:bg-hover-wash data-[current=true]:font-medium data-[current=true]:border-l-2 data-[current=true]:border-primary"
+              style={DEPTH_INDENT}
             >
               <FileIcon extension={getExtension(props.node.name)} />
               <TreeView.ItemText class="truncate">{props.node.name}</TreeView.ItemText>
@@ -165,7 +176,8 @@ export const FileTreeNode: Component<{
               {...currentAttrs()}
               ref={attachFolderDrop}
               data-file-drop={dropOver() ? 'true' : undefined}
-              class="flex items-center px-2 py-1 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-sm data-[selected]:bg-hover-wash data-[file-drop=true]:bg-primary/15 data-[file-drop=true]:outline data-[file-drop=true]:outline-1 data-[file-drop=true]:outline-primary"
+              class="flex items-center pr-2 py-1 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-sm data-[selected]:bg-hover-wash data-[file-drop=true]:bg-primary/15 data-[file-drop=true]:outline data-[file-drop=true]:outline-1 data-[file-drop=true]:outline-primary"
+              style={DEPTH_INDENT}
             >
               <TreeView.BranchIndicator class="shrink-0">
                 <ChevronRight class="w-3.5 h-3.5 transition-transform data-[state=open]:rotate-90" />

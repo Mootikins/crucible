@@ -129,6 +129,10 @@ fn build_cors_origins(web_config: &WebConfig) -> Vec<HeaderValue> {
 
     add_origin(&format!("http://{}:{}", web_config.host, web_config.port));
     add_origin(&format!("http://127.0.0.1:{}", web_config.port));
+    // Browsers visiting the UI as `http://localhost:PORT` send exactly that
+    // Origin; without it the terminal WebSocket guard 403s every upgrade
+    // (the bind host renders as 0.0.0.0/127.0.0.1, never `localhost`).
+    add_origin(&format!("http://localhost:{}", web_config.port));
 
     if cfg!(debug_assertions) {
         add_origin("http://localhost:5173");
@@ -181,6 +185,29 @@ mod tests {
         assert!(has_origin("http://127.0.0.1:3000"));
         if cfg!(debug_assertions) {
             assert!(has_origin("http://localhost:5173"));
+        }
+    }
+
+    /// Regression: real binds are 0.0.0.0/127.0.0.1 — never the literal
+    /// `localhost` — but browsers visiting `http://localhost:PORT` send that
+    /// Origin. Missing it made the terminal WebSocket guard 403 every
+    /// upgrade. (The old test used host="localhost", masking exactly this.)
+    #[test]
+    fn build_cors_origins_allows_localhost_for_real_binds() {
+        for host in ["0.0.0.0", "127.0.0.1"] {
+            let web_config = WebConfig {
+                enabled: true,
+                host: host.to_string(),
+                port: 3000,
+                static_dir: None,
+                api_key: None,
+            };
+            let origins = build_cors_origins(&web_config);
+            let localhost = HeaderValue::from_static("http://localhost:3000");
+            assert!(
+                origins.contains(&localhost),
+                "bind host {host} must still allow the localhost Origin"
+            );
         }
     }
 
