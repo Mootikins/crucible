@@ -416,8 +416,10 @@ impl NotePipeline {
             })
             .collect();
 
-        // Extract tags (Tag.name is the string value)
-        let tags: Vec<String> = parsed.tags.iter().map(|t| t.name.clone()).collect();
+        // Inline #tags plus frontmatter `tags:` (deduped) — kilns following
+        // the docs convention tag exclusively via frontmatter, and inline-only
+        // records left tag search and the graph's tag nodes empty for them.
+        let tags: Vec<String> = parsed.all_tags();
 
         // Extract properties from frontmatter
         let mut properties: HashMap<String, serde_json::Value> = parsed
