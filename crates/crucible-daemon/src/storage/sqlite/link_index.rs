@@ -78,6 +78,20 @@ pub(crate) fn ensure_note_links_v2(conn: &Connection) -> rusqlite::Result<bool> 
     }
 
     conn.execute_batch(NOTE_LINKS_V2_SCHEMA)?;
+
+    // A kiln indexed before the link index existed at all (no v1 table to
+    // drop) has notes but an empty note_links — and change detection never
+    // reprocesses unchanged files, so the index would stay empty forever.
+    // Notes-without-links means "never built". Cost of the heuristic: a kiln
+    // genuinely containing zero wikilinks repeats the (parse-only) relink
+    // pass on each open.
+    if !needs_relink {
+        let notes: i64 = conn.query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))?;
+        if notes > 0 {
+            let links: i64 = conn.query_row("SELECT COUNT(*) FROM note_links", [], |r| r.get(0))?;
+            needs_relink = links == 0;
+        }
+    }
     Ok(needs_relink)
 }
 
@@ -602,7 +616,44 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM note_links", [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 0);
-        // second run is a no-op
+        // Still-empty index with notes keeps requesting a relink (the pass
+        // hasn't happened yet); once links exist it becomes a no-op.
+        assert!(ensure_note_links_v2(&conn).unwrap());
+        conn.execute(
+            "INSERT INTO note_links (source_path, resolved_target, raw_target, target_key,
+             span_start, span_end, kind, is_ambiguous)
+             VALUES ('a.md', 'b.md', 'b', 'b', 0, 1, 'wikilink', 0)",
+            [],
+        )
+        .unwrap();
+        assert!(!ensure_note_links_v2(&conn).unwrap());
+    }
+
+    /// A kiln DB indexed before note_links existed AT ALL (no v1 table to
+    /// drop) must also get the relink pass — creating the v2 table empty and
+    /// never flagging left such kilns with a permanently empty link index.
+    #[test]
+    fn preexisting_notes_without_any_links_table_request_relink() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE notes (path TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '');
+            INSERT INTO notes (path) VALUES ('a.md');
+            "#,
+        )
+        .unwrap();
+        assert!(ensure_note_links_v2(&conn).unwrap(), "notes + no index → relink");
+    }
+
+    /// Fresh empty DB (new kiln): nothing to relink — the pipeline will
+    /// write links as it processes notes.
+    #[test]
+    fn fresh_db_without_notes_needs_no_relink() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE notes (path TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '');",
+        )
+        .unwrap();
         assert!(!ensure_note_links_v2(&conn).unwrap());
     }
 }
