@@ -1,5 +1,6 @@
-//! File-tree explorer routes: `GET /api/fs/list` (project dir listing proxy)
-//! and `GET /api/fs/events` (live filesystem-change SSE).
+//! File-tree explorer routes: `GET /api/fs/list` (project dir listing proxy),
+//! `POST /api/fs/move` (drag-and-drop move/rename), and `GET /api/fs/events`
+//! (live filesystem-change SSE).
 
 use crate::fs_events::FsEvent;
 use crate::services::daemon::AppState;
@@ -7,7 +8,7 @@ use crate::{error::WebResultExt, WebError};
 use axum::{
     extract::{Query, State},
     response::sse::{Event, KeepAlive, Sse},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use futures::stream::Stream;
@@ -18,6 +19,7 @@ use tokio_stream::StreamExt;
 pub fn fs_routes() -> Router<AppState> {
     Router::new()
         .route("/api/fs/list", get(list_dir))
+        .route("/api/fs/move", post(move_path))
         .route("/api/fs/events", get(fs_event_stream))
 }
 
@@ -44,6 +46,30 @@ async fn list_dir(
         .daemon_err()?;
 
     Ok(Json(serde_json::Value::Array(entries)))
+}
+
+#[derive(Debug, Deserialize)]
+struct FsMoveBody {
+    root: String,
+    /// `"project"` or `"kiln"` — selects the daemon-side allowlist.
+    kind: String,
+    from_rel: String,
+    to_rel: String,
+}
+
+/// Move/rename a file or directory within one root (file-tree DnD backend).
+/// All security (allowlist, containment, overwrite refusal) is daemon-side;
+/// this handler is a thin passthrough.
+async fn move_path(
+    State(state): State<AppState>,
+    Json(body): Json<FsMoveBody>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    state
+        .daemon
+        .fs_move(&body.root, &body.kind, &body.from_rel, &body.to_rel)
+        .await
+        .daemon_err()?;
+    Ok(Json(serde_json::json!({ "moved": true })))
 }
 
 /// Live filesystem-change stream for the file-tree explorer.

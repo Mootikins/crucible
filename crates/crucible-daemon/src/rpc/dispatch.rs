@@ -120,6 +120,7 @@ pub const METHODS: &[&str] = &[
     "project.list",
     "project.get",
     "fs.list_dir",
+    "fs.move",
     "storage.verify",
     "storage.cleanup",
     "storage.backup",
@@ -379,6 +380,7 @@ impl RpcDispatcher {
             "project.list" => to_response(id, self.handle_project_list(&req).await),
             "project.get" => to_response(id, self.handle_project_get(&req).await),
             "fs.list_dir" => to_response(id, self.handle_fs_list_dir(&req).await),
+            "fs.move" => to_response(id, self.handle_fs_move(&req).await),
 
             // Storage RPC handlers
             "storage.verify" => to_response(id, self.handle_storage_verify(&req).await),
@@ -1267,6 +1269,16 @@ impl RpcDispatcher {
     async fn handle_fs_list_dir(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::fs::handle_fs_list_dir(req.clone(), &self.ctx.project_manager).await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_fs_move(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::fs::handle_fs_move(
+            req.clone(),
+            &self.ctx.project_manager,
+            &self.ctx.kiln,
+        )
+        .await;
         map_server_resp(resp)
     }
 

@@ -945,6 +945,27 @@ impl ReconnectingDaemon {
         .await
     }
 
+    pub async fn fs_move(
+        &self,
+        root: &str,
+        kind: &str,
+        from_rel: &str,
+        to_rel: &str,
+    ) -> anyhow::Result<()> {
+        let root = root.to_string();
+        let kind = kind.to_string();
+        let from_rel = from_rel.to_string();
+        let to_rel = to_rel.to_string();
+        self.call_with_reconnect("fs.move", move |daemon| {
+            let root = root.clone();
+            let kind = kind.clone();
+            let from_rel = from_rel.clone();
+            let to_rel = to_rel.clone();
+            Box::pin(async move { daemon.fs_move(&root, &kind, &from_rel, &to_rel).await })
+        })
+        .await
+    }
+
     pub async fn project_get(&self, path: &Path) -> anyhow::Result<Option<crucible_core::Project>> {
         let path = path.to_path_buf();
         self.call_with_reconnect("project.get", move |daemon| {

@@ -313,6 +313,8 @@ pub fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
             }
         }
         "project.list" => json!([]),
+        "fs.list_dir" => json!([]),
+        "fs.move" => json!({"moved": true}),
         "project.register" => json!({
             "path": "/tmp/test-project",
             "name": "test-project",

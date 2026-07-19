@@ -15,6 +15,8 @@ mod commands;
 mod daemon_errors;
 #[path = "route_contract_tests/errors.rs"]
 mod errors;
+#[path = "route_contract_tests/fs.rs"]
+mod fs;
 #[path = "route_contract_tests/health.rs"]
 mod health;
 #[path = "route_contract_tests/kilns.rs"]

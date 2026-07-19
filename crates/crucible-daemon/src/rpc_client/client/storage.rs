@@ -154,6 +154,16 @@ pub struct FsListDirRequest {
     pub show_ignored: bool,
 }
 
+/// Request for `fs.move`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FsMoveRequest {
+    pub root: String,
+    /// `"project"` or `"kiln"` — selects the daemon-side allowlist.
+    pub kind: String,
+    pub from_rel: String,
+    pub to_rel: String,
+}
+
 /// Request for `list_notes`.
 ///
 /// `scope` is the request authority — defaults server-side to
@@ -703,6 +713,29 @@ impl DaemonClient {
             )
             .await?;
         Ok(v.as_array().cloned().unwrap_or_default())
+    }
+
+    /// Move/rename a file or directory within a registered project or open
+    /// kiln. All containment checks are daemon-side; overwrites are rejected.
+    pub async fn fs_move(
+        &self,
+        root: &str,
+        kind: &str,
+        from_rel: &str,
+        to_rel: &str,
+    ) -> Result<()> {
+        let _: serde_json::Value = self
+            .typed_call(
+                "fs.move",
+                FsMoveRequest {
+                    root: root.to_string(),
+                    kind: kind.to_string(),
+                    from_rel: from_rel.to_string(),
+                    to_rel: to_rel.to_string(),
+                },
+            )
+            .await?;
+        Ok(())
     }
 
     pub async fn project_get(&self, path: &Path) -> Result<Option<crucible_core::Project>> {

@@ -39,6 +39,7 @@
 //! it requires local filesystem write access, which a remote (read-only) web
 //! caller does not have — it is already inside the "shell access" accepted risk.
 
+use crate::kiln_manager::KilnManager;
 use crate::project_manager::ProjectManager;
 use crate::protocol::{Request, Response, INTERNAL_ERROR, INVALID_PARAMS};
 use crate::rpc_helpers::{optional_param, require_param};
@@ -209,6 +210,128 @@ fn walk_one_level(
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     Ok(out)
+}
+
+// ── fs.move ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, thiserror::Error)]
+enum FsMoveError {
+    #[error("root is not a registered project or open kiln")]
+    NotRegistered,
+    #[error("path escapes root")]
+    Escape,
+    #[error("source does not exist")]
+    SourceMissing,
+    #[error("destination already exists")]
+    DestinationExists,
+    #[error("destination parent is not a directory inside the root")]
+    BadDestination,
+    #[error("cannot move a directory into itself")]
+    IntoSelf,
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+}
+
+/// Handle the `fs.move` RPC — rename/move a file or directory *within* one
+/// root. The web file-tree's drag-and-drop backend.
+///
+/// Same threat model as `fs.list_dir` (all checks daemon-side, fail-closed):
+/// the only movable roots are registered projects (`kind == "project"`) or
+/// **already-open** kilns (`kind == "kiln"`). Open-kilns-only is deliberate:
+/// `KilnManager::open` will initialize `.crucible/` in ANY directory, so
+/// `get_or_open` here would let a caller mint move-capability over arbitrary
+/// paths. Both `from_rel` and `to_rel` get the component whitelist +
+/// canonicalize-and-contain treatment on their PARENT dirs (never the leaf,
+/// so a symlink moves as a link, not its target). Overwrites are rejected.
+///
+/// Kiln index consistency: the open kiln's watch pipeline observes the rename
+/// and re-indexes; this handler only touches the filesystem.
+pub(crate) async fn handle_fs_move(
+    req: Request,
+    pm: &Arc<ProjectManager>,
+    km: &Arc<KilnManager>,
+) -> Response {
+    let root = require_param!(req, "root", as_str);
+    let kind = require_param!(req, "kind", as_str);
+    let from_rel = require_param!(req, "from_rel", as_str);
+    let to_rel = require_param!(req, "to_rel", as_str);
+
+    let base = match kind {
+        "project" => pm.get(Path::new(root)).map(|p| p.path),
+        "kiln" => match Path::new(root).canonicalize() {
+            Ok(canon) if km.get(&canon).await.is_some() => Some(canon),
+            _ => None,
+        },
+        _ => {
+            return Response::error(req.id, INVALID_PARAMS, "kind must be 'project' or 'kiln'");
+        }
+    };
+    let Some(base) = base else {
+        return Response::error(
+            req.id,
+            INVALID_PARAMS,
+            FsMoveError::NotRegistered.to_string(),
+        );
+    };
+
+    match move_within(&base, from_rel, to_rel) {
+        Ok(()) => Response::success(req.id, serde_json::json!({ "moved": true })),
+        Err(FsMoveError::Io(e)) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => Response::error(req.id, INVALID_PARAMS, e.to_string()),
+    }
+}
+
+/// Resolve `rel` to `canonical(parent) + leaf name`, containing the PARENT in
+/// `base`. The leaf is deliberately not canonicalized: renaming a symlink must
+/// move the link itself, and a destination leaf does not exist yet.
+/// `missing_parent` is the error when the parent dir doesn't exist — the one
+/// case that means different things for source (missing) vs destination (bad
+/// target); real escapes always surface as `Escape`.
+fn split_contained(
+    base: &Path,
+    rel: &str,
+    missing_parent: fn() -> FsMoveError,
+) -> Result<PathBuf, FsMoveError> {
+    let rel_p = Path::new(rel);
+    if rel_p.is_absolute() || rel.contains('\0') {
+        return Err(FsMoveError::Escape);
+    }
+    for c in rel_p.components() {
+        if !matches!(c, Component::Normal(_)) {
+            return Err(FsMoveError::Escape);
+        }
+    }
+    // file_name is None only for empty/`..`-ish paths — the root itself is
+    // never a valid move source or destination.
+    let name = rel_p.file_name().ok_or(FsMoveError::Escape)?;
+    let parent_rel = rel_p.parent().unwrap_or(Path::new(""));
+    let parent = base
+        .join(parent_rel)
+        .canonicalize()
+        .map_err(|_| missing_parent())?;
+    if !parent.starts_with(base) {
+        return Err(FsMoveError::Escape);
+    }
+    if !parent.is_dir() {
+        return Err(missing_parent());
+    }
+    Ok(parent.join(name))
+}
+
+fn move_within(base: &Path, from_rel: &str, to_rel: &str) -> Result<(), FsMoveError> {
+    let from = split_contained(base, from_rel, || FsMoveError::SourceMissing)?;
+    if from.symlink_metadata().is_err() {
+        return Err(FsMoveError::SourceMissing);
+    }
+    let dest = split_contained(base, to_rel, || FsMoveError::BadDestination)?;
+    if dest.symlink_metadata().is_ok() {
+        return Err(FsMoveError::DestinationExists);
+    }
+    if dest.starts_with(&from) {
+        return Err(FsMoveError::IntoSelf);
+    }
+    std::fs::rename(&from, &dest)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -398,5 +521,147 @@ mod tests {
             list_dir(&pm, &root, "file.txt", false),
             Err(FsListError::NotADir)
         ));
+    }
+
+    // ── move_within ────────────────────────────────────────────────────
+
+    /// Canonicalized tempdir root (macOS /var → /private/var etc.); the
+    /// handler always passes a canonical base, so tests must too.
+    fn canon_root(tmp: &tempfile::TempDir) -> PathBuf {
+        tmp.path().canonicalize().unwrap()
+    }
+
+    #[test]
+    fn move_file_into_subdir() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let base = canon_root(&tmp);
+        fs::create_dir(base.join("notes")).unwrap();
+        fs::write(base.join("a.md"), "x").unwrap();
+
+        move_within(&base, "a.md", "notes/a.md").unwrap();
+        assert!(!base.join("a.md").exists());
+        assert_eq!(fs::read_to_string(base.join("notes/a.md")).unwrap(), "x");
+    }
+
+    #[test]
+    fn move_renames_a_directory_with_contents() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let base = canon_root(&tmp);
+        fs::create_dir_all(base.join("src/deep")).unwrap();
+        fs::write(base.join("src/deep/f.rs"), "fn").unwrap();
+        fs::create_dir(base.join("lib")).unwrap();
+
+        move_within(&base, "src", "lib/src").unwrap();
+        assert!(base.join("lib/src/deep/f.rs").exists());
+        assert!(!base.join("src").exists());
+    }
+
+    #[test]
+    fn move_rejects_escapes_in_either_path() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let base = canon_root(&tmp);
+        fs::write(base.join("a.md"), "x").unwrap();
+
+        for (from, to) in [
+            ("../a.md", "b.md"),
+            ("a.md", "../b.md"),
+            ("/etc/passwd", "b.md"),
+            ("a.md", "/tmp/b.md"),
+            ("", "b.md"),
+            ("a.md", ""),
+        ] {
+            assert!(
+                matches!(move_within(&base, from, to), Err(FsMoveError::Escape)),
+                "expected Escape for ({from:?}, {to:?})"
+            );
+        }
+        assert!(base.join("a.md").exists());
+    }
+
+    #[test]
+    fn move_rejects_overwrite_and_self_move() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let base = canon_root(&tmp);
+        fs::write(base.join("a.md"), "a").unwrap();
+        fs::write(base.join("b.md"), "b").unwrap();
+
+        assert!(matches!(
+            move_within(&base, "a.md", "b.md"),
+            Err(FsMoveError::DestinationExists)
+        ));
+        // A no-op move (same path) is also an existing destination.
+        assert!(matches!(
+            move_within(&base, "a.md", "a.md"),
+            Err(FsMoveError::DestinationExists)
+        ));
+        assert_eq!(fs::read_to_string(base.join("b.md")).unwrap(), "b");
+    }
+
+    #[test]
+    fn move_rejects_dir_into_itself() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let base = canon_root(&tmp);
+        fs::create_dir_all(base.join("dir/sub")).unwrap();
+
+        assert!(matches!(
+            move_within(&base, "dir", "dir/sub/dir"),
+            Err(FsMoveError::IntoSelf)
+        ));
+    }
+
+    #[test]
+    fn move_distinguishes_missing_source_and_bad_destination() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let base = canon_root(&tmp);
+        fs::write(base.join("a.md"), "x").unwrap();
+
+        assert!(matches!(
+            move_within(&base, "ghost.md", "a2.md"),
+            Err(FsMoveError::SourceMissing)
+        ));
+        assert!(matches!(
+            move_within(&base, "a.md", "no-such-dir/a.md"),
+            Err(FsMoveError::BadDestination)
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn move_rejects_symlink_parent_escape() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let outside = tempfile::TempDir::new().unwrap();
+        let base = canon_root(&tmp);
+        fs::write(base.join("a.md"), "x").unwrap();
+        std::os::unix::fs::symlink(outside.path(), base.join("evil")).unwrap();
+
+        // Destination parent canonicalizes outside the root → Escape, and the
+        // outside dir stays untouched.
+        assert!(matches!(
+            move_within(&base, "a.md", "evil/a.md"),
+            Err(FsMoveError::Escape)
+        ));
+        assert!(outside.path().read_dir().unwrap().next().is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn move_of_symlink_moves_the_link_not_its_target() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let outside = tempfile::TempDir::new().unwrap();
+        let base = canon_root(&tmp);
+        let target = outside.path().join("real.txt");
+        fs::write(&target, "real").unwrap();
+        std::os::unix::fs::symlink(&target, base.join("link.txt")).unwrap();
+        fs::create_dir(base.join("sub")).unwrap();
+
+        move_within(&base, "link.txt", "sub/link.txt").unwrap();
+        // The link moved; the outside target is untouched.
+        assert!(base
+            .join("sub/link.txt")
+            .symlink_metadata()
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "real");
     }
 }
