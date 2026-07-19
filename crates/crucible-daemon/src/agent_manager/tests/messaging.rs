@@ -2,48 +2,33 @@ use super::*;
 
 #[tokio::test]
 async fn send_message_emits_text_delta_events_in_order() {
-    let (_tmp, session_manager, session) = setup_session_manager().await;
+    let mut h = ReactorTestHarness::new().await;
+    h.inject_streaming_agent(vec![
+        script::text("hello"),
+        script::text(" world"),
+        script::done(),
+    ]);
 
-    let agent_manager = create_test_agent_manager(session_manager.clone());
-    agent_manager
-        .configure_agent(&session.id, test_agent())
-        .await
-        .unwrap();
+    let message_id = h.send("test").await;
 
-    agent_manager.agent_cache.insert(
-        session.id.clone(),
-        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            events: vec![
-                script::text("hello"),
-                script::text(" world"),
-                script::done(),
-            ],
-        }))),
-    );
-
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-    let message_id = agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
-        .await
-        .unwrap();
-
-    let user_message = next_event_or_skip(&mut event_rx, "user_message").await;
+    let user_message = h.wait_for("user_message").await;
     assert_eq!(user_message.data["content"], "test");
     assert_eq!(user_message.data["message_id"], message_id);
 
-    let first_delta = next_event_or_skip(&mut event_rx, "text_delta").await;
+    let first_delta = h.wait_for("text_delta").await;
     assert_eq!(first_delta.data["content"], "hello");
 
-    let second_delta = next_event_or_skip(&mut event_rx, "text_delta").await;
+    let second_delta = h.wait_for("text_delta").await;
     assert_eq!(second_delta.data["content"], " world");
 
-    let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
+    let complete = h.wait_for("message_complete").await;
     assert_eq!(complete.data["message_id"], message_id);
     assert_eq!(complete.data["full_response"], "hello world");
 
     // Scheduler-owned tree should carry the turn shape: root → User → Agent.
-    let tree_arc = agent_manager
-        .get_session_tree(&session.id)
+    let tree_arc = h
+        .agent_manager
+        .get_session_tree(&h.session_id)
         .expect("session tree should exist after a turn");
     let tree = tree_arc.lock().await;
     let path = tree.path_to_here(tree.current());
@@ -68,61 +53,46 @@ async fn send_message_emits_text_delta_events_in_order() {
     drop(tree);
 
     // One complete turn = undo_depth of 1; undo rewinds the cursor.
-    assert_eq!(agent_manager.undo_depth(&session.id).await.unwrap(), 1);
-    assert!(agent_manager.can_undo(&session.id).await.unwrap());
-    let summaries = agent_manager
-        .undo(&session.id, 1, None)
+    assert_eq!(h.agent_manager.undo_depth(&h.session_id).await.unwrap(), 1);
+    assert!(h.agent_manager.can_undo(&h.session_id).await.unwrap());
+    let summaries = h
+        .agent_manager
+        .undo(&h.session_id, 1, None)
         .await
         .expect("undo should succeed");
     assert_eq!(summaries.len(), 1);
-    assert_eq!(agent_manager.undo_depth(&session.id).await.unwrap(), 0);
+    assert_eq!(h.agent_manager.undo_depth(&h.session_id).await.unwrap(), 0);
 }
 
 #[tokio::test]
 async fn send_message_emits_thinking_before_text_delta() {
-    let (_tmp, session_manager, session) = setup_session_manager().await;
+    let mut h = ReactorTestHarness::new().await;
+    h.inject_streaming_agent(vec![
+        script::thinking("thinking..."),
+        script::text("response"),
+        script::done(),
+    ]);
 
-    let agent_manager = create_test_agent_manager(session_manager.clone());
-    agent_manager
-        .configure_agent(&session.id, test_agent())
-        .await
-        .unwrap();
+    h.send("test").await;
 
-    agent_manager.agent_cache.insert(
-        session.id.clone(),
-        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            events: vec![
-                script::thinking("thinking..."),
-                script::text("response"),
-                script::done(),
-            ],
-        }))),
-    );
-
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-    agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
-        .await
-        .unwrap();
-
-    let user_message = next_event_or_skip(&mut event_rx, "user_message").await;
+    let user_message = h.wait_for("user_message").await;
     assert_eq!(user_message.data["content"], "test");
 
-    let first_after_user = timeout(Duration::from_secs(2), event_rx.recv())
+    let first_after_user = timeout(Duration::from_secs(2), h.event_rx.recv())
         .await
         .expect("timed out waiting for first post-user event")
         .expect("event channel closed");
     assert_eq!(first_after_user.event, "thinking");
     assert_eq!(first_after_user.data["content"], "thinking...");
 
-    let second_after_user = timeout(Duration::from_secs(2), event_rx.recv())
+    let second_after_user = timeout(Duration::from_secs(2), h.event_rx.recv())
         .await
         .expect("timed out waiting for second post-user event")
         .expect("event channel closed");
     assert_eq!(second_after_user.event, "text_delta");
     assert_eq!(second_after_user.data["content"], "response");
 
-    let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
+    let complete = h.wait_for("message_complete").await;
     assert_eq!(complete.data["full_response"], "response");
 }
 
@@ -130,37 +100,22 @@ async fn send_message_emits_thinking_before_text_delta() {
 /// event must reach the scheduler before text_delta.
 #[tokio::test]
 async fn same_chunk_thinking_emitted_before_text_delta() {
-    let (_tmp, session_manager, session) = setup_session_manager().await;
-
-    let agent_manager = create_test_agent_manager(session_manager.clone());
-    agent_manager
-        .configure_agent(&session.id, test_agent())
-        .await
-        .unwrap();
+    let mut h = ReactorTestHarness::new().await;
 
     // Script emits thinking before text so the scheduler must relay
     // them in that order.
-    agent_manager.agent_cache.insert(
-        session.id.clone(),
-        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            events: vec![
-                script::thinking("let me think"),
-                script::text("answer"),
-                script::done(),
-            ],
-        }))),
-    );
+    h.inject_streaming_agent(vec![
+        script::thinking("let me think"),
+        script::text("answer"),
+        script::done(),
+    ]);
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-    agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
-        .await
-        .unwrap();
+    h.send("test").await;
 
-    let _user_message = next_event_or_skip(&mut event_rx, "user_message").await;
+    let _user_message = h.wait_for("user_message").await;
 
     // First event after user_message must be thinking, not text_delta
-    let first = timeout(Duration::from_secs(2), event_rx.recv())
+    let first = timeout(Duration::from_secs(2), h.event_rx.recv())
         .await
         .expect("timed out")
         .expect("channel closed");
@@ -171,7 +126,7 @@ async fn same_chunk_thinking_emitted_before_text_delta() {
     );
     assert_eq!(first.data["content"], "let me think");
 
-    let second = timeout(Duration::from_secs(2), event_rx.recv())
+    let second = timeout(Duration::from_secs(2), h.event_rx.recv())
         .await
         .expect("timed out")
         .expect("channel closed");
@@ -191,227 +146,132 @@ async fn same_chunk_thinking_emitted_before_text_delta() {
 /// tool call must pass through and the agent's own follow-up text must arrive.
 #[tokio::test]
 async fn owns_history_agent_tool_call_passes_through_without_truncating_turn() {
-    let (_tmp, session_manager, session) = setup_session_manager().await;
+    let mut h = ReactorTestHarness::new().await;
+    h.inject_agent(Box::new(OwnsToolsMockAgent {
+        events: vec![
+            script::tool_call(
+                "call1",
+                "Read",
+                serde_json::json!({"file_path": "notes.txt"}),
+            ),
+            script::tool_result("call1", "Read", "LINE TWO beta"),
+            script::text("Line two is: LINE TWO beta"),
+            script::done(),
+        ],
+    }));
 
-    let agent_manager = create_test_agent_manager(session_manager.clone());
-    agent_manager
-        .configure_agent(&session.id, test_agent())
-        .await
-        .unwrap();
-
-    agent_manager.agent_cache.insert(
-        session.id.clone(),
-        Arc::new(Mutex::new(Box::new(OwnsToolsMockAgent {
-            events: vec![
-                script::tool_call(
-                    "call1",
-                    "Read",
-                    serde_json::json!({"file_path": "notes.txt"}),
-                ),
-                script::tool_result("call1", "Read", "LINE TWO beta"),
-                script::text("Line two is: LINE TWO beta"),
-                script::done(),
-            ],
-        }))),
-    );
-
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-    agent_manager
-        .send_message(&session.id, "read notes".to_string(), &event_tx, true, None)
-        .await
-        .unwrap();
+    h.send("read notes").await;
 
     // The tool call must be surfaced (TUI renders it)...
-    let tool_call = next_event_or_skip(&mut event_rx, "tool_call").await;
+    let tool_call = h.wait_for("tool_call").await;
     assert_eq!(tool_call.data["tool"], "Read");
 
     // ...and crucially, the agent's own follow-up answer must still arrive —
     // proving the turn was not truncated at the tool call.
-    let delta = next_event_or_skip(&mut event_rx, "text_delta").await;
+    let delta = h.wait_for("text_delta").await;
     assert_eq!(delta.data["content"], "Line two is: LINE TWO beta");
 
-    let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
+    let complete = h.wait_for("message_complete").await;
     assert_eq!(complete.data["full_response"], "Line two is: LINE TWO beta");
 }
 
 #[tokio::test]
 async fn send_message_emits_tool_call_and_tool_result_events() {
-    let tmp = TempDir::new().unwrap();
-    std::fs::write(tmp.path().join("test.md"), "content").unwrap();
+    let mut h = ReactorTestHarness::new().await;
+    std::fs::write(h.workspace().join("test.md"), "content").unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    h.inject_streaming_agent(vec![
+        script::tool_call(
+            "call1",
+            "read_file",
+            serde_json::json!({ "path": "test.md" }),
+        ),
+        script::tool_result("call1", "read_file", "content"),
+        script::text("Done."),
+        script::done(),
+    ]);
 
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+    let message_id = h.send("test").await;
 
-    let agent_manager = create_test_agent_manager(session_manager.clone());
-    agent_manager
-        .configure_agent(&session.id, test_agent())
-        .await
-        .unwrap();
-
-    agent_manager.agent_cache.insert(
-        session.id.clone(),
-        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            events: vec![
-                script::tool_call(
-                    "call1",
-                    "read_file",
-                    serde_json::json!({ "path": "test.md" }),
-                ),
-                script::tool_result("call1", "read_file", "content"),
-                script::text("Done."),
-                script::done(),
-            ],
-        }))),
-    );
-
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-    let message_id = agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
-        .await
-        .unwrap();
-
-    let user_message = next_event_or_skip(&mut event_rx, "user_message").await;
+    let user_message = h.wait_for("user_message").await;
     assert_eq!(user_message.data["content"], "test");
 
-    let tool_call = next_event_or_skip(&mut event_rx, "tool_call").await;
+    let tool_call = h.wait_for("tool_call").await;
     assert_eq!(tool_call.data["tool"], "read_file");
     assert_eq!(tool_call.data["args"]["path"], "test.md");
 
-    let tool_result = next_event_or_skip(&mut event_rx, "tool_result").await;
+    let tool_result = h.wait_for("tool_result").await;
     assert_eq!(tool_result.data["tool"], "read_file");
     assert!(tool_result.data["result"]["result"]
         .as_str()
         .unwrap_or("")
         .contains("content"));
 
-    let complete = next_event_or_skip(&mut event_rx, "message_complete").await;
+    let complete = h.wait_for("message_complete").await;
     assert_eq!(complete.data["message_id"], message_id);
     assert_eq!(complete.data["full_response"], "Done.");
 }
 
 #[tokio::test]
 async fn display_hook_lua_tool_enriches_tool_call_metadata() {
-    let tmp = TempDir::new().unwrap();
-    std::fs::write(tmp.path().join("test.md"), "content").unwrap();
+    let mut h = ReactorTestHarness::new().await;
+    std::fs::write(h.workspace().join("test.md"), "content").unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    h.load_lua(
+        r#"
+        crucible.on("tool:display_start", function(ctx, event)
+            return {
+                label = "Custom " .. event.name,
+                detail = "LuaStart"
+            }
+        end)
 
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
+        crucible.on("tool:display_complete", function(ctx, event)
+            return {
+                summary = "Summary " .. event.name
+            }
+        end)
+    "#,
+    )
+    .await;
 
-    let agent_manager = create_test_agent_manager(session_manager.clone());
-    agent_manager
-        .configure_agent(&session.id, test_agent())
-        .await
-        .unwrap();
+    h.inject_streaming_agent(vec![
+        script::tool_call(
+            "call-display-hook",
+            "read_file",
+            serde_json::json!({ "path": "test.md" }),
+        ),
+        script::text("Done."),
+        script::done(),
+    ]);
 
-    {
-        let session_state = agent_manager.get_or_create_session_state(&session.id);
-        let state = session_state.lock().await;
-        state
-            .lua
-            .load(
-                r#"
-            crucible.on("tool:display_start", function(ctx, event)
-                return {
-                    label = "Custom " .. event.name,
-                    detail = "LuaStart"
-                }
-            end)
+    h.send("test").await;
 
-            crucible.on("tool:display_complete", function(ctx, event)
-                return {
-                    summary = "Summary " .. event.name
-                }
-            end)
-        "#,
-            )
-            .exec()
-            .unwrap();
-    }
+    let _ = h.wait_for("user_message").await;
 
-    agent_manager.agent_cache.insert(
-        session.id.clone(),
-        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            events: vec![
-                script::tool_call(
-                    "call-display-hook",
-                    "read_file",
-                    serde_json::json!({ "path": "test.md" }),
-                ),
-                script::text("Done."),
-                script::done(),
-            ],
-        }))),
-    );
-
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-    agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
-        .await
-        .unwrap();
-
-    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
-
-    let tool_call = next_event_or_skip(&mut event_rx, "tool_call").await;
+    let tool_call = h.wait_for("tool_call").await;
     assert_eq!(tool_call.data["tool"], "read_file");
     assert_eq!(tool_call.data["description"], "Custom read_file");
     assert_eq!(tool_call.data["source"], "LuaStart");
 
-    let tool_result = next_event_or_skip(&mut event_rx, "tool_result").await;
+    let tool_result = h.wait_for("tool_result").await;
     assert_eq!(tool_result.data["tool"], "read_file");
     assert_eq!(tool_result.data["result"]["summary"], "Summary read_file");
 }
 
 #[tokio::test]
 async fn test_execute_agent_stream_empty_response_emits_error_event() {
-    let (_tmp, session_manager, session) = setup_session_manager().await;
+    let mut h = ReactorTestHarness::new().await;
+    h.inject_streaming_agent(vec![script::done()]);
 
-    let agent_manager = create_test_agent_manager(session_manager.clone());
-    agent_manager
-        .configure_agent(&session.id, test_agent())
-        .await
-        .unwrap();
+    h.send("test").await;
 
-    agent_manager.agent_cache.insert(
-        session.id.clone(),
-        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            events: vec![script::done()],
-        }))),
-    );
-
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-    agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
-        .await
-        .unwrap();
-
-    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+    let _ = h.wait_for("user_message").await;
 
     let mut saw_message_complete = false;
     let ended = timeout(Duration::from_secs(2), async {
         loop {
-            match event_rx.recv().await {
+            match h.event_rx.recv().await {
                 Ok(event) if event.event == "message_complete" => saw_message_complete = true,
                 Ok(event) if event.event == "ended" => return event,
                 Ok(_) => continue,
@@ -436,41 +296,25 @@ async fn test_execute_agent_stream_empty_response_emits_error_event() {
 
 #[tokio::test]
 async fn test_execute_agent_stream_tool_call_only_is_not_error() {
-    let (_tmp, session_manager, session) = setup_session_manager().await;
+    let mut h = ReactorTestHarness::new().await;
+    h.inject_streaming_agent(vec![
+        script::tool_call(
+            "call-tool-only",
+            "read_file",
+            serde_json::json!({ "path": "test.md" }),
+        ),
+        script::tool_result("call-tool-only", "read_file", "content"),
+        script::done(),
+    ]);
 
-    let agent_manager = create_test_agent_manager(session_manager.clone());
-    agent_manager
-        .configure_agent(&session.id, test_agent())
-        .await
-        .unwrap();
+    let message_id = h.send("test").await;
 
-    agent_manager.agent_cache.insert(
-        session.id.clone(),
-        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            events: vec![
-                script::tool_call(
-                    "call-tool-only",
-                    "read_file",
-                    serde_json::json!({ "path": "test.md" }),
-                ),
-                script::tool_result("call-tool-only", "read_file", "content"),
-                script::done(),
-            ],
-        }))),
-    );
-
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-    let message_id = agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
-        .await
-        .unwrap();
-
-    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+    let _ = h.wait_for("user_message").await;
 
     let mut saw_error_ended = false;
     let complete = timeout(Duration::from_secs(2), async {
         loop {
-            match event_rx.recv().await {
+            match h.event_rx.recv().await {
                 Ok(event) if event.event == "ended" => {
                     let reason = event.data["reason"]
                         .as_str()
@@ -647,15 +491,10 @@ async fn depth_cap_triggers_depth_prompt_and_completes_with_text() {
     // prompt, the mock replies with final text, and the turn finishes
     // normally — no "error: max_tool_depth exceeded" ended event.
 
-    let (_tmp, session_manager, session) = setup_session_manager().await;
-
-    let agent_manager = create_test_agent_manager(session_manager.clone());
+    let mut h = ReactorTestHarness::new().await;
     let mut agent_cfg = test_agent();
     agent_cfg.max_iterations = Some(2); // cap after 2 tool rounds
-    agent_manager
-        .configure_agent(&session.id, agent_cfg)
-        .await
-        .unwrap();
+    h.reconfigure(agent_cfg).await;
 
     let captured = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
     // Script (each entry = one `Agent::turn` iteration):
@@ -663,7 +502,7 @@ async fn depth_cap_triggers_depth_prompt_and_completes_with_text() {
     //   2. turn after tool result               → tool_call id=call-2
     //   3. turn after tool result               → tool_call id=call-3 (would be depth=3, capped)
     //   4. turn with DEPTH_CAP_PROMPT injection → terminal text "final"
-    let handle: BoxedAgentHandle = Box::new(ScriptedHandle::new(
+    h.inject_agent(Box::new(ScriptedHandle::new(
         vec![
             vec![tool_call_fixture("read_file", "call-1")],
             vec![tool_call_fixture("read_file", "call-2")],
@@ -671,25 +510,18 @@ async fn depth_cap_triggers_depth_prompt_and_completes_with_text() {
             vec![script::text("final answer"), script::done()],
         ],
         captured.clone(),
-    ));
-    agent_manager
-        .agent_cache
-        .insert(session.id.clone(), Arc::new(Mutex::new(handle)));
+    )));
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-    agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
-        .await
-        .unwrap();
+    h.send("test").await;
 
-    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+    let _ = h.wait_for("user_message").await;
 
     // Drain until message_complete; the response should contain the
     // depth-prompt reply "final answer". No "error: max_tool_depth" ended.
     let mut saw_error_ended = false;
     let complete = timeout(Duration::from_secs(5), async {
         loop {
-            match event_rx.recv().await {
+            match h.event_rx.recv().await {
                 Ok(event) if event.event == "ended" => {
                     let reason = event.data["reason"]
                         .as_str()
@@ -758,35 +590,21 @@ async fn tool_dispatch_has_timeout() {
 /// the validation-exhausted marker — no second turn is attempted.
 #[tokio::test]
 async fn test_validate_retry_zero_retries_emits_exhausted_ended() {
-    let (_tmp, session_manager, session) = setup_session_manager().await;
-
-    let agent_manager = create_test_agent_manager(session_manager.clone());
+    let mut h = ReactorTestHarness::new().await;
     let mut agent = test_agent();
     agent.output_validation = crucible_core::session::OutputValidation::Json;
     agent.validation_retries = 0;
-    agent_manager
-        .configure_agent(&session.id, agent)
-        .await
-        .unwrap();
+    h.reconfigure(agent).await;
 
-    agent_manager.agent_cache.insert(
-        session.id.clone(),
-        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            events: vec![script::text("not json at all"), script::done()],
-        }))),
-    );
+    h.inject_streaming_agent(vec![script::text("not json at all"), script::done()]);
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-    agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
-        .await
-        .unwrap();
+    h.send("test").await;
 
-    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+    let _ = h.wait_for("user_message").await;
 
     let ended = timeout(Duration::from_secs(2), async {
         loop {
-            match event_rx.recv().await {
+            match h.event_rx.recv().await {
                 Ok(event) if event.event == "ended" => return event,
                 Ok(_) => continue,
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
@@ -808,32 +626,16 @@ async fn test_validate_retry_zero_retries_emits_exhausted_ended() {
 /// flow through normally — no validation, no retry, no ended-error.
 #[tokio::test]
 async fn test_validate_retry_none_validation_passes_freely() {
-    let (_tmp, session_manager, session) = setup_session_manager().await;
+    let mut h = ReactorTestHarness::new().await;
+    h.inject_streaming_agent(vec![script::text("not json"), script::done()]);
 
-    let agent_manager = create_test_agent_manager(session_manager.clone());
-    agent_manager
-        .configure_agent(&session.id, test_agent())
-        .await
-        .unwrap();
+    h.send("test").await;
 
-    agent_manager.agent_cache.insert(
-        session.id.clone(),
-        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            events: vec![script::text("not json"), script::done()],
-        }))),
-    );
-
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-    agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
-        .await
-        .unwrap();
-
-    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+    let _ = h.wait_for("user_message").await;
 
     // We expect message_complete to fire normally — no validation
     // gate intercepted it.
-    let mc = next_event_or_skip(&mut event_rx, "message_complete").await;
+    let mc = h.wait_for("message_complete").await;
     assert_eq!(mc.data["full_response"], "not json");
 }
 
@@ -854,43 +656,29 @@ fn lua_validator_runtime() -> (Arc<mlua::Lua>, Arc<crucible_lua::LuaValidatorReg
 /// exhaustion emit the standard validation-exhausted ended event.
 #[tokio::test]
 async fn test_lua_validator_failure_triggers_retry_and_exhausts() {
-    let (_tmp, session_manager, session) = setup_session_manager().await;
-
-    let agent_manager = create_test_agent_manager(session_manager.clone());
+    let mut h = ReactorTestHarness::new().await;
     let (lua, registry) = lua_validator_runtime();
     lua.load(r#"cru.context.register_validator("nope", function(_) return false, "boom" end)"#)
         .exec()
         .expect("register validator");
-    agent_manager.set_lua_validators(Arc::clone(&registry), Arc::clone(&lua));
+    h.set_lua_validators(Arc::clone(&registry), Arc::clone(&lua));
 
     let mut agent = test_agent();
     agent.output_validation = crucible_core::session::OutputValidation::Lua {
         name: "nope".to_string(),
     };
     agent.validation_retries = 0;
-    agent_manager
-        .configure_agent(&session.id, agent)
-        .await
-        .unwrap();
+    h.reconfigure(agent).await;
 
-    agent_manager.agent_cache.insert(
-        session.id.clone(),
-        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            events: vec![script::text("anything"), script::done()],
-        }))),
-    );
+    h.inject_streaming_agent(vec![script::text("anything"), script::done()]);
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-    agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
-        .await
-        .unwrap();
+    h.send("test").await;
 
-    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+    let _ = h.wait_for("user_message").await;
 
     let ended = timeout(Duration::from_secs(2), async {
         loop {
-            match event_rx.recv().await {
+            match h.event_rx.recv().await {
                 Ok(event) if event.event == "ended" => return event,
                 Ok(_) => continue,
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
@@ -912,41 +700,27 @@ async fn test_lua_validator_failure_triggers_retry_and_exhausts() {
 /// `true` — the response should flow through normally without retry.
 #[tokio::test]
 async fn test_lua_validator_pass_no_retry() {
-    let (_tmp, session_manager, session) = setup_session_manager().await;
-
-    let agent_manager = create_test_agent_manager(session_manager.clone());
+    let mut h = ReactorTestHarness::new().await;
     let (lua, registry) = lua_validator_runtime();
     lua.load(r#"cru.context.register_validator("ok", function(_) return true end)"#)
         .exec()
         .expect("register validator");
-    agent_manager.set_lua_validators(Arc::clone(&registry), Arc::clone(&lua));
+    h.set_lua_validators(Arc::clone(&registry), Arc::clone(&lua));
 
     let mut agent = test_agent();
     agent.output_validation = crucible_core::session::OutputValidation::Lua {
         name: "ok".to_string(),
     };
     agent.validation_retries = 0;
-    agent_manager
-        .configure_agent(&session.id, agent)
-        .await
-        .unwrap();
+    h.reconfigure(agent).await;
 
-    agent_manager.agent_cache.insert(
-        session.id.clone(),
-        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            events: vec![script::text("anything"), script::done()],
-        }))),
-    );
+    h.inject_streaming_agent(vec![script::text("anything"), script::done()]);
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-    agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
-        .await
-        .unwrap();
+    h.send("test").await;
 
-    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+    let _ = h.wait_for("user_message").await;
 
-    let mc = next_event_or_skip(&mut event_rx, "message_complete").await;
+    let mc = h.wait_for("message_complete").await;
     assert_eq!(mc.data["full_response"], "anything");
 }
 
@@ -956,41 +730,27 @@ async fn test_lua_validator_pass_no_retry() {
 /// problem is that `name` was never `register_validator`'d.
 #[tokio::test]
 async fn test_lua_validator_unregistered_name_errors() {
-    let (_tmp, session_manager, session) = setup_session_manager().await;
-
-    let agent_manager = create_test_agent_manager(session_manager.clone());
+    let mut h = ReactorTestHarness::new().await;
     // Registry is bound but no validator named "missing" was registered.
     let (lua, registry) = lua_validator_runtime();
-    agent_manager.set_lua_validators(Arc::clone(&registry), Arc::clone(&lua));
+    h.set_lua_validators(Arc::clone(&registry), Arc::clone(&lua));
 
     let mut agent = test_agent();
     agent.output_validation = crucible_core::session::OutputValidation::Lua {
         name: "missing".to_string(),
     };
     agent.validation_retries = 0;
-    agent_manager
-        .configure_agent(&session.id, agent)
-        .await
-        .unwrap();
+    h.reconfigure(agent).await;
 
-    agent_manager.agent_cache.insert(
-        session.id.clone(),
-        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            events: vec![script::text("anything"), script::done()],
-        }))),
-    );
+    h.inject_streaming_agent(vec![script::text("anything"), script::done()]);
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-    agent_manager
-        .send_message(&session.id, "test".to_string(), &event_tx, true, None)
-        .await
-        .unwrap();
+    h.send("test").await;
 
-    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+    let _ = h.wait_for("user_message").await;
 
     let ended = timeout(Duration::from_secs(2), async {
         loop {
-            match event_rx.recv().await {
+            match h.event_rx.recv().await {
                 Ok(event) if event.event == "ended" => return event,
                 Ok(_) => continue,
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
@@ -1015,59 +775,32 @@ async fn test_lua_validator_unregistered_name_errors() {
 /// the journal-mode restore replays the original file bytes.
 #[tokio::test]
 async fn turn_undo_restores_snapshotted_file() {
-    let tmp = TempDir::new().unwrap();
-    let workspace = tmp.path();
+    let mut h = ReactorTestHarness::new().await;
+    let workspace = h.workspace().to_path_buf();
 
     // Seed the workspace with a tracked file in its pre-turn state.
     std::fs::write(workspace.join("a.txt"), b"v1").unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            workspace.to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
-
-    let agent_manager = create_test_agent_manager(session_manager.clone());
-    agent_manager
-        .configure_agent(&session.id, test_agent())
-        .await
-        .unwrap();
-
     // Mock agent: text reply, done. The "tool effect" we simulate is
     // the file mutation below — we do not need a real tool to verify
     // the snapshot/undo wire-up.
-    agent_manager.agent_cache.insert(
-        session.id.clone(),
-        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
-            events: vec![script::text("ok"), script::done()],
-        }))),
-    );
+    h.inject_streaming_agent(vec![script::text("ok"), script::done()]);
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
-    agent_manager
-        .send_message(&session.id, "go".to_string(), &event_tx, true, None)
-        .await
-        .unwrap();
+    h.send("go").await;
 
     // Drain to message_complete so the snapshot has definitely been
     // taken (capture is synchronous in send_message before the spawned
     // task starts the stream).
-    let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+    let _ = h.wait_for("message_complete").await;
 
     // Simulate a tool that wrote to the file mid-turn.
     std::fs::write(workspace.join("a.txt"), b"v2").unwrap();
     assert_eq!(std::fs::read(workspace.join("a.txt")).unwrap(), b"v2");
 
     // Undo the turn — restoration should bring back v1.
-    let summaries = agent_manager
-        .undo(&session.id, 1, None)
+    let summaries = h
+        .agent_manager
+        .undo(&h.session_id, 1, None)
         .await
         .expect("undo should succeed");
     assert_eq!(summaries.len(), 1);

@@ -483,31 +483,68 @@ impl ReactorTestHarness {
     fn inject_capturing_agent(&self, events: Vec<TurnEvent>) -> (CapturedPrompt, CapturedMessages) {
         let received_prompt = Arc::new(std::sync::Mutex::new(None::<String>));
         let received_messages = Arc::new(std::sync::Mutex::new(None));
-        self.agent_manager.agent_cache.insert(
-            self.session_id.clone(),
-            Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
-                received_prompt: received_prompt.clone(),
-                received_messages: received_messages.clone(),
-                events,
-            }) as BoxedAgentHandle)),
-        );
+        self.inject_agent(Box::new(PromptCapturingAgent {
+            received_prompt: received_prompt.clone(),
+            received_messages: received_messages.clone(),
+            events,
+        }));
         (received_prompt, received_messages)
     }
 
     fn inject_streaming_agent(&self, events: Vec<TurnEvent>) {
-        self.agent_manager.agent_cache.insert(
-            self.session_id.clone(),
-            Arc::new(Mutex::new(
-                Box::new(StreamingMockAgent { events }) as BoxedAgentHandle
-            )),
-        );
+        self.inject_agent(Box::new(StreamingMockAgent { events }));
+    }
+
+    /// Drop an arbitrary agent handle into the cache for this session.
+    /// Use this directly for handle types (e.g. `OwnsToolsMockAgent`,
+    /// `ScriptedHandle`) that don't have a dedicated `inject_*` helper.
+    fn inject_agent(&self, handle: BoxedAgentHandle) {
+        self.agent_manager
+            .agent_cache
+            .insert(self.session_id.clone(), Arc::new(Mutex::new(handle)));
     }
 
     fn default_ok_events() -> Vec<TurnEvent> {
         vec![script::text("ok"), script::done()]
     }
 
-    async fn send(&mut self, msg: &str) {
+    /// The session's workspace directory, for tests that seed files the
+    /// mock agent's tool calls are expected to observe.
+    fn workspace(&self) -> &std::path::Path {
+        self._tmp.path()
+    }
+
+    /// Re-run `configure_agent` with a non-default `SessionAgent` (e.g. a
+    /// custom `max_iterations` or `output_validation`). Safe to call after
+    /// `new()`'s default configuration — it's an idempotent overwrite.
+    async fn reconfigure(&self, agent: SessionAgent) {
+        self.agent_manager
+            .configure_agent(&self.session_id, agent)
+            .await
+            .unwrap();
+    }
+
+    /// Load and execute a Lua snippet in this session's Lua VM (for tests
+    /// that register `crucible.on(...)` display hooks).
+    async fn load_lua(&self, script: &str) {
+        let session_state = self
+            .agent_manager
+            .get_or_create_session_state(&self.session_id);
+        let state = session_state.lock().await;
+        state.lua.load(script).exec().unwrap();
+    }
+
+    /// Bind a Lua validator registry for `OutputValidation::Lua` tests.
+    fn set_lua_validators(
+        &self,
+        registry: Arc<crucible_lua::LuaValidatorRegistry>,
+        lua: Arc<mlua::Lua>,
+    ) {
+        self.agent_manager.set_lua_validators(registry, lua);
+    }
+
+    /// Send a message and return the generated `message_id`.
+    async fn send(&mut self, msg: &str) -> String {
         self.agent_manager
             .send_message(
                 &self.session_id,
@@ -517,7 +554,7 @@ impl ReactorTestHarness {
                 None,
             )
             .await
-            .unwrap();
+            .unwrap()
     }
 
     async fn wait_for(&mut self, event_name: &str) -> SessionEventMessage {
