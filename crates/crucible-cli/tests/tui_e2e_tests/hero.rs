@@ -94,6 +94,32 @@ fn chat_resume_config(session_id: &str, kiln: &str) -> TuiTestConfig {
     config
 }
 
+/// A TuiTestConfig for a FRESH `cru chat` (no `--resume`) — its own new
+/// session, daemon-attached via the same env as the resume legs.
+fn chat_new_config(kiln: &str) -> TuiTestConfig {
+    let mut config = TuiTestConfig::new("chat")
+        .with_dimensions(110, 40)
+        .with_cwd(kiln)
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(90));
+    config.binary_path = Some(cru_bin());
+    for key in [
+        "CRUCIBLE_SOCKET",
+        "CRUCIBLE_CONFIG_DIR",
+        "HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_RUNTIME_DIR",
+    ] {
+        if let Ok(v) = std::env::var(key) {
+            if !v.is_empty() {
+                config = config.with_env(key, &v);
+            }
+        }
+    }
+    config
+}
+
 fn dump_frame(session: &mut TuiTestSession, artifact_dir: &str, name: &str) {
     session.refresh_screen();
     let contents = session.screen_contents();
@@ -258,6 +284,75 @@ fn hero_leg_3() {
     dump_frame(&mut session, &artifact, "leg3-03-turn3");
 
     detach(&mut session, &kiln, &session_id);
+}
+
+/// Agent-writes-a-file leg (TUI console) — the flagship full-flow journey:
+/// new session → agent responds → agent AFFECTS THE FILESYSTEM via a real
+/// `write_file` tool call, gated by a real permission prompt the TUI renders
+/// and this leg approves (`y`), same as a human would.
+///
+/// Independent of the 3-leg hero session (a FRESH `cru chat`, not `--resume`):
+/// driven by `crates/crucible-web/web/e2e/live/agent-fs.live.spec.ts`, which
+/// stands up the same isolated daemon + fake-ollama stack. The trigger
+/// substring and expected file/content are scripted in `hero-script.ts`
+/// (`AGENT_FS_WRITE.tui`) — kept in sync with the literals below by hand,
+/// same convention as the other hero legs' scripted prompts.
+#[test]
+#[ignore = "agent-fs flow — driven by the Playwright live harness (needs HERO_KILN env)"]
+fn agent_fs_leg_tui_write() {
+    let Some(kiln) = env_or_skip("HERO_KILN") else {
+        return;
+    };
+    let artifact = std::env::var("HERO_ARTIFACT").unwrap_or_else(|_| kiln.clone());
+
+    let mut session = TuiTestSession::spawn(chat_new_config(&kiln)).expect("spawn cru chat");
+    session.wait_for_ready().expect("TUI never reached NORMAL");
+    dump_frame(&mut session, &artifact, "agentfs-tui-01-ready");
+
+    // Trigger prompt — substring "write-via-tui-agent" matches the fake's
+    // toolCall rule (hero-script.ts AGENT_FS_WRITE.tui), which streams a
+    // write_file tool_calls round instead of plain text.
+    session
+        .send("Please write-via-tui-agent to create the note.")
+        .expect("send trigger prompt");
+    session.send_key(Key::Enter).expect("enter");
+
+    // The daemon dispatches write_file through the default-deny permission
+    // gate (write_file is not in the safe-tool allowlist) and blocks on a
+    // real interaction_requested event — the TUI renders it as a permission
+    // modal showing the tool name.
+    session
+        .wait_until(
+            |s| s.contents().contains("write_file"),
+            Duration::from_secs(30),
+        )
+        .expect("permission modal for write_file never rendered");
+    dump_frame(&mut session, &artifact, "agentfs-tui-02-permission-modal");
+
+    // Approve — `y` is the real terminal keybinding (same as
+    // vocab::approve_permission drives in the mock-tier story tests).
+    session.send("y").expect("approve permission");
+
+    // Tool executes, the daemon streams the follow-up reply.
+    session
+        .wait_until(
+            |s| s.contents().contains("agent-tui.md"),
+            Duration::from_secs(60),
+        )
+        .expect("post-tool reply never rendered");
+    dump_frame(&mut session, &artifact, "agentfs-tui-03-reply");
+
+    let note = format!("{kiln}/notes/agent-tui.md");
+    wait_for_file_contains(
+        &note,
+        "written by the agent from the TUI leg",
+        Duration::from_secs(15),
+    );
+    dump_frame(&mut session, &artifact, "agentfs-tui-04-file-on-disk");
+
+    let _ = session.send_control('c');
+    let _ = session.send_control('c');
+    session.settle();
 }
 
 /// Ctrl-C out of the TUI, then pause the session so the next console can resume

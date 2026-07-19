@@ -1,10 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { spawn } from 'node:child_process';
-import { readFileSync, readdirSync, existsSync, statSync, mkdirSync } from 'node:fs';
+import { readFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { readHeroState, STATE_FILE } from './hero-state';
 import { HERO_REPLIES } from './hero-script';
+import { findTuiTestBinary, runTuiLeg } from './tui-leg-runner';
 
 /**
  * The hero flow — one cross-surface journey proving the mental model:
@@ -24,56 +23,7 @@ import { HERO_REPLIES } from './hero-script';
  * binary; otherwise hero-setup writes { skip:true } and this skips cleanly.
  */
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const WORKSPACE_ROOT = path.resolve(HERE, '..', '..', '..', '..', '..');
-
 test.describe.configure({ mode: 'serial' });
-
-/** Locate the compiled `tui_e2e_tests` libtest binary (has a hash suffix). */
-function findTuiTestBinary(): string | null {
-  const depsDir = path.join(WORKSPACE_ROOT, 'target', 'debug', 'deps');
-  if (!existsSync(depsDir)) return null;
-  const candidates = readdirSync(depsDir)
-    .filter((f) => /^tui_e2e_tests-[0-9a-f]+$/.test(f))
-    .map((f) => path.join(depsDir, f))
-    .filter((p) => {
-      try {
-        return statSync(p).isFile() && (statSync(p).mode & 0o111) !== 0;
-      } catch {
-        return false;
-      }
-    })
-    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
-  return candidates[0] ?? null;
-}
-
-interface LegResult {
-  code: number | null;
-  out: string;
-}
-
-/** Run one ignored TUI leg (async spawn — never block the fake-ollama loop). */
-function runTuiLeg(
-  bin: string,
-  testName: string,
-  env: NodeJS.ProcessEnv,
-  timeoutMs: number,
-): Promise<LegResult> {
-  return new Promise((resolve) => {
-    const child = spawn(bin, ['--ignored', '--exact', '--nocapture', testName], { env });
-    let out = '';
-    child.stdout.on('data', (d) => (out += d));
-    child.stderr.on('data', (d) => (out += d));
-    const timer = setTimeout(() => {
-      child.kill('SIGKILL');
-      resolve({ code: null, out: out + '\n[leg killed: timeout]' });
-    }, timeoutMs);
-    child.on('exit', (code) => {
-      clearTimeout(timer);
-      resolve({ code, out });
-    });
-  });
-}
 
 test('hero flow: TUI → web → TUI, one session across three consoles', async ({ page, request }, testInfo) => {
   const state = readHeroState();
@@ -117,8 +67,11 @@ test('hero flow: TUI → web → TUI, one session across three consoles', async 
 
   // ── Leg 2 — web console: resume, hydrate turn 1, edit the note, turn 2 ──
   await page.goto(state.baseURL!);
-  // Let the app settle (config → kiln → session list) before resuming.
-  await expect(page.getByText('No session open')).toBeVisible({ timeout: 20_000 });
+  // Let the app settle (config → kiln → session list) before resuming. The
+  // center pane now defaults to a "Home" welcome tab (not an empty state),
+  // so "app is ready" is signaled by the session-creation control, same as
+  // the mock-tier suite (e2e/new-session-chat-tab.spec.ts) uses post-nav.
+  await expect(page.getByTestId('new-session-button')).toBeVisible({ timeout: 20_000 });
 
   // Resume by selecting the session in the Sessions panel (the real product
   // path — onSelect → selectSession resumes it, sets currentSession so the
@@ -149,9 +102,18 @@ test('hero flow: TUI → web → TUI, one session across three consoles', async 
   await expect(page.locator('.cm-content')).toContainText('terminal was here');
 
   // Edit → dirty → Save → clean, then assert the bytes changed on disk.
+  // vimMode defaults to true (src/lib/settings.ts) — the editor opens in vim
+  // NORMAL mode, so raw keystrokes are vim commands, not literal text (a bare
+  // `ControlOrMeta+End` + `type()` gets scrambled: 'b' back-word, 'r'+'o'
+  // replace-char, 'w' forward-word, 's' substitute-and-insert, then the rest
+  // types literally mid-word). `A` is vim's "append at end of line" — it both
+  // moves the cursor to EOL and enters INSERT mode, so the following type()
+  // lands as literal text regardless of where the click put the cursor.
   await page.locator('.cm-content').first().click();
-  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('A');
   await page.keyboard.type('browser was here');
+  await page.keyboard.press('Escape');
   await expect(page.getByTestId('status-save')).toBeVisible();
   await page.getByTestId('status-save').click();
   await expect(page.getByTestId('status-save')).toHaveCount(0);
