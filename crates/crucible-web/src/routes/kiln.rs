@@ -13,6 +13,7 @@ pub fn kiln_routes() -> Router<AppState> {
     Router::new()
         .route("/api/kiln/files", get(list_kiln_files))
         .route("/api/kiln/notes", get(list_kiln_notes))
+        .route("/api/kiln/graph", get(kiln_graph))
         .route("/api/kiln/file", get(get_kiln_file).put(put_kiln_file))
 }
 
@@ -70,6 +71,18 @@ async fn list_kiln_notes(
     let notes_json: Vec<serde_json::Value> = notes.into_iter().map(note_to_file_json).collect();
 
     Ok(Json(serde_json::json!({ "files": notes_json })))
+}
+
+/// `GET /api/kiln/graph?kiln=<path>` — the full note-link graph of a kiln.
+///
+/// Returns the daemon's `kiln.graph` result verbatim:
+/// `{ notes: [{ path, title, tags }], links: [{ source, target, resolved }] }`.
+async fn kiln_graph(
+    State(state): State<AppState>,
+    axum::extract::Query(query): axum::extract::Query<KilnPathQuery>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let graph = state.daemon.kiln_graph(&query.kiln).await.daemon_err()?;
+    Ok(Json(graph))
 }
 
 /// `GET /api/kiln/file?path=<path>` — read a file's content.

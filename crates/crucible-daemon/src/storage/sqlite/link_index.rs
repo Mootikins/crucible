@@ -24,7 +24,7 @@
 //!    rewrites skip the row and surface a warning
 //! 5. no match → `resolved_target IS NULL` (dangling; never rewritten)
 
-use crucible_core::storage::{InboundLink, LinkOccurrence};
+use crucible_core::storage::{GraphLink, InboundLink, LinkOccurrence};
 use rusqlite::{params, Connection, OptionalExtension};
 
 /// `note_links` v2 DDL. `span_start` doubles as the per-source discriminator
@@ -311,6 +311,33 @@ pub(crate) fn inbound_links(
     Ok(rows)
 }
 
+/// The whole note-link graph as deduped directed edges. Resolved rows carry
+/// the `resolved_target` note path (so it joins on `notes.path`); dangling
+/// rows fall back to the normalized `target_key`. Self-links (a note linking
+/// to itself) are excluded. `DISTINCT` collapses the multiple occurrences of
+/// the same edge (e.g. `[[async]]` and `[[notes/async]]` in one note both
+/// resolving to the same file, or repeated raw-fallback rows).
+pub(crate) fn graph_links(conn: &Connection) -> rusqlite::Result<Vec<GraphLink>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT source_path,
+                COALESCE(resolved_target, target_key) AS target,
+                resolved_target IS NOT NULL AS resolved
+         FROM note_links
+         WHERE COALESCE(resolved_target, target_key) <> source_path
+         ORDER BY source_path, target",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(GraphLink {
+                source: r.get(0)?,
+                target: r.get(1)?,
+                resolved: r.get(2)?,
+            })
+        })?
+        .collect::<Result<_, _>>()?;
+    Ok(rows)
+}
+
 /// Distinct source paths with at least one link resolving to `target_path`.
 pub(crate) fn backlink_sources(
     conn: &Connection,
@@ -519,6 +546,37 @@ mod tests {
             .unwrap();
         reresolve_keys(&conn, &note_keys("b/note.md", "")).unwrap();
         assert!(!inbound_links(&conn, "a/note.md").unwrap()[0].is_ambiguous);
+    }
+
+    #[test]
+    fn graph_links_dedupes_excludes_self_and_flags_resolution() {
+        let conn = mem_db();
+        add_note(&conn, "a.md", "");
+        add_note(&conn, "b.md", "");
+        // a → b (resolved), a → missing (dangling), a → a (self, excluded),
+        // and a duplicate a → b via a second raw form that resolves the same.
+        write_links(
+            &conn,
+            "a.md",
+            &[occ("b", 10), occ("missing", 30), occ("a", 50), occ("b.md", 70)],
+            &[],
+        )
+        .unwrap();
+
+        let mut edges = graph_links(&conn).unwrap();
+        edges.sort_by(|x, y| (x.source.clone(), x.target.clone()).cmp(&(y.source.clone(), y.target.clone())));
+
+        assert_eq!(edges.len(), 2, "self-link excluded, duplicate a→b deduped");
+
+        let resolved = &edges[0];
+        assert_eq!(resolved.source, "a.md");
+        assert_eq!(resolved.target, "b.md", "resolved edge uses note path");
+        assert!(resolved.resolved);
+
+        let dangling = &edges[1];
+        assert_eq!(dangling.source, "a.md");
+        assert_eq!(dangling.target, "missing", "dangling edge uses target_key");
+        assert!(!dangling.resolved);
     }
 
     #[test]

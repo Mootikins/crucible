@@ -256,6 +256,15 @@ impl ReconnectingDaemon {
         .await
     }
 
+    pub async fn kiln_graph(&self, kiln_path: &Path) -> anyhow::Result<serde_json::Value> {
+        let kiln_path = kiln_path.to_path_buf();
+        self.call_with_reconnect("kiln.graph", move |daemon| {
+            let kiln_path = kiln_path.clone();
+            Box::pin(async move { daemon.kiln_graph(&kiln_path, None).await })
+        })
+        .await
+    }
+
     pub async fn suggest_links(
         &self,
         kiln_path: &Path,

@@ -602,6 +602,14 @@ impl NoteStore for SqliteNoteStore {
         .await?
     }
 
+    async fn graph_links(&self) -> StorageResult<Vec<crucible_core::storage::GraphLink>> {
+        let pool = self.pool.clone();
+        tokio::task::spawn_blocking(move || {
+            pool.with_connection(|conn| super::link_index::graph_links(conn).sql())
+        })
+        .await?
+    }
+
     fn needs_link_reindex(&self) -> bool {
         self.needs_link_reindex
             .swap(false, std::sync::atomic::Ordering::AcqRel)

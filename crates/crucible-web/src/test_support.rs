@@ -216,6 +216,16 @@ pub async fn start_mock_daemon_with_errors(errors: MockErrors) -> (MockDaemon, D
 pub fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
     match method {
         "kiln.list" => json!([]),
+        "kiln.graph" => json!({
+            "notes": [
+                { "path": "Alpha.md", "title": "Alpha", "tags": ["rust"] },
+                { "path": "Beta.md", "title": "Beta", "tags": [] }
+            ],
+            "links": [
+                { "source": "Alpha.md", "target": "Beta.md", "resolved": true },
+                { "source": "Alpha.md", "target": "ghost", "resolved": false }
+            ]
+        }),
         "list_notes" => json!([]),
         "get_note_by_name" => Value::Null,
         // Note name "missing" resolves to nothing (404 path); anything else

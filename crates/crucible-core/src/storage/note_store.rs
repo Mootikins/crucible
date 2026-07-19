@@ -137,6 +137,20 @@ pub struct LinkOccurrence {
     pub is_embed: bool,
 }
 
+/// One directed edge in the note-link graph, deduped per (source, target,
+/// resolved). `resolved` edges point at a note path (joins on
+/// [`NoteRecord::path`]); unresolved edges point at the normalized target
+/// key of a dangling wikilink.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GraphLink {
+    /// Source note path (kiln-relative)
+    pub source: String,
+    /// Resolved note path when `resolved`, else the dangling target key
+    pub target: String,
+    /// Whether the wikilink resolved to a note in the kiln
+    pub resolved: bool,
+}
+
 /// One inbound link occurrence from the resolved-link index (rewrite input).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InboundLink {
@@ -469,6 +483,13 @@ pub trait NoteStore: Send + Sync {
     /// rows a rename/move rewrite splices. Empty for backends without a
     /// resolved-link index.
     async fn inbound_links(&self, _target_path: &str) -> StorageResult<Vec<InboundLink>> {
+        Ok(Vec::new())
+    }
+
+    /// The whole note-link graph as deduped directed edges (the resolved-link
+    /// index projected for graph views). Self-links are excluded. Empty for
+    /// backends without a resolved-link index.
+    async fn graph_links(&self) -> StorageResult<Vec<GraphLink>> {
         Ok(Vec::new())
     }
 

@@ -72,7 +72,7 @@ Crucible uses a **single `cru` binary** with a built-in daemon for multi-session
 - **Protocol**: JSON-RPC 2.0 over Unix socket with async event streaming
 
 **RPC methods:**
-- Kiln: `kiln.open`, `kiln.close`, `kiln.list`, `search_vectors`, `list_notes`, `get_note_by_name`, `get_backlinks`
+- Kiln: `kiln.open`, `kiln.close`, `kiln.list`, `kiln.graph`, `search_vectors`, `list_notes`, `get_note_by_name`, `get_backlinks`
 - Files: `fs.list_dir`, `fs.move` (kiln `.md` moves rewrite inbound wikilinks), `fs.mkdir`, `fs.trash`, `note.rename`/`note.move`
 - Sessions: `session.create`, `session.list`, `session.get`, `session.load`, `session.pause`, `session.resume`, `session.end`
 - Agents: `session.configure_agent`, `session.send_message`, `session.cancel`, `session.switch_model`, `session.list_models`

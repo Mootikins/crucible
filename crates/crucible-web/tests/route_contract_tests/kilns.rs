@@ -83,6 +83,60 @@ async fn list_notes_with_kiln_returns_200() {
 }
 
 #[tokio::test]
+async fn kiln_graph_returns_200_with_notes_and_links() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/kiln/graph?kiln=/tmp/test-kiln")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+
+    // Route returns the daemon's kiln.graph result verbatim.
+    assert!(json["notes"].is_array(), "Response must have 'notes' array");
+    assert!(json["links"].is_array(), "Response must have 'links' array");
+    let links = json["links"].as_array().unwrap();
+    assert!(links.iter().any(|l| l["resolved"] == true));
+    assert!(links.iter().any(|l| l["resolved"] == false));
+}
+
+#[tokio::test]
+async fn kiln_graph_requires_kiln_query_param() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/kiln/graph")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        response.status().is_client_error(),
+        "Missing kiln param should return client error, got: {}",
+        response.status()
+    );
+}
+
+#[tokio::test]
 async fn search_vectors_returns_200_with_results() {
     let (_mock, client) = start_mock_daemon().await;
     let state = build_mock_state(client);

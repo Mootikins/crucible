@@ -391,6 +391,80 @@ pub(crate) async fn handle_get_backlinks(req: Request, km: &Arc<KilnManager>) ->
     }
 }
 
+pub(crate) async fn handle_kiln_graph(req: Request, km: &Arc<KilnManager>) -> Response {
+    let kiln_path = require_param!(req, "kiln", as_str);
+
+    let scope = match decode_request_scope(&req, Path::new(kiln_path)) {
+        Ok(s) => s,
+        Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
+    };
+
+    let handle = match km.get_or_open(Path::new(kiln_path)).await {
+        Ok(c) => c,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    let notes = match handle.list_notes(None, &scope).await {
+        Ok(n) => n,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    let edges = match handle.as_note_store().graph_links().await {
+        Ok(e) => e,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    // Only surface edges whose source is a note the caller can see, and drop
+    // resolved edges pointing at an out-of-scope note so `links[].target`
+    // (resolved) always joins a `notes[].path`. Dangling edges keep their
+    // target_key — they name no note by definition.
+    let visible: std::collections::HashSet<&str> = notes.iter().map(|n| n.path.as_str()).collect();
+
+    let notes_json: Vec<_> = notes
+        .iter()
+        .map(|n| {
+            let title = n
+                .title
+                .as_deref()
+                .filter(|t| !t.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| {
+                    Path::new(&n.path)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or(&n.path)
+                        .to_string()
+                });
+            serde_json::json!({
+                "path": n.path,
+                "title": title,
+                "tags": n.tags,
+            })
+        })
+        .collect();
+
+    let links_json: Vec<_> = edges
+        .into_iter()
+        .filter(|e| visible.contains(e.source.as_str()))
+        .filter(|e| !e.resolved || visible.contains(e.target.as_str()))
+        .map(|e| {
+            serde_json::json!({
+                "source": e.source,
+                "target": e.target,
+                "resolved": e.resolved,
+            })
+        })
+        .collect();
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "notes": notes_json,
+            "links": links_json,
+        }),
+    )
+}
+
 // =============================================================================
 // NoteStore RPC Handlers
 // =============================================================================

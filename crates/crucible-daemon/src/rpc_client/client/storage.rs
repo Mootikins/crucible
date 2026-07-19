@@ -48,6 +48,17 @@ pub struct GetBacklinksRequest {
     pub scope: Option<crucible_core::storage::Scope>,
 }
 
+/// Request for `kiln.graph`.
+///
+/// `scope` is the request authority — defaults server-side to
+/// `Scope::Workspace { path: kiln }` when absent.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct KilnGraphRequest {
+    pub kiln: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<crucible_core::storage::Scope>,
+}
+
 /// Request for `suggest_links`.
 ///
 /// `scope` is the request authority — defaults server-side to
@@ -406,6 +417,24 @@ impl DaemonClient {
         } else {
             Ok(Some(result))
         }
+    }
+
+    /// The full note-link graph for a kiln. `scope = None` defaults to the
+    /// kiln's workspace authority server-side. Returns the raw
+    /// `{ notes: [...], links: [...] }` value verbatim.
+    pub async fn kiln_graph(
+        &self,
+        kiln_path: &Path,
+        scope: Option<crucible_core::storage::Scope>,
+    ) -> Result<serde_json::Value> {
+        self.typed_call(
+            "kiln.graph",
+            KilnGraphRequest {
+                kiln: kiln_path.to_string_lossy().to_string(),
+                scope,
+            },
+        )
+        .await
     }
 
     /// Detect unlinked mentions of existing notes in `text`.

@@ -30,7 +30,8 @@ pub use error::{StorageError, StorageResult};
 pub use error_ext::StorageResultExt;
 pub use graph::InMemoryGraph;
 pub use note_store::{
-    Filter, GraphView, InboundLink, LinkOccurrence, NoteRecord, NoteStore, Op, SearchResult,
+    Filter, GraphLink, GraphView, InboundLink, LinkOccurrence, NoteRecord, NoteStore, Op,
+    SearchResult,
 };
 pub use property_store::PropertyStore;
 pub use scope::{Scope, ScopeError};

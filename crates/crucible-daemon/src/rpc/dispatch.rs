@@ -23,6 +23,7 @@ pub const METHODS: &[&str] = &[
     "list_notes",
     "get_note_by_name",
     "get_backlinks",
+    "kiln.graph",
     "note.upsert",
     "note.get",
     "note.delete",
@@ -270,6 +271,7 @@ impl RpcDispatcher {
             "list_notes" => to_response(id, self.handle_list_notes(&req).await),
             "get_note_by_name" => to_response(id, self.handle_get_note_by_name(&req).await),
             "get_backlinks" => to_response(id, self.handle_get_backlinks(&req).await),
+            "kiln.graph" => to_response(id, self.handle_kiln_graph(&req).await),
             "suggest_links" => to_response(id, self.handle_suggest_links(&req).await),
 
             // Note CRUD handlers
@@ -669,6 +671,11 @@ impl RpcDispatcher {
 
     async fn handle_get_backlinks(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::kiln::handle_get_backlinks(req.clone(), &self.ctx.kiln).await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_kiln_graph(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::kiln::handle_kiln_graph(req.clone(), &self.ctx.kiln).await;
         map_server_resp(resp)
     }
 

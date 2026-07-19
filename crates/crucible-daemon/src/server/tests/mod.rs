@@ -12,6 +12,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
 mod events;
+mod graph;
 mod lifecycle;
 mod models_settings;
 mod persist_event;
