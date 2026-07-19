@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-19
+
+### Added
+- **Wikilink link integrity** (file-tree Phase 3): a deterministic resolved-link index (`note_links` v2 — resolution computed at index time and persisted per occurrence with byte spans) replaces fuzzy query-time backlink matching. New `note.rename`/`note.move` RPCs rewrite exactly the unambiguous inbound links by byte-span splice (aliases, `#heading`/`^block` refs, embeds, and the author's bare-vs-path link style all survive); ambiguous stems are never touched and are surfaced as warnings. Moving a note into or out of folders converges the index no matter how the file moved — every note add/remove/title-change re-resolves affected links.
+- **File-tree drag-and-drop** (Phase 2): drag any tree row onto a folder (or the tree root) to move it on disk, onto an editor pane to open it there, or into editor text to insert a `[[wikilink]]` (kiln notes) or relative path — one drag, three targets, innermost wins. Kiln `.md` moves route through the link-rewrite pipeline, so drags never break links. Built on native HTML5 drag-and-drop (pragmatic-drag-and-drop).
+- **Right-click menus**: tree rows gain Rename (inline, link-safe), New note, New folder (`fs.mkdir`), and Delete (`fs.trash` → `.crucible/trash/`, recoverable); tabs gain Close / Close Others / Close to the Right; editors gain clipboard actions. Shift+right-click and images/links always fall through to the browser menu so Copy Image / Save As keep working.
+- New daemon RPCs: `fs.move`, `fs.mkdir`, `fs.trash`, `note.rename`/`note.move` — all fail-closed (registered projects / already-open kilns only, canonicalize-and-contain, overwrite refusal).
+
+### Changed
+- **`crucible-web` crate**: the web UI server (Axum routes + embedded SolidJS frontend) moved out of `crucible-cli` into its own crate behind a default-on `web` cargo feature; `--no-default-features` builds a slim CLI. Release binaries still embed the web UI.
+- Backlinks now read the resolved-link index (exact, deterministic) instead of fuzzy stem/title matching.
+- Test-suite consolidation: shared server/agent test fixtures and parametrized suites (~1,150 lines removed, coverage unchanged).
+
+### Fixed
+- Lazily loaded project folders in the file tree rendered empty (loaded children were discarded instead of persisted).
+- Center-pane opens (file click, palette, drops) silently did nothing on layouts carrying a stale tab-group reference; the group is now materialized on demand.
+- A rename round-trip (A→B→A) could skip re-indexing at the destination due to stale-but-identical change-detection state; renames now force the reindex.
+
 ## [0.10.1] - 2026-07-18
 
 ### Added
