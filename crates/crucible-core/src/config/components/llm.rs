@@ -289,20 +289,18 @@ mod tests {
     use super::*;
     use std::str::FromStr;
 
+    /// Fully-defaulted config for a given provider type, for tests that need to
+    /// override a field the builder has no setter for (e.g. `trust_level`) via
+    /// struct-update syntax. For everything else prefer `LlmProviderConfig::builder(..).build()`.
+    impl LlmProviderConfig {
+        fn test_default(provider_type: BackendType) -> Self {
+            LlmProviderConfig::builder(provider_type).build()
+        }
+    }
+
     #[test]
     fn test_provider_defaults() {
-        let ollama = LlmProviderConfig {
-            provider_type: BackendType::Ollama,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-            name: None,
-        };
+        let ollama = LlmProviderConfig::builder(BackendType::Ollama).build();
 
         assert_eq!(ollama.endpoint(), "http://localhost:11434");
         assert_eq!(ollama.model(), "llama3.2");
@@ -310,50 +308,17 @@ mod tests {
         assert_eq!(ollama.max_tokens(), 4096);
         assert_eq!(ollama.timeout_secs(), 120);
 
-        let openai = LlmProviderConfig {
-            provider_type: BackendType::OpenAI,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-            name: None,
-        };
+        let openai = LlmProviderConfig::builder(BackendType::OpenAI).build();
 
         assert_eq!(openai.endpoint(), "https://api.openai.com/v1");
         assert_eq!(openai.model(), "gpt-4o");
 
-        let anthropic = LlmProviderConfig {
-            provider_type: BackendType::Anthropic,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-            name: None,
-        };
+        let anthropic = LlmProviderConfig::builder(BackendType::Anthropic).build();
 
         assert_eq!(anthropic.endpoint(), "https://api.anthropic.com/v1");
         assert_eq!(anthropic.model(), "claude-3-5-sonnet-20241022");
 
-        let copilot = LlmProviderConfig {
-            provider_type: BackendType::GitHubCopilot,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-            name: None,
-        };
+        let copilot = LlmProviderConfig::builder(BackendType::GitHubCopilot).build();
 
         assert_eq!(copilot.endpoint(), "https://api.githubcopilot.com");
         assert_eq!(copilot.model(), "gpt-4o");
@@ -384,18 +349,13 @@ mod tests {
 
     #[test]
     fn test_provider_custom_values() {
-        let config = LlmProviderConfig {
-            provider_type: BackendType::Ollama,
-            endpoint: Some("http://192.168.1.100:11434".to_string()),
-            default_model: Some("llama3.1:70b".to_string()),
-            temperature: Some(0.9),
-            max_tokens: Some(8192),
-            timeout_secs: Some(300),
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-            name: None,
-        };
+        let config = LlmProviderConfig::builder(BackendType::Ollama)
+            .endpoint("http://192.168.1.100:11434")
+            .model("llama3.1:70b")
+            .temperature(0.9)
+            .max_tokens(8192)
+            .timeout_secs(300)
+            .build();
 
         assert_eq!(config.endpoint(), "http://192.168.1.100:11434");
         assert_eq!(config.model(), "llama3.1:70b");
@@ -406,18 +366,9 @@ mod tests {
 
     #[test]
     fn test_api_key_direct_value() {
-        let config = LlmProviderConfig {
-            provider_type: BackendType::OpenAI,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: Some("sk-test-key-123".to_string()),
-            available_models: None,
-            trust_level: None,
-            name: None,
-        };
+        let config = LlmProviderConfig::builder(BackendType::OpenAI)
+            .api_key("sk-test-key-123")
+            .build();
 
         assert_eq!(config.api_key(), Some("sk-test-key-123".to_string()));
     }
@@ -427,33 +378,17 @@ mod tests {
         let mut providers = HashMap::new();
         providers.insert(
             "local".to_string(),
-            LlmProviderConfig {
-                provider_type: BackendType::Ollama,
-                endpoint: Some("http://localhost:11434".to_string()),
-                default_model: Some("llama3.2".to_string()),
-                temperature: None,
-                max_tokens: None,
-                timeout_secs: None,
-                api_key: None,
-                available_models: None,
-                trust_level: None,
-                name: None,
-            },
+            LlmProviderConfig::builder(BackendType::Ollama)
+                .endpoint("http://localhost:11434")
+                .model("llama3.2")
+                .build(),
         );
         providers.insert(
             "cloud".to_string(),
-            LlmProviderConfig {
-                provider_type: BackendType::OpenAI,
-                endpoint: None,
-                default_model: Some("gpt-4o".to_string()),
-                temperature: None,
-                max_tokens: None,
-                timeout_secs: None,
-                api_key: Some("OPENAI_API_KEY".to_string()),
-                available_models: None,
-                trust_level: None,
-                name: None,
-            },
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .model("gpt-4o")
+                .api_key("OPENAI_API_KEY")
+                .build(),
         );
 
         let config = LlmConfig {
@@ -472,18 +407,10 @@ mod tests {
         let mut providers = HashMap::new();
         providers.insert(
             "local".to_string(),
-            LlmProviderConfig {
-                provider_type: BackendType::Ollama,
-                endpoint: Some("http://localhost:11434".to_string()),
-                default_model: Some("llama3.2".to_string()),
-                temperature: None,
-                max_tokens: None,
-                timeout_secs: None,
-                api_key: None,
-                available_models: None,
-                trust_level: None,
-                name: None,
-            },
+            LlmProviderConfig::builder(BackendType::Ollama)
+                .endpoint("http://localhost:11434")
+                .model("llama3.2")
+                .build(),
         );
 
         let config = LlmConfig {
@@ -502,33 +429,11 @@ mod tests {
         let mut providers = HashMap::new();
         providers.insert(
             "local".to_string(),
-            LlmProviderConfig {
-                provider_type: BackendType::Ollama,
-                endpoint: None,
-                default_model: None,
-                temperature: None,
-                max_tokens: None,
-                timeout_secs: None,
-                api_key: None,
-                available_models: None,
-                trust_level: None,
-                name: None,
-            },
+            LlmProviderConfig::builder(BackendType::Ollama).build(),
         );
         providers.insert(
             "cloud".to_string(),
-            LlmProviderConfig {
-                provider_type: BackendType::OpenAI,
-                endpoint: None,
-                default_model: None,
-                temperature: None,
-                max_tokens: None,
-                timeout_secs: None,
-                api_key: None,
-                available_models: None,
-                trust_level: None,
-                name: None,
-            },
+            LlmProviderConfig::builder(BackendType::OpenAI).build(),
         );
 
         let config = LlmConfig {
@@ -553,18 +458,7 @@ mod tests {
         let mut providers = HashMap::new();
         providers.insert(
             "local".to_string(),
-            LlmProviderConfig {
-                provider_type: BackendType::Ollama,
-                endpoint: None,
-                default_model: None,
-                temperature: None,
-                max_tokens: None,
-                timeout_secs: None,
-                api_key: None,
-                available_models: None,
-                trust_level: None,
-                name: None,
-            },
+            LlmProviderConfig::builder(BackendType::Ollama).build(),
         );
 
         let config = LlmConfig {
@@ -589,18 +483,7 @@ mod tests {
         let mut providers = HashMap::new();
         providers.insert(
             "local".to_string(),
-            LlmProviderConfig {
-                provider_type: BackendType::Ollama,
-                endpoint: None,
-                default_model: None,
-                temperature: None,
-                max_tokens: None,
-                timeout_secs: None,
-                api_key: None,
-                available_models: None,
-                trust_level: None,
-                name: None,
-            },
+            LlmProviderConfig::builder(BackendType::Ollama).build(),
         );
 
         let config = LlmConfig {
@@ -613,18 +496,9 @@ mod tests {
 
     #[test]
     fn test_available_models_deserialization() {
-        let config = LlmProviderConfig {
-            provider_type: BackendType::Ollama,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: Some(vec!["model-a".to_string(), "model-b".to_string()]),
-            trust_level: None,
-            name: None,
-        };
+        let config = LlmProviderConfig::builder(BackendType::Ollama)
+            .available_models(vec!["model-a".to_string(), "model-b".to_string()])
+            .build();
 
         assert_eq!(
             config.available_models,
@@ -634,18 +508,7 @@ mod tests {
 
     #[test]
     fn test_available_models_none_by_default() {
-        let config = LlmProviderConfig {
-            provider_type: BackendType::Ollama,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-            name: None,
-        };
+        let config = LlmProviderConfig::builder(BackendType::Ollama).build();
 
         assert_eq!(config.available_models, None);
     }
@@ -655,33 +518,15 @@ mod tests {
         let mut providers = HashMap::new();
         providers.insert(
             "local".to_string(),
-            LlmProviderConfig {
-                provider_type: BackendType::Ollama,
-                endpoint: None,
-                default_model: None,
-                temperature: None,
-                max_tokens: None,
-                timeout_secs: None,
-                api_key: None,
-                available_models: Some(vec!["llama3.2".to_string()]),
-                trust_level: None,
-                name: None,
-            },
+            LlmProviderConfig::builder(BackendType::Ollama)
+                .available_models(vec!["llama3.2".to_string()])
+                .build(),
         );
         providers.insert(
             "cloud".to_string(),
-            LlmProviderConfig {
-                provider_type: BackendType::OpenAI,
-                endpoint: None,
-                default_model: None,
-                temperature: None,
-                max_tokens: None,
-                timeout_secs: None,
-                api_key: None,
-                available_models: Some(vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()]),
-                trust_level: None,
-                name: None,
-            },
+            LlmProviderConfig::builder(BackendType::OpenAI)
+                .available_models(vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()])
+                .build(),
         );
 
         let config = LlmConfig {
@@ -715,33 +560,11 @@ mod tests {
         // Without available_models, effective_models returns empty (dynamic discovery at daemon layer)
         providers.insert(
             "anthropic".to_string(),
-            LlmProviderConfig {
-                provider_type: BackendType::Anthropic,
-                endpoint: None,
-                default_model: None,
-                temperature: None,
-                max_tokens: None,
-                timeout_secs: None,
-                api_key: None,
-                available_models: None,
-                trust_level: None,
-                name: None,
-            },
+            LlmProviderConfig::builder(BackendType::Anthropic).build(),
         );
         providers.insert(
             "openai".to_string(),
-            LlmProviderConfig {
-                provider_type: BackendType::OpenAI,
-                endpoint: None,
-                default_model: None,
-                temperature: None,
-                max_tokens: None,
-                timeout_secs: None,
-                api_key: None,
-                available_models: None,
-                trust_level: None,
-                name: None,
-            },
+            LlmProviderConfig::builder(BackendType::OpenAI).build(),
         );
 
         let config = LlmConfig {
@@ -794,54 +617,21 @@ mod tests {
 
     #[test]
     fn test_zai_endpoint_default() {
-        let config = LlmProviderConfig {
-            provider_type: BackendType::ZAI,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-            name: None,
-        };
+        let config = LlmProviderConfig::builder(BackendType::ZAI).build();
 
         assert_eq!(config.endpoint(), "https://api.z.ai/api/coding/paas/v4");
     }
 
     #[test]
     fn test_zai_model_default() {
-        let config = LlmProviderConfig {
-            provider_type: BackendType::ZAI,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-            name: None,
-        };
+        let config = LlmProviderConfig::builder(BackendType::ZAI).build();
 
         assert_eq!(config.model(), "GLM-4.7");
     }
 
     #[test]
     fn test_zai_effective_models_empty_without_config() {
-        let config = LlmProviderConfig {
-            provider_type: BackendType::ZAI,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-            name: None,
-        };
+        let config = LlmProviderConfig::builder(BackendType::ZAI).build();
 
         let models = config.effective_models();
         assert!(
@@ -853,18 +643,9 @@ mod tests {
     #[test]
     fn test_zai_effective_models_custom() {
         let custom_models = vec!["custom-model".to_string()];
-        let config = LlmProviderConfig {
-            provider_type: BackendType::ZAI,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: Some(custom_models.clone()),
-            trust_level: None,
-            name: None,
-        };
+        let config = LlmProviderConfig::builder(BackendType::ZAI)
+            .available_models(custom_models.clone())
+            .build();
 
         assert_eq!(config.effective_models(), custom_models);
     }
@@ -882,35 +663,13 @@ mod tests {
     #[test]
     fn test_effective_trust_level_uses_backend_default() {
         // When trust_level is None, should use backend's default
-        let config = LlmProviderConfig {
-            provider_type: BackendType::FastEmbed,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-            name: None,
-        };
+        let config = LlmProviderConfig::builder(BackendType::FastEmbed).build();
         assert_eq!(
             config.effective_trust_level(),
             super::super::trust::TrustLevel::Local
         );
 
-        let config = LlmProviderConfig {
-            provider_type: BackendType::OpenAI,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-            name: None,
-        };
+        let config = LlmProviderConfig::builder(BackendType::OpenAI).build();
         assert_eq!(
             config.effective_trust_level(),
             super::super::trust::TrustLevel::Cloud
@@ -921,16 +680,8 @@ mod tests {
     fn test_effective_trust_level_explicit_override() {
         // When trust_level is Some, should use explicit value
         let config = LlmProviderConfig {
-            provider_type: BackendType::OpenAI,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
             trust_level: Some(super::super::trust::TrustLevel::Local),
-            name: None,
+            ..LlmProviderConfig::test_default(BackendType::OpenAI)
         };
         assert_eq!(
             config.effective_trust_level(),
@@ -941,18 +692,7 @@ mod tests {
     #[test]
     fn test_trust_level_serde_skip_none() {
         // When trust_level is None, it should not be serialized
-        let config = LlmProviderConfig {
-            provider_type: BackendType::OpenAI,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-            name: None,
-        };
+        let config = LlmProviderConfig::builder(BackendType::OpenAI).build();
         let json = serde_json::to_string(&config).expect("Failed to serialize");
         assert!(!json.contains("trust_level"));
     }
@@ -961,16 +701,8 @@ mod tests {
     fn test_trust_level_serde_include_some() {
         // When trust_level is Some, it should be serialized
         let config = LlmProviderConfig {
-            provider_type: BackendType::OpenAI,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
             trust_level: Some(super::super::trust::TrustLevel::Local),
-            name: None,
+            ..LlmProviderConfig::test_default(BackendType::OpenAI)
         };
         let json = serde_json::to_string(&config).expect("Failed to serialize");
         assert!(json.contains("trust_level"));
