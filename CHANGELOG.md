@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-18
+
 ### Added
+- **Web file-tree explorer** (Phase 1): hierarchical file tree with a top-right kiln/project root dropdown, live file-change updates over a new `/api/fs/events` SSE channel, keyboard/ARIA navigation, sort, collapse-all, reveal-active, and a read-only context menu. Backed by a new `fs.list_dir` daemon RPC (registry-allowlisted, symlink-contained, dotfiles/gitignored hidden by default).
+- **Custom font selection**: choose the UI font (`--font-sans`) and code font (`--font-mono`) in Settings — presets (IBM Plex, System, Serif) or a custom CSS font-family, applied live.
 - **Markdown caching**: Parse results cached between frames, keyed on content + terminal width
 - **`cru.storage` Lua API**: Plugin-namespaced EAV properties for structured data
 - **Precognition daemon setting**: `precognition.results` wired as session-scoped config
@@ -52,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Regenerated all demo GIFs via VHS
 
 ### Fixed
+- **IBM Plex webfont never loaded**: the `@fontsource` `@import`s sat after `@import "tailwindcss"`, so they were invalid CSS and the bundler dropped every `@font-face` — the web UI silently rendered in `system-ui` (OS-dependent). Reordered the imports so the designed font actually loads on every platform.
 - **TUI spacing**: Consistent 1 blank line between all container types; consecutive tool groups tight (no gap); thinking summary spaced from text below it
 - **Code block spacing**: Eliminated extra blank lines in code blocks; code renders as single text node with embedded newlines
 - **Ordered list numbering**: Lazy list merging and incremental numbering across tool boundaries
