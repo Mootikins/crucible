@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **`lua.eval`** RPC + `cru lua` CLI command with `=expr` Neovim convention
 - **Auto-linking**: `suggest_links` RPC detects unlinked note mentions via word-boundary matching
 - **Webhook API**: `POST /api/webhook/:name` receives payloads, broadcasts `webhook:received` event for Lua handlers
-- **API auth**: Bearer token middleware with auto-generated key (`~/.config/crucible/api_key`), constant-time comparison, localhost bypass with X-Forwarded-For awareness
+- **API auth**: HTTP auth middleware with auto-generated key (`~/.config/crucible/api_key`), constant-time comparison, localhost bypass with X-Forwarded-For awareness
 - **Scheduled Lua hooks**: `cru.schedule({every=N}, fn)` with `cru.schedule.cancel(handle)` and 256-schedule limit
 - **Runtime plugin infrastructure**: `PluginSource` provenance tracking (user/runtime/kiln/env-path); `plugin.list` RPC includes source/version
 - **Clean Lua error messages**: `format_lua_error()` strips FFI frames, prepends `[plugin_name]`
@@ -68,8 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Precognition dedup**: Deduplicate notes by normalized filename, not display title
 - **Bounded overflow indicator**: Auto-detect indent level
 - API key file written with `0o600` permissions (was world-readable)
-- Bearer auth constant-time token comparison (prevents timing attacks)
-- Bearer auth checks X-Forwarded-For to prevent proxy bypass
+- API auth: constant-time key comparison (prevents timing attacks)
+- API auth: checks X-Forwarded-For to prevent proxy bypass
 - Deduplicated `inject_context` logic between RPC handler and Lua bridge
 - Role filter validation in `load_messages` (rejects invalid roles with error)
 - Auto-link UTF-8 safety guard (returns empty for non-ASCII-safe text instead of wrong offsets)
