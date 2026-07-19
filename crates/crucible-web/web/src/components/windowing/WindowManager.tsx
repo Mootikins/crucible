@@ -35,33 +35,6 @@ import { statusBarStore, statusBarActions, pathBasename } from '@/stores/statusB
 import { shellStore, shellActions } from '@/stores/shellStore';
 import { attentionStore } from '@/stores/attentionStore';
 
-/** One expandable pill in the Edit ↔ Session mode toggle: icon-only until
- * hovered, ember-filled when its surface is active. */
-function ModePill(props: {
-  glyph: string;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      title={props.label}
-      onClick={props.onClick}
-      class="group flex items-center gap-1.5 box-border h-6 rounded-full px-[7px] cursor-pointer max-w-[27px] hover:max-w-[110px] overflow-hidden transition-all duration-300"
-      classList={{
-        'bg-primary text-white': props.active,
-        'text-muted hover:text-shell-ink': !props.active,
-      }}
-    >
-      <span class="text-xs flex-none">{props.glyph}</span>
-      <span class="text-[11px] font-semibold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-        {props.label}
-      </span>
-    </button>
-  );
-}
-
 function HeaderBar() {
   const edgePanels = () => windowStore.edgePanels;
   const surface = shellStore.activeSurface;
@@ -101,20 +74,10 @@ function HeaderBar() {
           ◆ {kilnName()}
         </button>
       </Show>
-      <div class="flex bg-shell-panel border border-hairline rounded-full p-0.5 gap-0.5">
-        <ModePill
-          glyph="✎"
-          label="Edit"
-          active={surface() === 'edit'}
-          onClick={() => shellActions.goEdit()}
-        />
-        <ModePill
-          glyph="◆"
-          label="Session"
-          active={surface() === 'session'}
-          onClick={() => shellActions.goSession()}
-        />
-      </div>
+      {/* Edit/Session mode pills removed: the center is always the editing
+          surface and sessions live in a right pane (openSessionInChat), so
+          there is no center "mode" to toggle. goEdit/goSession remain
+          reachable from the command palette. */}
       <span class="font-mono text-[10.5px] text-muted-dark truncate max-w-[320px]">
         {contextLine()}
       </span>

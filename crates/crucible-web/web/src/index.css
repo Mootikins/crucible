@@ -1,18 +1,11 @@
 /* Crucible shell identity: near-black surfaces + ember accent + IBM Plex
  * (docs/Meta/Web UI Feature Spec.md §2.3; "Crucible Shell Options" design).
  *
- * These @fontsource @imports MUST come before `@import "tailwindcss"`. CSS
- * requires all @import statements to precede any other rule; Tailwind's import
- * expands to rules, so @fontsource imports placed after it are invalid and the
- * bundler DROPS every @font-face — IBM Plex then never loads and text silently
- * falls back to system-ui (which differs across OSes → flaky visual baselines). */
-@import "@fontsource/ibm-plex-sans/400.css";
-@import "@fontsource/ibm-plex-sans/500.css";
-@import "@fontsource/ibm-plex-sans/600.css";
-@import "@fontsource/ibm-plex-sans/700.css";
-@import "@fontsource/ibm-plex-mono/400.css";
-@import "@fontsource/ibm-plex-mono/500.css";
-
+ * IBM Plex is imported from index.tsx as JS imports, NOT CSS @imports here:
+ * tailwind v4 inlines CSS @imports WITHOUT rebasing their url(./files/...)
+ * references, so the woff2 assets were never emitted into dist and every
+ * font request 404'd in production (silent system-ui fallback). JS imports
+ * let vite process each fontsource css with proper asset emission. */
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 

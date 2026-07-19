@@ -90,10 +90,14 @@ test('Header bar is visible with all controls', async ({ page }) => {
   const shortcutKey = page.locator('text=Ctrl+P');
   await expect(shortcutKey).toBeVisible();
 
-  // Shell navigation: Home logo, Edit/Session pills, Inbox
+  // Shell navigation: Home logo, Inbox. The Edit/Session mode pills were
+  // removed from the header — the center is always the editing surface and
+  // sessions now open in a right pane (openSessionInChat), so there's no
+  // center "mode" to toggle; goEdit/goSession remain reachable only from the
+  // command palette (see WindowManager.tsx HeaderBar).
   await expect(page.locator('button[title="Home"]').first()).toBeVisible();
-  await expect(page.locator('button[title="Edit"]')).toBeVisible();
-  await expect(page.locator('button[title="Session"]')).toBeVisible();
+  await expect(page.locator('button[title="Edit"]')).toHaveCount(0);
+  await expect(page.locator('button[title="Session"]')).toHaveCount(0);
   await expect(page.locator('button[title="Inbox"]')).toBeVisible();
 
   // Edge panel toggle buttons should be visible

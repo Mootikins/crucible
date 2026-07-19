@@ -14,6 +14,7 @@ import { windowActions } from '@/stores/windowStore';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { PanelShell } from './PanelShell';
 import { Menu } from '@ark-ui/solid';
+import { Portal } from 'solid-js/web';
 import { attachNativeMenuGuard } from '@/lib/context-menu';
 import type { EditorView } from '@codemirror/view';
 
@@ -225,6 +226,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
               </div>
             )}
           />
+          <Portal>
           <Menu.Positioner>
             <Menu.Content class="min-w-[11rem] rounded border border-hairline bg-surface-elevated py-1 text-xs text-shell-ink shadow-lg focus:outline-none z-50">
               <Menu.Item value="cut" class={menuItemClass}>Cut</Menu.Item>
@@ -235,6 +237,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
               <Menu.Item value="copy-file-path" class={menuItemClass}>Copy File Path</Menu.Item>
             </Menu.Content>
           </Menu.Positioner>
+          </Portal>
         </Menu.Root>
       </div>
     </PanelShell>

@@ -1,6 +1,14 @@
 /* @refresh reload */
 import { render } from 'solid-js/web';
 import App from './App';
+// IBM Plex before index.css (see the note there: CSS @imports of fontsource
+// under tailwind v4 lose their font assets; JS imports emit them correctly).
+import '@fontsource/ibm-plex-sans/400.css';
+import '@fontsource/ibm-plex-sans/500.css';
+import '@fontsource/ibm-plex-sans/600.css';
+import '@fontsource/ibm-plex-sans/700.css';
+import '@fontsource/ibm-plex-mono/400.css';
+import '@fontsource/ibm-plex-mono/500.css';
 import './index.css';
 import { initializeHighlighter } from '@/lib/shiki';
 

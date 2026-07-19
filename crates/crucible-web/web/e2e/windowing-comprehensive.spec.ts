@@ -54,30 +54,46 @@ test.describe('Comprehensive windowing behavior', () => {
     await expect(page.locator('[data-tab-id^="tab-chat-"]')).toBeVisible({ timeout: 5000 });
   });
 
+  // The beforeEach clicks a session, which opens the chat tab in the RIGHT
+  // pane (see src/lib/session-actions.ts) — the layout root is ALREADY a
+  // horizontal split (session column | chat pane) by the time these tests
+  // start, so the old `layout.type === 'pane'` guard is always false now.
+  // These tests split the LEFT pane (root.first, the original session/file
+  // pane) instead, and assert against the resulting nested shape.
+
   test('creates a vertical split with row splitter semantics', async ({ page }) => {
     await page.evaluate(() => {
       const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
       const windowActions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
-      if (windowStore.layout.type === 'pane') {
-        windowActions.splitPane(windowStore.layout.id, 'vertical');
+      const root = windowStore.layout;
+      if (root.type === 'split' && root.first.type === 'pane') {
+        windowActions.splitPane(root.first.id, 'vertical');
       }
     });
 
-    const splitter = page.locator('[data-split-id]').first();
-    await expect(splitter).toBeVisible({ timeout: 3000 });
-    await expect(splitter).toHaveClass(/cursor-row-resize/, { timeout: 3000 });
+    // The root's own splitter (session column | chat pane) is a horizontal
+    // split, i.e. cursor-col-resize — filter by class instead of `.first()`
+    // to find the NEW row splitter produced by the vertical split above.
+    const rowSplitter = page.locator('[data-split-id].cursor-row-resize');
+    await expect(rowSplitter).toBeVisible({ timeout: 3000 });
 
     const state = await page.evaluate(() => {
       const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
+      const root = windowStore.layout;
+      const first = root.type === 'split' ? root.first : undefined;
       return {
-        type: windowStore.layout.type,
-        direction: windowStore.layout.direction,
-        splitRatio: windowStore.layout.splitRatio,
+        rootType: root.type,
+        rootDirection: root.direction,
+        firstType: first?.type,
+        firstDirection: first?.type === 'split' ? first.direction : undefined,
+        firstSplitRatio: first?.type === 'split' ? first.splitRatio : undefined,
       };
     });
-    expect(state.type).toBe('split');
-    expect(state.direction).toBe('vertical');
-    expect(state.splitRatio).toBe(0.5);
+    expect(state.rootType).toBe('split');
+    expect(state.rootDirection).toBe('horizontal');
+    expect(state.firstType).toBe('split');
+    expect(state.firstDirection).toBe('vertical');
+    expect(state.firstSplitRatio).toBe(0.5);
   });
 
   test('supports nested splits by splitting a child pane after initial split', async ({ page }) => {
@@ -85,17 +101,19 @@ test.describe('Comprehensive windowing behavior', () => {
       const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
       const windowActions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
 
-      if (windowStore.layout.type !== 'pane') return false;
-      windowActions.splitPane(windowStore.layout.id, 'horizontal');
-
-      const afterFirst = windowStore.layout;
-      if (afterFirst.type !== 'split' || !afterFirst.first || afterFirst.first.type !== 'pane') return false;
-      windowActions.splitPane(afterFirst.first.id, 'vertical');
-
+      // The "initial split" is the session column | chat pane split already
+      // produced by the beforeEach. Splitting the left (session) pane again
+      // nests a second split under it.
       const root = windowStore.layout;
-      return root.type === 'split' && root.first?.type === 'split';
+      if (root.type !== 'split' || root.first.type !== 'pane') return false;
+      windowActions.splitPane(root.first.id, 'vertical');
+
+      const after = windowStore.layout;
+      return after.type === 'split' && after.first?.type === 'split';
     });
 
+    // One splitter already exists (the root session|chat divider); the
+    // nested split above adds a second.
     await expect(page.locator('[data-split-id]')).toHaveCount(2, { timeout: 3000 });
     expect(nested).toBe(true);
 
@@ -270,21 +288,35 @@ test.describe('Comprehensive windowing behavior', () => {
   });
 
   test('shows center empty state after all center tabs are removed', async ({ page }) => {
+    // The beforeEach's session click puts a chat tab in its OWN right pane,
+    // so there are now two center-pane groups (left "Home" pane + right
+    // "chat" pane). Closing a pane's last tab collapses that (now-empty)
+    // pane out of the layout tree entirely (see removeTab/collapseEmptyNodes
+    // in src/stores/tabActions.ts + windowStoreInternals.ts) — so emptying
+    // only ONE of the two groups just leaves its still-non-empty sibling
+    // occupying the whole layout, and no EmptyState ever renders. Verified
+    // via page.evaluate store dumps: emptying BOTH groups collapses the
+    // layout down to a single pane node whose tabGroupId no longer resolves
+    // to any group, which Pane.tsx renders as empty — the EmptyState. (No
+    // Home tab auto-reopens here: that startup catch-up in App.tsx only
+    // runs once on mount, not on later tab removal.)
     await page.evaluate(() => {
       const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
       const windowActions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
 
-      const findFirstPaneGroupId = (node: LayoutNode): string | null => {
-        if (node.type === 'pane') return node.tabGroupId ?? null;
-        return (node.first ? findFirstPaneGroupId(node.first) : null) ?? (node.second ? findFirstPaneGroupId(node.second) : null);
+      const findAllPaneGroupIds = (node: LayoutNode): string[] => {
+        if (node.type === 'pane') return node.tabGroupId ? [node.tabGroupId] : [];
+        return [
+          ...(node.first ? findAllPaneGroupIds(node.first) : []),
+          ...(node.second ? findAllPaneGroupIds(node.second) : []),
+        ];
       };
 
-      const centerGroupId = findFirstPaneGroupId(windowStore.layout);
-      if (!centerGroupId) return;
-
-      const tabs = [...(windowStore.tabGroups[centerGroupId]?.tabs ?? [])];
-      for (const tab of tabs) {
-        windowActions.removeTab(centerGroupId, tab.id);
+      for (const groupId of findAllPaneGroupIds(windowStore.layout)) {
+        const tabs = [...(windowStore.tabGroups[groupId]?.tabs ?? [])];
+        for (const tab of tabs) {
+          windowActions.removeTab(groupId, tab.id);
+        }
       }
     });
 

@@ -1,5 +1,6 @@
 import { Component, For, JSX, Show } from 'solid-js';
 import { Menu } from '@ark-ui/solid';
+import { Portal } from 'solid-js/web';
 import type { FileTreeNode } from '@/lib/file-tree/types';
 import type { TreeRootKind } from '@/lib/tree-root';
 import { FileText, Target, Copy, RefreshCw, Pencil, Plus, FolderTree, Trash2 } from '@/lib/icons';
@@ -83,6 +84,7 @@ export const FileTreeContextMenu: Component<{
             <div {...triggerProps({ class: 'contents' })}>{props.children}</div>
           )}
         />
+        <Portal>
         <Menu.Positioner>
           <Menu.Content class="min-w-[10rem] rounded border border-hairline bg-surface-elevated py-1 text-xs text-shell-ink shadow-lg focus:outline-none">
             <For each={items()}>
@@ -104,6 +106,7 @@ export const FileTreeContextMenu: Component<{
             </For>
           </Menu.Content>
         </Menu.Positioner>
+        </Portal>
       </Menu.Root>
     </Show>
   );

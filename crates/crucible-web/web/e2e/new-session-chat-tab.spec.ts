@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 import { MOCK_SESSION, MOCK_SESSION_2 } from './helpers/fixtures';
 
-type CenterPaneState = {
+type PaneState = {
   groupId: string | null;
   tabs: Array<{
     id: string;
@@ -13,7 +13,7 @@ type CenterPaneState = {
   activeTabId: string | null;
 };
 
-async function getCenterPaneState(page: Page): Promise<CenterPaneState> {
+async function getFirstPaneState(page: Page): Promise<PaneState> {
   return page.evaluate(() => {
     const store = (window as unknown as { __windowStore?: any }).__windowStore;
 
@@ -34,6 +34,31 @@ async function getCenterPaneState(page: Page): Promise<CenterPaneState> {
   });
 }
 
+/** Rightmost pane of the center tiling (descend `.second` through splits) —
+ * mirrors `rightmostPane` in src/lib/session-actions.ts. Sessions now open
+ * here, not in the first/left pane. */
+async function getRightPaneState(page: Page): Promise<PaneState> {
+  return page.evaluate(() => {
+    const store = (window as unknown as { __windowStore?: any }).__windowStore;
+
+    const rightmostPaneGroupId = (node: any): string | null => {
+      if (!node) return null;
+      let cur = node;
+      while (cur.type === 'split') cur = cur.second;
+      return cur.tabGroupId ?? null;
+    };
+
+    const groupId = store ? rightmostPaneGroupId(store.layout) : null;
+    const group = groupId ? store.tabGroups[groupId] : null;
+
+    return {
+      groupId,
+      tabs: group?.tabs ?? [],
+      activeTabId: group?.activeTabId ?? null,
+    };
+  });
+}
+
 test.describe('New Session -> Chat Tab', () => {
   test.beforeEach(async ({ page }) => {
     await setupBasicMocks(page, { sessions: [MOCK_SESSION, MOCK_SESSION_2] });
@@ -41,7 +66,7 @@ test.describe('New Session -> Chat Tab', () => {
     await expect(page.getByTestId('new-session-button')).toBeVisible({ timeout: 10000 });
   });
 
-  test('clicking New Session opens a chat tab in center', async ({ page }) => {
+  test('clicking New Session opens a chat tab in the right pane', async ({ page }) => {
     const createdSession = {
       ...MOCK_SESSION,
       session_id: 'test-session-new',
@@ -56,9 +81,9 @@ test.describe('New Session -> Chat Tab', () => {
       await route.fallback();
     });
 
-    // Fresh load lands on Home (the shell's landing tab)
-    const centerBefore = await getCenterPaneState(page);
-    expect(centerBefore.tabs.filter((t) => t.contentType === 'chat')).toHaveLength(0);
+    // Fresh load lands on Home (the shell's landing tab) in the left/first pane.
+    const leftBefore = await getFirstPaneState(page);
+    expect(leftBefore.tabs.filter((t) => t.contentType === 'chat')).toHaveLength(0);
 
     const createRequest = page.waitForRequest(
       (req) => req.url().includes('/api/session') && req.method() === 'POST',
@@ -71,24 +96,28 @@ test.describe('New Session -> Chat Tab', () => {
 
     await expect
       .poll(async () => {
-        const center = await getCenterPaneState(page);
-        return center.tabs.filter((t) => t.contentType === 'chat').length;
+        const right = await getRightPaneState(page);
+        return right.tabs.filter((t) => t.contentType === 'chat').length;
       })
       .toBe(1);
 
-    const centerAfter = await getCenterPaneState(page);
-    expect(centerAfter.groupId).not.toBeNull();
-    const chatTab = centerAfter.tabs.find((t) => t.contentType === 'chat');
+    const rightAfter = await getRightPaneState(page);
+    expect(rightAfter.groupId).not.toBeNull();
+    const chatTab = rightAfter.tabs.find((t) => t.contentType === 'chat');
     expect(chatTab?.id).toBe('tab-chat-test-session-new');
     expect(chatTab?.metadata?.sessionId).toBe('test-session-new');
-    expect(centerAfter.activeTabId).toBe('tab-chat-test-session-new');
+    expect(rightAfter.activeTabId).toBe('tab-chat-test-session-new');
+
+    // The left pane keeps its original (non-chat) tabs — sessions never land there.
+    const leftAfter = await getFirstPaneState(page);
+    expect(leftAfter.tabs.filter((t) => t.contentType === 'chat')).toHaveLength(0);
   });
 
-  test('clicking an existing session opens its chat tab in center', async ({ page }) => {
+  test('clicking an existing session opens its chat tab in the right pane', async ({ page }) => {
     await page.route('**/api/session/test-session-002', (route) => route.fulfill({ json: MOCK_SESSION_2 }));
 
-    const centerBefore = await getCenterPaneState(page);
-    expect(centerBefore.tabs.filter((t) => t.contentType === 'chat')).toHaveLength(0);
+    const leftBefore = await getFirstPaneState(page);
+    expect(leftBefore.tabs.filter((t) => t.contentType === 'chat')).toHaveLength(0);
 
     const getSessionRequest = page.waitForRequest(
       (req) => req.url().includes('/api/session/test-session-002') && req.method() === 'GET',
@@ -99,10 +128,14 @@ test.describe('New Session -> Chat Tab', () => {
 
     await expect(page.locator('[data-tab-id="tab-chat-test-session-002"]')).toBeVisible();
 
-    const centerAfter = await getCenterPaneState(page);
-    const chatTab = centerAfter.tabs.find((t) => t.contentType === 'chat');
+    const rightAfter = await getRightPaneState(page);
+    const chatTab = rightAfter.tabs.find((t) => t.contentType === 'chat');
     expect(chatTab?.id).toBe('tab-chat-test-session-002');
     expect(chatTab?.metadata?.sessionId).toBe('test-session-002');
-    expect(centerAfter.activeTabId).toBe('tab-chat-test-session-002');
+    expect(rightAfter.activeTabId).toBe('tab-chat-test-session-002');
+
+    // The left pane did not gain a chat tab.
+    const leftAfter = await getFirstPaneState(page);
+    expect(leftAfter.tabs.filter((t) => t.contentType === 'chat')).toHaveLength(0);
   });
 });

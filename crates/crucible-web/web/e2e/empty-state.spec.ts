@@ -13,24 +13,35 @@ test('Empty state appears when all center tabs are closed', async ({ page }) => 
   // Wait for the app to load
   const mainLayout = page.locator('div[class*="flex-col"][class*="h-screen"]');
   await expect(mainLayout).toBeVisible({ timeout: 5000 });
+  await expect(page.locator('[data-tab-id]').first()).toBeVisible({ timeout: 5000 });
 
-  // Close all tabs in the center pane by clicking close buttons
-  // The close button is a button inside a tab item (div with data-tab-id)
-  let tabItems = page.locator('[data-tab-id]');
-  let count = await tabItems.count();
-  
-  // Close all tabs
-  while (count > 0) {
-    // Find the first tab and click its close button
-    const firstTab = tabItems.first();
-    const closeButton = firstTab.locator('button').last(); // The close button is the last button in the tab
-    if (await closeButton.isVisible()) {
-      await closeButton.click();
-      // Wait for the close to actually remove a tab before re-reading the count.
-      await expect(tabItems).toHaveCount(count - 1, { timeout: 2000 });
+  // Click-driven close loops over a global `[data-tab-id]` selector that
+  // spans every pane/edge-panel group; as groups empty out mid-loop (edge
+  // panels auto-collapse, center panes collapse out of the layout tree —
+  // see collapseEmptyNodes/removeTab in src/stores/tabActions.ts) the tab
+  // count and DOM order can shift under the loop. Go straight through the
+  // store instead: close every tab in every pane-tiling group (this drives
+  // the SAME removeTab action the close button calls, so it's not testing
+  // a mock — it's the deterministic form of the same close), which is what
+  // actually needs to happen for the center EmptyState to render (emptying
+  // only one group just collapses it away, leaving its non-empty sibling
+  // filling the layout with no empty state anywhere).
+  await page.evaluate(() => {
+    const store = (window as unknown as { __windowStore: any }).__windowStore;
+    const actions = (window as unknown as { __windowActions: any }).__windowActions;
+
+    const findAllPaneGroupIds = (node: any): string[] => {
+      if (node.type === 'pane') return node.tabGroupId ? [node.tabGroupId] : [];
+      return [...findAllPaneGroupIds(node.first), ...findAllPaneGroupIds(node.second)];
+    };
+
+    for (const groupId of findAllPaneGroupIds(store.layout)) {
+      const tabs = [...(store.tabGroups[groupId]?.tabs ?? [])];
+      for (const tab of tabs) {
+        actions.removeTab(groupId, tab.id);
+      }
     }
-    count = await tabItems.count();
-  }
+  });
 
   // The empty state should appear in the center pane when no tabs are open
   const emptyStateHeading = page.locator('text=No session open');

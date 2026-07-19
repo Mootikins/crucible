@@ -11,6 +11,7 @@ import { IconGripVertical, IconClose, IconLayout } from './icons';
 import { ChevronDown } from '@/lib/icons';
 import { confirmTabClose } from '@/lib/tab-guards';
 import { Menu } from '@ark-ui/solid';
+import { Portal } from 'solid-js/web';
 import { attachNativeMenuGuard, tabsToClose, type TabCloseMode } from '@/lib/context-menu';
 
 // ── Module-level reorder state (shared with WindowManager) ──────────────
@@ -347,8 +348,11 @@ const TabContextMenu: Component<{
           <div {...triggerProps({ class: 'contents' })}>{props.children}</div>
         )}
       />
-      <Menu.Positioner>
-        <Menu.Content class="min-w-[10rem] rounded border border-hairline bg-surface-elevated py-1 text-xs text-shell-ink shadow-lg focus:outline-none z-50">
+      {/* Portaled: an in-flow positioner adds phantom layout inside the tab
+          strip (it scrolled the tabs and broke pointer hit-testing). */}
+      <Portal>
+        <Menu.Positioner>
+          <Menu.Content class="min-w-[10rem] rounded border border-hairline bg-surface-elevated py-1 text-xs text-shell-ink shadow-lg focus:outline-none z-50">
           <Menu.Item
             value="close"
             class="flex items-center gap-2 px-3 py-1.5 cursor-pointer data-[highlighted]:bg-hover-wash"
@@ -367,8 +371,9 @@ const TabContextMenu: Component<{
           >
             Close to the Right
           </Menu.Item>
-        </Menu.Content>
-      </Menu.Positioner>
+          </Menu.Content>
+        </Menu.Positioner>
+      </Portal>
     </Menu.Root>
   );
 };
