@@ -7,16 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.4] - 2026-07-20
+
 ### Added
-- Reading view (web editor) now renders **embedded HTML** in documents — DOMPurify-sanitized — so a README's centered `<p align="center">` demo block and similar markup display instead of showing as raw text. Chat and hover previews keep HTML disabled.
-- **Copy button** on code blocks in the reading view (hover-revealed, "Copied" confirmation).
+- **Project files in the web file-tree**: opening a file from a project root (README, source, configs — anything outside an attached kiln) no longer 404s. `/api/kiln/file` (and a new raw-bytes `/api/file/raw`) resolve files within a registered project too, reusing the daemon's project allowlist. Governed by a new `project_files` policy in `.crucible/project.toml` `[security]` — `read-write` (default), `read-only`, or `off`. Kiln notes remain always read-write.
+- **Rich document rendering (web editor)**: reading view renders embedded HTML (DOMPurify-sanitized) — a README's centered `<p align="center">` demo now displays — with a hover copy button on code blocks. Images render in **both** reading view and the live-preview editor, and relative image srcs (e.g. `assets/demo.gif`) load through the raw-file endpoint. Chat/hover previews keep HTML disabled.
+- **More editor syntax highlighting**: TOML, JSON, Python, Go, shell, CSS, HTML, YAML, and the long tail now highlight in the whole-file editor via lazily-loaded `@codemirror/language-data` grammars (previously only md/js/ts/rust).
+- **Task-list checkboxes**: GFM `- [ ]` / `- [x]` render as styled checkboxes in reading view and live-preview; clicking a live-preview checkbox toggles the source. Colored list markers; completed items dim and strike through.
+- **Colored filetype icons** (VSCode/seti-style) in the file tree — per-extension icon + hue.
 
 ### Fixed
-- Web file-tree: opening a file from a **project** root (the repo/code dir) — README, source, configs, anything outside an attached kiln — no longer 404s. The `/api/kiln/file` read/write endpoints now also resolve files within a registered project, reusing the daemon's project allowlist alongside kiln containment.
-- Web file-tree root selector no longer lists the same kiln twice when the daemon reports it under both a bare name and an absolute path (name-vs-path aliasing is now resolved and deduped).
-
-### Added
-- `project_files` project security policy (`.crucible/project.toml` → `[security]`): `read-write` (default), `read-only`, or `off` — governs whether the web UI may read/write project files outside a kiln. Kiln notes remain always read-write.
+- Web model picker prefixed every model with the provider's wire *type*, so any OpenAI-compatible endpoint (a local GLM server, an OpenRouter/Z.AI gateway) showed "openai/…" for all models. Now shows the model id as-is.
+- Web file-tree root selector no longer lists the same kiln twice (name-vs-path aliasing is resolved and deduped).
+- Badge/image spacing in the reading view: consecutive badge lines flow inline instead of stacking with large gaps.
 
 ## [0.11.3] - 2026-07-20
 
