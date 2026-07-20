@@ -141,6 +141,41 @@ function wikilinkPlugin(md: MarkdownIt): void {
   });
 }
 
+/**
+ * GFM task lists: turn a `- [ ]` / `- [x]` list item into a styled, disabled
+ * checkbox. markdown-it renders the brackets as literal text otherwise. The
+ * leading marker is stripped from the item's first text run and replaced with
+ * an `<input type=checkbox>`; the `<li>` gets `.task-list-item` for CSS.
+ */
+const TASK_MARKER_RE = /^\[([ xX])\]\s+/;
+
+function taskListPlugin(md: MarkdownIt): void {
+  md.core.ruler.after('inline', 'crucible_tasklists', (state) => {
+    const tokens = state.tokens;
+    for (let i = 0; i < tokens.length; i++) {
+      const inline = tokens[i];
+      if (inline.type !== 'inline' || !inline.children) continue;
+      // The inline must be the first paragraph of a list item.
+      if (tokens[i - 1]?.type !== 'paragraph_open') continue;
+      if (tokens[i - 2]?.type !== 'list_item_open') continue;
+      const m = TASK_MARKER_RE.exec(inline.content);
+      if (!m) continue;
+
+      const checked = m[1] !== ' ';
+      tokens[i - 2].attrJoin('class', 'task-list-item');
+      inline.content = inline.content.slice(m[0].length);
+      const firstText = inline.children.find((c) => c.type === 'text');
+      if (firstText) firstText.content = firstText.content.replace(TASK_MARKER_RE, '');
+
+      const box = new state.Token('html_inline', '', 0);
+      box.content = `<input class="task-checkbox" type="checkbox" disabled${
+        checked ? ' checked' : ''
+      }>`;
+      inline.children.unshift(box);
+    }
+  });
+}
+
 async function getShikiHighlighter() {
   return initializeHighlighter();
 }
@@ -222,6 +257,7 @@ export function createMarkdownRenderer(
 
   wikilinkPlugin(renderer);
   calloutPlugin(renderer);
+  taskListPlugin(renderer);
   return renderer;
 }
 

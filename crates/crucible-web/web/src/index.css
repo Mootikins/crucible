@@ -318,6 +318,82 @@ details.callout[open] > summary.callout-title::after {
   letter-spacing: inherit !important;
 }
 
+/* ===== Task lists + fancy list markers ===== */
+
+/* Reading view: colored list markers, tighter task items. */
+[data-testid='markdown-preview'] .prose :where(ul, ol) > li::marker {
+  color: var(--color-primary, #e0653a);
+}
+[data-testid='markdown-preview'] .prose li.task-list-item {
+  list-style: none;
+}
+.task-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1.05em;
+  height: 1.05em;
+  margin: 0 0.5em 0 -1.6em;
+  vertical-align: -0.16em;
+  border: 1.5px solid var(--color-muted, #98939e);
+  border-radius: 4px;
+  background: transparent;
+  position: relative;
+  cursor: default;
+}
+.task-checkbox:checked {
+  background: var(--color-primary, #e0653a);
+  border-color: var(--color-primary, #e0653a);
+}
+.task-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 0.32em;
+  top: 0.12em;
+  width: 0.28em;
+  height: 0.55em;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+/* Completed task text reads as done: dimmed + struck. */
+.task-list-item:has(.task-checkbox:checked) {
+  color: var(--color-muted, #98939e);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--color-muted, #98939e) 60%, transparent);
+}
+
+/* Live-preview: the same checkbox as a clickable widget (toggles source). */
+.cm-lp-checkbox {
+  display: inline-block;
+  width: 1.05em;
+  height: 1.05em;
+  margin-right: 0.4em;
+  vertical-align: -0.16em;
+  border: 1.5px solid var(--color-muted, #98939e);
+  border-radius: 4px;
+  cursor: pointer;
+  position: relative;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+.cm-lp-checkbox:hover {
+  border-color: var(--color-primary, #e0653a);
+}
+.cm-lp-checkbox.is-checked {
+  background: var(--color-primary, #e0653a);
+  border-color: var(--color-primary, #e0653a);
+}
+.cm-lp-checkbox.is-checked::after {
+  content: '';
+  position: absolute;
+  left: 0.32em;
+  top: 0.1em;
+  width: 0.28em;
+  height: 0.55em;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
 /* Reading-view images: Tailwind Typography forces `img { display:block }`
    with 2em margins, which stacks a row of badges vertically with big gaps.
    Flow them inline-block with tight margins instead; a lone image in its own

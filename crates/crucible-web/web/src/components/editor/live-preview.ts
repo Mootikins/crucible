@@ -99,6 +99,42 @@ const baseDirFacet = Facet.define<string, string>({
   combine: (values) => values[0] ?? '',
 });
 
+/** A GFM task-list checkbox rendered in place of a `[ ]`/`[x]` marker.
+ * Clicking toggles the marker in the source (so both states are editable);
+ * the cursor entering the marker reveals the raw brackets. */
+class CheckboxWidget extends WidgetType {
+  constructor(readonly checked: boolean) {
+    super();
+  }
+
+  override eq(other: CheckboxWidget): boolean {
+    return other.checked === this.checked;
+  }
+
+  override toDOM(view: EditorView): HTMLElement {
+    const box = document.createElement('span');
+    box.className = `cm-lp-checkbox${this.checked ? ' is-checked' : ''}`;
+    box.setAttribute('role', 'checkbox');
+    box.setAttribute('aria-checked', String(this.checked));
+    box.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const from = view.posAtDOM(box);
+      const marker = view.state.doc.sliceString(from, from + 3);
+      // Toggle the char between the brackets (`[ ]` ↔ `[x]`).
+      if (/^\[[ xX]\]$/.test(marker)) {
+        view.dispatch({
+          changes: { from: from + 1, to: from + 2, insert: marker[1] === ' ' ? 'x' : ' ' },
+        });
+      }
+    });
+    return box;
+  }
+
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}
+
 /** An inline image rendered in place of `![alt](url)` (or a badge's
  * `[![alt](img)](link)`), snapping back to source when the cursor enters. */
 class ImageWidget extends WidgetType {
@@ -283,6 +319,19 @@ function buildDecorations(view: EditorView): DecorationSet {
         if (name === 'ListMark') {
           decorations.push(
             Decoration.mark({ class: 'cm-lp-bullet' }).range(nodeRef.from, nodeRef.to),
+          );
+          return;
+        }
+
+        if (name === 'TaskMarker') {
+          // `[ ]`/`[x]` → a clickable checkbox, unless the cursor is on it.
+          if (selectionTouches(state, nodeRef.from, nodeRef.to)) return;
+          const checked = /[xX]/.test(doc.sliceString(nodeRef.from, nodeRef.to));
+          decorations.push(
+            Decoration.replace({ widget: new CheckboxWidget(checked) }).range(
+              nodeRef.from,
+              nodeRef.to,
+            ),
           );
         }
       },

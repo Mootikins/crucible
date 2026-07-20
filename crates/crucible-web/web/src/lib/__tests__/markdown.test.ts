@@ -55,6 +55,21 @@ describe('markdown renderer', () => {
     expect(html).not.toContain('<script>');
   });
 
+  it('renders GFM task lists as checkboxes with state', () => {
+    const html = renderMarkdown('- [ ] todo\n- [x] done\n- plain');
+    expect(html).toContain('class="task-list-item"');
+    expect(html).toContain('type="checkbox"');
+    // The done item is checked; the todo item is not.
+    expect(html).toMatch(/checkbox"[^>]*checked/);
+    // The literal brackets are gone from the item text.
+    expect(html).not.toContain('[ ] todo');
+    expect(html).not.toContain('[x] done');
+    expect(html).toContain('todo');
+    expect(html).toContain('done');
+    // A plain list item is untouched.
+    expect(html).toContain('<li>plain</li>');
+  });
+
   it('does NOT render raw HTML in the chat/hover path', () => {
     // Chat and hover keep html:false — a centered block stays inert text.
     const html = renderMarkdown('<p align="center">hi</p>');

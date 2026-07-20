@@ -252,6 +252,30 @@ describe('live preview: styled everywhere except the construct at the cursor', (
     expect(text(view)).toContain('<p align="center">');
   });
 
+  it('renders task-list markers as checkboxes; clicking toggles the source', () => {
+    const doc = '- [ ] todo\n- [x] done';
+    const view = track(makeView(doc));
+    cursorAt(view, view.state.doc.length + 0); // park cursor at end, off line 1
+    cursorAt(view, doc.length); // end of "done" line
+    // Line 1 (unchecked) shows an unchecked checkbox widget.
+    const boxes = view.dom.querySelectorAll('.cm-lp-checkbox');
+    expect(boxes.length).toBeGreaterThanOrEqual(1);
+    const unchecked = view.dom.querySelector('.cm-lp-checkbox:not(.is-checked)');
+    expect(unchecked).not.toBeNull();
+
+    // Toggling the unchecked one flips its source marker to [x].
+    (unchecked as HTMLElement).dispatchEvent(
+      new MouseEvent('mousedown', { bubbles: true }),
+    );
+    expect(view.state.doc.line(1).text).toBe('- [x] todo');
+  });
+
+  it('shows a checked checkbox for `- [x]`', () => {
+    const view = track(makeView('- [x] done\n'));
+    cursorAt(view, view.state.doc.length);
+    expect(view.dom.querySelector('.cm-lp-checkbox.is-checked')).not.toBeNull();
+  });
+
   describe('vertical cursor entry into rendered tables (vim j/k)', () => {
     // Blank lines around the table, as in real prose — without one after,
     // lezer's GFM parser absorbs the following paragraph into the Table.
