@@ -34,21 +34,12 @@ async function getFirstPaneState(page: Page): Promise<PaneState> {
   });
 }
 
-/** Rightmost pane of the center tiling (descend `.second` through splits) —
- * mirrors `rightmostPane` in src/lib/session-actions.ts. Sessions now open
- * here, not in the first/left pane. */
+/** The RIGHT EDGE PANEL's tab group — sessions dock here (session-actions
+ * sessionPane), not in the center tiling. */
 async function getRightPaneState(page: Page): Promise<PaneState> {
   return page.evaluate(() => {
     const store = (window as unknown as { __windowStore?: any }).__windowStore;
-
-    const rightmostPaneGroupId = (node: any): string | null => {
-      if (!node) return null;
-      let cur = node;
-      while (cur.type === 'split') cur = cur.second;
-      return cur.tabGroupId ?? null;
-    };
-
-    const groupId = store ? rightmostPaneGroupId(store.layout) : null;
+    const groupId = store?.edgePanels?.right?.tabGroupId ?? null;
     const group = groupId ? store.tabGroups[groupId] : null;
 
     return {

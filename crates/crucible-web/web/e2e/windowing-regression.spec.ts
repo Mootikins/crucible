@@ -92,7 +92,7 @@ test('Header bar is visible with all controls', async ({ page }) => {
 
   // Shell navigation: Home logo, Inbox. The Edit/Session mode pills were
   // removed from the header — the center is always the editing surface and
-  // sessions now open in a right pane (openSessionInChat), so there's no
+  // sessions dock in the right edge panel (openSessionInChat), so there's no
   // center "mode" to toggle; goEdit/goSession remain reachable only from the
   // command palette (see WindowManager.tsx HeaderBar).
   await expect(page.locator('button[title="Home"]').first()).toBeVisible();

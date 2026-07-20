@@ -288,9 +288,8 @@ test.describe('Comprehensive windowing behavior', () => {
   });
 
   test('shows center empty state after all center tabs are removed', async ({ page }) => {
-    // The beforeEach's session click puts a chat tab in its OWN right pane,
-    // so there are now two center-pane groups (left "Home" pane + right
-    // "chat" pane). Closing a pane's last tab collapses that (now-empty)
+    // The beforeEach's session click docks a chat tab in the right EDGE
+    // panel — the center tiling keeps its own group(s). Closing a pane's last tab collapses that (now-empty)
     // pane out of the layout tree entirely (see removeTab/collapseEmptyNodes
     // in src/stores/tabActions.ts + windowStoreInternals.ts) — so emptying
     // only ONE of the two groups just leaves its still-non-empty sibling

@@ -75,7 +75,7 @@ function HeaderBar() {
         </button>
       </Show>
       {/* Edit/Session mode pills removed: the center is always the editing
-          surface and sessions live in a right pane (openSessionInChat), so
+          surface and sessions dock in the right edge panel (openSessionInChat), so
           there is no center "mode" to toggle. goEdit/goSession remain
           reachable from the command palette. */}
       <span class="font-mono text-[10.5px] text-muted-dark truncate max-w-[320px]">
