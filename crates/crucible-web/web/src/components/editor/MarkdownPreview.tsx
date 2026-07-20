@@ -9,10 +9,18 @@ import { renderMarkdownDocAsync } from '@/lib/markdown';
 import { openNoteInEditor, stripFrontmatter } from '@/lib/note-actions';
 import { statusBarStore } from '@/stores/statusBarStore';
 
-export const MarkdownPreview: Component<{ content: string; maxWidth?: number }> = (props) => {
+const dirOf = (path?: string): string | undefined =>
+  path ? path.replace(/\/[^/]*$/, '') : undefined;
+
+export const MarkdownPreview: Component<{
+  content: string;
+  /** Absolute file path — its directory resolves relative image srcs. */
+  path?: string;
+  maxWidth?: number;
+}> = (props) => {
   const [html] = createResource(
-    () => props.content,
-    (content) => renderMarkdownDocAsync(stripFrontmatter(content)),
+    () => [props.content, props.path] as const,
+    ([content, path]) => renderMarkdownDocAsync(stripFrontmatter(content), dirOf(path)),
   );
 
   // The rendered HTML is not a component tree — delegate clicks the same way

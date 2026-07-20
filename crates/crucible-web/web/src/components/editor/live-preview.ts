@@ -28,13 +28,14 @@ import {
 import {
   Annotation,
   EditorState,
+  Facet,
   StateField,
   type Extension,
   type Range,
 } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
-import { renderMarkdown, wikilinkRe } from '@/lib/markdown';
+import { renderMarkdown, wikilinkRe, rawImageUrl, sanitizeDocHtml } from '@/lib/markdown';
 import { resolveCalloutKind } from '@/lib/callouts';
 import { formatTableLines } from '@/lib/table-format';
 import { inCodeOrTableContext } from './md-context';
@@ -88,6 +89,50 @@ const WIKILINK_RE = wikilinkRe();
 /** `> [!type]` head on a blockquote's first line — marks it as a callout. */
 const CALLOUT_HEAD_LINE_RE = /^\s*>\s*\[!([a-zA-Z]+)\]/;
 
+/** `![alt](url)` — captures alt (1) and url (2). */
+const IMAGE_RE = /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)$/;
+
+/** The document's directory, used to resolve relative image srcs. Injected
+ * per-editor by {@link livePreview} so images load the same way the reading
+ * view does (through the raw project-file endpoint). */
+const baseDirFacet = Facet.define<string, string>({
+  combine: (values) => values[0] ?? '',
+});
+
+/** An inline image rendered in place of `![alt](url)` (or a badge's
+ * `[![alt](img)](link)`), snapping back to source when the cursor enters. */
+class ImageWidget extends WidgetType {
+  constructor(
+    readonly url: string,
+    readonly alt: string,
+  ) {
+    super();
+  }
+
+  override eq(other: ImageWidget): boolean {
+    return other.url === this.url && other.alt === this.alt;
+  }
+
+  override toDOM(view: EditorView): HTMLElement {
+    const img = document.createElement('img');
+    img.className = 'cm-lp-img';
+    img.src = this.url;
+    img.alt = this.alt;
+    // Click drops the cursor into the source so the markup can be edited.
+    img.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const pos = view.posAtDOM(img);
+      view.dispatch({ selection: { anchor: pos } });
+      view.focus();
+    });
+    return img;
+  }
+
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}
+
 function buildDecorations(view: EditorView): DecorationSet {
   const { state } = view;
   const doc = state.doc;
@@ -138,6 +183,25 @@ function buildDecorations(view: EditorView): DecorationSet {
             hideChildMarks(nodeRef.node, MARKS_TO_HIDE[name] ?? [], decorations);
           }
           return;
+        }
+
+        if (name === 'Image') {
+          // `![alt](url)` renders as an inline <img>; the cursor entering the
+          // markup reveals the source for editing. Badges (`[![](img)](link)`)
+          // parse as this Image nested in a Link — the Link handler above
+          // already hides the outer `[…](link)`, so only the image shows.
+          if (selectionTouches(state, nodeRef.from, nodeRef.to)) return false;
+          const m = IMAGE_RE.exec(doc.sliceString(nodeRef.from, nodeRef.to));
+          if (!m) return false;
+          const url = rawImageUrl(m[2], state.facet(baseDirFacet) || undefined);
+          if (!url) return false;
+          decorations.push(
+            Decoration.replace({ widget: new ImageWidget(url, m[1]) }).range(
+              nodeRef.from,
+              nodeRef.to,
+            ),
+          );
+          return false;
         }
 
         if (name === 'FencedCode' || name === 'CodeBlock') {
@@ -256,24 +320,41 @@ function buildDecorations(view: EditorView): DecorationSet {
  * cursor into the source, which reveals the raw markdown for editing —
  * except clicks on a foldable callout's summary row, which keep their
  * native `<details>` toggle. */
+type BlockKind = 'table' | 'callout' | 'html';
+
 class RenderedBlockWidget extends WidgetType {
   constructor(
     readonly source: string,
-    readonly kind: 'table' | 'callout',
+    readonly kind: BlockKind,
+    readonly baseDir: string,
   ) {
     super();
   }
 
   override eq(other: RenderedBlockWidget): boolean {
-    return other.source === this.source && other.kind === this.kind;
+    return (
+      other.source === this.source &&
+      other.kind === this.kind &&
+      other.baseDir === this.baseDir
+    );
   }
 
   override toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement('div');
-    wrap.className = this.kind === 'table' ? 'cm-lp-table' : 'cm-lp-callout-block';
+    wrap.className =
+      this.kind === 'table'
+        ? 'cm-lp-table'
+        : this.kind === 'callout'
+          ? 'cm-lp-callout-block'
+          : 'cm-lp-html';
     wrap.setAttribute('data-testid', `lp-${this.kind}`);
+    // Tables/callouts are markdown; a raw HTML block is already HTML and only
+    // needs sanitizing + relative-image resolution. Both are DOMPurified.
     // eslint-disable-next-line solid/no-innerhtml -- DOMPurify-sanitized
-    wrap.innerHTML = renderMarkdown(this.source);
+    wrap.innerHTML =
+      this.kind === 'html'
+        ? sanitizeDocHtml(this.source, this.baseDir || undefined)
+        : renderMarkdown(this.source);
     wrap.addEventListener('mousedown', (e) => {
       // Foldable callout title: let the browser's <details> toggle run
       // instead of jumping into the source.
@@ -293,13 +374,11 @@ class RenderedBlockWidget extends WidgetType {
   }
 }
 
-/** Table node, or Blockquote whose first line is a `> [!type]` callout head. */
-function renderedBlockKind(
-  state: EditorState,
-  name: string,
-  from: number,
-): 'table' | 'callout' | null {
+/** Table, an HTML block, or a Blockquote whose first line is a `> [!type]`
+ * callout head — each rendered as a block widget. */
+function renderedBlockKind(state: EditorState, name: string, from: number): BlockKind | null {
   if (name === 'Table') return 'table';
+  if (name === 'HTMLBlock') return 'html';
   if (name !== 'Blockquote') return null;
   const firstLine = state.doc.lineAt(from);
   return CALLOUT_HEAD_LINE_RE.test(firstLine.text) ? 'callout' : null;
@@ -307,17 +386,18 @@ function renderedBlockKind(
 
 function buildBlockWidgets(state: EditorState): DecorationSet {
   const decorations: Range<Decoration>[] = [];
+  const baseDir = state.facet(baseDirFacet);
   syntaxTree(state).iterate({
     enter: (nodeRef) => {
       const kind = renderedBlockKind(state, nodeRef.name, nodeRef.from);
       if (!kind) return; // descend — plain blockquotes may contain tables
       // Selection in the block = editing: show the raw source (the whole
-      // callout at once — no nested widgets inside revealed source).
+      // block at once — no nested widgets inside revealed source).
       if (selectionTouches(state, nodeRef.from, nodeRef.to)) return false;
       const source = state.doc.sliceString(nodeRef.from, nodeRef.to);
       decorations.push(
         Decoration.replace({
-          widget: new RenderedBlockWidget(source, kind),
+          widget: new RenderedBlockWidget(source, kind, baseDir),
           block: true,
         }).range(nodeRef.from, nodeRef.to),
       );
@@ -529,6 +609,19 @@ const livePreviewTheme = EditorView.baseTheme({
   // lines inside the callout.
   '.cm-lp-callout-block': { cursor: 'text', padding: '2px 0', whiteSpace: 'normal' },
   '.cm-lp-callout-block .callout': { margin: '2px 0' },
+  // Rendered raw-HTML block (e.g. a README's centered `<p align="center">`
+  // demo). whiteSpace reset for the same pre-wrap reason as callouts.
+  '.cm-lp-html': { cursor: 'text', padding: '2px 0', whiteSpace: 'normal' },
+  '.cm-lp-html img': { maxWidth: '100%', height: 'auto' },
+  // Inline images (badges, `![](…)`) render at their natural size, capped to
+  // the column; a broken/blank src just collapses rather than showing an icon.
+  '.cm-lp-img': {
+    display: 'inline-block',
+    maxWidth: '100%',
+    height: 'auto',
+    verticalAlign: 'text-bottom',
+    cursor: 'pointer',
+  },
   '.cm-lp-table table': {
     borderCollapse: 'collapse',
     margin: '2px 0',
@@ -545,11 +638,13 @@ const livePreviewTheme = EditorView.baseTheme({
   },
 });
 
-export function livePreview(opts?: { maxLineWidth?: number }): Extension {
+export function livePreview(opts?: { maxLineWidth?: number; baseDir?: string }): Extension {
   const width = opts?.maxLineWidth ?? 0;
   return [
     // Scope the prose font to live-preview editors only.
     EditorView.editorAttributes.of({ class: 'cm-lp' }),
+    // The document's directory, for resolving relative image srcs.
+    baseDirFacet.of(opts?.baseDir ?? ''),
     // Prose wraps; horizontal scrolling is a source-mode behavior.
     EditorView.lineWrapping,
     // Readable line length (Obsidian-style): center a prose column instead

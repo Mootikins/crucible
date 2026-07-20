@@ -159,7 +159,12 @@ export const CodeMirrorEditor: Component<{
       extensions.push(wikilinkNavigation((target) => props.onFollowLink?.(target)));
     }
     if (liveMode) {
-      extensions.push(livePreview({ maxLineWidth: props.lineWidth }));
+      extensions.push(
+        livePreview({
+          maxLineWidth: props.lineWidth,
+          baseDir: props.path.replace(/\/[^/]*$/, ''),
+        }),
+      );
     }
 
     return extensions;

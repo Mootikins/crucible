@@ -195,16 +195,23 @@ async function highlightCodeBlocks(
 }
 
 /**
- * `allowHtml` passes raw HTML blocks/inline through markdown-it (still
+ * `html` passes raw HTML blocks/inline through markdown-it (still
  * DOMPurify-sanitized downstream). Off for chat/hover (LLM/user text should
  * not inject markup); on for the document Reading view, where authored docs
  * like a README legitimately embed HTML (e.g. a centered `<p align="center">`
  * demo).
+ *
+ * `breaks` turns single newlines into `<br>`. On for chat (a message's line
+ * breaks are meaningful); off for documents, where — like GitHub — soft
+ * wraps are whitespace, so consecutive badge lines render inline instead of
+ * stacked.
  */
-export function createMarkdownRenderer(allowHtml = false): MarkdownIt {
+export function createMarkdownRenderer(
+  opts: { html?: boolean; breaks?: boolean } = {},
+): MarkdownIt {
   const renderer = new MarkdownIt({
-    breaks: true,
-    html: allowHtml,
+    breaks: opts.breaks ?? true,
+    html: opts.html ?? false,
     linkify: true,
     highlight: (code, lang) => {
       const language = lang || 'text';
@@ -228,7 +235,7 @@ function getRenderer(): MarkdownIt {
 
 function getDocRenderer(): MarkdownIt {
   if (!docRenderer) {
-    docRenderer = createMarkdownRenderer(true);
+    docRenderer = createMarkdownRenderer({ html: true, breaks: false });
   }
 
   return docRenderer;
@@ -245,15 +252,61 @@ export async function renderMarkdownAsync(content: string): Promise<string> {
   return sanitizeHtml(highlightedHtml);
 }
 
+/** Join a relative POSIX path onto a base dir, resolving `.`/`..`. */
+function resolvePath(baseDir: string, rel: string): string {
+  const out: string[] = [];
+  for (const part of `${baseDir}/${rel}`.split('/')) {
+    if (part === '' || part === '.') continue;
+    if (part === '..') out.pop();
+    else out.push(part);
+  }
+  return `/${out.join('/')}`;
+}
+
+/**
+ * Resolve a markdown image `src` to a URL the browser can load. Absolute URLs
+ * (http/https/data/blob), already-API paths, and site-absolute paths pass
+ * through; a path relative to the document (e.g. a README's `assets/demo.gif`)
+ * is resolved against `baseDir` and routed through the raw project-file
+ * endpoint. Returns `null` when a relative src can't be resolved (no baseDir).
+ */
+export function rawImageUrl(src: string, baseDir?: string): string | null {
+  if (/^(https?:|data:|blob:|\/)/i.test(src)) return src;
+  if (!baseDir) return null;
+  return `/api/file/raw?path=${encodeURIComponent(resolvePath(baseDir, src))}`;
+}
+
+/**
+ * Sanitize an already-HTML fragment and resolve its relative image srcs
+ * against `baseDir`. For rendering a raw HTML block (e.g. a README's centered
+ * `<p align="center">` demo) that is HTML, not markdown — no markdown parse.
+ */
+export function sanitizeDocHtml(raw: string, baseDir?: string): string {
+  return sanitizeHtml(resolveDocImages(raw, baseDir));
+}
+
+/** Rewrite relative `<img src>` in rendered HTML to loadable URLs. */
+function resolveDocImages(html: string, baseDir?: string): string {
+  return html.replace(/(<img\b[^>]*?\bsrc=")([^"]*)(")/gi, (whole, pre, src, post) => {
+    const url = rawImageUrl(src, baseDir);
+    return url ? `${pre}${url}${post}` : whole;
+  });
+}
+
 /**
  * Reading-view render: like {@link renderMarkdownAsync} but permits embedded
- * HTML (sanitized) and floats a copy button over each code block. For rendering
- * whole documents (notes, project READMEs) rather than chat turns.
+ * HTML (sanitized), floats a copy button over each code block, and resolves
+ * relative image srcs against `baseDir` (the document's directory) so local
+ * images load. For rendering whole documents (notes, project READMEs) rather
+ * than chat turns.
  */
-export async function renderMarkdownDocAsync(content: string): Promise<string> {
+export async function renderMarkdownDocAsync(
+  content: string,
+  baseDir?: string,
+): Promise<string> {
   const renderedHtml = getDocRenderer().render(content);
   const highlightedHtml = await highlightCodeBlocks(renderedHtml, { copyButton: true });
-  return sanitizeHtml(highlightedHtml);
+  return sanitizeHtml(resolveDocImages(highlightedHtml, baseDir));
 }
 
 export async function initializeMarkdownHighlighter(): Promise<void> {

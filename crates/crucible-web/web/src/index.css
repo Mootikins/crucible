@@ -318,6 +318,17 @@ details.callout[open] > summary.callout-title::after {
   letter-spacing: inherit !important;
 }
 
+/* Reading-view images: Tailwind Typography forces `img { display:block }`
+   with 2em margins, which stacks a row of badges vertically with big gaps.
+   Flow them inline-block with tight margins instead; a lone image in its own
+   paragraph still sits on its own line (the <p> is block), just tighter. */
+[data-testid='markdown-preview'] .prose :where(p) img {
+  display: inline-block;
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+  vertical-align: middle;
+}
+
 /* Reading-view code blocks: a copy button floats top-right, revealed on
    hover/focus (and always visible on touch, which has no hover). Markup from
    lib/markdown.ts renderMarkdownDocAsync; click handled in MarkdownPreview. */

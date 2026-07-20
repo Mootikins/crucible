@@ -13,13 +13,13 @@ const DOC = [
   'See [[Target|alias]] link.',
 ].join('\n');
 
-function makeView(doc = DOC): EditorView {
+function makeView(doc = DOC, opts?: { baseDir?: string }): EditorView {
   const parent = document.createElement('div');
   document.body.appendChild(parent);
   const view = new EditorView({
     state: EditorState.create({
       doc,
-      extensions: [markdown({ base: markdownLanguage }), livePreview()],
+      extensions: [markdown({ base: markdownLanguage }), livePreview(opts)],
     }),
     parent,
   });
@@ -192,6 +192,64 @@ describe('live preview: styled everywhere except the construct at the cursor', (
     expect(view.state.selection.main.head).toBe(calloutFrom);
     // …and the callout reveals its raw source for editing.
     expect(view.dom.querySelector('[data-testid="lp-callout"]')).toBeNull();
+  });
+
+  it('renders an absolute-URL image inline; cursor reveals the source', () => {
+    const doc = 'Before.\n\n![badge](https://ex.com/b.svg)\n\nAfter.';
+    const view = track(makeView(doc));
+    cursorAt(view, 0);
+    const img = view.dom.querySelector<HTMLImageElement>('img.cm-lp-img');
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute('src')).toBe('https://ex.com/b.svg');
+    expect(text(view)).not.toContain('![badge]');
+
+    cursorAt(view, doc.indexOf('badge'));
+    expect(view.dom.querySelector('img.cm-lp-img')).toBeNull();
+    expect(text(view)).toContain('![badge](https://ex.com/b.svg)');
+  });
+
+  it('resolves a relative image src against baseDir via the raw endpoint', () => {
+    const view = track(
+      makeView('![demo](assets/demo.gif)\n', { baseDir: '/home/u/proj' }),
+    );
+    cursorAt(view, view.state.doc.length);
+    const img = view.dom.querySelector<HTMLImageElement>('img.cm-lp-img');
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute('src')).toBe(
+      `/api/file/raw?path=${encodeURIComponent('/home/u/proj/assets/demo.gif')}`,
+    );
+  });
+
+  it('renders a badge (image wrapped in a link) as an inline image', () => {
+    const view = track(
+      makeView('[![CI](https://ex.com/ci.svg)](https://ex.com/ci)\n'),
+    );
+    cursorAt(view, view.state.doc.length);
+    const img = view.dom.querySelector<HTMLImageElement>('img.cm-lp-img');
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute('src')).toBe('https://ex.com/ci.svg');
+  });
+
+  it('renders an embedded HTML block as a widget; cursor reveals source', () => {
+    const doc = [
+      'Before.',
+      '',
+      '<p align="center">',
+      '  <img src="https://ex.com/demo.gif" alt="demo" width="720" />',
+      '</p>',
+      '',
+      'After.',
+    ].join('\n');
+    const view = track(makeView(doc));
+    cursorAt(view, 0);
+    const widget = view.dom.querySelector('[data-testid="lp-html"]');
+    expect(widget).not.toBeNull();
+    expect(widget!.querySelector('p[align="center"]')).not.toBeNull();
+    expect(widget!.querySelector('img')).not.toBeNull();
+
+    cursorAt(view, doc.indexOf('align'));
+    expect(view.dom.querySelector('[data-testid="lp-html"]')).toBeNull();
+    expect(text(view)).toContain('<p align="center">');
   });
 
   describe('vertical cursor entry into rendered tables (vim j/k)', () => {

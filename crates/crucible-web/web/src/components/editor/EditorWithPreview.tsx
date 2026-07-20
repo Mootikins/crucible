@@ -81,7 +81,9 @@ export const EditorWithPreview: Component<{
       </Show>
       <Show
         when={mode() !== 'reading' || !isMarkdown()}
-        fallback={<MarkdownPreview content={props.content} maxWidth={props.lineWidth} />}
+        fallback={
+          <MarkdownPreview content={props.content} path={props.path} maxWidth={props.lineWidth} />
+        }
       >
         <CodeMirrorEditor
           apiRef={props.editorApiRef}

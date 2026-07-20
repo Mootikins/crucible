@@ -4,7 +4,8 @@ use super::helpers::{
 };
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
-use axum::{extract::State, routing::get, Json, Router};
+use axum::response::{IntoResponse, Response};
+use axum::{extract::State, http::header, routing::get, Json, Router};
 use crucible_core::config::{read_project_config, ProjectFileAccess};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,7 @@ pub fn kiln_routes() -> Router<AppState> {
         .route("/api/kiln/notes", get(list_kiln_notes))
         .route("/api/kiln/graph", get(kiln_graph))
         .route("/api/kiln/file", get(get_kiln_file).put(put_kiln_file))
+        .route("/api/file/raw", get(get_raw_file))
 }
 
 // =========================================================================
@@ -119,6 +121,37 @@ async fn get_kiln_file(
         .map_err(|e| WebError::NotFound(format!("File not found: {e}")))?;
 
     Ok(Json(serde_json::json!({ "content": content })))
+}
+
+/// `GET /api/file/raw?path=<path>` — serve a file's raw bytes with a guessed
+/// content type. Same containment as reading via `/api/kiln/file` (kiln, or a
+/// project whose `project_files` policy permits reads); used to load images
+/// (e.g. a README's `assets/demo.gif`) that markdown references by path.
+async fn get_raw_file(
+    State(state): State<AppState>,
+    axum::extract::Query(query): axum::extract::Query<FilePathQuery>,
+) -> Result<Response, WebError> {
+    reject_path_traversal(&query.path)?;
+
+    let file_path = PathBuf::from(&query.path);
+    let root = find_enclosing_root(&state, &file_path).await?;
+    if let EnclosingRoot::Project(_, policy) = &root {
+        if !policy.can_read() {
+            return Err(WebError::NotFound(
+                "File not within any open kiln".to_string(),
+            ));
+        }
+    }
+    let canonical_file = validate_file_within_kiln(&file_path, root.path(), &query.path)?;
+
+    let bytes = fs::read(&canonical_file)
+        .await
+        .map_err(|e| WebError::NotFound(format!("File not found: {e}")))?;
+    let mime = mime_guess::from_path(&canonical_file)
+        .first_or_octet_stream()
+        .to_string();
+
+    Ok(([(header::CONTENT_TYPE, mime)], bytes).into_response())
 }
 
 /// `PUT /api/kiln/file` — write content to a file within an open kiln.

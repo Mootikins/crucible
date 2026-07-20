@@ -274,6 +274,24 @@ async fn backlinks_returns_linked_and_filtered_unlinked() {
 }
 
 #[tokio::test]
+async fn raw_file_rejects_path_traversal() {
+    let (_mock, client) = start_mock_daemon().await;
+    let app = build_test_app(build_mock_state(client));
+    let (status, _) = get_json(app, "/api/file/raw?path=/x/../../etc/passwd").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn raw_file_outside_any_root_is_404() {
+    // Mock daemon reports no kilns and no projects, so any real path is
+    // outside every root and must be refused (fail-closed).
+    let (_mock, client) = start_mock_daemon().await;
+    let app = build_test_app(build_mock_state(client));
+    let (status, _) = get_json(app, "/api/file/raw?path=/etc/hostname").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn backlinks_missing_note_file_degrades_to_empty_unlinked() {
     let (_mock, client) = start_mock_daemon().await;
     let state = build_mock_state(client);
