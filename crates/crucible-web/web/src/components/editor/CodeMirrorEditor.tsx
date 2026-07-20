@@ -8,8 +8,9 @@ import {
   drawSelection,
   dropCursor,
 } from '@codemirror/view';
-import { EditorState, StateEffect, Extension, Annotation } from '@codemirror/state';
+import { EditorState, StateEffect, Extension, Annotation, Compartment } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { LanguageDescription } from '@codemirror/language';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages as codeLanguages } from '@codemirror/language-data';
@@ -79,6 +80,33 @@ export const CodeMirrorEditor: Component<{
   apiRef?: (view: EditorView) => void;
 }> = (props) => {
   let view: EditorView | undefined;
+  // Holds the language extension so a lazily-loaded grammar (or a file switch)
+  // can swap it in without rebuilding the editor.
+  const langCompartment = new Compartment();
+
+  // Eager grammars (getLanguageExtension) highlight instantly; anything else
+  // (TOML, JSON, Python, Go, shell, CSS, …) is resolved by filename against
+  // @codemirror/language-data and its grammar lazy-loaded, then swapped into
+  // the compartment. Skips markdown, which is always eager (live preview).
+  const applyLanguage = async (v: EditorView, path: string): Promise<void> => {
+    const eager = getLanguageExtension(path);
+    if (eager) {
+      v.dispatch({ effects: langCompartment.reconfigure(eager) });
+      return;
+    }
+    const filename = path.split('/').pop() ?? path;
+    const desc = LanguageDescription.matchFilename(codeLanguages, filename);
+    if (!desc) {
+      v.dispatch({ effects: langCompartment.reconfigure([]) });
+      return;
+    }
+    try {
+      const support = await desc.load();
+      if (view === v) v.dispatch({ effects: langCompartment.reconfigure(support) });
+    } catch {
+      /* grammar failed to load — leave plain text */
+    }
+  };
 
   const createExtensions = (): Extension[] => {
     const ext0 = props.path.split('.').pop()?.toLowerCase() ?? '';
@@ -149,10 +177,9 @@ export const CodeMirrorEditor: Component<{
       }),
     ];
 
-    const langExt = getLanguageExtension(props.path);
-    if (langExt) {
-      extensions.push(langExt);
-    }
+    // Eager grammar (or empty) up front; applyLanguage() lazy-loads the rest
+    // into this compartment once the view exists.
+    extensions.push(langCompartment.of(getLanguageExtension(props.path) ?? []));
 
     const ext = props.path.split('.').pop()?.toLowerCase() ?? '';
     if (props.onFollowLink && (ext === 'md' || ext === 'markdown')) {
@@ -188,6 +215,8 @@ export const CodeMirrorEditor: Component<{
       parent: el,
     });
     props.apiRef?.(view);
+    // Lazy-load a language-data grammar for non-eager file types (TOML, etc.).
+    void applyLanguage(view, props.path);
 
     // File-tree drops (pragmatic-drag-and-drop 'editor' zone — the innermost
     // file target, so it wins over the pane's open-in-pane zone). Kiln notes
@@ -237,6 +266,10 @@ export const CodeMirrorEditor: Component<{
       view.dispatch({
         effects: StateEffect.reconfigure.of(createExtensions()),
       });
+      // createExtensions seeds the compartment with the eager grammar (or
+      // empty); re-run the lazy resolver so a switched-to TOML/JSON/etc. file
+      // gets its grammar too.
+      void applyLanguage(view, props.path);
     }
   });
 

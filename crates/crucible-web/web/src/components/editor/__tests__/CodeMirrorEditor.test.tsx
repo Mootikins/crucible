@@ -2,6 +2,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { EditorView } from '@codemirror/view';
+import { LanguageDescription } from '@codemirror/language';
+import { languages as codeLanguages } from '@codemirror/language-data';
 
 import { CodeMirrorEditor, getLanguageExtension } from '../CodeMirrorEditor';
 
@@ -79,5 +81,27 @@ describe('getLanguageExtension — language coverage (bug 7)', () => {
   it('returns null for unknown extensions', () => {
     expect(getLanguageExtension('/kiln/data.csv')).toBeNull();
     expect(getLanguageExtension('/kiln/noext')).toBeNull();
+  });
+});
+
+describe('lazy language resolution (language-data)', () => {
+  it.each([
+    ['/proj/crucible.toml', 'TOML'],
+    ['/proj/Cargo.toml', 'TOML'],
+    ['/proj/package.json', 'JSON'],
+    ['/proj/script.py', 'Python'],
+    ['/proj/main.go', 'Go'],
+    ['/proj/styles.css', 'CSS'],
+    ['/proj/index.html', 'HTML'],
+    ['/proj/run.sh', 'Shell'],
+    ['/proj/config.yaml', 'YAML'],
+  ])('%s resolves to the %s grammar via matchFilename', (path, langName) => {
+    const filename = path.split('/').pop()!;
+    const desc = LanguageDescription.matchFilename(codeLanguages, filename);
+    expect(desc?.name).toBe(langName);
+  });
+
+  it('resolves nothing for a plain-text file with no known grammar', () => {
+    expect(LanguageDescription.matchFilename(codeLanguages, 'notes.txt')).toBeNull();
   });
 });
