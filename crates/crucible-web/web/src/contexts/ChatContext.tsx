@@ -27,6 +27,7 @@ import {
   getSessionHistory,
 } from '@/lib/api';
 import { findTabBySessionId } from '@/lib/session-actions';
+import { consumePendingFirstMessage } from '@/lib/draft-session';
 import { windowActions } from '@/stores/windowStore';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { notificationActions } from '@/stores/notificationStore';
@@ -253,7 +254,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     const abortController = new AbortController();
     historyAbortController = abortController;
 
-    void bootstrapSessionWithFallback({
+    const bootstrapPromise = bootstrapSessionWithFallback({
       sessionId: newSessionId,
       signal: abortController.signal,
       setSessionTitle,
@@ -262,6 +263,19 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     });
 
     eventSourceCleanup = subscribeToEvents(newSessionId, handleEvent);
+
+    // Lazy creation handoff: the draft surface staged the user's first
+    // message before opening this session. Send it only after bootstrap —
+    // loadHistory replaces the whole message list, so sending earlier would
+    // let the (empty) history load wipe the optimistic message.
+    const pendingFirstMessage = consumePendingFirstMessage(newSessionId);
+    if (pendingFirstMessage) {
+      void bootstrapPromise
+        .catch(() => {})
+        .then(() => {
+          void sendMessage(pendingFirstMessage);
+        });
+    }
   });
 
   onCleanup(() => {

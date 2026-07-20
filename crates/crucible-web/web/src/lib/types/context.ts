@@ -58,7 +58,10 @@ export interface SessionContextValue {
   availableModels: Accessor<string[]>;
   providers: Accessor<ProviderInfo[]>;
   selectedProvider: Accessor<ProviderInfo | null>;
-  createSession: (params: CreateSessionParams) => Promise<Session>;
+  createSession: (
+    params: CreateSessionParams,
+    opts?: { initialMessage?: string; model?: string },
+  ) => Promise<Session>;
   selectSession: (id: string) => Promise<void>;
   refreshSessions: (filters?: { kiln?: string; workspace?: string; includeArchived?: boolean }) => Promise<void>;
   pauseSession: () => Promise<void>;

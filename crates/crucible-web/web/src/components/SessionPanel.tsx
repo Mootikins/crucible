@@ -1,7 +1,6 @@
 import { Component, Show, createSignal, createEffect } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useProjectSafe } from '@/contexts/ProjectContext';
-import { notificationActions } from '@/stores/notificationStore';
 import { useSessionSearch } from '@/hooks/useSessionSearch';
 import { ProjectSection } from './ProjectSection';
 import { SessionSection } from './SessionSection';
@@ -15,12 +14,10 @@ export const SessionPanel: Component = () => {
     currentSession,
     sessions,
     isLoading,
-    createSession,
     selectSession,
     pauseSession,
     resumeSession,
     refreshSessions,
-    selectedProvider,
     providers,
     deleteSession,
     archiveSession,
@@ -51,31 +48,10 @@ export const SessionPanel: Component = () => {
     }
   });
 
-  const handleCreateSession = async () => {
-    const project = currentProject();
-    const kiln = selectedKiln();
-    if (!project) {
-      notificationActions.addNotification('error', 'Select a project before creating a session');
-      return;
-    }
-    if (!kiln) {
-      notificationActions.addNotification('error', 'Select a kiln before creating a session');
-      return;
-    }
-    if (providers().length === 0) {
-      notificationActions.addNotification('error', 'No LLM providers available. Configure a provider first.');
-      return;
-    }
-
-    const provider = selectedProvider();
-
-    await createSession({
-      kiln,
-      workspace: project.path,
-      provider: provider?.provider_type ?? 'ollama',
-      model: provider?.default_model ?? 'llama3.2',
-      endpoint: provider?.endpoint,
-    });
+  // All entry points converge on the draft surface (lazy creation) — no
+  // hardcoded provider/model fallbacks here anymore.
+  const handleCreateSession = () => {
+    window.dispatchEvent(new CustomEvent('crucible:new-session'));
   };
 
   const handleKilnSelect = async (kiln: string) => {

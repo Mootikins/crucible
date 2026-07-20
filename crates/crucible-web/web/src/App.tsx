@@ -10,6 +10,7 @@ import { getConfig } from '@/lib/api';
 import { setupLayoutAutoSave, loadLayoutOnStartup } from '@/lib/layout-persistence';
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
 import { openSessionInChat } from '@/lib/session-actions';
+import { openDraftSession } from '@/lib/draft-session';
 import { openFileInEditor } from '@/lib/file-actions';
 import { openPanelTab, findFirstCenterPaneGroupId } from '@/lib/panel-actions';
 import { statusBarActions, statusBarStore } from '@/stores/statusBarStore';
@@ -17,7 +18,6 @@ import { attentionActions } from '@/stores/attentionStore';
 import { windowActions, windowStore } from '@/stores/windowStore';
 import { NotificationToast } from '@/components/NotificationToast';
 import { ExportDialog } from '@/components/ExportDialog';
-import { NewSessionDialog } from '@/components/NewSessionDialog';
 import { AuthTokenPrompt } from '@/components/AuthTokenPrompt';
 
 function focusChatInput(): void {
@@ -40,7 +40,6 @@ const App: Component = () => {
   registerPanels();
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = createSignal(false);
   const [isExportDialogOpen, setIsExportDialogOpen] = createSignal(false);
-  const [isNewSessionDialogOpen, setIsNewSessionDialogOpen] = createSignal(false);
   const [kilnPath, setKilnPath] = createSignal<string | undefined>(undefined);
 
   const paletteCommands: PaletteCommand[] = [
@@ -224,8 +223,8 @@ const App: Component = () => {
     const onExportSession = () => setIsExportDialogOpen(true);
     window.addEventListener('crucible:export-session', onExportSession);
     // Every new-session entry point (ribbon, Home, palette, empty states)
-    // opens the kiln/project chooser; it emits crucible:create-session.
-    const onNewSession = () => setIsNewSessionDialogOpen(true);
+    // opens the draft surface; the session is created lazily on first send.
+    const onNewSession = () => openDraftSession();
     window.addEventListener('crucible:new-session', onNewSession);
     const onOpenSession = (e: Event) => {
       const { sessionId, title } = (e as CustomEvent<{ sessionId: string; title: string }>).detail;
@@ -271,10 +270,6 @@ const App: Component = () => {
             sessionId={statusBarStore.activeSessionId()}
             sessionTitle={statusBarStore.activeSessionTitle()}
             onClose={() => setIsExportDialogOpen(false)}
-          />
-          <NewSessionDialog
-            open={isNewSessionDialogOpen()}
-            onClose={() => setIsNewSessionDialogOpen(false)}
           />
           <CommandPalette
             open={isCommandPaletteOpen()}

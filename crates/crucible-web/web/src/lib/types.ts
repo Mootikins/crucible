@@ -64,11 +64,26 @@ export interface Session {
 
 export interface CreateSessionParams {
   session_type?: SessionType;
-  kiln: string;
+  /** Omitted → daemon default (home kiln). */
+  kiln?: string;
   workspace?: string;
   provider?: string;
   model?: string;
   endpoint?: string;
+  /** "internal" (default) or "acp". */
+  agent_type?: string;
+  /** ACP agent profile name; required when agent_type is "acp". */
+  agent_name?: string;
+}
+
+/** ACP agent profile entry from GET /api/agents. */
+export interface AgentProfileEntry {
+  name: string;
+  description: string;
+  command: string;
+  is_builtin: boolean;
+  /** Probed daemon-side: binary found on PATH and answering. */
+  available: boolean;
 }
 
 export interface ProviderInfo {

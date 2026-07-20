@@ -1,4 +1,5 @@
 import type {
+  AgentProfileEntry,
   ChatEvent,
   CreateSessionParams,
   Session,
@@ -529,6 +530,21 @@ export async function listProviders(): Promise<ProviderInfo[]> {
   return (await request<{ providers: ProviderInfo[] }>('GET', '/api/providers', {
     errorMessage: 'Failed to list providers',
   })).providers;
+}
+
+/** List ACP agent profiles with probed availability. */
+export async function listAgents(): Promise<AgentProfileEntry[]> {
+  return (await request<{ agents: AgentProfileEntry[] }>('GET', '/api/agents', {
+    errorMessage: 'Failed to list agents',
+  })).agents;
+}
+
+/** List all chat models across providers — no session required. */
+export async function listAllModels(kiln?: string): Promise<string[]> {
+  const url = kiln ? `/api/models?kiln=${encodeURIComponent(kiln)}` : '/api/models';
+  return (await request<{ models: string[] }>('GET', url, {
+    errorMessage: 'Failed to list models',
+  })).models;
 }
 
 // =============================================================================

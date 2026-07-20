@@ -8,6 +8,7 @@ export type TabContentType =
   | 'terminal'
   | 'settings'
   | 'chat'
+  | 'chat-draft'
   | 'home'
   | 'inbox'
   | 'sessions'

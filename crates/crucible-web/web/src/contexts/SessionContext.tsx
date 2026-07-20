@@ -28,6 +28,7 @@ import {
 } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
 import { findTabBySessionId } from '@/lib/session-actions';
+import { setPendingFirstMessage } from '@/lib/draft-session';
 import { windowActions } from '@/stores/windowStore';
 
 
@@ -135,13 +136,35 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     }
   };
 
-  const createSession = async (params: CreateSessionParams): Promise<Session> => {
+  const createSession = async (
+    params: CreateSessionParams,
+    opts?: { initialMessage?: string; model?: string },
+  ): Promise<Session> => {
     setIsLoading(true);
     try {
       const session = await withSessionAction(async () => {
         const created = await apiCreateSession(params);
+        // Model choice from the draft surface: reuse the daemon's switch-model
+        // resolution rather than parsing "provider_key/model" strings here.
+        if (opts?.model) {
+          try {
+            await apiSwitchModel(created.id, opts.model);
+            created.agent_model = opts.model;
+          } catch (err) {
+            notificationActions.addNotification(
+              'error',
+              'Failed to set model — session uses the provider default'
+            );
+            console.error('Failed to set model on new session:', err);
+          }
+        }
         setSessions(produce((s) => s.unshift(created)));
         setCurrentSession(created);
+        // Must be staged BEFORE open-session mounts the ChatProvider that
+        // consumes it (lazy creation: draft surface → first message).
+        if (opts?.initialMessage) {
+          setPendingFirstMessage(created.id, opts.initialMessage);
+        }
         window.dispatchEvent(new CustomEvent('crucible:open-session', {
           detail: { sessionId: created.id, title: created.title || 'New Session' },
         }));
@@ -429,31 +452,6 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     });
     refreshProviders();
   });
-
-  // `crucible:new-session` opens the kiln/project chooser (NewSessionDialog
-  // in App); the dialog emits `crucible:create-session` with the chosen
-  // params, handled here. Provider defaults are resolved server-side, so no
-  // provider/model is passed (avoids duplicating the SessionPanel
-  // fallbacks). createSession dispatches crucible:open-session, which opens
-  // the chat tab.
-  const onCreateSessionEvent = (e: Event) => {
-    const detail = (e as CustomEvent<{ kiln?: string; workspace?: string }>).detail ?? {};
-    const kiln = detail.kiln ?? props.initialKiln;
-    if (!kiln) {
-      // No silent no-op: without a kiln we cannot create a session.
-      notificationActions.addNotification(
-        'warning',
-        'Cannot create session: no kiln configured (is the daemon config loaded?)'
-      );
-      return;
-    }
-    void createSession({
-      kiln,
-      workspace: detail.workspace ?? props.initialWorkspace,
-    }).catch(() => {}); // surfaced via withSessionAction's error notification
-  };
-  window.addEventListener('crucible:create-session', onCreateSessionEvent);
-  onCleanup(() => window.removeEventListener('crucible:create-session', onCreateSessionEvent));
 
   // Daemon auto-titles sessions on their first completed turn; the owning
   // ChatProvider rebroadcasts the title so the session list stays current.
