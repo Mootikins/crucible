@@ -68,11 +68,16 @@ export interface FileTreeDnd {
 const AUTO_EXPAND_MS = 700;
 
 /**
- * Row indentation from zag's `--depth` var (1 = top level). Branch rows show
- * a 14px chevron files lack, so files get one extra step to align names.
+ * Row indentation from zag's `--depth` var (1 = top level). Branch rows
+ * show a 14px (0.875rem) chevron before their icon that file rows lack, so
+ * file rows take one extra chevron-width of padding — icons (and names)
+ * then align within a level.
  */
 const DEPTH_INDENT = {
   'padding-left': 'calc(0.5rem + (var(--depth, 1) - 1) * 0.875rem)',
+} as const;
+const DEPTH_INDENT_LEAF = {
+  'padding-left': 'calc(0.5rem + 0.875rem + (var(--depth, 1) - 1) * 0.875rem)',
 } as const;
 
 /**
@@ -161,7 +166,7 @@ export const FileTreeNode: Component<{
               {...currentAttrs()}
               ref={attachDrag}
               class="flex items-center pr-2 py-1 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-sm data-[selected]:bg-hover-wash data-[current=true]:font-medium data-[current=true]:border-l-2 data-[current=true]:border-primary"
-              style={DEPTH_INDENT}
+              style={DEPTH_INDENT_LEAF}
             >
               <FileIcon extension={getExtension(props.node.name)} />
               <TreeView.ItemText class="truncate">{props.node.name}</TreeView.ItemText>
