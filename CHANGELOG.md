@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-07-20
+
+### Fixed
+- File-tree icons align: file rows now take the chevron-width indent step that folder rows spend on their disclosure chevron, so icons and names line up within a level.
+- Revealed table source (live preview) rendered at the full prose font size after the header-alignment fix, and its background tint stopped at the readable-column edge while wide rows kept going; the source now keeps its compact size and the tint covers the full overflowing row.
+
 ## [0.11.1] - 2026-07-20
 
 ### Added
