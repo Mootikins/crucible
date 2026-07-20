@@ -34,6 +34,7 @@ import {
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 import { renderMarkdown, wikilinkRe } from '@/lib/markdown';
+import { resolveCalloutKind } from '@/lib/callouts';
 
 const HIDE = Decoration.replace({});
 
@@ -145,9 +146,25 @@ function buildDecorations(view: EditorView): DecorationSet {
         }
 
         if (name === 'Blockquote') {
-          const first = doc.lineAt(nodeRef.from).number;
+          const firstLine = doc.lineAt(nodeRef.from);
           const last = doc.lineAt(nodeRef.to).number;
-          for (let n = first; n <= last; n++) {
+          // `> [!type]` heads style the whole quote as that callout variant
+          // (colors shared with the reading-mode CSS); plain quotes keep the
+          // italic treatment.
+          const head = /^\s*>\s*\[!([a-zA-Z]+)\]/.exec(firstLine.text);
+          if (head) {
+            const kind = resolveCalloutKind(head[1]);
+            for (let n = firstLine.number; n <= last; n++) {
+              const title = n === firstLine.number ? ' cm-lp-callout-title' : '';
+              decorations.push(
+                Decoration.line({
+                  class: `cm-lp-callout cm-lp-callout-${kind}${title}`,
+                }).range(doc.line(n).from),
+              );
+            }
+            return;
+          }
+          for (let n = firstLine.number; n <= last; n++) {
             decorations.push(
               Decoration.line({ class: 'cm-lp-quote' }).range(doc.line(n).from),
             );

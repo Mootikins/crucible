@@ -167,6 +167,136 @@
   text-decoration: underline;
 }
 
+/* ===== Obsidian-style callouts =====
+   Markup from lib/callouts.ts (reading mode / chat / hover previews); the
+   .cm-lp-callout-* classes style the same variants inside the live-preview
+   editor. --callout-rgb values are mirrored in CALLOUT_RGB (callouts.ts) —
+   keep in sync. Icons are lucide outlines as alpha masks so they take the
+   variant color via background-color. */
+.callout {
+  --callout-rgb: 96, 165, 250;
+  --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>');
+  border-left: 3px solid rgb(var(--callout-rgb));
+  background: rgba(var(--callout-rgb), 0.08);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin: 8px 0;
+}
+.callout .callout-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: rgb(var(--callout-rgb));
+  font-weight: 600;
+  font-size: 0.95em;
+}
+.callout .callout-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  background-color: rgb(var(--callout-rgb));
+  -webkit-mask: var(--callout-icon) no-repeat center / contain;
+  mask: var(--callout-icon) no-repeat center / contain;
+}
+.callout > :not(.callout-title) {
+  margin-top: 6px;
+  margin-bottom: 0;
+}
+details.callout > summary.callout-title {
+  cursor: pointer;
+  list-style: none;
+}
+details.callout > summary.callout-title::-webkit-details-marker {
+  display: none;
+}
+details.callout > summary.callout-title::after {
+  content: '›';
+  margin-left: auto;
+  color: rgba(var(--callout-rgb), 0.7);
+  transform: rotate(90deg);
+  transition: transform 150ms ease;
+}
+details.callout[open] > summary.callout-title::after {
+  transform: rotate(-90deg);
+}
+
+/* Default accent for live-preview lines — must precede the variant rules
+   below so their --callout-rgb overrides win in source order. */
+.cm-lp-callout {
+  --callout-rgb: 96, 165, 250;
+}
+
+.callout[data-callout='abstract'],
+.cm-lp-callout-abstract {
+  --callout-rgb: 45, 212, 191;
+  --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>');
+}
+.callout[data-callout='info'],
+.cm-lp-callout-info {
+  --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>');
+}
+.callout[data-callout='todo'],
+.cm-lp-callout-todo {
+  --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>');
+}
+.callout[data-callout='tip'],
+.cm-lp-callout-tip {
+  --callout-rgb: 45, 212, 191;
+  --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>');
+}
+.callout[data-callout='success'],
+.cm-lp-callout-success {
+  --callout-rgb: 123, 196, 127;
+  --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>');
+}
+.callout[data-callout='question'],
+.cm-lp-callout-question {
+  --callout-rgb: 212, 167, 44;
+  --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>');
+}
+.callout[data-callout='warning'],
+.cm-lp-callout-warning {
+  --callout-rgb: 237, 137, 54;
+  --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>');
+}
+.callout[data-callout='failure'],
+.cm-lp-callout-failure {
+  --callout-rgb: 239, 68, 68;
+  --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>');
+}
+.callout[data-callout='danger'],
+.cm-lp-callout-danger {
+  --callout-rgb: 239, 68, 68;
+  --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>');
+}
+.callout[data-callout='bug'],
+.cm-lp-callout-bug {
+  --callout-rgb: 239, 68, 68;
+  --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/></svg>');
+}
+.callout[data-callout='example'],
+.cm-lp-callout-example {
+  --callout-rgb: 167, 139, 218;
+  --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>');
+}
+.callout[data-callout='quote'],
+.cm-lp-callout-quote {
+  --callout-rgb: 152, 147, 158;
+  --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6c0 2-1 3-3 4"/><path d="M20 11h-4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6c0 2-1 3-3 4"/></svg>');
+}
+
+/* Live-preview callout lines (classes from live-preview.ts). note/info/todo
+   inherit the default --callout-rgb declared above the variant rules. */
+.cm-lp-callout {
+  border-left: 3px solid rgb(var(--callout-rgb));
+  background: rgba(var(--callout-rgb), 0.07);
+  padding-left: 8px;
+}
+.cm-lp-callout-title {
+  color: rgb(var(--callout-rgb));
+  font-weight: 600;
+}
+
 /* Reduced motion support for accessibility */
 @media (prefers-reduced-motion: reduce) {
   *,

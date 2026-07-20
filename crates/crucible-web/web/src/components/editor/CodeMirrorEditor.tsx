@@ -12,6 +12,7 @@ import { EditorState, StateEffect, Extension, Annotation } from '@codemirror/sta
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+import { languages as codeLanguages } from '@codemirror/language-data';
 import { yamlFrontmatter } from '@codemirror/lang-yaml';
 import { javascript } from '@codemirror/lang-javascript';
 import { rust } from '@codemirror/lang-rust';
@@ -31,8 +32,12 @@ export const getLanguageExtension = (path: string): LanguageSupport | null => {
       // GFM base (strikethrough, tables, task lists) — the commonmark
       // default has no Strikethrough node for live preview to style.
       // yamlFrontmatter parses a leading `---` block as real YAML instead
-      // of letting it misparse as headings/hr.
-      return yamlFrontmatter({ content: markdown({ base: markdownLanguage }) });
+      // of letting it misparse as headings/hr. codeLanguages nests real
+      // grammars inside ```lang fences so fenced code highlights (grammars
+      // lazy-load per language on first use).
+      return yamlFrontmatter({
+        content: markdown({ base: markdownLanguage, codeLanguages }),
+      });
     case 'js':
     case 'mjs':
     case 'cjs':
