@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-07-20
+
+### Changed
+- Callouts now render as full admonition blocks (icon, colored title row, tinted body) inside the live-preview editor — matching reading mode and the way tables already render — instead of only tinting the raw source lines. Foldable `-`/`+` callouts render as collapsible `<details>` (clicking the title toggles the fold without dropping into the source); clicking a callout body, or moving the cursor in (including vim `j`/`k`), reveals its raw markdown for editing.
+
 ## [0.11.2] - 2026-07-20
 
 ### Fixed
