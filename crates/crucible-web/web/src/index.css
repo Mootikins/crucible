@@ -318,6 +318,44 @@ details.callout[open] > summary.callout-title::after {
   letter-spacing: inherit !important;
 }
 
+/* Reading-view code blocks: a copy button floats top-right, revealed on
+   hover/focus (and always visible on touch, which has no hover). Markup from
+   lib/markdown.ts renderMarkdownDocAsync; click handled in MarkdownPreview. */
+.md-codeblock {
+  position: relative;
+}
+.md-codeblock .md-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--color-shell-ink, #e7e4df);
+  background: color-mix(in srgb, var(--color-surface-elevated, #26232c) 90%, transparent);
+  border: 1px solid var(--color-hairline, #322f38);
+  border-radius: 5px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+.md-codeblock:hover .md-copy,
+.md-codeblock .md-copy:focus-visible {
+  opacity: 1;
+}
+.md-codeblock .md-copy:hover {
+  background: var(--color-surface-elevated, #26232c);
+}
+.md-codeblock .md-copy.is-copied {
+  opacity: 1;
+  color: var(--color-primary, #e0653a);
+}
+@media (hover: none) {
+  .md-codeblock .md-copy {
+    opacity: 1;
+  }
+}
+
 /* Reduced motion support for accessibility */
 @media (prefers-reduced-motion: reduce) {
   *,

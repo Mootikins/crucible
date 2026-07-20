@@ -46,6 +46,7 @@ export function renderPlainWithWikilinks(content: string): string {
 const CODE_BLOCK_PATTERN = /<pre><code(?: class="language-([^"]+)")?>([\s\S]*?)<\/code><\/pre>/g;
 
 let markdownRenderer: MarkdownIt | null = null;
+let docRenderer: MarkdownIt | null = null;
 
 function escapeHtml(value: string): string {
   return value
@@ -64,7 +65,9 @@ function decodeHtml(value: string): string {
 
 function sanitizeHtml(value: string): string {
   const sanitizeOptions = {
-    ADD_ATTR: ['data-note', 'style'],
+    // `align` keeps `<p align="center">` (README demo blocks); `data-copy`
+    // marks code-block copy buttons for the reading-view click delegate.
+    ADD_ATTR: ['data-note', 'data-copy', 'style', 'align'],
   };
 
   const directSanitize = (DOMPurify as { sanitize?: (html: string, options?: unknown) => string })
@@ -142,7 +145,22 @@ async function getShikiHighlighter() {
   return initializeHighlighter();
 }
 
-async function highlightCodeBlocks(renderedHtml: string): Promise<string> {
+/** Wrap a rendered code block so the reading view can float a copy button
+ * over it. The button carries `data-copy`; the click delegate reads the
+ * sibling `<pre>`'s text. Kept as markup (not a component) because the whole
+ * render is injected via innerHTML. */
+function wrapWithCopyButton(pre: string): string {
+  return (
+    `<div class="md-codeblock">` +
+    `<button class="md-copy" data-copy type="button" aria-label="Copy code">Copy</button>` +
+    `${pre}</div>`
+  );
+}
+
+async function highlightCodeBlocks(
+  renderedHtml: string,
+  opts: { copyButton?: boolean } = {},
+): Promise<string> {
   const highlighter = await getShikiHighlighter();
   const matches = [...renderedHtml.matchAll(CODE_BLOCK_PATTERN)];
 
@@ -161,14 +179,13 @@ async function highlightCodeBlocks(renderedHtml: string): Promise<string> {
 
     result += renderedHtml.slice(lastIndex, index);
 
+    let block: string;
     try {
-      result += highlighter.codeToHtml(source, {
-        lang: language,
-        theme: SHIKI_THEME,
-      });
+      block = highlighter.codeToHtml(source, { lang: language, theme: SHIKI_THEME });
     } catch {
-      result += fullMatch;
+      block = fullMatch;
     }
+    result += opts.copyButton ? wrapWithCopyButton(block) : block;
 
     lastIndex = index + fullMatch.length;
   }
@@ -177,10 +194,17 @@ async function highlightCodeBlocks(renderedHtml: string): Promise<string> {
   return result;
 }
 
-export function createMarkdownRenderer(): MarkdownIt {
+/**
+ * `allowHtml` passes raw HTML blocks/inline through markdown-it (still
+ * DOMPurify-sanitized downstream). Off for chat/hover (LLM/user text should
+ * not inject markup); on for the document Reading view, where authored docs
+ * like a README legitimately embed HTML (e.g. a centered `<p align="center">`
+ * demo).
+ */
+export function createMarkdownRenderer(allowHtml = false): MarkdownIt {
   const renderer = new MarkdownIt({
     breaks: true,
-    html: false,
+    html: allowHtml,
     linkify: true,
     highlight: (code, lang) => {
       const language = lang || 'text';
@@ -202,6 +226,14 @@ function getRenderer(): MarkdownIt {
   return markdownRenderer;
 }
 
+function getDocRenderer(): MarkdownIt {
+  if (!docRenderer) {
+    docRenderer = createMarkdownRenderer(true);
+  }
+
+  return docRenderer;
+}
+
 export function renderMarkdown(content: string): string {
   const renderedHtml = getRenderer().render(content);
   return sanitizeHtml(renderedHtml);
@@ -210,6 +242,17 @@ export function renderMarkdown(content: string): string {
 export async function renderMarkdownAsync(content: string): Promise<string> {
   const renderedHtml = getRenderer().render(content);
   const highlightedHtml = await highlightCodeBlocks(renderedHtml);
+  return sanitizeHtml(highlightedHtml);
+}
+
+/**
+ * Reading-view render: like {@link renderMarkdownAsync} but permits embedded
+ * HTML (sanitized) and floats a copy button over each code block. For rendering
+ * whole documents (notes, project READMEs) rather than chat turns.
+ */
+export async function renderMarkdownDocAsync(content: string): Promise<string> {
+  const renderedHtml = getDocRenderer().render(content);
+  const highlightedHtml = await highlightCodeBlocks(renderedHtml, { copyButton: true });
   return sanitizeHtml(highlightedHtml);
 }
 

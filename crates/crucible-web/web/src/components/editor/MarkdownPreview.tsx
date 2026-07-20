@@ -5,20 +5,41 @@
  * app-wide hover cards and click-to-open for free.
  */
 import { Component, createResource } from 'solid-js';
-import { renderMarkdownAsync } from '@/lib/markdown';
+import { renderMarkdownDocAsync } from '@/lib/markdown';
 import { openNoteInEditor, stripFrontmatter } from '@/lib/note-actions';
 import { statusBarStore } from '@/stores/statusBarStore';
 
 export const MarkdownPreview: Component<{ content: string; maxWidth?: number }> = (props) => {
   const [html] = createResource(
     () => props.content,
-    (content) => renderMarkdownAsync(stripFrontmatter(content)),
+    (content) => renderMarkdownDocAsync(stripFrontmatter(content)),
   );
 
   // The rendered HTML is not a component tree — delegate clicks the same way
-  // chat messages do.
+  // chat messages do: wikilink anchors open notes, code-block copy buttons
+  // copy the adjacent <pre>.
   const handleClick = (event: MouseEvent) => {
-    const anchor = (event.target as Element | null)?.closest?.('[data-note]');
+    const target = event.target as Element | null;
+
+    const copyBtn = target?.closest?.('[data-copy]');
+    if (copyBtn) {
+      event.preventDefault();
+      const pre = copyBtn.closest('.md-codeblock')?.querySelector('pre');
+      const code = pre?.textContent ?? '';
+      if (code) {
+        void navigator.clipboard?.writeText(code);
+        const prev = copyBtn.textContent;
+        copyBtn.textContent = 'Copied';
+        copyBtn.classList.add('is-copied');
+        setTimeout(() => {
+          copyBtn.textContent = prev;
+          copyBtn.classList.remove('is-copied');
+        }, 1200);
+      }
+      return;
+    }
+
+    const anchor = target?.closest?.('[data-note]');
     if (!anchor) return;
     event.preventDefault();
     const note = anchor.getAttribute('data-note');

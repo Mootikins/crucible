@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { renderMarkdown, renderPlainWithWikilinks } from '../markdown';
+import {
+  renderMarkdown,
+  renderMarkdownDocAsync,
+  renderPlainWithWikilinks,
+} from '../markdown';
 
 describe('renderPlainWithWikilinks (user bubbles)', () => {
   it('turns a user-authored [[link]] into a .wikilink anchor', () => {
@@ -49,5 +53,41 @@ describe('markdown renderer', () => {
   it('sanitizes unsafe script tags', () => {
     const html = renderMarkdown('<script>alert(1)</script>');
     expect(html).not.toContain('<script>');
+  });
+
+  it('does NOT render raw HTML in the chat/hover path', () => {
+    // Chat and hover keep html:false — a centered block stays inert text.
+    const html = renderMarkdown('<p align="center">hi</p>');
+    expect(html).not.toContain('<p align="center">');
+  });
+});
+
+describe('renderMarkdownDocAsync (reading view)', () => {
+  it('renders embedded HTML like a centered demo block (sanitized)', async () => {
+    const html = await renderMarkdownDocAsync(
+      '<p align="center"><img src="assets/demo.gif" alt="demo" width="720" /></p>',
+    );
+    expect(html).toContain('align="center"');
+    expect(html).toContain('<img');
+    expect(html).toContain('alt="demo"');
+  });
+
+  it('still strips scripts even with raw HTML enabled', async () => {
+    const html = await renderMarkdownDocAsync('<p>ok</p><script>alert(1)</script>');
+    expect(html).toContain('<p>ok</p>');
+    expect(html).not.toContain('<script>');
+  });
+
+  it('wraps code blocks with a copy button', async () => {
+    const html = await renderMarkdownDocAsync('```sh\nnpm install\n```');
+    expect(html).toContain('md-codeblock');
+    expect(html).toContain('data-copy');
+    expect(html).toContain('<pre');
+  });
+
+  it('renders markdown image syntax as an <img>', async () => {
+    const html = await renderMarkdownDocAsync('![badge](https://example.com/b.svg)');
+    expect(html).toContain('<img');
+    expect(html).toContain('src="https://example.com/b.svg"');
   });
 });

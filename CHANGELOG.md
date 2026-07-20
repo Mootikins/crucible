@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Reading view (web editor) now renders **embedded HTML** in documents — DOMPurify-sanitized — so a README's centered `<p align="center">` demo block and similar markup display instead of showing as raw text. Chat and hover previews keep HTML disabled.
+- **Copy button** on code blocks in the reading view (hover-revealed, "Copied" confirmation).
+
 ### Fixed
 - Web file-tree: opening a file from a **project** root (the repo/code dir) — README, source, configs, anything outside an attached kiln — no longer 404s. The `/api/kiln/file` read/write endpoints now also resolve files within a registered project, reusing the daemon's project allowlist alongside kiln containment.
 - Web file-tree root selector no longer lists the same kiln twice when the daemon reports it under both a bare name and an absolute path (name-vs-path aliasing is now resolved and deduped).
