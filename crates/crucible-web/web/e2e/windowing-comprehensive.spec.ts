@@ -54,46 +54,35 @@ test.describe('Comprehensive windowing behavior', () => {
     await expect(page.locator('[data-tab-id^="tab-chat-"]')).toBeVisible({ timeout: 5000 });
   });
 
-  // The beforeEach clicks a session, which opens the chat tab in the RIGHT
-  // pane (see src/lib/session-actions.ts) — the layout root is ALREADY a
-  // horizontal split (session column | chat pane) by the time these tests
-  // start, so the old `layout.type === 'pane'` guard is always false now.
-  // These tests split the LEFT pane (root.first, the original session/file
-  // pane) instead, and assert against the resulting nested shape.
+  // Sessions dock in the right EDGE PANEL (session-actions), so the center
+  // tiling root stays a single pane after the beforeEach's session click —
+  // these tests build their splits explicitly from that pane.
 
   test('creates a vertical split with row splitter semantics', async ({ page }) => {
     await page.evaluate(() => {
       const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
       const windowActions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
       const root = windowStore.layout;
-      if (root.type === 'split' && root.first.type === 'pane') {
-        windowActions.splitPane(root.first.id, 'vertical');
+      if (root.type === 'pane') {
+        windowActions.splitPane(root.id, 'vertical');
       }
     });
 
-    // The root's own splitter (session column | chat pane) is a horizontal
-    // split, i.e. cursor-col-resize — filter by class instead of `.first()`
-    // to find the NEW row splitter produced by the vertical split above.
     const rowSplitter = page.locator('[data-split-id].cursor-row-resize');
     await expect(rowSplitter).toBeVisible({ timeout: 3000 });
 
     const state = await page.evaluate(() => {
       const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
       const root = windowStore.layout;
-      const first = root.type === 'split' ? root.first : undefined;
       return {
         rootType: root.type,
         rootDirection: root.direction,
-        firstType: first?.type,
-        firstDirection: first?.type === 'split' ? first.direction : undefined,
-        firstSplitRatio: first?.type === 'split' ? first.splitRatio : undefined,
+        rootSplitRatio: root.type === 'split' ? root.splitRatio : undefined,
       };
     });
     expect(state.rootType).toBe('split');
-    expect(state.rootDirection).toBe('horizontal');
-    expect(state.firstType).toBe('split');
-    expect(state.firstDirection).toBe('vertical');
-    expect(state.firstSplitRatio).toBe(0.5);
+    expect(state.rootDirection).toBe('vertical');
+    expect(state.rootSplitRatio).toBe(0.5);
   });
 
   test('supports nested splits by splitting a child pane after initial split', async ({ page }) => {
@@ -101,19 +90,19 @@ test.describe('Comprehensive windowing behavior', () => {
       const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
       const windowActions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
 
-      // The "initial split" is the session column | chat pane split already
-      // produced by the beforeEach. Splitting the left (session) pane again
-      // nests a second split under it.
       const root = windowStore.layout;
-      if (root.type !== 'split' || root.first.type !== 'pane') return false;
-      windowActions.splitPane(root.first.id, 'vertical');
+      if (root.type !== 'pane') return false;
+      windowActions.splitPane(root.id, 'vertical');
 
       const after = windowStore.layout;
-      return after.type === 'split' && after.first?.type === 'split';
+      if (after.type !== 'split' || after.first?.type !== 'pane') return false;
+      windowActions.splitPane(after.first.id, 'horizontal');
+
+      const final = windowStore.layout;
+      return final.type === 'split' && final.first?.type === 'split';
     });
 
-    // One splitter already exists (the root session|chat divider); the
-    // nested split above adds a second.
+    // The initial vertical split plus the nested horizontal one.
     await expect(page.locator('[data-split-id]')).toHaveCount(2, { timeout: 3000 });
     expect(nested).toBe(true);
 

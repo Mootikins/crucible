@@ -49,9 +49,10 @@ async function getCenterOf(page: Page, locator: ReturnType<Page['locator']>) {
 }
 
 async function getCenterPaneDropPoint(page: Page): Promise<{ x: number; y: number }> {
-  const chatTab = page.locator('[data-tab-id^="tab-chat-"]').first();
-  await chatTab.waitFor({ state: 'visible', timeout: 3000 });
-  const box = await chatTab.boundingBox();
+  // Anchor on a CENTER tab — sessions dock in the right edge panel now.
+  const centerTab = page.locator('[data-tab-id]:not([data-testid^="edge-tab-"])').first();
+  await centerTab.waitFor({ state: 'visible', timeout: 3000 });
+  const box = await centerTab.boundingBox();
   expect(box).toBeTruthy();
   return { x: box!.x + box!.width / 2, y: box!.y + 100 };
 }

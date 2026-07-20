@@ -53,9 +53,11 @@ async function getCenterOf(page: Page, locator: ReturnType<Page['locator']>) {
 }
 
 async function getCenterPaneDropPoint(page: Page): Promise<{ x: number; y: number }> {
-  const chatTab = page.locator('[data-tab-id^="tab-chat-"]').first();
-  await chatTab.waitFor({ state: 'visible', timeout: 3000 });
-  const box = await chatTab.boundingBox();
+  // Anchor on a CENTER tab — sessions dock in the right edge panel now, so
+  // the chat tab no longer marks the center pane.
+  const centerTab = page.locator('[data-tab-id]:not([data-testid^="edge-tab-"])').first();
+  await centerTab.waitFor({ state: 'visible', timeout: 3000 });
+  const box = await centerTab.boundingBox();
   expect(box).toBeTruthy();
   return { x: box!.x + box!.width / 2, y: box!.y + box!.height + 40 };
 }
@@ -93,15 +95,16 @@ test.describe('Cross-zone tab drag and drop', () => {
   });
 
   test('drag center tab to left edge panel', async ({ page }) => {
-    const centerTab = page.locator('[data-tab-id^="tab-chat-"]').first();
+    // Sessions live in the right edge panel, so drag the center Home tab.
+    const centerTab = page.locator('[data-tab-id="tab-home"]:not([data-testid^="edge-tab-"])');
     const from = await getCenterOf(page, centerTab);
     const to = await getCenter(page, '[data-testid="edge-tabbar-left"]');
 
     await pointerDrag(page, from, to, 30);
 
-    const edgeTab = page.locator('[data-testid^="edge-tab-left-tab-chat-"]');
+    const edgeTab = page.locator('[data-testid="edge-tab-left-tab-home"]');
     await expect(edgeTab).toBeVisible({ timeout: 2000 });
-    const tabInCenter = page.locator('[data-tab-id^="tab-chat-"]:not([data-testid^="edge-tab-"])');
+    const tabInCenter = page.locator('[data-tab-id="tab-home"]:not([data-testid^="edge-tab-"])');
     await expect(tabInCenter).not.toBeVisible({ timeout: 2000 });
   });
 
