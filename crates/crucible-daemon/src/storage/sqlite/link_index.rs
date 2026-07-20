@@ -572,13 +572,20 @@ mod tests {
         write_links(
             &conn,
             "a.md",
-            &[occ("b", 10), occ("missing", 30), occ("a", 50), occ("b.md", 70)],
+            &[
+                occ("b", 10),
+                occ("missing", 30),
+                occ("a", 50),
+                occ("b.md", 70),
+            ],
             &[],
         )
         .unwrap();
 
         let mut edges = graph_links(&conn).unwrap();
-        edges.sort_by(|x, y| (x.source.clone(), x.target.clone()).cmp(&(y.source.clone(), y.target.clone())));
+        edges.sort_by(|x, y| {
+            (x.source.clone(), x.target.clone()).cmp(&(y.source.clone(), y.target.clone()))
+        });
 
         assert_eq!(edges.len(), 2, "self-link excluded, duplicate a→b deduped");
 
@@ -642,7 +649,10 @@ mod tests {
             "#,
         )
         .unwrap();
-        assert!(ensure_note_links_v2(&conn).unwrap(), "notes + no index → relink");
+        assert!(
+            ensure_note_links_v2(&conn).unwrap(),
+            "notes + no index → relink"
+        );
     }
 
     /// Fresh empty DB (new kiln): nothing to relink — the pipeline will

@@ -78,8 +78,7 @@ async fn kiln_graph_returns_nodes_and_deduped_edges() {
     );
 
     // Every resolved target must be joinable against a node path.
-    let node_set: std::collections::HashSet<&str> =
-        note_paths.iter().copied().collect();
+    let node_set: std::collections::HashSet<&str> = note_paths.iter().copied().collect();
     for (_, target, resolved) in &edges {
         if *resolved {
             assert!(
