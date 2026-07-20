@@ -26,6 +26,7 @@ import {
   WidgetType,
 } from '@codemirror/view';
 import {
+  Annotation,
   EditorState,
   StateField,
   type Extension,
@@ -35,6 +36,7 @@ import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 import { renderMarkdown, wikilinkRe } from '@/lib/markdown';
 import { resolveCalloutKind } from '@/lib/callouts';
+import { formatTableLines } from '@/lib/table-format';
 
 const HIDE = Decoration.replace({});
 
@@ -143,6 +145,25 @@ function buildDecorations(view: EditorView): DecorationSet {
             );
           }
           return;
+        }
+
+        if (name === 'Table') {
+          // Revealed table source (cursor inside): monospace lines so pipe
+          // alignment is real, and NO inline styling/mark-hiding — hidden
+          // syntax chars would make visual columns lie about source columns.
+          // Rendered tables are tableField's block widget; these decorations
+          // are inert then.
+          if (selectionTouches(state, nodeRef.from, nodeRef.to)) {
+            const first = doc.lineAt(nodeRef.from).number;
+            const endLine = doc.lineAt(nodeRef.to);
+            const last = endLine.from === nodeRef.to ? endLine.number - 1 : endLine.number;
+            for (let n = first; n <= last; n++) {
+              decorations.push(
+                Decoration.line({ class: 'cm-lp-tablesrc' }).range(doc.line(n).from),
+              );
+            }
+          }
+          return false;
         }
 
         if (name === 'Blockquote') {
@@ -271,6 +292,62 @@ function buildTableDecorations(state: EditorState): DecorationSet {
   return Decoration.set(decorations, true);
 }
 
+/** Marks our own table-formatting transactions so the listener ignores them. */
+const tableFormatAnno = Annotation.define<boolean>();
+
+function tableRangeAt(
+  state: EditorState,
+  pos: number,
+): { from: number; to: number } | null {
+  for (const side of [-1, 1] as const) {
+    let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, side);
+    while (node) {
+      if (node.name === 'Table') return { from: node.from, to: node.to };
+      node = node.parent;
+    }
+  }
+  return null;
+}
+
+/**
+ * Auto-align table source whenever the cursor enters or leaves a table:
+ * cells are padded so pipes line up (real columns, since revealed table
+ * lines render monospace). Formatting on entry gives an aligned table to
+ * edit; formatting on exit tidies whatever the edit un-aligned — so the
+ * file stays pretty without ever reflowing under the cursor mid-word.
+ */
+const tableAutoFormat = EditorView.updateListener.of((update) => {
+  if (update.docChanged || !update.selectionSet) return;
+  if (update.transactions.some((tr) => tr.annotation(tableFormatAnno))) return;
+  const prev = tableRangeAt(update.startState, update.startState.selection.main.head);
+  const cur = tableRangeAt(update.state, update.state.selection.main.head);
+  if (prev && cur && prev.from === cur.from) return; // moving within one table
+  const target = cur ?? prev;
+  if (!target) return;
+
+  const doc = update.state.doc;
+  const firstLine = doc.lineAt(target.from);
+  const endLine = doc.lineAt(target.to);
+  const lastLine = endLine.from === target.to ? doc.line(endLine.number - 1) : endLine;
+  const lines: string[] = [];
+  for (let n = firstLine.number; n <= lastLine.number; n++) {
+    lines.push(doc.line(n).text);
+  }
+  const formatted = formatTableLines(lines);
+  if (!formatted || formatted.join('\n') === lines.join('\n')) return;
+
+  const view = update.view;
+  // Dispatching inside an update listener is illegal — defer a tick, and
+  // bail if anything else changed the doc in between.
+  queueMicrotask(() => {
+    if (view.state.doc !== doc) return;
+    view.dispatch({
+      changes: { from: firstLine.from, to: lastLine.to, insert: formatted.join('\n') },
+      annotations: tableFormatAnno.of(true),
+    });
+  });
+});
+
 /**
  * Vertical motions (vim j/k, arrows — anything built on moveVertically) skip
  * block widgets entirely: from the line above a rendered table the cursor
@@ -395,6 +472,16 @@ const livePreviewTheme = EditorView.baseTheme({
     fontSize: '0.85em',
     background: 'rgba(255, 255, 255, 0.03)',
   },
+  // Revealed table source: monospace so the auto-formatter's pipe alignment
+  // holds up visually, and NO wrapping — a wrapped aligned table is worse
+  // than an unaligned one. Wide tables overflow horizontally; the scroller
+  // follows the cursor.
+  '.cm-lp-tablesrc': {
+    fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+    fontSize: '0.85em',
+    background: 'rgba(255, 255, 255, 0.03)',
+    whiteSpace: 'pre',
+  },
   '.cm-lp-table': { cursor: 'text', padding: '2px 0' },
   '.cm-lp-table table': {
     borderCollapse: 'collapse',
@@ -432,6 +519,7 @@ export function livePreview(opts?: { maxLineWidth?: number }): Extension {
     livePreviewPlugin,
     tableField,
     tableCursorEntry,
+    tableAutoFormat,
     livePreviewTheme,
   ];
 }

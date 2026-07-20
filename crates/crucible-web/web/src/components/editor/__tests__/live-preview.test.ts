@@ -183,6 +183,46 @@ describe('live preview: styled everywhere except the construct at the cursor', (
     });
   });
 
+  describe('table auto-format on cursor entry/exit', () => {
+    const flush = () => new Promise((r) => setTimeout(r, 0));
+    const RAGGED = ['Before.', '', '| a | long header |', '|---|---|', '| bbbb | c |', '', 'After.'].join('\n');
+
+    it('aligns an unaligned table when the cursor enters it', async () => {
+      const view = track(makeView(RAGGED));
+      cursorAt(view, 0);
+      await flush();
+      cursorAt(view, RAGGED.indexOf('bbbb'));
+      await flush();
+      const text = view.state.doc.toString();
+      expect(text).toContain('| a    | long header |');
+      expect(text).toContain('| bbbb | c           |');
+    });
+
+    it('re-aligns after edits when the cursor leaves', async () => {
+      const view = track(makeView(RAGGED));
+      cursorAt(view, RAGGED.indexOf('bbbb'));
+      await flush();
+      // Widen a cell: type into "c" making it long, un-aligning the row.
+      const cPos = view.state.doc.toString().indexOf('| c ') + 3;
+      view.dispatch({ changes: { from: cPos, insert: 'wide-cell' }, selection: { anchor: cPos } });
+      await flush();
+      // Leave the table.
+      cursorAt(view, 0);
+      await flush();
+      const text = view.state.doc.toString();
+      const rows = text.split('\n').filter((l) => l.startsWith('|'));
+      expect(new Set(rows.map((l) => l.length)).size).toBe(1);
+      expect(text).toContain('cwide-cell');
+    });
+
+    it('leaves prose untouched when no table is involved', async () => {
+      const view = track(makeView());
+      cursorAt(view, 3);
+      await flush();
+      expect(view.state.doc.toString()).toBe(DOC);
+    });
+  });
+
   it('wraps long prose lines (live preview only)', () => {
     const view = track(makeView());
     expect(view.contentDOM.classList.contains('cm-lineWrapping')).toBe(true);
