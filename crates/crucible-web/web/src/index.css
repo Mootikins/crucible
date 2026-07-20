@@ -297,6 +297,19 @@ details.callout[open] > summary.callout-title::after {
   font-weight: 600;
 }
 
+/* Revealed table source (live preview): kill every metric-changing style —
+   oneDark bolds table-header tokens, and a bold (or resized) glyph run
+   makes the header's pipes drift out of the mono column grid the formatter
+   aligned. !important so it wins over CodeMirror's injected styles. */
+.cm-lp-tablesrc,
+.cm-lp-tablesrc * {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace !important;
+  font-weight: normal !important;
+  font-style: normal !important;
+  font-size: inherit !important;
+  letter-spacing: normal !important;
+}
+
 /* Reduced motion support for accessibility */
 @media (prefers-reduced-motion: reduce) {
   *,

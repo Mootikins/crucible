@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EditorView } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import {
   wikilinkNavigation,
   wikilinkTargetAt,
@@ -54,6 +55,38 @@ describe('wikilink decorations', () => {
     expect(view.dom.querySelector('.cm-wikilink')).toBeNull();
     view.dispatch({ changes: { from: 0, insert: '[[New Note]] ' } });
     expect(view.dom.querySelector('.cm-wikilink')?.getAttribute('data-note')).toBe('New Note');
+  });
+});
+
+describe('code contexts get no wikilink treatment (needs markdown grammar)', () => {
+  const TOML_DOC = 'Prose [[Real]] link.\n\n```toml\n[[mcp.upstreams]]\n```\n';
+
+  function makeMarkdownView(doc: string): EditorView {
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    return new EditorView({
+      state: EditorState.create({
+        doc,
+        extensions: [markdown({ base: markdownLanguage }), wikilinkNavigation(() => {})],
+      }),
+      parent,
+    });
+  }
+
+  it('no pill on TOML [[table]] headers inside fences; prose links still pill', () => {
+    const view = track(makeMarkdownView(TOML_DOC));
+    const pills = [...view.dom.querySelectorAll('.cm-wikilink')].map((el) =>
+      el.getAttribute('data-note'),
+    );
+    expect(pills).toEqual(['Real']);
+  });
+
+  it('wikilinkTargetAt returns null inside a fence (Mod-Enter no-op)', () => {
+    const view = track(makeMarkdownView(TOML_DOC));
+    const inFence = TOML_DOC.indexOf('mcp.upstreams');
+    expect(wikilinkTargetAt(view.state, inFence)).toBeNull();
+    const inProse = TOML_DOC.indexOf('Real');
+    expect(wikilinkTargetAt(view.state, inProse)).toBe('Real');
   });
 });
 

@@ -18,15 +18,24 @@ import {
 } from '@codemirror/view';
 import { Prec, type EditorState, type Extension } from '@codemirror/state';
 import { parseWikilinkInner, wikilinkRe } from '@/lib/markdown';
+import { inCodeContext } from './md-context';
 
 const wikilinkDecorator = new MatchDecorator({
   regexp: wikilinkRe(),
-  decoration: (match) => {
+  // `decorate` (not `decoration`) so code contexts can be SKIPPED — TOML
+  // `[[mcp.upstreams]]` array-of-tables headers in fenced blocks are code,
+  // not knowledge links.
+  decorate: (add, from, to, match, view) => {
+    if (inCodeContext(view.state, from)) return;
     const { target } = parseWikilinkInner(match[1]);
-    return Decoration.mark({
-      class: 'cm-wikilink',
-      attributes: { 'data-note': target },
-    });
+    add(
+      from,
+      to,
+      Decoration.mark({
+        class: 'cm-wikilink',
+        attributes: { 'data-note': target },
+      }),
+    );
   },
 });
 
@@ -69,6 +78,7 @@ export function wikilinkTargetAt(state: EditorState, pos: number): string | null
     const from = line.from + (match.index ?? 0);
     const to = from + match[0].length;
     if (pos >= from && pos <= to) {
+      if (inCodeContext(state, from)) return null;
       return parseWikilinkInner(match[1]).target;
     }
   }

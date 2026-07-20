@@ -223,6 +223,35 @@ describe('live preview: styled everywhere except the construct at the cursor', (
     });
   });
 
+  describe('wikilink treatment skips code contexts', () => {
+    const TOML_DOC = [
+      'See [[Real Note]] here.',
+      '',
+      '```toml',
+      '[[mcp.upstreams]]',
+      'name = "github"',
+      '```',
+      '',
+      'Inline `[[not.a.link]]` too.',
+    ].join('\n');
+
+    it('does not hide TOML [[table]] brackets inside fenced code', () => {
+      const view = track(makeView(TOML_DOC));
+      cursorAt(view, 0);
+      // The fence content keeps its raw double brackets…
+      expect(text(view)).toContain('[[mcp.upstreams]]');
+      // …while the prose wikilink still hides them.
+      expect(text(view)).toContain('Real Note');
+      expect(text(view)).not.toContain('[[Real Note]]');
+    });
+
+    it('does not hide brackets inside inline code', () => {
+      const view = track(makeView(TOML_DOC));
+      cursorAt(view, 0);
+      expect(text(view)).toContain('[[not.a.link]]');
+    });
+  });
+
   it('wraps long prose lines (live preview only)', () => {
     const view = track(makeView());
     expect(view.contentDOM.classList.contains('cm-lineWrapping')).toBe(true);

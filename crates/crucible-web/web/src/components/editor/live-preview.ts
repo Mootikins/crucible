@@ -37,6 +37,7 @@ import type { SyntaxNode } from '@lezer/common';
 import { renderMarkdown, wikilinkRe } from '@/lib/markdown';
 import { resolveCalloutKind } from '@/lib/callouts';
 import { formatTableLines } from '@/lib/table-format';
+import { inCodeOrTableContext } from './md-context';
 
 const HIDE = Decoration.replace({});
 
@@ -220,6 +221,8 @@ function buildDecorations(view: EditorView): DecorationSet {
 
     // Wikilinks are Crucible syntax, not lezer nodes: hide `[[`/`]]` (and
     // the `target|` half of aliased links) unless the cursor is inside.
+    // Skipped in code contexts (TOML `[[table]]` headers are code, not
+    // links) and in tables (revealed source must stay character-exact).
     const text = doc.sliceString(from, to);
     WIKILINK_RE.lastIndex = 0;
     let m: RegExpExecArray | null;
@@ -227,6 +230,7 @@ function buildDecorations(view: EditorView): DecorationSet {
       const start = from + m.index;
       const end = start + m[0].length;
       if (selectionTouches(state, start, end)) continue;
+      if (inCodeOrTableContext(state, start)) continue;
       const pipe = m[1].indexOf('|');
       if (pipe !== -1) {
         decorations.push(HIDE.range(start, start + 2 + pipe + 1));
