@@ -327,6 +327,11 @@ async fn test_agents_list_profiles_returns_list() {
             "Each profile should have a name: {:?}",
             profile
         );
+        assert!(
+            profile["available"].is_boolean(),
+            "Each profile should carry probed availability: {:?}",
+            profile
+        );
     }
 
     server.shutdown().await;

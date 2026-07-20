@@ -166,17 +166,27 @@ pub(crate) async fn handle_agents_list_profiles(
     let profiles = agent_manager.build_available_agents();
     let builtins = crate::acp::discovery::default_agent_profiles();
 
-    let mut entries: Vec<serde_json::Value> = profiles
-        .iter()
-        .map(|(name, profile)| {
+    // Probe availability concurrently: missing binaries fail the PATH lookup
+    // in ~1ms, installed ones are bounded by the 2s --version probe timeout.
+    let probes = profiles.iter().map(|(name, profile)| {
+        let name = name.clone();
+        let profile = profile.clone();
+        let is_builtin = builtins.contains_key(&name);
+        async move {
+            let available = match profile.command.as_deref() {
+                Some(cmd) => crate::acp::is_agent_available(cmd).await,
+                None => false,
+            };
             serde_json::json!({
                 "name": name,
                 "description": profile.description.clone().unwrap_or_default(),
                 "command": profile.command.clone().unwrap_or_default(),
-                "is_builtin": builtins.contains_key(name),
+                "is_builtin": is_builtin,
+                "available": available,
             })
-        })
-        .collect();
+        }
+    });
+    let mut entries: Vec<serde_json::Value> = futures::future::join_all(probes).await;
     entries.sort_by(|a, b| {
         a["name"]
             .as_str()
