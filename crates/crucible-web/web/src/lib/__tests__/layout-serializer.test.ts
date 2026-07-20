@@ -344,8 +344,13 @@ describe('layout-serializer', () => {
 
     const tabs = restored.tabGroups['group-1'].tabs;
     expect(tabs[0].icon).toBe(iconForContentType('sessions'));
-    expect(tabs[1].icon).toBe(iconForContentType('chat'));
     expect(tabs[0].icon).toBeTypeOf('function');
+    // The chat tab migrates from the center group to the right panel group
+    // on restore — icon must still rehydrate wherever it lands.
+    const chatTab = Object.values(restored.tabGroups)
+      .flatMap((g) => g.tabs)
+      .find((t) => t.id === 'tab-chat-x');
+    expect(chatTab?.icon).toBe(iconForContentType('chat'));
   });
 });
 
@@ -466,10 +471,91 @@ describe('legacy generic chat tabs are pruned on every restore', () => {
     floatingWindows: [],
   });
 
-  it('drops session-less chat tabs, keeps session-bound ones, fixes activeTabId', () => {
+  it('drops session-less chat tabs and fixes activeTabId', () => {
     const restored = deserializeLayout(v3() as never);
     const ids = restored.tabGroups['center'].tabs.map((t) => t.id);
-    expect(ids).toEqual(['tab-home', 'tab-chat-abc']);
+    // The session-bound tab is then MIGRATED to the right panel group
+    // (which here is 'center' itself for left/right/bottom — see the
+    // dedicated migration suite below for the real shape).
+    expect(ids).toContain('tab-home');
+    expect(ids).not.toContain('tab-chat');
     expect(restored.tabGroups['center'].activeTabId).toBe('tab-home');
+  });
+});
+
+describe('center chat tabs migrate to the right edge panel on restore', () => {
+  const v3Split = () => ({
+    version: 3 as const,
+    layout: {
+      id: 'root',
+      type: 'split' as const,
+      direction: 'horizontal' as const,
+      first: { id: 'p-editor', type: 'pane' as const, tabGroupId: 'g-editor' },
+      second: { id: 'p-chat', type: 'pane' as const, tabGroupId: 'g-chat' },
+    },
+    tabGroups: {
+      'g-editor': {
+        id: 'g-editor',
+        tabs: [{ id: 'tab-file-a', title: 'a.md', contentType: 'file' }],
+        activeTabId: 'tab-file-a',
+      },
+      // The center-split era chat pane: sessions used to open here.
+      'g-chat': {
+        id: 'g-chat',
+        tabs: [
+          { id: 'tab-chat-s1', title: 'One', contentType: 'chat', metadata: { sessionId: 's1' } },
+        ],
+        activeTabId: 'tab-chat-s1',
+      },
+      'g-right': { id: 'g-right', tabs: [], activeTabId: null },
+      'g-left': { id: 'g-left', tabs: [], activeTabId: null },
+      'g-bottom': { id: 'g-bottom', tabs: [], activeTabId: null },
+    },
+    edgePanels: {
+      left: { id: 'left-panel', tabGroupId: 'g-left', isCollapsed: false, width: 250 },
+      right: { id: 'right-panel', tabGroupId: 'g-right', isCollapsed: true, width: 250 },
+      bottom: { id: 'bottom-panel', tabGroupId: 'g-bottom', isCollapsed: true, height: 200 },
+    },
+    floatingWindows: [],
+  });
+
+  it('moves the chat tab right and collapses the emptied center pane', () => {
+    const restored = deserializeLayout(v3Split() as never);
+    // Chat tab landed in the right panel group and became its active tab.
+    expect(restored.tabGroups['g-right'].tabs.map((t) => t.id)).toEqual(['tab-chat-s1']);
+    expect(restored.tabGroups['g-right'].activeTabId).toBe('tab-chat-s1');
+    // The emptied chat pane collapsed: the layout is the editor pane alone.
+    expect(restored.layout.type).toBe('pane');
+    expect((restored.layout as { tabGroupId?: string }).tabGroupId).toBe('g-editor');
+    // The orphaned group is gone.
+    expect(restored.tabGroups['g-chat']).toBeUndefined();
+  });
+
+  it('leaves non-chat tabs in place and keeps mixed panes alive', () => {
+    const json = v3Split();
+    json.tabGroups['g-chat'].tabs.push({
+      id: 'tab-file-b',
+      title: 'b.md',
+      contentType: 'file',
+    } as never);
+    const restored = deserializeLayout(json as never);
+    expect(restored.layout.type).toBe('split');
+    expect(restored.tabGroups['g-chat'].tabs.map((t) => t.id)).toEqual(['tab-file-b']);
+    expect(restored.tabGroups['g-chat'].activeTabId).toBe('tab-file-b');
+    expect(restored.tabGroups['g-right'].tabs.map((t) => t.id)).toEqual(['tab-chat-s1']);
+  });
+
+  it('chat tabs already in the right panel group stay put', () => {
+    const json = v3Split();
+    json.tabGroups['g-right'].tabs = [
+      { id: 'tab-chat-s9', title: 'Nine', contentType: 'chat', metadata: { sessionId: 's9' } },
+    ] as never;
+    (json.tabGroups['g-right'] as { activeTabId: string | null }).activeTabId = 'tab-chat-s9';
+    const restored = deserializeLayout(json as never);
+    expect(restored.tabGroups['g-right'].tabs.map((t) => t.id)).toEqual([
+      'tab-chat-s9',
+      'tab-chat-s1',
+    ]);
+    expect(restored.tabGroups['g-right'].activeTabId).toBe('tab-chat-s9');
   });
 });

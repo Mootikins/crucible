@@ -217,6 +217,74 @@ export function deserializeLayout(json: SerializedLayout): {
     };
   }
 
+  // Chat tabs dock in the right edge panel (WS-220). Layouts persisted in
+  // the center-split era hold session chat tabs in center-tiling groups —
+  // restoring them boots with a stale second chat surface next to the
+  // editor. Migrate them into the right panel group and collapse any pane
+  // this empties out of the tree.
+  let layoutTree = layout.layout;
+  const rightGroupId = layout.edgePanels.right?.tabGroupId;
+  if (rightGroupId && tabGroups[rightGroupId]) {
+    const centerGroupIds = new Set<string>();
+    const collect = (n: LayoutNode): void => {
+      if (n.type === 'pane') {
+        if (n.tabGroupId) centerGroupIds.add(n.tabGroupId);
+      } else {
+        collect(n.first);
+        collect(n.second);
+      }
+    };
+    collect(layoutTree);
+
+    const right = tabGroups[rightGroupId];
+    const emptied = new Set<string>();
+    for (const gid of centerGroupIds) {
+      if (gid === rightGroupId) continue;
+      const g = tabGroups[gid];
+      if (!g) continue;
+      const moving = g.tabs.filter((t) => t.contentType === 'chat');
+      if (moving.length === 0) continue;
+      g.tabs = g.tabs.filter((t) => t.contentType !== 'chat');
+      if (g.activeTabId && !g.tabs.some((t) => t.id === g.activeTabId)) {
+        g.activeTabId = g.tabs[0]?.id ?? null;
+      }
+      right.tabs = [...right.tabs, ...moving];
+      if (!right.activeTabId) right.activeTabId = moving[0].id;
+      if (g.tabs.length === 0) emptied.add(gid);
+    }
+
+    if (emptied.size > 0) {
+      const collapse = (n: LayoutNode): LayoutNode | null => {
+        if (n.type === 'pane') {
+          return n.tabGroupId && emptied.has(n.tabGroupId) ? null : n;
+        }
+        const first = collapse(n.first);
+        const second = collapse(n.second);
+        if (first && second) return { ...n, first, second };
+        return first ?? second;
+      };
+      // A root pane that emptied stays (renders the EmptyState) — only
+      // split branches collapse away.
+      layoutTree = collapse(layoutTree) ?? layoutTree;
+      // Groups the collapse orphaned entirely can go.
+      const stillReferenced = new Set<string>();
+      const collectInto = (n: LayoutNode): void => {
+        if (n.type === 'pane') {
+          if (n.tabGroupId) stillReferenced.add(n.tabGroupId);
+        } else {
+          collectInto(n.first);
+          collectInto(n.second);
+        }
+      };
+      collectInto(layoutTree);
+      for (const panel of Object.values(layout.edgePanels)) stillReferenced.add(panel.tabGroupId);
+      for (const w of layout.floatingWindows) stillReferenced.add((w as { tabGroupId: string }).tabGroupId);
+      for (const gid of emptied) {
+        if (!stillReferenced.has(gid)) delete tabGroups[gid];
+      }
+    }
+  }
+
   const edgePanels = {} as Record<EdgePanelPosition, EdgePanel>;
   for (const [pos, panel] of Object.entries(layout.edgePanels)) {
     edgePanels[pos as EdgePanelPosition] = {
@@ -229,7 +297,7 @@ export function deserializeLayout(json: SerializedLayout): {
   }
 
   return {
-    layout: layout.layout,
+    layout: layoutTree,
     tabGroups,
     edgePanels,
     floatingWindows: layout.floatingWindows.map((w) => ({ ...w })),

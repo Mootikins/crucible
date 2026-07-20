@@ -17,6 +17,7 @@ import { attentionActions } from '@/stores/attentionStore';
 import { windowActions, windowStore } from '@/stores/windowStore';
 import { NotificationToast } from '@/components/NotificationToast';
 import { ExportDialog } from '@/components/ExportDialog';
+import { NewSessionDialog } from '@/components/NewSessionDialog';
 import { AuthTokenPrompt } from '@/components/AuthTokenPrompt';
 
 function focusChatInput(): void {
@@ -39,6 +40,7 @@ const App: Component = () => {
   registerPanels();
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = createSignal(false);
   const [isExportDialogOpen, setIsExportDialogOpen] = createSignal(false);
+  const [isNewSessionDialogOpen, setIsNewSessionDialogOpen] = createSignal(false);
   const [kilnPath, setKilnPath] = createSignal<string | undefined>(undefined);
 
   const paletteCommands: PaletteCommand[] = [
@@ -221,6 +223,10 @@ const App: Component = () => {
     // Listen for export-session custom event (dispatched from command palette or other sources)
     const onExportSession = () => setIsExportDialogOpen(true);
     window.addEventListener('crucible:export-session', onExportSession);
+    // Every new-session entry point (ribbon, Home, palette, empty states)
+    // opens the kiln/project chooser; it emits crucible:create-session.
+    const onNewSession = () => setIsNewSessionDialogOpen(true);
+    window.addEventListener('crucible:new-session', onNewSession);
     const onOpenSession = (e: Event) => {
       const { sessionId, title } = (e as CustomEvent<{ sessionId: string; title: string }>).detail;
       openSessionInChat(sessionId, title);
@@ -242,6 +248,7 @@ const App: Component = () => {
       stopAttentionPolling();
       document.removeEventListener('keydown', onGlobalKeyDown, true);
       window.removeEventListener('crucible:export-session', onExportSession);
+      window.removeEventListener('crucible:new-session', onNewSession);
       window.removeEventListener('crucible:open-session', onOpenSession);
       window.removeEventListener('crucible:open-file', onOpenFile);
       window.removeEventListener('crucible:open-command-palette', onOpenPalette);
@@ -264,6 +271,10 @@ const App: Component = () => {
             sessionId={statusBarStore.activeSessionId()}
             sessionTitle={statusBarStore.activeSessionTitle()}
             onClose={() => setIsExportDialogOpen(false)}
+          />
+          <NewSessionDialog
+            open={isNewSessionDialogOpen()}
+            onClose={() => setIsNewSessionDialogOpen(false)}
           />
           <CommandPalette
             open={isCommandPaletteOpen()}

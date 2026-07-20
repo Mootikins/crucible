@@ -430,12 +430,16 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     refreshProviders();
   });
 
-  // Palette "New Chat Session" / Ctrl+Shift+N. Provider defaults are resolved
-  // server-side, so no provider/model is passed here (avoids duplicating the
-  // SessionPanel fallbacks). createSession dispatches crucible:open-session,
-  // which opens the chat tab.
-  const onNewSessionEvent = () => {
-    if (!props.initialKiln) {
+  // `crucible:new-session` opens the kiln/project chooser (NewSessionDialog
+  // in App); the dialog emits `crucible:create-session` with the chosen
+  // params, handled here. Provider defaults are resolved server-side, so no
+  // provider/model is passed (avoids duplicating the SessionPanel
+  // fallbacks). createSession dispatches crucible:open-session, which opens
+  // the chat tab.
+  const onCreateSessionEvent = (e: Event) => {
+    const detail = (e as CustomEvent<{ kiln?: string; workspace?: string }>).detail ?? {};
+    const kiln = detail.kiln ?? props.initialKiln;
+    if (!kiln) {
       // No silent no-op: without a kiln we cannot create a session.
       notificationActions.addNotification(
         'warning',
@@ -444,12 +448,12 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       return;
     }
     void createSession({
-      kiln: props.initialKiln,
-      workspace: props.initialWorkspace,
+      kiln,
+      workspace: detail.workspace ?? props.initialWorkspace,
     }).catch(() => {}); // surfaced via withSessionAction's error notification
   };
-  window.addEventListener('crucible:new-session', onNewSessionEvent);
-  onCleanup(() => window.removeEventListener('crucible:new-session', onNewSessionEvent));
+  window.addEventListener('crucible:create-session', onCreateSessionEvent);
+  onCleanup(() => window.removeEventListener('crucible:create-session', onCreateSessionEvent));
 
   // Daemon auto-titles sessions on their first completed turn; the owning
   // ChatProvider rebroadcasts the title so the session list stays current.

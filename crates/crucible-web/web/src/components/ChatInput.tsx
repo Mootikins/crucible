@@ -169,11 +169,9 @@ export const ChatInput: Component = () => {
          </div>
        </Show>
       
-      <Show when={!session()}>
-        <div class="mb-2 px-2 py-1 text-sm text-muted-dark text-center">
-          No active session. Create or select a session to start chatting.
-        </div>
-      </Show>
+      {/* No "no active session" notice here — MessageList already renders
+          the full empty state above; repeating it in the input strip read
+          as two stacked prompts. */}
 
       {/* Session context strip: the workspace the session acts in and the
           kiln it knows (Crucible Shell design 4a/5a). Display-only until the
