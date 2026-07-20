@@ -9,42 +9,19 @@ import {
   type FileDragData,
 } from '@/lib/file-dnd';
 import { FileTreeContextMenu, type ContextAction } from './FileTreeContextMenu';
-import {
-  FileText,
-  FileCode,
-  File,
-  Folder,
-  FolderOpen,
-  FileJson,
-  Palette,
-  Globe,
-  Moon,
-  Cog,
-  ChevronRight,
-} from '@/lib/icons';
+import { Folder, FolderOpen, ChevronRight } from '@/lib/icons';
+import { Dynamic } from 'solid-js/web';
+import { fileIconFor } from '@/lib/file-icons';
 
-const getExtension = (filename: string): string => {
-  const parts = filename.split('.');
-  return parts.length > 1 ? parts[parts.length - 1] : '';
-};
-
-const KNOWN_EXTS = ['md', 'ts', 'tsx', 'js', 'jsx', 'rs', 'json', 'toml', 'yaml', 'yml', 'css', 'scss', 'html', 'lua', 'fnl'];
-
-const FileIcon: Component<{ extension: string }> = (props) => {
-  const ext = createMemo(() => props.extension.toLowerCase());
+/** VSCode-style colored filetype icon, resolved by full filename. */
+const FileIcon: Component<{ name: string }> = (props) => {
+  const meta = createMemo(() => fileIconFor(props.name));
   return (
-    <>
-      {ext() === 'md' && <FileText class="w-4 h-4 mr-1.5 shrink-0" />}
-      {(ext() === 'ts' || ext() === 'tsx') && <FileCode class="w-4 h-4 mr-1.5 shrink-0" />}
-      {(ext() === 'js' || ext() === 'jsx') && <FileCode class="w-4 h-4 mr-1.5 shrink-0" />}
-      {ext() === 'rs' && <FileCode class="w-4 h-4 mr-1.5 shrink-0" />}
-      {ext() === 'json' && <FileJson class="w-4 h-4 mr-1.5 shrink-0" />}
-      {(ext() === 'toml' || ext() === 'yaml' || ext() === 'yml') && <Cog class="w-4 h-4 mr-1.5 shrink-0" />}
-      {(ext() === 'css' || ext() === 'scss') && <Palette class="w-4 h-4 mr-1.5 shrink-0" />}
-      {ext() === 'html' && <Globe class="w-4 h-4 mr-1.5 shrink-0" />}
-      {(ext() === 'lua' || ext() === 'fnl') && <Moon class="w-4 h-4 mr-1.5 shrink-0" />}
-      {!KNOWN_EXTS.includes(ext()) && <File class="w-4 h-4 mr-1.5 shrink-0" />}
-    </>
+    <Dynamic
+      component={meta().icon}
+      class="w-4 h-4 mr-1.5 shrink-0"
+      style={{ color: meta().color }}
+    />
   );
 };
 
@@ -168,7 +145,7 @@ export const FileTreeNode: Component<{
               class="flex items-center pr-2 py-1 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-sm data-[selected]:bg-hover-wash data-[current=true]:font-medium data-[current=true]:border-l-2 data-[current=true]:border-primary"
               style={DEPTH_INDENT_LEAF}
             >
-              <FileIcon extension={getExtension(props.node.name)} />
+              <FileIcon name={props.node.name} />
               <TreeView.ItemText class="truncate">{props.node.name}</TreeView.ItemText>
               <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 rounded border border-primary outline-none min-w-0 flex-1" />
             </TreeView.Item>
