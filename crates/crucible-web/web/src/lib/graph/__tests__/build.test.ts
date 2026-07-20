@@ -127,10 +127,12 @@ describe('adoptPositions', () => {
 });
 
 describe('nodeRadius', () => {
-  it('grows with degree and scales with the size knob', () => {
+  it('is uniform regardless of degree/kind and scales with the size knob', () => {
     const lo: GraphNode = { id: 'a', label: 'a', kind: 'note', degree: 0 };
     const hi: GraphNode = { id: 'b', label: 'b', kind: 'note', degree: 9 };
-    expect(nodeRadius(hi, 1)).toBeGreaterThan(nodeRadius(lo, 1));
+    const tag: GraphNode = { id: 'c', label: '#c', kind: 'tag', degree: 3 };
+    expect(nodeRadius(hi, 1)).toBe(nodeRadius(lo, 1));
+    expect(nodeRadius(tag, 1)).toBe(nodeRadius(lo, 1));
     expect(nodeRadius(lo, 2)).toBeCloseTo(nodeRadius(lo, 1) * 2);
   });
 });

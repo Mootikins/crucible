@@ -9,6 +9,7 @@ import {
 } from 'solid-js';
 import { createStore, unwrap } from 'solid-js/store';
 import {
+  forceCollide,
   forceLink,
   forceManyBody,
   forceSimulation,
@@ -25,6 +26,7 @@ import { statusBarStore } from '@/stores/statusBarStore';
 import { openFileInEditor } from '@/lib/file-actions';
 import { kilnRoot, noteAbsolutePath } from '@/lib/note-actions';
 import {
+  BASE_NODE_RADIUS,
   adoptPositions,
   buildAdjacency,
   buildGraph,
@@ -119,6 +121,7 @@ export const GraphPanel: Component = () => {
   const sim: Simulation<GraphNode, GraphEdge> = forceSimulation<GraphNode>([])
     .force('link', forceLink<GraphNode, GraphEdge>([]).id((d) => d.id))
     .force('charge', forceManyBody<GraphNode>().distanceMax(600))
+    .force('collide', forceCollide<GraphNode>())
     .force('x', forceX<GraphNode>(0))
     .force('y', forceY<GraphNode>(0))
     .velocityDecay(0.35)
@@ -133,6 +136,11 @@ export const GraphPanel: Component = () => {
     (sim.force('charge') as ReturnType<typeof forceManyBody<GraphNode>>).strength(
       -60 * f.repelForce,
     );
+    // Hard minimum spacing (Obsidian-style): nodes never overlap or crowd,
+    // whatever the charge/link settings. Radius tracks the display knob.
+    (sim.force('collide') as ReturnType<typeof forceCollide<GraphNode>>)
+      .radius(BASE_NODE_RADIUS * settings.display.nodeSize * 2.5)
+      .strength(0.9);
     (sim.force('x') as ReturnType<typeof forceX<GraphNode>>).strength(f.centerForce * 0.12);
     (sim.force('y') as ReturnType<typeof forceY<GraphNode>>).strength(f.centerForce * 0.12);
   };
@@ -208,11 +216,15 @@ export const GraphPanel: Component = () => {
     ),
   );
 
-  // Display knobs only need a repaint.
+  // Display knobs repaint; node size also feeds the collide radius, so the
+  // layout gently re-spaces when it changes.
   createEffect(
     on(
       () => [settings.display.nodeSize, settings.display.linkThickness, settings.display.textFade],
-      markDirty,
+      () => {
+        applyForces();
+        sim.alpha(0.3).restart();
+      },
       { defer: true },
     ),
   );
