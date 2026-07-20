@@ -99,14 +99,6 @@ export const GraphControls: Component<{
           value={props.settings.display.linkThickness}
           onInput={(v) => props.onChange('display', 'linkThickness', v)}
         />
-        <Slider
-          label="Text fade"
-          min={0}
-          max={1}
-          step={0.05}
-          value={props.settings.display.textFade}
-          onInput={(v) => props.onChange('display', 'textFade', v)}
-        />
       </Section>
 
       <Section title="Forces">

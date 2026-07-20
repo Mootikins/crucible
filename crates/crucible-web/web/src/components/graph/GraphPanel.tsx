@@ -102,6 +102,11 @@ export const GraphPanel: Component = () => {
   let edges: GraphEdge[] = [];
   let adjacency = new Map<string, Set<string>>();
   let hoverId: string | null = null;
+  // Eased 0..1 hover intensity + the set it applies to. The set is kept from
+  // the LAST hovered node so labels/dimming fade out in place instead of
+  // snapping when the pointer leaves.
+  let hoverT = 0;
+  let hoverSet: Set<string> | null = null;
   let dirty = true;
   let raf = 0;
   let didAutoFit = false;
@@ -159,6 +164,8 @@ export const GraphPanel: Component = () => {
     });
     if (hoverId && !adjacency.has(hoverId) && !nodes.some((n) => n.id === hoverId)) {
       hoverId = null;
+      hoverSet = null;
+      hoverT = 0;
     }
     sim.nodes(nodes);
     linkForce().links(edges);
@@ -220,7 +227,7 @@ export const GraphPanel: Component = () => {
   // layout gently re-spaces when it changes.
   createEffect(
     on(
-      () => [settings.display.nodeSize, settings.display.linkThickness, settings.display.textFade],
+      () => [settings.display.nodeSize, settings.display.linkThickness],
       () => {
         applyForces();
         sim.alpha(0.3).restart();
@@ -262,55 +269,74 @@ export const GraphPanel: Component = () => {
     ctx.translate(view.x, view.y);
     ctx.scale(view.k, view.k);
 
-    const { nodeSize, linkThickness, textFade } = settings.display;
-    const highlight = hoverId
-      ? new Set([hoverId, ...(adjacency.get(hoverId) ?? [])])
-      : null;
+    const { nodeSize, linkThickness } = settings.display;
+    // Everything hover-dependent lerps on the eased hoverT so the highlight
+    // (dimming, accent, labels) fades instead of snapping.
+    const set = hoverSet;
+    const t = hoverT;
+    const lerp = (a: number, b: number, x: number) => a + (b - a) * x;
+    const inSet = (id: string) => set !== null && set.has(id);
 
-    // Edges. d3-force has replaced string endpoints with node refs by now.
+    // Edges, base pass. d3-force has replaced string endpoints with node refs.
     const edgeWidth = Math.max(0.7 * linkThickness, 0.5 / view.k);
     ctx.lineWidth = edgeWidth;
+    ctx.strokeStyle = colors.link;
     for (const e of edges) {
       const s = e.source as GraphNode;
-      const t = e.target as GraphNode;
-      if (typeof s === 'string' || typeof t === 'string') continue;
-      const lit = highlight !== null && highlight.has(s.id) && highlight.has(t.id);
-      ctx.globalAlpha = highlight ? (lit ? 0.85 : 0.05) : e.kind === 'tag' ? 0.18 : 0.32;
-      ctx.strokeStyle = lit ? colors.accent : colors.link;
+      const d = e.target as GraphNode;
+      if (typeof s === 'string' || typeof d === 'string') continue;
+      const lit = inSet(s.id) && inSet(d.id);
+      const base = e.kind === 'tag' ? 0.18 : 0.32;
+      ctx.globalAlpha = lerp(base, lit ? 0.15 : 0.05, t);
       ctx.beginPath();
       ctx.moveTo(s.x ?? 0, s.y ?? 0);
-      ctx.lineTo(t.x ?? 0, t.y ?? 0);
+      ctx.lineTo(d.x ?? 0, d.y ?? 0);
       ctx.stroke();
     }
+    // Accent overlay on neighborhood edges — alpha rides hoverT, so the hue
+    // eases in rather than flipping.
+    if (t > 0.01 && set) {
+      ctx.strokeStyle = colors.accent;
+      ctx.globalAlpha = 0.8 * t;
+      for (const e of edges) {
+        const s = e.source as GraphNode;
+        const d = e.target as GraphNode;
+        if (typeof s === 'string' || typeof d === 'string') continue;
+        if (!(inSet(s.id) && inSet(d.id))) continue;
+        ctx.beginPath();
+        ctx.moveTo(s.x ?? 0, s.y ?? 0);
+        ctx.lineTo(d.x ?? 0, d.y ?? 0);
+        ctx.stroke();
+      }
+    }
 
-    // Labels fade in with zoom; textFade slides the threshold (1 ≈ always on).
-    const fadeThreshold = 3.0 - 2.85 * textFade;
-    const labelAlpha = clamp(view.k / fadeThreshold - 0.6, 0, 1);
     ctx.font = `${11 / view.k}px 'IBM Plex Sans', system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
 
     for (const n of nodes) {
-      const inSet = highlight === null || highlight.has(n.id);
       const r = nodeRadius(n, nodeSize);
       const x = n.x ?? 0;
       const y = n.y ?? 0;
-      const isHover = n.id === hoverId;
+      const isHover = n.id === hoverId && t > 0.01;
+      const member = inSet(n.id);
 
-      ctx.globalAlpha = inSet ? (n.kind === 'phantom' ? 0.45 : 1) : 0.08;
-      ctx.fillStyle = isHover
-        ? colors.accent
-        : n.kind === 'tag'
-          ? colors.tag
-          : n.kind === 'phantom'
-            ? colors.phantom
-            : colors.note;
+      const base = n.kind === 'phantom' ? 0.45 : 1;
+      ctx.globalAlpha = lerp(base, member ? 1 : 0.08, t);
+      ctx.fillStyle =
+        n.kind === 'tag' ? colors.tag : n.kind === 'phantom' ? colors.phantom : colors.note;
       ctx.beginPath();
       ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fill();
 
       if (isHover) {
-        ctx.globalAlpha = 0.25;
+        // Accent tint + ring ease in with hoverT.
+        ctx.globalAlpha = t;
+        ctx.fillStyle = colors.accent;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 0.25 * t;
         ctx.strokeStyle = colors.accent;
         ctx.lineWidth = 3 / view.k;
         ctx.beginPath();
@@ -319,9 +345,10 @@ export const GraphPanel: Component = () => {
         ctx.lineWidth = edgeWidth;
       }
 
-      const la = highlight !== null && highlight.has(n.id) ? Math.max(labelAlpha, 0.95) : labelAlpha;
-      if (la > 0.02 && inSet) {
-        ctx.globalAlpha = la;
+      // Labels are hover-only: the hovered neighborhood's names fade in with
+      // the highlight and out after the pointer leaves.
+      if (member && t > 0.02) {
+        ctx.globalAlpha = t;
         ctx.fillStyle = colors.label;
         ctx.fillText(n.label, x, y + r + 3 / view.k);
       }
@@ -395,6 +422,8 @@ export const GraphPanel: Component = () => {
     const id = hit?.id ?? null;
     if (id !== hoverId) {
       hoverId = id;
+      // Keep the previous set on leave so the fade-out has something to fade.
+      if (hit) hoverSet = new Set([hit.id, ...(adjacency.get(hit.id) ?? [])]);
       canvasEl!.style.cursor = hit ? 'pointer' : 'grab';
       markDirty();
     }
@@ -460,6 +489,14 @@ export const GraphPanel: Component = () => {
     onCleanup(() => ro.disconnect());
 
     const frame = () => {
+      // Ease the hover highlight toward its target; animating counts as dirty.
+      const target = hoverId ? 1 : 0;
+      if (hoverT !== target) {
+        const next = hoverT + (target - hoverT) * 0.22;
+        hoverT = Math.abs(next - target) < 0.01 ? target : next;
+        if (hoverT === 0) hoverSet = null;
+        dirty = true;
+      }
       if (dirty) {
         dirty = false;
         // Fit once, shortly after the first layout has spread out.

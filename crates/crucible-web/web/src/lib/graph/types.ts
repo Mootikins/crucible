@@ -61,8 +61,6 @@ export interface GraphDisplay {
   nodeSize: number;
   /** Link stroke width multiplier (0.3..3). */
   linkThickness: number;
-  /** 0 = labels only when zoomed far in, 1 = always visible. */
-  textFade: number;
 }
 
 export interface GraphForces {
@@ -84,6 +82,6 @@ export interface GraphSettings {
 
 export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   filters: { query: '', showTags: false, showPhantoms: true, showOrphans: true },
-  display: { nodeSize: 1, linkThickness: 1, textFade: 0.5 },
+  display: { nodeSize: 1, linkThickness: 1 },
   forces: { centerForce: 0.3, repelForce: 1, linkForce: 0.7, linkDistance: 140 },
 };
