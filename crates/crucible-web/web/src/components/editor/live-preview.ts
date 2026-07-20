@@ -479,12 +479,16 @@ const livePreviewTheme = EditorView.baseTheme({
   // Revealed table source: monospace so the auto-formatter's pipe alignment
   // holds up visually, and NO wrapping — a wrapped aligned table is worse
   // than an unaligned one. Wide tables overflow horizontally; the scroller
-  // follows the cursor.
+  // follows the cursor. width: max-content stretches the line box (and its
+  // background tint) over the full overflowing row — otherwise the bg stops
+  // at the readable-column cap while the text keeps going.
   '.cm-lp-tablesrc': {
     fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
     fontSize: '0.85em',
     background: 'rgba(255, 255, 255, 0.03)',
     whiteSpace: 'pre',
+    width: 'max-content',
+    minWidth: '100%',
   },
   '.cm-lp-table': { cursor: 'text', padding: '2px 0' },
   '.cm-lp-table table': {
