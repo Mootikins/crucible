@@ -434,3 +434,42 @@ describe('layout v2→v3 migration prunes removed content types', () => {
     expect(restored.tabGroups['left'].tabs.length).toBe(3);
   });
 });
+
+describe('legacy generic chat tabs are pruned on every restore', () => {
+  const v3 = () => ({
+    version: 3 as const,
+    layout: { id: 'p', type: 'pane' as const, tabGroupId: 'center' },
+    tabGroups: {
+      center: {
+        id: 'center',
+        tabs: [
+          { id: 'tab-home', title: 'Home', contentType: 'home' },
+          // Pre-WS-220 generic Chat panel: no sessionId — renders the active
+          // session wherever it is docked, defeating right-pane placement.
+          { id: 'tab-chat', title: 'Chat', contentType: 'chat' },
+          // Session-bound chat tab: must survive.
+          {
+            id: 'tab-chat-abc',
+            title: 'My Session',
+            contentType: 'chat',
+            metadata: { sessionId: 'abc' },
+          },
+        ],
+        activeTabId: 'tab-chat',
+      },
+    },
+    edgePanels: {
+      left: { id: 'left-panel', tabGroupId: 'center', isCollapsed: false, width: 250 },
+      right: { id: 'right-panel', tabGroupId: 'center', isCollapsed: true, width: 250 },
+      bottom: { id: 'bottom-panel', tabGroupId: 'center', isCollapsed: true, height: 200 },
+    },
+    floatingWindows: [],
+  });
+
+  it('drops session-less chat tabs, keeps session-bound ones, fixes activeTabId', () => {
+    const restored = deserializeLayout(v3() as never);
+    const ids = restored.tabGroups['center'].tabs.map((t) => t.id);
+    expect(ids).toEqual(['tab-home', 'tab-chat-abc']);
+    expect(restored.tabGroups['center'].activeTabId).toBe('tab-home');
+  });
+});

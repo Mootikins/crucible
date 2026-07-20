@@ -13,14 +13,23 @@ import type { WindowState } from '@/stores/windowStore';
 
 const arbTabContentType = fc.constantFrom('file', 'tool', 'terminal', 'settings', 'chat', 'sessions', 'files', 'skills', 'plugins', 'activity', 'backlinks');
 
-const arbTab = fc.record({
-  id: fc.uuid(),
-  title: fc.string({ minLength: 1, maxLength: 30 }),
-  contentType: arbTabContentType,
-  isModified: fc.option(fc.boolean(), { freq: 1, nil: undefined }),
-  isPinned: fc.option(fc.boolean(), { freq: 1, nil: undefined }),
-  metadata: fc.option(fc.record({}) as fc.Arbitrary<Record<string, unknown>>, { freq: 1, nil: undefined }),
-});
+const arbTab = fc
+  .record({
+    id: fc.uuid(),
+    title: fc.string({ minLength: 1, maxLength: 30 }),
+    contentType: arbTabContentType,
+    isModified: fc.option(fc.boolean(), { freq: 1, nil: undefined }),
+    isPinned: fc.option(fc.boolean(), { freq: 1, nil: undefined }),
+    metadata: fc.option(fc.record({}) as fc.Arbitrary<Record<string, unknown>>, { freq: 1, nil: undefined }),
+  })
+  // Session-less chat tabs are an INVALID persisted state — deserializeLayout
+  // prunes them (legacy generic Chat panel), so round-trip identity only
+  // holds for chat tabs carrying a sessionId.
+  .map((tab) =>
+    tab.contentType === 'chat'
+      ? { ...tab, metadata: { ...(tab.metadata ?? {}), sessionId: tab.id } }
+      : tab,
+  );
 
 const arbTabGroup = (groupId: string): fc.Arbitrary<TabGroup> =>
   fc.record({

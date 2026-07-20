@@ -195,12 +195,25 @@ export function deserializeLayout(json: SerializedLayout): {
 
   const tabGroups: Record<string, TabGroup> = {};
   for (const [id, group] of Object.entries(layout.tabGroups)) {
+    // Always-on prune: a `chat` tab WITHOUT a sessionId is the legacy
+    // generic Chat panel from before sessions opened as session-bound tabs
+    // in the right pane (WS-220). Restoring it makes the active session
+    // render wherever that tab happens to be docked — sessions then never
+    // appear in the right pane. Session tabs (metadata.sessionId) survive.
+    const tabs = group.tabs.filter(
+      (t) => !(t.contentType === 'chat' && !t.metadata?.sessionId),
+    );
     tabGroups[id] = {
       id: group.id,
       // Icons are components and never survive serialization — resolve them
       // from the content type on the way back in.
-      tabs: group.tabs.map((t) => ({ ...t, icon: iconForContentType(t.contentType) })),
-      activeTabId: group.activeTabId,
+      tabs: tabs.map((t) => ({ ...t, icon: iconForContentType(t.contentType) })),
+      // Remap ONLY when the active tab was pruned — a stored null must stay
+      // null (round-trip identity; the property tests enforce it).
+      activeTabId:
+        group.activeTabId && !tabs.some((t) => t.id === group.activeTabId)
+          ? (tabs[0]?.id ?? null)
+          : group.activeTabId,
     };
   }
 

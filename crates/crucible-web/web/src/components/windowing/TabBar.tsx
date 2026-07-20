@@ -407,7 +407,7 @@ const CenterTabBar: Component<{
       use:droppable
       ref={attachNativeMenuGuard}
       classList={{
-        'flex items-center h-9 bg-shell-bg border-b border-hairline relative': true,
+        'flex-shrink-0 flex items-center h-9 bg-shell-bg border-b border-hairline relative': true,
         'bg-primary/5': droppable.isActiveDroppable,
       }}
     >
@@ -482,7 +482,7 @@ const EdgeTabBar: Component<{
       ref={containerRef}
       data-testid={`edge-tabbar-${props.position}`}
       classList={{
-        'flex items-center h-9 bg-shell-bg border-b border-hairline relative': true,
+        'flex-shrink-0 flex items-center h-9 bg-shell-bg border-b border-hairline relative': true,
         'bg-primary/5': droppable.isActiveDroppable,
       }}
     >
