@@ -26,8 +26,8 @@ import {
   WidgetType,
 } from '@codemirror/view';
 import {
+  EditorState,
   StateField,
-  type EditorState,
   type Extension,
   type Range,
 } from '@codemirror/state';
@@ -271,6 +271,62 @@ function buildTableDecorations(state: EditorState): DecorationSet {
   return Decoration.set(decorations, true);
 }
 
+/**
+ * Vertical motions (vim j/k, arrows — anything built on moveVertically) skip
+ * block widgets entirely: from the line above a rendered table the cursor
+ * lands on the line below it, so the keyboard can never enter a table to
+ * edit it. This filter catches exactly that hop — a selection-only
+ * transaction whose head crossed a rendered table starting from an adjacent
+ * line and landing on the adjacent line past it — and redirects the head
+ * into the table's edge line (same column), which reveals the raw source
+ * via tableField's selection rule.
+ */
+const tableCursorEntry = EditorState.transactionFilter.of((tr) => {
+  if (tr.docChanged || !tr.selection) return tr;
+  const prev = tr.startState.selection.main.head;
+  const next = tr.newSelection.main.head;
+  if (prev === next) return tr;
+  const doc = tr.startState.doc;
+  let redirect: number | null = null;
+  syntaxTree(tr.startState).iterate({
+    enter: (nodeRef) => {
+      if (nodeRef.name !== 'Table') return;
+      if (redirect !== null) return false;
+      const { from, to } = nodeRef;
+      // Only tables currently rendered as widgets (cursor was outside).
+      if (selectionTouches(tr.startState, from, to)) return false;
+      const firstLine = doc.lineAt(from);
+      // Like Frontmatter, the Table node can end AT the next line's start —
+      // its last real line is then the one before.
+      const endLine = doc.lineAt(to);
+      const lastLine = endLine.from === to ? doc.line(endLine.number - 1) : endLine;
+      const prevLine = doc.lineAt(prev);
+      const nextLine = doc.lineAt(next);
+      const col = prev - prevLine.from;
+      if (
+        prevLine.number === firstLine.number - 1 &&
+        nextLine.number === lastLine.number + 1
+      ) {
+        redirect = Math.min(firstLine.from + col, firstLine.to);
+      } else if (
+        prevLine.number === lastLine.number + 1 &&
+        nextLine.number === firstLine.number - 1
+      ) {
+        redirect = Math.min(lastLine.from + col, lastLine.to);
+      }
+      return false;
+    },
+  });
+  if (redirect === null) return tr;
+  const main = tr.newSelection.main;
+  return [
+    {
+      selection: { anchor: main.empty ? redirect : main.anchor, head: redirect },
+      scrollIntoView: true,
+    },
+  ];
+});
+
 // Tables replace whole line blocks, and CM6 forbids block decorations from
 // ViewPlugins — they live in a StateField instead.
 const tableField = StateField.define<DecorationSet>({
@@ -375,6 +431,7 @@ export function livePreview(opts?: { maxLineWidth?: number }): Extension {
       : []),
     livePreviewPlugin,
     tableField,
+    tableCursorEntry,
     livePreviewTheme,
   ];
 }

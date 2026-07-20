@@ -129,6 +129,60 @@ describe('live preview: styled everywhere except the construct at the cursor', (
     expect(text(view)).toContain('| one   | two   |');
   });
 
+  describe('vertical cursor entry into rendered tables (vim j/k)', () => {
+    // Blank lines around the table, as in real prose — without one after,
+    // lezer's GFM parser absorbs the following paragraph into the Table.
+    const TABLE_DOC = [
+      'Before.',
+      '',
+      '| Col A | Col B |',
+      '| ----- | ----- |',
+      '| one   | two   |',
+      '',
+      'After.',
+    ].join('\n');
+    const blankAbove = TABLE_DOC.indexOf('\n| Col A') - 0; // empty line pos 8
+    const tableFrom = TABLE_DOC.indexOf('| Col A');
+    const lastLineFrom = TABLE_DOC.indexOf('| one');
+    const blankBelow = TABLE_DOC.indexOf('\nAfter.'); // empty line pos
+
+    it('a downward hop over the widget lands in the first table line', () => {
+      const view = track(makeView(TABLE_DOC));
+      cursorAt(view, blankAbove); // blank line directly above the table
+      // moveVertically skips block widgets: vim j dispatches a selection on
+      // the line BELOW the table. The filter must redirect into the table.
+      view.dispatch({ selection: { anchor: blankBelow } });
+      expect(view.state.selection.main.head).toBe(tableFrom);
+      // …and the table reveals its raw source for editing.
+      expect(view.dom.querySelector('[data-testid="lp-table"]')).toBeNull();
+    });
+
+    it('an upward hop over the widget lands in the last table line', () => {
+      const view = track(makeView(TABLE_DOC));
+      cursorAt(view, blankBelow); // blank line directly below the table
+      view.dispatch({ selection: { anchor: blankAbove } }); // vim k skipped over
+      expect(view.state.selection.main.head).toBe(lastLineFrom);
+      expect(view.dom.querySelector('[data-testid="lp-table"]')).toBeNull();
+    });
+
+    it('column is preserved and clamped to the table line length', () => {
+      const view = track(makeView(TABLE_DOC));
+      cursorAt(view, 3); // "Bef|ore." — col 3, two lines above the table
+      // A hop from a NON-adjacent line is not the skip pattern: untouched.
+      view.dispatch({ selection: { anchor: blankBelow } });
+      expect(view.state.selection.main.head).toBe(blankBelow);
+    });
+
+    it('long jumps far past the table are left alone', () => {
+      const doc = TABLE_DOC + '\nMore.\nLines.';
+      const view = track(makeView(doc));
+      cursorAt(view, blankAbove);
+      const far = doc.indexOf('Lines.');
+      view.dispatch({ selection: { anchor: far } });
+      expect(view.state.selection.main.head).toBe(far);
+    });
+  });
+
   it('wraps long prose lines (live preview only)', () => {
     const view = track(makeView());
     expect(view.contentDOM.classList.contains('cm-lineWrapping')).toBe(true);
