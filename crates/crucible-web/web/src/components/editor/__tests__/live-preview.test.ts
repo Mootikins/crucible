@@ -129,6 +129,71 @@ describe('live preview: styled everywhere except the construct at the cursor', (
     expect(text(view)).toContain('| one   | two   |');
   });
 
+  it('callouts render as fancy admonition blocks until the cursor enters', () => {
+    const CALLOUT_DOC = [
+      'Before.',
+      '',
+      '> [!warning] Watch out',
+      '> Body text here.',
+      '',
+      'After.',
+    ].join('\n');
+    const view = track(makeView(CALLOUT_DOC));
+    cursorAt(view, 0);
+
+    // Rendered: the reading-mode .callout markup — icon, colored title row,
+    // body — with the raw `> [!warning]` syntax hidden.
+    const widget = view.dom.querySelector('[data-testid="lp-callout"]');
+    expect(widget).not.toBeNull();
+    const callout = widget!.querySelector('.callout');
+    expect(callout).not.toBeNull();
+    expect(callout!.getAttribute('data-callout')).toBe('warning');
+    expect(widget!.querySelector('.callout-icon')).not.toBeNull();
+    expect(widget!.querySelector('.callout-title-text')?.textContent).toBe('Watch out');
+    expect(text(view)).not.toContain('[!warning]');
+    expect(text(view)).toContain('Body text here.');
+
+    // Cursor inside the callout reveals the raw source for editing.
+    cursorAt(view, CALLOUT_DOC.indexOf('Body'));
+    expect(view.dom.querySelector('[data-testid="lp-callout"]')).toBeNull();
+    expect(text(view)).toContain('> [!warning] Watch out');
+  });
+
+  it('foldable callouts render as <details> honoring the collapse marker', () => {
+    const view = track(
+      makeView('> [!note]- Folded\n> Hidden body.\n\nProse after.\n'),
+    );
+    cursorAt(view, view.state.doc.length);
+    const widget = view.dom.querySelector('[data-testid="lp-callout"]');
+    expect(widget).not.toBeNull();
+    const details = widget!.querySelector('details.callout');
+    expect(details).not.toBeNull();
+    expect(details!.hasAttribute('open')).toBe(false);
+    expect(details!.querySelector('summary.callout-title')?.textContent).toContain(
+      'Folded',
+    );
+  });
+
+  it('a downward hop over a rendered callout lands inside it (vim j/k)', () => {
+    const CALLOUT_DOC = [
+      'Before.',
+      '',
+      '> [!tip] Title',
+      '> Body.',
+      '',
+      'After.',
+    ].join('\n');
+    const view = track(makeView(CALLOUT_DOC));
+    const blankAbove = CALLOUT_DOC.indexOf('\n\n>') + 1;
+    const calloutFrom = CALLOUT_DOC.indexOf('> [!tip]');
+    cursorAt(view, blankAbove);
+    // Simulate the widget hop: moveVertically lands on the line below.
+    cursorAt(view, CALLOUT_DOC.indexOf('After.') - 1);
+    expect(view.state.selection.main.head).toBe(calloutFrom);
+    // …and the callout reveals its raw source for editing.
+    expect(view.dom.querySelector('[data-testid="lp-callout"]')).toBeNull();
+  });
+
   describe('vertical cursor entry into rendered tables (vim j/k)', () => {
     // Blank lines around the table, as in real prose — without one after,
     // lezer's GFM parser absorbs the following paragraph into the Table.

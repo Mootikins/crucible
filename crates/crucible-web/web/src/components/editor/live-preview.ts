@@ -85,6 +85,9 @@ function hideChildMarks(
 
 const WIKILINK_RE = wikilinkRe();
 
+/** `> [!type]` head on a blockquote's first line — marks it as a callout. */
+const CALLOUT_HEAD_LINE_RE = /^\s*>\s*\[!([a-zA-Z]+)\]/;
+
 function buildDecorations(view: EditorView): DecorationSet {
   const { state } = view;
   const doc = state.doc;
@@ -172,8 +175,10 @@ function buildDecorations(view: EditorView): DecorationSet {
           const last = doc.lineAt(nodeRef.to).number;
           // `> [!type]` heads style the whole quote as that callout variant
           // (colors shared with the reading-mode CSS); plain quotes keep the
-          // italic treatment.
-          const head = /^\s*>\s*\[!([a-zA-Z]+)\]/.exec(firstLine.text);
+          // italic treatment. Like tables, these line styles only matter for
+          // the revealed source (cursor inside) — rendered callouts are
+          // calloutField's block widget, which makes them inert.
+          const head = CALLOUT_HEAD_LINE_RE.exec(firstLine.text);
           if (head) {
             const kind = resolveCalloutKind(head[1]);
             for (let n = firstLine.number; n <= last; n++) {
@@ -244,25 +249,35 @@ function buildDecorations(view: EditorView): DecorationSet {
   return Decoration.set(decorations, true);
 }
 
-/** A markdown table rendered as a real HTML table (sanitized through the
- * chat markdown pipeline). Clicking it drops the cursor into the source,
- * which reveals the raw table for editing. */
-class TableWidget extends WidgetType {
-  constructor(readonly source: string) {
+/** A markdown block rendered as real HTML (sanitized through the chat
+ * markdown pipeline): tables become `<table>`, callout blockquotes become
+ * the `.callout` admonition markup from lib/callouts.ts (icon + colored
+ * title row + tinted body), matching reading mode. Clicking it drops the
+ * cursor into the source, which reveals the raw markdown for editing —
+ * except clicks on a foldable callout's summary row, which keep their
+ * native `<details>` toggle. */
+class RenderedBlockWidget extends WidgetType {
+  constructor(
+    readonly source: string,
+    readonly kind: 'table' | 'callout',
+  ) {
     super();
   }
 
-  override eq(other: TableWidget): boolean {
-    return other.source === this.source;
+  override eq(other: RenderedBlockWidget): boolean {
+    return other.source === this.source && other.kind === this.kind;
   }
 
   override toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement('div');
-    wrap.className = 'cm-lp-table';
-    wrap.setAttribute('data-testid', 'lp-table');
+    wrap.className = this.kind === 'table' ? 'cm-lp-table' : 'cm-lp-callout-block';
+    wrap.setAttribute('data-testid', `lp-${this.kind}`);
     // eslint-disable-next-line solid/no-innerhtml -- DOMPurify-sanitized
     wrap.innerHTML = renderMarkdown(this.source);
     wrap.addEventListener('mousedown', (e) => {
+      // Foldable callout title: let the browser's <details> toggle run
+      // instead of jumping into the source.
+      if ((e.target as HTMLElement).closest?.('summary.callout-title')) return;
       e.preventDefault();
       const pos = view.posAtDOM(wrap);
       view.dispatch({ selection: { anchor: pos } });
@@ -271,24 +286,40 @@ class TableWidget extends WidgetType {
     return wrap;
   }
 
-  override ignoreEvent(): boolean {
-    return false;
+  override ignoreEvent(e: Event): boolean {
+    // Summary clicks are the widget's own business (fold toggle) — CM must
+    // not turn them into selection changes that reveal the source.
+    return !!(e.target as HTMLElement).closest?.('summary.callout-title');
   }
 }
 
-function buildTableDecorations(state: EditorState): DecorationSet {
+/** Table node, or Blockquote whose first line is a `> [!type]` callout head. */
+function renderedBlockKind(
+  state: EditorState,
+  name: string,
+  from: number,
+): 'table' | 'callout' | null {
+  if (name === 'Table') return 'table';
+  if (name !== 'Blockquote') return null;
+  const firstLine = state.doc.lineAt(from);
+  return CALLOUT_HEAD_LINE_RE.test(firstLine.text) ? 'callout' : null;
+}
+
+function buildBlockWidgets(state: EditorState): DecorationSet {
   const decorations: Range<Decoration>[] = [];
   syntaxTree(state).iterate({
     enter: (nodeRef) => {
-      if (nodeRef.name !== 'Table') return;
-      // Selection in the table = editing: show the raw source.
+      const kind = renderedBlockKind(state, nodeRef.name, nodeRef.from);
+      if (!kind) return; // descend — plain blockquotes may contain tables
+      // Selection in the block = editing: show the raw source (the whole
+      // callout at once — no nested widgets inside revealed source).
       if (selectionTouches(state, nodeRef.from, nodeRef.to)) return false;
       const source = state.doc.sliceString(nodeRef.from, nodeRef.to);
       decorations.push(
-        Decoration.replace({ widget: new TableWidget(source), block: true }).range(
-          nodeRef.from,
-          nodeRef.to,
-        ),
+        Decoration.replace({
+          widget: new RenderedBlockWidget(source, kind),
+          block: true,
+        }).range(nodeRef.from, nodeRef.to),
       );
       return false;
     },
@@ -354,15 +385,15 @@ const tableAutoFormat = EditorView.updateListener.of((update) => {
 
 /**
  * Vertical motions (vim j/k, arrows — anything built on moveVertically) skip
- * block widgets entirely: from the line above a rendered table the cursor
- * lands on the line below it, so the keyboard can never enter a table to
- * edit it. This filter catches exactly that hop — a selection-only
- * transaction whose head crossed a rendered table starting from an adjacent
+ * block widgets entirely: from the line above a rendered table/callout the
+ * cursor lands on the line below it, so the keyboard can never enter the
+ * block to edit it. This filter catches exactly that hop — a selection-only
+ * transaction whose head crossed a rendered block starting from an adjacent
  * line and landing on the adjacent line past it — and redirects the head
- * into the table's edge line (same column), which reveals the raw source
- * via tableField's selection rule.
+ * into the block's edge line (same column), which reveals the raw source
+ * via blockWidgetField's selection rule.
  */
-const tableCursorEntry = EditorState.transactionFilter.of((tr) => {
+const blockWidgetCursorEntry = EditorState.transactionFilter.of((tr) => {
   if (tr.docChanged || !tr.selection) return tr;
   const prev = tr.startState.selection.main.head;
   const next = tr.newSelection.main.head;
@@ -371,10 +402,10 @@ const tableCursorEntry = EditorState.transactionFilter.of((tr) => {
   let redirect: number | null = null;
   syntaxTree(tr.startState).iterate({
     enter: (nodeRef) => {
-      if (nodeRef.name !== 'Table') return;
+      if (!renderedBlockKind(tr.startState, nodeRef.name, nodeRef.from)) return;
       if (redirect !== null) return false;
       const { from, to } = nodeRef;
-      // Only tables currently rendered as widgets (cursor was outside).
+      // Only blocks currently rendered as widgets (cursor was outside).
       if (selectionTouches(tr.startState, from, to)) return false;
       const firstLine = doc.lineAt(from);
       // Like Frontmatter, the Table node can end AT the next line's start —
@@ -408,12 +439,12 @@ const tableCursorEntry = EditorState.transactionFilter.of((tr) => {
   ];
 });
 
-// Tables replace whole line blocks, and CM6 forbids block decorations from
-// ViewPlugins — they live in a StateField instead.
-const tableField = StateField.define<DecorationSet>({
-  create: buildTableDecorations,
+// Tables/callouts replace whole line blocks, and CM6 forbids block
+// decorations from ViewPlugins — they live in a StateField instead.
+const blockWidgetField = StateField.define<DecorationSet>({
+  create: buildBlockWidgets,
   update(deco, tr) {
-    if (tr.docChanged || tr.selection) return buildTableDecorations(tr.state);
+    if (tr.docChanged || tr.selection) return buildBlockWidgets(tr.state);
     return deco.map(tr.changes);
   },
   provide: (f) => EditorView.decorations.from(f),
@@ -491,6 +522,13 @@ const livePreviewTheme = EditorView.baseTheme({
     minWidth: '100%',
   },
   '.cm-lp-table': { cursor: 'text', padding: '2px 0' },
+  // Rendered callout widget: the fancy .callout markup (icon, colored title,
+  // tinted body) comes from index.css; this spaces the block like the
+  // surrounding prose lines. whiteSpace reset: .cm-content is pre-wrap, which
+  // would turn the literal newlines between the rendered elements into blank
+  // lines inside the callout.
+  '.cm-lp-callout-block': { cursor: 'text', padding: '2px 0', whiteSpace: 'normal' },
+  '.cm-lp-callout-block .callout': { margin: '2px 0' },
   '.cm-lp-table table': {
     borderCollapse: 'collapse',
     margin: '2px 0',
@@ -525,8 +563,8 @@ export function livePreview(opts?: { maxLineWidth?: number }): Extension {
         ]
       : []),
     livePreviewPlugin,
-    tableField,
-    tableCursorEntry,
+    blockWidgetField,
+    blockWidgetCursorEntry,
     tableAutoFormat,
     livePreviewTheme,
   ];

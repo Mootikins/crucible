@@ -94,4 +94,64 @@ test.describe('Editor live preview (markdown default)', () => {
     await expect(content).not.toContainText('**bold**');
     await story.step(page, 'back to live preview');
   });
+
+  test('callouts render as admonition blocks; cursor reveals raw source', async ({ page }, testInfo) => {
+    const story = createStory(testInfo);
+    const CALLOUT_NOTE = {
+      name: 'Callout Note',
+      path: `${HARNESS_KILN}/Callout Note.md`,
+      content: [
+        '# Callouts',
+        '',
+        'Prose before.',
+        '',
+        '> [!warning] Mind the gap',
+        '> Callout body with **bold** prose.',
+        '',
+        '> [!tip]',
+        '> Default title comes from the type.',
+        '',
+        '> [!note]- Folded away',
+        '> Hidden until expanded.',
+        '',
+      ].join('\n'),
+    };
+    const harness = await setupEditorHarness(page, [CALLOUT_NOTE]);
+    await harness.open(CALLOUT_NOTE);
+    const content = page.locator('.cm-content');
+    await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 5000 });
+    await content.click();
+    await page.keyboard.press('Control+End');
+
+    // 1. Fancy admonitions: icon + colored title row, raw `> [!type]` hidden.
+    // (Attribute/tag/text locators only — the .callout markup carries no
+    // roles/testids, and story specs may not select by raw CSS class.)
+    const callouts = page.getByTestId('lp-callout');
+    await expect(callouts).toHaveCount(3);
+    await expect(callouts.nth(0).locator('[data-callout="warning"]')).toBeVisible();
+    await expect(callouts.nth(0).getByText('Mind the gap')).toBeVisible();
+    // The title-row icon renders (aria-hidden span, colored via CSS mask).
+    await expect(callouts.nth(0).locator('span[aria-hidden="true"]')).toBeVisible();
+    await expect(content).not.toContainText('[!warning]');
+    // Untitled callout falls back to its capitalized type.
+    await expect(callouts.nth(1).getByText('Tip', { exact: true })).toBeVisible();
+    // `[!note]-` renders a collapsed <details>.
+    const folded = callouts.nth(2).locator('details');
+    await expect(folded.getByText('Folded away')).toBeVisible();
+    await expect(folded).toHaveJSProperty('open', false);
+    await story.step(page, 'callouts rendered');
+    await expect(page.locator('.cm-editor')).toHaveScreenshot('editor-live-callouts.png');
+
+    // 2. Clicking a foldable title toggles it — without revealing the source.
+    await folded.locator('summary').click();
+    await expect(folded).toHaveJSProperty('open', true);
+    await expect(callouts).toHaveCount(3);
+    await story.step(page, 'foldable toggled open');
+
+    // 3. Clicking a callout body drops the cursor in and reveals raw markdown.
+    await callouts.nth(0).click();
+    await expect(content).toContainText('> [!warning] Mind the gap');
+    await expect(callouts).toHaveCount(2);
+    await story.step(page, 'callout revealed for editing');
+  });
 });
