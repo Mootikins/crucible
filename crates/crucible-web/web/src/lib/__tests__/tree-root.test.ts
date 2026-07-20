@@ -61,6 +61,27 @@ describe('buildRoster', () => {
     expect(groups[1].roots.filter((r) => r.path === '/vault')).toHaveLength(1);
   });
 
+  it('dedupes a kiln that also appears under its bare name (name-vs-path aliasing)', () => {
+    // The daemon can list the same kiln twice: once by absolute path and once
+    // by a bare name identifier (path == "docs", name == null). Resolve the
+    // bare name through the name→path map so both collapse to one root, keeping
+    // the descriptive name.
+    const groups = buildRoster(
+      [project('/home/moot/crucible', 'crucible', [{ path: '/home/moot/crucible/docs', name: 'crucible-docs' }])],
+      [kiln('crucible-docs', null), kiln('/home/moot/crucible/docs', 'crucible-docs')],
+    );
+    const docsRoots = groups[1].roots.filter((r) => r.path === '/home/moot/crucible/docs');
+    expect(docsRoots).toHaveLength(1);
+    expect(docsRoots[0].name).toBe('crucible-docs');
+    // The bare name did not survive as its own phantom root.
+    expect(groups[1].roots.some((r) => r.path === 'crucible-docs')).toBe(false);
+  });
+
+  it('keeps a name-only kiln when nothing maps the name to a path', () => {
+    const groups = buildRoster([], [kiln('solo-kiln', null)]);
+    expect(groups[1].roots).toEqual([{ kind: 'kiln', path: 'solo-kiln', name: 'solo-kiln' }]);
+  });
+
   it('does NOT collapse a project and a same-path kiln (rootKey includes kind)', () => {
     const groups = buildRoster([project('/vault', 'V')], [kiln('/vault', 'V')]);
     expect(groups[0].roots[0].path).toBe('/vault');

@@ -29,6 +29,9 @@ pub enum WebError {
     #[error("Not found: {0}")]
     NotFound(String),
 
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -42,6 +45,7 @@ impl IntoResponse for WebError {
             WebError::Daemon(e) => (StatusCode::BAD_GATEWAY, e.clone()),
             WebError::Validation(e) => (StatusCode::UNPROCESSABLE_ENTITY, e.clone()),
             WebError::NotFound(e) => (StatusCode::NOT_FOUND, e.clone()),
+            WebError::Forbidden(e) => (StatusCode::FORBIDDEN, e.clone()),
             WebError::Internal(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.clone()),
         };
 

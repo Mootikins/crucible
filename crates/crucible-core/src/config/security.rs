@@ -5,6 +5,40 @@
 
 use serde::{Deserialize, Serialize};
 
+/// How the web UI may access files inside a registered **project** root that
+/// are outside any attached kiln (source code, configs, README, …).
+///
+/// Kiln notes are always read-write — this policy governs only the project
+/// file-tree browser. Default is [`ReadWrite`](ProjectFileAccess::ReadWrite):
+/// the whole registered project is readable and writable from the web UI.
+/// Over a LAN bind (`cru web --host 0.0.0.0`) that reach is still gated by the
+/// session key like every other endpoint; on localhost it is unauthenticated.
+/// Tighten to `read-only` or `off` for shared/untrusted deployments. Set via
+/// `.crucible/project.toml`: `[security]` → `project_files = "read-only"`.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProjectFileAccess {
+    /// Read and write any file within the project root (default).
+    #[default]
+    ReadWrite,
+    /// Open project files but reject saves.
+    ReadOnly,
+    /// Project files are not served by the web UI at all (kiln notes only).
+    Off,
+}
+
+impl ProjectFileAccess {
+    /// Whether project files may be read (opened) via the web UI.
+    pub fn can_read(self) -> bool {
+        !matches!(self, ProjectFileAccess::Off)
+    }
+
+    /// Whether project files may be written (saved) via the web UI.
+    pub fn can_write(self) -> bool {
+        matches!(self, ProjectFileAccess::ReadWrite)
+    }
+}
+
 /// Policy for shell command execution security
 ///
 /// Implements prefix-based matching with blacklist-first evaluation.

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Web file-tree: opening a file from a **project** root (the repo/code dir) — README, source, configs, anything outside an attached kiln — no longer 404s. The `/api/kiln/file` read/write endpoints now also resolve files within a registered project, reusing the daemon's project allowlist alongside kiln containment.
+- Web file-tree root selector no longer lists the same kiln twice when the daemon reports it under both a bare name and an absolute path (name-vs-path aliasing is now resolved and deduped).
+
+### Added
+- `project_files` project security policy (`.crucible/project.toml` → `[security]`): `read-write` (default), `read-only`, or `off` — governs whether the web UI may read/write project files outside a kiln. Kiln notes remain always read-write.
+
 ## [0.11.3] - 2026-07-20
 
 ### Changed

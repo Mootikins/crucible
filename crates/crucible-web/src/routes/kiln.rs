@@ -5,6 +5,7 @@ use super::helpers::{
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{extract::State, routing::get, Json, Router};
+use crucible_core::config::{read_project_config, ProjectFileAccess};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use tokio::fs;
@@ -93,12 +94,21 @@ async fn get_kiln_file(
     axum::extract::Query(query): axum::extract::Query<FilePathQuery>,
 ) -> Result<Json<serde_json::Value>, WebError> {
     // The editor addresses files by ABSOLUTE path (a note's `path`); containment
-    // is enforced below by find_enclosing_kiln + validate_file_within_kiln.
+    // is enforced below by find_enclosing_root + validate_file_within_kiln.
     reject_path_traversal(&query.path)?;
 
     let file_path = PathBuf::from(&query.path);
-    let kiln = find_enclosing_kiln(&state, &file_path).await?;
-    let canonical_file = validate_file_within_kiln(&file_path, &kiln, &query.path)?;
+    let root = find_enclosing_root(&state, &file_path).await?;
+    // Project files are readable unless the project's policy is `off` (then
+    // they behave as not served — a 404, same as a path in no root at all).
+    if let EnclosingRoot::Project(_, policy) = &root {
+        if !policy.can_read() {
+            return Err(WebError::NotFound(
+                "File not within any open kiln".to_string(),
+            ));
+        }
+    }
+    let canonical_file = validate_file_within_kiln(&file_path, root.path(), &query.path)?;
 
     // Read the file directly. GET /api/notes/{name} (get_note_by_name) returns
     // only path/title/tags/links_to/content_hash — never a "content" field — so
@@ -129,9 +139,20 @@ async fn put_kiln_file(
     }
 
     let file_path = PathBuf::from(&req.path);
-    let kiln = find_enclosing_kiln(&state, &file_path).await?;
+    let root = find_enclosing_root(&state, &file_path).await?;
+    // Writes obey the project policy: `read-only` → 403, `off` → 404 (as if the
+    // file were not served). Kiln notes are always writable.
+    if let EnclosingRoot::Project(_, policy) = &root {
+        if !policy.can_write() {
+            return Err(if policy.can_read() {
+                WebError::Forbidden("Project files are read-only".to_string())
+            } else {
+                WebError::NotFound("File not within any open kiln".to_string())
+            });
+        }
+    }
 
-    validate_write_target_within_kiln(&file_path, &kiln)?;
+    validate_write_target_within_kiln(&file_path, root.path())?;
 
     // Create parent directories if needed
     if let Some(parent) = file_path.parent() {
@@ -145,25 +166,84 @@ async fn put_kiln_file(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-/// Find the open kiln that contains `file_path`.
-async fn find_enclosing_kiln(state: &AppState, file_path: &Path) -> Result<PathBuf, WebError> {
-    let kilns = state.daemon.kiln_list().await.daemon_err()?;
+/// A root the file endpoints may serve `file_path` from. Kilns are the
+/// knowledge content and are always read-write; projects (the code/repo dir a
+/// kiln lives in) obey a per-project [`ProjectFileAccess`] policy.
+enum EnclosingRoot {
+    Kiln(PathBuf),
+    Project(PathBuf, ProjectFileAccess),
+}
 
-    for kiln_value in &kilns {
-        if let Some(kiln_str) = kiln_value.get("path").and_then(|p| p.as_str()) {
-            let kiln_path = PathBuf::from(kiln_str);
-            if let Ok(canonical_kiln) = kiln_path.canonicalize() {
-                // Check if file_path is within this kiln (either raw or canonical)
-                if file_path.starts_with(&canonical_kiln) || file_path.starts_with(&kiln_path) {
-                    return Ok(canonical_kiln);
-                }
-            }
+impl EnclosingRoot {
+    /// The canonical containing directory, for containment validation.
+    fn path(&self) -> &Path {
+        match self {
+            EnclosingRoot::Kiln(p) | EnclosingRoot::Project(p, _) => p,
         }
     }
+}
 
-    Err(WebError::NotFound(
-        "File not within any open kiln".to_string(),
-    ))
+/// Return the canonical root if `file_path` is inside `root` (matched against
+/// both the canonical and raw forms, as daemon-reported paths may be either).
+fn canonical_if_contains(file_path: &Path, root: &Path) -> Option<PathBuf> {
+    let canonical = root.canonicalize().ok()?;
+    (file_path.starts_with(&canonical) || file_path.starts_with(root)).then_some(canonical)
+}
+
+/// Resolve which open root encloses `file_path`. Kilns take precedence over
+/// projects, so a kiln nested inside a project keeps its always-read-write
+/// treatment. Daemon-free (canonicalizes on the filesystem only) so the
+/// precedence and containment rules are unit-testable without a running daemon.
+fn resolve_enclosing_root(
+    file_path: &Path,
+    kilns: &[PathBuf],
+    projects: &[(PathBuf, ProjectFileAccess)],
+) -> Option<EnclosingRoot> {
+    for kiln in kilns {
+        if let Some(root) = canonical_if_contains(file_path, kiln) {
+            return Some(EnclosingRoot::Kiln(root));
+        }
+    }
+    for (project, policy) in projects {
+        if let Some(root) = canonical_if_contains(file_path, project) {
+            return Some(EnclosingRoot::Project(root, *policy));
+        }
+    }
+    None
+}
+
+/// Find the open kiln or registered project that contains `file_path`. The
+/// project's `project_files` policy (default read-write) is loaded from its
+/// `.crucible/project.toml` here so the handlers can gate read/write.
+async fn find_enclosing_root(
+    state: &AppState,
+    file_path: &Path,
+) -> Result<EnclosingRoot, WebError> {
+    let kilns: Vec<PathBuf> = state
+        .daemon
+        .kiln_list()
+        .await
+        .daemon_err()?
+        .iter()
+        .filter_map(|v| v.get("path").and_then(|p| p.as_str()).map(PathBuf::from))
+        .collect();
+
+    let projects: Vec<(PathBuf, ProjectFileAccess)> = state
+        .daemon
+        .project_list()
+        .await
+        .daemon_err()?
+        .into_iter()
+        .map(|p| {
+            let policy = read_project_config(&p.path)
+                .map(|c| c.security.project_files)
+                .unwrap_or_default();
+            (p.path, policy)
+        })
+        .collect();
+
+    resolve_enclosing_root(file_path, &kilns, &projects)
+        .ok_or_else(|| WebError::NotFound("File not within any open kiln".to_string()))
 }
 
 #[cfg(test)]
@@ -312,6 +392,73 @@ mod tests {
         let note = canonical_kiln.join("note.md");
         std::fs::write(&note, "hi").expect("write note");
         assert!(validate_write_target_within_kiln(&note, &canonical_kiln).is_ok());
+    }
+
+    // -- enclosing-root resolution (kiln vs project + policy) ----------------
+
+    #[test]
+    fn resolve_prefers_kiln_over_enclosing_project() {
+        // A kiln nested inside a project keeps its always-read-write treatment
+        // rather than inheriting the project's file policy.
+        let project = tempdir().expect("temp project");
+        let kiln = project.path().join("docs");
+        std::fs::create_dir(&kiln).expect("mkdir kiln");
+        let file = kiln.join("note.md");
+        std::fs::write(&file, "n").expect("write note");
+
+        let root = resolve_enclosing_root(
+            &file,
+            std::slice::from_ref(&kiln),
+            &[(project.path().to_path_buf(), ProjectFileAccess::Off)],
+        )
+        .expect("kiln should match first");
+        assert!(matches!(root, EnclosingRoot::Kiln(_)));
+    }
+
+    #[test]
+    fn resolve_matches_project_and_carries_policy() {
+        let project = tempdir().expect("temp project");
+        let file = project.path().join("README.md");
+        std::fs::write(&file, "r").expect("write readme");
+
+        for policy in [
+            ProjectFileAccess::ReadWrite,
+            ProjectFileAccess::ReadOnly,
+            ProjectFileAccess::Off,
+        ] {
+            let root =
+                resolve_enclosing_root(&file, &[], &[(project.path().to_path_buf(), policy)])
+                    .expect("project should match");
+            match root {
+                EnclosingRoot::Project(_, p) => assert_eq!(p, policy),
+                other => panic!("expected project root, got a kiln: {:?}", other.path()),
+            }
+        }
+    }
+
+    #[test]
+    fn resolve_returns_none_when_outside_every_root() {
+        let project = tempdir().expect("temp project");
+        let outside = tempdir().expect("temp outside");
+        let file = outside.path().join("secret.md");
+        std::fs::write(&file, "s").expect("write secret");
+
+        assert!(resolve_enclosing_root(
+            &file,
+            &[],
+            &[(project.path().to_path_buf(), ProjectFileAccess::ReadWrite)],
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn project_file_access_read_write_matrix() {
+        assert!(ProjectFileAccess::ReadWrite.can_read());
+        assert!(ProjectFileAccess::ReadWrite.can_write());
+        assert!(ProjectFileAccess::ReadOnly.can_read());
+        assert!(!ProjectFileAccess::ReadOnly.can_write());
+        assert!(!ProjectFileAccess::Off.can_read());
+        assert!(!ProjectFileAccess::Off.can_write());
     }
 
     proptest! {

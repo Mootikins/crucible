@@ -42,6 +42,13 @@ function basename(p: string): string {
  *    dir to its parent). A project and its attached kiln are DIFFERENT roots
  *    and never dedup against each other (`rootKey` includes `kind`).
  *
+ * The daemon may list one kiln under two identities — its absolute path AND a
+ * bare name (e.g. `path: "crucible-docs"` with `name: null`, alongside
+ * `path: "/…/docs"` with `name: "crucible-docs"`). A bare (non-absolute) path
+ * is resolved through the name→root map learned from the absolute entries so
+ * both collapse to a single root; a name that maps nowhere is kept as its own
+ * root rather than dropped.
+ *
  * Order is preserved (kilns in first-seen order); empty groups are still
  * returned (callers filter for display).
  */
@@ -52,11 +59,31 @@ export function buildRoster(projects: Project[], kilns: KilnListEntry[]): Roster
     name: p.name || basename(p.path),
   }));
 
+  // Learn name↔root from every entry that carries an absolute path, so a
+  // later bare-name alias can be resolved to (and named after) that root.
+  const nameToRoot = new Map<string, string>();
+  const rootToName = new Map<string, string>();
+  const learn = (rawPath: string, name: string | null) => {
+    if (!rawPath.startsWith('/')) return;
+    const root = kilnRoot(rawPath);
+    const trimmed = name?.trim();
+    if (!trimmed) return;
+    if (!nameToRoot.has(trimmed)) nameToRoot.set(trimmed, root);
+    if (!rootToName.has(root)) rootToName.set(root, trimmed);
+  };
+  for (const k of kilns) learn(k.path, k.name);
+  for (const p of projects) for (const k of p.kilns) learn(k.path, k.name);
+
   const seen = new Map<string, TreeRoot>();
   const pushKiln = (rawPath: string, name: string | null) => {
-    const root = kilnRoot(rawPath);
+    // Absolute → its normalized root; bare name → the root it aliases, or (if
+    // unknown) the name itself so a genuinely name-only kiln survives.
+    const root = rawPath.startsWith('/')
+      ? kilnRoot(rawPath)
+      : (nameToRoot.get(rawPath) ?? rawPath);
     if (!root || seen.has(root)) return;
-    seen.set(root, { kind: 'kiln', path: root, name: name?.trim() || basename(root) });
+    const display = name?.trim() || rootToName.get(root) || basename(root);
+    seen.set(root, { kind: 'kiln', path: root, name: display });
   };
 
   for (const k of kilns) pushKiln(k.path, k.name);

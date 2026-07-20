@@ -52,7 +52,7 @@ pub fn write_project_config(dir: &Path, config: &ProjectConfig) -> Result<()> {
 mod tests {
     use super::*;
     use crate::config::components::DataClassification;
-    use crate::config::security::ShellPolicy;
+    use crate::config::security::{ProjectFileAccess, ShellPolicy};
     use tempfile::TempDir;
 
     #[test]
@@ -111,6 +111,7 @@ blacklist = ["rm -rf"]
                     whitelist: vec!["git".to_string()],
                     blacklist: vec!["sudo".to_string()],
                 },
+                project_files: ProjectFileAccess::ReadOnly,
             },
         };
 
@@ -129,6 +130,22 @@ blacklist = ["rm -rf"]
         assert!(config.kilns.is_empty());
         assert!(config.security.shell.whitelist.is_empty());
         assert!(config.security.shell.blacklist.is_empty());
+        // Project files default to read-write when the key is absent.
+        assert_eq!(config.security.project_files, ProjectFileAccess::ReadWrite);
+    }
+
+    #[test]
+    fn project_files_policy_parses_from_toml() {
+        for (value, expected) in [
+            ("read-write", ProjectFileAccess::ReadWrite),
+            ("read-only", ProjectFileAccess::ReadOnly),
+            ("off", ProjectFileAccess::Off),
+        ] {
+            let toml = format!("[security]\nproject_files = \"{value}\"\n");
+            let config: ProjectConfig =
+                toml::from_str(&toml).expect("Failed to parse project_files policy");
+            assert_eq!(config.security.project_files, expected, "value {value}");
+        }
     }
 
     #[test]

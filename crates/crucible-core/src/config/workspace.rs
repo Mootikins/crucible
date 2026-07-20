@@ -4,7 +4,7 @@
 //! A workspace can contain multiple kiln attachments and security overrides.
 
 use crate::config::components::DataClassification;
-use crate::config::security::ShellPolicy;
+use crate::config::security::{ProjectFileAccess, ShellPolicy};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -67,6 +67,9 @@ impl KilnAttachment {
 pub struct SecurityConfig {
     /// Shell command execution policy
     pub shell: ShellPolicy,
+    /// Web UI access to project files outside any kiln. Defaults to
+    /// read-write; see [`ProjectFileAccess`].
+    pub project_files: ProjectFileAccess,
 }
 
 #[cfg(test)]
@@ -147,6 +150,7 @@ name = "Minimal"
                     whitelist: vec!["git".to_string()],
                     blacklist: vec!["sudo".to_string()],
                 },
+                ..Default::default()
             },
         };
 
@@ -270,6 +274,7 @@ path = "./docs"
                     whitelist: vec![],
                     blacklist: vec![],
                 },
+                ..Default::default()
             },
         };
 

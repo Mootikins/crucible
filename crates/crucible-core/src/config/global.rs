@@ -148,6 +148,7 @@ embedding = "secrets/api.toml"
                     whitelist: vec!["git".to_string(), "cargo".to_string()],
                     blacklist: vec!["sudo".to_string()],
                 },
+                ..Default::default()
             },
             include: None,
         };
