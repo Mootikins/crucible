@@ -131,7 +131,8 @@ pub fn session_routes() -> Router<AppState> {
 struct CreateSessionRequest {
     #[serde(default = "default_session_type")]
     session_type: String,
-    kiln: PathBuf,
+    /// Kiln for the session; omitted → daemon default (home kiln).
+    kiln: Option<PathBuf>,
     workspace: Option<PathBuf>,
     /// LLM provider (e.g., "ollama", "openai", "anthropic")
     provider: Option<String>,
@@ -139,6 +140,10 @@ struct CreateSessionRequest {
     model: Option<String>,
     /// Custom endpoint URL (optional, for self-hosted models)
     endpoint: Option<String>,
+    /// "internal" (default) or "acp"
+    agent_type: Option<String>,
+    /// ACP agent profile name (e.g. "claude", "opencode"); required when agent_type == "acp"
+    agent_name: Option<String>,
 }
 
 fn default_session_type() -> String {
@@ -251,43 +256,76 @@ async fn create_session(
         validate_endpoint(endpoint)?;
     }
 
+    let is_acp = req.agent_type.as_deref() == Some("acp");
+    if is_acp && req.agent_name.as_deref().unwrap_or("").is_empty() {
+        return Err(WebError::Validation(
+            "agent_name is required when agent_type is \"acp\"".to_string(),
+        ));
+    }
+
+    // Same fallback the daemon applies when kiln is omitted from session.create;
+    // the client wire type always sends a kiln, so resolve it here.
+    let kiln = req
+        .kiln
+        .unwrap_or_else(crucible_core::config::crucible_home);
+
     let result = state
         .daemon
         .session_create(
             &req.session_type,
-            &req.kiln,
+            &kiln,
             req.workspace.as_deref(),
             vec![],
             None,
             None,
+            req.agent_type.as_deref(),
         )
         .await
         .daemon_err()?;
 
     let session_id = result["session_id"].as_str().unwrap_or("");
 
-    // Resolve provider/model/endpoint: use provided values or detect defaults
-    let target = if req.provider.is_some() && req.model.is_some() {
-        resolve_agent_target(req.provider, req.model, req.endpoint, &[])
+    let agent = if is_acp {
+        // Mirror the CLI's `cru session create --agent <name>` path: resolve
+        // the profile daemon-side, then build the canonical ACP SessionAgent.
+        let agent_name = req.agent_name.as_deref().unwrap_or("");
+        let profile_json = state
+            .daemon
+            .agents_resolve_profile(agent_name)
+            .await
+            .daemon_err()?;
+        if profile_json.is_null() {
+            return Err(WebError::Validation(format!(
+                "Unknown ACP agent profile: {agent_name}"
+            )));
+        }
+        let profile: crucible_core::config::AgentProfile = serde_json::from_value(profile_json)
+            .map_err(|e| WebError::Daemon(format!("Failed to deserialize agent profile: {e}")))?;
+        SessionAgent::from_profile(&profile, agent_name)
     } else {
-        let providers = state.daemon.list_providers(None).await.unwrap_or_default();
-        resolve_agent_target(req.provider, req.model, req.endpoint, &providers)
-    };
+        // Resolve provider/model/endpoint: use provided values or detect defaults
+        let target = if req.provider.is_some() && req.model.is_some() {
+            resolve_agent_target(req.provider, req.model, req.endpoint, &[])
+        } else {
+            let providers = state.daemon.list_providers(None).await.unwrap_or_default();
+            resolve_agent_target(req.provider, req.model, req.endpoint, &providers)
+        };
 
-    // Configure agent for the session (required before sending messages)
-    let provider_type = BackendType::from_str(&target.provider)
-        .map_err(|e| WebError::Validation(format!("Invalid provider: {}", e)))?;
+        // Configure agent for the session (required before sending messages)
+        let provider_type = BackendType::from_str(&target.provider)
+            .map_err(|e| WebError::Validation(format!("Invalid provider: {}", e)))?;
 
-    // Base the agent on the SAME canonical builder the CLI uses so web and CLI
-    // sessions get identical config-derived defaults (temperature, max_tokens,
-    // endpoint, MCP servers, precognition). The web is request-driven for the
-    // provider/model/endpoint, so override only those.
-    let agent = SessionAgent {
-        provider_key: Some(target.provider_key),
-        provider: provider_type,
-        model: target.model,
-        endpoint: target.endpoint,
-        ..SessionAgent::internal_from_config(&state.config)
+        // Base the agent on the SAME canonical builder the CLI uses so web and CLI
+        // sessions get identical config-derived defaults (temperature, max_tokens,
+        // endpoint, MCP servers, precognition). The web is request-driven for the
+        // provider/model/endpoint, so override only those.
+        SessionAgent {
+            provider_key: Some(target.provider_key),
+            provider: provider_type,
+            model: target.model,
+            endpoint: target.endpoint,
+            ..SessionAgent::internal_from_config(&state.config)
+        }
     };
 
     state
@@ -776,6 +814,74 @@ mod tests {
     fn validate_endpoint_allows_public_domain_name() {
         // TODO(security): DNS rebinding not checked — hostname "evil.com" resolving to 10.0.0.1 would pass this validation
         assert!(validate_endpoint("http://evil.com").is_ok());
+    }
+
+    // =========================================================================
+    // create_session Tests
+    // =========================================================================
+
+    async fn post_create_session(
+        body: serde_json::Value,
+    ) -> (axum::http::StatusCode, serde_json::Value) {
+        let (_mock, client) = crate::test_support::start_mock_daemon().await;
+        let state = crate::test_support::build_mock_state(client);
+        let app = crate::test_support::build_test_app(state);
+
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/session")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+        (status, json)
+    }
+
+    #[tokio::test]
+    async fn create_session_works_without_a_kiln() {
+        let (status, json) = post_create_session(serde_json::json!({})).await;
+        assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
+        assert_eq!(json["session_id"], "test-session-001");
+    }
+
+    #[tokio::test]
+    async fn create_session_accepts_acp_agent() {
+        let (status, json) = post_create_session(serde_json::json!({
+            "agent_type": "acp",
+            "agent_name": "claude",
+        }))
+        .await;
+        assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
+        assert_eq!(json["session_id"], "test-session-001");
+    }
+
+    #[tokio::test]
+    async fn create_session_rejects_acp_without_agent_name() {
+        let (status, _) = post_create_session(serde_json::json!({
+            "agent_type": "acp",
+        }))
+        .await;
+        assert_eq!(status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn create_session_rejects_unknown_acp_agent() {
+        // The mock daemon resolves any profile name except "missing" to null.
+        let (status, _) = post_create_session(serde_json::json!({
+            "agent_type": "acp",
+            "agent_name": "missing",
+        }))
+        .await;
+        assert_eq!(status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     // =========================================================================

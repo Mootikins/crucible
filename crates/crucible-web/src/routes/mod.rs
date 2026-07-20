@@ -1,3 +1,4 @@
+mod agents;
 mod auth;
 mod chat;
 mod config;
@@ -18,6 +19,7 @@ mod skills;
 mod terminal;
 mod webhook;
 
+pub use agents::agents_routes;
 pub use auth::auth_routes;
 pub use chat::chat_routes;
 pub use config::config_routes;

@@ -431,6 +431,7 @@ impl ReconnectingDaemon {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn session_create(
         &self,
         session_type: &str,
@@ -439,6 +440,7 @@ impl ReconnectingDaemon {
         connect_kilns: Vec<&Path>,
         recording_mode: Option<&str>,
         recording_path: Option<&Path>,
+        agent_type: Option<&str>,
     ) -> anyhow::Result<serde_json::Value> {
         let session_type = session_type.to_string();
         let kiln = kiln.to_path_buf();
@@ -447,6 +449,7 @@ impl ReconnectingDaemon {
             connect_kilns.into_iter().map(Path::to_path_buf).collect();
         let recording_mode = recording_mode.map(str::to_string);
         let recording_path = recording_path.map(Path::to_path_buf);
+        let agent_type = agent_type.map(str::to_string);
 
         self.call_with_reconnect("session.create", move |daemon| {
             let session_type = session_type.clone();
@@ -455,6 +458,7 @@ impl ReconnectingDaemon {
             let connect_kilns = connect_kilns.clone();
             let recording_mode = recording_mode.clone();
             let recording_path = recording_path.clone();
+            let agent_type = agent_type.clone();
             Box::pin(async move {
                 daemon
                     .session_create(crucible_daemon::rpc_client::SessionCreateParams {
@@ -464,7 +468,7 @@ impl ReconnectingDaemon {
                         connect_kilns,
                         recording_mode: recording_mode.clone(),
                         recording_path: recording_path.clone(),
-                        agent_type: None,
+                        agent_type,
                     })
                     .await
             })
@@ -778,6 +782,36 @@ impl ReconnectingDaemon {
         self.call_with_reconnect("providers.list", move |daemon| {
             let kiln_path = kiln_path.map(|p| p.to_path_buf());
             Box::pin(async move { daemon.list_providers(kiln_path.as_deref()).await })
+        })
+        .await
+    }
+
+    /// List all chat models across providers without an active session.
+    pub async fn list_all_models(
+        &self,
+        kiln_path: Option<&std::path::Path>,
+    ) -> anyhow::Result<Vec<String>> {
+        self.call_with_reconnect("models.list", move |daemon| {
+            let kiln_path = kiln_path.map(|p| p.to_path_buf());
+            Box::pin(async move { daemon.list_all_models(kiln_path.as_deref()).await })
+        })
+        .await
+    }
+
+    /// List ACP agent profiles (builtins + config) with probed availability.
+    pub async fn agents_list_profiles(&self) -> anyhow::Result<serde_json::Value> {
+        self.call_with_reconnect("agents.list_profiles", move |daemon| {
+            Box::pin(async move { daemon.agents_list_profiles().await })
+        })
+        .await
+    }
+
+    /// Resolve a named ACP agent profile (JSON null when unknown).
+    pub async fn agents_resolve_profile(&self, name: &str) -> anyhow::Result<serde_json::Value> {
+        let name = name.to_string();
+        self.call_with_reconnect("agents.resolve_profile", move |daemon| {
+            let name = name.clone();
+            Box::pin(async move { daemon.agents_resolve_profile(&name).await })
         })
         .await
     }

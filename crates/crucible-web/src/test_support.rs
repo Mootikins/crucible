@@ -5,7 +5,8 @@
 // this replaced drifted (different resume_from_storage shapes).
 #[cfg(any(test, feature = "test-utils"))]
 use crate::routes::{
-    chat_routes, fs_routes, health_routes, project_routes, search_routes, session_routes,
+    agents_routes, chat_routes, fs_routes, health_routes, project_routes, search_routes,
+    session_routes,
 };
 #[cfg(any(test, feature = "test-utils"))]
 use crate::services::daemon::{AppState, EventBroker, ReconnectingDaemon};
@@ -347,6 +348,33 @@ pub fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
         "session.get_precognition_results" => json!({"precognition_results": 5}),
         "session.render_markdown" => json!({"markdown": "# Test Session\n\nExported content"}),
         "providers.list" => json!({"providers": []}),
+        "models.list" => json!({"models": ["ollama/llama3.2", "openai/gpt-4o"]}),
+        "agents.list_profiles" => json!({
+            "profiles": [
+                {"name": "claude", "description": "Claude Code via ACP", "command": "npx", "is_builtin": true, "available": false},
+                {"name": "opencode", "description": "OpenCode AI (Go)", "command": "opencode", "is_builtin": true, "available": true},
+            ]
+        }),
+        // Name "missing" is unknown (null); anything else resolves.
+        "agents.resolve_profile" => {
+            let name = _msg
+                .get("params")
+                .and_then(|p| p.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if name == "missing" {
+                Value::Null
+            } else {
+                json!({
+                    "name": name,
+                    "description": "Mock ACP agent",
+                    "command": "mock-agent",
+                    "is_builtin": true,
+                    "args": [],
+                    "env": {},
+                })
+            }
+        }
         "plugin.list" => json!({
             "plugins": ["mock-plugin"],
             "plugin_info": [{
@@ -444,6 +472,7 @@ pub fn unique_test_layout_path() -> std::path::PathBuf {
 /// Build the full app router with mock state.
 pub fn build_test_app(state: AppState) -> Router {
     Router::new()
+        .merge(agents_routes())
         .merge(chat_routes())
         .merge(session_routes())
         .merge(project_routes())
