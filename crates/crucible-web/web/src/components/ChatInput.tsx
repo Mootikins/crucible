@@ -10,7 +10,7 @@ import { executeCommand } from '@/lib/api';
 import { statusBarStore, pathBasename } from '@/stores/statusBarStore';
 export const ChatInput: Component = () => {
   const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, switchMode, addSystemMessage, clearMessages } = useChatSafe();
-  const { currentSession, cancelCurrentOperation, availableModels, switchModel, selectedProvider } = useSessionSafe();
+  const { currentSession, cancelCurrentOperation, availableModels, switchModel } = useSessionSafe();
   const [input, setInput] = createSignal('');
   const [isModelPickerOpen, setIsModelPickerOpen] = createSignal(false);
   const { isRecording, audioLevel, startRecording, stopRecording } = useMediaRecorder();
@@ -118,17 +118,12 @@ export const ChatInput: Component = () => {
     onCleanup(() => document.removeEventListener('mousedown', handleClickOutside));
   });
 
-  const providerPrefix = () => {
-    const provider = selectedProvider();
-    return provider?.provider_type ?? 'ollama';
-  };
-
-  const formatModelDisplay = (model: string) => {
-    if (model.includes('/')) {
-      return model;
-    }
-    return `${providerPrefix()}/${model}`;
-  };
+  // Show the model id as-is. Prefixing with the provider's wire *type* turned
+  // every model into "openai/…" for any OpenAI-compatible endpoint (e.g. a
+  // local GLM server) — misleading, and redundant since the picker is already
+  // scoped to the session's provider. Ids that carry their own namespace
+  // (OpenRouter's "openai/gpt-4o") keep their natural form either way.
+  const formatModelDisplay = (model: string) => model;
 
   const currentModel = () => {
     const s = currentSession();

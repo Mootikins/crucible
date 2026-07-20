@@ -131,10 +131,15 @@ describe('ChatInput', () => {
     expect(modelButton).toBeInTheDocument();
   });
 
-  it('displays current model in picker button', () => {
+  it('displays the model id as-is (no provider-type prefix)', () => {
     render(() => <ChatInput />);
     const modelButton = screen.getByTestId('model-picker-button');
-    expect(modelButton.textContent).toContain('ollama/test-model');
+    // The picker is scoped to the session's provider, so the model shows
+    // unprefixed — not "openai/…"/"ollama/…" (that misled openai-compatible
+    // endpoints into always reading "openai/").
+    expect(modelButton.textContent).toContain('test-model');
+    expect(modelButton.textContent).not.toContain('ollama/');
+    expect(modelButton.textContent).not.toContain('openai/');
   });
 
   it('renders form with correct data-testid', () => {
