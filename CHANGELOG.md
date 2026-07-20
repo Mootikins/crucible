@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-07-20
+
+### Added
+- **Knowledge graph view** (web): an Obsidian-style interactive graph of the kiln — notes as uniform nodes with collision spacing, wikilinks as edges, unresolved targets as ghost nodes, optional tag nodes. Smooth canvas force layout with zoom-to-cursor, pan, node dragging, hover neighborhood highlighting with eased fade-in labels (hover-only), click-to-open, and a persisted settings card (search filter, tags/unresolved/orphans toggles, display + physics sliders). Backed by a new `kiln.graph` RPC / `GET /api/kiln/graph` over the resolved link index.
+- **Callouts**: `> [!note] Title` blockquotes render as colored admonition blocks across reading mode, chat, and hover previews — all 13 Obsidian variants plus aliases, foldable `-`/`+` forms, icons, and live-preview tinting. Documented in `Help/Callouts`.
+- **Editor code highlighting**: fenced ` ```lang ` blocks now highlight inside the live/source editor (grammars lazy-load per language); reading mode already highlighted via shiki.
+- **Table editing**: entering a rendered table auto-aligns its source into a monospace, non-wrapping column grid (alignment markers preserved) and re-tidies on exit; vim `j`/`k` and other vertical motions now move *into* rendered tables instead of skipping over them.
+- **New-session chooser**: creating a session now offers kiln and project-workspace selection with defaults prefilled (Enter keeps the one-keypress fast path).
+- `scripts/sanity-web.sh`: post-install smoke check (binary, daemon socket ownership, UI/assets, graph API, LAN reachability, remote-API auth enforcement).
+
+### Changed
+- Sessions now dock as tabs in the **right edge panel** (auto-expanding) instead of splitting the center tiling; persisted layouts migrate on load (center chat tabs move right, emptied panes collapse, legacy session-less chat tabs are pruned).
+
+### Fixed
+- Kilns indexed before the resolved-link index existed had permanently empty graphs/backlinks; the relink pass now also fires for them.
+- Frontmatter `tags:` are now indexed alongside inline `#tags` (tag search and graph tag nodes were empty for frontmatter-tagged kilns).
+- Table header rows drifted out of column alignment while editing (bold header tokens are metrically wider; revealed table lines now pin font metrics).
+- `[[...]]` inside code blocks, inline code, and frontmatter is no longer treated as a wikilink (TOML `[[table]]` headers were getting link pills and bracket hiding).
+- File-tree folder chevrons now rotate on expand; tab bars no longer compress below their intended height; several panels rooted at a mismatched background tone were unified.
+- Duplicate "no active session" notices in the chat panel reduced to one.
+
 ## [0.11.0] - 2026-07-19
 
 ### Added
