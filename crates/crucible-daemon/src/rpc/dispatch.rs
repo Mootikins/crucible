@@ -639,7 +639,9 @@ impl RpcDispatcher {
     }
 
     async fn handle_kiln_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_kiln_list(req.clone(), &self.ctx.kiln).await;
+        let resp =
+            crate::server::kiln::handle_kiln_list(req.clone(), &self.ctx.kiln, &self.ctx.data_home)
+                .await;
         map_server_resp(resp)
     }
 

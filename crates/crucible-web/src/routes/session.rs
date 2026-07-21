@@ -279,7 +279,9 @@ async fn create_session(
         .await
         .daemon_err()?;
 
-    let session_id = result["session_id"].as_str().unwrap_or("");
+    let mut result = result;
+    let session_id = result["session_id"].as_str().unwrap_or("").to_string();
+    let session_id = session_id.as_str();
 
     let agent = if is_acp {
         // Mirror the CLI's `cru session create --agent <name>` path: resolve
@@ -335,6 +337,11 @@ async fn create_session(
         .session_subscribe(&[session_id])
         .await
         .daemon_err()?;
+
+    // The daemon's create response predates agent configuration, so it has no
+    // model; without this the UI's model button renders blank on a
+    // defaults-only create.
+    result["agent_model"] = serde_json::json!(agent.model);
 
     Ok(Json(result))
 }

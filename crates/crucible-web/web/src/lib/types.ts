@@ -10,11 +10,17 @@ export interface TokenUsage {
 /** Message in the chat */
 export interface Message {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   timestamp: number;
   /** Tool calls made during this message */
   toolCalls?: ToolCallSummary[];
+  /**
+   * For role "tool": the tool invocation this transcript entry represents.
+   * Tool calls are first-class transcript entries (like Claude Code / VS Code
+   * agent chat) so they persist after the turn instead of vanishing.
+   */
+  toolCall?: ToolCallDisplay;
   /** Message subtype (e.g., 'precognition' for auto-injected context) */
   type?: string;
   /** Thinking block data (extended thinking / reasoning) */

@@ -533,7 +533,11 @@ pub(super) fn extract_note_info(
             // keeping different files that share a display title.
             let dedup_key = (filename.to_string(), kiln_label.clone());
             if seen.insert(dedup_key) {
-                Some(crucible_core::traits::chat::PrecognitionNoteInfo { title, kiln_label })
+                Some(crucible_core::traits::chat::PrecognitionNoteInfo {
+                    title,
+                    kiln_label,
+                    score: r.score,
+                })
             } else {
                 None
             }

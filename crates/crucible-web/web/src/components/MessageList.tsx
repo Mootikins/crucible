@@ -1,10 +1,11 @@
 import { Component, For, Show, createEffect, createMemo } from 'solid-js';
 import { Message } from './Message';
+import { InteractionHandler } from './interactions';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 
 export const MessageList: Component = () => {
-  const { messages, isStreaming } = useChatSafe();
+  const { messages, isStreaming, pendingInteraction, respondToInteraction } = useChatSafe();
   const { currentSession } = useSessionSafe();
   let bottomRef: HTMLDivElement | undefined;
 
@@ -14,6 +15,7 @@ export const MessageList: Component = () => {
 
   createEffect(() => {
     messages();
+    pendingInteraction();
     queueMicrotask(scrollToBottom);
   });
 
@@ -44,6 +46,16 @@ export const MessageList: Component = () => {
           );
         }}
       </For>
+
+      {/* Permission/ask prompts appear inline at the point in the
+          conversation where the agent is blocked, like other agent UIs. */}
+      <Show when={pendingInteraction()}>
+        {(request) => (
+          <div class="max-w-3xl">
+            <InteractionHandler request={request()} onRespond={respondToInteraction} />
+          </div>
+        )}
+      </Show>
       <div ref={bottomRef} class="h-px" />
 
       <Show when={messages().length === 0}>

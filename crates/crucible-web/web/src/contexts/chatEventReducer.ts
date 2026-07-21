@@ -23,7 +23,10 @@ interface ChatEventReducerDeps {
   addMessage: (message: Message) => void;
   updateMessage: (id: string, updates: Partial<Message>) => void;
   appendToMessage: (id: string, content: string) => void;
-  setActiveTools: ArraySetter<ToolCallDisplay>;
+  /** Insert a tool invocation as a transcript entry (role "tool"). */
+  addToolMessage: (tool: ToolCallDisplay) => void;
+  /** Update a tool transcript entry by call id. */
+  updateToolMessage: (callId: string, updater: (tool: ToolCallDisplay) => ToolCallDisplay) => void;
   setSubagentEvents: ArraySetter<SubagentEvent>;
   setContextUsage: (usage: ContextUsage | null) => void;
   setChatMode: (mode: ChatMode) => void;
@@ -32,16 +35,6 @@ interface ChatEventReducerDeps {
   setError: (value: string | null) => void;
   setIsLoading: (value: boolean) => void;
   setIsStreaming: (value: boolean) => void;
-}
-
-function updateTool(
-  tools: ToolCallDisplay[],
-  id: string,
-  updates: Partial<ToolCallDisplay>,
-): ToolCallDisplay[] {
-  return tools.map((tool) => (
-    tool.callId === id || tool.id === id ? { ...tool, ...updates } : tool
-  ));
 }
 
 function upsertSubagentEvent(
@@ -75,19 +68,19 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
       case 'tool_call_start': {
         const toolName = 'title' in event ? event.title : ('name' in event ? event.name : '');
         const toolArgs = 'arguments' in event ? JSON.stringify(event.arguments ?? '') : '';
-        const tool: ToolCallDisplay = {
+        deps.addToolMessage({
           id: event.id,
           name: toolName,
           args: toolArgs,
           status: 'running',
           callId: event.id,
-        };
-        deps.setActiveTools((prev) => [...prev, tool]);
+        });
         break;
       }
 
       case 'tool_result':
-        deps.setActiveTools((prev) => updateTool(prev, event.id, {
+        deps.updateToolMessage(event.id, (tool) => ({
+          ...tool,
           result: event.result ?? '',
           status: 'complete',
           terminate: event.terminate ?? false,
@@ -95,20 +88,19 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         break;
 
       case 'tool_result_delta':
-        deps.setActiveTools((prev) => prev.map((tool) => {
-          if (tool.callId === event.id || tool.id === event.id) {
-            return { ...tool, result: (tool.result ?? '') + event.delta };
-          }
-          return tool;
+        deps.updateToolMessage(event.id, (tool) => ({
+          ...tool,
+          result: (tool.result ?? '') + event.delta,
         }));
         break;
 
       case 'tool_result_complete':
-        deps.setActiveTools((prev) => updateTool(prev, event.id, { status: 'complete' }));
+        deps.updateToolMessage(event.id, (tool) => ({ ...tool, status: 'complete' }));
         break;
 
       case 'tool_result_error':
-        deps.setActiveTools((prev) => updateTool(prev, event.id, {
+        deps.updateToolMessage(event.id, (tool) => ({
+          ...tool,
           result: event.error,
           status: 'error',
         }));
@@ -157,7 +149,6 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         }
         deps.setIsStreaming(false);
         deps.setIsLoading(false);
-        deps.setActiveTools([]);
         deps.setCurrentStreamingMessageId(null);
 
         if (!deps.hasReceivedFirstResponse() && deps.firstUserMessage()) {

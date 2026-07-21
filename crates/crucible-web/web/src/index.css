@@ -100,11 +100,10 @@
     @apply bg-surface-overlay text-shell-ink rounded-br-md;
   }
 
-  /* Assistant messages: full-width, left border accent */
+  /* Assistant messages: plain full-width text — the user bubble carries the
+     visual distinction, so agent output needs no callout of its own. */
   .message-assistant {
     @apply w-full px-4 py-3 text-shell-ink;
-    @apply border-l-[3px] border-primary/60;
-    @apply bg-shell-panel/30;
   }
 }
 

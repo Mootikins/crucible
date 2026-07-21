@@ -57,7 +57,7 @@ describe('ToolCard integration — real DiffViewer + Shiki', () => {
     expandCard(container);
 
     // Diff header file name from the real DiffViewer
-    expect(screen.getByText('foo.rs')).toBeInTheDocument();
+    expect(screen.getAllByText('foo.rs').length).toBeGreaterThanOrEqual(1);
 
     // +/- stats from analyzeDiff (one substitution: +1/-1)
     expect(screen.getByText('+1')).toBeInTheDocument();
@@ -90,7 +90,7 @@ describe('ToolCard integration — real DiffViewer + Shiki', () => {
     expandCard(container);
 
     // Outer header (DiffViewer's own) shows the file name
-    expect(screen.getByText('new.py')).toBeInTheDocument();
+    expect(screen.getAllByText('new.py').length).toBeGreaterThanOrEqual(1);
 
     // Write maps to oldContent='' → analyzeDiff treats every newContent line
     // as an addition. Two lines → +2 / -0.
@@ -121,7 +121,7 @@ describe('ToolCard integration — real DiffViewer + Shiki', () => {
     expandCard(container);
 
     // Outer MultiEditDiff header shows the file path
-    expect(screen.getByText('mod.ts')).toBeInTheDocument();
+    expect(screen.getAllByText('mod.ts').length).toBeGreaterThanOrEqual(1);
 
     // MultiEditDiff renders an "N edits" pill
     expect(screen.getByText('2 edits')).toBeInTheDocument();

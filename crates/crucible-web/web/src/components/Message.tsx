@@ -204,6 +204,22 @@ export const Message: Component<MessageProps> = (props) => {
 
   const showActions = () => !isSystem() && !props.isStreaming;
 
+  // Tool invocations are transcript rows of their own (role never changes
+  // for a given message, so a plain branch is safe in Solid).
+  if (props.message.role === 'tool' && props.message.toolCall) {
+    return (
+      <div
+        class="group relative mb-3 flex justify-start"
+        data-testid="message-tool"
+        data-role="tool"
+      >
+        <div class="w-full max-w-3xl">
+          <ToolCard toolCall={props.message.toolCall} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       class={`group relative mb-4 flex ${isUser() ? 'justify-end' : 'justify-start'}`}

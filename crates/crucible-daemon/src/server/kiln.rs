@@ -112,10 +112,18 @@ pub(crate) async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Re
     }
 }
 
-pub(crate) async fn handle_kiln_list(req: Request, km: &Arc<KilnManager>) -> Response {
+pub(crate) async fn handle_kiln_list(
+    req: Request,
+    km: &Arc<KilnManager>,
+    data_home: &Path,
+) -> Response {
     let kilns = km.list().await;
     let list: Vec<_> = kilns
         .iter()
+        // The daemon data root (~/.crucible) gets opened as the fallback kiln
+        // for kiln-less sessions, but it is config/session storage — not a
+        // user kiln. Listing it would surface ".crucible" in every kiln picker.
+        .filter(|(path, _, _)| path != data_home)
         .map(|(path, name, last_access)| {
             serde_json::json!({
                 "path": path.to_string_lossy(),

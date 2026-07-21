@@ -35,6 +35,9 @@ vi.mock('@/lib/api', () => ({
     .fn()
     .mockResolvedValue([{ path: '/home/user/kilns/other', name: 'other' }]),
   listProjects: vi.fn().mockResolvedValue([{ path: '/repos/crucible', name: 'crucible', kilns: [] }]),
+  listProviders: vi.fn().mockResolvedValue([
+    { name: 'ollama', provider_type: 'ollama', available: true, default_model: 'llama3.2', models: [] },
+  ]),
 }));
 
 afterEach(() => {

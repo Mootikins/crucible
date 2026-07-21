@@ -70,6 +70,10 @@ pub enum ChatError {
 pub struct PrecognitionNoteInfo {
     pub title: String,
     pub kiln_label: Option<String>,
+    /// Search relevance score from the vector index. Defaults for payloads
+    /// recorded before the field existed.
+    #[serde(default)]
+    pub score: f64,
 }
 
 /// Result from a completed tool execution

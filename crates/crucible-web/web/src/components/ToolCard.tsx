@@ -75,6 +75,28 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
     }
   });
 
+  // One-line header summary (the bash command, file path, query, …) so a
+  // collapsed row still says what the tool did — like other agent UIs.
+  const argSummary = createMemo(() => {
+    const args = props.toolCall.args;
+    if (!args || args === '' || args === '""') return null;
+    try {
+      const parsed: unknown = JSON.parse(args);
+      if (typeof parsed === 'string') return parsed || null;
+      if (parsed && typeof parsed === 'object') {
+        const record = parsed as Record<string, unknown>;
+        for (const key of ['command', 'file_path', 'path', 'pattern', 'query', 'url', 'name', 'note']) {
+          if (typeof record[key] === 'string' && record[key]) return record[key] as string;
+        }
+        const first = Object.values(record).find((v) => typeof v === 'string' && v);
+        return (first as string | undefined) ?? null;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
   const diff = createMemo(() => extractDiffFromToolCall(props.toolCall));
 
   return (
@@ -84,8 +106,11 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
         class="w-full flex items-center gap-2 px-3 py-2 hover:bg-hover-wash transition-colors text-left"
       >
         <span class="text-base leading-none">{iconForTool(props.toolCall.name)}</span>
-        <span class="flex-1 text-sm font-medium text-shell-ink truncate font-mono">
+        <span class="flex-shrink-0 max-w-[40%] text-sm font-medium text-shell-ink truncate font-mono">
           {props.toolCall.name}
+        </span>
+        <span class="flex-1 min-w-0 text-xs text-muted-dark truncate font-mono">
+          {argSummary() ?? ''}
         </span>
         <Show when={props.toolCall.terminate}>
           <span

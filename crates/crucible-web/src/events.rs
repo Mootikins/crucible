@@ -359,10 +359,9 @@ impl ChatEvent {
                                         .get("title")
                                         .or_else(|| note.get("name"))
                                         .and_then(|v| v.as_str())?;
-                                    let relevance = note
-                                        .get("relevance")
-                                        .and_then(|v| v.as_f64())
-                                        .unwrap_or(0.0);
+                                    // Daemon payloads carry `score` (PrecognitionNoteInfo).
+                                    let relevance =
+                                        note.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0);
                                     Some(PrecognitionNote {
                                         name: name.to_string(),
                                         relevance,

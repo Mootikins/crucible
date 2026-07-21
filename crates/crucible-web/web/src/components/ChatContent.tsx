@@ -1,17 +1,14 @@
 import { Component, Show, For } from 'solid-js';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
-import { ToolCard } from './ToolCard';
 import { SubagentCard } from './SubagentCard';
 import { DelegationCard } from './DelegationCard';
-import { InteractionHandler } from './interactions';
 import { useChatSafe } from '@/contexts/ChatContext';
 
 export const ChatContent: Component = () => {
   const chatCtx = useChatSafe();
-  const { pendingInteraction, respondToInteraction, isLoadingHistory } = chatCtx;
+  const { isLoadingHistory } = chatCtx;
 
-  const hasActiveTools = () => chatCtx.activeTools().length > 0;
   const hasSubagentEvents = () => chatCtx.subagentEvents().length > 0;
   return (
     <div class="h-full flex flex-col overflow-hidden" data-message-renderer="markdown-it">
@@ -25,18 +22,11 @@ export const ChatContent: Component = () => {
           </div>
         </Show>
         <Show when={!isLoadingHistory()}>
+          {/* Tool calls and permission prompts render inline in the
+              transcript (MessageList), not in strips above the input. */}
           <MessageList />
         </Show>
       </div>
-
-      {/* Active tool calls during streaming — shown above input */}
-      <Show when={hasActiveTools()}>
-        <div class="px-4 py-2 border-t border-hairline max-h-64 overflow-y-auto">
-          <For each={chatCtx.activeTools()}>
-            {(tool) => <ToolCard toolCall={tool} />}
-          </For>
-        </div>
-      </Show>
 
       <Show when={hasSubagentEvents()}>
         <div class="px-4 py-2 border-t border-hairline max-h-64 overflow-y-auto">
@@ -48,14 +38,6 @@ export const ChatContent: Component = () => {
             )}
           </For>
         </div>
-      </Show>
-
-      <Show when={pendingInteraction()}>
-        {(request) => (
-          <div class="px-4">
-            <InteractionHandler request={request()} onRespond={respondToInteraction} />
-          </div>
-        )}
       </Show>
 
       <ChatInput />

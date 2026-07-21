@@ -1,6 +1,13 @@
 import { Component, For, Show, createSignal, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import { getConfig, listAgents, listAllModels, listKilns, listProjects } from '@/lib/api';
+import {
+  getConfig,
+  listAgents,
+  listAllModels,
+  listKilns,
+  listProjects,
+  listProviders,
+} from '@/lib/api';
 import type { AgentProfileEntry, KilnListEntry, Project } from '@/lib/types';
 import { closeDraftTab } from '@/lib/draft-session';
 
@@ -21,6 +28,7 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
   const [kilns, setKilns] = createSignal<KilnListEntry[]>([]);
   const [projects, setProjects] = createSignal<Project[]>([]);
   const [defaultKiln, setDefaultKiln] = createSignal('');
+  const [defaultModel, setDefaultModel] = createSignal('');
 
   // '' = internal agent / default kiln / default model / no project.
   const [agentName, setAgentName] = createSignal('');
@@ -35,18 +43,23 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
 
   onMount(() => {
     void (async () => {
-      const [cfg, ag, mo, ks, ps] = await Promise.all([
+      const [cfg, ag, mo, ks, ps, providers] = await Promise.all([
         getConfig().catch(() => null),
         listAgents().catch(() => [] as AgentProfileEntry[]),
         listAllModels().catch(() => [] as string[]),
         listKilns().catch(() => [] as KilnListEntry[]),
         listProjects().catch(() => [] as Project[]),
+        listProviders().catch(() => []),
       ]);
       if (cfg?.kiln_path) setDefaultKiln(cfg.kiln_path);
       setAgents(ag);
       setModels(mo.filter((m) => !m.startsWith('[error]')));
       setKilns(ks);
       setProjects(ps);
+      // What a defaults-only create actually resolves to (first available
+      // provider) — shown so "default" isn't a blank promise.
+      const first = providers.find((p) => p.available);
+      if (first?.default_model) setDefaultModel(first.default_model);
     })();
   });
 
@@ -143,7 +156,9 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
                 title="Model"
                 data-testid="draft-model"
               >
-                <option value="">Default model</option>
+                <option value="">
+                  {defaultModel() ? `${defaultModel()} (default)` : 'Default model'}
+                </option>
                 <For each={models()}>{(m) => <option value={m}>{m}</option>}</For>
               </select>
             </Show>

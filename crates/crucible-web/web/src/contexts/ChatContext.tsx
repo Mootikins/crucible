@@ -49,7 +49,6 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   const [isStreaming, setIsStreamingRaw] = createSignal(false);
   const [pendingInteraction, setPendingInteractionRaw] = createSignal<InteractionRequest | null>(null);
   const [error, setError] = createSignal<string | null>(null);
-  const [activeTools, setActiveTools] = createStore<ToolCallDisplay[]>([]);
   const [subagentEvents, setSubagentEvents] = createStore<SubagentEvent[]>([]);
   const [contextUsage, setContextUsage] = createSignal<ContextUsage | null>(null);
   const [chatMode, setChatMode] = createSignal<ChatMode>('normal');
@@ -106,9 +105,49 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     });
   };
 
+  /**
+   * Tool calls are transcript entries. A turn's tools run BEFORE its answer
+   * text, but sendMessage pre-creates the (empty) assistant message — so a
+   * new tool entry is inserted before that placeholder while it is still
+   * empty, keeping transcript order chronological: user → tools → answer.
+   */
+  const addToolMessage = (tool: ToolCallDisplay) => {
+    const toolMessage: Message = {
+      id: `tool-${tool.callId ?? tool.id}`,
+      role: 'tool',
+      content: '',
+      timestamp: Date.now(),
+      toolCall: tool,
+    };
+    setMessages((prev) => {
+      const streamingId = currentStreamingMessageId;
+      const index = streamingId ? prev.findIndex((m) => m.id === streamingId) : -1;
+      if (index !== -1 && prev[index].content === '') {
+        const next = [...prev];
+        next.splice(index, 0, toolMessage);
+        return next;
+      }
+      return [...prev, toolMessage];
+    });
+  };
+
+  // Fine-grained path update: mutating `toolCall` in place keeps the message
+  // object's identity stable, so <For> doesn't recreate the row and the
+  // ToolCard's expanded state survives streaming result deltas.
+  const updateToolMessage = (
+    callId: string,
+    updater: (tool: ToolCallDisplay) => ToolCallDisplay,
+  ) => {
+    setMessages(
+      (m) => m.role === 'tool' && !!m.toolCall
+        && (m.toolCall.callId === callId || m.toolCall.id === callId),
+      'toolCall',
+      (tool) => updater(tool as ToolCallDisplay),
+    );
+  };
+
    const clearMessages = () => {
      setMessages([]);
-     setActiveTools([]);
      setSubagentEvents([]);
      setContextUsage(null);
      setError(null);
@@ -174,7 +213,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     addMessage,
     updateMessage,
     appendToMessage,
-    setActiveTools,
+    addToolMessage,
+    updateToolMessage,
     setSubagentEvents,
     setContextUsage,
     setChatMode,
@@ -189,7 +229,14 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     try {
       const response = await getSessionHistory(sessionId, kiln, undefined, undefined, signal);
       const loadedMessages: Message[] = [];
-      
+
+      // Attach a result to the newest matching tool entry.
+      const findToolMessage = (callId: string): Message | undefined =>
+        [...loadedMessages].reverse().find((m) => {
+          const tool = m.toolCall;
+          return m.role === 'tool' && tool && tool.callId === callId;
+        });
+
       for (const evt of response.history) {
         if (evt.event === 'user_message' && evt.data?.content) {
           loadedMessages.push({
@@ -198,6 +245,40 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
             content: evt.data.content,
             timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
           });
+        } else if (evt.event === 'tool_call') {
+          // Reconstruct tool entries so past tool activity stays visible in
+          // the transcript after a reload (they used to vanish at turn end).
+          // Canonical daemon payload: {call_id, tool, args}.
+          const data = (evt.data ?? {}) as Record<string, unknown>;
+          const callId = String(data.call_id ?? `hist-${loadedMessages.length}`);
+          const name = String(data.tool ?? 'tool');
+          const args = data.args;
+          loadedMessages.push({
+            id: `tool-${callId}`,
+            role: 'tool',
+            content: '',
+            timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
+            toolCall: {
+              id: callId,
+              callId,
+              name,
+              args: args === undefined ? '' : JSON.stringify(args),
+              status: 'complete',
+            },
+          });
+        } else if (evt.event === 'tool_result' || evt.event === 'tool_result_error') {
+          const data = (evt.data ?? {}) as Record<string, unknown>;
+          const callId = String(data.call_id ?? '');
+          const target = findToolMessage(callId);
+          if (target?.toolCall) {
+            const raw = evt.event === 'tool_result_error' ? data.error : data.result;
+            target.toolCall = {
+              ...target.toolCall,
+              status: evt.event === 'tool_result_error' ? 'error' : 'complete',
+              result: raw === undefined ? target.toolCall.result
+                : typeof raw === 'string' ? raw : JSON.stringify(raw),
+            };
+          }
         } else if (evt.event === 'message_complete' && evt.data?.full_response) {
           loadedMessages.push({
             id: evt.data.message_id as string || `assistant-${loadedMessages.length}`,
@@ -401,7 +482,6 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     isStreaming,
     pendingInteraction,
     error,
-    activeTools: () => activeTools,
     subagentEvents: () => subagentEvents,
     contextUsage,
     chatMode,
@@ -439,7 +519,6 @@ const fallbackChatContext: ChatContextValue = {
   isStreaming: () => false,
   pendingInteraction: () => null,
   error: () => null,
-  activeTools: () => [],
   subagentEvents: () => [],
   contextUsage: () => null,
   chatMode: () => 'normal',

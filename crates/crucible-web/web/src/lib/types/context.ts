@@ -7,7 +7,6 @@ import type {
   Message,
   InteractionRequest,
   InteractionResponse,
-  ToolCallDisplay,
   SubagentEvent,
   ContextUsage,
   ChatMode,
@@ -31,7 +30,6 @@ export interface ChatContextValue {
   isStreaming: Accessor<boolean>;
   pendingInteraction: Accessor<InteractionRequest | null>;
   error: Accessor<string | null>;
-  activeTools: Accessor<ToolCallDisplay[]>;
   subagentEvents: Accessor<SubagentEvent[]>;
   contextUsage: Accessor<ContextUsage | null>;
   chatMode: Accessor<ChatMode>;

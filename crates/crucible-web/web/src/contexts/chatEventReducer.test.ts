@@ -43,11 +43,12 @@ const mockedStatusBar = statusBarActions as unknown as {
 
 interface ReducerHarness {
   reducer: (event: ChatEvent) => void;
+  /** Tool transcript entries (role "tool"), in transcript order. */
+  tools: () => ToolCallDisplay[];
   state: {
     messages: Message[];
     currentStreamingMessageId: string | null;
     hasReceivedFirstResponse: boolean;
-    activeTools: ToolCallDisplay[];
     subagentEvents: SubagentEvent[];
     contextUsage: ContextUsage | null;
     chatMode: ChatMode;
@@ -75,7 +76,6 @@ function createHarness(): ReducerHarness {
     messages: [],
     currentStreamingMessageId: null,
     hasReceivedFirstResponse: false,
-    activeTools: [],
     subagentEvents: [],
     contextUsage: null,
     chatMode: 'normal',
@@ -123,10 +123,31 @@ function createHarness(): ReducerHarness {
     addMessage: spies.addMessage,
     updateMessage: spies.updateMessage,
     appendToMessage: spies.appendToMessage,
-    setActiveTools: (value) => {
-      state.activeTools = typeof value === 'function'
-        ? value([...state.activeTools])
-        : value;
+    // Mirrors ChatContext.addToolMessage: insert before the still-empty
+    // streaming assistant placeholder, else append.
+    addToolMessage: (tool) => {
+      const toolMessage: Message = {
+        id: `tool-${tool.callId ?? tool.id}`,
+        role: 'tool',
+        content: '',
+        timestamp: 0,
+        toolCall: tool,
+      };
+      const streamingId = state.currentStreamingMessageId;
+      const idx = streamingId ? state.messages.findIndex((m) => m.id === streamingId) : -1;
+      if (idx !== -1 && state.messages[idx].content === '') {
+        state.messages.splice(idx, 0, toolMessage);
+      } else {
+        state.messages.push(toolMessage);
+      }
+    },
+    updateToolMessage: (callId, updater) => {
+      for (const m of state.messages) {
+        const tool = m.toolCall;
+        if (m.role === 'tool' && tool && (tool.callId === callId || tool.id === callId)) {
+          m.toolCall = updater(tool);
+        }
+      }
     },
     setSubagentEvents: (value) => {
       state.subagentEvents = typeof value === 'function'
@@ -155,6 +176,9 @@ function createHarness(): ReducerHarness {
 
   return {
     reducer,
+    tools: () => state.messages
+      .filter((m) => m.role === 'tool' && m.toolCall)
+      .map((m) => m.toolCall!),
     state,
     spies,
     setUp: {
@@ -211,7 +235,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
       title: 'list_files',
       arguments: { path: '/tmp' },
     });
-    expect(h.state.activeTools).toEqual([
+    expect(h.tools()).toEqual([
       {
         id: 'tc-1',
         name: 'list_files',
@@ -230,28 +254,28 @@ describe('event matrix — covers every ChatEvent variant', () => {
       name: 'bash',
       arguments: { cmd: 'ls' },
     });
-    expect(h.state.activeTools[0].name).toBe('bash');
-    expect(h.state.activeTools[0].status).toBe('running');
+    expect(h.tools()[0].name).toBe('bash');
+    expect(h.tools()[0].status).toBe('running');
   });
 
   it('tool_call: handles missing arguments gracefully', () => {
     const h = createHarness();
     // No 'arguments' key at all → reducer skips JSON.stringify and uses empty string.
     h.reducer({ type: 'tool_call', id: 'tc-3', title: 'noop' });
-    expect(h.state.activeTools[0].args).toBe('');
+    expect(h.tools()[0].args).toBe('');
   });
 
   it('tool_call: arguments present but undefined stringifies to ""', () => {
     const h = createHarness();
     h.reducer({ type: 'tool_call', id: 'tc-4', title: 'noop', arguments: undefined });
-    expect(h.state.activeTools[0].args).toBe('""');
+    expect(h.tools()[0].args).toBe('""');
   });
 
   it('tool_result: marks tool complete and stores result', () => {
     const h = createHarness();
     h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
     h.reducer({ type: 'tool_result', id: 'tc-1', result: 'done' });
-    expect(h.state.activeTools[0]).toMatchObject({
+    expect(h.tools()[0]).toMatchObject({
       result: 'done',
       status: 'complete',
     });
@@ -261,14 +285,14 @@ describe('event matrix — covers every ChatEvent variant', () => {
     const h = createHarness();
     h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
     h.reducer({ type: 'tool_result', id: 'tc-1' });
-    expect(h.state.activeTools[0].result).toBe('');
+    expect(h.tools()[0].result).toBe('');
   });
 
   it('tool_result: stores terminate=true when the daemon signaled early-stop', () => {
     const h = createHarness();
     h.reducer({ type: 'tool_call', id: 'tc-1', title: 'submit_answer' });
     h.reducer({ type: 'tool_result', id: 'tc-1', result: 'final', terminate: true });
-    expect(h.state.activeTools[0]).toMatchObject({
+    expect(h.tools()[0]).toMatchObject({
       result: 'final',
       status: 'complete',
       terminate: true,
@@ -279,7 +303,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
     const h = createHarness();
     h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
     h.reducer({ type: 'tool_result', id: 'tc-1', result: 'done' });
-    expect(h.state.activeTools[0].terminate).toBe(false);
+    expect(h.tools()[0].terminate).toBe(false);
   });
 
   it('tool_result_delta: appends to existing result', () => {
@@ -287,14 +311,14 @@ describe('event matrix — covers every ChatEvent variant', () => {
     h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
     h.reducer({ type: 'tool_result_delta', id: 'tc-1', delta: 'partial-' });
     h.reducer({ type: 'tool_result_delta', id: 'tc-1', delta: 'output' });
-    expect(h.state.activeTools[0].result).toBe('partial-output');
+    expect(h.tools()[0].result).toBe('partial-output');
   });
 
   it('tool_result_delta: tools without a result accumulate from empty', () => {
     const h = createHarness();
     h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
     h.reducer({ type: 'tool_result_delta', id: 'tc-1', delta: 'x' });
-    expect(h.state.activeTools[0].result).toBe('x');
+    expect(h.tools()[0].result).toBe('x');
   });
 
   it('tool_result_complete: marks tool complete without changing result', () => {
@@ -302,7 +326,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
     h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
     h.reducer({ type: 'tool_result_delta', id: 'tc-1', delta: 'stream' });
     h.reducer({ type: 'tool_result_complete', id: 'tc-1' });
-    expect(h.state.activeTools[0]).toMatchObject({
+    expect(h.tools()[0]).toMatchObject({
       result: 'stream',
       status: 'complete',
     });
@@ -312,10 +336,35 @@ describe('event matrix — covers every ChatEvent variant', () => {
     const h = createHarness();
     h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
     h.reducer({ type: 'tool_result_error', id: 'tc-1', error: 'boom' });
-    expect(h.state.activeTools[0]).toMatchObject({
+    expect(h.tools()[0]).toMatchObject({
       result: 'boom',
       status: 'error',
     });
+  });
+
+  it('tool_call: inserts before the empty streaming assistant placeholder so transcript order is user → tools → answer', () => {
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
+    expect(h.state.messages.map((m) => m.role)).toEqual(['tool', 'assistant']);
+  });
+
+  it('tool_call: appends after the assistant message once it has content', () => {
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'token', content: 'answer so far' });
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
+    expect(h.state.messages.map((m) => m.role)).toEqual(['assistant', 'tool']);
+  });
+
+  it('tool entries persist in the transcript after message_complete', () => {
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
+    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'found it' });
+    h.reducer({ type: 'message_complete', id: 'srv', content: 'done', tool_calls: [] });
+    expect(h.tools()).toHaveLength(1);
+    expect(h.tools()[0]).toMatchObject({ status: 'complete', result: 'found it' });
   });
 
   it('thinking: appends to thinking block when streaming', () => {
@@ -368,7 +417,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
     });
     expect(h.state.isStreaming).toBe(false);
     expect(h.state.isLoading).toBe(false);
-    expect(h.state.activeTools).toEqual([]);
+    expect(h.tools()).toEqual([]);
     expect(h.state.currentStreamingMessageId).toBeNull();
     expect(h.state.hasReceivedFirstResponse).toBe(true);
     expect(h.spies.onFirstResponse).toHaveBeenCalledOnce();
@@ -894,7 +943,11 @@ describe('property: streaming order preserved', () => {
             if (safeInterleaved[i]) allEvents.push(safeInterleaved[i]);
           }
           for (const event of allEvents) h.reducer(event);
-          expect(h.state.messages[0].content).toBe(chunks.join(''));
+          // Tool entries may be inserted around the assistant message (an
+          // empty first chunk leaves the placeholder empty), so locate the
+          // streaming message by id instead of position.
+          const assistant = h.state.messages.find((m) => m.id === 'asst-1');
+          expect(assistant?.content).toBe(chunks.join(''));
         },
       ),
       { numRuns: 50 },
@@ -913,10 +966,10 @@ describe('property: tool lifecycle reaches terminal state', () => {
           h.reducer({ type: 'tool_call', id, title: 'noop' });
           if (useError) {
             h.reducer({ type: 'tool_result_error', id, error: 'boom' });
-            expect(h.state.activeTools[0].status).toBe('error');
+            expect(h.tools()[0].status).toBe('error');
           } else {
             h.reducer({ type: 'tool_result', id, result: 'ok' });
-            expect(h.state.activeTools[0].status).toBe('complete');
+            expect(h.tools()[0].status).toBe('complete');
           }
         },
       ),
