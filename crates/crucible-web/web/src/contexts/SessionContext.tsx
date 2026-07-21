@@ -48,6 +48,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   const [error, setError] = createSignal<string | null>(null);
   const [availableModels, setAvailableModels] = createSignal<string[]>([]);
   const [providers, setProviders] = createSignal<ProviderInfo[]>([]);
+  const [providersLoaded, setProvidersLoaded] = createSignal(false);
   const [selectedProvider, setSelectedProvider] = createSignal<ProviderInfo | null>(null);
 
   const hydrateSession = async (sessionId: string, kiln: string | undefined): Promise<boolean> => {
@@ -447,6 +448,8 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       }
     } catch (err) {
       console.error('Failed to load providers:', err);
+    } finally {
+      setProvidersLoaded(true);
     }
   };
 
@@ -491,6 +494,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     error,
     availableModels,
     providers,
+    providersLoaded,
     selectedProvider,
     createSession,
     selectSession,
@@ -534,6 +538,7 @@ const fallbackSessionContext: SessionContextValue = {
   error: () => null,
   availableModels: () => [],
   providers: () => [],
+  providersLoaded: () => false,
   selectedProvider: () => null,
   createSession: () => Promise.reject(new Error('No session context')),
   applySessionScope: () => {},

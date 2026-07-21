@@ -272,6 +272,9 @@ export interface Notification {
   dismissed: boolean;
   /** Seen by the user (clears the unread badge) but still listed. */
   read?: boolean;
+  /** Optional action rendered as a button; actionable notifications never
+   * auto-dismiss (the user must act or dismiss explicitly). */
+  action?: { label: string; run: () => void };
 }
 
 /** Precognition result (auto-injected context) */

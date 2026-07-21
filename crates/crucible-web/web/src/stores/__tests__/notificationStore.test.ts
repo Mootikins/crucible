@@ -1,5 +1,33 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { notificationStore, notificationActions } from '@/stores/notificationStore';
+
+describe('actionable notifications', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    notificationActions.clearAll();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('info notifications with an action never auto-dismiss', () => {
+    const id = notificationActions.addNotification('info', 'update available', {
+      label: 'Reload & update',
+      run: () => {},
+    });
+    // Plain info auto-dismisses at 5s; actionable must survive well past it.
+    vi.advanceTimersByTime(60_000);
+    const notif = notificationStore.notifications.find((n) => n.id === id);
+    expect(notif?.dismissed).toBe(false);
+    expect(notif?.action?.label).toBe('Reload & update');
+  });
+
+  it('plain info notifications still auto-dismiss after 5s', () => {
+    const id = notificationActions.addNotification('info', 'saved');
+    vi.advanceTimersByTime(5_100);
+    expect(notificationStore.notifications.find((n) => n.id === id)?.dismissed).toBe(true);
+  });
+});
 
 describe('notificationStore mark-read vs dismiss', () => {
   beforeEach(() => {

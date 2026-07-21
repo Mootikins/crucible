@@ -18,7 +18,9 @@ import '@xterm/xterm/css/xterm.css';
 function buildEmberTheme() {
   const css = getComputedStyle(document.documentElement);
   const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
-  const bg = v('--color-shell-panel', '#141318');
+  // Match the dock chrome (EdgePanel content is bg-shell-bg) — shell-panel
+  // here made the terminal render as a visibly lighter rectangle.
+  const bg = v('--color-shell-bg', '#0e0d11');
   return {
     background: bg,
     foreground: v('--color-shell-ink', '#e7e4df'),
@@ -47,6 +49,14 @@ function buildEmberTheme() {
 function wsUrl(): string {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   return `${proto}://${window.location.host}/api/terminal/ws`;
+}
+
+// The PTY endpoint is gated server-side to localhost (a PTY is full shell
+// access), so a LAN/remote visitor's connection is rejected every time.
+// Detect that up front and explain, instead of a dead reconnect loop.
+function isLocalhost(): boolean {
+  const h = window.location.hostname;
+  return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1';
 }
 
 export const TerminalPanel: Component = () => {
@@ -139,11 +149,26 @@ export const TerminalPanel: Component = () => {
     term?.dispose();
   });
 
+  if (!isLocalhost()) {
+    return (
+      <div
+        class="h-full w-full bg-shell-bg flex flex-col items-center justify-center gap-1.5 px-6 text-center"
+        data-testid="terminal-panel"
+      >
+        <span class="text-sm text-shell-body">Terminal is only available from the host machine</span>
+        <span class="text-xs text-muted-dark max-w-md">
+          A terminal is full shell access, so Crucible only serves it to a browser on the machine
+          running the server (localhost) — you're connected from {window.location.hostname}.
+        </span>
+      </div>
+    );
+  }
+
   return (
-    <div class="relative h-full w-full bg-shell-panel" data-testid="terminal-panel">
+    <div class="relative h-full w-full bg-shell-bg" data-testid="terminal-panel">
       <div ref={init} class="h-full w-full pl-2 pt-1" />
       <Show when={status() === 'closed'}>
-        <div class="absolute inset-0 flex items-center justify-center bg-shell-panel/80 cru-anim-fade">
+        <div class="absolute inset-0 flex items-center justify-center bg-shell-bg/80 cru-anim-fade">
           <button
             type="button"
             data-testid="terminal-reconnect"

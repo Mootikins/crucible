@@ -134,8 +134,13 @@ export const SessionSection: Component<{
   onCreateSession: () => void;
   isLoading: boolean;
   hasProviders: boolean;
+  /** False while the first provider probe is in flight — suppresses the
+   * "no providers" message so a slow probe doesn't read as an error. */
+  providersLoaded: boolean;
 }> = (props) => {
-  const isDisabled = createMemo(() => props.isLoading || !props.selectedKiln || !props.hasProviders);
+  const isDisabled = createMemo(
+    () => props.isLoading || !props.selectedKiln || (props.providersLoaded && !props.hasProviders),
+  );
 
   return (
     <div class="border-t border-hairline">
@@ -196,7 +201,7 @@ export const SessionSection: Component<{
           <Plus class="w-3.5 h-3.5" />
           New Session
         </button>
-        <Show when={!props.hasProviders}>
+        <Show when={props.providersLoaded && !props.hasProviders}>
           <p class="text-xs text-muted-dark text-center mt-1">No LLM providers detected</p>
         </Show>
 

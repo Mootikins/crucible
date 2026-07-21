@@ -77,6 +77,18 @@ const NotificationItem: Component<{ notification: Notification }> = (props) => {
         <p class="text-xs text-shell-ink leading-snug break-words">
           {props.notification.message}
         </p>
+        <Show when={props.notification.action && !props.notification.dismissed}>
+          <button
+            type="button"
+            onClick={() => {
+              props.notification.action!.run();
+              notificationActions.dismiss(props.notification.id);
+            }}
+            class="mt-1 px-2 py-0.5 rounded border border-hairline-strong bg-control text-shell-ink text-[11px] font-medium hover:bg-hover-wash transition-colors"
+          >
+            {props.notification.action!.label}
+          </button>
+        </Show>
         <span class="text-[10px] text-muted-dark mt-0.5 block">
           {formatTime(props.notification.timestamp)}
         </span>

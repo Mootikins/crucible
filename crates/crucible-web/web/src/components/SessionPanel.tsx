@@ -19,6 +19,7 @@ export const SessionPanel: Component = () => {
     resumeSession,
     refreshSessions,
     providers,
+    providersLoaded,
     deleteSession,
     archiveSession,
   } = useSessionSafe();
@@ -95,6 +96,7 @@ export const SessionPanel: Component = () => {
             onCreateSession={handleCreateSession}
             isLoading={isLoading()}
             hasProviders={providers().length > 0}
+            providersLoaded={providersLoaded()}
           />
         </Show>
       </div>

@@ -39,17 +39,14 @@ if (import.meta.env.PROD) {
       const updateSW = registerSW({
         immediate: true,
         onNeedRefresh() {
+          // Actionable notifications never auto-dismiss, so a stale bundle
+          // can't silently outlive its 5s toast.
           void import('@/stores/notificationStore').then(({ notificationActions }) => {
-            notificationActions.addNotification(
-              'info',
-              'Update available — click here or reload to apply',
-            );
+            notificationActions.addNotification('info', 'A new version of Crucible is available.', {
+              label: 'Reload & update',
+              run: () => void updateSW(true),
+            });
           });
-          const apply = () => {
-            window.removeEventListener('crucible:apply-sw-update', apply);
-            void updateSW(true);
-          };
-          window.addEventListener('crucible:apply-sw-update', apply);
         },
       });
     })

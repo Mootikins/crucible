@@ -40,7 +40,12 @@ const TOAST_STYLES: Record<NotificationType, ToastStyle> = {
 
 // ── Individual Toast ─────────────────────────────────────────────────────
 
-const Toast: Component<{ id: string; type: NotificationType; message: string }> = (props) => {
+const Toast: Component<{
+  id: string;
+  type: NotificationType;
+  message: string;
+  action?: { label: string; run: () => void };
+}> = (props) => {
   const [visible, setVisible] = createSignal(false);
   const style = () => TOAST_STYLES[props.type];
 
@@ -66,10 +71,24 @@ const Toast: Component<{ id: string; type: NotificationType; message: string }> 
         {style().icon}
       </span>
 
-      {/* Message */}
-      <p class="text-sm text-shell-ink flex-1 break-words leading-snug">
-        {props.message}
-      </p>
+      {/* Message + optional action */}
+      <div class="flex-1 min-w-0">
+        <p class="text-sm text-shell-ink break-words leading-snug">
+          {props.message}
+        </p>
+        <Show when={props.action}>
+          <button
+            type="button"
+            onClick={() => {
+              props.action!.run();
+              notificationActions.dismiss(props.id);
+            }}
+            class="mt-1.5 px-2.5 py-1 rounded border border-hairline-strong bg-control text-shell-ink text-xs font-medium hover:bg-hover-wash transition-colors"
+          >
+            {props.action!.label}
+          </button>
+        </Show>
+      </div>
 
       {/* Dismiss button */}
       <button
@@ -102,7 +121,7 @@ export const NotificationToast: Component = () => {
         <For each={activeToasts()}>
           {(notif) => (
             <div class="pointer-events-auto">
-              <Toast id={notif.id} type={notif.type} message={notif.message} />
+              <Toast id={notif.id} type={notif.type} message={notif.message} action={notif.action} />
             </div>
           )}
         </For>

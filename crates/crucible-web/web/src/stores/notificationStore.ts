@@ -25,7 +25,11 @@ function recalcCount() {
 
 let nextId = 0;
 
-function addNotification(type: NotificationType, message: string): string {
+function addNotification(
+  type: NotificationType,
+  message: string,
+  action?: Notification['action'],
+): string {
   const id = `notif-${Date.now()}-${nextId++}`;
   const notification: Notification = {
     id,
@@ -34,13 +38,15 @@ function addNotification(type: NotificationType, message: string): string {
     timestamp: Date.now(),
     dismissed: false,
     read: false,
+    action,
   };
 
   setNotifications(produce((list) => list.push(notification)));
   recalcCount();
 
-  // Auto-dismiss info and success after 5s
-  if (type === 'info' || type === 'success') {
+  // Auto-dismiss info and success after 5s — but never actionable
+  // notifications: the whole point is that the user gets to act on them.
+  if (!action && (type === 'info' || type === 'success')) {
     const timer = setTimeout(() => {
       dismiss(id);
       dismissTimers.delete(id);

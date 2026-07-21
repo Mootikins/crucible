@@ -56,6 +56,9 @@ export interface SessionContextValue {
   error: Accessor<string | null>;
   availableModels: Accessor<string[]>;
   providers: Accessor<ProviderInfo[]>;
+  /** False until the first provider probe resolves — "no providers" claims
+   * must wait for this, or the loading state reads as an error. */
+  providersLoaded: Accessor<boolean>;
   selectedProvider: Accessor<ProviderInfo | null>;
   createSession: (
     params: CreateSessionParams,

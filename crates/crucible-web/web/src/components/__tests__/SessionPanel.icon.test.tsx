@@ -32,6 +32,7 @@ const sessionSectionProps = {
   onCreateSession: vi.fn(),
   isLoading: false,
   hasProviders: true,
+  providersLoaded: true,
 };
 
 const session: Session = {
