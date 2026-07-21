@@ -171,3 +171,29 @@ describe('DraftSessionPanel', () => {
     );
   });
 });
+
+describe('DraftSessionPanel — instant submit preview', () => {
+  it('shows the user message + working dots the moment Enter is pressed, before createSession resolves', async () => {
+    // A slow daemon create (cold kiln open can take seconds) must not leave
+    // the user staring at the dead form — the panel becomes the conversation
+    // immediately.
+    let resolveCreate: (v: { id: string }) => void = () => {};
+    createSessionMock.mockReturnValueOnce(
+      new Promise((r) => (resolveCreate = r)),
+    );
+
+    const { getByTestId, queryByTestId } = await setup();
+    fireEvent.input(getByTestId('draft-input'), { target: { value: 'first message' } });
+    fireEvent.click(getByTestId('draft-send'));
+
+    // Synchronously visible — no awaits between click and preview.
+    const pending = getByTestId('draft-pending');
+    expect(pending.textContent).toContain('first message');
+    // The form is hidden while pending.
+    expect((getByTestId('draft-input').closest('.hidden'))).not.toBeNull();
+
+    resolveCreate({ id: 'sess-9' });
+    await waitFor(() => expect(closeDraftTabMock).toHaveBeenCalled());
+    void queryByTestId;
+  });
+});
