@@ -21,7 +21,7 @@ crucible-daemon = { path = "../crucible-daemon", default-features = false }
 
 axum = { workspace = true, features = ["macros", "ws"] }
 tower = { workspace = true }
-tower-http = { version = "0.6", features = ["fs", "cors"] }
+tower-http = { version = "0.7", features = ["fs", "cors"] }
 tokio = { workspace = true }
 tokio-stream = { workspace = true, features = ["sync"] }
 futures = { workspace = true }

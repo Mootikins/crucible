@@ -14,7 +14,7 @@ send = ["mlua/send"]  # Enable Send+Sync for multi-threaded use
 
 [dependencies]
 # Runtime: Lua 5.4 with optional Fennel compiler
-mlua = { version = "0.11", features = ["vendored", "async", "serialize", "lua54"] }
+mlua = { version = "0.12", features = ["vendored", "async", "serialize", "lua54"] }
 
 # Static analysis: Parse Lua for documentation extraction
 
