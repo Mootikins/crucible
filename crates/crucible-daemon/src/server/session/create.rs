@@ -10,6 +10,7 @@ pub(crate) async fn handle_session_create(
     req: Request,
     sm: &Arc<SessionManager>,
     pm: &Arc<ProjectManager>,
+    data_home: &std::path::Path,
     llm_config: &Option<LlmConfig>,
     km: &Arc<KilnManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
@@ -28,9 +29,12 @@ pub(crate) async fn handle_session_create(
         }
     };
 
+    // Kiln-less create falls back to the server's resolved data root, not the
+    // process-global crucible_home() — in production they're the same path,
+    // but tests inject an isolated data_home that must win here too.
     let kiln = optional_param!(req, "kiln", as_str)
         .map(PathBuf::from)
-        .unwrap_or_else(crucible_core::config::crucible_home);
+        .unwrap_or_else(|| data_home.to_path_buf());
 
     let workspace = optional_param!(req, "workspace", as_str).map(PathBuf::from);
 

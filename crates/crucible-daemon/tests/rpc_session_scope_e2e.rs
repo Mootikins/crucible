@@ -183,6 +183,62 @@ async fn set_workspace_attaches_and_detach_falls_back_to_kiln() {
 }
 
 #[tokio::test]
+async fn connect_kiln_rejected_by_trust_leaves_kiln_unopened() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().unwrap();
+
+    // A kiln classified Confidential (requires Local trust). The session below
+    // has no agent, so its provider trust resolves to Cloud, which cannot
+    // satisfy Confidential — the attach must be refused.
+    let classified_kiln = tempfile::tempdir().unwrap();
+    let crucible_dir = classified_kiln.path().join(".crucible");
+    std::fs::create_dir_all(&crucible_dir).unwrap();
+    std::fs::write(
+        crucible_dir.join("project.toml"),
+        "[[kilns]]\npath = \".\"\ndata_classification = \"confidential\"\n",
+    )
+    .unwrap();
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+    let session_id = create_session(&client, kiln_dir.path()).await;
+
+    let err = client
+        .session_connect_kiln(&session_id, classified_kiln.path())
+        .await
+        .expect_err("trust-rejected attach must fail");
+    assert!(
+        err.to_string().contains("insufficient"),
+        "unexpected error: {err}"
+    );
+
+    // The refusal must leave no side effect: the rejected kiln was never opened,
+    // so it must not surface in kiln.list (where it would otherwise be indexed).
+    let classified_name = classified_kiln
+        .path()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let listed = serde_json::to_string(&client.kiln_list().await.expect("kiln.list failed"))
+        .expect("serialize kiln list");
+    assert!(
+        !listed.contains(&classified_name),
+        "rejected kiln leaked into kiln.list: {listed}"
+    );
+
+    // Session scope is unchanged — no connected kiln was added.
+    let session = client.session_get(&session_id).await.unwrap();
+    assert!(session["connected_kilns"]
+        .as_array()
+        .map(|a| a.is_empty())
+        .unwrap_or(true));
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn set_workspace_rejects_nonexistent_directory() {
     let server = TestServer::start().await.expect("Failed to start server");
     let kiln_dir = tempfile::tempdir().unwrap();

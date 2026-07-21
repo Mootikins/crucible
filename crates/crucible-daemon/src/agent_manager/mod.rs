@@ -464,9 +464,7 @@ pub(crate) struct ResolvedProvider {
 
 pub struct AgentManager {
     request_state: Arc<DashMap<String, RequestState>>,
-    // TODO: invalidate agent_cache entries on kiln hot-swap (multi-kiln support)
     agent_cache: AgentCache,
-    // TODO: invalidate session_dispatchers on kiln hot-swap (multi-kiln support)
     session_dispatchers: Arc<DashMap<String, Arc<dyn ToolDispatcher>>>,
     /// Scheduler-owned conversation tree per session. Populated as a
     /// shadow of the agent's conversation state — the source of truth

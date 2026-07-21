@@ -21,8 +21,18 @@ async fn cloud_provider_confidential_kiln_returns_insufficient_error() {
 
     let (event_tx, _event_rx) = broadcast::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
-    let response =
-        handle_session_create(request, &sm, &pm, &llm_config, &km, &event_tx, &am, None).await;
+    let response = handle_session_create(
+        request,
+        &sm,
+        &pm,
+        tmp.path(),
+        &llm_config,
+        &km,
+        &event_tx,
+        &am,
+        None,
+    )
+    .await;
     let error = response.error.expect("expected trust-level rejection");
 
     assert_eq!(error.code, INVALID_PARAMS);
@@ -53,8 +63,18 @@ async fn local_provider_confidential_kiln_allows_session_creation() {
 
     let (event_tx, _event_rx) = broadcast::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
-    let response =
-        handle_session_create(request, &sm, &pm, &llm_config, &km, &event_tx, &am, None).await;
+    let response = handle_session_create(
+        request,
+        &sm,
+        &pm,
+        tmp.path(),
+        &llm_config,
+        &km,
+        &event_tx,
+        &am,
+        None,
+    )
+    .await;
 
     assert!(response.error.is_none());
     assert!(response.result.is_some());
@@ -82,8 +102,18 @@ async fn cloud_provider_public_or_missing_classification_allows_session_creation
 
     let (event_tx, _event_rx) = broadcast::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
-    let response =
-        handle_session_create(request, &sm, &pm, &llm_config, &km, &event_tx, &am, None).await;
+    let response = handle_session_create(
+        request,
+        &sm,
+        &pm,
+        tmp.path(),
+        &llm_config,
+        &km,
+        &event_tx,
+        &am,
+        None,
+    )
+    .await;
 
     assert!(response.error.is_none());
     assert!(response.result.is_some());
@@ -112,8 +142,18 @@ async fn untrusted_provider_internal_kiln_returns_error() {
 
     let (event_tx, _event_rx) = broadcast::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
-    let response =
-        handle_session_create(request, &sm, &pm, &llm_config, &km, &event_tx, &am, None).await;
+    let response = handle_session_create(
+        request,
+        &sm,
+        &pm,
+        tmp.path(),
+        &llm_config,
+        &km,
+        &event_tx,
+        &am,
+        None,
+    )
+    .await;
     let error = response.error.expect("expected trust-level rejection");
 
     assert_eq!(error.code, INVALID_PARAMS);

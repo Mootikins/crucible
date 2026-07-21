@@ -749,6 +749,7 @@ impl RpcDispatcher {
             req.clone(),
             &self.ctx.sessions,
             &self.ctx.project_manager,
+            &self.ctx.data_home,
             &self.ctx.llm_config,
             &self.ctx.kiln,
             &self.ctx.event_tx,

@@ -60,18 +60,23 @@ pub(crate) async fn handle_session_connect_kiln(
     let session_id = require_param!(req, "session_id", as_str).to_string();
     let kiln_path = PathBuf::from(require_param!(req, "kiln_path", as_str));
 
-    // Opening validates the path and makes the kiln discoverable.
+    // Trust must gate before any side effect: resolving the classification only
+    // reads the path's config (no open needed), so a rejected attach leaves the
+    // kiln untouched — never discoverable in kiln.list nor indexed.
+    let classification = find_workspace_and_resolve_classification(&kiln_path);
+    if let Err(message) = check_attach_trust(sm, llm_config, &session_id, classification) {
+        return Response::error(req.id, INVALID_PARAMS, message);
+    }
+
+    // Opening validates the path and makes the kiln discoverable. An invalid
+    // path resolves to no classification above, so the trust gate passes and
+    // this still surfaces the clear "Cannot open kiln" error.
     if let Err(e) = km.open(&kiln_path).await {
         return Response::error(
             req.id,
             INVALID_PARAMS,
             format!("Cannot open kiln '{}': {}", kiln_path.display(), e),
         );
-    }
-
-    let classification = find_workspace_and_resolve_classification(&kiln_path);
-    if let Err(message) = check_attach_trust(sm, llm_config, &session_id, classification) {
-        return Response::error(req.id, INVALID_PARAMS, message);
     }
 
     match am
