@@ -228,7 +228,8 @@ export function createInitialState(): WindowState {
         id: 'right-panel',
         tabGroupId: rightGroupId,
         isCollapsed: true,
-        width: 250,
+        // Sessions dock here — needs chat-worthy width, not a sidebar sliver.
+        width: 520,
       },
       bottom: {
         id: 'bottom-panel',

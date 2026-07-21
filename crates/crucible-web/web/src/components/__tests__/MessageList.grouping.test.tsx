@@ -12,6 +12,8 @@ vi.mock('@/contexts/ChatContext', () => ({
   useChatSafe: () => ({
     messages: () => messagesAccessor(),
     isStreaming: () => false,
+    sessionId: () => 's1',
+    sendMessage: async () => {},
     pendingInteraction: () => null,
     respondToInteraction: async () => {},
   }),
@@ -39,7 +41,7 @@ afterEach(() => {
   messagesAccessor = () => mockMessages;
 });
 
-describe('MessageList tool grouping', () => {
+describe('MessageList structural rows', () => {
   it('collapses consecutive tool calls into one block', () => {
     mockMessages = [
       msg('u1', 'user', 'hi'),
@@ -73,11 +75,47 @@ describe('MessageList tool grouping', () => {
     expect(groups[1].textContent).toContain('tool-t3');
   });
 
-  it('keeps stable rows mounted when the streaming assistant message appends tokens', () => {
+  it('groups tools-before-answer and the answer into one assistant turn', () => {
+    // user → tools run → answer: everything the agent did for the prompt is
+    // one turn block, with the tool group ordered before the answer text.
+    mockMessages = [
+      msg('u1', 'user', 'hi'),
+      msg('t1', 'tool'),
+      msg('a1', 'assistant', 'answer'),
+    ];
+    const { getAllByTestId, getByTestId } = render(() => <MessageList />);
+    const turn = getByTestId('assistant-turn');
+    // One turn contains both the tool group and the answer segment.
+    expect(getAllByTestId('tool-group')).toHaveLength(1);
+    expect(turn.querySelector('[data-testid="tool-group"]')).not.toBeNull();
+    expect(turn.querySelector('[data-testid="message-assistant"]')).not.toBeNull();
+    // The tool group is rendered before the answer text within the turn.
+    const toolGroup = turn.querySelector('[data-testid="tool-group"]') as HTMLElement;
+    const answer = turn.querySelector('[data-testid="message-assistant"]') as HTMLElement;
+    expect(toolGroup.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('renders a text→tools→text response as ONE assistant-turn container', () => {
+    mockMessages = [
+      msg('u1', 'user', 'hi'),
+      msg('a1', 'assistant', 'one'),
+      msg('t1', 'tool'),
+      msg('a2', 'assistant', 'two'),
+    ];
+    const { getAllByTestId } = render(() => <MessageList />);
+    // Interleaved segments collapse into a single turn, not three top-level rows.
+    expect(getAllByTestId('assistant-turn')).toHaveLength(1);
+    // Both text segments and the tool run live inside it.
+    expect(getAllByTestId('message-assistant')).toHaveLength(2);
+    expect(getAllByTestId('tool-group')).toHaveLength(1);
+  });
+
+  it('appending a streamed token recreates NO DOM nodes anywhere', () => {
     // Mirrors the store's behavior: appending a token replaces ONLY the
-    // streaming assistant object; the tool message keeps its reference. Rows
-    // whose underlying message is unchanged must not be disposed/recreated
-    // (that reset ToolCard's expanded state and re-rendered all markdown).
+    // streaming assistant object; user + tool references are unchanged. With
+    // the structural row model a token append changes no id/role sequence, so
+    // the row signature is identical and every wrapper is reused — zero
+    // remounts. Capture element references before/after and require identity.
     const toolMsg = msg('t1', 'tool');
     const assistant = msg('a1', 'assistant', 'Hel');
     const [msgs, setMsgs] = createSignal<Message[]>([
@@ -90,12 +128,14 @@ describe('MessageList tool grouping', () => {
     const { getByTestId } = render(() => <MessageList />);
     const groupBefore = getByTestId('tool-group');
     const userBefore = getByTestId('message-user');
+    const turnBefore = getByTestId('assistant-turn');
 
     // Token append: new assistant object, same user + tool references.
     setMsgs([msgs()[0], toolMsg, { ...assistant, content: 'Hello' }]);
 
-    // The unchanged rows keep the exact same DOM nodes (row not recreated).
+    // Unchanged rows keep the exact same DOM nodes (nothing recreated).
     expect(getByTestId('tool-group')).toBe(groupBefore);
     expect(getByTestId('message-user')).toBe(userBefore);
+    expect(getByTestId('assistant-turn')).toBe(turnBefore);
   });
 });

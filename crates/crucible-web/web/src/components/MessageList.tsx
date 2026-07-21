@@ -1,22 +1,25 @@
 import { Component, For, Show, createEffect, createMemo } from 'solid-js';
 import { Message } from './Message';
-import { ToolCard } from './ToolCard';
+import { AssistantTurn, type TurnPartSpec } from './AssistantTurn';
 import { InteractionHandler } from './interactions';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import type { Message as MessageType } from '@/lib/types';
 
-/** Transcript row: a message, or a run of consecutive tool calls collapsed
- * into one block (sequential tools read as a single unit of activity). */
+/**
+ * Transcript row. A TURN groups everything the agent did for one prompt —
+ * interleaved text segments and tool-call runs — into a single block with
+ * one meta row (timestamp/usage), instead of scattering chrome across
+ * segments. Rows carry message IDS only, never message objects: content
+ * changes resolve inside the part components via store lookups, so a
+ * streamed token causes zero row/wrapper churn — rows change only when the
+ * transcript's STRUCTURE (id/role sequence) changes.
+ */
 type TranscriptRow =
-  | { kind: 'message'; message: MessageType }
-  | { kind: 'tools'; items: MessageType[] };
-
-type MessageRow = Extract<TranscriptRow, { kind: 'message' }>;
-type ToolsRow = Extract<TranscriptRow, { kind: 'tools' }>;
+  | { kind: 'message'; id: string }
+  | { kind: 'turn'; key: string; parts: TurnPartSpec[] };
 
 export const MessageList: Component = () => {
-  const { messages, isStreaming, pendingInteraction, respondToInteraction } = useChatSafe();
+  const { messages, pendingInteraction, respondToInteraction } = useChatSafe();
   const { currentSession } = useSessionSafe();
   let bottomRef: HTMLDivElement | undefined;
 
@@ -32,64 +35,68 @@ export const MessageList: Component = () => {
 
   const session = () => currentSession();
 
-  // <For> keys rows by reference, so rebuilding fresh wrapper objects every
-  // recompute would dispose and recreate EVERY row on each streamed token —
-  // resetting ToolCard's expanded state and re-rendering all markdown. Cache
-  // wrappers and reuse them when the underlying identity is unchanged: a
-  // message row by its message reference, a tools group by the identity list
-  // of its items (both stay stable across token appends because the store
-  // preserves proxies for untouched entries). Only the row whose message
-  // actually changed gets a new wrapper.
-  const messageRowCache = new Map<string, MessageRow>();
-  const toolsRowCache = new Map<string, ToolsRow>();
+  // <For> keys rows by reference. Rows are structural (ids only), so their
+  // content never changes — but this memo re-runs on ANY store change, and a
+  // rebuilt row would be a fresh reference that remounts its whole subtree.
+  // Cache rows by a structural signature and reuse the identical wrapper
+  // while the signature is unchanged; only genuine structure changes (new
+  // message, id rename, role change) produce a new wrapper.
+  const rowCache = new Map<string, TranscriptRow>();
 
   const rows = createMemo<TranscriptRow[]>(() => {
-    const out: TranscriptRow[] = [];
-    const seenMessageIds = new Set<string>();
-    const seenToolKeys = new Set<string>();
-    let group: { key: string; items: MessageType[] } | null = null;
+    // Build structural specs first.
+    const specs: TranscriptRow[] = [];
+    let turn: { parts: TurnPartSpec[] } | null = null;
 
-    const flushGroup = () => {
-      if (!group) return;
-      const { key, items } = group;
-      const cached = toolsRowCache.get(key);
-      const reusable = cached
-        && cached.items.length === items.length
-        && cached.items.every((m, i) => m === items[i]);
-      const wrapper = reusable ? cached! : { kind: 'tools' as const, items };
-      toolsRowCache.set(key, wrapper);
-      seenToolKeys.add(key);
-      out.push(wrapper);
-      group = null;
+    const closeTurn = () => {
+      if (!turn) return;
+      const firstPart = turn.parts[0];
+      const key = firstPart.kind === 'text' ? firstPart.id : firstPart.ids[0];
+      specs.push({ kind: 'turn', key: `turn-${key}`, parts: turn.parts });
+      turn = null;
     };
 
     for (const message of messages()) {
-      if (message.role === 'tool') {
-        if (group) {
-          group.items.push(message);
+      if (message.role === 'assistant') {
+        turn ??= { parts: [] };
+        turn.parts.push({ kind: 'text', id: message.id });
+      } else if (message.role === 'tool') {
+        turn ??= { parts: [] };
+        const last = turn.parts[turn.parts.length - 1];
+        if (last?.kind === 'tools') {
+          last.ids.push(message.id);
         } else {
-          group = { key: `tools-${message.id}`, items: [message] };
+          turn.parts.push({ kind: 'tools', key: `tools-${message.id}`, ids: [message.id] });
         }
       } else {
-        flushGroup();
-        const cached = messageRowCache.get(message.id);
-        const wrapper = cached && cached.message === message
-          ? cached
-          : { kind: 'message' as const, message };
-        messageRowCache.set(message.id, wrapper);
-        seenMessageIds.add(message.id);
-        out.push(wrapper);
+        closeTurn();
+        specs.push({ kind: 'message', id: message.id });
       }
     }
-    flushGroup();
+    closeTurn();
 
-    // Evict wrappers for messages/groups that vanished (clear, session switch)
-    // so the caches don't grow unbounded across a long-lived provider.
-    for (const id of messageRowCache.keys()) {
-      if (!seenMessageIds.has(id)) messageRowCache.delete(id);
-    }
-    for (const key of toolsRowCache.keys()) {
-      if (!seenToolKeys.has(key)) toolsRowCache.delete(key);
+    // Reuse cached wrappers with identical structure.
+    const signature = (row: TranscriptRow): string =>
+      row.kind === 'message'
+        ? `m:${row.id}`
+        : `t:${row.key}:${row.parts
+            .map((p) => (p.kind === 'text' ? p.id : `[${p.ids.join(',')}]`))
+            .join('|')}`;
+
+    const seen = new Set<string>();
+    const out = specs.map((spec) => {
+      const sig = signature(spec);
+      seen.add(sig);
+      const cached = rowCache.get(sig);
+      if (cached) return cached;
+      rowCache.set(sig, spec);
+      return spec;
+    });
+
+    // Evict stale signatures (clear, session switch, structure changes) so
+    // the cache doesn't grow unbounded across a long-lived provider.
+    for (const sig of rowCache.keys()) {
+      if (!seen.has(sig)) rowCache.delete(sig);
     }
     return out;
   });
@@ -100,37 +107,22 @@ export const MessageList: Component = () => {
       data-testid="message-list"
     >
       <For each={rows()}>
-        {(row, index) => {
-          if (row.kind === 'tools') {
-            return (
-              <div class="group relative mb-3 flex justify-start" data-role="tool">
-                <div
-                  class="w-full max-w-3xl border border-hairline rounded-lg overflow-hidden divide-y divide-hairline bg-surface-elevated"
-                  data-testid="tool-group"
-                >
-                  <For each={row.items}>
-                    {(m) => <ToolCard toolCall={m.toolCall!} grouped />}
-                  </For>
-                </div>
-              </div>
-            );
-          }
-          const message = row.message;
-          const isLastAssistant = createMemo(() => {
-            const msgs = messages();
-            for (let i = msgs.length - 1; i >= 0; i--) {
-              if (msgs[i].role === 'assistant') {
-                return msgs[i].id === message.id;
+        {(row) => {
+          if (row.kind === 'turn') {
+            const isLastTurn = createMemo(() => {
+              const all = rows();
+              for (let i = all.length - 1; i >= 0; i--) {
+                if (all[i].kind === 'turn') return all[i] === row;
               }
-            }
-            return false;
-          });
+              return false;
+            });
+            return <AssistantTurn parts={row.parts} isLast={isLastTurn()} />;
+          }
+          const message = createMemo(() => messages().find((m) => m.id === row.id));
           return (
-            <Message
-              message={message}
-              isStreaming={isStreaming() && index() === rows().length - 1 && message.role === 'assistant'}
-              isLast={isLastAssistant()}
-            />
+            <Show when={message()}>
+              <Message message={message()!} />
+            </Show>
           );
         }}
       </For>
@@ -139,9 +131,7 @@ export const MessageList: Component = () => {
           conversation where the agent is blocked, like other agent UIs. */}
       <Show when={pendingInteraction()}>
         {(request) => (
-          <div class="max-w-3xl">
-            <InteractionHandler request={request()} onRespond={respondToInteraction} />
-          </div>
+          <InteractionHandler request={request()} onRespond={respondToInteraction} />
         )}
       </Show>
       <div ref={bottomRef} class="h-px" />

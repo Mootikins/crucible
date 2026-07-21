@@ -20,7 +20,9 @@ import {
 import { Plus } from '@/lib/icons';
 
 const EDGE_PANEL_MIN_WIDTH = 120;
-const EDGE_PANEL_MAX_WIDTH = 600;
+// No fixed max — an edge panel hosting a chat session should be able to take
+// most of the viewport; just keep a sliver of center pane usable.
+const edgePanelMaxWidth = () => Math.max(600, window.innerWidth - 320);
 const EDGE_PANEL_MIN_HEIGHT = 100;
 const EDGE_PANEL_MAX_HEIGHT = 500;
 
@@ -53,13 +55,13 @@ function EdgePanelResizeHandle(props: { position: EdgePanelPosition }) {
         const delta = e.clientX - startX;
         windowActions.setEdgePanelSize(
           props.position,
-          Math.max(EDGE_PANEL_MIN_WIDTH, Math.min(EDGE_PANEL_MAX_WIDTH, startSize + delta))
+          Math.max(EDGE_PANEL_MIN_WIDTH, Math.min(edgePanelMaxWidth(), startSize + delta))
         );
       } else if (props.position === 'right') {
         const delta = startX - e.clientX;
         windowActions.setEdgePanelSize(
           props.position,
-          Math.max(EDGE_PANEL_MIN_WIDTH, Math.min(EDGE_PANEL_MAX_WIDTH, startSize + delta))
+          Math.max(EDGE_PANEL_MIN_WIDTH, Math.min(edgePanelMaxWidth(), startSize + delta))
         );
       } else {
         const delta = startY - e.clientY;

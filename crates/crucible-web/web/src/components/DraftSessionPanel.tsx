@@ -106,9 +106,28 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
   const selectClass =
     'px-2 py-1.5 rounded-lg border border-hairline bg-surface-elevated text-xs text-shell-body outline-none focus:border-primary disabled:opacity-50 max-w-[180px] truncate';
 
+  // The instant the user submits, the panel becomes the conversation: their
+  // message + working dots render immediately while the session is created —
+  // no dead form staring back until the real chat panel takes over.
+  const submittedPreview = () => (busy() ? message().trim() : '');
+
   return (
     <div class="h-full bg-shell-bg flex flex-col items-center justify-center p-6 overflow-y-auto">
-      <div class="w-full max-w-xl flex flex-col gap-4">
+      <Show when={submittedPreview()}>
+        <div class="w-full flex flex-col gap-4 self-stretch flex-1 px-2 py-4" data-testid="draft-pending">
+          <div class="flex justify-end">
+            <div class="message-bubble message-bubble-user">
+              <p class="whitespace-pre-wrap break-words">{submittedPreview()}</p>
+            </div>
+          </div>
+          <span class="inline-flex items-center gap-1">
+            <span class="w-2 h-2 bg-muted rounded-full animate-pulse" />
+            <span class="w-2 h-2 bg-muted rounded-full animate-pulse" style={{ 'animation-delay': '75ms' }} />
+            <span class="w-2 h-2 bg-muted rounded-full animate-pulse" style={{ 'animation-delay': '150ms' }} />
+          </span>
+        </div>
+      </Show>
+      <div class="w-full max-w-xl flex-col gap-4" classList={{ flex: !submittedPreview(), hidden: !!submittedPreview() }}>
         <div class="text-center">
           <h2 class="text-lg font-semibold text-shell-ink">New Session</h2>
           <p class="text-xs text-muted mt-1">

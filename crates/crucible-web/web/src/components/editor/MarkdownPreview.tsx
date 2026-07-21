@@ -5,7 +5,7 @@
  * app-wide hover cards and click-to-open for free.
  */
 import { Component, createResource } from 'solid-js';
-import { renderMarkdownDocAsync } from '@/lib/markdown';
+import { renderMarkdownDocAsync, PROSE_CLASS } from '@/lib/markdown';
 import { openNoteInEditor, stripFrontmatter } from '@/lib/note-actions';
 import { statusBarStore } from '@/stores/statusBarStore';
 
@@ -61,10 +61,7 @@ export const MarkdownPreview: Component<{
       onClick={handleClick}
     >
       <div
-        class="prose prose-invert prose-sm mx-auto
-          prose-headings:text-shell-ink prose-p:leading-relaxed prose-a:text-primary
-          prose-pre:bg-surface-base prose-pre:rounded-lg
-          prose-code:before:content-none prose-code:after:content-none"
+        class={`${PROSE_CLASS} mx-auto`}
         // Readable line length setting; falls back to the classic prose column.
         style={{ 'max-width': props.maxWidth ? `${props.maxWidth}px` : '768px' }}
         // eslint-disable-next-line solid/no-innerhtml

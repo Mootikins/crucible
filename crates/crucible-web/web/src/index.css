@@ -100,11 +100,9 @@
     @apply bg-surface-overlay text-shell-ink rounded-br-md;
   }
 
-  /* Assistant messages: plain full-width text — the user bubble carries the
-     visual distinction, so agent output needs no callout of its own. */
-  .message-assistant {
-    @apply w-full px-4 py-3 text-shell-ink;
-  }
+  /* Assistant turns render as plain full-width text (AssistantTurn) — the
+     user bubble carries the visual distinction, so agent output needs no
+     callout of its own. */
 }
 
 /* ── Motion primitives ──────────────────────────────────────────────

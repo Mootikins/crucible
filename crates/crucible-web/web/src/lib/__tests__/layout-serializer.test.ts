@@ -79,7 +79,7 @@ describe('layout-serializer', () => {
     const serialized = serializeLayout(state);
     const deserialized = deserializeLayout(serialized);
 
-    expect(serialized.version).toBe(3);
+    expect(serialized.version).toBe(4);
 
     expect(deserialized.edgePanels.left.tabGroupId).toBeDefined();
     expect(deserialized.edgePanels.right.tabGroupId).toBeDefined();
@@ -249,7 +249,7 @@ describe('layout-serializer', () => {
     const deserialized1 = deserializeLayout(serialized1);
     const serialized2 = serializeLayout(deserialized1);
 
-    expect(serialized2.version).toBe(3);
+    expect(serialized2.version).toBe(4);
     expect(serialized2.edgePanels.left.tabGroupId).toBe(serialized1.edgePanels.left.tabGroupId);
     expect((serialized2.edgePanels.left as any).tabs).toBeUndefined();
     expect((serialized2.edgePanels.left as any).position).toBeUndefined();
@@ -480,6 +480,18 @@ describe('legacy generic chat tabs are pruned on every restore', () => {
     expect(ids).toContain('tab-home');
     expect(ids).not.toContain('tab-chat');
     expect(restored.tabGroups['center'].activeTabId).toBe('tab-home');
+  });
+
+  it('v3→v4 bumps a narrow right panel to chat-worthy width, leaves wider ones alone', () => {
+    const narrow = deserializeLayout(v3() as never);
+    expect(narrow.edgePanels.right.width).toBe(520);
+    // Left panel is not a session dock — untouched.
+    expect(narrow.edgePanels.left.width).toBe(250);
+
+    const wide = v3();
+    wide.edgePanels.right.width = 800;
+    const restored = deserializeLayout(wide as never);
+    expect(restored.edgePanels.right.width).toBe(800);
   });
 });
 

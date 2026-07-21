@@ -74,7 +74,7 @@ export function serializeLayout(state: {
   }
 
   return {
-    version: 3,
+    version: 4,
     layout: JSON.parse(JSON.stringify(state.layout)) as LayoutNode,
     tabGroups: serializedGroups,
     edgePanels: serializedEdgePanels,
@@ -134,6 +134,18 @@ function migrateV2toV3(v2: SerializedLayout): SerializedLayout {
   return { ...v2, version: 3, tabGroups };
 }
 
+// Sessions dock in the right edge panel, which pre-v4 defaulted to a
+// 250px sliver — unusable for chat. One-time bump of persisted narrow
+// widths to the new default; widths the user already dragged past it are
+// left alone.
+function migrateV3toV4(v3: SerializedLayout): SerializedLayout {
+  const right = v3.edgePanels?.right;
+  const edgePanels = right && (right.width ?? 0) < 520
+    ? { ...v3.edgePanels, right: { ...right, width: 520 } }
+    : v3.edgePanels;
+  return { ...v3, version: 4, edgePanels };
+}
+
 function migrateV1toV2(v1: any): SerializedLayout {
   const newTabGroups = { ...v1.tabGroups };
 
@@ -180,7 +192,8 @@ export function deserializeLayout(json: SerializedLayout): {
   floatingWindows: FloatingWindow[];
 } {
   // Auto-migrate forward: v1 → v2 (edge-panel tab groups) → v3 (prune tabs
-  // whose content type is no longer registered).
+  // whose content type is no longer registered) → v4 (chat-worthy right
+  // panel width).
   let layout = json;
   if (layout.version === 1) {
     layout = migrateV1toV2(layout as any);
@@ -188,8 +201,11 @@ export function deserializeLayout(json: SerializedLayout): {
   if (layout.version === 2) {
     layout = migrateV2toV3(layout);
   }
+  if (layout.version === 3) {
+    layout = migrateV3toV4(layout);
+  }
 
-  if (layout.version !== 3) {
+  if (layout.version !== 4) {
     throw new Error(`Unsupported layout version: ${layout.version}`);
   }
 

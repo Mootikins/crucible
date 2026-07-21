@@ -345,6 +345,39 @@ export async function renderMarkdownDocAsync(
   return sanitizeHtml(resolveDocImages(highlightedHtml, baseDir));
 }
 
+/**
+ * Chat-turn render with the SAME presentation as the note reading view
+ * (`.md-codeblock` code blocks with copy buttons, identical downstream CSS)
+ * — an agent writing the same markdown into a message or a note must get the
+ * same rendering. Only the semantics differ from the doc pipeline: raw HTML
+ * stays off (LLM/user text must not inject markup) and single newlines break
+ * (a message's line breaks are meaningful).
+ */
+export async function renderMarkdownChatAsync(content: string): Promise<string> {
+  const renderedHtml = getRenderer().render(content);
+  const highlightedHtml = await highlightCodeBlocks(renderedHtml, { copyButton: true });
+  return sanitizeHtml(highlightedHtml);
+}
+
+/**
+ * The one prose class both the note reading view and chat turns use — a
+ * single source of visual truth so message rendering can never drift from
+ * note rendering. `prose-hr:my-3` and the heading margins keep the vertical
+ * rhythm tight (stock prose-sm leaves large dead bands around `---` and
+ * headings).
+ */
+export const PROSE_CLASS = [
+  'prose prose-invert prose-sm max-w-none',
+  'prose-headings:text-shell-ink prose-headings:font-semibold prose-headings:my-2',
+  'prose-p:my-1 prose-p:leading-relaxed',
+  'prose-hr:my-3 prose-hr:border-hairline',
+  'prose-a:text-primary prose-a:no-underline hover:prose-a:underline',
+  'prose-pre:bg-surface-base prose-pre:rounded-lg prose-pre:p-3 prose-pre:text-sm',
+  'prose-code:bg-surface-elevated prose-code:px-1 prose-code:rounded prose-code:text-sm prose-code:before:content-none prose-code:after:content-none',
+  'prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5',
+  'prose-blockquote:border-l-2 prose-blockquote:border-hairline prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-muted',
+].join(' ');
+
 export async function initializeMarkdownHighlighter(): Promise<void> {
   await initializeHighlighter();
 }

@@ -1,172 +1,28 @@
-import { Component, Show, createSignal, createEffect, onCleanup } from 'solid-js';
-import { Copy, Check, Pencil, RefreshCw } from 'lucide-solid';
-import { ThinkingBlock } from './ThinkingBlock';
+/**
+ * A USER or SYSTEM transcript row. Assistant output never renders here —
+ * MessageList groups an entire assistant response (text segments + tool
+ * runs) into one AssistantTurn block with a single meta row.
+ */
+import { Component, Show, createSignal } from 'solid-js';
+import { Copy, Check, Pencil } from 'lucide-solid';
 import { PrecognitionBadge } from './PrecognitionBadge';
 import { useChatSafe } from '@/contexts/ChatContext';
-import { useSessionSafe } from '@/contexts/SessionContext';
-import type { Message as MessageType, TokenUsage } from '@/lib/types';
-import { renderMarkdown, renderMarkdownAsync, renderPlainWithWikilinks } from '@/lib/markdown';
-import { openNoteInEditor } from '@/lib/note-actions';
-import { statusBarStore } from '@/stores/statusBarStore';
-
-function addCopyButtons(container: HTMLDivElement): void {
-  const blocks = container.querySelectorAll('pre');
-
-  for (const block of blocks) {
-    if (block.dataset.copyButton === 'true') {
-      continue;
-    }
-
-    block.dataset.copyButton = 'true';
-    block.classList.add('relative');
-
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = 'Copy';
-    button.className = 'absolute top-2 right-2 rounded border border-hairline bg-surface-overlay px-2 py-1 text-[10px] font-medium text-shell-ink hover:bg-hover-wash';
-
-    button.addEventListener('click', async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const code = block.querySelector('code')?.textContent ?? '';
-      try {
-        await navigator.clipboard.writeText(code);
-        button.textContent = 'Copied';
-        window.setTimeout(() => {
-          button.textContent = 'Copy';
-        }, 1200);
-      } catch {
-        button.textContent = 'Failed';
-        window.setTimeout(() => {
-          button.textContent = 'Copy';
-        }, 1200);
-      }
-    });
-
-    block.append(button);
-  }
-}
-
-/** Format a timestamp as relative time (e.g., "2 min ago") */
-function formatRelativeTime(timestamp: number): string {
-  const now = Date.now();
-  const diffMs = now - timestamp;
-  const diffSec = Math.floor(diffMs / 1000);
-  const diffMin = Math.floor(diffSec / 60);
-  const diffHour = Math.floor(diffMin / 60);
-  const diffDay = Math.floor(diffHour / 24);
-
-  if (diffSec < 60) return 'just now';
-  if (diffMin < 60) return `${diffMin} min ago`;
-  if (diffHour < 24) return `${diffHour} hour${diffHour === 1 ? '' : 's'} ago`;
-
-  if (diffDay === 1) {
-    const date = new Date(timestamp);
-    const hours = date.getHours().toString().padStart(2, '0');
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    return `Yesterday at ${hours}:${minutes}`;
-  }
-
-  const date = new Date(timestamp);
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-/** Format token usage as a compact string, e.g. "150 tokens (25 cached)" */
-function formatTokenUsage(usage: TokenUsage): string {
-  const parts: string[] = [`${usage.totalTokens.toLocaleString()} tokens`];
-  const cached = (usage.cacheReadTokens ?? 0) + (usage.cacheCreationTokens ?? 0);
-  if (cached > 0) {
-    parts.push(`(${cached.toLocaleString()} cached)`);
-  }
-  return parts.join(' ');
-}
+import type { Message as MessageType } from '@/lib/types';
+import { renderPlainWithWikilinks } from '@/lib/markdown';
+import { formatRelativeTime } from '@/lib/format-time';
 
 interface MessageProps {
   message: MessageType;
-  isStreaming?: boolean;
-  isLast?: boolean;
 }
 
 export const Message: Component<MessageProps> = (props) => {
   const chat = useChatSafe();
-  const sessionCtx = useSessionSafe();
   const isUser = () => props.message.role === 'user';
   const isSystem = () => props.message.role === 'system';
-  const isAssistant = () => props.message.role === 'assistant';
-  const isEmpty = () => !props.message.content || props.message.content.length === 0;
-  const hasThinking = () => !!props.message.thinking && props.message.thinking.content.length > 0;
   const hasPrecognition = () => !!props.message.precognition;
-  const [renderedContent, setRenderedContent] = createSignal('');
   const [copied, setCopied] = createSignal(false);
   const [isEditing, setIsEditing] = createSignal(false);
   const [editContent, setEditContent] = createSignal('');
-  let markdownRef: HTMLDivElement | undefined;
-
-  createEffect(() => {
-    if (isUser() || isEmpty()) {
-      setRenderedContent('');
-      return;
-    }
-
-    const content = props.message.content;
-    setRenderedContent(renderMarkdown(content));
-
-    let cancelled = false;
-    void renderMarkdownAsync(content).then((html) => {
-      if (!cancelled) {
-        setRenderedContent(html);
-      }
-    });
-
-    onCleanup(() => {
-      cancelled = true;
-    });
-  });
-
-  createEffect(() => {
-    renderedContent();
-    if (markdownRef) {
-      addCopyButtons(markdownRef);
-    }
-  });
-
-  const sessionKiln = () => {
-    const sid = chat.sessionId?.();
-    return sessionCtx.sessions().find((s) => s.id === sid)?.kiln;
-  };
-
-  const handleRenderedClick = (event: MouseEvent) => {
-    const target = event.target as HTMLElement | null;
-    const noteElement = target?.closest('[data-note]') as HTMLElement | null;
-    if (noteElement) {
-      event.preventDefault();
-      const note = noteElement.dataset.note;
-      if (note) {
-        void openNoteInEditor(note, sessionKiln());
-      }
-      return;
-    }
-
-    // Plain markdown links in agent output: external URLs open a new tab;
-    // anything relative is interpreted as a kiln note reference (the agent
-    // links files it read — `Help/Wikilinks.md` etc.). Never let the SPA
-    // navigate away to a 404.
-    const anchor = target?.closest('a') as HTMLAnchorElement | null;
-    if (!anchor) return;
-    const href = anchor.getAttribute('href') ?? '';
-    if (!href || href.startsWith('#')) return;
-
-    event.preventDefault();
-    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
-      // Absolute scheme (https:, mailto:, …) — external.
-      window.open(href, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    const note = decodeURIComponent(href)
-      .replace(/^\.?\//, '')
-      .replace(/\.md$/i, '');
-    void openNoteInEditor(note, sessionKiln());
-  };
 
   const handleCopy = async () => {
     try {
@@ -196,29 +52,9 @@ export const Message: Component<MessageProps> = (props) => {
     await chat.sendMessage(content);
   };
 
-  const handleRegenerate = async () => {
-    const msgs = chat.messages();
-    // Find the previous user message before this assistant message
-    let prevUserContent: string | null = null;
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      if (msgs[i].role === 'user') {
-        prevUserContent = msgs[i].content;
-        break;
-      }
-    }
-    if (prevUserContent) {
-      await chat.sendMessage(prevUserContent);
-    }
-  };
-
-  const showActions = () => !isSystem() && !props.isStreaming;
-
-  // Tool messages never reach this component — MessageList collapses runs
-  // of them into tool-group blocks and renders ToolCards directly.
-
   return (
     <div
-      class={`group relative mb-4 flex ${isUser() ? 'justify-end' : 'justify-start'}`}
+      class={`group relative mb-5 flex ${isUser() ? 'justify-end' : 'justify-start'}`}
       data-testid={`message-${props.message.role}`}
       data-role={props.message.role}
     >
@@ -226,133 +62,69 @@ export const Message: Component<MessageProps> = (props) => {
         class={
           isUser()
             ? 'message-bubble message-bubble-user'
-            : isSystem()
-              ? 'max-w-3xl rounded-md border border-hairline bg-surface-base px-3 py-2 text-xs italic text-muted'
-              : 'message-assistant'
+            : 'rounded-md border border-hairline bg-surface-base px-3 py-2 text-xs italic text-muted'
         }
       >
-        <Show
-          when={!isEmpty()}
-          fallback={
-            <span class="inline-flex items-center gap-1">
-              <span class="w-2 h-2 bg-muted rounded-full animate-pulse" />
-              <span
-                class="w-2 h-2 bg-muted rounded-full animate-pulse"
-                style={{ 'animation-delay': '75ms' }}
-              />
-              <span
-                class="w-2 h-2 bg-muted rounded-full animate-pulse"
-                style={{ 'animation-delay': '150ms' }}
-              />
-            </span>
-          }
-        >
-          <Show when={hasThinking() && statusBarStore.showThinking()}>
-            <ThinkingBlock
-              content={props.message.thinking!.content}
-              isStreaming={props.message.thinking!.isStreaming}
-              tokenCount={props.message.thinking!.tokenCount}
+        <Show when={!isEditing()} fallback={
+          <div class="flex flex-col gap-2">
+            <textarea
+              class="w-full rounded border border-hairline bg-control px-3 py-2 text-sm text-shell-ink focus:border-primary focus:outline-none resize-y min-h-[60px]"
+              value={editContent()}
+              onInput={(e) => setEditContent(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  handleEditCancel();
+                }
+              }}
+              ref={(el) => {
+                // Auto-focus and set cursor to end
+                queueMicrotask(() => {
+                  el.focus();
+                  el.setSelectionRange(el.value.length, el.value.length);
+                });
+              }}
             />
-          </Show>
-
-          <Show when={!isEmpty()}>
-              <Show when={!isEditing()} fallback={
-                <div class="flex flex-col gap-2">
-                  <textarea
-                    class="w-full rounded border border-hairline bg-control px-3 py-2 text-sm text-shell-ink focus:border-primary focus:outline-none resize-y min-h-[60px]"
-                    value={editContent()}
-                    onInput={(e) => setEditContent(e.currentTarget.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') {
-                        e.preventDefault();
-                        handleEditCancel();
-                      }
-                    }}
-                    ref={(el) => {
-                      // Auto-focus and set cursor to end
-                      queueMicrotask(() => {
-                        el.focus();
-                        el.setSelectionRange(el.value.length, el.value.length);
-                      });
-                    }}
-                  />
-                  <div class="flex gap-2 justify-end">
-                    <button
-                      type="button"
-                      class="rounded px-3 py-1 text-xs text-muted hover:text-shell-ink hover:bg-hover-wash transition-colors"
-                      onClick={handleEditCancel}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      class="rounded bg-primary px-3 py-1 text-xs text-white hover:bg-primary-hover transition-colors"
-                      onClick={handleEditSave}
-                    >
-                      Save & Send
-                    </button>
-                  </div>
-                </div>
-              }>
-                <Show
-                  when={!isUser()}
-                  fallback={
-                    <p
-                      class="whitespace-pre-wrap break-words"
-                      onClick={handleRenderedClick}
-                      innerHTML={renderPlainWithWikilinks(props.message.content)}
-                    />
-                  }
-                >
-                  <div
-                    ref={markdownRef}
-                    onClick={handleRenderedClick}
-                    class="prose prose-invert prose-sm max-w-none
-                      prose-p:my-1 prose-p:leading-relaxed
-                      prose-pre:bg-surface-base prose-pre:rounded-lg prose-pre:p-3 prose-pre:text-sm
-                      prose-code:bg-surface-elevated prose-code:px-1 prose-code:rounded prose-code:text-sm prose-code:before:content-none prose-code:after:content-none
-                      prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5
-                      prose-headings:my-2 prose-headings:font-semibold
-                      prose-a:text-primary prose-a:no-underline hover:prose-a:underline
-                      prose-blockquote:border-l-2 prose-blockquote:border-hairline prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-muted"
-                    innerHTML={renderedContent()}
-                  />
-                </Show>
-              </Show>
-              <Show when={isUser() && hasPrecognition()}>
-                <PrecognitionBadge
-                  notesCount={props.message.precognition!.notesCount}
-                  notes={props.message.precognition!.notes}
-                />
-              </Show>
-          </Show>
-
-           <Show when={props.isStreaming}>
-             <span class="inline-block w-2 h-4 bg-primary-hover animate-pulse ml-0.5" />
-           </Show>
-        </Show>
-
-        {/* Token usage — assistant messages only */}
-        <Show when={isAssistant() && props.message.usage}>
-          <div class="mt-1 text-[11px] text-muted-dark">
-            {formatTokenUsage(props.message.usage!)}
+            <div class="flex gap-2 justify-end">
+              <button
+                type="button"
+                class="rounded px-3 py-1 text-xs text-muted hover:text-shell-ink hover:bg-hover-wash transition-colors"
+                onClick={handleEditCancel}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="rounded bg-primary px-3 py-1 text-xs text-white hover:bg-primary-hover transition-colors"
+                onClick={handleEditSave}
+              >
+                Save & Send
+              </button>
+            </div>
           </div>
+        }>
+          <p
+            class="whitespace-pre-wrap break-words"
+            innerHTML={renderPlainWithWikilinks(props.message.content)}
+          />
+        </Show>
+        <Show when={isUser() && hasPrecognition()}>
+          <PrecognitionBadge
+            notesCount={props.message.precognition!.notesCount}
+            notes={props.message.precognition!.notes}
+          />
         </Show>
 
-        {/* Timestamp */}
-        <Show when={props.message.timestamp && !isSystem()}>
-          <div class={`mt-1 text-xs text-muted-dark ${isUser() ? 'text-right' : 'text-left'}`}>
+        <Show when={isUser() && props.message.timestamp}>
+          <div class="mt-1 text-right text-xs text-muted-dark">
             {formatRelativeTime(props.message.timestamp)}
           </div>
         </Show>
       </div>
 
-      {/* Action buttons — visible on hover */}
-      <Show when={showActions()}>
-        <div
-          class={`absolute ${isUser() ? 'right-0 -bottom-6' : 'left-0 -bottom-6'} flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150`}
-        >
-          {/* Copy — all messages */}
+      {/* Hover actions */}
+      <Show when={!isSystem()}>
+        <div class="absolute right-0 -bottom-5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
           <button
             type="button"
             class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
@@ -363,8 +135,6 @@ export const Message: Component<MessageProps> = (props) => {
               <Check size={14} class="text-ok" />
             </Show>
           </button>
-
-          {/* Edit — user messages only */}
           <Show when={isUser()}>
             <button
               type="button"
@@ -373,18 +143,6 @@ export const Message: Component<MessageProps> = (props) => {
               onClick={handleEditStart}
             >
               <Pencil size={14} />
-            </button>
-          </Show>
-
-          {/* Regenerate — last assistant message only */}
-          <Show when={isAssistant() && props.isLast}>
-            <button
-              type="button"
-              class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
-              title="Regenerate response"
-              onClick={handleRegenerate}
-            >
-              <RefreshCw size={14} />
             </button>
           </Show>
         </div>
