@@ -1,4 +1,5 @@
 import { Component, For, Show } from 'solid-js';
+import { FileText } from '@/lib/icons';
 import { useEditorSafe } from '@/contexts/EditorContext';
 import { EditorWithPreview } from './editor/EditorWithPreview';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
@@ -76,7 +77,7 @@ export const EditorPanel: Component = () => {
         fallback={
           <div class="flex-1 flex items-center justify-center text-muted-dark">
             <div class="text-center">
-              <div class="text-4xl mb-4">📄</div>
+              <FileText class="w-10 h-10 mx-auto mb-4 text-muted-dark" />
               <div class="text-sm">No files open</div>
                <div class="text-xs text-muted-dark mt-1">Click a note in the sidebar to open it</div>
             </div>

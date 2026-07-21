@@ -20,7 +20,7 @@ export const SessionFooter: Component<{
         <Show when={props.session.state === 'active'}>
           <button
             onClick={props.onPause}
-            class="flex-1 px-2 py-1 text-sm bg-attention text-white rounded hover:bg-attention"
+            class="flex-1 px-2 py-1 text-sm bg-attention text-black rounded-md hover:brightness-110 transition-[filter]"
           >
             Pause
           </button>
@@ -29,7 +29,7 @@ export const SessionFooter: Component<{
         <Show when={props.session.state === 'paused'}>
           <button
             onClick={props.onResume}
-            class="flex-1 px-2 py-1 text-sm bg-ok text-white rounded hover:bg-ok"
+            class="flex-1 px-2 py-1 text-sm bg-ok text-black rounded-md hover:brightness-110 transition-[filter]"
           >
             Resume
           </button>
@@ -38,7 +38,7 @@ export const SessionFooter: Component<{
 
         <button
           onClick={props.onRefresh}
-          class="px-2 py-1 text-sm bg-control text-shell-body rounded hover:bg-hover-wash flex items-center justify-center"
+          class="px-2 py-1 text-sm bg-control text-shell-body rounded-md hover:bg-hover-wash flex items-center justify-center"
         >
           <RefreshCw class="w-3.5 h-3.5" />
         </button>

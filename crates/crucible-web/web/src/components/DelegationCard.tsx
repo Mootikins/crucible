@@ -1,5 +1,5 @@
 import { Component, Show, createSignal, createEffect } from 'solid-js';
-import { ArrowRightLeft, Check, X } from 'lucide-solid';
+import { ArrowRightLeft, Check, ChevronRight, X } from 'lucide-solid';
 import type { SubagentEvent } from '@/lib/types';
 
 interface DelegationCardProps {
@@ -77,6 +77,7 @@ export const DelegationCard: Component<DelegationCardProps> = (props) => {
     <div class={`border ${borderColor()} rounded-lg ${bgColor()} overflow-hidden my-2`}>
       <button
         onClick={() => setExpanded(!expanded())}
+        aria-expanded={expanded()}
         class="w-full flex items-center gap-2 px-3 py-2 hover:bg-hover-wash transition-colors text-left group"
       >
         <ArrowRightLeft class={`w-4 h-4 flex-shrink-0 ${accentColor()}`} />
@@ -97,9 +98,9 @@ export const DelegationCard: Component<DelegationCardProps> = (props) => {
           </Show>
         </span>
         <span class="flex-shrink-0">{statusIcon()}</span>
-        <span class="text-muted-dark text-xs ml-0.5 group-hover:text-shell-body transition-colors">
-          {expanded() ? '▼' : '▶'}
-        </span>
+        <ChevronRight
+          class={`w-3 h-3 flex-shrink-0 ml-0.5 text-muted-dark group-hover:text-shell-body transition-all ${expanded() ? 'rotate-90' : ''}`}
+        />
       </button>
 
       <Show when={expanded()}>

@@ -21,14 +21,29 @@ type TranscriptRow =
 export const MessageList: Component = () => {
   const { messages, pendingInteraction, respondToInteraction } = useChatSafe();
   const { currentSession } = useSessionSafe();
+  let containerRef: HTMLDivElement | undefined;
   let bottomRef: HTMLDivElement | undefined;
 
+  // Auto-scroll only while the user is pinned at (near) the bottom — a reader
+  // who scrolled up to their scrollback must not be yanked down on every
+  // streamed token. Sending a message re-pins: your own prompt always comes
+  // into view.
+  let pinned = true;
+
+  const handleScroll = () => {
+    if (!containerRef) return;
+    const distance =
+      containerRef.scrollHeight - containerRef.scrollTop - containerRef.clientHeight;
+    pinned = distance < 40;
+  };
+
   const scrollToBottom = () => {
-    bottomRef?.scrollIntoView({ behavior: 'instant', block: 'end' });
+    if (pinned) bottomRef?.scrollIntoView({ behavior: 'instant', block: 'end' });
   };
 
   createEffect(() => {
-    messages();
+    const msgs = messages();
+    if (msgs[msgs.length - 1]?.role === 'user') pinned = true;
     pendingInteraction();
     queueMicrotask(scrollToBottom);
   });
@@ -103,6 +118,8 @@ export const MessageList: Component = () => {
 
   return (
     <div
+      ref={containerRef}
+      onScroll={handleScroll}
       class="flex-1 overflow-y-auto px-4 py-4"
       data-testid="message-list"
     >

@@ -71,6 +71,14 @@ const SessionItem: Component<{
    return (
      <div
        onClick={props.onSelect}
+       role="button"
+       tabindex="0"
+       onKeyDown={(e) => {
+         if (e.key === 'Enter' || e.key === ' ') {
+           e.preventDefault();
+           props.onSelect();
+         }
+       }}
       class={`group relative w-full text-left px-3 py-2 rounded-lg transition-colors cursor-pointer ${
         props.selected
           ? 'bg-primary/20 text-primary-hover'
@@ -89,7 +97,7 @@ const SessionItem: Component<{
       </div>
 
       {/* Action buttons — visible on hover */}
-      <div class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+      <div class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-150">
         <Show when={props.onArchive}>
           <button
             type="button"

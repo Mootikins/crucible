@@ -15,6 +15,9 @@ const [notificationCount, setNotificationCount] = createSignal(0);
 const dismissTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const AUTO_DISMISS_MS = 5000;
+// Warnings/errors get a longer dwell but still leave the screen — they pile
+// up bottom-right forever otherwise. The Notification Center retains them.
+const AUTO_DISMISS_ALERT_MS = 12000;
 
 function recalcCount() {
   // The badge counts UNREAD notifications (still listed, not yet seen).
@@ -44,13 +47,15 @@ function addNotification(
   setNotifications(produce((list) => list.push(notification)));
   recalcCount();
 
-  // Auto-dismiss info and success after 5s — but never actionable
-  // notifications: the whole point is that the user gets to act on them.
-  if (!action && (type === 'info' || type === 'success')) {
+  // Every toast auto-dismisses (info/success quickly, warning/error after a
+  // longer dwell) EXCEPT actionable notifications: the whole point of those
+  // is that the user gets to act on them.
+  if (!action) {
+    const dwell = type === 'info' || type === 'success' ? AUTO_DISMISS_MS : AUTO_DISMISS_ALERT_MS;
     const timer = setTimeout(() => {
       dismiss(id);
       dismissTimers.delete(id);
-    }, AUTO_DISMISS_MS);
+    }, dwell);
     dismissTimers.set(id, timer);
   }
 

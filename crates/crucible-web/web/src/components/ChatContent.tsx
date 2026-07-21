@@ -14,11 +14,13 @@ export const ChatContent: Component = () => {
     <div class="h-full flex flex-col overflow-hidden" data-message-renderer="markdown-it">
       <div class="flex-1 min-h-0 flex flex-col">
         <Show when={isLoadingHistory()}>
+          {/* Skeleton mirrors the real transcript: full-width, left-aligned
+              rows (no bubble-era right-aligned fakes). */}
           <div class="flex flex-col gap-3 p-4">
-            <div class="animate-pulse bg-surface-elevated rounded-lg h-12 w-3/4" />
-            <div class="animate-pulse bg-surface-elevated rounded-lg h-16 w-full ml-auto" style="max-width: 80%" />
-            <div class="animate-pulse bg-surface-elevated rounded-lg h-12 w-2/3" />
-            <div class="animate-pulse bg-surface-elevated rounded-lg h-20 w-full ml-auto" style="max-width: 85%" />
+            <div class="animate-pulse bg-surface-elevated rounded-md h-8 w-full" />
+            <div class="animate-pulse bg-surface-elevated rounded-md h-16 w-full" />
+            <div class="animate-pulse bg-surface-elevated rounded-md h-8 w-3/4" />
+            <div class="animate-pulse bg-surface-elevated rounded-md h-20 w-full" />
           </div>
         </Show>
         <Show when={!isLoadingHistory()}>

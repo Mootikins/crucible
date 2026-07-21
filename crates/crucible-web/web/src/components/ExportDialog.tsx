@@ -1,4 +1,5 @@
 import { Component, Show, createSignal, onCleanup, createEffect } from 'solid-js';
+import { X } from '@/lib/icons';
 import { exportSession } from '@/lib/api';
 
 interface ExportDialogProps {
@@ -95,9 +96,7 @@ export const ExportDialog: Component<ExportDialogProps> = (props) => {
             class="rounded p-1 text-muted hover:bg-hover-wash hover:text-shell-ink transition-colors"
             aria-label="Close"
           >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
+            <X class="h-4 w-4" />
           </button>
         </div>
 

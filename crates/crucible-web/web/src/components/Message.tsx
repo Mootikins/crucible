@@ -28,7 +28,7 @@ export const Message: Component<MessageProps> = (props) => {
     try {
       await navigator.clipboard.writeText(props.message.content);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
+      window.setTimeout(() => setCopied(false), 1200);
     } catch {
       // Clipboard API not available
     }
@@ -97,8 +97,9 @@ export const Message: Component<MessageProps> = (props) => {
                 type="button"
                 class="rounded bg-primary px-3 py-1 text-xs text-white hover:bg-primary-hover transition-colors"
                 onClick={handleEditSave}
+                title="Sends the edited text as a new message (history is immutable)"
               >
-                Save & Send
+                Send as new
               </button>
             </div>
           </div>
@@ -119,6 +120,7 @@ export const Message: Component<MessageProps> = (props) => {
           <div
             class="mt-1 inline-block text-[11px] leading-none text-muted-dark"
             data-dynamic-time
+            title={new Date(props.message.timestamp).toLocaleString()}
           >
             {formatRelativeTime(props.message.timestamp)}
           </div>
@@ -127,7 +129,7 @@ export const Message: Component<MessageProps> = (props) => {
 
       {/* Hover actions */}
       <Show when={!isSystem()}>
-        <div class="absolute right-0 -bottom-5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+        <div class="absolute right-0 -bottom-5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-150">
           <button
             type="button"
             class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"

@@ -1,5 +1,8 @@
 // src/components/SettingsPanel.tsx
 import { Component, Show, For, ErrorBoundary, createSignal, onMount, onCleanup, type JSX } from 'solid-js';
+import { AlertTriangle, Brain, Key, Link2, Mic, Package, Palette, Pencil } from '@/lib/icons';
+
+type IconComponent = Component<{ class?: string }>;
 import { useSettings } from '@/contexts/SettingsContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import type { TranscriptionProvider } from '@/lib/settings';
@@ -25,14 +28,16 @@ import {
 // Section Header
 // =============================================================================
 
-const SectionHeader: Component<{ title: string; icon: string }> = (props) => (
+const SectionHeader: Component<{ title: string; icon: IconComponent }> = (props) => (
   <tr>
     <td
       colSpan={2}
       class="pt-6 pb-2 text-xs font-semibold uppercase tracking-wider text-muted border-b border-hairline"
     >
-      <span class="mr-1.5">{props.icon}</span>
-      {props.title}
+      <span class="inline-flex items-center gap-1.5">
+        <props.icon class="w-3.5 h-3.5" />
+        {props.title}
+      </span>
     </td>
   </tr>
 );
@@ -87,7 +92,7 @@ const SettingRow: Component<{
  */
 const SettingsSectionState: Component<{
   title: string;
-  icon: string;
+  icon: IconComponent;
   loading: boolean;
   error: string | null;
   loadingMessage?: string;
@@ -230,7 +235,7 @@ const ModelSettingsSection: Component = () => {
 
   onMount(loadSettings);
 
-  const inputClass = 'bg-control border border-hairline rounded px-2 py-1 text-sm text-white focus:border-primary focus:outline-none';
+  const inputClass = 'bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus:outline-none';
 
   const handleBudgetChange = (e: Event) => {
     const val = parseInt((e.target as HTMLInputElement).value, 10);
@@ -299,7 +304,7 @@ const ModelSettingsSection: Component = () => {
   return (
     <SettingsSectionState
       title="Model Settings"
-      icon="🧠"
+      icon={Brain}
       loading={loading()}
       error={error()}
       loadingMessage="Loading settings…"
@@ -424,7 +429,7 @@ const PluginsSection: Component = () => {
   return (
     <SettingsSectionState
       title="Plugins"
-      icon="🔌"
+      icon={Package}
       loading={loading()}
       error={error()}
       loadingMessage="Loading plugins…"
@@ -491,7 +496,7 @@ const McpStatusSection: Component = () => {
   return (
     <SettingsSectionState
       title="MCP Status"
-      icon="🔗"
+      icon={Link2}
       loading={loading()}
       error={error()}
       loadingMessage="Loading MCP status…"
@@ -529,7 +534,7 @@ const EditorSettingsSection: Component = () => {
   const { settings, updateSetting } = useSettings();
   return (
     <>
-      <SectionHeader title="Editor" icon="✎" />
+      <SectionHeader title="Editor" icon={Pencil} />
       <SettingRow
         label="Vim keybindings"
         description="Modal editing in the note/file editor."
@@ -538,7 +543,7 @@ const EditorSettingsSection: Component = () => {
           type="checkbox"
           checked={settings.editor.vimMode}
           onChange={(e) => updateSetting('editor', 'vimMode', e.currentTarget.checked)}
-          class="h-4 w-4 accent-[--color-primary] cursor-pointer"
+          class="h-4 w-4 cursor-pointer"
           data-testid="settings-editor-vim"
         />
       </SettingRow>
@@ -612,7 +617,7 @@ const EditorSettingsSection: Component = () => {
           type="checkbox"
           checked={settings.editor.showSaveButton}
           onChange={(e) => updateSetting('editor', 'showSaveButton', e.currentTarget.checked)}
-          class="h-4 w-4 accent-[--color-primary] cursor-pointer"
+          class="h-4 w-4 cursor-pointer"
           data-testid="settings-editor-save-button"
         />
       </SettingRow>
@@ -677,7 +682,7 @@ const FontControl: Component<{
 /** Typography: choose the UI + code fonts (applied live via CSS vars). */
 const AppearanceSettingsSection: Component = () => (
   <>
-    <SectionHeader title="Appearance" icon="🅰" />
+    <SectionHeader title="Appearance" icon={Palette} />
     <SettingRow label="UI font" description="Font for the interface and prose. Applies instantly.">
       <FontControl field="fontSans" presets={SANS_PRESETS} testid="settings-font-sans" />
     </SettingRow>
@@ -703,7 +708,7 @@ const ApiAccessSection: Component = () => {
 
   return (
     <>
-      <SectionHeader title="API Access" icon="🔑" />
+      <SectionHeader title="API Access" icon={Key} />
       <tr class="border-b border-hairline">
         <td class="py-3 text-shell-body text-sm">
           Sign in with API key
@@ -722,7 +727,7 @@ const ApiAccessSection: Component = () => {
             value={draft()}
             onInput={(e) => setDraft(e.currentTarget.value)}
             placeholder="Paste API key"
-            class="bg-control border border-hairline rounded px-2 py-1 text-sm text-white focus:border-primary focus:outline-none w-56"
+            class="bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus:outline-none w-56"
             data-testid="settings-api-token-input"
           />
           <button
@@ -763,7 +768,7 @@ const SettingsPanelContent: Component = () => {
     updateSetting('transcription', 'language', value);
   };
 
-  const inputClass = 'bg-control border border-hairline rounded px-2 py-1 text-sm text-white focus:border-primary focus:outline-none';
+  const inputClass = 'bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus:outline-none';
   const selectClass = `${inputClass} cursor-pointer`;
   const labelClass = 'text-shell-body text-sm';
 
@@ -772,7 +777,7 @@ const SettingsPanelContent: Component = () => {
       <table class="w-full">
         <tbody>
           {/* Transcription Settings */}
-          <SectionHeader title="Transcription" icon="🎙️" />
+          <SectionHeader title="Transcription" icon={Mic} />
 
           <tr class="border-b border-hairline">
             <td class={`py-3 ${labelClass}`}>Provider</td>
@@ -867,7 +872,9 @@ export const SettingsPanel: Component = () => {
     <ErrorBoundary fallback={(err) => (
       <div class="h-full bg-shell-bg p-4 flex items-center justify-center">
         <div class="text-center text-muted">
-          <div class="text-sm mb-2">⚠️ Settings Error</div>
+          <div class="text-sm mb-2 inline-flex items-center gap-1.5">
+            <AlertTriangle class="w-4 h-4 text-attention" /> Settings Error
+          </div>
           <div class="text-xs text-muted-dark">{String(err)}</div>
         </div>
       </div>

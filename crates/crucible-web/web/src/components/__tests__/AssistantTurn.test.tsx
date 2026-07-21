@@ -196,7 +196,8 @@ describe('AssistantTurn — in-flight indicators', () => {
     const { container } = render(() => (
       <AssistantTurn parts={[textPart('a1')]} isLast={true} />
     ));
-    expect(container.querySelector('.bg-primary-hover')).not.toBeNull();
+    // The caret is the animated ember block appended after the prose.
+    expect(container.querySelector('span.bg-primary.animate-pulse')).not.toBeNull();
   });
 
   it('renders NO meta row while the turn is in flight', () => {

@@ -32,7 +32,7 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
 
   const statusColor = () => {
     switch (props.event.status) {
-      case 'spawned': return isDelegation() ? 'text-precog' : 'text-sky-400';
+      case 'spawned': return 'text-precog';
       case 'completed': return 'text-ok';
       case 'failed': return 'text-error';
     }
@@ -40,7 +40,7 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
 
   const borderColor = () => {
     switch (props.event.status) {
-      case 'spawned': return isDelegation() ? 'border-precog/30' : 'border-sky-500/30';
+      case 'spawned': return 'border-precog/30';
       case 'completed': return 'border-ok/20';
       case 'failed': return 'border-error/30';
     }
@@ -48,7 +48,7 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
 
   const bgColor = () => {
     switch (props.event.status) {
-      case 'spawned': return isDelegation() ? 'bg-precog/10' : 'bg-sky-950/10';
+      case 'spawned': return 'bg-precog/10';
       case 'completed': return 'bg-hover-wash';
       case 'failed': return 'bg-error/10';
     }
@@ -139,7 +139,7 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
           <Show when={props.event.status === 'spawned'}>
             <div class="px-3 py-2 bg-surface-base">
               <span class="inline-flex items-center gap-1.5 text-xs text-muted-dark">
-                <span class={`w-1.5 h-1.5 rounded-full animate-pulse ${isDelegation() ? 'bg-precog' : 'bg-sky-400'}`} />
+                <span class="w-1.5 h-1.5 rounded-full animate-pulse bg-precog" />
                 Processing…
               </span>
             </div>
@@ -164,8 +164,8 @@ const TaskSummary: Component<{ events: SubagentEvent[] }> = (props) => {
   return (
     <div class="flex items-center gap-3 px-3 py-2 border-b border-hairline text-[11px]">
       <Show when={active() > 0}>
-        <span class="flex items-center gap-1 text-sky-400">
-          <span class="w-1.5 h-1.5 bg-sky-400 rounded-full animate-pulse" />
+        <span class="flex items-center gap-1 text-precog">
+          <span class="w-1.5 h-1.5 bg-precog rounded-full animate-pulse" />
           {active()} active
         </span>
       </Show>

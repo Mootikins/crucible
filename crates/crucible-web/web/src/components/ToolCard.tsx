@@ -1,14 +1,22 @@
 import { Component, Show, createSignal, createMemo, createEffect } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import type { ToolCallDisplay } from '@/lib/types';
 import { DiffViewer } from './DiffViewer';
 import { MultiEditDiff } from './MultiEditDiff';
 import { extractDiffFromToolCall } from '@/lib/tool-diffs';
+import {
+  ChevronRight,
+  FileText,
+  Globe,
+  Pencil,
+  Search,
+  StickyNote,
+  Wrench,
+  Zap,
+} from '@/lib/icons';
 
 interface ToolCardProps {
   toolCall: ToolCallDisplay;
-  /** Rendered as an item inside a tool-group block: the group owns the
-   * border/rounding, the card keeps only its status wash. */
-  grouped?: boolean;
 }
 
 export const ToolCard: Component<ToolCardProps> = (props) => {
@@ -22,15 +30,15 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
     }
   });
 
-  const iconForTool = (name: string): string => {
+  const iconForTool = (name: string): Component<{ class?: string }> => {
     const lower = name.toLowerCase();
-    if (lower.includes('read') || lower.includes('file')) return '📄';
-    if (lower.includes('write') || lower.includes('edit')) return '✏️';
-    if (lower.includes('search') || lower.includes('find')) return '🔍';
-    if (lower.includes('bash') || lower.includes('shell') || lower.includes('exec')) return '⚡';
-    if (lower.includes('web') || lower.includes('fetch') || lower.includes('http')) return '🌐';
-    if (lower.includes('note') || lower.includes('memory')) return '📝';
-    return '🔧';
+    if (lower.includes('read') || lower.includes('file')) return FileText;
+    if (lower.includes('write') || lower.includes('edit')) return Pencil;
+    if (lower.includes('search') || lower.includes('find')) return Search;
+    if (lower.includes('bash') || lower.includes('shell') || lower.includes('exec')) return Zap;
+    if (lower.includes('web') || lower.includes('fetch') || lower.includes('http')) return Globe;
+    if (lower.includes('note') || lower.includes('memory')) return StickyNote;
+    return Wrench;
   };
 
   const statusIcon = () => {
@@ -48,14 +56,6 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
         return <span class="text-ok text-[11px] font-semibold" title="Complete">✓</span>;
       case 'error':
         return <span class="text-error text-[11px] font-semibold" title="Error">✗</span>;
-    }
-  };
-
-  const statusBorderColor = () => {
-    switch (props.toolCall.status) {
-      case 'running': return 'border-primary/40';
-      case 'complete': return 'border-ok/30';
-      case 'error': return 'border-error/40';
     }
   };
 
@@ -152,18 +152,16 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   });
 
   return (
-    <div
-      class={
-        props.grouped
-          ? `${statusBgColor()} overflow-hidden`
-          : `border ${statusBorderColor()} rounded-lg ${statusBgColor()} overflow-hidden my-2`
-      }
-    >
+    <div class={`${statusBgColor()} overflow-hidden`}>
       <button
         onClick={() => setExpanded(!expanded())}
+        aria-expanded={expanded()}
         class="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-hover-wash transition-colors text-left"
       >
-        <span class="flex-shrink-0 text-[12px] leading-none opacity-70">{iconForTool(props.toolCall.name)}</span>
+        <Dynamic
+          component={iconForTool(props.toolCall.name)}
+          class="w-3.5 h-3.5 flex-shrink-0 text-muted"
+        />
         <span class="flex-shrink-0 max-w-[45%] text-xs font-medium text-shell-ink truncate font-mono">
           {props.toolCall.name}
         </span>
@@ -179,9 +177,9 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
           </span>
         </Show>
         <span class="flex-shrink-0">{statusIcon()}</span>
-        <span class="flex-shrink-0 text-muted-dark text-[10px]">
-          {expanded() ? '▼' : '▶'}
-        </span>
+        <ChevronRight
+          class={`w-3 h-3 flex-shrink-0 text-muted-dark transition-transform ${expanded() ? 'rotate-90' : ''}`}
+        />
       </button>
 
       <Show when={expanded()}>

@@ -97,7 +97,7 @@ export const MicButton: Component<MicButtonProps> = (props) => {
    const stateStyles = () => {
      switch (state()) {
        case 'recording':
-         return 'bg-white'; // Inverted: white bg, black icon
+         return 'bg-shell-ink'; // Inverted: ink bg, black icon
        case 'processing':
          return 'bg-primary-hover';
        case 'error':

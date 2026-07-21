@@ -37,11 +37,12 @@ describe('ToolCard — collapsed header', () => {
     expect(screen.queryByText('Result')).not.toBeInTheDocument();
   });
 
-  it('shows the right-facing caret while collapsed and flips to down when expanded', () => {
-    render(() => <ToolCard toolCall={makeTool()} />);
-    expect(screen.getByText('▶')).toBeInTheDocument();
+  it('exposes collapsed/expanded state via aria-expanded', () => {
+    const { container } = render(() => <ToolCard toolCall={makeTool()} />);
+    const button = container.querySelector('button')!;
+    expect(button.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(screen.getByText('read_file'));
-    expect(screen.getByText('▼')).toBeInTheDocument();
+    expect(button.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('toggles back to collapsed on a second click', () => {
@@ -55,30 +56,30 @@ describe('ToolCard — collapsed header', () => {
 });
 
 describe('ToolCard — icon selection', () => {
-  // Header icon precedes the tool name. We assert via getByText since each
-  // emoji is unique enough in the collapsed header to avoid ambiguity.
+  // Header icon precedes the tool name; lucide stamps a kebab-case class on
+  // the rendered svg, which is the stable hook for which icon was chosen.
   const cases: Array<[string, string]> = [
-    ['read_file', '📄'],
-    ['file_lookup', '📄'],
-    ['write_note', '✏️'],
-    ['edit_block', '✏️'],
-    ['search_codebase', '🔍'],
-    ['find_refs', '🔍'],
-    ['bash_exec', '⚡'],
-    ['run_shell', '⚡'],
-    ['exec_command', '⚡'],
-    ['web_fetch', '🌐'],
-    ['http_get', '🌐'],
-    ['fetch_url', '🌐'],
-    ['note_create', '📝'],
-    ['memory_get', '📝'],
-    ['weird_tool_name', '🔧'],
+    ['read_file', 'lucide-file-text'],
+    ['file_lookup', 'lucide-file-text'],
+    ['write_note', 'lucide-pencil'],
+    ['edit_block', 'lucide-pencil'],
+    ['search_codebase', 'lucide-search'],
+    ['find_refs', 'lucide-search'],
+    ['bash_exec', 'lucide-zap'],
+    ['run_shell', 'lucide-zap'],
+    ['exec_command', 'lucide-zap'],
+    ['web_fetch', 'lucide-globe'],
+    ['http_get', 'lucide-globe'],
+    ['fetch_url', 'lucide-globe'],
+    ['note_create', 'lucide-sticky-note'],
+    ['memory_get', 'lucide-sticky-note'],
+    ['weird_tool_name', 'lucide-wrench'],
   ];
 
-  for (const [name, emoji] of cases) {
-    it(`maps "${name}" to ${emoji}`, () => {
-      render(() => <ToolCard toolCall={makeTool({ name })} />);
-      expect(screen.getByText(emoji)).toBeInTheDocument();
+  for (const [name, iconClass] of cases) {
+    it(`maps "${name}" to ${iconClass}`, () => {
+      const { container } = render(() => <ToolCard toolCall={makeTool({ name })} />);
+      expect(container.querySelector(`svg.${iconClass}`)).toBeInTheDocument();
     });
   }
 });
@@ -200,9 +201,9 @@ describe('ToolCard — ID footer', () => {
 
 function expandCard(container: HTMLElement) {
   // Only click if currently collapsed — error-status cards auto-expand.
-  if (!container.querySelector('button')?.textContent?.includes('▼')) {
-    const button = container.querySelector('button');
-    if (button) fireEvent.click(button);
+  const button = container.querySelector('button');
+  if (button && button.getAttribute('aria-expanded') !== 'true') {
+    fireEvent.click(button);
   }
 }
 

@@ -1,5 +1,5 @@
 import { Component, Show, createSignal, createEffect } from 'solid-js';
-import { Bot, Check, X } from 'lucide-solid';
+import { Bot, Check, ChevronRight, X } from 'lucide-solid';
 import type { SubagentEvent } from '@/lib/types';
 
 interface SubagentCardProps {
@@ -20,7 +20,7 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
     switch (props.event.status) {
       case 'spawned':
         return (
-          <span class="inline-flex items-center text-sky-400" title="Running">
+          <span class="inline-flex items-center text-precog" title="Running">
             <svg class="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -36,7 +36,7 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
 
   const borderColor = () => {
     switch (props.event.status) {
-      case 'spawned': return 'border-sky-500/40';
+      case 'spawned': return 'border-precog/40';
       case 'completed': return 'border-ok/30';
       case 'failed': return 'border-error/40';
     }
@@ -44,7 +44,7 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
 
   const bgColor = () => {
     switch (props.event.status) {
-      case 'spawned': return 'bg-sky-950/15';
+      case 'spawned': return 'bg-precog/10';
       case 'completed': return 'bg-surface-elevated';
       case 'failed': return 'bg-error/10';
     }
@@ -52,7 +52,7 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
 
   const accentColor = () => {
     switch (props.event.status) {
-      case 'spawned': return 'text-sky-400';
+      case 'spawned': return 'text-precog';
       case 'completed': return 'text-ok';
       case 'failed': return 'text-error';
     }
@@ -76,6 +76,7 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
     <div class={`border ${borderColor()} rounded-lg ${bgColor()} overflow-hidden my-2`}>
       <button
         onClick={() => setExpanded(!expanded())}
+        aria-expanded={expanded()}
         class="w-full flex items-center gap-2 px-3 py-2 hover:bg-hover-wash transition-colors text-left group"
       >
         <Bot class={`w-4 h-4 flex-shrink-0 ${accentColor()}`} />
@@ -90,9 +91,9 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
           </Show>
         </span>
         <span class="flex-shrink-0">{statusIcon()}</span>
-        <span class="text-muted-dark text-xs ml-0.5 group-hover:text-shell-body transition-colors">
-          {expanded() ? '▼' : '▶'}
-        </span>
+        <ChevronRight
+          class={`w-3 h-3 flex-shrink-0 ml-0.5 text-muted-dark group-hover:text-shell-body transition-all ${expanded() ? 'rotate-90' : ''}`}
+        />
       </button>
 
       <Show when={expanded()}>
@@ -131,7 +132,7 @@ export const SubagentCard: Component<SubagentCardProps> = (props) => {
           <Show when={props.event.status === 'spawned'}>
             <div class="px-3 py-2 bg-surface-base">
               <span class="inline-flex items-center gap-1.5 text-xs text-muted-dark">
-                <span class="w-1.5 h-1.5 bg-sky-400 rounded-full animate-pulse" />
+                <span class="w-1.5 h-1.5 bg-precog rounded-full animate-pulse" />
                 Processing…
               </span>
             </div>

@@ -14,7 +14,7 @@ vi.mock('@/lib/markdown', () => ({
 }));
 
 // ChatContext: capture what handlers do without spinning up a real provider.
-// Message uses chat.sendMessage for the edit "Save & Send" flow.
+// Message uses chat.sendMessage for the edit "Send as new" flow.
 const sendMessageMock = vi.fn().mockResolvedValue(undefined);
 const messagesMock = vi.fn<() => MessageType[]>(() => []);
 
@@ -172,7 +172,7 @@ describe('Message — edit', () => {
     fireEvent.click(screen.getByTitle('Edit message'));
     const textarea = screen.getByDisplayValue('first') as HTMLTextAreaElement;
     fireEvent.input(textarea, { target: { value: '  revised  ' } });
-    fireEvent.click(screen.getByText('Save & Send'));
+    fireEvent.click(screen.getByText('Send as new'));
 
     await waitFor(() => expect(sendMessageMock).toHaveBeenCalledWith('revised'));
     // Editor closes after submit
@@ -186,7 +186,7 @@ describe('Message — edit', () => {
     fireEvent.click(screen.getByTitle('Edit message'));
     const textarea = screen.getByDisplayValue('something') as HTMLTextAreaElement;
     fireEvent.input(textarea, { target: { value: '   ' } });
-    fireEvent.click(screen.getByText('Save & Send'));
+    fireEvent.click(screen.getByText('Send as new'));
 
     await new Promise((r) => setTimeout(r, 0));
     expect(sendMessageMock).not.toHaveBeenCalled();

@@ -63,4 +63,10 @@ export {
   Code,
   Pin,
   PanelTop,
+  Brain,
+  Key,
+  Mic,
+  Sparkles,
+  StickyNote,
+  Wrench,
 } from 'lucide-solid';

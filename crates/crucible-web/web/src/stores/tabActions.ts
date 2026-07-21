@@ -126,6 +126,10 @@ export function createTabActions(context: WindowStoreContext): TabActions {
 
   const setActiveTab = (groupId: string, tabId: string | null) => {
     setStore('tabGroups', groupId, 'activeTabId', tabId);
+    // Activating a tab focuses its region — otherwise an edge panel's active
+    // tab never gets the focused (ember) treatment, since nothing else on the
+    // click path sets focusedRegion for edges.
+    setStore('focusedRegion', findEdgePanelForGroup(store, groupId) ?? 'center');
     syncActiveSession(store.tabGroups[groupId]?.tabs.find((t) => t.id === tabId));
   };
 

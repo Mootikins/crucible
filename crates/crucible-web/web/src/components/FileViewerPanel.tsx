@@ -5,6 +5,7 @@ import {
   onCleanup,
   untrack,
 } from 'solid-js';
+import { FileText } from '@/lib/icons';
 import { useEditorSafe } from '@/contexts/EditorContext';
 import { EditorWithPreview } from './editor/EditorWithPreview';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
@@ -196,7 +197,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
                 <Show when={!isLoading()}>
                   <div class="h-full flex items-center justify-center text-muted-dark">
                     <div class="text-center">
-                      <div class="text-4xl mb-4">📄</div>
+                      <FileText class="w-10 h-10 mx-auto mb-4 text-muted-dark" />
                       <div class="text-sm">Loading file...</div>
                     </div>
                   </div>

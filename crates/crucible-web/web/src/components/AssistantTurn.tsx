@@ -87,7 +87,7 @@ const TextSegment: Component<{
         <div class={PROSE_CLASS} onClick={props.onMarkdownClick} innerHTML={renderedContent()} />
       </Show>
       <Show when={props.showCaret && content() !== ''}>
-        <span class="inline-block w-2 h-4 bg-primary-hover animate-pulse ml-0.5" />
+        <span class="inline-block w-2 h-4 bg-primary animate-pulse ml-0.5" />
       </Show>
     </div>
   );
@@ -158,7 +158,7 @@ export const AssistantTurn: Component<{
     try {
       await navigator.clipboard.writeText(fullText());
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
+      window.setTimeout(() => setCopied(false), 1200);
     } catch {
       // Clipboard API not available
     }
@@ -191,7 +191,7 @@ export const AssistantTurn: Component<{
                         const tool = createMemo(() => byId(id)?.toolCall);
                         return (
                           <Show when={tool()}>
-                            <ToolCard toolCall={tool()!} grouped />
+                            <ToolCard toolCall={tool()!} />
                           </Show>
                         );
                       }}
@@ -228,14 +228,16 @@ export const AssistantTurn: Component<{
             <span aria-hidden="true">·</span>
           </Show>
           <Show when={firstMessage()?.timestamp}>
-            <span data-dynamic-time>{formatRelativeTime(firstMessage()!.timestamp)}</span>
+            <span data-dynamic-time title={new Date(firstMessage()!.timestamp).toLocaleString()}>
+              {formatRelativeTime(firstMessage()!.timestamp)}
+            </span>
           </Show>
         </div>
       </Show>
 
       {/* Hover actions for the whole turn */}
       <Show when={!turnInFlight()}>
-        <div class="absolute left-0 -bottom-5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+        <div class="absolute left-0 -bottom-5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-150">
           <button
             type="button"
             class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"

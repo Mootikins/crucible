@@ -133,7 +133,7 @@ export const PluginPanel: Component = () => {
           <button
             type="button"
             onClick={() => setShowInstall(true)}
-            class="text-[11px] px-2 py-0.5 rounded bg-primary-active hover:bg-primary-hover text-white"
+            class="text-[11px] px-2 py-0.5 rounded bg-primary hover:bg-primary-hover text-white"
             data-testid="plugins-install-open"
           >
             Install
@@ -251,7 +251,7 @@ export const PluginPanel: Component = () => {
               type="button"
               onClick={handleInstall}
               disabled={installing()}
-              class="text-xs px-3 py-1 bg-primary-active hover:bg-primary-hover rounded text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              class="text-xs px-3 py-1 bg-primary hover:bg-primary-hover rounded text-white disabled:opacity-50 disabled:cursor-not-allowed"
               data-testid="plugins-install-submit"
             >
               {installing() ? 'Installing…' : 'Install'}

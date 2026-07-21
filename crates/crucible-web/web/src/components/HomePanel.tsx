@@ -9,6 +9,8 @@ import { openFileInEditor } from '@/lib/file-actions';
 import { noteAbsolutePath } from '@/lib/note-actions';
 import { openDraftSession, setDraftPrefill } from '@/lib/draft-session';
 import { sortByRecency, sessionDisplayTitle } from '@/lib/session-display';
+import { SECTION_LABEL_CLASS } from '@/components/ui/SectionLabel';
+import { Pencil } from '@/lib/icons';
 import type { Session } from '@/lib/types';
 
 // ── Home — the landing surface ───────────────────────────────────────────
@@ -39,7 +41,7 @@ export function relativeTime(iso: string, now: number = Date.now()): string {
 
 function CardLabel(props: { children: string }) {
   return (
-    <div class="font-mono font-semibold text-[10px] tracking-[0.08em] text-muted-dark">
+    <div class={SECTION_LABEL_CLASS}>
       {props.children}
     </div>
   );
@@ -125,7 +127,7 @@ export const HomePanel: Component = () => {
             onClick={() => shellActions.goEdit()}
             class="ml-auto flex items-center gap-1.5 text-[11px] text-muted hover:text-shell-ink transition-colors cursor-pointer"
           >
-            <span aria-hidden="true">✎</span> Open editor
+            <Pencil class="w-3 h-3" aria-hidden="true" /> Open editor
           </button>
         </div>
 
@@ -270,7 +272,11 @@ export const HomePanel: Component = () => {
             <CardLabel>RECENT NOTES</CardLabel>
             <Show
               when={recentNotes().length > 0}
-              fallback={<div class="text-muted-dark text-xs mt-2.5">No notes in this kiln yet.</div>}
+              fallback={
+                <div class="text-muted-dark text-xs mt-2.5">
+                  {notes.loading ? 'Loading notes…' : 'No notes in this kiln yet.'}
+                </div>
+              }
             >
               <div class="flex flex-col gap-0.5 text-[12.5px] mt-2">
                 <For each={recentNotes()}>

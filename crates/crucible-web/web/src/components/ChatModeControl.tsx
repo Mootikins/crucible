@@ -26,7 +26,8 @@ export const ChatModeControl: Component = () => {
           type="button"
           onClick={() => switchMode(mode.value)}
           title={`${mode.label}: ${mode.hint} (Shift+Tab to cycle)`}
-          class="px-2.5 py-1 text-xs font-medium transition-colors outline-none"
+          aria-pressed={chatMode() === mode.value}
+          class="px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-1 focus-visible:outline-primary/60 focus-visible:-outline-offset-1"
           classList={{
             'bg-primary/80 text-white': chatMode() === mode.value,
             'text-muted hover:text-shell-ink hover:bg-hover-wash': chatMode() !== mode.value,

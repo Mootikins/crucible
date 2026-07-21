@@ -1,5 +1,5 @@
 import type { Component } from 'solid-js';
-import { Plus } from 'lucide-solid';
+import { Plus } from '@/lib/icons';
 
 interface EmptyStateProps {
   onAction?: () => void;

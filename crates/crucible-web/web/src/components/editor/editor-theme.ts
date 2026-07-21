@@ -14,7 +14,7 @@ export const crucibleEditorChrome = EditorView.theme(
     '&': { backgroundColor: 'var(--color-shell-panel, #141318)' },
     '.cm-gutters': {
       backgroundColor: 'var(--color-shell-panel, #141318)',
-      borderRight: '1px solid var(--color-hairline, #26252b)',
+      borderRight: '1px solid var(--color-hairline, #211f26)',
     },
     '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.03)' },
     '.cm-activeLineGutter': { backgroundColor: 'rgba(255, 255, 255, 0.05)' },

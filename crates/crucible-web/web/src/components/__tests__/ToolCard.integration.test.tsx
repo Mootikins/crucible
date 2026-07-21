@@ -22,12 +22,12 @@ function makeTool(overrides: Partial<ToolCallDisplay>): ToolCallDisplay {
 }
 
 function expandCard(container: HTMLElement) {
-  // Idempotent: only click if the header still shows the collapsed caret.
+  // Idempotent: only click if still collapsed (aria-expanded is the hook).
   // (Error-status cards auto-expand; we don't use those here, but matches
   // the helper pattern in ToolCard.test.tsx for consistency.)
   const button = container.querySelector('button');
   if (!button) return;
-  if (!button.textContent?.includes('▼')) {
+  if (button.getAttribute('aria-expanded') !== 'true') {
     fireEvent.click(button);
   }
 }

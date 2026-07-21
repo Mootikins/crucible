@@ -1,4 +1,5 @@
 import { Component, For, Show, createMemo, createResource, createSignal } from 'solid-js';
+import { SECTION_LABEL_CLASS } from '@/components/ui/SectionLabel';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { attentionStore, attentionActions, type SessionAttention } from '@/stores/attentionStore';
 import { InteractionHandler } from '@/components/interactions';
@@ -236,7 +237,7 @@ export const InboxPanel: Component = () => {
           </div>
         </Show>
 
-        <div class="font-mono font-semibold text-[10px] tracking-[0.08em] text-muted-dark pt-2.5 pb-2">
+        <div class={`${SECTION_LABEL_CLASS} pt-2.5 pb-2`}>
           RECENT SESSIONS
         </div>
         <Show
@@ -260,7 +261,7 @@ export const InboxPanel: Component = () => {
         <button
           type="button"
           data-testid="archived-toggle"
-          class="w-full flex items-center gap-2 font-mono font-semibold text-[10px] tracking-[0.08em] text-muted-dark pt-3 pb-2 cursor-pointer hover:text-muted transition-colors"
+          class={`w-full flex items-center gap-2 ${SECTION_LABEL_CLASS} pt-3 pb-2 cursor-pointer hover:text-muted transition-colors`}
           onClick={() => setArchivedOpen(!archivedOpen())}
         >
           <span>{archivedOpen() ? '▾' : '▸'}</span>

@@ -1,4 +1,5 @@
 import { Component, Show, For, createSignal } from 'solid-js';
+import { ChevronRight, Sparkles } from '@/lib/icons';
 
 interface PrecognitionBadgeProps {
   notesCount: number;
@@ -22,15 +23,18 @@ export const PrecognitionBadge: Component<PrecognitionBadgeProps> = (props) => {
         type="button"
         class="flex items-center gap-1.5 text-[11px] text-muted hover:text-shell-ink"
         onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded()}
         title="Click to show injected notes"
         data-testid="precognition-badge-toggle"
       >
-        <span aria-hidden>🔮</span>
+        <Sparkles class="w-3 h-3 text-precog" aria-hidden />
         <span>
           Enriched with {props.notesCount} {props.notesCount === 1 ? 'note' : 'notes'}
         </span>
         <Show when={props.notes.length > 0}>
-          <span class="text-muted-dark">{expanded() ? '▼' : '▶'}</span>
+          <ChevronRight
+            class={`w-3 h-3 text-muted-dark transition-transform ${expanded() ? 'rotate-90' : ''}`}
+          />
         </Show>
       </button>
       <Show when={expanded() && props.notes.length > 0}>

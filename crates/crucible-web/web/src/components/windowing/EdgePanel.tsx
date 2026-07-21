@@ -320,14 +320,24 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
           mode="edge"
           position={props.position}
         />
-        <div class="flex-1 overflow-auto p-2 text-xs text-muted" data-testid={`panel-content-${activeTab()?.contentType ?? 'unknown'}`}>
+        {/* Full-bleed: panels own their padding/typography. A wrapper p-2
+            showed the dock canvas as an 8px frame around every panel (most
+            visibly boxing-in the terminal). */}
+        <div class="flex-1 overflow-auto" data-testid={`panel-content-${activeTab()?.contentType ?? 'unknown'}`}>
           {/* Keyed by tab ID: an inline expression here re-runs on EVERY
               group mutation (addTab / setActiveTab / removeTab each replace
               store objects) and would return a fresh <Dynamic> — remounting
               the panel three times during a draft→session handoff and
               killing any state the first mount owned. Key by id keeps one
               mounted instance per active tab. */}
-          <Show when={activeTab()} fallback={<span>Select a tab</span>}>
+          <Show
+            when={activeTab()}
+            fallback={
+              <div class="h-full flex items-center justify-center text-xs text-muted-dark">
+                Select a tab
+              </div>
+            }
+          >
             <Key each={activeTab() ? [activeTab()!] : []} by={(t) => t.id}>
               {(tab) => {
                 const panelDef = () => getGlobalRegistry().get(tab().contentType);
