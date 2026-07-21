@@ -500,6 +500,20 @@ details.callout[open] > summary.callout-title::after {
   background: color-mix(in oklab, var(--color-surface-elevated) 40%, transparent);
 }
 
+/* Code blocks (chat + reading view): ONE tokened surface. Shiki inlines its
+   own theme background on the <pre> (github-dark's blue-grey #24292e), which
+   beats any class — override it; surface-elevated reads on both the chat
+   canvas (shell-bg) and the reading panel (shell-panel), where surface-base
+   would vanish. The inner <code> must not double-chip with the inline-code
+   background or padding. */
+.prose pre {
+  background-color: var(--color-surface-elevated) !important;
+}
+.prose pre code {
+  background-color: transparent;
+  padding: 0;
+}
+
 /* Reading-view code blocks: a copy button floats top-right, revealed on
    hover/focus (and always visible on touch, which has no hover). Markup from
    lib/markdown.ts renderMarkdownDocAsync; click handled in MarkdownPreview. */

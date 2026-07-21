@@ -74,12 +74,12 @@ describe('motion primitives on structural surfaces', () => {
     expect(read('components/windowing/FloatingWindow.tsx')).toMatch(/cru-anim-pop/);
   });
 
-  it('edge panels tween their main-axis size in BOTH directions (push, not overlay)', () => {
+  it('edge panels slide (full-opacity translate) in BOTH directions inside an instant clip frame', () => {
     const src = read('components/windowing/EdgePanel.tsx');
-    // Width/height transition armed around collapse-state changes; content
-    // stays mounted through the exit tween.
+    // Layout snaps once (no per-frame center reflow); the inner panel
+    // translates from its owning edge; content survives the exit slide.
     expect(src).toMatch(/TWEEN_MS/);
-    expect(src).toMatch(/transition: tweening\(\)/);
+    expect(src).toMatch(/translate: open\(\)/);
     expect(src).toMatch(/setRendered\(false\)/);
   });
 

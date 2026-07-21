@@ -358,17 +358,15 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
     </>
   );
 
-  // Collapse/expand tween: the wrapper's main-axis size animates 0 ↔ full,
-  // PUSHING the center content aside like Obsidian — never a translate that
-  // slides the panel OVER its neighbors. The inner panel keeps its fixed
-  // size (overflow-hidden clips mid-tween, so content never reflows), stays
-  // mounted through the exit animation, and unmounts after it. The
-  // transition is only armed around a collapse-state change, so dragging
-  // the resize handle tracks the pointer instantly.
+  // Slide, don't tween layout: animating the wrapper's width made the CENTER
+  // content reflow every frame (visible jitter in heavy panes). Instead the
+  // wrapper snaps 0 ↔ full instantly (one reflow at each end), and the inner
+  // panel TRANSLATES in/out from its owning edge at full opacity, clipped by
+  // the wrapper. Content stays mounted through the exit slide and unmounts
+  // after it.
   const TWEEN_MS = 200;
   const [rendered, setRendered] = createSignal(!isCollapsed());
   const [open, setOpen] = createSignal(!isCollapsed());
-  const [tweening, setTweening] = createSignal(false);
   let tweenTimer: number | undefined;
 
   createEffect(
@@ -376,19 +374,14 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
       isCollapsed,
       (collapsed) => {
         window.clearTimeout(tweenTimer);
-        setTweening(true);
         if (!collapsed) {
           setRendered(true);
-          // Double rAF: paint the 0-size state first, THEN flip to full so
-          // the browser has something to transition from.
+          // Double rAF: paint the offscreen-translated state first, THEN
+          // flip so the browser has something to transition from.
           requestAnimationFrame(() => requestAnimationFrame(() => setOpen(true)));
-          tweenTimer = window.setTimeout(() => setTweening(false), TWEEN_MS + 50);
         } else {
           setOpen(false);
-          tweenTimer = window.setTimeout(() => {
-            setRendered(false);
-            setTweening(false);
-          }, TWEEN_MS + 50);
+          tweenTimer = window.setTimeout(() => setRendered(false), TWEEN_MS + 50);
         }
       },
       { defer: true },
@@ -398,13 +391,13 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
 
   // Panel size + the 1px resize handle that lives inside the wrapper.
   const fullSize = () => (isVertical() ? (panel().width || 250) : (panel().height || 200)) + 1;
-  const wrapperStyle = () => {
-    const axis = isVertical() ? 'width' : 'height';
-    return {
-      [axis]: open() ? `${fullSize()}px` : '0px',
-      transition: tweening() ? `${axis} ${TWEEN_MS}ms ease-out` : 'none',
-    };
-  };
+  const offscreen = () =>
+    props.position === 'left' ? '-100% 0' : props.position === 'right' ? '100% 0' : '0 100%';
+  const innerStyle = () => ({
+    [isVertical() ? 'width' : 'height']: `${fullSize()}px`,
+    translate: open() ? '0 0' : offscreen(),
+    transition: `translate ${TWEEN_MS}ms ease-out`,
+  });
 
   // Ribbon at the window edge, always; the panel grows out of it toward the
   // center. Left: [ribbon][panel][handle]; right: [handle][panel][ribbon];
@@ -419,16 +412,26 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
     >
       {props.position === 'left' && <EdgeRibbon position="left" />}
       <Show when={rendered()}>
+        {/* Clip frame: sized instantly (layout settles in one step)… */}
         <div
           classList={{
             'flex overflow-hidden flex-none': true,
-            'flex-row justify-end': isVertical() && props.position === 'left',
-            'flex-row': isVertical() && props.position !== 'left',
+            'flex-row': isVertical(),
             'flex-col': !isVertical(),
           }}
-          style={wrapperStyle()}
+          style={{ [isVertical() ? 'width' : 'height']: `${fullSize()}px` }}
         >
-          {expandedPanel()}
+          {/* …while the panel itself slides within it, at full opacity. */}
+          <div
+            classList={{
+              'flex flex-none': true,
+              'flex-row': isVertical(),
+              'flex-col': !isVertical(),
+            }}
+            style={innerStyle()}
+          >
+            {expandedPanel()}
+          </div>
         </div>
       </Show>
       {props.position !== 'left' && <EdgeRibbon position={props.position} />}

@@ -634,7 +634,9 @@ const livePreviewTheme = EditorView.baseTheme({
     fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
     fontSize: '12px',
     lineHeight: '1.5',
-    background: 'var(--color-surface-base, #141318)',
+    // surface-elevated like the reading view's pre: surface-base would be
+    // invisible on the editor's shell-panel background.
+    background: 'var(--color-surface-elevated, #1c1b22)',
   },
   '.cm-lp-quote': {
     borderLeft: '2px solid var(--color-hairline, #211f26)',
@@ -718,12 +720,14 @@ export function livePreview(opts?: { maxLineWidth?: number; baseDir?: string }):
     // Prose wraps; horizontal scrolling is a source-mode behavior.
     EditorView.lineWrapping,
     // Readable line length (Obsidian-style): center a prose column instead
-    // of running lines the full window width. Inline style so it is plainly
-    // inspectable (and testable) on .cm-content.
+    // of running lines the full window width. The 24px side padding mirrors
+    // the reading view's px-6 container, so Edit ↔ Preview keeps the text at
+    // the same x even when the pane is narrower than the column. Inline
+    // style so it is plainly inspectable (and testable) on .cm-content.
     ...(width > 0
       ? [
           EditorView.contentAttributes.of({
-            style: `max-width:${width}px;margin:0 auto;`,
+            style: `max-width:${width}px;margin:0 auto;padding-left:24px;padding-right:24px;box-sizing:content-box;`,
           }),
         ]
       : []),
