@@ -10,8 +10,7 @@ import {
 } from '@/lib/api';
 import type { AgentProfileEntry, KilnListEntry, Project } from '@/lib/types';
 import { closeDraftTab } from '@/lib/draft-session';
-
-const basename = (p: string): string => p.replace(/\/$/, '').split('/').pop() ?? p;
+import { pathBasename } from '@/stores/statusBarStore';
 
 /**
  * Draft session surface — the single session-creation path (lazy creation).
@@ -40,9 +39,13 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
   const [message, setMessage] = createSignal('');
   const [busy, setBusy] = createSignal(false);
 
+  let messageRef: HTMLTextAreaElement | undefined;
+
   const isAcp = () => agentName() !== '';
 
   onMount(() => {
+    // Land the cursor in the message box so the user can start typing at once.
+    messageRef?.focus();
     void (async () => {
       const [cfg, ag, mo, ks, ps, providers] = await Promise.all([
         getConfig().catch(() => null),
@@ -86,6 +89,9 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
       if (props.draftTabId) closeDraftTab(props.draftTabId);
     } catch {
       // Error already surfaced via the session context's notification.
+    } finally {
+      // Always clear busy: on success closeDraftTab unmounts us, but a
+      // draftTabId-less mount (or any failure) must re-enable the button.
       setBusy(false);
     }
   };
@@ -119,6 +125,7 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
               disabled={busy()}
               onChange={(e) => setAgentName(e.currentTarget.value)}
               title="Agent"
+              aria-label="Agent"
               data-testid="draft-agent"
             >
               <option value="">Internal agent</option>
@@ -143,13 +150,14 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
                 setExtraKilns((prev) => prev.filter((p) => p !== e.currentTarget.value));
               }}
               title="Kiln (knowledge)"
+              aria-label="Kiln (knowledge)"
               data-testid="draft-kiln"
             >
               <option value="">
-                {defaultKiln() ? `${basename(defaultKiln())} (default)` : 'Home kiln (default)'}
+                {defaultKiln() ? `${pathBasename(defaultKiln())} (default)` : 'Home kiln (default)'}
               </option>
               <For each={kilns().filter((k) => k.path !== defaultKiln())}>
-                {(k) => <option value={k.path}>{k.name || basename(k.path)}</option>}
+                {(k) => <option value={k.path}>{k.name || pathBasename(k.path)}</option>}
               </For>
             </select>
 
@@ -164,6 +172,7 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
                 e.currentTarget.value = '';
               }}
               title="Attach more kilns"
+              aria-label="Attach more kilns"
               data-testid="draft-extra-kilns"
             >
               <option value="">+ kiln…</option>
@@ -173,7 +182,7 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
                     k.path !== (kiln() || defaultKiln()) && !extraKilns().includes(k.path),
                 )}
               >
-                {(k) => <option value={k.path}>{k.name || basename(k.path)}</option>}
+                {(k) => <option value={k.path}>{k.name || pathBasename(k.path)}</option>}
               </For>
             </select>
 
@@ -184,6 +193,7 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
                 disabled={busy()}
                 onChange={(e) => setModel(e.currentTarget.value)}
                 title="Model"
+                aria-label="Model"
                 data-testid="draft-model"
               >
                 <option value="">
@@ -199,20 +209,23 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
               disabled={busy()}
               onChange={(e) => setWorkspace(e.currentTarget.value)}
               title="Project workspace (optional)"
+              aria-label="Project workspace (optional)"
               data-testid="draft-project"
             >
               <option value="">No project</option>
               <For each={projects()}>
-                {(p) => <option value={p.path}>{p.name || basename(p.path)}</option>}
+                {(p) => <option value={p.path}>{p.name || pathBasename(p.path)}</option>}
               </For>
             </select>
           </div>
 
           <textarea
+            ref={messageRef}
             value={message()}
             onInput={(e) => setMessage(e.currentTarget.value)}
             onKeyDown={handleKeyDown}
             placeholder="Type your first message..."
+            aria-label="First message"
             disabled={busy()}
             rows={3}
             class="w-full bg-transparent text-shell-ink placeholder-muted-dark resize-none outline-none px-2 py-1 min-h-[4rem] disabled:opacity-50"

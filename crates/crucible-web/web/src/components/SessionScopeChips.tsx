@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, onMount } from 'solid-js';
+import { Component, For, Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useChatSafe } from '@/contexts/ChatContext';
 import {
@@ -38,6 +38,26 @@ export const SessionScopeChips: Component = () => {
   onMount(() => {
     void listKilns().then(setKilns).catch(() => {});
     void listProjects().then(setProjects).catch(() => {});
+  });
+
+  // Dismiss the open kiln/project picker on Escape or any outside click.
+  // The listeners are attached on the next tick so the opening click (which
+  // the toggle button stops from propagating) doesn't immediately close it.
+  createEffect(() => {
+    if (!openPicker()) return;
+    const close = () => setOpenPicker(null);
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpenPicker(null);
+    };
+    const timer = setTimeout(() => {
+      document.addEventListener('click', close);
+      document.addEventListener('keydown', onEscape);
+    }, 0);
+    onCleanup(() => {
+      clearTimeout(timer);
+      document.removeEventListener('click', close);
+      document.removeEventListener('keydown', onEscape);
+    });
   });
 
   const mutate = async (action: () => Promise<Parameters<typeof applySessionScope>[0]>) => {
@@ -83,7 +103,12 @@ export const SessionScopeChips: Component = () => {
                 type="button"
                 class={addButton}
                 disabled={disabled()}
-                onClick={() => setOpenPicker(openPicker() === 'project' ? null : 'project')}
+                aria-haspopup="menu"
+                aria-expanded={openPicker() === 'project'}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenPicker(openPicker() === 'project' ? null : 'project');
+                }}
                 data-testid="attach-project"
               >
                 ⌁ + project
@@ -171,7 +196,12 @@ export const SessionScopeChips: Component = () => {
             type="button"
             class={addButton}
             disabled={disabled()}
-            onClick={() => setOpenPicker(openPicker() === 'kiln' ? null : 'kiln')}
+            aria-haspopup="menu"
+            aria-expanded={openPicker() === 'kiln'}
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpenPicker(openPicker() === 'kiln' ? null : 'kiln');
+            }}
             data-testid="attach-kiln"
           >
             ◇ + kiln

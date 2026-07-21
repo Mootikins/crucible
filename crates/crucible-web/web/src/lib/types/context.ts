@@ -17,6 +17,7 @@ import type {
   EditorFile,
 } from '../types';
 import type { Accessor } from 'solid-js';
+import type { SessionScope } from '@/lib/api';
 
 // =============================================================================
 // Chat Context
@@ -61,12 +62,7 @@ export interface SessionContextValue {
     opts?: { initialMessage?: string; model?: string },
   ) => Promise<Session>;
   /** Fold a kiln/workspace mutation's echoed scope into the session store. */
-  applySessionScope: (scope: {
-    session_id: string;
-    kiln: string;
-    workspace: string;
-    connected_kilns: string[];
-  }) => void;
+  applySessionScope: (scope: SessionScope) => void;
   selectSession: (id: string) => Promise<void>;
   refreshSessions: (filters?: { kiln?: string; workspace?: string; includeArchived?: boolean }) => Promise<void>;
   pauseSession: () => Promise<void>;

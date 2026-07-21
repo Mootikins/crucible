@@ -107,4 +107,35 @@ describe('SessionScopeChips', () => {
     fireEvent.click(getByText(/extra —/));
     await waitFor(() => expect(connectMock).toHaveBeenCalledWith('s1', '/kilns/extra'));
   });
+
+  it('Escape closes the open picker', async () => {
+    mockSession = baseSession();
+    const { getByTestId, getByText, queryByText } = render(() => <SessionScopeChips />);
+    fireEvent.click(getByTestId('attach-project'));
+    await waitFor(() => expect(getByText(/crucible —/)).toBeTruthy());
+    expect(getByTestId('attach-project').getAttribute('aria-expanded')).toBe('true');
+    // The dismissal listener is attached on the next macrotask.
+    await new Promise((r) => setTimeout(r, 0));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(queryByText(/crucible —/)).toBeNull());
+    expect(getByTestId('attach-project').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('an outside click closes the open picker', async () => {
+    mockSession = baseSession();
+    const { getByTestId, getByText, queryByText } = render(() => <SessionScopeChips />);
+    fireEvent.click(getByTestId('attach-project'));
+    await waitFor(() => expect(getByText(/crucible —/)).toBeTruthy());
+    await new Promise((r) => setTimeout(r, 0));
+    fireEvent.click(document.body);
+    await waitFor(() => expect(queryByText(/crucible —/)).toBeNull());
+  });
+
+  it('toggle button exposes aria-haspopup/aria-expanded', () => {
+    mockSession = baseSession();
+    const { getByTestId } = render(() => <SessionScopeChips />);
+    const btn = getByTestId('attach-project');
+    expect(btn.getAttribute('aria-haspopup')).toBe('menu');
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+  });
 });

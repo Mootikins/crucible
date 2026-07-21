@@ -143,6 +143,11 @@ describe('DraftSessionPanel', () => {
     expect(opts.initialMessage).toBe('refactor auth');
   });
 
+  it('focuses the message textarea on mount', async () => {
+    const { getByTestId } = await setup();
+    expect(document.activeElement).toBe(getByTestId('draft-input'));
+  });
+
   it('submits on Enter (without Shift)', async () => {
     const { getByTestId } = await setup();
     const input = getByTestId('draft-input');
