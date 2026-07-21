@@ -96,6 +96,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     });
   };
 
+  const removeMessage = (id: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== id));
+  };
+
   const appendToMessage = (id: string, content: string) => {
     setMessages((prev) => {
       const index = prev.findIndex((m) => m.id === id);
@@ -468,45 +472,55 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     // message_complete.id is that turn id too. Keying the transcript on it
     // (user = id, assistant = `${id}-response` — see turnResponseId) means
     // every viewer converges on identical ids and dedup is exact, never
-    // heuristic. The optimistic messages therefore wait for the POST — a
-    // local round-trip that just enqueues the turn.
+    // heuristic.
     const trimmed = content.trim();
 
     setIsLoading(true);
     setIsStreaming(true);
 
+    // Optimistic entries go in NOW so transcript order stays user → answer
+    // even when SSE events beat the POST response (a fast turn can complete
+    // before the send round-trip resolves). They carry temp ids that the
+    // canonical ids replace below — a temp id never outlives the send, so
+    // convergence still rests on backend-canonical ids only.
+    const tempUserId = generateMessageId();
+    addMessage({ id: tempUserId, role: 'user', content: trimmed, timestamp: Date.now() });
+    const tempResponseId = generateMessageId();
+    addMessage({ id: tempResponseId, role: 'assistant', content: '', timestamp: Date.now() });
+    currentStreamingMessageId = tempResponseId;
+
     try {
       const messageId = await sendChatMessage(props.sessionId, trimmed);
-      if (!messages.some((m) => m.id === messageId)) {
-        addMessage({
-          id: messageId,
-          role: 'user',
-          content: trimmed,
-          timestamp: Date.now(),
-        });
+
+      // Canonicalize the user entry — unless the SSE echo already added it.
+      if (messages.some((m) => m.id === messageId)) {
+        removeMessage(tempUserId);
+      } else {
+        updateMessage(tempUserId, { id: messageId });
       }
+
+      // Canonicalize the assistant entry. The reducer may have already
+      // renamed it (segment_complete / message_complete rename the streaming
+      // message to a canonical id) — then the temp id is gone and there is
+      // nothing to do.
       const responseId = turnResponseId(messageId);
-      const earlyStreamId = currentStreamingMessageId;
-      if (earlyStreamId && earlyStreamId !== responseId
-        && !messages.some((m) => m.id === responseId)) {
-        // A token beat this POST: the reducer already minted a random-id
-        // assistant message and streamed into it. Reconcile that message into
-        // the canonical response id instead of adding a second (empty)
-        // placeholder that would orphan the streamed text.
-        updateMessage(earlyStreamId, { id: responseId });
-      } else if (!messages.some((m) => m.id === responseId)) {
-        addMessage({
-          id: responseId,
-          role: 'assistant',
-          content: '',
-          timestamp: Date.now(),
-        });
+      if (messages.some((m) => m.id === tempResponseId)) {
+        if (messages.some((m) => m.id === responseId)) {
+          removeMessage(tempResponseId);
+        } else {
+          updateMessage(tempResponseId, { id: responseId });
+        }
       }
-      currentStreamingMessageId = responseId;
+      if (currentStreamingMessageId === tempResponseId) {
+        currentStreamingMessageId = responseId;
+      }
     } catch (err) {
       console.error('Failed to send message:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to connect to server';
       setError(errorMsg);
+      // Keep the user's text visible next to the failure notice, but drop the
+      // empty assistant placeholder.
+      removeMessage(tempResponseId);
       addMessage({
         id: generateMessageId(),
         role: 'system',

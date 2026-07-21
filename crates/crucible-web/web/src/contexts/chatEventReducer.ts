@@ -94,6 +94,25 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
     }
   };
 
+  // Thinking that streamed onto a segment frozen at a tool boundary never
+  // receives the messageId-targeted finalization in message_complete (the
+  // streaming id was cleared at the boundary), so sweep every message still
+  // marked thinking-in-progress when the turn ends — no bubble may be left
+  // saying "Thinking…" forever.
+  const finalizeStreamingThinking = () => {
+    for (const m of deps.messages()) {
+      if (m.thinking?.isStreaming) {
+        deps.updateMessage(m.id, {
+          thinking: {
+            content: m.thinking.content,
+            isStreaming: false,
+            tokenCount: m.thinking.content.length,
+          },
+        });
+      }
+    }
+  };
+
   return (event: ChatEvent) => {
     switch (event.type) {
       case 'token': {
@@ -272,8 +291,17 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
             timestamp: Date.now(),
             usage,
           });
+        } else if (usage && frozenPrefix !== '') {
+          // Segments covered the whole turn, so there is no trailing bubble to
+          // carry the token usage — put it on the turn's last frozen segment
+          // so totals still render.
+          const lastAssistant = [...deps.messages()]
+            .reverse()
+            .find((m) => m.role === 'assistant');
+          if (lastAssistant) deps.updateMessage(lastAssistant.id, { usage });
         }
         finalizeDanglingTools();
+        finalizeStreamingThinking();
         frozenSegments = [];
         deps.setIsStreaming(false);
         deps.setIsLoading(false);
@@ -290,6 +318,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
           });
         }
         finalizeDanglingTools();
+        finalizeStreamingThinking();
         frozenSegments = [];
         deps.setIsStreaming(false);
         deps.setIsLoading(false);

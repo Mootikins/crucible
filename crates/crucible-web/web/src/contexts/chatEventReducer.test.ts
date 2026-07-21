@@ -376,6 +376,27 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(transcript.split('Let me look that up.').length - 1).toBe(1);
   });
 
+  it('message_complete finalizes thinking left streaming on a frozen segment', () => {
+    // Thinking streamed before a tool boundary lives on the frozen segment,
+    // which the messageId-targeted finalization in message_complete never
+    // touches (the streaming id was cleared at the boundary). Regression: the
+    // segment rendered "Thinking…" forever instead of "Thought for N tokens".
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'token', content: 'Here is the answer.' });
+    h.reducer({ type: 'thinking', content: 'Considering the options.' });
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'read_file' });
+    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'contents' });
+    // Whole-turn text == the frozen segment: no trailing bubble is added.
+    h.reducer({ type: 'message_complete', id: 'srv', content: 'Here is the answer.' });
+
+    const frozen = h.state.messages.find((m) => m.role === 'assistant' && m.thinking);
+    expect(frozen?.thinking).toMatchObject({
+      isStreaming: false,
+      tokenCount: 'Considering the options.'.length,
+    });
+  });
+
   it('text → tool → text → tool → text strips every frozen prefix (each narration once)', () => {
     const h = createHarness();
     h.setUp.streamingMessage('asst-1');
