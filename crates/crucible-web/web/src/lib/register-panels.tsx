@@ -14,20 +14,22 @@ import HomePanel from '@/components/HomePanel';
 import { BacklinksPanel } from '@/components/BacklinksPanel';
 import { GraphPanel } from '@/components/graph/GraphPanel';
 
+// Tab/ribbon icons are NOT registered here — they resolve per content type
+// through lib/tab-icons.ts (SVG components, consistent monochrome chrome).
 export function registerPanels(): void {
   const registry = getGlobalRegistry();
-  registry.register('sessions', 'Sessions', SessionPanel, 'left', '📋');
-  registry.register('settings', 'Settings', SettingsPanel, 'center', '⚙️');
-  registry.register('chat', 'Chat', ChatPanel, 'center', '💬');
-  registry.register('chat-draft', 'New Session', DraftSessionPanel, 'center', '✳️');
-  registry.register('inbox', 'Inbox', InboxPanel, 'center', '📥');
-  registry.register('home', 'Home', HomePanel, 'center', '⌂');
-  registry.register('activity', 'Activity', ActivityPanel, 'right', '📊');
-  registry.register('terminal', 'Terminal', TerminalPanel, 'bottom', '💻');
-  registry.register('file', 'File', FileViewerPanel, 'center', '📄');
-  registry.register('files', 'Files', FilesPanel, 'left', '📁');
-  registry.register('skills', 'Skills', SkillsPanel, 'left', '🎯');
-  registry.register('plugins', 'Plugins', PluginPanel, 'left', '🔌');
-  registry.register('backlinks', 'Backlinks', BacklinksPanel, 'right', '🔗');
-  registry.register('graph', 'Graph', GraphPanel, 'center', '🕸️');
+  registry.register('sessions', 'Sessions', SessionPanel, 'left');
+  registry.register('settings', 'Settings', SettingsPanel, 'center');
+  registry.register('chat', 'Chat', ChatPanel, 'center');
+  registry.register('chat-draft', 'New Session', DraftSessionPanel, 'center');
+  registry.register('inbox', 'Inbox', InboxPanel, 'center');
+  registry.register('home', 'Home', HomePanel, 'center');
+  registry.register('activity', 'Activity', ActivityPanel, 'right');
+  registry.register('terminal', 'Terminal', TerminalPanel, 'bottom');
+  registry.register('file', 'File', FileViewerPanel, 'center');
+  registry.register('files', 'Files', FilesPanel, 'left');
+  registry.register('skills', 'Skills', SkillsPanel, 'left');
+  registry.register('plugins', 'Plugins', PluginPanel, 'left');
+  registry.register('backlinks', 'Backlinks', BacklinksPanel, 'right');
+  registry.register('graph', 'Graph', GraphPanel, 'center');
 }

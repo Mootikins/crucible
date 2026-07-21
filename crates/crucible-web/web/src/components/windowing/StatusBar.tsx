@@ -98,7 +98,7 @@ export const StatusBar: Component = () => {
           </Show>
           {/* Mode badge */}
           <span
-            class={`px-1.5 rounded-sm font-medium uppercase tracking-wider text-[9px] leading-tight ${modeColor(statusBarStore.chatMode())}`}
+            class={`px-1.5 rounded-sm font-medium uppercase tracking-wider text-[10px] leading-tight ${modeColor(statusBarStore.chatMode())}`}
             data-testid="status-mode"
           >
             {statusBarStore.chatMode()}

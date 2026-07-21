@@ -8,8 +8,10 @@ vi.mock('@/contexts/SessionContext', () => ({
 }));
 
 const closeDraftTabMock = vi.fn();
+const consumeDraftPrefillMock = vi.fn<() => string | null>(() => null);
 vi.mock('@/lib/draft-session', () => ({
   closeDraftTab: (...args: unknown[]) => closeDraftTabMock(...args),
+  consumeDraftPrefill: () => consumeDraftPrefillMock(),
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -141,6 +143,14 @@ describe('DraftSessionPanel', () => {
     expect(params.agent_name).toBe('claude');
     expect(opts.model).toBeUndefined();
     expect(opts.initialMessage).toBe('refactor auth');
+  });
+
+  it('prefills the message box from the Home composer handoff', async () => {
+    consumeDraftPrefillMock.mockReturnValueOnce('carried over from home');
+    const { getByTestId } = await setup();
+    expect((getByTestId('draft-input') as HTMLTextAreaElement).value).toBe(
+      'carried over from home',
+    );
   });
 
   it('focuses the message textarea on mount', async () => {

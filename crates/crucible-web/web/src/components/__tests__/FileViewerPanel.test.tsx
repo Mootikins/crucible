@@ -55,7 +55,6 @@ describe('FileViewerPanel — panel registry', () => {
     expect(panel!.id).toBe('file');
     expect(panel!.title).toBe('File');
     expect(panel!.defaultZone).toBe('center');
-    expect(panel!.icon).toBe('📄');
   });
 
   it('registers file panel with a valid component', () => {

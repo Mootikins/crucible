@@ -76,8 +76,8 @@ describe('Message — role rendering', () => {
     ));
     const outer = container.querySelector('[data-testid="message-user"]') as HTMLElement;
     // The prompt is a full-width quoted block (ember gutter), no longer a
-    // right-aligned bubble — the distinguishing class is message-bubble-user.
-    expect(outer.querySelector('.message-bubble-user')).not.toBeNull();
+    // the full-width quoted block — the distinguishing class is user-quote.
+    expect(outer.querySelector('.user-quote')).not.toBeNull();
     // User content rendered verbatim — no markdown HTML
     expect(screen.getByText('hi **there**')).toBeInTheDocument();
   });

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, cleanup, waitFor } from '@solidjs/testing-library';
+import { render, cleanup, waitFor, fireEvent } from '@solidjs/testing-library';
 import HomePanel, { greetingForHour, relativeTime } from '../HomePanel';
 import { attentionStore, attentionActions } from '@/stores/attentionStore';
 import { statusBarActions } from '@/stores/statusBarStore';
@@ -38,6 +38,13 @@ const openFileInEditorMock = vi.fn();
 vi.mock('@/lib/file-actions', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   openFileInEditor: (...args: unknown[]) => openFileInEditorMock(...args),
+}));
+
+const openDraftSessionMock = vi.fn();
+const setDraftPrefillMock = vi.fn();
+vi.mock('@/lib/draft-session', () => ({
+  openDraftSession: (...args: unknown[]) => openDraftSessionMock(...args),
+  setDraftPrefill: (...args: unknown[]) => setDraftPrefillMock(...args),
 }));
 
 function clearAttention() {
@@ -82,7 +89,7 @@ describe('HomePanel', () => {
   it('shows the kiln name and all-clear when nothing needs attention', async () => {
     const { getByText } = render(() => <HomePanel />);
     expect(getByText(/helios/)).toBeTruthy();
-    expect(getByText(/all clear/)).toBeTruthy();
+    expect(getByText(/all clear/i)).toBeTruthy();
     // Recent notes load, most recently updated first.
     await waitFor(() => {
       expect(getByText('Scheduler Redesign')).toBeTruthy();
@@ -102,7 +109,7 @@ describe('HomePanel', () => {
     const { getByText, queryByText } = render(() => <HomePanel />);
     expect(getByText('1 need you')).toBeTruthy();
     expect(getByText(/open inbox/)).toBeTruthy();
-    expect(queryByText(/all clear/)).toBeNull();
+    expect(queryByText(/all clear/i)).toBeNull();
   });
 
   it('opens recent notes by absolute path (records are kiln-relative)', async () => {
@@ -130,10 +137,28 @@ describe('HomePanel', () => {
     // assertion above throws first.
   });
 
-  it('always offers new session and editor entry points', () => {
-    const { getByText } = render(() => <HomePanel />);
-    expect(getByText('+ new session')).toBeTruthy();
-    expect(getByText(/open editor/)).toBeTruthy();
+  it('offers the composer, an editor shortcut, and the graph teaser', () => {
+    const { getByTestId, getByText } = render(() => <HomePanel />);
+    expect(getByTestId('home-composer')).toBeTruthy();
+    expect(getByText(/Open editor/)).toBeTruthy();
     expect(getByText('GRAPH')).toBeTruthy();
+  });
+
+  it('starts a session with the typed text prefilled into the draft', () => {
+    const { getByTestId } = render(() => <HomePanel />);
+    const composer = getByTestId('home-composer');
+    fireEvent.input(composer, { target: { value: 'refactor the auth module' } });
+    fireEvent.keyDown(composer, { key: 'Enter' });
+
+    expect(setDraftPrefillMock).toHaveBeenCalledWith('refactor the auth module');
+    expect(openDraftSessionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens an empty draft when the composer is empty', () => {
+    const { getByTestId } = render(() => <HomePanel />);
+    fireEvent.keyDown(getByTestId('home-composer'), { key: 'Enter' });
+
+    expect(setDraftPrefillMock).not.toHaveBeenCalled();
+    expect(openDraftSessionMock).toHaveBeenCalledTimes(1);
   });
 });

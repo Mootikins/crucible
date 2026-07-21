@@ -9,7 +9,8 @@ import {
   listProviders,
 } from '@/lib/api';
 import type { AgentProfileEntry, KilnListEntry, Project } from '@/lib/types';
-import { closeDraftTab } from '@/lib/draft-session';
+import { closeDraftTab, consumeDraftPrefill } from '@/lib/draft-session';
+import { WorkingDots } from '@/components/AssistantTurn';
 import { pathBasename } from '@/stores/statusBarStore';
 
 /**
@@ -44,8 +45,16 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
   const isAcp = () => agentName() !== '';
 
   onMount(() => {
-    // Land the cursor in the message box so the user can start typing at once.
+    // Carry over text typed into the Home composer, if any — reviewed here,
+    // never auto-sent.
+    const prefill = consumeDraftPrefill();
+    if (prefill) setMessage(prefill);
+    // Land the cursor at the end of the message box so the user can keep typing.
     messageRef?.focus();
+    if (prefill && messageRef) {
+      const end = messageRef.value.length;
+      messageRef.setSelectionRange(end, end);
+    }
     void (async () => {
       const [cfg, ag, mo, ks, ps, providers] = await Promise.all([
         getConfig().catch(() => null),
@@ -115,14 +124,10 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
     <div class="h-full bg-shell-bg flex flex-col items-center justify-center p-6 overflow-y-auto">
       <Show when={submittedPreview()}>
         <div class="w-full flex flex-col gap-4 self-stretch flex-1 px-2 py-4" data-testid="draft-pending">
-          <div class="message-bubble message-bubble-user">
+          <div class="user-quote">
             <p class="whitespace-pre-wrap break-words">{submittedPreview()}</p>
           </div>
-          <span class="inline-flex items-center gap-1">
-            <span class="w-2 h-2 bg-muted rounded-full animate-pulse" />
-            <span class="w-2 h-2 bg-muted rounded-full animate-pulse" style={{ 'animation-delay': '75ms' }} />
-            <span class="w-2 h-2 bg-muted rounded-full animate-pulse" style={{ 'animation-delay': '150ms' }} />
-          </span>
+          <WorkingDots />
         </div>
       </Show>
       <div class="w-full max-w-xl flex-col gap-4" classList={{ flex: !submittedPreview(), hidden: !!submittedPreview() }}>

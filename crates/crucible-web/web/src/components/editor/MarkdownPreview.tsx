@@ -6,7 +6,8 @@
  */
 import { Component, createResource } from 'solid-js';
 import { renderMarkdownDocAsync, PROSE_CLASS } from '@/lib/markdown';
-import { openNoteInEditor, stripFrontmatter } from '@/lib/note-actions';
+import { stripFrontmatter } from '@/lib/note-actions';
+import { makeMarkdownClickHandler } from '@/lib/markdown-click';
 import { statusBarStore } from '@/stores/statusBarStore';
 
 const dirOf = (path?: string): string | undefined =>
@@ -23,36 +24,10 @@ export const MarkdownPreview: Component<{
     ([content, path]) => renderMarkdownDocAsync(stripFrontmatter(content), dirOf(path)),
   );
 
-  // The rendered HTML is not a component tree — delegate clicks the same way
-  // chat messages do: wikilink anchors open notes, code-block copy buttons
-  // copy the adjacent <pre>.
-  const handleClick = (event: MouseEvent) => {
-    const target = event.target as Element | null;
-
-    const copyBtn = target?.closest?.('[data-copy]');
-    if (copyBtn) {
-      event.preventDefault();
-      const pre = copyBtn.closest('.md-codeblock')?.querySelector('pre');
-      const code = pre?.textContent ?? '';
-      if (code) {
-        void navigator.clipboard?.writeText(code);
-        const prev = copyBtn.textContent;
-        copyBtn.textContent = 'Copied';
-        copyBtn.classList.add('is-copied');
-        setTimeout(() => {
-          copyBtn.textContent = prev;
-          copyBtn.classList.remove('is-copied');
-        }, 1200);
-      }
-      return;
-    }
-
-    const anchor = target?.closest?.('[data-note]');
-    if (!anchor) return;
-    event.preventDefault();
-    const note = anchor.getAttribute('data-note');
-    if (note) void openNoteInEditor(note, statusBarStore.kilnPath() ?? undefined);
-  };
+  // The rendered HTML is not a component tree — delegate clicks through the
+  // implementation shared with chat (lib/markdown-click.ts): wikilinks open
+  // notes, copy buttons copy, external/relative links behave identically.
+  const handleClick = makeMarkdownClickHandler(() => statusBarStore.kilnPath() ?? undefined);
 
   return (
     <div

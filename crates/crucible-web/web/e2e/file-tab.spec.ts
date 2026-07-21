@@ -39,9 +39,10 @@ test.describe('File tab flows', () => {
     await setupBasicMocks(page);
     await page.goto('/');
 
-    // Center pane starts with no persisted tabs → the shell opens Home
+    // Center pane starts with no persisted tabs → the shell opens Home,
+    // whose hero is the start-a-session composer.
     await expect(page.locator('[data-tab-id="tab-home"]')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText('+ new session')).toBeVisible();
+    await expect(page.getByTestId('home-composer')).toBeVisible();
   });
 
   test('opening a file creates a file tab in the center pane', async ({ page }) => {

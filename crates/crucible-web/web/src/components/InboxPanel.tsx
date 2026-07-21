@@ -231,7 +231,7 @@ export const InboxPanel: Component = () => {
         </Show>
 
         <Show when={resolved()}>
-          <div class="border border-ok/30 bg-ok/5 rounded-lg px-3 py-2 mb-2.5 text-[11.5px] text-ok">
+          <div class="border border-ok/30 bg-ok/5 rounded-lg px-3 py-2 mb-2.5 text-[11px] text-ok">
             {resolved()}
           </div>
         </Show>

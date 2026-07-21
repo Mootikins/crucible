@@ -211,7 +211,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
                       class="group flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-shell-body outline-none aria-selected:bg-primary/15 aria-selected:text-shell-ink data-[selected=true]:bg-primary/15 data-[selected=true]:text-shell-ink"
                     >
                       <span
-                        class={`font-mono text-[9.5px] font-medium border rounded-[3px] px-1 py-px w-[54px] text-center flex-none opacity-85 ${KIND_STYLE[item.kind]}`}
+                        class={`font-mono text-[10px] font-medium border rounded-[3px] px-1 py-px w-[54px] text-center flex-none opacity-85 ${KIND_STYLE[item.kind]}`}
                       >
                         {item.kind}
                       </span>

@@ -17,7 +17,7 @@ import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import type { Message as MessageType, TokenUsage } from '@/lib/types';
 import { renderMarkdown, renderMarkdownChatAsync, PROSE_CLASS } from '@/lib/markdown';
-import { openNoteInEditor } from '@/lib/note-actions';
+import { makeMarkdownClickHandler } from '@/lib/markdown-click';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { formatRelativeTime } from '@/lib/format-time';
 
@@ -35,7 +35,9 @@ function formatTokenUsage(usage: TokenUsage): string {
   return parts.join(' ');
 }
 
-const WorkingDots: Component = () => (
+// Also shown by DraftSessionPanel's instant pending-preview — one dots
+// implementation so the draft handoff and in-turn states can't drift apart.
+export const WorkingDots: Component = () => (
   <span class="inline-flex items-center gap-1 py-1" data-testid="working-indicator">
     <span class="w-2 h-2 bg-muted rounded-full animate-pulse" />
     <span class="w-2 h-2 bg-muted rounded-full animate-pulse" style={{ 'animation-delay': '75ms' }} />
@@ -106,52 +108,9 @@ export const AssistantTurn: Component<{
     return sessionCtx.sessions().find((s) => s.id === sid)?.kiln;
   };
 
-  // Shared with the note reading view's click semantics: md-codeblock copy
-  // buttons copy, wikilinks open notes, external links open a new tab,
-  // relative links are kiln note references.
-  const handleMarkdownClick = (event: MouseEvent) => {
-    const target = event.target as HTMLElement | null;
-
-    const copyBtn = target?.closest?.('[data-copy]');
-    if (copyBtn) {
-      event.preventDefault();
-      const pre = copyBtn.closest('.md-codeblock')?.querySelector('pre');
-      const code = pre?.textContent ?? '';
-      if (code) {
-        void navigator.clipboard?.writeText(code);
-        const prev = copyBtn.textContent;
-        copyBtn.textContent = 'Copied';
-        copyBtn.classList.add('is-copied');
-        setTimeout(() => {
-          copyBtn.textContent = prev;
-          copyBtn.classList.remove('is-copied');
-        }, 1200);
-      }
-      return;
-    }
-
-    const noteElement = target?.closest('[data-note]') as HTMLElement | null;
-    if (noteElement) {
-      event.preventDefault();
-      const note = noteElement.dataset.note;
-      if (note) void openNoteInEditor(note, sessionKiln());
-      return;
-    }
-
-    const anchor = target?.closest('a') as HTMLAnchorElement | null;
-    if (!anchor) return;
-    const href = anchor.getAttribute('href') ?? '';
-    if (!href || href.startsWith('#')) return;
-    event.preventDefault();
-    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
-      window.open(href, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    const note = decodeURIComponent(href)
-      .replace(/^\.?\//, '')
-      .replace(/\.md$/i, '');
-    void openNoteInEditor(note, sessionKiln());
-  };
+  // One click-delegation implementation shared with the note reading view
+  // (lib/markdown-click.ts) — chat and notes must keep identical semantics.
+  const handleMarkdownClick = makeMarkdownClickHandler(sessionKiln);
 
   // Turn-level meta: ONE timestamp (turn start) and ONE usage line (whichever
   // part carries it — the daemon attaches usage to the turn's final segment).

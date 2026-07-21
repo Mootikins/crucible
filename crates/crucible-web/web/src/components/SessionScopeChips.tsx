@@ -162,7 +162,7 @@ export const SessionScopeChips: Component = () => {
         {/* Primary kiln: fixed — the session is stored there. */}
         <span
           title={`kiln · ${session()!.kiln}`}
-          class="text-[11.5px] text-shell-ink bg-primary/10 border border-primary/45 rounded-full px-2.5 py-0.5"
+          class="text-[11px] text-shell-ink bg-primary/10 border border-primary/45 rounded-full px-2.5 py-0.5"
           data-testid="primary-kiln-chip"
         >
           ◆ {pathBasename(session()!.kiln)}
@@ -173,7 +173,7 @@ export const SessionScopeChips: Component = () => {
           {(kiln) => (
             <span
               title={`connected kiln · ${kiln}`}
-              class="text-[11.5px] text-shell-body bg-primary/5 border border-hairline rounded-full px-2.5 py-0.5 inline-flex items-center"
+              class="text-[11px] text-shell-body bg-primary/5 border border-hairline rounded-full px-2.5 py-0.5 inline-flex items-center"
               data-testid="connected-kiln-chip"
             >
               ◇ {pathBasename(kiln)}

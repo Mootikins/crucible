@@ -94,7 +94,7 @@ function HeaderBar() {
       >
         ▤ Inbox
         <Show when={badge() > 0}>
-          <span class="min-w-[15px] h-[15px] rounded-full bg-attention text-black font-mono font-bold text-[9.5px] flex items-center justify-center px-[3px]">
+          <span class="min-w-[15px] h-[15px] rounded-full bg-attention text-black font-mono font-bold text-[10px] flex items-center justify-center px-[3px]">
             {badge()}
           </span>
         </Show>

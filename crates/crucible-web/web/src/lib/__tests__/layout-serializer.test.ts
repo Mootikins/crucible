@@ -389,7 +389,7 @@ describe('layout v2→v3 migration prunes removed content types', () => {
     resetGlobalRegistry();
     const reg = getGlobalRegistry();
     for (const id of ['home', 'sessions', 'terminal', 'chat']) {
-      reg.register(id, id, Dummy, 'center', '•');
+      reg.register(id, id, Dummy, 'center');
     }
     try {
       fn();

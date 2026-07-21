@@ -61,7 +61,7 @@ export const Message: Component<MessageProps> = (props) => {
       <div
         class={
           isUser()
-            ? 'message-bubble message-bubble-user'
+            ? 'user-quote'
             : 'w-full rounded-md border border-hairline bg-surface-base px-3 py-1.5 text-[12px] italic text-muted'
         }
       >

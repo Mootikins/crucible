@@ -7,14 +7,13 @@ export interface PanelDefinition {
   title: string;
   component: Component;
   defaultZone: Zone;
-  icon: string;
 }
 
 export class PanelRegistry {
   private panels = new Map<string, PanelDefinition>();
 
-  register(id: string, title: string, component: Component, defaultZone: Zone, icon: string): void {
-    this.panels.set(id, { id, title, component, defaultZone, icon });
+  register(id: string, title: string, component: Component, defaultZone: Zone): void {
+    this.panels.set(id, { id, title, component, defaultZone });
   }
 
   get(id: string): PanelDefinition | undefined {

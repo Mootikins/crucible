@@ -32,6 +32,27 @@ export function consumePendingFirstMessage(sessionId: string): string | undefine
   return message;
 }
 
+/**
+ * Prefill handoff for the Home composer: the landing page stashes the text the
+ * user typed BEFORE `openDraftSession` mounts the DraftSessionPanel, which
+ * consumes it into its message box on mount (the user reviews and hits enter —
+ * it is never auto-sent). Separate from `pendingFirstMessages`, which is the
+ * post-send handoff into the real ChatProvider. In-memory on purpose.
+ */
+let pendingDraftPrefill: string | null = null;
+
+export function setDraftPrefill(text: string): void {
+  pendingDraftPrefill = text;
+}
+
+/** Destructive take — call once at mount. Clears so a later plain draft-open
+ * (e.g. the "+ new session" affordances) starts with an empty box. */
+export function consumeDraftPrefill(): string | null {
+  const text = pendingDraftPrefill;
+  pendingDraftPrefill = null;
+  return text;
+}
+
 let draftCounter = 0;
 
 function findDraftTab(): { groupId: string; tab: Tab } | null {
@@ -59,7 +80,7 @@ export function openDraftSession(): void {
     id: tabId,
     title: 'New Session',
     contentType: 'chat-draft',
-    icon: iconForContentType('chat'),
+    icon: iconForContentType('chat-draft'),
     metadata: { draftTabId: tabId },
   });
   if (!opened) {

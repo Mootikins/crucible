@@ -52,10 +52,10 @@ const simpleLayout = (paneId: string, groupId: string): LayoutNode => ({
 beforeEach(() => {
   resetGlobalRegistry();
   const registry = getGlobalRegistry();
-  registry.register('settings', 'Settings', StubComponent, 'center', '⚙️');
-  registry.register('skills', 'Skills', StubComponent, 'left', '🎯');
-  registry.register('plugins', 'Plugins', StubComponent, 'left', '🔌');
-  registry.register('files', 'Files', StubComponent, 'left', '📁');
+  registry.register('settings', 'Settings', StubComponent, 'center');
+  registry.register('skills', 'Skills', StubComponent, 'left');
+  registry.register('plugins', 'Plugins', StubComponent, 'left');
+  registry.register('files', 'Files', StubComponent, 'left');
 
   resetToState({
     tabGroups: {
