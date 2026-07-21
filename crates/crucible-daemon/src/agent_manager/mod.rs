@@ -185,6 +185,61 @@ struct RequestState {
     started_at: Instant,
 }
 
+/// RAII claim on a session's `request_state` slot — the single mutual-exclusion
+/// point shared by `send_message` and the scope mutations. Acquiring inserts a
+/// marker `RequestState`; dropping removes it, so the slot is released on every
+/// exit path including early returns, `?`, and panics.
+///
+/// `send_message` does *not* use this guard: its claim must outlive the call
+/// (the spawned stream task releases the slot when the turn ends), so it manages
+/// the entry by hand. The synchronous scope mutations, whose claim lasts exactly
+/// one function body, use the guard instead. Both go through the same
+/// `Entry::Occupied`/`Vacant` gate, so a send and a mutation exclude each other
+/// in both directions.
+struct RequestSlotGuard {
+    request_state: Arc<DashMap<String, RequestState>>,
+    session_id: String,
+}
+
+impl RequestSlotGuard {
+    /// Atomically claim the slot, or return `ConcurrentRequest` if a send or
+    /// another mutation already holds it.
+    fn acquire(
+        request_state: Arc<DashMap<String, RequestState>>,
+        session_id: &str,
+    ) -> Result<Self, AgentError> {
+        use dashmap::mapref::entry::Entry;
+        match request_state.entry(session_id.to_string()) {
+            Entry::Occupied(_) => {
+                return Err(AgentError::ConcurrentRequest(session_id.to_string()))
+            }
+            Entry::Vacant(e) => {
+                e.insert(RequestState {
+                    cancel_tx: None,
+                    task_handle: None,
+                    started_at: Instant::now(),
+                });
+            }
+        }
+        Ok(Self {
+            request_state,
+            session_id: session_id.to_string(),
+        })
+    }
+}
+
+impl Drop for RequestSlotGuard {
+    fn drop(&mut self) {
+        // Remove only our own marker (cancel_tx/task_handle both None). If a
+        // cancel raced the mutation and a send has since claimed the slot,
+        // that entry carries Some(cancel_tx) — an unconditional remove would
+        // release a slot a live turn owns.
+        self.request_state.remove_if(&self.session_id, |_, state| {
+            state.cancel_tx.is_none() && state.task_handle.is_none()
+        });
+    }
+}
+
 pub(crate) type BoxedAgentHandle = Box<dyn AgentHandle + Send + Sync>;
 
 use mlua::RegistryKey;

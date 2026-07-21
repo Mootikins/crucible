@@ -2,10 +2,17 @@
 //!
 //! Detach is always safe (it only shrinks future retrieval/tool scope);
 //! attach-side trust validation lives in the RPC handlers, which have the
-//! LLM config. All mutations are rejected mid-turn and invalidate BOTH the
-//! agent handle and the tool dispatcher — each bakes in workspace/kiln
-//! state at build time (system prompt, WorkspaceTools, kiln MCP tools),
-//! while precognition/search already read the session fresh every turn.
+//! LLM config. Each mutation claims the session's `request_state` slot for
+//! its whole duration via `RequestSlotGuard` — the same gate `send_message`
+//! uses — so a mutation and a turn are mutually exclusive in both
+//! directions: a send racing a mutation gets `ConcurrentRequest`, and a
+//! mutation racing a send gets `ConcurrentRequest`. This closes the window
+//! where a send could build and cache an agent from the pre-mutation
+//! session *after* the caches were invalidated. On commit a mutation
+//! invalidates BOTH the agent handle and the tool dispatcher — each bakes
+//! in workspace/kiln state at build time (system prompt, WorkspaceTools,
+//! kiln MCP tools), while precognition/search already read the session
+//! fresh every turn.
 
 use super::*;
 use crate::event_emitter::emit_event;
@@ -13,13 +20,6 @@ use crucible_core::Session;
 use std::path::{Path, PathBuf};
 
 impl AgentManager {
-    fn ensure_idle(&self, session_id: &str) -> Result<(), AgentError> {
-        if self.request_state.contains_key(session_id) {
-            return Err(AgentError::ConcurrentRequest(session_id.to_string()));
-        }
-        Ok(())
-    }
-
     /// Evict everything that baked the old scope in at build time.
     fn invalidate_scope_caches(&self, session_id: &str) {
         self.agent_cache.remove(session_id);
@@ -46,16 +46,20 @@ impl AgentManager {
         }
     }
 
-    /// Shared envelope for scope mutations: idle-check → load → apply the
-    /// rule → (if changed) persist + invalidate caches + emit. The rule
-    /// returns whether it changed anything; no-ops skip the write entirely.
+    /// Shared envelope for scope mutations: claim the request slot → load →
+    /// apply the rule → (if changed) persist + invalidate caches + emit. The
+    /// rule returns whether it changed anything; no-ops skip the write
+    /// entirely. The slot claim is held for the whole body (guard dropped on
+    /// return), so no `send_message` can interleave — a racing send hits the
+    /// occupied slot and returns `ConcurrentRequest`, exactly as it would
+    /// against another send.
     async fn mutate_scope(
         &self,
         session_id: &str,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
         apply: impl FnOnce(&mut Session) -> Result<bool, AgentError>,
     ) -> Result<Session, AgentError> {
-        self.ensure_idle(session_id)?;
+        let _slot = RequestSlotGuard::acquire(self.request_state.clone(), session_id)?;
         let mut session = self
             .session_manager
             .get_session(session_id)

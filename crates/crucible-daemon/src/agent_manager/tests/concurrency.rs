@@ -208,3 +208,59 @@ async fn parallel_workflow_steps_serialize_llm_turns_on_one_session() {
         }
     }
 }
+
+/// A scope mutation must claim the session's request slot atomically, exactly
+/// like a send. With the slot already held (a turn in flight, represented here
+/// by a pre-inserted `RequestState`), a scope mutation is rejected rather than
+/// racing in and caching a stale-scope agent after the caches are invalidated.
+#[tokio::test]
+async fn scope_mutation_rejected_when_request_slot_occupied() {
+    let (_tmp, session_manager, session) = setup_session_manager().await;
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+
+    // Simulate an in-flight turn holding the slot.
+    agent_manager.request_state.insert(
+        session.id.clone(),
+        super::RequestState {
+            cancel_tx: None,
+            task_handle: None,
+            started_at: std::time::Instant::now(),
+        },
+    );
+
+    let other_kiln = TempDir::new().unwrap();
+    let result = agent_manager
+        .connect_kiln(&session.id, other_kiln.path(), None)
+        .await;
+
+    assert!(
+        matches!(result, Err(AgentError::ConcurrentRequest(_))),
+        "scope mutation during an in-flight turn should return ConcurrentRequest, got: {result:?}",
+    );
+    // The in-flight turn still owns the slot — the rejected mutation must not
+    // have touched it.
+    assert!(
+        agent_manager.request_state.contains_key(&session.id),
+        "rejected mutation must leave the existing slot claim intact",
+    );
+}
+
+/// After a scope mutation completes it must release the slot, so the next turn
+/// (or mutation) can claim it. The `RequestSlotGuard` drop guarantees this on
+/// the success path.
+#[tokio::test]
+async fn scope_mutation_releases_request_slot_on_completion() {
+    let (_tmp, session_manager, session) = setup_session_manager().await;
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+
+    let other_kiln = TempDir::new().unwrap();
+    agent_manager
+        .connect_kiln(&session.id, other_kiln.path(), None)
+        .await
+        .expect("connect_kiln on an idle session should succeed");
+
+    assert!(
+        !agent_manager.request_state.contains_key(&session.id),
+        "slot must be free once the mutation returns",
+    );
+}
