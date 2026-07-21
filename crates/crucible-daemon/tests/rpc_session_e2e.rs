@@ -60,7 +60,7 @@ async fn create_session(client: &DaemonClient, kiln: &std::path::Path) -> String
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: kiln.to_path_buf(),
+            kiln: Some(kiln.to_path_buf()),
             workspace: None,
             connect_kilns: vec![],
             recording_mode: None,
@@ -93,7 +93,7 @@ async fn test_session_create_returns_id() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: kiln_dir.path().to_path_buf(),
+            kiln: Some(kiln_dir.path().to_path_buf()),
             workspace: None,
             connect_kilns: vec![],
             recording_mode: None,

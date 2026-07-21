@@ -214,7 +214,7 @@ pub async fn start_mock_daemon_with_errors(errors: MockErrors) -> (MockDaemon, D
 
 #[cfg(any(test, feature = "test-utils"))]
 /// Generate mock RPC responses based on method name.
-pub fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
+pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
     match method {
         "kiln.list" => json!([]),
         "kiln.graph" => json!({
@@ -232,7 +232,7 @@ pub fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
         // Note name "missing" resolves to nothing (404 path); anything else
         // resolves to a focused note with one linked mention.
         "get_backlinks" => {
-            let name = _msg
+            let name = msg
                 .get("params")
                 .and_then(|p| p.get("name"))
                 .and_then(|v| v.as_str())
@@ -291,7 +291,7 @@ pub fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
         // SessionEventMessage entries, NOT a `messages` array. Session id
         // "empty-session-001" yields an empty history for fallback tests.
         "session.resume_from_storage" => {
-            let session_id = _msg
+            let session_id = msg
                 .get("params")
                 .and_then(|p| p.get("session_id"))
                 .and_then(|v| v.as_str())
@@ -357,7 +357,7 @@ pub fn mock_rpc_response(method: &str, _msg: &Value) -> Value {
         }),
         // Name "missing" is unknown (null); anything else resolves.
         "agents.resolve_profile" => {
-            let name = _msg
+            let name = msg
                 .get("params")
                 .and_then(|p| p.get("name"))
                 .and_then(|v| v.as_str())

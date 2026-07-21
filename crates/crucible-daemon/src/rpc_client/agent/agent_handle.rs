@@ -86,7 +86,7 @@ impl AgentHandle for DaemonAgentHandle {
             .client
             .session_create(crate::rpc_client::client::SessionCreateParams {
                 session_type: "chat".to_string(),
-                kiln: kiln.clone(),
+                kiln: Some(kiln.clone()),
                 workspace: Some(ws.clone()),
                 connect_kilns: vec![],
                 recording_mode: None,

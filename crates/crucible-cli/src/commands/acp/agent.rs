@@ -252,7 +252,7 @@ impl Agent for CrucibleAcpAgent {
         let create = client
             .session_create(SessionCreateParams {
                 session_type: "chat".to_string(),
-                kiln: self.config.session_storage_path(),
+                kiln: Some(self.config.session_storage_path()),
                 workspace: Some(workspace),
                 connect_kilns: vec![],
                 recording_mode: None,

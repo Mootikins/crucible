@@ -802,7 +802,7 @@ mod tests {
         });
         let req: SessionCreateRequest = serde_json::from_value(json).unwrap();
         assert_eq!(req.session_type, "chat");
-        assert_eq!(req.kiln, "/tmp/kiln");
+        assert_eq!(req.kiln.as_deref(), Some("/tmp/kiln"));
         assert_eq!(req.agent_type, None);
     }
 
@@ -840,7 +840,7 @@ mod tests {
         // see an unexpected field.
         let req = SessionCreateRequest {
             session_type: "chat".to_string(),
-            kiln: "/tmp/kiln".to_string(),
+            kiln: Some("/tmp/kiln".to_string()),
             workspace: None,
             connect_kilns: None,
             recording_mode: None,
@@ -851,6 +851,26 @@ mod tests {
         assert!(
             json.get("agent_type").is_none(),
             "agent_type should be omitted when None, got: {json}"
+        );
+    }
+
+    #[test]
+    fn session_create_request_omits_kiln_when_none() {
+        // A None kiln must not appear on the wire: the daemon resolves its
+        // own default (home kiln), and clients must never pre-empt it.
+        let req = SessionCreateRequest {
+            session_type: "chat".to_string(),
+            kiln: None,
+            workspace: None,
+            connect_kilns: None,
+            recording_mode: None,
+            recording_path: None,
+            agent_type: None,
+        };
+        let json = serde_json::to_value(&req).unwrap();
+        assert!(
+            json.get("kiln").is_none(),
+            "kiln should be omitted when None, got: {json}"
         );
     }
 
@@ -961,7 +981,7 @@ mod tests {
         let result = client
             .session_create(SessionCreateParams {
                 session_type: "chat".to_string(),
-                kiln: tmp.path().to_path_buf(),
+                kiln: Some(tmp.path().to_path_buf()),
                 workspace: None,
                 connect_kilns: vec![],
                 recording_mode: None,
@@ -997,7 +1017,7 @@ mod tests {
         let result = client
             .session_create(SessionCreateParams {
                 session_type: "chat".to_string(),
-                kiln: tmp.path().to_path_buf(),
+                kiln: Some(tmp.path().to_path_buf()),
                 workspace: None,
                 connect_kilns: vec![],
                 recording_mode: None,
@@ -1027,7 +1047,7 @@ mod tests {
         let result = client
             .session_create(SessionCreateParams {
                 session_type: "chat".to_string(),
-                kiln: tmp.path().to_path_buf(),
+                kiln: Some(tmp.path().to_path_buf()),
                 workspace: None,
                 connect_kilns: vec![],
                 recording_mode: None,
@@ -1056,7 +1076,7 @@ mod tests {
         let result = client
             .session_create(SessionCreateParams {
                 session_type: "chat".to_string(),
-                kiln: tmp.path().to_path_buf(),
+                kiln: Some(tmp.path().to_path_buf()),
                 workspace: None,
                 connect_kilns: vec![],
                 recording_mode: None,
@@ -1084,7 +1104,7 @@ mod tests {
         let result = client
             .session_create(SessionCreateParams {
                 session_type: "chat".to_string(),
-                kiln: tmp.path().to_path_buf(),
+                kiln: Some(tmp.path().to_path_buf()),
                 workspace: None,
                 connect_kilns: vec![],
                 recording_mode: None,

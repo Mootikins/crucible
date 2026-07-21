@@ -39,7 +39,7 @@ async fn test_interaction_event_flows_to_receiver() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: kiln_dir.path().to_path_buf(),
+            kiln: Some(kiln_dir.path().to_path_buf()),
             workspace: None,
             connect_kilns: vec![],
             recording_mode: None,

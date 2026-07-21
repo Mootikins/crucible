@@ -21,40 +21,50 @@ export function sessionPane(): { groupId: string } | null {
   return groupId ? { groupId } : null;
 }
 
+/** Focus an existing tab in place — wherever the user has put it (edge panel or a pane). */
+export function focusTabInPlace(groupId: string, tabId: string): void {
+  const pos = findEdgePanelForGroup(groupId);
+  if (pos) {
+    windowActions.setEdgePanelCollapsed(pos, false);
+    windowActions.setEdgePanelActiveTab(pos, tabId);
+  } else {
+    windowActions.setActiveTab(groupId, tabId);
+  }
+}
+
+/**
+ * Add a tab docked in the right edge panel (where sessions live), falling
+ * back to the first center group only if the layout has no right panel group
+ * at all. Returns false when no pane exists to host the tab.
+ */
+export function openTabDockedRight(tab: Tab): boolean {
+  const target = sessionPane();
+  const groupId = target?.groupId ?? findFirstCenterPaneGroupId();
+  if (!groupId) return false;
+
+  windowActions.addTab(groupId, tab);
+  if (target) {
+    windowActions.setEdgePanelCollapsed('right', false);
+    windowActions.setEdgePanelActiveTab('right', tab.id);
+  }
+  return true;
+}
+
 export function openSessionInChat(sessionId: string, sessionTitle: string): void {
   const existing = findTabBySessionId(sessionId);
   if (existing) {
-    // Focus in place — wherever the user has put it (edge panel or a pane).
-    const pos = findEdgePanelForGroup(existing.groupId);
-    if (pos) {
-      windowActions.setEdgePanelCollapsed(pos, false);
-      windowActions.setEdgePanelActiveTab(pos, existing.tab.id);
-    } else {
-      windowActions.setActiveTab(existing.groupId, existing.tab.id);
-    }
+    focusTabInPlace(existing.groupId, existing.tab.id);
     return;
   }
 
-  // New sessions dock in the right edge panel; fall back to the first
-  // center group only if the layout has no right panel group at all.
-  const target = sessionPane();
-  const groupId = target?.groupId ?? findFirstCenterPaneGroupId();
-  if (!groupId) {
-    console.error('openSessionInChat: no pane available — cannot open chat tab');
-    return;
-  }
-
-  const newTab: Tab = {
+  const opened = openTabDockedRight({
     id: `tab-chat-${sessionId}`,
     title: sessionTitle || 'Chat',
     contentType: 'chat',
     icon: iconForContentType('chat'),
     metadata: { sessionId },
-  };
-
-  windowActions.addTab(groupId, newTab);
-  if (target) {
-    windowActions.setEdgePanelCollapsed('right', false);
-    windowActions.setEdgePanelActiveTab('right', newTab.id);
+  });
+  if (!opened) {
+    console.error('openSessionInChat: no pane available — cannot open chat tab');
   }
 }

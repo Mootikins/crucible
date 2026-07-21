@@ -18,7 +18,7 @@ async fn test_tui_sessions_command_flow() {
     let session1 = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: kiln_dir.path().to_path_buf(),
+            kiln: Some(kiln_dir.path().to_path_buf()),
             workspace: Some(workspace_dir.path().to_path_buf()),
             connect_kilns: vec![],
             recording_mode: None,
@@ -32,7 +32,7 @@ async fn test_tui_sessions_command_flow() {
     let session2 = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: kiln_dir.path().to_path_buf(),
+            kiln: Some(kiln_dir.path().to_path_buf()),
             workspace: Some(workspace_dir.path().to_path_buf()),
             connect_kilns: vec![],
             recording_mode: None,
@@ -81,7 +81,7 @@ async fn test_tui_resume_command_flow() {
     let create_result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: kiln_dir.path().to_path_buf(),
+            kiln: Some(kiln_dir.path().to_path_buf()),
             workspace: None,
             connect_kilns: vec![],
             recording_mode: None,
@@ -129,7 +129,7 @@ async fn test_tui_daemon_agent_full_flow() {
     let create_result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: kiln_dir.path().to_path_buf(),
+            kiln: Some(kiln_dir.path().to_path_buf()),
             workspace: None,
             connect_kilns: vec![],
             recording_mode: None,

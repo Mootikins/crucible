@@ -156,7 +156,7 @@ async fn test_complete_user_flow() {
     let create_result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: kiln_dir.path().to_path_buf(),
+            kiln: Some(kiln_dir.path().to_path_buf()),
             workspace: None,
             connect_kilns: vec![],
             recording_mode: None,
@@ -368,7 +368,7 @@ async fn test_user_flow_session_list_reflects_state() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: kiln_dir.path().to_path_buf(),
+            kiln: Some(kiln_dir.path().to_path_buf()),
             workspace: None,
             connect_kilns: vec![],
             recording_mode: None,

@@ -431,47 +431,15 @@ impl ReconnectingDaemon {
         .await
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// A `None` kiln is omitted from the wire so the daemon resolves its own
+    /// default (home kiln) — the fallback lives in exactly one place.
     pub async fn session_create(
         &self,
-        session_type: &str,
-        kiln: &Path,
-        workspace: Option<&Path>,
-        connect_kilns: Vec<&Path>,
-        recording_mode: Option<&str>,
-        recording_path: Option<&Path>,
-        agent_type: Option<&str>,
+        params: crucible_daemon::rpc_client::SessionCreateParams,
     ) -> anyhow::Result<serde_json::Value> {
-        let session_type = session_type.to_string();
-        let kiln = kiln.to_path_buf();
-        let workspace = workspace.map(Path::to_path_buf);
-        let connect_kilns: Vec<std::path::PathBuf> =
-            connect_kilns.into_iter().map(Path::to_path_buf).collect();
-        let recording_mode = recording_mode.map(str::to_string);
-        let recording_path = recording_path.map(Path::to_path_buf);
-        let agent_type = agent_type.map(str::to_string);
-
         self.call_with_reconnect("session.create", move |daemon| {
-            let session_type = session_type.clone();
-            let kiln = kiln.clone();
-            let workspace = workspace.clone();
-            let connect_kilns = connect_kilns.clone();
-            let recording_mode = recording_mode.clone();
-            let recording_path = recording_path.clone();
-            let agent_type = agent_type.clone();
-            Box::pin(async move {
-                daemon
-                    .session_create(crucible_daemon::rpc_client::SessionCreateParams {
-                        session_type: session_type.clone(),
-                        kiln: kiln.clone(),
-                        workspace: workspace.clone(),
-                        connect_kilns,
-                        recording_mode: recording_mode.clone(),
-                        recording_path: recording_path.clone(),
-                        agent_type,
-                    })
-                    .await
-            })
+            let params = params.clone();
+            Box::pin(async move { daemon.session_create(params).await })
         })
         .await
     }

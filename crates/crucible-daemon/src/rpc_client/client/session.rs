@@ -16,7 +16,10 @@ use super::DaemonClient;
 pub struct SessionCreateRequest {
     #[serde(rename = "type")]
     pub session_type: String,
-    pub kiln: String,
+    /// Omitted → the daemon resolves its default (home kiln). Keeping the
+    /// fallback daemon-side means clients can never drift from it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kiln: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -36,7 +39,8 @@ pub struct SessionCreateRequest {
 #[derive(Debug, Clone)]
 pub struct SessionCreateParams {
     pub session_type: String,
-    pub kiln: PathBuf,
+    /// None → daemon default (home kiln).
+    pub kiln: Option<PathBuf>,
     pub workspace: Option<PathBuf>,
     pub connect_kilns: Vec<PathBuf>,
     pub recording_mode: Option<String>,
@@ -226,7 +230,7 @@ impl DaemonClient {
             "session.create",
             SessionCreateRequest {
                 session_type: params.session_type,
-                kiln: params.kiln.to_string_lossy().to_string(),
+                kiln: params.kiln.map(|p| p.to_string_lossy().to_string()),
                 workspace: params.workspace.map(|ws| ws.to_string_lossy().to_string()),
                 connect_kilns: if params.connect_kilns.is_empty() {
                     None

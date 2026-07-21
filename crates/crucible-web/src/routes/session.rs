@@ -263,23 +263,19 @@ async fn create_session(
         ));
     }
 
-    // Same fallback the daemon applies when kiln is omitted from session.create;
-    // the client wire type always sends a kiln, so resolve it here.
-    let kiln = req
-        .kiln
-        .unwrap_or_else(crucible_core::config::crucible_home);
-
+    // No kiln → omitted from the wire; the daemon resolves its default
+    // (home kiln), so web can never drift from it.
     let result = state
         .daemon
-        .session_create(
-            &req.session_type,
-            &kiln,
-            req.workspace.as_deref(),
-            vec![],
-            None,
-            None,
-            req.agent_type.as_deref(),
-        )
+        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+            session_type: req.session_type.clone(),
+            kiln: req.kiln,
+            workspace: req.workspace,
+            connect_kilns: vec![],
+            recording_mode: None,
+            recording_path: None,
+            agent_type: req.agent_type.clone(),
+        })
         .await
         .daemon_err()?;
 

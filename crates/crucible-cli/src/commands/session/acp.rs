@@ -176,7 +176,7 @@ pub(super) mod rpc {
         let result = client
             .session_create(crucible_daemon::rpc_client::SessionCreateParams {
                 session_type: params.session_type.to_string(),
-                kiln: config.session_storage_path(),
+                kiln: Some(config.session_storage_path()),
                 workspace: params.workspace.map(|p| p.to_path_buf()),
                 connect_kilns: vec![],
                 recording_mode: recording_mode_parsed,

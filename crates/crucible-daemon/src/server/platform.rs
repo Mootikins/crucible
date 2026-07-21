@@ -173,10 +173,7 @@ pub(crate) async fn handle_agents_list_profiles(
         let profile = profile.clone();
         let is_builtin = builtins.contains_key(&name);
         async move {
-            let available = match profile.command.as_deref() {
-                Some(cmd) => crate::acp::is_agent_available(cmd).await,
-                None => false,
-            };
+            let available = probe_profile_availability(&profile).await;
             serde_json::json!({
                 "name": name,
                 "description": profile.description.clone().unwrap_or_default(),
@@ -194,6 +191,15 @@ pub(crate) async fn handle_agents_list_profiles(
             .cmp(b["name"].as_str().unwrap_or(""))
     });
     Response::success(req.id, serde_json::json!({ "profiles": entries }))
+}
+
+/// A profile with no command can never spawn, so it is never available;
+/// otherwise availability is the binary probe (PATH + bounded --version).
+async fn probe_profile_availability(profile: &crucible_core::config::AgentProfile) -> bool {
+    match profile.command.as_deref() {
+        Some(cmd) => crate::acp::is_agent_available(cmd).await,
+        None => false,
+    }
 }
 
 pub(crate) async fn handle_agents_resolve_profile(
@@ -217,5 +223,42 @@ pub(crate) async fn handle_agents_resolve_profile(
             }),
         ),
         None => Response::success(req.id, serde_json::Value::Null),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crucible_core::config::AgentProfile;
+
+    fn profile_with_command(command: Option<&str>) -> AgentProfile {
+        AgentProfile {
+            extends: None,
+            command: command.map(str::to_string),
+            args: None,
+            env: std::collections::HashMap::new(),
+            description: None,
+            capabilities: None,
+            delegation: None,
+            permissions: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn profile_without_command_is_unavailable() {
+        assert!(!probe_profile_availability(&profile_with_command(None)).await);
+    }
+
+    #[tokio::test]
+    async fn profile_with_unknown_command_is_unavailable() {
+        let profile = profile_with_command(Some("crucible-no-such-agent-binary-98765"));
+        assert!(!probe_profile_availability(&profile).await);
+    }
+
+    #[tokio::test]
+    async fn profile_with_present_command_is_available() {
+        // `cargo` exists wherever the tests run and answers --version.
+        let profile = profile_with_command(Some("cargo"));
+        assert!(probe_profile_availability(&profile).await);
     }
 }

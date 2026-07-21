@@ -1,7 +1,6 @@
 import { windowActions, windowStore } from '@/stores/windowStore';
 import type { Tab } from '@/types/windowTypes';
-import { sessionPane } from './session-actions';
-import { findFirstCenterPaneGroupId } from './panel-actions';
+import { focusTabInPlace, openTabDockedRight } from './session-actions';
 import { iconForContentType } from './tab-icons';
 
 /**
@@ -36,42 +35,25 @@ function findDraftTab(): { groupId: string; tab: Tab } | null {
 /**
  * Open (or focus) a draft session tab — the lazy-creation surface. Nothing
  * touches the daemon until the first message is sent; the draft panel then
- * creates the session and closes itself. Docks in the right edge panel,
- * same as real chat tabs (session-actions.openSessionInChat).
+ * creates the session and closes itself.
  */
 export function openDraftSession(): void {
   const existing = findDraftTab();
   if (existing) {
-    const target = sessionPane();
-    if (target && target.groupId === existing.groupId) {
-      windowActions.setEdgePanelCollapsed('right', false);
-      windowActions.setEdgePanelActiveTab('right', existing.tab.id);
-    } else {
-      windowActions.setActiveTab(existing.groupId, existing.tab.id);
-    }
-    return;
-  }
-
-  const target = sessionPane();
-  const groupId = target?.groupId ?? findFirstCenterPaneGroupId();
-  if (!groupId) {
-    console.error('openDraftSession: no pane available — cannot open draft tab');
+    focusTabInPlace(existing.groupId, existing.tab.id);
     return;
   }
 
   const tabId = `tab-draft-${++draftCounter}`;
-  const newTab: Tab = {
+  const opened = openTabDockedRight({
     id: tabId,
     title: 'New Session',
     contentType: 'chat-draft',
     icon: iconForContentType('chat'),
     metadata: { draftTabId: tabId },
-  };
-
-  windowActions.addTab(groupId, newTab);
-  if (target) {
-    windowActions.setEdgePanelCollapsed('right', false);
-    windowActions.setEdgePanelActiveTab('right', newTab.id);
+  });
+  if (!opened) {
+    console.error('openDraftSession: no pane available — cannot open draft tab');
   }
 }
 
