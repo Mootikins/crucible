@@ -38,16 +38,16 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
       case 'running':
         return (
           <span class="inline-flex items-center text-primary" title="Running">
-            <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+            <svg class="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
           </span>
         );
       case 'complete':
-        return <span class="text-ok text-sm font-bold" title="Complete">✓</span>;
+        return <span class="text-ok text-[11px] font-semibold" title="Complete">✓</span>;
       case 'error':
-        return <span class="text-error text-sm font-bold" title="Error">✗</span>;
+        return <span class="text-error text-[11px] font-semibold" title="Error">✗</span>;
     }
   };
 
@@ -59,10 +59,13 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
     }
   };
 
+  // Completed rows stay flat (transparent) so a run of them reads as one tight
+  // stack on the group's surface, not a column of raised cards. Only the
+  // meaningful in-progress/failed states carry a wash.
   const statusBgColor = () => {
     switch (props.toolCall.status) {
       case 'running': return 'bg-primary/10';
-      case 'complete': return 'bg-surface-elevated';
+      case 'complete': return 'bg-transparent';
       case 'error': return 'bg-error/10';
     }
   };
@@ -133,13 +136,13 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
     >
       <button
         onClick={() => setExpanded(!expanded())}
-        class="w-full flex items-center gap-2 px-3 py-2 hover:bg-hover-wash transition-colors text-left"
+        class="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-hover-wash transition-colors text-left"
       >
-        <span class="text-base leading-none">{iconForTool(props.toolCall.name)}</span>
-        <span class="flex-shrink-0 max-w-[40%] text-sm font-medium text-shell-ink truncate font-mono">
+        <span class="flex-shrink-0 text-[12px] leading-none opacity-70">{iconForTool(props.toolCall.name)}</span>
+        <span class="flex-shrink-0 max-w-[45%] text-xs font-medium text-shell-ink truncate font-mono">
           {props.toolCall.name}
         </span>
-        <span class="flex-1 min-w-0 text-xs text-muted-dark truncate font-mono">
+        <span class="flex-1 min-w-0 text-[11px] text-muted-dark truncate font-mono">
           {argSummary() ?? ''}
         </span>
         <Show when={props.toolCall.terminate}>
@@ -151,7 +154,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
           </span>
         </Show>
         <span class="flex-shrink-0">{statusIcon()}</span>
-        <span class="text-muted-dark text-xs ml-1">
+        <span class="flex-shrink-0 text-muted-dark text-[10px]">
           {expanded() ? '▼' : '▶'}
         </span>
       </button>

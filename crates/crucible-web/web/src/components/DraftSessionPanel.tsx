@@ -115,10 +115,8 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
     <div class="h-full bg-shell-bg flex flex-col items-center justify-center p-6 overflow-y-auto">
       <Show when={submittedPreview()}>
         <div class="w-full flex flex-col gap-4 self-stretch flex-1 px-2 py-4" data-testid="draft-pending">
-          <div class="flex justify-end">
-            <div class="message-bubble message-bubble-user">
-              <p class="whitespace-pre-wrap break-words">{submittedPreview()}</p>
-            </div>
+          <div class="message-bubble message-bubble-user">
+            <p class="whitespace-pre-wrap break-words">{submittedPreview()}</p>
           </div>
           <span class="inline-flex items-center gap-1">
             <span class="w-2 h-2 bg-muted rounded-full animate-pulse" />

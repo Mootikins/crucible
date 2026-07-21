@@ -73,8 +73,9 @@ async function pinCaptureBox(page: Page) {
 
 function maskDynamic(page: Page) {
   // Relative-time labels (e.g. "just now") are the only dynamic text in the
-  // conversation; they render as `.text-xs.text-muted-dark` divs.
-  return page.getByTestId('message-list').locator('div.text-xs.text-muted-dark');
+  // conversation; every one is tagged `data-dynamic-time` at its render site
+  // (user prompt timestamp + the turn meta row).
+  return page.getByTestId('message-list').locator('[data-dynamic-time]');
 }
 
 test.describe('WS-101/102/103 streaming chat', () => {

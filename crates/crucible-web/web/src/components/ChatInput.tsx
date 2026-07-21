@@ -175,7 +175,7 @@ export const ChatInput: Component = () => {
       <SessionScopeChips />
 
       <div
-        class="relative flex flex-col gap-2 bg-surface-base rounded-xl p-2 border-2 border-transparent transition-[border-color]"
+        class="relative flex flex-col gap-2 bg-surface-base rounded-lg p-2 border border-hairline transition-colors focus-within:border-primary/40"
         style={containerStyle()}
       >
         <div class="relative">

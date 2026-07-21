@@ -367,15 +367,21 @@ export async function renderMarkdownChatAsync(content: string): Promise<string> 
  * headings).
  */
 export const PROSE_CLASS = [
-  'prose prose-invert prose-sm max-w-none',
-  'prose-headings:text-shell-ink prose-headings:font-semibold prose-headings:my-2',
-  'prose-p:my-1 prose-p:leading-relaxed',
-  'prose-hr:my-3 prose-hr:border-hairline',
+  // IDE-native reading scale: 13px body at 1.6 leading, em-based headings so
+  // the whole scale tracks the root size. Tight vertical rhythm — no dead
+  // bands around headings/rules/lists — reads dense but calm on the near-black
+  // panel, matching a code editor's own text density.
+  'prose prose-invert max-w-none text-[13px] leading-[1.6]',
+  'prose-headings:text-shell-ink prose-headings:font-semibold prose-headings:mt-3.5 prose-headings:mb-1.5',
+  'prose-h1:text-[1.45em] prose-h2:text-[1.25em] prose-h3:text-[1.1em] prose-h4:text-[1em]',
+  'prose-p:my-2 prose-p:leading-[1.6]',
+  'prose-hr:my-4 prose-hr:border-hairline',
   'prose-a:text-primary prose-a:no-underline hover:prose-a:underline',
-  'prose-pre:bg-surface-base prose-pre:rounded-lg prose-pre:p-3 prose-pre:text-sm',
-  'prose-code:bg-surface-elevated prose-code:px-1 prose-code:rounded prose-code:text-sm prose-code:before:content-none prose-code:after:content-none',
-  'prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5',
+  'prose-pre:bg-surface-base prose-pre:rounded-md prose-pre:p-3 prose-pre:text-[12px] prose-pre:leading-[1.5]',
+  'prose-code:bg-surface-elevated prose-code:px-1 prose-code:rounded prose-code:text-[0.9em] prose-code:before:content-none prose-code:after:content-none',
+  'prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5 prose-li:leading-[1.6]',
   'prose-blockquote:border-l-2 prose-blockquote:border-hairline prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-muted',
+  'prose-strong:text-shell-ink',
 ].join(' ');
 
 export async function initializeMarkdownHighlighter(): Promise<void> {

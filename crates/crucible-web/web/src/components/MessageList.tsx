@@ -103,7 +103,7 @@ export const MessageList: Component = () => {
 
   return (
     <div
-      class="flex-1 overflow-y-auto px-4 py-6"
+      class="flex-1 overflow-y-auto px-4 py-4"
       data-testid="message-list"
     >
       <For each={rows()}>

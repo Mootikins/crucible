@@ -70,12 +70,14 @@ afterEach(() => {
 // ── Role rendering ─────────────────────────────────────────────────────
 
 describe('Message — role rendering', () => {
-  it('renders the user bubble with justify-end and user content as plain text', () => {
+  it('renders the user prompt as a full-width quoted block and its content as plain text', () => {
     const { container } = render(() => (
       <Message message={makeMessage({ role: 'user', content: 'hi **there**' })} />
     ));
     const outer = container.querySelector('[data-testid="message-user"]') as HTMLElement;
-    expect(outer.className).toContain('justify-end');
+    // The prompt is a full-width quoted block (ember gutter), no longer a
+    // right-aligned bubble — the distinguishing class is message-bubble-user.
+    expect(outer.querySelector('.message-bubble-user')).not.toBeNull();
     // User content rendered verbatim — no markdown HTML
     expect(screen.getByText('hi **there**')).toBeInTheDocument();
   });

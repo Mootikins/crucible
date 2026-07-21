@@ -216,15 +216,15 @@ export const AssistantTurn: Component<{
   };
 
   return (
-    <div class="group relative mb-5" data-testid="assistant-turn" data-role="assistant-turn">
-      <div class="flex flex-col gap-2">
+    <div class="group relative mb-6" data-testid="assistant-turn" data-role="assistant-turn">
+      <div class="flex flex-col gap-1.5">
         <For each={props.parts}>
           {(part) => {
             if (part.kind === 'tools') {
               return (
                 <div class="flex justify-start" data-role="tool">
                   <div
-                    class="w-full border border-hairline rounded-lg overflow-hidden divide-y divide-hairline bg-surface-elevated"
+                    class="w-full border border-hairline rounded-md overflow-hidden divide-y divide-hairline bg-surface-base"
                     data-testid="tool-group"
                   >
                     <For each={part.ids}>
@@ -258,14 +258,18 @@ export const AssistantTurn: Component<{
         </Show>
       </div>
 
-      {/* ONE meta row for the whole response — never per segment. */}
+      {/* ONE meta row for the whole response — never per segment. Tiny and
+          muted, out of the reading flow: usage · time, hairline-quiet. */}
       <Show when={!turnInFlight()}>
-        <div class="mt-1.5 flex items-center gap-3 text-xs text-muted-dark">
+        <div class="mt-2 flex items-center gap-1.5 text-[11px] leading-none text-muted-dark">
           <Show when={usage()}>
             <span>{formatTokenUsage(usage()!)}</span>
           </Show>
+          <Show when={usage() && firstMessage()?.timestamp}>
+            <span aria-hidden="true">·</span>
+          </Show>
           <Show when={firstMessage()?.timestamp}>
-            <span>{formatRelativeTime(firstMessage()!.timestamp)}</span>
+            <span data-dynamic-time>{formatRelativeTime(firstMessage()!.timestamp)}</span>
           </Show>
         </div>
       </Show>

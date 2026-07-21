@@ -17,34 +17,68 @@
   --color-primary-hover: #f08a5e;
   --color-primary-active: #c4552e;
 
+  /* ── Neutral ramp ─────────────────────────────────────────────────────
+   * An even, low-chroma near-black stack, IDE-native: each step is a small,
+   * deliberate lift from the one below, so depth reads without heavy fills.
+   *   shell-bg   — deepest canvas, behind every panel
+   *   surface-base/shell-panel — a panel's own surface
+   *   surface-elevated — raised rows, cards, inputs at rest
+   *   surface-overlay  — popovers, menus, floating windows
+   *   control    — the resting fill of a solid control (button/slider track) */
   --color-surface-base: #141318;
-  --color-surface-elevated: #1a1920;
-  --color-surface-overlay: #211f28;
+  --color-surface-elevated: #1c1b22;
+  --color-surface-overlay: #232128;
+  --color-control: #302e38;
 
-  --color-muted: #98939e;
-  --color-muted-dark: #6b6673;
+  --color-shell-bg: #0e0d11;
+  --color-shell-panel: #141318;
 
-  /* The one hairline separator color (panel borders, splitters). */
-  --color-hairline: #26252b;
-  /* Stronger outline for elevated surfaces (popups, floating windows). */
+  /* ── Ink ──────────────────────────────────────────────────────────────
+   * Four weights, high → faint. Metadata lives on muted-dark; it should read
+   * as present-but-quiet, never competing with body text. */
+  --color-shell-ink: #e7e4df;
+  --color-shell-body: #c4c0ba;
+  --color-muted: #928d99;
+  --color-muted-dark: #656069;
+
+  /* ── Separators ───────────────────────────────────────────────────────
+   * Barely-there by design (Cursor's language): a hairline is a hint of an
+   * edge, ~6% lift over the panel, not a drawn line. hairline-strong is only
+   * for surfaces that float free of the panel (popovers, windows) and need a
+   * readable outline against whatever sits behind them. */
+  --color-hairline: #211f26;
   --color-hairline-strong: #322f38;
-  /* Solid fill for controls that need a visible resting state (buttons,
-   * inputs, sliders) — distinct from surface-* which are backgrounds. */
-  --color-control: #322f38;
-  /* Translucent hover fill that reads on any surface. */
-  --color-hover-wash: rgba(255, 255, 255, 0.07);
+
+  /* Translucent hover fill that reads on any surface — kept faint so a hover
+   * is felt, not announced. */
+  --color-hover-wash: rgba(255, 255, 255, 0.05);
 
   --color-error: #ef4444;
   --color-error-dark: #991b1b;
 
-  /* Shell semantic colors from the design system */
-  --color-shell-bg: #0e0d11;
-  --color-shell-panel: #141318;
-  --color-shell-ink: #e7e4df;
-  --color-shell-body: #c9c5bf;
   --color-attention: #d4a72c;
   --color-ok: #7bc47f;
   --color-precog: #a78bda;
+
+  /* ── Radii ────────────────────────────────────────────────────────────
+   * Tight and consistent, the way an editor rounds its chrome. Overrides
+   * Tailwind's defaults so every `rounded-*` in the app tightens at once —
+   * no more xl/2xl bubbles. */
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-2xl: 10px;
+  --radius-3xl: 14px;
+
+  /* ── Elevation ────────────────────────────────────────────────────────
+   * Quiet on a near-black canvas: a soft, mostly-vertical shadow that lifts a
+   * floating surface just enough. The border does most of the separating. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 8px -2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 6px 20px -6px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 12px 32px -8px rgba(0, 0, 0, 0.55);
+  --shadow-2xl: 0 18px 46px -10px rgba(0, 0, 0, 0.6);
 }
 
 @layer base {
@@ -91,18 +125,31 @@
     @apply inline-block w-0.5 h-4 bg-primary animate-pulse;
   }
 
-  /* User messages: compact bubble, right-aligned */
+  /* User prompt — NO bubble. A full-width quoted block marked by a 2px ember
+     gutter on its leading edge, the way an editor marks a changed line. This
+     is the single place the accent lives in the reading column: your words
+     are marked, the agent's are open text. The faint elevated wash sets the
+     prompt apart from the assistant prose without shouting. (Class names kept
+     for the DraftSessionPanel pending-preview, which reuses the same look.) */
   .message-bubble {
-    @apply rounded-2xl px-4 py-2 max-w-[70%];
+    width: 100%;
   }
 
   .message-bubble-user {
-    @apply bg-surface-overlay text-shell-ink rounded-br-md;
+    display: block;
+    width: 100%;
+    border-radius: 5px;
+    border-left: 2px solid color-mix(in srgb, var(--color-primary) 60%, transparent);
+    background: color-mix(in srgb, var(--color-surface-elevated) 60%, transparent);
+    padding: 0.4rem 0.7rem 0.4rem 0.7rem;
+    color: var(--color-shell-ink);
+    font-size: 13px;
+    line-height: 1.6;
   }
 
   /* Assistant turns render as plain full-width text (AssistantTurn) — the
-     user bubble carries the visual distinction, so agent output needs no
-     callout of its own. */
+     marked user block carries the visual distinction, so agent output needs
+     no callout of its own. */
 }
 
 /* ── Motion primitives ──────────────────────────────────────────────

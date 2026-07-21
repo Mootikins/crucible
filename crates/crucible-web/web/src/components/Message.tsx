@@ -54,7 +54,7 @@ export const Message: Component<MessageProps> = (props) => {
 
   return (
     <div
-      class={`group relative mb-5 flex ${isUser() ? 'justify-end' : 'justify-start'}`}
+      class="group relative mb-5 flex justify-start"
       data-testid={`message-${props.message.role}`}
       data-role={props.message.role}
     >
@@ -62,7 +62,7 @@ export const Message: Component<MessageProps> = (props) => {
         class={
           isUser()
             ? 'message-bubble message-bubble-user'
-            : 'rounded-md border border-hairline bg-surface-base px-3 py-2 text-xs italic text-muted'
+            : 'w-full rounded-md border border-hairline bg-surface-base px-3 py-1.5 text-[12px] italic text-muted'
         }
       >
         <Show when={!isEditing()} fallback={
@@ -116,7 +116,10 @@ export const Message: Component<MessageProps> = (props) => {
         </Show>
 
         <Show when={isUser() && props.message.timestamp}>
-          <div class="mt-1 text-right text-xs text-muted-dark">
+          <div
+            class="mt-1 inline-block text-[11px] leading-none text-muted-dark"
+            data-dynamic-time
+          >
             {formatRelativeTime(props.message.timestamp)}
           </div>
         </Show>
