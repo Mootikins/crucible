@@ -183,7 +183,9 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
         window.dispatchEvent(new CustomEvent('crucible:open-session', {
           detail: { sessionId: created.id, title: created.title || 'New Session' },
         }));
-        await refreshModels(created);
+        // Non-blocking: the model list is picker chrome — don't hold the
+        // draft surface (and the first message) hostage to a models.list RPC.
+        void refreshModels(created);
         return created;
       }, {
         errorMessage: 'Failed to create session',

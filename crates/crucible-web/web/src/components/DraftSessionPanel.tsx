@@ -33,6 +33,7 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
   // '' = internal agent / default kiln / default model / no project.
   const [agentName, setAgentName] = createSignal('');
   const [kiln, setKiln] = createSignal('');
+  const [extraKilns, setExtraKilns] = createSignal<string[]>([]);
   const [model, setModel] = createSignal('');
   const [workspace, setWorkspace] = createSignal('');
 
@@ -71,6 +72,7 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
       await createSession(
         {
           kiln: kiln() || defaultKiln() || undefined,
+          connect_kilns: extraKilns().length > 0 ? extraKilns() : undefined,
           workspace: workspace() || undefined,
           ...(isAcp() ? { agent_type: 'acp', agent_name: agentName() } : {}),
         },
@@ -135,7 +137,11 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
               class={selectClass}
               value={kiln()}
               disabled={busy()}
-              onChange={(e) => setKiln(e.currentTarget.value)}
+              onChange={(e) => {
+                setKiln(e.currentTarget.value);
+                // The primary can't also be an extra.
+                setExtraKilns((prev) => prev.filter((p) => p !== e.currentTarget.value));
+              }}
               title="Kiln (knowledge)"
               data-testid="draft-kiln"
             >
@@ -143,6 +149,30 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
                 {defaultKiln() ? `${basename(defaultKiln())} (default)` : 'Home kiln (default)'}
               </option>
               <For each={kilns().filter((k) => k.path !== defaultKiln())}>
+                {(k) => <option value={k.path}>{k.name || basename(k.path)}</option>}
+              </For>
+            </select>
+
+            {/* Attach additional knowledge kilns (session.connect_kilns). */}
+            <select
+              class={selectClass}
+              value=""
+              disabled={busy()}
+              onChange={(e) => {
+                const path = e.currentTarget.value;
+                if (path) setExtraKilns((prev) => [...prev, path]);
+                e.currentTarget.value = '';
+              }}
+              title="Attach more kilns"
+              data-testid="draft-extra-kilns"
+            >
+              <option value="">+ kiln…</option>
+              <For
+                each={kilns().filter(
+                  (k) =>
+                    k.path !== (kiln() || defaultKiln()) && !extraKilns().includes(k.path),
+                )}
+              >
                 {(k) => <option value={k.path}>{k.name || basename(k.path)}</option>}
               </For>
             </select>

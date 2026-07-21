@@ -343,19 +343,30 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       loadHistory,
     });
 
-    eventSourceCleanup = subscribeToEvents(newSessionId, handleEvent);
+    // Resolves when the SSE stream is open (daemon subscribed). Sending
+    // before that drops the response's first tokens — the turn then looks
+    // frozen until message_complete backfills the full text.
+    let resolveSseOpen: () => void = () => {};
+    const sseOpen = new Promise<void>((resolve) => {
+      resolveSseOpen = resolve;
+    });
+    eventSourceCleanup = subscribeToEvents(newSessionId, handleEvent, resolveSseOpen);
 
     // Lazy creation handoff: the draft surface staged the user's first
-    // message before opening this session. Send it only after bootstrap —
-    // loadHistory replaces the whole message list, so sending earlier would
-    // let the (empty) history load wipe the optimistic message.
+    // message before opening this session. Send it only after (a) bootstrap
+    // — loadHistory replaces the whole message list, so sending earlier
+    // would let the (empty) history load wipe the optimistic message — and
+    // (b) the SSE stream is open, so the response streams from token one.
+    // The timeout keeps the message from being stuck if SSE can't connect.
     const pendingFirstMessage = consumePendingFirstMessage(newSessionId);
     if (pendingFirstMessage) {
-      void bootstrapPromise
-        .catch(() => {})
-        .then(() => {
-          void sendMessage(pendingFirstMessage);
-        });
+      const sseOpenOrTimeout = Promise.race([
+        sseOpen,
+        new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+      ]);
+      void Promise.all([bootstrapPromise.catch(() => {}), sseOpenOrTimeout]).then(() => {
+        void sendMessage(pendingFirstMessage);
+      });
     }
   });
 

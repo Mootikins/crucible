@@ -116,6 +116,19 @@ describe('DraftSessionPanel', () => {
     await waitFor(() => expect(closeDraftTabMock).toHaveBeenCalledWith('tab-draft-1'));
   });
 
+  it('attaches additional kilns and passes them as connect_kilns', async () => {
+    const { getByTestId } = await setup();
+    fireEvent.change(getByTestId('draft-extra-kilns'), {
+      target: { value: '/home/user/kilns/other' },
+    });
+    fireEvent.input(getByTestId('draft-input'), { target: { value: 'multi-kiln idea' } });
+    fireEvent.click(getByTestId('draft-send'));
+
+    await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(1));
+    const [params] = createSessionMock.mock.calls[0];
+    expect(params.connect_kilns).toEqual(['/home/user/kilns/other']);
+  });
+
   it('creates an ACP session without a model override', async () => {
     const { getByTestId } = await setup();
     fireEvent.change(getByTestId('draft-agent'), { target: { value: 'claude' } });

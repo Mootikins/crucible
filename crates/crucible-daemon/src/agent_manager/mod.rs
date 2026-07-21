@@ -720,15 +720,41 @@ impl AgentManager {
                 (repo, embed)
             };
 
+            // Connected kilns join semantic_search's scope (same pattern as
+            // precognition's collect_kiln_search_sources). Unopenable kilns
+            // are skipped, not failed — search should degrade, not break.
+            let mut connected_repos: Vec<(
+                std::path::PathBuf,
+                Arc<dyn crucible_core::traits::KnowledgeRepository>,
+            )> = Vec::new();
+            for connected in &session.connected_kilns {
+                match self.kiln_manager.get_or_open(connected).await {
+                    Ok(storage) => {
+                        connected_repos
+                            .push((connected.clone(), storage.as_knowledge_repository()));
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            kiln = %connected.display(),
+                            error = %e,
+                            "Skipping connected kiln for session tools"
+                        );
+                    }
+                }
+            }
+
             // Pass the real workspace (not the kiln) so `skill_view` discovers
             // workspace-scoped skills under the same root the prompt catalog used.
-            let mcp = Arc::new(CrucibleMcpServer::new_with_workspace_and_delegation(
-                session.kiln.to_string_lossy().to_string(),
-                session.workspace.clone(),
-                knowledge_repo,
-                embedding_provider,
-                None,
-            ));
+            let mcp = Arc::new(
+                CrucibleMcpServer::new_with_workspace_and_delegation(
+                    session.kiln.to_string_lossy().to_string(),
+                    session.workspace.clone(),
+                    knowledge_repo,
+                    embedding_provider,
+                    None,
+                )
+                .with_connected_kilns(connected_repos),
+            );
 
             let mut providers: Vec<Arc<dyn ToolExecutor>> = vec![
                 Arc::new(

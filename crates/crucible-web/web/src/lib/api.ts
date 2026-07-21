@@ -185,6 +185,13 @@ export const SSE_EVENT_TYPES = [
 export function subscribeToEvents(
   sessionId: string,
   onEvent: (event: ChatEvent) => void,
+  /**
+   * Fires once, when the stream is first open. The server subscribes the
+   * daemon session before returning stream headers, so "open" means events
+   * will not be dropped — senders that must not lose the first tokens
+   * (lazy-created sessions auto-sending their first message) wait for this.
+   */
+  onOpen?: () => void,
 ): () => void {
   // EventSource cannot set headers; the HttpOnly session cookie (set by
   // login()) authenticates the stream for non-localhost clients.
@@ -193,6 +200,7 @@ export function subscribeToEvents(
   let reconnectAttempts = 0;
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   let closed = false;
+  let opened = false;
 
   function connect() {
     if (closed) return;
@@ -231,6 +239,10 @@ export function subscribeToEvents(
 
     source.onopen = () => {
       reconnectAttempts = 0;
+      if (!opened) {
+        opened = true;
+        onOpen?.();
+      }
       onEvent({ type: 'connection', status: 'connected' });
     };
   }

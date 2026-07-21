@@ -136,6 +136,9 @@ struct CreateSessionRequest {
     session_type: String,
     /// Kiln for the session; omitted → daemon default (home kiln).
     kiln: Option<PathBuf>,
+    /// Additional knowledge kilns to attach at creation.
+    #[serde(default)]
+    connect_kilns: Vec<PathBuf>,
     workspace: Option<PathBuf>,
     /// LLM provider (e.g., "ollama", "openai", "anthropic")
     provider: Option<String>,
@@ -274,7 +277,7 @@ async fn create_session(
             session_type: req.session_type.clone(),
             kiln: req.kiln,
             workspace: req.workspace,
-            connect_kilns: vec![],
+            connect_kilns: req.connect_kilns,
             recording_mode: None,
             recording_path: None,
             agent_type: req.agent_type.clone(),
@@ -908,6 +911,15 @@ mod tests {
         let (status, json) = post_create_session(serde_json::json!({})).await;
         assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
         assert_eq!(json["session_id"], "test-session-001");
+    }
+
+    #[tokio::test]
+    async fn create_session_accepts_connect_kilns() {
+        let (status, json) = post_create_session(serde_json::json!({
+            "connect_kilns": ["/tmp/extra-kiln"],
+        }))
+        .await;
+        assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
     }
 
     #[tokio::test]

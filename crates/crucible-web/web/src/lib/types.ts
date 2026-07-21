@@ -74,6 +74,8 @@ export interface CreateSessionParams {
   session_type?: SessionType;
   /** Omitted → daemon default (home kiln). */
   kiln?: string;
+  /** Additional knowledge kilns to attach at creation. */
+  connect_kilns?: string[];
   workspace?: string;
   provider?: string;
   model?: string;

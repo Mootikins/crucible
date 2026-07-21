@@ -222,6 +222,16 @@ impl CrucibleMcpServer {
         }
     }
 
+    /// Attach session-connected kilns so `semantic_search` covers them in
+    /// addition to the primary kiln.
+    pub fn with_connected_kilns(
+        mut self,
+        connected: Vec<(PathBuf, Arc<dyn KnowledgeRepository>)>,
+    ) -> Self {
+        self.search_tools = self.search_tools.with_connected_kilns(connected);
+        self
+    }
+
     /// Create a new MCP server with `NoteStore` for optimized operations
     ///
     /// When a `NoteStore` is provided, the following operations use indexed metadata:

@@ -51,6 +51,10 @@ pub struct SearchTools {
     embedding_provider: Arc<dyn EmbeddingProvider>,
     /// Optional NoteStore for indexed property searches
     note_store: Option<Arc<dyn NoteStore>>,
+    /// Session-connected kilns: `semantic_search` fans out across these in
+    /// addition to the primary. Trust gating happens at attach time
+    /// (session.connect_kiln / session.create), not per-query.
+    connected_kilns: Vec<(std::path::PathBuf, Arc<dyn KnowledgeRepository>)>,
 }
 
 /// Parameters for semantic search
@@ -95,6 +99,7 @@ impl SearchTools {
             knowledge_repo,
             embedding_provider,
             note_store: None,
+            connected_kilns: Vec::new(),
         }
     }
 
@@ -109,7 +114,17 @@ impl SearchTools {
             knowledge_repo,
             embedding_provider,
             note_store: Some(note_store),
+            connected_kilns: Vec::new(),
         }
+    }
+
+    /// Attach session-connected kilns for multi-kiln semantic search.
+    pub fn with_connected_kilns(
+        mut self,
+        connected: Vec<(std::path::PathBuf, Arc<dyn KnowledgeRepository>)>,
+    ) -> Self {
+        self.connected_kilns = connected;
+        self
     }
 }
 #[tool_router]
@@ -129,14 +144,34 @@ impl SearchTools {
             .await
             .mcp_err_ctx("Failed to generate embedding")?;
 
-        // Search notes
-        let note_results = self
-            .knowledge_repo
-            .search_vectors(embedding.clone())
-            .await
-            .mcp_err_ctx("Note search failed")?;
+        // Fan out across the primary + connected kilns through the same
+        // engine precognition uses (dedup + merge-sort + kiln labeling).
+        // Trust filtering is None here: connected kilns pass the trust gate
+        // at attach time.
+        let mut sources = vec![crate::multi_kiln_search::KilnSearchSource {
+            kiln_path: std::path::PathBuf::from(&self.kiln_path),
+            knowledge_repo: self.knowledge_repo.clone(),
+            is_primary: true,
+        }];
+        sources.extend(self.connected_kilns.iter().map(|(path, repo)| {
+            crate::multi_kiln_search::KilnSearchSource {
+                kiln_path: path.clone(),
+                knowledge_repo: repo.clone(),
+                is_primary: false,
+            }
+        }));
 
-        let mut all_results: Vec<serde_json::Value> = note_results
+        let note_results = crate::multi_kiln_search::search_across_kilns(
+            &sources,
+            embedding,
+            limit,
+            None,
+            std::path::Path::new(&self.kiln_path),
+        )
+        .await
+        .mcp_err_ctx("Note search failed")?;
+
+        let all_results: Vec<serde_json::Value> = note_results
             .into_iter()
             .map(|r| {
                 serde_json::json!({
@@ -144,22 +179,11 @@ impl SearchTools {
                     "id": r.document_id,
                     "score": r.score,
                     "snippet": r.snippet,
-                    "highlights": r.highlights
+                    "highlights": r.highlights,
+                    "kiln_path": r.kiln_path,
                 })
             })
             .collect();
-
-        // Sort all results by score descending
-        all_results.sort_by(|a, b| {
-            let score_a = a["score"].as_f64().unwrap_or(0.0);
-            let score_b = b["score"].as_f64().unwrap_or(0.0);
-            score_b
-                .partial_cmp(&score_a)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        // Take only the top results
-        all_results.truncate(limit);
 
         json_success(serde_json::json!({
             "results": all_results,
