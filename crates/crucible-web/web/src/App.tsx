@@ -12,10 +12,10 @@ import { matchShortcut } from '@/lib/keyboard-shortcuts';
 import { openSessionInChat } from '@/lib/session-actions';
 import { openDraftSession } from '@/lib/draft-session';
 import { openFileInEditor } from '@/lib/file-actions';
-import { openPanelTab, findFirstCenterPaneGroupId } from '@/lib/panel-actions';
+import { openPanelTab } from '@/lib/panel-actions';
 import { statusBarActions, statusBarStore } from '@/stores/statusBarStore';
 import { attentionActions } from '@/stores/attentionStore';
-import { windowActions, windowStore } from '@/stores/windowStore';
+import { windowActions } from '@/stores/windowStore';
 import { NotificationToast } from '@/components/NotificationToast';
 import { ExportDialog } from '@/components/ExportDialog';
 import { AuthTokenPrompt } from '@/components/AuthTokenPrompt';
@@ -190,15 +190,10 @@ const App: Component = () => {
     // covers sessions without an open tab (WS-302).
     const stopAttentionPolling = attentionActions.startPolling();
 
-    // Land on Home when the restored layout has no center content — the
-    // shell always has somewhere to start (Crucible Shell design turn 5).
-    void loadLayoutOnStartup().then(() => {
-      const groupId = findFirstCenterPaneGroupId();
-      const group = groupId ? windowStore.tabGroups[groupId] : null;
-      if (!group || group.tabs.length === 0) {
-        openPanelTab('home');
-      }
-    });
+    // No landing page: a fresh shell (no persisted center content) shows the
+    // center pane's EmptyState, whose action starts a new session. Users
+    // build their own home from panels.
+    void loadLayoutOnStartup();
     setupLayoutAutoSave();
 
     const onGlobalKeyDown = (event: KeyboardEvent) => {

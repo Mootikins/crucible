@@ -86,17 +86,20 @@ const SessionItem: Component<{
       }`}
        data-testid={`session-item-${props.session.id}`}
      >
-      <div class="flex items-center gap-2">
+      {/* pr-12 reserves the action-button strip so hover buttons never
+          overlay the title; explicit 13px so the row doesn't inherit the
+          browser/system base size. */}
+      <div class="flex items-center gap-2 pr-12">
         <StateIndicator state={props.session.state} />
-        <span class="font-medium truncate flex-1">
+        <span class="text-[13px] font-medium truncate flex-1">
           {sessionDisplayTitle(props.session)}
         </span>
       </div>
-      <div class="text-xs text-muted-dark mt-1">
+      <div class="text-[11px] text-muted-dark mt-0.5 pr-12 truncate">
         {props.session.agent_model || 'No model'}
       </div>
 
-      {/* Action buttons — visible on hover */}
+      {/* Action buttons — visible on hover, in the reserved strip */}
       <div class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-150">
         <Show when={props.onArchive}>
           <button

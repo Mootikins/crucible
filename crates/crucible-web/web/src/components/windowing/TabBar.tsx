@@ -77,13 +77,17 @@ const TabItem: Component<TabItemProps> = (props) => {
       data-tab-id={props.tab.id}
       {...(props.testId ? { 'data-testid': props.testId } : {})}
       classList={{
-        'group relative flex items-center gap-1 px-2.5 py-1.5 cursor-pointer transition-all duration-100 border-b-2 rounded-t-sm':
+        // Obsidian's tab language: the active tab is a raised chip (bg lift),
+        // no accent underline. Focus of the containing region reads through
+        // ink weight + a hairline outline, never a colored bar.
+        'group relative flex items-center gap-1 px-2.5 py-1 my-1 mx-0.5 rounded-md cursor-pointer transition-all duration-100':
           true,
-        'opacity-40 border-transparent bg-surface-elevated': draggable.isActiveDraggable,
-        'bg-shell-bg text-shell-ink': props.isActive && !draggable.isActiveDraggable,
-        'border-primary': props.isActive && props.isFocused && !draggable.isActiveDraggable,
-        'border-hairline': props.isActive && !props.isFocused && !draggable.isActiveDraggable,
-        'border-transparent text-muted hover:text-shell-ink hover:bg-hover-wash':
+        'opacity-40 bg-surface-elevated': draggable.isActiveDraggable,
+        'bg-surface-elevated text-shell-ink outline outline-1 -outline-offset-1 outline-hairline-strong':
+          props.isActive && props.isFocused && !draggable.isActiveDraggable,
+        'bg-surface-elevated/70 text-shell-body':
+          props.isActive && !props.isFocused && !draggable.isActiveDraggable,
+        'text-muted hover:text-shell-ink hover:bg-hover-wash':
           !props.isActive && !draggable.isActiveDraggable,
       }}
       onClick={() => props.onClick()}

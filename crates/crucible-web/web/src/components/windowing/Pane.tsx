@@ -46,8 +46,6 @@ export const Pane: Component<{ paneId: string }> = (props) => {
     if (!g?.activeTabId) return null;
     return g.tabs.find((t) => t.id === g.activeTabId) ?? null;
   };
-  const isActive = () => windowStore.activePaneId === props.paneId;
-
   const centerDroppable = createDroppable(`pane:${props.paneId}:center`, {
     type: 'pane',
     paneId: props.paneId,
@@ -143,7 +141,8 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       ref={attachFileDrop}
       classList={{
         'relative flex flex-col h-full overflow-hidden transition-all': true,
-        'ring-1 ring-primary/30': isActive() && windowStore.focusedRegion === 'center',
+        // Focus reads through the active tab chip (Obsidian's language) —
+        // no colored ring around the pane itself.
         'bg-primary/5': centerDroppable.isActiveDroppable,
         'ring-1 ring-primary/60': fileDropOver(),
       }}

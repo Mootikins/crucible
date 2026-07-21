@@ -11,6 +11,7 @@ import { FloatingWindow } from './FloatingWindow';
 import { StatusBar } from './StatusBar';
 import { MinimizedBar } from './MinimizedBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
+import { openDraftSession } from '@/lib/draft-session';
 import { IconButton } from '@/components/ui/IconButton';
 import type { DragSource, DropTarget } from '@/types/windowTypes';
 import { getPendingReorder, clearPendingReorder } from './TabBar';
@@ -43,8 +44,6 @@ function HeaderBar() {
 
   const contextLine = () => {
     switch (surface()) {
-      case 'home':
-        return 'pick up where you left off';
       case 'edit':
         return kilnName() ? `editing ◆ ${kilnName()}` : 'editing';
       case 'session':
@@ -58,8 +57,8 @@ function HeaderBar() {
     <div class="flex items-center h-10 gap-3 bg-shell-bg border-b border-hairline px-3.5">
       <button
         type="button"
-        title="Home"
-        onClick={() => shellActions.goHome()}
+        title="New session"
+        onClick={() => openDraftSession()}
         class="w-[18px] h-[18px] rounded-[5px] bg-primary flex items-center justify-center font-mono font-semibold text-[10px] text-white cursor-pointer hover:ring-[3px] hover:ring-primary/30 transition-shadow"
       >
         C
@@ -67,8 +66,8 @@ function HeaderBar() {
       <Show when={kilnName()}>
         <button
           type="button"
-          title="Home"
-          onClick={() => shellActions.goHome()}
+          title="Open the vault"
+          onClick={() => shellActions.goEdit()}
           class="font-mono text-xs text-muted hover:text-shell-ink cursor-pointer"
         >
           ◆ {kilnName()}

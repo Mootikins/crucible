@@ -209,6 +209,14 @@ export function deserializeLayout(json: SerializedLayout): {
     throw new Error(`Unsupported layout version: ${layout.version}`);
   }
 
+  // Always-on prune of unregistered content types: the v2→v3 migration only
+  // covers layouts that were still v2 — a v4 layout persisted before a panel
+  // was deleted (e.g. the removed Home page) would otherwise resurrect a
+  // ghost tab that renders "Unknown content type" forever.
+  const registry = getGlobalRegistry();
+  const isKnown = (contentType: string) =>
+    registry.list().length === 0 || registry.get(contentType) !== undefined;
+
   const tabGroups: Record<string, TabGroup> = {};
   for (const [id, group] of Object.entries(layout.tabGroups)) {
     // Always-on prune: a `chat` tab WITHOUT a sessionId is the legacy
@@ -217,7 +225,7 @@ export function deserializeLayout(json: SerializedLayout): {
     // render wherever that tab happens to be docked — sessions then never
     // appear in the right pane. Session tabs (metadata.sessionId) survive.
     const tabs = group.tabs.filter(
-      (t) => !(t.contentType === 'chat' && !t.metadata?.sessionId),
+      (t) => isKnown(t.contentType) && !(t.contentType === 'chat' && !t.metadata?.sessionId),
     );
     tabGroups[id] = {
       id: group.id,

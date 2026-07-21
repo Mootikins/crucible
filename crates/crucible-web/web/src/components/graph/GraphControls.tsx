@@ -1,4 +1,4 @@
-import { Component, JSX } from 'solid-js';
+import { Component, JSX, Show } from 'solid-js';
 import type { SetStoreFunction } from 'solid-js/store';
 import { DEFAULT_GRAPH_SETTINGS, type GraphSettings } from '@/lib/graph/types';
 
@@ -57,6 +57,24 @@ export const GraphControls: Component<{
 }> = (props) => {
   return (
     <div class="absolute top-11 right-2 w-60 max-h-[calc(100%-4rem)] overflow-y-auto flex flex-col gap-3 rounded-md border border-hairline bg-surface-elevated p-3 text-xs text-shell-body shadow-lg">
+      <Section title="Local graph">
+        <Toggle
+          label="Local graph"
+          checked={props.settings.local.enabled}
+          onChange={(v) => props.onChange('local', 'enabled', v)}
+        />
+        <Show when={props.settings.local.enabled}>
+          <Slider
+            label="Hops"
+            min={1}
+            max={3}
+            step={1}
+            value={props.settings.local.depth}
+            onInput={(v) => props.onChange('local', 'depth', v)}
+          />
+        </Show>
+      </Section>
+
       <Section title="Filters">
         <input
           type="search"
@@ -144,6 +162,7 @@ export const GraphControls: Component<{
           props.onChange('filters', d.filters);
           props.onChange('display', d.display);
           props.onChange('forces', d.forces);
+          props.onChange('local', d.local);
         }}
       >
         Reset to defaults

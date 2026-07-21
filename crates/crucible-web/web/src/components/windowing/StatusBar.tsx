@@ -62,8 +62,6 @@ export const StatusBar: Component = () => {
   const surfaceIndicator = () => {
     const kiln = pathBasename(statusBarStore.kilnPath());
     switch (shellStore.activeSurface()) {
-      case 'home':
-        return '⌂ home';
       case 'inbox':
         return '▤ inbox';
       case 'edit':

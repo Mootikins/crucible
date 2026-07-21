@@ -25,6 +25,10 @@ interface FileViewerPanelProps {
   /** Mode markdown opens in ('reading' | 'live' | 'source') — hover
    * popovers set this via tab metadata. */
   initialMode?: string;
+  /** Open the buffer WITHOUT claiming activeFile — hover popovers set this
+   * so transient previews don't retarget focus-following panels
+   * (backlinks). */
+  background?: boolean;
 }
 
 const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
@@ -102,7 +106,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   createEffect(() => {
     const path = props.filePath;
     if (path) {
-      untrack(() => openFile(path));
+      untrack(() => openFile(path, { background: props.background }));
     }
   });
 

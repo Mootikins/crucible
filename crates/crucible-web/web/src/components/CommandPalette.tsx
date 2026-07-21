@@ -97,7 +97,6 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
   const goItems = (): OmniItem[] => {
     const sessionTitle = statusBarStore.activeSessionTitle();
     return [
-      { id: 'go-home', kind: 'GO', label: 'Home', keywords: ['landing', 'start'], action: () => shellActions.goHome() },
       { id: 'go-inbox', kind: 'GO', label: 'Inbox', keywords: ['pending', 'approvals', 'waiting'], action: () => shellActions.goInbox() },
       { id: 'go-edit', kind: 'GO', label: 'Editor (✎ Edit mode)', keywords: ['edit', 'notes', 'vault'], action: () => shellActions.goEdit() },
       {

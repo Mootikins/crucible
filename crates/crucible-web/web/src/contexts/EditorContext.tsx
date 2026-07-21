@@ -23,13 +23,16 @@ export const EditorProvider: ParentComponent = (props) => {
     // pop-out) — we only evict when the last holder releases it.
     const openCounts = new Map<string, number>();
 
-  const openFile = async (path: string) => {
+  // `background` opens the buffer WITHOUT making it the active file —
+  // transient surfaces (wikilink hover windows) must not steal focus, or
+  // everything keyed on activeFile (backlinks panel) flickers per hover.
+  const openFile = async (path: string, opts?: { background?: boolean }) => {
     const existing = openFilesStore.find((f) => f.path === path);
     if (existing) {
       // Already open — take another reference and reuse the (possibly dirty)
       // buffer instead of re-reading disk and clobbering unsaved edits.
       openCounts.set(path, (openCounts.get(path) ?? 0) + 1);
-      setActiveFileSignal(path);
+      if (!opts?.background) setActiveFileSignal(path);
       return;
     }
 
@@ -48,7 +51,7 @@ export const EditorProvider: ParentComponent = (props) => {
         })
       );
       openCounts.set(path, 1);
-      setActiveFileSignal(path);
+      if (!opts?.background) setActiveFileSignal(path);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to open file';
       setError(msg);

@@ -199,28 +199,29 @@
   to { opacity: 1; }
 }
 
-/* Edge panels grow out of their ribbon: slide in from the owning edge. */
+/* Edge panels grow out of their ribbon: a real slide from the owning edge
+   (Obsidian's register), not a nudge — the panel travels its own width. */
 @keyframes cru-slide-in-l {
-  from { opacity: 0; translate: -6px 0; }
-  to { opacity: 1; translate: 0 0; }
+  from { translate: -100% 0; }
+  to { translate: 0 0; }
 }
 
 @keyframes cru-slide-in-r {
-  from { opacity: 0; translate: 6px 0; }
-  to { opacity: 1; translate: 0 0; }
+  from { translate: 100% 0; }
+  to { translate: 0 0; }
 }
 
 @keyframes cru-slide-in-b {
-  from { opacity: 0; translate: 0 6px; }
-  to { opacity: 1; translate: 0 0; }
+  from { translate: 0 100%; }
+  to { translate: 0 0; }
 }
 
 .cru-anim-pop { animation: cru-pop-in 150ms ease-out; }
 .cru-anim-rise { animation: cru-rise-in 150ms ease-out; }
 .cru-anim-fade { animation: cru-fade-in 200ms ease-out; }
-.cru-anim-slide-l { animation: cru-slide-in-l 150ms ease-out; }
-.cru-anim-slide-r { animation: cru-slide-in-r 150ms ease-out; }
-.cru-anim-slide-b { animation: cru-slide-in-b 150ms ease-out; }
+.cru-anim-slide-l { animation: cru-slide-in-l 200ms ease-out; }
+.cru-anim-slide-r { animation: cru-slide-in-r 200ms ease-out; }
+.cru-anim-slide-b { animation: cru-slide-in-b 200ms ease-out; }
 
 /* Rendered [[wikilinks]] (chat + previews). Mirrors the editor's .cm-wikilink
    ember pill so a knowledge link reads as one identity across every surface. */

@@ -23,6 +23,7 @@ export const EmptyState: Component<EmptyStateProps> = (props) => {
       {props.onAction && (
         <button
           onClick={props.onAction}
+          data-testid="empty-state-action"
           class="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-hover text-white text-sm font-medium rounded-lg transition-colors"
         >
           <Plus class="w-4 h-4" />

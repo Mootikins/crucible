@@ -93,8 +93,14 @@ export const WikilinkHoverPreview: Component = () => {
       contentType: 'file',
       icon: iconForContentType('file'),
       // Popovers open in the configured hover mode (default: the fully
-      // rendered reading view, like Obsidian's page preview).
-      metadata: { filePath: preview.absPath, initialMode: settings.editor.hoverMode },
+      // rendered reading view, like Obsidian's page preview). background:
+      // a hover must never claim activeFile, or focus-following panels
+      // (backlinks) retarget on every hover.
+      metadata: {
+        filePath: preview.absPath,
+        initialMode: settings.editor.hoverMode,
+        background: true,
+      },
     });
     hoverWindowId = windowActions.createFloatingWindow(
       groupId,

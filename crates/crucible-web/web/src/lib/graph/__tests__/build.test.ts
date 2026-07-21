@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { adoptPositions, buildAdjacency, buildGraph, nodeRadius } from '../build';
-import type { GraphDto, GraphFilters, GraphNode } from '../types';
+import {
+  adoptPositions,
+  buildAdjacency,
+  buildGraph,
+  localSubgraph,
+  nodeRadius,
+  stripExternalTargets,
+} from '../build';
+import type { GraphDto, GraphEdge, GraphFilters, GraphNode } from '../types';
 
 const filters = (over: Partial<GraphFilters> = {}): GraphFilters => ({
   query: '',
@@ -123,6 +130,87 @@ describe('adoptPositions', () => {
     adoptPositions(next, prev);
     expect(next[0]).toMatchObject({ x: 10, y: 20, vx: 1, vy: 2 });
     expect(next[1].x).toBeUndefined();
+  });
+});
+
+describe('stripExternalTargets', () => {
+  it('drops links to scheme://… sites, keeping kiln links', () => {
+    const withUrls: GraphDto = {
+      notes: [
+        { path: 'A.md', title: 'A', tags: [] },
+        { path: 'B.md', title: 'B', tags: [] },
+      ],
+      links: [
+        { source: 'A.md', target: 'https://example.com', resolved: false },
+        { source: 'A.md', target: 'ftp://files.example', resolved: false },
+        { source: 'A.md', target: 'B.md', resolved: true },
+      ],
+    };
+    const clean = stripExternalTargets(withUrls);
+    expect(clean.links).toEqual([{ source: 'A.md', target: 'B.md', resolved: true }]);
+    // Downstream, no phantom is synthesized for the stripped URLs.
+    const g = buildGraph(clean, filters());
+    expect(g.nodes.some((n) => n.kind === 'phantom')).toBe(false);
+  });
+
+  it('drops a note whose own path is a URL', () => {
+    const clean = stripExternalTargets({
+      notes: [
+        { path: 'A.md', title: 'A', tags: [] },
+        { path: 'http://weird.example/', title: 'weird', tags: [] },
+      ],
+      links: [],
+    });
+    expect(clean.notes.map((n) => n.path)).toEqual(['A.md']);
+  });
+});
+
+describe('localSubgraph', () => {
+  // A—B—C—D chain plus an isolated E.
+  const chain = (): { nodes: GraphNode[]; edges: GraphEdge[] } => {
+    const nodes: GraphNode[] = ['A', 'B', 'C', 'D', 'E'].map((id) => ({
+      id,
+      label: id,
+      kind: 'note',
+      degree: 0,
+    }));
+    const edges: GraphEdge[] = [
+      { source: 'A', target: 'B', kind: 'link' },
+      { source: 'B', target: 'C', kind: 'link' },
+      { source: 'C', target: 'D', kind: 'link' },
+    ];
+    return { nodes, edges };
+  };
+
+  it('keeps nodes within N hops of the root and edges among them', () => {
+    const { nodes, edges } = chain();
+    const sub = localSubgraph(nodes, edges, buildAdjacency(edges), 'A', 2);
+    expect(sub.nodes.map((n) => n.id).sort()).toEqual(['A', 'B', 'C']);
+    // D is 3 hops out, so the C—D edge is excluded.
+    expect(sub.edges.map((e) => `${e.source as string}-${e.target as string}`)).toEqual([
+      'A-B',
+      'B-C',
+    ]);
+  });
+
+  it('depth 1 is the root plus immediate neighbors only', () => {
+    const { nodes, edges } = chain();
+    const sub = localSubgraph(nodes, edges, buildAdjacency(edges), 'B', 1);
+    expect(sub.nodes.map((n) => n.id).sort()).toEqual(['A', 'B', 'C']);
+  });
+
+  it('an isolated root yields just itself', () => {
+    const { nodes, edges } = chain();
+    const sub = localSubgraph(nodes, edges, buildAdjacency(edges), 'E', 2);
+    expect(sub.nodes.map((n) => n.id)).toEqual(['E']);
+    expect(sub.edges).toEqual([]);
+  });
+
+  it('a root absent from the graph yields an empty subgraph', () => {
+    const { nodes, edges } = chain();
+    const sub = localSubgraph(nodes, edges, buildAdjacency(edges), 'Z', 2);
+    expect(sub.nodes).toEqual([]);
+    expect(sub.edges).toEqual([]);
   });
 });
 

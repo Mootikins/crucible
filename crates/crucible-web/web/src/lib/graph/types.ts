@@ -74,14 +74,26 @@ export interface GraphForces {
   linkDistance: number;
 }
 
+export interface GraphLocal {
+  /** Restrict the graph to the neighborhood of the focused note. */
+  enabled: boolean;
+  /** BFS radius in hops from the focused note (1..3). */
+  depth: number;
+}
+
 export interface GraphSettings {
   filters: GraphFilters;
   display: GraphDisplay;
   forces: GraphForces;
+  local: GraphLocal;
 }
 
 export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   filters: { query: '', showTags: false, showPhantoms: true, showOrphans: true },
   display: { nodeSize: 1, linkThickness: 1 },
-  forces: { centerForce: 0.3, repelForce: 1, linkForce: 0.7, linkDistance: 140 },
+  // Obsidian-like defaults tuned against the degree-aware force wiring in
+  // GraphPanel: strong-but-local links pull leaves onto their hub, gentle
+  // centering lets disconnected components drift apart instead of piling up.
+  forces: { centerForce: 0.4, repelForce: 1, linkForce: 1, linkDistance: 90 },
+  local: { enabled: false, depth: 2 },
 };

@@ -81,7 +81,8 @@ describe('CommandPalette — omnibox sections', () => {
     render(() => (
       <CommandPalette open={true} commands={[]} onOpenChange={() => {}} />
     ));
-    expect(screen.getByText('Home')).toBeInTheDocument();
+    // No Home surface — the landing page was removed.
+    expect(screen.queryByText('Home')).not.toBeInTheDocument();
     expect(screen.getByText('Inbox')).toBeInTheDocument();
     expect(screen.getByText('Editor (✎ Edit mode)')).toBeInTheDocument();
     expect(screen.getByText('Session (◆ Session mode)')).toBeInTheDocument();

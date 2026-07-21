@@ -6,15 +6,16 @@ import { openPanelTab } from '@/lib/panel-actions';
 import { findTabBySessionId } from '@/lib/session-actions';
 
 // ── Shell surface state ──────────────────────────────────────────────────
-// The shell has four navigable surfaces (Crucible Shell design, turn 5):
-// Home (landing), Inbox (everything waiting on you), Session (chat), and
-// Edit (the vault flow). Surfaces are not a router — they map onto tabs in
-// the window manager; this store tracks which surface the focused center
-// tab belongs to and provides the header's navigation actions.
+// The shell has three navigable surfaces: Inbox (everything waiting on
+// you), Session (chat), and Edit (the vault flow). There is no landing
+// page — a fresh shell opens the new-session draft. Surfaces are not a
+// router — they map onto tabs in the window manager; this store tracks
+// which surface the focused center tab belongs to and provides the
+// header's navigation actions.
 
-export type ShellSurface = 'home' | 'inbox' | 'session' | 'edit';
+export type ShellSurface = 'inbox' | 'session' | 'edit';
 
-const [activeSurface, setActiveSurface] = createSignal<ShellSurface>('home');
+const [activeSurface, setActiveSurface] = createSignal<ShellSurface>('session');
 
 /** Which surface a tab belongs to; null for tabs that don't change the
  * surface (settings, terminal, edge-panel tools…). */
@@ -24,8 +25,6 @@ export function surfaceForContentType(contentType: TabContentType): ShellSurface
       return 'session';
     case 'file':
       return 'edit';
-    case 'home':
-      return 'home';
     case 'inbox':
       return 'inbox';
     default:
@@ -50,10 +49,6 @@ function focusMostRecentTabOfType(contentType: TabContentType): boolean {
     }
   }
   return false;
-}
-
-function goHome(): void {
-  openPanelTab('home');
 }
 
 function goInbox(): void {
@@ -88,7 +83,6 @@ export const shellStore = {
 } as const;
 
 export const shellActions = {
-  goHome,
   goInbox,
   goSession,
   goEdit,

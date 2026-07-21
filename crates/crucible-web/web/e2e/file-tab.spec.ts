@@ -35,14 +35,13 @@ async function openFile(page: import('@playwright/test').Page, path: string, nam
 }
 
 test.describe('File tab flows', () => {
-  test('lands on Home on fresh load', async ({ page }) => {
+  test('lands on the empty center pane on fresh load', async ({ page }) => {
     await setupBasicMocks(page);
     await page.goto('/');
 
-    // Center pane starts with no persisted tabs → the shell opens Home,
-    // whose hero is the start-a-session composer.
-    await expect(page.locator('[data-tab-id="tab-home"]')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByTestId('home-composer')).toBeVisible();
+    // No landing page: an empty center shows the EmptyState with a
+    // new-session action.
+    await expect(page.getByTestId('empty-state-action')).toBeVisible({ timeout: 10000 });
   });
 
   test('opening a file creates a file tab in the center pane', async ({ page }) => {
@@ -69,7 +68,7 @@ test.describe('File tab flows', () => {
     });
 
     await page.goto('/');
-    await expect(page.locator('[data-tab-id="tab-home"]')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('empty-state-action')).toBeVisible({ timeout: 10000 });
 
     // Open a file (same code path as clicking in FilesPanel)
     await openFile(page, '/home/user/.crucible/kiln/My Note.md', 'My Note.md');
@@ -84,7 +83,7 @@ test.describe('File tab flows', () => {
   }) => {
     await setupBasicMocks(page);
     await page.goto('/');
-    await expect(page.locator('[data-tab-id="tab-home"]')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('empty-state-action')).toBeVisible({ timeout: 10000 });
 
     // Open the same file twice
     await openFile(page, '/home/user/.crucible/kiln/My Note.md', 'My Note.md');

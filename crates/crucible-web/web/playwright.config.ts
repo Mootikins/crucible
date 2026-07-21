@@ -45,6 +45,11 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    // The app honors prefers-reduced-motion (index.css zeroes all animation
+    // durations), so this freezes slide/pop animations — DnD tests measure
+    // element coordinates that must not move mid-drag, and screenshots stay
+    // deterministic.
+    contextOptions: { reducedMotion: 'reduce' },
   },
 
   projects: [

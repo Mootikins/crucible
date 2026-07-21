@@ -5,7 +5,7 @@ import { attentionStore, attentionActions, type SessionAttention } from '@/store
 import { InteractionHandler } from '@/components/interactions';
 import { respondToInteraction, listSessions, deleteSession, unarchiveSession } from '@/lib/api';
 import { sortByRecency, sessionDisplayTitle } from '@/lib/session-display';
-import { relativeTime } from '@/components/HomePanel';
+import { relativeTime } from '@/lib/format-time';
 import type { InteractionResponse, Session, SessionState } from '@/lib/types';
 
 // ── Inbox — everything waiting on you, one place ─────────────────────────

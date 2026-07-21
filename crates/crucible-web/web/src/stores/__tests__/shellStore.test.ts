@@ -20,8 +20,7 @@ describe('shellStore — surface mapping', () => {
     expect(surfaceForContentType('file')).toBe('edit');
   });
 
-  it('maps home and inbox tabs to their surfaces', () => {
-    expect(surfaceForContentType('home')).toBe('home');
+  it('maps inbox tabs to the inbox surface', () => {
     expect(surfaceForContentType('inbox')).toBe('inbox');
   });
 
@@ -35,7 +34,7 @@ describe('shellStore — surface mapping', () => {
 
 describe('shellStore — syncShellSurface', () => {
   it('updates the active surface when focusing a surface-bearing tab', () => {
-    shellActions.setActiveSurface('home');
+    shellActions.setActiveSurface('inbox');
     syncShellSurface(tab('chat'));
     expect(shellStore.activeSurface()).toBe('session');
 

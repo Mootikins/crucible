@@ -2,6 +2,7 @@ import {
   Component,
   Show,
   createEffect,
+  createMemo,
   createSignal,
   on,
   onCleanup,
@@ -25,12 +26,16 @@ import { getConfig, getKilnGraph } from '@/lib/api';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { openFileInEditor } from '@/lib/file-actions';
 import { kilnRoot, noteAbsolutePath } from '@/lib/note-actions';
+import { useEditorSafe } from '@/contexts/EditorContext';
+import { noteKeyForPath } from '../BacklinksPanel';
 import {
   BASE_NODE_RADIUS,
   adoptPositions,
   buildAdjacency,
   buildGraph,
+  localSubgraph,
   nodeRadius,
+  stripExternalTargets,
 } from '@/lib/graph/build';
 import {
   DEFAULT_GRAPH_SETTINGS,
@@ -41,7 +46,9 @@ import {
 } from '@/lib/graph/types';
 import { GraphControls } from './GraphControls';
 
-const SETTINGS_KEY = 'crucible-graph-settings';
+// v2: the force wiring changed to degree-aware clustering, so v1's persisted
+// force values would fight the new defaults — a fresh key retires them.
+const SETTINGS_KEY = 'crucible-graph-settings-v2';
 
 function loadSettings(): GraphSettings {
   try {
@@ -52,6 +59,7 @@ function loadSettings(): GraphSettings {
       filters: { ...DEFAULT_GRAPH_SETTINGS.filters, ...stored.filters },
       display: { ...DEFAULT_GRAPH_SETTINGS.display, ...stored.display },
       forces: { ...DEFAULT_GRAPH_SETTINGS.forces, ...stored.forces },
+      local: { ...DEFAULT_GRAPH_SETTINGS.local, ...stored.local },
     };
   } catch {
     return structuredClone(DEFAULT_GRAPH_SETTINGS);
@@ -89,6 +97,21 @@ export const GraphPanel: Component = () => {
   const [stats, setStats] = createSignal({ notes: 0, links: 0 });
   const [controlsOpen, setControlsOpen] = createSignal(false);
   const [kiln, setKiln] = createSignal<string | null>(null);
+  const [localHint, setLocalHint] = createSignal<string | null>(null);
+
+  // Local-mode focus: the note key of the focused editor file, derived the
+  // same way BacklinksPanel derives it so the key matches graph node ids.
+  const editor = useEditorSafe();
+  const focalKey = createMemo(() => {
+    const path = editor.activeFile();
+    if (!path || !/\.(md|markdown)$/i.test(path)) return null;
+    return noteKeyForPath(path, kiln());
+  });
+  // Rebuild trigger that only tracks the focused note while local mode is on,
+  // so switching files never reheats the full (global) graph.
+  const localRebuildKey = createMemo(() =>
+    settings.local.enabled ? `on:${focalKey() ?? ''}` : 'off',
+  );
 
   // --- canvas / sim state kept OUT of solid reactivity (mutated per frame) ---
   let wrapEl: HTMLDivElement | undefined;
@@ -107,6 +130,8 @@ export const GraphPanel: Component = () => {
   // snapping when the pointer leaves.
   let hoverT = 0;
   let hoverSet: Set<string> | null = null;
+  // Focused note in local mode — drawn with a persistent accent ring/label.
+  let focalId: string | null = null;
   let dirty = true;
   let raf = 0;
   let didAutoFit = false;
@@ -123,40 +148,88 @@ export const GraphPanel: Component = () => {
     dirty = true;
   };
 
+  // Higher velocityDecay damps the per-tick jitter that made the old layout
+  // read as "chaotic"; a slightly-raised alphaDecay lets it settle and idle.
   const sim: Simulation<GraphNode, GraphEdge> = forceSimulation<GraphNode>([])
     .force('link', forceLink<GraphNode, GraphEdge>([]).id((d) => d.id))
-    .force('charge', forceManyBody<GraphNode>().distanceMax(600))
+    .force('charge', forceManyBody<GraphNode>().distanceMax(360).theta(0.9))
     .force('collide', forceCollide<GraphNode>())
     .force('x', forceX<GraphNode>(0))
     .force('y', forceY<GraphNode>(0))
-    .velocityDecay(0.35)
+    .velocityDecay(0.42)
+    .alphaDecay(0.028)
     .on('tick', markDirty)
     .stop();
 
   const linkForce = () => sim.force('link') as ForceLink<GraphNode, GraphEdge>;
 
+  const nodeDegree = (n: GraphNode) => Math.max(1, n.degree);
+
+  // Degree-aware forces, Obsidian-style, so linked clusters actually read as
+  // clusters instead of a uniform mush:
+  //  - Link strength = knob / min(deg endpoints): a leaf's single link to a
+  //    hub pulls at full strength (leaf snaps onto the hub), while each of a
+  //    hub's many links pulls weakly so the hub isn't yanked around.
+  //  - Repulsion grows with degree (hubs clear space for their halo) but is
+  //    capped and range-limited so distant components don't shove each other.
+  //  - Centering is deliberately faint (<=0.06) so disconnected components
+  //    drift apart rather than overlapping at the origin.
+  //  - Collision = node radius + fixed padding: a hard no-overlap floor.
   const applyForces = () => {
     const f = settings.forces;
-    linkForce().distance(f.linkDistance).strength(f.linkForce * 0.6);
+    linkForce()
+      .distance(f.linkDistance)
+      .strength((l) => {
+        const s = l.source as GraphNode;
+        const t = l.target as GraphNode;
+        return f.linkForce / Math.min(nodeDegree(s), nodeDegree(t));
+      });
     (sim.force('charge') as ReturnType<typeof forceManyBody<GraphNode>>).strength(
-      -60 * f.repelForce,
+      (n) => -f.repelForce * (36 + 8 * Math.min(nodeDegree(n), 12)),
     );
-    // Hard minimum spacing (Obsidian-style): nodes never overlap or crowd,
-    // whatever the charge/link settings. Radius tracks the display knob.
     (sim.force('collide') as ReturnType<typeof forceCollide<GraphNode>>)
-      .radius(BASE_NODE_RADIUS * settings.display.nodeSize * 2.5)
-      .strength(0.9);
-    (sim.force('x') as ReturnType<typeof forceX<GraphNode>>).strength(f.centerForce * 0.12);
-    (sim.force('y') as ReturnType<typeof forceY<GraphNode>>).strength(f.centerForce * 0.12);
+      .radius(BASE_NODE_RADIUS * settings.display.nodeSize + BASE_NODE_RADIUS * 2)
+      .strength(0.85);
+    (sim.force('x') as ReturnType<typeof forceX<GraphNode>>).strength(f.centerForce * 0.06);
+    (sim.force('y') as ReturnType<typeof forceY<GraphNode>>).strength(f.centerForce * 0.06);
   };
 
   const rebuild = () => {
     const data = dto();
     if (!data) return;
     const built = buildGraph(data, unwrap(settings).filters);
-    adoptPositions(built.nodes, nodes);
-    nodes = built.nodes;
-    edges = built.edges;
+
+    let builtNodes = built.nodes;
+    let builtEdges = built.edges;
+    focalId = null;
+    if (settings.local.enabled) {
+      const root = focalKey();
+      if (!root) {
+        builtNodes = [];
+        builtEdges = [];
+        setLocalHint('Open a note to see its local graph');
+      } else {
+        const sub = localSubgraph(
+          built.nodes,
+          built.edges,
+          buildAdjacency(built.edges),
+          root,
+          settings.local.depth,
+        );
+        builtNodes = sub.nodes;
+        builtEdges = sub.edges;
+        focalId = sub.nodes.length > 0 ? root : null;
+        setLocalHint(
+          sub.nodes.length === 0 ? 'This note isn’t linked into the graph yet' : null,
+        );
+      }
+    } else {
+      setLocalHint(null);
+    }
+
+    adoptPositions(builtNodes, nodes);
+    nodes = builtNodes;
+    edges = builtEdges;
     adjacency = buildAdjacency(edges);
     setStats({
       notes: nodes.filter((n) => n.kind === 'note').length,
@@ -185,14 +258,17 @@ export const GraphPanel: Component = () => {
           return;
         }
         setKiln(kilnRoot(kilnPath));
-        setDto(await getKilnGraph(kilnRoot(kilnPath)));
+        // Strip external-URL targets (https://…, mailto:…) at ingest so they
+        // never surface as phantom nodes in the graph.
+        setDto(stripExternalTargets(await getKilnGraph(kilnRoot(kilnPath))));
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load graph');
       }
     })();
   });
 
-  // Rebuild on data arrival or any filter change.
+  // Rebuild on data arrival, any filter change, or a local-mode change. The
+  // local key folds in the focused note only while local mode is enabled.
   createEffect(
     on(
       () => [
@@ -201,8 +277,23 @@ export const GraphPanel: Component = () => {
         settings.filters.showTags,
         settings.filters.showPhantoms,
         settings.filters.showOrphans,
+        settings.local.enabled,
+        settings.local.depth,
+        localRebuildKey(),
       ],
       rebuild,
+    ),
+  );
+
+  // Reframe when the local neighborhood changes — the subgraph is usually far
+  // smaller than the whole kiln, so refit once it settles.
+  createEffect(
+    on(
+      () => [settings.local.enabled, localRebuildKey()],
+      () => {
+        didAutoFit = false;
+      },
+      { defer: true },
     ),
   );
 
@@ -345,9 +436,29 @@ export const GraphPanel: Component = () => {
         ctx.lineWidth = edgeWidth;
       }
 
+      // Local-mode focal node: a persistent accent fill + ring + label so the
+      // note the graph is centered on is unmistakable (independent of hover).
+      if (n.id === focalId) {
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = colors.accent;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 0.4;
+        ctx.strokeStyle = colors.accent;
+        ctx.lineWidth = 3 / view.k;
+        ctx.beginPath();
+        ctx.arc(x, y, r + 4 / view.k, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.lineWidth = edgeWidth;
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = colors.label;
+        ctx.fillText(n.label, x, y + r + 4 / view.k);
+      }
+
       // Labels are hover-only: the hovered neighborhood's names fade in with
       // the highlight and out after the pointer leaves.
-      if (member && t > 0.02) {
+      if (member && t > 0.02 && n.id !== focalId) {
         ctx.globalAlpha = t;
         ctx.fillStyle = colors.label;
         ctx.fillText(n.label, x, y + r + 3 / view.k);
@@ -537,7 +648,12 @@ export const GraphPanel: Component = () => {
           <span class="text-sm text-muted">Loading graph…</span>
         </div>
       </Show>
-      <Show when={dto() && stats().notes === 0}>
+      <Show when={localHint()}>
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span class="text-sm text-muted">{localHint()}</span>
+        </div>
+      </Show>
+      <Show when={dto() && stats().notes === 0 && !localHint()}>
         <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
           <span class="text-sm text-muted">
             {settings.filters.query ? 'No notes match the filter' : 'No notes in this kiln yet'}
