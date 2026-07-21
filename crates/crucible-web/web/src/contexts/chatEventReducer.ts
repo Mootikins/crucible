@@ -1,4 +1,5 @@
 import { statusBarActions } from '@/stores/statusBarStore';
+import { generateMessageId, turnResponseId } from '@/lib/api';
 import type {
   Message,
   ChatEvent,
@@ -54,18 +55,40 @@ function upsertSubagentEvent(
 }
 
 export function createChatEventReducer(deps: ChatEventReducerDeps) {
+  // A viewer that attaches mid-turn (page reload, PWA update, second pane)
+  // has no streaming placeholder — sendMessage ran in another instance.
+  // Materialize one instead of dropping the stream, so every viewer
+  // converges on the same transcript.
+  const ensureStreamingMessage = (): string => {
+    const existing = deps.currentStreamingMessageId();
+    if (existing) return existing;
+    const id = generateMessageId();
+    deps.addMessage({ id, role: 'assistant', content: '', timestamp: Date.now() });
+    deps.setCurrentStreamingMessageId(id);
+    deps.setIsStreaming(true);
+    return id;
+  };
+
   return (event: ChatEvent) => {
     switch (event.type) {
       case 'token': {
-        const messageId = deps.currentStreamingMessageId();
-        if (messageId) {
-          deps.appendToMessage(messageId, event.content);
-        }
+        deps.appendToMessage(ensureStreamingMessage(), event.content);
         break;
       }
 
       case 'tool_call':
       case 'tool_call_start': {
+        // A tool call after streamed text is a segment boundary: close the
+        // current text message so the narration between tools survives as
+        // its own entry (message_complete only carries the FINAL response,
+        // so folding everything into one message loses the in-between text).
+        const streamingId = deps.currentStreamingMessageId();
+        if (streamingId) {
+          const current = deps.messages().find((m) => m.id === streamingId);
+          if (current && current.content !== '') {
+            deps.setCurrentStreamingMessageId(null);
+          }
+        }
         const toolName = 'title' in event ? event.title : ('name' in event ? event.name : '');
         const toolArgs = 'arguments' in event ? JSON.stringify(event.arguments ?? '') : '';
         deps.addToolMessage({
@@ -107,16 +130,14 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         break;
 
       case 'thinking': {
-        const messageId = deps.currentStreamingMessageId();
-        if (messageId) {
-          const thinkingContent = deps.messages().find((message) => message.id === messageId)?.thinking?.content ?? '';
-          deps.updateMessage(messageId, {
-            thinking: {
-              content: thinkingContent + event.content,
-              isStreaming: true,
-            },
-          });
-        }
+        const messageId = ensureStreamingMessage();
+        const thinkingContent = deps.messages().find((message) => message.id === messageId)?.thinking?.content ?? '';
+        deps.updateMessage(messageId, {
+          thinking: {
+            content: thinkingContent + event.content,
+            isStreaming: true,
+          },
+        });
         break;
       }
 
@@ -132,9 +153,16 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
           cacheReadTokens: event.cache_read_tokens,
           cacheCreationTokens: event.cache_creation_tokens,
         } : undefined;
+        // event.id is the TURN id (same one the user message carries), so
+        // the assistant entry takes the derived response id — identical to
+        // what sendMessage pre-created and what history reconstruction uses.
+        // Segmented turns (text → tool → text) may have consumed the
+        // response id on an earlier segment; later segments keep their own.
+        const responseId = turnResponseId(event.id);
+        const idTaken = deps.messages().some((m) => m.id === responseId && m.id !== messageId);
         if (messageId) {
           deps.updateMessage(messageId, {
-            id: event.id,
+            ...(idTaken ? {} : { id: responseId }),
             content: event.content,
             toolCalls: event.tool_calls,
             usage,
@@ -145,6 +173,16 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
                 tokenCount: thinkingData.content.length,
               },
             } : {}),
+          });
+        } else if (!deps.messages().some((m) => m.id === responseId)) {
+          // Late attach with no streamed tokens seen: append the completed
+          // message wholesale rather than dropping the turn's text.
+          deps.addMessage({
+            id: responseId,
+            role: 'assistant',
+            content: event.content,
+            timestamp: Date.now(),
+            usage,
           });
         }
         deps.setIsStreaming(false);
@@ -296,8 +334,24 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         deps.onTitleChanged(event.title);
         break;
 
-      case 'session_event':
+      case 'session_event': {
+        // The daemon echoes user_message over SSE with the turn's canonical
+        // message_id — the same id sendMessage keyed its entry on, so dedup
+        // is exact. Viewers that attached mid-turn get the prompt from here.
+        if (event.event_type === 'user_message') {
+          const data = event.data as { message_id?: string; content?: string } | null;
+          if (data?.message_id && data.content !== undefined
+            && !deps.messages().some((m) => m.id === data.message_id)) {
+            deps.addMessage({
+              id: data.message_id,
+              role: 'user',
+              content: data.content,
+              timestamp: Date.now(),
+            });
+          }
+        }
         break;
+      }
     }
   };
 }

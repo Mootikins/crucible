@@ -25,6 +25,7 @@ import {
   cancelSession as apiCancelSession,
   generateMessageId,
   getSessionHistory,
+  turnResponseId,
 } from '@/lib/api';
 import { findTabBySessionId } from '@/lib/session-actions';
 import { consumePendingFirstMessage } from '@/lib/draft-session';
@@ -227,7 +228,11 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   const loadHistory = async (sessionId: string, kiln: string, signal?: AbortSignal) => {
     setIsLoadingHistory(true);
     try {
-      const response = await getSessionHistory(sessionId, kiln, undefined, undefined, signal);
+      // Explicit high limit: the server pages from the FRONT, and a long
+      // agentic turn can log hundreds of thinking events — the default page
+      // cut off the tail, which holds the tool results and message_complete
+      // (i.e. the assistant's actual text).
+      const response = await getSessionHistory(sessionId, kiln, 10000, undefined, signal);
       const loadedMessages: Message[] = [];
 
       // Attach a result to the newest matching tool entry.
@@ -281,7 +286,11 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
           }
         } else if (evt.event === 'message_complete' && evt.data?.full_response) {
           loadedMessages.push({
-            id: evt.data.message_id as string || `assistant-${loadedMessages.length}`,
+            // Same derivation the live reducer uses, so a reloaded transcript
+            // carries identical ids to the one that streamed.
+            id: evt.data.message_id
+              ? turnResponseId(evt.data.message_id as string)
+              : `assistant-${loadedMessages.length}`,
             role: 'assistant',
             content: evt.data.full_response,
             timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
@@ -289,7 +298,16 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         }
       }
       
-      setMessages(loadedMessages);
+      // MERGE, don't clobber: messages that arrived after the history
+      // snapshot (optimistic sends, live SSE events during a slow load)
+      // aren't in `loadedMessages`. Backend-canonical ids make the overlap
+      // exact — anything already reconstructed is dropped from the live
+      // set, everything newer is kept in order after it.
+      setMessages((prev) => {
+        const reconstructed = new Set(loadedMessages.map((m) => m.id));
+        const newer = prev.filter((m) => !reconstructed.has(m.id));
+        return [...loadedMessages, ...newer];
+      });
       if (loadedMessages.length > 0) {
         hasReceivedFirstResponse = true;
         const userMsg = loadedMessages.find((m) => m.role === 'user');
@@ -413,39 +431,50 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
 
     setError(null);
 
-    const userMessage: Message = {
-      id: generateMessageId(),
-      role: 'user',
-      content: content.trim(),
-      timestamp: Date.now(),
-    };
-    addMessage(userMessage);
-    
+    // The backend mints the canonical id: POST /api/chat/send returns the
+    // turn's message_id, the SSE user_message echo carries the same id, and
+    // message_complete.id is that turn id too. Keying the transcript on it
+    // (user = id, assistant = `${id}-response` — see turnResponseId) means
+    // every viewer converges on identical ids and dedup is exact, never
+    // heuristic. The optimistic messages therefore wait for the POST — a
+    // local round-trip that just enqueues the turn.
+    const trimmed = content.trim();
     if (!firstUserMessage) {
-      firstUserMessage = content.trim();
+      firstUserMessage = trimmed;
     }
-
-    const assistantMessageId = generateMessageId();
-    const assistantMessage: Message = {
-      id: assistantMessageId,
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-    };
-    addMessage(assistantMessage);
-    currentStreamingMessageId = assistantMessageId;
 
     setIsLoading(true);
     setIsStreaming(true);
 
     try {
-      await sendChatMessage(props.sessionId, content);
+      const messageId = await sendChatMessage(props.sessionId, trimmed);
+      if (!messages.some((m) => m.id === messageId)) {
+        addMessage({
+          id: messageId,
+          role: 'user',
+          content: trimmed,
+          timestamp: Date.now(),
+        });
+      }
+      const responseId = turnResponseId(messageId);
+      if (!messages.some((m) => m.id === responseId)) {
+        addMessage({
+          id: responseId,
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+        });
+      }
+      currentStreamingMessageId = responseId;
     } catch (err) {
       console.error('Failed to send message:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to connect to server';
       setError(errorMsg);
-      updateMessage(assistantMessageId, {
-        content: `Error: ${errorMsg}`,
+      addMessage({
+        id: generateMessageId(),
+        role: 'system',
+        content: `Failed to send: ${errorMsg}`,
+        timestamp: Date.now(),
       });
       setIsStreaming(false);
       setIsLoading(false);

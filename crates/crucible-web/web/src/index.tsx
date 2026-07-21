@@ -30,10 +30,29 @@ void initializeHighlighter().catch((err) => {
 
 // PWA service worker: production builds only. The virtual module is emitted
 // by vite-plugin-pwa at build time; the PROD guard keeps dev and vitest from
-// ever touching it. autoUpdate registration — new builds activate on reload.
+// ever touching it. Prompt registration: a new deploy must never reload the
+// page mid-turn, so updates surface as a notification and apply when the
+// user clicks it (or on their next manual reload).
 if (import.meta.env.PROD) {
   void import('virtual:pwa-register')
-    .then(({ registerSW }) => registerSW({ immediate: true }))
+    .then(({ registerSW }) => {
+      const updateSW = registerSW({
+        immediate: true,
+        onNeedRefresh() {
+          void import('@/stores/notificationStore').then(({ notificationActions }) => {
+            notificationActions.addNotification(
+              'info',
+              'Update available — click here or reload to apply',
+            );
+          });
+          const apply = () => {
+            window.removeEventListener('crucible:apply-sw-update', apply);
+            void updateSW(true);
+          };
+          window.addEventListener('crucible:apply-sw-update', apply);
+        },
+      });
+    })
     .catch((err) => {
       console.error('Service worker registration failed:', err);
     });

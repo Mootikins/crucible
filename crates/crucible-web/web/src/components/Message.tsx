@@ -143,20 +143,42 @@ export const Message: Component<MessageProps> = (props) => {
     }
   });
 
+  const sessionKiln = () => {
+    const sid = chat.sessionId?.();
+    return sessionCtx.sessions().find((s) => s.id === sid)?.kiln;
+  };
+
   const handleRenderedClick = (event: MouseEvent) => {
     const target = event.target as HTMLElement | null;
     const noteElement = target?.closest('[data-note]') as HTMLElement | null;
-    if (!noteElement) {
+    if (noteElement) {
+      event.preventDefault();
+      const note = noteElement.dataset.note;
+      if (note) {
+        void openNoteInEditor(note, sessionKiln());
+      }
       return;
     }
 
+    // Plain markdown links in agent output: external URLs open a new tab;
+    // anything relative is interpreted as a kiln note reference (the agent
+    // links files it read — `Help/Wikilinks.md` etc.). Never let the SPA
+    // navigate away to a 404.
+    const anchor = target?.closest('a') as HTMLAnchorElement | null;
+    if (!anchor) return;
+    const href = anchor.getAttribute('href') ?? '';
+    if (!href || href.startsWith('#')) return;
+
     event.preventDefault();
-    const note = noteElement.dataset.note;
-    if (note) {
-      const sid = chat.sessionId?.();
-      const sessionKiln = sessionCtx.sessions().find((s) => s.id === sid)?.kiln;
-      void openNoteInEditor(note, sessionKiln);
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
+      // Absolute scheme (https:, mailto:, …) — external.
+      window.open(href, '_blank', 'noopener,noreferrer');
+      return;
     }
+    const note = decodeURIComponent(href)
+      .replace(/^\.?\//, '')
+      .replace(/\.md$/i, '');
+    void openNoteInEditor(note, sessionKiln());
   };
 
   const handleCopy = async () => {

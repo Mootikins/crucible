@@ -99,6 +99,27 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
 
   const diff = createMemo(() => extractDiffFromToolCall(props.toolCall));
 
+  // Results are often serialized JSON — pretty-print them instead of showing
+  // one raw line of bytes. Nested JSON-in-strings (MCP text payloads) gets
+  // one unwrap pass; anything unparseable renders verbatim.
+  const formattedResult = createMemo(() => {
+    const raw = props.toolCall.result;
+    if (!raw) return raw;
+    try {
+      let parsed: unknown = JSON.parse(raw);
+      if (typeof parsed === 'string') {
+        try {
+          parsed = JSON.parse(parsed) as unknown;
+        } catch {
+          return parsed as string;
+        }
+      }
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      return raw;
+    }
+  });
+
   return (
     <div class={`border ${statusBorderColor()} rounded-lg ${statusBgColor()} overflow-hidden my-2`}>
       <button
@@ -182,7 +203,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
                 Result
               </div>
               <pre class="text-xs font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-64 overflow-y-auto text-shell-body">
-                {props.toolCall.result}
+                {formattedResult()}
               </pre>
             </div>
           </Show>

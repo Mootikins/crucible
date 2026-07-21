@@ -7,7 +7,10 @@ export default defineConfig({
   plugins: [
     solid(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt': never yank the page out from under an in-flight turn.
+      // A new deploy surfaces as a notification; the update applies when
+      // the user reloads (registerSW onNeedRefresh in index.tsx).
+      registerType: 'prompt',
       // Dev flow stays untouched: no SW or manifest in `bun run dev`.
       devOptions: { enabled: false },
       manifest: {
@@ -36,11 +39,11 @@ export default defineConfig({
         // transformers) exceed the 2 MiB default and are intentionally
         // skipped — they load from network exactly as before.
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
-        // A new SW must take over immediately, or the old one keeps serving
-        // the previous precache and users see stale bundles until every tab
-        // is closed. registerType 'autoUpdate' reloads the page once the new
-        // SW activates — these make that activation immediate.
-        skipWaiting: true,
+        // Activation waits for the user: registerType 'prompt' only sends
+        // SKIP_WAITING when they accept the update toast, so a deploy never
+        // reloads a page mid-turn (autoUpdate did exactly that — killing
+        // in-flight drafts/streams). The toast keeps stale-forever at bay.
+        skipWaiting: false,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
         // SPA navigation fallback, but NEVER for API paths. /api/* (including

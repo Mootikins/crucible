@@ -132,6 +132,17 @@ async function request<T>(
  * Returns the assigned message_id. Does NOT stream events —
  * subscribe to events separately via `subscribeToEvents`.
  */
+/**
+ * Transcript id for the assistant response of a turn. The backend keys a
+ * whole turn by one message_id (send response, user_message echo, and
+ * message_complete all carry it); the user message takes the id itself and
+ * the response takes this derived form, so live streaming, late-attaching
+ * viewers, and history reconstruction all converge on identical ids.
+ */
+export function turnResponseId(messageId: string): string {
+  return `${messageId}-response`;
+}
+
 export async function sendChatMessage(
   sessionId: string,
   content: string,

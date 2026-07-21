@@ -220,11 +220,13 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.spies.appendToMessage).toHaveBeenCalledTimes(2);
   });
 
-  it('token: ignored when no streaming message is active', () => {
+  it('token: materializes a streaming assistant message when none is active (mid-turn attach)', () => {
     const h = createHarness();
-    h.reducer({ type: 'token', content: 'oops' });
-    expect(h.spies.appendToMessage).not.toHaveBeenCalled();
-    expect(h.state.messages).toHaveLength(0);
+    h.reducer({ type: 'token', content: 'late ' });
+    h.reducer({ type: 'token', content: 'viewer' });
+    expect(h.state.messages).toHaveLength(1);
+    expect(h.state.messages[0]).toMatchObject({ role: 'assistant', content: 'late viewer' });
+    expect(h.state.currentStreamingMessageId).toBe(h.state.messages[0].id);
   });
 
   it('tool_call: adds a running ToolCallDisplay with title and arguments', () => {
@@ -357,6 +359,23 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.state.messages.map((m) => m.role)).toEqual(['assistant', 'tool']);
   });
 
+  it('text → tool → text yields separate assistant segments (in-between text survives)', () => {
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'token', content: 'Let me look that up.' });
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'semantic_search' });
+    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'notes...' });
+    h.reducer({ type: 'token', content: 'Here is what I found.' });
+    h.reducer({ type: 'message_complete', id: 'srv', content: 'Here is what I found.', tool_calls: [] });
+
+    expect(h.state.messages.map((m) => m.role)).toEqual(['assistant', 'tool', 'assistant']);
+    expect(h.state.messages[0].content).toBe('Let me look that up.');
+    expect(h.state.messages[2]).toMatchObject({
+      id: 'srv-response',
+      content: 'Here is what I found.',
+    });
+  });
+
   it('tool entries persist in the transcript after message_complete', () => {
     const h = createHarness();
     h.setUp.streamingMessage('asst-1');
@@ -378,10 +397,11 @@ describe('event matrix — covers every ChatEvent variant', () => {
     });
   });
 
-  it('thinking: ignored when no streaming message is active', () => {
+  it('thinking: materializes a streaming assistant message when none is active', () => {
     const h = createHarness();
-    h.reducer({ type: 'thinking', content: 'oops' });
-    expect(h.state.messages).toHaveLength(0);
+    h.reducer({ type: 'thinking', content: 'pondering' });
+    expect(h.state.messages).toHaveLength(1);
+    expect(h.state.messages[0].thinking).toEqual({ content: 'pondering', isStreaming: true });
   });
 
   it('message_complete: finalizes message, clears streaming, calls onFirstResponse exactly once', () => {
@@ -403,7 +423,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
     });
 
     expect(h.state.messages[0]).toMatchObject({
-      id: 'msg-server-1',
+      id: 'msg-server-1-response',
       content: 'final',
       toolCalls: [{ id: 'tc-x', title: 'noop' }],
       usage: {
@@ -448,17 +468,39 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.state.hasReceivedFirstResponse).toBe(false);
   });
 
-  it('message_complete: tolerates missing streaming message', () => {
+  it('message_complete: with no streaming message, appends the completed turn (late attach)', () => {
     const h = createHarness();
-    expect(() =>
-      h.reducer({
-        type: 'message_complete',
-        id: 'srv',
-        content: 'no-op',
-        tool_calls: [],
-      }),
-    ).not.toThrow();
+    h.reducer({
+      type: 'message_complete',
+      id: 'srv',
+      content: 'full text',
+      tool_calls: [],
+    });
+    expect(h.state.messages).toHaveLength(1);
+    expect(h.state.messages[0]).toMatchObject({
+      id: 'srv-response',
+      role: 'assistant',
+      content: 'full text',
+    });
+    // Replayed completion (reconnect) must not duplicate.
+    h.reducer({ type: 'message_complete', id: 'srv', content: 'full text', tool_calls: [] });
+    expect(h.state.messages).toHaveLength(1);
     expect(h.state.isStreaming).toBe(false);
+  });
+
+  it('session_event user_message: adds the prompt for mid-turn attachers, exact-id dedupe', () => {
+    const h = createHarness();
+    const evt = {
+      type: 'session_event',
+      event_type: 'user_message',
+      data: { message_id: 'msg-turn-9', content: 'the prompt' },
+    } as ChatEvent;
+    h.reducer(evt);
+    expect(h.state.messages).toHaveLength(1);
+    expect(h.state.messages[0]).toMatchObject({ id: 'msg-turn-9', role: 'user' });
+    // Echo received by the sender (id already present) is a no-op.
+    h.reducer(evt);
+    expect(h.state.messages).toHaveLength(1);
   });
 
   it('error: sets error string and updates streaming message content', () => {
@@ -943,11 +985,15 @@ describe('property: streaming order preserved', () => {
             if (safeInterleaved[i]) allEvents.push(safeInterleaved[i]);
           }
           for (const event of allEvents) h.reducer(event);
-          // Tool entries may be inserted around the assistant message (an
-          // empty first chunk leaves the placeholder empty), so locate the
-          // streaming message by id instead of position.
-          const assistant = h.state.messages.find((m) => m.id === 'asst-1');
-          expect(assistant?.content).toBe(chunks.join(''));
+          // Interleaved tool_call events legitimately SEGMENT the stream
+          // (text → tool → text becomes separate assistant messages), so the
+          // invariant is that the concatenation of all assistant segments
+          // preserves token arrival order.
+          const assistantContent = h.state.messages
+            .filter((m) => m.role === 'assistant')
+            .map((m) => m.content)
+            .join('');
+          expect(assistantContent).toBe(chunks.join(''));
         },
       ),
       { numRuns: 50 },

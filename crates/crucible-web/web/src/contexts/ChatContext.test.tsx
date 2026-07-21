@@ -6,7 +6,8 @@ import * as api from '@/lib/api';
 import type { Session } from '@/lib/types';
 
 vi.mock('@/lib/api', () => ({
-  sendChatMessage: vi.fn(),
+  // Resolves the backend-minted turn id (the transcript is keyed on it).
+  sendChatMessage: vi.fn(async () => 'msg-turn-1'),
   subscribeToEvents: vi.fn(() => () => {}),
   respondToInteraction: vi.fn(),
   getSession: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock('@/lib/api', () => ({
   listSessions: vi.fn(async () => []),
   setSessionTitle: vi.fn(),
   generateMessageId: () => `msg_${Date.now()}_test`,
+  turnResponseId: (id: string) => `${id}-response`,
 }));
 
 const mockSendChatMessage = api.sendChatMessage as ReturnType<typeof vi.fn>;
@@ -91,6 +93,11 @@ describe('ChatContext', () => {
 
     const sendButton = screen.getByText('Send');
     sendButton.click();
+
+    // Let the mount-time bootstrap (empty history) land first — the merge
+    // in loadHistory must not clobber the optimistic messages. This used to
+    // pass only because waitFor's first poll beat the wipe.
+    await new Promise((r) => setTimeout(r, 50));
 
     await waitFor(() => {
       expect(screen.getByTestId('count').textContent).toBe('2');
@@ -408,7 +415,7 @@ describe('isLoadingHistory', () => {
     expect(mockGetSessionHistory).toHaveBeenCalledWith(
       'test-session-1',
       '/tmp/test-kiln',
-      undefined,
+      10000,
       undefined,
       expect.any(AbortSignal),
     );
