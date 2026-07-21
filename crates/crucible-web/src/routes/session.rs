@@ -262,12 +262,48 @@ async fn create_session(
         validate_endpoint(endpoint)?;
     }
 
+    // Validate agent_type up front: an unrecognized value (e.g. "ACP",
+    // "internal-x") must be rejected, not silently forwarded to the daemon as a
+    // junk string while taking the internal branch.
+    match req.agent_type.as_deref() {
+        None | Some("internal") | Some("acp") => {}
+        Some(other) => {
+            return Err(WebError::Validation(format!(
+                "Invalid agent_type: {other:?} (expected \"internal\" or \"acp\")"
+            )));
+        }
+    }
+
     let is_acp = req.agent_type.as_deref() == Some("acp");
     if is_acp && req.agent_name.as_deref().unwrap_or("").is_empty() {
         return Err(WebError::Validation(
             "agent_name is required when agent_type is \"acp\"".to_string(),
         ));
     }
+
+    // Resolve + validate the ACP profile BEFORE creating the session. Doing it
+    // after session_create left an orphaned, agent-less session in the daemon
+    // whenever the agent name was unknown (422 after the row already existed).
+    let acp_profile = if is_acp {
+        // Mirror the CLI's `cru session create --agent <name>` path: resolve
+        // the profile daemon-side, then build the canonical ACP SessionAgent.
+        let agent_name = req.agent_name.as_deref().unwrap_or("");
+        let profile_json = state
+            .daemon
+            .agents_resolve_profile(agent_name)
+            .await
+            .daemon_err()?;
+        if profile_json.is_null() {
+            return Err(WebError::Validation(format!(
+                "Unknown ACP agent profile: {agent_name}"
+            )));
+        }
+        let profile: crucible_core::config::AgentProfile = serde_json::from_value(profile_json)
+            .map_err(|e| WebError::Daemon(format!("Failed to deserialize agent profile: {e}")))?;
+        Some(profile)
+    } else {
+        None
+    };
 
     // No kiln → omitted from the wire; the daemon resolves its default
     // (home kiln), so web can never drift from it.
@@ -285,25 +321,19 @@ async fn create_session(
         .await
         .daemon_err()?;
 
+    // A create response without a usable session_id (protocol drift) would
+    // otherwise let configure_agent/subscribe run against an empty id and
+    // surface as a confusing downstream error; fail loudly here instead.
     let session_id = result["session_id"].as_str().unwrap_or("").to_string();
+    if session_id.is_empty() {
+        return Err(WebError::Daemon(
+            "daemon returned no session_id from session.create".to_string(),
+        ));
+    }
     let session_id = session_id.as_str();
 
-    let agent = if is_acp {
-        // Mirror the CLI's `cru session create --agent <name>` path: resolve
-        // the profile daemon-side, then build the canonical ACP SessionAgent.
+    let agent = if let Some(profile) = acp_profile {
         let agent_name = req.agent_name.as_deref().unwrap_or("");
-        let profile_json = state
-            .daemon
-            .agents_resolve_profile(agent_name)
-            .await
-            .daemon_err()?;
-        if profile_json.is_null() {
-            return Err(WebError::Validation(format!(
-                "Unknown ACP agent profile: {agent_name}"
-            )));
-        }
-        let profile: crucible_core::config::AgentProfile = serde_json::from_value(profile_json)
-            .map_err(|e| WebError::Daemon(format!("Failed to deserialize agent profile: {e}")))?;
         SessionAgent::from_profile(&profile, agent_name)
     } else {
         // Resolve provider/model/endpoint: use provided values or detect defaults
@@ -882,27 +912,7 @@ mod tests {
     async fn post_create_session(
         body: serde_json::Value,
     ) -> (axum::http::StatusCode, serde_json::Value) {
-        let (_mock, client) = crate::test_support::start_mock_daemon().await;
-        let state = crate::test_support::build_mock_state(client);
-        let app = crate::test_support::build_test_app(state);
-
-        let response = app
-            .oneshot(
-                axum::http::Request::builder()
-                    .method("POST")
-                    .uri("/api/session")
-                    .header("content-type", "application/json")
-                    .body(axum::body::Body::from(body.to_string()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let status = response.status();
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let json = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
-        (status, json)
+        crate::test_support::request_json("POST", "/api/session", Some(body)).await
     }
 
     #[tokio::test]
@@ -952,6 +962,88 @@ mod tests {
         assert_eq!(status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
     }
 
+    #[tokio::test]
+    async fn create_session_with_unknown_acp_agent_does_not_create_a_session() {
+        // Regression: an unknown ACP agent name must be rejected BEFORE
+        // session.create runs, or the daemon is left with an orphaned,
+        // agent-less session row.
+        let (mock, client) = crate::test_support::start_mock_daemon().await;
+        let state = crate::test_support::build_mock_state(client);
+        let app = crate::test_support::build_test_app(state);
+
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/session")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(
+                        serde_json::json!({
+                            "agent_type": "acp",
+                            "agent_name": "missing",
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::UNPROCESSABLE_ENTITY
+        );
+
+        let methods = mock.received_methods();
+        assert!(
+            methods.iter().any(|m| m == "agents.resolve_profile"),
+            "profile should have been resolved (and rejected): {methods:?}"
+        );
+        assert!(
+            !methods.iter().any(|m| m == "session.create"),
+            "session.create must NOT run for an unknown ACP agent: {methods:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_session_rejects_unknown_agent_type() {
+        // Anything other than absent/"internal"/"acp" is a validation error,
+        // not a silently-forwarded junk string on the internal branch.
+        for bad in ["ACP", "internal-x", "external", ""] {
+            let (status, _) = post_create_session(serde_json::json!({
+                "agent_type": bad,
+            }))
+            .await;
+            assert_eq!(
+                status,
+                axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                "agent_type {bad:?} should be rejected"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn create_session_errors_when_daemon_returns_no_session_id() {
+        // Protocol drift: a create response missing session_id must fail loudly,
+        // not proceed to configure_agent/subscribe against an empty id. The mock
+        // drops session_id for the "__no_session_id__" sentinel session_type.
+        let (status, _) = post_create_session(serde_json::json!({
+            "session_type": "__no_session_id__",
+        }))
+        .await;
+        assert_eq!(status, axum::http::StatusCode::BAD_GATEWAY);
+    }
+
+    #[tokio::test]
+    async fn create_session_accepts_internal_agent_type() {
+        let (status, json) = post_create_session(serde_json::json!({
+            "agent_type": "internal",
+        }))
+        .await;
+        assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
+        assert_eq!(json["session_id"], "test-session-001");
+    }
+
     // =========================================================================
     // Session scope (kilns/workspace) Tests
     // =========================================================================
@@ -961,27 +1053,7 @@ mod tests {
         uri: &str,
         body: serde_json::Value,
     ) -> (axum::http::StatusCode, serde_json::Value) {
-        let (_mock, client) = crate::test_support::start_mock_daemon().await;
-        let state = crate::test_support::build_mock_state(client);
-        let app = crate::test_support::build_test_app(state);
-
-        let response = app
-            .oneshot(
-                axum::http::Request::builder()
-                    .method(method)
-                    .uri(uri)
-                    .header("content-type", "application/json")
-                    .body(axum::body::Body::from(body.to_string()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let status = response.status();
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let json = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
-        (status, json)
+        crate::test_support::request_json(method, uri, Some(body)).await
     }
 
     #[tokio::test]

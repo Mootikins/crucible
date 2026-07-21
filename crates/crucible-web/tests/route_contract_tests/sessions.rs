@@ -479,3 +479,93 @@ async fn list_sessions_with_include_archived_returns_200() {
         "include_archived query param should be accepted"
     );
 }
+
+// =========================================================================
+// Session Scope (kilns/workspace) Route Contract Tests (with mock daemon)
+// =========================================================================
+
+/// Drive one request through a fresh mock-daemon-backed app and decode JSON.
+async fn send_json(method: &str, uri: &str, body: Value) -> (StatusCode, Value) {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, json)
+}
+
+#[tokio::test]
+async fn connect_kiln_returns_scope_shape() {
+    let (status, json) = send_json(
+        "POST",
+        "/api/session/test-session-001/kilns/connect",
+        json!({"kiln": "/tmp/extra-kiln"}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "body: {json}");
+    assert_eq!(json["session_id"], "test-session-001");
+    assert_eq!(json["kiln"], "/tmp/test-kiln");
+    assert_eq!(json["workspace"], "/tmp/test-kiln");
+    assert_eq!(json["connected_kilns"][0], "/tmp/extra-kiln");
+}
+
+#[tokio::test]
+async fn disconnect_kiln_returns_scope_shape() {
+    let (status, json) = send_json(
+        "POST",
+        "/api/session/test-session-001/kilns/disconnect",
+        json!({"kiln": "/tmp/extra-kiln"}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "body: {json}");
+    assert_eq!(json["session_id"], "test-session-001");
+    assert!(
+        json["connected_kilns"].as_array().unwrap().is_empty(),
+        "disconnect empties connected_kilns: {json}"
+    );
+}
+
+#[tokio::test]
+async fn set_workspace_attaches_project_dir() {
+    let (status, json) = send_json(
+        "PUT",
+        "/api/session/test-session-001/workspace",
+        json!({"workspace": "/repos/crucible"}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "body: {json}");
+    assert_eq!(json["session_id"], "test-session-001");
+    assert_eq!(json["workspace"], "/repos/crucible");
+}
+
+#[tokio::test]
+async fn set_workspace_null_detaches_to_kiln() {
+    let (status, json) = send_json(
+        "PUT",
+        "/api/session/test-session-001/workspace",
+        json!({"workspace": null}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "body: {json}");
+    // Detach falls back to the kiln path (the mock echoes its default).
+    assert_eq!(json["workspace"], "/tmp/test-kiln");
+}

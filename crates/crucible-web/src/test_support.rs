@@ -127,6 +127,18 @@ pub fn arb_safe_path() -> impl Strategy<Value = String> {
 /// with canned responses. This allows testing HTTP routes without a real daemon.
 pub struct MockDaemon {
     _tmp: TempDir,
+    /// Every JSON-RPC method name the mock received, in order. Lets a test
+    /// assert a call was (or crucially, was NOT) made — e.g. that a validation
+    /// failure short-circuits before `session.create` leaves an orphan session.
+    calls: Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+impl MockDaemon {
+    /// Snapshot of the JSON-RPC method names received so far, in order.
+    pub fn received_methods(&self) -> Vec<String> {
+        self.calls.lock().unwrap().clone()
+    }
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -153,9 +165,12 @@ pub async fn start_mock_daemon_with_errors(errors: MockErrors) -> (MockDaemon, D
 
     // Spawn mock daemon server
     let errors = Arc::new(errors);
+    let calls: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let calls_srv = calls.clone();
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
             let errors = errors.clone();
+            let calls = calls_srv.clone();
             tokio::spawn(async move {
                 let (read, mut write) = stream.into_split();
                 let mut reader = BufReader::new(read);
@@ -173,6 +188,8 @@ pub async fn start_mock_daemon_with_errors(errors: MockErrors) -> (MockDaemon, D
 
                             let id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
                             let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+
+                            calls.lock().unwrap().push(method.to_string());
 
                             let response = if let Some((code, message)) = errors.get(method) {
                                 json!({
@@ -209,7 +226,7 @@ pub async fn start_mock_daemon_with_errors(errors: MockErrors) -> (MockDaemon, D
         .await
         .expect("Failed to connect to mock daemon");
 
-    (MockDaemon { _tmp: tmp }, client)
+    (MockDaemon { _tmp: tmp, calls }, client)
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -259,7 +276,21 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         }),
         "note.upsert" => json!({}),
         "search_vectors" => json!([]),
-        "session.create" => json!({"session_id": "test-session-001"}),
+        // Sentinel session_type "__no_session_id__" yields a create response
+        // WITHOUT a session_id, to exercise the protocol-drift guard.
+        "session.create" => {
+            // The wire field is `type` (SessionCreateRequest renames it).
+            let session_type = msg
+                .get("params")
+                .and_then(|p| p.get("type"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if session_type == "__no_session_id__" {
+                json!({})
+            } else {
+                json!({"session_id": "test-session-001"})
+            }
+        }
         "session.list" => json!([]),
         "session.get" => json!({
             "session_id": "test-session-001",
@@ -505,6 +536,42 @@ pub fn build_test_app(state: AppState) -> Router {
         .merge(fs_routes())
         .with_state(state)
         .merge(health_routes())
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// Drive one request through a fresh mock-daemon-backed app and decode the
+/// JSON body. `body` is `None` for empty-body requests (GET/POST-without-body),
+/// `Some(v)` for a JSON payload. Returns the status and the parsed body
+/// (`Value::Null` when the body is empty/non-JSON). Consolidates the near-
+/// identical per-module test helpers so route tests don't each re-spin the
+/// mock+state+app boilerplate.
+pub async fn request_json(
+    method: &str,
+    uri: &str,
+    body: Option<Value>,
+) -> (axum::http::StatusCode, Value) {
+    use tower::ServiceExt;
+
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let builder = axum::http::Request::builder().method(method).uri(uri);
+    let request = match body {
+        Some(body) => builder
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap(),
+        None => builder.body(axum::body::Body::empty()).unwrap(),
+    };
+
+    let response = app.oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, json)
 }
 
 #[cfg(test)]
