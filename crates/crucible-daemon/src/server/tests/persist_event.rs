@@ -129,6 +129,7 @@ async fn test_should_persist_filters_correctly() {
     let persistent = [
         "user_message",
         "thinking",
+        "segment_complete",
         "message_complete",
         "tool_call",
         "tool_result",

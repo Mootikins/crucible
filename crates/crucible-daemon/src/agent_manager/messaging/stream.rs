@@ -337,6 +337,18 @@ impl AgentManager {
         let mut last_usage: Option<TokenUsage> = None;
         let mut terminal_stop_reason: Option<StopReason> = None;
 
+        // Text→tool segment tracking. A tool call after streamed text is a
+        // segment boundary: we emit a `segment_complete` carrying the text
+        // accumulated since the last boundary so viewers converge on a
+        // canonical bubble (id + content) for the pre-tool narration, live
+        // and on reload. `message_complete` still carries the whole
+        // accumulated response, so segments are strictly additive.
+        // `last_segment_end` is a byte offset into `accumulated_response`;
+        // it always lands on a valid UTF-8 boundary because it's only ever
+        // set to `accumulated_response.len()`.
+        let mut segment_index: usize = 0;
+        let mut last_segment_end: usize = accumulated_response.len();
+
         let mut ttft_first_token_logged = false;
         let mut ttft_first_event_logged = false;
         while let Some(event) = event_stream.next().await {
@@ -399,6 +411,32 @@ impl AgentManager {
                     args,
                     diffs,
                 } => {
+                    // Text → tool boundary: if text streamed since the last
+                    // boundary, freeze it into a canonical segment before the
+                    // tool_call event. This fires for both internal and
+                    // ACP-style agents (the web reducer freezes on every
+                    // tool_call), so parallel tool calls in one batch emit at
+                    // most one segment — subsequent calls see no new text.
+                    if accumulated_response.len() > last_segment_end {
+                        let segment_text = accumulated_response[last_segment_end..].to_string();
+                        if !emit_event(
+                            &stream_ctx.event_tx,
+                            SessionEventMessage::segment_complete(
+                                &stream_ctx.session_id,
+                                &stream_ctx.message_id,
+                                segment_index,
+                                segment_text,
+                            ),
+                        ) {
+                            warn!(
+                                session_id = %stream_ctx.session_id,
+                                "No subscribers for segment_complete event"
+                            );
+                        }
+                        segment_index += 1;
+                        last_segment_end = accumulated_response.len();
+                    }
+
                     // ACP-style agents already executed this tool in their own
                     // server-side loop; the event is an observation. Pass it
                     // through to subscribers + the tree and move on. We must NOT

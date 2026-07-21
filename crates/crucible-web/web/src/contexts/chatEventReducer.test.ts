@@ -402,6 +402,80 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.state.messages.map((m) => m.content).join('')).toBe('First. Second. Third.');
   });
 
+  it('segment_complete: freezes the open streaming message and renames it to the canonical id', () => {
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'token', content: 'Let me look that up.' });
+    h.reducer({ type: 'segment_complete', message_id: 'msg-turn-1', index: 0, content: 'Let me look that up.' });
+    expect(h.state.messages).toHaveLength(1);
+    expect(h.state.messages[0]).toMatchObject({
+      id: 'msg-turn-1-seg-0',
+      role: 'assistant',
+      content: 'Let me look that up.',
+    });
+    expect(h.state.currentStreamingMessageId).toBeNull();
+  });
+
+  it('segment_complete: new-daemon text→tool→text converges on canonical ids without double-freezing', () => {
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'token', content: 'Let me look that up.' });
+    // The daemon emits segment_complete BEFORE the tool_call.
+    h.reducer({ type: 'segment_complete', message_id: 'msg-turn-1', index: 0, content: 'Let me look that up.' });
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'semantic_search' });
+    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'notes...' });
+    h.reducer({ type: 'token', content: 'Here is what I found.' });
+    h.reducer({
+      type: 'message_complete',
+      id: 'msg-turn-1',
+      content: 'Let me look that up.Here is what I found.',
+    });
+
+    expect(h.state.messages.map((m) => m.role)).toEqual(['assistant', 'tool', 'assistant']);
+    expect(h.state.messages[0]).toMatchObject({ id: 'msg-turn-1-seg-0', content: 'Let me look that up.' });
+    expect(h.state.messages[2]).toMatchObject({ id: 'msg-turn-1-response', content: 'Here is what I found.' });
+    // The tool_call fallback must NOT have frozen the segment a second time.
+    const transcript = h.state.messages.map((m) => m.content).join('');
+    expect(transcript.split('Let me look that up.').length - 1).toBe(1);
+  });
+
+  it('segment_complete: late attach with no streaming message adds the segment bubble under the canonical id', () => {
+    const h = createHarness();
+    h.reducer({ type: 'segment_complete', message_id: 'msg-turn-9', index: 1, content: 'earlier narration' });
+    expect(h.state.messages).toHaveLength(1);
+    expect(h.state.messages[0]).toMatchObject({
+      id: 'msg-turn-9-seg-1',
+      role: 'assistant',
+      content: 'earlier narration',
+    });
+  });
+
+  it('segment_complete: a replayed signal does not duplicate an existing segment bubble', () => {
+    const h = createHarness();
+    h.reducer({ type: 'segment_complete', message_id: 'msg-turn-9', index: 0, content: 'seg' });
+    h.reducer({ type: 'segment_complete', message_id: 'msg-turn-9', index: 0, content: 'seg' });
+    expect(h.state.messages).toHaveLength(1);
+  });
+
+  it('segment_complete: adopts the canonical id on a segment the tool_call fallback already froze', () => {
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'token', content: 'narration' });
+    // Fallback path (unusual ordering): tool_call freezes the text first, under
+    // the random streaming id.
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
+    // segment_complete for the same text: adopt the canonical id, do NOT add a
+    // second bubble or double-count the frozen prefix.
+    h.reducer({ type: 'segment_complete', message_id: 'msg-turn-1', index: 0, content: 'narration' });
+    const assistants = () => h.state.messages.filter((m) => m.role === 'assistant');
+    expect(assistants()).toHaveLength(1);
+    expect(assistants()[0].id).toBe('msg-turn-1-seg-0');
+    h.reducer({ type: 'token', content: 'tail' });
+    h.reducer({ type: 'message_complete', id: 'msg-turn-1', content: 'narrationtail' });
+    // Two bubbles, each rendered once: the frozen segment and the trailing text.
+    expect(assistants().map((m) => m.content).join('|')).toBe('narration|tail');
+  });
+
   it('message_complete: uses event.content verbatim when it does not start with the frozen prefix', () => {
     const h = createHarness();
     h.setUp.streamingMessage('asst-1');
@@ -833,7 +907,13 @@ const arbChatEvent = (): fc.Arbitrary<ChatEvent> => {
     type: fc.constant('message_complete' as const),
     id: fc.string({ minLength: 1, maxLength: 10 }),
     content: fc.string(),
-    
+
+  });
+  const segmentComplete = fc.record({
+    type: fc.constant('segment_complete' as const),
+    message_id: fc.string({ minLength: 1, maxLength: 10 }),
+    index: fc.nat({ max: 5 }),
+    content: fc.string(),
   });
   const err = fc.record({
     type: fc.constant('error' as const),
@@ -905,6 +985,7 @@ const arbChatEvent = (): fc.Arbitrary<ChatEvent> => {
     toolResultError,
     thinking,
     msgComplete,
+    segmentComplete,
     err,
     interaction,
     subSpawned,
@@ -1091,6 +1172,7 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
     'tool_result_complete',
     'tool_result_error',
     'thinking',
+    'segment_complete',
     'message_complete',
     'error',
     'interaction_requested',
@@ -1163,6 +1245,7 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
       if (t === 'session_event') { minimal.event_type = 'x'; minimal.data = null; }
       if (t === 'error') { minimal.code = 'x'; minimal.message = ''; }
       if (t === 'message_complete') { minimal.content = ''; }
+      if (t === 'segment_complete') { minimal.message_id = 'placeholder'; minimal.index = 0; minimal.content = ''; }
       if (t === 'tool_call' || t === 'tool_call_start') minimal.title = minimal.name = 'noop';
       if (t === 'tool_result_delta') minimal.delta = '';
       if (t === 'tool_result_error' || t === 'subagent_failed' || t === 'delegation_failed') {

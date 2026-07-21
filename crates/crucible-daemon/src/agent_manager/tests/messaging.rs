@@ -212,6 +212,107 @@ async fn send_message_emits_tool_call_and_tool_result_events() {
     assert_eq!(complete.data["full_response"], "Done.");
 }
 
+/// A text → tool → text turn must emit a `segment_complete` for the
+/// pre-tool narration, carrying the turn's `message_id`, `index` 0, and the
+/// narration text — emitted BEFORE the `tool_call` event — while
+/// `message_complete` still carries the WHOLE accumulated response. This is
+/// what lets live viewers and reloaded viewers converge on the same
+/// segmented bubbles with canonical ids.
+#[tokio::test]
+async fn text_then_tool_emits_segment_complete_before_tool_call() {
+    let mut h = ReactorTestHarness::new().await;
+    std::fs::write(h.workspace().join("test.md"), "content").unwrap();
+
+    h.inject_streaming_agent(vec![
+        script::text("Let me look that up."),
+        script::tool_call(
+            "call1",
+            "read_file",
+            serde_json::json!({ "path": "test.md" }),
+        ),
+        script::tool_result("call1", "read_file", "content"),
+        script::text("Here is what I found."),
+        script::done(),
+    ]);
+
+    let message_id = h.send("test").await;
+
+    // Drain events in arrival order until message_complete so we can assert
+    // the segment_complete lands before the tool_call.
+    let mut names = Vec::new();
+    let mut segment: Option<SessionEventMessage> = None;
+    let complete = timeout(Duration::from_secs(2), async {
+        loop {
+            match h.event_rx.recv().await {
+                Ok(event) => {
+                    names.push(event.event.clone());
+                    if event.event == "segment_complete" {
+                        segment = Some(event.clone());
+                    }
+                    if event.event == "message_complete" {
+                        return event;
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(err) => panic!("event channel closed: {err}"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for message_complete");
+
+    let segment = segment.expect("expected a segment_complete event");
+    assert_eq!(segment.data["message_id"], message_id);
+    assert_eq!(segment.data["index"], 0);
+    assert_eq!(segment.data["content"], "Let me look that up.");
+
+    let seg_pos = names.iter().position(|n| n == "segment_complete");
+    let tool_pos = names.iter().position(|n| n == "tool_call");
+    assert!(
+        seg_pos.is_some() && tool_pos.is_some() && seg_pos < tool_pos,
+        "segment_complete must precede tool_call; got order: {names:?}"
+    );
+
+    // message_complete still carries the WHOLE turn's accumulated text —
+    // other clients depend on this; segments do not replace it.
+    assert_eq!(complete.data["message_id"], message_id);
+    assert_eq!(
+        complete.data["full_response"],
+        "Let me look that up.Here is what I found."
+    );
+}
+
+/// A turn with narration but no tool call must NOT emit any
+/// `segment_complete` — the single bubble carries the whole response.
+#[tokio::test]
+async fn text_only_turn_emits_no_segment_complete() {
+    let mut h = ReactorTestHarness::new().await;
+    h.inject_streaming_agent(vec![script::text("just a plain answer"), script::done()]);
+
+    h.send("test").await;
+
+    let mut saw_segment = false;
+    let complete = timeout(Duration::from_secs(2), async {
+        loop {
+            match h.event_rx.recv().await {
+                Ok(event) if event.event == "segment_complete" => saw_segment = true,
+                Ok(event) if event.event == "message_complete" => return event,
+                Ok(_) => continue,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(err) => panic!("event channel closed: {err}"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for message_complete");
+
+    assert!(
+        !saw_segment,
+        "text-only turn must not emit segment_complete"
+    );
+    assert_eq!(complete.data["full_response"], "just a plain answer");
+}
+
 #[tokio::test]
 async fn display_hook_lua_tool_enriches_tool_call_metadata() {
     let mut h = ReactorTestHarness::new().await;

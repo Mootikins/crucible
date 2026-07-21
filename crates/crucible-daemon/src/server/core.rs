@@ -149,6 +149,7 @@ pub(super) fn should_persist(event: &SessionEventMessage) -> bool {
         event.event.as_str(),
         "user_message"
             | "thinking"
+            | "segment_complete"
             | "message_complete"
             | "tool_call"
             | "tool_result"

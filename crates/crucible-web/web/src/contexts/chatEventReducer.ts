@@ -1,5 +1,5 @@
 import { statusBarActions } from '@/stores/statusBarStore';
-import { generateMessageId, turnResponseId } from '@/lib/api';
+import { generateMessageId, turnResponseId, turnSegmentId, stripFrozenPrefix } from '@/lib/api';
 import type {
   Message,
   ChatEvent,
@@ -157,6 +157,57 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         }));
         break;
 
+      case 'segment_complete': {
+        // The daemon marks a text → tool boundary explicitly (it fires just
+        // before the tool_call). Freezing here — instead of relying on the
+        // tool_call fallback below — lets us give the segment a CANONICAL id
+        // (${message_id}-seg-${index}) so live viewers and reloaded viewers
+        // converge on the same bubble. The whole turn's text still arrives in
+        // message_complete; frozenSegments records what's already rendered so
+        // that final bubble strips this prefix.
+        const canonicalId = turnSegmentId(event.message_id, event.index);
+        // Replay / duplicate signal — the segment bubble already exists.
+        if (deps.messages().some((m) => m.id === canonicalId)) {
+          break;
+        }
+        const streamingId = deps.currentStreamingMessageId();
+        if (streamingId) {
+          const streaming = deps.messages().find((m) => m.id === streamingId);
+          if (streaming) {
+            // Happy path: freeze the open streaming text into its canonical
+            // segment bubble (rename + close). The tool_call that follows sees
+            // no streaming message, so its fallback freeze does NOT run — this
+            // segment is recorded in frozenSegments exactly once.
+            frozenSegments.push(streaming.content);
+            deps.updateMessage(streamingId, { id: canonicalId });
+            deps.setCurrentStreamingMessageId(null);
+            break;
+          }
+        }
+        // No open streaming message. If the tool_call fallback already froze
+        // this text (unusual ordering), it lives under a random id and
+        // frozenSegments already accounts for it — adopt the canonical id on
+        // that bubble rather than duplicating.
+        if (frozenSegments[event.index] === event.content) {
+          const stale = deps
+            .messages()
+            .find((m) => m.role === 'assistant' && m.content === event.content && m.id !== canonicalId);
+          if (stale) deps.updateMessage(stale.id, { id: canonicalId });
+          break;
+        }
+        // Late attach: never saw the streamed tokens. Materialize the segment
+        // bubble under its canonical id and record it as frozen so a later
+        // message_complete strips it.
+        frozenSegments.push(event.content);
+        deps.addMessage({
+          id: canonicalId,
+          role: 'assistant',
+          content: event.content,
+          timestamp: Date.now(),
+        });
+        break;
+      }
+
       case 'thinking': {
         const messageId = ensureStreamingMessage();
         const thinkingContent = deps.messages().find((message) => message.id === messageId)?.thinking?.content ?? '';
@@ -190,13 +241,11 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         const idTaken = deps.messages().some((m) => m.id === responseId && m.id !== messageId);
         // event.content is the ENTIRE turn's accumulated text. Segments frozen
         // before earlier tool calls already render as their own bubbles, so the
-        // final bubble must carry only the trailing text. Strip the frozen
-        // prefix (whitespace-exact); if the payload doesn't start with it
-        // (daemon shape drift), fall back to using event.content verbatim.
+        // final bubble must carry only the trailing text. stripFrozenPrefix is
+        // shared with history reconstruction so both converge on the same
+        // final-bubble content.
         const frozenPrefix = frozenSegments.join('');
-        const finalContent = frozenPrefix && event.content.startsWith(frozenPrefix)
-          ? event.content.slice(frozenPrefix.length)
-          : event.content;
+        const finalContent = stripFrozenPrefix(event.content, frozenSegments);
         if (messageId) {
           deps.updateMessage(messageId, {
             ...(idTaken ? {} : { id: responseId }),

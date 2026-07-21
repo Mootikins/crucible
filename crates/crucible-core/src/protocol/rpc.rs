@@ -294,6 +294,32 @@ impl SessionEventMessage {
         }
         Self::new(session_id, "message_complete", data)
     }
+
+    /// A text segment that streamed before a tool call, emitted at the
+    /// text→tool boundary. `message_id` is the turn id (shared with
+    /// `user_message` and `message_complete`); `index` is the 0-based
+    /// segment position within the turn; `content` is the segment's text
+    /// (the delta accumulated since the previous boundary). Lets viewers
+    /// converge on canonical per-segment bubbles across live streaming and
+    /// history reload. `message_complete` still carries the WHOLE turn's
+    /// accumulated text — segments are additive, not a replacement.
+    pub fn segment_complete(
+        session_id: impl Into<String>,
+        message_id: impl Into<String>,
+        index: usize,
+        content: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            session_id,
+            "segment_complete",
+            serde_json::json!({
+                "message_id": message_id.into(),
+                "index": index,
+                "content": content.into(),
+            }),
+        )
+    }
+
     pub fn interaction_requested(
         session_id: impl Into<String>,
         request_id: impl Into<String>,

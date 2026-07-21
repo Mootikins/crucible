@@ -443,6 +443,18 @@ export interface TitleChangedEvent {
   title: string;
 }
 
+/**
+ * A pre-tool narration segment finished (text → tool boundary). Carries the
+ * turn's message_id and the segment's 0-based index so the client can build a
+ * canonical bubble id that matches history reconstruction.
+ */
+export interface SegmentCompleteEvent {
+  type: 'segment_complete';
+  message_id: string;
+  index: number;
+  content: string;
+}
+
 /** Message is complete */
 export interface MessageCompleteEvent {
   type: 'message_complete';
@@ -497,6 +509,7 @@ export type ChatEvent =
   | ToolResultCompleteEvent
   | ToolResultErrorEvent
   | ThinkingEvent
+  | SegmentCompleteEvent
   | MessageCompleteEvent
   | ErrorEvent
   | ConnectionEvent

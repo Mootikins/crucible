@@ -143,6 +143,33 @@ export function turnResponseId(messageId: string): string {
   return `${messageId}-response`;
 }
 
+/**
+ * Transcript id for a pre-tool narration segment of a turn. A segmented turn
+ * (text → tool → text) freezes each pre-tool text run into its own bubble;
+ * the daemon's `segment_complete` event carries the turn's message_id and the
+ * segment's 0-based index, and both live streaming and history reconstruction
+ * derive the same id from them — so segmented turns converge on identical
+ * bubbles across viewers and reload (mirrors `turnResponseId`).
+ */
+export function turnSegmentId(messageId: string, index: number): string {
+  return `${messageId}-seg-${index}`;
+}
+
+/**
+ * Strip the concatenated frozen-segment prefix off a turn's accumulated text
+ * so the final bubble carries only the trailing (post-last-tool) narration.
+ * The daemon's `message_complete` deliberately carries the WHOLE turn's text;
+ * segments render as their own bubbles, so the final bubble must drop the
+ * already-rendered prefix. Whitespace-exact; if `fullText` doesn't start with
+ * the prefix (daemon shape drift) the text is returned verbatim. Shared by the
+ * live reducer and history reconstruction so both produce identical final-bubble
+ * content.
+ */
+export function stripFrozenPrefix(fullText: string, frozenSegments: string[]): string {
+  const prefix = frozenSegments.join('');
+  return prefix && fullText.startsWith(prefix) ? fullText.slice(prefix.length) : fullText;
+}
+
 export async function sendChatMessage(
   sessionId: string,
   content: string,
@@ -177,6 +204,7 @@ export const SSE_EVENT_TYPES = [
   'tool_result_complete',
   'tool_result_error',
   'thinking',
+  'segment_complete',
   'message_complete',
   'error',
   'interaction_requested',

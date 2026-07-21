@@ -26,6 +26,8 @@ import {
   generateMessageId,
   getSessionHistory,
   turnResponseId,
+  turnSegmentId,
+  stripFrozenPrefix,
 } from '@/lib/api';
 import { findTabBySessionId } from '@/lib/session-actions';
 import { consumePendingFirstMessage } from '@/lib/draft-session';
@@ -222,6 +224,14 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       const response = await getSessionHistory(sessionId, kiln, 10000, undefined, signal);
       const loadedMessages: Message[] = [];
 
+      // Pre-tool narration segments of the CURRENT turn, in order. A segmented
+      // turn (text → tool → text) persists a `segment_complete` per boundary;
+      // each becomes its own assistant bubble here, and the turn's final
+      // message_complete bubble drops their concatenated prefix — exactly the
+      // shape the live reducer produces, so a reload converges on it. Reset at
+      // each new turn (user_message) so segments never leak across turns.
+      let pendingSegments: string[] = [];
+
       // Attach a result to the newest matching tool entry.
       const findToolMessage = (callId: string): Message | undefined =>
         [...loadedMessages].reverse().find((m) => {
@@ -231,10 +241,26 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
 
       for (const evt of response.history) {
         if (evt.event === 'user_message' && evt.data?.content) {
+          // New turn: drop any segments a prior turn left uncollected.
+          pendingSegments = [];
           loadedMessages.push({
             id: evt.data.message_id as string || `user-${loadedMessages.length}`,
             role: 'user',
             content: evt.data.content,
+            timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
+          });
+        } else if (evt.event === 'segment_complete') {
+          // Canonical id derivation identical to the live reducer's, so a
+          // reloaded segment bubble carries the same id it streamed under.
+          const data = (evt.data ?? {}) as Record<string, unknown>;
+          const content = typeof data.content === 'string' ? data.content : '';
+          const index = typeof data.index === 'number' ? data.index : Number(data.index ?? 0);
+          const messageId = typeof data.message_id === 'string' ? data.message_id : undefined;
+          pendingSegments.push(content);
+          loadedMessages.push({
+            id: messageId ? turnSegmentId(messageId, index) : `assistant-seg-${loadedMessages.length}`,
+            role: 'assistant',
+            content,
             timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
           });
         } else if (evt.event === 'tool_call') {
@@ -272,16 +298,28 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
             };
           }
         } else if (evt.event === 'message_complete' && evt.data?.full_response) {
-          loadedMessages.push({
-            // Same derivation the live reducer uses, so a reloaded transcript
-            // carries identical ids to the one that streamed.
-            id: evt.data.message_id
-              ? turnResponseId(evt.data.message_id as string)
-              : `assistant-${loadedMessages.length}`,
-            role: 'assistant',
-            content: evt.data.full_response,
-            timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
-          });
+          // The persisted full_response is the WHOLE turn; strip the prefix
+          // already rendered as segment bubbles (same helper the live reducer
+          // uses). Skip an empty trailing bubble when segments covered the
+          // whole turn — the live reducer adds none in that case either.
+          const hadSegments = pendingSegments.length > 0;
+          const finalContent = stripFrozenPrefix(
+            evt.data.full_response as string,
+            pendingSegments,
+          );
+          pendingSegments = [];
+          if (finalContent !== '' || !hadSegments) {
+            loadedMessages.push({
+              // Same derivation the live reducer uses, so a reloaded transcript
+              // carries identical ids to the one that streamed.
+              id: evt.data.message_id
+                ? turnResponseId(evt.data.message_id as string)
+                : `assistant-${loadedMessages.length}`,
+              role: 'assistant',
+              content: finalContent,
+              timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
+            });
+          }
         }
       }
       

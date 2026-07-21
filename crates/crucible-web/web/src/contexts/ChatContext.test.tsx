@@ -17,6 +17,11 @@ vi.mock('@/lib/api', () => ({
   setSessionTitle: vi.fn(),
   generateMessageId: () => `msg_${Date.now()}_test`,
   turnResponseId: (id: string) => `${id}-response`,
+  turnSegmentId: (id: string, index: number) => `${id}-seg-${index}`,
+  stripFrozenPrefix: (full: string, segs: string[]) => {
+    const prefix = segs.join('');
+    return prefix && full.startsWith(prefix) ? full.slice(prefix.length) : full;
+  },
 }));
 
 const mockSendChatMessage = api.sendChatMessage as ReturnType<typeof vi.fn>;
@@ -428,6 +433,77 @@ describe('isLoadingHistory', () => {
     expect(items[0].textContent?.trim()).toBe('hello');
     expect(items[1].getAttribute('data-role')).toBe('assistant');
     expect(items[1].textContent?.trim()).toBe('hi there');
+  });
+
+  it('reconstructs a segmented turn into canonical segment + final bubbles matching the live reducer', async () => {
+    // A text → tool → text turn persists a segment_complete plus a
+    // message_complete carrying the WHOLE turn. Reconstruction must split it
+    // into a segment bubble + a trailing bubble with the SAME canonical ids
+    // the live reducer streams (turnSegmentId / turnResponseId) — that identity
+    // is what makes live and reloaded transcripts converge.
+    mockGetSessionHistory.mockResolvedValue({
+      history: [
+        { type: 'event', session_id: 'test-session-1', event: 'user_message', data: { content: 'find it', message_id: 'msg1' } },
+        { type: 'event', session_id: 'test-session-1', event: 'segment_complete', data: { message_id: 'msg1', index: 0, content: 'Let me look. ' } },
+        { type: 'event', session_id: 'test-session-1', event: 'tool_call', data: { call_id: 'tc-1', tool: 'search', args: {} } },
+        { type: 'event', session_id: 'test-session-1', event: 'tool_result', data: { call_id: 'tc-1', result: 'notes' } },
+        { type: 'event', session_id: 'test-session-1', event: 'message_complete', data: { full_response: 'Let me look. Here it is.', message_id: 'msg1' } },
+      ],
+      total_events: 5,
+    });
+
+    render(() => (
+      <TestWrapper>
+        <HistoryTestConsumer />
+      </TestWrapper>
+    ));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('msg-count').textContent).toBe('4');
+    });
+
+    const items = screen.getAllByRole('listitem');
+    expect(items.map((el) => el.getAttribute('data-role'))).toEqual([
+      'user',
+      'assistant',
+      'tool',
+      'assistant',
+    ]);
+    // Canonical ids identical to the live-streamed transcript.
+    expect(screen.getByTestId('hist-msg-msg1-seg-0').textContent?.trim()).toBe('Let me look.');
+    expect(screen.getByTestId('hist-msg-msg1-response').textContent?.trim()).toBe('Here it is.');
+  });
+
+  it('omits the trailing bubble when segments cover the whole turn (matches the live reducer)', async () => {
+    // text → tool with no trailing narration: the whole turn is the single
+    // segment, so message_complete's stripped content is empty and no final
+    // bubble is added — the same shape the live reducer produces.
+    mockGetSessionHistory.mockResolvedValue({
+      history: [
+        { type: 'event', session_id: 'test-session-1', event: 'user_message', data: { content: 'go', message_id: 'msg1' } },
+        { type: 'event', session_id: 'test-session-1', event: 'segment_complete', data: { message_id: 'msg1', index: 0, content: 'All done via tool.' } },
+        { type: 'event', session_id: 'test-session-1', event: 'tool_call', data: { call_id: 'tc-1', tool: 'search', args: {} } },
+        { type: 'event', session_id: 'test-session-1', event: 'tool_result', data: { call_id: 'tc-1', result: 'notes' } },
+        { type: 'event', session_id: 'test-session-1', event: 'message_complete', data: { full_response: 'All done via tool.', message_id: 'msg1' } },
+      ],
+      total_events: 5,
+    });
+
+    render(() => (
+      <TestWrapper>
+        <HistoryTestConsumer />
+      </TestWrapper>
+    ));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('msg-count').textContent).toBe('3');
+    });
+
+    const items = screen.getAllByRole('listitem');
+    expect(items.map((el) => el.getAttribute('data-role'))).toEqual(['user', 'assistant', 'tool']);
+    expect(screen.getByTestId('hist-msg-msg1-seg-0').textContent?.trim()).toBe('All done via tool.');
+    // No canonical response bubble was added.
+    expect(screen.queryByTestId('hist-msg-msg1-response')).toBeNull();
   });
 
   it('falls back to persisted history when getSession fails', async () => {

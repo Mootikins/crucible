@@ -44,6 +44,16 @@ pub enum ChatEvent {
         content: String,
     },
 
+    /// A text segment that streamed before a tool call, carrying the turn's
+    /// `message_id`, its 0-based `index`, and the segment text. Lets the
+    /// frontend materialize a canonical per-segment bubble that matches
+    /// history reconstruction.
+    SegmentComplete {
+        message_id: String,
+        index: u64,
+        content: String,
+    },
+
     MessageComplete {
         id: String,
         content: String,
@@ -144,6 +154,7 @@ impl ChatEvent {
             ChatEvent::ToolResultComplete { .. } => "tool_result_complete",
             ChatEvent::ToolResultError { .. } => "tool_result_error",
             ChatEvent::Thinking { .. } => "thinking",
+            ChatEvent::SegmentComplete { .. } => "segment_complete",
             ChatEvent::MessageComplete { .. } => "message_complete",
             ChatEvent::Error { .. } => "error",
             ChatEvent::InteractionRequested { .. } => "interaction_requested",
@@ -240,6 +251,12 @@ impl ChatEvent {
                     .as_str()
                     .unwrap_or("Unknown error")
                     .to_string(),
+            },
+
+            "segment_complete" => ChatEvent::SegmentComplete {
+                message_id: data["message_id"].as_str().unwrap_or("").to_string(),
+                index: data["index"].as_u64().unwrap_or(0),
+                content: data["content"].as_str().unwrap_or("").to_string(),
             },
 
             "turn_complete" | "message_complete" => ChatEvent::MessageComplete {
@@ -585,6 +602,36 @@ mod tests {
                 assert_eq!(total_tokens, Some(15));
             }
             other => panic!("expected MessageComplete, got {other:?}"),
+        }
+    }
+
+    /// The daemon emits `segment_complete` at each text→tool boundary
+    /// (SessionEventMessage::segment_complete). The web mapping must carry
+    /// message_id/index/content through under a dedicated SSE event name so
+    /// the frontend can build a canonical segment bubble — falling through to
+    /// the generic `session_event` passthrough would strand it.
+    #[test]
+    fn real_segment_complete_event_maps_fields_and_name() {
+        let event = from_wire(SessionEventMessage::segment_complete(
+            "s1",
+            "msg-7",
+            0,
+            "Let me look that up.",
+        ));
+
+        let chat_event = ChatEvent::from_daemon_event(&event);
+        assert_eq!(chat_event.event_name(), "segment_complete");
+        match chat_event {
+            ChatEvent::SegmentComplete {
+                message_id,
+                index,
+                content,
+            } => {
+                assert_eq!(message_id, "msg-7");
+                assert_eq!(index, 0);
+                assert_eq!(content, "Let me look that up.");
+            }
+            other => panic!("expected SegmentComplete, got {other:?}"),
         }
     }
 
