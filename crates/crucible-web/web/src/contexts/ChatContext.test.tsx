@@ -15,7 +15,12 @@ vi.mock('@/lib/api', () => ({
   getConfig: vi.fn(async () => ({ kiln_path: '/tmp/test-kiln' })),
   listSessions: vi.fn(async () => []),
   setSessionTitle: vi.fn(),
-  generateMessageId: () => `msg_${Date.now()}_test`,
+  // Monotonic — sendMessage mints two temp ids back-to-back, and a
+  // Date.now()-based id would collide within one millisecond.
+  generateMessageId: (() => {
+    let n = 0;
+    return () => `msg_${++n}_test`;
+  })(),
   turnResponseId: (id: string) => `${id}-response`,
   turnSegmentId: (id: string, index: number) => `${id}-seg-${index}`,
   stripFrozenPrefix: (full: string, segs: string[]) => {
@@ -217,6 +222,42 @@ describe('streaming reconciliation', () => {
     });
     // Still exactly user + one assistant — the orphan bug would make it three.
     expect(screen.getByTestId('count').textContent).toBe('2');
+  });
+});
+
+describe('draft first-message handoff', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockListSessions.mockResolvedValue([]);
+  });
+
+  it('renders the user message and working indicator immediately, before bootstrap and SSE resolve', async () => {
+    // Neither gate ever resolves: bootstrap hangs, SSE never opens. The
+    // optimistic turn must render anyway — the user should never stare at an
+    // empty transcript after sending their first draft message.
+    mockGetSession.mockReturnValue(new Promise(() => {}));
+    mockGetSessionHistory.mockReturnValue(new Promise(() => {}));
+    mockSubscribeToEvents.mockImplementation(() => () => {});
+    mockSendChatMessage.mockResolvedValue('msg-turn-1');
+
+    const { setPendingFirstMessage } = await import('@/lib/draft-session');
+    setPendingFirstMessage(mockSession.id, 'first message from draft');
+
+    render(() => (
+      <TestWrapper>
+        <TestConsumer />
+      </TestWrapper>
+    ));
+
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'));
+    const items = screen.getAllByRole('listitem');
+    expect(items[0].getAttribute('data-role')).toBe('user');
+    expect(items[0].textContent).toBe('first message from draft');
+    expect(items[1].getAttribute('data-role')).toBe('assistant');
+    expect(items[1].textContent).toBe('');
+    expect(screen.getByTestId('loading').textContent).toBe('loading');
+    // The POST is still gated — only the rendering is immediate.
+    expect(mockSendChatMessage).not.toHaveBeenCalled();
   });
 });
 

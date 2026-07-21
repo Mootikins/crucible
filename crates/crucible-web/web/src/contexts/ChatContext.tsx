@@ -414,12 +414,16 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     // The timeout keeps the message from being stuck if SSE can't connect.
     const pendingFirstMessage = consumePendingFirstMessage(newSessionId);
     if (pendingFirstMessage) {
+      // Show the user's message + working indicator IMMEDIATELY — only the
+      // POST waits for the gates below. The optimistic entries survive the
+      // history load because loadHistory merges by id instead of clobbering.
+      const temps = insertOptimisticTurn(pendingFirstMessage);
       const sseOpenOrTimeout = Promise.race([
         sseOpen,
         new Promise<void>((resolve) => setTimeout(resolve, 5000)),
       ]);
       void Promise.all([bootstrapPromise.catch(() => {}), sseOpenOrTimeout]).then(() => {
-        void sendMessage(pendingFirstMessage);
+        void dispatchTurn(pendingFirstMessage, temps);
       });
     }
   });
@@ -462,33 +466,35 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   window.addEventListener('crucible:clear-chat', onClearChatEvent);
   onCleanup(() => window.removeEventListener('crucible:clear-chat', onClearChatEvent));
 
-  const sendMessage = async (content: string) => {
-    if (!content.trim() || isLoading() || !props.sessionId) return;
-
+  // Optimistic entries go in BEFORE the POST so transcript order stays
+  // user → answer even when SSE events beat the POST response, and so the
+  // user sees their message + working indicator with zero delay. They carry
+  // temp ids that the canonical ids replace in dispatchTurn — a temp id
+  // never outlives the send, so convergence still rests on backend-canonical
+  // ids only.
+  const insertOptimisticTurn = (trimmed: string) => {
     setError(null);
-
-    // The backend mints the canonical id: POST /api/chat/send returns the
-    // turn's message_id, the SSE user_message echo carries the same id, and
-    // message_complete.id is that turn id too. Keying the transcript on it
-    // (user = id, assistant = `${id}-response` — see turnResponseId) means
-    // every viewer converges on identical ids and dedup is exact, never
-    // heuristic.
-    const trimmed = content.trim();
-
     setIsLoading(true);
     setIsStreaming(true);
-
-    // Optimistic entries go in NOW so transcript order stays user → answer
-    // even when SSE events beat the POST response (a fast turn can complete
-    // before the send round-trip resolves). They carry temp ids that the
-    // canonical ids replace below — a temp id never outlives the send, so
-    // convergence still rests on backend-canonical ids only.
     const tempUserId = generateMessageId();
     addMessage({ id: tempUserId, role: 'user', content: trimmed, timestamp: Date.now() });
     const tempResponseId = generateMessageId();
     addMessage({ id: tempResponseId, role: 'assistant', content: '', timestamp: Date.now() });
     currentStreamingMessageId = tempResponseId;
+    return { tempUserId, tempResponseId };
+  };
 
+  // The backend mints the canonical id: POST /api/chat/send returns the
+  // turn's message_id, the SSE user_message echo carries the same id, and
+  // message_complete.id is that turn id too. Keying the transcript on it
+  // (user = id, assistant = `${id}-response` — see turnResponseId) means
+  // every viewer converges on identical ids and dedup is exact, never
+  // heuristic.
+  const dispatchTurn = async (
+    trimmed: string,
+    { tempUserId, tempResponseId }: { tempUserId: string; tempResponseId: string },
+  ) => {
+    if (!props.sessionId) return;
     try {
       const messageId = await sendChatMessage(props.sessionId, trimmed);
 
@@ -531,6 +537,12 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       setIsLoading(false);
       currentStreamingMessageId = null;
     }
+  };
+
+  const sendMessage = async (content: string) => {
+    if (!content.trim() || isLoading() || !props.sessionId) return;
+    const trimmed = content.trim();
+    await dispatchTurn(trimmed, insertOptimisticTurn(trimmed));
   };
 
    const respondToInteraction = async (response: InteractionResponse) => {
