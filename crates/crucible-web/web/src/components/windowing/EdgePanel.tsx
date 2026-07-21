@@ -1,4 +1,4 @@
-import { Component, Show, onCleanup } from 'solid-js';
+import { Component, Show, createEffect, createSignal, on, onCleanup } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { Key } from '@solid-primitives/keyed';
 import { createDraggable, createDroppable } from '@thisbeyond/solid-dnd';
@@ -358,6 +358,54 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
     </>
   );
 
+  // Collapse/expand tween: the wrapper's main-axis size animates 0 ↔ full,
+  // PUSHING the center content aside like Obsidian — never a translate that
+  // slides the panel OVER its neighbors. The inner panel keeps its fixed
+  // size (overflow-hidden clips mid-tween, so content never reflows), stays
+  // mounted through the exit animation, and unmounts after it. The
+  // transition is only armed around a collapse-state change, so dragging
+  // the resize handle tracks the pointer instantly.
+  const TWEEN_MS = 200;
+  const [rendered, setRendered] = createSignal(!isCollapsed());
+  const [open, setOpen] = createSignal(!isCollapsed());
+  const [tweening, setTweening] = createSignal(false);
+  let tweenTimer: number | undefined;
+
+  createEffect(
+    on(
+      isCollapsed,
+      (collapsed) => {
+        window.clearTimeout(tweenTimer);
+        setTweening(true);
+        if (!collapsed) {
+          setRendered(true);
+          // Double rAF: paint the 0-size state first, THEN flip to full so
+          // the browser has something to transition from.
+          requestAnimationFrame(() => requestAnimationFrame(() => setOpen(true)));
+          tweenTimer = window.setTimeout(() => setTweening(false), TWEEN_MS + 50);
+        } else {
+          setOpen(false);
+          tweenTimer = window.setTimeout(() => {
+            setRendered(false);
+            setTweening(false);
+          }, TWEEN_MS + 50);
+        }
+      },
+      { defer: true },
+    ),
+  );
+  onCleanup(() => window.clearTimeout(tweenTimer));
+
+  // Panel size + the 1px resize handle that lives inside the wrapper.
+  const fullSize = () => (isVertical() ? (panel().width || 250) : (panel().height || 200)) + 1;
+  const wrapperStyle = () => {
+    const axis = isVertical() ? 'width' : 'height';
+    return {
+      [axis]: open() ? `${fullSize()}px` : '0px',
+      transition: tweening() ? `${axis} ${TWEEN_MS}ms ease-out` : 'none',
+    };
+  };
+
   // Ribbon at the window edge, always; the panel grows out of it toward the
   // center. Left: [ribbon][panel][handle]; right: [handle][panel][ribbon];
   // bottom: [handle][panel] over [ribbon].
@@ -370,17 +418,15 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
       }}
     >
       {props.position === 'left' && <EdgeRibbon position="left" />}
-      <Show when={!isCollapsed()}>
+      <Show when={rendered()}>
         <div
           classList={{
-            'flex overflow-hidden': true,
-            'flex-row': isVertical(),
+            'flex overflow-hidden flex-none': true,
+            'flex-row justify-end': isVertical() && props.position === 'left',
+            'flex-row': isVertical() && props.position !== 'left',
             'flex-col': !isVertical(),
-            // Panels grow out of their ribbon — slide in from the owning edge.
-            'cru-anim-slide-l': props.position === 'left',
-            'cru-anim-slide-r': props.position === 'right',
-            'cru-anim-slide-b': props.position === 'bottom',
           }}
+          style={wrapperStyle()}
         >
           {expandedPanel()}
         </div>

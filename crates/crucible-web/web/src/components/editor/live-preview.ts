@@ -596,38 +596,49 @@ const livePreviewPlugin = ViewPlugin.fromClass(
   { decorations: (v) => v.decorations },
 );
 
-/** Prose-first typography; syntax colors still come from the highlighter. */
+/** Prose-first typography; syntax colors still come from the highlighter.
+ * PARITY CONTRACT: these values mirror PROSE_CLASS (lib/markdown.ts) — the
+ * reading view is canonical, and toggling Edit ↔ Preview must not reflow
+ * the document's scale. Body 13px/1.6, em-based headings 1.45/1.25/1.1/1 at
+ * weight 600, tokened code/table/blockquote surfaces. */
 const livePreviewTheme = EditorView.baseTheme({
   '&.cm-lp .cm-content': {
     fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
-    fontSize: '15px',
+    fontSize: '13px',
     lineHeight: '1.6',
   },
-  '.cm-lp-h1': { fontSize: '1.7em', fontWeight: '700' },
-  '.cm-lp-h2': { fontSize: '1.45em', fontWeight: '700' },
-  '.cm-lp-h3': { fontSize: '1.25em', fontWeight: '700' },
-  '.cm-lp-h4': { fontSize: '1.1em', fontWeight: '700' },
-  '.cm-lp-h5': { fontSize: '1em', fontWeight: '700' },
-  '.cm-lp-h6': { fontSize: '1em', fontWeight: '600', opacity: '0.8' },
-  '.cm-lp-strong': { fontWeight: '700' },
+  // Ink headings, not oneDark's coral markdown-heading color — the reading
+  // view renders headings in shell-ink and Edit ↔ Preview must agree. The
+  // descendant reset covers the highlighter's nested token spans.
+  '.cm-lp-h1': { fontSize: '1.45em', fontWeight: '600', color: 'var(--color-shell-ink, #e7e4df) !important' },
+  '.cm-lp-h2': { fontSize: '1.25em', fontWeight: '600', color: 'var(--color-shell-ink, #e7e4df) !important' },
+  '.cm-lp-h3': { fontSize: '1.1em', fontWeight: '600', color: 'var(--color-shell-ink, #e7e4df) !important' },
+  '.cm-lp-h4': { fontSize: '1em', fontWeight: '600', color: 'var(--color-shell-ink, #e7e4df) !important' },
+  '.cm-lp-h5': { fontSize: '1em', fontWeight: '600', color: 'var(--color-shell-ink, #e7e4df) !important' },
+  '.cm-lp-h6': { fontSize: '1em', fontWeight: '600', opacity: '0.8', color: 'var(--color-shell-ink, #e7e4df) !important' },
+  // oneDark colors the heading TOKEN in a nested span — pull it back to ink.
+  '.cm-lp-h1 span, .cm-lp-h2 span, .cm-lp-h3 span, .cm-lp-h4 span, .cm-lp-h5 span, .cm-lp-h6 span':
+    { color: 'inherit !important' },
+  '.cm-lp-strong': { fontWeight: '700', color: 'var(--color-shell-ink, #e7e4df) !important' },
   '.cm-lp-em': { fontStyle: 'italic' },
   '.cm-lp-strike': { textDecoration: 'line-through', opacity: '0.75' },
   '.cm-lp-code': {
     fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
-    fontSize: '0.88em',
-    background: 'rgba(255, 255, 255, 0.08)',
+    fontSize: '0.9em',
+    background: 'var(--color-surface-elevated, #1c1b22)',
     borderRadius: '3px',
     padding: '0.5px 4px',
   },
   '.cm-lp-link': { color: 'var(--color-primary, #e0653a)' },
   '.cm-lp-codeblock': {
     fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
-    fontSize: '0.88em',
-    background: 'rgba(255, 255, 255, 0.04)',
+    fontSize: '12px',
+    lineHeight: '1.5',
+    background: 'var(--color-surface-base, #141318)',
   },
   '.cm-lp-quote': {
-    borderLeft: '2px solid color-mix(in srgb, var(--color-primary, #e0653a) 50%, transparent)',
-    color: 'color-mix(in srgb, var(--color-shell-ink, #e7e4df) 75%, transparent)',
+    borderLeft: '2px solid var(--color-hairline, #211f26)',
+    color: 'var(--color-muted, #928d99)',
     fontStyle: 'italic',
   },
   '.cm-lp-bullet': { color: 'var(--color-primary, #e0653a)' },
@@ -671,18 +682,28 @@ const livePreviewTheme = EditorView.baseTheme({
     verticalAlign: 'text-bottom',
     cursor: 'pointer',
   },
+  // Rendered tables match the reading view's .prose table frame: hairline
+  // cell borders, tinted header, rounded outer edge.
   '.cm-lp-table table': {
-    borderCollapse: 'collapse',
+    borderCollapse: 'separate',
+    borderSpacing: '0',
     margin: '2px 0',
     fontSize: '0.95em',
+    border: '1px solid var(--color-hairline, #211f26)',
+    borderRadius: 'var(--radius-md, 4px)',
+    overflow: 'hidden',
   },
   '.cm-lp-table th, .cm-lp-table td': {
-    border: '1px solid var(--color-hairline-strong, #322f38)',
+    border: '0',
+    borderRight: '1px solid var(--color-hairline, #211f26)',
+    borderBottom: '1px solid var(--color-hairline, #211f26)',
     padding: '3px 10px',
     textAlign: 'left',
   },
+  '.cm-lp-table th:last-child, .cm-lp-table td:last-child': { borderRight: '0' },
+  '.cm-lp-table tr:last-child td': { borderBottom: '0' },
   '.cm-lp-table th': {
-    background: 'rgba(255, 255, 255, 0.05)',
+    background: 'var(--color-surface-elevated, #1c1b22)',
     fontWeight: '600',
   },
 });

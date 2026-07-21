@@ -74,11 +74,13 @@ describe('motion primitives on structural surfaces', () => {
     expect(read('components/windowing/FloatingWindow.tsx')).toMatch(/cru-anim-pop/);
   });
 
-  it('edge panels slide in from their owning edge', () => {
+  it('edge panels tween their main-axis size in BOTH directions (push, not overlay)', () => {
     const src = read('components/windowing/EdgePanel.tsx');
-    expect(src).toMatch(/cru-anim-slide-l/);
-    expect(src).toMatch(/cru-anim-slide-r/);
-    expect(src).toMatch(/cru-anim-slide-b/);
+    // Width/height transition armed around collapse-state changes; content
+    // stays mounted through the exit tween.
+    expect(src).toMatch(/TWEEN_MS/);
+    expect(src).toMatch(/transition: tweening\(\)/);
+    expect(src).toMatch(/setRendered\(false\)/);
   });
 
   it('command palette pops in over a fading overlay', () => {
@@ -100,8 +102,9 @@ describe('motion primitives on structural surfaces', () => {
 
   it('keyframes animate scale/translate, never transform (would clobber Tailwind transforms)', () => {
     const css = read('index.css');
+    // pop, rise, fade — edge panels tween width/height inline (no keyframes).
     const keyframeBlocks = css.match(/@keyframes cru-[\s\S]*?\n\}/g) ?? [];
-    expect(keyframeBlocks.length).toBeGreaterThanOrEqual(6);
+    expect(keyframeBlocks.length).toBeGreaterThanOrEqual(3);
     for (const block of keyframeBlocks) {
       expect(block).not.toMatch(/transform:/);
     }
