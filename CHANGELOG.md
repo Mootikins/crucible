@@ -7,7 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.11.4] - 2026-07-20
+## [0.12.0] - 2026-07-21
+
+### Added
+- **Unified session creation on the web (draft surface)**: one "new session" flow replaces the old dialog. A draft chat panel opens instantly with scope chips for kiln, workspace, agent, and model; the real daemon session is created lazily on the first message. The first message is handed off in-memory (never persisted with tab layout), so a reload can't re-send it.
+- **ACP agents from the web**: pick Claude Code, OpenCode, Gemini CLI, etc. right in the draft panel. `agents.list_profiles` now probes each agent's availability so unavailable ones are grayed out, and the daemon resolves the profile server-side — an unknown agent name errors without creating a session.
+- **Kiln-less sessions**: the kiln is now optional everywhere (web, CLI, RPC). Omitted, the daemon resolves its home-kiln default in exactly one place — clients never pre-empt it.
+- **Multi-kiln sessions**: attach extra knowledge kilns at creation (`connect_kilns`) or mid-session via new `session.connect_kiln` / `session.disconnect_kiln` / `session.set_workspace` RPCs and interactive scope chips. Attach re-runs data-classification trust checks (and the check runs *before* the kiln is opened, so a rejected attach leaves no trace); detach is always safe; the primary kiln is immutable. The `semantic_search` tool now fans out across the primary plus all connected kilns through the same engine precognition uses, labeling results with their source kiln.
+- **Transcript convergence**: message ids are backend-canonical (turn id from send; assistant = `{id}-response`; segments = `{id}-seg-N`), tool calls are first-class transcript entries rendered as grouped blocks in chronological order (user → tools → answer), and the daemon emits a persisted `segment_complete` event at each text→tool boundary — so live viewers, second panes, and reloads all render byte-identical transcripts, including turns where the agent narrates between tool calls.
+
+### Changed
+- **The daemon now owns default-agent resolution**: `session.create` accepts an optional agent spec and resolves provider/model/endpoint (or an ACP profile) server-side, configuring the agent as part of create. Web sessions now default to the *configured* default provider (same as the CLI) instead of the first detected one.
+- Session scope mutations claim the session's request slot atomically — a scope change and an in-flight turn exclude each other in both directions.
+- `semantic_search` results dedup per note across kilns (highest score wins), matching precognition's merge policy.
+
+### Fixed
+- Streaming no longer recreates the whole transcript on every token — expanded tool cards stay open while the agent streams, and markdown renders once per message instead of per token.
+- Narration before a tool call ("Let me look that up…") no longer renders twice in the final answer bubble on text→tool→text turns.
+- Tools left `running` when a turn completes or errors are finalized instead of spinning forever.
+- Kiln/project pickers in the scope chips close on Escape and outside click; the draft panel autofocuses its message box.
+- Kiln-less session creation respects an embedded server's injected data root instead of always using the process-global home directory.
 
 ### Added
 - **Project files in the web file-tree**: opening a file from a project root (README, source, configs — anything outside an attached kiln) no longer 404s. `/api/kiln/file` (and a new raw-bytes `/api/file/raw`) resolve files within a registered project too, reusing the daemon's project allowlist. Governed by a new `project_files` policy in `.crucible/project.toml` `[security]` — `read-write` (default), `read-only`, or `off`. Kiln notes remain always read-write.
