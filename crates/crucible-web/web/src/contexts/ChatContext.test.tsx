@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from '@solidjs/testing-library';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createSignal } from 'solid-js';
 import { ChatProvider, useChat, useChatSafe } from './ChatContext';
 import * as api from '@/lib/api';
@@ -229,6 +229,15 @@ describe('draft first-message handoff', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockListSessions.mockResolvedValue([]);
+  });
+
+  afterEach(async () => {
+    // The staged message survives rendering now (peek, not consume — the
+    // destructive read happens only at dispatch, which these tests hold
+    // open). Drain it so it can't leak into later tests as a phantom
+    // optimistic turn.
+    const { consumePendingFirstMessage } = await import('@/lib/draft-session');
+    consumePendingFirstMessage(mockSession.id);
   });
 
   it('renders the user message and working indicator immediately, before bootstrap and SSE resolve', async () => {

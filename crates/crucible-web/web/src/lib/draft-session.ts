@@ -16,6 +16,16 @@ export function setPendingFirstMessage(sessionId: string, message: string): void
   pendingFirstMessages.set(sessionId, message);
 }
 
+/** Non-destructive read — for RENDERING the optimistic turn. A provider that
+ * remounts mid-handoff must still see the message; only the dispatcher
+ * consumes. */
+export function peekPendingFirstMessage(sessionId: string): string | undefined {
+  return pendingFirstMessages.get(sessionId);
+}
+
+/** Destructive take — call at DISPATCH time only. First caller wins; a
+ * concurrent (e.g. zombie pre-remount) dispatcher gets undefined and must
+ * skip, so the message can never be sent twice. */
 export function consumePendingFirstMessage(sessionId: string): string | undefined {
   const message = pendingFirstMessages.get(sessionId);
   pendingFirstMessages.delete(sessionId);

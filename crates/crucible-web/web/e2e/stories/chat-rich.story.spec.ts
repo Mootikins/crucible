@@ -34,6 +34,14 @@ const ANSWER = [
   '}',
   '```',
   '',
+  '---',
+  '',
+  '| Step | Command | Owner |',
+  '| --- | --- | --- |',
+  '| Build | `just build` | you |',
+  '| Sweep | `cru daemon sweep` | daemon |',
+  '| Verify | `kiln.list` | daemon |',
+  '',
   "That's the whole flow — the pipeline handles the rest.",
 ].join('\n');
 
@@ -55,7 +63,18 @@ const RICH_STREAM: Frame[] = [
   ...tokenFrames(ANSWER),
   { type: 'thinking', data: { type: 'thinking', content: 'Mapping the deploy steps to daemon internals.' } },
   ...toolFrames('t1', 'read_file', { path: 'crates/crucible-daemon/src/server/core.rs' }, 'ok'),
-  ...toolFrames('t2', 'search_codebase', { pattern: 'resolve_socket' }, 'ok'),
+  // MCP envelope result whose text payload is itself JSON — the card must
+  // unwrap and pretty-print the payload, not the wrapper.
+  ...toolFrames(
+    't2',
+    'search_codebase',
+    { pattern: 'resolve_socket' },
+    JSON.stringify({
+      content: [
+        { type: 'text', text: JSON.stringify({ matches: 3, files: ['server/core.rs', 'rpc/dispatch.rs'] }) },
+      ],
+    }),
+  ),
   ...toolFrames('t3', 'bash_exec', { command: 'just build' }, 'Compiling crucible-daemon v0.11.4'),
   ...toolFrames('t4', 'write_note', { note: 'memory/deploy-flow.md' }, 'ok'),
   {
@@ -118,6 +137,11 @@ async function driveComplete(page: Page) {
   await expect(page.getByText('write_note')).toBeVisible();
   await expect(page.getByText('2,220 tokens')).toBeVisible();
   await expect(page.getByTestId('send-button')).toBeVisible();
+  // Markdown tables must render as REAL framed tables in chat (parity with
+  // notes), and the MCP envelope result must be unwrapped (payload visible,
+  // wrapper's escaped soup gone).
+  await expect(page.getByTestId('message-list').locator('table')).toBeVisible();
+  await expect(page.getByTestId('message-list').locator('hr')).toBeVisible();
 }
 
 test.describe('rich transcript rhythm', () => {

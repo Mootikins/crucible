@@ -108,11 +108,36 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   // Results are often serialized JSON — pretty-print them instead of showing
   // one raw line of bytes. Nested JSON-in-strings (MCP text payloads) gets
   // one unwrap pass; anything unparseable renders verbatim.
+  // MCP tool results arrive as an envelope — {content:[{type:'text',text}]}
+  // — whose payload is itself often JSON, so a naive pretty-print renders the
+  // WRAPPER nicely while the actual result stays one escaped line ("\" soup,
+  // no newlines). Unwrap the envelope first, then pretty-print what's inside.
+  const unwrapEnvelope = (parsed: unknown): unknown => {
+    if (parsed && typeof parsed === 'object' && 'content' in parsed) {
+      const content = (parsed as { content?: unknown }).content;
+      if (Array.isArray(content)) {
+        const texts = content
+          .filter(
+            (c): c is { type?: string; text: string } =>
+              !!c && typeof c === 'object' && typeof (c as { text?: unknown }).text === 'string',
+          )
+          .map((c) => c.text);
+        if (texts.length > 0 && texts.length === content.length) {
+          return texts.join('\n');
+        }
+      }
+    }
+    return parsed;
+  };
+
   const formattedResult = createMemo(() => {
     const raw = props.toolCall.result;
     if (!raw) return raw;
     try {
       let parsed: unknown = JSON.parse(raw);
+      parsed = unwrapEnvelope(parsed);
+      // A string at this point (envelope text or double-encoded JSON): if it
+      // parses as JSON, pretty-print that; otherwise show it verbatim.
       if (typeof parsed === 'string') {
         try {
           parsed = JSON.parse(parsed) as unknown;

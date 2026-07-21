@@ -101,22 +101,47 @@
     color: inherit;
   }
 
+  /* Native form controls (checkbox/radio/range) inherit the OS accent — blue
+     on most platforms, which fights the ember identity. Pin them to the brand
+     accent everywhere. */
+  input[type='checkbox'],
+  input[type='radio'],
+  input[type='range'] {
+    accent-color: var(--color-primary);
+  }
+
+  /* Thin, overlay-quiet scrollbars (Cursor's register): a transparent track,
+     a faint thumb inset from the edge that only firms up on hover — never a
+     chrome element competing with content. */
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
   }
 
   ::-webkit-scrollbar-track {
-    background: var(--color-surface-base);
+    background: transparent;
   }
 
   ::-webkit-scrollbar-thumb {
-    background: var(--color-hairline-strong);
-    border-radius: 4px;
+    background: color-mix(in srgb, var(--color-shell-ink) 14%, transparent);
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #4a4752;
+    background: color-mix(in srgb, var(--color-shell-ink) 26%, transparent);
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--color-shell-ink) 16%, transparent) transparent;
   }
 }
 
@@ -447,6 +472,47 @@ details.callout[open] > summary.callout-title::after {
   margin-top: 0.25em;
   margin-bottom: 0.25em;
   vertical-align: middle;
+}
+
+/* Rendered markdown tables — chat turns AND the note reading view (both use
+   PROSE_CLASS; visual parity is the contract). Tailwind prose alone draws
+   only row rules, which reads as bare horizontal lines: give tables a real
+   frame — hairline cell borders, tinted header row, rounded outer edge —
+   matching the live-preview editor's table treatment. Wide tables scroll
+   inside the table itself rather than overflowing the panel. */
+.prose table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  margin: 0.75rem 0;
+}
+.prose thead th {
+  background: var(--color-surface-elevated);
+  color: var(--color-shell-ink);
+  font-weight: 600;
+  text-align: left;
+}
+.prose th,
+.prose td {
+  border-bottom: 1px solid var(--color-hairline);
+  border-right: 1px solid var(--color-hairline);
+  padding: 0.375rem 0.75rem;
+  vertical-align: top;
+}
+.prose th:last-child,
+.prose td:last-child {
+  border-right: none;
+}
+.prose tbody tr:last-child td {
+  border-bottom: none;
+}
+.prose tbody tr:nth-child(even) td {
+  background: color-mix(in oklab, var(--color-surface-elevated) 40%, transparent);
 }
 
 /* Reading-view code blocks: a copy button floats top-right, revealed on

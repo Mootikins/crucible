@@ -164,3 +164,35 @@ describe('ToolCard integration — real DiffViewer + Shiki', () => {
     expect(diffHeaderFileSpans.length).toBe(0);
   });
 });
+
+describe('ToolCard — MCP envelope results', () => {
+  it('unwraps {content:[{type:"text",text}]} and pretty-prints the JSON payload inside', () => {
+    const payload = { matches: 3, files: ['a.rs', 'b.rs'] };
+    const envelope = JSON.stringify({
+      content: [{ type: 'text', text: JSON.stringify(payload) }],
+    });
+    const { container } = render(() => (
+      <ToolCard
+        toolCall={makeTool({ name: 'search', args: '{}', result: envelope })}
+      />
+    ));
+    expandCard(container);
+
+    // The payload is pretty-printed (multi-line, unescaped)…
+    expect(container.textContent).toContain('"matches": 3');
+    expect(container.textContent).toContain('"a.rs"');
+    // …and the wrapper's escaped soup is gone.
+    expect(container.textContent).not.toContain('\\"matches\\"');
+    expect(container.textContent).not.toContain('"content"');
+  });
+
+  it('unwraps an envelope whose text is plain prose (no inner JSON)', () => {
+    const envelope = JSON.stringify({ content: [{ type: 'text', text: 'All 3 checks passed.' }] });
+    const { container } = render(() => (
+      <ToolCard toolCall={makeTool({ name: 'check', args: '{}', result: envelope })} />
+    ));
+    expandCard(container);
+    expect(container.textContent).toContain('All 3 checks passed.');
+    expect(container.textContent).not.toContain('"content"');
+  });
+});

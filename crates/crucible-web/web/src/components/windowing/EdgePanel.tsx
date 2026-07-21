@@ -321,16 +321,27 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
           position={props.position}
         />
         <div class="flex-1 overflow-auto p-2 text-xs text-muted" data-testid={`panel-content-${activeTab()?.contentType ?? 'unknown'}`}>
-          {(() => {
-            const tab = activeTab();
-            if (!tab) return <span>Select a tab</span>;
-            const panelDef = getGlobalRegistry().get(tab.contentType);
-            if (panelDef) {
-              const panelProps = (tab.metadata ?? {}) as Record<string, unknown>;
-              return <Dynamic component={panelDef.component} {...panelProps} />;
-            }
-            return <div>{tab.title} content</div>;
-          })()}
+          {/* Keyed by tab ID: an inline expression here re-runs on EVERY
+              group mutation (addTab / setActiveTab / removeTab each replace
+              store objects) and would return a fresh <Dynamic> — remounting
+              the panel three times during a draft→session handoff and
+              killing any state the first mount owned. Key by id keeps one
+              mounted instance per active tab. */}
+          <Show when={activeTab()} fallback={<span>Select a tab</span>}>
+            <Key each={activeTab() ? [activeTab()!] : []} by={(t) => t.id}>
+              {(tab) => {
+                const panelDef = () => getGlobalRegistry().get(tab().contentType);
+                return (
+                  <Show when={panelDef()} fallback={<div>{tab().title} content</div>}>
+                    <Dynamic
+                      component={panelDef()!.component}
+                      {...((tab().metadata ?? {}) as Record<string, unknown>)}
+                    />
+                  </Show>
+                );
+              }}
+            </Key>
+          </Show>
         </div>
       </div>
       {props.position === 'left' && <EdgePanelResizeHandle position={props.position} />}

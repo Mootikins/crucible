@@ -30,7 +30,7 @@ import {
   stripFrozenPrefix,
 } from '@/lib/api';
 import { findTabBySessionId } from '@/lib/session-actions';
-import { consumePendingFirstMessage } from '@/lib/draft-session';
+import { consumePendingFirstMessage, peekPendingFirstMessage } from '@/lib/draft-session';
 import { windowActions } from '@/stores/windowStore';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { notificationActions } from '@/stores/notificationStore';
@@ -412,7 +412,14 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     // would let the (empty) history load wipe the optimistic message — and
     // (b) the SSE stream is open, so the response streams from token one.
     // The timeout keeps the message from being stuck if SSE can't connect.
-    const pendingFirstMessage = consumePendingFirstMessage(newSessionId);
+    // PEEK (non-destructive) so the optimistic turn renders on EVERY mount —
+    // the handoff can race a panel remount, and a destructive read here let a
+    // short-lived first mount swallow the message while the surviving mount
+    // showed an empty transcript for seconds. The destructive consume happens
+    // at dispatch time below: first dispatcher wins, any zombie sibling gets
+    // undefined and skips, so the message renders instantly everywhere and is
+    // sent exactly once.
+    const pendingFirstMessage = peekPendingFirstMessage(newSessionId);
     if (pendingFirstMessage) {
       // Show the user's message + working indicator IMMEDIATELY — only the
       // POST waits for the gates below. The optimistic entries survive the
@@ -423,7 +430,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         new Promise<void>((resolve) => setTimeout(resolve, 5000)),
       ]);
       void Promise.all([bootstrapPromise.catch(() => {}), sseOpenOrTimeout]).then(() => {
-        void dispatchTurn(pendingFirstMessage, temps);
+        const message = consumePendingFirstMessage(newSessionId);
+        if (message) void dispatchTurn(message, temps);
       });
     }
   });

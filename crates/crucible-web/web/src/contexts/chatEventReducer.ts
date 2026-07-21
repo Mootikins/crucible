@@ -462,12 +462,23 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
           const data = event.data as { message_id?: string; content?: string } | null;
           if (data?.message_id && data.content !== undefined
             && !deps.messages().some((m) => m.id === data.message_id)) {
-            deps.addMessage({
-              id: data.message_id,
-              role: 'user',
-              content: data.content,
-              timestamp: Date.now(),
-            });
+            // Adopt an optimistic temp entry with the same content instead of
+            // duplicating it — the echo can arrive before the send POST (or a
+            // sibling provider's dispatch) canonicalized the temp id. Temp ids
+            // are client-minted `msg_…` (underscore); daemon ids are `msg-…`.
+            const temp = deps
+              .messages()
+              .find((m) => m.role === 'user' && m.content === data.content && /^msg_/.test(m.id));
+            if (temp) {
+              deps.updateMessage(temp.id, { id: data.message_id });
+            } else {
+              deps.addMessage({
+                id: data.message_id,
+                role: 'user',
+                content: data.content,
+                timestamp: Date.now(),
+              });
+            }
           }
         }
         break;

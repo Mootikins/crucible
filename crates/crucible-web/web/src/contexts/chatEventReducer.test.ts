@@ -376,6 +376,23 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(transcript.split('Let me look that up.').length - 1).toBe(1);
   });
 
+  it('session_event user_message: adopts an optimistic temp entry instead of duplicating it', () => {
+    // The echo can win the race against the send POST's canonicalization —
+    // e.g. when a remounted provider rendered the pending first message
+    // optimistically but a sibling dispatcher sent it. Same content + a
+    // client-minted `msg_` id ⇒ rename, never a second user bubble.
+    const h = createHarness();
+    h.state.messages.push({ id: 'msg_123_temp', role: 'user', content: 'hello there', timestamp: 1 });
+    h.reducer({
+      type: 'session_event',
+      event_type: 'user_message',
+      data: { message_id: 'msg-canonical-1', content: 'hello there' },
+    });
+    const users = h.state.messages.filter((m) => m.role === 'user');
+    expect(users).toHaveLength(1);
+    expect(users[0].id).toBe('msg-canonical-1');
+  });
+
   it('message_complete finalizes thinking left streaming on a frozen segment', () => {
     // Thinking streamed before a tool boundary lives on the frozen segment,
     // which the messageId-targeted finalization in message_complete never
