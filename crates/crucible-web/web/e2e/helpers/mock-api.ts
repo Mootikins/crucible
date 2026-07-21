@@ -61,6 +61,12 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     route.fulfill({ json: overrides.kilns ?? MOCK_KILNS }),
   );
 
+  // Draft-session panel loads (lazy session creation surface).
+  await page.route('**/api/agents', (route) => route.fulfill({ json: { agents: [] } }));
+  await page.route('**/api/models**', (route) =>
+    route.fulfill({ json: { models: ['llama3.2'] } }),
+  );
+
   await page.route('**/api/layout', (route) => {
     if (route.request().method() === 'GET') {
       route.fulfill({ status: 404, body: '' });

@@ -25,7 +25,7 @@ test.describe('Session Management', () => {
     await expect(page.getByTestId('session-list').getByText('Second Session')).toBeVisible();
   });
 
-  test('creates a new session when new session button is clicked', async ({ page }) => {
+  test('creates a session when the first draft message is sent', async ({ page }) => {
     const newSession = { ...MOCK_SESSION, session_id: 'test-session-new', title: 'New Session' };
     await setupBasicMocks(page, { sessionCreate: newSession });
     await page.goto('/');
@@ -34,15 +34,21 @@ test.describe('Session Management', () => {
     const newSessionBtn = page.getByTestId('new-session-button');
     await expect(newSessionBtn).toBeVisible({ timeout: 10000 });
 
-    // Set up request interception before clicking
+    // Lazy creation: the click opens a draft surface, no daemon call yet.
+    let createdEarly = false;
+    page.on('request', (req) => {
+      if (req.url().endsWith('/api/session') && req.method() === 'POST') createdEarly = true;
+    });
+    await newSessionBtn.click();
+    await expect(page.getByTestId('draft-input')).toBeVisible();
+    expect(createdEarly).toBe(false);
+
+    // Sending the first message creates the session.
     const requestPromise = page.waitForRequest(
       (req) => req.url().includes('/api/session') && req.method() === 'POST',
     );
-
-    // Click the new session button
-    await newSessionBtn.click();
-
-    // Assert: the POST request was made (waitForRequest resolves = success)
+    await page.getByTestId('draft-input').fill('First message');
+    await page.getByTestId('draft-send').click();
     await requestPromise;
   });
 

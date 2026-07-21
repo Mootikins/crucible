@@ -267,6 +267,103 @@ const CONFIG_METHODS: &[ConfigMethod] = &[
 
 const SESSION_ID: &str = "session_id";
 
+// ===========================================================================
+// A1b — scope-mutation parity: session.connect_kiln / session.disconnect_kiln
+// / session.set_workspace. These are NOT config knobs — their handlers are
+// hand-written in `server/session/scope.rs` (attach-time trust gating), there
+// is no `get` direction, and all three return the shared scope response
+// instead of echoing a single field — but the field-name bug class is
+// identical, so they get their own parity table instead of CONFIG_METHODS
+// rows.
+// ===========================================================================
+
+struct ScopeMethod {
+    /// Client fn name in `rpc_client/client/agent.rs`.
+    client_fn: &'static str,
+    /// Handler fn name in `server/session/scope.rs`.
+    server_fn: &'static str,
+    /// JSON fields the request carries besides `session_id`.
+    request_fields: &'static [&'static str],
+}
+
+const SCOPE_METHODS: &[ScopeMethod] = &[
+    ScopeMethod {
+        client_fn: "session_connect_kiln",
+        server_fn: "handle_session_connect_kiln",
+        request_fields: &["kiln_path"],
+    },
+    ScopeMethod {
+        client_fn: "session_disconnect_kiln",
+        server_fn: "handle_session_disconnect_kiln",
+        request_fields: &["kiln_path"],
+    },
+    ScopeMethod {
+        client_fn: "session_set_workspace",
+        server_fn: "handle_session_set_workspace",
+        request_fields: &["workspace"],
+    },
+];
+
+#[test]
+fn rpc_scope_mutation_field_names_match_across_the_wire() {
+    let root = workspace_root();
+    let client = read(&root.join("crates/crucible-daemon/src/rpc_client/client/agent.rs"));
+    let server = read(&root.join("crates/crucible-daemon/src/server/session/scope.rs"));
+
+    let mut failures = Vec::new();
+
+    for m in SCOPE_METHODS {
+        let client_body = fn_body(&client, &format!("fn {}(", m.client_fn));
+        let server_body = fn_body(&server, &format!("fn {}(", m.server_fn));
+
+        let mut client_req = captures(r"(?m)^\s*([a-z_][a-z0-9_]*)\s*[:,]", &client_body);
+        client_req.remove(SESSION_ID);
+
+        let mut server_req = captures(
+            r#"(?:require_param|optional_param)!\s*\(\s*req\s*,\s*"([^"]+)""#,
+            &server_body,
+        );
+        server_req.remove(SESSION_ID);
+
+        let expected: BTreeSet<String> = m.request_fields.iter().map(|s| s.to_string()).collect();
+        if client_req != expected {
+            failures.push(format!(
+                "{}: client sends request fields {client_req:?}, expected {expected:?}",
+                m.client_fn
+            ));
+        }
+        if server_req != expected {
+            failures.push(format!(
+                "{}: server reads request fields {server_req:?}, expected {expected:?} \
+                 (client sends {client_req:?})",
+                m.server_fn
+            ));
+        }
+    }
+
+    // All three mutations return the shared scope response, and the client
+    // hands that JSON back verbatim (no per-field reads), so response parity
+    // is a single assertion on the shared builder.
+    let scope_response = fn_body(&server, "fn scope_response(");
+    let response_fields = captures(r#""([a-z_][a-z0-9_]*)""#, &scope_response);
+    let expected: BTreeSet<String> = ["session_id", "kiln", "workspace", "connected_kilns"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    if response_fields != expected {
+        failures.push(format!(
+            "scope_response: returns fields {response_fields:?}, expected {expected:?}"
+        ));
+    }
+
+    assert!(
+        failures.is_empty(),
+        "RPC scope-mutation field-name parity violations (fix the client/server \
+         field name, not this test):\n  - {}",
+        failures.join("\n  - ")
+    );
+}
+
 #[test]
 fn rpc_config_field_names_match_across_the_wire() {
     let root = workspace_root();
@@ -365,10 +462,19 @@ fn config_methods_table_covers_every_knob() {
         .map(|m| m.suffix.to_string())
         .collect();
 
+    // Scope mutations (session.set_workspace) share the `session_set_` prefix
+    // but are covered by the SCOPE_METHODS parity gate above, not
+    // CONFIG_METHODS.
+    let scope_owned: BTreeSet<String> = SCOPE_METHODS
+        .iter()
+        .filter_map(|m| m.client_fn.strip_prefix("session_set_"))
+        .map(str::to_string)
+        .collect();
+
     let sides = [
         (
             "client set",
-            captures(r"fn session_set_([a-z0-9_]+)\(", &client),
+            &captures(r"fn session_set_([a-z0-9_]+)\(", &client) - &scope_owned,
         ),
         (
             "client get",

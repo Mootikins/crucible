@@ -30,7 +30,7 @@ const NEW_SESSION = {
 
 test.describe('Session Lifecycle', () => {
   // ── Flow 1: Create Session ──────────────────────────────────────────
-  test('creates a new session and opens chat tab', async ({ page }) => {
+  test('creates a new session on first draft message and opens chat tab', async ({ page }) => {
     await setupBasicMocks(page, { sessionCreate: NEW_SESSION });
     await page.goto('/');
 
@@ -38,17 +38,23 @@ test.describe('Session Lifecycle', () => {
     const newSessionBtn = page.getByTestId('new-session-button');
     await expect(newSessionBtn).toBeVisible({ timeout: 10000 });
 
-    // Intercept the POST request for session creation
+    // Lazy creation: clicking opens the draft surface, no POST yet.
+    await newSessionBtn.click();
+    await expect(page.getByTestId('draft-input')).toBeVisible();
+
+    // The first message triggers session creation…
     const createPromise = page.waitForRequest(
       (req) => req.url().includes('/api/session') && req.method() === 'POST',
     );
-
-    // Click new session
-    await newSessionBtn.click();
-
-    // Assert: POST was made
+    await page.getByTestId('draft-input').fill('Hello');
+    await page.getByTestId('draft-send').click();
     const createRequest = await createPromise;
     expect(createRequest).toBeTruthy();
+
+    // …and the chat tab for the new session opens.
+    await expect(
+      page.locator('[data-tab-id="tab-chat-test-session-new"]'),
+    ).toBeVisible();
   });
 
   // ── Flow 2: Send & Stream ──────────────────────────────────────────

@@ -57,7 +57,7 @@ test.describe('New Session -> Chat Tab', () => {
     await expect(page.getByTestId('new-session-button')).toBeVisible({ timeout: 10000 });
   });
 
-  test('clicking New Session opens a chat tab in the right pane', async ({ page }) => {
+  test('clicking New Session opens a draft; first message creates the chat tab in the right pane', async ({ page }) => {
     const createdSession = {
       ...MOCK_SESSION,
       session_id: 'test-session-new',
@@ -76,11 +76,30 @@ test.describe('New Session -> Chat Tab', () => {
     const leftBefore = await getFirstPaneState(page);
     expect(leftBefore.tabs.filter((t) => t.contentType === 'chat')).toHaveLength(0);
 
+    // Lazy creation: clicking New Session opens a DRAFT surface docked right —
+    // nothing hits the daemon until the first message.
+    let createdEarly = false;
+    page.on('request', (req) => {
+      if (req.url().endsWith('/api/session') && req.method() === 'POST') createdEarly = true;
+    });
+
+    await page.getByTestId('new-session-button').click();
+    await expect(page.getByTestId('draft-input')).toBeVisible();
+    expect(createdEarly).toBe(false);
+
+    await expect
+      .poll(async () => {
+        const right = await getRightPaneState(page);
+        return right.tabs.filter((t) => t.contentType === 'chat-draft').length;
+      })
+      .toBe(1);
+
+    // The first message creates the real session and swaps draft → chat tab.
     const createRequest = page.waitForRequest(
       (req) => req.url().includes('/api/session') && req.method() === 'POST',
     );
-
-    await page.getByTestId('new-session-button').click();
+    await page.getByTestId('draft-input').fill('Hello from the draft');
+    await page.getByTestId('draft-send').click();
     await createRequest;
 
     await expect(page.locator('[data-tab-id="tab-chat-test-session-new"]')).toBeVisible();
@@ -94,6 +113,8 @@ test.describe('New Session -> Chat Tab', () => {
 
     const rightAfter = await getRightPaneState(page);
     expect(rightAfter.groupId).not.toBeNull();
+    // The draft closed itself once the real session opened.
+    expect(rightAfter.tabs.filter((t) => t.contentType === 'chat-draft')).toHaveLength(0);
     const chatTab = rightAfter.tabs.find((t) => t.contentType === 'chat');
     expect(chatTab?.id).toBe('tab-chat-test-session-new');
     expect(chatTab?.metadata?.sessionId).toBe('test-session-new');
