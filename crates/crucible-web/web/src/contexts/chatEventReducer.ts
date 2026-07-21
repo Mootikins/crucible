@@ -65,6 +65,35 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
     return id;
   };
 
+  // Text that streamed before each tool call is frozen into its own assistant
+  // bubble at the segment boundary (see the tool_call case). The daemon's
+  // message_complete carries the WHOLE turn's accumulated text, so we must
+  // strip these already-rendered prefixes off the final bubble or the
+  // narration renders twice. Reset per turn.
+  let frozenSegments: string[] = [];
+
+  // A turn can complete (or error) with a tool still marked "running" — no
+  // tool_result ever arrived. Left alone, ToolCard shows a perpetual spinner.
+  // Finalize each: keep any partial result as a completed card, else surface
+  // it as an error so the transcript isn't silently misleading.
+  const finalizeDanglingTools = () => {
+    const runningCallIds = deps
+      .messages()
+      .filter((m) => m.role === 'tool' && m.toolCall?.status === 'running')
+      .map((m) => m.toolCall!.callId)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    for (const callId of runningCallIds) {
+      deps.updateToolMessage(callId, (tool) => {
+        const hasResult = tool.result != null && tool.result !== '';
+        return {
+          ...tool,
+          status: hasResult ? 'complete' : 'error',
+          result: hasResult ? tool.result : 'tool did not complete',
+        };
+      });
+    }
+  };
+
   return (event: ChatEvent) => {
     switch (event.type) {
       case 'token': {
@@ -82,6 +111,9 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         if (streamingId) {
           const current = deps.messages().find((m) => m.id === streamingId);
           if (current && current.content !== '') {
+            // Record what we're freezing so message_complete can strip it off
+            // the turn's accumulated text and not re-render this narration.
+            frozenSegments.push(current.content);
             deps.setCurrentStreamingMessageId(null);
           }
         }
@@ -156,10 +188,19 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         // response id on an earlier segment; later segments keep their own.
         const responseId = turnResponseId(event.id);
         const idTaken = deps.messages().some((m) => m.id === responseId && m.id !== messageId);
+        // event.content is the ENTIRE turn's accumulated text. Segments frozen
+        // before earlier tool calls already render as their own bubbles, so the
+        // final bubble must carry only the trailing text. Strip the frozen
+        // prefix (whitespace-exact); if the payload doesn't start with it
+        // (daemon shape drift), fall back to using event.content verbatim.
+        const frozenPrefix = frozenSegments.join('');
+        const finalContent = frozenPrefix && event.content.startsWith(frozenPrefix)
+          ? event.content.slice(frozenPrefix.length)
+          : event.content;
         if (messageId) {
           deps.updateMessage(messageId, {
             ...(idTaken ? {} : { id: responseId }),
-            content: event.content,
+            content: finalContent,
             usage,
             ...(thinkingData ? {
               thinking: {
@@ -169,17 +210,22 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
               },
             } : {}),
           });
-        } else if (!deps.messages().some((m) => m.id === responseId)) {
-          // Late attach with no streamed tokens seen: append the completed
-          // message wholesale rather than dropping the turn's text.
+        } else if (!deps.messages().some((m) => m.id === responseId)
+          && (finalContent !== '' || frozenPrefix === '')) {
+          // Late attach with no active streaming message: append the trailing
+          // segment as its own bubble rather than dropping the turn's text.
+          // Skip when the frozen segments already cover the whole turn (no
+          // trailing text) so we don't add an empty bubble.
           deps.addMessage({
             id: responseId,
             role: 'assistant',
-            content: event.content,
+            content: finalContent,
             timestamp: Date.now(),
             usage,
           });
         }
+        finalizeDanglingTools();
+        frozenSegments = [];
         deps.setIsStreaming(false);
         deps.setIsLoading(false);
         deps.setCurrentStreamingMessageId(null);
@@ -194,6 +240,8 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
             content: `Error: ${event.message}`,
           });
         }
+        finalizeDanglingTools();
+        frozenSegments = [];
         deps.setIsStreaming(false);
         deps.setIsLoading(false);
         deps.setCurrentStreamingMessageId(null);
@@ -329,6 +377,10 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         // message_id — the same id sendMessage keyed its entry on, so dedup
         // is exact. Viewers that attached mid-turn get the prompt from here.
         if (event.event_type === 'user_message') {
+          // A new user turn begins — drop any frozen-segment state that a
+          // prior turn left behind (e.g. one that errored without a clean
+          // message_complete) so it can't strip the next turn's final bubble.
+          frozenSegments = [];
           const data = event.data as { message_id?: string; content?: string } | null;
           if (data?.message_id && data.content !== undefined
             && !deps.messages().some((m) => m.id === data.message_id)) {

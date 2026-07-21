@@ -196,3 +196,166 @@ describe('selectSession auto-resume', () => {
     });
   });
 });
+
+function makeChatSession(id = 'new-id'): Session {
+  return {
+    id,
+    session_type: 'chat',
+    kiln: '/kilns/main',
+    workspace: '/kilns/main',
+    connected_kilns: [],
+    state: 'active',
+    title: null,
+    agent_model: null,
+    agent_mode: null,
+    started_at: '2026-01-01T00:00:00Z',
+    event_count: 0,
+  };
+}
+
+describe('applySessionScope', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (api.listSessions as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
+    (api.listModels as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
+    (api.listProviders as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
+    (api.createSession as ReturnType<typeof vi.fn<any>>).mockResolvedValue(makeChatSession());
+  });
+
+  function ScopeConsumer() {
+    const { createSession, applySessionScope, currentSession, sessions } = useSession();
+    return (
+      <div>
+        <button data-testid="create" onClick={() => void createSession({ kiln: '/kilns/main' })}>
+          create
+        </button>
+        <button
+          data-testid="apply"
+          onClick={() =>
+            applySessionScope({
+              session_id: 'new-id',
+              kiln: '/kilns/main',
+              workspace: '/repos/app',
+              connected_kilns: ['/kilns/extra'],
+            })
+          }
+        >
+          apply
+        </button>
+        <span data-testid="cur-workspace">{currentSession()?.workspace ?? '-'}</span>
+        <span data-testid="cur-connected">
+          {(currentSession()?.connected_kilns ?? []).join(',')}
+        </span>
+        <span data-testid="list-workspace">{sessions()[0]?.workspace ?? '-'}</span>
+        <span data-testid="list-connected">
+          {(sessions()[0]?.connected_kilns ?? []).join(',')}
+        </span>
+      </div>
+    );
+  }
+
+  it('patches both currentSession and the matching sessions list entry', async () => {
+    render(() => (
+      <SessionProvider initialKiln="/kilns/main">
+        <ScopeConsumer />
+      </SessionProvider>
+    ));
+    await waitFor(() => expect(api.listSessions).toHaveBeenCalled());
+
+    screen.getByTestId('create').click();
+    await waitFor(() =>
+      expect(screen.getByTestId('list-workspace').textContent).toBe('/kilns/main'),
+    );
+
+    screen.getByTestId('apply').click();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('cur-workspace').textContent).toBe('/repos/app'),
+    );
+    expect(screen.getByTestId('cur-connected').textContent).toBe('/kilns/extra');
+    expect(screen.getByTestId('list-workspace').textContent).toBe('/repos/app');
+    expect(screen.getByTestId('list-connected').textContent).toBe('/kilns/extra');
+  });
+});
+
+describe('createSession param forwarding', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (api.listSessions as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
+    (api.listModels as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
+    (api.listProviders as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
+    (api.createSession as ReturnType<typeof vi.fn<any>>).mockResolvedValue(makeChatSession());
+    (api.switchModel as ReturnType<typeof vi.fn<any>>).mockResolvedValue(undefined);
+  });
+
+  function CreateConsumer(props: { run: (ctx: ReturnType<typeof useSession>) => void }) {
+    const ctx = useSession();
+    return (
+      <button data-testid="run" onClick={() => props.run(ctx)}>
+        run
+      </button>
+    );
+  }
+
+  async function renderWithRun(run: (ctx: ReturnType<typeof useSession>) => void) {
+    render(() => (
+      <SessionProvider initialKiln="/kilns/home">
+        <CreateConsumer run={run} />
+      </SessionProvider>
+    ));
+    await waitFor(() => expect(api.listSessions).toHaveBeenCalled());
+    screen.getByTestId('run').click();
+  }
+
+  it('forwards an internal create with the chosen kiln and applies the model', async () => {
+    await renderWithRun((ctx) =>
+      void ctx.createSession(
+        { kiln: '/kilns/main' },
+        { initialMessage: 'hi', model: 'openai/gpt-4o' },
+      ),
+    );
+
+    await waitFor(() =>
+      expect(api.createSession).toHaveBeenCalledWith({ kiln: '/kilns/main' }),
+    );
+    await waitFor(() =>
+      expect(api.switchModel).toHaveBeenCalledWith('new-id', 'openai/gpt-4o'),
+    );
+  });
+
+  it('forwards a kiln-less ACP create without a model override', async () => {
+    await renderWithRun((ctx) =>
+      void ctx.createSession(
+        { agent_type: 'acp', agent_name: 'claude' },
+        { initialMessage: 'refactor auth' },
+      ),
+    );
+
+    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
+    const params = (api.createSession as ReturnType<typeof vi.fn<any>>).mock.calls[0][0] as {
+      agent_type?: string;
+      agent_name?: string;
+      kiln?: string;
+    };
+    expect(params.agent_type).toBe('acp');
+    expect(params.agent_name).toBe('claude');
+    expect(params.kiln).toBeUndefined();
+    expect(api.switchModel).not.toHaveBeenCalled();
+  });
+
+  it('forwards additional kilns as connect_kilns', async () => {
+    await renderWithRun((ctx) =>
+      void ctx.createSession(
+        { kiln: '/kilns/main', connect_kilns: ['/kilns/extra'] },
+        { initialMessage: 'multi-kiln' },
+      ),
+    );
+
+    await waitFor(() =>
+      expect(api.createSession).toHaveBeenCalledWith({
+        kiln: '/kilns/main',
+        connect_kilns: ['/kilns/extra'],
+      }),
+    );
+  });
+});

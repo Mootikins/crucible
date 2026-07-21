@@ -10,7 +10,10 @@ import type { Message as MessageType } from '@/lib/types';
  * into one block (sequential tools read as a single unit of activity). */
 type TranscriptRow =
   | { kind: 'message'; message: MessageType }
-  | { kind: 'tools'; key: string; items: MessageType[] };
+  | { kind: 'tools'; items: MessageType[] };
+
+type MessageRow = Extract<TranscriptRow, { kind: 'message' }>;
+type ToolsRow = Extract<TranscriptRow, { kind: 'tools' }>;
 
 export const MessageList: Component = () => {
   const { messages, isStreaming, pendingInteraction, respondToInteraction } = useChatSafe();
@@ -29,19 +32,64 @@ export const MessageList: Component = () => {
 
   const session = () => currentSession();
 
+  // <For> keys rows by reference, so rebuilding fresh wrapper objects every
+  // recompute would dispose and recreate EVERY row on each streamed token —
+  // resetting ToolCard's expanded state and re-rendering all markdown. Cache
+  // wrappers and reuse them when the underlying identity is unchanged: a
+  // message row by its message reference, a tools group by the identity list
+  // of its items (both stay stable across token appends because the store
+  // preserves proxies for untouched entries). Only the row whose message
+  // actually changed gets a new wrapper.
+  const messageRowCache = new Map<string, MessageRow>();
+  const toolsRowCache = new Map<string, ToolsRow>();
+
   const rows = createMemo<TranscriptRow[]>(() => {
     const out: TranscriptRow[] = [];
+    const seenMessageIds = new Set<string>();
+    const seenToolKeys = new Set<string>();
+    let group: { key: string; items: MessageType[] } | null = null;
+
+    const flushGroup = () => {
+      if (!group) return;
+      const { key, items } = group;
+      const cached = toolsRowCache.get(key);
+      const reusable = cached
+        && cached.items.length === items.length
+        && cached.items.every((m, i) => m === items[i]);
+      const wrapper = reusable ? cached! : { kind: 'tools' as const, items };
+      toolsRowCache.set(key, wrapper);
+      seenToolKeys.add(key);
+      out.push(wrapper);
+      group = null;
+    };
+
     for (const message of messages()) {
       if (message.role === 'tool') {
-        const last = out[out.length - 1];
-        if (last?.kind === 'tools') {
-          last.items.push(message);
+        if (group) {
+          group.items.push(message);
         } else {
-          out.push({ kind: 'tools', key: `tools-${message.id}`, items: [message] });
+          group = { key: `tools-${message.id}`, items: [message] };
         }
       } else {
-        out.push({ kind: 'message', message });
+        flushGroup();
+        const cached = messageRowCache.get(message.id);
+        const wrapper = cached && cached.message === message
+          ? cached
+          : { kind: 'message' as const, message };
+        messageRowCache.set(message.id, wrapper);
+        seenMessageIds.add(message.id);
+        out.push(wrapper);
       }
+    }
+    flushGroup();
+
+    // Evict wrappers for messages/groups that vanished (clear, session switch)
+    // so the caches don't grow unbounded across a long-lived provider.
+    for (const id of messageRowCache.keys()) {
+      if (!seenMessageIds.has(id)) messageRowCache.delete(id);
+    }
+    for (const key of toolsRowCache.keys()) {
+      if (!seenToolKeys.has(key)) toolsRowCache.delete(key);
     }
     return out;
   });

@@ -91,13 +91,13 @@ describe('ChatContext', () => {
       </TestWrapper>
     ));
 
+    // Let the mount-time bootstrap (empty history) fire its load first — the
+    // merge in loadHistory must not clobber the optimistic messages. Anchor on
+    // the actual bootstrap call rather than an arbitrary sleep.
+    await waitFor(() => expect(mockGetSessionHistory).toHaveBeenCalled());
+
     const sendButton = screen.getByText('Send');
     sendButton.click();
-
-    // Let the mount-time bootstrap (empty history) land first — the merge
-    // in loadHistory must not clobber the optimistic messages. This used to
-    // pass only because waitFor's first poll beat the wipe.
-    await new Promise((r) => setTimeout(r, 50));
 
     await waitFor(() => {
       expect(screen.getByTestId('count').textContent).toBe('2');
@@ -120,7 +120,10 @@ describe('ChatContext', () => {
     const sendButton = screen.getByText('Send');
     sendButton.click();
 
-    await new Promise((r) => setTimeout(r, 50));
+    // A null session makes sendMessage bail synchronously before any await;
+    // flush the microtask queue (deterministic, no arbitrary delay) and assert
+    // nothing was sent.
+    await Promise.resolve();
 
     expect(screen.getByTestId('count').textContent).toBe('0');
     expect(mockSendChatMessage).not.toHaveBeenCalled();
@@ -156,6 +159,59 @@ describe('ChatContext', () => {
     await waitFor(() => {
       expect(screen.getByTestId('loading').textContent).toBe('idle');
     });
+  });
+});
+
+describe('streaming reconciliation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetSession.mockResolvedValue(mockSession);
+    mockListSessions.mockResolvedValue([]);
+    mockGetSessionHistory.mockResolvedValue({ history: [], total_events: 0 });
+  });
+
+  it('reconciles a message minted by a token that beat the send POST (no orphan bubble)', async () => {
+    let eventCallback: ((event: any) => void) | null = null;
+    mockSubscribeToEvents.mockImplementation(
+      (_sessionId: string, callback: (event: any) => void, onOpen?: () => void) => {
+        eventCallback = callback;
+        onOpen?.();
+        return () => { eventCallback = null; };
+      },
+    );
+    // Hold the POST open so a token can arrive mid-flight.
+    let resolveSend!: (id: string) => void;
+    mockSendChatMessage.mockReturnValue(new Promise<string>((r) => { resolveSend = r; }));
+
+    render(() => (
+      <TestWrapper>
+        <TestConsumer />
+      </TestWrapper>
+    ));
+
+    await waitFor(() => expect(eventCallback).not.toBeNull());
+    screen.getByText('Send').click();
+    await waitFor(() => expect(mockSendChatMessage).toHaveBeenCalled());
+
+    // Token arrives before the POST resolves → reducer mints a random-id
+    // assistant and streams into it.
+    eventCallback!({ type: 'token', content: 'partial ' });
+
+    // POST resolves with the canonical turn id. The early streaming message
+    // must be reconciled into `${id}-response`, not left orphaned beside a new
+    // empty placeholder.
+    resolveSend('msg-turn-1');
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'));
+
+    eventCallback!({ type: 'message_complete', id: 'msg-turn-1', content: 'partial answer' });
+
+    await waitFor(() => {
+      const items = screen.getAllByRole('listitem');
+      const assistant = items.find((i) => i.getAttribute('data-role') === 'assistant');
+      expect(assistant?.textContent).toBe('partial answer');
+    });
+    // Still exactly user + one assistant — the orphan bug would make it three.
+    expect(screen.getByTestId('count').textContent).toBe('2');
   });
 });
 
@@ -418,5 +474,54 @@ describe('isLoadingHistory', () => {
       undefined,
       expect.any(AbortSignal),
     );
+  });
+
+  it('dedups a live canonical user message against a pre-canonical reconstructed one', async () => {
+    let eventCallback: ((event: any) => void) | null = null;
+    mockSubscribeToEvents.mockImplementation(
+      (_sessionId: string, callback: (event: any) => void, onOpen?: () => void) => {
+        eventCallback = callback;
+        onOpen?.();
+        return () => { eventCallback = null; };
+      },
+    );
+    // Hold history open so a live SSE echo lands in the message list first.
+    let resolveHistory!: (value: any) => void;
+    mockGetSessionHistory.mockReturnValue(new Promise((resolve) => { resolveHistory = resolve; }));
+
+    render(() => (
+      <TestWrapper>
+        <HistoryTestConsumer />
+      </TestWrapper>
+    ));
+
+    // Live echo adds the prompt under its canonical id.
+    await waitFor(() => expect(eventCallback).not.toBeNull());
+    eventCallback!({
+      type: 'session_event',
+      event_type: 'user_message',
+      data: { message_id: 'msg-live', content: 'hello' },
+    });
+    await waitFor(() => expect(screen.getByTestId('msg-count').textContent).toBe('1'));
+    await waitFor(() => expect(mockGetSessionHistory).toHaveBeenCalled());
+
+    // History replays the SAME prompt from an old event that predates canonical
+    // message_ids → reconstructed under a fallback id (user-0).
+    resolveHistory({
+      history: [
+        {
+          type: 'event',
+          session_id: 'test-session-1',
+          event: 'user_message',
+          data: { content: 'hello' },
+        },
+      ],
+      total_events: 1,
+    });
+
+    // Wait for the merge to complete (history-loading flips to idle AFTER the
+    // setMessages merge), then assert the prompt did not render twice.
+    await waitFor(() => expect(screen.getByTestId('history-loading').textContent).toBe('idle'));
+    expect(screen.getByTestId('msg-count').textContent).toBe('1');
   });
 });

@@ -21,9 +21,13 @@ vi.mock('@/stores/statusBarStore', () => ({
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
+  // Unique per call: a segmented turn (text → tool → text → tool → text)
+  // materializes a fresh streaming assistant message per segment, and a fixed
+  // id would collide so updateMessage would target the wrong bubble.
+  let counter = 0;
   return {
     ...actual,
-    generateMessageId: () => 'gen-msg-id',
+    generateMessageId: () => `gen-msg-id-${counter++}`,
   };
 });
 
@@ -343,20 +347,99 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.state.messages.map((m) => m.role)).toEqual(['assistant', 'tool']);
   });
 
-  it('text → tool → text yields separate assistant segments (in-between text survives)', () => {
+  it('text → tool → text yields separate assistant segments; narration renders exactly once', () => {
     const h = createHarness();
     h.setUp.streamingMessage('asst-1');
     h.reducer({ type: 'token', content: 'Let me look that up.' });
     h.reducer({ type: 'tool_call', id: 'tc-1', title: 'semantic_search' });
     h.reducer({ type: 'tool_result', id: 'tc-1', result: 'notes...' });
     h.reducer({ type: 'token', content: 'Here is what I found.' });
-    h.reducer({ type: 'message_complete', id: 'srv', content: 'Here is what I found.' });
+    // The real daemon accumulates the WHOLE turn's text and sends it in
+    // message_complete — pre-tool narration INCLUDED — not just the post-tool
+    // tail. The reducer must strip the already-frozen prefix so the final
+    // bubble holds only the trailing segment.
+    h.reducer({
+      type: 'message_complete',
+      id: 'srv',
+      content: 'Let me look that up.Here is what I found.',
+    });
 
     expect(h.state.messages.map((m) => m.role)).toEqual(['assistant', 'tool', 'assistant']);
     expect(h.state.messages[0].content).toBe('Let me look that up.');
+    // Final bubble is ONLY the trailing segment, not the full accumulated text.
     expect(h.state.messages[2]).toMatchObject({
       id: 'srv-response',
       content: 'Here is what I found.',
+    });
+    // The narration appears exactly once across the whole transcript.
+    const transcript = h.state.messages.map((m) => m.content).join('');
+    expect(transcript.split('Let me look that up.').length - 1).toBe(1);
+  });
+
+  it('text → tool → text → tool → text strips every frozen prefix (each narration once)', () => {
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'token', content: 'First. ' });
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
+    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'r1' });
+    h.reducer({ type: 'token', content: 'Second. ' });
+    h.reducer({ type: 'tool_call', id: 'tc-2', title: 'search' });
+    h.reducer({ type: 'tool_result', id: 'tc-2', result: 'r2' });
+    h.reducer({ type: 'token', content: 'Third.' });
+    h.reducer({
+      type: 'message_complete',
+      id: 'srv',
+      content: 'First. Second. Third.',
+    });
+
+    expect(h.state.messages.map((m) => m.role)).toEqual([
+      'assistant', 'tool', 'assistant', 'tool', 'assistant',
+    ]);
+    expect(h.state.messages[0].content).toBe('First. ');
+    expect(h.state.messages[2].content).toBe('Second. ');
+    expect(h.state.messages[4]).toMatchObject({ id: 'srv-response', content: 'Third.' });
+    // Full concatenation equals the daemon payload — no text lost, none doubled.
+    expect(h.state.messages.map((m) => m.content).join('')).toBe('First. Second. Third.');
+  });
+
+  it('message_complete: uses event.content verbatim when it does not start with the frozen prefix', () => {
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'token', content: 'Frozen narration.' });
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
+    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'r' });
+    h.reducer({ type: 'token', content: 'tail' });
+    // Payload that does NOT begin with the frozen segment (shape drift): the
+    // reducer must not crash or mangle it — it keeps event.content as-is.
+    h.reducer({ type: 'message_complete', id: 'srv', content: 'completely different' });
+    expect(h.state.messages[2]).toMatchObject({
+      id: 'srv-response',
+      content: 'completely different',
+    });
+  });
+
+  it('message_complete finalizes a still-running tool with no result as an error', () => {
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
+    // No tool_result arrives before the turn completes.
+    h.reducer({ type: 'message_complete', id: 'srv', content: 'done' });
+    expect(h.tools()[0]).toMatchObject({
+      status: 'error',
+      result: 'tool did not complete',
+    });
+  });
+
+  it('message_complete finalizes a still-running tool that has a partial result as complete', () => {
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
+    h.reducer({ type: 'tool_result_delta', id: 'tc-1', delta: 'partial output' });
+    // tool_result_complete never arrives; the turn ends with status still running.
+    h.reducer({ type: 'message_complete', id: 'srv', content: 'done' });
+    expect(h.tools()[0]).toMatchObject({
+      status: 'complete',
+      result: 'partial output',
     });
   });
 

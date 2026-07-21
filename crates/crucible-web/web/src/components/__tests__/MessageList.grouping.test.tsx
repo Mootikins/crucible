@@ -1,12 +1,16 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup } from '@solidjs/testing-library';
+import { createSignal } from 'solid-js';
 import { MessageList } from '../MessageList';
 import type { Message } from '@/lib/types';
 
 let mockMessages: Message[] = [];
+// Indirection so a test can swap in a reactive accessor (a signal) to drive
+// re-renders; static tests keep reading the plain module-level array.
+let messagesAccessor: () => Message[] = () => mockMessages;
 vi.mock('@/contexts/ChatContext', () => ({
   useChatSafe: () => ({
-    messages: () => mockMessages,
+    messages: () => messagesAccessor(),
     isStreaming: () => false,
     pendingInteraction: () => null,
     respondToInteraction: async () => {},
@@ -32,6 +36,7 @@ const msg = (id: string, role: Message['role'], content = ''): Message => ({
 afterEach(() => {
   cleanup();
   mockMessages = [];
+  messagesAccessor = () => mockMessages;
 });
 
 describe('MessageList tool grouping', () => {
@@ -66,5 +71,31 @@ describe('MessageList tool grouping', () => {
     expect(groups[0].textContent).not.toContain('tool-t2');
     expect(groups[1].textContent).toContain('tool-t2');
     expect(groups[1].textContent).toContain('tool-t3');
+  });
+
+  it('keeps stable rows mounted when the streaming assistant message appends tokens', () => {
+    // Mirrors the store's behavior: appending a token replaces ONLY the
+    // streaming assistant object; the tool message keeps its reference. Rows
+    // whose underlying message is unchanged must not be disposed/recreated
+    // (that reset ToolCard's expanded state and re-rendered all markdown).
+    const toolMsg = msg('t1', 'tool');
+    const assistant = msg('a1', 'assistant', 'Hel');
+    const [msgs, setMsgs] = createSignal<Message[]>([
+      msg('u1', 'user', 'hi'),
+      toolMsg,
+      assistant,
+    ]);
+    messagesAccessor = () => msgs();
+
+    const { getByTestId } = render(() => <MessageList />);
+    const groupBefore = getByTestId('tool-group');
+    const userBefore = getByTestId('message-user');
+
+    // Token append: new assistant object, same user + tool references.
+    setMsgs([msgs()[0], toolMsg, { ...assistant, content: 'Hello' }]);
+
+    // The unchanged rows keep the exact same DOM nodes (row not recreated).
+    expect(getByTestId('tool-group')).toBe(groupBefore);
+    expect(getByTestId('message-user')).toBe(userBefore);
   });
 });

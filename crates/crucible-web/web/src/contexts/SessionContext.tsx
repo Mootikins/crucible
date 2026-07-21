@@ -26,6 +26,7 @@ import {
   setSessionTitle as apiSetSessionTitle,
   listProviders as apiListProviders,
 } from '@/lib/api';
+import type { SessionScope } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
 import { findTabBySessionId } from '@/lib/session-actions';
 import { setPendingFirstMessage } from '@/lib/draft-session';
@@ -109,12 +110,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
 
   // Kiln/workspace mutations echo the updated scope; fold it into the store
   // so chips and headers re-render without a refetch.
-  const applySessionScope = (scope: {
-    session_id: string;
-    kiln: string;
-    workspace: string;
-    connected_kilns: string[];
-  }) => {
+  const applySessionScope = (scope: SessionScope) => {
     patchSessionById(scope.session_id, {
       kiln: scope.kiln,
       workspace: scope.workspace,

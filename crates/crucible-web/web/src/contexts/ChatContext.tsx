@@ -293,7 +293,21 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       setMessages((prev) => {
         const reconstructed = new Set(loadedMessages.map((m) => m.id));
         const newer = prev.filter((m) => !reconstructed.has(m.id));
-        return [...loadedMessages, ...newer];
+        // Events stored before canonical message_ids existed reconstruct under
+        // fallback ids (user-N / assistant-N), so a live-added canonical copy
+        // of the same prompt escapes the exact-id overlap above and renders
+        // twice. Drop a live message that an id-less reconstructed entry
+        // already represents (same role + content). Only fires when a fallback
+        // id is present, so current-daemon sessions (always canonical) are
+        // untouched.
+        const isFallbackId = (id: string) => /^(?:user|assistant)-\d+$/.test(id);
+        const hasFallback = loadedMessages.some((m) => isFallbackId(m.id));
+        const merged = hasFallback
+          ? newer.filter((live) => !loadedMessages.some(
+              (h) => isFallbackId(h.id) && h.role === live.role && h.content === live.content,
+            ))
+          : newer;
+        return [...loadedMessages, ...merged];
       });
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
@@ -434,7 +448,15 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         });
       }
       const responseId = turnResponseId(messageId);
-      if (!messages.some((m) => m.id === responseId)) {
+      const earlyStreamId = currentStreamingMessageId;
+      if (earlyStreamId && earlyStreamId !== responseId
+        && !messages.some((m) => m.id === responseId)) {
+        // A token beat this POST: the reducer already minted a random-id
+        // assistant message and streamed into it. Reconcile that message into
+        // the canonical response id instead of adding a second (empty)
+        // placeholder that would orphan the streamed text.
+        updateMessage(earlyStreamId, { id: responseId });
+      } else if (!messages.some((m) => m.id === responseId)) {
         addMessage({
           id: responseId,
           role: 'assistant',
