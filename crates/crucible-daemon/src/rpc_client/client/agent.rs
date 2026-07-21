@@ -156,6 +156,21 @@ pub struct ListProvidersRequest {
     pub kiln_path: Option<String>,
 }
 
+/// Request for `session.connect_kiln` / `session.disconnect_kiln`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionKilnRequest {
+    pub session_id: String,
+    pub kiln_path: String,
+}
+
+/// Request for `session.set_workspace`. `workspace: None` detaches.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetWorkspaceRequest {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+}
+
 impl DaemonClient {
     pub async fn session_configure_agent(
         &self,
@@ -178,6 +193,55 @@ impl DaemonClient {
             SessionSwitchModelRequest {
                 session_id: session_id.to_string(),
                 model_id: model_id.to_string(),
+            },
+        )
+        .await
+    }
+
+    /// Attach a kiln to a session's connected set. Returns the updated scope
+    /// `{session_id, kiln, workspace, connected_kilns}`.
+    pub async fn session_connect_kiln(
+        &self,
+        session_id: &str,
+        kiln_path: &Path,
+    ) -> Result<serde_json::Value> {
+        self.typed_call(
+            "session.connect_kiln",
+            SessionKilnRequest {
+                session_id: session_id.to_string(),
+                kiln_path: kiln_path.to_string_lossy().to_string(),
+            },
+        )
+        .await
+    }
+
+    /// Detach a connected kiln (the primary kiln cannot be detached).
+    pub async fn session_disconnect_kiln(
+        &self,
+        session_id: &str,
+        kiln_path: &Path,
+    ) -> Result<serde_json::Value> {
+        self.typed_call(
+            "session.disconnect_kiln",
+            SessionKilnRequest {
+                session_id: session_id.to_string(),
+                kiln_path: kiln_path.to_string_lossy().to_string(),
+            },
+        )
+        .await
+    }
+
+    /// Set (Some) or detach (None) the session's workspace.
+    pub async fn session_set_workspace(
+        &self,
+        session_id: &str,
+        workspace: Option<&Path>,
+    ) -> Result<serde_json::Value> {
+        self.typed_call(
+            "session.set_workspace",
+            SessionSetWorkspaceRequest {
+                session_id: session_id.to_string(),
+                workspace: workspace.map(|p| p.to_string_lossy().to_string()),
             },
         )
         .await

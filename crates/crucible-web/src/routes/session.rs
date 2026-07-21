@@ -100,6 +100,9 @@ pub fn session_routes() -> Router<AppState> {
         .route("/api/session/{id}/cancel", post(cancel_session))
         .route("/api/session/{id}/models", get(list_models))
         .route("/api/session/{id}/model", post(switch_model))
+        .route("/api/session/{id}/kilns/connect", post(connect_kiln))
+        .route("/api/session/{id}/kilns/disconnect", post(disconnect_kiln))
+        .route("/api/session/{id}/workspace", put(set_workspace))
         .route("/api/session/{id}/mode", post(set_mode))
         .route("/api/session/{id}/title", put(set_session_title))
         .route("/api/session/{id}/auto-title", post(auto_title))
@@ -580,6 +583,57 @@ async fn switch_model(
 }
 
 #[derive(Debug, Deserialize)]
+struct SessionKilnRequest {
+    kiln: PathBuf,
+}
+
+/// Updated session scope, echoed by kiln/workspace mutations.
+async fn connect_kiln(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<SessionKilnRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let scope = state
+        .daemon
+        .session_connect_kiln(&id, &req.kiln)
+        .await
+        .daemon_err()?;
+    Ok(Json(scope))
+}
+
+async fn disconnect_kiln(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<SessionKilnRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let scope = state
+        .daemon
+        .session_disconnect_kiln(&id, &req.kiln)
+        .await
+        .daemon_err()?;
+    Ok(Json(scope))
+}
+
+#[derive(Debug, Deserialize)]
+struct SetWorkspaceRequest {
+    /// Omitted/null → detach (workspace falls back to the kiln).
+    workspace: Option<PathBuf>,
+}
+
+async fn set_workspace(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<SetWorkspaceRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let scope = state
+        .daemon
+        .session_set_workspace(&id, req.workspace.as_deref())
+        .await
+        .daemon_err()?;
+    Ok(Json(scope))
+}
+
+#[derive(Debug, Deserialize)]
 struct SetModeRequest {
     mode: String,
 }
@@ -885,6 +939,87 @@ mod tests {
         }))
         .await;
         assert_eq!(status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    // =========================================================================
+    // Session scope (kilns/workspace) Tests
+    // =========================================================================
+
+    async fn send_json(
+        method: &str,
+        uri: &str,
+        body: serde_json::Value,
+    ) -> (axum::http::StatusCode, serde_json::Value) {
+        let (_mock, client) = crate::test_support::start_mock_daemon().await;
+        let state = crate::test_support::build_mock_state(client);
+        let app = crate::test_support::build_test_app(state);
+
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method(method)
+                    .uri(uri)
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+        (status, json)
+    }
+
+    #[tokio::test]
+    async fn connect_kiln_returns_updated_scope() {
+        let (status, json) = send_json(
+            "POST",
+            "/api/session/test-session-001/kilns/connect",
+            serde_json::json!({"kiln": "/tmp/extra-kiln"}),
+        )
+        .await;
+        assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
+        assert_eq!(json["connected_kilns"][0], "/tmp/extra-kiln");
+    }
+
+    #[tokio::test]
+    async fn disconnect_kiln_returns_updated_scope() {
+        let (status, json) = send_json(
+            "POST",
+            "/api/session/test-session-001/kilns/disconnect",
+            serde_json::json!({"kiln": "/tmp/extra-kiln"}),
+        )
+        .await;
+        assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
+        assert!(json["connected_kilns"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn set_workspace_accepts_null_for_detach() {
+        let (status, json) = send_json(
+            "PUT",
+            "/api/session/test-session-001/workspace",
+            serde_json::json!({ "workspace": null }),
+        )
+        .await;
+        assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
+        // Detach falls back to the kiln path (mock echoes the default).
+        assert_eq!(json["workspace"], "/tmp/test-kiln");
+    }
+
+    #[tokio::test]
+    async fn set_workspace_attaches_project_dir() {
+        let (status, json) = send_json(
+            "PUT",
+            "/api/session/test-session-001/workspace",
+            serde_json::json!({ "workspace": "/repos/crucible" }),
+        )
+        .await;
+        assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
+        assert_eq!(json["workspace"], "/repos/crucible");
     }
 
     // =========================================================================

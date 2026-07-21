@@ -60,6 +60,13 @@ export interface SessionContextValue {
     params: CreateSessionParams,
     opts?: { initialMessage?: string; model?: string },
   ) => Promise<Session>;
+  /** Fold a kiln/workspace mutation's echoed scope into the session store. */
+  applySessionScope: (scope: {
+    session_id: string;
+    kiln: string;
+    workspace: string;
+    connected_kilns: string[];
+  }) => void;
   selectSession: (id: string) => Promise<void>;
   refreshSessions: (filters?: { kiln?: string; workspace?: string; includeArchived?: boolean }) => Promise<void>;
   pauseSession: () => Promise<void>;

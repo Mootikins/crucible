@@ -303,6 +303,7 @@ interface RawSession {
   type: Session['session_type'];
   kiln: string;
   workspace: string;
+  connected_kilns?: string[];
   state: Session['state'];
   title: string | null;
   // Two endpoint shapes: session.list sends a flattened top-level `agent_model`;
@@ -323,6 +324,7 @@ function mapSession(raw: RawSession): Session {
     session_type: raw.type,
     kiln: raw.kiln,
     workspace: raw.workspace,
+    connected_kilns: raw.connected_kilns ?? [],
     state: raw.state,
     title: raw.title,
     agent_model: raw.agent_model ?? raw.agent?.model ?? null,
@@ -530,6 +532,47 @@ export async function listProviders(): Promise<ProviderInfo[]> {
   return (await request<{ providers: ProviderInfo[] }>('GET', '/api/providers', {
     errorMessage: 'Failed to list providers',
   })).providers;
+}
+
+/** Session scope echoed by kiln/workspace mutations. */
+export interface SessionScope {
+  session_id: string;
+  kiln: string;
+  workspace: string;
+  connected_kilns: string[];
+}
+
+/** Attach a kiln to a session's connected set. */
+export async function connectSessionKiln(sessionId: string, kiln: string): Promise<SessionScope> {
+  return request<SessionScope>(
+    'POST',
+    `/api/session/${encodeURIComponent(sessionId)}/kilns/connect`,
+    { errorMessage: 'Failed to attach kiln', ...jsonRequest({ kiln }) },
+  );
+}
+
+/** Detach a connected kiln (the primary kiln cannot be detached). */
+export async function disconnectSessionKiln(
+  sessionId: string,
+  kiln: string,
+): Promise<SessionScope> {
+  return request<SessionScope>(
+    'POST',
+    `/api/session/${encodeURIComponent(sessionId)}/kilns/disconnect`,
+    { errorMessage: 'Failed to detach kiln', ...jsonRequest({ kiln }) },
+  );
+}
+
+/** Set (string) or detach (null) the session's workspace. */
+export async function setSessionWorkspace(
+  sessionId: string,
+  workspace: string | null,
+): Promise<SessionScope> {
+  return request<SessionScope>(
+    'PUT',
+    `/api/session/${encodeURIComponent(sessionId)}/workspace`,
+    { errorMessage: 'Failed to update workspace', ...jsonRequest({ workspace }) },
+  );
 }
 
 /** List ACP agent profiles with probed availability. */

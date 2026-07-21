@@ -56,6 +56,8 @@ export interface Session {
   session_type: SessionType;
   kiln: string;
   workspace: string;
+  /** Additional knowledge kilns attached to this session (primary excluded). */
+  connected_kilns: string[];
   state: SessionState;
   title: string | null;
   agent_model: string | null;

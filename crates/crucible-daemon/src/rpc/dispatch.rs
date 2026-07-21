@@ -47,6 +47,9 @@ pub const METHODS: &[&str] = &[
     "session.send_message",
     "session.cancel",
     "session.switch_model",
+    "session.connect_kiln",
+    "session.disconnect_kiln",
+    "session.set_workspace",
     "session.set_mode",
     "session.get_mode",
     "session.list_models",
@@ -335,6 +338,13 @@ impl RpcDispatcher {
                 to_response(id, self.handle_session_pending_interactions(&req).await)
             }
             "session.switch_model" => to_response(id, self.handle_session_switch_model(&req).await),
+            "session.connect_kiln" => to_response(id, self.handle_session_connect_kiln(&req).await),
+            "session.disconnect_kiln" => {
+                to_response(id, self.handle_session_disconnect_kiln(&req).await)
+            }
+            "session.set_workspace" => {
+                to_response(id, self.handle_session_set_workspace(&req).await)
+            }
             "session.set_mode" => to_response(id, self.handle_session_set_mode(&req).await),
             "session.list_models" => to_response(id, self.handle_session_list_models(&req).await),
             "session.add_notification" => {
@@ -992,6 +1002,42 @@ impl RpcDispatcher {
         let resp = crate::server::session::handle_session_switch_model(
             req.clone(),
             &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_connect_kiln(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_connect_kiln(
+            req.clone(),
+            &self.ctx.sessions,
+            &self.ctx.agents,
+            &self.ctx.kiln,
+            &self.ctx.llm_config,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_disconnect_kiln(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_disconnect_kiln(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_set_workspace(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_session_set_workspace(
+            req.clone(),
+            &self.ctx.sessions,
+            &self.ctx.agents,
+            &self.ctx.project_manager,
+            &self.ctx.llm_config,
             &self.ctx.event_tx,
         )
         .await;

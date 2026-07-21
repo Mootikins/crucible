@@ -70,6 +70,7 @@ describe('selectSession auto-resume', () => {
       session_type: 'chat',
       kiln: '/tmp/test-kiln',
       workspace: '/tmp/test-workspace',
+      connected_kilns: [],
       state,
       title: 'Test Session',
       agent_model: 'test-model',

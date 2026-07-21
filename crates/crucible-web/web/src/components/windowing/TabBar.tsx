@@ -231,6 +231,17 @@ const TabStrip: Component<TabStripProps> = (props) => {
     onCleanup(() => observer.disconnect());
   });
 
+  // Follow the active tab: newly opened or switched-to tabs scroll into
+  // view instead of hiding past the strip's overflow edge.
+  createEffect(() => {
+    const activeId = props.activeTabId();
+    if (!activeId) return;
+    queueMicrotask(() => {
+      const tabEl = tabsContainerRef?.querySelector(`[data-tab-id="${activeId}"]`);
+      tabEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    });
+  });
+
   createEffect(() => {
     if (!showDropdown()) return;
     const handleClickOutside = () => {

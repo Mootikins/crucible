@@ -31,7 +31,7 @@ import { RootDropdown } from './files/RootDropdown';
 import type { ContextAction } from './files/FileTreeContextMenu';
 import { currentOpenFilePath, revealLoadedPath, revealLazyPath } from './files/file-tree-a11y';
 import type { UseTreeViewReturn } from '@ark-ui/solid';
-import { ChevronsDownUp, Target, RefreshCw, ArrowUpDown, Plus } from '@/lib/icons';
+import { ChevronsDownUp, RefreshCw, ArrowUpDown, Plus } from '@/lib/icons';
 
 // ---- localStorage helpers (per-root expanded state, global sort) ----------
 const EXPANDED_KEY = (rootId: string) => `crucible.filetree.expanded.${rootId}`;
@@ -408,15 +408,6 @@ export const FilesPanel: Component = () => {
             class="p-1 rounded hover:bg-hover-wash text-muted"
           >
             <ChevronsDownUp class="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            aria-label="Reveal active file"
-            title="Reveal active file"
-            onClick={() => revealActive()}
-            class="p-1 rounded hover:bg-hover-wash text-muted"
-          >
-            <Target class="w-3.5 h-3.5" />
           </button>
           <Show when={activeRoot()?.kind === 'kiln'}>
             <button

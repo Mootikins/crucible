@@ -107,6 +107,21 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     return updatedSession;
   };
 
+  // Kiln/workspace mutations echo the updated scope; fold it into the store
+  // so chips and headers re-render without a refetch.
+  const applySessionScope = (scope: {
+    session_id: string;
+    kiln: string;
+    workspace: string;
+    connected_kilns: string[];
+  }) => {
+    patchSessionById(scope.session_id, {
+      kiln: scope.kiln,
+      workspace: scope.workspace,
+      connected_kilns: scope.connected_kilns,
+    });
+  };
+
   const withSessionAction = async <T,>(
     action: () => Promise<T>,
     options: {
@@ -481,6 +496,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     selectedProvider,
     createSession,
     selectSession,
+    applySessionScope,
     refreshSessions,
     pauseSession,
     resumeSession,
@@ -522,6 +538,7 @@ const fallbackSessionContext: SessionContextValue = {
   providers: () => [],
   selectedProvider: () => null,
   createSession: () => Promise.reject(new Error('No session context')),
+  applySessionScope: () => {},
   selectSession: noopAsync,
   refreshSessions: noopAsync,
   pauseSession: noopAsync,

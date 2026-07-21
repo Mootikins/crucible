@@ -685,6 +685,62 @@ impl ReconnectingDaemon {
         .await
     }
 
+    /// Attach a kiln to a session's connected set. Returns the updated scope.
+    pub async fn session_connect_kiln(
+        &self,
+        session_id: &str,
+        kiln_path: &Path,
+    ) -> anyhow::Result<serde_json::Value> {
+        let session_id = session_id.to_string();
+        let kiln_path = kiln_path.to_path_buf();
+        self.call_with_reconnect("session.connect_kiln", move |daemon| {
+            let session_id = session_id.clone();
+            let kiln_path = kiln_path.clone();
+            Box::pin(async move { daemon.session_connect_kiln(&session_id, &kiln_path).await })
+        })
+        .await
+    }
+
+    /// Detach a connected kiln (the primary kiln cannot be detached).
+    pub async fn session_disconnect_kiln(
+        &self,
+        session_id: &str,
+        kiln_path: &Path,
+    ) -> anyhow::Result<serde_json::Value> {
+        let session_id = session_id.to_string();
+        let kiln_path = kiln_path.to_path_buf();
+        self.call_with_reconnect("session.disconnect_kiln", move |daemon| {
+            let session_id = session_id.clone();
+            let kiln_path = kiln_path.clone();
+            Box::pin(async move {
+                daemon
+                    .session_disconnect_kiln(&session_id, &kiln_path)
+                    .await
+            })
+        })
+        .await
+    }
+
+    /// Set (Some) or detach (None) the session's workspace.
+    pub async fn session_set_workspace(
+        &self,
+        session_id: &str,
+        workspace: Option<&Path>,
+    ) -> anyhow::Result<serde_json::Value> {
+        let session_id = session_id.to_string();
+        let workspace = workspace.map(Path::to_path_buf);
+        self.call_with_reconnect("session.set_workspace", move |daemon| {
+            let session_id = session_id.clone();
+            let workspace = workspace.clone();
+            Box::pin(async move {
+                daemon
+                    .session_set_workspace(&session_id, workspace.as_deref())
+                    .await
+            })
+        })
+        .await
+    }
+
     pub async fn session_switch_model(
         &self,
         session_id: &str,

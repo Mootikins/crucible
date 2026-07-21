@@ -14,6 +14,7 @@ mod messaging;
 mod models;
 mod notifications;
 mod params;
+mod scope;
 
 pub(crate) use create::handle_session_create;
 // Re-exported for tests.rs (accessed via `use session::*`).
@@ -57,6 +58,9 @@ pub(crate) use params::{
     handle_session_set_precognition_results, handle_session_set_system_prompt,
     handle_session_set_temperature, handle_session_set_thinking_budget,
     handle_session_set_validation_retries, handle_session_undo, handle_session_undo_depth,
+};
+pub(crate) use scope::{
+    handle_session_connect_kiln, handle_session_disconnect_kiln, handle_session_set_workspace,
 };
 
 /// Serialize `payload` and broadcast it as a setup event for `session_id`.

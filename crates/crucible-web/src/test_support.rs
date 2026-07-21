@@ -336,6 +336,31 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         }),
         "project.unregister" => json!(null),
         "project.get" => Value::Null,
+        "session.connect_kiln" => json!({
+            "session_id": "test-session-001",
+            "kiln": "/tmp/test-kiln",
+            "workspace": "/tmp/test-kiln",
+            "connected_kilns": ["/tmp/extra-kiln"],
+        }),
+        "session.disconnect_kiln" => json!({
+            "session_id": "test-session-001",
+            "kiln": "/tmp/test-kiln",
+            "workspace": "/tmp/test-kiln",
+            "connected_kilns": [],
+        }),
+        "session.set_workspace" => {
+            let workspace = msg
+                .get("params")
+                .and_then(|p| p.get("workspace"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("/tmp/test-kiln");
+            json!({
+                "session_id": "test-session-001",
+                "kiln": "/tmp/test-kiln",
+                "workspace": workspace,
+                "connected_kilns": [],
+            })
+        }
         "session.set_thinking_budget" => json!(null),
         "session.get_thinking_budget" => json!({"thinking_budget": 1024}),
         "session.set_temperature" => json!(null),

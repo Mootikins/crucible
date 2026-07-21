@@ -39,6 +39,9 @@ vi.mock('@/contexts/SessionContext', () => ({
       id: 'test-session',
       state: 'active',
       kiln: '/tmp/test-kiln',
+      // workspace == kiln is the daemon's "floating" (no-workspace) state.
+      workspace: '/tmp/test-kiln',
+      connected_kilns: [],
       agent_model: 'test-model',
     }),
     cancelCurrentOperation: mockCancelCurrentOperation,
@@ -46,6 +49,7 @@ vi.mock('@/contexts/SessionContext', () => ({
     switchModel: mockSwitchModel,
     refreshModels: mockRefreshModels,
     selectedProvider: () => ({ provider_type: 'ollama' }),
+    applySessionScope: vi.fn(),
   }),
 }));
 
@@ -87,6 +91,12 @@ vi.mock('@/lib/api', () => ({
   // CommandResponse (web/routes/session_commands.rs) always sets `type` to
   // "success" | "error"; a successful command returns "success".
   executeCommand: vi.fn(async () => ({ result: 'Command executed', type: 'success' })),
+  // SessionScopeChips (rendered inside ChatInput) loads these on mount.
+  listKilns: vi.fn(async () => []),
+  listProjects: vi.fn(async () => []),
+  connectSessionKiln: vi.fn(),
+  disconnectSessionKiln: vi.fn(),
+  setSessionWorkspace: vi.fn(),
 }));
 
 describe('ChatInput', () => {
@@ -181,9 +191,9 @@ describe('ChatInput — session context chips', () => {
     expect(chips.textContent).toContain('◆ test-kiln');
   });
 
-  it('omits the workspace chip when the session has no workspace', () => {
+  it('floating session (workspace == kiln) offers "+ project" instead of a workspace chip', () => {
     render(() => <ChatInput />);
-    const chips = screen.getByTestId('context-chips');
-    expect(chips.textContent).not.toContain('⌁');
+    expect(screen.queryByTestId('workspace-chip')).not.toBeInTheDocument();
+    expect(screen.getByTestId('attach-project')).toBeInTheDocument();
   });
 });

@@ -13,6 +13,7 @@ vi.mock('@/contexts/SessionContext', () => ({
       session_type: 'chat',
       kiln: '/tmp/k',
       workspace: '/tmp/k',
+      connected_kilns: [],
       state: 'active',
       title: null,
       agent_model: null,

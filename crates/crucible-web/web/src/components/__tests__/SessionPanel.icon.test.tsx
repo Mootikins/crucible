@@ -39,6 +39,7 @@ const session: Session = {
   session_type: 'chat',
   kiln: '/kiln',
   workspace: '/ws',
+  connected_kilns: [],
   state: 'active',
   title: 'A session',
   agent_model: 'llama3.2',

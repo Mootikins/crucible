@@ -1020,6 +1020,7 @@ mod messaging;
 mod models;
 pub(crate) mod precognition;
 pub mod providers;
+mod scope;
 pub(crate) mod title;
 pub mod tool_tracking;
 

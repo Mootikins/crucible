@@ -6,8 +6,9 @@ import { useAutocomplete } from '@/hooks/useAutocomplete';
 import { MicButton } from './MicButton';
 import { ChatModeControl, nextChatMode } from './ChatModeControl';
 import { AutocompletePopup } from './AutocompletePopup';
+import { SessionScopeChips } from './SessionScopeChips';
 import { executeCommand } from '@/lib/api';
-import { statusBarStore, pathBasename } from '@/stores/statusBarStore';
+import { statusBarStore } from '@/stores/statusBarStore';
 export const ChatInput: Component = () => {
   const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, switchMode, addSystemMessage, clearMessages } = useChatSafe();
   const { currentSession, cancelCurrentOperation, availableModels, switchModel } = useSessionSafe();
@@ -169,29 +170,9 @@ export const ChatInput: Component = () => {
           as two stacked prompts. */}
 
       {/* Session context strip: the workspace the session acts in and the
-          kiln it knows (Crucible Shell design 4a/5a). Display-only until the
-          daemon supports attaching/detaching kilns on a live session. */}
-      <Show when={session()}>
-        <div class="flex items-center gap-1.5 flex-wrap mb-2" data-testid="context-chips">
-          <Show when={session()!.workspace}>
-            <span
-              title={`workspace · ${session()!.workspace}`}
-              class="font-mono text-[11px] text-attention bg-attention/10 border border-attention/40 rounded-full px-2.5 py-0.5"
-            >
-              ⌁ {pathBasename(session()!.workspace)}
-            </span>
-            <span class="w-px h-4 bg-hairline" />
-          </Show>
-          <Show when={session()!.kiln}>
-            <span
-              title={`kiln · ${session()!.kiln}`}
-              class="text-[11.5px] text-shell-ink bg-primary/10 border border-primary/45 rounded-full px-2.5 py-0.5"
-            >
-              ◆ {pathBasename(session()!.kiln)}
-            </span>
-          </Show>
-        </div>
-      </Show>
+          kilns it knows — attach/detach mid-session (Crucible Shell design
+          4a/5a). */}
+      <SessionScopeChips />
 
       <div
         class="relative flex flex-col gap-2 bg-surface-base rounded-xl p-2 border-2 border-transparent transition-[border-color]"
