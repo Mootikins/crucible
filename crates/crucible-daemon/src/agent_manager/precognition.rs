@@ -251,7 +251,7 @@ impl AgentManager {
     /// Collect search sources from the primary kiln and any connected kilns.
     /// Connected kilns are skipped if they lack enrichment config or use a
     /// different embedding model than the primary kiln.
-    async fn collect_kiln_search_sources(
+    pub(super) async fn collect_kiln_search_sources(
         &self,
         session_id: &str,
         session: &crucible_core::session::Session,

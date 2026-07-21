@@ -17,6 +17,7 @@
 #![allow(clippy::doc_markdown, clippy::manual_let_else, missing_docs)]
 
 use super::helpers::{json_success, McpResultExt};
+use crate::multi_kiln_search::KilnSearchSource;
 use crucible_core::serde_helpers::default_true;
 use crucible_core::storage::NoteStore;
 use crucible_core::{enrichment::EmbeddingProvider, traits::KnowledgeRepository};
@@ -47,14 +48,13 @@ fn json_object_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema 
 #[allow(missing_docs)]
 pub struct SearchTools {
     kiln_path: String,
-    knowledge_repo: Arc<dyn KnowledgeRepository>,
     embedding_provider: Arc<dyn EmbeddingProvider>,
     /// Optional NoteStore for indexed property searches
     note_store: Option<Arc<dyn NoteStore>>,
-    /// Session-connected kilns: `semantic_search` fans out across these in
-    /// addition to the primary. Trust gating happens at attach time
-    /// (session.connect_kiln / session.create), not per-query.
-    connected_kilns: Vec<(std::path::PathBuf, Arc<dyn KnowledgeRepository>)>,
+    /// Kilns `semantic_search` fans out across: the primary plus any
+    /// session-connected kilns (same sources precognition uses — one
+    /// builder, one filter policy). Trust gating happens at attach time.
+    search_sources: Vec<KilnSearchSource>,
 }
 
 /// Parameters for semantic search
@@ -94,12 +94,16 @@ impl SearchTools {
         knowledge_repo: Arc<dyn KnowledgeRepository>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
     ) -> Self {
+        let search_sources = vec![KilnSearchSource {
+            kiln_path: std::path::PathBuf::from(&kiln_path),
+            knowledge_repo,
+            is_primary: true,
+        }];
         Self {
             kiln_path,
-            knowledge_repo,
             embedding_provider,
             note_store: None,
-            connected_kilns: Vec::new(),
+            search_sources,
         }
     }
 
@@ -109,21 +113,17 @@ impl SearchTools {
         embedding_provider: Arc<dyn EmbeddingProvider>,
         note_store: Arc<dyn NoteStore>,
     ) -> Self {
-        Self {
-            kiln_path,
-            knowledge_repo,
-            embedding_provider,
-            note_store: Some(note_store),
-            connected_kilns: Vec::new(),
-        }
+        let mut tools = Self::new(kiln_path, knowledge_repo, embedding_provider);
+        tools.note_store = Some(note_store);
+        tools
     }
 
-    /// Attach session-connected kilns for multi-kiln semantic search.
-    pub fn with_connected_kilns(
-        mut self,
-        connected: Vec<(std::path::PathBuf, Arc<dyn KnowledgeRepository>)>,
-    ) -> Self {
-        self.connected_kilns = connected;
+    /// Replace the search fan-out set (primary + connected kilns), as built
+    /// by `AgentManager::collect_kiln_search_sources`.
+    pub fn with_search_sources(mut self, sources: Vec<KilnSearchSource>) -> Self {
+        if !sources.is_empty() {
+            self.search_sources = sources;
+        }
         self
     }
 }
@@ -148,21 +148,8 @@ impl SearchTools {
         // engine precognition uses (dedup + merge-sort + kiln labeling).
         // Trust filtering is None here: connected kilns pass the trust gate
         // at attach time.
-        let mut sources = vec![crate::multi_kiln_search::KilnSearchSource {
-            kiln_path: std::path::PathBuf::from(&self.kiln_path),
-            knowledge_repo: self.knowledge_repo.clone(),
-            is_primary: true,
-        }];
-        sources.extend(self.connected_kilns.iter().map(|(path, repo)| {
-            crate::multi_kiln_search::KilnSearchSource {
-                kiln_path: path.clone(),
-                knowledge_repo: repo.clone(),
-                is_primary: false,
-            }
-        }));
-
         let note_results = crate::multi_kiln_search::search_across_kilns(
-            &sources,
+            &self.search_sources,
             embedding,
             limit,
             None,

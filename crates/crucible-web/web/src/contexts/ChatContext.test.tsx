@@ -151,7 +151,6 @@ describe('ChatContext', () => {
       type: 'message_complete',
       id: 'msg_server_1',
       content: 'Response from assistant',
-      tool_calls: [],
     });
 
     await waitFor(() => {

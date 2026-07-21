@@ -271,7 +271,7 @@ async fn create_session(
 
     // No kiln → omitted from the wire; the daemon resolves its default
     // (home kiln), so web can never drift from it.
-    let result = state
+    let mut result = state
         .daemon
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: req.session_type.clone(),
@@ -285,7 +285,6 @@ async fn create_session(
         .await
         .daemon_err()?;
 
-    let mut result = result;
     let session_id = result["session_id"].as_str().unwrap_or("").to_string();
     let session_id = session_id.as_str();
 

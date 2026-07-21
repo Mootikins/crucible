@@ -30,8 +30,7 @@ pub mod mock_agent;
 pub use acp_client::{CrucibleClient, WriteInfo};
 pub use client::CrucibleAcpClient;
 pub use discovery::{
-    discover_agent, get_agent_help, get_known_agents, is_agent_available, probe_all_agents,
-    reset_agent_cache, AgentInfo, KnownAgent,
+    discover_agent, get_agent_help, is_agent_available, reset_agent_cache, AgentInfo,
 };
 pub use filesystem::FileSystemHandler;
 pub use protocol::MessageHandler;

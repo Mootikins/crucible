@@ -1,8 +1,16 @@
 import { Component, For, Show, createEffect, createMemo } from 'solid-js';
 import { Message } from './Message';
+import { ToolCard } from './ToolCard';
 import { InteractionHandler } from './interactions';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
+import type { Message as MessageType } from '@/lib/types';
+
+/** Transcript row: a message, or a run of consecutive tool calls collapsed
+ * into one block (sequential tools read as a single unit of activity). */
+type TranscriptRow =
+  | { kind: 'message'; message: MessageType }
+  | { kind: 'tools'; key: string; items: MessageType[] };
 
 export const MessageList: Component = () => {
   const { messages, isStreaming, pendingInteraction, respondToInteraction } = useChatSafe();
@@ -21,13 +29,45 @@ export const MessageList: Component = () => {
 
   const session = () => currentSession();
 
+  const rows = createMemo<TranscriptRow[]>(() => {
+    const out: TranscriptRow[] = [];
+    for (const message of messages()) {
+      if (message.role === 'tool') {
+        const last = out[out.length - 1];
+        if (last?.kind === 'tools') {
+          last.items.push(message);
+        } else {
+          out.push({ kind: 'tools', key: `tools-${message.id}`, items: [message] });
+        }
+      } else {
+        out.push({ kind: 'message', message });
+      }
+    }
+    return out;
+  });
+
   return (
     <div
       class="flex-1 overflow-y-auto px-4 py-6"
       data-testid="message-list"
     >
-      <For each={messages()}>
-        {(message, index) => {
+      <For each={rows()}>
+        {(row, index) => {
+          if (row.kind === 'tools') {
+            return (
+              <div class="group relative mb-3 flex justify-start" data-role="tool">
+                <div
+                  class="w-full max-w-3xl border border-hairline rounded-lg overflow-hidden divide-y divide-hairline bg-surface-elevated"
+                  data-testid="tool-group"
+                >
+                  <For each={row.items}>
+                    {(m) => <ToolCard toolCall={m.toolCall!} grouped />}
+                  </For>
+                </div>
+              </div>
+            );
+          }
+          const message = row.message;
           const isLastAssistant = createMemo(() => {
             const msgs = messages();
             for (let i = msgs.length - 1; i >= 0; i--) {
@@ -40,7 +80,7 @@ export const MessageList: Component = () => {
           return (
             <Message
               message={message}
-              isStreaming={isStreaming() && index() === messages().length - 1 && message.role === 'assistant'}
+              isStreaming={isStreaming() && index() === rows().length - 1 && message.role === 'assistant'}
               isLast={isLastAssistant()}
             />
           );

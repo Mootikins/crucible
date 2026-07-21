@@ -77,8 +77,6 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   let eventSourceCleanup: (() => void) | null = null;
   let historyAbortController: AbortController | null = null;
   let currentStreamingMessageId: string | null = null;
-  let firstUserMessage: string | null = null;
-  let hasReceivedFirstResponse = false;
   let previousSessionId: string | null = null;
   const [sessionTitle, setSessionTitle] = createSignal<string | null>(null);
 
@@ -134,14 +132,14 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
 
   // Fine-grained path update: mutating `toolCall` in place keeps the message
   // object's identity stable, so <For> doesn't recreate the row and the
-  // ToolCard's expanded state survives streaming result deltas.
+  // ToolCard's expanded state survives streaming result deltas. Every
+  // producer sets callId, so that's the only match key.
   const updateToolMessage = (
     callId: string,
     updater: (tool: ToolCallDisplay) => ToolCallDisplay,
   ) => {
     setMessages(
-      (m) => m.role === 'tool' && !!m.toolCall
-        && (m.toolCall.callId === callId || m.toolCall.id === callId),
+      (m) => m.role === 'tool' && m.toolCall?.callId === callId,
       'toolCall',
       (tool) => updater(tool as ToolCallDisplay),
     );
@@ -154,8 +152,6 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
      setError(null);
      setPendingInteraction(null);
      currentStreamingMessageId = null;
-     firstUserMessage = null;
-     hasReceivedFirstResponse = false;
    };
 
    /** UI-optimistic mode switch that also persists daemon-side. The daemon
@@ -188,15 +184,6 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     setCurrentStreamingMessageId: (id) => {
       currentStreamingMessageId = id;
     },
-    firstUserMessage: () => firstUserMessage,
-    hasReceivedFirstResponse: () => hasReceivedFirstResponse,
-    setHasReceivedFirstResponse: (value) => {
-      hasReceivedFirstResponse = value;
-    },
-    // Titles are daemon-owned: on the first completed turn of an untitled
-    // session the daemon generates a topic-based title and broadcasts
-    // title_changed, handled below. Nothing to do client-side.
-    onFirstResponse: () => {},
     onTitleChanged: (title: string) => {
       setSessionTitle(title);
       const tabInfo = findTabBySessionId(props.sessionId);
@@ -308,13 +295,6 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         const newer = prev.filter((m) => !reconstructed.has(m.id));
         return [...loadedMessages, ...newer];
       });
-      if (loadedMessages.length > 0) {
-        hasReceivedFirstResponse = true;
-        const userMsg = loadedMessages.find((m) => m.role === 'user');
-        if (userMsg) {
-          firstUserMessage = userMsg.content;
-        }
-      }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
         // Silently ignore — expected when session switches rapidly
@@ -439,9 +419,6 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     // heuristic. The optimistic messages therefore wait for the POST — a
     // local round-trip that just enqueues the turn.
     const trimmed = content.trim();
-    if (!firstUserMessage) {
-      firstUserMessage = trimmed;
-    }
 
     setIsLoading(true);
     setIsStreaming(true);

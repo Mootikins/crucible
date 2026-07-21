@@ -720,26 +720,19 @@ impl AgentManager {
                 (repo, embed)
             };
 
-            // Connected kilns join semantic_search's scope (same pattern as
-            // precognition's collect_kiln_search_sources). Unopenable kilns
-            // are skipped, not failed — search should degrade, not break.
-            let mut connected_repos: Vec<(
-                std::path::PathBuf,
-                Arc<dyn crucible_core::traits::KnowledgeRepository>,
-            )> = Vec::new();
-            for connected in &session.connected_kilns {
-                match self.kiln_manager.get_or_open(connected).await {
-                    Ok(storage) => {
-                        connected_repos
-                            .push((connected.clone(), storage.as_knowledge_repository()));
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            kiln = %connected.display(),
-                            error = %e,
-                            "Skipping connected kiln for session tools"
-                        );
-                    }
+            // Connected kilns join semantic_search's scope through the SAME
+            // source builder precognition uses (one open loop, one
+            // model-mismatch filter policy). Falls back to primary-only when
+            // there's nothing to fan out to or no enrichment config.
+            let mut search_sources: Vec<crate::multi_kiln_search::KilnSearchSource> = Vec::new();
+            if !session.connected_kilns.is_empty() {
+                if let (Ok(handle), Some(config)) = (
+                    self.kiln_manager.get_or_open(session.kiln.as_path()).await,
+                    self.kiln_manager.enrichment_config().cloned(),
+                ) {
+                    search_sources = self
+                        .collect_kiln_search_sources(&session.id, session, &handle, &config)
+                        .await;
                 }
             }
 
@@ -753,7 +746,7 @@ impl AgentManager {
                     embedding_provider,
                     None,
                 )
-                .with_connected_kilns(connected_repos),
+                .with_search_sources(search_sources),
             );
 
             let mut providers: Vec<Arc<dyn ToolExecutor>> = vec![

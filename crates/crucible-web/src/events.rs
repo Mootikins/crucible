@@ -47,8 +47,6 @@ pub enum ChatEvent {
     MessageComplete {
         id: String,
         content: String,
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        tool_calls: Vec<ToolCallSummary>,
         #[serde(skip_serializing_if = "Option::is_none")]
         prompt_tokens: Option<u64>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -127,12 +125,6 @@ pub enum ChatEvent {
         event_type: String,
         data: serde_json::Value,
     },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCallSummary {
-    pub id: String,
-    pub title: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -261,7 +253,6 @@ impl ChatEvent {
                     .or_else(|| data["content"].as_str())
                     .unwrap_or("")
                     .to_string(),
-                tool_calls: Vec::new(),
                 prompt_tokens: data["prompt_tokens"].as_u64(),
                 completion_tokens: data["completion_tokens"].as_u64(),
                 total_tokens: data["total_tokens"].as_u64(),

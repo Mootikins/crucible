@@ -48,7 +48,6 @@ interface ReducerHarness {
   state: {
     messages: Message[];
     currentStreamingMessageId: string | null;
-    hasReceivedFirstResponse: boolean;
     subagentEvents: SubagentEvent[];
     contextUsage: ContextUsage | null;
     chatMode: ChatMode;
@@ -58,7 +57,6 @@ interface ReducerHarness {
     isStreaming: boolean;
   };
   spies: {
-    onFirstResponse: ReturnType<typeof vi.fn>;
     onTitleChanged: ReturnType<typeof vi.fn>;
     addMessage: ReturnType<typeof vi.fn>;
     updateMessage: ReturnType<typeof vi.fn>;
@@ -67,7 +65,6 @@ interface ReducerHarness {
   /** Mutate state for setup (e.g. install a streaming message before token). */
   setUp: {
     streamingMessage: (id: string) => void;
-    firstUserMessage: (text: string) => void;
   };
 }
 
@@ -75,7 +72,6 @@ function createHarness(): ReducerHarness {
   const state: ReducerHarness['state'] = {
     messages: [],
     currentStreamingMessageId: null,
-    hasReceivedFirstResponse: false,
     subagentEvents: [],
     contextUsage: null,
     chatMode: 'normal',
@@ -84,10 +80,7 @@ function createHarness(): ReducerHarness {
     isLoading: false,
     isStreaming: false,
   };
-  let firstUser: string | null = null;
-
   const spies = {
-    onFirstResponse: vi.fn(),
     onTitleChanged: vi.fn(),
     addMessage: vi.fn((message: Message) => {
       state.messages.push(message);
@@ -113,12 +106,6 @@ function createHarness(): ReducerHarness {
     setCurrentStreamingMessageId: (id) => {
       state.currentStreamingMessageId = id;
     },
-    firstUserMessage: () => firstUser,
-    hasReceivedFirstResponse: () => state.hasReceivedFirstResponse,
-    setHasReceivedFirstResponse: (value) => {
-      state.hasReceivedFirstResponse = value;
-    },
-    onFirstResponse: spies.onFirstResponse,
     onTitleChanged: spies.onTitleChanged,
     addMessage: spies.addMessage,
     updateMessage: spies.updateMessage,
@@ -144,7 +131,7 @@ function createHarness(): ReducerHarness {
     updateToolMessage: (callId, updater) => {
       for (const m of state.messages) {
         const tool = m.toolCall;
-        if (m.role === 'tool' && tool && (tool.callId === callId || tool.id === callId)) {
+        if (m.role === 'tool' && tool && tool.callId === callId) {
           m.toolCall = updater(tool);
         }
       }
@@ -192,9 +179,6 @@ function createHarness(): ReducerHarness {
             timestamp: 0,
           });
         }
-      },
-      firstUserMessage: (text: string) => {
-        firstUser = text;
       },
     },
   };
@@ -366,7 +350,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
     h.reducer({ type: 'tool_call', id: 'tc-1', title: 'semantic_search' });
     h.reducer({ type: 'tool_result', id: 'tc-1', result: 'notes...' });
     h.reducer({ type: 'token', content: 'Here is what I found.' });
-    h.reducer({ type: 'message_complete', id: 'srv', content: 'Here is what I found.', tool_calls: [] });
+    h.reducer({ type: 'message_complete', id: 'srv', content: 'Here is what I found.' });
 
     expect(h.state.messages.map((m) => m.role)).toEqual(['assistant', 'tool', 'assistant']);
     expect(h.state.messages[0].content).toBe('Let me look that up.');
@@ -381,7 +365,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
     h.setUp.streamingMessage('asst-1');
     h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
     h.reducer({ type: 'tool_result', id: 'tc-1', result: 'found it' });
-    h.reducer({ type: 'message_complete', id: 'srv', content: 'done', tool_calls: [] });
+    h.reducer({ type: 'message_complete', id: 'srv', content: 'done' });
     expect(h.tools()).toHaveLength(1);
     expect(h.tools()[0]).toMatchObject({ status: 'complete', result: 'found it' });
   });
@@ -404,17 +388,15 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.state.messages[0].thinking).toEqual({ content: 'pondering', isStreaming: true });
   });
 
-  it('message_complete: finalizes message, clears streaming, calls onFirstResponse exactly once', () => {
+  it('message_complete: finalizes the streaming message and clears streaming state', () => {
     const h = createHarness();
     h.setUp.streamingMessage('msg-stream');
-    h.setUp.firstUserMessage('hi');
     h.reducer({ type: 'thinking', content: 'reasoning' });
 
     h.reducer({
       type: 'message_complete',
       id: 'msg-server-1',
       content: 'final',
-      tool_calls: [{ id: 'tc-x', title: 'noop' }],
       prompt_tokens: 100,
       completion_tokens: 50,
       total_tokens: 150,
@@ -425,7 +407,6 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.state.messages[0]).toMatchObject({
       id: 'msg-server-1-response',
       content: 'final',
-      toolCalls: [{ id: 'tc-x', title: 'noop' }],
       usage: {
         promptTokens: 100,
         completionTokens: 50,
@@ -439,8 +420,6 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.state.isLoading).toBe(false);
     expect(h.tools()).toEqual([]);
     expect(h.state.currentStreamingMessageId).toBeNull();
-    expect(h.state.hasReceivedFirstResponse).toBe(true);
-    expect(h.spies.onFirstResponse).toHaveBeenCalledOnce();
   });
 
   it('message_complete: omits usage when total_tokens is missing/zero', () => {
@@ -450,22 +429,9 @@ describe('event matrix — covers every ChatEvent variant', () => {
       type: 'message_complete',
       id: 'msg-server-1',
       content: 'final',
-      tool_calls: [],
+
     });
     expect(h.state.messages[0].usage).toBeUndefined();
-  });
-
-  it('message_complete: does not call onFirstResponse if no first user message', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('msg-stream');
-    h.reducer({
-      type: 'message_complete',
-      id: 'srv',
-      content: '',
-      tool_calls: [],
-    });
-    expect(h.spies.onFirstResponse).not.toHaveBeenCalled();
-    expect(h.state.hasReceivedFirstResponse).toBe(false);
   });
 
   it('message_complete: with no streaming message, appends the completed turn (late attach)', () => {
@@ -474,7 +440,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
       type: 'message_complete',
       id: 'srv',
       content: 'full text',
-      tool_calls: [],
+
     });
     expect(h.state.messages).toHaveLength(1);
     expect(h.state.messages[0]).toMatchObject({
@@ -483,7 +449,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
       content: 'full text',
     });
     // Replayed completion (reconnect) must not duplicate.
-    h.reducer({ type: 'message_complete', id: 'srv', content: 'full text', tool_calls: [] });
+    h.reducer({ type: 'message_complete', id: 'srv', content: 'full text' });
     expect(h.state.messages).toHaveLength(1);
     expect(h.state.isStreaming).toBe(false);
   });
@@ -784,7 +750,7 @@ const arbChatEvent = (): fc.Arbitrary<ChatEvent> => {
     type: fc.constant('message_complete' as const),
     id: fc.string({ minLength: 1, maxLength: 10 }),
     content: fc.string(),
-    tool_calls: fc.constant([]),
+    
   });
   const err = fc.record({
     type: fc.constant('error' as const),
@@ -877,7 +843,6 @@ describe('property: totality', () => {
       fc.property(fc.array(arbChatEvent(), { maxLength: 50 }), (events) => {
         const h = createHarness();
         h.setUp.streamingMessage('asst-1');
-        h.setUp.firstUserMessage('user said something');
         for (const event of events) {
           h.reducer(event);
         }
@@ -938,7 +903,7 @@ describe('property: message_complete second call is a safe no-op', () => {
             type: 'message_complete',
             id: msgId,
             content,
-            tool_calls: [],
+
           };
           h.reducer(event);
           const firstSnapshot = JSON.stringify(h.state.messages);
@@ -1114,7 +1079,7 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
       if (t === 'title_changed') minimal.title = 'A generated title';
       if (t === 'session_event') { minimal.event_type = 'x'; minimal.data = null; }
       if (t === 'error') { minimal.code = 'x'; minimal.message = ''; }
-      if (t === 'message_complete') { minimal.content = ''; minimal.tool_calls = []; }
+      if (t === 'message_complete') { minimal.content = ''; }
       if (t === 'tool_call' || t === 'tool_call_start') minimal.title = minimal.name = 'noop';
       if (t === 'tool_result_delta') minimal.delta = '';
       if (t === 'tool_result_error' || t === 'subagent_failed' || t === 'delegation_failed') {

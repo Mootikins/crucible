@@ -17,10 +17,6 @@ interface ChatEventReducerDeps {
   messages: () => Message[];
   currentStreamingMessageId: () => string | null;
   setCurrentStreamingMessageId: (id: string | null) => void;
-  firstUserMessage: () => string | null;
-  hasReceivedFirstResponse: () => boolean;
-  setHasReceivedFirstResponse: (value: boolean) => void;
-  onFirstResponse: () => void;
   addMessage: (message: Message) => void;
   updateMessage: (id: string, updates: Partial<Message>) => void;
   appendToMessage: (id: string, content: string) => void;
@@ -164,7 +160,6 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
           deps.updateMessage(messageId, {
             ...(idTaken ? {} : { id: responseId }),
             content: event.content,
-            toolCalls: event.tool_calls,
             usage,
             ...(thinkingData ? {
               thinking: {
@@ -188,11 +183,6 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         deps.setIsStreaming(false);
         deps.setIsLoading(false);
         deps.setCurrentStreamingMessageId(null);
-
-        if (!deps.hasReceivedFirstResponse() && deps.firstUserMessage()) {
-          deps.setHasReceivedFirstResponse(true);
-          deps.onFirstResponse();
-        }
         break;
       }
 

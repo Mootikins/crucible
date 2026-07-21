@@ -222,13 +222,13 @@ impl CrucibleMcpServer {
         }
     }
 
-    /// Attach session-connected kilns so `semantic_search` covers them in
-    /// addition to the primary kiln.
-    pub fn with_connected_kilns(
+    /// Attach the session's search fan-out set (primary + connected kilns)
+    /// so `semantic_search` covers the same sources precognition does.
+    pub fn with_search_sources(
         mut self,
-        connected: Vec<(PathBuf, Arc<dyn KnowledgeRepository>)>,
+        sources: Vec<crate::multi_kiln_search::KilnSearchSource>,
     ) -> Self {
-        self.search_tools = self.search_tools.with_connected_kilns(connected);
+        self.search_tools = self.search_tools.with_search_sources(sources);
         self
     }
 

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct KilnSearchSource {
     pub kiln_path: PathBuf,
     pub knowledge_repo: Arc<dyn KnowledgeRepository>,

@@ -34,73 +34,6 @@ pub struct AgentInfo {
 
 const BUILTIN_AGENT_ORDER: &[&str] = &["opencode", "claude", "gemini", "codex", "cursor"];
 
-static KNOWN_AGENTS: Lazy<Vec<(String, String)>> = Lazy::new(|| {
-    let defaults = default_agent_profiles();
-    BUILTIN_AGENT_ORDER
-        .iter()
-        .filter_map(|name| {
-            defaults.get(*name).map(|profile| {
-                (
-                    (*name).to_string(),
-                    profile.description.clone().unwrap_or_default(),
-                )
-            })
-        })
-        .collect()
-});
-
-/// Information about a known agent (for splash screen display)
-#[derive(Debug, Clone)]
-pub struct KnownAgent {
-    pub name: String,
-    pub description: String,
-    pub available: bool,
-}
-
-/// Get list of known agents (sync, no availability check)
-pub fn get_known_agents() -> Vec<KnownAgent> {
-    KNOWN_AGENTS
-        .iter()
-        .map(|(name, desc)| KnownAgent {
-            name: name.to_string(),
-            description: desc.to_string(),
-            available: false, // Unknown until probed
-        })
-        .collect()
-}
-
-/// Probe all known agents and return availability status
-///
-/// This probes all agents in parallel and returns their availability.
-/// Use this to populate splash screen with actual availability info.
-pub async fn probe_all_agents() -> Vec<KnownAgent> {
-    let profiles = default_agent_profiles();
-    let ordered_names = ordered_profile_names(&profiles);
-
-    let futures: Vec<_> = ordered_names
-        .into_iter()
-        .filter_map(|name| {
-            profiles.get(&name).and_then(|profile| {
-                profile.command.as_ref().map(|cmd| {
-                    let name = name.clone();
-                    let cmd = cmd.clone();
-                    let description = profile.description.clone().unwrap_or_default();
-                    async move {
-                        let available = is_agent_available(&cmd).await;
-                        KnownAgent {
-                            name,
-                            description,
-                            available,
-                        }
-                    }
-                })
-            })
-        })
-        .collect();
-
-    join_all(futures).await
-}
-
 /// Built-in agent profiles (table-driven initialization)
 const BUILTIN_PROFILES: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("opencode", "opencode", &["acp"], Some("OpenCode AI (Go)")),
@@ -437,7 +370,7 @@ pub async fn is_agent_available(command: &str) -> bool {
 ///
 /// This function looks up an agent by name, checking:
 /// 1. Custom profiles in config.agents
-/// 2. Built-in KNOWN_AGENTS
+/// 2. Built-in default agent profiles
 ///
 /// For custom profiles, it can extend a built-in agent (using `extends`)
 /// or define a completely custom agent (using `command` and `args`).
@@ -629,23 +562,6 @@ mod tests {
             "Parallel probe took too long: {:?}",
             elapsed
         );
-    }
-
-    #[test]
-    fn test_known_agents_list() {
-        assert!(!KNOWN_AGENTS.is_empty(), "Should have known agents");
-
-        for (name, description) in KNOWN_AGENTS.iter() {
-            assert!(!name.is_empty(), "Agent name should not be empty");
-            assert!(
-                !description.is_empty(),
-                "Agent description should not be empty"
-            );
-        }
-
-        let names: Vec<String> = KNOWN_AGENTS.iter().map(|(name, _)| name.clone()).collect();
-        assert!(names.contains(&"opencode".to_string()));
-        assert!(names.contains(&"claude".to_string()));
     }
 
     #[test]
@@ -947,15 +863,5 @@ mod tests {
             "cursor"
         ]
         .contains(&agent.name.as_str()));
-    }
-
-    #[test]
-    fn test_get_known_agents_reflects_default_profiles() {
-        let known = get_known_agents();
-        let profiles = default_agent_profiles();
-
-        for agent in known {
-            assert!(profiles.contains_key(&agent.name));
-        }
     }
 }

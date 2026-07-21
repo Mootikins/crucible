@@ -637,39 +637,3 @@ describe('Message — wikilink click handler', () => {
   });
 });
 
-// ── Tool calls ─────────────────────────────────────────────────────────
-
-describe('Message — tool calls', () => {
-  it('renders one ToolCard per toolCall summary', () => {
-    render(() => (
-      <Message
-        message={makeMessage({
-          role: 'assistant',
-          content: 'reply',
-          toolCalls: [
-            { id: 't1', title: 'read_file' },
-            { id: 't2', title: 'bash' },
-          ],
-        })}
-      />
-    ));
-    expect(screen.getByText('read_file')).toBeInTheDocument();
-    expect(screen.getByText('bash')).toBeInTheDocument();
-  });
-
-  it('renders tool cards even when the assistant message has no text content', () => {
-    render(() => (
-      <Message
-        message={makeMessage({
-          role: 'assistant',
-          content: '',
-          toolCalls: [{ id: 't', title: 'only-tool' }],
-        })}
-      />
-    ));
-    expect(screen.getByText('only-tool')).toBeInTheDocument();
-    // The pulse-dot fallback should NOT render once toolCalls are present
-    const dots = document.body.querySelectorAll('.w-2.h-2.animate-pulse');
-    expect(dots.length).toBe(0);
-  });
-});

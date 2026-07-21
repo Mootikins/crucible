@@ -13,8 +13,6 @@ export interface Message {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   timestamp: number;
-  /** Tool calls made during this message */
-  toolCalls?: ToolCallSummary[];
   /**
    * For role "tool": the tool invocation this transcript entry represents.
    * Tool calls are first-class transcript entries (like Claude Code / VS Code
@@ -38,11 +36,6 @@ export interface Message {
   };
 }
 
-/** Summary of a tool call */
-export interface ToolCallSummary {
-  id: string;
-  title: string;
-}
 
 // =============================================================================
 // Session Types (matching Rust SessionSummary)
@@ -455,7 +448,6 @@ export interface MessageCompleteEvent {
   type: 'message_complete';
   id: string;
   content: string;
-  tool_calls: ToolCallSummary[];
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;

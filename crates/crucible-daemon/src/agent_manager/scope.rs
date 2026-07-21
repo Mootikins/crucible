@@ -46,6 +46,34 @@ impl AgentManager {
         }
     }
 
+    /// Shared envelope for scope mutations: idle-check → load → apply the
+    /// rule → (if changed) persist + invalidate caches + emit. The rule
+    /// returns whether it changed anything; no-ops skip the write entirely.
+    async fn mutate_scope(
+        &self,
+        session_id: &str,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        apply: impl FnOnce(&mut Session) -> Result<bool, AgentError>,
+    ) -> Result<Session, AgentError> {
+        self.ensure_idle(session_id)?;
+        let mut session = self
+            .session_manager
+            .get_session(session_id)
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
+
+        if !apply(&mut session)? {
+            return Ok(session);
+        }
+
+        self.session_manager
+            .update_session(&session)
+            .await
+            .map_err(AgentError::Session)?;
+        self.invalidate_scope_caches(session_id);
+        self.emit_scope_changed(event_tx, &session);
+        Ok(session)
+    }
+
     /// Attach a kiln to the session's connected set. Idempotent; the primary
     /// kiln cannot be attached twice.
     pub async fn connect_kiln(
@@ -54,30 +82,20 @@ impl AgentManager {
         kiln: &Path,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<Session, AgentError> {
-        self.ensure_idle(session_id)?;
-        let mut session = self
-            .session_manager
-            .get_session(session_id)
-            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
-
         let kiln = kiln.to_path_buf();
-        if session.kiln == kiln {
-            return Err(AgentError::InvalidConfig(
-                "kiln is already the session's primary kiln".to_string(),
-            ));
-        }
-        if session.connected_kilns.contains(&kiln) {
-            return Ok(session);
-        }
-
-        session.connected_kilns.push(kiln);
-        self.session_manager
-            .update_session(&session)
-            .await
-            .map_err(AgentError::Session)?;
-        self.invalidate_scope_caches(session_id);
-        self.emit_scope_changed(event_tx, &session);
-        Ok(session)
+        self.mutate_scope(session_id, event_tx, move |session| {
+            if session.kiln == kiln {
+                return Err(AgentError::InvalidConfig(
+                    "kiln is already the session's primary kiln".to_string(),
+                ));
+            }
+            if session.connected_kilns.contains(&kiln) {
+                return Ok(false);
+            }
+            session.connected_kilns.push(kiln);
+            Ok(true)
+        })
+        .await
     }
 
     /// Detach a connected kiln. The primary kiln cannot be detached — the
@@ -88,31 +106,18 @@ impl AgentManager {
         kiln: &Path,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<Session, AgentError> {
-        self.ensure_idle(session_id)?;
-        let mut session = self
-            .session_manager
-            .get_session(session_id)
-            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
-
-        if session.kiln == kiln {
-            return Err(AgentError::InvalidConfig(
-                "cannot detach the session's primary kiln — the session is stored there"
-                    .to_string(),
-            ));
-        }
-        let before = session.connected_kilns.len();
-        session.connected_kilns.retain(|k| k != kiln);
-        if session.connected_kilns.len() == before {
-            return Ok(session);
-        }
-
-        self.session_manager
-            .update_session(&session)
-            .await
-            .map_err(AgentError::Session)?;
-        self.invalidate_scope_caches(session_id);
-        self.emit_scope_changed(event_tx, &session);
-        Ok(session)
+        self.mutate_scope(session_id, event_tx, |session| {
+            if session.kiln == kiln {
+                return Err(AgentError::InvalidConfig(
+                    "cannot detach the session's primary kiln — the session is stored there"
+                        .to_string(),
+                ));
+            }
+            let before = session.connected_kilns.len();
+            session.connected_kilns.retain(|k| k != kiln);
+            Ok(session.connected_kilns.len() != before)
+        })
+        .await
     }
 
     /// Set or clear the session's workspace. `None` detaches: the workspace
@@ -125,37 +130,26 @@ impl AgentManager {
         workspace: Option<PathBuf>,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<Session, AgentError> {
-        self.ensure_idle(session_id)?;
-        let mut session = self
-            .session_manager
-            .get_session(session_id)
-            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
-
-        let is_acp = session
-            .agent
-            .as_ref()
-            .map(|a| a.agent_type == "acp")
-            .unwrap_or(false);
-        if is_acp {
-            return Err(AgentError::NotSupported(
-                "ACP agents run in the workspace they were spawned with — start a new session to change it"
-                    .to_string(),
-            ));
-        }
-
-        let new_workspace = workspace.unwrap_or_else(|| session.kiln.clone());
-        if session.workspace == new_workspace {
-            return Ok(session);
-        }
-
-        session.workspace = new_workspace;
-        self.session_manager
-            .update_session(&session)
-            .await
-            .map_err(AgentError::Session)?;
-        self.invalidate_scope_caches(session_id);
-        self.emit_scope_changed(event_tx, &session);
-        Ok(session)
+        self.mutate_scope(session_id, event_tx, move |session| {
+            let is_acp = session
+                .agent
+                .as_ref()
+                .map(|a| a.agent_type == "acp")
+                .unwrap_or(false);
+            if is_acp {
+                return Err(AgentError::NotSupported(
+                    "ACP agents run in the workspace they were spawned with — start a new session to change it"
+                        .to_string(),
+                ));
+            }
+            let new_workspace = workspace.unwrap_or_else(|| session.kiln.clone());
+            if session.workspace == new_workspace {
+                return Ok(false);
+            }
+            session.workspace = new_workspace;
+            Ok(true)
+        })
+        .await
     }
 }
 

@@ -53,7 +53,6 @@ fn chat_event_message_complete_event_name() {
     let event = ChatEvent::MessageComplete {
         id: "1".to_string(),
         content: "done".to_string(),
-        tool_calls: vec![],
         prompt_tokens: None,
         completion_tokens: None,
         total_tokens: None,
@@ -98,11 +97,12 @@ fn chat_event_error_serializes_with_type_tag() {
 }
 
 #[test]
-fn chat_event_message_complete_omits_empty_tool_calls() {
+fn chat_event_message_complete_has_no_tool_calls_field() {
+    // tool_calls was removed from the wire entirely — tools are first-class
+    // transcript events (tool_call/tool_result), never a completion payload.
     let event = ChatEvent::MessageComplete {
         id: "msg-1".to_string(),
         content: "response text".to_string(),
-        tool_calls: vec![],
         prompt_tokens: None,
         completion_tokens: None,
         total_tokens: None,
@@ -110,12 +110,7 @@ fn chat_event_message_complete_omits_empty_tool_calls() {
         cache_creation_tokens: None,
     };
     let json: Value = serde_json::to_value(&event).unwrap();
-
-    // Contract: empty tool_calls should be omitted (skip_serializing_if)
-    assert!(
-        json.get("tool_calls").is_none(),
-        "Empty tool_calls should be omitted from serialization"
-    );
+    assert!(json.get("tool_calls").is_none());
 }
 
 #[test]

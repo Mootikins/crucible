@@ -6,6 +6,9 @@ import { extractDiffFromToolCall } from '@/lib/tool-diffs';
 
 interface ToolCardProps {
   toolCall: ToolCallDisplay;
+  /** Rendered as an item inside a tool-group block: the group owns the
+   * border/rounding, the card keeps only its status wash. */
+  grouped?: boolean;
 }
 
 export const ToolCard: Component<ToolCardProps> = (props) => {
@@ -121,7 +124,13 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   });
 
   return (
-    <div class={`border ${statusBorderColor()} rounded-lg ${statusBgColor()} overflow-hidden my-2`}>
+    <div
+      class={
+        props.grouped
+          ? `${statusBgColor()} overflow-hidden`
+          : `border ${statusBorderColor()} rounded-lg ${statusBgColor()} overflow-hidden my-2`
+      }
+    >
       <button
         onClick={() => setExpanded(!expanded())}
         class="w-full flex items-center gap-2 px-3 py-2 hover:bg-hover-wash transition-colors text-left"

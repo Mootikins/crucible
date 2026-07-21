@@ -1,11 +1,10 @@
-import { Component, Show, For, createMemo, createSignal, createEffect, onCleanup } from 'solid-js';
+import { Component, Show, createSignal, createEffect, onCleanup } from 'solid-js';
 import { Copy, Check, Pencil, RefreshCw } from 'lucide-solid';
-import { ToolCard } from './ToolCard';
 import { ThinkingBlock } from './ThinkingBlock';
 import { PrecognitionBadge } from './PrecognitionBadge';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import type { Message as MessageType, ToolCallDisplay, TokenUsage } from '@/lib/types';
+import type { Message as MessageType, TokenUsage } from '@/lib/types';
 import { renderMarkdown, renderMarkdownAsync, renderPlainWithWikilinks } from '@/lib/markdown';
 import { openNoteInEditor } from '@/lib/note-actions';
 import { statusBarStore } from '@/stores/statusBarStore';
@@ -95,7 +94,6 @@ export const Message: Component<MessageProps> = (props) => {
   const isSystem = () => props.message.role === 'system';
   const isAssistant = () => props.message.role === 'assistant';
   const isEmpty = () => !props.message.content || props.message.content.length === 0;
-  const hasToolCalls = () => props.message.toolCalls && props.message.toolCalls.length > 0;
   const hasThinking = () => !!props.message.thinking && props.message.thinking.content.length > 0;
   const hasPrecognition = () => !!props.message.precognition;
   const [renderedContent, setRenderedContent] = createSignal('');
@@ -103,17 +101,6 @@ export const Message: Component<MessageProps> = (props) => {
   const [isEditing, setIsEditing] = createSignal(false);
   const [editContent, setEditContent] = createSignal('');
   let markdownRef: HTMLDivElement | undefined;
-
-  const toolCalls = createMemo<ToolCallDisplay[]>(() => {
-    const calls = props.message.toolCalls ?? [];
-    return calls.map((tool) => ({
-      id: tool.id,
-      callId: tool.id,
-      name: tool.title,
-      args: '',
-      status: 'complete',
-    }));
-  });
 
   createEffect(() => {
     if (isUser() || isEmpty()) {
@@ -226,21 +213,8 @@ export const Message: Component<MessageProps> = (props) => {
 
   const showActions = () => !isSystem() && !props.isStreaming;
 
-  // Tool invocations are transcript rows of their own (role never changes
-  // for a given message, so a plain branch is safe in Solid).
-  if (props.message.role === 'tool' && props.message.toolCall) {
-    return (
-      <div
-        class="group relative mb-3 flex justify-start"
-        data-testid="message-tool"
-        data-role="tool"
-      >
-        <div class="w-full max-w-3xl">
-          <ToolCard toolCall={props.message.toolCall} />
-        </div>
-      </div>
-    );
-  }
+  // Tool messages never reach this component — MessageList collapses runs
+  // of them into tool-group blocks and renders ToolCards directly.
 
   return (
     <div
@@ -258,7 +232,7 @@ export const Message: Component<MessageProps> = (props) => {
         }
       >
         <Show
-          when={!isEmpty() || hasToolCalls()}
+          when={!isEmpty()}
           fallback={
             <span class="inline-flex items-center gap-1">
               <span class="w-2 h-2 bg-muted rounded-full animate-pulse" />
@@ -279,14 +253,6 @@ export const Message: Component<MessageProps> = (props) => {
               isStreaming={props.message.thinking!.isStreaming}
               tokenCount={props.message.thinking!.tokenCount}
             />
-          </Show>
-
-          <Show when={hasToolCalls()}>
-            <div class="mb-2">
-              <For each={toolCalls()}>
-                {(tool) => <ToolCard toolCall={tool} />}
-              </For>
-            </div>
           </Show>
 
           <Show when={!isEmpty()}>
