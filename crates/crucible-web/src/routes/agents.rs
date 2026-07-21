@@ -1,3 +1,4 @@
+use crate::routes::helpers::ModelsResponse;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
@@ -5,7 +6,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::path::PathBuf;
 
 pub fn agents_routes() -> Router<AppState> {
@@ -38,22 +39,17 @@ struct ListModelsQuery {
     kiln: Option<PathBuf>,
 }
 
-#[derive(Debug, Serialize)]
-struct AllModelsResponse {
-    models: Vec<String>,
-}
-
 /// All chat models across providers, no session required (draft-state picker).
 async fn list_all_models(
     State(state): State<AppState>,
     Query(query): Query<ListModelsQuery>,
-) -> Result<Json<AllModelsResponse>, WebError> {
+) -> Result<Json<ModelsResponse>, WebError> {
     let models = state
         .daemon
         .list_all_models(query.kiln.as_deref())
         .await
         .daemon_err()?;
-    Ok(Json(AllModelsResponse { models }))
+    Ok(Json(ModelsResponse { models }))
 }
 
 #[cfg(test)]

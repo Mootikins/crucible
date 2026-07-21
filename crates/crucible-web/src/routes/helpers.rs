@@ -7,6 +7,13 @@ use std::path::{Path, PathBuf};
 
 use crate::WebError;
 
+/// Response for model listings — the session-scoped `list_models` and the
+/// session-less `list_all_models` return the same `{ models: [...] }` shape.
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct ModelsResponse {
+    pub(crate) models: Vec<String>,
+}
+
 // =========================================================================
 // Note mapping
 // =========================================================================

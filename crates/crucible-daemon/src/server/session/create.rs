@@ -68,6 +68,23 @@ pub(crate) async fn handle_session_create(
         .unwrap_or("internal")
         .to_string();
 
+    // Resolve the agent BEFORE creating the session. `configure_agent` is the
+    // caller's opt-in to have the daemon own default-agent resolution (ACP
+    // profile or config-derived internal defaults) instead of each client
+    // building its own copy. Absent/false ⇒ today's behavior exactly: the
+    // session is created agent-less and configured later via
+    // `session.configure_agent`. Resolving first means an unknown ACP profile
+    // (or an unparseable provider override) fails without orphaning a session.
+    let configure_agent = optional_param!(req, "configure_agent", as_bool).unwrap_or(false);
+    let resolved_agent = if configure_agent {
+        match resolve_create_agent(&req, &agent_type, am, llm_config, mcp_config) {
+            Ok(agent) => Some(agent),
+            Err(message) => return Response::error(req.id, INVALID_PARAMS, message),
+        }
+    } else {
+        None
+    };
+
     // Only a real workspace registers as a project. Falling back to the
     // kiln here used to register kiln/config dirs (e.g. ~/.crucible) as
     // "projects" — a kiln is where knowledge goes, not where work happens.
@@ -87,7 +104,19 @@ pub(crate) async fn handle_session_create(
         )
         .await
     {
-        Ok(session) => {
+        Ok(mut session) => {
+            // Configure the resolved agent as part of create so the session is
+            // usable immediately (no follow-up `session.configure_agent`
+            // round-trip) and the setup task's `session_initialized` event can
+            // carry the real model/endpoint. Mutating the local `session` here
+            // mirrors what `configure_agent` persists to the manager.
+            if let Some(agent) = resolved_agent {
+                if let Err(e) = am.configure_agent(&session.id, agent.clone()).await {
+                    return internal_error(req.id, e);
+                }
+                session.agent = Some(agent);
+            }
+
             // Open the kiln in KilnManager so it's discoverable by session.list()
             if let Err(e) = km.open(&session.kiln).await {
                 tracing::warn!(kiln = %session.kiln.display(), error = %e, "Failed to open kiln in manager");
@@ -132,11 +161,145 @@ pub(crate) async fn handle_session_create(
                     "kiln": session.kiln,
                     "workspace": session.workspace,
                     "state": format!("{}", session.state),
+                    // Present only when the daemon configured the agent as part
+                    // of create; lets callers render the model without a
+                    // separate session.get. Null/absent otherwise.
+                    "agent_model": session.agent.as_ref().map(|a| a.model.clone()),
                 }),
             )
         }
         Err(e) => internal_error(req.id, e),
     }
+}
+
+/// Resolve the [`SessionAgent`] to configure at create time from the request's
+/// agent spec.
+///
+/// ACP profiles are looked up in the same table `agents.resolve_profile` uses
+/// (`AgentManager::build_available_agents`); an unknown name is an `Err`, which
+/// the caller turns into `INVALID_PARAMS` — the session is never created, so an
+/// unknown agent can't orphan an agent-less row. Internal agents get
+/// config-derived defaults (see [`build_default_internal_agent`]).
+fn resolve_create_agent(
+    req: &Request,
+    agent_type: &str,
+    am: &Arc<AgentManager>,
+    llm_config: &Option<LlmConfig>,
+    mcp_config: Option<&McpConfig>,
+) -> Result<crucible_core::session::SessionAgent, String> {
+    if agent_type == "acp" {
+        let name = optional_param!(req, "agent_name", as_str).unwrap_or("");
+        if name.is_empty() {
+            return Err("agent_name is required when agent_type is \"acp\"".to_string());
+        }
+        let profiles = am.build_available_agents();
+        match profiles.get(name) {
+            Some(profile) => Ok(crucible_core::session::SessionAgent::from_profile(
+                profile, name,
+            )),
+            None => Err(format!("Unknown ACP agent profile: {name}")),
+        }
+    } else {
+        build_default_internal_agent(req, llm_config, mcp_config)
+    }
+}
+
+/// Config-derived internal-agent defaults — the daemon-side equivalent of
+/// `SessionAgent::internal_from_config` — with any caller-supplied
+/// provider/provider_key/model/endpoint overrides applied on top.
+///
+/// Base temperature/max_tokens/MCP servers/precognition always come from the
+/// daemon's own config so web sessions match CLI sessions. Only when the
+/// provider itself is defaulted does the agent inherit the config default's
+/// endpoint/key; an explicit provider override must not silently borrow the
+/// default provider's endpoint.
+fn build_default_internal_agent(
+    req: &Request,
+    llm_config: &Option<LlmConfig>,
+    mcp_config: Option<&McpConfig>,
+) -> Result<crucible_core::session::SessionAgent, String> {
+    use crucible_core::config::BackendType;
+
+    let default = llm_config.as_ref().and_then(|c| c.default_provider());
+    let (def_provider, def_model, def_key, def_endpoint, def_temperature, def_max_tokens) =
+        match default {
+            Some((key, p)) => (
+                p.provider_type,
+                p.model(),
+                key.clone(),
+                Some(p.endpoint()),
+                Some(p.temperature() as f64),
+                Some(p.max_tokens()),
+            ),
+            None => (
+                BackendType::Ollama,
+                crucible_core::config::DEFAULT_CHAT_MODEL.to_string(),
+                BackendType::Ollama.as_str().to_string(),
+                None,
+                None,
+                None,
+            ),
+        };
+
+    let req_provider = optional_param!(req, "provider", as_str);
+    let req_provider_key = optional_param!(req, "provider_key", as_str).map(str::to_string);
+    let req_model = optional_param!(req, "model", as_str).map(str::to_string);
+    let req_endpoint = optional_param!(req, "endpoint", as_str).map(str::to_string);
+
+    let provider_defaulted = req_provider.is_none();
+    let provider = match req_provider {
+        Some(p) => p
+            .parse::<BackendType>()
+            .map_err(|e| format!("Invalid provider: {e}"))?,
+        None => def_provider,
+    };
+    let model = req_model.unwrap_or(def_model);
+    let (endpoint, provider_key) = if provider_defaulted {
+        (
+            req_endpoint.or(def_endpoint),
+            req_provider_key.unwrap_or(def_key),
+        )
+    } else {
+        (
+            req_endpoint,
+            req_provider_key.unwrap_or_else(|| provider.as_str().to_string()),
+        )
+    };
+
+    let mcp_servers = mcp_config
+        .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
+        .unwrap_or_default();
+
+    Ok(crucible_core::session::SessionAgent {
+        agent_type: "internal".to_string(),
+        agent_name: None,
+        provider_key: Some(provider_key),
+        provider,
+        model,
+        system_prompt: String::new(),
+        temperature: def_temperature,
+        max_tokens: def_max_tokens,
+        max_context_tokens: None,
+        thinking_budget: None,
+        endpoint,
+        env_overrides: std::collections::HashMap::new(),
+        mcp_servers,
+        agent_card_name: None,
+        capabilities: None,
+        agent_description: None,
+        delegation_config: None,
+        precognition_enabled: true,
+        precognition_results: 5,
+        max_iterations: None,
+        execution_timeout_secs: None,
+        context_budget: None,
+        context_strategy: Default::default(),
+        context_window: None,
+        output_validation: Default::default(),
+        validation_retries: 3,
+        autocompact_threshold: None,
+        mode: None,
+    })
 }
 
 pub(crate) fn validate_trust_level(

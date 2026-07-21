@@ -4,6 +4,7 @@ use super::session_config::{
     get_thinking_budget, set_max_tokens, set_precognition, set_precognition_results,
     set_temperature, set_thinking_budget,
 };
+use crate::routes::helpers::ModelsResponse;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
@@ -11,13 +12,10 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
-use crucible_core::config::BackendType;
-use crucible_core::session::SessionAgent;
 use crucible_daemon::agent_manager::providers::ProviderInfo;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 // =========================================================================
 // Typed Response Structs
@@ -51,12 +49,6 @@ struct DeleteResponse {
 #[derive(Debug, Serialize)]
 struct CancelledResponse {
     cancelled: bool,
-}
-
-/// Response for model listing.
-#[derive(Debug, Serialize)]
-struct ModelsResponse {
-    models: Vec<String>,
 }
 
 /// Response for title operations.
@@ -198,59 +190,18 @@ fn validate_endpoint(endpoint: &str) -> Result<(), WebError> {
     Ok(())
 }
 
-/// Provider/model/endpoint resolved for a new session's agent.
-struct ResolvedAgentTarget {
-    /// Backend type string (e.g. "openai", "zai")
-    provider: String,
-    model: String,
-    endpoint: Option<String>,
-    /// Named provider entry when defaulted from detection (e.g. "llama-swappo"),
-    /// else the backend type string the caller supplied.
-    provider_key: String,
-}
-
-/// Resolve the agent target from request values, falling back to the first
-/// available detected provider. When the PROVIDER itself is defaulted, its
-/// endpoint and name come along too — a detected provider is a named config
-/// entry (custom endpoint included), and flattening it to just its backend
-/// type used to send e.g. a local llama-swap default to api.openai.com.
-fn resolve_agent_target(
-    req_provider: Option<String>,
-    req_model: Option<String>,
-    req_endpoint: Option<String>,
-    detected: &[ProviderInfo],
-) -> ResolvedAgentTarget {
-    let first = detected.iter().find(|p| p.available);
-    let provider_defaulted = req_provider.is_none();
-
-    let provider = req_provider.unwrap_or_else(|| {
-        first
-            .map(|p| p.provider_type.clone())
-            .unwrap_or_else(|| "ollama".to_string())
-    });
-    let model = req_model.unwrap_or_else(|| {
-        first
-            .and_then(|p| p.default_model.clone())
-            .unwrap_or_else(|| "llama3.2".to_string())
-    });
-    // Only inherit the detected endpoint/name when the provider was defaulted —
-    // an explicit provider must not pick up another entry's endpoint.
-    let (endpoint, provider_key) = if provider_defaulted {
-        (
-            req_endpoint.or_else(|| first.and_then(|p| p.endpoint.clone())),
-            first
-                .map(|p| p.name.clone())
-                .unwrap_or_else(|| provider.clone()),
-        )
+/// Map a `session.create` daemon error to an HTTP status. An `INVALID_PARAMS`
+/// error (JSON-RPC code `-32602` — e.g. an unknown ACP profile or an
+/// unparseable provider override, both now resolved daemon-side) is a client
+/// error (422), preserving the pre-consolidation behavior where the web
+/// validated the profile itself. Anything else is a daemon/transport failure
+/// (502).
+fn map_create_error(err: impl std::fmt::Display) -> WebError {
+    let message = err.to_string();
+    if message.contains("-32602") {
+        WebError::Validation(message)
     } else {
-        (req_endpoint, provider.clone())
-    };
-
-    ResolvedAgentTarget {
-        provider,
-        model,
-        endpoint,
-        provider_key,
+        WebError::Daemon(message)
     }
 }
 
@@ -281,102 +232,52 @@ async fn create_session(
         ));
     }
 
-    // Resolve + validate the ACP profile BEFORE creating the session. Doing it
-    // after session_create left an orphaned, agent-less session in the daemon
-    // whenever the agent name was unknown (422 after the row already existed).
-    let acp_profile = if is_acp {
-        // Mirror the CLI's `cru session create --agent <name>` path: resolve
-        // the profile daemon-side, then build the canonical ACP SessionAgent.
-        let agent_name = req.agent_name.as_deref().unwrap_or("");
-        let profile_json = state
-            .daemon
-            .agents_resolve_profile(agent_name)
-            .await
-            .daemon_err()?;
-        if profile_json.is_null() {
-            return Err(WebError::Validation(format!(
-                "Unknown ACP agent profile: {agent_name}"
-            )));
-        }
-        let profile: crucible_core::config::AgentProfile = serde_json::from_value(profile_json)
-            .map_err(|e| WebError::Daemon(format!("Failed to deserialize agent profile: {e}")))?;
-        Some(profile)
-    } else {
-        None
+    // Hand the agent spec to the daemon, which owns default-agent resolution:
+    // it resolves the ACP profile (unknown ⇒ INVALID_PARAMS, and no session is
+    // created — see map_create_error) or builds config-derived internal
+    // defaults, configures the session's agent as part of create, and returns
+    // the resolved model in `agent_model`. The web no longer keeps its own copy
+    // of "what is the default agent". No kiln → omitted from the wire so the
+    // daemon resolves its default (home kiln).
+    let agent_spec = crucible_daemon::rpc_client::SessionAgentSpec {
+        agent_name: req.agent_name.clone(),
+        provider: req.provider.clone(),
+        provider_key: None,
+        model: req.model.clone(),
+        endpoint: req.endpoint.clone(),
     };
 
-    // No kiln → omitted from the wire; the daemon resolves its default
-    // (home kiln), so web can never drift from it.
-    let mut result = state
+    let params = crucible_daemon::rpc_client::SessionCreateParams {
+        session_type: req.session_type.clone(),
+        kiln: req.kiln.clone(),
+        workspace: req.workspace.clone(),
+        connect_kilns: req.connect_kilns.clone(),
+        recording_mode: None,
+        recording_path: None,
+        agent_type: req.agent_type.clone(),
+    };
+
+    let result = state
         .daemon
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
-            session_type: req.session_type.clone(),
-            kiln: req.kiln,
-            workspace: req.workspace,
-            connect_kilns: req.connect_kilns,
-            recording_mode: None,
-            recording_path: None,
-            agent_type: req.agent_type.clone(),
-        })
+        .session_create_with_agent(params, agent_spec)
         .await
-        .daemon_err()?;
+        .map_err(map_create_error)?;
 
     // A create response without a usable session_id (protocol drift) would
-    // otherwise let configure_agent/subscribe run against an empty id and
-    // surface as a confusing downstream error; fail loudly here instead.
-    let session_id = result["session_id"].as_str().unwrap_or("").to_string();
+    // otherwise let subscribe run against an empty id and surface as a confusing
+    // downstream error; fail loudly here instead.
+    let session_id = result["session_id"].as_str().unwrap_or("");
     if session_id.is_empty() {
         return Err(WebError::Daemon(
             "daemon returned no session_id from session.create".to_string(),
         ));
     }
-    let session_id = session_id.as_str();
-
-    let agent = if let Some(profile) = acp_profile {
-        let agent_name = req.agent_name.as_deref().unwrap_or("");
-        SessionAgent::from_profile(&profile, agent_name)
-    } else {
-        // Resolve provider/model/endpoint: use provided values or detect defaults
-        let target = if req.provider.is_some() && req.model.is_some() {
-            resolve_agent_target(req.provider, req.model, req.endpoint, &[])
-        } else {
-            let providers = state.daemon.list_providers(None).await.unwrap_or_default();
-            resolve_agent_target(req.provider, req.model, req.endpoint, &providers)
-        };
-
-        // Configure agent for the session (required before sending messages)
-        let provider_type = BackendType::from_str(&target.provider)
-            .map_err(|e| WebError::Validation(format!("Invalid provider: {}", e)))?;
-
-        // Base the agent on the SAME canonical builder the CLI uses so web and CLI
-        // sessions get identical config-derived defaults (temperature, max_tokens,
-        // endpoint, MCP servers, precognition). The web is request-driven for the
-        // provider/model/endpoint, so override only those.
-        SessionAgent {
-            provider_key: Some(target.provider_key),
-            provider: provider_type,
-            model: target.model,
-            endpoint: target.endpoint,
-            ..SessionAgent::internal_from_config(&state.config)
-        }
-    };
-
-    state
-        .daemon
-        .session_configure_agent(session_id, &agent)
-        .await
-        .daemon_err()?;
 
     state
         .daemon
         .session_subscribe(&[session_id])
         .await
         .daemon_err()?;
-
-    // The daemon's create response predates agent configuration, so it has no
-    // model; without this the UI's model button renders blank on a
-    // defaults-only create.
-    result["agent_model"] = serde_json::json!(agent.model);
 
     Ok(Json(result))
 }
@@ -964,9 +865,13 @@ mod tests {
 
     #[tokio::test]
     async fn create_session_with_unknown_acp_agent_does_not_create_a_session() {
-        // Regression: an unknown ACP agent name must be rejected BEFORE
-        // session.create runs, or the daemon is left with an orphaned,
-        // agent-less session row.
+        // Regression: an unknown ACP agent must not orphan an agent-less
+        // session. Resolution now lives in the daemon's session.create, which
+        // rejects the unknown profile atomically (INVALID_PARAMS, no row). At
+        // the web/wire level the invariants are: the web forwards a single
+        // session.create carrying the agent spec, no longer resolves the
+        // profile client-side (agents.resolve_profile), and does NOT proceed to
+        // subscribe once create fails.
         let (mock, client) = crate::test_support::start_mock_daemon().await;
         let state = crate::test_support::build_mock_state(client);
         let app = crate::test_support::build_test_app(state);
@@ -996,12 +901,16 @@ mod tests {
 
         let methods = mock.received_methods();
         assert!(
-            methods.iter().any(|m| m == "agents.resolve_profile"),
-            "profile should have been resolved (and rejected): {methods:?}"
+            methods.iter().any(|m| m == "session.create"),
+            "web must forward the create (with the agent spec) to the daemon: {methods:?}"
         );
         assert!(
-            !methods.iter().any(|m| m == "session.create"),
-            "session.create must NOT run for an unknown ACP agent: {methods:?}"
+            !methods.iter().any(|m| m == "agents.resolve_profile"),
+            "profile resolution moved daemon-side; web must NOT resolve it: {methods:?}"
+        );
+        assert!(
+            !methods.iter().any(|m| m == "session.subscribe"),
+            "a failed create must not proceed to subscribe: {methods:?}"
         );
     }
 
@@ -1259,99 +1168,6 @@ mod tests {
             "Response should contain 'title' field"
         );
         assert!(json["title"].is_string(), "Title should be a string");
-    }
-
-    // =========================================================================
-    // resolve_agent_target Tests
-    // =========================================================================
-
-    fn detected_provider(name: &str, ptype: &str, endpoint: Option<&str>) -> ProviderInfo {
-        ProviderInfo {
-            name: name.to_string(),
-            provider_type: ptype.to_string(),
-            available: true,
-            default_model: Some("glm-4.7-flash-iq4".to_string()),
-            models: vec![],
-            endpoint: endpoint.map(String::from),
-            reason: None,
-            is_local: true,
-        }
-    }
-
-    #[test]
-    fn defaulted_provider_carries_detected_endpoint_and_name() {
-        // The bug: a detected named provider (llama-swappo, type=openai, custom
-        // endpoint) was flattened to just "openai" with no endpoint, so the
-        // agent targeted api.openai.com and demanded OPENAI_API_KEY.
-        let detected = [detected_provider(
-            "llama-swappo",
-            "openai",
-            Some("https://llama.example.com/v1"),
-        )];
-        let t = resolve_agent_target(None, None, None, &detected);
-        assert_eq!(t.provider, "openai");
-        assert_eq!(t.model, "glm-4.7-flash-iq4");
-        assert_eq!(t.endpoint.as_deref(), Some("https://llama.example.com/v1"));
-        assert_eq!(t.provider_key, "llama-swappo");
-    }
-
-    #[test]
-    fn explicit_provider_does_not_inherit_detected_endpoint() {
-        let detected = [detected_provider(
-            "llama-swappo",
-            "openai",
-            Some("https://llama.example.com/v1"),
-        )];
-        let t = resolve_agent_target(
-            Some("anthropic".to_string()),
-            Some("claude-sonnet-5".to_string()),
-            None,
-            &detected,
-        );
-        assert_eq!(t.provider, "anthropic");
-        assert_eq!(t.model, "claude-sonnet-5");
-        assert_eq!(t.endpoint, None, "must not borrow another entry's endpoint");
-        assert_eq!(t.provider_key, "anthropic");
-    }
-
-    #[test]
-    fn explicit_endpoint_wins_over_detected() {
-        let detected = [detected_provider(
-            "llama-swappo",
-            "openai",
-            Some("https://llama.example.com/v1"),
-        )];
-        let t = resolve_agent_target(
-            None,
-            None,
-            Some("https://other.example.com/v1".to_string()),
-            &detected,
-        );
-        assert_eq!(t.endpoint.as_deref(), Some("https://other.example.com/v1"));
-    }
-
-    #[test]
-    fn no_detected_providers_falls_back_to_ollama() {
-        let t = resolve_agent_target(None, None, None, &[]);
-        assert_eq!(t.provider, "ollama");
-        assert_eq!(t.model, "llama3.2");
-        assert_eq!(t.endpoint, None);
-        assert_eq!(t.provider_key, "ollama");
-    }
-
-    #[test]
-    fn unavailable_providers_are_skipped() {
-        let mut unavailable =
-            detected_provider("dead-provider", "openai", Some("https://dead.example.com"));
-        unavailable.available = false;
-        let live = detected_provider("live", "zai", Some("https://api.z.ai/api/coding/paas/v4"));
-        let t = resolve_agent_target(None, None, None, &[unavailable, live]);
-        assert_eq!(t.provider, "zai");
-        assert_eq!(t.provider_key, "live");
-        assert_eq!(
-            t.endpoint.as_deref(),
-            Some("https://api.z.ai/api/coding/paas/v4")
-        );
     }
 
     #[tokio::test]

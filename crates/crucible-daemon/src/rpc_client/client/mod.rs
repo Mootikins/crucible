@@ -56,7 +56,7 @@ pub use lua::{
     LuaRegisterHooksRequest, LuaRegisterHooksResponse, LuaRunPluginTestsRequest,
     LuaRunPluginTestsResponse, LuaShutdownSessionRequest, LuaShutdownSessionResponse,
 };
-pub use session::SessionCreateParams;
+pub use session::{SessionAgentSpec, SessionCreateParams};
 pub use types::{DaemonCapabilities, NameRequest, SessionEvent, VersionCheck};
 
 use session::SessionIdRequest;
@@ -846,12 +846,17 @@ mod tests {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            ..Default::default()
         };
         let json = serde_json::to_value(&req).unwrap();
         assert!(
             json.get("agent_type").is_none(),
             "agent_type should be omitted when None, got: {json}"
         );
+        // The agent-spec fields default to absent too, so an old daemon sees
+        // the same minimal payload it always did.
+        assert!(json.get("configure_agent").is_none());
+        assert!(json.get("agent_name").is_none());
     }
 
     #[test]
@@ -866,6 +871,7 @@ mod tests {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            ..Default::default()
         };
         let json = serde_json::to_value(&req).unwrap();
         assert!(

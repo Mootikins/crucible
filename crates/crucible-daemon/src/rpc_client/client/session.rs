@@ -12,7 +12,7 @@ use super::DaemonClient;
 // =========================================================================
 
 /// Request for `session.create`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SessionCreateRequest {
     #[serde(rename = "type")]
     pub session_type: String,
@@ -33,6 +33,31 @@ pub struct SessionCreateRequest {
     /// before `session.configure_agent` has been called.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_type: Option<String>,
+
+    /// When true, the daemon resolves and configures the session's agent as
+    /// part of create (ACP profile for `agent_type == "acp"`, otherwise
+    /// config-derived internal defaults), and returns the resolved model in
+    /// `agent_model`. Absent/false ⇒ today's behavior: the session is created
+    /// agent-less and the caller configures it separately via
+    /// `session.configure_agent`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub configure_agent: bool,
+    /// ACP profile name; used when `configure_agent` and `agent_type == "acp"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_name: Option<String>,
+    /// Internal-agent overrides applied on top of config-derived defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// Parameters for creating a session.
@@ -47,6 +72,59 @@ pub struct SessionCreateParams {
     pub recording_path: Option<PathBuf>,
     /// "acp" | "internal"; None treated as "internal" for back-compat.
     pub agent_type: Option<String>,
+}
+
+/// Optional agent spec for `session.create` that asks the daemon to resolve and
+/// configure the session's agent server-side (the "daemon owns defaults" path).
+///
+/// `agent_name` selects an ACP profile (with `agent_type == "acp"`); the
+/// provider/model/endpoint fields override internal-agent config defaults. An
+/// all-`None` spec on an internal session means "use the config defaults as-is".
+#[derive(Debug, Clone, Default)]
+pub struct SessionAgentSpec {
+    pub agent_name: Option<String>,
+    pub provider: Option<String>,
+    pub provider_key: Option<String>,
+    pub model: Option<String>,
+    pub endpoint: Option<String>,
+}
+
+/// Build the wire request. `agent = Some(..)` sets `configure_agent = true` so
+/// the daemon resolves + configures the agent as part of create; `None` keeps
+/// the back-compat "create agent-less, configure later" shape.
+fn build_create_request(
+    params: SessionCreateParams,
+    agent: Option<SessionAgentSpec>,
+) -> SessionCreateRequest {
+    let configure_agent = agent.is_some();
+    let agent = agent.unwrap_or_default();
+    SessionCreateRequest {
+        session_type: params.session_type,
+        kiln: params.kiln.map(|p| p.to_string_lossy().to_string()),
+        workspace: params.workspace.map(|ws| ws.to_string_lossy().to_string()),
+        connect_kilns: if params.connect_kilns.is_empty() {
+            None
+        } else {
+            Some(
+                params
+                    .connect_kilns
+                    .iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect(),
+            )
+        },
+        recording_mode: params.recording_mode,
+        recording_path: params
+            .recording_path
+            .map(|p| p.to_string_lossy().to_string()),
+        agent_type: params.agent_type,
+        configure_agent,
+        agent_name: agent.agent_name,
+        provider: agent.provider,
+        provider_key: agent.provider_key,
+        model: agent.model,
+        endpoint: agent.endpoint,
+    }
 }
 
 /// Request for `session.list`.
@@ -226,31 +304,21 @@ impl DaemonClient {
     // =========================================================================
 
     pub async fn session_create(&self, params: SessionCreateParams) -> Result<serde_json::Value> {
-        self.typed_call(
-            "session.create",
-            SessionCreateRequest {
-                session_type: params.session_type,
-                kiln: params.kiln.map(|p| p.to_string_lossy().to_string()),
-                workspace: params.workspace.map(|ws| ws.to_string_lossy().to_string()),
-                connect_kilns: if params.connect_kilns.is_empty() {
-                    None
-                } else {
-                    Some(
-                        params
-                            .connect_kilns
-                            .iter()
-                            .map(|p| p.to_string_lossy().to_string())
-                            .collect(),
-                    )
-                },
-                recording_mode: params.recording_mode,
-                recording_path: params
-                    .recording_path
-                    .map(|p| p.to_string_lossy().to_string()),
-                agent_type: params.agent_type,
-            },
-        )
-        .await
+        self.typed_call("session.create", build_create_request(params, None))
+            .await
+    }
+
+    /// Create a session AND have the daemon resolve + configure its agent in one
+    /// call (the "daemon owns default-agent resolution" path). The response
+    /// carries the resolved `agent_model`. An unknown ACP profile fails with
+    /// `INVALID_PARAMS` and no session is created.
+    pub async fn session_create_with_agent(
+        &self,
+        params: SessionCreateParams,
+        agent: SessionAgentSpec,
+    ) -> Result<serde_json::Value> {
+        self.typed_call("session.create", build_create_request(params, Some(agent)))
+            .await
     }
 
     pub async fn session_list(

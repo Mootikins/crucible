@@ -191,7 +191,11 @@ pub async fn start_mock_daemon_with_errors(errors: MockErrors) -> (MockDaemon, D
 
                             calls.lock().unwrap().push(method.to_string());
 
-                            let response = if let Some((code, message)) = errors.get(method) {
+                            let scripted_error = errors
+                                .get(method)
+                                .cloned()
+                                .or_else(|| mock_rpc_error(method, &msg));
+                            let response = if let Some((code, message)) = scripted_error {
                                 json!({
                                     "jsonrpc": "2.0",
                                     "id": id,
@@ -227,6 +231,25 @@ pub async fn start_mock_daemon_with_errors(errors: MockErrors) -> (MockDaemon, D
         .expect("Failed to connect to mock daemon");
 
     (MockDaemon { _tmp: tmp, calls }, client)
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// Param-dependent scripted errors that the per-method [`MockErrors`] map can't
+/// express. Mirrors the real daemon: `session.create` now owns ACP-profile
+/// resolution, so an unknown profile fails atomically with `INVALID_PARAMS`
+/// (JSON-RPC `-32602`) and creates nothing. Agent name `"missing"` is the
+/// unknown-profile sentinel (matching `agents.resolve_profile`).
+pub fn mock_rpc_error(method: &str, msg: &Value) -> Option<(i64, String)> {
+    if method == "session.create" {
+        let agent_name = msg
+            .get("params")
+            .and_then(|p| p.get("agent_name"))
+            .and_then(|v| v.as_str());
+        if agent_name == Some("missing") {
+            return Some((-32602, "Unknown ACP agent profile: missing".to_string()));
+        }
+    }
+    None
 }
 
 #[cfg(any(test, feature = "test-utils"))]

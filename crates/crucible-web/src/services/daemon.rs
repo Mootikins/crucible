@@ -444,6 +444,22 @@ impl ReconnectingDaemon {
         .await
     }
 
+    /// Create a session and have the daemon resolve + configure its agent in
+    /// one call (ACP profile or config-derived internal defaults). The daemon
+    /// owns default resolution, so the web never builds its own copy.
+    pub async fn session_create_with_agent(
+        &self,
+        params: crucible_daemon::rpc_client::SessionCreateParams,
+        agent: crucible_daemon::rpc_client::SessionAgentSpec,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.call_with_reconnect("session.create", move |daemon| {
+            let params = params.clone();
+            let agent = agent.clone();
+            Box::pin(async move { daemon.session_create_with_agent(params, agent).await })
+        })
+        .await
+    }
+
     pub async fn session_list(
         &self,
         kiln: Option<&Path>,

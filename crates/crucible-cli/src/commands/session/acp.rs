@@ -1,18 +1,8 @@
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
 use crucible_core::config::BackendType;
-use crucible_core::session::{OutputValidation, SessionAgent};
+use crucible_core::session::OutputValidation;
 use crucible_daemon::DaemonClient;
-
-pub(super) async fn resolve_acp_profile(
-    client: &DaemonClient,
-    agent_name: &str,
-) -> Result<crucible_core::config::AgentProfile> {
-    let profile_json = client.agents_resolve_profile(agent_name).await?;
-    let profile: crucible_core::config::AgentProfile = serde_json::from_value(profile_json)
-        .map_err(|e| anyhow!("Failed to deserialize agent profile: {}", e))?;
-    Ok(profile)
-}
 
 pub(super) mod rpc {
     use super::*;
@@ -91,67 +81,6 @@ pub(super) mod rpc {
         Ok(())
     }
 
-    /// Build a default internal SessionAgent from global config.
-    ///
-    /// Same logic as `cru chat` uses via `SessionAgent::internal_from_config`,
-    /// so CLI sessions get the same provider/model defaults.
-    fn build_default_session_agent(config: &CliConfig) -> SessionAgent {
-        let effective_llm = config.effective_llm_provider().ok();
-        let model = effective_llm
-            .as_ref()
-            .map(|p| p.model.clone())
-            .or_else(|| config.chat.model.clone())
-            .unwrap_or_else(|| crucible_core::config::DEFAULT_CHAT_MODEL.to_string());
-        let backend_type = effective_llm
-            .as_ref()
-            .map(|p| p.provider_type)
-            .unwrap_or(BackendType::Ollama);
-        let provider_key = effective_llm
-            .as_ref()
-            .map(|p| p.key.clone())
-            .unwrap_or_else(|| backend_type.as_str().to_string());
-
-        SessionAgent {
-            agent_type: "internal".to_string(),
-            agent_name: None,
-            provider_key: Some(provider_key),
-            provider: backend_type,
-            model,
-            system_prompt: String::new(),
-            temperature: effective_llm
-                .as_ref()
-                .map(|p| p.temperature as f64)
-                .or_else(|| config.chat.temperature.map(|t| t as f64)),
-            max_tokens: effective_llm
-                .as_ref()
-                .map(|p| p.max_tokens)
-                .or(config.chat.max_tokens),
-            endpoint: effective_llm
-                .as_ref()
-                .map(|p| p.endpoint.clone())
-                .or_else(|| config.chat.endpoint.clone()),
-            max_context_tokens: None,
-            thinking_budget: None,
-            env_overrides: std::collections::HashMap::new(),
-            mcp_servers: vec![],
-            agent_card_name: None,
-            capabilities: None,
-            agent_description: None,
-            delegation_config: None,
-            precognition_enabled: true,
-            precognition_results: 5,
-            max_iterations: None,
-            execution_timeout_secs: None,
-            context_budget: None,
-            context_strategy: Default::default(),
-            context_window: None,
-            output_validation: OutputValidation::default(),
-            validation_retries: 3,
-            autocompact_threshold: None,
-            mode: None,
-        }
-    }
-
     pub(crate) async fn create(
         client: &DaemonClient,
         config: &CliConfig,
@@ -173,35 +102,31 @@ pub(super) mod rpc {
             "internal"
         };
 
+        // The daemon owns default-agent resolution: it builds the config-derived
+        // internal defaults (or resolves the named ACP profile) and configures
+        // the session's agent as part of create. An unknown ACP profile fails
+        // here with no session created.
+        let agent_spec = crucible_daemon::rpc_client::SessionAgentSpec {
+            agent_name: params.agent.map(str::to_string),
+            ..Default::default()
+        };
+
         let result = client
-            .session_create(crucible_daemon::rpc_client::SessionCreateParams {
-                session_type: params.session_type.to_string(),
-                kiln: Some(config.session_storage_path()),
-                workspace: params.workspace.map(|p| p.to_path_buf()),
-                connect_kilns: vec![],
-                recording_mode: recording_mode_parsed,
-                recording_path: None,
-                agent_type: Some(agent_type.to_string()),
-            })
+            .session_create_with_agent(
+                crucible_daemon::rpc_client::SessionCreateParams {
+                    session_type: params.session_type.to_string(),
+                    kiln: Some(config.session_storage_path()),
+                    workspace: params.workspace.map(|p| p.to_path_buf()),
+                    connect_kilns: vec![],
+                    recording_mode: recording_mode_parsed,
+                    recording_path: None,
+                    agent_type: Some(agent_type.to_string()),
+                },
+                agent_spec,
+            )
             .await?;
 
         let session_id = result["session_id"].as_str().unwrap_or("unknown");
-
-        if let Some(agent_name) = params.agent {
-            let profile = super::resolve_acp_profile(client, agent_name)
-                .await
-                .map_err(|e| anyhow!("Failed to resolve ACP agent profile: {}", e))?;
-            let session_agent = SessionAgent::from_profile(&profile, agent_name);
-            client
-                .session_configure_agent(session_id, &session_agent)
-                .await?;
-        } else {
-            // Auto-configure from global config (same as `cru chat`)
-            let session_agent = build_default_session_agent(config);
-            client
-                .session_configure_agent(session_id, &session_agent)
-                .await?;
-        }
 
         if let Some(t) = params.title {
             client.session_set_title(session_id, t).await?;
