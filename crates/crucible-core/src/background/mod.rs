@@ -11,35 +11,13 @@ pub use types::{
 use async_trait::async_trait;
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio::sync::oneshot;
 
-/// Configuration for blocking subagent delegation.
-#[derive(Debug, Clone)]
-pub struct SubagentBlockingConfig {
-    /// Maximum time to wait for subagent completion.
-    pub timeout: Duration,
-    /// Maximum bytes returned in `JobResult.output`.
-    pub result_max_bytes: usize,
-    /// Maximum conversation turns the subagent may take. `None` falls back to
-    /// the runtime default. Reflection and other single-shot spawns cap this
-    /// low (1–3) so they cannot loop.
-    pub max_turns: Option<usize>,
-}
-
-impl Default for SubagentBlockingConfig {
-    fn default() -> Self {
-        Self {
-            timeout: Duration::from_secs(300),
-            result_max_bytes: 51200,
-            max_turns: None,
-        }
-    }
-}
-
-/// Trait for spawning and managing background jobs.
+/// Trait for spawning and managing background jobs (bash commands).
 ///
-/// Implementations handle the actual execution of jobs in the background,
-/// tracking their status and storing results for later retrieval.
+/// Subagent delegation used to live here too; it now runs through the
+/// daemon's `DelegationSpawner` (children are real scheduler-driven
+/// sessions, not background jobs). This trait covers only jobs that are
+/// genuinely detached processes.
 #[async_trait]
 pub trait BackgroundSpawner: Send + Sync {
     /// Spawn a bash command in the background.
@@ -52,36 +30,6 @@ pub trait BackgroundSpawner: Send + Sync {
         workdir: Option<PathBuf>,
         timeout: Option<Duration>,
     ) -> Result<JobId, JobError>;
-
-    /// Spawn a subagent in the background.
-    ///
-    /// The subagent runs with inherited tools (minus spawn_subagent to prevent recursion)
-    /// and executes up to `max_turns` conversation turns.
-    ///
-    /// Returns the job ID immediately. The subagent runs asynchronously.
-    async fn spawn_subagent(
-        &self,
-        session_id: &str,
-        prompt: String,
-        context: Option<String>,
-    ) -> Result<JobId, JobError>;
-
-    /// Spawn a subagent and wait for completion.
-    ///
-    /// Default implementation returns an unsupported error so existing
-    /// `BackgroundSpawner` implementations remain source-compatible.
-    async fn spawn_subagent_blocking(
-        &self,
-        _session_id: &str,
-        _prompt: String,
-        _context: Option<String>,
-        _config: SubagentBlockingConfig,
-        _cancel_rx: Option<oneshot::Receiver<()>>,
-    ) -> Result<JobResult, JobError> {
-        Err(JobError::SpawnFailed(
-            "spawn_subagent_blocking not supported".to_string(),
-        ))
-    }
 
     /// List all jobs (running + completed) for a session.
     ///

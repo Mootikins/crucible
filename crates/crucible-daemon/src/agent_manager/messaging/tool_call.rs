@@ -342,8 +342,22 @@ impl AgentManager {
             }
         }
 
+        // Most tools get the standard 30 s dispatch timeout. A blocking
+        // `delegate_session` legitimately runs a whole child session inside
+        // this dispatch, so it gets the delegation timeout plus margin — the
+        // delegation layer cancels the child on its own timeout first, this
+        // outer bound is only the backstop.
+        let dispatch_timeout_secs = if tool_call.name == "delegate_session" {
+            stream_ctx
+                .agent_stream_config
+                .delegation_timeout_secs
+                .unwrap_or(300)
+                .saturating_add(30)
+        } else {
+            30
+        };
         let tool_result = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
+            std::time::Duration::from_secs(dispatch_timeout_secs),
             stream_ctx
                 .tool_dispatcher
                 .dispatch_tool(&tool_call.name, args.clone(), hook_env_vars),
@@ -355,8 +369,12 @@ impl AgentManager {
             Err(_elapsed) => (
                 String::new(),
                 Some(
-                    anyhow::anyhow!("Tool '{}' timed out after 30 seconds", tool_call.name)
-                        .to_string(),
+                    anyhow::anyhow!(
+                        "Tool '{}' timed out after {} seconds",
+                        tool_call.name,
+                        dispatch_timeout_secs
+                    )
+                    .to_string(),
                 ),
             ),
         };

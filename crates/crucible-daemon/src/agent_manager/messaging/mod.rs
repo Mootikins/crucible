@@ -19,6 +19,20 @@ impl AgentManager {
     }
 
     pub async fn cancel(&self, session_id: &str) -> bool {
+        // Cascade to delegated children first: a cancelled parent turn must
+        // not leave its children running (fire-and-forget children of a
+        // cancelled turn are orphans by definition). Spawned so a child's
+        // own cancel (which routes back through this method with the child's
+        // id) never recurses on the stack; children have no grandchildren
+        // (delegation_config is cleared on spawn), so the cascade is finite.
+        {
+            let service = self.delegation_service.clone();
+            let session_id = session_id.to_string();
+            tokio::spawn(async move {
+                service.cancel_children_of(&session_id).await;
+            });
+        }
+
         // Drop any pending permission `oneshot::Sender`s for this session so
         // their receivers Err out immediately and any callers blocked inside
         // `PermissionSerializer::run` release the per-session lock. Without

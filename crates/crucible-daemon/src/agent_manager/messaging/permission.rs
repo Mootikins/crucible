@@ -44,39 +44,6 @@ impl PermissionSerializer {
 }
 
 impl AgentManager {
-    /// Register delegation context and permission handlers for an agent session.
-    ///
-    /// If the agent has delegation configuration, registers a subagent context
-    /// with the background manager for cross-agent delegation support.
-    pub(super) fn setup_permission_handlers(
-        &self,
-        session_id: &str,
-        resolved_config: &SessionAgent,
-    ) {
-        if resolved_config.delegation_config.is_some() {
-            if let Some(session) = self.session_manager.get_session(session_id) {
-                let parent_session_id = session
-                    .parent_session_id
-                    .clone()
-                    .or(Some(session.id.clone()));
-                let available_agents = self.build_available_agents();
-                self.background_manager.register_subagent_context(
-                    session_id,
-                    SubagentContext {
-                        agent: resolved_config.clone(),
-                        available_agents,
-                        workspace: session.workspace.clone(),
-                        parent_session_id,
-                        parent_session_dir: Some(session.storage_path()),
-                        delegator_agent_name: resolved_config.agent_name.clone(),
-                        target_agent_name: None,
-                        delegation_depth: 0,
-                    },
-                );
-            }
-        }
-    }
-
     pub(super) fn build_acp_permission_handler(
         &self,
         session_id: &str,
@@ -588,6 +555,34 @@ impl AgentManager {
                 false
             }
             PermissionHookResult::Prompt => {
+                // Non-interactive turns (delegated child sessions, headless
+                // sends) have nobody to answer a prompt — deny immediately
+                // with an actionable message instead of hanging.
+                if !stream_ctx.is_interactive {
+                    let error_msg = format!(
+                        "Permission required for '{}' but this session runs non-interactively. \
+                         Allow it via a permission pattern, Lua permission hook, or permissions \
+                         config.",
+                        tool_call.name
+                    );
+                    if !emit_event(
+                        &stream_ctx.event_tx,
+                        SessionEventMessage::tool_result(
+                            &stream_ctx.session_id,
+                            call_id,
+                            &tool_call.name,
+                            serde_json::json!({ "error": error_msg }),
+                        ),
+                    ) {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            tool = %tool_call.name,
+                            "No subscribers for non-interactive deny tool_result event"
+                        );
+                    }
+                    return false;
+                }
+
                 let diffs = crate::tools::diff_synth::synthesize_diffs(
                     &tool_call.name,
                     args,
@@ -639,8 +634,28 @@ impl AgentManager {
                     "Waiting for permission response"
                 );
 
-                let (permission_granted, deny_reason) = match response_rx.await {
-                    Ok(response) => {
+                // Bounded wait (parity with the ACP gate's 300 s): an
+                // unanswered prompt must not wedge the turn forever.
+                let response_result =
+                    tokio::time::timeout(std::time::Duration::from_secs(300), response_rx).await;
+                let (permission_granted, deny_reason) = match response_result {
+                    Err(_elapsed) => {
+                        if let Some(mut session_map) = stream_ctx
+                            .pending_permissions
+                            .get_mut(stream_ctx.session_id.as_str())
+                        {
+                            session_map.remove(&permission_id);
+                        }
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            tool = %tool_call.name,
+                            permission_id = %permission_id,
+                            "Permission prompt timed out, treating as deny"
+                        );
+                        (false, Some("permission prompt timed out".to_string()))
+                    }
+                    Ok(response_rx_result) => match response_rx_result {
+                        Ok(response) => {
                         debug!(
                             session_id = %stream_ctx.session_id,
                             tool = %tool_call.name,
@@ -678,15 +693,16 @@ impl AgentManager {
                             (false, response.reason)
                         }
                     }
-                    Err(_) => {
-                        warn!(
-                            session_id = %stream_ctx.session_id,
-                            tool = %tool_call.name,
-                            permission_id = %permission_id,
-                            "Permission channel dropped, treating as deny"
-                        );
-                        (false, None)
-                    }
+                        Err(_) => {
+                            warn!(
+                                session_id = %stream_ctx.session_id,
+                                tool = %tool_call.name,
+                                permission_id = %permission_id,
+                                "Permission channel dropped, treating as deny"
+                            );
+                            (false, None)
+                        }
+                    },
                 };
 
                 if permission_granted {

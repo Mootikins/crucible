@@ -456,6 +456,7 @@ mod tests {
             allowed_targets: Some(vec!["tool-agent".to_string(), "search-agent".to_string()]),
             result_max_bytes: 102400,
             max_concurrent_delegations: 4,
+            timeout_secs: 300,
         }
     }
 

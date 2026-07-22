@@ -88,8 +88,6 @@ impl BackgroundJobManager {
             job_id.clone(),
             RunningJob {
                 info,
-                is_delegation: false,
-                parent_session_id: None,
                 cancel_tx,
                 task_handle,
             },

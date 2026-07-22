@@ -84,6 +84,39 @@ impl SessionManager {
         Ok(session_clone)
     }
 
+    /// Create a delegated child session of `parent`.
+    ///
+    /// The child inherits the parent's kiln, workspace, and connected kilns,
+    /// carries `parent_session_id`, and is created with its agent config
+    /// already set (children never go through `configure_agent`). Children
+    /// are full sessions in behavior but are hidden from default listings
+    /// and lifecycle-subordinate to their parent.
+    pub async fn create_child_session(
+        &self,
+        parent: &Session,
+        agent: crucible_core::session::SessionAgent,
+        title: Option<String>,
+    ) -> Result<Session, SessionError> {
+        let mut session = Session::new(SessionType::Agent, parent.kiln.clone())
+            .with_workspace(parent.workspace.clone())
+            .with_connected_kilns(parent.connected_kilns.clone())
+            .with_parent(parent.id.clone());
+        session.agent = Some(agent);
+        session.title = title;
+
+        let session_id = session.id.clone();
+        self.storage.save(&session).await?;
+        let session_clone = session.clone();
+        self.sessions.insert(session_id.clone(), session);
+
+        info!(
+            session_id = %session_id,
+            parent_session_id = %parent.id,
+            "Child session created"
+        );
+        Ok(session_clone)
+    }
+
     /// Resume a session from storage.
     ///
     /// Loads the session from disk and sets its state to Active.

@@ -50,6 +50,7 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     pub connected_kilns: &'a [std::path::PathBuf],
     pub parent_session_id: Option<&'a str>,
     pub background_spawner: Option<Arc<dyn BackgroundSpawner>>,
+    pub delegation_spawner: Option<Arc<dyn crate::delegation::DelegationSpawner>>,
     pub mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     pub acp_permission_handler: Option<PermissionRequestHandler>,
     pub acp_config: Option<&'a crucible_core::config::components::acp::AcpConfig>,
@@ -57,40 +58,42 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
 }
 
-/// Build a `DelegationContext` for the internal agent's MCP server.
+/// Build a `DelegationContext` for a session's MCP server.
 ///
-/// Follows the exact pattern from `AcpAgentHandle::new()` — requires both
-/// `parent_session_id` and `background_spawner` to be present.  When either
-/// is `None` the result is `None` and the MCP server falls back to the
-/// non-delegation constructor.
-fn build_internal_delegation_context(
+/// This is the SINGLE builder used both when tool definitions are assembled
+/// (here, via `create_agent_from_session_config`) and when the session's
+/// dispatch-side MCP server is constructed (`get_or_create_session_dispatcher`)
+/// — the two must agree or the LLM is advertised a `delegate_session` tool
+/// the executor refuses. Requires the session id and both spawners; `None`
+/// otherwise, which hides the delegation/job tools.
+pub(crate) fn build_internal_delegation_context(
     agent_config: &SessionAgent,
     parent_session_id: Option<&str>,
     background_spawner: Option<Arc<dyn BackgroundSpawner>>,
+    delegation_spawner: Option<Arc<dyn crate::delegation::DelegationSpawner>>,
     workspace: &Path,
     kiln_path: Option<&Path>,
 ) -> Option<DelegationContext> {
-    parent_session_id.and_then(|session_id| {
-        background_spawner.map(|spawner| {
-            let delegation_config = agent_config.delegation_config.as_ref();
-            DelegationContext {
-                background_spawner: spawner,
-                session_id: session_id.to_string(),
-                targets: delegation_config
-                    .and_then(|c| c.allowed_targets.clone())
-                    .unwrap_or_default(),
-                enabled: delegation_config.map(|c| c.enabled).unwrap_or(false),
-                depth: 0,
-                result_max_bytes: delegation_config
-                    .map(|c| c.result_max_bytes)
-                    .unwrap_or(51200),
-                data_classification: kiln_path
-                    .and_then(|kiln| {
-                        crate::trust_resolution::resolve_kiln_classification(workspace, kiln)
-                    })
-                    .unwrap_or(DataClassification::Public),
-            }
-        })
+    let session_id = parent_session_id?;
+    let background_spawner = background_spawner?;
+    let delegation_spawner = delegation_spawner?;
+    let delegation_config = agent_config.delegation_config.as_ref();
+    Some(DelegationContext {
+        background_spawner,
+        delegation_spawner,
+        session_id: session_id.to_string(),
+        targets: delegation_config
+            .and_then(|c| c.allowed_targets.clone())
+            .unwrap_or_default(),
+        enabled: delegation_config.map(|c| c.enabled).unwrap_or(false),
+        depth: 0,
+        result_max_bytes: delegation_config
+            .map(|c| c.result_max_bytes)
+            .unwrap_or(51200),
+        timeout_secs: delegation_config.map(|c| c.timeout_secs).unwrap_or(300),
+        data_classification: kiln_path
+            .and_then(|kiln| crate::trust_resolution::resolve_kiln_classification(workspace, kiln))
+            .unwrap_or(DataClassification::Public),
     })
 }
 
@@ -455,6 +458,7 @@ pub async fn create_agent_from_session_config(
         connected_kilns,
         parent_session_id,
         background_spawner,
+        delegation_spawner,
         mcp_gateway,
         acp_permission_handler,
         acp_config,
@@ -469,6 +473,7 @@ pub async fn create_agent_from_session_config(
             knowledge_repo,
             embedding_provider,
             background_spawner,
+            delegation_spawner,
             parent_session_id,
             delegation_config: agent_config.delegation_config.as_ref(),
             acp_config,
@@ -491,6 +496,7 @@ pub async fn create_agent_from_session_config(
         agent_config,
         parent_session_id,
         background_spawner.clone(),
+        delegation_spawner.clone(),
         workspace,
         kiln_path,
     );
@@ -703,6 +709,7 @@ mod tests {
                 connected_kilns: &[],
                 parent_session_id: None,
                 background_spawner: None,
+                delegation_spawner: None,
                 mcp_gateway: None,
                 acp_permission_handler: None,
                 acp_config: None,
@@ -872,6 +879,7 @@ mod tests {
             connected_kilns: &[],
             parent_session_id: None,
             background_spawner: None,
+            delegation_spawner: None,
             mcp_gateway: None,
             acp_permission_handler: None,
             acp_config: None,
@@ -898,6 +906,7 @@ mod tests {
             connected_kilns: &[],
             parent_session_id: None,
             background_spawner: None,
+            delegation_spawner: None,
             mcp_gateway: None,
             acp_permission_handler: None,
             acp_config: None,
@@ -926,6 +935,7 @@ mod tests {
             connected_kilns: &[],
             parent_session_id: None,
             background_spawner: None,
+            delegation_spawner: None,
             mcp_gateway: None,
             acp_permission_handler: None,
             acp_config: None,

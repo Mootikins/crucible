@@ -1,11 +1,10 @@
 //! Background job management for the daemon.
 //!
-//! Provides session-scoped, ephemeral job management (jobs don't survive daemon restart).
+//! Provides session-scoped, ephemeral job management (jobs don't survive
+//! daemon restart) for **bash** background commands.
 //!
-//! # Supported Job Types
-//!
-//! - **Bash**: Background shell command execution with timeout
-//! - **Subagent**: Multi-turn LLM execution with inherited tools
+//! Subagent delegation used to run here too; delegated children are now real
+//! scheduler-driven sessions managed by [`crate::delegation::DelegationService`].
 //!
 //! # Example
 //!
@@ -29,56 +28,37 @@
 use crate::event_emitter::emit_event;
 use crate::protocol::SessionEventMessage;
 use async_trait::async_trait;
-use crucible_core::config::AgentProfile;
 
-use crate::observe::events::LogEvent;
-use crate::observe::session::SessionWriter;
 use crucible_core::background::{
     truncate, BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult,
-    SubagentBlockingConfig,
 };
-use crucible_core::session::SessionAgent;
-use crucible_core::traits::chat::AgentHandle;
 use dashmap::DashMap;
-use futures::StreamExt;
-use std::collections::HashMap;
-use std::future::Future;
-use std::path::{Path, PathBuf};
-use std::pin::Pin;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::process::Command;
-use tokio::sync::{broadcast, oneshot, Mutex};
+use tokio::sync::{broadcast, oneshot};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 const DEFAULT_BASH_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_HISTORY_PER_SESSION: usize = 50;
-const DEFAULT_SUBAGENT_MAX_TURNS: usize = 10;
-/// Maximum output size for subagent accumulated output (10 MB)
-const MAX_SUBAGENT_OUTPUT: usize = 10 * 1024 * 1024;
 
 mod bash;
 mod spawner;
-mod subagent;
 mod types;
 
 #[cfg(test)]
 mod tests;
 
-use types::{
-    events, parse_target_agent_name, target_profile_to_session_agent, BashError,
-    PreparedSubagentExecution, RunningJob, SubagentError, SubagentExecutionOptions,
-};
-pub use types::{BackgroundError, SubagentContext, SubagentFactory};
+use types::{events, BashError, RunningJob};
+pub use types::BackgroundError;
 
 pub struct BackgroundJobManager {
     running: Arc<DashMap<JobId, RunningJob>>,
     history: Arc<DashMap<String, std::collections::VecDeque<JobResult>>>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     max_history: usize,
-    subagent_factory: Option<Arc<SubagentFactory>>,
-    subagent_contexts: Arc<DashMap<String, SubagentContext>>,
 }
 
 impl BackgroundJobManager {
@@ -88,14 +68,7 @@ impl BackgroundJobManager {
             history: Arc::new(DashMap::new()),
             event_tx,
             max_history: MAX_HISTORY_PER_SESSION,
-            subagent_factory: None,
-            subagent_contexts: Arc::new(DashMap::new()),
         }
-    }
-    #[allow(dead_code)] // builder API, exercised by tests
-    pub fn with_subagent_factory(mut self, factory: SubagentFactory) -> Self {
-        self.subagent_factory = Some(Arc::new(factory));
-        self
     }
 
     pub fn list_jobs(&self, session_id: &str) -> Vec<JobInfo> {
@@ -192,17 +165,15 @@ impl BackgroundJobManager {
         let job_session_id = info.session_id.clone();
         let job_result = JobResult::failure(info, "Job cancelled".to_string());
 
-        let kind = match &job_result.info.kind {
-            JobKind::Bash { .. } => "bash",
-            JobKind::Subagent { .. } => "subagent",
-        };
+        let kind = job_result.info.kind.name();
         Self::emit_background_completed(&self.event_tx, &job_session_id, job_id, &job_result, kind);
         Self::add_to_history(&self.history, &job_session_id, job_result, self.max_history);
 
         info!(job_id = %job_id, "Job cancelled");
         true
     }
-    #[allow(dead_code)] // lifecycle API, exercised by tests
+
+    /// Cancel all running jobs for a session; optionally drop its history.
     pub async fn cleanup_session(&self, session_id: &str, clear_history: bool) {
         let job_ids: Vec<JobId> = self
             .running

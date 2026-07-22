@@ -84,6 +84,7 @@ pub struct AcpAgentHandleParams<'a> {
     pub knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
     pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
     pub background_spawner: Option<Arc<dyn BackgroundSpawner>>,
+    pub delegation_spawner: Option<Arc<dyn crate::delegation::DelegationSpawner>>,
     pub parent_session_id: Option<&'a str>,
     pub delegation_config: Option<&'a DelegationConfig>,
     pub acp_config: Option<&'a AcpConfig>,
@@ -115,6 +116,7 @@ impl AcpAgentHandle {
             knowledge_repo,
             embedding_provider,
             background_spawner,
+            delegation_spawner,
             parent_session_id,
             delegation_config,
             acp_config,
@@ -133,9 +135,14 @@ impl AcpAgentHandle {
         if let Some(ref handler) = permission_handler {
             client = client.with_permission_handler(handler.clone());
         }
-        let delegation_context = parent_session_id.and_then(|session_id| {
-            background_spawner.clone().map(|spawner| DelegationContext {
-                background_spawner: spawner,
+        let delegation_context = match (
+            parent_session_id,
+            background_spawner.clone(),
+            delegation_spawner.clone(),
+        ) {
+            (Some(session_id), Some(bg), Some(deleg)) => Some(DelegationContext {
+                background_spawner: bg,
+                delegation_spawner: deleg,
                 session_id: session_id.to_string(),
                 targets: delegation_config
                     .and_then(|c| c.allowed_targets.clone())
@@ -145,13 +152,15 @@ impl AcpAgentHandle {
                 result_max_bytes: delegation_config
                     .map(|c| c.result_max_bytes)
                     .unwrap_or(51200),
+                timeout_secs: delegation_config.map(|c| c.timeout_secs).unwrap_or(300),
                 data_classification: kiln_path
                     .and_then(|kiln| {
                         crate::trust_resolution::resolve_kiln_classification(workspace, kiln)
                     })
                     .unwrap_or(DataClassification::Public),
-            })
-        });
+            }),
+            _ => None,
+        };
 
         let mcp_host = if kiln_path.is_some() {
             let repo = knowledge_repo.unwrap_or_else(|| Arc::new(EmptyKnowledgeRepository));

@@ -133,6 +133,14 @@ impl Session {
         self
     }
 
+    /// Link this session to a parent session (delegation). Sessions with a
+    /// parent are "child sessions": full sessions in behavior, but hidden
+    /// from default listings and lifecycle-subordinate to their parent.
+    pub fn with_parent(mut self, parent_session_id: impl Into<String>) -> Self {
+        self.parent_session_id = Some(parent_session_id.into());
+        self
+    }
+
     /// Set the session title.
     pub fn with_title(mut self, title: impl Into<String>) -> Self {
         self.title = Some(title.into());

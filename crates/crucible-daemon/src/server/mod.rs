@@ -328,17 +328,23 @@ impl Server {
             .clone()
             .unwrap_or_else(crucible_core::config::crucible_home);
         let workspace_tools = Arc::new(WorkspaceTools::new(&data_home));
-        let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
-            kiln_manager: kiln_manager.clone(),
-            session_manager: session_manager.clone(),
-            background_manager: background_manager.clone(),
-            mcp_gateway,
-            llm_config: params.llm_config.clone(),
-            acp_config: params.acp_config.clone(),
-            permission_config: params.permission_config.clone(),
-            plugin_loader: Some(plugin_loader.clone()),
-            workspace_tools: Arc::clone(&workspace_tools),
-        }));
+        let delegation_service =
+            crate::delegation::DelegationService::new(session_manager.clone(), event_tx.clone());
+        let agent_manager = Arc::new(AgentManager::new_with_delegation(
+            AgentManagerParams {
+                kiln_manager: kiln_manager.clone(),
+                session_manager: session_manager.clone(),
+                background_manager: background_manager.clone(),
+                mcp_gateway,
+                llm_config: params.llm_config.clone(),
+                acp_config: params.acp_config.clone(),
+                permission_config: params.permission_config.clone(),
+                plugin_loader: Some(plugin_loader.clone()),
+                workspace_tools: Arc::clone(&workspace_tools),
+            },
+            delegation_service.clone(),
+        ));
+        delegation_service.bind_agent_manager(&agent_manager);
         let subscription_manager = Arc::new(SubscriptionManager::new());
         let project_manager = Arc::new(ProjectManager::new(data_home.join("projects.json")));
         let lua_sessions = Arc::new(DashMap::new());

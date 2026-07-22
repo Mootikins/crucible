@@ -54,10 +54,18 @@ pub struct DelegationConfig {
     /// Maximum number of concurrent delegations a session can spawn (default 3)
     #[serde(default = "default_max_concurrent_delegations")]
     pub max_concurrent_delegations: u32,
+    /// Seconds a delegated child may run before it is cancelled (default 300).
+    /// Applies to blocking and background delegations alike.
+    #[serde(default = "default_delegation_timeout_secs")]
+    pub timeout_secs: u64,
 }
 
 fn default_max_depth() -> u32 {
     1
+}
+
+fn default_delegation_timeout_secs() -> u64 {
+    300
 }
 
 fn default_result_max_bytes() -> usize {
@@ -426,6 +434,7 @@ mod tests {
             allowed_targets: None,
             result_max_bytes: 51200,
             max_concurrent_delegations: 3,
+            timeout_secs: 300,
         };
         assert_eq!(delegation.max_concurrent_delegations, 3);
     }

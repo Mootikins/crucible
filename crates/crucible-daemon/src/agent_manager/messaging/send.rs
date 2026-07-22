@@ -2,6 +2,14 @@ use super::super::*;
 use super::DEFAULT_MAX_TOOL_DEPTH;
 use crucible_core::config::components::permissions::PermissionMode;
 
+/// Map the stream driver's outcome to the completion-channel status pair.
+fn outcome_to_status(outcome: StreamOutcome) -> (TurnStatus, Option<String>) {
+    match outcome {
+        StreamOutcome::Completed => (TurnStatus::Completed, None),
+        StreamOutcome::Failed(reason) => (TurnStatus::Failed, Some(reason)),
+    }
+}
+
 impl AgentManager {
     pub async fn send_message(
         &self,
@@ -10,6 +18,52 @@ impl AgentManager {
         event_tx: &broadcast::Sender<SessionEventMessage>,
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
+    ) -> Result<String, AgentError> {
+        self.send_message_inner(
+            session_id,
+            content,
+            event_tx,
+            is_interactive,
+            permission_override,
+            None,
+        )
+        .await
+    }
+
+    /// Like [`send_message`], but also returns a completion channel resolved
+    /// when the turn reaches ANY terminal state (completed, cancelled, timed
+    /// out, failed). This is the only reliable way to await a turn: the event
+    /// bus emits no terminal event on successful completion.
+    pub async fn send_message_notified(
+        &self,
+        session_id: &str,
+        content: String,
+        event_tx: &broadcast::Sender<SessionEventMessage>,
+        is_interactive: bool,
+        permission_override: Option<PermissionMode>,
+    ) -> Result<(String, oneshot::Receiver<TurnOutcome>), AgentError> {
+        let (completion_tx, completion_rx) = oneshot::channel();
+        let message_id = self
+            .send_message_inner(
+                session_id,
+                content,
+                event_tx,
+                is_interactive,
+                permission_override,
+                Some(completion_tx),
+            )
+            .await?;
+        Ok((message_id, completion_rx))
+    }
+
+    async fn send_message_inner(
+        &self,
+        session_id: &str,
+        content: String,
+        event_tx: &broadcast::Sender<SessionEventMessage>,
+        is_interactive: bool,
+        permission_override: Option<PermissionMode>,
+        completion_tx: Option<oneshot::Sender<TurnOutcome>>,
     ) -> Result<String, AgentError> {
         let ttft_start = Instant::now();
         info!(target: "ttft", session_id = %session_id, stage = "send_message_entry", elapsed_ms = 0, "ttft");
@@ -165,6 +219,7 @@ impl AgentManager {
             session_manager: self.session_manager.clone(),
             precognition_message,
             session_mode,
+            is_interactive,
         };
 
         let task = tokio::spawn(async move {
@@ -197,7 +252,7 @@ impl AgentManager {
                     )
                     .await
                     {
-                        Ok(()) => {}
+                        Ok(outcome) => outcome_to_status(outcome),
                         Err(_) => {
                             warn!(
                                 session_id = %stream_ctx.session_id,
@@ -216,14 +271,18 @@ impl AgentManager {
                                     "No subscribers for execution timeout ended event"
                                 );
                             }
+                            (
+                                TurnStatus::TimedOut,
+                                Some("execution timeout reached".to_string()),
+                            )
                         }
                     }
                 } else {
-                    stream_future.await;
+                    outcome_to_status(stream_future.await)
                 }
             };
 
-            tokio::select! {
+            let (status, error) = tokio::select! {
                 _ = cancel_rx => {
                     debug!(session_id = %session_id_owned, "Request cancelled");
                     if !emit_event(
@@ -232,8 +291,20 @@ impl AgentManager {
                     ) {
                         warn!(session_id = %session_id_owned, "No subscribers for cancelled event");
                     }
+                    (TurnStatus::Cancelled, None)
                 }
-                _ = timed_future => {}
+                outcome = timed_future => outcome,
+            };
+
+            // Single convergence point for ALL exit paths — this send must
+            // happen before the request_state slot is released so an awaiter
+            // observes the outcome strictly after the turn is over.
+            if let Some(tx) = completion_tx {
+                let _ = tx.send(TurnOutcome {
+                    status,
+                    final_text: std::mem::take(&mut accumulated_response),
+                    error,
+                });
             }
 
             request_state.remove(&session_id_owned);
@@ -261,17 +332,26 @@ impl AgentManager {
             return Ok(cached.clone());
         }
 
-        // Build the agent handle from configuration
-        let (mut agent, resolved_config) = self
-            .build_agent_from_config(
-                session_id,
-                agent_config,
-                workspace,
-                event_tx,
-                is_interactive,
-                permission_override,
-            )
-            .await?;
+        // Build the agent handle from configuration (or the test-support
+        // factory override, which lets tests script delegation children
+        // whose session ids don't exist before spawn time).
+        let mut agent = match self.agent_factory_override() {
+            Some(factory) => factory(agent_config, workspace)
+                .await
+                .map_err(AgentFactoryError::AgentBuild)?,
+            None => {
+                self.build_agent_from_config(
+                    session_id,
+                    agent_config,
+                    workspace,
+                    event_tx,
+                    is_interactive,
+                    permission_override,
+                )
+                .await?
+                .0
+            }
+        };
 
         // Re-apply the persisted session mode: a mode set before the first
         // message (or after a handle eviction) must still shape this handle's
@@ -288,9 +368,6 @@ impl AgentManager {
                 );
             }
         }
-
-        // Register delegation/permission handlers if configured
-        self.setup_permission_handlers(session_id, &resolved_config);
 
         // Cache and return
         let agent = Arc::new(Mutex::new(agent));
@@ -414,6 +491,7 @@ impl AgentManager {
             connected_kilns: &connected_kilns,
             parent_session_id: Some(session_id),
             background_spawner: Some(self.background_manager.clone()),
+            delegation_spawner: Some(self.delegation_service.clone()),
             mcp_gateway: self.mcp_gateway.clone(),
             acp_permission_handler,
             acp_config: self.acp_config.as_ref(),

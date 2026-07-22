@@ -251,6 +251,7 @@ fn test_session_agent_with_delegation_config() {
         allowed_targets: Some(vec!["tool-agent".to_string()]),
         result_max_bytes: 102400,
         max_concurrent_delegations: 3,
+            timeout_secs: 300,
     };
 
     let agent = SessionAgent {
@@ -330,6 +331,7 @@ fn test_session_agent_round_trip_with_all_fields() {
         allowed_targets: Some(vec!["agent1".to_string(), "agent2".to_string()]),
         result_max_bytes: 204800,
         max_concurrent_delegations: 3,
+            timeout_secs: 300,
     };
 
     let original = SessionAgent {
@@ -472,6 +474,7 @@ fn test_session_agent_from_profile_with_delegation() {
         allowed_targets: Some(vec!["worker1".to_string(), "worker2".to_string()]),
         result_max_bytes: 102400,
         max_concurrent_delegations: 3,
+            timeout_secs: 300,
     };
 
     let profile = AgentProfile {

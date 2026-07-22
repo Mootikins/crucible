@@ -239,13 +239,13 @@ impl AgentManager {
         mut tool_depth: usize,
         max_tool_depth: usize,
         validation_attempts: u32,
-    ) {
+    ) -> StreamOutcome {
         let ttft_local = Instant::now();
         info!(target: "ttft", session_id = %stream_ctx.session_id, stage = "execute_stream_entry", elapsed_ms = 0, "ttft");
         let Some(content) =
             Self::apply_pre_llm_call_handlers(content, &stream_ctx, &stream_config).await
         else {
-            return;
+            return StreamOutcome::Failed("cancelled by pre_llm_call handler".into());
         };
         info!(target: "ttft", session_id = %stream_ctx.session_id, stage = "pre_llm_done", elapsed_ms = ttft_local.elapsed().as_millis() as u64, "ttft");
 
@@ -269,7 +269,7 @@ impl AgentManager {
             Self::apply_transform_context_handlers(flattened_messages, &stream_ctx, &stream_config)
                 .await
         else {
-            return;
+            return StreamOutcome::Failed("cancelled by transform_context handler".into());
         };
 
         let (inbound_tx, inbound_rx) = mpsc::channel::<TurnEvent>(32);
@@ -306,7 +306,7 @@ impl AgentManager {
                         "No subscribers for turn-start error event"
                     );
                 }
-                return;
+                return StreamOutcome::Failed(format!("agent failed to start turn: {e}"));
             }
         };
 
@@ -503,7 +503,7 @@ impl AgentManager {
                                     "No subscribers for hard-stop ended event"
                                 );
                             }
-                            return;
+                            return StreamOutcome::Failed("max_tool_depth exceeded".into());
                         }
 
                         in_tool_batch = true;
@@ -763,7 +763,9 @@ impl AgentManager {
                                 "No subscribers for terminate ended event"
                             );
                         }
-                        return;
+                        // A tool-requested terminate is a deliberate end of
+                        // turn, not a failure.
+                        return StreamOutcome::Completed;
                     }
                 }
                 TurnEvent::Usage(usage) => {
@@ -792,7 +794,7 @@ impl AgentManager {
                             "No subscribers for error event"
                         );
                     }
-                    return;
+                    return StreamOutcome::Failed(format!("agent turn error: {e}"));
                 }
             }
         }
@@ -817,14 +819,14 @@ impl AgentManager {
             );
             if !emit_event(
                 &stream_ctx.event_tx,
-                SessionEventMessage::ended(&stream_ctx.session_id, error_reason),
+                SessionEventMessage::ended(&stream_ctx.session_id, error_reason.clone()),
             ) {
                 warn!(
                     session_id = %stream_ctx.session_id,
                     "No subscribers for empty-response ended event"
                 );
             }
-            return;
+            return StreamOutcome::Failed(error_reason);
         }
 
         if terminal_stop_reason.is_none() {
@@ -866,11 +868,12 @@ impl AgentManager {
                     Some((prompt, "after".to_string()))
                 }
                 ValidationOutcome::Exhausted => {
-                    return;
+                    return StreamOutcome::Failed("output validation exhausted retries".into());
                 }
             },
         };
 
+        let mut continuation_outcome = StreamOutcome::Completed;
         if let Some((injected_content, _)) = injection {
             drop(event_stream);
             // Release the handle lock before recursing so the inner
@@ -896,9 +899,10 @@ impl AgentManager {
                 // the original turn already prepended it.
                 precognition_message: None,
                 session_mode: stream_ctx.session_mode.clone(),
+                is_interactive: stream_ctx.is_interactive,
             };
 
-            Box::pin(Self::execute_agent_stream(
+            continuation_outcome = Box::pin(Self::execute_agent_stream(
                 agent,
                 injected_content,
                 continuation_ctx,
@@ -977,6 +981,8 @@ impl AgentManager {
                 );
             }
         }
+
+        continuation_outcome
     }
 
     pub(in crate::agent_manager) async fn dispatch_turn_complete_handlers(

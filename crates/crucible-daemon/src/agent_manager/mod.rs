@@ -4,8 +4,9 @@ use crate::acp::discovery::default_agent_profiles;
 use crate::agent_factory::{
     create_agent_from_session_config, AgentFactoryError, CreateAgentFromSessionConfigParams,
 };
-use crate::background_manager::{BackgroundJobManager, SubagentContext};
+use crate::background_manager::BackgroundJobManager;
 use crate::daemon_plugins::DaemonPluginLoader;
+use crate::delegation::DelegationService;
 use crate::event_emitter::emit_event;
 use crate::kiln_manager::KilnManager;
 use crate::multi_kiln_search::{search_across_kilns, KilnSearchSource};
@@ -185,6 +186,37 @@ struct RequestState {
     started_at: Instant,
 }
 
+/// Terminal status of a `send_message` turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnStatus {
+    Completed,
+    Cancelled,
+    TimedOut,
+    Failed,
+}
+
+/// Terminal outcome of a turn, delivered through the completion channel of
+/// [`AgentManager::send_message_notified`]. This is the reliable completion
+/// signal: the event bus emits no terminal event on *successful* turns, so
+/// callers that must await a turn (delegation) use this channel instead.
+#[derive(Debug, Clone)]
+pub struct TurnOutcome {
+    pub status: TurnStatus,
+    /// The accumulated assistant text (possibly partial on cancel/timeout).
+    pub final_text: String,
+    pub error: Option<String>,
+}
+
+/// Internal result of `execute_agent_stream`: distinguishes a turn that ran
+/// to a normal end from one that bailed on an error path. Every early-return
+/// site maps to `Failed` with the same reason string it emitted as an
+/// `ended` event.
+#[derive(Debug, Clone)]
+pub(crate) enum StreamOutcome {
+    Completed,
+    Failed(String),
+}
+
 /// RAII claim on a session's `request_state` slot — the single mutual-exclusion
 /// point shared by `send_message` and the scope mutations. Acquiring inserts a
 /// marker `RequestState`; dropping removes it, so the slot is released on every
@@ -241,6 +273,19 @@ impl Drop for RequestSlotGuard {
 }
 
 pub(crate) type BoxedAgentHandle = Box<dyn AgentHandle + Send + Sync>;
+
+/// Test-support seam: replaces `create_agent_from_session_config` so tests
+/// (including delegation tests, where the child session id doesn't exist
+/// until spawn time) can inject scripted agents. Never set in production.
+pub type AgentFactoryOverride = Box<
+    dyn Fn(
+            &SessionAgent,
+            &std::path::Path,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<BoxedAgentHandle, String>> + Send>,
+        > + Send
+        + Sync,
+>;
 
 use mlua::RegistryKey;
 use std::sync::Mutex as StdMutex;
@@ -379,6 +424,10 @@ struct StreamContext {
     /// bridge call is unwrapped — the agent handle that owns the canonical
     /// mode is not reachable from the tool-dispatch path.
     session_mode: String,
+    /// Whether a user can answer permission prompts for this turn. Delegated
+    /// child sessions run non-interactive: a tool call that would prompt is
+    /// denied immediately instead of hanging on a prompt nobody sees.
+    is_interactive: bool,
 }
 
 #[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration
@@ -403,6 +452,10 @@ struct AgentStreamConfig {
     output_validation: OutputValidation,
     /// Maximum retry count when output validation fails.
     validation_retries: u32,
+    /// From the session's `delegation_config.timeout_secs`; sizes the
+    /// tool-dispatch timeout for `delegate_session` (a blocking delegation
+    /// legitimately outlives the standard 30 s tool timeout).
+    delegation_timeout_secs: Option<u64>,
     /// Registry of Lua-defined validators, populated when the daemon
     /// has a plugin loader. The agent stream loop dispatches
     /// `OutputValidation::Lua { name }` against this registry.
@@ -432,6 +485,10 @@ impl AgentStreamConfig {
             autocompact_threshold: session_agent.autocompact_threshold,
             output_validation: session_agent.output_validation.clone(),
             validation_retries: session_agent.validation_retries,
+            delegation_timeout_secs: session_agent
+                .delegation_config
+                .as_ref()
+                .map(|c| c.timeout_secs),
             lua_validators,
             plugin_lua,
         }
@@ -533,6 +590,10 @@ pub struct AgentManager {
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
     background_manager: Arc<BackgroundJobManager>,
+    /// Spawns delegated child sessions through this manager's scheduler loop.
+    /// The service holds a `Weak` back-reference (bound at startup), so this
+    /// strong Arc creates no cycle.
+    delegation_service: Arc<DelegationService>,
     session_states: SessionStateCache,
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
@@ -558,6 +619,9 @@ pub struct AgentManager {
     /// User node). On undo, the tree's new cursor position is looked up
     /// here and its snapshot is replayed to revert tool-side file edits.
     pub(crate) snapshots: Arc<crate::workspace_snapshot::SnapshotMap>,
+    /// Test-support: when set, agent handles are built through this instead
+    /// of the real factory. See [`AgentFactoryOverride`].
+    agent_factory_override: std::sync::OnceLock<Arc<AgentFactoryOverride>>,
 }
 
 /// Parameters for creating an AgentManager.
@@ -574,7 +638,25 @@ pub struct AgentManagerParams {
 }
 
 impl AgentManager {
+    /// Construct with a default, unbound `DelegationService`. Delegation
+    /// spawns through it fail with a clear "not bound" error — appropriate
+    /// for contexts that never delegate (most tests). Production and
+    /// delegation tests use [`AgentManager::new_with_delegation`] and bind.
     pub fn new(params: AgentManagerParams) -> Self {
+        let delegation_service = DelegationService::new(
+            params.session_manager.clone(),
+            broadcast::channel(16).0,
+        );
+        Self::new_with_delegation(params, delegation_service)
+    }
+
+    /// Construct with an explicit delegation service. The caller must call
+    /// `delegation_service.bind_agent_manager(&arc_manager)` after Arc-ing
+    /// the returned manager, or delegation spawns will fail.
+    pub fn new_with_delegation(
+        params: AgentManagerParams,
+        delegation_service: Arc<DelegationService>,
+    ) -> Self {
         let tool_dispatcher: Arc<dyn ToolDispatcher> = Arc::new(DaemonToolDispatcher::new(vec![
             params.workspace_tools as Arc<dyn ToolExecutor>,
         ]));
@@ -585,6 +667,7 @@ impl AgentManager {
             kiln_manager: params.kiln_manager,
             session_manager: params.session_manager,
             background_manager: params.background_manager,
+            delegation_service,
             session_states: SessionStateCache::new(),
             pending_permissions: Arc::new(DashMap::new()),
             session_dispatchers: Arc::new(DashMap::new()),
@@ -599,7 +682,19 @@ impl AgentManager {
             lua_validators: std::sync::OnceLock::new(),
             titles_in_flight: Arc::new(DashMap::new()),
             snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),
+            agent_factory_override: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Test-support: install an agent-factory override (first call wins).
+    /// Production never calls this; it exists so tests can script the agents
+    /// that `send_message` (and thus delegation) builds.
+    pub fn set_agent_factory_override(&self, factory: AgentFactoryOverride) {
+        let _ = self.agent_factory_override.set(Arc::new(factory));
+    }
+
+    pub(crate) fn agent_factory_override(&self) -> Option<Arc<AgentFactoryOverride>> {
+        self.agent_factory_override.get().cloned()
     }
 
     /// Bind the plugin loader's validator registry + `Lua` handle.
@@ -791,13 +886,29 @@ impl AgentManager {
 
             // Pass the real workspace (not the kiln) so `skill_view` discovers
             // workspace-scoped skills under the same root the prompt catalog used.
+            //
+            // The delegation context here MUST match the one used when the
+            // agent's tool definitions were built (agent_factory) — the old
+            // split (defs built with a context, execution built with `None`)
+            // advertised a `delegate_session` tool the executor then refused.
+            // Both sites now call the same builder with the same inputs.
+            let delegation_context = session.agent.as_ref().and_then(|agent_config| {
+                crate::agent_factory::build_internal_delegation_context(
+                    agent_config,
+                    Some(&session.id),
+                    Some(self.background_manager.clone()),
+                    Some(self.delegation_service.clone()),
+                    &session.workspace,
+                    Some(session.kiln.as_path()),
+                )
+            });
             let mcp = Arc::new(
                 CrucibleMcpServer::new_with_workspace_and_delegation(
                     session.kiln.to_string_lossy().to_string(),
                     session.workspace.clone(),
                     knowledge_repo,
                     embedding_provider,
-                    None,
+                    delegation_context,
                 )
                 .with_search_sources(search_sources),
             );
@@ -842,9 +953,33 @@ impl AgentManager {
         dispatcher
     }
 
+    /// Access the delegation service (child-session spawning).
+    pub fn delegation_service(&self) -> &Arc<DelegationService> {
+        &self.delegation_service
+    }
+
     pub fn cleanup_session(&self, session_id: &str) {
         if self.session_states.remove(session_id).is_some() {
             debug!(session_id = %session_id, "Cleaned up Lua state for session");
+        }
+
+        // Cascade: a parent going away must not leave running children.
+        // Spawned (cleanup_session is sync); cancellation resolves each
+        // child's completion channel, then the records are dropped.
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let service = self.delegation_service.clone();
+            let session_id = session_id.to_string();
+            handle.spawn(async move {
+                let cancelled = service.cancel_children_of(&session_id).await;
+                if cancelled > 0 {
+                    info!(
+                        session_id = %session_id,
+                        cancelled,
+                        "Cancelled delegated children of cleaned-up session"
+                    );
+                }
+                service.forget_parent(&session_id);
+            });
         }
 
         self.agent_cache.remove(session_id);
