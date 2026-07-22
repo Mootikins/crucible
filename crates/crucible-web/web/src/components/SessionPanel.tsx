@@ -1,13 +1,24 @@
-import { Component, Show, createSignal, createEffect } from 'solid-js';
+import { Component, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { useSessionSearch } from '@/hooks/useSessionSearch';
-import { ProjectSection } from './ProjectSection';
-import { SessionSection } from './SessionSection';
+import { SessionTree } from './SessionTree';
 import { SessionFooter } from './SessionFooter';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
+import { ChipSelect, type ChipOption } from './composer/ChipSelect';
+import { listKilns, scmBranches } from '@/lib/api';
+import type { KilnListEntry, Session } from '@/lib/types';
+import { FlaskConical, GitBranch, Plus, Search, X } from '@/lib/icons';
+import { pathBasename } from '@/stores/statusBarStore';
 
+/**
+ * The sessions panel: ONE tree of all sessions grouped by project (worktrees
+ * fold into their repo's group), kiln and branch surfaced as row chips and as
+ * FACET FILTERS rather than tree levels — filter popouts with checkable
+ * entries, per the branch-is-a-filter design call. Recency ordering within
+ * and between groups.
+ */
 export const SessionPanel: Component = () => {
   const { currentProject, projects, selectProject, registerProject } = useProjectSafe();
   const {
@@ -24,11 +35,15 @@ export const SessionPanel: Component = () => {
     archiveSession,
   } = useSessionSafe();
 
-  const [selectedKiln, setSelectedKiln] = createSignal<string>('');
   const [sessionFilter, setSessionFilter] = createSignal<'active' | 'all' | 'archived'>('active');
+  const [selectedBranches, setSelectedBranches] = createSignal<string[]>([]);
+  const [selectedKilns, setSelectedKilns] = createSignal<string[]>([]);
+  const [kilns, setKilns] = createSignal<KilnListEntry[]>([]);
+  // checkout path -> live branch name, from scm.branches per unique repo.
+  const [checkoutBranch, setCheckoutBranch] = createSignal<Map<string, string>>(new Map());
 
   const search = useSessionSearch({
-    selectedKiln,
+    selectedKiln: () => selectedKilns()[0] ?? '',
     sessions,
     sessionFilter,
   });
@@ -40,65 +55,288 @@ export const SessionPanel: Component = () => {
     refreshSessions({ includeArchived });
   });
 
-  createEffect(() => {
-    const project = currentProject();
-    if (project && project.kilns.length > 0) {
-      if (!selectedKiln() || !project.kilns.some((k) => k.path === selectedKiln())) {
-        setSelectedKiln(project.kilns[0].path);
-      }
-    }
+  onMount(() => {
+    void listKilns().then(setKilns).catch(() => {});
   });
 
-  // All entry points converge on the draft surface (lazy creation) — no
-  // hardcoded provider/model fallbacks here anymore.
+  // Live branch mapping: one scm.branches call per unique repo root, refreshed
+  // when the project roster changes and on window focus (branch switches and
+  // new worktrees happen outside the app).
+  const loadBranches = async () => {
+    const roots = [...new Set(
+      projects()
+        .filter((p) => p.repository?.root)
+        .map((p) => p.repository!.root),
+    )];
+    const map = new Map<string, string>();
+    await Promise.all(
+      roots.map(async (root) => {
+        try {
+          const res = await scmBranches(root);
+          for (const b of res.branches) {
+            if (b.worktree_path) map.set(b.worktree_path, b.name);
+          }
+        } catch {
+          /* older daemon / repo gone: no branch chips for this repo */
+        }
+      }),
+    );
+    setCheckoutBranch(map);
+  };
+
+  createEffect(() => {
+    projects();
+    void loadBranches();
+  });
+
+  onMount(() => {
+    const onFocus = () => void loadBranches();
+    window.addEventListener('focus', onFocus);
+    onCleanup(() => window.removeEventListener('focus', onFocus));
+  });
+
+  const branchOf = (workspace: string): string | null => {
+    const map = checkoutBranch();
+    const direct = map.get(workspace);
+    if (direct) return direct;
+    for (const [checkout, branch] of map) {
+      if (workspace.startsWith(checkout + '/')) return branch;
+    }
+    return null;
+  };
+
+  const kilnName = (path: string): string | null => {
+    if (!path) return null;
+    const match = kilns().find((k) => k.path === path);
+    return match?.name || pathBasename(path) || path;
+  };
+
+  const sessionMatchesKilnFacet = (s: Session, facet: string[]) =>
+    facet.includes(s.kiln) || s.connected_kilns.some((k) => facet.includes(k));
+
+  const filteredSessions = createMemo(() => {
+    let base = search.displayedSessions();
+    const branches = selectedBranches();
+    if (branches.length > 0) {
+      base = base.filter((s) => {
+        const b = s.workspace && s.workspace !== s.kiln ? branchOf(s.workspace) : null;
+        return b !== null && branches.includes(b);
+      });
+    }
+    const kilnFacet = selectedKilns();
+    if (kilnFacet.length > 0) {
+      base = base.filter((s) => sessionMatchesKilnFacet(s, kilnFacet));
+    }
+    return base;
+  });
+
+  // Facet options come from the state-filtered (pre-facet) list so adding a
+  // second branch/kiln stays possible while one is active.
+  const branchOptions = createMemo<ChipOption[]>(() => {
+    const counts = new Map<string, number>();
+    for (const s of search.displayedSessions()) {
+      const b = s.workspace && s.workspace !== s.kiln ? branchOf(s.workspace) : null;
+      if (b) counts.set(b, (counts.get(b) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([name, n]) => ({ value: name, label: name, hint: `${n}` }));
+  });
+
+  const kilnOptions = createMemo<ChipOption[]>(() => {
+    const counts = new Map<string, number>();
+    for (const s of search.displayedSessions()) {
+      if (s.kiln) counts.set(s.kiln, (counts.get(s.kiln) ?? 0) + 1);
+      for (const k of s.connected_kilns) counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([path, n]) => ({ value: path, label: kilnName(path) ?? path, hint: `${n}` }));
+  });
+
+  const toggleIn = (list: string[], value: string) =>
+    list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+
+  const hasFacets = () => selectedBranches().length > 0 || selectedKilns().length > 0;
+
+  // All entry points converge on the draft surface (lazy creation).
   const handleCreateSession = () => {
     window.dispatchEvent(new CustomEvent('crucible:new-session'));
   };
 
-  const handleKilnSelect = async (kiln: string) => {
-    setSelectedKiln(kiln);
-    await refreshSessions({ kiln, workspace: currentProject()?.path });
+  // Inline add-project (the old ProjectSection affordance, kept minimal).
+  const [showNewProject, setShowNewProject] = createSignal(false);
+  const [newProjectPath, setNewProjectPath] = createSignal('');
+  const handleRegisterProject = async () => {
+    const path = newProjectPath().trim();
+    if (!path) return;
+    try {
+      await registerProject(path);
+      setNewProjectPath('');
+      setShowNewProject(false);
+    } catch (err) {
+      console.error('Failed to register project:', err);
+    }
   };
 
   const session = () => currentSession();
-  const project = () => currentProject();
+  const createDisabled = createMemo(
+    () => isLoading() || (providersLoaded() && providers().length === 0),
+  );
 
   return (
     <PanelShell>
-      <PanelHeader title="Projects" />
+      <PanelHeader title="Sessions" />
 
-      <div class="flex-1 overflow-y-auto">
+      <div class="px-3 pt-2 pb-1 flex flex-col gap-1.5 shrink-0">
+        <div class="relative">
+          <Search class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-dark" />
+          <input
+            ref={search.setSearchInputRef}
+            type="text"
+            value={search.searchQuery()}
+            onInput={(e) => search.handleSearchInput(e.currentTarget.value)}
+            placeholder="Search sessions..."
+            class="w-full bg-control text-shell-ink text-sm pl-8 pr-7 py-1.5 rounded border border-hairline focus:border-primary focus:outline-none placeholder:text-muted-dark"
+            data-testid="session-search-input"
+          />
+          <Show when={search.searchQuery()}>
+            <button
+              onClick={search.clearSearch}
+              class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-muted-dark hover:text-shell-body rounded"
+            >
+              <X class="w-3 h-3" />
+            </button>
+          </Show>
+        </div>
 
-        <ProjectSection
+        <div class="flex items-center gap-1 flex-wrap">
+          <select
+            data-testid="session-filter-dropdown"
+            value={sessionFilter()}
+            onChange={(e) =>
+              setSessionFilter(e.target.value as 'active' | 'all' | 'archived')
+            }
+            class="text-xs bg-surface-elevated text-shell-body border border-hairline rounded px-1 py-0.5"
+          >
+            <option value="active">Active</option>
+            <option value="all">All</option>
+            <option value="archived">Archived</option>
+          </select>
+          <ChipSelect
+            name="branch"
+            icon={GitBranch}
+            multi
+            selected={selectedBranches()}
+            options={branchOptions()}
+            value=""
+            onSelect={(v) => setSelectedBranches((prev) => toggleIn(prev, v))}
+            testid="session-branch-facet"
+          />
+          <ChipSelect
+            name="kiln"
+            icon={FlaskConical}
+            multi
+            selected={selectedKilns()}
+            options={kilnOptions()}
+            value=""
+            onSelect={(v) => setSelectedKilns((prev) => toggleIn(prev, v))}
+            testid="session-kiln-facet"
+          />
+          <Show when={hasFacets()}>
+            <button
+              type="button"
+              class="text-[11px] text-muted-dark hover:text-shell-ink transition-colors"
+              onClick={() => {
+                setSelectedBranches([]);
+                setSelectedKilns([]);
+              }}
+              data-testid="session-facet-clear"
+            >
+              clear
+            </button>
+          </Show>
+        </div>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-2">
+        <button
+          onClick={handleCreateSession}
+          disabled={createDisabled()}
+          class="w-full mb-2 px-3 py-2 text-sm text-muted hover:text-shell-ink hover:bg-hover-wash rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          data-testid="new-session-button"
+        >
+          <Plus class="w-3.5 h-3.5" />
+          New Session
+        </button>
+        <Show when={providersLoaded() && providers().length === 0}>
+          <p class="text-xs text-muted-dark text-center mb-2">No LLM providers detected</p>
+        </Show>
+
+        <Show when={search.isSearching()}>
+          <p class="text-muted-dark text-sm text-center py-2">Searching...</p>
+        </Show>
+
+        <SessionTree
+          sessions={filteredSessions()}
+          currentSessionId={session()?.id}
           projects={projects()}
-          currentProject={project() ?? undefined}
+          currentProjectPath={currentProject()?.path}
+          onSelectSession={selectSession}
           onSelectProject={selectProject}
-          onRegisterProject={async (path) => { await registerProject(path); }}
+          onArchiveSession={archiveSession}
+          onDeleteSession={deleteSession}
+          branchOf={branchOf}
+          kilnName={kilnName}
         />
 
-        <Show when={project()}>
-          <SessionSection
-            kilns={project()!.kilns}
-            selectedKiln={selectedKiln()}
-            onKilnSelect={handleKilnSelect}
-            sessionFilter={sessionFilter()}
-            onSessionFilterChange={setSessionFilter}
-            searchQuery={search.searchQuery()}
-            isSearching={search.isSearching()}
-            onSearchInput={search.handleSearchInput}
-            onClearSearch={search.clearSearch}
-            setSearchInputRef={search.setSearchInputRef}
-            displayedSessions={search.displayedSessions()}
-            currentSession={session() ?? undefined}
-            onSelectSession={selectSession}
-            onArchiveSession={archiveSession}
-            onDeleteSession={deleteSession}
-            onCreateSession={handleCreateSession}
-            isLoading={isLoading()}
-            hasProviders={providers().length > 0}
-            providersLoaded={providersLoaded()}
-          />
+        <Show when={!search.isSearching() && filteredSessions().length === 0}>
+          <Show
+            when={search.searchQuery().trim()}
+            fallback={
+              <Show when={hasFacets()}>
+                <p class="text-muted-dark text-sm text-center py-2">No sessions match the filters</p>
+              </Show>
+            }
+          >
+            <p class="text-muted-dark text-sm text-center py-2">
+              No sessions match "{search.searchQuery()}"
+            </p>
+          </Show>
         </Show>
+
+        <Show when={showNewProject()}>
+          <div class="mt-2 p-2 bg-surface-elevated rounded-lg">
+            <input
+              type="text"
+              value={newProjectPath()}
+              onInput={(e) => setNewProjectPath(e.currentTarget.value)}
+              placeholder="/path/to/project"
+              class="w-full bg-control text-shell-ink px-2 py-1 rounded text-sm"
+            />
+            <div class="flex gap-2 mt-2">
+              <button
+                onClick={() => void handleRegisterProject()}
+                class="flex-1 px-2 py-1 bg-primary text-white rounded text-sm hover:bg-primary-hover"
+              >
+                Add
+              </button>
+              <button
+                onClick={() => setShowNewProject(false)}
+                class="px-2 py-1 bg-control text-shell-body rounded text-sm hover:bg-hover-wash"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </Show>
+        <button
+          onClick={() => setShowNewProject(true)}
+          class="w-full mt-1 px-3 py-1.5 text-xs text-muted-dark hover:text-shell-ink hover:bg-hover-wash rounded-lg transition-colors flex items-center justify-center gap-2"
+        >
+          <Plus class="w-3 h-3" />
+          Add Project
+        </button>
       </div>
 
       <Show when={session()}>

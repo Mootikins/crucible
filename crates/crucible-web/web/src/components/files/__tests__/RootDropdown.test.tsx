@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMemo, createSignal } from 'solid-js';
-import { render, fireEvent, waitFor } from '@solidjs/testing-library';
+import { render, fireEvent, screen, waitFor } from '@solidjs/testing-library';
 import { RootDropdown } from '../RootDropdown';
 import { buildRoster, rootKey, rosterIndex, type TreeRoot } from '@/lib/tree-root';
 import type { KilnListEntry, Project } from '@/lib/types';
@@ -40,7 +40,7 @@ describe('RootDropdown', () => {
       <RootDropdown groups={groups} selectedKey={null} onSelect={() => {}} />
     ));
     openPopout(getByTestId);
-    const popout = getByTestId('root-dropdown-popout');
+    const popout = screen.getByTestId('root-dropdown-popout');
     const rows = popout.querySelectorAll('[role="option"]');
     expect(rows).toHaveLength(3);
     expect(popout.textContent).toContain('Projects');
@@ -81,11 +81,11 @@ describe('RootDropdown', () => {
   it('calls onSelect with the resolved TreeRoot when an option is picked', () => {
     const groups = buildRoster([project('/p1', 'P1')], [{ path: '/vault', name: 'Vault' }]);
     const onSelect = vi.fn<(r: TreeRoot) => void>();
-    const { getByTestId, getByText } = render(() => (
+    const { getByTestId } = render(() => (
       <RootDropdown groups={groups} selectedKey={null} onSelect={onSelect} />
     ));
     openPopout(getByTestId);
-    fireEvent.click(getByText('Vault'));
+    fireEvent.click(screen.getByText('Vault'));
     expect(onSelect).toHaveBeenCalledWith({ kind: 'kiln', path: '/vault', name: 'Vault' });
   });
 
@@ -115,7 +115,7 @@ describe('RootDropdown', () => {
     vi.mocked(registerProject).mockResolvedValue(project('/repo/tree/feat/x', 'x'));
     const onSelect = vi.fn<(r: TreeRoot) => void>();
     const groups = buildRoster([project('/repo', 'repo')], []);
-    const { getByTestId, getByText } = render(() => (
+    const { getByTestId } = render(() => (
       <RootDropdown
         groups={groups}
         selectedKey="project:/repo"
@@ -124,9 +124,9 @@ describe('RootDropdown', () => {
       />
     ));
     openPopout(getByTestId);
-    await waitFor(() => expect(getByTestId('root-dropdown-popout').textContent).toContain('Branches — repo'));
+    await waitFor(() => expect(screen.getByTestId('root-dropdown-popout').textContent).toContain('Branches — repo'));
 
-    fireEvent.click(getByText('feat/x'));
+    fireEvent.click(screen.getByText('feat/x'));
     await waitFor(() =>
       expect(onSelect).toHaveBeenCalledWith({
         kind: 'project',
@@ -154,7 +154,7 @@ describe('RootDropdown', () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const onSelect = vi.fn<(r: TreeRoot) => void>();
     const groups = buildRoster([project('/repo', 'repo')], []);
-    const { getByTestId, getByText } = render(() => (
+    const { getByTestId } = render(() => (
       <RootDropdown
         groups={groups}
         selectedKey="project:/repo"
@@ -163,9 +163,9 @@ describe('RootDropdown', () => {
       />
     ));
     openPopout(getByTestId);
-    await waitFor(() => expect(getByText('fix/y')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('fix/y')).toBeTruthy());
 
-    fireEvent.click(getByText('fix/y'));
+    fireEvent.click(screen.getByText('fix/y'));
     await waitFor(() => expect(scmWorktreeAdd).toHaveBeenCalledWith('/repo', 'fix/y', false));
     await waitFor(() =>
       expect(onSelect).toHaveBeenCalledWith({
@@ -197,7 +197,7 @@ describe('RootDropdown', () => {
       Array.from({ length: 8 }, (_, i) => project(`/p${i}`, `P${i}`)),
       [],
     );
-    const { getByTestId, getByLabelText } = render(() => (
+    const { getByTestId } = render(() => (
       <RootDropdown
         groups={groups}
         selectedKey={null}
@@ -207,11 +207,11 @@ describe('RootDropdown', () => {
       />
     ));
     openPopout(getByTestId);
-    await waitFor(() => expect(getByTestId('root-dropdown-popout').textContent).toContain('master'));
+    await waitFor(() => expect(screen.getByTestId('root-dropdown-popout').textContent).toContain('master'));
 
-    const filter = getByLabelText('Search Browse root') as HTMLInputElement;
+    const filter = screen.getByLabelText('Search Browse root') as HTMLInputElement;
     fireEvent.input(filter, { target: { value: 'feat/new-thing' } });
-    const createRow = getByTestId('root-dropdown-create');
+    const createRow = screen.getByTestId('root-dropdown-create');
     expect(createRow.textContent).toContain("Create branch + worktree 'feat/new-thing'");
 
     fireEvent.click(createRow);

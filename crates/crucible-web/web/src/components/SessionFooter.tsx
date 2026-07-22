@@ -1,7 +1,7 @@
 import { Component, Show } from 'solid-js';
 import type { Session } from '@/lib/types';
 import { RefreshCw } from '@/lib/icons';
-import { StateIndicator } from './SessionSection';
+import { StateIndicator } from './SessionTree';
 
 export const SessionFooter: Component<{
   session: Session;

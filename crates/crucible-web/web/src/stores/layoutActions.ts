@@ -10,6 +10,7 @@ import {
   deserializeLayout,
   serializeLayout,
 } from '@/lib/layout-serializer';
+import { markLayoutRestore } from '@/lib/layout-restore';
 import type { WindowStoreContext } from './windowStoreInternals';
 import {
   collectLeafGroupIds,
@@ -157,6 +158,9 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
 
   const importLayout = (json: SerializedLayout) => {
     const restored = deserializeLayout(json);
+    // Snap-not-tween marker: effects reacting to this store swap (edge-panel
+    // collapse states) must apply instantly — see lib/layout-restore.
+    markLayoutRestore(() =>
     setStore(
       produce((s) => {
         s.layout = restored.layout;
@@ -169,7 +173,7 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
         const firstPane = findFirstPane(s.layout);
         if (firstPane) s.activePaneId = firstPane.id;
       })
-    );
+    ));
   };
 
   return {

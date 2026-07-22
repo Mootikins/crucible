@@ -1,5 +1,7 @@
 import { Component, For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import { ChevronDown, Check } from '@/lib/icons';
+import { treeSectionHeader } from '@/components/tree/tree-style';
 
 export interface ChipOption {
   value: string;
@@ -18,6 +20,12 @@ export interface ChipOption {
  * panel with the options, a filter box once the list is big enough to need
  * one, and a check mark on the current selection. Native <select> can't do
  * any of that (no search, no hints, no styling of the list).
+ *
+ * The panel renders through a Portal with fixed positioning: triggers live
+ * inside edge panels whose animation frame is `overflow-hidden` and whose
+ * translate creates a stacking context — an in-place absolute popout gets
+ * clipped at the panel edge and painted UNDER the center area, and no
+ * z-index can save it.
  */
 export const ChipSelect: Component<{
   /** Leading static label, e.g. "kiln". Screen-reader name for the trigger. */
@@ -40,15 +48,30 @@ export const ChipSelect: Component<{
   /** Offer creating from the filter text when it matches no option exactly
    * (repo/branch-switcher "create …" row). */
   create?: { label: (text: string) => string; run: (text: string) => void };
+  /** Toggle-many mode (facet filters): picks toggle membership in `selected`
+   * and the popout stays open; the trigger shows a count badge. */
+  multi?: boolean;
+  selected?: string[];
 }> = (props) => {
   const [open, setOpen] = createSignal(false);
   const [filter, setFilter] = createSignal('');
   const [hover, setHover] = createSignal(-1);
+  const [panelPos, setPanelPos] = createSignal({ left: 0, top: 0 });
   let rootRef: HTMLDivElement | undefined;
+  let panelRef: HTMLDivElement | undefined;
+  let triggerRef: HTMLButtonElement | undefined;
   let inputRef: HTMLInputElement | undefined;
 
   const current = () => props.options.find((o) => o.value === props.value);
-  const display = () => current()?.label ?? props.placeholder ?? props.name;
+  const display = () => {
+    if (props.multi) {
+      const n = props.selected?.length ?? 0;
+      return n > 0 ? `${props.name} · ${n}` : props.name;
+    }
+    return current()?.label ?? props.placeholder ?? props.name;
+  };
+  const isPicked = (o: ChipOption) =>
+    props.multi ? (props.selected ?? []).includes(o.value) : o.value === props.value;
   const searchable = () => props.options.length >= (props.searchThreshold ?? 8);
   const visible = () => {
     const q = filter().trim().toLowerCase();
@@ -67,10 +90,14 @@ export const ChipSelect: Component<{
   const pick = (o: ChipOption) => {
     if (o.disabled) return;
     props.onSelect(o.value);
-    close();
+    if (!props.multi) close();
   };
 
   const openPopout = () => {
+    if (triggerRef) {
+      const rect = triggerRef.getBoundingClientRect();
+      setPanelPos({ left: Math.round(rect.left), top: Math.round(rect.bottom + 4) });
+    }
     setOpen(true);
     props.onOpen?.();
   };
@@ -95,7 +122,9 @@ export const ChipSelect: Component<{
     if (!open()) return;
     queueMicrotask(() => inputRef?.focus());
     const onDocClick = (e: MouseEvent) => {
-      if (rootRef && !rootRef.contains(e.target as Node)) close();
+      const t = e.target as Node;
+      // The panel is portaled out of rootRef's subtree — check both.
+      if (rootRef && !rootRef.contains(t) && panelRef && !panelRef.contains(t)) close();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -118,17 +147,23 @@ export const ChipSelect: Component<{
         }
       }
     };
+    // A viewport change moves the trigger out from under the fixed panel —
+    // close instead of chasing it.
+    const onViewportChange = () => close();
     document.addEventListener('mousedown', onDocClick);
     document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onViewportChange);
     onCleanup(() => {
       document.removeEventListener('mousedown', onDocClick);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onViewportChange);
     });
   });
 
   return (
     <div ref={rootRef} class="relative inline-flex">
       <button
+        ref={triggerRef}
         type="button"
         aria-label={props.name}
         aria-expanded={open()}
@@ -151,79 +186,83 @@ export const ChipSelect: Component<{
       </button>
 
       <Show when={open()}>
-        <div
-          data-testid={props.testid ? `${props.testid}-popout` : undefined}
-          class="absolute left-0 top-full mt-1 z-50 min-w-[220px] max-w-[320px] bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1 cru-anim-rise"
-        >
-          <Show when={searchable()}>
-            <div class="px-2 pb-1 pt-0.5 border-b border-hairline">
-              <input
-                ref={inputRef}
-                value={filter()}
-                onInput={(e) => {
-                  setFilter(e.currentTarget.value);
-                  setHover(0);
-                }}
-                placeholder={`Search ${props.name}…`}
-                aria-label={`Search ${props.name}`}
-                class="w-full bg-transparent text-xs text-shell-ink placeholder-muted-dark outline-none py-1"
-              />
-            </div>
-          </Show>
-          <div class="max-h-[300px] overflow-y-auto" role="listbox" aria-label={props.name}>
-            <For each={visible()}>
-              {(o, i) => (
-                <>
-                <Show when={o.group && o.group !== visible()[i() - 1]?.group}>
-                  <div class="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-dark">
-                    {o.group}
-                  </div>
-                </Show>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={o.value === props.value}
-                  disabled={o.disabled}
-                  onMouseEnter={() => setHover(i())}
-                  onClick={() => pick(o)}
-                  classList={{
-                    'w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors': true,
-                    'bg-hover-wash': hover() === i(),
-                    'text-shell-ink': !o.disabled,
-                    'text-muted-dark cursor-not-allowed': !!o.disabled,
+        <Portal>
+          <div
+            ref={panelRef}
+            data-testid={props.testid ? `${props.testid}-popout` : undefined}
+            class="fixed z-50 min-w-[220px] max-w-[320px] bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1 cru-anim-rise"
+            style={{ left: `${panelPos().left}px`, top: `${panelPos().top}px` }}
+          >
+            <Show when={searchable()}>
+              <div class="px-2 pb-1 pt-0.5 border-b border-hairline">
+                <input
+                  ref={inputRef}
+                  value={filter()}
+                  onInput={(e) => {
+                    setFilter(e.currentTarget.value);
+                    setHover(0);
                   }}
-                >
-                  <span class="w-3.5 flex-shrink-0">
-                    <Show when={o.value === props.value}>
-                      <Check class="w-3.5 h-3.5 text-primary" />
+                  placeholder={`Search ${props.name}…`}
+                  aria-label={`Search ${props.name}`}
+                  class="w-full bg-transparent text-xs text-shell-ink placeholder-muted-dark outline-none py-1"
+                />
+              </div>
+            </Show>
+            <div class="max-h-[300px] overflow-y-auto" role="listbox" aria-label={props.name}>
+              <For each={visible()}>
+                {(o, i) => (
+                  <>
+                    <Show when={o.group && o.group !== visible()[i() - 1]?.group}>
+                      <div class={treeSectionHeader}>{o.group}</div>
                     </Show>
-                  </span>
-                  <span class="truncate">{o.label}</span>
-                  <Show when={o.hint}>
-                    <span class="ml-auto pl-3 text-muted-dark truncate max-w-[140px]">{o.hint}</span>
-                  </Show>
-                </button>
-                </>
-              )}
-            </For>
-            <Show when={visible().length === 0 && !createText()}>
-              <div class="px-3 py-2 text-xs text-muted-dark">No matches</div>
-            </Show>
-            <Show when={createText()} keyed>
-              {(text) => (
-                <button
-                  type="button"
-                  onClick={runCreate}
-                  class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs text-primary hover:bg-hover-wash transition-colors border-t border-hairline"
-                  data-testid={props.testid ? `${props.testid}-create` : undefined}
-                >
-                  <span class="w-3.5 flex-shrink-0">＋</span>
-                  <span class="truncate">{props.create!.label(text)}</span>
-                </button>
-              )}
-            </Show>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={isPicked(o)}
+                      disabled={o.disabled}
+                      onMouseEnter={() => setHover(i())}
+                      onClick={() => pick(o)}
+                      classList={{
+                        'w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors': true,
+                        'bg-hover-wash': hover() === i(),
+                        'text-shell-ink': !o.disabled,
+                        'text-muted-dark cursor-not-allowed': !!o.disabled,
+                      }}
+                    >
+                      <span class="w-3.5 flex-shrink-0">
+                        <Show when={isPicked(o)}>
+                          <Check class="w-3.5 h-3.5 text-primary" />
+                        </Show>
+                      </span>
+                      <span class="truncate">{o.label}</span>
+                      <Show when={o.hint}>
+                        <span class="ml-auto pl-3 text-muted-dark truncate max-w-[140px]">
+                          {o.hint}
+                        </span>
+                      </Show>
+                    </button>
+                  </>
+                )}
+              </For>
+              <Show when={visible().length === 0 && !createText()}>
+                <div class="px-3 py-2 text-xs text-muted-dark">No matches</div>
+              </Show>
+              <Show when={createText()} keyed>
+                {(text) => (
+                  <button
+                    type="button"
+                    onClick={runCreate}
+                    class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs text-primary hover:bg-hover-wash transition-colors border-t border-hairline"
+                    data-testid={props.testid ? `${props.testid}-create` : undefined}
+                  >
+                    <span class="w-3.5 flex-shrink-0">＋</span>
+                    <span class="truncate">{props.create!.label(text)}</span>
+                  </button>
+                )}
+              </Show>
+            </div>
           </div>
-        </div>
+        </Portal>
       </Show>
     </div>
   );

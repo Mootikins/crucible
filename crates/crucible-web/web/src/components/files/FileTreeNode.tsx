@@ -12,6 +12,7 @@ import { FileTreeContextMenu, type ContextAction } from './FileTreeContextMenu';
 import { Folder, FolderOpen, ChevronRight } from '@/lib/icons';
 import { Dynamic } from 'solid-js/web';
 import { fileIconFor } from '@/lib/file-icons';
+import { treeChevron, treeRow } from '@/components/tree/tree-style';
 
 /** VSCode-style colored filetype icon, resolved by full filename. */
 const FileIcon: Component<{ name: string }> = (props) => {
@@ -142,7 +143,7 @@ export const FileTreeNode: Component<{
             <TreeView.Item
               {...currentAttrs()}
               ref={attachDrag}
-              class="flex items-center pr-2 py-1 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-sm data-[selected]:bg-hover-wash data-[current=true]:font-medium data-[current=true]:border-l-2 data-[current=true]:border-primary"
+              class={`${treeRow} data-[selected]:bg-hover-wash data-[current=true]:font-medium data-[current=true]:border-l-2 data-[current=true]:border-primary`}
               style={DEPTH_INDENT_LEAF}
             >
               <FileIcon name={props.node.name} />
@@ -158,12 +159,12 @@ export const FileTreeNode: Component<{
               {...currentAttrs()}
               ref={attachFolderDrop}
               data-file-drop={dropOver() ? 'true' : undefined}
-              class="flex items-center pr-2 py-1 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-sm data-[selected]:bg-hover-wash data-[file-drop=true]:bg-primary/15 data-[file-drop=true]:outline data-[file-drop=true]:outline-1 data-[file-drop=true]:outline-primary"
+              class={`${treeRow} data-[selected]:bg-hover-wash data-[file-drop=true]:bg-primary/15 data-[file-drop=true]:outline data-[file-drop=true]:outline-1 data-[file-drop=true]:outline-primary`}
               style={DEPTH_INDENT}
             >
               {/* zag stamps data-state on the INDICATOR, not its children — the
                   rotate selector must live here or it never matches. */}
-              <TreeView.BranchIndicator class="shrink-0 transition-transform duration-150 data-[state=open]:rotate-90">
+              <TreeView.BranchIndicator class={`${treeChevron} data-[state=open]:rotate-90`}>
                 <ChevronRight class="w-3.5 h-3.5" />
               </TreeView.BranchIndicator>
               <FolderIcon />

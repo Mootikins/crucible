@@ -5,6 +5,7 @@ import { windowStore, windowActions } from '@/stores/windowStore';
 import { collectLeafGroupIds, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
 import type { EdgePanelPosition, Tab } from '@/types/windowTypes';
 import { openPanelTab } from '@/lib/panel-actions';
+import { isRestoringLayout } from '@/lib/layout-restore';
 import { attachFileDropTarget } from '@/lib/file-dnd';
 import { openFileInGroup } from '@/lib/file-actions';
 import { terminalAllowed } from '@/lib/terminal-availability';
@@ -390,6 +391,13 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
         if (tweenRaf !== undefined) cancelAnimationFrame(tweenRaf);
         const from = progress();
         if (from === target) return;
+        // A layout RESTORE snaps: it's initialization, not an interaction —
+        // tweening on page load looks wrong and slides the center layout
+        // under anything that just measured it (stale-coordinate drags).
+        if (isRestoringLayout()) {
+          setProgress(target);
+          return;
+        }
         // Duration scales with remaining distance so a mid-flight reversal
         // doesn't crawl.
         const dur = Math.max(1, TWEEN_MS * Math.abs(target - from));

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, cleanup, waitFor, fireEvent } from '@solidjs/testing-library';
+import { render, cleanup, screen, waitFor, fireEvent } from '@solidjs/testing-library';
 import { CenterComposer } from '../CenterComposer';
 import { recordRecentFile } from '@/lib/recent-files';
 
@@ -67,12 +67,13 @@ describe('CenterComposer', () => {
   });
 
   it('a chip popout selects a value used on submit', async () => {
-    const { getByTestId, getByText } = render(() => <CenterComposer />);
+    const { getByTestId } = render(() => <CenterComposer />);
     await waitFor(() => expect(getByTestId('composer-project')).toBeInTheDocument());
     fireEvent.click(getByTestId('composer-project'));
-    await waitFor(() => expect(getByTestId('composer-project-popout')).toBeInTheDocument());
-    await waitFor(() => expect(getByText('crucible')).toBeInTheDocument());
-    fireEvent.click(getByText('crucible'));
+    // The popout renders through a Portal into document.body — query via screen.
+    await waitFor(() => expect(screen.getByTestId('composer-project-popout')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('crucible')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('crucible'));
 
     const input = getByTestId('composer-input') as HTMLTextAreaElement;
     fireEvent.input(input, { target: { value: 'with project' } });

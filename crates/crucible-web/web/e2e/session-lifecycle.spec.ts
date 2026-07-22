@@ -280,7 +280,7 @@ test.describe('Session Lifecycle', () => {
     await sessionRow.hover();
 
     // Wait for the archive button to become visible (opacity transition)
-    const archiveButton = page.getByTitle('Archive session').first();
+    const archiveButton = sessionRow.getByTitle('Archive session');
     await expect(archiveButton).toBeVisible({ timeout: 5000 });
 
     // Click archive
@@ -326,7 +326,7 @@ test.describe('Session Lifecycle', () => {
     await sessionRow.hover();
 
     // Wait for the delete button to become visible (opacity transition)
-    const deleteButton = page.getByTitle('Delete session').first();
+    const deleteButton = sessionRow.getByTitle('Delete session');
     await expect(deleteButton).toBeVisible({ timeout: 5000 });
 
     // Click delete
