@@ -6,6 +6,8 @@ import { EditorProvider } from '@/contexts/EditorContext';
 import { WindowManager } from '@/components/windowing/WindowManager';
 import { CommandPalette, type PaletteCommand } from '@/components/CommandPalette';
 import { registerPanels } from '@/lib/register-panels';
+import { getGlobalRegistry } from '@/lib/panel-registry';
+import type { TabContentType } from '@/types/windowTypes';
 import { getConfig } from '@/lib/api';
 import { setupLayoutAutoSave, loadLayoutOnStartup } from '@/lib/layout-persistence';
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
@@ -28,17 +30,50 @@ function focusChatInput(): void {
   candidate.focus();
 }
 
-function openSettingsPanel(): void {
-  openPanelTab('settings');
-}
+/** Content types that only make sense with a target (a specific file or
+ * session) — they get no generic "Open …" palette command. */
+const PANEL_COMMAND_EXCLUDED = new Set<string>(['file', 'chat', 'chat-draft']);
 
-function openFilesPanel(): void {
-  openPanelTab('files');
+/** Panel-specific palette descriptions; anything unlisted gets a generic one. */
+const PANEL_COMMAND_DESCRIPTIONS: Record<string, string> = {
+  settings: 'Open the settings tab.',
+  files: 'Browse workspace files and kiln notes.',
+  plugins: 'Manage installed plugins.',
+  skills: 'Browse and search agent skills.',
+  backlinks: 'Linked and unlinked mentions for the focused note.',
+  graph: 'Interactive knowledge graph of the kiln.',
+  terminal: 'Shell terminal in the bottom panel.',
+  sessions: 'Session list in the left panel.',
+  inbox: 'Everything waiting on you, one place.',
+  activity: 'Live agent activity feed.',
+};
+
+/** One "Open …" command per registered panel, so any closed window can be
+ * brought back from the palette (focuses the existing tab if still open). */
+function panelOpenCommands(): PaletteCommand[] {
+  return getGlobalRegistry()
+    .list()
+    .filter((def) => !PANEL_COMMAND_EXCLUDED.has(def.id))
+    .map((def) => ({
+      id: `nav-open-${def.id}`,
+      label: `Open ${def.title}`,
+      description: PANEL_COMMAND_DESCRIPTIONS[def.id] ?? `Open the ${def.title} panel.`,
+      category: 'Navigation' as const,
+      keywords: ['open', 'panel', 'window', 'reopen', 'view', def.id],
+      action: () => openPanelTab(def.id as TabContentType),
+    }));
 }
 
 const App: Component = () => {
   registerPanels();
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = createSignal(false);
+  // Seed text the palette opens with: '' for the full omnibox (Ctrl+P),
+  // '[[' for the note quick switcher (Ctrl+O).
+  const [paletteSeed, setPaletteSeed] = createSignal('');
+  const openPalette = (seed = '') => {
+    setPaletteSeed(seed);
+    setIsCommandPaletteOpen(true);
+  };
   const [isExportDialogOpen, setIsExportDialogOpen] = createSignal(false);
   const [kilnPath, setKilnPath] = createSignal<string | undefined>(undefined);
 
@@ -108,53 +143,21 @@ const App: Component = () => {
       },
     },
     {
-      id: 'nav-open-settings',
-      label: 'Open Settings',
-      description: 'Open the settings tab.',
+      id: 'nav-open-note',
+      label: 'Open Note…',
+      description: 'Quick switcher: jump to a note by name.',
+      shortcut: 'Ctrl+O',
       category: 'Navigation',
-      keywords: ['open', 'settings', 'panel'],
-      action: openSettingsPanel,
+      keywords: ['note', 'quick', 'switcher', 'jump', 'file'],
+      // Selecting a command closes the palette after the action runs; defer
+      // the seeded reopen so it lands after that close.
+      action: () => setTimeout(() => openPalette('[['), 0),
     },
-    {
-      id: 'nav-open-files',
-      label: 'Open Files',
-      description: 'Browse workspace files and kiln notes.',
-      category: 'Navigation',
-      keywords: ['files', 'explorer', 'left panel'],
-      action: openFilesPanel,
-    },
-    {
-      id: 'nav-open-plugins',
-      label: 'Open Plugins',
-      description: 'Manage installed plugins.',
-      category: 'Navigation',
-      keywords: ['plugins', 'install', 'reload', 'panel'],
-      action: () => openPanelTab('plugins'),
-    },
-    {
-      id: 'nav-open-skills',
-      label: 'Open Skills',
-      description: 'Browse and search agent skills.',
-      category: 'Navigation',
-      keywords: ['skills', 'browse', 'panel'],
-      action: () => openPanelTab('skills'),
-    },
-    {
-      id: 'nav-open-backlinks',
-      label: 'Open Backlinks',
-      description: 'Linked and unlinked mentions for the focused note.',
-      category: 'Navigation',
-      keywords: ['backlinks', 'mentions', 'wikilinks', 'panel'],
-      action: () => openPanelTab('backlinks'),
-    },
-    {
-      id: 'nav-open-graph',
-      label: 'Open Graph View',
-      description: 'Interactive knowledge graph of the kiln.',
-      category: 'Navigation',
-      keywords: ['graph', 'network', 'links', 'knowledge', 'map'],
-      action: () => openPanelTab('graph'),
-    },
+    // Every registered panel gets an "Open …" command — the way to bring
+    // back a closed window (graph, terminal, backlinks…). Focuses the
+    // existing tab when one is already open. Content-parameterized types
+    // (file/chat) are excluded: they need a target, not a singleton tab.
+    ...panelOpenCommands(),
     {
       id: 'nav-toggle-left',
       label: 'Toggle Left Panel',
@@ -172,6 +175,15 @@ const App: Component = () => {
       category: 'Navigation',
       keywords: ['toggle', 'right', 'panel'],
       action: () => windowActions.toggleEdgePanel('right'),
+    },
+    {
+      id: 'nav-toggle-bottom',
+      label: 'Toggle Bottom Panel',
+      description: 'Collapse or expand the bottom edge panel.',
+      shortcut: 'Ctrl+Shift+B',
+      category: 'Navigation',
+      keywords: ['toggle', 'bottom', 'terminal', 'panel'],
+      action: () => windowActions.toggleEdgePanel('bottom'),
     },
   ];
 
@@ -208,7 +220,11 @@ const App: Component = () => {
       if (action === 'openCommandPalette') {
         event.preventDefault();
         event.stopPropagation();
-        setIsCommandPaletteOpen(true);
+        openPalette();
+      } else if (action === 'openNoteSwitcher') {
+        event.preventDefault();
+        event.stopPropagation();
+        openPalette('[[');
       }
     };
 
@@ -234,8 +250,8 @@ const App: Component = () => {
       openFileInEditor(path, name ?? path.split('/').pop() ?? path);
     };
     window.addEventListener('crucible:open-file', onOpenFile);
-    // Header-bar palette pill (WindowManager can't reach the palette signal).
-    const onOpenPalette = () => setIsCommandPaletteOpen(true);
+    // Ribbon palette button (WindowManager can't reach the palette signal).
+    const onOpenPalette = () => openPalette();
     window.addEventListener('crucible:open-command-palette', onOpenPalette);
 
     onCleanup(() => {
@@ -269,6 +285,7 @@ const App: Component = () => {
           <CommandPalette
             open={isCommandPaletteOpen()}
             commands={paletteCommands}
+            initialQuery={paletteSeed()}
             onOpenChange={setIsCommandPaletteOpen}
           />
         </SessionProvider>

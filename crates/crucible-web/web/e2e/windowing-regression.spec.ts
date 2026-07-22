@@ -37,76 +37,48 @@ test('WindowManager renders with all layout regions', async ({ page }) => {
   const rootContainer = page.locator('div.flex.flex-col.h-screen.bg-shell-bg');
   await expect(rootContainer).toBeVisible();
 
-  // Header bar with command palette pill
-  const headerBar = page.locator('button[title="Command palette (Ctrl+P)"]').first();
-  await expect(headerBar).toBeVisible();
+  // Ribbon with the command palette button (no header bar).
+  await expect(page.getByTestId('ribbon-cmd-palette')).toBeVisible();
 
-  // Status bar at bottom
-  const statusBar = page.locator('[class*="StatusBar"]');
-  // StatusBar may not have a specific test ID, so we check for its presence via structure
-  // The main layout should have a header, content area, and status bar
+  // Main content area between the ribbons.
   const mainContent = page.locator('div.flex-1.flex.flex-col.overflow-hidden');
   await expect(mainContent).toBeVisible();
 });
 
-test('Left edge panel toggles open and closed', async ({ page }) => {
+test('Left edge panel toggles open and closed via its ribbon', async ({ page }) => {
   await page.goto('/');
 
-  // Find the left panel toggle button (title contains "Hide Left Panel" or "Show Left Panel")
-  const toggleButton = page.locator('button[title*="Left Panel"]').first();
+  const toggleButton = page.getByTestId('ribbon-toggle-left');
   await expect(toggleButton).toBeVisible();
 
-  // Get initial state - button should show "Hide Left Panel" (panel is open)
-  const initialTitle = await toggleButton.getAttribute('title');
-  expect(initialTitle).toContain('Left Panel');
+  // Panel starts open — the toggle offers to collapse it.
+  await expect(toggleButton).toHaveAttribute('title', 'Collapse panel');
 
-  // Click to collapse
   await toggleButton.click();
+  await expect(toggleButton).toHaveAttribute('title', 'Expand panel');
 
-  // After collapse, button title should change to "Show Left Panel"
-  const collapsedTitle = await toggleButton.getAttribute('title');
-  expect(collapsedTitle).toContain('Show Left Panel');
-
-  // Click to expand again
   await toggleButton.click();
-
-  // After expand, button title should change back to "Hide Left Panel"
-  const expandedTitle = await toggleButton.getAttribute('title');
-  expect(expandedTitle).toContain('Hide Left Panel');
+  await expect(toggleButton).toHaveAttribute('title', 'Collapse panel');
 });
 
-test('Header bar is visible with all controls', async ({ page }) => {
+test('Ribbons carry the shell controls — no header bar', async ({ page }) => {
   await page.goto('/');
 
-  // Header bar should be visible
-  const headerBar = page.locator('div.flex.items-center.h-10.bg-shell-bg');
-  await expect(headerBar).toBeVisible();
+  // Left ribbon: palette, new session, settings gear.
+  await expect(page.getByTestId('ribbon-cmd-palette')).toBeVisible();
+  await expect(page.getByTestId('ribbon-cmd-new-session')).toBeVisible();
+  await expect(page.getByTestId('ribbon-cmd-settings')).toBeVisible();
 
-  // Command palette pill should be visible
-  const commandPalette = page.locator('button[title="Command palette (Ctrl+P)"]').first();
-  await expect(commandPalette).toBeVisible();
+  // Every edge exposes its own toggle.
+  await expect(page.getByTestId('ribbon-toggle-left')).toBeVisible();
+  await expect(page.getByTestId('ribbon-toggle-right')).toBeVisible();
+  await expect(page.getByTestId('ribbon-toggle-bottom')).toBeVisible();
 
-  // Keyboard shortcut indicator should be visible
-  const shortcutKey = page.locator('text=Ctrl+P');
-  await expect(shortcutKey).toBeVisible();
-
-  // Shell navigation: the C logo starts a new session (no landing page),
-  // Inbox stays. The Edit/Session mode pills were removed from the header —
-  // goEdit/goSession remain reachable from the command palette.
-  await expect(page.locator('button[title="New session"]').first()).toBeVisible();
-  await expect(page.locator('button[title="Edit"]')).toHaveCount(0);
-  await expect(page.locator('button[title="Session"]')).toHaveCount(0);
-  await expect(page.locator('button[title="Inbox"]')).toBeVisible();
-
-  // Edge panel toggle buttons should be visible
-  const leftPanelButton = page.locator('button[title*="Left Panel"]');
-  await expect(leftPanelButton).toBeVisible();
-
-  const rightPanelButton = page.locator('button[title*="Right Panel"]');
-  await expect(rightPanelButton).toBeVisible();
-
-  const bottomPanelButton = page.locator('button[title*="Bottom Panel"]');
-  await expect(bottomPanelButton).toBeVisible();
+  // The header bar is gone: its Inbox pill and Ctrl+P kbd hint (the ribbon's
+  // palette button shares the palette title, so Inbox is the discriminator)
+  // no longer exist anywhere.
+  await expect(page.locator('button[title="Inbox"]')).toHaveCount(0);
+  await expect(page.locator('kbd:has-text("Ctrl+P")')).toHaveCount(0);
 });
 
 test('Center tiling area is visible and interactive', async ({ page }) => {
@@ -131,22 +103,22 @@ test('Layout structure remains stable after interaction', async ({ page }) => {
   await expect(rootContainer).toBeVisible();
 
   // Collapse the left panel
-  const toggleButton = page.locator('button[title*="Left Panel"]').first();
+  const toggleButton = page.getByTestId('ribbon-toggle-left');
   await toggleButton.click();
 
   // Root container should still be visible and stable
   await expect(rootContainer).toBeVisible();
 
-  // Header bar should still be visible
-  const headerBar = page.locator('button[title="Command palette (Ctrl+P)"]').first();
-  await expect(headerBar).toBeVisible();
+  // Ribbon should still be visible
+  const ribbonPalette = page.getByTestId('ribbon-cmd-palette');
+  await expect(ribbonPalette).toBeVisible();
 
   // Expand the left panel again
   await toggleButton.click();
 
   // Everything should still be visible
   await expect(rootContainer).toBeVisible();
-  await expect(headerBar).toBeVisible();
+  await expect(ribbonPalette).toBeVisible();
 });
 
 test('No critical console errors on initial load', async ({ page }) => {

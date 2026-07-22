@@ -1,7 +1,10 @@
 import { createSignal } from 'solid-js';
 import { createHighlighter, type Highlighter } from 'shiki';
 
-export const SHIKI_THEME = 'github-dark';
+// One Dark everywhere: the CodeMirror editor + live preview highlight with
+// @codemirror/theme-one-dark, so rendered code (reading view, chat) uses the
+// matching shiki theme — one syntax palette across every surface.
+export const SHIKI_THEME = 'one-dark-pro';
 
 // Eager lang set. Loaded once at boot. ~+200KB gzip vs the previous narrow set;
 // matches the long tail of languages a coding agent realistically edits.

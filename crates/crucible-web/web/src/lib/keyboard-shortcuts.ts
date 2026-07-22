@@ -13,6 +13,10 @@ export const DEFAULT_SHORTCUTS: ShortcutAction[] = [
   { key: 'Tab', modifiers: ['shift'], action: 'cycleMode', description: 'Cycle chat mode (Normal → Plan → Auto)' },
   // Command palette — Ctrl+P / Cmd+P (browser print intercepted with preventDefault)
   { key: 'p', modifiers: ['ctrl'], action: 'openCommandPalette', description: 'Open command palette' },
+  // Note quick switcher — Ctrl+O (Obsidian's binding; browser open-file
+  // dialog intercepted with preventDefault). Opens the palette pre-scoped
+  // to notes so note-open doesn't share Ctrl+P's mixed results.
+  { key: 'o', modifiers: ['ctrl'], action: 'openNoteSwitcher', description: 'Open note (quick switcher)' },
   // Chat focus — Ctrl+/ focuses chat input
   { key: '/', modifiers: ['ctrl'], action: 'focusChatInput', description: 'Focus chat input' },
   // Overlay management — Escape closes active overlay

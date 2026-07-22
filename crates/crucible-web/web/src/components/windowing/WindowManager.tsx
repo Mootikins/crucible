@@ -11,144 +11,19 @@ import { FloatingWindow } from './FloatingWindow';
 import { StatusBar } from './StatusBar';
 import { MinimizedBar } from './MinimizedBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
-import { openDraftSession } from '@/lib/draft-session';
-import { IconButton } from '@/components/ui/IconButton';
 import type { DragSource, DropTarget } from '@/types/windowTypes';
 import { getPendingReorder, clearPendingReorder } from './TabBar';
-import {
-  IconPanelLeft,
-  IconPanelLeftClose,
-  IconPanelRight,
-  IconPanelRightClose,
-  IconPanelBottom,
-  IconPanelBottomClose,
-  IconSettings,
-  IconZap,
-} from './icons';
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
 import { confirmTabClose } from '@/lib/tab-guards';
-import { openPanelTab } from '@/lib/panel-actions';
 import { placeNewTab, resolveNewTabTarget } from '@/lib/tab-placement';
 import { lastPointerPosition } from '@/lib/collision-detector';
 import { WikilinkHoverPreview } from '@/components/WikilinkHoverPreview';
 import { smallestIntersecting } from '@/lib/collision-detector';
-import { statusBarStore, statusBarActions, pathBasename } from '@/stores/statusBarStore';
-import { shellStore, shellActions } from '@/stores/shellStore';
-import { attentionStore } from '@/stores/attentionStore';
+import { statusBarStore, statusBarActions } from '@/stores/statusBarStore';
 
-function HeaderBar() {
-  const edgePanels = () => windowStore.edgePanels;
-  const surface = shellStore.activeSurface;
-  const badge = attentionStore.attentionCount;
-  const kilnName = () => pathBasename(statusBarStore.kilnPath());
-
-  const contextLine = () => {
-    switch (surface()) {
-      case 'edit':
-        return kilnName() ? `editing ◆ ${kilnName()}` : 'editing';
-      case 'session':
-        return statusBarStore.activeSessionTitle() ?? 'session';
-      case 'inbox':
-        return 'everything waiting on you, one place';
-    }
-  };
-
-  return (
-    <div class="flex items-center h-10 gap-3 bg-shell-bg border-b border-hairline px-3.5">
-      <button
-        type="button"
-        title="New session"
-        onClick={() => openDraftSession()}
-        class="w-[18px] h-[18px] rounded-[5px] bg-primary flex items-center justify-center font-mono font-semibold text-[10px] text-white cursor-pointer hover:ring-[3px] hover:ring-primary/30 transition-shadow"
-      >
-        C
-      </button>
-      <Show when={kilnName()}>
-        <button
-          type="button"
-          title="Open the vault"
-          onClick={() => shellActions.goEdit()}
-          class="font-mono text-xs text-muted hover:text-shell-ink cursor-pointer"
-        >
-          ◆ {kilnName()}
-        </button>
-      </Show>
-      {/* Edit/Session mode pills removed: the center is always the editing
-          surface and sessions dock in the right edge panel (openSessionInChat), so
-          there is no center "mode" to toggle. goEdit/goSession remain
-          reachable from the command palette. */}
-      <span class="font-mono text-[10.5px] text-muted-dark truncate max-w-[320px]">
-        {contextLine()}
-      </span>
-      <span class="flex-1" />
-      <button
-        type="button"
-        title="Inbox"
-        onClick={() => shellActions.goInbox()}
-        class="relative flex items-center gap-1.5 px-2.5 py-1 rounded-md cursor-pointer text-xs border transition-colors hover:bg-surface-elevated"
-        classList={{
-          'text-primary border-primary/50': surface() === 'inbox',
-          'text-muted border-hairline': surface() !== 'inbox',
-        }}
-      >
-        ▤ Inbox
-        <Show when={badge() > 0}>
-          <span class="min-w-[15px] h-[15px] rounded-full bg-attention text-black font-mono font-bold text-[10px] flex items-center justify-center px-[3px]">
-            {badge()}
-          </span>
-        </Show>
-      </button>
-      <button
-        type="button"
-        title="Command palette (Ctrl+P)"
-        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-hairline text-xs text-muted cursor-pointer hover:bg-surface-elevated hover:text-shell-ink transition-colors"
-        onClick={() => window.dispatchEvent(new CustomEvent('crucible:open-command-palette'))}
-      >
-        <IconZap class="w-3 h-3" />
-        <kbd class="font-mono text-[10px]">Ctrl+P</kbd>
-      </button>
-      <div class="flex items-center gap-0.5">
-        <IconButton
-          title={edgePanels().left.isCollapsed ? 'Show Left Panel' : 'Hide Left Panel'}
-          onClick={() => windowActions.toggleEdgePanel('left')}
-        >
-          {edgePanels().left.isCollapsed ? (
-            <IconPanelLeft class="w-4 h-4" />
-          ) : (
-            <IconPanelLeftClose class="w-4 h-4" />
-          )}
-        </IconButton>
-        <IconButton
-          title={edgePanels().bottom.isCollapsed ? 'Show Bottom Panel' : 'Hide Bottom Panel'}
-          onClick={() => windowActions.toggleEdgePanel('bottom')}
-        >
-          {edgePanels().bottom.isCollapsed ? (
-            <IconPanelBottom class="w-4 h-4" />
-          ) : (
-            <IconPanelBottomClose class="w-4 h-4" />
-          )}
-        </IconButton>
-        <IconButton
-          title={edgePanels().right.isCollapsed ? 'Show Right Panel' : 'Hide Right Panel'}
-          onClick={() => windowActions.toggleEdgePanel('right')}
-        >
-          {edgePanels().right.isCollapsed ? (
-            <IconPanelRight class="w-4 h-4" />
-          ) : (
-            <IconPanelRightClose class="w-4 h-4" />
-          )}
-        </IconButton>
-        <div class="w-px h-4 bg-hairline mx-1" />
-        <IconButton
-          title="Open Settings"
-          onClick={() => openPanelTab('settings')}
-        >
-          <IconSettings class="w-4 h-4" />
-        </IconButton>
-      </div>
-    </div>
-  );
-}
+// There is no header bar: the edge ribbons carry the shell chrome (panel
+// toggles, palette, new session, settings) and the status bar carries the
+// context + attention indicators. The center belongs entirely to content.
 
 function DragOverlayContent() {
   const dndContext = useDragDropContext();
@@ -322,7 +197,6 @@ function InnerManager() {
 
   return (
     <div class="flex flex-col h-screen bg-shell-bg text-shell-ink overflow-hidden select-none">
-      <HeaderBar />
       <div class="relative z-0 flex flex-1 overflow-hidden min-h-0">
         <EdgePanel position="left" />
         <div class="flex-1 flex flex-col overflow-hidden min-w-0">

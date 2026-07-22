@@ -1,6 +1,6 @@
 // src/components/SettingsPanel.tsx
 import { Component, Show, For, ErrorBoundary, createSignal, onMount, onCleanup, type JSX } from 'solid-js';
-import { AlertTriangle, Brain, Key, Link2, Mic, Package, Palette, Pencil } from '@/lib/icons';
+import { AlertTriangle, Brain, Key, Link2, Mic, Package, Palette, Pencil, Terminal } from '@/lib/icons';
 
 type IconComponent = Component<{ class?: string }>;
 import { useSettings } from '@/contexts/SettingsContext';
@@ -636,14 +636,18 @@ const MONO_PRESETS: { label: string; value: string }[] = [
 ];
 const CUSTOM_FONT = '__custom__';
 
-/** Preset dropdown + a "Custom…" free-text CSS font-family for one font var. */
+/** Preset dropdown + a "Custom…" free-text CSS font-family for one font
+ * setting (Appearance vars, or the terminal's xterm option). */
 const FontControl: Component<{
-  field: 'fontSans' | 'fontMono';
+  section?: 'appearance' | 'terminal';
+  field: 'fontSans' | 'fontMono' | 'fontFamily';
   presets: { label: string; value: string }[];
   testid: string;
 }> = (props) => {
   const { settings, updateSetting } = useSettings();
-  const val = () => settings.appearance[props.field];
+  const section = () => props.section ?? 'appearance';
+  const val = () =>
+    (settings[section()] as unknown as Record<string, string>)[props.field] ?? '';
   const isPreset = () => props.presets.some((p) => p.value === val());
   const [custom, setCustom] = createSignal(val() !== '' && !isPreset());
   return (
@@ -656,7 +660,7 @@ const FontControl: Component<{
             setCustom(true);
           } else {
             setCustom(false);
-            updateSetting('appearance', props.field, v);
+            updateSetting(section() as 'appearance', props.field as 'fontSans', v);
           }
         }}
         class="rounded border border-hairline bg-surface-base px-2 py-1 text-sm"
@@ -669,7 +673,9 @@ const FontControl: Component<{
         <input
           type="text"
           value={isPreset() ? '' : val()}
-          onInput={(e) => updateSetting('appearance', props.field, e.currentTarget.value)}
+          onInput={(e) =>
+            updateSetting(section() as 'appearance', props.field as 'fontSans', e.currentTarget.value)
+          }
           placeholder='e.g. "Inter", sans-serif'
           class="w-56 rounded border border-hairline bg-surface-base px-2 py-1 text-sm"
           data-testid={`${props.testid}-custom`}
@@ -691,6 +697,49 @@ const AppearanceSettingsSection: Component = () => (
     </SettingRow>
   </>
 );
+
+const TERMINAL_FONT_PRESETS: { label: string; value: string }[] = [
+  { label: 'Code font (default)', value: '' },
+  { label: 'System Mono', value: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' },
+];
+
+/** Terminal panel typography (applies live to a running terminal). */
+const TerminalSettingsSection: Component = () => {
+  const { settings, updateSetting } = useSettings();
+  return (
+    <>
+      <SectionHeader title="Terminal" icon={Terminal} />
+      <SettingRow
+        label="Terminal font"
+        description="Font family for the terminal. Default follows the Appearance code font."
+      >
+        <FontControl
+          section="terminal"
+          field="fontFamily"
+          presets={TERMINAL_FONT_PRESETS}
+          testid="settings-terminal-font"
+        />
+      </SettingRow>
+      <SettingRow label="Terminal font size" description="Size in px. Applies instantly.">
+        <input
+          type="number"
+          min="8"
+          max="32"
+          value={settings.terminal.fontSize}
+          onChange={(e) =>
+            updateSetting(
+              'terminal',
+              'fontSize',
+              Math.min(32, Math.max(8, Number(e.currentTarget.value) || 13)),
+            )
+          }
+          class="w-20 rounded border border-hairline bg-surface-base px-2 py-1 text-sm"
+          data-testid="settings-terminal-font-size"
+        />
+      </SettingRow>
+    </>
+  );
+};
 
 const ApiAccessSection: Component = () => {
   const [draft, setDraft] = createSignal('');
@@ -845,6 +894,9 @@ const SettingsPanelContent: Component = () => {
 
           {/* Appearance Section */}
           <AppearanceSettingsSection />
+
+          {/* Terminal Section */}
+          <TerminalSettingsSection />
 
           {/* API Access Section */}
           <ApiAccessSection />

@@ -4,7 +4,8 @@ import { windowStore } from '@/stores/windowStore';
 import { statusBarStore, pathBasename } from '@/stores/statusBarStore';
 import { useEditorSafe } from '@/contexts/EditorContext';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
-import { shellStore } from '@/stores/shellStore';
+import { shellStore, shellActions } from '@/stores/shellStore';
+import { attentionStore } from '@/stores/attentionStore';
 import { notificationStore } from '@/stores/notificationStore';
 import type { ChatMode } from '@/lib/types';
 import { IconLayout, IconBell } from './icons';
@@ -107,6 +108,20 @@ export const StatusBar: Component = () => {
           )}
         </div>
         <div class="flex items-center gap-3">
+          {/* Attention chip: pending approvals/interactions waiting on the
+              user (the old header's Inbox badge). Hidden at zero — the Inbox
+              panel stays reachable from the command palette. */}
+          <Show when={attentionStore.attentionCount() > 0}>
+            <button
+              type="button"
+              data-testid="status-inbox"
+              title="Open Inbox"
+              class="flex items-center gap-1 px-1.5 rounded-sm bg-attention/15 text-attention font-mono hover:bg-attention/25 transition-colors"
+              onClick={() => shellActions.goInbox()}
+            >
+              ▤ {attentionStore.attentionCount()}
+            </button>
+          </Show>
           <Show when={settings.editor.showSaveButton && activeDirtyFile()}>
             {(file) => (
               <button

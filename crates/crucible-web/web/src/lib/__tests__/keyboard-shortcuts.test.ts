@@ -93,6 +93,18 @@ describe('keyboard-shortcuts', () => {
       expect(result).toBe('openCommandPalette');
     });
 
+    it('matches Ctrl+O to openNoteSwitcher (note quick switcher)', () => {
+      const event = {
+        key: 'o',
+        ctrlKey: true,
+        shiftKey: false,
+        altKey: false,
+        metaKey: false,
+      } as KeyboardEvent;
+
+      expect(matchShortcut(event)).toBe('openNoteSwitcher');
+    });
+
     it('matches Escape (no modifiers) to closeOverlay', () => {
       const event = {
         key: 'Escape',

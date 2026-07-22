@@ -24,6 +24,8 @@ interface CommandPaletteProps {
   open: boolean;
   commands: PaletteCommand[];
   onOpenChange: (open: boolean) => void;
+  /** Query text the palette opens with (e.g. '[[' for the note switcher). */
+  initialQuery?: string;
 }
 
 // ── Omnibox ──────────────────────────────────────────────────────────────
@@ -82,7 +84,10 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
   const sessionCtx = useSessionSafe();
 
   createEffect(() => {
-    if (!props.open) {
+    if (props.open) {
+      // Seeded open: Ctrl+O lands in note-switcher mode ('[['), Ctrl+P clean.
+      setQuery(props.initialQuery ?? '');
+    } else {
       setQuery('');
     }
   });

@@ -275,4 +275,25 @@ describe('CommandPalette — query reset on close', () => {
 
     expect(getInput().value).toBe('');
   });
+
+  it('opens seeded with initialQuery — the Ctrl+O note switcher lands in [[ mode', async () => {
+    const [open, setOpen] = createSignal(false);
+    render(() => (
+      <CommandPalette
+        open={open()}
+        commands={[cmd({ id: 'a', label: 'AAA' })]}
+        initialQuery="[["
+        onOpenChange={setOpen}
+      />
+    ));
+
+    setOpen(true);
+
+    expect(getInput().value).toBe('[[');
+    // Note-scoped: commands are filtered out, notes remain.
+    await waitFor(() => {
+      expect(screen.getByText('Architecture')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('AAA')).not.toBeInTheDocument();
+  });
 });

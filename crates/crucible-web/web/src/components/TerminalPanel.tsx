@@ -1,8 +1,18 @@
-import { Component, createResource, createSignal, onCleanup, Match, Show, Switch } from 'solid-js';
+import {
+  Component,
+  createEffect,
+  createResource,
+  createSignal,
+  onCleanup,
+  Match,
+  Show,
+  Switch,
+} from 'solid-js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { getConfig } from '@/lib/api';
+import { useSettingsSafe } from '@/contexts/SettingsContext';
 
 /**
  * Real terminal: xterm.js over the daemon's PTY WebSocket
@@ -65,6 +75,15 @@ function isLocalhost(): boolean {
 
 export const TerminalPanel: Component = () => {
   const [status, setStatus] = createSignal<'connecting' | 'open' | 'closed'>('connecting');
+  // Terminal font: its own setting when set, else the Appearance code font,
+  // else the shell default. xterm renders to canvas, so CSS vars can't reach
+  // it — the resolved family is passed as a real option.
+  const { settings } = useSettingsSafe();
+  const termFontFamily = () =>
+    settings.terminal.fontFamily.trim() ||
+    settings.appearance.fontMono.trim() ||
+    "'IBM Plex Mono', ui-monospace, monospace";
+  const termFontSize = () => Math.max(8, settings.terminal.fontSize || 13);
   // Localhost never needs the config round-trip; remote clients check the
   // server's remote-shell opt-in before attempting the socket.
   const [cfg] = createResource(
@@ -75,8 +94,23 @@ export const TerminalPanel: Component = () => {
   const denied = () => !isLocalhost() && cfg() !== undefined && cfg()?.remote_shell !== true;
   let container: HTMLDivElement | undefined;
   let term: Terminal | undefined;
+  let fitAddon: FitAddon | undefined;
   let socket: WebSocket | undefined;
   let resizeObserver: ResizeObserver | undefined;
+
+  // Live-apply font changes from Settings to the running terminal.
+  createEffect(() => {
+    const family = termFontFamily();
+    const size = termFontSize();
+    if (!term) return;
+    term.options.fontFamily = family;
+    term.options.fontSize = size;
+    try {
+      fitAddon?.fit();
+    } catch {
+      // Fitting a zero-sized (hidden) panel throws; harmless.
+    }
+  });
 
   const connect = (t: Terminal, fit: FitAddon) => {
     setStatus('connecting');
@@ -121,14 +155,15 @@ export const TerminalPanel: Component = () => {
     container = el;
     const t = new Terminal({
       theme: buildEmberTheme(),
-      fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
-      fontSize: 13,
+      fontFamily: termFontFamily(),
+      fontSize: termFontSize(),
       cursorBlink: true,
       scrollback: 5000,
     });
     const fit = new FitAddon();
     t.loadAddon(fit);
     term = t;
+    fitAddon = fit;
     // Defer to the next frame: the panel container has zero size until the
     // layout pass, and xterm measures on open().
     requestAnimationFrame(() => {
@@ -152,6 +187,7 @@ export const TerminalPanel: Component = () => {
     term.reset();
     const fit = new FitAddon();
     term.loadAddon(fit);
+    fitAddon = fit;
     connect(term, fit);
   };
 

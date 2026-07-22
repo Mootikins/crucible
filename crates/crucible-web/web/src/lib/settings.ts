@@ -41,11 +41,21 @@ export interface AppearanceSettings {
   fontMono: string;
 }
 
+/** Settings for the xterm terminal panel. xterm renders to canvas and can't
+ * read CSS vars, so its font is a real setting rather than a stylesheet. */
+export interface TerminalSettings {
+  /** CSS font-family for the terminal. Empty = follow the Appearance code font. */
+  fontFamily: string;
+  /** Terminal font size in px. */
+  fontSize: number;
+}
+
 /** Root application settings structure */
 export interface AppSettings {
   transcription: TranscriptionSettings;
   editor: EditorSettings;
   appearance: AppearanceSettings;
+  terminal: TerminalSettings;
 }
 
 /** Default settings values */
@@ -68,6 +78,10 @@ export const defaultSettings: AppSettings = {
   appearance: {
     fontSans: '',
     fontMono: '',
+  },
+  terminal: {
+    fontFamily: '',
+    fontSize: 13,
   },
 };
 
@@ -98,6 +112,10 @@ export function loadSettings(): AppSettings {
           ...defaultSettings.appearance,
           ...parsed.appearance,
         },
+        terminal: {
+          ...defaultSettings.terminal,
+          ...parsed.terminal,
+        },
       };
     }
   } catch (e) {
@@ -107,6 +125,7 @@ export function loadSettings(): AppSettings {
     transcription: { ...defaultSettings.transcription },
     editor: { ...defaultSettings.editor },
     appearance: { ...defaultSettings.appearance },
+    terminal: { ...defaultSettings.terminal },
   };
 }
 

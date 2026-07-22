@@ -3,7 +3,9 @@ import { initializeHighlighter, highlighter, SHIKI_THEME } from '../shiki';
 
 describe('lib/shiki — singleton', () => {
   it('exposes a constant theme name', () => {
-    expect(SHIKI_THEME).toBe('github-dark');
+    // Must match the CodeMirror one-dark family (editor + live preview) so
+    // code blocks read the same in every surface.
+    expect(SHIKI_THEME).toBe('one-dark-pro');
   });
 
   it('returns null from highlighter() before initialization', () => {
