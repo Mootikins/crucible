@@ -60,6 +60,31 @@
   --color-ok: #7bc47f;
   --color-precog: #a78bda;
 
+  /* ── Terminal ANSI palette ────────────────────────────────────────────
+   * A deliberate 16-color ramp for xterm, NOT the UI semantic tokens above
+   * (those are tuned for chrome legibility, not as a balanced terminal
+   * palette — mapping error/ok/attention onto ANSI slots produced a
+   * mismatched mix of loud and washed colors). One HSL envelope, warmed
+   * toward the ember identity; brights are the same hues lifted ~8-10 L.
+   * TerminalPanel reads these at mount (xterm can't consume CSS vars), so
+   * a future theme system restyles the terminal by overriding them. */
+  --color-term-black: #2b2933;
+  --color-term-red: #e8746e;
+  --color-term-green: #9dcf85;
+  --color-term-yellow: #e0b24c;
+  --color-term-blue: #7fa7e0;
+  --color-term-magenta: #bd93e0;
+  --color-term-cyan: #79c9c4;
+  --color-term-white: #c9c5bf;
+  --color-term-bright-black: #6b6673;
+  --color-term-bright-red: #f2938c;
+  --color-term-bright-green: #b7e0a1;
+  --color-term-bright-yellow: #ecc76e;
+  --color-term-bright-blue: #a0c0ee;
+  --color-term-bright-magenta: #d0b0ee;
+  --color-term-bright-cyan: #9adcd7;
+  --color-term-bright-white: #e7e4df;
+
   /* ── Radii ────────────────────────────────────────────────────────────
    * Tight and consistent, the way an editor rounds its chrome. Overrides
    * Tailwind's defaults so every `rounded-*` in the app tightens at once —

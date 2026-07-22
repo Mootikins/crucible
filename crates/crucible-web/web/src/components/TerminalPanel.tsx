@@ -10,6 +10,8 @@ import {
 } from 'solid-js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { WebglAddon } from '@xterm/addon-webgl';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
 import '@xterm/xterm/css/xterm.css';
 import { getConfig } from '@/lib/api';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
@@ -22,10 +24,10 @@ import { useSettingsSafe } from '@/contexts/SettingsContext';
  */
 
 // Ember-shell ANSI theme. xterm renders into a canvas/DOM layer that can't
-// consume CSS custom properties, so the tokened entries are READ from the
-// design tokens at mount (single source of truth in index.css); each falls
-// back to its literal if the var is unresolved. The two untokened ANSI slots
-// (blue, cyan) stay as literals.
+// consume CSS custom properties, so every entry is READ from the design
+// tokens at mount (single source of truth: the --color-term-* ramp in
+// index.css), with the token's literal as fallback. The ANSI ramp is
+// deliberately its own token family — not the UI semantic tokens.
 function buildEmberTheme() {
   const css = getComputedStyle(document.documentElement);
   const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
@@ -38,22 +40,22 @@ function buildEmberTheme() {
     cursor: v('--color-primary', '#e0653a'),
     cursorAccent: bg,
     selectionBackground: 'rgba(224, 101, 58, 0.35)',
-    black: '#26252b',
-    red: v('--color-error', '#ef4444'),
-    green: v('--color-ok', '#7bc47f'),
-    yellow: v('--color-attention', '#d4a72c'),
-    blue: '#7aa2f7',
-    magenta: v('--color-precog', '#a78bda'),
-    cyan: '#76c7c0',
-    white: '#c9c5bf',
-    brightBlack: '#6b6673',
-    brightRed: '#f87171',
-    brightGreen: '#9ed9a2',
-    brightYellow: '#e3bd52',
-    brightBlue: '#9db8f9',
-    brightMagenta: '#c1a8ee',
-    brightCyan: '#98dbd5',
-    brightWhite: '#e7e4df',
+    black: v('--color-term-black', '#2b2933'),
+    red: v('--color-term-red', '#e8746e'),
+    green: v('--color-term-green', '#9dcf85'),
+    yellow: v('--color-term-yellow', '#e0b24c'),
+    blue: v('--color-term-blue', '#7fa7e0'),
+    magenta: v('--color-term-magenta', '#bd93e0'),
+    cyan: v('--color-term-cyan', '#79c9c4'),
+    white: v('--color-term-white', '#c9c5bf'),
+    brightBlack: v('--color-term-bright-black', '#6b6673'),
+    brightRed: v('--color-term-bright-red', '#f2938c'),
+    brightGreen: v('--color-term-bright-green', '#b7e0a1'),
+    brightYellow: v('--color-term-bright-yellow', '#ecc76e'),
+    brightBlue: v('--color-term-bright-blue', '#a0c0ee'),
+    brightMagenta: v('--color-term-bright-magenta', '#d0b0ee'),
+    brightCyan: v('--color-term-bright-cyan', '#9adcd7'),
+    brightWhite: v('--color-term-bright-white', '#e7e4df'),
   };
 }
 
@@ -159,9 +161,27 @@ export const TerminalPanel: Component = () => {
       fontSize: termFontSize(),
       cursorBlink: true,
       scrollback: 5000,
+      // VS Code-parity fidelity options. customGlyphs vector-draws
+      // box-drawing and powerline separators (U+E0B0…) instead of trusting
+      // the font — the fix for seams/gaps between powerline segments — but
+      // only takes effect on the WebGL renderer, loaded below. The 4.5
+      // contrast floor nudges unreadable fg/bg pairs apart (xterm exempts
+      // powerline glyphs from the nudge, so segments keep exact colors).
+      customGlyphs: true,
+      minimumContrastRatio: 4.5,
+      drawBoldTextInBrightColors: true,
+      allowProposedApi: true,
+      // WebGL paints to canvas — without this there is no DOM text at all,
+      // for screen readers or tests. The a11y layer mirrors visible rows
+      // as hidden DOM text.
+      screenReaderMode: true,
     });
     const fit = new FitAddon();
     t.loadAddon(fit);
+    // Unicode 11 width tables: emoji/Nerd icon glyphs get correct cell
+    // widths so prompt columns don't drift (needs allowProposedApi).
+    t.loadAddon(new Unicode11Addon());
+    t.unicode.activeVersion = '11';
     term = t;
     fitAddon = fit;
     // Defer to the next frame: the panel container has zero size until the
@@ -169,6 +189,16 @@ export const TerminalPanel: Component = () => {
     requestAnimationFrame(() => {
       if (!container) return;
       t.open(container);
+      // GPU renderer — also the renderer where customGlyphs is live (the
+      // DOM renderer ignores it). Falls back to DOM if WebGL is
+      // unavailable or the context is lost.
+      try {
+        const webgl = new WebglAddon();
+        webgl.onContextLoss(() => webgl.dispose());
+        t.loadAddon(webgl);
+      } catch {
+        // WebGL unavailable (headless/old GPU) — DOM renderer still works.
+      }
       fit.fit();
       connect(t, fit);
     });
@@ -219,7 +249,9 @@ export const TerminalPanel: Component = () => {
         <div class="relative h-full w-full bg-shell-bg" data-testid="terminal-panel">
           <div ref={init} class="h-full w-full pl-2 pt-1" />
           <Show when={status() === 'closed'}>
-            <div class="absolute inset-0 flex items-center justify-center bg-shell-bg/80 cru-anim-fade">
+            {/* z-20: xterm's accessibility layer is z-10 inside the term —
+                the overlay must stay clickable above it. */}
+            <div class="absolute inset-0 z-20 flex items-center justify-center bg-shell-bg/80 cru-anim-fade">
               <button
                 type="button"
                 data-testid="terminal-reconnect"

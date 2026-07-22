@@ -82,6 +82,10 @@ async fn handle_terminal(mut socket: WebSocket) {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
     let mut cmd = CommandBuilder::new(&shell);
     cmd.env("TERM", "xterm-256color");
+    // xterm.js speaks 24-bit color, but Starship/Powerlevel10k-style prompts
+    // gate truecolor on COLORTERM and silently downgrade to 256-color
+    // approximations without it.
+    cmd.env("COLORTERM", "truecolor");
     if let Some(home) = dirs::home_dir() {
         cmd.cwd(home);
     }
