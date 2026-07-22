@@ -220,7 +220,11 @@ fn resolve_create_agent(
             Some(name) if !name.is_empty() => {
                 let cards = crate::agent_cards::discover_agent_cards(workspace, Some(kiln));
                 match cards.get(name) {
-                    Some(card) => Ok(crucible_core::session::SessionAgent::from_card(card, &base)),
+                    Some(card) => Ok(crucible_core::session::SessionAgent::from_card(
+                        card,
+                        &base,
+                        llm_config.as_ref().map(|c| &c.models),
+                    )),
                     None => {
                         let mut names: Vec<_> = cards.keys().cloned().collect();
                         names.sort();

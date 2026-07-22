@@ -309,7 +309,7 @@ impl DelegationSpawner for DelegationService {
                     Some(parent.kiln.as_path()),
                 );
                 if let Some(card) = cards.get(name) {
-                    SessionAgent::from_card(card, &parent_agent)
+                    SessionAgent::from_card(card, &parent_agent, manager.specialty_models())
                 } else {
                     let available = manager.build_available_agents();
                     let profile = available.get(name).cloned().ok_or_else(|| {

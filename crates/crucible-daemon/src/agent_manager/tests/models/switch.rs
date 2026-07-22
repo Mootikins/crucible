@@ -18,6 +18,7 @@ async fn test_switch_model_zai_llm_config() {
     let llm_config = LlmConfig {
         default: Some("zai-coding".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -77,6 +78,7 @@ async fn test_switch_model_legacy_still_works() {
     let llm_config = LlmConfig {
         default: None,
         providers: llm_providers,
+        models: Default::default(),
     };
 
     let agent_manager = create_test_agent_manager_with_both(session_manager.clone(), llm_config);
@@ -130,6 +132,7 @@ async fn test_switch_model_llm_config_invalidates_cache() {
     let llm_config = LlmConfig {
         default: None,
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -245,6 +248,7 @@ async fn test_switch_model_to_zai_provider() {
     let llm_config = LlmConfig {
         default: Some("openai".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =

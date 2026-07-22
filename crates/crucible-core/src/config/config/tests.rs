@@ -372,6 +372,7 @@ fn test_effective_llm_provider_from_llm_config() {
         llm: Some(crate::config::components::LlmConfig {
             default: Some("local".to_string()),
             providers,
+            models: Default::default(),
         }),
         ..Config::default()
     };
@@ -475,6 +476,7 @@ fn test_cli_app_config_effective_llm_provider() {
         llm: crate::config::components::LlmConfig {
             default: Some("local".to_string()),
             providers,
+            models: Default::default(),
         },
         ..Default::default()
     };

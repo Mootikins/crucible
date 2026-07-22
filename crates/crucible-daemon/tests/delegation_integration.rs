@@ -1134,3 +1134,120 @@ async fn await_after_completion_returns_stored_result_instantly() {
         started.elapsed()
     );
 }
+
+#[tokio::test]
+async fn card_specialty_resolves_through_llm_models_table() {
+    // Model-resolution chain: card-explicit > specialty via [llm.models] >
+    // inherit from the spawning context. This card pins no model but declares
+    // `specialty: reasoning`, which the config maps to a provider/model.
+    let temp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let (event_tx, _) = broadcast::channel(64);
+    let service = DelegationService::new(session_manager.clone(), event_tx.clone());
+    let llm_config = crucible_core::config::LlmConfig {
+        default: None,
+        providers: Default::default(),
+        models: [
+            ("reasoning".to_string(), "openai/o1-mini".to_string()),
+            ("coder".to_string(), "qwen2.5-coder".to_string()),
+        ]
+        .into_iter()
+        .collect(),
+    };
+    let agent_manager = Arc::new(AgentManager::new_with_delegation(
+        AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager: session_manager.clone(),
+            background_manager: Arc::new(crucible_daemon::BackgroundJobManager::new(
+                event_tx.clone(),
+            )),
+            mcp_gateway: None,
+            llm_config: Some(llm_config),
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+            workspace_tools: Arc::new(WorkspaceTools::new(temp.path().to_path_buf())),
+        },
+        service.clone(),
+    ));
+    service.bind_agent_manager(&agent_manager);
+    agent_manager.set_agent_factory_override(behavior_factory(
+        MockSubagentBehavior::ImmediateSuccess("ok".to_string()),
+    ));
+
+    let agents_dir = temp.path().join("agents");
+    std::fs::create_dir_all(&agents_dir).unwrap();
+    std::fs::write(
+        agents_dir.join("thinker.md"),
+        "---\ndescription: deep thinker\nspecialty: reasoning\n---\n\nThink hard.\n",
+    )
+    .unwrap();
+    // Bare-model mapping: provider must inherit from the parent.
+    std::fs::write(
+        agents_dir.join("coder.md"),
+        "---\ndescription: writes code\nspecialty: coder\n---\n\nWrite code.\n",
+    )
+    .unwrap();
+    // Unmapped specialty: falls through to inheriting the parent's model.
+    std::fs::write(
+        agents_dir.join("mystic.md"),
+        "---\ndescription: unmapped\nspecialty: divination\n---\n\nGaze.\n",
+    )
+    .unwrap();
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            temp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    agent_manager
+        .configure_agent(&session.id, parent_agent(Some(delegation_config(true, 3))))
+        .await
+        .unwrap();
+
+    let storage = FileSessionStorage::new();
+    let mut resolved = std::collections::HashMap::new();
+    for target in ["thinker", "coder", "mystic"] {
+        let spawned = service
+            .spawn_delegation(DelegationRequest {
+                parent_session_id: session.id.clone(),
+                prompt: "task".to_string(),
+                context: None,
+                target_agent: Some(target.to_string()),
+                description: None,
+            })
+            .await
+            .expect("spawn");
+        let _ = service
+            .await_delegation(&spawned.delegation_id, Duration::from_secs(5))
+            .await
+            .expect("await");
+        let child = crucible_daemon::session_storage::SessionStorage::load(
+            &storage,
+            &spawned.child_session_id,
+            temp.path(),
+        )
+        .await
+        .expect("child persisted");
+        resolved.insert(target, child.agent.expect("agent config"));
+    }
+
+    // "provider/model" mapping: both switch.
+    assert_eq!(resolved["thinker"].model, "o1-mini");
+    assert_eq!(
+        resolved["thinker"].provider,
+        crucible_core::config::BackendType::OpenAI
+    );
+    // Bare-model mapping: model switches, provider inherited from parent.
+    assert_eq!(resolved["coder"].model, "qwen2.5-coder");
+    assert_eq!(resolved["coder"].provider, BackendType::Ollama);
+    // Unmapped specialty: full inherit.
+    assert_eq!(resolved["mystic"].model, "llama3.2");
+    assert_eq!(resolved["mystic"].provider, BackendType::Ollama);
+}

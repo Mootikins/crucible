@@ -70,7 +70,7 @@ AI agent infrastructure. Manages agent definitions and execution.
 - LLM providers (Ollama, OpenAI-compatible)
 - Context management (sliding window, compaction)
 - Tool registry and MCP integration
-- Delegation: agents delegate tasks via the `delegate_session` tool; children run as real (hidden, parent-linked) sessions through the main scheduler loop (`DelegationService`). Targets resolve to agent cards (specialized internal agents) or ACP profiles; policy via `DelegationConfig` (enabled, max_depth incl. real nesting, allowed_targets, timeout_secs)
+- Delegation: agents delegate tasks via the `delegate_session` tool; children run as real (hidden, parent-linked) sessions through the main scheduler loop (`DelegationService`). Targets resolve to agent cards (model chain: card-explicit > specialty via `[llm.models]` > inherit-from-parent) or ACP profiles; policy via `DelegationConfig` (enabled, max_depth incl. real nesting, allowed_targets, timeout_secs)
 
 See: [[Help/Concepts/Agents & Protocols]], [[Help/Extending/Internal Agent]]
 

@@ -54,6 +54,7 @@ async fn list_models_dynamic_discovery_succeeds(
     let llm_config = LlmConfig {
         default: Some(provider_name.to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -122,6 +123,7 @@ async fn test_list_models_dynamic_discovery_failure_returns_empty() {
     let llm_config = LlmConfig {
         default: Some("openai-fail".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -174,6 +176,7 @@ async fn test_list_models_explicit_config_skips_dynamic_discovery() {
     let llm_config = LlmConfig {
         default: Some("openai-explicit".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -243,6 +246,7 @@ async fn test_list_models_integration_multi_provider() {
     let llm_config = LlmConfig {
         default: Some("openai-int".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -315,6 +319,7 @@ async fn test_list_models_integration_dynamic_discovery() {
     let llm_config = LlmConfig {
         default: Some("openai-discovery-int".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -393,6 +398,7 @@ async fn test_list_models_integration_override_precedence() {
     let llm_config = LlmConfig {
         default: Some("openai-override-int".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -464,6 +470,7 @@ async fn test_list_models_integration_partial_failure() {
     let llm_config = LlmConfig {
         default: Some("openai-ok-int".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -557,6 +564,7 @@ async fn test_openai_model_discovery_returns_all_models() {
     let llm_config = LlmConfig {
         default: Some("openai-test".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -641,6 +649,7 @@ async fn test_list_models_ollama_failure() {
     let llm_config = LlmConfig {
         default: Some("openai-ok".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -699,6 +708,7 @@ async fn test_model_cache_hit() {
     let llm_config = LlmConfig {
         default: Some("test".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -740,6 +750,7 @@ async fn test_model_cache_invalidation() {
     let llm_config = LlmConfig {
         default: Some("test".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -790,6 +801,7 @@ async fn test_model_cache_does_not_cache_errors() {
     let llm_config = LlmConfig {
         default: Some("test".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =

@@ -40,6 +40,7 @@ fn create_config_with_named_providers(
     config.llm = LlmConfig {
         default: default_key,
         providers,
+        models: Default::default(),
     };
     config
 }

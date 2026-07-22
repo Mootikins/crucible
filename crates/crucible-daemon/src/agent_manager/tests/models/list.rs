@@ -26,6 +26,7 @@ async fn test_list_models_returns_all_providers() {
     let llm_config = LlmConfig {
         default: Some("ollama".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let (event_tx, _) = broadcast::channel(16);
@@ -122,6 +123,7 @@ async fn list_models_trust_classification(
     let llm_config = LlmConfig {
         default: Some("local-custom".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -229,6 +231,7 @@ async fn test_list_models_all_chat_backends_with_explicit_models() {
     let llm_config = LlmConfig {
         default: Some("ollama-local".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -299,6 +302,7 @@ async fn test_list_models_discovery_failure_returns_empty() {
     let llm_config = LlmConfig {
         default: Some("anthropic-dead".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -349,6 +353,7 @@ async fn test_list_models_count_matches_sum() {
     let llm_config = LlmConfig {
         default: Some("openai-count".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -433,6 +438,7 @@ async fn test_list_models_includes_env_discovered_providers() {
     let llm_config = LlmConfig {
         default: None,
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -475,6 +481,7 @@ async fn test_list_models_classification_filters_env_providers() {
     let llm_config = LlmConfig {
         default: None,
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -513,6 +520,7 @@ async fn test_list_models_prefixes_with_provider_key() {
     let llm_config = LlmConfig {
         default: Some("zai-coding".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let (event_tx, _) = broadcast::channel(16);
@@ -572,6 +580,7 @@ async fn test_list_models_multi_provider_with_zai() {
     let llm_config = LlmConfig {
         default: Some("ollama".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -639,6 +648,7 @@ async fn test_list_models_legacy_providers_config() {
     let llm_config = LlmConfig {
         default: Some("openai".to_string()),
         providers,
+        models: Default::default(),
     };
     let agent_manager =
         create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
@@ -691,6 +701,7 @@ async fn test_list_models_both_configs() {
     let llm_config = LlmConfig {
         default: Some("new-anthropic".to_string()),
         providers: llm_providers,
+        models: Default::default(),
     };
 
     let agent_manager = create_test_agent_manager_with_both(session_manager.clone(), llm_config);

@@ -280,6 +280,7 @@ data_classification = "confidential"
         let llm_config = LlmConfig {
             default: None,
             providers,
+            models: Default::default(),
         };
 
         let agent = make_test_agent("internal", None, Some("local-ollama"));
@@ -294,6 +295,7 @@ data_classification = "confidential"
         let llm_config = LlmConfig {
             default: None,
             providers: HashMap::new(),
+            models: Default::default(),
         };
         let result = resolve_provider_trust(&agent, Some(&llm_config));
         assert_eq!(result, TrustLevel::Cloud);
@@ -306,6 +308,7 @@ data_classification = "confidential"
         let llm_config = LlmConfig {
             default: None,
             providers: HashMap::new(),
+            models: Default::default(),
         };
         let result = resolve_provider_trust(&agent, Some(&llm_config));
         assert_eq!(result, TrustLevel::Cloud);

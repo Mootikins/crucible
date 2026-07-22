@@ -243,6 +243,14 @@ pub struct LlmConfig {
     /// Named provider instances
     #[serde(default)]
     pub providers: HashMap<String, LlmProviderConfig>,
+
+    /// Specialty → model mapping for agent cards (`[llm.models]`), e.g.
+    /// `reasoning = "openai/o1"` or `coder = "qwen2.5-coder"` (provider
+    /// inherited when unprefixed). A card that declares `specialty:` but no
+    /// explicit `model:` resolves through this table, keeping cards portable
+    /// across machines with different providers.
+    #[serde(default)]
+    pub models: HashMap<String, String>,
 }
 
 impl LlmConfig {
@@ -394,6 +402,7 @@ mod tests {
         let config = LlmConfig {
             default: Some("local".to_string()),
             providers,
+            models: Default::default(),
         };
 
         let (key, provider) = config.default_provider().unwrap();
@@ -416,6 +425,7 @@ mod tests {
         let config = LlmConfig {
             default: Some("local".to_string()),
             providers,
+            models: Default::default(),
         };
 
         let provider = config.get_provider("local").unwrap();
@@ -439,6 +449,7 @@ mod tests {
         let config = LlmConfig {
             default: None,
             providers,
+            models: Default::default(),
         };
 
         let keys = config.provider_keys();
@@ -452,6 +463,7 @@ mod tests {
         let config = LlmConfig {
             default: None,
             providers: HashMap::new(),
+            models: Default::default(),
         };
         assert!(!config.has_providers());
 
@@ -464,6 +476,7 @@ mod tests {
         let config = LlmConfig {
             default: Some("local".to_string()),
             providers,
+            models: Default::default(),
         };
         assert!(config.has_providers());
     }
@@ -473,6 +486,7 @@ mod tests {
         let config = LlmConfig {
             default: None,
             providers: HashMap::new(),
+            models: Default::default(),
         };
 
         assert!(config.default_provider().is_none());
@@ -489,6 +503,7 @@ mod tests {
         let config = LlmConfig {
             default: Some("nonexistent".to_string()),
             providers,
+            models: Default::default(),
         };
 
         assert!(config.default_provider().is_none());
@@ -532,6 +547,7 @@ mod tests {
         let config = LlmConfig {
             default: None,
             providers,
+            models: Default::default(),
         };
 
         let result = config.all_provider_models();
@@ -570,6 +586,7 @@ mod tests {
         let config = LlmConfig {
             default: None,
             providers,
+            models: Default::default(),
         };
 
         let result = config.all_provider_models();

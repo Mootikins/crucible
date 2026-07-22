@@ -601,6 +601,7 @@ mod permission_channel_tests {
         let llm_config = LlmConfig {
             default: Some("ollama".to_string()),
             providers,
+            models: Default::default(),
         };
 
         let agent_manager =
@@ -668,6 +669,7 @@ mod permission_channel_tests {
         let llm_config = LlmConfig {
             default: Some("ollama".to_string()),
             providers,
+            models: Default::default(),
         };
 
         let agent_manager =
@@ -731,6 +733,7 @@ mod permission_channel_tests {
         let llm_config = LlmConfig {
             default: Some("ollama".to_string()),
             providers,
+            models: Default::default(),
         };
 
         let agent_manager =
@@ -797,6 +800,7 @@ mod permission_channel_tests {
         let llm_config = LlmConfig {
             default: Some("ollama".to_string()),
             providers,
+            models: Default::default(),
         };
 
         let agent_manager =

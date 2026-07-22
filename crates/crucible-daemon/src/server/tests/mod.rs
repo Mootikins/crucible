@@ -55,6 +55,7 @@ pub(super) fn build_llm_config_with_trust(
     LlmConfig {
         default: Some(default_key.to_string()),
         providers,
+        models: Default::default(),
     }
 }
 

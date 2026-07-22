@@ -977,6 +977,11 @@ impl AgentManager {
         &self.delegation_service
     }
 
+    /// The `[llm.models]` specialty → model table for agent-card resolution.
+    pub(crate) fn specialty_models(&self) -> Option<&HashMap<String, String>> {
+        self.llm_config.as_ref().map(|c| &c.models)
+    }
+
     /// Wait for a mixed set of job ids — delegations (child session ids) and
     /// background bash jobs — to reach terminal state. One JSON object per
     /// id with `id`, `status`, and (when finished) `output`/`error`/

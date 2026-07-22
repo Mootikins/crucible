@@ -192,24 +192,62 @@ impl SessionAgent {
     /// base config (the spawning context: the parent's agent for delegation,
     /// or the configured defaults for session creation).
     ///
-    /// Card fields override the base where present: system prompt (the card
-    /// body — finally populating the "inlined from agent card" field),
-    /// provider/model, temperature, max_tokens, max_turns → max_iterations,
-    /// mode, mcp_servers, and the per-tool policy. Everything else (endpoint
+    /// Model selection follows one explicit chain, most-specific first:
+    /// 1. card-explicit `provider:`/`model:`
+    /// 2. card `specialty:` resolved through the `[llm.models]` table
+    ///    (`specialty_models`), value `"provider/model"` or bare `"model"`
+    ///    (provider inherited)
+    /// 3. the base — the spawning context's agent (parent session for
+    ///    delegation, configured defaults for session creation)
+    ///
+    /// Other card fields override the base where present: system prompt (the
+    /// card body — finally populating the "inlined from agent card" field),
+    /// temperature, max_tokens, max_turns → max_iterations, mode,
+    /// mcp_servers, and the per-tool policy. Everything else (endpoint
     /// resolution, precognition, context budget, validation) inherits from
     /// the base. An unrecognized `provider:` string falls back to the base
     /// provider (validated at use, not load).
-    pub fn from_card(card: &crate::agent::AgentCard, base: &SessionAgent) -> Self {
-        let provider = card
-            .provider
+    pub fn from_card(
+        card: &crate::agent::AgentCard,
+        base: &SessionAgent,
+        specialty_models: Option<&HashMap<String, String>>,
+    ) -> Self {
+        // Specialty mapping applies only when the card names no model of its
+        // own: explicit card fields always win.
+        let specialty_entry = if card.model.is_none() && card.provider.is_none() {
+            card.specialty
+                .as_deref()
+                .and_then(|s| specialty_models.and_then(|m| m.get(s)))
+        } else {
+            None
+        };
+        let (mapped_provider_str, mapped_model) = match specialty_entry {
+            Some(entry) => match entry.split_once('/') {
+                // "provider/model" only when the prefix is a real backend;
+                // otherwise the whole string is a model id (some model ids
+                // contain slashes).
+                Some((prefix, rest)) if prefix.parse::<BackendType>().is_ok() => {
+                    (Some(prefix.to_string()), Some(rest.to_string()))
+                }
+                _ => (None, Some(entry.clone())),
+            },
+            None => (None, None),
+        };
+
+        let provider_str = card.provider.clone().or(mapped_provider_str);
+        let provider = provider_str
             .as_deref()
             .and_then(|p| p.parse::<BackendType>().ok());
         Self {
             agent_type: "internal".to_string(),
             agent_name: None,
-            provider_key: card.provider.clone().or_else(|| base.provider_key.clone()),
+            provider_key: provider_str.or_else(|| base.provider_key.clone()),
             provider: provider.unwrap_or(base.provider),
-            model: card.model.clone().unwrap_or_else(|| base.model.clone()),
+            model: card
+                .model
+                .clone()
+                .or(mapped_model)
+                .unwrap_or_else(|| base.model.clone()),
             system_prompt: card.system_prompt.clone(),
             temperature: card.temperature.map(|t| t as f64).or(base.temperature),
             max_tokens: card.max_tokens.or(base.max_tokens),

@@ -76,10 +76,30 @@ Only `description` is required. The card's name defaults to its file stem (`rese
 | `max_tokens` | No | Max output tokens override |
 | `max_turns` | No | Max tool-loop turns per message |
 | `mode` | No | Initial mode (`auto`/`plan`) |
-| `specialty` | No | Informational label (e.g. `reasoning`); metadata only |
+| `specialty` | No | Model category resolved via `[llm.models]` (see below) |
 | `tags` | No | Tags for discovery |
 
-When `provider`/`model` are omitted, the agent inherits them from the spawning context — the delegating parent's model, or the configured default for `session.create`. That keeps cards portable across machines with different providers.
+## Model Resolution
+
+A card's model resolves through one explicit chain, most specific first:
+
+1. **Card-explicit** `provider:` / `model:` — always wins.
+2. **`specialty:`** mapped through your `[llm.models]` config table.
+3. **Inherit from the spawning context** — the delegating parent's
+   provider/model, or the configured default for `session.create`.
+
+The `specialty` layer keeps cards portable: the card says what *kind* of
+model it wants, and each machine maps that to its own preferred model:
+
+```toml
+[llm.models]
+reasoning = "openai/o1"          # provider/model — switches both
+coder = "qwen2.5-coder"          # bare model — provider inherited
+writing = "anthropic/claude-haiku"
+```
+
+An unmapped specialty simply falls through to inheritance, so sharing a
+card with a specialty the recipient hasn't configured still works.
 
 ## Tool Permissions
 

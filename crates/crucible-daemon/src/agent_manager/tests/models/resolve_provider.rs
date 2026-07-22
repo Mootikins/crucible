@@ -19,6 +19,7 @@ async fn test_resolve_provider_config_from_llm_config() {
     let llm_config = LlmConfig {
         default: Some("zai-coding".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -54,6 +55,7 @@ async fn test_resolve_provider_config_from_providers_config() {
     let llm_config = LlmConfig {
         default: Some("local".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -116,6 +118,7 @@ async fn test_resolve_provider_config_llm_config_wins_over_providers_config() {
     let llm_config = LlmConfig {
         default: None,
         providers: llm_providers,
+        models: Default::default(),
     };
 
     let agent_manager = create_test_agent_manager_with_both(session_manager.clone(), llm_config);

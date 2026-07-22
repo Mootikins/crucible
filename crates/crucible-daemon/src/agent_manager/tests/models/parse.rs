@@ -19,6 +19,7 @@ async fn test_parse_provider_model_llm_config_found() {
     let llm_config = LlmConfig {
         default: Some("zai-coding".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -49,6 +50,7 @@ async fn test_parse_provider_model_llm_config_not_found() {
     let llm_config = LlmConfig {
         default: None,
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -82,6 +84,7 @@ async fn test_parse_provider_model_legacy_takes_precedence() {
     let llm_config = LlmConfig {
         default: None,
         providers: llm_providers,
+        models: Default::default(),
     };
 
     let agent_manager = create_test_agent_manager_with_both(session_manager.clone(), llm_config);
@@ -129,6 +132,7 @@ async fn test_parse_provider_model_trailing_slash() {
     let llm_config = LlmConfig {
         default: Some("provider".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -163,6 +167,7 @@ async fn test_parse_provider_model_whitespace() {
     let llm_config = LlmConfig {
         default: Some("provider".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
@@ -196,6 +201,7 @@ async fn test_parse_provider_model_case_sensitivity() {
     let llm_config = LlmConfig {
         default: Some("ollama".to_string()),
         providers,
+        models: Default::default(),
     };
 
     let agent_manager =
