@@ -77,10 +77,15 @@ describe('motion primitives on structural surfaces', () => {
   it('edge panels slide (full-opacity translate) in BOTH directions inside an instant clip frame', () => {
     const src = read('components/windowing/EdgePanel.tsx');
     // Layout snaps once (no per-frame center reflow); the inner panel
-    // translates from its owning edge; content survives the exit slide.
+    // translates from its owning edge; content stays MOUNTED while
+    // collapsed (an expand must never pay a panel-subtree mount) and
+    // leaves paint/tab order via visibility.
     expect(src).toMatch(/TWEEN_MS/);
-    expect(src).toMatch(/translate: open\(\)/);
-    expect(src).toMatch(/setRendered\(false\)/);
+    expect(src).toMatch(/translate: isCollapsed\(\)/);
+    expect(src).toMatch(/visibility: spaceReserved\(\)/);
+    expect(src).not.toMatch(/setRendered/);
+    // The only transitioned property is translate — never width/height.
+    expect(src).not.toMatch(/transition:.*(width|height)/);
   });
 
   it('command palette pops in over a fading overlay', () => {

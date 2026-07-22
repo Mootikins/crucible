@@ -366,60 +366,51 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
     </>
   );
 
-  // Slide without live reflow: the clip frame SNAPS between 0 and full size
-  // (one layout change per toggle) while the inner panel — kept at its full
-  // final size — slides via compositor-driven `translate`. Layout-affecting
-  // properties are never transitioned: tweening width/height re-lays-out the
-  // neighboring content every frame AND runs on the main thread out of sync
-  // with the compositor's translate, which reads as jitter. On open the
-  // frame reserves the space first and the panel slides into it; on close
-  // the panel slides out, then the frame collapses.
+  // Slide without reflow OR remount: the panel content stays MOUNTED while
+  // collapsed — clipped to zero size and visibility:hidden — so a toggle
+  // never re-mounts the panel subtree. (The old mount-on-expand lifecycle
+  // spent ~500ms synchronously building the file tree / session panels
+  // exactly when the slide should start, which read as jitter. Staying
+  // mounted also preserves panel state: tree expansion, terminal
+  // scrollback.) Layout-affecting properties are never transitioned: the
+  // clip frame SNAPS between 0 and full (one reflow per toggle) and the
+  // only animated property is the compositor-driven `translate`. On open
+  // the frame reserves the space and the already-painted panel slides in;
+  // on close the panel slides out, then the frame collapses.
   const TWEEN_MS = 200;
-  const [rendered, setRendered] = createSignal(!isCollapsed());
-  const [open, setOpen] = createSignal(!isCollapsed());
-  let tweenTimer: number | undefined;
-  let openRaf: number | undefined;
-  const cancelPending = () => {
-    window.clearTimeout(tweenTimer);
-    // The expand path's rAF must be cancelled too: orphaned, it fires
-    // setOpen(true) DURING a close started within the next two frames,
-    // sliding the panel back in before the unmount timer yanks it.
-    if (openRaf !== undefined) cancelAnimationFrame(openRaf);
-    openRaf = undefined;
-  };
+  const [spaceReserved, setSpaceReserved] = createSignal(!isCollapsed());
+  let collapseTimer: number | undefined;
 
   createEffect(
     on(
       isCollapsed,
       (collapsed) => {
-        cancelPending();
+        window.clearTimeout(collapseTimer);
         if (!collapsed) {
-          setRendered(true);
-          // Double rAF: paint the offscreen state first, THEN flip so the
-          // browser has something to transition from.
-          openRaf = requestAnimationFrame(() => {
-            openRaf = requestAnimationFrame(() => setOpen(true));
-          });
+          setSpaceReserved(true);
         } else {
-          setOpen(false);
-          tweenTimer = window.setTimeout(() => setRendered(false), TWEEN_MS + 50);
+          // Hold the frame open while the panel slides out, then collapse.
+          collapseTimer = window.setTimeout(() => setSpaceReserved(false), TWEEN_MS + 50);
         }
       },
       { defer: true },
     ),
   );
-  onCleanup(cancelPending);
+  onCleanup(() => window.clearTimeout(collapseTimer));
 
   // Panel size + the 1px resize handle that lives inside the wrapper.
   const fullSize = () => (isVertical() ? (panel().width || 250) : (panel().height || 200)) + 1;
   const offscreen = () =>
     props.position === 'left' ? '-100% 0' : props.position === 'right' ? '100% 0' : '0 100%';
   const frameStyle = () => ({
-    [isVertical() ? 'width' : 'height']: `${fullSize()}px`,
+    [isVertical() ? 'width' : 'height']: spaceReserved() ? `${fullSize()}px` : '0px',
+    // Fully closed panels leave paint, hit-testing, and the tab order —
+    // clipped-but-visible content is still keyboard-reachable otherwise.
+    visibility: spaceReserved() ? ('visible' as const) : ('hidden' as const),
   });
   const innerStyle = () => ({
     [isVertical() ? 'width' : 'height']: `${fullSize()}px`,
-    translate: open() ? '0 0' : offscreen(),
+    translate: isCollapsed() ? offscreen() : '0 0',
     transition: `translate ${TWEEN_MS}ms ease-out`,
   });
 
@@ -435,30 +426,28 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
       }}
     >
       {props.position === 'left' && <EdgeRibbon position="left" />}
-      <Show when={rendered()}>
-        {/* Clip frame: fixed at full size while mounted, so neighboring
-            content reflows exactly once per toggle… */}
+      {/* Clip frame: snaps 0 ↔ full size (one reflow per toggle), content
+          always mounted… */}
+      <div
+        classList={{
+          'flex overflow-hidden flex-none': true,
+          'flex-row': isVertical(),
+          'flex-col': !isVertical(),
+        }}
+        style={frameStyle()}
+      >
+        {/* …while the panel itself slides within it, at full opacity. */}
         <div
           classList={{
-            'flex overflow-hidden flex-none': true,
+            'flex flex-none': true,
             'flex-row': isVertical(),
             'flex-col': !isVertical(),
           }}
-          style={frameStyle()}
+          style={innerStyle()}
         >
-          {/* …while the panel itself slides within it, at full opacity. */}
-          <div
-            classList={{
-              'flex flex-none': true,
-              'flex-row': isVertical(),
-              'flex-col': !isVertical(),
-            }}
-            style={innerStyle()}
-          >
-            {expandedPanel()}
-          </div>
+          {expandedPanel()}
         </div>
-      </Show>
+      </div>
       {props.position !== 'left' && <EdgeRibbon position={props.position} />}
     </div>
   );
