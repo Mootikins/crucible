@@ -313,7 +313,7 @@ test.describe('Comprehensive windowing behavior', () => {
       }
     });
 
-    await expect(page.locator('text=Nothing open')).toBeVisible({ timeout: 3000 });
-    await expect(page.locator('text=Open a file from the Files panel')).toBeVisible({ timeout: 3000 });
+    await expect(page.getByTestId('center-composer')).toBeVisible({ timeout: 3000 });
+    await expect(page.getByTestId('cta-open-file')).toBeVisible({ timeout: 3000 });
   });
 });

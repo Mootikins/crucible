@@ -7,9 +7,9 @@ import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import { createInitialState, findFirstPane } from '@/stores/windowStoreInternals';
 
 // The old test read Pane.tsx as a string and asserted it "contains" the text
-// EmptyState / import { EmptyState }. That passes even if the Show/fallback
-// wiring is broken. Here we render Pane against the real windowStore and assert
-// the EmptyState actually appears when the pane has no tabs — and disappears
+// of the fallback import. That passes even if the Show/fallback wiring is
+// broken. Here we render Pane against the real windowStore and assert the
+// center composer actually appears when the pane has no tabs — and disappears
 // once a tab is added.
 
 let paneId: string;
@@ -33,27 +33,29 @@ beforeEach(() => {
   groupId = pane.tabGroupId!;
 });
 
-describe('Pane — empty state', () => {
-  it('renders the EmptyState (no tabs) with its call-to-action', () => {
-    const { getByText, getByRole } = render(() => (
+describe('Pane — empty center', () => {
+  it('renders the center composer (no tabs) with its input and quick actions', () => {
+    const { getByTestId } = render(() => (
       <DragDropProvider>
         <Pane paneId={paneId} />
       </DragDropProvider>
     ));
 
-    // EmptyState's copy + action button.
-    expect(getByText('Nothing open')).toBeInTheDocument();
-    expect(getByRole('button', { name: /New Session/i })).toBeInTheDocument();
+    expect(getByTestId('center-composer')).toBeInTheDocument();
+    expect(getByTestId('composer-input')).toBeInTheDocument();
+    // Quick actions instead of descriptive copy.
+    expect(getByTestId('cta-open-file')).toBeInTheDocument();
+    expect(getByTestId('cta-commands')).toBeInTheDocument();
   });
 
-  it('replaces the EmptyState with the tab bar once a tab is added', () => {
-    const { queryByText, container } = render(() => (
+  it('replaces the composer with the tab bar once a tab is added', () => {
+    const { queryByTestId, container } = render(() => (
       <DragDropProvider>
         <Pane paneId={paneId} />
       </DragDropProvider>
     ));
 
-    expect(queryByText('Nothing open')).toBeInTheDocument();
+    expect(queryByTestId('center-composer')).toBeInTheDocument();
 
     windowActions.addTab(groupId, {
       id: 'note-tab',
@@ -61,7 +63,7 @@ describe('Pane — empty state', () => {
       contentType: 'file',
     });
 
-    expect(queryByText('Nothing open')).toBeNull();
+    expect(queryByTestId('center-composer')).toBeNull();
     // The tab strip now renders the tab row.
     expect(container.querySelector('[data-tab-id="note-tab"]')).toBeTruthy();
   });

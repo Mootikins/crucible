@@ -223,8 +223,8 @@ const App: Component = () => {
     const stopAttentionPolling = attentionActions.startPolling();
 
     // No landing page: a fresh shell (no persisted center content) shows the
-    // center pane's EmptyState, whose action starts a new session. Users
-    // build their own home from panels.
+    // center composer — context chips + first-message box + quick actions.
+    // Users build their own home from panels.
     void loadLayoutOnStartup();
     setupLayoutAutoSave();
 
@@ -271,7 +271,10 @@ const App: Component = () => {
     };
     window.addEventListener('crucible:open-file', onOpenFile);
     // Ribbon palette button (WindowManager can't reach the palette signal).
-    const onOpenPalette = () => openPalette();
+    // detail.mode lets non-App surfaces (center composer CTAs) open the
+    // notes tree directly instead of the commands list.
+    const onOpenPalette = (e: Event) =>
+      openPalette(((e as CustomEvent).detail?.mode as PaletteMode) ?? 'commands');
     window.addEventListener('crucible:open-command-palette', onOpenPalette);
 
     onCleanup(() => {

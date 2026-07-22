@@ -41,7 +41,7 @@ test.describe('File tab flows', () => {
 
     // No landing page: an empty center shows the EmptyState with a
     // new-session action.
-    await expect(page.getByTestId('empty-state-action')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 10000 });
   });
 
   test('opening a file creates a file tab in the center pane', async ({ page }) => {
@@ -68,7 +68,7 @@ test.describe('File tab flows', () => {
     });
 
     await page.goto('/');
-    await expect(page.getByTestId('empty-state-action')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 10000 });
 
     // Open a file (same code path as clicking in FilesPanel)
     await openFile(page, '/home/user/.crucible/kiln/My Note.md', 'My Note.md');
@@ -83,7 +83,7 @@ test.describe('File tab flows', () => {
   }) => {
     await setupBasicMocks(page);
     await page.goto('/');
-    await expect(page.getByTestId('empty-state-action')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 10000 });
 
     // Open the same file twice
     await openFile(page, '/home/user/.crucible/kiln/My Note.md', 'My Note.md');

@@ -44,11 +44,11 @@ test('Empty state appears when all center tabs are closed', async ({ page }) => 
   });
 
   // The empty state should appear in the center pane when no tabs are open
-  const emptyStateHeading = page.locator('text=Nothing open');
+  const emptyStateHeading = page.getByTestId('center-composer');
   await expect(emptyStateHeading).toBeVisible({ timeout: 2000 });
 
   // Verify the empty state has helpful text
-  const emptyStateText = page.locator('text=Open a file from the Files panel');
+  const emptyStateText = page.getByTestId('cta-open-file');
   await expect(emptyStateText).toBeVisible();
 });
 
@@ -64,6 +64,6 @@ test('Empty state is not shown in non-center panes', async ({ page }) => {
   const leftPanel = page.locator('[class*="EdgePanel"]').first();
   
   // The empty state message "Nothing open" should NOT appear in the left panel
-  const emptyStateInLeftPanel = leftPanel.locator('text=Nothing open');
+  const emptyStateInLeftPanel = leftPanel.getByTestId('center-composer');
   await expect(emptyStateInLeftPanel).not.toBeVisible();
 });

@@ -35,14 +35,14 @@ beforeEach(() => {
 
 describe('CenterTiling', () => {
   it('renders the pane content and no dev-only "Set ratio" control', () => {
-    const { queryByText, getByText } = render(() => (
+    const { queryByText, container } = render(() => (
       <DragDropProvider>
         <CenterTiling />
       </DragDropProvider>
     ));
 
-    // Single-pane layout with an empty tab group → the pane's EmptyState.
-    expect(getByText('Nothing open')).toBeInTheDocument();
+    // Single-pane layout with an empty tab group → the pane's composer.
+    expect(container.querySelector('[data-testid="center-composer"]')).toBeTruthy();
     // The removed dev-only ratio buttons must not render.
     expect(queryByText(/Set ratio/i)).toBeNull();
   });

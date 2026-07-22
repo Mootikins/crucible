@@ -2,6 +2,7 @@ import { windowActions, windowStore } from '@/stores/windowStore';
 import type { Tab } from '@/types/windowTypes';
 import { findFirstCenterPaneGroupId } from './panel-actions';
 import { iconForContentType } from './tab-icons';
+import { recordRecentFile } from './recent-files';
 
 export function findTabByFilePath(filePath: string): { groupId: string; tab: Tab } | null {
   for (const [groupId, group] of Object.entries(windowStore.tabGroups)) {
@@ -43,6 +44,7 @@ export function openFileInGroup(
   };
 
   windowActions.addTab(groupId, newTab);
+  recordRecentFile(filePath, newTab.title);
 }
 
 /**
