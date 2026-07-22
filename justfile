@@ -162,12 +162,14 @@ web-vite-host:
 web-dev:
     cargo run -p crucible-cli -- web --host 0.0.0.0 --port 3000 --static-dir crates/crucible-web/web/dist
 
-# Debug-build web server on a side port (default 3001) with fresh assets —
-# runs safely next to the installed release instance on 3000, sharing its
-# daemon. Throttled -j4 build (full-parallel builds can lock this box up).
+# Debug-build web server on a side port (default 3001) with fresh assets.
+# ALWAYS --standalone: a debug client on the shared socket detects the git-SHA
+# mismatch with the installed daemon and SHUTS IT DOWN to respawn its own
+# (verify_or_restart) — killing the production instance on 3000 out from
+# under you. Throttled -j4 build (full-parallel builds can lock this box up).
 web-debug port="3001": web-build
     cargo build -j4 -p crucible-cli --bin cru
-    cargo run -p crucible-cli -- web --port {{port}} --static-dir crates/crucible-web/web/dist
+    cargo run -p crucible-cli -- --standalone web --port {{port}} --static-dir crates/crucible-web/web/dist
 
 # Build release with embedded web assets
 release-web: web-build
