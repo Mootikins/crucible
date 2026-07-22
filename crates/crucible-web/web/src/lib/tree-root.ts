@@ -19,7 +19,7 @@ export interface TreeRoot {
 }
 
 export interface RosterGroup {
-  label: 'Projects' | 'Kilns';
+  label: 'Projects' | 'Worktrees' | 'Kilns';
   kind: TreeRootKind;
   roots: TreeRoot[];
 }
@@ -53,11 +53,30 @@ function basename(p: string): string {
  * returned (callers filter for display).
  */
 export function buildRoster(projects: Project[], kilns: KilnListEntry[]): RosterGroup[] {
-  const projectRoots: TreeRoot[] = projects.map((p) => ({
-    kind: 'project',
-    path: p.path,
-    name: p.name || basename(p.path),
-  }));
+  // Registered git worktrees ([scm] detect_worktrees) get their own group,
+  // labeled `mainrepo › rel/path` so parallel checkouts of one repo read as
+  // siblings instead of identically-named projects.
+  const projectRoots: TreeRoot[] = [];
+  const worktreeRoots: TreeRoot[] = [];
+  for (const p of projects) {
+    const repo = p.repository;
+    if (repo?.is_worktree && repo.root) {
+      const rel = p.path.startsWith(repo.root + '/')
+        ? p.path.slice(repo.root.length + 1)
+        : null;
+      worktreeRoots.push({
+        kind: 'project',
+        path: p.path,
+        name: rel ? `${basename(repo.root)} › ${rel}` : p.name || basename(p.path),
+      });
+    } else {
+      projectRoots.push({
+        kind: 'project',
+        path: p.path,
+        name: p.name || basename(p.path),
+      });
+    }
+  }
 
   // Learn name↔root from every entry that carries an absolute path, so a
   // later bare-name alias can be resolved to (and named after) that root.
@@ -91,6 +110,7 @@ export function buildRoster(projects: Project[], kilns: KilnListEntry[]): Roster
 
   return [
     { label: 'Projects', kind: 'project', roots: projectRoots },
+    { label: 'Worktrees', kind: 'project', roots: worktreeRoots },
     { label: 'Kilns', kind: 'kiln', roots: [...seen.values()] },
   ];
 }

@@ -94,8 +94,10 @@ export const FilesPanel: Component = () => {
     const idx = rosterIndex(groups);
     const persisted = selectedRootKey();
     if (persisted && idx.has(persisted)) return idx.get(persisted)!;
-    const firstProject = groups.find((g) => g.kind === 'project')?.roots[0];
-    const firstKiln = groups.find((g) => g.kind === 'kiln')?.roots[0];
+    // First non-empty group of each kind (Projects may be empty while
+    // Worktrees has roots — both are kind 'project').
+    const firstProject = groups.find((g) => g.kind === 'project' && g.roots.length > 0)?.roots[0];
+    const firstKiln = groups.find((g) => g.kind === 'kiln' && g.roots.length > 0)?.roots[0];
     return firstProject ?? firstKiln ?? null; // deterministic fallback
   });
 

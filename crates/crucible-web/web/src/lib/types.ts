@@ -166,11 +166,22 @@ export interface KilnInfo {
   name: string | null;
 }
 
+/** SCM info attached to a Project when `[scm]` detection found a repo.
+ * Wire shape of crucible-core's `RepositoryInfo` (snake_case contract). */
+export interface RepositoryInfo {
+  /** Repo root — for worktrees, the MAIN checkout's root. */
+  root: string;
+  remote_url?: string;
+  is_worktree?: boolean;
+  main_repo_git_dir?: string;
+}
+
 export interface Project {
   path: string;
   name: string;
   kilns: KilnInfo[];
   last_accessed: string; // ISO datetime
+  repository?: RepositoryInfo;
 }
 
 /**
