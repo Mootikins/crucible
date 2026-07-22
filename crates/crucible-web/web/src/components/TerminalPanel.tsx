@@ -1,7 +1,8 @@
-import { Component, createSignal, onCleanup, Show } from 'solid-js';
+import { Component, createResource, createSignal, onCleanup, Match, Show, Switch } from 'solid-js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
+import { getConfig } from '@/lib/api';
 
 /**
  * Real terminal: xterm.js over the daemon's PTY WebSocket
@@ -52,8 +53,11 @@ function wsUrl(): string {
 }
 
 // The PTY endpoint is gated server-side to localhost (a PTY is full shell
-// access), so a LAN/remote visitor's connection is rejected every time.
-// Detect that up front and explain, instead of a dead reconnect loop.
+// access) unless the server opted into authenticated remote access
+// (`cru web --remote-shell` / `[server] remote_shell`, requires an API
+// key). /api/config reports whether the opt-in is active, so a LAN client
+// either connects or gets an honest explanation instead of a dead
+// reconnect loop.
 function isLocalhost(): boolean {
   const h = window.location.hostname;
   return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1';
@@ -61,6 +65,14 @@ function isLocalhost(): boolean {
 
 export const TerminalPanel: Component = () => {
   const [status, setStatus] = createSignal<'connecting' | 'open' | 'closed'>('connecting');
+  // Localhost never needs the config round-trip; remote clients check the
+  // server's remote-shell opt-in before attempting the socket.
+  const [cfg] = createResource(
+    () => (isLocalhost() ? null : true),
+    () => getConfig().catch(() => ({ kiln_path: '', remote_shell: false })),
+  );
+  const allowed = () => isLocalhost() || cfg()?.remote_shell === true;
+  const denied = () => !isLocalhost() && cfg() !== undefined && cfg()?.remote_shell !== true;
   let container: HTMLDivElement | undefined;
   let term: Terminal | undefined;
   let socket: WebSocket | undefined;
@@ -149,36 +161,41 @@ export const TerminalPanel: Component = () => {
     term?.dispose();
   });
 
-  if (!isLocalhost()) {
-    return (
-      <div
-        class="h-full w-full bg-shell-bg flex flex-col items-center justify-center gap-1.5 px-6 text-center"
-        data-testid="terminal-panel"
-      >
-        <span class="text-sm text-shell-body">Terminal is only available from the host machine</span>
-        <span class="text-xs text-muted-dark max-w-md">
-          A terminal is full shell access, so Crucible only serves it to a browser on the machine
-          running the server (localhost) — you're connected from {window.location.hostname}.
-        </span>
-      </div>
-    );
-  }
-
   return (
-    <div class="relative h-full w-full bg-shell-bg" data-testid="terminal-panel">
-      <div ref={init} class="h-full w-full pl-2 pt-1" />
-      <Show when={status() === 'closed'}>
-        <div class="absolute inset-0 flex items-center justify-center bg-shell-bg/80 cru-anim-fade">
-          <button
-            type="button"
-            data-testid="terminal-reconnect"
-            onClick={reconnect}
-            class="px-3 py-1.5 rounded border border-hairline-strong bg-control text-shell-ink text-sm hover:bg-hover-wash transition-colors"
-          >
-            Session ended — reconnect
-          </button>
+    <Switch fallback={<div class="h-full w-full bg-shell-bg" data-testid="terminal-panel" />}>
+      <Match when={denied()}>
+        <div
+          class="h-full w-full bg-shell-bg flex flex-col items-center justify-center gap-1.5 px-6 text-center"
+          data-testid="terminal-panel"
+        >
+          <span class="text-sm text-shell-body">
+            Terminal is only available from the host machine
+          </span>
+          <span class="text-xs text-muted-dark max-w-md">
+            A terminal is full shell access, so Crucible only serves it to localhost by default —
+            you're connected from {window.location.hostname}. To allow authenticated remote
+            devices, run the server with `cru web --remote-shell` (or set remote_shell = true
+            under [server] in config.toml). An API key must be configured.
+          </span>
         </div>
-      </Show>
-    </div>
+      </Match>
+      <Match when={allowed()}>
+        <div class="relative h-full w-full bg-shell-bg" data-testid="terminal-panel">
+          <div ref={init} class="h-full w-full pl-2 pt-1" />
+          <Show when={status() === 'closed'}>
+            <div class="absolute inset-0 flex items-center justify-center bg-shell-bg/80 cru-anim-fade">
+              <button
+                type="button"
+                data-testid="terminal-reconnect"
+                onClick={reconnect}
+                class="px-3 py-1.5 rounded border border-hairline-strong bg-control text-shell-ink text-sm hover:bg-hover-wash transition-colors"
+              >
+                Session ended — reconnect
+              </button>
+            </div>
+          </Show>
+        </div>
+      </Match>
+    </Switch>
   );
 };

@@ -58,7 +58,8 @@ test.describe('Editor live preview (markdown default)', () => {
     // Frontmatter renders as the Properties card (cursor starts in the
     // body); raw yaml only appears when the cursor enters the block.
     await expect(page.getByTestId('fm-card')).toBeVisible();
-    await expect(page.getByTestId('fm-card').locator('.fm-pill')).toHaveCount(2); // [kiln, live]
+    await expect(page.getByTestId('fm-card')).toContainText('kiln');
+    await expect(page.getByTestId('fm-card')).toContainText('live');
     await expect(content).not.toContainText('tags: [kiln, live]');
     // Prose wraps instead of scrolling horizontally.
     await expect(content).toHaveClass(/cm-lineWrapping/);

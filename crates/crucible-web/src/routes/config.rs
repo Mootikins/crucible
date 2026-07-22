@@ -6,6 +6,9 @@ use serde::Serialize;
 #[derive(Serialize)]
 struct ConfigResponse {
     kiln_path: String,
+    /// Non-loopback terminal/shell access is active (opt-in + API key) —
+    /// the terminal panel connects from LAN clients only when this is true.
+    remote_shell: bool,
 }
 
 pub fn config_routes() -> Router<AppState> {
@@ -14,5 +17,8 @@ pub fn config_routes() -> Router<AppState> {
 
 async fn get_config(State(state): State<AppState>) -> Result<Json<ConfigResponse>, WebError> {
     let kiln_path = state.config.kiln_path_str().unwrap_or_default();
-    Ok(Json(ConfigResponse { kiln_path }))
+    Ok(Json(ConfigResponse {
+        kiln_path,
+        remote_shell: state.remote_shell,
+    }))
 }

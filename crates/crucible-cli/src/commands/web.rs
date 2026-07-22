@@ -18,6 +18,11 @@ pub struct WebCommand {
     #[arg(long)]
     pub static_dir: Option<String>,
 
+    /// Allow AUTHENTICATED non-localhost clients to use the terminal/shell
+    /// (overrides `[server] remote_shell` in config; requires an API key).
+    #[arg(long)]
+    pub remote_shell: bool,
+
     #[command(subcommand)]
     pub command: Option<WebSubcommand>,
 }
@@ -48,6 +53,7 @@ pub async fn handle(cmd: WebCommand) -> Result<()> {
         host: "127.0.0.1".to_string(),
         static_dir: None,
         api_key: None,
+        remote_shell: false,
     });
 
     let final_config = WebConfig {
@@ -56,6 +62,7 @@ pub async fn handle(cmd: WebCommand) -> Result<()> {
         host: cmd.host.unwrap_or(web_config.host),
         static_dir: cmd.static_dir.or(web_config.static_dir),
         api_key: web_config.api_key,
+        remote_shell: cmd.remote_shell || web_config.remote_shell,
     };
 
     if let Some(WebSubcommand::Key { rotate }) = cmd.command {

@@ -84,6 +84,12 @@ pub struct WebConfig {
     /// Set to empty string `""` to disable auth entirely.
     #[serde(default)]
     pub api_key: Option<String>,
+
+    /// Allow AUTHENTICATED non-localhost clients to use the terminal/shell
+    /// routes (a PTY is full shell access, so this is loopback-only by
+    /// default). Fail-closed: ignored unless an API key is configured.
+    #[serde(default)]
+    pub remote_shell: bool,
 }
 
 fn default_web_port() -> u16 {
@@ -102,6 +108,7 @@ impl Default for WebConfig {
             host: default_web_host(),
             static_dir: None,
             api_key: None,
+            remote_shell: false,
         }
     }
 }

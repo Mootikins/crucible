@@ -1,6 +1,7 @@
 use crate::assets::static_routes;
 use crate::middleware::auth::{
-    bearer_auth, localhost_only_shell_auth, resolve_api_key, websocket_origin_guard, ApiKeyState,
+    bearer_auth, localhost_only_shell_auth, remote_shell_active, resolve_api_key,
+    websocket_origin_guard, ApiKeyState, ShellGateState,
 };
 use crate::routes::{
     agents_routes, auth_routes, chat_routes, config_routes, fs_routes, health_routes, kiln_routes,
@@ -22,7 +23,7 @@ pub use crucible_core::config::{CliAppConfig, WebConfig};
 const MAX_BODY_SIZE_10MB: usize = 10 * 1024 * 1024;
 
 pub async fn start_server(web_config: &WebConfig, app_config: &CliAppConfig) -> Result<()> {
-    let state = daemon::init_daemon(app_config.clone()).await?;
+    let mut state = daemon::init_daemon(app_config.clone()).await?;
 
     // Wildcard CORS is dangerous here because `/api/shell/exec` can execute host shell commands.
     // Restricting origins prevents arbitrary websites from triggering command execution via browsers.
@@ -47,12 +48,33 @@ pub async fn start_server(web_config: &WebConfig, app_config: &CliAppConfig) -> 
         tracing::warn!("API Bearer token auth is disabled — all requests will be accepted");
     }
     let api_key_state = Arc::new(ApiKeyState { api_key });
+    state.remote_shell =
+        remote_shell_active(web_config.remote_shell, api_key_state.api_key.is_some());
+    if state.remote_shell {
+        tracing::warn!(
+            "Remote shell/terminal access ENABLED ([server] remote_shell) — \
+             authenticated non-localhost clients get a PTY"
+        );
+    } else if web_config.remote_shell {
+        tracing::warn!(
+            "remote_shell is set but NO API key is configured — keeping the \
+             terminal loopback-only (fail closed)"
+        );
+    }
+    let shell_gate = Arc::new(ShellGateState {
+        allow_remote: state.remote_shell,
+    });
 
-    // API routes get Bearer auth + shell gets additional localhost-only check.
+    // API routes get Bearer auth + shell gets an additional localhost-only
+    // check (relaxed only by the fail-closed remote-shell opt-in, which
+    // requires an API key so bearer/cookie auth still gates every request).
     let api_routes = Router::new()
         .nest(
             "/api/shell",
-            shell_routes().layer(middleware::from_fn(localhost_only_shell_auth)),
+            shell_routes().layer(middleware::from_fn_with_state(
+                shell_gate.clone(),
+                localhost_only_shell_auth,
+            )),
         )
         // A PTY is full shell access: localhost gate + an Origin allow-list on
         // the WS upgrade to block Cross-Site WebSocket Hijacking (CORS doesn't
@@ -60,7 +82,10 @@ pub async fn start_server(web_config: &WebConfig, app_config: &CliAppConfig) -> 
         .nest(
             "/api/terminal",
             terminal_routes()
-                .layer(middleware::from_fn(localhost_only_shell_auth))
+                .layer(middleware::from_fn_with_state(
+                    shell_gate.clone(),
+                    localhost_only_shell_auth,
+                ))
                 .layer(middleware::from_fn_with_state(
                     allowed_origins.clone(),
                     websocket_origin_guard,
@@ -174,6 +199,7 @@ mod tests {
             port: 3000,
             static_dir: None,
             api_key: None,
+            remote_shell: false,
         };
 
         let origins = build_cors_origins(&web_config);
@@ -202,6 +228,7 @@ mod tests {
                 port: 3000,
                 static_dir: None,
                 api_key: None,
+                remote_shell: false,
             };
             let origins = build_cors_origins(&web_config);
             let localhost = HeaderValue::from_static("http://localhost:3000");
@@ -220,6 +247,7 @@ mod tests {
             port: 3000,
             static_dir: None,
             api_key: None,
+            remote_shell: false,
         };
 
         let cors = CorsLayer::new()

@@ -8,8 +8,6 @@ use serde_json::json;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
-const ALLOW_REMOTE_SHELL_ENV: &str = "CRUCIBLE_ALLOW_REMOTE_SHELL";
-
 /// Session cookie carrying the API key for browser clients (set by
 /// `POST /api/auth/login`). HttpOnly, so page JS never touches it, and it
 /// rides along on EventSource/SSE requests that cannot set headers.
@@ -240,7 +238,12 @@ pub async fn websocket_origin_guard(
     next: Next,
 ) -> Response {
     if let Some(origin) = request.headers().get(header::ORIGIN) {
-        if !allowed.iter().any(|a| a == origin) {
+        // Same-origin is always fine — CSWSH means a CROSS-site page driving
+        // the socket. The static allowlist can't know every host the server
+        // is reachable as (LAN IP, hostname), but the request's own Host
+        // header does.
+        let same_origin = origin_matches_host(origin, request.headers().get(header::HOST));
+        if !same_origin && !allowed.iter().any(|a| a == origin) {
             tracing::warn!(
                 ?origin,
                 "Rejecting WebSocket upgrade from disallowed Origin"
@@ -251,8 +254,40 @@ pub async fn websocket_origin_guard(
     next.run(request).await
 }
 
-pub async fn localhost_only_shell_auth(request: Request<Body>, next: Next) -> Response {
-    if allow_remote_shell() {
+/// `Origin: http(s)://<authority>` matches the request's `Host: <authority>`.
+fn origin_matches_host(origin: &HeaderValue, host: Option<&HeaderValue>) -> bool {
+    let (Ok(origin), Some(Ok(host))) = (origin.to_str(), host.map(|h| h.to_str())) else {
+        return false;
+    };
+    origin
+        .strip_prefix("http://")
+        .or_else(|| origin.strip_prefix("https://"))
+        .is_some_and(|authority| authority == host)
+}
+
+/// Whether non-loopback shell/terminal access is active. Fail-closed: the
+/// `[server] remote_shell = true` config opt-in (or `cru web --remote-shell`)
+/// only takes effect when an API key is configured — otherwise it would hand
+/// any LAN peer an UNAUTHENTICATED PTY. With a key, remote requests still
+/// pass bearer_auth (Bearer header or session cookie) like every other API
+/// route.
+pub fn remote_shell_active(opted_in: bool, api_key_configured: bool) -> bool {
+    opted_in && api_key_configured
+}
+
+/// State for [`localhost_only_shell_auth`]: whether the loopback restriction
+/// is lifted (already fail-closed via [`remote_shell_active`]).
+#[derive(Clone)]
+pub struct ShellGateState {
+    pub allow_remote: bool,
+}
+
+pub async fn localhost_only_shell_auth(
+    State(state): State<Arc<ShellGateState>>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    if state.allow_remote {
         return next.run(request).await;
     }
 
@@ -270,12 +305,6 @@ pub async fn localhost_only_shell_auth(request: Request<Body>, next: Next) -> Re
         Some(addr) if addr.ip().is_loopback() => next.run(request).await,
         _ => forbidden_response(),
     }
-}
-
-fn allow_remote_shell() -> bool {
-    std::env::var(ALLOW_REMOTE_SHELL_ENV)
-        .map(|value| value.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
 }
 
 fn forwarded_for_is_localhost(headers: &HeaderMap) -> bool {
@@ -554,60 +583,102 @@ mod tests {
         assert_eq!(resolve_api_key(Some("my-key")), Some("my-key".to_string()));
     }
 
-    // --- Localhost shell auth tests (pre-existing) ---
+    // --- Localhost shell auth tests ---
 
-    #[tokio::test]
-    async fn localhost_connect_info_is_allowed() {
-        let app = Router::new()
+    fn shell_router(allow_remote: bool) -> Router {
+        let state = Arc::new(ShellGateState { allow_remote });
+        Router::new()
             .route("/shell/run", get(|| async { "ok" }))
-            .layer(middleware::from_fn(localhost_only_shell_auth));
+            .layer(middleware::from_fn_with_state(
+                state,
+                localhost_only_shell_auth,
+            ))
+    }
 
+    fn shell_req(ip: [u8; 4]) -> Request<Body> {
         let mut req = Request::builder()
             .uri("/shell/run")
             .body(Body::empty())
             .unwrap();
         req.extensions_mut()
-            .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 5000))));
+            .insert(ConnectInfo(SocketAddr::from((ip, 5000))));
+        req
+    }
 
-        let response = app.oneshot(req).await.unwrap();
-
+    #[tokio::test]
+    async fn localhost_connect_info_is_allowed() {
+        let response = shell_router(false)
+            .oneshot(shell_req([127, 0, 0, 1]))
+            .await
+            .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]
     async fn non_localhost_connect_info_is_forbidden() {
-        let app = Router::new()
-            .route("/shell/run", get(|| async { "ok" }))
-            .layer(middleware::from_fn(localhost_only_shell_auth));
-
-        let mut req = Request::builder()
-            .uri("/shell/run")
-            .body(Body::empty())
+        let response = shell_router(false)
+            .oneshot(shell_req([10, 0, 0, 8]))
+            .await
             .unwrap();
-        req.extensions_mut()
-            .insert(ConnectInfo(SocketAddr::from(([10, 0, 0, 8], 5000))));
-
-        let response = app.oneshot(req).await.unwrap();
-
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]
     async fn non_localhost_forwarded_for_is_forbidden_even_with_local_connect_info() {
-        let app = Router::new()
-            .route("/shell/run", get(|| async { "ok" }))
-            .layer(middleware::from_fn(localhost_only_shell_auth));
+        let mut req = shell_req([127, 0, 0, 1]);
+        req.headers_mut()
+            .insert("x-forwarded-for", HeaderValue::from_static("203.0.113.10"));
+        let response = shell_router(false).oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
 
-        let mut req = Request::builder()
-            .uri("/shell/run")
-            .header("x-forwarded-for", "203.0.113.10")
+    // --- Remote shell opt-in ([server] remote_shell) ---
+
+    #[tokio::test]
+    async fn remote_shell_gate_allows_non_localhost_when_active() {
+        // bearer_auth (layered separately in the real router) still gates
+        // the request — this middleware only lifts the loopback restriction.
+        let response = shell_router(true)
+            .oneshot(shell_req([10, 0, 0, 8]))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn remote_shell_active_is_fail_closed_without_an_api_key() {
+        // Opt-in without a key = auth disabled — must NOT hand a LAN peer an
+        // unauthenticated PTY.
+        assert!(!remote_shell_active(true, false));
+        assert!(remote_shell_active(true, true));
+        assert!(!remote_shell_active(false, true));
+    }
+
+    // --- Same-origin WebSocket acceptance ---
+
+    #[tokio::test]
+    async fn origin_guard_allows_same_origin_lan_host() {
+        // A LAN browser at http://192.168.0.16:3001 isn't in the static
+        // allowlist, but its Origin matches the request's own Host.
+        let req = Request::builder()
+            .uri("/api/terminal/ws")
+            .header(header::ORIGIN, "http://192.168.0.16:3001")
+            .header(header::HOST, "192.168.0.16:3001")
             .body(Body::empty())
             .unwrap();
-        req.extensions_mut()
-            .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 5000))));
+        let response = test_router_with_origin_guard().oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
 
-        let response = app.oneshot(req).await.unwrap();
-
+    #[tokio::test]
+    async fn origin_guard_still_rejects_cross_origin_with_mismatched_host() {
+        let req = Request::builder()
+            .uri("/api/terminal/ws")
+            .header(header::ORIGIN, "http://evil.example")
+            .header(header::HOST, "192.168.0.16:3001")
+            .body(Body::empty())
+            .unwrap();
+        let response = test_router_with_origin_guard().oneshot(req).await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 }

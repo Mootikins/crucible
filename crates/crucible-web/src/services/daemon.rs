@@ -23,6 +23,10 @@ pub struct AppState {
     /// Where the web UI's serialized pane layout is persisted (JSON blob,
     /// opaque to the server). Tests point this at a tempdir.
     pub layout_path: Arc<std::path::PathBuf>,
+    /// Whether non-loopback terminal/shell access is active (opt-in env var
+    /// AND an API key configured) — surfaced to the frontend via /api/config
+    /// so the terminal panel knows whether to connect from a LAN client.
+    pub remote_shell: bool,
 }
 
 /// Default persistence location for the web UI layout:
@@ -1210,6 +1214,8 @@ pub async fn init_daemon(config: CliAppConfig) -> Result<AppState> {
         config: Arc::new(config),
         http_client,
         layout_path: Arc::new(default_layout_path()),
+        // start_server overwrites this once the API key is resolved.
+        remote_shell: false,
     })
 }
 

@@ -16,6 +16,8 @@ import type {
 
 export interface Config {
   kiln_path: string;
+  /** Server allows non-loopback terminal/shell (opt-in env + API key). */
+  remote_shell?: boolean;
 }
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
