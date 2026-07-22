@@ -130,6 +130,12 @@ pub struct SessionAgent {
     /// agent handle is created, and survives handle eviction. `None` = normal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
+
+    /// Per-tool permission policy from the source agent card. Deny = tool
+    /// not advertised and refused; Ask = always prompt; Allow = never
+    /// prompt. Tools not listed use default behavior. `None` = no policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_policy: Option<crate::agent::ToolPolicyMap>,
 }
 
 impl SessionAgent {
@@ -177,7 +183,70 @@ impl SessionAgent {
             output_validation: OutputValidation::default(),
             validation_retries: default_validation_retries(),
             autocompact_threshold: None,
+            tool_policy: None,
             mode: None,
+        }
+    }
+
+    /// Construct an internal SessionAgent from an agent card, layered over a
+    /// base config (the spawning context: the parent's agent for delegation,
+    /// or the configured defaults for session creation).
+    ///
+    /// Card fields override the base where present: system prompt (the card
+    /// body — finally populating the "inlined from agent card" field),
+    /// provider/model, temperature, max_tokens, max_turns → max_iterations,
+    /// mode, mcp_servers, and the per-tool policy. Everything else (endpoint
+    /// resolution, precognition, context budget, validation) inherits from
+    /// the base. An unrecognized `provider:` string falls back to the base
+    /// provider (validated at use, not load).
+    pub fn from_card(card: &crate::agent::AgentCard, base: &SessionAgent) -> Self {
+        let provider = card
+            .provider
+            .as_deref()
+            .and_then(|p| p.parse::<BackendType>().ok());
+        Self {
+            agent_type: "internal".to_string(),
+            agent_name: None,
+            provider_key: card
+                .provider
+                .clone()
+                .or_else(|| base.provider_key.clone()),
+            provider: provider.unwrap_or(base.provider),
+            model: card.model.clone().unwrap_or_else(|| base.model.clone()),
+            system_prompt: card.system_prompt.clone(),
+            temperature: card.temperature.map(|t| t as f64).or(base.temperature),
+            max_tokens: card.max_tokens.or(base.max_tokens),
+            max_context_tokens: base.max_context_tokens,
+            thinking_budget: base.thinking_budget,
+            // Endpoint follows the provider: a card that switches provider
+            // must not inherit the base's endpoint for a different backend.
+            endpoint: if provider.is_some() && provider != Some(base.provider) {
+                None
+            } else {
+                base.endpoint.clone()
+            },
+            env_overrides: HashMap::new(),
+            mcp_servers: if card.mcp_servers.is_empty() {
+                base.mcp_servers.clone()
+            } else {
+                card.mcp_servers.clone()
+            },
+            agent_card_name: Some(card.name.clone()),
+            capabilities: None,
+            agent_description: Some(card.description.clone()),
+            delegation_config: base.delegation_config.clone(),
+            precognition_enabled: base.precognition_enabled,
+            precognition_results: base.precognition_results,
+            max_iterations: card.max_turns.or(base.max_iterations),
+            execution_timeout_secs: base.execution_timeout_secs,
+            context_budget: base.context_budget,
+            context_strategy: base.context_strategy.clone(),
+            context_window: base.context_window,
+            output_validation: base.output_validation.clone(),
+            validation_retries: base.validation_retries,
+            autocompact_threshold: base.autocompact_threshold,
+            mode: card.mode.clone().or_else(|| base.mode.clone()),
+            tool_policy: card.tools.clone(),
         }
     }
 
@@ -244,6 +313,7 @@ impl SessionAgent {
             output_validation: OutputValidation::default(),
             validation_retries: default_validation_retries(),
             autocompact_threshold: None,
+            tool_policy: None,
             mode: None,
         }
     }

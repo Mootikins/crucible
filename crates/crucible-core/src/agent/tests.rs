@@ -294,15 +294,19 @@ Some content here.
     }
 
     #[test]
-    fn test_validation_empty_name() {
+    fn test_empty_name_defaults_to_file_stem() {
+        // `name` is optional since the documented minimal card has none:
+        // empty or missing names fall back to the card's file stem.
         let temp_dir = TempDir::new().unwrap();
         let invalid_content =
             get_sample_agent_frontmatter().replace("name: \"Test Agent\"", "name: \"\"");
 
         let file_path = create_test_agent_file(&temp_dir, "empty_name.md", &invalid_content);
         let mut loader = AgentCardLoader::new();
-        let result = loader.load_from_file(&file_path);
-        assert!(result.is_err(), "Should fail for empty name");
+        let card = loader
+            .load_from_file(&file_path)
+            .expect("empty name falls back to file stem");
+        assert_eq!(card.name, "empty_name");
     }
 
     #[test]

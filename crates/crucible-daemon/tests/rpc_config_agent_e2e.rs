@@ -111,6 +111,7 @@ async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient)
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
+            tool_policy: None,
     };
 
     client
@@ -344,6 +345,7 @@ async fn test_configure_agent_sets_agent() {
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
+            tool_policy: None,
     };
 
     client

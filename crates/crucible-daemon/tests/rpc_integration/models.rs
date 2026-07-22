@@ -63,6 +63,7 @@ async fn test_session_switch_model() {
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
+            tool_policy: None,
     };
 
     client
@@ -151,6 +152,7 @@ async fn test_daemon_agent_handle_switch_model() {
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
+            tool_policy: None,
     };
 
     client
@@ -244,6 +246,7 @@ async fn test_session_set_mode_round_trip() {
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
+            tool_policy: None,
     };
     client
         .session_configure_agent(&session_id, &agent)
@@ -355,6 +358,7 @@ async fn test_daemon_agent_handle_set_mode_reaches_daemon() {
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
+            tool_policy: None,
     };
     client
         .session_configure_agent(&session_id, &agent)

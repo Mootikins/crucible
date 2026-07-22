@@ -24,6 +24,7 @@
 pub mod acp;
 pub mod acp_handle;
 pub mod agent_factory;
+pub mod agent_cards;
 pub mod agent_manager;
 pub mod background_manager;
 pub mod delegation;

@@ -39,6 +39,8 @@ pub struct CreateInternalMcpToolDefsParams<'a> {
     pub delegation_context: Option<DelegationContext>,
     pub mode: &'a str,
     pub gateway_all_tools_override: Option<&'a [McpToolInfo]>,
+    /// Agent-card tool policy: tools marked Deny are never advertised.
+    pub tool_policy: Option<&'a crucible_core::agent::ToolPolicyMap>,
 }
 
 /// Parameters for creating an agent from session configuration.
@@ -113,7 +115,13 @@ async fn create_internal_mcp_tool_defs(
         delegation_context,
         mode,
         gateway_all_tools_override,
+        tool_policy,
     } = params;
+    let denied = |name: &str| {
+        tool_policy
+            .and_then(|m| m.get(name))
+            .is_some_and(|p| *p == crucible_core::agent::ToolPolicy::Deny)
+    };
     let mut tool_defs = Vec::new();
 
     if let Some(kiln_path) = kiln_path {
@@ -130,6 +138,9 @@ async fn create_internal_mcp_tool_defs(
         for tool in server.list_tools() {
             let tool_name = tool.name.to_string();
             if mode == "plan" && !is_plan_mode_tool(&tool_name) {
+                continue;
+            }
+            if denied(&tool_name) {
                 continue;
             }
             tool_defs.push(LlmToolDefinition::new(
@@ -156,6 +167,9 @@ async fn create_internal_mcp_tool_defs(
     for tool in crate::tools::workspace::WorkspaceTools::tool_definitions() {
         let tool_name = tool.name.to_string();
         if mode == "plan" && !is_plan_mode_tool(&tool_name) {
+            continue;
+        }
+        if denied(&tool_name) {
             continue;
         }
         tool_defs.push(LlmToolDefinition::new(
@@ -186,6 +200,7 @@ async fn create_internal_mcp_tool_defs(
             let tools = all_tools
                 .iter()
                 .filter(|tool| server_names.contains(&tool.upstream))
+                .filter(|tool| !denied(&tool.prefixed_name))
                 .map(|tool| {
                     LlmToolDefinition::new(
                         tool.prefixed_name.clone(),
@@ -238,6 +253,7 @@ async fn create_internal_mcp_tool_names_for_tests(
         delegation_context,
         mode,
         gateway_all_tools_override,
+        tool_policy: None,
     })
     .await;
     tools.into_iter().map(|t| t.function.name).collect()
@@ -511,6 +527,7 @@ pub async fn create_agent_from_session_config(
             delegation_context,
             mode,
             gateway_all_tools_override: None,
+            tool_policy: agent_config.tool_policy.as_ref(),
         })
         .await;
 
@@ -623,6 +640,7 @@ mod tests {
             output_validation: Default::default(),
             validation_retries: 3,
             autocompact_threshold: None,
+            tool_policy: None,
         }
     }
 
@@ -784,6 +802,7 @@ mod tests {
             delegation_context: None,
             mode: "auto",
             gateway_all_tools_override: Some(&gateway_tools),
+            tool_policy: None,
         })
         .await;
         assert_eq!(deferrable.len(), 12, "all gateway tools are deferrable");
@@ -1054,6 +1073,7 @@ mod tests {
             delegation_context: None,
             mode: "auto",
             gateway_all_tools_override: None,
+            tool_policy: None,
         })
         .await;
 
@@ -1082,6 +1102,7 @@ mod tests {
             delegation_context: None,
             mode: "auto",
             gateway_all_tools_override: None,
+            tool_policy: None,
         })
         .await;
 

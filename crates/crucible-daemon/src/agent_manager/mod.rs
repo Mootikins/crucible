@@ -456,6 +456,9 @@ struct AgentStreamConfig {
     /// tool-dispatch timeout for `delegate_session` (a blocking delegation
     /// legitimately outlives the standard 30 s tool timeout).
     delegation_timeout_secs: Option<u64>,
+    /// Per-tool policy from the session's agent card: Deny blocks execution,
+    /// Ask forces a prompt (even for safe tools), Allow skips the gate.
+    tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
     /// Registry of Lua-defined validators, populated when the daemon
     /// has a plugin loader. The agent stream loop dispatches
     /// `OutputValidation::Lua { name }` against this registry.
@@ -489,6 +492,7 @@ impl AgentStreamConfig {
                 .delegation_config
                 .as_ref()
                 .map(|c| c.timeout_secs),
+            tool_policy: session_agent.tool_policy.clone(),
             lua_validators,
             plugin_lua,
         }

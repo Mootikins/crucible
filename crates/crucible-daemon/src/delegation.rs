@@ -284,35 +284,50 @@ impl DelegationSpawner for DelegationService {
                 )));
             }
         }
-        if let (Some(delegator), Some(target)) =
-            (parent_agent.agent_name.as_deref(), req.target_agent.as_deref())
-        {
-            if delegator == target {
+        if let Some(target) = req.target_agent.as_deref() {
+            let is_self = parent_agent.agent_name.as_deref() == Some(target)
+                || parent_agent.agent_card_name.as_deref() == Some(target);
+            if is_self {
                 return Err(JobError::SpawnFailed(
                     "Delegation rejected by self-delegation guard".into(),
                 ));
             }
         }
 
-        // Resolve the child agent config: named target (ACP profile) or a
-        // clone of the parent. Nested delegation stays disabled by clearing
-        // the child's delegation_config (depth-aware nesting is a follow-up).
+        // Resolve the child agent config: a named target resolves to an
+        // agent CARD (specialized internal agent) first, then an ACP
+        // profile; no target clones the parent. Nested delegation stays
+        // disabled by clearing the child's delegation_config (depth-aware
+        // nesting is a follow-up).
         let mut child_agent: SessionAgent = match req.target_agent.as_deref() {
             Some(name) => {
-                let available = manager.build_available_agents();
-                let profile = available.get(name).ok_or_else(|| {
-                    let mut names: Vec<_> = available.keys().cloned().collect();
-                    names.sort();
-                    let list = if names.is_empty() {
-                        "(none)".to_string()
-                    } else {
-                        names.join(", ")
-                    };
-                    JobError::SpawnFailed(format!(
-                        "Delegation target '{name}' not found. Available agents: {list}"
-                    ))
-                })?;
-                SessionAgent::from_profile(&profile, name)
+                let cards = crate::agent_cards::discover_agent_cards(
+                    &parent.workspace,
+                    Some(parent.kiln.as_path()),
+                );
+                if let Some(card) = cards.get(name) {
+                    SessionAgent::from_card(card, &parent_agent)
+                } else {
+                    let available = manager.build_available_agents();
+                    let profile = available.get(name).cloned().ok_or_else(|| {
+                        let mut names: Vec<_> = cards
+                            .keys()
+                            .chain(available.keys())
+                            .cloned()
+                            .collect();
+                        names.sort();
+                        names.dedup();
+                        let list = if names.is_empty() {
+                            "(none)".to_string()
+                        } else {
+                            names.join(", ")
+                        };
+                        JobError::SpawnFailed(format!(
+                            "Delegation target '{name}' not found. Available agents: {list}"
+                        ))
+                    })?;
+                    SessionAgent::from_profile(&profile, name)
+                }
             }
             None => parent_agent.clone(),
         };

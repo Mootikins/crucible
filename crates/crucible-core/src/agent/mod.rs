@@ -9,7 +9,7 @@ pub mod types;
 
 pub use loader::AgentCardLoader;
 pub use matcher::{AgentCardMatcher, MatchingWeights};
-pub use types::{AgentCard, AgentCardFrontmatter, AgentCardMatch, AgentCardQuery};
+pub use types::{AgentCard, AgentCardFrontmatter, AgentCardMatch, AgentCardQuery, ToolPolicy, ToolPolicyMap};
 
 use anyhow::Result;
 use std::collections::HashMap;

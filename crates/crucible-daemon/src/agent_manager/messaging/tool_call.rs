@@ -202,7 +202,46 @@ impl AgentManager {
             }
         }
 
-        if !is_safe(&tool_call.name)
+        // Agent-card tool policy: Deny refuses outright (defense in depth —
+        // denied tools are also excluded from the advertised definitions),
+        // Ask forces the permission gate even for safe tools, Allow skips it.
+        use crucible_core::agent::ToolPolicy;
+        let card_policy = stream_ctx
+            .agent_stream_config
+            .tool_policy
+            .as_ref()
+            .and_then(|m| m.get(&tool_call.name))
+            .copied();
+        if card_policy == Some(ToolPolicy::Deny) {
+            let error_msg = format!(
+                "Tool '{}' is denied by this agent's card tool policy",
+                tool_call.name
+            );
+            emit_event(
+                &stream_ctx.event_tx,
+                SessionEventMessage::tool_result(
+                    &stream_ctx.session_id,
+                    &call_id,
+                    &tool_call.name,
+                    serde_json::json!({ "error": &error_msg }),
+                ),
+            );
+            return Some(crucible_core::traits::chat::ChatToolResult {
+                name: tool_call.name.clone(),
+                result: String::new(),
+                error: Some(error_msg),
+                call_id: Some(call_id.clone()),
+                terminate: false,
+            });
+        }
+        let requires_gate = match card_policy {
+            Some(ToolPolicy::Allow) => false,
+            Some(ToolPolicy::Ask) => true,
+            Some(ToolPolicy::Deny) => unreachable!("denied above"),
+            None => !is_safe(&tool_call.name),
+        };
+
+        if requires_gate
             && !Self::handle_permission_request(stream_ctx, tool_call, &call_id, &args).await
         {
             return Some(crucible_core::traits::chat::ChatToolResult {

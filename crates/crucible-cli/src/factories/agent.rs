@@ -189,6 +189,7 @@ fn build_acp_session_agent(params: &AgentInitParams, config: &CliAppConfig) -> S
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
+            tool_policy: None,
         mode: None,
     }
 }

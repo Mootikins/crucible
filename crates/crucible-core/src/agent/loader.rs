@@ -90,14 +90,34 @@ impl AgentCardLoader {
         let card_id = uuid::Uuid::new_v4();
         let now = chrono::Utc::now();
 
+        // name defaults to the file stem, version to 0.1.0 — the documented
+        // minimal card (description-only frontmatter) must load as written.
+        let name = frontmatter
+            .name
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or_else(|| {
+                Path::new(file_path)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            });
+
         let card = AgentCard {
             id: card_id,
-            name: frontmatter.name.clone(),
-            version: frontmatter.version,
+            name,
+            version: frontmatter.version.unwrap_or_else(|| "0.1.0".to_string()),
             description: frontmatter.description,
             tags: frontmatter.tags,
+            specialty: frontmatter.specialty,
             system_prompt: self.extract_system_prompt(markdown_content)?,
             mcp_servers: frontmatter.mcp_servers,
+            provider: frontmatter.provider,
+            model: frontmatter.model,
+            temperature: frontmatter.temperature,
+            max_tokens: frontmatter.max_tokens,
+            max_turns: frontmatter.max_turns,
+            mode: frontmatter.mode,
+            tools: frontmatter.tools,
             config: frontmatter.config.unwrap_or_default(),
             loaded_at: now,
         };

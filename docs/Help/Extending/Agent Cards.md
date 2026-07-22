@@ -1,12 +1,13 @@
 ---
 title: Agent Cards
-description: Define AI agent personalities and capabilities for your kiln
+description: Define specialized AI agents for your kiln and projects
 status: implemented
 tags:
   - extending
   - agents
   - ai
   - configuration
+  - delegation
 aliases:
   - Agents
   - AI Agents
@@ -14,34 +15,36 @@ aliases:
 
 # Agent Cards
 
-Agent cards define who your AI assistants are and what they can do. Each card is a markdown file that combines a system prompt with tool access and configuration.
+Agent cards define specialized AI agents. Each card is a markdown file: YAML frontmatter for configuration, markdown body as the system prompt. Cards are the primary way to define **delegation targets** — an agent with delegation enabled can hand a task to any card by name via `delegate_session`, and the child runs as a real session with the card's prompt, model, and tool policy.
 
 ## What's in an Agent Card
 
-An agent card answers these questions:
-- **Who is this agent?** - Name, role, personality
-- **What can it do?** - Which tools and MCPs it can access
-- **How does it behave?** - System prompt and instructions
-- **What kind of model?** - Specialty (not specific model)
+- **Who is this agent?** — Name, description, system prompt
+- **What can it do?** — Per-tool permissions and MCP servers
+- **What model?** — Optional provider/model override (omit to inherit the spawning context's model)
+- **How long may it run?** — `max_turns` caps the tool loop
 
-## File Location
+## File Locations
 
-Place agent cards in:
-- `~/.config/crucible/agents/` - Personal agents
-- `KILN/Agents/` - Project-specific agents (shared with team)
+Discovery order (later locations shadow earlier ones, by card name):
+
+1. `~/.config/crucible/agents/` — personal cards
+2. `KILN/.crucible/agents/` — kiln hidden config
+3. `KILN/agents/` or `KILN/Agents/` — kiln content (shared with the team)
+4. `PROJECT/.crucible/agents/` — project-scoped cards (checked into a repo)
 
 ## Basic Example
 
-Create `Agents/Researcher.md`:
+Create `agents/researcher.md`:
 
 ```markdown
 ---
 description: Explores and synthesizes knowledge
-specialty: reasoning
 tools:
   semantic_search: true
   read_note: true
   create_note: ask
+  bash: deny
 mcps:
   - context7
 ---
@@ -56,133 +59,66 @@ You are a research assistant specializing in knowledge exploration.
 - Acknowledge gaps in knowledge
 ```
 
+Only `description` is required. The card's name defaults to its file stem (`researcher` above); `version` defaults to `0.1.0`.
+
 ## Frontmatter Fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `description` | Yes | Brief description |
-| `specialty` | Yes | Model category (coder, vision, reasoning, etc.) |
-| `tools` | No | Tool permissions (true/ask/deny) |
-| `mcps` | No | List of MCP servers to connect |
-| `model` | No | Specific model override (avoid for portability) |
+| `description` | Yes | Brief description (shown in delegation target listings) |
+| `name` | No | Card name (default: file stem) |
+| `version` | No | Semantic version (default: `0.1.0`) |
+| `tools` | No | Per-tool permissions (`true`/`false`/`allow`/`ask`/`deny`) |
+| `mcps` | No | MCP servers this agent can use (alias: `mcp_servers`) |
+| `provider` | No | Provider override (`ollama`, `anthropic`, …); omit to inherit |
+| `model` | No | Model override; omit to inherit (better portability) |
+| `temperature` | No | Sampling temperature override |
+| `max_tokens` | No | Max output tokens override |
+| `max_turns` | No | Max tool-loop turns per message |
+| `mode` | No | Initial mode (`auto`/`plan`) |
+| `specialty` | No | Informational label (e.g. `reasoning`); metadata only |
+| `tags` | No | Tags for discovery |
 
-## Specialty Field
-
-The `specialty` field maps to a model category from your config. This keeps agent cards portable - recipients use their own preferred model for each specialty.
-
-| Specialty | Use Case |
-|-----------|----------|
-| `coder` | General programming tasks |
-| `vision` | Image analysis, diagrams |
-| `designer` | UI/UX, visual design |
-| `writing` | Documentation, prose |
-| `reasoning` | Complex analysis, planning |
-
-Configure your preferred models in `config.toml`:
-
-```toml
-[models]
-coder = "claude-sonnet-4"
-vision = "claude-sonnet-4"
-reasoning = "o1-preview"
-writing = "claude-haiku"
-```
+When `provider`/`model` are omitted, the agent inherits them from the spawning context — the delegating parent's model, or the configured default for `session.create`. That keeps cards portable across machines with different providers.
 
 ## Tool Permissions
 
-Tools can have three permission levels that interact with [[Help/TUI/Modes|runtime modes]]:
-
 ```yaml
 tools:
-  semantic_search: true    # Always allowed
-  write_file: ask          # Prompt for permission
-  execute_command: deny    # Never allowed for this agent
+  semantic_search: true    # Always allowed, never prompts
+  write_file: ask          # Always prompts (even in permissive contexts)
+  bash: deny               # Not advertised, refused if called
 ```
 
 Permission values:
-- `true` or `allow` - Auto-approve
-- `ask` - Prompt user for each use  
-- `false` or `deny` - Block the tool
+- `true` or `allow` — auto-approve; the permission gate is skipped
+- `ask` — force a prompt for every use, even for read-only tools
+- `false` or `deny` — the tool is removed from the agent's toolset AND refused at dispatch if requested anyway
 
-Tools not listed use the current mode's default behavior.
+Tools not listed use the default behavior (safe read-only tools run freely; mutating tools go through the permission gate). Note: delegated child sessions run non-interactively — for them, `ask` is effectively `deny` unless a permission pattern or Lua hook answers the prompt.
 
-## MCP Connections
+## Delegating to a Card
 
-The `mcps` field lists MCP servers this agent can access:
+An agent whose session has delegation enabled (`delegation_config.enabled`) sees a `delegate_session` tool listing the available cards. Delegation resolves targets in this order: agent card → ACP profile (external agents like `claude`, `opencode`).
 
-```yaml
-mcps:
-  - github        # GitHub API access
-  - context7      # Documentation lookup
-  - filesystem    # Local file access
+```jsonc
+// the parent agent calls:
+delegate_session { "prompt": "Survey what we know about X", "target": "researcher" }
 ```
 
-MCP servers must be configured in your `config.toml`:
+The child runs as a real (hidden) session: the card's system prompt, tool policy, and model, with Precognition and session persistence. See [[Help/Concepts/Delegation]].
 
-```toml
-[mcps.github]
-command = "npx"
-args = ["-y", "@anthropic/mcp-server-github"]
-env = { GITHUB_TOKEN = "..." }
-
-[mcps.context7]
-url = "https://context7.example.com"
-```
-
-## Available Tools
-
-Common tools to include:
-
-**Search tools:**
-- `semantic_search` - Find by meaning
-- `text_search` - Find by keywords
-- `search_by_tags` - Filter by tags
-- `search_by_properties` - Filter by frontmatter
-
-**Note tools:**
-- `read_note` - Read note content
-- `create_note` - Create new notes
-- `update_note` - Modify notes
-
-**Kiln tools:**
-- `list_notes` - List all notes
-- `get_stats` - Kiln statistics
-
-**External tools (via MCP):**
-- `gh_search_code` - GitHub code search
-- `fs_read_file` - Filesystem access
-
-## Directory Structure
-
-```
-your-kiln/
-├── Agents/
-│   ├── Researcher.md    # Research-focused
-│   ├── Coder.md         # Code-focused
-│   ├── Reviewer.md      # Quality review
-│   └── Custom.md        # Your own
-```
-
-## Using Agents
-
-### From CLI
+## Using Cards from the CLI
 
 ```bash
-# Chat with default agent
-cru chat
-
-# Chat with specific agent
-cru chat --agent Researcher
-
-# List available agents
+# List / inspect / validate cards
 cru agents list
-```
+cru agents show researcher
+cru agents validate
 
-### In Chat
-
-```
-/agent Researcher
-/agent Coder
+# Create a session with a card-configured internal agent
+cru session create --type chat   # then session.configure_agent, or:
+# via RPC: session.create { configure_agent: true, agent_name: "researcher" }
 ```
 
 ## Writing Good Prompts
@@ -214,62 +150,9 @@ You catch common mistakes and suggest idiomatic improvements.
 - Don't ignore the user's stated goals
 ```
 
-## Examples in This Kiln
-
-- [[Agents/Researcher]] - Deep exploration
-- [[Agents/Coder]] - Code analysis
-- [[Agents/Reviewer]] - Quality review
-
-## Configuration Override
-
-Agents can override global settings:
-
-```yaml
----
-type: agent
-model: claude-3-opus
-temperature: 0.9
-max_tokens: 4000
----
-```
-
-This agent uses a different model and higher temperature than the default.
-
-## Tool Restrictions
-
-Limit what an agent can do:
-
-```yaml
----
-type: agent
-tools:
-  - read_note
-  - semantic_search
-# No create_note or update_note - read-only agent
----
-```
-
-## Custom Model Endpoints
-
-Use different providers per agent:
-
-```yaml
----
-type: agent
-model: llama3.2
-provider: ollama
----
-
----
-type: agent
-model: gpt-4
-provider: openai
----
-```
-
 ## See Also
 
-- [[Help/Config/agents]] - Agent configuration
+- [[Help/Concepts/Delegation]] - Delegating tasks to other agents
 - [[Help/CLI/chat]] - Chat command
 - [[AI Features]] - All AI capabilities
 - [[Help/Concepts/Agents & Protocols]] - MCP/ACP explained

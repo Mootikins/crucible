@@ -67,6 +67,7 @@ fn parent_agent(delegation: Option<DelegationConfig>) -> SessionAgent {
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
+            tool_policy: None,
         mode: None,
     }
 }
@@ -786,5 +787,196 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
     assert!(
         saw_child_tool_result,
         "child session must emit tool_result events"
+    );
+}
+
+#[tokio::test]
+async fn delegation_to_agent_card_builds_specialized_child() {
+    // A card in the kiln defines a specialized internal agent; targeting it
+    // by name must hand the child factory a SessionAgent carrying the card's
+    // prompt, model, and tool policy layered over the parent's config.
+    let h = setup(
+        parent_agent(Some(delegation_config(true, 3))),
+        MockSubagentBehavior::ImmediateSuccess("card-result".to_string()),
+    )
+    .await;
+
+    let parent = h.session_manager.get_session(&h.parent_id).unwrap();
+    let agents_dir = parent.kiln.join("agents");
+    std::fs::create_dir_all(&agents_dir).unwrap();
+    std::fs::write(
+        agents_dir.join("researcher.md"),
+        "---\ndescription: Explores knowledge\nmodel: llama3.2-card\nmax_turns: 4\ntools:\n  bash: deny\n  semantic_search: true\n---\n\nYou are the researcher card prompt.\n",
+    )
+    .unwrap();
+
+    // Observing override: capture the SessionAgent the child was built from.
+    // The harness already installed an override (first call wins), so build a
+    // fresh harness-free assertion path: spawn and read the CHILD session's
+    // persisted agent config instead — it is the factory's input.
+    let mut req = request(&h, "research something");
+    req.target_agent = Some("researcher".to_string());
+    let spawned = h.service.spawn_delegation(req).await.expect("spawn");
+    let _ = h
+        .service
+        .await_delegation(&spawned.delegation_id, Duration::from_secs(5))
+        .await
+        .expect("await");
+
+    let storage = FileSessionStorage::new();
+    let child = crucible_daemon::session_storage::SessionStorage::load(
+        &storage,
+        &spawned.child_session_id,
+        &parent.kiln,
+    )
+    .await
+    .expect("child session persisted");
+    let agent = child.agent.expect("child has agent config");
+    assert_eq!(agent.agent_type, "internal");
+    assert_eq!(agent.agent_card_name.as_deref(), Some("researcher"));
+    assert_eq!(agent.model, "llama3.2-card");
+    assert_eq!(agent.max_iterations, Some(4));
+    assert!(agent.system_prompt.contains("researcher card prompt"));
+    let policy = agent.tool_policy.expect("card tool policy carried");
+    assert_eq!(policy["bash"], crucible_core::agent::ToolPolicy::Deny);
+    assert_eq!(
+        policy["semantic_search"],
+        crucible_core::agent::ToolPolicy::Allow
+    );
+}
+
+#[tokio::test]
+async fn card_tool_policy_deny_blocks_child_tool_call() {
+    // A child spawned from a card with `bash: deny` must have its bash call
+    // refused by the scheduler with a policy error fed back to the agent.
+    use crucible_core::turn::{StopReason, TurnEvent};
+
+    struct BashCallingAgent;
+    #[async_trait::async_trait]
+    impl crucible_core::turn::Agent for BashCallingAgent {
+        fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+            crucible_core::turn::AgentCapabilities::default()
+        }
+        async fn turn<'a>(
+            &'a mut self,
+            ctx: crucible_core::turn::TurnContext,
+        ) -> Result<futures::stream::BoxStream<'a, TurnEvent>, crucible_core::turn::AgentError>
+        {
+            let mut inbound = ctx.inbound;
+            let body = async_stream::stream! {
+                yield TurnEvent::ToolCall {
+                    id: "call-bash".to_string(),
+                    name: "bash".to_string(),
+                    args: serde_json::json!({"command": "echo hi"}),
+                    diffs: Vec::new(),
+                };
+                yield TurnEvent::ToolBatchEnd;
+                if let Some(rx) = inbound.as_mut() {
+                    while let Some(ev) = rx.recv().await {
+                        if let TurnEvent::ToolResult { error, .. } = ev {
+                            match error {
+                                Some(e) => yield TurnEvent::TextDelta(format!("blocked: {e}")),
+                                None => yield TurnEvent::TextDelta("executed".to_string()),
+                            }
+                            break;
+                        }
+                    }
+                }
+                yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+            };
+            Ok(Box::pin(body))
+        }
+        async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+            Ok(())
+        }
+        async fn switch_model(
+            &mut self,
+            _: &str,
+        ) -> Result<(), crucible_core::turn::NotSupported> {
+            Err(crucible_core::turn::NotSupported::new("switch_model"))
+        }
+    }
+    #[async_trait::async_trait]
+    impl AgentHandle for BashCallingAgent {
+        async fn send_message_fire_and_forget(
+            &mut self,
+            _: String,
+        ) -> crucible_core::traits::chat::ChatResult<()> {
+            Ok(())
+        }
+        async fn set_mode_str(&mut self, _: &str) -> crucible_core::traits::chat::ChatResult<()> {
+            Ok(())
+        }
+    }
+
+    let temp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let (event_tx, _event_rx) = broadcast::channel(256);
+    let service = DelegationService::new(session_manager.clone(), event_tx.clone());
+    let agent_manager = Arc::new(AgentManager::new_with_delegation(
+        AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager: session_manager.clone(),
+            background_manager: Arc::new(crucible_daemon::BackgroundJobManager::new(
+                event_tx.clone(),
+            )),
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+            workspace_tools: Arc::new(WorkspaceTools::new(temp.path().to_path_buf())),
+        },
+        service.clone(),
+    ));
+    service.bind_agent_manager(&agent_manager);
+    agent_manager.set_agent_factory_override(Box::new(|_, _| {
+        Box::pin(async { Ok(Box::new(BashCallingAgent) as Box<dyn AgentHandle + Send + Sync>) })
+    }));
+
+    let agents_dir = temp.path().join("agents");
+    std::fs::create_dir_all(&agents_dir).unwrap();
+    std::fs::write(
+        agents_dir.join("no-bash.md"),
+        "---\ndescription: cannot shell out\ntools:\n  bash: deny\n---\n\nNo shell for you.\n",
+    )
+    .unwrap();
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            temp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    agent_manager
+        .configure_agent(&session.id, parent_agent(Some(delegation_config(true, 3))))
+        .await
+        .unwrap();
+
+    let spawned = service
+        .spawn_delegation(DelegationRequest {
+            parent_session_id: session.id.clone(),
+            prompt: "try to run bash".to_string(),
+            context: None,
+            target_agent: Some("no-bash".to_string()),
+            description: None,
+        })
+        .await
+        .expect("spawn");
+    let result = service
+        .await_delegation(&spawned.delegation_id, Duration::from_secs(10))
+        .await
+        .expect("await");
+
+    assert_eq!(result.info.status, JobStatus::Completed, "err: {:?}", result.error);
+    let output = result.output.unwrap_or_default();
+    assert!(
+        output.contains("blocked:") && output.contains("card tool policy"),
+        "bash must be refused by the card policy; got: {output}"
     );
 }

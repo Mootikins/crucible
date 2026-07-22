@@ -77,7 +77,15 @@ pub(crate) async fn handle_session_create(
     // (or an unparseable provider override) fails without orphaning a session.
     let configure_agent = optional_param!(req, "configure_agent", as_bool).unwrap_or(false);
     let resolved_agent = if configure_agent {
-        match resolve_create_agent(&req, &agent_type, am, llm_config, mcp_config) {
+        match resolve_create_agent(
+            &req,
+            &agent_type,
+            am,
+            llm_config,
+            mcp_config,
+            workspace.as_deref().unwrap_or(&kiln),
+            &kiln,
+        ) {
             Ok(agent) => Some(agent),
             Err(message) => return Response::error(req.id, INVALID_PARAMS, message),
         }
@@ -180,12 +188,15 @@ pub(crate) async fn handle_session_create(
 /// the caller turns into `INVALID_PARAMS` — the session is never created, so an
 /// unknown agent can't orphan an agent-less row. Internal agents get
 /// config-derived defaults (see [`build_default_internal_agent`]).
+#[allow(clippy::too_many_arguments)]
 fn resolve_create_agent(
     req: &Request,
     agent_type: &str,
     am: &Arc<AgentManager>,
     llm_config: &Option<LlmConfig>,
     mcp_config: Option<&McpConfig>,
+    workspace: &std::path::Path,
+    kiln: &std::path::Path,
 ) -> Result<crucible_core::session::SessionAgent, String> {
     if agent_type == "acp" {
         let name = optional_param!(req, "agent_name", as_str).unwrap_or("");
@@ -200,7 +211,28 @@ fn resolve_create_agent(
             None => Err(format!("Unknown ACP agent profile: {name}")),
         }
     } else {
-        build_default_internal_agent(req, llm_config, mcp_config)
+        let base = build_default_internal_agent(req, llm_config, mcp_config)?;
+        // An internal `agent_name` selects an agent card (specialized
+        // internal agent): card prompt/model/tools layered over the
+        // config-derived defaults. Unknown card = error before the session
+        // exists, mirroring the ACP branch.
+        match optional_param!(req, "agent_name", as_str) {
+            Some(name) if !name.is_empty() => {
+                let cards = crate::agent_cards::discover_agent_cards(workspace, Some(kiln));
+                match cards.get(name) {
+                    Some(card) => Ok(crucible_core::session::SessionAgent::from_card(card, &base)),
+                    None => {
+                        let mut names: Vec<_> = cards.keys().cloned().collect();
+                        names.sort();
+                        Err(format!(
+                            "Unknown agent card: {name}. Available cards: {}",
+                            if names.is_empty() { "(none)".to_string() } else { names.join(", ") }
+                        ))
+                    }
+                }
+            }
+            _ => Ok(base),
+        }
     }
 }
 
@@ -298,6 +330,7 @@ fn build_default_internal_agent(
         output_validation: Default::default(),
         validation_retries: 3,
         autocompact_threshold: None,
+            tool_policy: None,
         mode: None,
     })
 }

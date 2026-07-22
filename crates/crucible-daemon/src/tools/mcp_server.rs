@@ -295,16 +295,32 @@ impl CrucibleMcpServer {
             tools.retain(|t| t.name != "delegate_session");
         }
 
-        // Enrich description when enabled with targets
+        // Enrich the description with the available targets: the configured
+        // allowlist when present, otherwise the agent cards discoverable in
+        // this workspace/kiln (specialized internal agents).
         if let Some(delegation_context) = &self.delegation_context {
-            if !delegation_context.targets.is_empty() {
-                if let Some(delegate_tool) = tools.iter_mut().find(|t| t.name == "delegate_session")
-                {
-                    let targets_str = delegation_context.targets.join(", ");
-                    let new_desc = format!(
-                        "Delegate a task to another AI agent. Available delegation targets: {targets_str}. The target agent receives the prompt, executes the task, and returns the result."
-                    );
-                    delegate_tool.description = Some(new_desc.into());
+            if delegation_available {
+                let mut targets = delegation_context.targets.clone();
+                if targets.is_empty() {
+                    targets = crate::agent_cards::discover_agent_cards(
+                        &self.workspace_path,
+                        Some(self.kiln_path.as_path()),
+                    )
+                    .keys()
+                    .cloned()
+                    .collect();
+                    targets.sort();
+                }
+                if !targets.is_empty() {
+                    if let Some(delegate_tool) =
+                        tools.iter_mut().find(|t| t.name == "delegate_session")
+                    {
+                        let targets_str = targets.join(", ");
+                        let new_desc = format!(
+                            "Delegate a task to another AI agent. Available delegation targets: {targets_str}. The target agent receives the prompt, executes the task, and returns the result."
+                        );
+                        delegate_tool.description = Some(new_desc.into());
+                    }
                 }
             }
         }
