@@ -150,6 +150,8 @@ pub struct TuiTestSession {
     recording: bool,
     /// vt100 terminal emulator — accumulates all PTY output into a queryable screen buffer.
     vt_parser: Vt100Parser,
+    /// Hermetic HOME for the PTY child — kept alive for the session's lifetime.
+    _home: tempfile::TempDir,
 }
 
 /// A timestamped chunk of output for granular analysis and replay
@@ -191,38 +193,50 @@ impl TuiTestSession {
     pub fn spawn(config: TuiTestConfig) -> Result<Self, expectrl::Error> {
         let binary = config.find_binary();
 
-        // Env vars are scoped to the child via `/usr/bin/env` rather than
+        // Env vars are scoped to the child via `/usr/bin/env -i` rather than
         // `std::env::set_var`: mutating the test process's environment is
-        // process-global and races under parallel nextest runs. expectrl's
-        // string spawn tokenizes on whitespace, so reject values that would
-        // split — none of our test env values (socket/config paths) contain
-        // spaces.
-        let mut cmd = String::new();
-        if !config.env.is_empty() || config.working_dir.is_some() {
-            cmd.push_str("/usr/bin/env");
-            if let Some(dir) = &config.working_dir {
-                // `env -C DIR` is a GNU coreutils extension (fine on the Linux CI
-                // these PTY tests run on; not portable to BSD/macOS env).
-                let dir = dir.display().to_string();
-                assert!(
-                    !dir.contains(char::is_whitespace),
-                    "working_dir {dir} contains whitespace; expectrl string spawn cannot pass it"
-                );
-                cmd.push_str(" -C ");
-                cmd.push_str(&dir);
-            }
-            for (key, value) in &config.env {
-                assert!(
-                    !key.contains(char::is_whitespace) && !value.contains(char::is_whitespace),
-                    "env var {key}={value} contains whitespace; expectrl string spawn cannot pass it"
-                );
-                cmd.push(' ');
-                cmd.push_str(key);
-                cmd.push('=');
-                cmd.push_str(value);
-            }
-            cmd.push(' ');
+        // process-global and races under parallel nextest runs — and `-i`
+        // clears the inherited environment entirely, so the PTY child can
+        // never see the developer's real provider credentials or config.
+        // The allowlist (hermetic_env_pairs) is applied first; the test's
+        // own `config.env` follows and wins (env applies left-to-right).
+        // expectrl's string spawn tokenizes on whitespace, so reject values
+        // that would split — none of our test env values (socket/config
+        // paths) contain spaces.
+        let home = tempfile::tempdir().expect("create hermetic HOME for TUI child");
+        let mut pairs = crucible_core::test_support::hermetic_env_pairs(home.path());
+        // A TUI child needs a terminal type; parents under CI may not have one.
+        if !pairs.iter().any(|(k, _)| k == "TERM") {
+            pairs.push(("TERM".to_string(), "xterm-256color".to_string()));
         }
+
+        let mut cmd = String::from("/usr/bin/env -i");
+        if let Some(dir) = &config.working_dir {
+            // `env -C DIR` is a GNU coreutils extension (fine on the Linux CI
+            // these PTY tests run on; not portable to BSD/macOS env).
+            let dir = dir.display().to_string();
+            assert!(
+                !dir.contains(char::is_whitespace),
+                "working_dir {dir} contains whitespace; expectrl string spawn cannot pass it"
+            );
+            cmd.push_str(" -C ");
+            cmd.push_str(&dir);
+        }
+        for (key, value) in pairs
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .chain(config.env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+        {
+            assert!(
+                !key.contains(char::is_whitespace) && !value.contains(char::is_whitespace),
+                "env var {key}={value} contains whitespace; expectrl string spawn cannot pass it"
+            );
+            cmd.push(' ');
+            cmd.push_str(key);
+            cmd.push('=');
+            cmd.push_str(value);
+        }
+        cmd.push(' ');
         cmd.push_str(&format!("{} {}", binary.display(), config.subcommand));
 
         for arg in &config.args {
@@ -242,6 +256,7 @@ impl TuiTestSession {
             start_time: Instant::now(),
             recording: false,
             vt_parser,
+            _home: home,
         })
     }
 

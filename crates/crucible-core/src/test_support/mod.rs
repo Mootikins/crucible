@@ -12,11 +12,13 @@
 
 pub mod env_guard;
 pub mod fixtures;
+pub mod hermetic_env;
 pub mod mocks;
 
 // Re-export common fixture types and utilities for convenience
 pub use env_guard::EnvVarGuard;
 pub use fixtures::{create_kiln, KilnFixture};
+pub use hermetic_env::hermetic_env_pairs;
 
 use anyhow::{Context, Result};
 use std::path::Path;

@@ -4,6 +4,7 @@
 //! used by cli_e2e_internal, cli_e2e_acp, and cli_e2e_delegation tests.
 
 use assert_cmd::Command;
+use crucible_core::test_support::hermetic_env_pairs;
 use std::fs;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -72,7 +73,15 @@ impl TestDaemon {
         // Single binary: daemon runs via `cru daemon serve`
         let cru_exe = env!("CARGO_BIN_EXE_cru");
 
-        let mut process = StdCommand::new(cru_exe)
+        // Hermetic child env: the daemon must never inherit the developer's
+        // real provider credentials (it could make real API calls) or real
+        // ~/.crucible state. env_clear + allowlist, rooted in the TempDir.
+        let mut daemon_cmd = StdCommand::new(cru_exe);
+        daemon_cmd.env_clear();
+        for (k, v) in hermetic_env_pairs(temp_dir.path()) {
+            daemon_cmd.env(k, v);
+        }
+        let mut process = daemon_cmd
             .args(["--config", config_path.to_str().unwrap(), "daemon", "serve"])
             .env("CRUCIBLE_SOCKET", &socket_path)
             .stdin(Stdio::null())
@@ -102,9 +111,14 @@ impl TestDaemon {
         );
     }
 
-    /// Create a `cru` command pre-wired with CRUCIBLE_SOCKET and --config.
+    /// Create a `cru` command pre-wired with CRUCIBLE_SOCKET and --config,
+    /// in the same hermetic environment as the daemon (no real credentials).
     pub fn command(&self) -> Command {
         let mut cmd = cru();
+        cmd.env_clear();
+        for (k, v) in hermetic_env_pairs(self._temp_dir.path()) {
+            cmd.env(k, v);
+        }
         cmd.env("CRUCIBLE_SOCKET", &self.socket_path)
             .arg("--config")
             .arg(&self.config_path);

@@ -125,6 +125,19 @@ pub fn verify_api_key(state: &ApiKeyState, provided: &str) -> bool {
 /// 2. Read from `~/.config/crucible/api_key`
 /// 3. Generate a random 32-char alphanumeric key and persist it there
 pub fn resolve_api_key(configured_key: Option<&str>) -> Option<String> {
+    resolve_api_key_at(configured_key, api_key_path())
+}
+
+/// [`resolve_api_key`] with an injectable key-file path.
+///
+/// Tests MUST use this with a TempDir-rooted path: the default path is the
+/// developer's real `~/.config/crucible/api_key`, and the fallback both
+/// READS that credential and, when absent/empty, WRITES a generated one —
+/// neither may ever happen from a test.
+pub fn resolve_api_key_at(
+    configured_key: Option<&str>,
+    key_path: Option<std::path::PathBuf>,
+) -> Option<String> {
     match configured_key {
         // Explicitly set to empty string — auth disabled.
         Some("") => return None,
@@ -133,7 +146,7 @@ pub fn resolve_api_key(configured_key: Option<&str>) -> Option<String> {
         None => {}
     }
 
-    let key_path = dirs::config_dir()?.join("crucible").join("api_key");
+    let key_path = key_path?;
 
     if key_path.exists() {
         let contents = std::fs::read_to_string(&key_path).ok()?;
@@ -581,6 +594,44 @@ mod tests {
     #[test]
     fn resolve_api_key_returns_explicit_value() {
         assert_eq!(resolve_api_key(Some("my-key")), Some("my-key".to_string()));
+    }
+
+    // The file-fallback paths are exercised ONLY through the injectable
+    // variant — resolve_api_key(None) reads (and can create) the real
+    // ~/.config/crucible/api_key, which a test must never touch.
+    #[test]
+    fn resolve_api_key_at_reads_and_trims_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("api_key");
+        std::fs::write(&path, "  stored-key\n").unwrap();
+        assert_eq!(
+            resolve_api_key_at(None, Some(path)),
+            Some("stored-key".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_api_key_at_generates_and_persists_when_missing_or_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested").join("api_key");
+
+        let generated = resolve_api_key_at(None, Some(path.clone())).expect("generated key");
+        assert_eq!(generated.len(), 32);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), generated);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+
+        // A second resolve returns the persisted key, not a fresh one.
+        assert_eq!(resolve_api_key_at(None, Some(path)), Some(generated));
+    }
+
+    #[test]
+    fn resolve_api_key_at_without_path_disables_auth() {
+        assert_eq!(resolve_api_key_at(None, None), None);
     }
 
     // --- Localhost shell auth tests ---

@@ -35,8 +35,15 @@ impl TestDaemon {
                 .expect("target dir");
             target_dir.join("cru").to_string_lossy().to_string()
         });
-        // Spawn daemon with custom socket path via environment variable
-        let process = Command::new(&cru_exe)
+        // Spawn daemon with a HERMETIC environment: env_clear + allowlist so
+        // the developer's real provider credentials (which could drive real
+        // API calls) and real ~/.crucible state never reach the child.
+        let mut cmd = Command::new(&cru_exe);
+        cmd.env_clear();
+        for (k, v) in crucible_core::test_support::hermetic_env_pairs(temp_dir.path()) {
+            cmd.env(k, v);
+        }
+        let process = cmd
             .args(["daemon", "serve"])
             .env("CRUCIBLE_SOCKET", &socket_path)
             // Scope the config home to this test's TempDir (child-process env, no
@@ -85,6 +92,12 @@ impl TestDaemon {
         });
 
         let mut cmd = Command::new(&cru_exe);
+        // Hermetic base (cleared + allowlist) — see start(); caller-supplied
+        // vars are applied on top and win.
+        cmd.env_clear();
+        for (k, v) in crucible_core::test_support::hermetic_env_pairs(temp_dir.path()) {
+            cmd.env(k, v);
+        }
         cmd.args(["daemon", "serve"])
             .env("CRUCIBLE_SOCKET", &socket_path)
             // Default the config home to this test's TempDir; a caller-supplied

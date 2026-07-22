@@ -52,6 +52,11 @@ fn demo_fixture_renders_without_rpc_error() {
     let fake_sock = tmp.path().join("crucible.sock");
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_cru"));
+    // Hermetic child env: no real credentials or config reach the PTY child.
+    cmd.env_clear();
+    for (k, v) in crucible_core::test_support::hermetic_env_pairs(tmp.path()) {
+        cmd.env(k, v);
+    }
     cmd.args(["chat", "--replay"])
         .arg(&fixture)
         .args(["--replay-speed", "100", "--replay-auto-exit", "200"])

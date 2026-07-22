@@ -58,6 +58,7 @@
 //! assert!(env.secrets_file_exists());
 //! ```
 
+use crucible_core::test_support::hermetic_env_pairs;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -67,8 +68,13 @@ use tempfile::TempDir;
 
 /// Environment isolation for auth E2E tests
 ///
-/// Creates temporary directories for `$HOME` and `$XDG_CONFIG_HOME`, sets environment
-/// variables, and provides helpers for credential fixture injection.
+/// Commands run with a CLEARED environment plus an explicit allowlist
+/// (see `crucible_core::test_support::hermetic_env_pairs`): the child sees
+/// a temporary `$HOME`/`$XDG_CONFIG_HOME` and no real provider credentials.
+/// The test process's own environment is never touched — the old
+/// `env::remove_var`/restore dance was process-global (racy under parallel
+/// runs) and only scrubbed a hardcoded list of variables, while everything
+/// else still leaked into the child.
 ///
 /// Cleanup is automatic via `TempDir` RAII guards.
 pub struct AuthTestEnv {
@@ -76,10 +82,8 @@ pub struct AuthTestEnv {
     temp_home: TempDir,
     /// Temporary XDG_CONFIG_HOME directory
     temp_config: TempDir,
-    /// Environment variables to set on commands (name -> value)
+    /// Extra environment variables to set on commands (name -> value)
     env_vars: Arc<Mutex<HashMap<String, String>>>,
-    /// Original environment variables (for restoration)
-    original_env: Arc<Mutex<HashMap<String, Option<String>>>>,
 }
 
 impl AuthTestEnv {
@@ -88,37 +92,15 @@ impl AuthTestEnv {
     /// Sets up:
     /// - Temporary `$HOME` directory
     /// - Temporary `$XDG_CONFIG_HOME` directory
-    /// - Clean environment variables (no real API keys leak into tests)
+    /// - Hermetic child environment (no real API keys can reach commands)
     pub fn new() -> Self {
         let temp_home = TempDir::new().expect("Failed to create temp HOME");
         let temp_config = TempDir::new().expect("Failed to create temp XDG_CONFIG_HOME");
 
-        let mut env_vars = HashMap::new();
-        env_vars.insert("HOME".to_string(), temp_home.path().display().to_string());
-        env_vars.insert(
-            "XDG_CONFIG_HOME".to_string(),
-            temp_config.path().display().to_string(),
-        );
-
-        // Clear provider API key env vars to prevent leakage from real environment
-        let api_key_vars = [
-            "OPENAI_API_KEY",
-            "ANTHROPIC_API_KEY",
-            "OLLAMA_HOST",
-            "CRUCIBLE_API_KEY",
-        ];
-
-        let mut original_env = HashMap::new();
-        for var in &api_key_vars {
-            original_env.insert(var.to_string(), env::var(var).ok());
-            env::remove_var(var);
-        }
-
         Self {
             temp_home,
             temp_config,
-            env_vars: Arc::new(Mutex::new(env_vars)),
-            original_env: Arc::new(Mutex::new(original_env)),
+            env_vars: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -182,9 +164,9 @@ impl AuthTestEnv {
         self
     }
 
-    /// Set an environment variable for this test
+    /// Set an environment variable for commands run through this env.
     ///
-    /// The variable is passed to commands via `assert_cmd` and cleaned up on drop.
+    /// Child-scoped only — the test process's environment is untouched.
     ///
     /// # Example
     ///
@@ -197,15 +179,6 @@ impl AuthTestEnv {
             let mut env_vars = self.env_vars.lock().unwrap();
             env_vars.insert(name.to_string(), value.to_string());
         }
-
-        // Track original value for restoration
-        {
-            let mut original_env = self.original_env.lock().unwrap();
-            if !original_env.contains_key(name) {
-                original_env.insert(name.to_string(), env::var(name).ok());
-            }
-        }
-
         self
     }
 
@@ -271,7 +244,16 @@ impl AuthTestEnv {
         let mut cmd = assert_cmd::Command::new(env!("CARGO_BIN_EXE_cru"));
         cmd.arg(subcommand);
 
-        // Apply environment variables
+        // Hermetic base env (cleared + allowlist, rooted at temp HOME) —
+        // no real credentials can reach the child by construction.
+        cmd.env_clear();
+        for (key, value) in hermetic_env_pairs(self.temp_home.path()) {
+            cmd.env(key, value);
+        }
+        // This fixture keeps XDG_CONFIG_HOME as its own TempDir.
+        cmd.env("XDG_CONFIG_HOME", self.temp_config.path());
+
+        // Test-specific overrides win last.
         let env_vars = self.env_vars.lock().unwrap();
         for (key, value) in env_vars.iter() {
             cmd.env(key, value);
@@ -311,19 +293,6 @@ model = "llama3.2"
             .expect("Failed to write config.toml");
 
         kiln_path
-    }
-}
-
-impl Drop for AuthTestEnv {
-    fn drop(&mut self) {
-        // Restore original environment variables
-        let original_env = self.original_env.lock().unwrap();
-        for (key, original_value) in original_env.iter() {
-            match original_value {
-                Some(value) => env::set_var(key, value),
-                None => env::remove_var(key),
-            }
-        }
     }
 }
 
@@ -415,16 +384,18 @@ mod tests {
     }
 
     #[test]
-    fn test_env_cleanup_restores_variables() {
-        let original_home = env::var("HOME").ok();
-
+    fn test_process_env_is_never_mutated() {
+        // Constructing (and dropping) the fixture must not touch the test
+        // process's environment — isolation is applied to CHILD commands
+        // only. The old implementation removed real provider keys globally
+        // and restored them on drop, racing parallel tests.
+        let home_before = env::var("HOME").ok();
+        let key_before = env::var("OPENAI_API_KEY").ok();
         {
-            let _env = AuthTestEnv::new();
-            // HOME is modified inside this scope
+            let _env = AuthTestEnv::new().with_env_var("OPENAI_API_KEY", "sk-child-only");
         }
-
-        // After drop, HOME should be restored
-        assert_eq!(env::var("HOME").ok(), original_home);
+        assert_eq!(env::var("HOME").ok(), home_before);
+        assert_eq!(env::var("OPENAI_API_KEY").ok(), key_before);
     }
 
     #[test]

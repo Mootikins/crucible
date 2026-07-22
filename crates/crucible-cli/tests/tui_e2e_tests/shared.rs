@@ -63,6 +63,12 @@ pub(super) fn provider_test_config() -> TuiTestConfig {
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(15));
 
+    // The PTY harness spawns children with a HERMETIC environment (env -i +
+    // allowlist, temp HOME) — the child cannot see the developer's real
+    // ~/.config. Live-provider tests therefore MUST point at their provider
+    // explicitly via CRUCIBLE_TEST_CONFIG=<config.toml>; the old implicit
+    // fallback to the developer's real config was exactly the credential
+    // leak the hermetic env removes.
     if let Ok(cfg_path) = std::env::var("CRUCIBLE_TEST_CONFIG") {
         config.args = vec!["--config".to_string(), cfg_path];
     }

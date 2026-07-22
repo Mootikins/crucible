@@ -49,7 +49,13 @@ fn replay_makes_no_socket_or_network_syscalls() {
     // typically not a TTY, so `Terminal::new()` fails and the process exits.
     // That is fine: the invariant we assert is about syscalls, not exit code.
     // `Stdio::null()` makes the non-TTY behavior deterministic.
-    let status = Command::new("strace")
+    let mut cmd = Command::new("strace");
+    // Hermetic child env: no real credentials or config reach the traced cru.
+    cmd.env_clear();
+    for (k, v) in crucible_core::test_support::hermetic_env_pairs(tmp.path()) {
+        cmd.env(k, v);
+    }
+    let status = cmd
         .args(["-f", "-e", "trace=connect,socket", "-o"])
         .arg(&trace_file)
         .arg(env!("CARGO_BIN_EXE_cru"))
