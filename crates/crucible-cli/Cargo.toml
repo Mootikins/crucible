@@ -142,7 +142,7 @@ toml = { workspace = true }
 
 [dev-dependencies]
 # MCP client for testing examples
-rmcp = { version = "1.4", features = ["client", "transport-child-process"] }
+rmcp = { version = "2.2", features = ["client", "transport-child-process"] }
 tempfile = { workspace = true }
 assert_cmd = { workspace = true }
 predicates = { workspace = true }
