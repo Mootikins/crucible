@@ -155,8 +155,11 @@ async fn test_tool_dispatch_executes_read_file() {
 
 #[test]
 fn test_delegation_context_construction() {
-    use crucible_core::background::{BackgroundSpawner, JobError, JobId, JobInfo, JobResult};
+    use crucible_core::background::{
+        BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult,
+    };
     use crucible_core::config::DataClassification;
+    use crucible_daemon::delegation::{DelegationRequest, DelegationSpawned, DelegationSpawner};
     use std::path::PathBuf as StdPathBuf;
     use std::time::Duration;
 
@@ -175,15 +178,6 @@ fn test_delegation_context_construction() {
             Ok("mock-bash-job".to_string())
         }
 
-        async fn spawn_subagent(
-            &self,
-            _session_id: &str,
-            _prompt: String,
-            _context: Option<String>,
-        ) -> Result<JobId, JobError> {
-            Ok("mock-subagent-job".to_string())
-        }
-
         fn list_jobs(&self, _session_id: &str) -> Vec<JobInfo> {
             vec![]
         }
@@ -197,16 +191,63 @@ fn test_delegation_context_construction() {
         }
     }
 
+    struct MockDelegationSpawner;
+
+    #[async_trait::async_trait]
+    impl DelegationSpawner for MockDelegationSpawner {
+        async fn spawn_delegation(
+            &self,
+            _req: DelegationRequest,
+        ) -> Result<DelegationSpawned, JobError> {
+            Ok(DelegationSpawned {
+                delegation_id: "agent-child-test".to_string(),
+                child_session_id: "agent-child-test".to_string(),
+                message_id: "msg-test".to_string(),
+            })
+        }
+
+        async fn await_delegation(
+            &self,
+            delegation_id: &str,
+            _timeout: Duration,
+        ) -> Result<JobResult, JobError> {
+            let mut info = JobInfo::new(
+                "test-session-123".to_string(),
+                JobKind::Subagent {
+                    prompt: "test".to_string(),
+                    context: None,
+                },
+            );
+            info.id = delegation_id.to_string();
+            info.mark_completed();
+            Ok(JobResult::success(info, "done".to_string()))
+        }
+
+        fn list_delegations(&self, _parent_session_id: &str) -> Vec<JobInfo> {
+            Vec::new()
+        }
+
+        fn get_delegation_result(&self, _delegation_id: &str) -> Option<JobResult> {
+            None
+        }
+
+        async fn cancel_delegation(&self, _delegation_id: &str) -> bool {
+            false
+        }
+    }
+
     let spawner = Arc::new(MockSpawner) as Arc<dyn BackgroundSpawner>;
     let targets = vec!["claude".to_string(), "opencode".to_string()];
 
     let ctx = DelegationContext {
         background_spawner: spawner,
+        delegation_spawner: Arc::new(MockDelegationSpawner),
         session_id: "test-session-123".to_string(),
         targets: targets.clone(),
         enabled: true,
         depth: 0,
         result_max_bytes: 51200,
+        timeout_secs: 300,
         data_classification: DataClassification::default(),
     };
 
@@ -221,11 +262,13 @@ fn test_delegation_context_construction() {
     // Verify disabled delegation context
     let disabled_ctx = DelegationContext {
         background_spawner: Arc::new(MockSpawner),
+        delegation_spawner: Arc::new(MockDelegationSpawner),
         session_id: "disabled-session".to_string(),
         targets: vec![],
         enabled: false,
         depth: 0,
         result_max_bytes: 51200,
+        timeout_secs: 300,
         data_classification: DataClassification::default(),
     };
 
@@ -284,8 +327,11 @@ async fn test_mcp_host_initializes() {
 
 #[tokio::test]
 async fn test_mcp_host_initializes_with_delegation_context() {
-    use crucible_core::background::{BackgroundSpawner, JobError, JobId, JobInfo, JobResult};
+    use crucible_core::background::{
+        BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult,
+    };
     use crucible_core::config::DataClassification;
+    use crucible_daemon::delegation::{DelegationRequest, DelegationSpawned, DelegationSpawner};
     use std::path::PathBuf as StdPathBuf;
     use std::time::Duration;
 
@@ -303,15 +349,6 @@ async fn test_mcp_host_initializes_with_delegation_context() {
             Ok("mock-bash-job".to_string())
         }
 
-        async fn spawn_subagent(
-            &self,
-            _session_id: &str,
-            _prompt: String,
-            _context: Option<String>,
-        ) -> Result<JobId, JobError> {
-            Ok("mock-subagent-job".to_string())
-        }
-
         fn list_jobs(&self, _session_id: &str) -> Vec<JobInfo> {
             vec![]
         }
@@ -325,17 +362,64 @@ async fn test_mcp_host_initializes_with_delegation_context() {
         }
     }
 
+    struct MockDelegationSpawner;
+
+    #[async_trait::async_trait]
+    impl DelegationSpawner for MockDelegationSpawner {
+        async fn spawn_delegation(
+            &self,
+            _req: DelegationRequest,
+        ) -> Result<DelegationSpawned, JobError> {
+            Ok(DelegationSpawned {
+                delegation_id: "agent-child-test".to_string(),
+                child_session_id: "agent-child-test".to_string(),
+                message_id: "msg-test".to_string(),
+            })
+        }
+
+        async fn await_delegation(
+            &self,
+            delegation_id: &str,
+            _timeout: Duration,
+        ) -> Result<JobResult, JobError> {
+            let mut info = JobInfo::new(
+                "mcp-delegation-test".to_string(),
+                JobKind::Subagent {
+                    prompt: "test".to_string(),
+                    context: None,
+                },
+            );
+            info.id = delegation_id.to_string();
+            info.mark_completed();
+            Ok(JobResult::success(info, "done".to_string()))
+        }
+
+        fn list_delegations(&self, _parent_session_id: &str) -> Vec<JobInfo> {
+            Vec::new()
+        }
+
+        fn get_delegation_result(&self, _delegation_id: &str) -> Option<JobResult> {
+            None
+        }
+
+        async fn cancel_delegation(&self, _delegation_id: &str) -> bool {
+            false
+        }
+    }
+
     let temp = TempDir::new().expect("temp dir");
     let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
     let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
 
     let delegation_ctx = DelegationContext {
         background_spawner: Arc::new(MockSpawner),
+        delegation_spawner: Arc::new(MockDelegationSpawner),
         session_id: "mcp-delegation-test".to_string(),
         targets: vec!["claude".to_string()],
         enabled: true,
         depth: 0,
         result_max_bytes: 51200,
+        timeout_secs: 300,
         data_classification: DataClassification::default(),
     };
 

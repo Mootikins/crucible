@@ -226,7 +226,11 @@ fn resolve_create_agent(
                         names.sort();
                         Err(format!(
                             "Unknown agent card: {name}. Available cards: {}",
-                            if names.is_empty() { "(none)".to_string() } else { names.join(", ") }
+                            if names.is_empty() {
+                                "(none)".to_string()
+                            } else {
+                                names.join(", ")
+                            }
                         ))
                     }
                 }
@@ -330,7 +334,7 @@ fn build_default_internal_agent(
         output_validation: Default::default(),
         validation_retries: 3,
         autocompact_threshold: None,
-            tool_policy: None,
+        tool_policy: None,
         mode: None,
     })
 }

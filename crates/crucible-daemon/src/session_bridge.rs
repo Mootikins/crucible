@@ -415,10 +415,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
         let am = self.agent_manager.clone();
         Box::pin(async move {
             let timeout = std::time::Duration::from_secs_f64(timeout_secs.unwrap_or(120.0));
-            let results = am
-                .background_manager()
-                .collect_jobs(&job_ids, timeout)
-                .await;
+            let results = am.collect_jobs(&job_ids, timeout).await;
             Ok(results)
         })
     }

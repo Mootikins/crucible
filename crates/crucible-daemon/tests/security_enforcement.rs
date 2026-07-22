@@ -126,7 +126,6 @@ impl AgentHandle for OneToolAgent {
 struct Rig {
     _temp: TempDir,
     workspace: std::path::PathBuf,
-    session_manager: Arc<SessionManager>,
     agent_manager: Arc<AgentManager>,
     event_tx: broadcast::Sender<crucible_daemon::SessionEventMessage>,
     session_id: String,
@@ -173,7 +172,6 @@ async fn rig(
     Rig {
         _temp: temp,
         workspace,
-        session_manager: session_manager.clone(),
         agent_manager,
         event_tx,
         session_id: session.id,
@@ -185,7 +183,13 @@ impl Rig {
     async fn run_turn(&self) -> String {
         let (_, rx) = self
             .agent_manager
-            .send_message_notified(&self.session_id, "go".to_string(), &self.event_tx, false, None)
+            .send_message_notified(
+                &self.session_id,
+                "go".to_string(),
+                &self.event_tx,
+                false,
+                None,
+            )
             .await
             .expect("send");
         let outcome = tokio::time::timeout(Duration::from_secs(10), rx)
@@ -205,7 +209,12 @@ async fn permissions_config_deny_blocks_internal_agent_bash() {
         deny: vec!["bash:*".to_string()],
         ask: vec![],
     };
-    let r = rig("bash", serde_json::json!({"command": "echo pwned"}), Some(config)).await;
+    let r = rig(
+        "bash",
+        serde_json::json!({"command": "echo pwned"}),
+        Some(config),
+    )
+    .await;
     let text = r.run_turn().await;
     assert!(
         text.contains("ERROR") && text.contains("denied by permissions config"),
@@ -303,7 +312,12 @@ async fn shell_policy_whitelist_restricts_bash_tool() {
 #[tokio::test]
 async fn workspace_read_outside_allowed_roots_is_contained() {
     // Previously an internal agent could read any host path unprompted.
-    let r = rig("read_file", serde_json::json!({"path": "/etc/passwd"}), None).await;
+    let r = rig(
+        "read_file",
+        serde_json::json!({"path": "/etc/passwd"}),
+        None,
+    )
+    .await;
     let text = r.run_turn().await;
     assert!(
         text.contains("ERROR") && text.contains("allowed roots"),

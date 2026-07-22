@@ -167,14 +167,14 @@ end
 ```
 
 For true parallelism, use the subagent-spawning path instead. Tools
-that delegate work via `BackgroundJobManager` produce job ids; collect
+that delegate work produce delegation ids (the child session id); collect
 them all at once:
 
 ```lua
 -- Inside a tool handler with access to the subagent factory:
 local job_ids = {}
 for _, agent in ipairs({ "researcher", "skeptic", "writer" }) do
-    -- spawn_subagent returns a job id; see the delegate_session tool
+    -- delegate_session returns a delegation id (child session id)
     -- and your plugin's subagent factory for the exact call shape.
     job_ids[#job_ids + 1] = spawn_subagent(agent, prompt)
 end

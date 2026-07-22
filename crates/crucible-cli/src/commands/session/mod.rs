@@ -37,7 +37,18 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             state,
             all,
             include_children,
-        } => list::list(config, limit, session_type, format, state, all, include_children).await,
+        } => {
+            list::list(
+                config,
+                limit,
+                session_type,
+                format,
+                state,
+                all,
+                include_children,
+            )
+            .await
+        }
         SessionCommands::Search {
             query,
             limit,

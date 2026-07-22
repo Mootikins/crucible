@@ -29,6 +29,7 @@ pub mod tool_modes;
 pub mod toon_response;
 pub mod utils;
 pub mod workspace;
+pub(crate) mod workspace_defs;
 
 // ===== PUBLIC API EXPORTS =====
 

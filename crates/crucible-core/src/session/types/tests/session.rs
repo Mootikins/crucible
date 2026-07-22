@@ -123,7 +123,7 @@ fn test_session_with_agent() {
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
         autocompact_threshold: None,
-            tool_policy: None,
+        tool_policy: None,
         mode: None,
     };
 
@@ -187,7 +187,7 @@ fn test_session_summary_includes_agent_model() {
         output_validation: OutputValidation::default(),
         validation_retries: default_validation_retries(),
         autocompact_threshold: None,
-            tool_policy: None,
+        tool_policy: None,
         mode: None,
     };
 

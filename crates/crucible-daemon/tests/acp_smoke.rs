@@ -10,16 +10,22 @@
 //! cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent
 //! ```
 
-use crucible_core::background::{JobResult, JobStatus};
+use crucible_core::background::JobStatus;
 use crucible_core::config::{AcpConfig, AgentProfile, BackendType, DelegationConfig};
 use crucible_core::session::RecordingMode;
-use crucible_core::session::{OutputValidation, SessionAgent};
+use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::turn::{Agent, TurnContext, TurnEvent};
 use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
-use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
+use crucible_daemon::agent_manager::AgentFactoryOverride;
+use crucible_daemon::background_manager::BackgroundJobManager;
+use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::recording::RecordingWriter;
+use crucible_daemon::tools::workspace::WorkspaceTools;
+use crucible_daemon::{
+    AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
+};
 use futures::StreamExt;
 use std::collections::HashMap;
 use std::future::Future;
@@ -28,7 +34,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::{broadcast, oneshot};
-use tokio::time::{sleep, Instant};
 use tokio::time::{timeout, Duration};
 
 /// Returns the path to the mock-acp-agent binary.
@@ -87,22 +92,34 @@ pub fn mock_session_agent(agent_path: &str) -> SessionAgent {
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
+        tool_policy: None,
     }
 }
 
 fn delegation_enabled_agent(agent_path: &str) -> SessionAgent {
     let mut agent = mock_session_agent(agent_path);
+    // The scheduler rejects empty no-tool turns; have the mock binary stream
+    // a deterministic chunk (see CRU_MOCK_STREAM_CHUNKS hook).
+    agent.env_overrides.insert(
+        "CRU_MOCK_STREAM_CHUNKS".to_string(),
+        "mock delegation output".to_string(),
+    );
     agent.delegation_config = Some(DelegationConfig {
         enabled: true,
         max_depth: 2,
         allowed_targets: None,
         result_max_bytes: 51200,
         max_concurrent_delegations: 3,
+        timeout_secs: 300,
     });
     agent
 }
 
-fn make_acp_subagent_factory() -> SubagentFactory {
+/// Agent-factory override that builds the child session's agent as an
+/// `AcpAgentHandle` connected to the mock-acp-agent binary. This is the
+/// successor to the pre-refactor `SubagentFactory`: the delegation scheduler
+/// calls it to construct the CHILD session's agent.
+fn make_acp_agent_factory() -> AgentFactoryOverride {
     Box::new(move |agent_config: &SessionAgent, workspace: &Path| {
         let agent_config = agent_config.clone();
         let workspace = workspace.to_path_buf();
@@ -114,6 +131,7 @@ fn make_acp_subagent_factory() -> SubagentFactory {
                 knowledge_repo: None,
                 embedding_provider: None,
                 background_spawner: None,
+                delegation_spawner: None,
                 parent_session_id: None,
                 delegation_config: None,
                 acp_config: None,
@@ -129,25 +147,65 @@ fn make_acp_subagent_factory() -> SubagentFactory {
     })
 }
 
-fn register_delegation_context(
-    manager: &BackgroundJobManager,
-    session_id: &str,
-    workspace: &Path,
-    agent_path: &str,
+/// Build the full delegation stack (session manager + agent manager +
+/// delegation service) with a scripted child-agent factory installed. The
+/// returned `AgentManager` must be kept alive for the duration of the test:
+/// the `DelegationService` holds only a `Weak` back-reference to it.
+fn build_delegation_stack(
+    event_tx: broadcast::Sender<SessionEventMessage>,
+    factory: AgentFactoryOverride,
+) -> (
+    Arc<AgentManager>,
+    Arc<SessionManager>,
+    Arc<DelegationService>,
 ) {
-    manager.register_subagent_context(
-        session_id,
-        SubagentContext {
-            agent: delegation_enabled_agent(agent_path),
-            available_agents: HashMap::new(),
-            workspace: workspace.to_path_buf(),
-            parent_session_id: Some(session_id.to_string()),
-            parent_session_dir: Some(workspace.to_path_buf()),
-            delegator_agent_name: Some("parent-agent".to_string()),
-            target_agent_name: Some("worker-agent".to_string()),
-            delegation_depth: 0,
+    let session_manager = Arc::new(SessionManager::with_storage(Arc::new(
+        FileSessionStorage::new(),
+    )));
+    let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
+    let service = DelegationService::new(session_manager.clone(), event_tx.clone());
+    let manager = Arc::new(AgentManager::new_with_delegation(
+        AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager: session_manager.clone(),
+            background_manager,
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+            workspace_tools: Arc::new(WorkspaceTools::new(PathBuf::from("/tmp"))),
         },
-    );
+        service.clone(),
+    ));
+    service.bind_agent_manager(&manager);
+    manager.set_agent_factory_override(factory);
+    (manager, session_manager, service)
+}
+
+/// Create a top-level parent session with `agent` configured as its
+/// delegation-capable agent, returning the parent session id.
+async fn create_delegation_parent(
+    manager: &AgentManager,
+    session_manager: &SessionManager,
+    workspace: &Path,
+    agent: SessionAgent,
+) -> String {
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            workspace.to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .expect("parent session should be created");
+    manager
+        .configure_agent(&session.id, agent)
+        .await
+        .expect("parent agent should be configured");
+    session.id
 }
 
 async fn next_event(
@@ -165,23 +223,6 @@ async fn next_event(
     })
     .await
     .expect("timed out waiting for event")
-}
-
-async fn wait_for_terminal_result(manager: &BackgroundJobManager, job_id: &str) -> JobResult {
-    let deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        if let Some(result) = manager.get_job_result(&job_id.to_string()) {
-            if result.info.status.is_terminal() {
-                return result;
-            }
-        }
-
-        assert!(
-            Instant::now() < deadline,
-            "timed out waiting for terminal result"
-        );
-        sleep(Duration::from_millis(10)).await;
-    }
 }
 
 #[test]
@@ -217,6 +258,7 @@ async fn mock_acp_handshake_succeeds() {
             knowledge_repo: None,
             embedding_provider: None,
             background_spawner: None,
+            delegation_spawner: None,
             parent_session_id: None,
             delegation_config: None,
             acp_config: None,
@@ -248,6 +290,7 @@ async fn mock_acp_agent_returns_message_response() {
             knowledge_repo: None,
             embedding_provider: None,
             background_spawner: None,
+            delegation_spawner: None,
             parent_session_id: None,
             delegation_config: None,
             acp_config: None,
@@ -304,6 +347,7 @@ async fn injected_system_context_reaches_acp_prompt() {
             knowledge_repo: None,
             embedding_provider: None,
             background_spawner: None,
+            delegation_spawner: None,
             parent_session_id: None,
             delegation_config: None,
             acp_config: None,
@@ -372,6 +416,7 @@ async fn acp_model_switching_round_trips() {
             knowledge_repo: None,
             embedding_provider: None,
             background_spawner: None,
+            delegation_spawner: None,
             parent_session_id: None,
             delegation_config: None,
             acp_config: None,
@@ -436,6 +481,7 @@ async fn missing_binary_returns_connection_error() {
             knowledge_repo: None,
             embedding_provider: None,
             background_spawner: None,
+            delegation_spawner: None,
             parent_session_id: None,
             delegation_config: None,
             acp_config: None,
@@ -473,6 +519,7 @@ async fn inject_errors_causes_handshake_failure() {
             knowledge_repo: None,
             embedding_provider: None,
             background_spawner: None,
+            delegation_spawner: None,
             parent_session_id: None,
             delegation_config: None,
             acp_config: Some(&acp_config),
@@ -492,44 +539,38 @@ async fn inject_errors_causes_handshake_failure() {
 async fn delegation_depth_limit_enforced() {
     let temp = TempDir::new().expect("temp dir");
     let (event_tx, _) = broadcast::channel(32);
-    let manager = Arc::new(
-        BackgroundJobManager::new(event_tx).with_subagent_factory(Box::new(
-            |_agent, _workspace| {
-                Box::pin(async { Err("factory should not be called".to_string()) })
-            },
-        )),
-    );
 
-    let session_id = "session-depth-limit-smoke";
+    // The factory must never run: the depth check rejects before any child
+    // session is created.
+    let factory: AgentFactoryOverride = Box::new(|_agent: &SessionAgent, _workspace: &Path| {
+        Box::pin(async { Err("factory should not be called".to_string()) })
+            as Pin<
+                Box<dyn Future<Output = Result<Box<dyn AgentHandle + Send + Sync>, String>> + Send>,
+            >
+    });
+    let (manager, session_manager, service) = build_delegation_stack(event_tx, factory);
+
+    // max_depth = 0 means any child (which sits at depth 1) exceeds the limit.
     let mut agent = mock_session_agent("test-agent");
     agent.delegation_config = Some(DelegationConfig {
         enabled: true,
-        max_depth: 2,
+        max_depth: 0,
         allowed_targets: None,
         result_max_bytes: 51200,
         max_concurrent_delegations: 3,
+        timeout_secs: 300,
     });
 
-    manager.register_subagent_context(
-        session_id,
-        SubagentContext {
-            agent,
-            available_agents: HashMap::new(),
-            workspace: temp.path().to_path_buf(),
-            parent_session_id: Some(session_id.to_string()),
-            parent_session_dir: Some(temp.path().to_path_buf()),
-            delegator_agent_name: Some("parent-agent".to_string()),
-            target_agent_name: Some("worker-agent".to_string()),
-            delegation_depth: 3,
-        },
-    );
+    let parent_id = create_delegation_parent(&manager, &session_manager, temp.path(), agent).await;
 
-    let err = manager
-        .spawn_subagent(
-            session_id,
-            "delegate deeper".to_string(),
-            Some("depth test".to_string()),
-        )
+    let err = service
+        .spawn_delegation(DelegationRequest {
+            parent_session_id: parent_id,
+            prompt: "delegate deeper".to_string(),
+            context: None,
+            target_agent: None,
+            description: Some("depth test".to_string()),
+        })
         .await
         .expect_err("depth limit should reject delegation");
 
@@ -543,74 +584,95 @@ async fn delegation_depth_limit_enforced() {
 #[tokio::test]
 async fn mock_acp_delegation_emits_events() {
     let temp = TempDir::new().expect("temp dir");
-    let agent_path = mock_agent_path();
-    let agent_path = agent_path.to_string_lossy().into_owned();
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
 
-    let (event_tx, mut rx) = broadcast::channel(32);
-    let manager = Arc::new(
-        BackgroundJobManager::new(event_tx).with_subagent_factory(make_acp_subagent_factory()),
-    );
+    let (event_tx, mut rx) = broadcast::channel(256);
+    let (manager, session_manager, service) =
+        build_delegation_stack(event_tx, make_acp_agent_factory());
 
-    let session_id = "session-acp-delegation-events";
-    register_delegation_context(manager.as_ref(), session_id, temp.path(), &agent_path);
+    // Parent is the ACP mock agent with delegation enabled; the delegated
+    // child (target None) inherits that config, so it too runs the mock
+    // binary through the scheduler.
+    let parent_id = create_delegation_parent(
+        &manager,
+        &session_manager,
+        temp.path(),
+        delegation_enabled_agent(&agent_path),
+    )
+    .await;
 
-    let delegation_id = timeout(
+    let spawned = timeout(
         Duration::from_secs(30),
-        manager.spawn_subagent(
-            session_id,
-            "Delegate this task".to_string(),
-            Some("acp smoke test".to_string()),
-        ),
+        service.spawn_delegation(DelegationRequest {
+            parent_session_id: parent_id.clone(),
+            prompt: "Delegate this task".to_string(),
+            context: None,
+            target_agent: None,
+            description: Some("acp smoke test".to_string()),
+        }),
     )
     .await
-    .expect("timed out while spawning subagent")
+    .expect("timed out while spawning delegation")
     .expect("delegation spawn should succeed");
+    let delegation_id = spawned.delegation_id.clone();
 
-    let spawned = next_event(&mut rx, "delegation_spawned").await;
-    let completed = next_event(&mut rx, "delegation_completed").await;
+    let spawned_event = next_event(&mut rx, "delegation_spawned").await;
+    let completed_event = next_event(&mut rx, "delegation_completed").await;
 
     assert_eq!(
-        spawned.data["delegation_id"].as_str(),
+        spawned_event.data["delegation_id"].as_str(),
         Some(delegation_id.as_str())
     );
-    assert_eq!(spawned.session_id, session_id);
-    assert_eq!(spawned.data["parent_session_id"].as_str(), Some(session_id));
-
-    assert_eq!(completed.session_id, session_id);
+    assert_eq!(spawned_event.session_id, parent_id);
     assert_eq!(
-        completed.data["delegation_id"].as_str(),
+        spawned_event.data["parent_session_id"].as_str(),
+        Some(parent_id.as_str())
+    );
+
+    assert_eq!(completed_event.session_id, parent_id);
+    assert_eq!(
+        completed_event.data["delegation_id"].as_str(),
         Some(delegation_id.as_str())
     );
     assert_eq!(
-        completed.data["parent_session_id"].as_str(),
-        Some(session_id)
+        completed_event.data["parent_session_id"].as_str(),
+        Some(parent_id.as_str())
     );
 
-    let result = wait_for_terminal_result(manager.as_ref(), &delegation_id).await;
+    let result = service
+        .await_delegation(&delegation_id, Duration::from_secs(30))
+        .await
+        .expect("await_delegation should return a terminal result");
     assert_eq!(result.info.status, JobStatus::Completed);
 }
 
 #[tokio::test]
 async fn mock_acp_delegation_captured_in_recording() {
     let temp = TempDir::new().expect("temp dir");
-    let agent_path = mock_agent_path();
-    let agent_path = agent_path.to_string_lossy().into_owned();
-    let session_id = "session-acp-delegation-recording";
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
     let recording_path = temp.path().join("recording.jsonl");
 
+    let (event_tx, mut assertion_rx) = broadcast::channel(256);
+    let (manager, session_manager, service) =
+        build_delegation_stack(event_tx.clone(), make_acp_agent_factory());
+
+    let parent_id = create_delegation_parent(
+        &manager,
+        &session_manager,
+        temp.path(),
+        delegation_enabled_agent(&agent_path),
+    )
+    .await;
+
+    // The recording is filtered by session id, so it must match the parent
+    // session the delegation events are emitted on.
     let (writer, recording_tx) = RecordingWriter::new(
         recording_path.clone(),
-        session_id.to_string(),
+        parent_id.clone(),
         RecordingMode::Granular,
         None,
     );
     let writer_handle = writer.start();
-
-    let (event_tx, mut assertion_rx) = broadcast::channel(64);
-    let manager = Arc::new(
-        BackgroundJobManager::new(event_tx.clone())
-            .with_subagent_factory(make_acp_subagent_factory()),
-    );
 
     let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
     let mut bridge_rx = event_tx.subscribe();
@@ -632,33 +694,37 @@ async fn mock_acp_delegation_captured_in_recording() {
         }
     });
 
-    register_delegation_context(manager.as_ref(), session_id, temp.path(), &agent_path);
-
-    let delegation_id = timeout(
+    let spawned = timeout(
         Duration::from_secs(30),
-        manager.spawn_subagent(
-            session_id,
-            "Delegate and record this task".to_string(),
-            Some("acp recording smoke test".to_string()),
-        ),
+        service.spawn_delegation(DelegationRequest {
+            parent_session_id: parent_id.clone(),
+            prompt: "Delegate and record this task".to_string(),
+            context: None,
+            target_agent: None,
+            description: Some("acp recording smoke test".to_string()),
+        }),
     )
     .await
-    .expect("timed out while spawning subagent")
+    .expect("timed out while spawning delegation")
     .expect("delegation spawn should succeed");
+    let delegation_id = spawned.delegation_id.clone();
 
-    let spawned = next_event(&mut assertion_rx, "delegation_spawned").await;
-    let completed = next_event(&mut assertion_rx, "delegation_completed").await;
+    let spawned_event = next_event(&mut assertion_rx, "delegation_spawned").await;
+    let completed_event = next_event(&mut assertion_rx, "delegation_completed").await;
 
     assert_eq!(
-        spawned.data["delegation_id"].as_str(),
+        spawned_event.data["delegation_id"].as_str(),
         Some(delegation_id.as_str())
     );
     assert_eq!(
-        completed.data["delegation_id"].as_str(),
+        completed_event.data["delegation_id"].as_str(),
         Some(delegation_id.as_str())
     );
 
-    let result = wait_for_terminal_result(manager.as_ref(), &delegation_id).await;
+    let result = service
+        .await_delegation(&delegation_id, Duration::from_secs(30))
+        .await
+        .expect("await_delegation should return a terminal result");
     assert_eq!(result.info.status, JobStatus::Completed);
 
     let _ = stop_tx.send(());

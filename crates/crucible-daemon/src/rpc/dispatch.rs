@@ -1470,9 +1470,8 @@ impl RpcDispatcher {
         }
 
         let p: Params = parse_params(req)?;
-        let manager = self.ctx.agents.background_manager();
         let timeout = std::time::Duration::from_secs_f64(p.timeout_secs);
-        let results = manager.collect_jobs(&p.job_ids, timeout).await;
+        let results = self.ctx.agents.collect_jobs(&p.job_ids, timeout).await;
 
         Ok(serde_json::json!({ "results": results }))
     }

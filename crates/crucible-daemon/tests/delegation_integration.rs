@@ -67,7 +67,7 @@ fn parent_agent(delegation: Option<DelegationConfig>) -> SessionAgent {
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
-            tool_policy: None,
+        tool_policy: None,
         mode: None,
     }
 }
@@ -239,8 +239,14 @@ async fn child_is_a_real_parent_linked_session_and_ends_on_completion() {
     )
     .await
     .expect("child session persisted");
-    assert_eq!(child.parent_session_id.as_deref(), Some(h.parent_id.as_str()));
-    assert_eq!(child.agent.as_ref().map(|a| a.agent_type.as_str()), Some("internal"));
+    assert_eq!(
+        child.parent_session_id.as_deref(),
+        Some(h.parent_id.as_str())
+    );
+    assert_eq!(
+        child.agent.as_ref().map(|a| a.agent_type.as_str()),
+        Some("internal")
+    );
     assert_eq!(
         child.state,
         crucible_core::session::SessionState::Ended,
@@ -321,7 +327,11 @@ async fn target_not_in_allowlist_is_rejected_and_allowlist_requires_target() {
 
     let mut req = request(&h, "delegate");
     req.target_agent = Some("claude".to_string());
-    let err = h.service.spawn_delegation(req).await.expect_err("not allowed");
+    let err = h
+        .service
+        .spawn_delegation(req)
+        .await
+        .expect_err("not allowed");
     assert!(err.to_string().contains("'claude' is not allowed"));
 
     let req = request(&h, "delegate without target");
@@ -337,11 +347,19 @@ async fn target_not_in_allowlist_is_rejected_and_allowlist_requires_target() {
 async fn self_delegation_is_rejected() {
     let mut agent = parent_agent(Some(delegation_config(true, 3)));
     agent.agent_name = Some("worker-agent".to_string());
-    let h = setup(agent, MockSubagentBehavior::ImmediateSuccess("unused".to_string())).await;
+    let h = setup(
+        agent,
+        MockSubagentBehavior::ImmediateSuccess("unused".to_string()),
+    )
+    .await;
 
     let mut req = request(&h, "delegate to self");
     req.target_agent = Some("worker-agent".to_string());
-    let err = h.service.spawn_delegation(req).await.expect_err("self-delegation");
+    let err = h
+        .service
+        .spawn_delegation(req)
+        .await
+        .expect_err("self-delegation");
     assert!(err.to_string().contains("self-delegation guard"));
 }
 
@@ -472,7 +490,11 @@ async fn child_turn_failure_surfaces_as_failed_delegation() {
         .expect("await");
     assert_eq!(result.info.status, JobStatus::Failed);
     assert!(
-        result.error.as_deref().unwrap_or("").contains("child exploded"),
+        result
+            .error
+            .as_deref()
+            .unwrap_or("")
+            .contains("child exploded"),
         "got: {:?}",
         result.error
     );
@@ -647,10 +669,8 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
         async fn turn<'a>(
             &'a mut self,
             ctx: crucible_core::turn::TurnContext,
-        ) -> Result<
-            futures::stream::BoxStream<'a, TurnEvent>,
-            crucible_core::turn::AgentError,
-        > {
+        ) -> Result<futures::stream::BoxStream<'a, TurnEvent>, crucible_core::turn::AgentError>
+        {
             let mut inbound = ctx.inbound;
             let body = async_stream::stream! {
                 yield TurnEvent::TextDelta("checking file ".to_string());
@@ -683,10 +703,7 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
         async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
             Ok(())
         }
-        async fn switch_model(
-            &mut self,
-            _: &str,
-        ) -> Result<(), crucible_core::turn::NotSupported> {
+        async fn switch_model(&mut self, _: &str) -> Result<(), crucible_core::turn::NotSupported> {
             Err(crucible_core::turn::NotSupported::new("switch_model"))
         }
     }
@@ -727,9 +744,7 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
     ));
     service.bind_agent_manager(&agent_manager);
     agent_manager.set_agent_factory_override(Box::new(|_, _| {
-        Box::pin(async {
-            Ok(Box::new(ToolCallingAgent) as Box<dyn AgentHandle + Send + Sync>)
-        })
+        Box::pin(async { Ok(Box::new(ToolCallingAgent) as Box<dyn AgentHandle + Send + Sync>) })
     }));
 
     let session = session_manager
@@ -762,7 +777,12 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
         .await
         .expect("await");
 
-    assert_eq!(result.info.status, JobStatus::Completed, "err: {:?}", result.error);
+    assert_eq!(
+        result.info.status,
+        JobStatus::Completed,
+        "err: {:?}",
+        result.error
+    );
     let output = result.output.unwrap_or_default();
     assert!(
         output.contains("tool-result-received"),
@@ -889,10 +909,7 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
         async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
             Ok(())
         }
-        async fn switch_model(
-            &mut self,
-            _: &str,
-        ) -> Result<(), crucible_core::turn::NotSupported> {
+        async fn switch_model(&mut self, _: &str) -> Result<(), crucible_core::turn::NotSupported> {
             Err(crucible_core::turn::NotSupported::new("switch_model"))
         }
     }
@@ -973,10 +990,147 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
         .await
         .expect("await");
 
-    assert_eq!(result.info.status, JobStatus::Completed, "err: {:?}", result.error);
+    assert_eq!(
+        result.info.status,
+        JobStatus::Completed,
+        "err: {:?}",
+        result.error
+    );
     let output = result.output.unwrap_or_default();
     assert!(
         output.contains("blocked:") && output.contains("card tool policy"),
         "bash must be refused by the card policy; got: {output}"
+    );
+}
+
+#[tokio::test]
+async fn max_depth_two_allows_one_level_of_nesting_and_blocks_the_next() {
+    // max_depth is real now: with max_depth = 2 a delegated child may
+    // delegate once more; the grandchild gets no delegation at all.
+    let mut cfg = delegation_config(true, 3);
+    cfg.max_depth = 2;
+    let h = setup(
+        parent_agent(Some(cfg)),
+        MockSubagentBehavior::ImmediateSuccess("nested-ok".to_string()),
+    )
+    .await;
+
+    // Level 1: parent -> child.
+    let first = h
+        .service
+        .spawn_delegation(request(&h, "level one"))
+        .await
+        .expect("first-level spawn");
+    let _ = h
+        .service
+        .await_delegation(&first.delegation_id, Duration::from_secs(5))
+        .await
+        .expect("first-level completes");
+
+    // The child kept a delegation config (one more level fits) — delegate
+    // FROM the child session id. It has ended, but its persisted agent
+    // config is what matters; re-register it as live for the spawn.
+    let parent = h.session_manager.get_session(&h.parent_id).unwrap();
+    let storage = FileSessionStorage::new();
+    let child = crucible_daemon::session_storage::SessionStorage::load(
+        &storage,
+        &first.child_session_id,
+        &parent.kiln,
+    )
+    .await
+    .expect("child persisted");
+    assert!(
+        child.agent.as_ref().unwrap().delegation_config.is_some(),
+        "with max_depth=2 the child must keep delegation for one more level"
+    );
+    h.session_manager.register_transient(child);
+
+    // Level 2: child -> grandchild (depth 2 <= max 2: allowed).
+    let second = h
+        .service
+        .spawn_delegation(DelegationRequest {
+            parent_session_id: first.child_session_id.clone(),
+            prompt: "level two".to_string(),
+            context: None,
+            target_agent: None,
+            description: None,
+        })
+        .await
+        .expect("second-level spawn allowed at max_depth=2");
+    let _ = h
+        .service
+        .await_delegation(&second.delegation_id, Duration::from_secs(5))
+        .await
+        .expect("second-level completes");
+
+    // The grandchild must NOT carry delegation (a third level would exceed).
+    let grandchild = crucible_daemon::session_storage::SessionStorage::load(
+        &storage,
+        &second.child_session_id,
+        &parent.kiln,
+    )
+    .await
+    .expect("grandchild persisted");
+    assert!(
+        grandchild
+            .agent
+            .as_ref()
+            .unwrap()
+            .delegation_config
+            .is_none(),
+        "grandchild must not be able to delegate further"
+    );
+
+    // And spawning from the grandchild fails outright.
+    h.session_manager.register_transient(grandchild);
+    let err = h
+        .service
+        .spawn_delegation(DelegationRequest {
+            parent_session_id: second.child_session_id.clone(),
+            prompt: "level three".to_string(),
+            context: None,
+            target_agent: None,
+            description: None,
+        })
+        .await
+        .expect_err("third level must be blocked");
+    assert!(
+        err.to_string().contains("Delegation is disabled"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn await_after_completion_returns_stored_result_instantly() {
+    // Regression: the result used to be published with watch::Sender::send,
+    // which silently DISCARDS the value when no receiver exists yet — an
+    // await issued after the child finished then burned its full timeout.
+    let mut h = setup(
+        parent_agent(Some(delegation_config(true, 3))),
+        MockSubagentBehavior::ImmediateSuccess("late-await".to_string()),
+    )
+    .await;
+
+    let spawned = h
+        .service
+        .spawn_delegation(request(&h, "quick task"))
+        .await
+        .expect("spawn");
+    // Wait until the delegation is fully finalized (parent event observed)
+    // BEFORE subscribing via await_delegation.
+    let _ = next_event(&mut h.event_rx, "delegation_completed").await;
+
+    let started = tokio::time::Instant::now();
+    let result = h
+        .service
+        .await_delegation(&spawned.delegation_id, Duration::from_secs(30))
+        .await
+        .expect("await");
+    assert_eq!(result.info.status, JobStatus::Completed);
+    assert_eq!(result.output.as_deref(), Some("late-await"));
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "stored result must return immediately, took {:?}",
+        started.elapsed()
     );
 }

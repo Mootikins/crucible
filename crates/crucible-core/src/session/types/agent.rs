@@ -207,10 +207,7 @@ impl SessionAgent {
         Self {
             agent_type: "internal".to_string(),
             agent_name: None,
-            provider_key: card
-                .provider
-                .clone()
-                .or_else(|| base.provider_key.clone()),
+            provider_key: card.provider.clone().or_else(|| base.provider_key.clone()),
             provider: provider.unwrap_or(base.provider),
             model: card.model.clone().unwrap_or_else(|| base.model.clone()),
             system_prompt: card.system_prompt.clone(),

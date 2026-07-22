@@ -62,7 +62,8 @@ pub struct DelegationSpawned {
 /// `tools/` doesn't depend on `AgentManager` construction.
 #[async_trait]
 pub trait DelegationSpawner: Send + Sync {
-    async fn spawn_delegation(&self, req: DelegationRequest) -> Result<DelegationSpawned, JobError>;
+    async fn spawn_delegation(&self, req: DelegationRequest)
+        -> Result<DelegationSpawned, JobError>;
 
     /// Await a spawned delegation's terminal result. On timeout the child is
     /// cancelled and a failed result is returned (no orphans).
@@ -238,14 +239,20 @@ impl DelegationService {
             event_tx,
             SessionEventMessage::new(parent_id, event_type, data),
         ) {
-            debug!(delegation_id, "No subscribers for delegation completion event");
+            debug!(
+                delegation_id,
+                "No subscribers for delegation completion event"
+            );
         }
     }
 }
 
 #[async_trait]
 impl DelegationSpawner for DelegationService {
-    async fn spawn_delegation(&self, req: DelegationRequest) -> Result<DelegationSpawned, JobError> {
+    async fn spawn_delegation(
+        &self,
+        req: DelegationRequest,
+    ) -> Result<DelegationSpawned, JobError> {
         let manager = self.manager()?;
         let parent = self
             .session_manager
@@ -259,9 +266,7 @@ impl DelegationSpawner for DelegationService {
             .delegation_config
             .clone()
             .filter(|c| c.enabled)
-            .ok_or_else(|| {
-                JobError::SpawnFailed("Delegation is disabled for this agent".into())
-            })?;
+            .ok_or_else(|| JobError::SpawnFailed("Delegation is disabled for this agent".into()))?;
 
         // Depth: the child sits one level below the parent.
         let child_depth = self.depth_of(&parent).saturating_add(1);
@@ -296,9 +301,7 @@ impl DelegationSpawner for DelegationService {
 
         // Resolve the child agent config: a named target resolves to an
         // agent CARD (specialized internal agent) first, then an ACP
-        // profile; no target clones the parent. Nested delegation stays
-        // disabled by clearing the child's delegation_config (depth-aware
-        // nesting is a follow-up).
+        // profile; no target clones the parent.
         let mut child_agent: SessionAgent = match req.target_agent.as_deref() {
             Some(name) => {
                 let cards = crate::agent_cards::discover_agent_cards(
@@ -310,11 +313,8 @@ impl DelegationSpawner for DelegationService {
                 } else {
                     let available = manager.build_available_agents();
                     let profile = available.get(name).cloned().ok_or_else(|| {
-                        let mut names: Vec<_> = cards
-                            .keys()
-                            .chain(available.keys())
-                            .cloned()
-                            .collect();
+                        let mut names: Vec<_> =
+                            cards.keys().chain(available.keys()).cloned().collect();
                         names.sort();
                         names.dedup();
                         let list = if names.is_empty() {
@@ -331,7 +331,17 @@ impl DelegationSpawner for DelegationService {
             }
             None => parent_agent.clone(),
         };
-        child_agent.delegation_config = None;
+        // Nested delegation is depth-aware: the child keeps delegation only
+        // while another level would still fit under max_depth. The default
+        // (max_depth = 1) preserves no-nesting behavior; max_depth = 2 lets
+        // a child delegate once more, and so on. Depth is derived from the
+        // parent_session_id chain at every level, so a child cannot exceed
+        // the cap by editing its own config.
+        child_agent.delegation_config = if child_depth < delegation_cfg.max_depth {
+            Some(delegation_cfg.clone())
+        } else {
+            None
+        };
 
         // Trust gate: the CHILD's resolved provider trust (not a hardcoded
         // Cloud assumption) must satisfy the kiln's data classification. A
@@ -339,11 +349,9 @@ impl DelegationSpawner for DelegationService {
         // cloud target cannot. Unresolved trust still fails closed to Cloud
         // inside resolve_agent_trust.
         let child_trust = manager.resolve_agent_trust(&child_agent);
-        let classification = crate::trust_resolution::resolve_kiln_classification(
-            &parent.workspace,
-            &parent.kiln,
-        )
-        .unwrap_or(crucible_core::config::DataClassification::Public);
+        let classification =
+            crate::trust_resolution::resolve_kiln_classification(&parent.workspace, &parent.kiln)
+                .unwrap_or(crucible_core::config::DataClassification::Public);
         if !child_trust.satisfies(classification) {
             return Err(JobError::SpawnFailed(format!(
                 "Delegated agent's trust level '{child_trust}' is insufficient for kiln data                  classification '{classification}'. Requires '{}' trust.",
@@ -474,10 +482,7 @@ impl DelegationSpawner for DelegationService {
                     TurnOutcome {
                         status: TurnStatus::TimedOut,
                         final_text: String::new(),
-                        error: Some(format!(
-                            "delegation timed out after {}s",
-                            timeout.as_secs()
-                        )),
+                        error: Some(format!("delegation timed out after {}s", timeout.as_secs())),
                     }
                 }
             };
@@ -497,7 +502,10 @@ impl DelegationSpawner for DelegationService {
             if let Some(mut record) = records.get_mut(&child_id) {
                 record.info = result.info.clone();
             }
-            let _ = result_tx.send(Some(result.clone()));
+            // send_replace, not send: `send` fails (and DISCARDS the value)
+            // when no receiver currently exists, which is exactly the case
+            // when the delegation finishes before anyone awaits it.
+            let _ = result_tx.send_replace(Some(result.clone()));
             DelegationService::emit_completion_events(&event_tx, &parent_id, &child_id, &result);
             drop(permit);
         });

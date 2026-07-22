@@ -431,9 +431,8 @@ struct StreamContext {
     /// The daemon's `[permissions]` config compiled for this turn. Internal
     /// agents consult it before hooks/patterns/prompt: config deny is
     /// absolute, config allow short-circuits the gate. `None` = no config.
-    permission_engine: Option<
-        Arc<crucible_core::config::components::permissions::PermissionEngine>,
-    >,
+    permission_engine:
+        Option<Arc<crucible_core::config::components::permissions::PermissionEngine>>,
 }
 
 #[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration
@@ -653,10 +652,8 @@ impl AgentManager {
     /// for contexts that never delegate (most tests). Production and
     /// delegation tests use [`AgentManager::new_with_delegation`] and bind.
     pub fn new(params: AgentManagerParams) -> Self {
-        let delegation_service = DelegationService::new(
-            params.session_manager.clone(),
-            broadcast::channel(16).0,
-        );
+        let delegation_service =
+            DelegationService::new(params.session_manager.clone(), broadcast::channel(16).0);
         Self::new_with_delegation(params, delegation_service)
     }
 
@@ -978,6 +975,74 @@ impl AgentManager {
     /// Access the delegation service (child-session spawning).
     pub fn delegation_service(&self) -> &Arc<DelegationService> {
         &self.delegation_service
+    }
+
+    /// Wait for a mixed set of job ids — delegations (child session ids) and
+    /// background bash jobs — to reach terminal state. One JSON object per
+    /// id with `id`, `status`, and (when finished) `output`/`error`/
+    /// `exit_code`; still-running ids get `"timeout"`, unknown `"not_found"`.
+    ///
+    /// This is the fan-in primitive behind `cru.sessions.collect_subagents`
+    /// and the `jobs.collect` RPC; it must span BOTH registries because
+    /// delegations no longer live in the background-job manager.
+    pub async fn collect_jobs(
+        &self,
+        job_ids: &[String],
+        timeout: Duration,
+    ) -> Vec<serde_json::Value> {
+        use crate::delegation::DelegationSpawner as _;
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut results: Vec<Option<serde_json::Value>> = vec![None; job_ids.len()];
+
+        loop {
+            let mut all_done = true;
+            for (i, job_id) in job_ids.iter().enumerate() {
+                if results[i].is_some() {
+                    continue;
+                }
+                let result = self
+                    .delegation_service
+                    .get_delegation_result(job_id)
+                    .or_else(|| self.background_manager.get_job_result(job_id));
+                match result {
+                    Some(jr) if jr.info.status.is_terminal() => {
+                        results[i] = Some(serde_json::json!({
+                            "id": job_id,
+                            "status": jr.info.status.to_string(),
+                            "output": jr.output,
+                            "error": jr.error,
+                            "exit_code": jr.exit_code,
+                        }));
+                    }
+                    Some(_) => {
+                        all_done = false;
+                    }
+                    None => {
+                        results[i] = Some(serde_json::json!({
+                            "id": job_id,
+                            "status": "not_found",
+                        }));
+                    }
+                }
+            }
+            if all_done || tokio::time::Instant::now() >= deadline {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        results
+            .into_iter()
+            .enumerate()
+            .map(|(i, r)| {
+                r.unwrap_or_else(|| {
+                    serde_json::json!({
+                        "id": job_ids[i].clone(),
+                        "status": "timeout",
+                    })
+                })
+            })
+            .collect()
     }
 
     /// Effective trust level of an agent config's provider, from the LLM

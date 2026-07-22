@@ -8,13 +8,19 @@
 //! cargo nextest run -p crucible-daemon --test acp_real -- --run-ignored
 //! ```
 
-use crucible_core::config::{BackendType, DelegationConfig};
-use crucible_core::session::{OutputValidation, SessionAgent};
+use crucible_core::config::{AcpConfig, AgentProfile, BackendType, DelegationConfig};
+use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::turn::{Agent, TurnContext};
 use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
-use crucible_daemon::background_manager::{BackgroundJobManager, SubagentContext, SubagentFactory};
+use crucible_daemon::agent_manager::AgentFactoryOverride;
+use crucible_daemon::background_manager::BackgroundJobManager;
+use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
 use crucible_daemon::protocol::SessionEventMessage;
+use crucible_daemon::tools::workspace::WorkspaceTools;
+use crucible_daemon::{
+    AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
+};
 use futures::StreamExt;
 use std::collections::HashMap;
 use std::future::Future;
@@ -107,6 +113,7 @@ fn real_session_agent(agent_name: &str) -> SessionAgent {
         output_validation: OutputValidation::default(),
         validation_retries: 3,
         autocompact_threshold: None,
+        tool_policy: None,
     }
 }
 
@@ -123,7 +130,11 @@ async fn next_event(
     }
 }
 
-fn make_acp_subagent_factory() -> SubagentFactory {
+/// Agent-factory override that builds a delegated child session's agent as an
+/// `AcpAgentHandle`. The child's `SessionAgent` (resolved from the named target
+/// profile) supplies the agent name; the built-in command mapping resolves it
+/// to a real binary, so `acp_config` here can stay `None`.
+fn make_acp_agent_factory() -> AgentFactoryOverride {
     Box::new(move |agent_config: &SessionAgent, workspace: &Path| {
         let agent_config = agent_config.clone();
         let workspace = workspace.to_path_buf();
@@ -135,6 +146,7 @@ fn make_acp_subagent_factory() -> SubagentFactory {
                 knowledge_repo: None,
                 embedding_provider: None,
                 background_spawner: None,
+                delegation_spawner: None,
                 parent_session_id: None,
                 delegation_config: None,
                 acp_config: None,
@@ -174,6 +186,7 @@ async fn real_agent_handshake_succeeds() {
             knowledge_repo: None,
             embedding_provider: None,
             background_spawner: None,
+            delegation_spawner: None,
             parent_session_id: None,
             delegation_config: None,
             acp_config: None,
@@ -212,6 +225,7 @@ async fn real_agent_single_message() {
             knowledge_repo: None,
             embedding_provider: None,
             background_spawner: None,
+            delegation_spawner: None,
             parent_session_id: None,
             delegation_config: None,
             acp_config: None,
@@ -258,55 +272,98 @@ async fn real_cross_agent_delegation() {
     );
 
     let temp = TempDir::new().expect("temp dir");
-    let (event_tx, mut rx) = broadcast::channel(32);
-    let manager = Arc::new(
-        BackgroundJobManager::new(event_tx).with_subagent_factory(make_acp_subagent_factory()),
+    let (event_tx, mut rx) = broadcast::channel(256);
+
+    // Register both agents as ACP profiles so the named delegation target
+    // resolves through the AgentManager's acp_config.
+    let mut acp_config = AcpConfig::default();
+    acp_config.agents.insert(
+        primary_name.clone(),
+        AgentProfile {
+            command: Some(primary_path.to_string_lossy().into_owned()),
+            ..Default::default()
+        },
     );
-
-    let session_id = "session-real-cross-delegation";
-    let mut agent = real_session_agent(&primary_name);
-    agent.delegation_config = Some(DelegationConfig {
-        enabled: true,
-        max_depth: 2,
-        allowed_targets: None,
-        result_max_bytes: 51200,
-        max_concurrent_delegations: 3,
-    });
-
-    manager.register_subagent_context(
-        session_id,
-        SubagentContext {
-            agent,
-            available_agents: HashMap::new(),
-            workspace: temp.path().to_path_buf(),
-            parent_session_id: Some(session_id.to_string()),
-            parent_session_dir: Some(temp.path().to_path_buf()),
-            delegator_agent_name: Some(primary_name.clone()),
-            target_agent_name: Some(secondary_name.clone()),
-            delegation_depth: 0,
+    acp_config.agents.insert(
+        secondary_name.clone(),
+        AgentProfile {
+            command: Some(secondary_path.to_string_lossy().into_owned()),
+            ..Default::default()
         },
     );
 
-    let delegation_id = timeout(
+    let session_manager = Arc::new(SessionManager::with_storage(Arc::new(
+        FileSessionStorage::new(),
+    )));
+    let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
+    let service = DelegationService::new(session_manager.clone(), event_tx.clone());
+    let manager = Arc::new(AgentManager::new_with_delegation(
+        AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager: session_manager.clone(),
+            background_manager,
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config: Some(acp_config),
+            permission_config: None,
+            plugin_loader: None,
+            workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
+        },
+        service.clone(),
+    ));
+    service.bind_agent_manager(&manager);
+    manager.set_agent_factory_override(make_acp_agent_factory());
+
+    // Parent = primary ACP agent, allowed to delegate to the secondary.
+    let mut parent_agent = real_session_agent(&primary_name);
+    parent_agent.delegation_config = Some(DelegationConfig {
+        enabled: true,
+        max_depth: 2,
+        allowed_targets: Some(vec![secondary_name.clone()]),
+        result_max_bytes: 51200,
+        max_concurrent_delegations: 3,
+        timeout_secs: 300,
+    });
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            temp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .expect("parent session should be created");
+    manager
+        .configure_agent(&session.id, parent_agent)
+        .await
+        .expect("parent agent should be configured");
+    let parent_id = session.id;
+
+    let spawned = timeout(
         Duration::from_secs(120),
-        manager.spawn_subagent(
-            session_id,
-            "Say hello".to_string(),
-            Some("cross-agent delegation smoke test".to_string()),
-        ),
+        service.spawn_delegation(DelegationRequest {
+            parent_session_id: parent_id.clone(),
+            prompt: "Say hello".to_string(),
+            context: None,
+            target_agent: Some(secondary_name.clone()),
+            description: Some("cross-agent delegation smoke test".to_string()),
+        }),
     )
     .await
     .expect("delegation spawn timed out (120s)")
     .expect("delegation spawn failed");
+    let delegation_id = spawned.delegation_id.clone();
 
-    let spawned = timeout(
+    let spawned_event = timeout(
         Duration::from_secs(120),
         next_event(&mut rx, "delegation_spawned"),
     )
     .await
     .expect("timed out waiting for delegation_spawned event");
 
-    let completed = timeout(
+    let completed_event = timeout(
         Duration::from_secs(120),
         next_event(&mut rx, "delegation_completed"),
     )
@@ -314,11 +371,11 @@ async fn real_cross_agent_delegation() {
     .expect("timed out waiting for delegation_completed event");
 
     assert_eq!(
-        spawned.data["delegation_id"].as_str(),
+        spawned_event.data["delegation_id"].as_str(),
         Some(delegation_id.as_str())
     );
     assert_eq!(
-        completed.data["delegation_id"].as_str(),
+        completed_event.data["delegation_id"].as_str(),
         Some(delegation_id.as_str())
     );
 }

@@ -51,8 +51,8 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-use types::{events, BashError, RunningJob};
 pub use types::BackgroundError;
+use types::{events, BashError, RunningJob};
 
 pub struct BackgroundJobManager {
     running: Arc<DashMap<JobId, RunningJob>>,

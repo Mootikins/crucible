@@ -490,6 +490,21 @@ impl MockStdioAgent {
             })
             .collect();
 
+        // Test hook (like CRU_MOCK_PROMPT_CAPTURE): stream a text chunk set
+        // via env. Spawned-binary tests can't reach the in-process config,
+        // and the scheduler treats an empty no-tool turn as a provider
+        // error, so delegation tests inject their expected output this way.
+        if notifications.is_empty() {
+            if let Ok(text) = env::var("CRU_MOCK_STREAM_CHUNKS") {
+                if !text.is_empty() {
+                    notifications.push(update(json!({
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": { "type": "text", "text": text }
+                    })));
+                }
+            }
+        }
+
         if self.config.stream_tool_call {
             notifications.push(update(json!({
                 "sessionUpdate": "tool_call",

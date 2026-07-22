@@ -23,12 +23,12 @@
 //!
 pub mod acp;
 pub mod acp_handle;
-pub mod agent_factory;
 pub mod agent_cards;
+pub mod agent_factory;
 pub mod agent_manager;
 pub mod background_manager;
-pub mod delegation;
 pub mod daemon_plugins;
+pub mod delegation;
 pub mod embedding;
 mod empty_providers;
 pub mod enrichment;
@@ -76,13 +76,11 @@ pub use acp_handle::{AcpAgentHandle, AcpHandleError};
 pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};
 pub use agent_manager::{AgentError, AgentManager, AgentManagerParams};
 pub use background_manager::{BackgroundError, BackgroundJobManager};
-pub use delegation::{
-    DelegationRequest, DelegationService, DelegationSpawned, DelegationSpawner,
-};
 pub use daemon_plugins::{
     bootstrap_plugin_entry, bootstrap_plugins, daemon_plugin_paths, default_daemon_plugin_paths,
     BootstrapOutcome, DaemonPluginLoader,
 };
+pub use delegation::{DelegationRequest, DelegationService, DelegationSpawned, DelegationSpawner};
 pub use file_watch_bridge::{create_event_bridge, DaemonEventBridge};
 pub use kiln_manager::KilnManager;
 pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};

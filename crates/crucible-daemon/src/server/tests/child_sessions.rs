@@ -43,11 +43,15 @@ async fn session_list_hides_children_unless_requested() {
     .await;
     let sessions = response["result"]["sessions"].as_array().unwrap();
     assert!(
-        sessions.iter().any(|s| s["session_id"] == parent_id.as_str()),
+        sessions
+            .iter()
+            .any(|s| s["session_id"] == parent_id.as_str()),
         "parent must be listed: {sessions:?}"
     );
     assert!(
-        !sessions.iter().any(|s| s["session_id"] == child_id.as_str()),
+        !sessions
+            .iter()
+            .any(|s| s["session_id"] == child_id.as_str()),
         "child must be hidden by default: {sessions:?}"
     );
 
@@ -95,10 +99,7 @@ async fn session_archive_cascades_to_children() {
         }),
     )
     .await;
-    assert!(
-        response["error"].is_null(),
-        "archive failed: {response:?}"
-    );
+    assert!(response["error"].is_null(), "archive failed: {response:?}");
 
     let child_meta = server
         .kiln_path

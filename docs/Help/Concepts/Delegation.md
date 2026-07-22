@@ -30,37 +30,33 @@ Common reasons to delegate:
 
 Delegation flows through the `delegate_session` tool. When an agent calls this tool, Crucible:
 
-1. Spawns a new child session with the target agent
-2. Passes the task description and any relevant context
-3. Waits for the child agent to complete its work
+1. Creates a real **child session** (linked to the parent via `parent_session_id`) with the target agent's configuration
+2. Runs the task through the same scheduler every session uses — working tools, [[Precognition]] knowledge injection, Lua hooks, and standard persistence included
+3. Waits for the child's turn to complete (or returns immediately in background mode)
 4. Returns the result to the parent agent
 
 The parent agent can then use that result however it likes: summarize it, build on it, or pass it along.
 
 ### Parent and Child Sessions
 
-Every delegation creates a parent-child relationship between sessions. The parent session is the one that initiated the delegation. The child session runs independently but reports back when finished.
+Every delegation creates a parent-child relationship between sessions. Children are full sessions in behavior, but **not first-class in visibility**:
 
-Key behaviors:
+- Children are hidden from `session.list` by default (`cru session list --include-children` reveals them; `cru session show <id>` works normally).
+- Each child gets its own conversation history and transcript, persisted like any session.
+- Results flow back to the parent as tool call responses; the parent also receives `delegation_spawned` / `delegation_completed` events carrying the child session id.
+- Children emit their own per-turn events (text, tool calls, results) on their session id — a UI can subscribe to watch a child live.
+- Cancelling, ending, archiving, or deleting the parent cascades to its children.
+- Children can't see the parent's conversation, only the task description they were given.
+- A child ends automatically when its delegated turn completes; its transcript remains readable.
 
-- Child sessions get their own conversation history, separate from the parent.
-- Results flow back to the parent as tool call responses.
-- If the parent session ends, any active child sessions are cleaned up.
-- Children can't see the parent's full conversation, only the task they were given.
+## Available Targets
 
-## Available Agents
+A delegation target is resolved in this order:
 
-You can delegate to any [[Agent Client Protocol]] agent that Crucible knows about. Built-in agents include:
+1. **[[Help/Extending/Agent Cards|Agent cards]]** — specialized internal agents defined as markdown cards in your kiln, project, or config directory. This is the primary way to define delegation targets: a card carries its own system prompt, optional model, and per-tool policy.
+2. **[[Agent Client Protocol]] profiles** — external agents (Claude Code, OpenCode, Cursor, Gemini, Codex, or custom profiles from `crucible.toml`).
 
-| Agent | Good For |
-|-------|----------|
-| Claude Code | Complex reasoning, architecture, writing |
-| OpenCode | Code generation, refactoring |
-| Cursor | Codebase-wide edits, multi-file changes |
-| Gemini | Research, analysis, long-context tasks |
-| Codex | Code generation, quick edits |
-
-Custom agent profiles work too. If you've defined a profile in `crucible.toml`, any agent can delegate to it by name.
+Omit the target to hand the task to a clone of the parent's own agent configuration.
 
 ## Configuration
 
@@ -76,6 +72,7 @@ max_depth = 2
 allowed_targets = ["opencode", "cursor"]
 result_max_bytes = 102400
 max_concurrent_delegations = 3
+timeout_secs = 300
 ```
 
 ### Settings
@@ -87,6 +84,7 @@ max_concurrent_delegations = 3
 | `allowed_targets` | all agents | Which agents this one can delegate to |
 | `result_max_bytes` | `51200` | Maximum size of a delegation result (bytes) |
 | `max_concurrent_delegations` | `3` | How many delegations can run at once |
+| `timeout_secs` | `300` | Seconds a delegated child may run before it is cancelled |
 
 ### Depth Limits
 
@@ -100,15 +98,17 @@ Delegation follows a principle of least privilege. Child agents run with restric
 
 **What children can't do:**
 
-- Re-delegate (unless `max_depth` allows it, and even then with tighter restrictions)
-- Access tools the parent hasn't been granted
-- Read or write outside the kiln's boundaries
+- Re-delegate deeper than `max_depth` allows (depth is derived from the parent chain, so a child can't lift its own cap)
+- Use tools their agent card marks `deny`
+- Read or write files outside the workspace, kilns, and session directory (filesystem containment)
+- Answer permission prompts — children run non-interactively, so a tool that would prompt is denied unless a permission pattern, Lua hook, or `[permissions]` config allows it
 
 **What Crucible enforces:**
 
-- Every tool call from a delegated agent goes through the same permission checks as direct calls
+- Every tool call from a delegated child goes through the same permission gate as direct calls, including the `[permissions]` config and the project `[security.shell]` policy
+- The child's **provider trust level** (not a blanket assumption) must satisfy the kiln's data classification — a local-model card can serve a confidential kiln that a cloud target cannot
 - Results are truncated to `result_max_bytes` to prevent context overflow
-- Concurrent delegation limits prevent resource exhaustion
+- Concurrent delegation limits prevent resource exhaustion; `timeout_secs` cancels hung children
 - Child sessions inherit the parent's kiln context but not its full conversation
 
 For more on how Crucible scopes agent permissions, see [[Agent Client Protocol]].
@@ -134,11 +134,12 @@ A few things to keep in mind:
 
 - **No shared state.** Child agents don't see the parent's conversation history. They only get the task description you provide.
 - **Result size caps.** Large outputs get truncated. If a child agent produces a massive diff, only the first `result_max_bytes` come back.
-- **Cold start.** Each delegation spawns a new agent process. There's startup overhead, especially for agents that need to load models or authenticate.
-- **No streaming.** The parent agent waits for the full result. You won't see the child's progress in real-time.
+- **Cold start for external agents.** Delegating to an ACP target spawns a new agent process. Internal card targets have no process overhead.
+- **No streaming into the parent.** The parent waits for the full result. The child's live progress IS streamed as events on the child's own session id, but the parent transcript only records the delegation call and its result.
 
 ## See Also
 
-- [[Agent Client Protocol]] for the underlying protocol
+- [[Help/Extending/Agent Cards]] for defining specialized delegation targets
+- [[Agent Client Protocol]] for the external-agent protocol
 - [[Agents & Protocols]] for an overview of agent architecture
 - [[Agent Skills]] for how agents discover and load context

@@ -708,43 +708,45 @@ impl AgentManager {
                     }
                     Ok(response_rx_result) => match response_rx_result {
                         Ok(response) => {
-                        debug!(
-                            session_id = %stream_ctx.session_id,
-                            tool = %tool_call.name,
-                            permission_id = %permission_id,
-                            allowed = response.allowed,
-                            pattern = ?response.pattern,
-                            "Permission response received"
-                        );
+                            debug!(
+                                session_id = %stream_ctx.session_id,
+                                tool = %tool_call.name,
+                                permission_id = %permission_id,
+                                allowed = response.allowed,
+                                pattern = ?response.pattern,
+                                "Permission response received"
+                            );
 
-                        if response.allowed {
-                            if let Some(ref pattern) = response.pattern {
-                                if response.scope == PermissionScope::Project {
-                                    if let Err(e) =
-                                        Self::store_pattern(&tool_call.name, pattern, &project_path)
-                                    {
-                                        warn!(
-                                            session_id = %stream_ctx.session_id,
-                                            tool = %tool_call.name,
-                                            pattern = %pattern,
-                                            error = %e,
-                                            "Failed to store pattern"
-                                        );
-                                    } else {
-                                        info!(
-                                            session_id = %stream_ctx.session_id,
-                                            tool = %tool_call.name,
-                                            pattern = %pattern,
-                                            "Pattern stored for future use"
-                                        );
+                            if response.allowed {
+                                if let Some(ref pattern) = response.pattern {
+                                    if response.scope == PermissionScope::Project {
+                                        if let Err(e) = Self::store_pattern(
+                                            &tool_call.name,
+                                            pattern,
+                                            &project_path,
+                                        ) {
+                                            warn!(
+                                                session_id = %stream_ctx.session_id,
+                                                tool = %tool_call.name,
+                                                pattern = %pattern,
+                                                error = %e,
+                                                "Failed to store pattern"
+                                            );
+                                        } else {
+                                            info!(
+                                                session_id = %stream_ctx.session_id,
+                                                tool = %tool_call.name,
+                                                pattern = %pattern,
+                                                "Pattern stored for future use"
+                                            );
+                                        }
                                     }
                                 }
+                                (true, None)
+                            } else {
+                                (false, response.reason)
                             }
-                            (true, None)
-                        } else {
-                            (false, response.reason)
                         }
-                    }
                         Err(_) => {
                             warn!(
                                 session_id = %stream_ctx.session_id,

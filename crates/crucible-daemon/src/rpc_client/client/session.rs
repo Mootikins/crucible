@@ -332,8 +332,15 @@ impl DaemonClient {
         state: Option<&str>,
         include_archived: Option<bool>,
     ) -> Result<serde_json::Value> {
-        self.session_list_with_children(kiln, workspace, session_type, state, include_archived, None)
-            .await
+        self.session_list_with_children(
+            kiln,
+            workspace,
+            session_type,
+            state,
+            include_archived,
+            None,
+        )
+        .await
     }
 
     /// `session.list` with explicit control over delegated-child visibility

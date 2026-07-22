@@ -179,7 +179,7 @@ fn test_output_validation_serde_roundtrip() {
         output_validation: OutputValidation::Json,
         validation_retries: 5,
         autocompact_threshold: None,
-            tool_policy: None,
+        tool_policy: None,
         mode: None,
     };
 

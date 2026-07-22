@@ -12,6 +12,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
 mod child_sessions;
+mod delegation_e2e;
 mod events;
 mod graph;
 mod lifecycle;
