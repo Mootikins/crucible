@@ -117,6 +117,20 @@ impl SessionManager {
         Ok(session_clone)
     }
 
+    /// Ids of persisted child sessions of `parent_id` in `kiln`. Used by the
+    /// archive/delete cascades: children are lifecycle-subordinate to their
+    /// parent and must not outlive it in listings.
+    pub async fn child_session_ids(&self, parent_id: &str, kiln: &Path) -> Vec<String> {
+        self.storage
+            .list(kiln)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|s| s.parent_session_id.as_deref() == Some(parent_id))
+            .map(|s| s.id)
+            .collect()
+    }
+
     /// Resume a session from storage.
     ///
     /// Loads the session from disk and sets its state to Active.
@@ -558,6 +572,11 @@ impl SessionManager {
                 .await
             {
                 if !seen.insert(summary.id.clone()) {
+                    continue;
+                }
+                // Delegated children are titled at creation and hidden from
+                // listings — never re-title them.
+                if summary.parent_session_id.is_some() {
                     continue;
                 }
                 if summary

@@ -12,6 +12,7 @@ pub(super) async fn list(
     format: String,
     state: Option<String>,
     all: bool,
+    include_children: bool,
 ) -> Result<()> {
     let client = daemon_client().await?;
 
@@ -22,6 +23,7 @@ pub(super) async fn list(
         state.as_deref(),
         &format,
         Some(limit),
+        include_children,
     )
     .await?;
 

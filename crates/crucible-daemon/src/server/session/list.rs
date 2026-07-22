@@ -22,8 +22,11 @@ pub(crate) async fn handle_session_list(
         _ => None,
     });
     let include_archived = optional_param!(req, "include_archived", as_bool).unwrap_or(false);
+    // Delegated child sessions are hidden by default: full sessions in
+    // behavior, but not first-class in visibility.
+    let include_children = optional_param!(req, "include_children", as_bool).unwrap_or(false);
 
-    let sessions = if kiln.is_none() {
+    let mut sessions = if kiln.is_none() {
         // When no kiln is specified, load sessions from all open kilns + crucible home
         let mut all_sessions = Vec::new();
         let mut seen_ids = std::collections::HashSet::new();
@@ -80,6 +83,10 @@ pub(crate) async fn handle_session_list(
         .await
     };
 
+    if !include_children {
+        sessions.retain(|s| s.parent_session_id.is_none());
+    }
+
     let sessions_json: Vec<_> = sessions
         .iter()
         .map(|s| {
@@ -95,6 +102,7 @@ pub(crate) async fn handle_session_list(
                 "agent_model": s.agent_model,
                 "event_count": s.event_count,
                 "archived": s.archived,
+                "parent_session_id": s.parent_session_id,
             })
         })
         .collect();
@@ -239,6 +247,7 @@ pub(crate) async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -
                 "started_at": session.started_at.to_rfc3339(),
                 "title": session.title,
                 "continued_from": session.continued_from,
+                "parent_session_id": session.parent_session_id,
                 "agent": session.agent,
             });
 

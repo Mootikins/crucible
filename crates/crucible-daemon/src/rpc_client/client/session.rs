@@ -140,6 +140,9 @@ pub struct SessionListRequest {
     pub state: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_archived: Option<bool>,
+    /// Include delegated child sessions (hidden by default).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_children: Option<bool>,
 }
 
 /// Shared request for methods that only require a `session_id`.
@@ -329,6 +332,21 @@ impl DaemonClient {
         state: Option<&str>,
         include_archived: Option<bool>,
     ) -> Result<serde_json::Value> {
+        self.session_list_with_children(kiln, workspace, session_type, state, include_archived, None)
+            .await
+    }
+
+    /// `session.list` with explicit control over delegated-child visibility
+    /// (children are hidden unless `include_children` is `Some(true)`).
+    pub async fn session_list_with_children(
+        &self,
+        kiln: Option<&Path>,
+        workspace: Option<&Path>,
+        session_type: Option<&str>,
+        state: Option<&str>,
+        include_archived: Option<bool>,
+        include_children: Option<bool>,
+    ) -> Result<serde_json::Value> {
         self.typed_call(
             "session.list",
             SessionListRequest {
@@ -337,6 +355,7 @@ impl DaemonClient {
                 workspace: workspace.map(|ws| ws.to_string_lossy().to_string()),
                 state: state.map(|s| s.to_string()),
                 include_archived,
+                include_children,
             },
         )
         .await

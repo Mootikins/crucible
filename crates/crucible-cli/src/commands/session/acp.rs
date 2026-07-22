@@ -25,12 +25,20 @@ pub(super) mod rpc {
         state: Option<&str>,
         format: &str,
         limit: Option<u32>,
+        include_children: bool,
     ) -> Result<()> {
         let result = client
             // Pass None to search all kilns + crucible home, not just config.kiln_path.
             // Sessions may be stored under crucible_home (~/.crucible) regardless of
             // which kiln_path is in the current config.
-            .session_list(None, None, session_type, state, None)
+            .session_list_with_children(
+                None,
+                None,
+                session_type,
+                state,
+                None,
+                include_children.then_some(true),
+            )
             .await?;
 
         let mut sessions = result["sessions"].as_array().cloned().unwrap_or_default();

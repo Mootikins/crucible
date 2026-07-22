@@ -127,6 +127,15 @@ pub(crate) async fn handle_session_delete(
     match sm.delete_session(session_id, &kiln).await {
         Ok(()) => {
             am.cleanup_session(session_id);
+            // Deleting the parent deletes its delegated children too —
+            // an orphaned hidden child would be unreachable otherwise.
+            for child_id in sm.child_session_ids(session_id, &kiln).await {
+                if let Err(e) = sm.delete_session(&child_id, &kiln).await {
+                    warn!(child_id = %child_id, error = %e, "Failed to delete child session");
+                } else {
+                    am.cleanup_session(&child_id);
+                }
+            }
             Response::success(
                 req.id,
                 serde_json::json!({
@@ -150,6 +159,15 @@ pub(crate) async fn handle_session_archive(
     match sm.archive_session(session_id, &kiln).await {
         Ok(session) => {
             am.cleanup_session(session_id);
+            // Children are lifecycle-subordinate: archiving the parent
+            // archives its delegated children too (best-effort).
+            for child_id in sm.child_session_ids(session_id, &kiln).await {
+                if let Err(e) = sm.archive_session(&child_id, &kiln).await {
+                    warn!(child_id = %child_id, error = %e, "Failed to archive child session");
+                } else {
+                    am.cleanup_session(&child_id);
+                }
+            }
             Response::success(
                 req.id,
                 serde_json::json!({

@@ -11,6 +11,7 @@ use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
+mod child_sessions;
 mod events;
 mod graph;
 mod lifecycle;

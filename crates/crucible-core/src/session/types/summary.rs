@@ -37,6 +37,10 @@ pub struct SessionSummary {
     /// Last activity timestamp (None for legacy sessions that predate it)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity: Option<DateTime<Utc>>,
+    /// Parent session id for delegated child sessions. Children are hidden
+    /// from default listings; `#[serde(default)]` keeps old meta files valid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
 }
 impl From<&Session> for SessionSummary {
     fn from(session: &Session) -> Self {
@@ -52,6 +56,7 @@ impl From<&Session> for SessionSummary {
             agent_model: session.agent.as_ref().map(|a| a.model.clone()),
             archived: session.archived,
             last_activity: session.last_activity,
+            parent_session_id: session.parent_session_id.clone(),
         }
     }
 }

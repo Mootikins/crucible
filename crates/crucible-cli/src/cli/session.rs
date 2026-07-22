@@ -29,6 +29,10 @@ pub enum SessionCommands {
         /// Include persisted sessions from storage in addition to daemon sessions
         #[arg(long)]
         all: bool,
+
+        /// Include delegated child sessions (hidden by default)
+        #[arg(long)]
+        include_children: bool,
     },
 
     /// Search sessions by title
