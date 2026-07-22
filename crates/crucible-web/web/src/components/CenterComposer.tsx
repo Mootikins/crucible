@@ -14,7 +14,7 @@ import { pathBasename } from '@/stores/statusBarStore';
 import { recentFiles } from '@/lib/recent-files';
 import { openFileInEditor } from '@/lib/file-actions';
 import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
-import { ArrowUp, FileText, History } from '@/lib/icons';
+import { ArrowUp, Bot, FileText, FlaskConical, FolderGit2, History, Sparkles } from '@/lib/icons';
 
 const kbd = 'px-1.5 py-0.5 rounded bg-surface-elevated border border-hairline text-[10px] text-shell-body';
 
@@ -75,7 +75,9 @@ export const CenterComposer: Component = () => {
     try {
       await createSession(
         {
-          kiln: kiln() || defaultKiln() || undefined,
+          // 'none' = an explicitly kiln-less session (v0.12 kiln-less
+          // creation) — distinct from '' which falls back to the default.
+          kiln: kiln() === 'none' ? undefined : kiln() || defaultKiln() || undefined,
           workspace: workspace() || undefined,
           ...(isAcp() ? { agent_type: 'acp', agent_name: agentName() } : {}),
         },
@@ -92,12 +94,17 @@ export const CenterComposer: Component = () => {
     }
   };
 
+  // The default kiln's REGISTERED name (kiln.toml), not its path basename.
+  const defaultKilnName = () => {
+    const match = kilns().find((k) => k.path === defaultKiln());
+    return (
+      match?.name ||
+      (defaultKiln() ? pathBasename(defaultKiln()) || defaultKiln() : 'Home kiln')
+    );
+  };
+
   const kilnOptions = (): ChipOption[] => [
-    {
-      value: '',
-      label: defaultKiln() ? pathBasename(defaultKiln()) || defaultKiln() : 'Home kiln',
-      hint: 'default',
-    },
+    { value: '', label: defaultKilnName(), hint: 'default' },
     ...kilns()
       .filter((k) => k.path !== defaultKiln())
       .map((k) => ({
@@ -105,16 +112,33 @@ export const CenterComposer: Component = () => {
         label: k.name || pathBasename(k.path) || k.path,
         hint: k.path,
       })),
+    // Explicitly kiln-less — a session with no knowledge base attached.
+    { value: 'none', label: 'No kiln' },
   ];
 
-  const projectOptions = (): ChipOption[] => [
-    { value: '', label: 'No project' },
-    ...projects().map((p) => ({
-      value: p.path,
-      label: p.name || pathBasename(p.path) || p.path,
-      hint: p.repository?.is_worktree ? 'worktree' : undefined,
-    })),
-  ];
+  const projectOptions = (): ChipOption[] => {
+    const main = projects().filter((p) => !p.repository?.is_worktree);
+    const worktrees = projects().filter((p) => p.repository?.is_worktree);
+    const wtLabel = (p: Project) => {
+      const root = p.repository?.root;
+      const rel = root && p.path.startsWith(root + '/') ? p.path.slice(root.length + 1) : null;
+      const repo = root ? pathBasename(root) || root : null;
+      return rel && repo ? `${repo} › ${rel}` : p.name || pathBasename(p.path) || p.path;
+    };
+    return [
+      { value: '', label: 'No project' },
+      ...main.map((p) => ({
+        value: p.path,
+        label: p.name || pathBasename(p.path) || p.path,
+        group: 'Projects',
+      })),
+      ...worktrees.map((p) => ({
+        value: p.path,
+        label: wtLabel(p),
+        group: 'Worktrees',
+      })),
+    ];
+  };
 
   const agentOptions = (): ChipOption[] => [
     { value: '', label: 'Internal agent' },
@@ -159,6 +183,7 @@ export const CenterComposer: Component = () => {
           <div class="flex items-center justify-center gap-1 flex-wrap" data-testid="composer-context">
             <ChipSelect
               name="kiln"
+              icon={FlaskConical}
               options={kilnOptions()}
               value={kiln()}
               onSelect={setKiln}
@@ -167,6 +192,7 @@ export const CenterComposer: Component = () => {
             />
             <ChipSelect
               name="project"
+              icon={FolderGit2}
               options={projectOptions()}
               value={workspace()}
               onSelect={setWorkspace}
@@ -175,6 +201,7 @@ export const CenterComposer: Component = () => {
             />
             <ChipSelect
               name="agent"
+              icon={Bot}
               options={agentOptions()}
               value={agentName()}
               onSelect={setAgentName}
@@ -205,6 +232,7 @@ export const CenterComposer: Component = () => {
               <Show when={!isAcp()}>
                 <ChipSelect
                   name="model"
+                  icon={Sparkles}
                   options={modelOptions()}
                   value={model()}
                   onSelect={setModel}

@@ -7,6 +7,9 @@ export interface ChipOption {
   /** Dimmed suffix (e.g. a path or availability note). */
   hint?: string;
   disabled?: boolean;
+  /** Section header rendered above this option when it differs from the
+   * previous option's group (caller keeps options sorted by group). */
+  group?: string;
 }
 
 /**
@@ -28,6 +31,8 @@ export const ChipSelect: Component<{
   testid?: string;
   /** Show the filter input at ≥ this many options (default 8). */
   searchThreshold?: number;
+  /** Leading icon on the trigger chip. */
+  icon?: Component<{ class?: string }>;
 }> = (props) => {
   const [open, setOpen] = createSignal(false);
   const [filter, setFilter] = createSignal('');
@@ -106,6 +111,9 @@ export const ChipSelect: Component<{
           'opacity-50 cursor-not-allowed': props.disabled,
         }}
       >
+        <Show when={props.icon} keyed>
+          {(Icon) => <Icon class="w-3.5 h-3.5 flex-shrink-0 text-muted-dark" />}
+        </Show>
         <span class="truncate">{display()}</span>
         <ChevronDown class="w-3 h-3 flex-shrink-0 text-muted-dark" />
       </button>
@@ -133,6 +141,12 @@ export const ChipSelect: Component<{
           <div class="max-h-[300px] overflow-y-auto" role="listbox" aria-label={props.name}>
             <For each={visible()}>
               {(o, i) => (
+                <>
+                <Show when={o.group && o.group !== visible()[i() - 1]?.group}>
+                  <div class="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-dark">
+                    {o.group}
+                  </div>
+                </Show>
                 <button
                   type="button"
                   role="option"
@@ -157,6 +171,7 @@ export const ChipSelect: Component<{
                     <span class="ml-auto pl-3 text-muted-dark truncate max-w-[140px]">{o.hint}</span>
                   </Show>
                 </button>
+                </>
               )}
             </For>
             <Show when={visible().length === 0}>

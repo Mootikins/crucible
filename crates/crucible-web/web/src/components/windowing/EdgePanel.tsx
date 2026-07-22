@@ -366,53 +366,70 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
     </>
   );
 
-  // Slide without reflow OR remount: the panel content stays MOUNTED while
-  // collapsed — clipped to zero size and visibility:hidden — so a toggle
-  // never re-mounts the panel subtree. (The old mount-on-expand lifecycle
-  // spent ~500ms synchronously building the file tree / session panels
-  // exactly when the slide should start, which read as jitter. Staying
-  // mounted also preserves panel state: tree expansion, terminal
-  // scrollback.) Layout-affecting properties are never transitioned: the
-  // clip frame SNAPS between 0 and full (one reflow per toggle) and the
-  // only animated property is the compositor-driven `translate`. On open
-  // the frame reserves the space and the already-painted panel slides in;
-  // on close the panel slides out, then the frame collapses.
+  // Slide with SYNCHRONIZED reflow, no remount: the panel content stays
+  // MOUNTED while collapsed — clipped to zero size and visibility:hidden —
+  // so a toggle never re-mounts the panel subtree (the old mount-on-expand
+  // lifecycle spent ~500ms building the file tree exactly when the slide
+  // should start; staying mounted also preserves tree expansion and
+  // terminal scrollback). One rAF loop drives BOTH the clip frame's size
+  // and the inner panel's translate from a single progress value, so the
+  // neighboring content reflows smoothly across the whole toggle and the
+  // clip edge stays pixel-locked to the panel edge. CSS transitions are
+  // deliberately NOT used: width/height transitions run on the main thread
+  // while `translate` runs on the compositor, and under load the two
+  // desync — the panel visibly tears against its own clip edge.
   const TWEEN_MS = 200;
-  const [spaceReserved, setSpaceReserved] = createSignal(!isCollapsed());
-  let collapseTimer: number | undefined;
+  const [progress, setProgress] = createSignal(isCollapsed() ? 0 : 1);
+  let tweenRaf: number | undefined;
 
   createEffect(
     on(
       isCollapsed,
       (collapsed) => {
-        window.clearTimeout(collapseTimer);
-        if (!collapsed) {
-          setSpaceReserved(true);
-        } else {
-          // Hold the frame open while the panel slides out, then collapse.
-          collapseTimer = window.setTimeout(() => setSpaceReserved(false), TWEEN_MS + 50);
-        }
+        const target = collapsed ? 0 : 1;
+        if (tweenRaf !== undefined) cancelAnimationFrame(tweenRaf);
+        const from = progress();
+        if (from === target) return;
+        // Duration scales with remaining distance so a mid-flight reversal
+        // doesn't crawl.
+        const dur = Math.max(1, TWEEN_MS * Math.abs(target - from));
+        const start = performance.now();
+        const step = (now: number) => {
+          const t = Math.min(1, (now - start) / dur);
+          const eased = 1 - (1 - t) * (1 - t); // ease-out
+          setProgress(from + (target - from) * eased);
+          tweenRaf = t < 1 ? requestAnimationFrame(step) : undefined;
+        };
+        tweenRaf = requestAnimationFrame(step);
       },
       { defer: true },
     ),
   );
-  onCleanup(() => window.clearTimeout(collapseTimer));
+  onCleanup(() => {
+    if (tweenRaf !== undefined) cancelAnimationFrame(tweenRaf);
+  });
 
   // Panel size + the 1px resize handle that lives inside the wrapper.
   const fullSize = () => (isVertical() ? (panel().width || 250) : (panel().height || 200)) + 1;
-  const offscreen = () =>
-    props.position === 'left' ? '-100% 0' : props.position === 'right' ? '100% 0' : '0 100%';
   const frameStyle = () => ({
-    [isVertical() ? 'width' : 'height']: spaceReserved() ? `${fullSize()}px` : '0px',
+    [isVertical() ? 'width' : 'height']: `${Math.round(fullSize() * progress())}px`,
     // Fully closed panels leave paint, hit-testing, and the tab order —
     // clipped-but-visible content is still keyboard-reachable otherwise.
-    visibility: spaceReserved() ? ('visible' as const) : ('hidden' as const),
+    visibility: progress() > 0 ? ('visible' as const) : ('hidden' as const),
   });
-  const innerStyle = () => ({
-    [isVertical() ? 'width' : 'height']: `${fullSize()}px`,
-    translate: isCollapsed() ? offscreen() : '0 0',
-    transition: `translate ${TWEEN_MS}ms ease-out`,
-  });
+  const innerStyle = () => {
+    const off = (1 - progress()) * 100;
+    const translate =
+      props.position === 'left'
+        ? `${-off}% 0`
+        : props.position === 'right'
+          ? `${off}% 0`
+          : `0 ${off}%`;
+    return {
+      [isVertical() ? 'width' : 'height']: `${fullSize()}px`,
+      translate,
+    };
+  };
 
   // Ribbon at the window edge, always; the panel grows out of it toward the
   // center. Left: [ribbon][panel][handle]; right: [handle][panel][ribbon];

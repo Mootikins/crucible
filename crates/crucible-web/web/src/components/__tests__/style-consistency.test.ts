@@ -74,18 +74,20 @@ describe('motion primitives on structural surfaces', () => {
     expect(read('components/windowing/FloatingWindow.tsx')).toMatch(/cru-anim-pop/);
   });
 
-  it('edge panels slide (full-opacity translate) in BOTH directions inside an instant clip frame', () => {
+  it('edge panels slide via one rAF-driven progress (frame + translate locked)', () => {
     const src = read('components/windowing/EdgePanel.tsx');
-    // Layout snaps once (no per-frame center reflow); the inner panel
-    // translates from its owning edge; content stays MOUNTED while
-    // collapsed (an expand must never pay a panel-subtree mount) and
-    // leaves paint/tab order via visibility.
+    // A single progress value drives the clip frame size AND the inner
+    // translate each frame, so neighbors reflow smoothly over the whole
+    // toggle and the clip edge never tears from the panel edge. Content
+    // stays MOUNTED while collapsed (an expand must never pay a
+    // panel-subtree mount) and leaves paint/tab order via visibility.
     expect(src).toMatch(/TWEEN_MS/);
-    expect(src).toMatch(/translate: isCollapsed\(\)/);
-    expect(src).toMatch(/visibility: spaceReserved\(\)/);
+    expect(src).toMatch(/requestAnimationFrame\(step\)/);
+    expect(src).toMatch(/visibility: progress\(\)/);
     expect(src).not.toMatch(/setRendered/);
-    // The only transitioned property is translate — never width/height.
-    expect(src).not.toMatch(/transition:.*(width|height)/);
+    // NO CSS transitions on the slide: width/height transition on the main
+    // thread while translate composites — under load they desync and tear.
+    expect(src).not.toMatch(/transition:.*(width|height|translate)/);
   });
 
   it('command palette pops in over a fading overlay', () => {
