@@ -2,9 +2,12 @@ import { Component, Show, createEffect, createSignal, on, onCleanup } from 'soli
 import { Key } from '@solid-primitives/keyed';
 import { createDraggable, createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore, windowActions } from '@/stores/windowStore';
-import { collectLeafGroupIds } from '@/stores/windowStoreInternals';
+import { collectLeafGroupIds, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
 import type { EdgePanelPosition, Tab } from '@/types/windowTypes';
 import { openPanelTab } from '@/lib/panel-actions';
+import { attachFileDropTarget } from '@/lib/file-dnd';
+import { openFileInGroup } from '@/lib/file-actions';
+import { terminalAllowed } from '@/lib/terminal-availability';
 import { SplitPane } from './SplitPane';
 import {
   IconPanelLeft,
@@ -118,7 +121,14 @@ const RibbonTabButton: Component<{
     { type: 'tab', tab: props.tab, sourceGroupId: props.groupId },
   );
 
+  // A terminal this client can't use (remote without the remote_shell
+  // opt-in) is greyed out instead of opening a panel that only explains
+  // why it won't connect. Still draggable — moving the tab is harmless.
+  const unavailable = () =>
+    props.tab.contentType === 'terminal' && !terminalAllowed();
+
   const handleClick = () => {
+    if (unavailable()) return;
     const panel = windowStore.edgePanels[props.position];
     if (panel.isCollapsed) {
       windowActions.setActiveTab(props.groupId, props.tab.id);
@@ -142,12 +152,19 @@ const RibbonTabButton: Component<{
         'flex items-center justify-center transition-all duration-150': true,
         'w-10 h-10': props.isVertical,
         'h-9 px-3': !props.isVertical,
-        'opacity-40': draggable.isActiveDraggable,
-        'bg-surface-elevated text-shell-ink': highlighted() && !draggable.isActiveDraggable,
+        'opacity-40': draggable.isActiveDraggable || unavailable(),
+        'cursor-not-allowed': unavailable(),
+        'bg-surface-elevated text-shell-ink':
+          highlighted() && !draggable.isActiveDraggable && !unavailable(),
         'text-muted-dark hover:text-shell-body hover:bg-hover-wash':
-          !highlighted() && !draggable.isActiveDraggable,
+          !highlighted() && !draggable.isActiveDraggable && !unavailable(),
+        'text-muted-dark': unavailable() && !draggable.isActiveDraggable,
       }}
-      title={props.tab.title}
+      title={
+        unavailable()
+          ? `${props.tab.title} — only available from the host machine (or with remote_shell enabled)`
+          : props.tab.title
+      }
       onClick={handleClick}
     >
       {props.tab.icon ? (
@@ -209,6 +226,27 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
     panelId: props.position,
   });
 
+  // Native file drags (pragmatic pipeline, separate from solid-dnd tab
+  // drags): dropping a file on the ribbon opens it in this panel's first
+  // leaf group and expands the panel — same affordance the tab drop has.
+  const [fileDropOver, setFileDropOver] = createSignal(false);
+  const attachRibbonFileDrop = (el: HTMLElement) => {
+    const cleanup = attachFileDropTarget(el, {
+      zone: 'ribbon',
+      canDrop: (source) => !source.isDir,
+      onDragEnter: () => setFileDropOver(true),
+      onDragLeave: () => setFileDropOver(false),
+      onDrop: (source) => {
+        setFileDropOver(false);
+        const groupId = primaryEdgeGroupId(windowStore, props.position);
+        if (!groupId) return;
+        openFileInGroup(groupId, source.absPath, source.name);
+        windowActions.setEdgePanelCollapsed(props.position, false);
+      },
+    });
+    onCleanup(cleanup);
+  };
+
   const toggleIcon = () => {
     const collapsed = panel().isCollapsed;
     switch (props.position) {
@@ -224,6 +262,7 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
   return (
     <div
       use:droppable
+      ref={attachRibbonFileDrop}
       data-testid={`edge-collapsed-drop-${props.position}`}
       classList={{
         'flex bg-shell-bg border-hairline transition-colors': true,
@@ -231,7 +270,7 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
         'flex-col border-r': props.position === 'left',
         'flex-col border-l': props.position === 'right',
         'flex-row border-t': !isVertical(),
-        'bg-primary/20': droppable.isActiveDroppable,
+        'bg-primary/20': droppable.isActiveDroppable || fileDropOver(),
       }}
     >
       {/* Top/leading slot: this bar's panel toggle — always in view. */}

@@ -1,7 +1,6 @@
 import {
   Component,
   createEffect,
-  createResource,
   createSignal,
   onCleanup,
   Match,
@@ -13,7 +12,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import '@xterm/xterm/css/xterm.css';
-import { getConfig } from '@/lib/api';
+import { terminalAllowed, terminalDenied } from '@/lib/terminal-availability';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
 
 /**
@@ -64,17 +63,6 @@ function wsUrl(): string {
   return `${proto}://${window.location.host}/api/terminal/ws`;
 }
 
-// The PTY endpoint is gated server-side to localhost (a PTY is full shell
-// access) unless the server opted into authenticated remote access
-// (`cru web --remote-shell` / `[server] remote_shell`, requires an API
-// key). /api/config reports whether the opt-in is active, so a LAN client
-// either connects or gets an honest explanation instead of a dead
-// reconnect loop.
-function isLocalhost(): boolean {
-  const h = window.location.hostname;
-  return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1';
-}
-
 export const TerminalPanel: Component = () => {
   const [status, setStatus] = createSignal<'connecting' | 'open' | 'closed'>('connecting');
   // Terminal font: its own setting when set, else the Appearance code font,
@@ -86,14 +74,13 @@ export const TerminalPanel: Component = () => {
     settings.appearance.fontMono.trim() ||
     "'IBM Plex Mono', ui-monospace, monospace";
   const termFontSize = () => Math.max(8, settings.terminal.fontSize || 13);
-  // Localhost never needs the config round-trip; remote clients check the
-  // server's remote-shell opt-in before attempting the socket.
-  const [cfg] = createResource(
-    () => (isLocalhost() ? null : true),
-    () => getConfig().catch(() => ({ kiln_path: '', remote_shell: false })),
-  );
-  const allowed = () => isLocalhost() || cfg()?.remote_shell === true;
-  const denied = () => !isLocalhost() && cfg() !== undefined && cfg()?.remote_shell !== true;
+  // The PTY endpoint is gated server-side to localhost (a PTY is full shell
+  // access) unless the server opted into authenticated remote access — the
+  // shared availability module does the /api/config round-trip once, so a
+  // LAN client either connects or gets an honest explanation instead of a
+  // dead reconnect loop.
+  const allowed = terminalAllowed;
+  const denied = terminalDenied;
   let container: HTMLDivElement | undefined;
   let term: Terminal | undefined;
   let fitAddon: FitAddon | undefined;

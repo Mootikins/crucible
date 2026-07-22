@@ -16,6 +16,7 @@ import { openSessionInChat } from '@/lib/session-actions';
 import { openDraftSession } from '@/lib/draft-session';
 import { openFileInEditor } from '@/lib/file-actions';
 import { openPanelTab } from '@/lib/panel-actions';
+import { terminalAllowed } from '@/lib/terminal-availability';
 import { statusBarActions, statusBarStore } from '@/stores/statusBarStore';
 import { attentionActions } from '@/stores/attentionStore';
 import { windowActions } from '@/stores/windowStore';
@@ -55,6 +56,9 @@ function panelOpenCommands(): PaletteCommand[] {
   return getGlobalRegistry()
     .list()
     .filter((def) => !PANEL_COMMAND_EXCLUDED.has(def.id))
+    // No "Open Terminal" on clients that can't use it (remote without the
+    // remote_shell opt-in) — the command would open an explanation panel.
+    .filter((def) => def.id !== 'terminal' || terminalAllowed())
     .map((def) => ({
       id: `nav-open-${def.id}`,
       label: `Open ${def.title}`,

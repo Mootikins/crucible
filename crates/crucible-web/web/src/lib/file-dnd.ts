@@ -9,10 +9,10 @@
  * dragstart/drop, so tab drags and file drags never see each other.
  *
  * Zone protocol: every file-accepting drop target tags its data with a `zone`
- * (`'folder' | 'tree-root' | 'pane' | 'editor'`) and only acts when it is the
- * INNERMOST file target of the drop (pragmatic fires onDrop on the whole
- * target stack; without the innermost check, dropping on an editor would also
- * "open in pane" on the pane behind it).
+ * (`'folder' | 'tree-root' | 'pane' | 'editor' | 'ribbon'`) and only acts
+ * when it is the INNERMOST file target of the drop (pragmatic fires onDrop on
+ * the whole target stack; without the innermost check, dropping on an editor
+ * would also "open in pane" on the pane behind it).
  */
 import {
   draggable,
@@ -20,7 +20,7 @@ import {
 } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 
-export type FileDropZone = 'folder' | 'tree-root' | 'pane' | 'editor';
+export type FileDropZone = 'folder' | 'tree-root' | 'pane' | 'editor' | 'ribbon';
 
 /** Payload attached to a file-tree node drag. Identity is rootKey + relPath. */
 export type FileDragData = {
