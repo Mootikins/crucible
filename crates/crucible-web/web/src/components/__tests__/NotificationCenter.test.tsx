@@ -211,22 +211,20 @@ describe('NotificationCenter — keyboard / backdrop', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('calls onClose when the backdrop is clicked', () => {
+  it('calls onClose on an outside click (popout has no backdrop)', () => {
     const onClose = vi.fn();
-    const { container } = render(() => (
-      <NotificationCenter open={true} onClose={onClose} />
-    ));
-    const backdrop = container.querySelector('.fixed.inset-0') as HTMLElement;
-    expect(backdrop).not.toBeNull();
-    // Dispatch a click whose target IS the backdrop element
-    fireEvent.click(backdrop);
+    render(() => <NotificationCenter open={true} onClose={onClose} />);
+    // The popout dismisses via a document-level listener when the press
+    // lands outside its anchor parent.
+    fireEvent.mouseDown(document.body);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('does not call onClose when a child of the drawer is clicked', () => {
+  it('does not call onClose when a child of the popout is clicked', () => {
     const onClose = vi.fn();
     mockState.notifications = [makeNotif({ message: 'child-click-target' })];
     render(() => <NotificationCenter open={true} onClose={onClose} />);
+    fireEvent.mouseDown(screen.getByText('child-click-target'));
     fireEvent.click(screen.getByText('child-click-target'));
     expect(onClose).not.toHaveBeenCalled();
   });

@@ -4,5 +4,5 @@ export { Pane } from './Pane';
 export { TabBar } from './TabBar';
 export { EdgePanel } from './EdgePanel';
 export { FloatingWindow } from './FloatingWindow';
-export { StatusBar } from './StatusBar';
+export { CornerBar } from './CornerBar';
 export { MinimizedBar } from './MinimizedBar';

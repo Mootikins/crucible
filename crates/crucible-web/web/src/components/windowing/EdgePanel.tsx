@@ -358,15 +358,18 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
     </>
   );
 
-  // Slide, don't tween layout: animating the wrapper's width made the CENTER
-  // content reflow every frame (visible jitter in heavy panes). Instead the
-  // wrapper snaps 0 ↔ full instantly (one reflow at each end), and the inner
-  // panel TRANSLATES in/out from its owning edge at full opacity, clipped by
-  // the wrapper. Content stays mounted through the exit slide and unmounts
-  // after it.
+  // Synchronized slide + live resize: the clip frame's size TWEENS 0 ↔ full
+  // while the inner panel (kept at its full final size, so its own content
+  // never reflows) translates in from its edge with the same duration and
+  // easing. With matching curves the inner panel's center-facing edge
+  // exactly tracks the frame's moving boundary, so neighboring content
+  // reflows *with* the slide instead of snapping at the end. The transition
+  // is armed only around collapse-state changes — resize-handle drags write
+  // width/height directly and must stay instant.
   const TWEEN_MS = 200;
   const [rendered, setRendered] = createSignal(!isCollapsed());
   const [open, setOpen] = createSignal(!isCollapsed());
+  const [tweening, setTweening] = createSignal(false);
   let tweenTimer: number | undefined;
 
   createEffect(
@@ -374,14 +377,19 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
       isCollapsed,
       (collapsed) => {
         window.clearTimeout(tweenTimer);
+        setTweening(true);
         if (!collapsed) {
           setRendered(true);
-          // Double rAF: paint the offscreen-translated state first, THEN
+          // Double rAF: paint the zero-width/offscreen state first, THEN
           // flip so the browser has something to transition from.
           requestAnimationFrame(() => requestAnimationFrame(() => setOpen(true)));
+          tweenTimer = window.setTimeout(() => setTweening(false), TWEEN_MS + 50);
         } else {
           setOpen(false);
-          tweenTimer = window.setTimeout(() => setRendered(false), TWEEN_MS + 50);
+          tweenTimer = window.setTimeout(() => {
+            setRendered(false);
+            setTweening(false);
+          }, TWEEN_MS + 50);
         }
       },
       { defer: true },
@@ -393,6 +401,12 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
   const fullSize = () => (isVertical() ? (panel().width || 250) : (panel().height || 200)) + 1;
   const offscreen = () =>
     props.position === 'left' ? '-100% 0' : props.position === 'right' ? '100% 0' : '0 100%';
+  const frameStyle = () => ({
+    [isVertical() ? 'width' : 'height']: open() ? `${fullSize()}px` : '0px',
+    transition: tweening()
+      ? `${isVertical() ? 'width' : 'height'} ${TWEEN_MS}ms ease-out`
+      : 'none',
+  });
   const innerStyle = () => ({
     [isVertical() ? 'width' : 'height']: `${fullSize()}px`,
     translate: open() ? '0 0' : offscreen(),
@@ -412,14 +426,15 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
     >
       {props.position === 'left' && <EdgeRibbon position="left" />}
       <Show when={rendered()}>
-        {/* Clip frame: sized instantly (layout settles in one step)… */}
+        {/* Clip frame: its size tweens with the slide so the neighboring
+            content's edge moves in step with the panel… */}
         <div
           classList={{
             'flex overflow-hidden flex-none': true,
             'flex-row': isVertical(),
             'flex-col': !isVertical(),
           }}
-          style={{ [isVertical() ? 'width' : 'height']: `${fullSize()}px` }}
+          style={frameStyle()}
         >
           {/* …while the panel itself slides within it, at full opacity. */}
           <div

@@ -610,8 +610,8 @@ const EditorSettingsSection: Component = () => {
         </select>
       </SettingRow>
       <SettingRow
-        label="Save button in status bar"
-        description="Show a dirty indicator + Save action for the active buffer."
+        label="Floating save button"
+        description="Show a dirty indicator + Save action at the bottom-right of the workspace."
       >
         <input
           type="checkbox"

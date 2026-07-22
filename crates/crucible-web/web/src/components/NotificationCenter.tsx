@@ -111,14 +111,19 @@ const NotificationItem: Component<{ notification: Notification }> = (props) => {
 
 // ── Notification Center Drawer ──────────────────────────────────────────
 
+/**
+ * Notification popout — anchors to the corner bell (Adobe-style flyout),
+ * expects a `position: relative` parent to hang from. No backdrop; it
+ * dismisses on outside click or Escape.
+ */
 export const NotificationCenter: Component<{ open: boolean; onClose: () => void }> = (props) => {
   const [visible, setVisible] = createSignal(false);
-  let backdropRef: HTMLDivElement | undefined;
+  let panelRef: HTMLDivElement | undefined;
 
   // Animate in/out
   createEffect(() => {
     if (props.open) {
-      // Mark all as read when drawer opens
+      // Mark all as read when the popout opens
       notificationActions.markAllRead();
       requestAnimationFrame(() => setVisible(true));
     } else {
@@ -126,7 +131,7 @@ export const NotificationCenter: Component<{ open: boolean; onClose: () => void 
     }
   });
 
-  // Close on Escape
+  // Close on Escape or outside click
   createEffect(() => {
     if (!props.open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -135,19 +140,24 @@ export const NotificationCenter: Component<{ open: boolean; onClose: () => void 
         props.onClose();
       }
     };
+    const onPointerDown = (e: MouseEvent) => {
+      // The anchor parent contains both the bell and this panel — clicks
+      // inside either keep the popout open (the bell's own handler toggles).
+      if (panelRef && !panelRef.parentElement?.contains(e.target as Node)) {
+        props.onClose();
+      }
+    };
     document.addEventListener('keydown', onKey, true);
-    onCleanup(() => document.removeEventListener('keydown', onKey, true));
+    document.addEventListener('mousedown', onPointerDown);
+    onCleanup(() => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('mousedown', onPointerDown);
+    });
   });
 
   const allNotifications = () => [...notificationStore.notifications];
   const grouped = () => groupNotifications(allNotifications());
   const hasNotifications = () => allNotifications().length > 0;
-
-  const handleBackdropClick = (e: MouseEvent) => {
-    if (e.target === backdropRef) {
-      props.onClose();
-    }
-  };
 
   const handleClearAll = () => {
     notificationActions.clearAll();
@@ -155,27 +165,20 @@ export const NotificationCenter: Component<{ open: boolean; onClose: () => void 
 
   return (
     <Show when={props.open}>
-      {/* Backdrop */}
+      {/* Popout above the bell, growing up-left from the corner. */}
       <div
-        ref={backdropRef}
-        class="fixed inset-0 z-50 bg-black/30 backdrop-blur-[2px] transition-opacity duration-200"
-        classList={{
-          'opacity-100': visible(),
-          'opacity-0': !visible(),
-        }}
-        onClick={handleBackdropClick}
+        ref={panelRef}
+        class={`
+          absolute bottom-full right-0 mb-2 z-50
+          w-80 max-w-[85vw] max-h-[min(480px,70vh)]
+          rounded-lg border border-hairline-strong bg-surface-overlay
+          shadow-2xl shadow-black/50
+          flex flex-col overflow-hidden
+          origin-bottom-right
+          transition-[opacity,scale,translate] duration-200 ease-out
+          ${visible() ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-1'}
+        `}
       >
-        {/* Drawer */}
-        <div
-          class={`
-            absolute top-0 right-0 h-full w-80 max-w-[90vw]
-            bg-shell-panel border-l border-hairline
-            shadow-2xl shadow-black/50
-            flex flex-col
-            transition-transform duration-300 ease-out
-            ${visible() ? 'translate-x-0' : 'translate-x-full'}
-          `}
-        >
           {/* Header */}
           <div class="flex items-center justify-between px-4 py-3 border-b border-hairline">
             <div class="flex items-center gap-2">
@@ -214,7 +217,7 @@ export const NotificationCenter: Component<{ open: boolean; onClose: () => void 
             <Show
               when={hasNotifications()}
               fallback={
-                <div class="flex flex-col items-center justify-center h-full text-muted-dark">
+                <div class="flex flex-col items-center justify-center py-10 text-muted-dark">
                   <span class="text-2xl mb-2">🔔</span>
                   <span class="text-xs">No notifications</span>
                 </div>
@@ -240,7 +243,6 @@ export const NotificationCenter: Component<{ open: boolean; onClose: () => void 
               </div>
             </Show>
           </div>
-        </div>
       </div>
     </Show>
   );

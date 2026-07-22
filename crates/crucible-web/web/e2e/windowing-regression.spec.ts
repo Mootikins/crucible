@@ -40,8 +40,9 @@ test('WindowManager renders with all layout regions', async ({ page }) => {
   // Ribbon with the command palette button (no header bar).
   await expect(page.getByTestId('ribbon-cmd-palette')).toBeVisible();
 
-  // Main content area between the ribbons.
-  const mainContent = page.locator('div.flex-1.flex.flex-col.overflow-hidden');
+  // Main content area between the ribbons (nested wrappers share the class
+  // combo — the outermost is the center column).
+  const mainContent = page.locator('div.flex-1.flex.flex-col.overflow-hidden').first();
   await expect(mainContent).toBeVisible();
 });
 
@@ -85,7 +86,7 @@ test('Center tiling area is visible and interactive', async ({ page }) => {
   await page.goto('/');
 
   // The center tiling area should be visible
-  const centerArea = page.locator('div.flex-1.flex.flex-col.overflow-hidden');
+  const centerArea = page.locator('div.flex-1.flex.flex-col.overflow-hidden').first();
   await expect(centerArea).toBeVisible();
 
   // There should be at least one pane in the center area

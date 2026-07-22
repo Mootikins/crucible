@@ -8,7 +8,7 @@ import {
 import { CenterTiling } from './CenterTiling';
 import { EdgePanel } from './EdgePanel';
 import { FloatingWindow } from './FloatingWindow';
-import { StatusBar } from './StatusBar';
+import { CornerBar } from './CornerBar';
 import { MinimizedBar } from './MinimizedBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import type { DragSource, DropTarget } from '@/types/windowTypes';
@@ -200,12 +200,16 @@ function InnerManager() {
       <div class="relative z-0 flex flex-1 overflow-hidden min-h-0">
         <EdgePanel position="left" />
         <div class="flex-1 flex flex-col overflow-hidden min-w-0">
-          <CenterTiling />
+          {/* relative: CornerBar floats at this area's bottom-right (above
+              the bottom dock), Adobe-style — the status bar's replacement. */}
+          <div class="relative flex-1 flex flex-col overflow-hidden min-h-0">
+            <CenterTiling />
+            <CornerBar />
+          </div>
           <EdgePanel position="bottom" />
         </div>
         <EdgePanel position="right" />
       </div>
-      <StatusBar />
       <div class="fixed inset-0 z-30 pointer-events-none">
         <For each={floatingWindows()}>
           {(w) => (

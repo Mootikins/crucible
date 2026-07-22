@@ -86,8 +86,16 @@ async fn handle_terminal(mut socket: WebSocket) {
     // gate truecolor on COLORTERM and silently downgrade to 256-color
     // approximations without it.
     cmd.env("COLORTERM", "truecolor");
-    if let Some(home) = dirs::home_dir() {
-        cmd.cwd(home);
+    // Start where the server was launched (the project you're working in),
+    // not $HOME — until terminals are session-aware, the launch directory is
+    // the best guess at "where the user's work is".
+    match std::env::current_dir() {
+        Ok(cwd) => cmd.cwd(cwd),
+        Err(_) => {
+            if let Some(home) = dirs::home_dir() {
+                cmd.cwd(home);
+            }
+        }
     }
 
     let mut child = match pair.slave.spawn_command(cmd) {
