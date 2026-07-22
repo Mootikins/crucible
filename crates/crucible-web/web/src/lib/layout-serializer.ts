@@ -211,6 +211,8 @@ function migrateV1toV2(v1: any): SerializedLayout {
   // Migrate each edge panel
   for (const pos of ['left', 'right', 'bottom'] as const) {
     const panel = v1.edgePanels[pos];
+    // Absent positions synthesize defaults at the end of deserializeLayout.
+    if (!panel) continue;
     if (panel.tabs && Array.isArray(panel.tabs)) {
       // Create new tab group from v1 inline tabs
       const groupId = `edge-${pos}-${Date.now()}`;
@@ -379,9 +381,24 @@ export function deserializeLayout(json: SerializedLayout): {
     }
   }
 
+  // Every position MUST come back with a valid panel: a partial payload
+  // (missing edgePanels entries, or an empty object from a truncated write)
+  // otherwise leaves `windowStore.edgePanels[pos]` undefined and every
+  // panel/ribbon/composer read crashes ("can't access property 'layout'"),
+  // bricking the whole shell. Absent positions get a collapsed empty panel.
   const edgePanels = {} as Record<EdgePanelPosition, EdgePanel>;
-  for (const [pos, panel] of Object.entries(layout.edgePanels)) {
-    edgePanels[pos as EdgePanelPosition] = {
+  for (const pos of ['left', 'right', 'bottom'] as EdgePanelPosition[]) {
+    const panel = layout.edgePanels?.[pos];
+    if (!panel) {
+      edgePanels[pos] = {
+        id: `${pos}-panel`,
+        layout: { id: `${pos}-pane`, type: 'pane', tabGroupId: null },
+        isCollapsed: true,
+        ...(pos === 'bottom' ? { height: 200 } : { width: 280 }),
+      };
+      continue;
+    }
+    edgePanels[pos] = {
       id: panel.id,
       // A v5-labeled layout with a null/absent tree (hand-corrupted JSON)
       // must not boot-block the renderer — degrade to an empty pane.

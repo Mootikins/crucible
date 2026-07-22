@@ -637,4 +637,23 @@ describe('v5 edge panels with split layout trees', () => {
     const restored = deserializeLayout(serialized);
     expect(restored.edgePanels.right.layout).toMatchObject({ type: 'pane', tabGroupId: null });
   });
+
+  it('a v5 layout with MISSING edge panel entries synthesizes collapsed defaults', () => {
+    // Regression: a minimal/truncated payload ({ edgePanels: {} }) restored
+    // a store with edgePanels[pos] === undefined — every panel, ribbon, and
+    // composer read then crashed ("can't access property 'layout'") and the
+    // whole shell bricked (no pane collapse/expand, dead chip popouts).
+    const restored = deserializeLayout({
+      version: 5,
+      layout: { id: 'p', type: 'pane', tabGroupId: null },
+      tabGroups: {},
+      edgePanels: {},
+      floatingWindows: [],
+    } as never);
+    for (const pos of ['left', 'right', 'bottom'] as const) {
+      expect(restored.edgePanels[pos]).toBeDefined();
+      expect(restored.edgePanels[pos].isCollapsed).toBe(true);
+      expect(restored.edgePanels[pos].layout).toMatchObject({ type: 'pane', tabGroupId: null });
+    }
+  });
 });
