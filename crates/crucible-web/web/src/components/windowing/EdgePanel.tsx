@@ -378,17 +378,28 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
   const [rendered, setRendered] = createSignal(!isCollapsed());
   const [open, setOpen] = createSignal(!isCollapsed());
   let tweenTimer: number | undefined;
+  let openRaf: number | undefined;
+  const cancelPending = () => {
+    window.clearTimeout(tweenTimer);
+    // The expand path's rAF must be cancelled too: orphaned, it fires
+    // setOpen(true) DURING a close started within the next two frames,
+    // sliding the panel back in before the unmount timer yanks it.
+    if (openRaf !== undefined) cancelAnimationFrame(openRaf);
+    openRaf = undefined;
+  };
 
   createEffect(
     on(
       isCollapsed,
       (collapsed) => {
-        window.clearTimeout(tweenTimer);
+        cancelPending();
         if (!collapsed) {
           setRendered(true);
           // Double rAF: paint the offscreen state first, THEN flip so the
           // browser has something to transition from.
-          requestAnimationFrame(() => requestAnimationFrame(() => setOpen(true)));
+          openRaf = requestAnimationFrame(() => {
+            openRaf = requestAnimationFrame(() => setOpen(true));
+          });
         } else {
           setOpen(false);
           tweenTimer = window.setTimeout(() => setRendered(false), TWEEN_MS + 50);
@@ -397,7 +408,7 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
       { defer: true },
     ),
   );
-  onCleanup(() => window.clearTimeout(tweenTimer));
+  onCleanup(cancelPending);
 
   // Panel size + the 1px resize handle that lives inside the wrapper.
   const fullSize = () => (isVertical() ? (panel().width || 250) : (panel().height || 200)) + 1;

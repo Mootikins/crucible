@@ -16,11 +16,19 @@ export function isLocalhost(): boolean {
 }
 
 // true = allowed, false = denied, undefined = remote check still in flight.
-const [remoteShell, setRemoteShell] = createSignal<boolean | undefined>(
-  isLocalhost() ? true : undefined,
-);
+const [remoteShell, setRemoteShell] = createSignal<boolean | undefined>(undefined);
 
-if (!isLocalhost()) {
+// Lazy on first read, NOT at import: a module-level fetch would fire as an
+// import side effect in any test/tool that transitively pulls this in under
+// a non-localhost URL.
+let started = false;
+function ensureStarted(): void {
+  if (started) return;
+  started = true;
+  if (isLocalhost()) {
+    setRemoteShell(true);
+    return;
+  }
   try {
     getConfig()
       .then((c) => setRemoteShell(c.remote_shell === true))
@@ -31,7 +39,13 @@ if (!isLocalhost()) {
 }
 
 /** Terminal is usable from this client. */
-export const terminalAllowed = () => remoteShell() === true;
+export const terminalAllowed = () => {
+  ensureStarted();
+  return remoteShell() === true;
+};
 
 /** The check finished and the answer is no (distinct from still-loading). */
-export const terminalDenied = () => remoteShell() === false;
+export const terminalDenied = () => {
+  ensureStarted();
+  return remoteShell() === false;
+};

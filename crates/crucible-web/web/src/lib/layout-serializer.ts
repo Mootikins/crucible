@@ -309,8 +309,12 @@ export function deserializeLayout(json: SerializedLayout): {
   // editor. Migrate them into the right panel group and collapse any pane
   // this empties out of the tree.
   let layoutTree = layout.layout;
+  // First RESOLVABLE leaf group of the right panel: with a split right
+  // panel, leaf [0] may be empty/missing from tabGroups, and skipping the
+  // chat migration would resurrect the stale center chat surface WS-220
+  // exists to prevent.
   const rightGroupId = layout.edgePanels.right
-    ? edgePanelGroupIds(layout.edgePanels.right)[0]
+    ? edgePanelGroupIds(layout.edgePanels.right).find((id) => tabGroups[id])
     : undefined;
   if (rightGroupId && tabGroups[rightGroupId]) {
     const centerGroupIds = new Set<string>();
@@ -379,7 +383,13 @@ export function deserializeLayout(json: SerializedLayout): {
   for (const [pos, panel] of Object.entries(layout.edgePanels)) {
     edgePanels[pos as EdgePanelPosition] = {
       id: panel.id,
-      layout: panel.layout,
+      // A v5-labeled layout with a null/absent tree (hand-corrupted JSON)
+      // must not boot-block the renderer — degrade to an empty pane.
+      layout: panel.layout ?? {
+        id: `${panel.id}-pane`,
+        type: 'pane',
+        tabGroupId: null,
+      },
       isCollapsed: panel.isCollapsed,
       width: panel.width,
       height: panel.height,

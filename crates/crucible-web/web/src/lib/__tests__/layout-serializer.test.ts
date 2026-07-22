@@ -582,3 +582,59 @@ describe('center chat tabs migrate to the right edge panel on restore', () => {
     expect(restored.tabGroups['g-right'].activeTabId).toBe('tab-chat-s9');
   });
 });
+
+describe('v5 edge panels with split layout trees', () => {
+  const splitEdgeState = (): WindowState => {
+    const state = createTestState();
+    state.tabGroups['edge-right-b'] = {
+      id: 'edge-right-b',
+      tabs: [{ id: 'tab-right-b', title: 'B', contentType: 'tool' }],
+      activeTabId: 'tab-right-b',
+    };
+    state.edgePanels.right.layout = {
+      id: 'right-split',
+      type: 'split',
+      direction: 'vertical',
+      splitRatio: 0.3,
+      first: paneLayout('right-pane-a', 'edge-right-group'),
+      second: paneLayout('right-pane-b', 'edge-right-b'),
+    };
+    return state;
+  };
+
+  it('a split edge tree round-trips: both leaf groups, ratio, and direction survive', () => {
+    const restored = deserializeLayout(serializeLayout(splitEdgeState()));
+    const right = restored.edgePanels.right.layout;
+    expect(right.type).toBe('split');
+    if (right.type !== 'split') return;
+    expect(right.direction).toBe('vertical');
+    expect(right.splitRatio).toBe(0.3);
+    expect(right.first).toMatchObject({ type: 'pane', tabGroupId: 'edge-right-group' });
+    expect(right.second).toMatchObject({ type: 'pane', tabGroupId: 'edge-right-b' });
+    expect(restored.tabGroups['edge-right-group']).toBeDefined();
+    expect(restored.tabGroups['edge-right-b']).toBeDefined();
+  });
+
+  it('chat docking targets the first RESOLVABLE right-panel leaf when leaf[0] is missing', () => {
+    const state = splitEdgeState();
+    // First leaf references a group that no longer exists; the session-bound
+    // chat tab in center must still migrate right (into the second leaf).
+    delete state.tabGroups['edge-right-group'];
+    state.tabGroups['group-1'].tabs.push({
+      id: 'tab-chat-z',
+      title: 'Z',
+      contentType: 'chat',
+      metadata: { sessionId: 'z' },
+    });
+    const restored = deserializeLayout(serializeLayout(state));
+    expect(restored.tabGroups['edge-right-b'].tabs.map((t) => t.id)).toContain('tab-chat-z');
+    expect(restored.tabGroups['group-1'].tabs.some((t) => t.id === 'tab-chat-z')).toBe(false);
+  });
+
+  it('a v5 layout with a null edge tree degrades to an empty pane instead of crashing', () => {
+    const serialized = serializeLayout(createTestState());
+    (serialized.edgePanels.right as { layout: unknown }).layout = null;
+    const restored = deserializeLayout(serialized);
+    expect(restored.edgePanels.right.layout).toMatchObject({ type: 'pane', tabGroupId: null });
+  });
+});

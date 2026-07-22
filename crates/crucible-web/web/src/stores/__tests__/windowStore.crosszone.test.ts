@@ -442,3 +442,109 @@ describe('setEdgePanelActiveTab', () => {
     expect(windowStore.focusedRegion).toBe('left');
   });
 });
+
+describe('edge panel split trees (v5 model)', () => {
+  const seedSplitBottom = () => {
+    resetToState({
+      tabGroups: {
+        'g-center': makeTabGroup('g-center', [makeTab('c1')], 'c1'),
+        'g-b1': makeTabGroup('g-b1', [
+          { id: 'term-1', title: 'Terminal', contentType: 'terminal' },
+        ], 'term-1'),
+        'g-b2': makeTabGroup('g-b2', [
+          { id: 'chat-1', title: 'Chat', contentType: 'tool' },
+        ], 'chat-1'),
+      },
+      edgePanels: {
+        left: makeEdgePanel('left', 'g-center-unused-left'),
+        right: makeEdgePanel('right', 'g-center-unused-right'),
+        bottom: {
+          id: 'bottom-panel',
+          layout: {
+            id: 'bottom-split',
+            type: 'split' as const,
+            direction: 'horizontal' as const,
+            splitRatio: 0.5,
+            first: { id: 'pane-b1', type: 'pane' as const, tabGroupId: 'g-b1' },
+            second: { id: 'pane-b2', type: 'pane' as const, tabGroupId: 'g-b2' },
+          },
+          isCollapsed: false,
+          height: 200,
+        },
+      },
+      layout: simpleLayout('pane-center', 'g-center'),
+      activePaneId: 'pane-b2',
+      focusedRegion: 'bottom',
+    });
+  };
+
+  it('splitPane routes into the edge tree and focuses the edge region', () => {
+    resetToState({
+      tabGroups: {
+        'g-center': makeTabGroup('g-center', [makeTab('c1')], 'c1'),
+        'g-left': makeTabGroup('g-left', [makeTab('l1')], 'l1'),
+      },
+      edgePanels: {
+        left: makeEdgePanel('left', 'g-left'),
+        right: makeEdgePanel('right', 'g-r'),
+        bottom: makeEdgePanel('bottom', 'g-b'),
+      },
+      layout: simpleLayout('pane-center', 'g-center'),
+      activePaneId: 'pane-center',
+      focusedRegion: 'center',
+    });
+
+    windowActions.splitPane('left-pane', 'vertical');
+
+    expect(windowStore.edgePanels.left.layout.type).toBe('split');
+    // Center tiling untouched.
+    expect(windowStore.layout.type).toBe('pane');
+    expect(windowStore.focusedRegion).toBe('left');
+  });
+
+  it('commitSplitRatio finds a split living inside an edge panel', () => {
+    seedSplitBottom();
+    windowActions.commitSplitRatio('bottom-split', 0.3);
+    const layout = windowStore.edgePanels.bottom.layout;
+    expect(layout.type).toBe('split');
+    if (layout.type === 'split') expect(layout.splitRatio).toBe(0.3);
+  });
+
+  it('removing the last tab of one pane in a multi-pane edge panel collapses that pane out, keeps the panel expanded, and re-points activePaneId', () => {
+    seedSplitBottom();
+    windowActions.removeTab('g-b2', 'chat-1');
+
+    // The emptied pane collapsed out of the tree; its group is gone.
+    const layout = windowStore.edgePanels.bottom.layout;
+    expect(layout).toMatchObject({ type: 'pane', tabGroupId: 'g-b1' });
+    expect(windowStore.tabGroups['g-b2']).toBeUndefined();
+    // Panel stays expanded (it still has content), unlike the sole-pane case.
+    expect(windowStore.edgePanels.bottom.isCollapsed).toBe(false);
+    // activePaneId pointed at the collapsed pane — must be re-pointed, or
+    // every keyboard shortcut dead-ends on a pane that exists in no tree.
+    expect(windowStore.activePaneId).toBe('pane-b1');
+  });
+
+  it('sole-pane edge panels keep the old behavior: empty group survives, panel collapses', () => {
+    resetToState({
+      tabGroups: {
+        'g-center': makeTabGroup('g-center', [makeTab('c1')], 'c1'),
+        'g-solo': makeTabGroup('g-solo', [makeTab('solo-tab')], 'solo-tab'),
+      },
+      edgePanels: {
+        left: makeEdgePanel('left', 'g-solo'),
+        right: makeEdgePanel('right', 'g-r'),
+        bottom: makeEdgePanel('bottom', 'g-b'),
+      },
+      layout: simpleLayout('pane-center', 'g-center'),
+      activePaneId: 'pane-center',
+      focusedRegion: 'center',
+    });
+
+    windowActions.removeTab('g-solo', 'solo-tab');
+
+    expect(windowStore.tabGroups['g-solo']).toMatchObject({ tabs: [], activeTabId: null });
+    expect(windowStore.edgePanels.left.isCollapsed).toBe(true);
+    expect(windowStore.edgePanels.left.layout).toMatchObject({ type: 'pane', tabGroupId: 'g-solo' });
+  });
+});

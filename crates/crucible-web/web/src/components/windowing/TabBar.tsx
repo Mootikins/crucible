@@ -1,4 +1,4 @@
-import { Component, For, JSX, Show, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
+import { Component, For, JSX, Show, createMemo, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
 import { Key } from '@solid-primitives/keyed';
 import {
   createDraggable,
@@ -405,7 +405,9 @@ const CenterTabBar: Component<{
   const activeTabId = () => group()?.activeTabId ?? null;
   // Panes render inside the center tiling AND inside edge-panel trees; the
   // bar's focus (and its e2e-visible identity) follows the group's region.
-  const edgePos = () => findEdgePanelForGroup(props.groupId);
+  // Memoized: the walk reads all three edge trees, and it feeds isFocused,
+  // the container testid, and every tab row's testid.
+  const edgePos = createMemo(() => findEdgePanelForGroup(props.groupId));
   const isFocused = () =>
     windowStore.activePaneId === props.paneId &&
     windowStore.focusedRegion === (edgePos() ?? 'center');

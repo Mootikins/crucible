@@ -3,6 +3,7 @@ import { Dynamic } from 'solid-js/web';
 import { createDroppable, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { TabBar } from './TabBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
+import { regionOfPane } from '@/stores/windowStoreInternals';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import { attachFileDropTarget } from '@/lib/file-dnd';
 import { openFileInGroup } from '@/lib/file-actions';
@@ -151,9 +152,18 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       <Show
         when={tabs().length > 0}
         fallback={
-          <EmptyState
-            onAction={() => window.dispatchEvent(new CustomEvent('crucible:new-session'))}
-          />
+          // The new-session CTA belongs to the CENTER (sessions open there /
+          // in the right dock) — an empty EDGE pane gets a neutral hint, as
+          // the old edge panel body did.
+          regionOfPane(windowStore, props.paneId) === 'center' ? (
+            <EmptyState
+              onAction={() => window.dispatchEvent(new CustomEvent('crucible:new-session'))}
+            />
+          ) : (
+            <div class="h-full flex items-center justify-center text-xs text-muted-dark">
+              Select a tab
+            </div>
+          )
         }
       >
         <TabBar

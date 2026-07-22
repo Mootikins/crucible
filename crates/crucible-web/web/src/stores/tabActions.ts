@@ -49,6 +49,14 @@ function releaseEdgeGroup(
   if (countPanes(panel.layout) > 1) {
     delete s.tabGroups[group.id];
     panel.layout = collapseEmptyNodes(panel.layout, s.tabGroups);
+    // The collapsed pane may have been the active one — apply the same
+    // guard the center branches use, else every activePaneId-driven
+    // shortcut (Ctrl+W, split, next-tab) silently no-ops until the user
+    // clicks another pane.
+    if (s.activePaneId && !findPaneAnywhere(s, s.activePaneId)) {
+      s.activePaneId =
+        findFirstPane(panel.layout)?.id ?? findFirstPane(s.layout)?.id ?? null;
+    }
   } else {
     s.tabGroups[group.id] = { ...group, tabs: [], activeTabId: null };
     panel.isCollapsed = true;
