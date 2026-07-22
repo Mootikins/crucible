@@ -42,7 +42,7 @@ describe('CenterTiling', () => {
     ));
 
     // Single-pane layout with an empty tab group → the pane's EmptyState.
-    expect(getByText('No session open')).toBeInTheDocument();
+    expect(getByText('Nothing open')).toBeInTheDocument();
     // The removed dev-only ratio buttons must not render.
     expect(queryByText(/Set ratio/i)).toBeNull();
   });

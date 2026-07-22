@@ -5,7 +5,7 @@ import { EmptyState } from '../EmptyState';
 describe('EmptyState', () => {
   it('shows no action button when onAction is not provided', () => {
     render(() => <EmptyState />);
-    expect(screen.getByText('No session open')).toBeInTheDocument();
+    expect(screen.getByText('Nothing open')).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 

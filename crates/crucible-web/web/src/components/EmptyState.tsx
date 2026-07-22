@@ -13,10 +13,13 @@ interface EmptyStateProps {
 export const EmptyState: Component<EmptyStateProps> = (props) => {
   return (
     <div class="flex-1 flex flex-col items-center justify-center bg-shell-bg gap-6 p-8">
+      {/* The center is the EDITING surface (sessions dock right, WS-220) —
+          point at opening content, not at sessions. */}
       <div class="text-center space-y-2">
-        <h2 class="text-lg font-semibold text-shell-ink">No session open</h2>
+        <h2 class="text-lg font-semibold text-shell-ink">Nothing open</h2>
         <p class="text-sm text-muted">
-          Select a session from the left panel or create a new one to get started.
+          Open a file from the Files panel or with <kbd class="px-1 rounded bg-surface-elevated text-shell-body">Ctrl+P</kbd>,
+          or start a new session.
         </p>
       </div>
 

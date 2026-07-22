@@ -313,7 +313,7 @@ test.describe('Comprehensive windowing behavior', () => {
       }
     });
 
-    await expect(page.locator('text=No session open')).toBeVisible({ timeout: 3000 });
-    await expect(page.locator('text=Select a session from the left panel or create a new one to get started.')).toBeVisible({ timeout: 3000 });
+    await expect(page.locator('text=Nothing open')).toBeVisible({ timeout: 3000 });
+    await expect(page.locator('text=Open a file from the Files panel')).toBeVisible({ timeout: 3000 });
   });
 });

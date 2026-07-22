@@ -42,7 +42,7 @@ describe('Pane — empty state', () => {
     ));
 
     // EmptyState's copy + action button.
-    expect(getByText('No session open')).toBeInTheDocument();
+    expect(getByText('Nothing open')).toBeInTheDocument();
     expect(getByRole('button', { name: /New Session/i })).toBeInTheDocument();
   });
 
@@ -53,7 +53,7 @@ describe('Pane — empty state', () => {
       </DragDropProvider>
     ));
 
-    expect(queryByText('No session open')).toBeInTheDocument();
+    expect(queryByText('Nothing open')).toBeInTheDocument();
 
     windowActions.addTab(groupId, {
       id: 'note-tab',
@@ -61,7 +61,7 @@ describe('Pane — empty state', () => {
       contentType: 'file',
     });
 
-    expect(queryByText('No session open')).toBeNull();
+    expect(queryByText('Nothing open')).toBeNull();
     // The tab strip now renders the tab row.
     expect(container.querySelector('[data-tab-id="note-tab"]')).toBeTruthy();
   });
