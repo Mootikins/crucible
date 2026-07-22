@@ -39,7 +39,14 @@ async function getFirstPaneState(page: Page): Promise<PaneState> {
 async function getRightPaneState(page: Page): Promise<PaneState> {
   return page.evaluate(() => {
     const store = (window as unknown as { __windowStore?: any }).__windowStore;
-    const groupId = store?.edgePanels?.right?.tabGroupId ?? null;
+    // v5 model: edge panels carry a layout tree; the right panel's group is
+    // its first leaf.
+    const firstLeafGroupId = (node: any): string | null => {
+      if (!node) return null;
+      if (node.type === 'pane') return node.tabGroupId ?? null;
+      return firstLeafGroupId(node.first) || firstLeafGroupId(node.second);
+    };
+    const groupId = firstLeafGroupId(store?.edgePanels?.right?.layout) ?? null;
     const group = groupId ? store.tabGroups[groupId] : null;
 
     return {

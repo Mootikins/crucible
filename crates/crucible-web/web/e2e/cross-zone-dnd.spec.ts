@@ -137,12 +137,12 @@ test.describe('Cross-zone tab drag and drop', () => {
     await page.evaluate(() => {
       const windowStore = (window as unknown as Record<string, unknown>).__windowStore as {
         layout: { type?: string; tabGroupId?: string; first?: unknown; second?: unknown };
-        edgePanels: { left: { tabGroupId: string } };
+        // v5 model: edge panels carry a layout tree; leaves reference groups.
+        edgePanels: { left: { layout: unknown } };
       };
       const windowActions = (window as unknown as Record<string, unknown>).__windowActions as {
         moveTab: (from: string, to: string, tabId: string) => void;
       };
-      const leftGroupId = windowStore.edgePanels.left.tabGroupId;
 
       const findFirstPaneGroupId = (node: unknown): string | null => {
         if (!node || typeof node !== 'object') return null;
@@ -156,8 +156,9 @@ test.describe('Cross-zone tab drag and drop', () => {
         return findFirstPaneGroupId(typedNode.first) ?? findFirstPaneGroupId(typedNode.second);
       };
 
+      const leftGroupId = findFirstPaneGroupId(windowStore.edgePanels.left.layout);
       const centerGroupId = findFirstPaneGroupId(windowStore.layout);
-      if (!centerGroupId) return;
+      if (!centerGroupId || !leftGroupId) return;
 
       for (const tabId of ['files-tab']) {
         windowActions.moveTab(leftGroupId, centerGroupId, tabId);

@@ -456,7 +456,9 @@ const CenterTabBar: Component<{
         )}
       />
       <div class="flex-shrink-0 flex items-center gap-0.5 px-1">
-        {props.onPopOut && tabs().length > 0 && (
+        {/* Edge bars stay minimal (Obsidian sidebars have no pop-out) —
+            edge content reaches floating windows by dragging the tab. */}
+        {!edgePos() && props.onPopOut && tabs().length > 0 && (
           <button
             onClick={props.onPopOut}
             class="w-6 h-6 flex items-center justify-center rounded text-muted-dark hover:text-shell-body hover:bg-hover-wash transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"

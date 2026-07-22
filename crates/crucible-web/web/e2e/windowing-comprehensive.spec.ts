@@ -15,7 +15,8 @@ type LayoutNode = {
 type WindowStoreShape = {
   layout: LayoutNode;
   tabGroups: Record<string, { tabs: Array<{ id: string }>; activeTabId: string | null }>;
-  edgePanels: Record<'left' | 'right' | 'bottom', { tabGroupId: string; isCollapsed: boolean }>;
+  // v5 model: edge panels carry a layout tree; leaves reference tab groups.
+  edgePanels: Record<'left' | 'right' | 'bottom', { layout: LayoutNode; isCollapsed: boolean }>;
   floatingWindows: Array<{ id: string; x: number; y: number; width: number; height: number }>;
 };
 
@@ -144,7 +145,11 @@ test.describe('Comprehensive windowing behavior', () => {
     await page.evaluate(() => {
       const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
       const windowActions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
-      const leftGroupId = windowStore.edgePanels.left.tabGroupId;
+      const firstLeafGroupId = (node: WindowStoreShape['layout']): string | null => {
+        if (node.type === 'pane') return node.tabGroupId ?? null;
+        return firstLeafGroupId(node.first!) ?? firstLeafGroupId(node.second!);
+      };
+      const leftGroupId = firstLeafGroupId(windowStore.edgePanels.left.layout)!;
       const tabs = [...(windowStore.tabGroups[leftGroupId]?.tabs ?? [])];
       for (const tab of tabs) {
         windowActions.removeTab(leftGroupId, tab.id);
