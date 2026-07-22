@@ -19,7 +19,7 @@ import { languages as codeLanguages } from '@codemirror/language-data';
 import { yamlFrontmatter } from '@codemirror/lang-yaml';
 import { javascript } from '@codemirror/lang-javascript';
 import { rust } from '@codemirror/lang-rust';
-import { vim } from '@replit/codemirror-vim';
+import { vim, Vim } from '@replit/codemirror-vim';
 import { wikilinkNavigation } from './wikilink-extension';
 import { attachFileDropTarget, insertTextFor } from '@/lib/file-dnd';
 import { crucibleEditorChrome } from './editor-theme';
@@ -62,6 +62,24 @@ export const getLanguageExtension = (path: string): LanguageSupport | null => {
 // reused view, so the update listener can tell them apart from user edits —
 // otherwise switching the active file marks the incoming file dirty (bug 5).
 export const contentSync = Annotation.define<boolean>();
+
+// Vim's `:w`/`:write` (and `:wq`) route to the owning editor's save handler
+// — same path as Ctrl-S, so the dirty state (and the floating Save chip)
+// clears identically. Ex commands are global to the vim adapter, so a
+// per-view registry dispatches to whichever editor ran the command.
+const vimSaveHandlers = new WeakMap<EditorView, () => void>();
+let vimExDefined = false;
+function ensureVimWriteEx(): void {
+  if (vimExDefined) return;
+  vimExDefined = true;
+  const write = (cm: { cm6?: EditorView }) => {
+    if (cm?.cm6) vimSaveHandlers.get(cm.cm6)?.();
+  };
+  Vim.defineEx('write', 'w', write);
+  // :wq saves too — there is no vim "quit" in a tabbed editor; the write
+  // half is what the muscle memory is for.
+  Vim.defineEx('wq', 'wq', write);
+}
 
 export const CodeMirrorEditor: Component<{
   content: string;
@@ -135,6 +153,16 @@ export const CodeMirrorEditor: Component<{
       keymap.of([
         {
           key: 'Mod-s',
+          preventDefault: true,
+          run: () => {
+            props.onSave?.();
+            return true;
+          },
+        },
+        // Alt-S too: unlike Ctrl-S it has no browser default to fight, so
+        // it works even where the browser refuses to yield the chord.
+        {
+          key: 'Alt-s',
           preventDefault: true,
           run: () => {
             props.onSave?.();
@@ -228,6 +256,8 @@ export const CodeMirrorEditor: Component<{
       parent: el,
     });
     props.apiRef?.(view);
+    vimSaveHandlers.set(view, () => props.onSave?.());
+    ensureVimWriteEx();
     // Lazy-load a language-data grammar for non-eager file types (TOML, etc.).
     void applyLanguage(view, props.path);
 

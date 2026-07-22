@@ -38,7 +38,7 @@ export const CornerBar: Component = () => {
             type="button"
             data-testid="status-save"
             class="flex items-center gap-1.5 h-6 px-2 rounded-md border border-hairline bg-surface-elevated/90 backdrop-blur text-[11px] text-attention hover:bg-hover-wash transition-colors"
-            title={`Save ${file().path.split('/').pop()} (Ctrl+S / Ctrl+Enter)`}
+            title={`Save ${file().path.split('/').pop()} (Ctrl+S / Alt+S / :w)`}
             onClick={() => void editor.saveFile(file().path)}
           >
             <span>●</span>

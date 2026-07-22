@@ -105,3 +105,28 @@ describe('lazy language resolution (language-data)', () => {
     expect(LanguageDescription.matchFilename(codeLanguages, 'notes.txt')).toBeNull();
   });
 });
+
+describe('CodeMirrorEditor — vim :write saves', () => {
+  it(':w and :wq route to onSave (same path as Ctrl-S, clears the dirty chip)', async () => {
+    const { getCM, Vim } = await import('@replit/codemirror-vim');
+    const onSave = vi.fn();
+    const { container } = render(() => (
+      <CodeMirrorEditor
+        content={'# note\n'}
+        path="/kiln/vim-save.md"
+        onChange={() => {}}
+        onSave={onSave}
+        vimMode={true}
+      />
+    ));
+    const view = findView(container);
+    const cm = getCM(view);
+    expect(cm).not.toBeNull();
+
+    Vim.handleEx(cm!, 'w');
+    expect(onSave).toHaveBeenCalledTimes(1);
+
+    Vim.handleEx(cm!, 'wq');
+    expect(onSave).toHaveBeenCalledTimes(2);
+  });
+});
