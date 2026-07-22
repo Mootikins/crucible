@@ -5,7 +5,8 @@ import { CommandPalette, parseOmniQuery, type PaletteCommand } from '../CommandP
 import { statusBarActions } from '@/stores/statusBarStore';
 import type { NoteEntry } from '@/lib/types';
 
-const PLACEHOLDER = 'Go anywhere… ( > command · [[ note )';
+const CMD_PLACEHOLDER = 'Run a command… ( [[ to open a note )';
+const NOTE_PLACEHOLDER = 'Open note… ( > to run a command )';
 
 const mockNotes: NoteEntry[] = [
   {
@@ -14,6 +15,13 @@ const mockNotes: NoteEntry[] = [
     title: 'Architecture',
     tags: ['meta'],
     updated_at: '2026-07-10T10:00:00Z',
+  },
+  {
+    name: 'Roadmap',
+    path: '/kiln/Meta/Roadmap.md',
+    title: 'Roadmap',
+    tags: [],
+    updated_at: '2026-07-12T10:00:00Z',
   },
 ];
 
@@ -44,19 +52,23 @@ function cmd(overrides: Partial<PaletteCommand> = {}): PaletteCommand {
   };
 }
 
-function getInput(): HTMLInputElement {
-  return screen.getByPlaceholderText(PLACEHOLDER) as HTMLInputElement;
+function getInput(placeholder = CMD_PLACEHOLDER): HTMLInputElement {
+  return screen.getByPlaceholderText(placeholder) as HTMLInputElement;
 }
 
 describe('parseOmniQuery — prefix routing', () => {
-  it('routes > to commands', () => {
-    expect(parseOmniQuery('>clear')).toEqual({ kinds: ['CMD'], query: 'clear' });
+  it('routes > to commands from any mode', () => {
+    expect(parseOmniQuery('>clear', 'notes')).toEqual({ kind: 'CMD', query: 'clear' });
   });
-  it('routes [[ to notes', () => {
-    expect(parseOmniQuery('[[arch')).toEqual({ kinds: ['NOTE'], query: 'arch' });
+  it('routes [[ to notes from any mode', () => {
+    expect(parseOmniQuery('[[arch', 'commands')).toEqual({ kind: 'NOTE', query: 'arch' });
   });
-  it('leaves plain queries unscoped', () => {
-    expect(parseOmniQuery('  inbox ')).toEqual({ kinds: null, query: 'inbox' });
+  it('plain queries scope to the open mode', () => {
+    expect(parseOmniQuery('  inbox ', 'commands')).toEqual({ kind: 'CMD', query: 'inbox' });
+    expect(parseOmniQuery('arch', 'notes')).toEqual({ kind: 'NOTE', query: 'arch' });
+  });
+  it('defaults to commands mode', () => {
+    expect(parseOmniQuery('x')).toEqual({ kind: 'CMD', query: 'x' });
   });
 });
 
@@ -65,10 +77,10 @@ describe('CommandPalette — open / closed', () => {
     render(() => (
       <CommandPalette open={false} commands={[cmd()]} onOpenChange={() => {}} />
     ));
-    expect(screen.queryByPlaceholderText(PLACEHOLDER)).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(CMD_PLACEHOLDER)).not.toBeInTheDocument();
   });
 
-  it('renders the omnibox input when open is true', () => {
+  it('renders the palette input when open is true', () => {
     render(() => (
       <CommandPalette open={true} commands={[cmd()]} onOpenChange={() => {}} />
     ));
@@ -76,19 +88,8 @@ describe('CommandPalette — open / closed', () => {
   });
 });
 
-describe('CommandPalette — omnibox sections', () => {
-  it('always offers the GO surfaces', () => {
-    render(() => (
-      <CommandPalette open={true} commands={[]} onOpenChange={() => {}} />
-    ));
-    // No Home surface — the landing page was removed.
-    expect(screen.queryByText('Home')).not.toBeInTheDocument();
-    expect(screen.getByText('Inbox')).toBeInTheDocument();
-    expect(screen.getByText('Editor (✎ Edit mode)')).toBeInTheDocument();
-    expect(screen.getByText('Session (◆ Session mode)')).toBeInTheDocument();
-  });
-
-  it('renders provided commands with a CMD badge', () => {
+describe('CommandPalette — single-purpose modes', () => {
+  it('commands mode shows actions only — no notes, no GO/session rows', async () => {
     render(() => (
       <CommandPalette
         open={true}
@@ -98,16 +99,33 @@ describe('CommandPalette — omnibox sections', () => {
     ));
     expect(screen.getByText('Run Tests')).toBeInTheDocument();
     expect(screen.getAllByText('CMD').length).toBeGreaterThan(0);
+    // The old omnibox mixed in notes and surfaces; the palette must not.
+    await Promise.resolve();
+    expect(screen.queryByText('Architecture')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Session mode/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Edit mode/)).not.toBeInTheDocument();
   });
 
-  it('lists kiln notes once loaded', async () => {
+  it('notes mode lists kiln notes only, most recently updated first', async () => {
     render(() => (
-      <CommandPalette open={true} commands={[]} onOpenChange={() => {}} />
+      <CommandPalette open={true} mode="notes" commands={[cmd({ label: 'Hidden Cmd' })]} onOpenChange={() => {}} />
     ));
     await waitFor(() => {
       expect(screen.getByText('Architecture')).toBeInTheDocument();
     });
-    expect(screen.getAllByText('NOTE').length).toBe(1);
+    expect(screen.queryByText('Hidden Cmd')).not.toBeInTheDocument();
+    // Recency order: Roadmap (07-12) above Architecture (07-10).
+    const labels = screen.getAllByText(/Roadmap|Architecture/).map((el) => el.textContent);
+    expect(labels[0]).toBe('Roadmap');
+    // Note paths render as descriptions.
+    expect(screen.getByText('/kiln/Meta/Roadmap.md')).toBeInTheDocument();
+  });
+
+  it('mode sets the placeholder', () => {
+    render(() => (
+      <CommandPalette open={true} mode="notes" commands={[]} onOpenChange={() => {}} />
+    ));
+    expect(screen.getByPlaceholderText(NOTE_PLACEHOLDER)).toBeInTheDocument();
   });
 });
 
@@ -124,7 +142,6 @@ describe('CommandPalette — filtering & prefixes', () => {
     fireEvent.input(getInput(), { target: { value: 'build' } });
     expect(screen.getByText('Compile Project')).toBeInTheDocument();
     expect(screen.queryByText('Switch Workspace')).not.toBeInTheDocument();
-    expect(screen.queryByText('Home')).not.toBeInTheDocument();
   });
 
   it('fuzzy: subsequence queries match (WS-304 fuzzy matching)', () => {
@@ -139,6 +156,18 @@ describe('CommandPalette — filtering & prefixes', () => {
     fireEvent.input(getInput(), { target: { value: 'clch' } });
     expect(screen.getByText('Clear Chat')).toBeInTheDocument();
     expect(screen.queryByText('Switch Workspace')).not.toBeInTheDocument();
+  });
+
+  it('fuzzy: notes match by path segments too', async () => {
+    render(() => (
+      <CommandPalette open={true} mode="notes" commands={[]} onOpenChange={() => {}} />
+    ));
+    await waitFor(() => {
+      expect(screen.getByText('Roadmap')).toBeInTheDocument();
+    });
+    fireEvent.input(getInput(NOTE_PLACEHOLDER), { target: { value: 'meta' } });
+    // "meta" hits Roadmap's path segment and Architecture's tag.
+    expect(screen.getByText('Roadmap')).toBeInTheDocument();
   });
 
   it('fuzzy: label matches rank above keyword-only matches', () => {
@@ -172,16 +201,7 @@ describe('CommandPalette — filtering & prefixes', () => {
     expect(screen.getByText('Toggle Mode')).toBeInTheDocument();
   });
 
-  it('> scopes to commands only', () => {
-    render(() => (
-      <CommandPalette open={true} commands={commands} onOpenChange={() => {}} />
-    ));
-    fireEvent.input(getInput(), { target: { value: '>' } });
-    expect(screen.getByText('Compile Project')).toBeInTheDocument();
-    expect(screen.queryByText('Home')).not.toBeInTheDocument();
-  });
-
-  it('[[ scopes to notes only', async () => {
+  it('[[ crosses over from commands mode to note search', async () => {
     render(() => (
       <CommandPalette open={true} commands={commands} onOpenChange={() => {}} />
     ));
@@ -190,7 +210,15 @@ describe('CommandPalette — filtering & prefixes', () => {
       expect(screen.getByText('Architecture')).toBeInTheDocument();
     });
     expect(screen.queryByText('Compile Project')).not.toBeInTheDocument();
-    expect(screen.queryByText('Home')).not.toBeInTheDocument();
+  });
+
+  it('> crosses over from notes mode to commands', async () => {
+    render(() => (
+      <CommandPalette open={true} mode="notes" commands={commands} onOpenChange={() => {}} />
+    ));
+    fireEvent.input(getInput(NOTE_PLACEHOLDER), { target: { value: '>compile' } });
+    expect(screen.getByText('Compile Project')).toBeInTheDocument();
+    expect(screen.queryByText('Architecture')).not.toBeInTheDocument();
   });
 
   it('shows the empty message when nothing matches', () => {
@@ -247,12 +275,13 @@ describe('CommandPalette — extras', () => {
     expect(screen.getByText('Squash conversation history')).toBeInTheDocument();
   });
 
-  it('shows the prefix hint footer', () => {
+  it('shows the prefix hint footer with both bindings', () => {
     render(() => (
       <CommandPalette open={true} commands={[]} onOpenChange={() => {}} />
     ));
     expect(screen.getByText('command')).toBeInTheDocument();
     expect(screen.getByText('note')).toBeInTheDocument();
+    expect(screen.getByText(/Ctrl\+P commands · Ctrl\+O notes/)).toBeInTheDocument();
   });
 });
 
@@ -274,26 +303,5 @@ describe('CommandPalette — query reset on close', () => {
     setOpen(true);
 
     expect(getInput().value).toBe('');
-  });
-
-  it('opens seeded with initialQuery — the Ctrl+O note switcher lands in [[ mode', async () => {
-    const [open, setOpen] = createSignal(false);
-    render(() => (
-      <CommandPalette
-        open={open()}
-        commands={[cmd({ id: 'a', label: 'AAA' })]}
-        initialQuery="[["
-        onOpenChange={setOpen}
-      />
-    ));
-
-    setOpen(true);
-
-    expect(getInput().value).toBe('[[');
-    // Note-scoped: commands are filtered out, notes remain.
-    await waitFor(() => {
-      expect(screen.getByText('Architecture')).toBeInTheDocument();
-    });
-    expect(screen.queryByText('AAA')).not.toBeInTheDocument();
   });
 });

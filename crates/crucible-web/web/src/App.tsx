@@ -4,7 +4,8 @@ import { ProjectProvider } from '@/contexts/ProjectContext';
 import { SessionProvider } from '@/contexts/SessionContext';
 import { EditorProvider } from '@/contexts/EditorContext';
 import { WindowManager } from '@/components/windowing/WindowManager';
-import { CommandPalette, type PaletteCommand } from '@/components/CommandPalette';
+import { CommandPalette, type PaletteCommand, type PaletteMode } from '@/components/CommandPalette';
+import { shellActions } from '@/stores/shellStore';
 import { registerPanels } from '@/lib/register-panels';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import type { TabContentType } from '@/types/windowTypes';
@@ -67,11 +68,10 @@ function panelOpenCommands(): PaletteCommand[] {
 const App: Component = () => {
   registerPanels();
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = createSignal(false);
-  // Seed text the palette opens with: '' for the full omnibox (Ctrl+P),
-  // '[[' for the note quick switcher (Ctrl+O).
-  const [paletteSeed, setPaletteSeed] = createSignal('');
-  const openPalette = (seed = '') => {
-    setPaletteSeed(seed);
+  // Ctrl+P opens the palette in commands mode, Ctrl+O in notes mode.
+  const [paletteMode, setPaletteMode] = createSignal<PaletteMode>('commands');
+  const openPalette = (mode: PaletteMode = 'commands') => {
+    setPaletteMode(mode);
     setIsCommandPaletteOpen(true);
   };
   const [isExportDialogOpen, setIsExportDialogOpen] = createSignal(false);
@@ -150,8 +150,24 @@ const App: Component = () => {
       category: 'Navigation',
       keywords: ['note', 'quick', 'switcher', 'jump', 'file'],
       // Selecting a command closes the palette after the action runs; defer
-      // the seeded reopen so it lands after that close.
-      action: () => setTimeout(() => openPalette('[['), 0),
+      // the mode-switched reopen so it lands after that close.
+      action: () => setTimeout(() => openPalette('notes'), 0),
+    },
+    {
+      id: 'nav-go-edit',
+      label: 'Go to Editor',
+      description: 'Focus the most recent file tab (opens the notes tree if none).',
+      category: 'Navigation',
+      keywords: ['edit', 'editor', 'vault', 'notes', 'go'],
+      action: () => shellActions.goEdit(),
+    },
+    {
+      id: 'nav-go-session',
+      label: 'Go to Session',
+      description: 'Focus the active session chat (starts one if none).',
+      category: 'Navigation',
+      keywords: ['chat', 'session', 'agent', 'go'],
+      action: () => shellActions.goSession(),
     },
     // Every registered panel gets an "Open …" command — the way to bring
     // back a closed window (graph, terminal, backlinks…). Focuses the
@@ -224,7 +240,7 @@ const App: Component = () => {
       } else if (action === 'openNoteSwitcher') {
         event.preventDefault();
         event.stopPropagation();
-        openPalette('[[');
+        openPalette('notes');
       }
     };
 
@@ -285,7 +301,7 @@ const App: Component = () => {
           <CommandPalette
             open={isCommandPaletteOpen()}
             commands={paletteCommands}
-            initialQuery={paletteSeed()}
+            mode={paletteMode()}
             onOpenChange={setIsCommandPaletteOpen}
           />
         </SessionProvider>

@@ -1,5 +1,4 @@
 import { Component, Show, createSignal } from 'solid-js';
-import { createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore } from '@/stores/windowStore';
 import { statusBarStore, pathBasename } from '@/stores/statusBarStore';
 import { useEditorSafe } from '@/contexts/EditorContext';
@@ -7,24 +6,12 @@ import { useSettingsSafe } from '@/contexts/SettingsContext';
 import { shellStore, shellActions } from '@/stores/shellStore';
 import { attentionStore } from '@/stores/attentionStore';
 import { notificationStore } from '@/stores/notificationStore';
-import type { ChatMode } from '@/lib/types';
-import { IconLayout, IconBell } from './icons';
+import { IconBell } from './icons';
 import { NotificationCenter } from '@/components/NotificationCenter';
 
 export const StatusBar: Component = () => {
-  const totalTabs = () =>
-    Object.values(windowStore.tabGroups).reduce(
-      (sum, group) => sum + group.tabs.length,
-      0
-    );
   const minimizedCount = () =>
     windowStore.floatingWindows.filter((w) => w.isMinimized).length;
-
-  // Drop target only: dropping a tab here moves it into a new floating
-  // window (onDragEnd's 'newFloating' branch). The chip itself was never a
-  // working drag source — its data type matched no drop handler.
-  const droppable = createDroppable('dropNewFloating', { type: 'newFloating' });
-  void droppable;
 
   const [drawerOpen, setDrawerOpen] = createSignal(false);
   const unreadCount = () => notificationStore.notificationCount();
@@ -38,14 +25,6 @@ export const StatusBar: Component = () => {
     if (!path) return null;
     const file = editor.openFiles().find((f) => f.path === path);
     return file?.dirty ? file : null;
-  };
-
-  const modeColor = (mode: ChatMode): string => {
-    switch (mode) {
-      case 'normal': return 'bg-ok/15 text-ok';
-      case 'plan': return 'bg-primary/80 text-white';
-      case 'auto': return 'bg-attention/15 text-attention';
-    }
   };
 
   const formatTokens = (n: number): string => {
@@ -74,15 +53,6 @@ export const StatusBar: Component = () => {
     }
   };
 
-  const contextIndicator = () => {
-    const workspace = pathBasename(statusBarStore.workspacePath());
-    const kiln = pathBasename(statusBarStore.kilnPath());
-    if (workspace && kiln) return `⌁ ${workspace} · knows ${kiln}`;
-    if (workspace) return `⌁ ${workspace}`;
-    if (kiln) return `knows ${kiln}`;
-    return null;
-  };
-
   return (
     <>
       <div class="flex items-center justify-between px-2 h-5 bg-shell-bg border-t border-hairline text-[10px] text-muted-dark select-none">
@@ -90,19 +60,8 @@ export const StatusBar: Component = () => {
           <span class="font-mono text-primary" data-testid="status-surface">
             {surfaceIndicator()}
           </span>
-          <Show when={contextIndicator()}>
-            <span class="font-mono text-muted-dark" data-testid="status-context">
-              {contextIndicator()}
-            </span>
-          </Show>
-          {/* Mode badge */}
-          <span
-            class={`px-1.5 rounded-sm font-medium uppercase tracking-wider text-[10px] leading-tight ${modeColor(statusBarStore.chatMode())}`}
-            data-testid="status-mode"
-          >
-            {statusBarStore.chatMode()}
-          </span>
-          <span>{totalTabs()} tabs</span>
+          {/* Chat mode lives in each composer (ChatModeControl); tab count
+              and the workspace/kiln context line carried no signal — gone. */}
           {minimizedCount() > 0 && (
             <span class="text-attention">{minimizedCount()} minimized</span>
           )}
@@ -136,15 +95,6 @@ export const StatusBar: Component = () => {
               </button>
             )}
           </Show>
-          <div
-            use:droppable
-            class="flex items-center gap-2 px-2 py-1 rounded"
-          >
-            <div class="flex items-center gap-2 px-2 py-1 text-xs text-muted-dark transition-colors">
-              <IconLayout class="w-3.5 h-3.5" />
-              <span>New Window</span>
-            </div>
-          </div>
           {/* Context usage */}
           <Show when={statusBarStore.contextUsage()}>
             {(usage) => (

@@ -1,8 +1,6 @@
 import { Component, For, Show, createEffect, createMemo, createResource, createSignal } from 'solid-js';
 import { Command } from 'cmdk-solid';
-import { useSessionSafe } from '@/contexts/SessionContext';
 import { statusBarStore } from '@/stores/statusBarStore';
-import { shellActions } from '@/stores/shellStore';
 import { listNotes } from '@/lib/api';
 import { openFileInEditor } from '@/lib/file-actions';
 import { noteAbsolutePath } from '@/lib/note-actions';
@@ -20,20 +18,25 @@ export interface PaletteCommand {
   action: () => void;
 }
 
+/** What the palette opens as: Ctrl+P = commands, Ctrl+O = notes. */
+export type PaletteMode = 'commands' | 'notes';
+
 interface CommandPaletteProps {
   open: boolean;
   commands: PaletteCommand[];
   onOpenChange: (open: boolean) => void;
-  /** Query text the palette opens with (e.g. '[[' for the note switcher). */
-  initialQuery?: string;
+  /** Initial scope. Typing a prefix (`>` commands / `[[` notes) crosses over. */
+  mode?: PaletteMode;
 }
 
-// ── Omnibox ──────────────────────────────────────────────────────────────
-// One palette that goes anywhere (Feature Spec §2.2, Crucible Shell design
-// turn 5): GO surfaces, note quick-switcher, sessions, and commands, with
-// type-ahead prefixes — `>` commands only, `[[` notes only.
+// ── Palette ──────────────────────────────────────────────────────────────
+// Two single-purpose surfaces sharing one component: the command palette
+// (actions only) and the note quick switcher (notes only). No mixed
+// results — sessions live in the sessions panel's search, files/notes are
+// Ctrl+O. Prefixes are crossover escapes: `[[` from commands jumps to note
+// search, `>` from notes jumps to commands.
 
-type OmniKind = 'GO' | 'NOTE' | 'SESSION' | 'CMD';
+type OmniKind = 'NOTE' | 'CMD';
 
 interface OmniItem {
   id: string;
@@ -46,21 +49,21 @@ interface OmniItem {
 }
 
 const KIND_STYLE: Record<OmniKind, string> = {
-  GO: 'text-primary border-primary/70',
   NOTE: 'text-muted border-muted/60',
-  SESSION: 'text-attention border-attention/60',
   CMD: 'text-precog border-precog/60',
 };
 
-const KIND_ORDER: OmniKind[] = ['GO', 'NOTE', 'SESSION', 'CMD'];
+/** Untyped list caps. Commands are few — show them all; notes cap at a
+ * screenful of the most recently updated. Typing re-ranks over everything. */
+const IDLE_LIMITS: Record<OmniKind, number> = { NOTE: 20, CMD: 100 };
 
-/** How many items a section shows before the user types anything. */
-const IDLE_LIMITS: Record<OmniKind, number> = { GO: 8, NOTE: 5, SESSION: 4, CMD: 6 };
-
-export function parseOmniQuery(raw: string): { kinds: OmniKind[] | null; query: string } {
-  if (raw.startsWith('>')) return { kinds: ['CMD'], query: raw.slice(1).trim() };
-  if (raw.startsWith('[[')) return { kinds: ['NOTE'], query: raw.slice(2).trim() };
-  return { kinds: null, query: raw.trim() };
+export function parseOmniQuery(
+  raw: string,
+  mode: PaletteMode = 'commands',
+): { kind: OmniKind; query: string } {
+  if (raw.startsWith('>')) return { kind: 'CMD', query: raw.slice(1).trim() };
+  if (raw.startsWith('[[')) return { kind: 'NOTE', query: raw.slice(2).trim() };
+  return { kind: mode === 'notes' ? 'NOTE' : 'CMD', query: raw.trim() };
 }
 
 /**
@@ -81,15 +84,11 @@ function scoreItem(item: OmniItem, query: string): number | null {
 
 export const CommandPalette: Component<CommandPaletteProps> = (props) => {
   const [query, setQuery] = createSignal('');
-  const sessionCtx = useSessionSafe();
 
   createEffect(() => {
-    if (props.open) {
-      // Seeded open: Ctrl+O lands in note-switcher mode ('[['), Ctrl+P clean.
-      setQuery(props.initialQuery ?? '');
-    } else {
-      setQuery('');
-    }
+    // Track open state; always start a session of the palette clean.
+    void props.open;
+    setQuery('');
   });
 
   // Notes load lazily when the palette opens (and re-fetch per open so
@@ -99,46 +98,24 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     (kiln) => listNotes(kiln).catch(() => [])
   );
 
-  const goItems = (): OmniItem[] => {
-    const sessionTitle = statusBarStore.activeSessionTitle();
-    return [
-      { id: 'go-inbox', kind: 'GO', label: 'Inbox', keywords: ['pending', 'approvals', 'waiting'], action: () => shellActions.goInbox() },
-      { id: 'go-edit', kind: 'GO', label: 'Editor (✎ Edit mode)', keywords: ['edit', 'notes', 'vault'], action: () => shellActions.goEdit() },
-      {
-        id: 'go-session',
-        kind: 'GO',
-        label: sessionTitle ? `Session: ${sessionTitle}` : 'Session (◆ Session mode)',
-        keywords: ['chat', 'agent'],
-        action: () => shellActions.goSession(),
-      },
-    ];
-  };
-
   const noteItems = (): OmniItem[] =>
-    (notes() ?? []).map((note) => ({
-      id: `note-${note.path}`,
-      kind: 'NOTE' as const,
-      label: note.title || note.name,
-      keywords: note.tags,
-      // Note records carry kiln-relative paths; the file API is absolute.
-      action: () =>
-        openFileInEditor(
-          noteAbsolutePath(note.path, statusBarStore.kilnPath() ?? ''),
-          note.name,
-        ),
-    }));
-
-  const sessionItems = (): OmniItem[] =>
-    sessionCtx
-      .sessions()
-      .filter((s) => !s.archived)
-      .map((session) => ({
-        id: `session-${session.id}`,
-        kind: 'SESSION' as const,
-        label: session.title || `Session ${session.id.slice(0, 8)}`,
-        description: session.agent_model ?? undefined,
-        keywords: ['resume', 'session'],
-        action: () => void sessionCtx.selectSession(session.id).catch(() => {}),
+    (notes() ?? [])
+      // Recency-first so the untyped switcher shows what you touched last.
+      .slice()
+      .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
+      .map((note) => ({
+        id: `note-${note.path}`,
+        kind: 'NOTE' as const,
+        label: note.title || note.name,
+        description: note.path,
+        // Path segments count for fuzzy matching (find "meta arch" style).
+        keywords: [...(note.tags ?? []), ...note.path.split('/')],
+        // Note records carry kiln-relative paths; the file API is absolute.
+        action: () =>
+          openFileInEditor(
+            noteAbsolutePath(note.path, statusBarStore.kilnPath() ?? ''),
+            note.name,
+          ),
       }));
 
   const commandItems = (): OmniItem[] =>
@@ -152,34 +129,28 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
       action: command.action,
     }));
 
-  const grouped = createMemo(() => {
-    const { kinds, query: q } = parseOmniQuery(query());
-    const sections: Record<OmniKind, OmniItem[]> = {
-      GO: goItems(),
-      NOTE: noteItems(),
-      SESSION: sessionItems(),
-      CMD: commandItems(),
-    };
-    return KIND_ORDER.filter((kind) => !kinds || kinds.includes(kind))
-      .map((kind) => {
-        let items = sections[kind]
-          .map((item) => ({ item, score: scoreItem(item, q) }))
-          .filter((x): x is { item: OmniItem; score: number } => x.score !== null)
-          .sort((a, b) => b.score - a.score)
-          .map((x) => x.item);
-        if (!q) items = items.slice(0, IDLE_LIMITS[kind]);
-        return { kind, items };
-      })
-      .filter((group) => group.items.length > 0);
+  const visible = createMemo(() => {
+    const { kind, query: q } = parseOmniQuery(query(), props.mode ?? 'commands');
+    const source = kind === 'NOTE' ? noteItems() : commandItems();
+    let items = source
+      .map((item) => ({ item, score: scoreItem(item, q) }))
+      .filter((x): x is { item: OmniItem; score: number } => x.score !== null)
+      .sort((a, b) => b.score - a.score)
+      .map((x) => x.item);
+    if (!q) items = items.slice(0, IDLE_LIMITS[kind]);
+    return { kind, items };
   });
 
-  const hasResults = createMemo(() => grouped().length > 0);
+  const placeholder = () =>
+    (props.mode ?? 'commands') === 'notes'
+      ? 'Open note… ( > to run a command )'
+      : 'Run a command… ( [[ to open a note )';
 
   return (
     <Command.Dialog
       open={props.open}
       onOpenChange={props.onOpenChange}
-      label="Omnibox"
+      label={(props.mode ?? 'commands') === 'notes' ? 'Note switcher' : 'Command palette'}
       class="fixed left-1/2 top-24 z-[120] w-[min(680px,92vw)] -translate-x-1/2 overflow-hidden rounded-xl border border-hairline-strong bg-surface-elevated/95 shadow-2xl backdrop-blur cru-anim-pop"
       overlayClassName="fixed inset-0 z-[110] bg-black/65 cru-anim-fade"
       shouldFilter={false}
@@ -188,62 +159,57 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
       <Command.Input
         value={query()}
         onValueChange={setQuery}
-        placeholder="Go anywhere… ( > command · [[ note )"
+        placeholder={placeholder()}
         class="w-full border-b border-hairline bg-transparent px-4 py-3 text-sm text-shell-ink outline-none placeholder:text-muted-dark"
       />
 
       <Command.List class="max-h-[60vh] overflow-y-auto p-1.5">
         <Show
-          when={hasResults()}
+          when={visible().items.length > 0}
           fallback={
             <div class="px-3 py-8 text-center text-sm text-muted-dark">
               Nothing matches "{query()}".
             </div>
           }
         >
-          <For each={grouped()}>
-            {(group) => (
-              <Command.Group class="mb-1">
-                <For each={group.items}>
-                  {(item) => (
-                    <Command.Item
-                      value={`${item.kind}:${item.id}`}
-                      onSelect={() => {
-                        item.action();
-                        props.onOpenChange(false);
-                      }}
-                      class="group flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-shell-body outline-none aria-selected:bg-primary/15 aria-selected:text-shell-ink data-[selected=true]:bg-primary/15 data-[selected=true]:text-shell-ink"
-                    >
-                      <span
-                        class={`font-mono text-[10px] font-medium border rounded-[3px] px-1 py-px w-[54px] text-center flex-none opacity-85 ${KIND_STYLE[item.kind]}`}
-                      >
-                        {item.kind}
-                      </span>
-                      <div class="min-w-0 flex-1">
-                        <div class="text-[13px] leading-5 truncate">{item.label}</div>
-                        <Show when={item.description}>
-                          <div class="text-xs text-muted-dark truncate">{item.description}</div>
-                        </Show>
-                      </div>
-                      <Show when={item.shortcut}>
-                        <kbd class="rounded border border-hairline bg-surface-overlay px-1.5 py-0.5 text-[10px] text-muted">
-                          {item.shortcut}
-                        </kbd>
-                      </Show>
-                    </Command.Item>
-                  )}
-                </For>
-              </Command.Group>
-            )}
-          </For>
+          <Command.Group class="mb-1">
+            <For each={visible().items}>
+              {(item) => (
+                <Command.Item
+                  value={`${item.kind}:${item.id}`}
+                  onSelect={() => {
+                    item.action();
+                    props.onOpenChange(false);
+                  }}
+                  class="group flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-shell-body outline-none aria-selected:bg-primary/15 aria-selected:text-shell-ink data-[selected=true]:bg-primary/15 data-[selected=true]:text-shell-ink"
+                >
+                  <span
+                    class={`font-mono text-[10px] font-medium border rounded-[3px] px-1 py-px w-[54px] text-center flex-none opacity-85 ${KIND_STYLE[item.kind]}`}
+                  >
+                    {item.kind}
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <div class="text-[13px] leading-5 truncate">{item.label}</div>
+                    <Show when={item.description}>
+                      <div class="text-xs text-muted-dark truncate">{item.description}</div>
+                    </Show>
+                  </div>
+                  <Show when={item.shortcut}>
+                    <kbd class="rounded border border-hairline bg-surface-overlay px-1.5 py-0.5 text-[10px] text-muted">
+                      {item.shortcut}
+                    </kbd>
+                  </Show>
+                </Command.Item>
+              )}
+            </For>
+          </Command.Group>
         </Show>
       </Command.List>
 
       <div class="flex gap-3.5 border-t border-hairline bg-shell-panel px-4 py-2 font-mono text-[10.5px] text-muted-dark">
         <span><span class="text-primary">&gt;</span> command</span>
         <span><span class="text-primary">[[</span> note</span>
-        <span><span class="text-primary">◆</span> session</span>
-        <span><span class="text-primary">⌂</span> go</span>
+        <span class="ml-auto">Ctrl+P commands · Ctrl+O notes</span>
       </div>
     </Command.Dialog>
   );
