@@ -41,3 +41,44 @@ describe('MarkdownPreview (reading view)', () => {
     expect(btn.textContent).toBe('Copied');
   });
 });
+
+describe('MarkdownPreview — frontmatter Properties card', () => {
+  it('renders YAML frontmatter as a card, not body text', async () => {
+    const { getByTestId } = render(() => (
+      <MarkdownPreview content={'---\ntitle: Hello\ntags:\n  - a\n  - b\n---\n# Body\n'} />
+    ));
+    const preview = getByTestId('markdown-preview');
+    await waitFor(() => {
+      const card = preview.querySelector('[data-testid="fm-card"]');
+      expect(card).not.toBeNull();
+      expect(card!.textContent).toContain('title');
+      expect(card!.querySelectorAll('.fm-pill')).toHaveLength(2);
+    });
+    // The raw delimiters never reach the prose.
+    expect(preview.textContent).not.toContain('---');
+  });
+
+  it('renders TOML (+++) frontmatter as a card too', async () => {
+    const { getByTestId } = render(() => (
+      <MarkdownPreview content={'+++\ntitle = "Hello"\ntags = ["a"]\n+++\n# Body\n'} />
+    ));
+    const preview = getByTestId('markdown-preview');
+    await waitFor(() => {
+      expect(preview.querySelector('[data-testid="fm-card"]')).not.toBeNull();
+    });
+    expect(preview.textContent).not.toContain('+++');
+    expect(preview.textContent).not.toContain('title = ');
+  });
+
+  it('omits the card (old strip behavior) when frontmatter is unparseable', async () => {
+    const { getByTestId } = render(() => (
+      <MarkdownPreview content={'---\nmeta:\n  nested: true\n---\n# Body\n'} />
+    ));
+    const preview = getByTestId('markdown-preview');
+    await waitFor(() => {
+      expect(preview.querySelector('h1')).not.toBeNull();
+    });
+    expect(preview.querySelector('[data-testid="fm-card"]')).toBeNull();
+    expect(preview.textContent).not.toContain('nested');
+  });
+});

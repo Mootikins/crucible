@@ -36,6 +36,7 @@ import {
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 import { renderMarkdown, wikilinkRe, rawImageUrl, sanitizeDocHtml } from '@/lib/markdown';
+import { extractFrontmatterBlock, renderFrontmatterCardHtml } from '@/lib/frontmatter';
 import { resolveCalloutKind } from '@/lib/callouts';
 import { formatTableLines } from '@/lib/table-format';
 import { inCodeOrTableContext } from './md-context';
@@ -173,6 +174,18 @@ function buildDecorations(view: EditorView): DecorationSet {
   const { state } = view;
   const doc = state.doc;
   const decorations: Range<Decoration>[] = [];
+
+  // TOML frontmatter (no lezer node): mono/dim line styling for the revealed
+  // (cursor-inside) state; when the cursor is out, the block widget covers it.
+  const toml = tomlFrontmatterRange(state);
+  if (toml) {
+    const last = doc.lineAt(toml.to).number;
+    for (let n = 1; n <= last; n++) {
+      decorations.push(
+        Decoration.line({ class: 'cm-lp-frontmatter' }).range(doc.line(n).from),
+      );
+    }
+  }
 
   for (const { from, to } of view.visibleRanges) {
     syntaxTree(state).iterate({
@@ -369,7 +382,28 @@ function buildDecorations(view: EditorView): DecorationSet {
  * cursor into the source, which reveals the raw markdown for editing —
  * except clicks on a foldable callout's summary row, which keep their
  * native `<details>` toggle. */
-type BlockKind = 'table' | 'callout' | 'html';
+type BlockKind = 'table' | 'callout' | 'html' | 'frontmatter';
+
+/** Card HTML for a frontmatter block's raw source (delimiters included);
+ * null when the flat parser can't represent it (callers keep raw source). */
+function frontmatterCardHtml(raw: string): string | null {
+  const block = extractFrontmatterBlock(raw.endsWith('\n') ? raw : `${raw}\n`);
+  if (!block?.entries?.length) return null;
+  return renderFrontmatterCardHtml(block.entries);
+}
+
+/** TOML (`+++`) frontmatter has NO lezer node (yamlFrontmatter only wraps
+ * `---`) — detect it at doc start so it still gets the card widget instead
+ * of rendering as body text. Returns the replace range (delimiters
+ * included, trailing newline excluded). */
+function tomlFrontmatterRange(state: EditorState): { from: number; to: number } | null {
+  if (!state.doc.sliceString(0, 3).startsWith('+++')) return null;
+  const head = state.doc.sliceString(0, Math.min(state.doc.length, 8192));
+  const block = extractFrontmatterBlock(head);
+  if (!block || block.format !== 'toml') return null;
+  const to = head[block.bodyStart - 1] === '\n' ? block.bodyStart - 1 : block.bodyStart;
+  return { from: 0, to };
+}
 
 class RenderedBlockWidget extends WidgetType {
   constructor(
@@ -395,15 +429,20 @@ class RenderedBlockWidget extends WidgetType {
         ? 'cm-lp-table'
         : this.kind === 'callout'
           ? 'cm-lp-callout-block'
-          : 'cm-lp-html';
+          : this.kind === 'frontmatter'
+            ? 'cm-lp-fm'
+            : 'cm-lp-html';
     wrap.setAttribute('data-testid', `lp-${this.kind}`);
     // Tables/callouts are markdown; a raw HTML block is already HTML and only
     // needs sanitizing + relative-image resolution. Both are DOMPurified.
+    // Frontmatter renders the shared Properties card (self-escaped).
     // eslint-disable-next-line solid/no-innerhtml -- DOMPurify-sanitized
     wrap.innerHTML =
-      this.kind === 'html'
-        ? sanitizeDocHtml(this.source, this.baseDir || undefined)
-        : renderMarkdown(this.source);
+      this.kind === 'frontmatter'
+        ? (frontmatterCardHtml(this.source) ?? '')
+        : this.kind === 'html'
+          ? sanitizeDocHtml(this.source, this.baseDir || undefined)
+          : renderMarkdown(this.source);
     wrap.addEventListener('mousedown', (e) => {
       // Foldable callout title: let the browser's <details> toggle run
       // instead of jumping into the source.
@@ -423,11 +462,12 @@ class RenderedBlockWidget extends WidgetType {
   }
 }
 
-/** Table, an HTML block, or a Blockquote whose first line is a `> [!type]`
- * callout head — each rendered as a block widget. */
+/** Table, an HTML block, YAML frontmatter, or a Blockquote whose first line
+ * is a `> [!type]` callout head — each rendered as a block widget. */
 function renderedBlockKind(state: EditorState, name: string, from: number): BlockKind | null {
   if (name === 'Table') return 'table';
   if (name === 'HTMLBlock') return 'html';
+  if (name === 'Frontmatter') return 'frontmatter';
   if (name !== 'Blockquote') return null;
   const firstLine = state.doc.lineAt(from);
   return CALLOUT_HEAD_LINE_RE.test(firstLine.text) ? 'callout' : null;
@@ -436,20 +476,37 @@ function renderedBlockKind(state: EditorState, name: string, from: number): Bloc
 function buildBlockWidgets(state: EditorState): DecorationSet {
   const decorations: Range<Decoration>[] = [];
   const baseDir = state.facet(baseDirFacet);
+
+  const pushWidget = (kind: BlockKind, from: number, to: number) => {
+    // Selection in the block = editing: show the raw source (the whole
+    // block at once — no nested widgets inside revealed source).
+    // Frontmatter's END boundary is exclusive: the yaml Frontmatter node
+    // ends AT the body's first position, where the cursor deliberately
+    // starts (CodeMirrorEditor) — an inclusive test would boot every file
+    // open into raw yaml.
+    const touchTo = kind === 'frontmatter' ? to - 1 : to;
+    if (selectionTouches(state, from, touchTo)) return;
+    const source = state.doc.sliceString(from, to);
+    // Frontmatter the flat parser can't represent stays raw — a wrong card
+    // is worse than mono source.
+    if (kind === 'frontmatter' && frontmatterCardHtml(source) === null) return;
+    decorations.push(
+      Decoration.replace({
+        widget: new RenderedBlockWidget(source, kind, baseDir),
+        block: true,
+      }).range(from, to),
+    );
+  };
+
+  // TOML frontmatter is invisible to the syntax tree — widget it manually.
+  const toml = tomlFrontmatterRange(state);
+  if (toml) pushWidget('frontmatter', toml.from, toml.to);
+
   syntaxTree(state).iterate({
     enter: (nodeRef) => {
       const kind = renderedBlockKind(state, nodeRef.name, nodeRef.from);
       if (!kind) return; // descend — plain blockquotes may contain tables
-      // Selection in the block = editing: show the raw source (the whole
-      // block at once — no nested widgets inside revealed source).
-      if (selectionTouches(state, nodeRef.from, nodeRef.to)) return false;
-      const source = state.doc.sliceString(nodeRef.from, nodeRef.to);
-      decorations.push(
-        Decoration.replace({
-          widget: new RenderedBlockWidget(source, kind, baseDir),
-          block: true,
-        }).range(nodeRef.from, nodeRef.to),
-      );
+      pushWidget(kind, nodeRef.from, nodeRef.to);
       return false;
     },
   });
@@ -671,6 +728,10 @@ const livePreviewTheme = EditorView.baseTheme({
   // lines inside the callout.
   '.cm-lp-callout-block': { cursor: 'text', padding: '2px 0', whiteSpace: 'normal' },
   '.cm-lp-callout-block .callout': { margin: '2px 0' },
+  // Frontmatter Properties card (shared .fm-card styles from index.css);
+  // click drops into the raw source like the other block widgets.
+  '.cm-lp-fm': { cursor: 'text', padding: '2px 0', whiteSpace: 'normal' },
+  '.cm-lp-fm .fm-card': { margin: '2px 0' },
   // Rendered raw-HTML block (e.g. a README's centered `<p align="center">`
   // demo). whiteSpace reset for the same pre-wrap reason as callouts.
   '.cm-lp-html': { cursor: 'text', padding: '2px 0', whiteSpace: 'normal' },

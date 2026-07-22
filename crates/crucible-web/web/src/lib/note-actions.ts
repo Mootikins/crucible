@@ -6,6 +6,7 @@
  * backlinks panel so every surface resolves links the same way.
  */
 import { getConfig, getNote } from './api';
+import { extractFrontmatterBlock } from './frontmatter';
 import { openFileInEditor } from './file-actions';
 import { notificationActions } from '@/stores/notificationStore';
 import type { NoteContent } from './types';
@@ -82,13 +83,10 @@ export interface NotePreview {
 
 /** Note body without its YAML frontmatter block (for rendered views). */
 export function stripFrontmatter(content: string): string {
-  if (content.startsWith('---')) {
-    const end = content.indexOf('\n---', 3);
-    if (end !== -1) {
-      return content.slice(end + 4);
-    }
-  }
-  return content;
+  // YAML (---) and TOML (+++) — the daemon parser accepts both, so the web
+  // must too, or TOML frontmatter leaks into the rendered body as text.
+  const block = extractFrontmatterBlock(content);
+  return block ? content.slice(block.bodyStart) : content;
 }
 
 /**

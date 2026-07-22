@@ -425,17 +425,55 @@ describe('live preview: styled everywhere except the construct at the cursor', (
         parent,
       }),
     );
+    // Cursor OUTSIDE the frontmatter → the Properties card widget replaces
+    // the raw yaml (delimiters and all).
     cursorAt(view, FM_DOC.length);
-    // Every frontmatter line carries the mono line class, delimiters included.
-    const fmLines = view.dom.querySelectorAll('.cm-lp-frontmatter');
-    expect(fmLines.length).toBe(4);
-    // Delimiters stay visible; the bold inside frontmatter is NOT styled prose.
-    expect(text(view)).toContain('---');
-    expect(text(view)).toContain('**note**');
-    expect(view.dom.querySelector('.cm-lp-frontmatter .cm-lp-strong')).toBeNull();
+    const card = view.dom.querySelector('.cm-lp-fm [data-testid="fm-card"]');
+    expect(card).not.toBeNull();
+    expect(card!.textContent).toContain('title');
+    expect(card!.querySelectorAll('.fm-pill').length).toBe(1); // tags: [kiln]
+    expect(text(view)).not.toContain('---');
     // The document body below still gets live-preview styling.
     expect(view.dom.querySelector('.cm-lp-h1')).not.toBeNull();
     expect(text(view)).not.toContain('# Title');
+
+    // Cursor INSIDE → raw mono source for editing; the bold inside
+    // frontmatter is NOT styled prose.
+    cursorAt(view, 5);
+    expect(view.dom.querySelector('[data-testid="fm-card"]')).toBeNull();
+    const fmLines = view.dom.querySelectorAll('.cm-lp-frontmatter');
+    expect(fmLines.length).toBe(4);
+    expect(text(view)).toContain('---');
+    expect(text(view)).toContain('**note**');
+    expect(view.dom.querySelector('.cm-lp-frontmatter .cm-lp-strong')).toBeNull();
+  });
+
+  it('TOML (+++) frontmatter gets the Properties card too', () => {
+    const DOC = ['+++', 'title = "T"', 'tags = ["a", "b"]', '+++', '', '# Body', ''].join('\n');
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    const view = track(
+      new EditorView({
+        state: EditorState.create({
+          doc: DOC,
+          extensions: [
+            yamlFrontmatter({ content: markdown({ base: markdownLanguage }) }),
+            livePreview(),
+          ],
+        }),
+        parent,
+      }),
+    );
+    cursorAt(view, DOC.length);
+    const card = view.dom.querySelector('.cm-lp-fm [data-testid="fm-card"]');
+    expect(card).not.toBeNull();
+    expect(card!.querySelectorAll('.fm-pill').length).toBe(2);
+    expect(text(view)).not.toContain('+++');
+    // Cursor inside reveals the raw TOML with the mono treatment.
+    cursorAt(view, 5);
+    expect(view.dom.querySelector('[data-testid="fm-card"]')).toBeNull();
+    expect(text(view)).toContain('title = "T"');
+    expect(view.dom.querySelectorAll('.cm-lp-frontmatter').length).toBe(4);
   });
 
   it('without the extension nothing is hidden (source mode)', () => {

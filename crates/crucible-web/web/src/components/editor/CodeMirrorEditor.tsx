@@ -12,6 +12,7 @@ import { EditorState, StateEffect, Extension, Annotation, Compartment } from '@c
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { LanguageDescription } from '@codemirror/language';
 import { oneDark } from '@codemirror/theme-one-dark';
+import { extractFrontmatterBlock } from '@/lib/frontmatter';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages as codeLanguages } from '@codemirror/language-data';
 import { yamlFrontmatter } from '@codemirror/lang-yaml';
@@ -207,9 +208,15 @@ export const CodeMirrorEditor: Component<{
   const initEditor = (el: HTMLDivElement) => {
     if (view) return;
 
+    // Open with the cursor in the BODY, past any frontmatter (Obsidian's
+    // default) — at position 0 the cursor sits inside the frontmatter block
+    // and the live preview would show raw yaml/toml instead of the
+    // Properties card until the first click.
+    const fm = extractFrontmatterBlock(props.content);
     view = new EditorView({
       state: EditorState.create({
         doc: props.content,
+        selection: { anchor: Math.min(fm?.bodyStart ?? 0, props.content.length) },
         extensions: createExtensions(),
       }),
       parent: el,

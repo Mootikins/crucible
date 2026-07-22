@@ -500,6 +500,49 @@ details.callout[open] > summary.callout-title::after {
   background: color-mix(in oklab, var(--color-surface-elevated) 40%, transparent);
 }
 
+/* Frontmatter Properties card (lib/frontmatter.ts renderFrontmatterCardHtml)
+   — the SAME card in the reading view and the live-preview widget. Quiet
+   key/value rows; array values render as pill chips. */
+.fm-card {
+  display: grid;
+  gap: 3px;
+  margin: 0 0 1rem;
+  padding: 8px 12px;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-surface-elevated) 45%, transparent);
+}
+.fm-row {
+  display: grid;
+  grid-template-columns: minmax(72px, max-content) 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+.fm-key {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-muted-dark);
+}
+.fm-val {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--color-shell-body);
+  min-width: 0;
+}
+.fm-text {
+  overflow-wrap: anywhere;
+}
+.fm-pill {
+  border: 1px solid var(--color-hairline-strong);
+  border-radius: 9999px;
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--color-shell-body);
+}
+
 /* Code blocks (chat + reading view): ONE tokened surface. Shiki inlines its
    own theme background on the <pre> (github-dark's blue-grey #24292e), which
    beats any class — override it; surface-elevated reads on both the chat

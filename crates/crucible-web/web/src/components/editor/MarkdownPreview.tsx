@@ -6,7 +6,7 @@
  */
 import { Component, createResource } from 'solid-js';
 import { renderMarkdownDocAsync, PROSE_CLASS } from '@/lib/markdown';
-import { stripFrontmatter } from '@/lib/note-actions';
+import { extractFrontmatterBlock, renderFrontmatterCardHtml } from '@/lib/frontmatter';
 import { makeMarkdownClickHandler } from '@/lib/markdown-click';
 import { statusBarStore } from '@/stores/statusBarStore';
 
@@ -21,7 +21,15 @@ export const MarkdownPreview: Component<{
 }> = (props) => {
   const [html] = createResource(
     () => [props.content, props.path] as const,
-    ([content, path]) => renderMarkdownDocAsync(stripFrontmatter(content), dirOf(path)),
+    async ([content, path]) => {
+      // Frontmatter renders as the Properties card (YAML and TOML), never as
+      // body text. Unparseable frontmatter is simply omitted, matching the
+      // old strip behavior.
+      const fm = extractFrontmatterBlock(content);
+      const body = fm ? content.slice(fm.bodyStart) : content;
+      const card = fm?.entries?.length ? renderFrontmatterCardHtml(fm.entries) : '';
+      return card + (await renderMarkdownDocAsync(body, dirOf(path)));
+    },
   );
 
   // The rendered HTML is not a component tree — delegate clicks through the
