@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-22
+
+### Added
+- **Remote terminal (opt-in, fail-closed)**: `cru web --remote-shell` (or `[server] remote_shell = true`) serves the PTY terminal to authenticated non-localhost clients. Requires an API key — without one the opt-in is ignored and the terminal stays loopback-only. The WebSocket origin guard now accepts same-origin upgrades (any LAN IP/hostname the server answers as) while still rejecting cross-site origins; `/api/config` reports the opt-in so remote clients get an explanation instead of a dead reconnect loop.
+- **Terminal fidelity overhaul**: WebGL renderer with vector-drawn powerline/box-drawing glyphs (no more seams from font fallback), a coherent warm-ember 16-color ANSI palette as first-class `--color-term-*` design tokens, `COLORTERM=truecolor` on the PTY (prompts stop downgrading to 256-color), Unicode 11 width tables, a 4.5:1 minimum contrast floor, and a screen-reader text layer. Terminal font family and size are configurable (Settings → Terminal) and apply live; the PTY starts in the server's launch directory instead of `$HOME`.
+- **Single-purpose palettes**: Ctrl+P is a pure command palette (every registered panel gets an "Open …" command, so closed windows — graph, terminal, backlinks — can always be brought back); Ctrl+O is a dedicated note quick switcher (recency-sorted, path subtitles, path-segment fuzzy matching). `[[` and `>` cross between the two mid-typing.
+- **Backlinks show the referencing block**: each linked mention renders the line that contains the wikilink (exact occurrence from the daemon's link index, which now returns byte spans in `get_backlinks`), and hovering a backlink opens the preview scrolled to that referencing section in both reading and editor modes.
+- **Frontmatter Properties card**: YAML and TOML frontmatter render as a structured card in live preview and reading view instead of raw text (TOML frontmatter previously leaked into the body); the editor opens with the cursor past the frontmatter, and touching the card reveals the raw source.
+- **Graph local mode**: BFS-scoped view (1–3 hops around the focused note), external `scheme://` link filtering, and degree-aware clustering forces.
+- **Obsidian-style shell chrome**: raised-chip active tabs, edge panels that slide in/out with the neighboring content reflowing in step (the panel's own content never squishes), always-visible edge ribbons carrying panel toggles, palette, new-session, and settings.
+
+### Changed
+- **The header bar and status bar are gone.** The ribbons and a floating bottom-right chip cluster replace them: notification bell with an Adobe-style popout panel, an attention chip when something is waiting, and the (setting-gated) save chip for dirty buffers. Chat mode lives in each composer; the Inbox is reachable from the palette and the attention chip.
+- **One code palette everywhere**: rendered code blocks (reading view, chat) switched from github-dark to one-dark-pro, matching the CodeMirror editor and live preview.
+- **Live preview ↔ reading parity**: matched typography scale, heading colors, code/blockquote/table surfaces, and column gutters between the two views.
+- Session rows fade out long titles and marquee them on hover (ping-pong) instead of truncating; delete is red; hover actions no longer overlay the title.
+- Hover previews hug their anchor and ignore links crossed while the pointer travels into the window (no more preview hijacking by the link below).
+- The home page is gone — a fresh shell opens to an empty workspace; users compose their own layout from panels.
+
+### Fixed
+- Service-worker update prompt is actionable (a "Reload & update" toast that never auto-dismisses) — deploys no longer stranded stale bundles silently.
+- Terminal background matched to the dock; "No LLM providers detected" no longer flashes during the provider probe.
+- Backlinks panel no longer retargets while hovering wikilink previews (hover buffers open in the background).
+- xterm's accessibility layer no longer swallows clicks on the reconnect button.
+
+### Docs
+- The docs kiln was pruned to product documentation (~290 internal analysis/research/planning notes and session recordings removed).
+
 ## [0.12.0] - 2026-07-21
 
 ### Added
