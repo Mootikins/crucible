@@ -35,10 +35,43 @@ interface SerializedTab {
 
 interface SerializedEdgePanel {
   id: string;
+  /** v5+: full layout tree. Pre-v5 panels carried a single `tabGroupId`
+   * (see LegacySerializedEdgePanel / migrateV4toV5). */
+  layout: LayoutNode;
+  isCollapsed: boolean;
+  width?: number;
+  height?: number;
+}
+
+/** Pre-v5 edge panel shape: one tab group, no layout tree. */
+interface LegacySerializedEdgePanel {
+  id: string;
   tabGroupId: string;
   isCollapsed: boolean;
   width?: number;
   height?: number;
+}
+
+/** Leaf group ids of a serialized edge panel, tolerating both shapes (the
+ * shared migration helpers run on pre-v5 objects too). */
+function edgePanelGroupIds(
+  panel: SerializedEdgePanel | LegacySerializedEdgePanel
+): string[] {
+  if ('layout' in panel && panel.layout) {
+    const ids: string[] = [];
+    const walk = (n: LayoutNode): void => {
+      if (n.type === 'pane') {
+        if (n.tabGroupId) ids.push(n.tabGroupId);
+      } else {
+        walk(n.first);
+        walk(n.second);
+      }
+    };
+    walk(panel.layout);
+    return ids;
+  }
+  const legacy = panel as LegacySerializedEdgePanel;
+  return legacy.tabGroupId ? [legacy.tabGroupId] : [];
 }
 
 function stripIcon(tab: Tab): SerializedTab {
@@ -66,7 +99,7 @@ export function serializeLayout(state: {
   for (const [pos, panel] of Object.entries(state.edgePanels)) {
     serializedEdgePanels[pos as EdgePanelPosition] = {
       id: panel.id,
-      tabGroupId: panel.tabGroupId,
+      layout: JSON.parse(JSON.stringify(panel.layout)) as LayoutNode,
       isCollapsed: panel.isCollapsed,
       width: panel.width,
       height: panel.height,
@@ -74,7 +107,7 @@ export function serializeLayout(state: {
   }
 
   return {
-    version: 4,
+    version: 5,
     layout: JSON.parse(JSON.stringify(state.layout)) as LayoutNode,
     tabGroups: serializedGroups,
     edgePanels: serializedEdgePanels,
@@ -95,7 +128,9 @@ function referencedGroupIds(layout: SerializedLayout): Set<string> {
     }
   };
   walk(layout.layout);
-  for (const panel of Object.values(layout.edgePanels)) ids.add(panel.tabGroupId);
+  for (const panel of Object.values(layout.edgePanels)) {
+    for (const id of edgePanelGroupIds(panel)) ids.add(id);
+  }
   for (const w of layout.floatingWindows) ids.add((w as { tabGroupId: string }).tabGroupId);
   return ids;
 }
@@ -146,6 +181,30 @@ function migrateV3toV4(v3: SerializedLayout): SerializedLayout {
   return { ...v3, version: 4, edgePanels };
 }
 
+// Edge panels grew full layout trees (splittable like the center tiling):
+// the single `tabGroupId` becomes a one-pane tree.
+function migrateV4toV5(v4: SerializedLayout): SerializedLayout {
+  const edgePanels = {} as Record<EdgePanelPosition, SerializedEdgePanel>;
+  for (const [pos, panel] of Object.entries(v4.edgePanels)) {
+    const legacy = panel as unknown as LegacySerializedEdgePanel;
+    edgePanels[pos as EdgePanelPosition] =
+      'layout' in panel && panel.layout
+        ? (panel as SerializedEdgePanel)
+        : {
+            id: legacy.id,
+            layout: {
+              id: `${legacy.id}-pane`,
+              type: 'pane',
+              tabGroupId: legacy.tabGroupId,
+            },
+            isCollapsed: legacy.isCollapsed,
+            width: legacy.width,
+            height: legacy.height,
+          };
+  }
+  return { ...v4, version: 5, edgePanels };
+}
+
 function migrateV1toV2(v1: any): SerializedLayout {
   const newTabGroups = { ...v1.tabGroups };
 
@@ -193,7 +252,7 @@ export function deserializeLayout(json: SerializedLayout): {
 } {
   // Auto-migrate forward: v1 → v2 (edge-panel tab groups) → v3 (prune tabs
   // whose content type is no longer registered) → v4 (chat-worthy right
-  // panel width).
+  // panel width) → v5 (edge panels carry layout trees).
   let layout = json;
   if (layout.version === 1) {
     layout = migrateV1toV2(layout as any);
@@ -204,8 +263,11 @@ export function deserializeLayout(json: SerializedLayout): {
   if (layout.version === 3) {
     layout = migrateV3toV4(layout);
   }
+  if (layout.version === 4) {
+    layout = migrateV4toV5(layout);
+  }
 
-  if (layout.version !== 4) {
+  if (layout.version !== 5) {
     throw new Error(`Unsupported layout version: ${layout.version}`);
   }
 
@@ -247,7 +309,9 @@ export function deserializeLayout(json: SerializedLayout): {
   // editor. Migrate them into the right panel group and collapse any pane
   // this empties out of the tree.
   let layoutTree = layout.layout;
-  const rightGroupId = layout.edgePanels.right?.tabGroupId;
+  const rightGroupId = layout.edgePanels.right
+    ? edgePanelGroupIds(layout.edgePanels.right)[0]
+    : undefined;
   if (rightGroupId && tabGroups[rightGroupId]) {
     const centerGroupIds = new Set<string>();
     const collect = (n: LayoutNode): void => {
@@ -301,7 +365,9 @@ export function deserializeLayout(json: SerializedLayout): {
         }
       };
       collectInto(layoutTree);
-      for (const panel of Object.values(layout.edgePanels)) stillReferenced.add(panel.tabGroupId);
+      for (const panel of Object.values(layout.edgePanels)) {
+        for (const id of edgePanelGroupIds(panel)) stillReferenced.add(id);
+      }
       for (const w of layout.floatingWindows) stillReferenced.add((w as { tabGroupId: string }).tabGroupId);
       for (const gid of emptied) {
         if (!stillReferenced.has(gid)) delete tabGroups[gid];
@@ -313,7 +379,7 @@ export function deserializeLayout(json: SerializedLayout): {
   for (const [pos, panel] of Object.entries(layout.edgePanels)) {
     edgePanels[pos as EdgePanelPosition] = {
       id: panel.id,
-      tabGroupId: panel.tabGroupId,
+      layout: panel.layout,
       isCollapsed: panel.isCollapsed,
       width: panel.width,
       height: panel.height,

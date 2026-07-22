@@ -4,7 +4,7 @@ import { produce } from 'solid-js/store';
 import { DragDropProvider } from '@thisbeyond/solid-dnd';
 import { EdgePanel } from '../EdgePanel';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState } from '@/stores/windowStoreInternals';
+import { createInitialState, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
 import type { EdgePanelPosition } from '@/types/windowTypes';
 
 // The old test scraped EdgePanel.tsx and windowStoreInternals.ts for source
@@ -30,7 +30,7 @@ beforeEach(() => {
 });
 
 const edgeTabs = (position: EdgePanelPosition) =>
-  windowStore.tabGroups[windowStore.edgePanels[position].tabGroupId].tabs;
+  windowStore.tabGroups[primaryEdgeGroupId(windowStore, position)!].tabs;
 
 describe('EdgePanel — tab icons', () => {
   it('renders each ribbon tab with its icon as an <svg>', () => {
@@ -49,7 +49,7 @@ describe('EdgePanel — tab icons', () => {
   });
 
   it('falls back to the title initial for a tab without an icon', () => {
-    const groupId = windowStore.edgePanels.left.tabGroupId;
+    const groupId = primaryEdgeGroupId(windowStore, 'left')!;
     windowActions.addTab(groupId, { id: 'no-icon-tab', title: 'Zeta', contentType: 'files' });
 
     const { container } = render(() => (

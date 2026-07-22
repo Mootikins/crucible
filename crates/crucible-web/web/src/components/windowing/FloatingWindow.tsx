@@ -288,7 +288,7 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
       </div>
       <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
         <Show when={w().showTabBar !== false}>
-          <TabBar mode="center" groupId={w().tabGroupId} paneId="" />
+          <TabBar groupId={w().tabGroupId} paneId="" />
         </Show>
         <div class="flex-1 bg-surface-base overflow-auto p-2 text-xs text-muted" data-testid={`panel-content-${activeContentType() ?? 'unknown'}`}>
           {(() => {

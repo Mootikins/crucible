@@ -1,16 +1,19 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { windowStore, setStore, windowActions, findEdgePanelForGroup } from '../windowStore';
-import { createInitialState } from '@/stores/windowStoreInternals';
+import { createInitialState, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
 import type { Tab, EdgePanelPosition, TabGroup, LayoutNode } from '@/types/windowTypes';
 
 const LEGACY_EDGE_TAB_FIELD = 'panel' + 'Position';
+
+/** First leaf group of an edge panel — the single group, pre-splits. */
+const edgeGroup = (pos: EdgePanelPosition) => primaryEdgeGroupId(windowStore, pos)!;
 
 function resetToState(overrides: Partial<{
   tabGroups: Record<string, TabGroup>;
   edgePanels: Record<EdgePanelPosition, {
     id: string;
-    tabGroupId: string;
+    layout: LayoutNode;
     isCollapsed: boolean;
     width?: number;
     height?: number;
@@ -38,7 +41,7 @@ const makeTab = (id: string, title = id): Tab => ({
 
 const makeEdgePanel = (position: EdgePanelPosition, tabGroupId: string, isCollapsed = false) => ({
   id: `${position}-panel`,
-  tabGroupId,
+  layout: { id: `${position}-pane`, type: 'pane' as const, tabGroupId },
   isCollapsed,
   ...(position === 'bottom' ? { height: 200 } : { width: 250 }),
 });
@@ -92,18 +95,18 @@ describe('initial state structure', () => {
   });
 
   it('edgePanels.left.tabGroupId references a group in tabGroups', () => {
-    const leftGroupId = windowStore.edgePanels.left.tabGroupId;
+    const leftGroupId = edgeGroup('left');
     expect(windowStore.tabGroups[leftGroupId]).toBeDefined();
     expect(windowStore.tabGroups[leftGroupId]!.tabs.length).toBeGreaterThan(0);
   });
 
   it('edgePanels.right.tabGroupId references a group in tabGroups', () => {
-    const rightGroupId = windowStore.edgePanels.right.tabGroupId;
+    const rightGroupId = edgeGroup('right');
     expect(windowStore.tabGroups[rightGroupId]).toBeDefined();
   });
 
   it('edgePanels.bottom.tabGroupId references a group in tabGroups', () => {
-    const bottomGroupId = windowStore.edgePanels.bottom.tabGroupId;
+    const bottomGroupId = edgeGroup('bottom');
     expect(windowStore.tabGroups[bottomGroupId]).toBeDefined();
   });
 
@@ -115,7 +118,7 @@ describe('initial state structure', () => {
   });
 
   it('edge tab groups contain plain Tab objects without legacy edge metadata', () => {
-    const leftGroupId = windowStore.edgePanels.left.tabGroupId;
+    const leftGroupId = edgeGroup('left');
     const group = windowStore.tabGroups[leftGroupId]!;
     for (const tab of group.tabs) {
       expect(tab).not.toHaveProperty(LEGACY_EDGE_TAB_FIELD);
@@ -125,25 +128,25 @@ describe('initial state structure', () => {
 
 describe('findEdgePanelForGroup', () => {
   it('returns left for the left panel group', () => {
-    const leftGroupId = windowStore.edgePanels.left.tabGroupId;
+    const leftGroupId = edgeGroup('left');
     expect(findEdgePanelForGroup(leftGroupId)).toBe('left');
   });
 
   it('returns right for the right panel group', () => {
-    const rightGroupId = windowStore.edgePanels.right.tabGroupId;
+    const rightGroupId = edgeGroup('right');
     expect(findEdgePanelForGroup(rightGroupId)).toBe('right');
   });
 
   it('returns bottom for the bottom panel group', () => {
-    const bottomGroupId = windowStore.edgePanels.bottom.tabGroupId;
+    const bottomGroupId = edgeGroup('bottom');
     expect(findEdgePanelForGroup(bottomGroupId)).toBe('bottom');
   });
 
   it('returns null for a center group', () => {
     const edgeGroupIds = new Set([
-      windowStore.edgePanels.left.tabGroupId,
-      windowStore.edgePanels.right.tabGroupId,
-      windowStore.edgePanels.bottom.tabGroupId,
+      edgeGroup('left'),
+      edgeGroup('right'),
+      edgeGroup('bottom'),
     ]);
     const centerGroupId = Object.keys(windowStore.tabGroups).find(id => !edgeGroupIds.has(id));
     expect(centerGroupId).toBeDefined();
@@ -210,7 +213,7 @@ describe('moveTab: edge → center', () => {
   it('preserves edge group when emptied', () => {
     windowActions.moveTab('right-group', 'group-1', 'right-1');
     expect(windowStore.tabGroups['right-group']).toBeDefined();
-    expect(windowStore.edgePanels.right.tabGroupId).toBe('right-group');
+    expect(edgeGroup('right')).toBe('right-group');
   });
 });
 
@@ -401,7 +404,7 @@ describe('removeTab: edge-aware', () => {
   it('does not delete edge group when emptied', () => {
     windowActions.removeTab('left-group', 'left-1');
     expect(windowStore.tabGroups['left-group']).toBeDefined();
-    expect(windowStore.edgePanels.left.tabGroupId).toBe('left-group');
+    expect(edgeGroup('left')).toBe('left-group');
   });
 
   it('removes non-last edge tab without collapsing', () => {
@@ -429,7 +432,7 @@ describe('removeTab: edge-aware', () => {
 
 describe('setEdgePanelActiveTab', () => {
   it('sets activeTabId on the edge group via tabGroups', () => {
-    const leftGroupId = windowStore.edgePanels.left.tabGroupId;
+    const leftGroupId = edgeGroup('left');
     const group = windowStore.tabGroups[leftGroupId]!;
     const secondTab = group.tabs[1];
     if (!secondTab) return;

@@ -122,14 +122,95 @@ export function insertPaneRelative(
   return replacePaneWithSplit(layout, paneId, newSplit);
 }
 
+/** In-order tab-group ids at the leaves of a layout tree. */
+export function collectLeafGroupIds(layout: LayoutNode): string[] {
+  if (layout.type === 'pane') {
+    return layout.tabGroupId ? [layout.tabGroupId] : [];
+  }
+  return [...collectLeafGroupIds(layout.first), ...collectLeafGroupIds(layout.second)];
+}
+
+/** Count of leaf panes in a layout tree. */
+export function countPanes(layout: LayoutNode): number {
+  if (layout.type === 'pane') return 1;
+  return countPanes(layout.first) + countPanes(layout.second);
+}
+
 export function findEdgePanelForGroup(
   state: WindowState,
   groupId: string
 ): EdgePanelPosition | null {
   for (const pos of ['left', 'right', 'bottom'] as EdgePanelPosition[]) {
-    if (state.edgePanels[pos].tabGroupId === groupId) return pos;
+    if (collectLeafGroupIds(state.edgePanels[pos].layout).includes(groupId)) {
+      return pos;
+    }
   }
   return null;
+}
+
+export function findEdgePanelForPane(
+  state: WindowState,
+  paneId: string
+): EdgePanelPosition | null {
+  for (const pos of ['left', 'right', 'bottom'] as EdgePanelPosition[]) {
+    if (findPaneInLayout(state.edgePanels[pos].layout, paneId)) return pos;
+  }
+  return null;
+}
+
+/** Search every layout root (center tiling + edge panels) for a pane. */
+export function findPaneAnywhere(
+  state: WindowState,
+  paneId: string
+): PaneNode | null {
+  const inMain = findPaneInLayout(state.layout, paneId);
+  if (inMain) return inMain;
+  for (const pos of ['left', 'right', 'bottom'] as EdgePanelPosition[]) {
+    const pane = findPaneInLayout(state.edgePanels[pos].layout, paneId);
+    if (pane) return pane;
+  }
+  return null;
+}
+
+/** The pane region a pane lives in: an edge position or the center tiling. */
+export function regionOfPane(
+  state: WindowState,
+  paneId: string
+): EdgePanelPosition | 'center' {
+  return findEdgePanelForPane(state, paneId) ?? 'center';
+}
+
+/**
+ * Apply a tree transform to whichever layout root (center or edge panel)
+ * satisfies `contains`. Mutates the draft state; returns true when a root
+ * matched. This is what makes every split/drop/collapse operation work
+ * identically in the center tiling and inside edge panels.
+ */
+export function updateRootWhere(
+  s: WindowState,
+  contains: (root: LayoutNode) => boolean,
+  transform: (root: LayoutNode) => LayoutNode
+): boolean {
+  if (contains(s.layout)) {
+    s.layout = transform(s.layout);
+    return true;
+  }
+  for (const pos of ['left', 'right', 'bottom'] as EdgePanelPosition[]) {
+    if (contains(s.edgePanels[pos].layout)) {
+      s.edgePanels[pos].layout = transform(s.edgePanels[pos].layout);
+      return true;
+    }
+  }
+  return false;
+}
+
+/** The group new tabs land in when a whole edge panel is the drop target:
+ * its first leaf group (top/leading pane). */
+export function primaryEdgeGroupId(
+  state: WindowState,
+  pos: EdgePanelPosition
+): string | null {
+  return collectLeafGroupIds(state.edgePanels[pos].layout)[0] ?? null;
 }
 
 const createSampleTabs = (): Tab[] => [];
@@ -220,20 +301,20 @@ export function createInitialState(): WindowState {
     edgePanels: {
       left: {
         id: 'left-panel',
-        tabGroupId: leftGroupId,
+        layout: { id: 'left-pane', type: 'pane' as const, tabGroupId: leftGroupId },
         isCollapsed: false,
         width: 280,
       },
       right: {
         id: 'right-panel',
-        tabGroupId: rightGroupId,
+        layout: { id: 'right-pane', type: 'pane' as const, tabGroupId: rightGroupId },
         isCollapsed: true,
         // Sessions dock here — needs chat-worthy width, not a sidebar sliver.
         width: 520,
       },
       bottom: {
         id: 'bottom-panel',
-        tabGroupId: bottomGroupId,
+        layout: { id: 'bottom-pane', type: 'pane' as const, tabGroupId: bottomGroupId },
         isCollapsed: true,
         height: 200,
       },

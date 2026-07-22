@@ -10,7 +10,7 @@ function resetToState(overrides: Partial<{
   tabGroups: Record<string, TabGroup>;
   edgePanels: Record<EdgePanelPosition, {
     id: string;
-    tabGroupId: string;
+    layout: LayoutNode;
     isCollapsed: boolean;
     width?: number;
     height?: number;
@@ -45,7 +45,7 @@ const makeTabGroup = (id: string, tabs: Tab[], activeTabId: string | null = tabs
 
 const makeEdgePanel = (position: EdgePanelPosition, tabGroupId: string, isCollapsed = false) => ({
   id: `${position}-panel`,
-  tabGroupId,
+  layout: { id: `${position}-pane`, type: 'pane' as const, tabGroupId },
   isCollapsed,
   ...(position === 'bottom' ? { height: 200 } : { width: 250 }),
 });

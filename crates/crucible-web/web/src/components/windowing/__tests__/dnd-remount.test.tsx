@@ -5,7 +5,7 @@ import { DragDropProvider, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { TabBar } from '../TabBar';
 import { EdgePanel } from '../EdgePanel';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState, findFirstPane, generateId } from '@/stores/windowStoreInternals';
+import { createInitialState, findFirstPane, generateId, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
 import type { DragSource } from '@/types/windowTypes';
 
 // Regression: updateTab replaces the tab OBJECT on every write (dirty flag,
@@ -50,7 +50,7 @@ it('updateTab (dirty-flag/title sync) keeps the tab draggable registered', () =>
   render(() => (
     <DragDropProvider>
       <Probe />
-      <TabBar mode="center" groupId={groupId} paneId={paneId} />
+      <TabBar groupId={groupId} paneId={paneId} />
     </DragDropProvider>
   ));
 
@@ -69,7 +69,7 @@ it('updateTab (dirty-flag/title sync) keeps the tab draggable registered', () =>
 it('the row still re-renders tab fields updated in place (dirty dot, title)', () => {
   const { container } = render(() => (
     <DragDropProvider>
-      <TabBar mode="center" groupId={groupId} paneId={paneId} />
+      <TabBar groupId={groupId} paneId={paneId} />
     </DragDropProvider>
   ));
 
@@ -84,7 +84,7 @@ it('a genuinely new tab id still mounts its own draggable', () => {
   render(() => (
     <DragDropProvider>
       <Probe />
-      <TabBar mode="center" groupId={groupId} paneId={paneId} />
+      <TabBar groupId={groupId} paneId={paneId} />
     </DragDropProvider>
   ));
 
@@ -105,12 +105,15 @@ const dragData = (id: string) => {
 };
 
 const swapEdgeGroupId = (position: 'left' | 'bottom'): string => {
-  const oldGid = windowStore.edgePanels[position].tabGroupId;
+  const oldGid = primaryEdgeGroupId(windowStore, position)!;
   const newGid = generateId();
   setStore(produce((s) => {
     s.tabGroups[newGid] = { ...s.tabGroups[oldGid]!, id: newGid };
     delete s.tabGroups[oldGid];
-    s.edgePanels[position].tabGroupId = newGid;
+    const root = s.edgePanels[position].layout;
+    if (root.type === 'pane') {
+      s.edgePanels[position].layout = { ...root, tabGroupId: newGid };
+    }
   }));
   return newGid;
 };
@@ -122,7 +125,7 @@ it('collapsed strip icons re-register their draggable with the live group id aft
   // flips later.
   setStore(produce((s) => { s.edgePanels.bottom.isCollapsed = false; }));
   setStore(produce((s) => { s.edgePanels.bottom.isCollapsed = true; }));
-  const gid = windowStore.edgePanels.bottom.tabGroupId;
+  const gid = primaryEdgeGroupId(windowStore, 'bottom')!;
   windowActions.addTab(gid, { id: 'strip-tab', title: 'Terminal', contentType: 'terminal' });
 
   render(() => (
@@ -133,7 +136,7 @@ it('collapsed strip icons re-register their draggable with the live group id aft
   ));
 
   const id = 'edgetab-collapsed:bottom:strip-tab';
-  expect(dragData(id)?.sourceGroupId).toBe(windowStore.edgePanels.bottom.tabGroupId);
+  expect(dragData(id)?.sourceGroupId).toBe(gid);
 
   const newGid = swapEdgeGroupId('bottom');
   expect(dragData(id)?.sourceGroupId).toBe(newGid);
@@ -145,19 +148,21 @@ it('expanded edge tab bars re-register draggables with the live group id after a
   // expand is a real transition even if the default flips later.
   setStore(produce((s) => { s.edgePanels.left.isCollapsed = true; }));
   setStore(produce((s) => { s.edgePanels.left.isCollapsed = false; }));
-  const gid = windowStore.edgePanels.left.tabGroupId;
+  const gid = primaryEdgeGroupId(windowStore, 'left')!;
   windowActions.addTab(gid, { id: 'edge-tab', title: 'Files', contentType: 'files' });
 
   render(() => (
     <DragDropProvider>
       <Probe />
-      <TabBar mode="edge" position="left" />
+      <EdgePanel position="left" />
     </DragDropProvider>
   ));
 
-  const id = 'edgetab:left:edge-tab';
-  expect(dragData(id)?.sourceGroupId).toBe(windowStore.edgePanels.left.tabGroupId);
+  // Edge panels host the unified TabBar; draggable ids carry the group id,
+  // so a group swap remounts the keyed bar and re-registers under the NEW
+  // id — the drag data must always match the live group.
+  expect(dragData(`tab:${gid}:edge-tab`)?.sourceGroupId).toBe(gid);
 
   const newGid = swapEdgeGroupId('left');
-  expect(dragData(id)?.sourceGroupId).toBe(newGid);
+  expect(dragData(`tab:${newGid}:edge-tab`)?.sourceGroupId).toBe(newGid);
 });

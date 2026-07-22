@@ -5,8 +5,8 @@ import {
   createDroppable,
   useDragDropContext,
 } from '@thisbeyond/solid-dnd';
-import type { Tab as TabType, EdgePanelPosition, TabBarProps, DragSource } from '@/types/windowTypes';
-import { windowStore, windowActions } from '@/stores/windowStore';
+import type { Tab as TabType, TabBarProps, DragSource } from '@/types/windowTypes';
+import { windowStore, windowActions, findEdgePanelForGroup } from '@/stores/windowStore';
 import { IconGripVertical, IconClose, IconLayout } from './icons';
 import { ChevronDown } from '@/lib/icons';
 import { confirmTabClose } from '@/lib/tab-guards';
@@ -403,7 +403,12 @@ const CenterTabBar: Component<{
   const group = () => windowStore.tabGroups[props.groupId];
   const tabs = () => group()?.tabs ?? [];
   const activeTabId = () => group()?.activeTabId ?? null;
-  const isFocused = () => windowStore.activePaneId === props.paneId && windowStore.focusedRegion === 'center';
+  // Panes render inside the center tiling AND inside edge-panel trees; the
+  // bar's focus (and its e2e-visible identity) follows the group's region.
+  const edgePos = () => findEdgePanelForGroup(props.groupId);
+  const isFocused = () =>
+    windowStore.activePaneId === props.paneId &&
+    windowStore.focusedRegion === (edgePos() ?? 'center');
 
   let tabsContainerRef: HTMLDivElement | undefined;
 
@@ -421,6 +426,7 @@ const CenterTabBar: Component<{
     <div
       use:droppable
       ref={attachNativeMenuGuard}
+      {...(edgePos() ? { 'data-testid': `edge-tabbar-${edgePos()}` } : {})}
       classList={{
         'flex-shrink-0 flex items-center h-9 bg-shell-bg border-b border-hairline relative': true,
         'bg-primary/5': droppable.isActiveDroppable,
@@ -444,6 +450,7 @@ const CenterTabBar: Component<{
               isFocused={isFocused()}
               onClick={() => windowActions.setActiveTab(props.groupId, tab().id)}
               onClose={() => confirmTabClose(tab()) && windowActions.removeTab(props.groupId, tab().id)}
+              testId={edgePos() ? `edge-tab-${edgePos()}-${tab().id}` : undefined}
             />
           </TabContextMenu>
         )}
@@ -467,97 +474,23 @@ const CenterTabBar: Component<{
   );
 };
 
-// ── Edge TabBar ─────────────────────────────────────────────────────────
-
-const EdgeTabBar: Component<{
-  position: EdgePanelPosition;
-}> = (props) => {
-  const groupId = () => windowStore.edgePanels[props.position].tabGroupId;
-  const group = () => windowStore.tabGroups[groupId()];
-  const tabs = () => group()?.tabs ?? [];
-  const activeTabId = () => group()?.activeTabId ?? null;
-  const isFocused = () => windowStore.focusedRegion === props.position;
-
-  let containerRef: HTMLDivElement | undefined;
-  let tabsContainerRef: HTMLDivElement | undefined;
-
-  const droppable = createDroppable(`edgepanel:${props.position}`, {
-    type: 'edgePanel',
-    panelId: props.position,
-  });
-
-  const { insertIdx } = useTabBarDnD({
-    groupId,
-    tabsContainerRef: () => tabsContainerRef,
-  });
-
-  return (
-    <div
-      use:droppable
-      ref={containerRef}
-      data-testid={`edge-tabbar-${props.position}`}
-      classList={{
-        'flex-shrink-0 flex items-center h-9 bg-shell-bg border-b border-hairline relative': true,
-        'bg-primary/5': droppable.isActiveDroppable,
-      }}
-    >
-      <TabStrip
-        tabs={tabs}
-        activeTabId={activeTabId}
-        insertIdx={insertIdx}
-        onSelectTab={(tabId) => windowActions.setActiveTab(groupId(), tabId)}
-        onTabsContainerRef={(el) => {
-          tabsContainerRef = el;
-        }}
-        renderTab={(tab) => (
-          <TabContextMenu groupId={groupId} tab={tab()}>
-            <TabItem
-              tab={tab()}
-              draggableId={`edgetab:${props.position}:${tab().id}`}
-              draggableData={{ type: 'tab', tab: tab(), sourceGroupId: groupId() }}
-              isActive={activeTabId() === tab().id}
-              isFocused={isFocused()}
-              onClick={() => windowActions.setActiveTab(groupId(), tab().id)}
-              onClose={() => confirmTabClose(tab()) && windowActions.removeTab(groupId(), tab().id)}
-              testId={`edge-tab-${props.position}-${tab().id}`}
-            />
-          </TabContextMenu>
-        )}
-      />
-      {droppable.isActiveDroppable && (
-        <div class="absolute inset-x-0 bottom-0 h-0.5 bg-primary cru-anim-fade" />
-      )}
-    </div>
-  );
-};
-
-// ── Exported TabBar (discriminated union dispatcher) ────────────────────
+// ── Exported TabBar ─────────────────────────────────────────────────────
+// One bar for every region: edge panels host the same Pane/TabBar stack as
+// the center tiling (their tab bars self-identify via the group's region).
 
 export const TabBar: Component<TabBarProps> = (props) => {
-  if (props.mode === 'center') {
-    // Keyed: CenterTabBar registers its `tabgroup:` droppable with the group
-    // id captured at mount. Layout restores and group churn swap the id under
-    // a surviving instance, leaving a stale drop target — remount instead.
-    return (
-      <Show when={props.mode === 'center' ? props.groupId : undefined} keyed>
-        {(groupId) => (
-          <CenterTabBar
-            groupId={groupId}
-            paneId={(props as Extract<TabBarProps, { mode: 'center' }>).paneId}
-            onPopOut={(props as Extract<TabBarProps, { mode: 'center' }>).onPopOut}
-          />
-        )}
-      </Show>
-    );
-  }
-  // Keyed on the live group id for the same reason as CenterTabBar: layout
-  // restores swap the edge panel's group id under a surviving instance, and
-  // both the droppable and every TabItem draggable hold registration-time
-  // snapshots of it — drags from a stale bar silently no-op in moveTab.
-  const position = props.position;
+  // Keyed: CenterTabBar registers its `tabgroup:` droppable with the group
+  // id captured at mount. Layout restores and group churn swap the id under
+  // a surviving instance, leaving a stale drop target — remount instead.
   return (
-    <Show when={windowStore.edgePanels[position].tabGroupId} keyed>
-      {(_groupId) => <EdgeTabBar position={position} />}
+    <Show when={props.groupId} keyed>
+      {(groupId) => (
+        <CenterTabBar
+          groupId={groupId}
+          paneId={props.paneId}
+          onPopOut={props.onPopOut}
+        />
+      )}
     </Show>
   );
 };

@@ -1,7 +1,6 @@
 import { Component, Show, createSignal, createEffect, onCleanup } from 'solid-js';
-import { produce, unwrap } from 'solid-js/store';
 import { Pane } from './Pane';
-import { setStore, updateSplitRatio, windowStore } from '@/stores/windowStore';
+import { windowActions } from '@/stores/windowStore';
 import type { LayoutNode } from '@/types/windowTypes';
 
 const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }> = (props) => {
@@ -53,10 +52,9 @@ const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }
     };
 
     const handlePointerUp = (e: PointerEvent) => {
-      const ratio = localRatio();
-      const currentLayout = unwrap(windowStore.layout) as LayoutNode;
-      const newLayout = updateSplitRatio(currentLayout, splitId, ratio);
-      setStore(produce((s) => { s.layout = newLayout; }));
+      // Root-aware commit: this split may live in the center tiling or
+      // inside an edge panel's tree.
+      windowActions.commitSplitRatio(splitId, localRatio());
       setIsDragging(false);
       el.releasePointerCapture(e.pointerId);
       document.removeEventListener('pointermove', handlePointerMove);

@@ -157,7 +157,6 @@ export const Pane: Component<{ paneId: string }> = (props) => {
         }
       >
         <TabBar
-          mode="center"
           groupId={tabGroupId()!}
           paneId={props.paneId}
           onPopOut={handlePopOut}

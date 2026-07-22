@@ -11,6 +11,7 @@ import { FloatingWindow } from './FloatingWindow';
 import { CornerBar } from './CornerBar';
 import { MinimizedBar } from './MinimizedBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
+import { collectLeafGroupIds, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
 import type { DragSource, DropTarget } from '@/types/windowTypes';
 import { getPendingReorder, clearPendingReorder } from './TabBar';
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
@@ -65,8 +66,9 @@ function InnerManager() {
         target?.type === 'tabGroup' && target.groupId === source.sourceGroupId;
       const droppingOnSameEdgePanel =
         target?.type === 'edgePanel' &&
-        windowStore.edgePanels[target.panelId as 'left' | 'right' | 'bottom']?.tabGroupId ===
-          source.sourceGroupId;
+        collectLeafGroupIds(
+          windowStore.edgePanels[target.panelId as 'left' | 'right' | 'bottom'].layout
+        ).includes(source.sourceGroupId);
       if (!target || droppingOnSameGroup || droppingOnSameEdgePanel) {
         windowActions.moveTab(source.sourceGroupId, source.sourceGroupId, source.tab.id, reorder.insertIndex);
         return;
@@ -114,8 +116,10 @@ function InnerManager() {
       } else if (target.type === 'edgePanel') {
         const targetPosition = target.panelId as 'left' | 'right' | 'bottom';
         const panel = windowStore.edgePanels[targetPosition];
-        if (panel) {
-          const edgeGroupId = panel.tabGroupId;
+        const edgeGroupId = panel
+          ? primaryEdgeGroupId(windowStore, targetPosition)
+          : null;
+        if (edgeGroupId) {
           windowActions.moveTab(source.sourceGroupId, edgeGroupId, source.tab.id, target.insertIndex);
           // Expand panel if collapsed
           if (panel.isCollapsed) {

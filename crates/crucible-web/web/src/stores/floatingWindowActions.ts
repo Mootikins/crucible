@@ -7,11 +7,14 @@ import type {
 import type { WindowStoreContext } from './windowStoreInternals';
 import {
   collapseEmptyNodes,
+  findEdgePanelForPane,
   findFirstPane,
+  findPaneAnywhere,
   findPaneInLayout,
   generateId,
   replacePaneWithSplit,
   updatePaneInLayout,
+  updateRootWhere,
 } from './windowStoreInternals';
 
 export interface FloatingWindowActions {
@@ -84,12 +87,15 @@ export function createFloatingWindowActions(
   // duplicate solid-dnd draggable/droppable ids, which corrupt the DnD
   // registry ("Cannot remove nonexistent draggable").
   const popOutPane = (paneId: string): string | null => {
-    const pane = findPaneInLayout(store.layout, paneId);
+    const pane = findPaneAnywhere(store, paneId);
     const groupId = pane?.tabGroupId;
     if (!pane || !groupId) return null;
     const group = store.tabGroups[groupId];
     if (!group || group.tabs.length === 0) return null;
 
+    // Region resolved BEFORE the detach — the pane may be collapsed out of
+    // its tree below.
+    const edgePos = findEdgePanelForPane(store, paneId);
     const activeTab = group.tabs.find((t) => t.id === group.activeTabId) ?? group.tabs[0];
     // Detach FIRST, in its own store write: the pane's tab bar must unmount
     // (and unregister its solid-dnd ids) before the floating window's tab bar
@@ -98,12 +104,31 @@ export function createFloatingWindowActions(
     // leaving the floating window undraggable/undroppable.
     setStore(
       produce((s) => {
-        s.layout = updatePaneInLayout(s.layout, paneId, (p) => ({
-          ...p,
-          tabGroupId: null,
-        }));
-        s.layout = collapseEmptyNodes(s.layout, s.tabGroups);
-        if (!s.activePaneId || !findPaneInLayout(s.layout, s.activePaneId)) {
+        updateRootWhere(
+          s,
+          (root) => !!findPaneInLayout(root, paneId),
+          (root) =>
+            collapseEmptyNodes(
+              updatePaneInLayout(root, paneId, (p) => ({
+                ...p,
+                tabGroupId: null,
+              })),
+              s.tabGroups
+            )
+        );
+        if (edgePos) {
+          // Popping an edge panel's sole pane out must not leave the panel
+          // groupless (new tabs dock into the panel's first leaf group) —
+          // give it a fresh empty group and collapse it.
+          const root = s.edgePanels[edgePos].layout;
+          if (root.type === 'pane' && !root.tabGroupId) {
+            const emptyGroupId = generateId();
+            s.tabGroups[emptyGroupId] = { id: emptyGroupId, tabs: [], activeTabId: null };
+            s.edgePanels[edgePos].layout = { ...root, tabGroupId: emptyGroupId };
+            s.edgePanels[edgePos].isCollapsed = true;
+          }
+        }
+        if (!s.activePaneId || !findPaneAnywhere(s, s.activePaneId)) {
           s.activePaneId = findFirstPane(s.layout)?.id ?? null;
         }
       })

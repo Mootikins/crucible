@@ -1,12 +1,11 @@
 import { Component, Show, createEffect, createSignal, on, onCleanup } from 'solid-js';
-import { Dynamic } from 'solid-js/web';
 import { Key } from '@solid-primitives/keyed';
 import { createDraggable, createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore, windowActions } from '@/stores/windowStore';
+import { collectLeafGroupIds } from '@/stores/windowStoreInternals';
 import type { EdgePanelPosition, Tab } from '@/types/windowTypes';
-import { getGlobalRegistry } from '@/lib/panel-registry';
 import { openPanelTab } from '@/lib/panel-actions';
-import { TabBar } from './TabBar';
+import { SplitPane } from './SplitPane';
 import {
   IconPanelLeft,
   IconPanelLeftClose,
@@ -188,10 +187,22 @@ const RibbonCommand: Component<{
  * (or leading, for the bottom bar) button expands/collapses the panel. */
 const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
   const panel = () => windowStore.edgePanels[props.position];
-  const group = () => windowStore.tabGroups[panel().tabGroupId];
-  const tabs = () => group()?.tabs ?? [];
-  const activeTabId = () => group()?.activeTabId ?? null;
   const isVertical = () => props.position === 'left' || props.position === 'right';
+
+  // The panel is a layout tree — the ribbon shows every tab across all leaf
+  // groups, in tree order. Each leaf group keeps its own active tab (one
+  // highlighted icon per split).
+  const leafEntries = () => {
+    const entries: { groupId: string; tab: Tab; isActive: boolean }[] = [];
+    for (const gid of collectLeafGroupIds(panel().layout)) {
+      const g = windowStore.tabGroups[gid];
+      if (!g) continue;
+      for (const t of g.tabs) {
+        entries.push({ groupId: gid, tab: t, isActive: g.activeTabId === t.id });
+      }
+    }
+    return entries;
+  };
 
   const droppable = createDroppable(`edgepanel-collapsed:${props.position}`, {
     type: 'edgePanel',
@@ -254,28 +265,23 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
         </RibbonCommand>
         <div class="mx-2 my-1 h-px flex-none bg-hairline" />
       </Show>
-      {/* Outer Show keyed on the group id: a layout restore swaps group ids
-          under surviving components, and solid-dnd draggable data is a
-          registration-time snapshot — without a remount every drag would
-          carry a dead sourceGroupId and moveTab would silently no-op.
-          Inner Key by tab id: updateTab replaces the tab object on every
-          write, and a remounting row re-registers its draggable under the
-          same id, leaving it silently undraggable (same trap as TabStrip). */}
-      <Show when={panel().tabGroupId} keyed>
-        {(groupId) => (
-          <Key each={tabs()} by={(t) => t.id}>
-            {(tab) => (
-              <RibbonTabButton
-                position={props.position}
-                tab={tab()}
-                groupId={groupId}
-                isActive={activeTabId() === tab().id}
-                isVertical={isVertical()}
-              />
-            )}
-          </Key>
+      {/* Keyed by group id + tab id: solid-dnd draggable data is a
+          registration-time snapshot, so a layout restore (or a tab moving
+          between leaf groups) must remount the row — otherwise every drag
+          would carry a dead sourceGroupId and moveTab would silently no-op.
+          Keying also survives updateTab replacing tab objects on every write
+          (same trap as TabStrip). */}
+      <Key each={leafEntries()} by={(e) => `${e.groupId}:${e.tab.id}`}>
+        {(entry) => (
+          <RibbonTabButton
+            position={props.position}
+            tab={entry().tab}
+            groupId={entry().groupId}
+            isActive={entry().isActive}
+            isVertical={isVertical()}
+          />
         )}
-      </Show>
+      </Key>
       <Show when={props.position === 'left'}>
         {/* Settings pinned at the ribbon's bottom, like Obsidian's gear. */}
         <RibbonCommand
@@ -293,21 +299,18 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
 
 export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => {
   const panel = () => windowStore.edgePanels[props.position];
-  const group = () => windowStore.tabGroups[panel().tabGroupId];
   const isCollapsed = () => panel().isCollapsed;
   const isVertical = () => props.position === 'left' || props.position === 'right';
-  const activeTab = () => {
-    const g = group();
-    if (!g?.activeTabId) return null;
-    return g.tabs.find((t) => t.id === g.activeTabId) ?? null;
-  };
 
   const expandedPanel = () => (
     <>
       {(props.position === 'right' || props.position === 'bottom') && (
         <EdgePanelResizeHandle position={props.position} />
       )}
-      {/* No border here — the ribbon and handle lines are the separators. */}
+      {/* No border here — the ribbon and handle lines are the separators.
+          The panel body is a full layout tree rendered by the same
+          SplitPane/Pane stack as the center tiling, so edge panels split,
+          host tab bars, and accept drops exactly like center panes. */}
       <div
         class="flex flex-col overflow-hidden"
         style={
@@ -316,42 +319,8 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
             : { height: panel().height ? `${panel().height}px` : '200px', 'min-height': '0' }
         }
       >
-        <TabBar
-          mode="edge"
-          position={props.position}
-        />
-        {/* Full-bleed: panels own their padding/typography. A wrapper p-2
-            showed the dock canvas as an 8px frame around every panel (most
-            visibly boxing-in the terminal). */}
-        <div class="flex-1 overflow-auto" data-testid={`panel-content-${activeTab()?.contentType ?? 'unknown'}`}>
-          {/* Keyed by tab ID: an inline expression here re-runs on EVERY
-              group mutation (addTab / setActiveTab / removeTab each replace
-              store objects) and would return a fresh <Dynamic> — remounting
-              the panel three times during a draft→session handoff and
-              killing any state the first mount owned. Key by id keeps one
-              mounted instance per active tab. */}
-          <Show
-            when={activeTab()}
-            fallback={
-              <div class="h-full flex items-center justify-center text-xs text-muted-dark">
-                Select a tab
-              </div>
-            }
-          >
-            <Key each={activeTab() ? [activeTab()!] : []} by={(t) => t.id}>
-              {(tab) => {
-                const panelDef = () => getGlobalRegistry().get(tab().contentType);
-                return (
-                  <Show when={panelDef()} fallback={<div>{tab().title} content</div>}>
-                    <Dynamic
-                      component={panelDef()!.component}
-                      {...((tab().metadata ?? {}) as Record<string, unknown>)}
-                    />
-                  </Show>
-                );
-              }}
-            </Key>
-          </Show>
+        <div class="flex-1 min-h-0 min-w-0">
+          <SplitPane node={panel().layout} />
         </div>
       </div>
       {props.position === 'left' && <EdgePanelResizeHandle position={props.position} />}

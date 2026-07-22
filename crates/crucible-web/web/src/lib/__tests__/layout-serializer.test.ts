@@ -3,6 +3,17 @@ import { iconForContentType } from '../tab-icons';
 import { serializeLayout, deserializeLayout } from '../layout-serializer';
 import { getGlobalRegistry, resetGlobalRegistry } from '../panel-registry';
 import type { WindowState } from '@/stores/windowStore';
+import type { LayoutNode } from '@/types/windowTypes';
+
+const paneLayout = (id: string, tabGroupId: string): LayoutNode => ({
+  id,
+  type: 'pane',
+  tabGroupId,
+});
+
+/** Group id of a single-pane edge panel (state or serialized shape). */
+const panelGroupId = (panel: { layout: LayoutNode }): string | null =>
+  panel.layout.type === 'pane' ? panel.layout.tabGroupId : null;
 
 function createTestState(): WindowState {
   const tabGroupId1 = 'group-1';
@@ -49,19 +60,19 @@ function createTestState(): WindowState {
     edgePanels: {
       left: {
         id: 'left-panel',
-        tabGroupId: leftGroupId,
+        layout: paneLayout('left-pane', leftGroupId),
         isCollapsed: false,
         width: 250,
       },
       right: {
         id: 'right-panel',
-        tabGroupId: rightGroupId,
+        layout: paneLayout('right-pane', rightGroupId),
         isCollapsed: true,
         width: 250,
       },
       bottom: {
         id: 'bottom-panel',
-        tabGroupId: bottomGroupId,
+        layout: paneLayout('bottom-pane', bottomGroupId),
         isCollapsed: false,
         height: 200,
       },
@@ -79,13 +90,13 @@ describe('layout-serializer', () => {
     const serialized = serializeLayout(state);
     const deserialized = deserializeLayout(serialized);
 
-    expect(serialized.version).toBe(4);
+    expect(serialized.version).toBe(5);
 
-    expect(deserialized.edgePanels.left.tabGroupId).toBeDefined();
-    expect(deserialized.edgePanels.right.tabGroupId).toBeDefined();
-    expect(deserialized.edgePanels.bottom.tabGroupId).toBeDefined();
+    expect(panelGroupId(deserialized.edgePanels.left)!).toBeDefined();
+    expect(panelGroupId(deserialized.edgePanels.right)!).toBeDefined();
+    expect(panelGroupId(deserialized.edgePanels.bottom)!).toBeDefined();
 
-    const leftGroup = deserialized.tabGroups[deserialized.edgePanels.left.tabGroupId];
+    const leftGroup = deserialized.tabGroups[panelGroupId(deserialized.edgePanels.left)!];
     expect(leftGroup).toBeDefined();
     expect(leftGroup.tabs.length).toBe(2);
     expect(leftGroup.tabs[0].title).toBe('Explorer');
@@ -136,11 +147,11 @@ describe('layout-serializer', () => {
 
     const deserialized = deserializeLayout(v1Json as any);
 
-    expect(deserialized.edgePanels.left.tabGroupId).toBeDefined();
+    expect(panelGroupId(deserialized.edgePanels.left)!).toBeDefined();
     expect((deserialized.edgePanels.left as any).tabs).toBeUndefined();
     expect((deserialized.edgePanels.left as any).position).toBeUndefined();
 
-    const leftGroup = deserialized.tabGroups[deserialized.edgePanels.left.tabGroupId];
+    const leftGroup = deserialized.tabGroups[panelGroupId(deserialized.edgePanels.left)!];
     expect(leftGroup).toBeDefined();
     expect(leftGroup.tabs.length).toBe(2);
     expect(leftGroup.tabs[0].title).toBe('Explorer');
@@ -188,7 +199,7 @@ describe('layout-serializer', () => {
     };
 
     const deserialized = deserializeLayout(v1Json as any);
-    const leftGroup = deserialized.tabGroups[deserialized.edgePanels.left.tabGroupId];
+    const leftGroup = deserialized.tabGroups[panelGroupId(deserialized.edgePanels.left)!];
 
     expect(leftGroup.activeTabId).toBe('tab2');
   });
@@ -229,11 +240,11 @@ describe('layout-serializer', () => {
 
     const deserialized = deserializeLayout(v1Json as any);
 
-    expect(deserialized.edgePanels.left.tabGroupId).toBeDefined();
-    expect(deserialized.edgePanels.right.tabGroupId).toBeDefined();
-    expect(deserialized.edgePanels.bottom.tabGroupId).toBeDefined();
+    expect(panelGroupId(deserialized.edgePanels.left)!).toBeDefined();
+    expect(panelGroupId(deserialized.edgePanels.right)!).toBeDefined();
+    expect(panelGroupId(deserialized.edgePanels.bottom)!).toBeDefined();
 
-    const leftGroup = deserialized.tabGroups[deserialized.edgePanels.left.tabGroupId];
+    const leftGroup = deserialized.tabGroups[panelGroupId(deserialized.edgePanels.left)!];
     expect(leftGroup.tabs.length).toBe(0);
     expect(leftGroup.activeTabId).toBeNull();
   });
@@ -249,8 +260,8 @@ describe('layout-serializer', () => {
     const deserialized1 = deserializeLayout(serialized1);
     const serialized2 = serializeLayout(deserialized1);
 
-    expect(serialized2.version).toBe(4);
-    expect(serialized2.edgePanels.left.tabGroupId).toBe(serialized1.edgePanels.left.tabGroupId);
+    expect(serialized2.version).toBe(5);
+    expect(panelGroupId(serialized2.edgePanels.left)).toBe(panelGroupId(serialized1.edgePanels.left));
     expect((serialized2.edgePanels.left as any).tabs).toBeUndefined();
     expect((serialized2.edgePanels.left as any).position).toBeUndefined();
   });
@@ -286,19 +297,19 @@ describe('layout-serializer', () => {
       edgePanels: {
         left: {
           id: 'left-panel',
-          tabGroupId: 'edge-left-group',
+          layout: paneLayout('left-pane', 'edge-left-group'),
           isCollapsed: false,
           width: 250,
         },
         right: {
           id: 'right-panel',
-          tabGroupId: 'edge-right-group',
+          layout: paneLayout('right-pane', 'edge-right-group'),
           isCollapsed: true,
           width: 250,
         },
         bottom: {
           id: 'bottom-panel',
-          tabGroupId: 'edge-bottom-group',
+          layout: paneLayout('bottom-pane', 'edge-bottom-group'),
           isCollapsed: false,
           height: 200,
         },
@@ -421,7 +432,7 @@ describe('layout v2→v3 migration prunes removed content types', () => {
       expect(right).toBeDefined();
       expect(right.tabs).toEqual([]);
       expect(right.activeTabId).toBeNull();
-      expect(restored.edgePanels.right.tabGroupId).toBe('right');
+      expect(panelGroupId(restored.edgePanels.right)!).toBe('right');
     });
   });
 

@@ -17,7 +17,11 @@ function resetLayout(
       s.layout = layout;
       s.tabGroups = tabGroups;
       s.activePaneId = null;
-      s.edgePanels.right.tabGroupId = rightGroupId as string;
+      s.edgePanels.right.layout = {
+        id: 'right-pane',
+        type: 'pane',
+        tabGroupId: rightGroupId,
+      };
       s.edgePanels.right.isCollapsed = true;
     })
   );

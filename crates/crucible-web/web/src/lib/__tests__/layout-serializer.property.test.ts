@@ -46,7 +46,11 @@ const arbTabGroup = (groupId: string): fc.Arbitrary<TabGroup> =>
 const arbEdgePanel = (tabGroupId: string): fc.Arbitrary<EdgePanel> =>
   fc.record({
     id: fc.uuid(),
-    tabGroupId: fc.constant(tabGroupId),
+    // v5: the panel body is a layout tree; a single-pane tree is the common
+    // shape (split trees are pinned by unit tests).
+    layout: fc.uuid().map(
+      (paneId): LayoutNode => ({ id: paneId, type: 'pane', tabGroupId }),
+    ),
     isCollapsed: fc.boolean(),
     width: fc.option(fc.integer({ min: 100, max: 500 }), { freq: 2 }),
     height: fc.option(fc.integer({ min: 100, max: 500 }), { freq: 2 }),

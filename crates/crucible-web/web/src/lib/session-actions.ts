@@ -1,4 +1,5 @@
 import { findEdgePanelForGroup, windowActions, windowStore } from '@/stores/windowStore';
+import { primaryEdgeGroupId } from '@/stores/windowStoreInternals';
 import type { Tab } from '@/types/windowTypes';
 import { findFirstCenterPaneGroupId } from './panel-actions';
 import { iconForContentType } from './tab-icons';
@@ -17,7 +18,7 @@ export function findTabBySessionId(sessionId: string): { groupId: string; tab: T
  * panel's tab group (addTab materializes it if a stale layout lost it).
  */
 export function sessionPane(): { groupId: string } | null {
-  const groupId = windowStore.edgePanels.right.tabGroupId;
+  const groupId = primaryEdgeGroupId(windowStore, 'right');
   return groupId ? { groupId } : null;
 }
 

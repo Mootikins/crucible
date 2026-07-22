@@ -47,7 +47,7 @@ describe('TabBar — close button visibility & behavior', () => {
   it('renders a close button on every tab', () => {
     const { container } = render(() => (
       <DragDropProvider>
-        <TabBar mode="center" groupId={groupId} paneId={paneId} />
+        <TabBar groupId={groupId} paneId={paneId} />
       </DragDropProvider>
     ));
 
@@ -59,7 +59,7 @@ describe('TabBar — close button visibility & behavior', () => {
   it('active tab close button is always visible; inactive is hover-revealed', () => {
     const { container } = render(() => (
       <DragDropProvider>
-        <TabBar mode="center" groupId={groupId} paneId={paneId} />
+        <TabBar groupId={groupId} paneId={paneId} />
       </DragDropProvider>
     ));
 
@@ -78,7 +78,7 @@ describe('TabBar — close button visibility & behavior', () => {
   it('reflects the active tab flipping (visibility follows isActive)', () => {
     const { container } = render(() => (
       <DragDropProvider>
-        <TabBar mode="center" groupId={groupId} paneId={paneId} />
+        <TabBar groupId={groupId} paneId={paneId} />
       </DragDropProvider>
     ));
 
@@ -91,7 +91,7 @@ describe('TabBar — close button visibility & behavior', () => {
   it('clicking a close button removes that tab', () => {
     const { container } = render(() => (
       <DragDropProvider>
-        <TabBar mode="center" groupId={groupId} paneId={paneId} />
+        <TabBar groupId={groupId} paneId={paneId} />
       </DragDropProvider>
     ));
 

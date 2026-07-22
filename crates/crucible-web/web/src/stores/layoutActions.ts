@@ -2,6 +2,7 @@ import { produce } from 'solid-js/store';
 import type {
   EdgePanel as EdgePanelType,
   EdgePanelPosition,
+  LayoutNode,
   TabGroup,
 } from '@/types/windowTypes';
 import type { SerializedLayout } from '@/lib/layout-serializer';
@@ -11,8 +12,12 @@ import {
 } from '@/lib/layout-serializer';
 import type { WindowStoreContext } from './windowStoreInternals';
 import {
-  findPaneInLayout,
+  collectLeafGroupIds,
   findFirstPane,
+  findPaneAnywhere,
+  regionOfPane,
+  updateRootWhere,
+  updateSplitRatio,
 } from './windowStoreInternals';
 import { statusBarActions } from './statusBarStore';
 import { syncShellSurface } from './shellStore';
@@ -25,7 +30,8 @@ export interface LayoutActions {
   setEdgePanelSize(position: EdgePanelPosition, size: number): void;
   getTabGroup(groupId: string): TabGroup | undefined;
   getPaneTabGroupId(paneId: string): string | null;
-  findPaneById(paneId: string): ReturnType<typeof findPaneInLayout>;
+  findPaneById(paneId: string): ReturnType<typeof findPaneAnywhere>;
+  commitSplitRatio(splitId: string, ratio: number): void;
   exportLayout(): SerializedLayout;
   importLayout(json: SerializedLayout): void;
 }
@@ -35,12 +41,14 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
 
   const setActivePane = (paneId: string | null) => {
     setStore('activePaneId', paneId);
-    setStore('focusedRegion', 'center');
+    // Panes live in the center tiling OR inside an edge panel's tree —
+    // focus follows the pane's actual region.
+    setStore('focusedRegion', paneId ? regionOfPane(store, paneId) : 'center');
     // Focusing a pane makes its visible chat the target of session-scoped
     // commands (Ctrl+K clear, switch-model) — see syncActiveSession in
     // tabActions for the tab-activation half.
     if (paneId) {
-      const pane = findPaneInLayout(store.layout, paneId);
+      const pane = findPaneAnywhere(store, paneId);
       const group = pane?.tabGroupId ? store.tabGroups[pane.tabGroupId] : null;
       const activeTab = group?.tabs.find((t) => t.id === group.activeTabId);
       const sessionId = activeTab?.metadata?.sessionId;
@@ -70,7 +78,16 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
     position: EdgePanelPosition,
     tabId: string | null
   ) => {
-    const groupId = store.edgePanels[position].tabGroupId;
+    // The panel is a layout tree — activate the tab in whichever leaf group
+    // holds it (null clears the first group's active tab).
+    const groupIds = collectLeafGroupIds(store.edgePanels[position].layout);
+    const groupId =
+      tabId === null
+        ? groupIds[0]
+        : groupIds.find((id) =>
+            store.tabGroups[id]?.tabs.some((t) => t.id === tabId)
+          );
+    if (!groupId) return;
     setStore('tabGroups', groupId, 'activeTabId', tabId);
     setStore('focusedRegion', position);
   };
@@ -96,12 +113,29 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
   };
 
   const getPaneTabGroupId = (paneId: string): string | null => {
-    const pane = findPaneInLayout(store.layout, paneId);
+    const pane = findPaneAnywhere(store, paneId);
     return pane?.tabGroupId ?? null;
   };
 
   const findPaneById = (paneId: string) => {
-    return findPaneInLayout(store.layout, paneId);
+    return findPaneAnywhere(store, paneId);
+  };
+
+  /** Persist a splitter drag — the split may live in the center tiling or
+   * inside an edge panel's tree. */
+  const commitSplitRatio = (splitId: string, ratio: number) => {
+    const containsSplit = (root: LayoutNode): boolean => {
+      if (root.type === 'pane') return false;
+      if (root.id === splitId) return true;
+      return containsSplit(root.first) || containsSplit(root.second);
+    };
+    setStore(
+      produce((s) => {
+        updateRootWhere(s, containsSplit, (root) =>
+          updateSplitRatio(root, splitId, ratio)
+        );
+      })
+    );
   };
 
   const exportLayout = (): SerializedLayout => {
@@ -147,6 +181,7 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
     getTabGroup,
     getPaneTabGroupId,
     findPaneById,
+    commitSplitRatio,
     exportLayout,
     importLayout,
   };

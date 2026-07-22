@@ -41,7 +41,7 @@ describe('TabBar — icons', () => {
   it('renders tab-row icons as <svg> and never the "▼" glyph', () => {
     const { container } = render(() => (
       <DragDropProvider>
-        <TabBar mode="center" groupId={groupId} paneId={paneId} />
+        <TabBar groupId={groupId} paneId={paneId} />
       </DragDropProvider>
     ));
 
@@ -53,7 +53,7 @@ describe('TabBar — icons', () => {
   it('overflow control renders a ChevronDown <svg>, not a "▼" arrow', () => {
     const { container } = render(() => (
       <DragDropProvider>
-        <TabBar mode="center" groupId={groupId} paneId={paneId} />
+        <TabBar groupId={groupId} paneId={paneId} />
       </DragDropProvider>
     ));
 

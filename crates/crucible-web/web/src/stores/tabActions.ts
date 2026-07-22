@@ -22,14 +22,38 @@ function syncActiveSession(tab: Tab | undefined | null): void {
 }
 import {
   collapseEmptyNodes,
+  countPanes,
   findEdgePanelForGroup,
+  findEdgePanelForPane,
   findFirstPane,
+  findPaneAnywhere,
   findPaneInLayout,
   generateId,
   insertPaneRelative,
   replacePaneWithSplit,
   updatePaneInLayout,
+  updateRootWhere,
 } from './windowStoreInternals';
+import type { WindowState } from './windowStoreTypes';
+
+/** Drop an emptied group that lives in an edge panel: a multi-pane panel
+ * collapses the empty pane out of its tree; the sole remaining pane keeps an
+ * empty group and collapses the panel instead (mirrors the old single-group
+ * behavior). Call inside produce(). */
+function releaseEdgeGroup(
+  s: WindowState,
+  pos: 'left' | 'right' | 'bottom',
+  group: TabGroup
+): void {
+  const panel = s.edgePanels[pos];
+  if (countPanes(panel.layout) > 1) {
+    delete s.tabGroups[group.id];
+    panel.layout = collapseEmptyNodes(panel.layout, s.tabGroups);
+  } else {
+    s.tabGroups[group.id] = { ...group, tabs: [], activeTabId: null };
+    panel.isCollapsed = true;
+  }
+}
 
 export interface TabActions {
   addTab(groupId: string, tab: Tab, insertIndex?: number): void;
@@ -99,8 +123,7 @@ export function createTabActions(context: WindowStoreContext): TabActions {
             s.floatingWindows = s.floatingWindows.filter((w) => w.id !== floating.id);
             delete s.tabGroups[groupId];
           } else if (pos) {
-            s.tabGroups[groupId] = { ...group, tabs: [], activeTabId: null };
-            s.edgePanels[pos].isCollapsed = true;
+            releaseEdgeGroup(s, pos, group);
           } else {
             delete s.tabGroups[groupId];
             s.layout = collapseEmptyNodes(s.layout, s.tabGroups);
@@ -181,12 +204,7 @@ export function createTabActions(context: WindowStoreContext): TabActions {
             s.floatingWindows = s.floatingWindows.filter((w) => w.id !== floating.id);
             delete s.tabGroups[sourceGroupId];
           } else if (sourcePos) {
-            s.tabGroups[sourceGroupId] = {
-              ...sourceGroup,
-              tabs: [],
-              activeTabId: null,
-            };
-            s.edgePanels[sourcePos].isCollapsed = true;
+            releaseEdgeGroup(s, sourcePos, sourceGroup);
           } else {
             delete s.tabGroups[sourceGroupId];
             s.layout = collapseEmptyNodes(s.layout, s.tabGroups);
@@ -244,12 +262,17 @@ export function createTabActions(context: WindowStoreContext): TabActions {
       produce((s) => {
         s.tabGroups[groupId] = newGroup;
         if (paneId) {
-          s.layout = updatePaneInLayout(s.layout, paneId, (p) => ({
-            ...p,
-            tabGroupId: groupId,
-          }));
+          updateRootWhere(
+            s,
+            (root) => !!findPaneInLayout(root, paneId),
+            (root) =>
+              updatePaneInLayout(root, paneId, (p) => ({
+                ...p,
+                tabGroupId: groupId,
+              }))
+          );
           s.activePaneId = paneId;
-          s.focusedRegion = 'center';
+          s.focusedRegion = findEdgePanelForPane(s, paneId) ?? 'center';
         }
       })
     );
@@ -257,7 +280,7 @@ export function createTabActions(context: WindowStoreContext): TabActions {
   };
 
   const splitPane = (paneId: string, direction: SplitDirection) => {
-    const pane = findPaneInLayout(store.layout, paneId);
+    const pane = findPaneAnywhere(store, paneId);
     if (!pane) return;
     const firstGroupId = generateId();
     const secondGroupId = generateId();
@@ -280,7 +303,11 @@ export function createTabActions(context: WindowStoreContext): TabActions {
     };
     setStore(
       produce((s) => {
-        s.layout = replacePaneWithSplit(s.layout, paneId, newSplit);
+        updateRootWhere(
+          s,
+          (root) => !!findPaneInLayout(root, paneId),
+          (root) => replacePaneWithSplit(root, paneId, newSplit)
+        );
         s.tabGroups[firstGroupId] = {
           id: firstGroupId,
           tabs: originalGroup ? [...originalGroup.tabs] : [],
@@ -294,8 +321,9 @@ export function createTabActions(context: WindowStoreContext): TabActions {
         if (pane.tabGroupId && pane.tabGroupId in s.tabGroups) {
           delete s.tabGroups[pane.tabGroupId];
         }
-        s.activePaneId = (newSplit as Extract<LayoutNode, { type: 'split' }>).second.id;
-        s.focusedRegion = 'center';
+        const newPaneId = (newSplit as Extract<LayoutNode, { type: 'split' }>).second.id;
+        s.activePaneId = newPaneId;
+        s.focusedRegion = findEdgePanelForPane(s, newPaneId) ?? 'center';
       })
     );
   };
@@ -306,7 +334,7 @@ export function createTabActions(context: WindowStoreContext): TabActions {
     sourceGroupId: string,
     tabId: string
   ) => {
-    const pane = findPaneInLayout(store.layout, paneId);
+    const pane = findPaneAnywhere(store, paneId);
     if (!pane) {
       // A miss here means a drop target carried a pane id that's no longer
       // in the layout (historically: stale droppable after a layout restore).
@@ -318,14 +346,18 @@ export function createTabActions(context: WindowStoreContext): TabActions {
     const newGroupId = generateId();
     setStore(
       produce((s) => {
-        s.layout = insertPaneRelative(s.layout, paneId, position, newPaneId, newGroupId);
+        updateRootWhere(
+          s,
+          (root) => !!findPaneInLayout(root, paneId),
+          (root) => insertPaneRelative(root, paneId, position, newPaneId, newGroupId)
+        );
         s.tabGroups[newGroupId] = {
           id: newGroupId,
           tabs: [],
           activeTabId: tabId,
         };
         s.activePaneId = newPaneId;
-        s.focusedRegion = 'center';
+        s.focusedRegion = findEdgePanelForPane(s, newPaneId) ?? 'center';
       })
     );
     moveTab(sourceGroupId, newGroupId, tabId);

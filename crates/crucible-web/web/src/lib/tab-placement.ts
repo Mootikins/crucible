@@ -5,6 +5,7 @@
  * drag-and-drop abstraction as panes, tabs, and edge panels.
  */
 import { windowStore, windowActions } from '@/stores/windowStore';
+import { primaryEdgeGroupId } from '@/stores/windowStoreInternals';
 import type { DropTarget, Tab } from '@/types/windowTypes';
 
 /** Focus the tab if some group already holds its id. */
@@ -41,8 +42,9 @@ export function placeNewTab(target: DropTarget, tab: Tab): void {
     }
     case 'edgePanel': {
       const panel = windowStore.edgePanels[target.panelId];
-      if (!panel) return;
-      windowActions.addTab(panel.tabGroupId, tab, target.insertIndex);
+      const groupId = panel ? primaryEdgeGroupId(windowStore, target.panelId) : null;
+      if (!groupId) return;
+      windowActions.addTab(groupId, tab, target.insertIndex);
       if (panel.isCollapsed) {
         windowActions.setEdgePanelCollapsed(target.panelId, false);
       }

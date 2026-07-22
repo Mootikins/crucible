@@ -61,7 +61,10 @@ export type FocusedRegion = EdgePanelPosition | 'center';
 
 export interface EdgePanel {
   id: string;
-  tabGroupId: string;
+  /** Panel content is a full binary layout tree (same shape as the center
+   * tiling) — leaves are PaneNodes referencing tab groups, so edge panels
+   * split exactly like the center area. */
+  layout: LayoutNode;
   isCollapsed: boolean;
   width?: number;
   height?: number;
@@ -121,10 +124,13 @@ export type DropTarget =
 // native dragstart/drop.
 // ---------------------------------------------------------------------------
 
-// TabBar props discriminated union
-export type TabBarProps =
-  | { mode: 'center'; groupId: string; paneId: string; onPopOut?: () => void }
-  | { mode: 'edge'; position: EdgePanelPosition };
+// One TabBar for every region: edge panels host the same Pane/TabBar stack
+// as the center tiling (the bar derives its region from the group).
+export interface TabBarProps {
+  groupId: string;
+  paneId: string;
+  onPopOut?: () => void;
+}
 
 export interface TabContentProps {
   tab: Tab;

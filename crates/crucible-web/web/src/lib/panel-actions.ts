@@ -1,4 +1,5 @@
 import { findEdgePanelForGroup, windowActions, windowStore } from '@/stores/windowStore';
+import { primaryEdgeGroupId } from '@/stores/windowStoreInternals';
 import { getGlobalRegistry } from './panel-registry';
 import { iconForContentType } from './tab-icons';
 import type { LayoutNode, Tab, TabContentType } from '@/types/windowTypes';
@@ -66,7 +67,12 @@ export function openPanelTab(contentType: TabContentType): void {
     windowActions.addTab(groupId, tab);
   } else {
     const pos = def.defaultZone;
-    windowActions.addTab(windowStore.edgePanels[pos].tabGroupId, tab);
+    const groupId = primaryEdgeGroupId(windowStore, pos);
+    if (!groupId) {
+      console.error(`openPanelTab: edge panel '${pos}' has no tab group — cannot open '${contentType}'`);
+      return;
+    }
+    windowActions.addTab(groupId, tab);
     windowActions.setEdgePanelCollapsed(pos, false);
   }
 }

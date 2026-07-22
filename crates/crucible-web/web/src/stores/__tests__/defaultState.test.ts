@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createInitialState } from '@/stores/windowStoreInternals';
+import { createInitialState, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
 
 describe('createInitialState default seed', () => {
   // Regression / drift guard: every seeded tab group's activeTabId must be an
@@ -18,7 +18,7 @@ describe('createInitialState default seed', () => {
 
   it('the right edge panel opens to Backlinks', () => {
     const state = createInitialState();
-    const rightGroupId = state.edgePanels.right.tabGroupId;
+    const rightGroupId = primaryEdgeGroupId(state, 'right')!;
     expect(state.tabGroups[rightGroupId].activeTabId).toBe('backlinks-tab');
   });
 });

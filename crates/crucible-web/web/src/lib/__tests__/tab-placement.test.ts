@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { placeNewTab, resolveNewTabTarget } from '../tab-placement';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState, findFirstPane } from '@/stores/windowStoreInternals';
+import { createInitialState, findFirstPane, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
 import type { Tab } from '@/types/windowTypes';
 
 const fileTab = (path: string): Tab => ({
@@ -47,7 +47,7 @@ describe('placeNewTab (groupless DragSource → any drop target)', () => {
 
   it('drops onto an edge panel and expands it when collapsed', () => {
     setStore(produce((s) => { s.edgePanels.right.isCollapsed = true; }));
-    const edgeGroup = windowStore.edgePanels.right.tabGroupId;
+    const edgeGroup = primaryEdgeGroupId(windowStore, 'right')!;
     placeNewTab({ type: 'edgePanel', panelId: 'right' }, fileTab('/k/c.md'));
     expect(windowStore.tabGroups[edgeGroup].tabs.some((t) => t.id === 'tab-file-/k/c.md')).toBe(true);
     expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
@@ -89,7 +89,7 @@ describe('placeNewTab (groupless DragSource → any drop target)', () => {
     windowActions.addTab(centerGroupId, fileTab('/k/other.md'));
     placeNewTab({ type: 'edgePanel', panelId: 'left' }, fileTab('/k/dup.md'));
     // Not added to the edge panel; refocused in its original group.
-    const edgeGroup = windowStore.edgePanels.left.tabGroupId;
+    const edgeGroup = primaryEdgeGroupId(windowStore, 'left')!;
     expect(windowStore.tabGroups[edgeGroup].tabs.some((t) => t.id === 'tab-file-/k/dup.md')).toBe(false);
     expect(windowStore.tabGroups[centerGroupId].activeTabId).toBe('tab-file-/k/dup.md');
   });
