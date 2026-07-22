@@ -86,16 +86,17 @@ const SessionItem: Component<{
       }`}
        data-testid={`session-item-${props.session.id}`}
      >
-      {/* pr-12 reserves the action-button strip so hover buttons never
-          overlay the title; explicit 13px so the row doesn't inherit the
-          browser/system base size. */}
-      <div class="flex items-center gap-2 pr-12">
+      {/* The action-button strip is reserved only WHILE the buttons show
+          (hover/focus; always on touch) — the title keeps its full width the
+          rest of the time and truncates as the buttons fade in. Explicit
+          13px so the row doesn't inherit the browser/system base size. */}
+      <div class="flex items-center gap-2 transition-[padding] duration-150 group-hover:pr-12 group-focus-within:pr-12 [@media(hover:none)]:pr-12">
         <StateIndicator state={props.session.state} />
         <span class="text-[13px] font-medium truncate flex-1">
           {sessionDisplayTitle(props.session)}
         </span>
       </div>
-      <div class="text-[11px] text-muted-dark mt-0.5 pr-12 truncate">
+      <div class="text-[11px] text-muted-dark mt-0.5 truncate transition-[padding] duration-150 group-hover:pr-12 group-focus-within:pr-12 [@media(hover:none)]:pr-12">
         {props.session.agent_model || 'No model'}
       </div>
 
