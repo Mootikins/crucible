@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
+import { createMemo, createSignal } from 'solid-js';
 import { render, fireEvent } from '@solidjs/testing-library';
 import { RootDropdown } from '../RootDropdown';
-import { buildRoster, type TreeRoot } from '@/lib/tree-root';
-import type { Project } from '@/lib/types';
+import { buildRoster, rootKey, rosterIndex, type TreeRoot } from '@/lib/tree-root';
+import type { KilnListEntry, Project } from '@/lib/types';
 
 const project = (path: string, name: string, kilns: Project['kilns'] = []): Project => ({
   path,
@@ -26,6 +27,40 @@ describe('RootDropdown', () => {
     expect(optgroups[0].querySelectorAll('option')).toHaveLength(2);
     expect(optgroups[1].label).toBe('Kilns');
     expect(optgroups[1].querySelectorAll('option')).toHaveLength(1);
+  });
+
+  // Regression: the FilesPanel wiring — projects and kilns land in separate
+  // async flushes, the resolved root (persisted kiln) only becomes valid once
+  // kilns arrive, and each roster rebuild re-creates every <option>. The DOM
+  // select must END on the resolved key, not silently sit on option 0.
+  it('DOM selection follows the resolved root across async roster arrival', async () => {
+    const [projects, setProjects] = createSignal<Project[]>([]);
+    const [kilns, setKilns] = createSignal<KilnListEntry[]>([]);
+    const persisted = 'kiln:/vault';
+    const roster = createMemo(() => buildRoster(projects(), kilns()));
+    const activeKey = createMemo(() => {
+      const idx = rosterIndex(roster());
+      if (idx.has(persisted)) return persisted;
+      const first = roster().find((g) => g.roots.length > 0)?.roots[0];
+      return first ? rootKey(first) : null;
+    });
+    const { getByTestId } = render(() => (
+      <RootDropdown groups={roster()} selectedKey={activeKey()} onSelect={() => {}} />
+    ));
+
+    setProjects([project('/p1', 'crucible')]);
+    await Promise.resolve();
+    expect((getByTestId('root-dropdown') as HTMLSelectElement).value).toBe('project:/p1');
+
+    setKilns([{ path: '/vault', name: 'docs' }]);
+    await Promise.resolve();
+    expect((getByTestId('root-dropdown') as HTMLSelectElement).value).toBe('kiln:/vault');
+
+    // A later roster rebuild (projects refresh) re-creates all options with
+    // the SAME resolved key — the DOM selection must survive that too.
+    setProjects([project('/p1', 'crucible'), project('/p2', 'other')]);
+    await Promise.resolve();
+    expect((getByTestId('root-dropdown') as HTMLSelectElement).value).toBe('kiln:/vault');
   });
 
   it('reflects the selected key on the <select>', () => {
