@@ -162,17 +162,30 @@ web-vite-host:
 web-dev:
     cargo run -p crucible-cli -- web --host 0.0.0.0 --port 3000 --static-dir crates/crucible-web/web/dist
 
+# Debug-build web server on a side port (default 3001) with fresh assets —
+# runs safely next to the installed release instance on 3000, sharing its
+# daemon. Throttled -j4 build (full-parallel builds can lock this box up).
+web-debug port="3001": web-build
+    cargo build -j4 -p crucible-cli --bin cru
+    cargo run -p crucible-cli -- web --port {{port}} --static-dir crates/crucible-web/web/dist
+
 # Build release with embedded web assets
 release-web: web-build
     cargo build -p crucible-cli --release
 
-# Run web E2E tests (Playwright)
-web-test:
-    cd crates/crucible-web/web && bunx playwright test --reporter=line
+# Run web E2E tests (Playwright). Args pass through for scoped runs:
+# `just web-test e2e/cross-zone-dnd.spec.ts --project=chromium`
+web-test *args:
+    cd crates/crucible-web/web && bunx playwright test --reporter=line {{args}}
 
-# Run web unit tests (Vitest)
-web-test-unit:
-    cd crates/crucible-web/web && bunx vitest run
+# Run web unit tests (Vitest). Args pass through for scoped runs:
+# `just web-test-unit src/stores/__tests__`
+web-test-unit *args:
+    cd crates/crucible-web/web && bunx vitest run {{args}}
+
+# Typecheck the web frontend (no emit)
+web-typecheck:
+    cd crates/crucible-web/web && bunx tsc --noEmit -p tsconfig.json
 
 # Run web unit tests with coverage (Vitest + v8). Report at crates/crucible-web/web/coverage/index.html.
 # Thresholds in vite.config.ts gate against regressions below the 2026-05-17 baseline.

@@ -270,10 +270,19 @@ Conventions: use wikilinks (`[[Help/Wikilinks]]`), add frontmatter with tags, ke
 
 ### Workflow
 
-**Use `just`** for common recipes:
-- `just ci` — **Run before committing**: format check, clippy, quick tests
+**Use `just`** — reach for a recipe BEFORE invoking cargo/bunx/vitest/playwright
+directly. Recipes encode this box's constraints (thread caps, build prereqs like
+the web dist clippy needs); bypassing them re-derives that knowledge badly.
+Scoped runs pass through args, so scoping is not a reason to go direct:
+- `just ci` — **Run before committing**: fmt, clippy, size gate, nextest, web unit + e2e
 - `just build` / `just test` / `just check` — build, test, check
-- `just web` / `just mcp` — web UI, MCP server
+- `just test-crate <crate>` / `just web-test-unit [paths…]` / `just web-test [specs…]` — scoped tests
+- `just web-typecheck` — frontend tsc, no emit
+- `just web` (build + serve on 3000) / `just web-debug [port]` — debug server on a
+  side port (default 3001), safe next to the installed instance
+- `just mcp` — MCP server
+
+If a flow has no recipe and you need it twice, add a recipe instead of going direct again.
 
 **Don't build release unless installing.** Release builds use LTO and take 5-10 minutes. Use debug builds for iteration.
 
