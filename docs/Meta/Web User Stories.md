@@ -272,4 +272,3 @@ The four-surface shell from the "Crucible Shell Options" design (turn 5): Home �
 ## See Also
 - [[TUI User Stories]] — terminal counterpart
 - [[Meta/Product]] — Web & Desktop feature inventory
-- [[Meta/Web UI Feature Spec]] — long-run web UI feature map and design brief

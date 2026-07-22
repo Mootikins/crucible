@@ -214,5 +214,3 @@ The system boundary is about **what** (requirements), crates are about **how** (
 
 ## Related
 
-- [[Meta/Roadmap]] - Development timeline
-- [[Dev Kiln Architecture]] - Technical architecture

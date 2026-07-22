@@ -10,7 +10,7 @@ tags:
 
 # Workflow Syntax
 
-Workflows define high-level planning and orchestration in readable markdown. Unlike [[Tasks]] which focus on execution details, workflows describe *what* needs to happen and *why*, letting the system derive execution steps.
+Workflows define high-level planning and orchestration in readable markdown. Unlike [[Task Management|task notes]] which focus on execution details, workflows describe *what* needs to happen and *why*, letting the system derive execution steps.
 
 > **Status:** the syntax, parsing, and execution on this page are implemented — workflows parse into a typed `WorkflowDoc` AST (inspect with `cru workflow list` / `cru workflow show`) and run via the daemon's workflow engine, including parallel step groups. Sections still marked **(Future)** are not yet implemented; see [[Help/Workflows/Index]] for the roadmap.
 
@@ -400,5 +400,5 @@ Based on **severity**, take immediate action:
 ## Related
 
 - [[Sessions]] — Workflow execution tracking
-- [[Tasks]] — Task execution format
+- [[Task Management]] — Task execution format
 - [[Markdown Handlers]] — Event-driven context injection

@@ -524,15 +524,12 @@ async fn dev_kiln_code_references_exist() {
     let md_files = find_markdown_files();
     let dev_kiln = dev_kiln_root();
 
-    // Historical docs reference crate paths that no longer exist.
-    // Exclude them from code reference validation since they capture
-    // the codebase state at the time they were written.
-    let excluded_prefixes: Vec<PathBuf> = vec![
-        dev_kiln.join("Meta/Analysis"),
-        dev_kiln.join("Meta/Research"),
-        dev_kiln.join("research"),
-    ];
-    let excluded_files: Vec<PathBuf> = vec![dev_kiln.join("Meta/backlog.md")];
+    // Historical docs that captured a past codebase state were deleted in
+    // the 2026-07 kiln cleanup; the exclusion lists remain as the hook for
+    // any future point-in-time documents.
+    let excluded_prefixes: Vec<PathBuf> = Vec::new();
+    let excluded_files: Vec<PathBuf> = Vec::new();
+    let _ = &dev_kiln;
 
     let mut failures = Vec::new();
     let mut total_refs = 0;

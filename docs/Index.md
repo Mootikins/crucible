@@ -133,7 +133,7 @@ Not sure how to structure your notes?
 
 ## About This Kiln
 
-This **dev-kiln** serves as a learning environment, reference system, working example, and test fixture — Crucible documenting itself, using itself. See [[Meta/Dev Kiln Architecture]] for technical details.
+This **dev-kiln** serves as a learning environment, reference system, working example, and test fixture — Crucible documenting itself, using itself.
 
 ---
 

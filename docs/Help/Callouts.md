@@ -1,5 +1,6 @@
 ---
 title: Callouts
+description: Admonition blocks (note, warning, tip…) in notes and how they render
 tags:
   - help
   - editor

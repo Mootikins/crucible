@@ -508,7 +508,6 @@ Before submitting changes:
 
 - **[README.md](./README.md)** — Project overview and quick start
 - **[docs/Meta/Systems.md](./docs/Meta/Systems.md)** — System boundaries
-- **[docs/Meta/Roadmap.md](./docs/Meta/Roadmap.md)** — Development roadmap
 - **[docs/](./docs/)** — Reference kiln (user guides + test fixture)
 - **[justfile](./justfile)** — Development recipes
 - **[vendor/README.md](./vendor/README.md)** — Patched upstream dependencies

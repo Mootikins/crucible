@@ -619,11 +619,6 @@ HTTP Gateway (crucible-web wired to daemon)
 
 ## Links
 
-- [[Meta/Roadmap]] — Phase-based development timeline
-- [[Meta/Tasks]] — Active operational tasks
-- [[Meta/backlog]] — Development backlog
 - [[Meta/Systems]] — System architecture and boundaries
 - [[Meta/TUI User Stories]] — TUI requirements
-- [[Meta/Web UI Feature Spec]] — long-run web UI feature map and design brief
 - [[Meta/Plugin User Stories]] — Plugin requirements
-- [[Meta/Plugin API Sketches]] — Plugin API designs

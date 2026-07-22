@@ -312,5 +312,4 @@ async fn handle(&self, event: &SessionEvent) -> Result<()> {
 ## See Also
 
 - [[Help/Extending/Event Hooks]] - Simpler hook-based approach
-- [[Meta/Analysis/Event Architecture]] - Internal event system design
 - [[Help/Lua/Language Basics]] - Lua syntax
