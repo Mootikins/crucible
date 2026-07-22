@@ -38,6 +38,16 @@ pub fn default_layout_path() -> std::path::PathBuf {
         .join("web-layout.json")
 }
 
+/// Layout file for `--standalone` instances: same directory, separate file,
+/// so a debug/test web server never overwrites the installed instance's
+/// restored workspace.
+pub fn standalone_layout_path() -> std::path::PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("crucible")
+        .join("web-layout.standalone.json")
+}
+
 pub struct ReconnectingDaemon {
     daemon: Arc<RwLock<DaemonClient>>,
     generation: AtomicU64,

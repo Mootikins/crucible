@@ -402,7 +402,9 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
 
         #[cfg(feature = "web")]
         Some(Commands::Web(cmd)) => {
-            commands::web::handle(cmd).await?;
+            // Standalone web instances persist their layout separately so a
+            // debug/test server never trashes the installed one's workspace.
+            commands::web::handle(cmd, cli.standalone).await?;
         }
 
         None => {

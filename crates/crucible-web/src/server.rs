@@ -22,8 +22,20 @@ pub use crucible_core::config::{CliAppConfig, WebConfig};
 
 const MAX_BODY_SIZE_10MB: usize = 10 * 1024 * 1024;
 
-pub async fn start_server(web_config: &WebConfig, app_config: &CliAppConfig) -> Result<()> {
+pub async fn start_server(
+    web_config: &WebConfig,
+    app_config: &CliAppConfig,
+    standalone: bool,
+) -> Result<()> {
     let mut state = daemon::init_daemon(app_config.clone()).await?;
+
+    // A standalone instance (isolated debug/test daemon) must not share the
+    // production layout file — its tab experiments would silently trash the
+    // installed instance's restored workspace.
+    if standalone {
+        state.layout_path = Arc::new(daemon::standalone_layout_path());
+        tracing::info!(path = %state.layout_path.display(), "Standalone: using isolated web layout");
+    }
 
     // Wildcard CORS is dangerous here because `/api/shell/exec` can execute host shell commands.
     // Restricting origins prevents arbitrary websites from triggering command execution via browsers.

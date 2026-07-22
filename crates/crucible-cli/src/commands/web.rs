@@ -44,7 +44,7 @@ pub enum WebSubcommand {
     },
 }
 
-pub async fn handle(cmd: WebCommand) -> Result<()> {
+pub async fn handle(cmd: WebCommand, standalone: bool) -> Result<()> {
     let config = CliAppConfig::load(None, None, None).unwrap_or_default();
 
     let web_config = config.web.clone().unwrap_or_else(|| WebConfig {
@@ -77,7 +77,7 @@ pub async fn handle(cmd: WebCommand) -> Result<()> {
     );
     print_connect_urls(&final_config);
 
-    crucible_web::start_server(&final_config, &config).await?;
+    crucible_web::start_server(&final_config, &config, standalone).await?;
 
     Ok(())
 }
