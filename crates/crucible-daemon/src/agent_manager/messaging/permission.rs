@@ -456,6 +456,30 @@ impl AgentManager {
         Some(current)
     }
 
+    /// Evaluate ONLY the `[permissions]` config deny rules for a tool call.
+    /// Used where the full gate is skipped (card `allow`) but the operator's
+    /// deny must still be absolute. `None` = no config or no deny match.
+    pub(super) fn config_deny_reason(
+        stream_ctx: &StreamContext,
+        tool_name: &str,
+        args: &serde_json::Value,
+    ) -> Option<String> {
+        use crucible_core::config::components::permissions::PermissionDecision;
+        let engine = stream_ctx.permission_engine.as_ref()?;
+        let input = if tool_name == "bash" {
+            args.get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string()
+        } else {
+            args.to_string()
+        };
+        match engine.evaluate(tool_name, &input, true) {
+            PermissionDecision::Deny { reason } => Some(reason),
+            PermissionDecision::Allow | PermissionDecision::Ask => None,
+        }
+    }
+
     pub(super) async fn handle_permission_request(
         stream_ctx: &StreamContext,
         tool_call: &crucible_core::traits::chat::ChatToolCall,

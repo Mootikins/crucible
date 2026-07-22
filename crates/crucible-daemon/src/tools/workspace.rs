@@ -22,7 +22,6 @@ use super::helpers::{text_success, McpResultExt};
 use rmcp::model::{CallToolResult, RawContent, Tool};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use tokio::process::Command;
 
 /// Canonicalize a path for containment checks even when it doesn't exist
@@ -136,7 +135,9 @@ impl WorkspaceTools {
             canonical.starts_with(&root)
         });
         if permitted {
-            Ok(resolved)
+            // Return the CANONICAL path so the checked path is the used
+            // path (no symlink swapped in between check and use).
+            Ok(canonical)
         } else {
             Err(rmcp::ErrorData::invalid_params(
                 format!(
@@ -255,27 +256,45 @@ impl WorkspaceTools {
         command: String,
         timeout_ms: Option<u64>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        // Project `[security.shell]` policy: blacklist blocks outright; a
-        // non-empty whitelist restricts to listed prefixes. An unset/empty
-        // policy imposes nothing (the permission gate still applies).
+        // Project `[security.shell]` policy: blacklist blocks; a non-empty
+        // whitelist restricts to listed prefixes. Checked per shell
+        // STATEMENT (split on ;/&&/||/|/newlines, whitespace-trimmed) so
+        // `git log; curl ...` can't ride a `git` whitelist entry. This is
+        // defense-in-depth against straightforward misuse, not a sandbox —
+        // env tricks and `eval` are out of scope; use the permission gate
+        // for authoritative control. An unset/empty policy imposes nothing.
         if let Some(policy) = &self.shell_policy {
-            let blocked = policy
-                .blacklist
-                .iter()
-                .any(|prefix| command.starts_with(prefix.as_str()));
-            let whitelisted = policy.whitelist.is_empty()
-                || policy
-                    .whitelist
-                    .iter()
-                    .any(|prefix| command.starts_with(prefix.as_str()));
-            if blocked || !whitelisted {
-                return Err(rmcp::ErrorData::invalid_params(
-                    format!(
-                        "Command blocked by the project shell policy \
-                         ([security.shell] in .crucible/project.toml): {command}"
-                    ),
-                    None,
-                ));
+            if !(policy.blacklist.is_empty() && policy.whitelist.is_empty()) {
+                let statements =
+                    crucible_core::config::components::permissions::split_chained_commands(
+                        &command,
+                    );
+                let statements: Vec<&str> = if statements.is_empty() {
+                    vec![command.trim()]
+                } else {
+                    statements.iter().map(|s| s.trim()).collect()
+                };
+                let violation = statements.iter().any(|stmt| {
+                    let blocked = policy
+                        .blacklist
+                        .iter()
+                        .any(|prefix| stmt.starts_with(prefix.as_str()));
+                    let whitelisted = policy.whitelist.is_empty()
+                        || policy
+                            .whitelist
+                            .iter()
+                            .any(|prefix| stmt.starts_with(prefix.as_str()));
+                    blocked || !whitelisted
+                });
+                if violation {
+                    return Err(rmcp::ErrorData::invalid_params(
+                        format!(
+                            "Command blocked by the project shell policy \
+                             ([security.shell] in .crucible/project.toml): {command}"
+                        ),
+                        None,
+                    ));
+                }
             }
         }
 
@@ -324,6 +343,25 @@ impl WorkspaceTools {
             None => self.workspace_root.clone(),
         };
 
+        // Containment must cover the PATTERN too, not just the search path:
+        // the glob crate special-cases literal `..` components and genuinely
+        // walks up, so `../../etc/*` would enumerate host files. Reject
+        // upward traversal in the pattern, and belt-and-braces filter every
+        // yielded path through the same allowed-roots check.
+        if self.allowed_roots.is_some()
+            && std::path::Path::new(&pattern)
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return Err(rmcp::ErrorData::invalid_params(
+                format!(
+                    "Glob pattern '{pattern}' contains '..' — patterns must stay inside \
+                     this session's allowed roots"
+                ),
+                None,
+            ));
+        }
+
         let full_pattern = search_path.join(&pattern);
         let pattern_str = full_pattern.to_string_lossy();
         let max_results = limit.unwrap_or(100);
@@ -331,6 +369,15 @@ impl WorkspaceTools {
         let paths: Vec<String> = glob::glob(&pattern_str)
             .mcp_err_ctx("Glob error")?
             .filter_map(std::result::Result::ok)
+            .filter(|p| match &self.allowed_roots {
+                None => true,
+                Some(roots) => {
+                    let canonical = canonicalize_lenient(p);
+                    roots
+                        .iter()
+                        .any(|root| canonical.starts_with(canonicalize_lenient(root)))
+                }
+            })
             .take(max_results + 1)
             .map(|p| {
                 p.strip_prefix(&self.workspace_root)

@@ -241,6 +241,38 @@ impl AgentManager {
             None => !is_safe(&tool_call.name),
         };
 
+        // A card's `allow` skips the PROMPT, never the operator's config:
+        // the global `[permissions]` deny rules are absolute even for
+        // card-allowed tools. Without this, an untrusted kiln could ship a
+        // card granting `bash: allow` and sidestep a configured deny.
+        let config_deny = if requires_gate {
+            None // the full gate below evaluates the config itself
+        } else {
+            Self::config_deny_reason(stream_ctx, &tool_call.name, &args)
+        };
+        if let Some(reason) = config_deny {
+            let error_msg = format!(
+                "Tool '{}' denied by permissions config: {reason}",
+                tool_call.name
+            );
+            emit_event(
+                &stream_ctx.event_tx,
+                SessionEventMessage::tool_result(
+                    &stream_ctx.session_id,
+                    &call_id,
+                    &tool_call.name,
+                    serde_json::json!({ "error": &error_msg }),
+                ),
+            );
+            return Some(crucible_core::traits::chat::ChatToolResult {
+                name: tool_call.name.clone(),
+                result: String::new(),
+                error: Some(error_msg),
+                call_id: Some(call_id.clone()),
+                terminate: false,
+            });
+        }
+
         if requires_gate {
             if let Err(deny_reason) =
                 Self::handle_permission_request(stream_ctx, tool_call, &call_id, &args).await

@@ -430,3 +430,126 @@ async fn delegation_trust_derives_from_child_provider() {
         "no child session may be created when trust fails"
     );
 }
+
+#[tokio::test]
+async fn glob_pattern_cannot_escape_containment() {
+    // Review MAJOR-1: the glob crate walks literal `..` components, so a
+    // pattern like `../../etc/*` used to enumerate host files even though
+    // the search path was contained.
+    let r = rig(
+        "glob",
+        serde_json::json!({"pattern": "../../../../../../etc/*"}),
+        None,
+    )
+    .await;
+    let text = r.run_turn().await;
+    assert!(
+        text.contains("ERROR") && text.contains(".."),
+        "upward-traversing glob patterns must be rejected, got: {text}"
+    );
+}
+
+#[tokio::test]
+async fn glob_inside_workspace_still_works() {
+    let r = rig("glob", serde_json::json!({"pattern": "*.txt"}), None).await;
+    std::fs::write(r.workspace.join("hello.txt"), "x").unwrap();
+    let text = r.run_turn().await;
+    assert!(
+        text.contains("OK") && text.contains("hello.txt"),
+        "in-workspace glob must keep working, got: {text}"
+    );
+}
+
+#[tokio::test]
+async fn card_allow_does_not_override_config_deny() {
+    // Review MAJOR-2: a card's `bash: allow` skips the prompt but must NOT
+    // sidestep the operator's [permissions] deny rules.
+    let config = PermissionConfig {
+        default: PermissionMode::Allow,
+        allow: vec![],
+        deny: vec!["bash:*".to_string()],
+        ask: vec![],
+    };
+    let temp = TempDir::new().unwrap();
+    let workspace = temp.path().to_path_buf();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let (event_tx, _) = broadcast::channel(256);
+    let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager: session_manager.clone(),
+        background_manager: Arc::new(crucible_daemon::BackgroundJobManager::new(event_tx.clone())),
+        mcp_gateway: None,
+        llm_config: None,
+        acp_config: None,
+        permission_config: Some(config),
+        plugin_loader: None,
+        workspace_tools: Arc::new(WorkspaceTools::new(workspace.clone())),
+    }));
+    agent_manager.set_agent_factory_override(Box::new(move |_, _| {
+        Box::pin(async move {
+            Ok(Box::new(OneToolAgent {
+                tool: "bash",
+                args: serde_json::json!({"command": "echo pwned"}),
+            }) as Box<dyn AgentHandle + Send + Sync>)
+        })
+    }));
+    let session = session_manager
+        .create_session(SessionType::Chat, workspace.clone(), None, vec![], None)
+        .await
+        .unwrap();
+    let mut agent = internal_agent();
+    // Card-style allow for bash — the untrusted-kiln-card scenario.
+    agent.tool_policy = Some(
+        [("bash".to_string(), crucible_core::agent::ToolPolicy::Allow)]
+            .into_iter()
+            .collect(),
+    );
+    agent_manager
+        .configure_agent(&session.id, agent)
+        .await
+        .unwrap();
+
+    let (_, rx) = agent_manager
+        .send_message_notified(&session.id, "go".to_string(), &event_tx, false, None)
+        .await
+        .expect("send");
+    let outcome = tokio::time::timeout(Duration::from_secs(10), rx)
+        .await
+        .expect("turn completes")
+        .expect("outcome delivered");
+    assert!(
+        outcome.final_text.contains("ERROR")
+            && outcome.final_text.contains("denied by permissions config"),
+        "config deny must beat card allow, got: {}",
+        outcome.final_text
+    );
+}
+
+#[tokio::test]
+async fn shell_policy_checks_each_chained_statement() {
+    // Review MAJOR-3: `git log; rm -rf x` must not ride a `git` whitelist
+    // entry via prefix matching on the whole command line.
+    let allow_all = PermissionConfig {
+        default: PermissionMode::Allow,
+        ..Default::default()
+    };
+    let r = rig(
+        "bash",
+        serde_json::json!({"command": "git log; rm -rf /tmp/x"}),
+        Some(allow_all),
+    )
+    .await;
+    std::fs::create_dir_all(r.workspace.join(".crucible")).unwrap();
+    std::fs::write(
+        r.workspace.join(".crucible").join("project.toml"),
+        "[security.shell]\nwhitelist = [\"git\"]\n",
+    )
+    .unwrap();
+
+    let text = r.run_turn().await;
+    assert!(
+        text.contains("ERROR") && text.contains("shell policy"),
+        "chained non-whitelisted statement must be blocked, got: {text}"
+    );
+}

@@ -117,6 +117,8 @@ Permission values:
 
 Tools not listed use the default behavior (safe read-only tools run freely; mutating tools go through the permission gate). Note: delegated child sessions run non-interactively — for them, `ask` is effectively `deny` unless a permission pattern or Lua hook answers the prompt.
 
+**Trust note:** `allow` skips the interactive prompt, so only install cards from sources you trust — a kiln-shipped card granting `bash: allow` runs shell commands unattended when delegated to. The operator's `[permissions]` deny rules always win over a card's `allow`, so `deny = ["bash:*"]` in your permissions config is an absolute backstop.
+
 ## Delegating to a Card
 
 An agent whose session has delegation enabled (`delegation_config.enabled`) sees a `delegate_session` tool listing the available cards. Delegation resolves targets in this order: agent card → ACP profile (external agents like `claude`, `opencode`).

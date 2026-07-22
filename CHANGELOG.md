@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-07-22
+
+### Added
+- **Subagent delegation actually works** — the internal `delegate_session` path was never wired in production (three independent breaks). Delegated children are now real sessions driven through the main scheduler: working tool execution, Precognition knowledge injection, Lua hooks, per-turn events on the child's own session id, and standard persistence. Blocking and background modes both honor `timeout_secs` and `result_max_bytes`.
+- **Agent cards define delegation targets.** The documented card format is now fully implemented (only `description` is required; `name`/`version` default; `mcps` alias; `tools:` accepts `true`/`false`/`allow`/`ask`/`deny`). Cards are discovered from `~/.config/crucible/agents/`, kiln `agents/`, and project `.crucible/agents/` (later shadows earlier), and `delegate_session` resolves targets card-first, then ACP profiles. `session.create` accepts `agent_name` for card-configured internal agents.
+- **Card model-resolution chain**: card-explicit `provider`/`model` > `specialty:` mapped through the new `[llm.models]` config table (`reasoning = "openai/o1"`, bare model inherits the provider) > inherit from the spawning context (the delegating parent, or configured defaults).
+- **Child sessions are hidden but real**: excluded from `session.list` unless `include_children` (`cru session list --include-children`), linked via `parent_session_id`, ended with their turn, and archived/deleted/cancelled together with their parent.
+- **Real nested delegation**: `max_depth` now works as documented — `2` lets a delegated child delegate once more; depth derives from the parent-session chain, so a child cannot lift its own cap.
+- Production-wiring delegation e2e (real server construction + scripted LLM) — the test class whose absence let the unwired path ship.
+
+### Security
+- `[permissions]` config is now enforced for internal agents (was ACP-only): config `deny` is absolute — including over an agent card's `allow` — and `default = "allow"` skips prompts. Non-interactive sessions deny would-prompt tools immediately instead of hanging.
+- The project `[security.shell]` policy now applies to the agent `bash` tool, checked per chained statement (defense-in-depth, not a sandbox).
+- Workspace file tools are contained to the workspace + kilns + session directory: symlink and `..` escapes are blocked for reads and writes, and glob patterns can no longer traverse out.
+- Delegation trust derives from the target's actual provider trust level instead of assuming Cloud, so a local-model card can serve a confidential kiln while cloud targets stay blocked.
+
+### Changed
+- `delegate_session` results carry `child_session_id`, and `delegation_id` now equals the child session id; delegation lifecycle events (`delegation_spawned`/`completed`/`failed`) include the child session id.
+- Blocking delegations are no longer killed by the flat 30s tool timeout (they get the delegation timeout plus margin).
+
+### Fixed
+- A delegation whose awaiter subscribed after completion no longer burns its full timeout (results were silently dropped by the watch channel when no receiver existed yet).
+- Ending, archiving, or deleting a session now cleans up its delegated children (previously orphaned background tasks kept running).
+
 ## [0.13.0] - 2026-07-22
 
 ### Added
