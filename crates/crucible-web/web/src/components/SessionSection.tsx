@@ -92,12 +92,12 @@ const SessionItem: Component<{
           13px so the row doesn't inherit the browser/system base size. */}
       <div class="flex items-center gap-2 transition-[padding] duration-150 group-hover:pr-12 group-focus-within:pr-12 [@media(hover:none)]:pr-12">
         <StateIndicator state={props.session.state} />
-        <span class="text-[13px] font-medium truncate flex-1">
-          {sessionDisplayTitle(props.session)}
+        <span class="text-[13px] font-medium flex-1 min-w-0 fade-scroll">
+          <span>{sessionDisplayTitle(props.session)}</span>
         </span>
       </div>
-      <div class="text-[11px] text-muted-dark mt-0.5 truncate transition-[padding] duration-150 group-hover:pr-12 group-focus-within:pr-12 [@media(hover:none)]:pr-12">
-        {props.session.agent_model || 'No model'}
+      <div class="text-[11px] text-muted-dark mt-0.5 fade-scroll transition-[padding] duration-150 group-hover:pr-12 group-focus-within:pr-12 [@media(hover:none)]:pr-12">
+        <span>{props.session.agent_model || 'No model'}</span>
       </div>
 
       {/* Action buttons — visible on hover, in the reserved strip */}
@@ -115,7 +115,7 @@ const SessionItem: Component<{
         <Show when={props.onDelete}>
           <button
             type="button"
-            class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
+            class="rounded p-1 text-error/70 hover:text-error hover:bg-error/10 transition-colors"
             title="Delete session"
             onClick={(e) => { e.stopPropagation(); props.onDelete?.(); }}
           >

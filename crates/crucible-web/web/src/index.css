@@ -500,6 +500,29 @@ details.callout[open] > summary.callout-title::after {
   background: color-mix(in oklab, var(--color-surface-elevated) 40%, transparent);
 }
 
+/* Overflowing row text (session list): FADE at the clipped edge instead of
+   an ellipsis, and hovering the row scrolls the hidden tail into view.
+   Container-query units give the exact overflow distance in pure CSS —
+   `100cqw - 100%` is negative by the overflow amount; min() clamps short
+   text to zero movement. The scroll overshoots by the fade width so the
+   tail clears the mask. Markup: <div class="fade-scroll"><span>text</span>. */
+.fade-scroll {
+  overflow: hidden;
+  white-space: nowrap;
+  container-type: inline-size;
+  mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+}
+.fade-scroll > span {
+  display: inline-block;
+  white-space: nowrap;
+  translate: 0 0;
+  transition: translate 900ms ease-in-out 250ms;
+}
+.group:hover .fade-scroll > span,
+.group:focus-within .fade-scroll > span {
+  translate: min(0px, calc(100cqw - 100% - 28px)) 0;
+}
+
 /* Frontmatter Properties card (lib/frontmatter.ts renderFrontmatterCardHtml)
    — the SAME card in the reading view and the live-preview widget. Quiet
    key/value rows; array values render as pill chips. */
