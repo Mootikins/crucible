@@ -29,7 +29,7 @@
 use super::helpers::{make_server_info, McpResultExt};
 use super::{KilnTools, NoteTools, SearchTools, WorkspaceTools};
 use crucible_core::background::{BackgroundSpawner, JobStatus};
-use crucible_core::config::{DataClassification, TrustLevel};
+use crucible_core::config::DataClassification;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::storage::NoteStore;
 use crucible_core::traits::KnowledgeRepository;
@@ -596,19 +596,9 @@ impl CrucibleMcpServer {
             }
         }
 
-        let child_trust_level = TrustLevel::Cloud;
-        if !child_trust_level.satisfies(delegation.data_classification) {
-            return Err(rmcp::ErrorData::invalid_params(
-                format!(
-                    "Delegated agent's trust level '{}' is insufficient for kiln data classification '{}'. Requires '{}' trust.",
-                    child_trust_level,
-                    delegation.data_classification,
-                    delegation.data_classification.required_trust_level(),
-                ),
-                None,
-            ));
-        }
-
+        // Trust is enforced service-side against the CHILD's resolved
+        // provider (see DelegationService::spawn_delegation) — no more
+        // hardcoded Cloud assumption here.
         let request = crate::delegation::DelegationRequest {
             parent_session_id: delegation.session_id.clone(),
             prompt: params.prompt,
@@ -1253,7 +1243,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_delegation_blocked_for_confidential_kiln() {
+    async fn test_delegation_trust_is_enforced_service_side_not_in_tool() {
+        // Trust used to be checked here with a hardcoded Cloud assumption.
+        // It now derives from the CHILD's resolved provider inside
+        // DelegationService::spawn_delegation, so the tool defers: the spawn
+        // call goes through and the service is the gate (covered by
+        // delegation_integration tests).
         let (server, spawner) =
             make_server_with_delegation_classification(DataClassification::Confidential);
 
@@ -1266,14 +1261,8 @@ mod tests {
             }))
             .await;
 
-        assert!(result.is_err());
-        assert_eq!(spawner.spawn_calls.load(Ordering::SeqCst), 0);
-
-        let err = result.unwrap_err();
-        assert!(err.message.contains("insufficient"));
-        assert!(err.message.contains("cloud"));
-        assert!(err.message.contains("confidential"));
-        assert!(err.message.contains("local"));
+        assert!(result.is_ok());
+        assert_eq!(spawner.spawn_calls.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

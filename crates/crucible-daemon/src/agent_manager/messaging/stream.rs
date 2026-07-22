@@ -900,6 +900,7 @@ impl AgentManager {
                 precognition_message: None,
                 session_mode: stream_ctx.session_mode.clone(),
                 is_interactive: stream_ctx.is_interactive,
+                permission_engine: stream_ctx.permission_engine.clone(),
             };
 
             continuation_outcome = Box::pin(Self::execute_agent_stream(

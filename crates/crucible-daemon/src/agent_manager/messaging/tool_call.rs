@@ -241,19 +241,20 @@ impl AgentManager {
             None => !is_safe(&tool_call.name),
         };
 
-        if requires_gate
-            && !Self::handle_permission_request(stream_ctx, tool_call, &call_id, &args).await
-        {
-            return Some(crucible_core::traits::chat::ChatToolResult {
-                name: tool_call.name.clone(),
-                result: String::new(),
-                error: Some(format!(
-                    "Tool call denied by permission gate: {}",
-                    tool_call.name
-                )),
-                call_id: Some(call_id.clone()),
-                terminate: false,
-            });
+        if requires_gate {
+            if let Err(deny_reason) =
+                Self::handle_permission_request(stream_ctx, tool_call, &call_id, &args).await
+            {
+                // Feed the SPECIFIC denial reason back to the model so it can
+                // adapt (config rule vs shell policy vs non-interactive).
+                return Some(crucible_core::traits::chat::ChatToolResult {
+                    name: tool_call.name.clone(),
+                    result: String::new(),
+                    error: Some(deny_reason),
+                    call_id: Some(call_id.clone()),
+                    terminate: false,
+                });
+            }
         }
 
         let args_str = serde_json::to_string(&args).unwrap_or_else(|_| "null".to_string());

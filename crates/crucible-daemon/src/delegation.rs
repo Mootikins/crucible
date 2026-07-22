@@ -333,6 +333,24 @@ impl DelegationSpawner for DelegationService {
         };
         child_agent.delegation_config = None;
 
+        // Trust gate: the CHILD's resolved provider trust (not a hardcoded
+        // Cloud assumption) must satisfy the kiln's data classification. A
+        // local-model card can therefore serve a confidential kiln that a
+        // cloud target cannot. Unresolved trust still fails closed to Cloud
+        // inside resolve_agent_trust.
+        let child_trust = manager.resolve_agent_trust(&child_agent);
+        let classification = crate::trust_resolution::resolve_kiln_classification(
+            &parent.workspace,
+            &parent.kiln,
+        )
+        .unwrap_or(crucible_core::config::DataClassification::Public);
+        if !child_trust.satisfies(classification) {
+            return Err(JobError::SpawnFailed(format!(
+                "Delegated agent's trust level '{child_trust}' is insufficient for kiln data                  classification '{classification}'. Requires '{}' trust.",
+                classification.required_trust_level(),
+            )));
+        }
+
         // Concurrency permit — acquired before session creation, released by
         // the watcher when the child reaches a terminal state. try_acquire on
         // a semaphore is atomic: two racing spawns cannot both pass the cap.

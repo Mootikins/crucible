@@ -220,6 +220,16 @@ impl AgentManager {
             precognition_message,
             session_mode,
             is_interactive,
+            // Compile the global [permissions] config once per turn. Unlike
+            // the ACP gate there is no per-agent profile config for internal
+            // agents (cards carry tool_policy instead), so this is global-only.
+            permission_engine: self.permission_config.as_ref().map(|config| {
+                Arc::new(
+                    crucible_core::config::components::permissions::PermissionEngine::new(Some(
+                        config,
+                    )),
+                )
+            }),
         };
 
         let task = tokio::spawn(async move {

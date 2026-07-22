@@ -25,6 +25,31 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::process::Command;
 
+
+/// Canonicalize a path for containment checks even when it doesn't exist
+/// yet: canonicalize the deepest existing ancestor (resolving symlinks and
+/// `..`), then re-append the non-existent remainder.
+fn canonicalize_lenient(path: &std::path::Path) -> PathBuf {
+    let mut existing = path.to_path_buf();
+    let mut remainder: Vec<std::ffi::OsString> = Vec::new();
+    loop {
+        if let Ok(canonical) = existing.canonicalize() {
+            let mut result = canonical;
+            for part in remainder.iter().rev() {
+                result.push(part);
+            }
+            return result;
+        }
+        match (existing.file_name(), existing.parent()) {
+            (Some(name), Some(parent)) => {
+                remainder.push(name.to_os_string());
+                existing = parent.to_path_buf();
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
 /// Workspace tools for file and shell operations
 #[derive(Debug, Clone)]
 pub struct WorkspaceTools {
@@ -34,6 +59,15 @@ pub struct WorkspaceTools {
     default_timeout_ms: u64,
     /// Extra environment variables injected into bash commands
     env_vars: HashMap<String, String>,
+    /// Filesystem containment: when set, every path a tool touches must
+    /// resolve inside one of these roots (workspace, kilns, session dir,
+    /// configured extras). `None` = uncontained (construction sites that
+    /// predate containment; agent-session dispatchers always set it).
+    allowed_roots: Option<Vec<PathBuf>>,
+    /// Project `[security.shell]` policy, resolved at construction (never
+    /// re-read at call time). `None` or an empty policy = no restriction
+    /// beyond the permission gate.
+    shell_policy: Option<crucible_core::config::ShellPolicy>,
 }
 
 impl WorkspaceTools {
@@ -43,6 +77,8 @@ impl WorkspaceTools {
             workspace_root: workspace_root.into(),
             default_timeout_ms: 120_000,
             env_vars: HashMap::new(),
+            allowed_roots: None,
+            shell_policy: None,
         }
     }
 
@@ -60,13 +96,59 @@ impl WorkspaceTools {
         self
     }
 
-    /// Resolve a path (absolute or relative to workspace)
-    fn resolve_path(&self, path: &str) -> PathBuf {
+    /// Contain all file operations to the workspace root plus the given
+    /// additional roots (kiln, connected kilns, session dir, …).
+    #[must_use]
+    pub fn with_allowed_roots(mut self, mut extra_roots: Vec<PathBuf>) -> Self {
+        let mut roots = vec![self.workspace_root.clone()];
+        roots.append(&mut extra_roots);
+        self.allowed_roots = Some(roots);
+        self
+    }
+
+    /// Apply a project shell policy to the `bash` tool.
+    #[must_use]
+    pub fn with_shell_policy(
+        mut self,
+        policy: Option<crucible_core::config::ShellPolicy>,
+    ) -> Self {
+        self.shell_policy = policy;
+        self
+    }
+
+    /// Resolve a path (absolute or relative to workspace) and enforce
+    /// containment when configured.
+    ///
+    /// Containment canonicalizes the deepest existing ancestor (defeating
+    /// `..` and symlink escapes for reads AND writes of not-yet-existing
+    /// files) and requires the result to sit under an allowed root.
+    fn resolve_path(&self, path: &str) -> Result<PathBuf, rmcp::ErrorData> {
         let p = PathBuf::from(path);
-        if p.is_absolute() {
+        let resolved = if p.is_absolute() {
             p
         } else {
             self.workspace_root.join(p)
+        };
+
+        let Some(roots) = &self.allowed_roots else {
+            return Ok(resolved);
+        };
+
+        let canonical = canonicalize_lenient(&resolved);
+        let permitted = roots.iter().any(|root| {
+            let root = canonicalize_lenient(root);
+            canonical.starts_with(&root)
+        });
+        if permitted {
+            Ok(resolved)
+        } else {
+            Err(rmcp::ErrorData::invalid_params(
+                format!(
+                    "Path '{path}' is outside this session's allowed roots \
+                     (workspace, kilns, session dir). Use a path inside the workspace."
+                ),
+                None,
+            ))
         }
     }
 
@@ -283,7 +365,7 @@ impl WorkspaceTools {
         offset: Option<usize>,
         limit: Option<usize>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let resolved = self.resolve_path(&path);
+        let resolved = self.resolve_path(&path)?;
 
         let content = tokio::fs::read_to_string(&resolved)
             .await
@@ -321,7 +403,7 @@ impl WorkspaceTools {
         new_string: String,
         replace_all: Option<bool>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let resolved = self.resolve_path(&path);
+        let resolved = self.resolve_path(&path)?;
 
         let content = tokio::fs::read_to_string(&resolved)
             .await
@@ -351,7 +433,7 @@ impl WorkspaceTools {
         path: String,
         content: String,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let resolved = self.resolve_path(&path);
+        let resolved = self.resolve_path(&path)?;
 
         // Create parent directories if needed
         if let Some(parent) = resolved.parent() {
@@ -377,6 +459,30 @@ impl WorkspaceTools {
         command: String,
         timeout_ms: Option<u64>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        // Project `[security.shell]` policy: blacklist blocks outright; a
+        // non-empty whitelist restricts to listed prefixes. An unset/empty
+        // policy imposes nothing (the permission gate still applies).
+        if let Some(policy) = &self.shell_policy {
+            let blocked = policy
+                .blacklist
+                .iter()
+                .any(|prefix| command.starts_with(prefix.as_str()));
+            let whitelisted = policy.whitelist.is_empty()
+                || policy
+                    .whitelist
+                    .iter()
+                    .any(|prefix| command.starts_with(prefix.as_str()));
+            if blocked || !whitelisted {
+                return Err(rmcp::ErrorData::invalid_params(
+                    format!(
+                        "Command blocked by the project shell policy \
+                         ([security.shell] in .crucible/project.toml): {command}"
+                    ),
+                    None,
+                ));
+            }
+        }
+
         let timeout =
             std::time::Duration::from_millis(timeout_ms.unwrap_or(self.default_timeout_ms));
 
@@ -417,8 +523,10 @@ impl WorkspaceTools {
         path: Option<String>,
         limit: Option<usize>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let search_path =
-            path.map_or_else(|| self.workspace_root.clone(), |p| self.resolve_path(&p));
+        let search_path = match path {
+            Some(p) => self.resolve_path(&p)?,
+            None => self.workspace_root.clone(),
+        };
 
         let full_pattern = search_path.join(&pattern);
         let pattern_str = full_pattern.to_string_lossy();
@@ -461,8 +569,10 @@ impl WorkspaceTools {
         glob: Option<String>,
         limit: Option<usize>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let search_path =
-            path.map_or_else(|| self.workspace_root.clone(), |p| self.resolve_path(&p));
+        let search_path = match path {
+            Some(p) => self.resolve_path(&p)?,
+            None => self.workspace_root.clone(),
+        };
 
         let max_matches = limit.unwrap_or(50);
 

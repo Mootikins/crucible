@@ -428,6 +428,12 @@ struct StreamContext {
     /// child sessions run non-interactive: a tool call that would prompt is
     /// denied immediately instead of hanging on a prompt nobody sees.
     is_interactive: bool,
+    /// The daemon's `[permissions]` config compiled for this turn. Internal
+    /// agents consult it before hooks/patterns/prompt: config deny is
+    /// absolute, config allow short-circuits the gate. `None` = no config.
+    permission_engine: Option<
+        Arc<crucible_core::config::components::permissions::PermissionEngine>,
+    >,
 }
 
 #[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration
@@ -917,6 +923,16 @@ impl AgentManager {
                 .with_search_sources(search_sources),
             );
 
+            // Security posture for the session's workspace tools: file
+            // operations are contained to the workspace + kilns + session
+            // dir (spill reads), and the project's `[security.shell]`
+            // policy applies to bash. Both are resolved ONCE here, never
+            // re-read at call time.
+            let shell_policy = crucible_core::config::read_project_config(&session.workspace)
+                .map(|c| c.security.shell);
+            let mut allowed_roots = vec![session.kiln.clone()];
+            allowed_roots.extend(session.connected_kilns.iter().cloned());
+            allowed_roots.push(session.storage_path());
             let mut providers: Vec<Arc<dyn ToolExecutor>> = vec![
                 Arc::new(
                     WorkspaceTools::new(&session.workspace)
@@ -924,7 +940,9 @@ impl AgentManager {
                         .with_env(
                             "CRU_SESSION_DIR",
                             session.storage_path().to_string_lossy().to_string(),
-                        ),
+                        )
+                        .with_allowed_roots(allowed_roots)
+                        .with_shell_policy(shell_policy),
                 ) as Arc<dyn ToolExecutor>,
                 Arc::new(McpToolExecutor::new(mcp)),
             ];
@@ -960,6 +978,16 @@ impl AgentManager {
     /// Access the delegation service (child-session spawning).
     pub fn delegation_service(&self) -> &Arc<DelegationService> {
         &self.delegation_service
+    }
+
+    /// Effective trust level of an agent config's provider, from the LLM
+    /// config's per-provider trust settings (Cloud fallback). Used to gate
+    /// delegation against the kiln's data classification.
+    pub(crate) fn resolve_agent_trust(
+        &self,
+        agent: &SessionAgent,
+    ) -> crucible_core::config::TrustLevel {
+        resolve_provider_trust(agent, self.llm_config.as_ref())
     }
 
     pub fn cleanup_session(&self, session_id: &str) {

@@ -461,7 +461,7 @@ impl AgentManager {
         tool_call: &crucible_core::traits::chat::ChatToolCall,
         call_id: &str,
         args: &serde_json::Value,
-    ) -> bool {
+    ) -> Result<(), String> {
         // Honor explicit --permissions override before running any hooks or prompt.
         // `Allow` auto-approves; `Deny` auto-rejects with an error tool_result;
         // `Ask` and `None` fall through to the standard hook/prompt flow.
@@ -472,7 +472,7 @@ impl AgentManager {
                     tool = %tool_call.name,
                     "permission override Allow: auto-approving tool call"
                 );
-                return true;
+                return Ok(());
             }
             Some(PermissionMode::Deny) => {
                 let error_msg = "Tool call denied by permission override".to_string();
@@ -490,9 +490,61 @@ impl AgentManager {
                         "No subscribers for tool_result (permission override Deny)"
                     );
                 }
-                return false;
+                return Err(error_msg);
             }
             Some(PermissionMode::Ask) | None => {}
+        }
+
+        // Global `[permissions]` config — previously enforced for ACP agents
+        // only. Config deny is absolute; config allow (incl. `default =
+        // "allow"`) short-circuits the gate. Ask (or no matching rule) falls
+        // through to PatternStore → Lua hooks → prompt. The engine is asked
+        // with `is_interactive: true` deliberately: its own ask→deny
+        // conversion would skip the fall-through layers, and the prompt
+        // branch below already handles non-interactive turns.
+        if let Some(engine) = &stream_ctx.permission_engine {
+            use crucible_core::config::components::permissions::PermissionDecision;
+            let engine_input = if tool_call.name == "bash" {
+                args.get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            } else {
+                args.to_string()
+            };
+            match engine.evaluate(&tool_call.name, &engine_input, true) {
+                PermissionDecision::Allow => {
+                    debug!(
+                        session_id = %stream_ctx.session_id,
+                        tool = %tool_call.name,
+                        "Permissions config allows tool, skipping prompt"
+                    );
+                    return Ok(());
+                }
+                PermissionDecision::Deny { reason } => {
+                    let error_msg = format!(
+                        "Tool '{}' denied by permissions config: {reason}",
+                        tool_call.name
+                    );
+                    if !emit_event(
+                        &stream_ctx.event_tx,
+                        SessionEventMessage::tool_result(
+                            &stream_ctx.session_id,
+                            call_id,
+                            &tool_call.name,
+                            serde_json::json!({ "error": &error_msg }),
+                        ),
+                    ) {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            tool = %tool_call.name,
+                            "No subscribers for config-denied tool_result event"
+                        );
+                    }
+                    return Err(error_msg);
+                }
+                PermissionDecision::Ask => {}
+            }
         }
 
         let project_path = stream_ctx.workspace_path.to_string_lossy();
@@ -505,7 +557,7 @@ impl AgentManager {
                 tool = %tool_call.name,
                 "Tool call matches whitelisted pattern, skipping permission prompt"
             );
-            return true;
+            return Ok(());
         }
 
         let hook_result = Self::execute_permission_hooks_with_timeout(
@@ -523,7 +575,7 @@ impl AgentManager {
                     tool = %tool_call.name,
                     "Lua hook allowed tool, skipping permission prompt"
                 );
-                true
+                Ok(())
             }
             PermissionHookResult::Deny => {
                 debug!(
@@ -543,7 +595,7 @@ impl AgentManager {
                         &stream_ctx.session_id,
                         call_id,
                         &tool_call.name,
-                        serde_json::json!({ "error": error_msg }),
+                        serde_json::json!({ "error": &error_msg }),
                     ),
                 ) {
                     warn!(
@@ -552,7 +604,7 @@ impl AgentManager {
                         "No subscribers for hook denied tool_result event"
                     );
                 }
-                false
+                Err(error_msg)
             }
             PermissionHookResult::Prompt => {
                 // Non-interactive turns (delegated child sessions, headless
@@ -571,7 +623,7 @@ impl AgentManager {
                             &stream_ctx.session_id,
                             call_id,
                             &tool_call.name,
-                            serde_json::json!({ "error": error_msg }),
+                            serde_json::json!({ "error": &error_msg }),
                         ),
                     ) {
                         warn!(
@@ -580,7 +632,7 @@ impl AgentManager {
                             "No subscribers for non-interactive deny tool_result event"
                         );
                     }
-                    return false;
+                    return Err(error_msg);
                 }
 
                 let diffs = crate::tools::diff_synth::synthesize_diffs(
@@ -706,7 +758,7 @@ impl AgentManager {
                 };
 
                 if permission_granted {
-                    return true;
+                    return Ok(());
                 }
 
                 let resource_desc = Self::brief_resource_description(args);
@@ -735,7 +787,7 @@ impl AgentManager {
                         &stream_ctx.session_id,
                         call_id,
                         &tool_call.name,
-                        serde_json::json!({ "error": error_msg }),
+                        serde_json::json!({ "error": &error_msg }),
                     ),
                 ) {
                     warn!(
@@ -744,7 +796,7 @@ impl AgentManager {
                         "No subscribers for permission denied tool_result event"
                     );
                 }
-                false
+                Err(error_msg)
             }
         }
     }
