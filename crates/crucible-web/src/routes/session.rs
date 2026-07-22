@@ -12,7 +12,6 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
-use crucible_daemon::agent_manager::providers::ProviderInfo;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -55,12 +54,6 @@ struct CancelledResponse {
 #[derive(Debug, Serialize)]
 struct TitleResponse {
     title: String,
-}
-
-/// Response for provider listing.
-#[derive(Debug, Serialize)]
-struct ProvidersResponse {
-    providers: Vec<ProviderInfo>,
 }
 
 // =========================================================================
@@ -709,16 +702,16 @@ struct ListProvidersQuery {
     kiln: Option<PathBuf>,
 }
 
+/// Served through the SWR catalog cache — provider probing takes ~0.7s and
+/// must not gate every splash render. Shape: `{providers: [ProviderInfo]}`.
 async fn list_providers(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<ListProvidersQuery>,
-) -> Result<Json<ProvidersResponse>, WebError> {
-    let providers = state
-        .daemon
-        .list_providers(query.kiln.as_deref())
+) -> Result<Json<serde_json::Value>, WebError> {
+    let providers = crate::services::catalog::providers_value(&state, query.kiln.as_deref())
         .await
         .daemon_err()?;
-    Ok(Json(ProvidersResponse { providers }))
+    Ok(Json(serde_json::json!({ "providers": providers })))
 }
 
 #[cfg(test)]

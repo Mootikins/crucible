@@ -27,6 +27,9 @@ pub struct AppState {
     /// AND an API key configured) — surfaced to the frontend via /api/config
     /// so the terminal panel knows whether to connect from a LAN client.
     pub remote_shell: bool,
+    /// Stale-while-revalidate cache for slow daemon catalog calls
+    /// (agent profiles, providers) — see `services::catalog`.
+    pub swr: Arc<crate::services::catalog::SwrCache>,
 }
 
 /// Default persistence location for the web UI layout:
@@ -1026,6 +1029,38 @@ impl ReconnectingDaemon {
             .await
     }
 
+    pub async fn scm_branches(
+        &self,
+        path: &Path,
+    ) -> anyhow::Result<crucible_daemon::ScmBranchesResponse> {
+        let path = path.to_path_buf();
+        self.call_with_reconnect("scm.branches", move |daemon| {
+            let path = path.clone();
+            Box::pin(async move { daemon.scm_branches(&path).await })
+        })
+        .await
+    }
+
+    pub async fn scm_worktree_add(
+        &self,
+        repo_root: &Path,
+        branch: &str,
+        create_branch: bool,
+    ) -> anyhow::Result<crucible_daemon::ScmWorktreeAddResponse> {
+        let repo_root = repo_root.to_path_buf();
+        let branch = branch.to_string();
+        self.call_with_reconnect("scm.worktree_add", move |daemon| {
+            let repo_root = repo_root.clone();
+            let branch = branch.clone();
+            Box::pin(async move {
+                daemon
+                    .scm_worktree_add(&repo_root, &branch, create_branch)
+                    .await
+            })
+        })
+        .await
+    }
+
     pub async fn fs_list_dir(
         &self,
         root: &str,
@@ -1226,6 +1261,7 @@ pub async fn init_daemon(config: CliAppConfig) -> Result<AppState> {
         layout_path: Arc::new(default_layout_path()),
         // start_server overwrites this once the API key is resolved.
         remote_shell: false,
+        swr: Arc::new(crate::services::catalog::SwrCache::default()),
     })
 }
 

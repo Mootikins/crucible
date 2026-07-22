@@ -7,13 +7,16 @@
 use crate::services::daemon::AppState;
 use crate::WebError;
 use axum::{extract::State, routing::get, Json, Router};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 pub fn layout_routes() -> Router<AppState> {
-    Router::new().route(
-        "/api/layout",
-        get(get_layout).post(save_layout).delete(reset_layout),
-    )
+    Router::new()
+        .route(
+            "/api/layout",
+            get(get_layout).post(save_layout).delete(reset_layout),
+        )
+        .route("/api/recents", get(get_recents).post(record_recent))
 }
 
 async fn get_layout(State(state): State<AppState>) -> Result<Json<serde_json::Value>, WebError> {
@@ -56,6 +59,81 @@ async fn reset_layout(State(state): State<AppState>) -> Result<Json<serde_json::
         Err(e) => return Err(WebError::Internal(format!("Failed to delete layout: {e}"))),
     }
     Ok(Json(json!({"ok": true})))
+}
+
+// =========================================================================
+// Recently opened files
+// =========================================================================
+//
+// The splash's "pick up where you left off" list. Persisted server-side —
+// localStorage recents are per-origin, so they vanished across ports,
+// browsers, and debug instances. Stored next to the layout blob and
+// inheriting its standalone isolation: `web-layout.json` →
+// `web-layout.recents.json`.
+
+const MAX_RECENTS: usize = 20;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RecentFile {
+    abs_path: String,
+    name: String,
+    /// Unix millis of the last open — set server-side on record.
+    opened_at: u64,
+}
+
+fn recents_path(state: &AppState) -> std::path::PathBuf {
+    state.layout_path.with_extension("recents.json")
+}
+
+async fn read_recents(state: &AppState) -> Vec<RecentFile> {
+    match tokio::fs::read(recents_path(state)).await {
+        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
+async fn get_recents(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let recents = read_recents(&state).await;
+    Json(json!({ "recents": recents }))
+}
+
+#[derive(Debug, Deserialize)]
+struct RecordRecentRequest {
+    abs_path: String,
+    name: String,
+}
+
+async fn record_recent(
+    State(state): State<AppState>,
+    Json(req): Json<RecordRecentRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let mut recents = read_recents(&state).await;
+    recents.retain(|r| r.abs_path != req.abs_path);
+    recents.insert(
+        0,
+        RecentFile {
+            abs_path: req.abs_path,
+            name: req.name,
+            opened_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0),
+        },
+    );
+    recents.truncate(MAX_RECENTS);
+
+    let path = recents_path(&state);
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| WebError::Internal(format!("Failed to create recents dir: {e}")))?;
+    }
+    let bytes = serde_json::to_vec(&recents)
+        .map_err(|e| WebError::Internal(format!("Failed to serialize recents: {e}")))?;
+    tokio::fs::write(&path, bytes)
+        .await
+        .map_err(|e| WebError::Internal(format!("Failed to write recents: {e}")))?;
+    Ok(Json(json!({ "recents": recents })))
 }
 
 #[cfg(test)]
@@ -107,6 +185,61 @@ mod tests {
             .await
             .unwrap();
         serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn recents_record_dedupes_and_orders_newest_first() {
+        let (_tmp, app) = layout_test_app().await;
+
+        // Empty before anything is recorded.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/recents")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body_json(response).await["recents"], json!([]));
+
+        let record = |path: &str, name: &str| {
+            Request::builder()
+                .method("POST")
+                .uri("/api/recents")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"abs_path": path, "name": name}).to_string(),
+                ))
+                .unwrap()
+        };
+        app.clone().oneshot(record("/a.md", "a.md")).await.unwrap();
+        app.clone().oneshot(record("/b.md", "b.md")).await.unwrap();
+        // Re-opening /a.md moves it back to the front — no duplicate entry.
+        app.clone().oneshot(record("/a.md", "a.md")).await.unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/recents")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let recents = body_json(response).await["recents"].clone();
+        let paths: Vec<&str> = recents
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["abs_path"].as_str().unwrap())
+            .collect();
+        assert_eq!(paths, vec!["/a.md", "/b.md"]);
+        assert!(recents[0]["opened_at"].as_u64().unwrap() > 0);
     }
 
     #[tokio::test]

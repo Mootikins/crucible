@@ -391,6 +391,8 @@ export const FilesPanel: Component = () => {
           groups={roster()}
           selectedKey={activeRoot() ? rootKey(activeRoot()!) : null}
           onSelect={(r) => treeRootActions.selectRoot(r)}
+          activeRoot={activeRoot()}
+          onNotice={setError}
         />
         <div class="flex items-center gap-1">
           <button

@@ -33,6 +33,13 @@ export const ChipSelect: Component<{
   searchThreshold?: number;
   /** Leading icon on the trigger chip. */
   icon?: Component<{ class?: string }>;
+  /** Replace the default quiet-chip trigger classes (e.g. a bordered field). */
+  triggerClass?: string;
+  /** Called when the popout opens (lazy data loads hook in here). */
+  onOpen?: () => void;
+  /** Offer creating from the filter text when it matches no option exactly
+   * (repo/branch-switcher "create …" row). */
+  create?: { label: (text: string) => string; run: (text: string) => void };
 }> = (props) => {
   const [open, setOpen] = createSignal(false);
   const [filter, setFilter] = createSignal('');
@@ -63,6 +70,27 @@ export const ChipSelect: Component<{
     close();
   };
 
+  const openPopout = () => {
+    setOpen(true);
+    props.onOpen?.();
+  };
+
+  // The "create '<text>'" row appears once the filter text stops matching any
+  // option exactly — picking it hands the raw text to the caller.
+  const createText = () => {
+    if (!props.create) return null;
+    const text = filter().trim();
+    if (!text) return null;
+    return props.options.some((o) => o.label === text || o.value === text) ? null : text;
+  };
+
+  const runCreate = () => {
+    const text = createText();
+    if (!text || !props.create) return;
+    props.create.run(text);
+    close();
+  };
+
   createEffect(() => {
     if (!open()) return;
     queueMicrotask(() => inputRef?.focus());
@@ -84,6 +112,9 @@ export const ChipSelect: Component<{
         if (o) {
           e.preventDefault();
           pick(o);
+        } else if (createText()) {
+          e.preventDefault();
+          runCreate();
         }
       }
     };
@@ -103,11 +134,12 @@ export const ChipSelect: Component<{
         aria-expanded={open()}
         disabled={props.disabled}
         data-testid={props.testid}
-        onClick={() => (open() ? close() : setOpen(true))}
+        onClick={() => (open() ? close() : openPopout())}
         classList={{
-          'inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors max-w-[220px]': true,
-          'text-shell-body hover:bg-hover-wash': !open(),
-          'bg-hover-wash text-shell-ink': open(),
+          [props.triggerClass ??
+          'inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors max-w-[220px]']: true,
+          'text-shell-body hover:bg-hover-wash': !props.triggerClass && !open(),
+          'bg-hover-wash text-shell-ink': !props.triggerClass && open(),
           'opacity-50 cursor-not-allowed': props.disabled,
         }}
       >
@@ -174,8 +206,21 @@ export const ChipSelect: Component<{
                 </>
               )}
             </For>
-            <Show when={visible().length === 0}>
+            <Show when={visible().length === 0 && !createText()}>
               <div class="px-3 py-2 text-xs text-muted-dark">No matches</div>
+            </Show>
+            <Show when={createText()} keyed>
+              {(text) => (
+                <button
+                  type="button"
+                  onClick={runCreate}
+                  class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs text-primary hover:bg-hover-wash transition-colors border-t border-hairline"
+                  data-testid={props.testid ? `${props.testid}-create` : undefined}
+                >
+                  <span class="w-3.5 flex-shrink-0">＋</span>
+                  <span class="truncate">{props.create!.label(text)}</span>
+                </button>
+              )}
             </Show>
           </div>
         </div>

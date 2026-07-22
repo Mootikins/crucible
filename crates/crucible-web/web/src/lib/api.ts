@@ -1125,6 +1125,52 @@ export async function listProjects(): Promise<Project[]> {
   return request<Project[]>('GET', '/api/project/list', { errorMessage: 'Failed to list projects' });
 }
 
+// =============================================================================
+// SCM Endpoints (branch/worktree browsing)
+// =============================================================================
+
+export interface ScmBranch {
+  name: string;
+  /** Absolute checkout path when the branch has one (main checkout included). */
+  worktree_path: string | null;
+  is_current: boolean;
+  /** Present on a remote but not yet as a local branch. */
+  remote_only: boolean;
+}
+
+export interface ScmBranchesResponse {
+  repo_root: string;
+  current_branch: string | null;
+  branches: ScmBranch[];
+}
+
+/** Branches + worktree mapping for the repo containing `path`. */
+export async function scmBranches(path: string): Promise<ScmBranchesResponse> {
+  const params = new URLSearchParams({ path });
+  return request<ScmBranchesResponse>('GET', `/api/scm/branches?${params.toString()}`, {
+    errorMessage: 'Failed to list branches',
+  });
+}
+
+export interface ScmWorktreeAddResponse {
+  path: string;
+  project: Project;
+  warning: string | null;
+}
+
+/** Create a worktree for `branch` (new branch when `createBranch`) and
+ * register it as a project. */
+export async function scmWorktreeAdd(
+  repoRoot: string,
+  branch: string,
+  createBranch: boolean,
+): Promise<ScmWorktreeAddResponse> {
+  return request<ScmWorktreeAddResponse>('POST', '/api/scm/worktree', {
+    errorMessage: 'Failed to create worktree',
+    ...jsonRequest({ repo_root: repoRoot, branch, create_branch: createBranch }),
+  });
+}
+
 /** Get project by path. */
 export async function getProject(path: string): Promise<Project | null> {
   const params = new URLSearchParams({ path });
@@ -1258,6 +1304,32 @@ export async function resetLayout(): Promise<void> {
   } catch (err) {
     console.warn(err instanceof Error ? err.message : 'Failed to reset layout');
   }
+}
+
+// =============================================================================
+// Recently Opened Files (server-side, stored next to the layout blob)
+// =============================================================================
+
+interface RawRecent {
+  abs_path: string;
+  name: string;
+  opened_at: number;
+}
+
+/** Server-persisted recents, newest first. */
+export async function fetchRecents(): Promise<{ absPath: string; name: string }[]> {
+  const raw = await request<{ recents: RawRecent[] }>('GET', '/api/recents', {
+    errorMessage: 'Failed to load recents',
+  });
+  return raw.recents.map((r) => ({ absPath: r.abs_path, name: r.name }));
+}
+
+/** Record a file open (fire-and-forget from the caller's perspective). */
+export async function recordRecent(absPath: string, name: string): Promise<void> {
+  await request<unknown>('POST', '/api/recents', {
+    errorMessage: 'Failed to record recent file',
+    ...jsonRequest({ abs_path: absPath, name }),
+  });
 }
 
 // =============================================================================

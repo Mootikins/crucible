@@ -27,8 +27,12 @@ fn agents_from_profiles(result: &serde_json::Value) -> serde_json::Value {
 
 /// ACP agent profiles with probed availability, for the session-creation
 /// agent picker. Shape: `{agents: [{name, description, command, is_builtin, available}]}`.
+/// Served through the SWR catalog cache — the daemon probe takes ~0.5s and
+/// must not gate every splash render.
 async fn list_agents(State(state): State<AppState>) -> Result<Json<serde_json::Value>, WebError> {
-    let result = state.daemon.agents_list_profiles().await.daemon_err()?;
+    let result = crate::services::catalog::agents_value(&state)
+        .await
+        .daemon_err()?;
     let agents = agents_from_profiles(&result);
     Ok(Json(serde_json::json!({ "agents": agents })))
 }

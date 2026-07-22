@@ -5,8 +5,8 @@ use crate::middleware::auth::{
 };
 use crate::routes::{
     agents_routes, auth_routes, chat_routes, config_routes, fs_routes, health_routes, kiln_routes,
-    layout_routes, mcp_routes, plugin_routes, project_routes, search_routes, session_routes,
-    shell_routes, skills_routes, terminal_routes, webhook_routes,
+    layout_routes, mcp_routes, plugin_routes, project_routes, scm_routes, search_routes,
+    session_routes, shell_routes, skills_routes, terminal_routes, webhook_routes,
 };
 use crate::services::daemon;
 use crate::{Result, WebError};
@@ -36,6 +36,10 @@ pub async fn start_server(
         state.layout_path = Arc::new(daemon::standalone_layout_path());
         tracing::info!(path = %state.layout_path.display(), "Standalone: using isolated web layout");
     }
+
+    // Pre-fill the slow catalog entries (agent/provider probes, ~0.5-1s each)
+    // so the first splash render is served from cache.
+    crate::services::catalog::warm(state.clone());
 
     // Wildcard CORS is dangerous here because `/api/shell/exec` can execute host shell commands.
     // Restricting origins prevents arbitrary websites from triggering command execution via browsers.
@@ -108,6 +112,7 @@ pub async fn start_server(
         .merge(config_routes())
         .merge(session_routes())
         .merge(project_routes())
+        .merge(scm_routes())
         .merge(fs_routes())
         .merge(search_routes())
         .merge(plugin_routes())

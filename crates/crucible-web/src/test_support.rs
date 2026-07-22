@@ -532,6 +532,7 @@ pub fn build_mock_state(client: DaemonClient) -> AppState {
         http_client: reqwest::Client::new(),
         layout_path: Arc::new(unique_test_layout_path()),
         remote_shell: false,
+        swr: Arc::new(crate::services::catalog::SwrCache::default()),
     }
 }
 

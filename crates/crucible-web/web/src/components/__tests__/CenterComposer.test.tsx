@@ -24,6 +24,10 @@ vi.mock('@/lib/api', () => ({
   listProviders: vi.fn().mockResolvedValue([
     { name: 'ollama', available: true, default_model: 'llama3.2' },
   ]),
+  // Server-backed recents: empty server list keeps localStorage-driven
+  // fixtures in charge; record is fire-and-forget.
+  fetchRecents: vi.fn().mockResolvedValue([]),
+  recordRecent: vi.fn().mockResolvedValue(undefined),
 }));
 
 beforeEach(() => {

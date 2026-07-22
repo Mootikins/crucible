@@ -11,7 +11,7 @@ import {
 import type { AgentProfileEntry, KilnListEntry, Project } from '@/lib/types';
 import { WorkingDots } from '@/components/AssistantTurn';
 import { pathBasename } from '@/stores/statusBarStore';
-import { recentFiles } from '@/lib/recent-files';
+import { recentFiles, syncRecentsFromServer } from '@/lib/recent-files';
 import { openFileInEditor } from '@/lib/file-actions';
 import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
 import { ArrowUp, Bot, FileText, FlaskConical, FolderGit2, History, Sparkles } from '@/lib/icons';
@@ -49,23 +49,24 @@ export const CenterComposer: Component = () => {
   const isAcp = () => agentName() !== '';
 
   onMount(() => {
-    void (async () => {
-      const [cfg, ag, mo, ks, ps, providers] = await Promise.all([
-        getConfig().catch(() => null),
-        listAgents().catch(() => [] as AgentProfileEntry[]),
-        listAllModels().catch(() => [] as string[]),
-        listKilns().catch(() => [] as KilnListEntry[]),
-        listProjects().catch(() => [] as Project[]),
-        listProviders().catch(() => []),
-      ]);
-      if (cfg?.kiln_path) setDefaultKiln(cfg.kiln_path);
-      setAgents(ag);
-      setModels(mo.filter((m) => !m.startsWith('[error]')));
-      setKilns(ks);
-      setProjects(ps);
-      const first = providers.find((p) => p.available);
-      if (first?.default_model) setDefaultModel(first.default_model);
-    })();
+    // No barrier: each chip fills as its data arrives. Agents/providers are
+    // the slow calls (daemon probes); the splash must not wait on them.
+    void getConfig()
+      .then((cfg) => cfg?.kiln_path && setDefaultKiln(cfg.kiln_path))
+      .catch(() => {});
+    void listAgents().then(setAgents).catch(() => {});
+    void listAllModels()
+      .then((mo) => setModels(mo.filter((m) => !m.startsWith('[error]'))))
+      .catch(() => {});
+    void listKilns().then(setKilns).catch(() => {});
+    void listProjects().then(setProjects).catch(() => {});
+    void listProviders()
+      .then((providers) => {
+        const first = providers.find((p) => p.available);
+        if (first?.default_model) setDefaultModel(first.default_model);
+      })
+      .catch(() => {});
+    syncRecentsFromServer();
   });
 
   const submit = async () => {
