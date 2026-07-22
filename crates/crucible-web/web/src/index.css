@@ -516,11 +516,18 @@ details.callout[open] > summary.callout-title::after {
   display: inline-block;
   white-space: nowrap;
   translate: 0 0;
-  transition: translate 900ms ease-in-out 250ms;
+}
+/* Ping-pong marquee while hovered: ease to the tail, hold, ease back
+   (alternate). The 0%/12% and 88%/100% holds give a beat at each end so
+   the text is readable before it turns around. Short text resolves the
+   min() to 0 and never moves. */
+@keyframes fade-scroll-pingpong {
+  0%, 12% { translate: 0 0; }
+  88%, 100% { translate: min(0px, calc(100cqw - 100% - 28px)) 0; }
 }
 .group:hover .fade-scroll > span,
 .group:focus-within .fade-scroll > span {
-  translate: min(0px, calc(100cqw - 100% - 28px)) 0;
+  animation: fade-scroll-pingpong 2600ms ease-in-out 250ms infinite alternate;
 }
 
 /* Frontmatter Properties card (lib/frontmatter.ts renderFrontmatterCardHtml)
