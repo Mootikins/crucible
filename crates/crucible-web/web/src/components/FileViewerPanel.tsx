@@ -29,6 +29,12 @@ interface FileViewerPanelProps {
    * so transient previews don't retarget focus-following panels
    * (backlinks). */
   background?: boolean;
+  /** Scroll to the first wikilink pointing at this note key on open —
+   * backlinks hover previews jump to the referencing section. */
+  scrollToNote?: string;
+  /** Exact referencing line (1-based) when the link index resolved one —
+   * beats the scrollToNote scan in editor modes. */
+  scrollToLine?: number;
 }
 
 const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
@@ -225,6 +231,8 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
                       ? props.initialMode
                       : undefined
                   }
+                  scrollToNote={props.scrollToNote}
+                  scrollToLine={props.scrollToLine}
                 />
               )}
             </Show>

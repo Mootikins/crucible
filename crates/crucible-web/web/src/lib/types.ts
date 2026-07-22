@@ -137,6 +137,10 @@ export interface BacklinkEntry {
   path: string;
   abs_path: string;
   title: string | null;
+  /** Byte span of the first link occurrence in the source (from the
+   * daemon's link index); absent for span-less legacy index rows. */
+  span_start?: number;
+  span_end?: number;
 }
 
 /** A plain-text mention of another note inside the focused note. */

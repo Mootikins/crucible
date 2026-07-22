@@ -33,6 +33,10 @@ export const EditorWithPreview: Component<{
   lineWidth?: number;
   /** Hand the live EditorView up (context-menu clipboard ops). */
   editorApiRef?: (view: import('@codemirror/view').EditorView) => void;
+  /** Scroll to the first wikilink targeting this note key on open. */
+  scrollToNote?: string;
+  /** Exact referencing line (1-based); beats the scrollToNote scan. */
+  scrollToLine?: number;
 }> = (props) => {
   const isMarkdown = () => isMarkdownPath(props.path);
   const defaultMode = (): EditorMode =>
@@ -82,7 +86,12 @@ export const EditorWithPreview: Component<{
       <Show
         when={mode() !== 'reading' || !isMarkdown()}
         fallback={
-          <MarkdownPreview content={props.content} path={props.path} maxWidth={props.lineWidth} />
+          <MarkdownPreview
+            content={props.content}
+            path={props.path}
+            maxWidth={props.lineWidth}
+            scrollToNote={props.scrollToNote}
+          />
         }
       >
         <CodeMirrorEditor
@@ -96,6 +105,8 @@ export const EditorWithPreview: Component<{
           livePreview={isMarkdown() && mode() === 'live'}
           lineWidth={props.lineWidth}
           onTogglePreview={isMarkdown() ? () => setMode('reading') : undefined}
+          scrollToNote={props.scrollToNote}
+          scrollToLine={props.scrollToLine}
         />
       </Show>
     </div>

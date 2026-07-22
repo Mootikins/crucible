@@ -63,6 +63,12 @@ export const WikilinkHoverPreview: Component = () => {
   };
 
   const spawnHoverWindow = (anchor: Element, preview: NotePreview) => {
+    // Backlinks rows ask the preview to scroll to the wikilink that points
+    // back at their focused note (data-scroll-note = that note's key,
+    // data-scroll-line = the exact referencing line when known).
+    const scrollToNote = anchor.getAttribute('data-scroll-note') || undefined;
+    const scrollLineRaw = Number(anchor.getAttribute('data-scroll-line') ?? NaN);
+    const scrollToLine = Number.isFinite(scrollLineRaw) && scrollLineRaw > 0 ? scrollLineRaw : undefined;
     // Already showing this note (or the user pinned one for it)? Done.
     const open = windowStore.floatingWindows.find((fw) =>
       windowStore.tabGroups[fw.tabGroupId]?.tabs.some(
@@ -79,10 +85,12 @@ export const WikilinkHoverPreview: Component = () => {
       EDGE_GAP_PX,
       Math.min(rect.left, window.innerWidth - WINDOW_WIDTH - EDGE_GAP_PX),
     );
+    // Hug the anchor: a taller gap exposed the next link in a list, so the
+    // pointer crossed it (and spawned ITS preview) en route to the window.
     const fitsBelow = rect.bottom + WINDOW_HEIGHT + EDGE_GAP_PX <= window.innerHeight;
     const top = fitsBelow
-      ? rect.bottom + 6
-      : Math.max(EDGE_GAP_PX, rect.top - WINDOW_HEIGHT - 6);
+      ? rect.bottom + 2
+      : Math.max(EDGE_GAP_PX, rect.top - WINDOW_HEIGHT - 2);
 
     const groupId = windowActions.createTabGroup();
     windowActions.addTab(groupId, {
@@ -100,6 +108,8 @@ export const WikilinkHoverPreview: Component = () => {
         filePath: preview.absPath,
         initialMode: settings.editor.hoverMode,
         background: true,
+        ...(scrollToNote ? { scrollToNote } : {}),
+        ...(scrollToLine ? { scrollToLine } : {}),
       },
     });
     hoverWindowId = windowActions.createFloatingWindow(
@@ -137,11 +147,35 @@ export const WikilinkHoverPreview: Component = () => {
     const target = event.target as Element | null;
     if (!target) return;
 
-    // Pointer over the hover window keeps it open.
+    // Pointer over the hover window keeps it open — and cancels any pending
+    // show from a link the pointer crossed on its way in (that stray timer
+    // used to swap the preview to whatever sat under the transit path).
     const winId = hoverWindowId;
     if (winId && target.closest?.(`[data-window-id="${winId}"]`)) {
-      window.clearTimeout(hideTimer);
+      clearTimers();
       return;
+    }
+
+    // Transit corridor: with a window open, the strip between the anchor and
+    // the window's near edge belongs to the hover — links inside it must not
+    // trigger while the pointer is merely traveling to the window.
+    const win = hoverWindow();
+    if (win && anchorRect) {
+      const withinX =
+        event.clientX >= Math.min(win.x, anchorRect.left) - 8 &&
+        event.clientX <= Math.max(win.x + win.width, anchorRect.right) + 8;
+      const belowPath =
+        win.y >= anchorRect.bottom &&
+        event.clientY >= anchorRect.top &&
+        event.clientY <= win.y + 4;
+      const abovePath =
+        win.y + win.height <= anchorRect.top &&
+        event.clientY <= anchorRect.bottom &&
+        event.clientY >= win.y + win.height - 4;
+      if (withinX && (belowPath || abovePath)) {
+        clearTimers();
+        return;
+      }
     }
 
     const anchor = target.closest?.('[data-note]');

@@ -10,8 +10,9 @@
 import { Component, Show, For, createSignal, createResource, createMemo } from 'solid-js';
 import { useEditorSafe } from '@/contexts/EditorContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import { getBacklinks, getConfig } from '@/lib/api';
+import { getBacklinks, getConfig, getFileContent } from '@/lib/api';
 import type { BacklinksResponse, UnlinkedMention } from '@/lib/types';
+import { blockAtByteOffset, findLinkingBlock, type LinkingBlock } from '@/lib/backlink-context';
 import { insertWikilink } from '@/lib/note-actions';
 import { notificationActions } from '@/stores/notificationStore';
 import { PanelShell } from './PanelShell';
@@ -78,6 +79,48 @@ export const BacklinksPanel: Component = () => {
         // Unindexed or brand-new note: an empty panel, not an error toast.
         return null;
       }
+    },
+  );
+
+  /** Wikilink identities of the focused note (stem + kiln-relative path)
+   * that a linking note's wikilinks can point at. */
+  const focusedKeys = createMemo(() => {
+    const path = focusedFile();
+    if (!path) return [];
+    const rel = noteKeyForPath(path, kilnPath() ?? null).replace(/\.md$/, '');
+    const stem = (path.split('/').pop() ?? path).replace(/\.md$/, '');
+    return [...new Set([rel, stem])];
+  });
+
+  // Referencing block per linked note: fetch each linking note (capped) and
+  // pull the first line whose wikilink targets the focused note. Purely
+  // additive context — entries render fine while (or if never) resolved.
+  const SNIPPET_CAP = 25;
+  const [linkingBlocks] = createResource(
+    () => {
+      const data = backlinks();
+      const keys = focusedKeys();
+      if (!data || data.linked.length === 0 || keys.length === 0) return null;
+      return { linked: data.linked.slice(0, SNIPPET_CAP), keys };
+    },
+    async ({ linked, keys }) => {
+      const out: Record<string, LinkingBlock> = {};
+      await Promise.all(
+        linked.map(async (entry) => {
+          try {
+            const content = await getFileContent(entry.abs_path);
+            // The daemon's link index gives the exact byte span of the
+            // occurrence; the regex scan is the legacy-row fallback.
+            const block =
+              (entry.span_start != null ? blockAtByteOffset(content, entry.span_start) : null) ??
+              findLinkingBlock(content, keys);
+            if (block) out[entry.abs_path] = block;
+          } catch {
+            // Unreadable linking note: row simply shows no snippet.
+          }
+        }),
+      );
+      return out;
     },
   );
 
@@ -149,28 +192,46 @@ export const BacklinksPanel: Component = () => {
             }
           >
             <For each={backlinks()?.linked}>
-              {(entry) => (
-                <button
-                  type="button"
-                  data-testid="backlinks-linked-item"
-                  data-note={entry.name}
-                  class="block w-full rounded px-2 py-1.5 text-left hover:bg-hover-wash"
-                  onClick={() =>
-                    // Global open event: the app routes it to the window-tab
-                    // editor; harnesses route it to their own EditorContext.
-                    window.dispatchEvent(
-                      new CustomEvent('crucible:open-file', {
-                        detail: { path: entry.abs_path, name: entry.name },
-                      }),
-                    )
-                  }
-                >
-                  <span class="block truncate text-sm text-shell-ink">
-                    {entry.title || entry.name}
-                  </span>
-                  <span class="block truncate text-[11px] text-muted-dark">{entry.path}</span>
-                </button>
-              )}
+              {(entry) => {
+                const block = () => linkingBlocks()?.[entry.abs_path];
+                return (
+                  <button
+                    type="button"
+                    data-testid="backlinks-linked-item"
+                    data-note={entry.name}
+                    // Hover previews of this row scroll to the wikilink that
+                    // points back at the focused note (exact line when the
+                    // link index resolved one; note-match fallback).
+                    data-scroll-note={focusedKeys()[0] ?? ''}
+                    data-scroll-line={block()?.line ?? ''}
+                    class="block w-full rounded px-2 py-1.5 text-left hover:bg-hover-wash"
+                    onClick={() =>
+                      // Global open event: the app routes it to the window-tab
+                      // editor; harnesses route it to their own EditorContext.
+                      window.dispatchEvent(
+                        new CustomEvent('crucible:open-file', {
+                          detail: { path: entry.abs_path, name: entry.name },
+                        }),
+                      )
+                    }
+                  >
+                    <span class="block truncate text-sm text-shell-ink">
+                      {entry.title || entry.name}
+                    </span>
+                    <span class="block truncate text-[11px] text-muted-dark">{entry.path}</span>
+                    <Show when={block()}>
+                      {(b) => (
+                        <span
+                          data-testid="backlinks-snippet"
+                          class="mt-1 block border-l-2 border-hairline-strong pl-2 text-[11px] leading-snug text-muted line-clamp-2"
+                        >
+                          {b().snippet}
+                        </span>
+                      )}
+                    </Show>
+                  </button>
+                );
+              }}
             </For>
           </Show>
 

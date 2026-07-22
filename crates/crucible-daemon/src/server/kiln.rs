@@ -379,18 +379,28 @@ pub(crate) async fn handle_get_backlinks(req: Request, km: &Arc<KilnManager>) ->
     };
 
     match handle.get_backlinks(name, &scope).await {
-        Ok(Some((note, backlinks))) => Response::success(
+        Ok(Some((note, backlinks, spans))) => Response::success(
             req.id,
             serde_json::json!({
                 "path": note.path,
                 "title": note.title,
                 "backlinks": backlinks
                     .into_iter()
-                    .map(|b| serde_json::json!({
-                        "name": b.name,
-                        "path": b.path,
-                        "title": b.title,
-                    }))
+                    .map(|b| {
+                        let mut v = serde_json::json!({
+                            "name": b.name,
+                            "path": b.path,
+                            "title": b.title,
+                        });
+                        // Byte span of the first link occurrence in the
+                        // source — lets clients jump to the referencing
+                        // block without re-scanning the file.
+                        if let Some((start, end)) = spans.get(&b.path) {
+                            v["span_start"] = serde_json::json!(start);
+                            v["span_end"] = serde_json::json!(end);
+                        }
+                        v
+                    })
                     .collect::<Vec<_>>()
             }),
         ),

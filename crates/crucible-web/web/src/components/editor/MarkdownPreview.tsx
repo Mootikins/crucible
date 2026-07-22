@@ -4,10 +4,11 @@
  * (wikilinks become `data-note` anchors), so previewed wikilinks get the
  * app-wide hover cards and click-to-open for free.
  */
-import { Component, createResource } from 'solid-js';
+import { Component, createEffect, createResource } from 'solid-js';
 import { renderMarkdownDocAsync, PROSE_CLASS } from '@/lib/markdown';
 import { extractFrontmatterBlock, renderFrontmatterCardHtml } from '@/lib/frontmatter';
 import { makeMarkdownClickHandler } from '@/lib/markdown-click';
+import { wikilinkTargetMatches } from '@/lib/backlink-context';
 import { statusBarStore } from '@/stores/statusBarStore';
 
 const dirOf = (path?: string): string | undefined =>
@@ -18,6 +19,9 @@ export const MarkdownPreview: Component<{
   /** Absolute file path — its directory resolves relative image srcs. */
   path?: string;
   maxWidth?: number;
+  /** Scroll to the first rendered wikilink pointing at this note key —
+   * backlinks hover previews open at the referencing section. */
+  scrollToNote?: string;
 }> = (props) => {
   const [html] = createResource(
     () => [props.content, props.path] as const,
@@ -37,8 +41,24 @@ export const MarkdownPreview: Component<{
   // notes, copy buttons copy, external/relative links behave identically.
   const handleClick = makeMarkdownClickHandler(() => statusBarStore.kilnPath() ?? undefined);
 
+  let scrollHost: HTMLDivElement | undefined;
+  // After the async render lands, jump to the wikilink that points at the
+  // requested note (rendered wikilinks carry data-note = raw target text).
+  createEffect(() => {
+    const target = props.scrollToNote;
+    if (!target || html() === undefined || !scrollHost) return;
+    const anchors = scrollHost.querySelectorAll<HTMLElement>('[data-note]');
+    for (const a of anchors) {
+      if (wikilinkTargetMatches(a.getAttribute('data-note') ?? '', [target])) {
+        a.scrollIntoView({ block: 'center' });
+        break;
+      }
+    }
+  });
+
   return (
     <div
+      ref={scrollHost}
       class="h-full overflow-y-auto bg-shell-panel px-6 py-4"
       data-testid="markdown-preview"
       onClick={handleClick}

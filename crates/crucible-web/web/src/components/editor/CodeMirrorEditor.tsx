@@ -13,6 +13,7 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { LanguageDescription } from '@codemirror/language';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { extractFrontmatterBlock } from '@/lib/frontmatter';
+import { findLinkingBlock } from '@/lib/backlink-context';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages as codeLanguages } from '@codemirror/language-data';
 import { yamlFrontmatter } from '@codemirror/lang-yaml';
@@ -79,6 +80,11 @@ export const CodeMirrorEditor: Component<{
   onTogglePreview?: () => void;
   /** Hand the live EditorView to the parent (context-menu clipboard ops). */
   apiRef?: (view: EditorView) => void;
+  /** Scroll to the first wikilink targeting this note key on open —
+   * backlinks hover previews jump to the referencing section. */
+  scrollToNote?: string;
+  /** Exact referencing line (1-based); beats the scrollToNote scan. */
+  scrollToLine?: number;
 }> = (props) => {
   let view: EditorView | undefined;
   // Holds the language extension so a lazily-loaded grammar (or a file switch)
@@ -224,6 +230,22 @@ export const CodeMirrorEditor: Component<{
     props.apiRef?.(view);
     // Lazy-load a language-data grammar for non-eager file types (TOML, etc.).
     void applyLanguage(view, props.path);
+
+    // Backlinks hover previews: open scrolled to the referencing line (from
+    // the daemon's link index when available, else the first wikilink that
+    // matches the note key). Deferred a frame for real view geometry.
+    const targetLine =
+      props.scrollToLine ??
+      (props.scrollToNote
+        ? findLinkingBlock(props.content, [props.scrollToNote])?.line
+        : undefined);
+    if (targetLine) {
+      const v2 = view;
+      const pos = v2.state.doc.line(Math.min(targetLine, v2.state.doc.lines)).from;
+      requestAnimationFrame(() =>
+        v2.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'center' }) }),
+      );
+    }
 
     // File-tree drops (pragmatic-drag-and-drop 'editor' zone — the innermost
     // file target, so it wins over the pane's open-in-pane zone). Kiln notes

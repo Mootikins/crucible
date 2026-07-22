@@ -179,14 +179,24 @@ impl StorageHandle {
     /// Resolve a note by name and collect the notes that wikilink to it.
     ///
     /// Returns `None` if `name` resolves to no note. The second element is
-    /// the backlink sources as [`NoteInfo`], sorted by path for stable output.
+    /// the backlink sources as [`NoteInfo`], sorted by path for stable
+    /// output; the third maps source path → the first link occurrence's
+    /// byte span in that source (from the resolved-link index), so callers
+    /// can jump straight to the referencing block. Sources whose only rows
+    /// are span-less legacy entries are absent from the map.
     ///
     /// `authority` is the request authority — see [`crucible_core::storage::Scope`].
     pub async fn get_backlinks(
         &self,
         name: &str,
         authority: &crucible_core::storage::Scope,
-    ) -> Result<Option<(NoteRecord, Vec<NoteInfo>)>> {
+    ) -> Result<
+        Option<(
+            NoteRecord,
+            Vec<NoteInfo>,
+            std::collections::HashMap<String, (i64, i64)>,
+        )>,
+    > {
         let records = self.sqlite.as_note_store().list(authority).await?;
         let name_lower = name.to_lowercase();
         let Some(target) = records
@@ -225,7 +235,30 @@ impl StorageHandle {
             })
             .collect();
         backlinks.sort_by(|a, b| a.path.cmp(&b.path));
-        Ok(Some((target, backlinks)))
+
+        // First in-file occurrence per source, from the same link index —
+        // negative spans are span-less legacy rows, skipped.
+        let mut spans = std::collections::HashMap::new();
+        for link in self
+            .sqlite
+            .as_note_store()
+            .inbound_links(&target.path)
+            .await?
+        {
+            if link.span_start < 0 {
+                continue;
+            }
+            spans
+                .entry(link.source_path)
+                .and_modify(|s: &mut (i64, i64)| {
+                    if link.span_start < s.0 {
+                        *s = (link.span_start, link.span_end);
+                    }
+                })
+                .or_insert((link.span_start, link.span_end));
+        }
+
+        Ok(Some((target, backlinks, spans)))
     }
 
     /// Knowledge repository trait surface (SQLite-backed).
