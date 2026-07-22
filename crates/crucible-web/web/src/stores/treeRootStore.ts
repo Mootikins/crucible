@@ -18,23 +18,20 @@ function load(): string | null {
 }
 
 const [selectedRootKey, setKey] = createSignal<string | null>(load());
-const [selectedRoot, setSelectedRoot] = createSignal<TreeRoot | null>(null);
 
-export { selectedRootKey, selectedRoot };
+export { selectedRootKey };
 
 export const treeRootActions = {
-  /** User picked a root: update signals AND persist the key. */
+  /** User picked a root: update the signal AND persist the key. The key is a
+   * PREFERENCE, not the display state — FilesPanel resolves it against the
+   * loaded roster (with fallback) and binds the dropdown to the RESOLVED
+   * root, so a stale key can never show a root the tree isn't rendering. */
   selectRoot(root: TreeRoot) {
-    setSelectedRoot(root);
     setKey(rootKey(root));
     try {
       localStorage.setItem(TREE_ROOT_STORAGE_KEY, rootKey(root));
     } catch {
       /* private mode: in-memory only */
     }
-  },
-  /** Silent restore of a derived/fallback key — does NOT persist. */
-  setSelectedRootKey(key: string | null) {
-    setKey(key);
   },
 };

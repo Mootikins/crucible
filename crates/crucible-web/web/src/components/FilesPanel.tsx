@@ -99,12 +99,6 @@ export const FilesPanel: Component = () => {
     return firstProject ?? firstKiln ?? null; // deterministic fallback
   });
 
-  // Keep the persisted key in sync with the resolved fallback (silent, no persist).
-  createEffect(() => {
-    const r = activeRoot();
-    if (r) treeRootActions.setSelectedRootKey(selectedRootKey() ?? rootKey(r));
-  });
-
   // ---- data-source discriminant --------------------------------------------
   async function loadKilnTree(kilnPath: string) {
     setLoading(true);
@@ -388,8 +382,14 @@ export const FilesPanel: Component = () => {
 
   return (
     <PanelShell class="overflow-hidden">
+      {/* No "Files" heading — the panel tab already names it. The dropdown
+          leads so the browsed root reads as the panel's title. */}
       <div class="p-3 border-b border-hairline shrink-0 flex items-center justify-between gap-2">
-        <h2 class="text-sm font-semibold text-muted uppercase tracking-wide">Files</h2>
+        <RootDropdown
+          groups={roster()}
+          selectedKey={activeRoot() ? rootKey(activeRoot()!) : null}
+          onSelect={(r) => treeRootActions.selectRoot(r)}
+        />
         <div class="flex items-center gap-1">
           <button
             type="button"
@@ -437,11 +437,6 @@ export const FilesPanel: Component = () => {
               <RefreshCw class="w-3.5 h-3.5" />
             </button>
           </Show>
-          <RootDropdown
-            groups={roster()}
-            selectedKey={selectedRootKey()}
-            onSelect={(r) => treeRootActions.selectRoot(r)}
-          />
         </div>
       </div>
 
