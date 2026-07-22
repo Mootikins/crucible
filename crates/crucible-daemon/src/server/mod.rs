@@ -306,6 +306,16 @@ impl Server {
         let lua_sessions = Arc::new(DashMap::new());
         let mcp_server_manager = Arc::new(McpServerManager::new());
 
+        // SCM (git) config rides in on the serialized app config; `scm.worktree_add`
+        // reads `worktree_dir` from it. Absent/unparseable → daemon default template.
+        let scm_config = params
+            .app_config
+            .as_ref()
+            .and_then(|v| v.get("scm"))
+            .and_then(|s| {
+                serde_json::from_value::<crucible_core::config::ScmConfig>(s.clone()).ok()
+            });
+
         let ctx = RpcContext::new(
             kiln_manager.clone(),
             session_manager.clone(),
@@ -320,6 +330,7 @@ impl Server {
             mcp_server_manager.clone(),
             params.mcp_config.clone(),
             data_home.clone(),
+            scm_config,
         );
         let dispatcher = Arc::new(RpcDispatcher::new(ctx));
 

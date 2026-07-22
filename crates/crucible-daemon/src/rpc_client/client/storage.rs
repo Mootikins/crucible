@@ -808,6 +808,37 @@ impl DaemonClient {
         .await
     }
 
+    /// List local + remote-only branches for the repo containing `path`,
+    /// with worktree paths and the current branch annotated.
+    pub async fn scm_branches(&self, path: &Path) -> Result<crate::scm::ScmBranchesResponse> {
+        self.typed_call_with_retry(
+            "scm.branches",
+            PathRequest {
+                path: path.to_string_lossy().to_string(),
+            },
+        )
+        .await
+    }
+
+    /// Create a worktree for `branch` (optionally creating the branch) and
+    /// register it as a project.
+    pub async fn scm_worktree_add(
+        &self,
+        repo_root: &Path,
+        branch: &str,
+        create_branch: bool,
+    ) -> Result<crate::scm::ScmWorktreeAddResponse> {
+        self.typed_call_with_retry(
+            "scm.worktree_add",
+            serde_json::json!({
+                "repo_root": repo_root.to_string_lossy(),
+                "branch": branch,
+                "create_branch": create_branch,
+            }),
+        )
+        .await
+    }
+
     pub async fn project_get(&self, path: &Path) -> Result<Option<crucible_core::Project>> {
         let result: serde_json::Value = self
             .typed_call_with_retry(

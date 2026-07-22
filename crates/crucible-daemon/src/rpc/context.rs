@@ -8,7 +8,7 @@ use crate::protocol::SessionEventMessage;
 use crate::session_manager::SessionManager;
 use crate::subscription::SubscriptionManager;
 use crate::workflow_registry::WorkflowRegistry;
-use crucible_core::config::{LlmConfig, McpConfig};
+use crucible_core::config::{LlmConfig, McpConfig, ScmConfig};
 use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
@@ -35,6 +35,8 @@ pub struct RpcContext {
     pub data_home: std::path::PathBuf,
     /// Active workflow executions keyed by session id (Phase 3a).
     pub workflows: Arc<WorkflowRegistry>,
+    /// SCM (git) config — `scm.worktree_add` reads `worktree_dir` from here.
+    pub scm_config: Option<ScmConfig>,
 }
 
 impl RpcContext {
@@ -53,6 +55,7 @@ impl RpcContext {
         mcp_server_manager: Arc<McpServerManager>,
         mcp_config: Option<McpConfig>,
         data_home: std::path::PathBuf,
+        scm_config: Option<ScmConfig>,
     ) -> Self {
         Self {
             kiln,
@@ -69,6 +72,7 @@ impl RpcContext {
             mcp_config,
             data_home,
             workflows: Arc::new(WorkflowRegistry::new()),
+            scm_config,
         }
     }
 }

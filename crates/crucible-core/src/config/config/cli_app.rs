@@ -38,7 +38,7 @@ extern crate toml;
 
 use super::errors::ConfigError;
 use super::provider::EffectiveLlmConfig;
-use super::server::{LoggingConfig, WebConfig};
+use super::server::{LoggingConfig, ScmConfig, WebConfig};
 
 /// Processing configuration for file processing operations.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -167,6 +167,11 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub server: Option<super::server::ServerConfig>,
 
+    /// SCM (git) configuration — worktree detection and `scm.worktree_add`
+    /// destination template.
+    #[serde(default)]
+    pub scm: Option<ScmConfig>,
+
     /// Value source tracking for configuration provenance
     ///
     /// Tracks where each configuration value came from (file, environment, CLI, default).
@@ -205,6 +210,7 @@ impl Default for CliAppConfig {
             plugins: HashMap::new(),
             web: None,
             server: None,
+            scm: None,
             source_map: None,
         }
     }

@@ -171,6 +171,74 @@ pub(crate) async fn handle_project_get(req: Request, pm: &Arc<ProjectManager>) -
     }
 }
 
+// --- SCM (git) handlers ---
+
+/// `scm.branches`: list local + remote-only branches for the repo containing
+/// `path`, annotated with worktree paths and which branch is current.
+pub(crate) async fn handle_scm_branches(req: Request, _pm: &Arc<ProjectManager>) -> Response {
+    let path = require_param!(req, "path", as_str);
+
+    match crate::scm::collect_branches(Path::new(path)).await {
+        Ok(resp) => match serde_json::to_value(resp) {
+            Ok(v) => Response::success(req.id, v),
+            Err(e) => internal_error(req.id, e),
+        },
+        Err(e @ crate::scm::ScmError::NotARepo(_)) => {
+            Response::error(req.id, INVALID_PARAMS, e.to_string())
+        }
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+/// `scm.worktree_add`: create a worktree for `branch` under the configured
+/// `worktree_dir` template and register it as a project.
+pub(crate) async fn handle_scm_worktree_add(
+    req: Request,
+    pm: &Arc<ProjectManager>,
+    worktree_dir: Option<&str>,
+) -> Response {
+    let repo_root = require_param!(req, "repo_root", as_str).to_string();
+    let branch = require_param!(req, "branch", as_str).to_string();
+    let create_branch = optional_param!(req, "create_branch", as_bool).unwrap_or(false);
+
+    let added =
+        match crate::scm::add_worktree(Path::new(&repo_root), &branch, create_branch, worktree_dir)
+            .await
+        {
+            Ok(added) => added,
+            Err(e @ crate::scm::ScmError::InvalidBranch(_))
+            | Err(e @ crate::scm::ScmError::DestExists(_))
+            | Err(e @ crate::scm::ScmError::NotARepo(_)) => {
+                return Response::error(req.id, INVALID_PARAMS, e.to_string());
+            }
+            Err(e) => return internal_error(req.id, e),
+        };
+
+    let project = match pm.register(&added.dest) {
+        Ok(project) => project,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    let warning = if added.not_ignored_warning {
+        Some(format!(
+            "{} is inside the repository but not gitignored; it will show as untracked",
+            added.dest.display()
+        ))
+    } else {
+        None
+    };
+
+    let response = crate::scm::ScmWorktreeAddResponse {
+        path: added.dest.to_string_lossy().to_string(),
+        project,
+        warning,
+    };
+    match serde_json::to_value(response) {
+        Ok(v) => Response::success(req.id, v),
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
 pub(super) fn spawn_plugin_watcher(
     plugin_dirs: Vec<(String, PathBuf)>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,

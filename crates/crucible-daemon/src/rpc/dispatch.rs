@@ -123,6 +123,8 @@ pub const METHODS: &[&str] = &[
     "project.unregister",
     "project.list",
     "project.get",
+    "scm.branches",
+    "scm.worktree_add",
     "fs.list_dir",
     "fs.move",
     "fs.mkdir",
@@ -395,6 +397,8 @@ impl RpcDispatcher {
             "project.unregister" => to_response(id, self.handle_project_unregister(&req).await),
             "project.list" => to_response(id, self.handle_project_list(&req).await),
             "project.get" => to_response(id, self.handle_project_get(&req).await),
+            "scm.branches" => to_response(id, self.handle_scm_branches(&req).await),
+            "scm.worktree_add" => to_response(id, self.handle_scm_worktree_add(&req).await),
             "fs.list_dir" => to_response(id, self.handle_fs_list_dir(&req).await),
             "fs.move" => to_response(id, self.handle_fs_move(&req).await),
             "fs.mkdir" => to_response(id, self.handle_fs_mkdir(&req).await),
@@ -1329,6 +1333,28 @@ impl RpcDispatcher {
         map_server_resp(resp)
     }
 
+    async fn handle_scm_branches(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp =
+            crate::server::plugins::handle_scm_branches(req.clone(), &self.ctx.project_manager)
+                .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_scm_worktree_add(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let worktree_dir = self
+            .ctx
+            .scm_config
+            .as_ref()
+            .and_then(|s| s.worktree_dir.as_deref());
+        let resp = crate::server::plugins::handle_scm_worktree_add(
+            req.clone(),
+            &self.ctx.project_manager,
+            worktree_dir,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
     async fn handle_fs_list_dir(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::fs::handle_fs_list_dir(req.clone(), &self.ctx.project_manager).await;
@@ -1570,6 +1596,7 @@ mod tests {
             Arc::new(McpServerManager::new()),
             None,
             std::path::PathBuf::from("/tmp"),
+            None,
         )
     }
 
@@ -1844,5 +1871,173 @@ mod tests {
             "on_session_end fired {count} times; expected exactly 1 \
              (session.end and lua.shutdown_session must not both fire)"
         );
+    }
+
+    /// Build a context whose ProjectManager persists to `projects_path` and
+    /// whose SCM config carries a custom `worktree_dir` template. Mirrors
+    /// `test_context` but lets the SCM tests isolate the registry and steer
+    /// where worktrees land.
+    fn scm_test_context(
+        projects_path: std::path::PathBuf,
+        worktree_dir: Option<String>,
+    ) -> RpcContext {
+        use crate::agent_manager::{AgentManager, AgentManagerParams};
+        use crate::background_manager::BackgroundJobManager;
+        use crate::kiln_manager::KilnManager;
+        use crate::mcp_server::McpServerManager;
+        use crate::project_manager::ProjectManager;
+        use crate::session_manager::SessionManager;
+        use crate::subscription::SubscriptionManager;
+        use crate::tools::workspace::WorkspaceTools;
+        use dashmap::DashMap;
+        use tokio::sync::broadcast;
+
+        let (event_tx, _) = broadcast::channel(16);
+        let (shutdown_tx, _) = broadcast::channel(1);
+        let kiln_manager = Arc::new(KilnManager::new());
+        let session_manager = Arc::new(SessionManager::new());
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
+        let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
+            kiln_manager: kiln_manager.clone(),
+            session_manager: session_manager.clone(),
+            background_manager,
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config: None,
+            permission_config: None,
+            plugin_loader: None,
+            workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
+        }));
+
+        RpcContext::new(
+            kiln_manager,
+            session_manager,
+            agent_manager,
+            Arc::new(SubscriptionManager::new()),
+            event_tx,
+            shutdown_tx,
+            Arc::new(ProjectManager::new(projects_path)),
+            Arc::new(DashMap::new()),
+            Arc::new(tokio::sync::Mutex::new(None)),
+            None,
+            Arc::new(McpServerManager::new()),
+            None,
+            std::path::PathBuf::from("/tmp"),
+            Some(crucible_core::config::ScmConfig {
+                worktree_dir,
+                ..Default::default()
+            }),
+        )
+    }
+
+    fn run_git(args: &[&str]) {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .status()
+            .expect("run git");
+        assert!(status.success(), "git {args:?} failed");
+    }
+
+    /// End-to-end through dispatch: `scm.branches` reports the shape the web
+    /// frontend depends on, and `scm.worktree_add` creates the worktree at the
+    /// configured template location and registers it as a project.
+    #[tokio::test]
+    async fn dispatch_scm_branches_and_worktree_add() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir(&repo).unwrap();
+        let repo_s = repo.to_string_lossy().to_string();
+
+        run_git(&["-C", &repo_s, "init", "-q", "-b", "master"]);
+        std::fs::write(repo.join("f.txt"), "x").unwrap();
+        run_git(&["-C", &repo_s, "add", "."]);
+        run_git(&[
+            "-C",
+            &repo_s,
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-m",
+            "c1",
+        ]);
+        run_git(&["-C", &repo_s, "branch", "feat/x"]);
+
+        let wt_template = format!("{}/wt/{{branch}}", tmp.path().to_string_lossy());
+        let ctx = scm_test_context(tmp.path().join("projects.json"), Some(wt_template));
+        let dispatcher = RpcDispatcher::new(ctx);
+
+        // scm.branches
+        let resp = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request("scm.branches", serde_json::json!({ "path": repo_s })),
+            )
+            .await;
+        assert!(resp.error.is_none(), "scm.branches: {:?}", resp.error);
+        let v = resp.result.unwrap();
+        assert_eq!(v["current_branch"], "master");
+        assert_eq!(
+            v["repo_root"].as_str().unwrap(),
+            repo.canonicalize().unwrap().to_string_lossy()
+        );
+        let branches = v["branches"].as_array().unwrap();
+        assert_eq!(branches[0]["name"], "master");
+        assert_eq!(branches[0]["is_current"], true);
+        assert!(branches.iter().any(|b| b["name"] == "feat/x"));
+
+        // scm.worktree_add for the existing local branch, using the template.
+        let repo_root = v["repo_root"].as_str().unwrap().to_string();
+        let resp = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "scm.worktree_add",
+                    serde_json::json!({
+                        "repo_root": repo_root,
+                        "branch": "feat/x",
+                        "create_branch": false,
+                    }),
+                ),
+            )
+            .await;
+        assert!(resp.error.is_none(), "scm.worktree_add: {:?}", resp.error);
+        let v = resp.result.unwrap();
+        let dest = v["path"].as_str().unwrap();
+        assert!(dest.ends_with("/wt/feat/x"), "dest was {dest}");
+        assert!(std::path::Path::new(dest).join("f.txt").is_file());
+        // Registered as a project (worktree outside repo → no warning).
+        assert!(v["project"]["path"].is_string());
+        assert!(v["warning"].is_null());
+    }
+
+    /// A hostile branch name is rejected before any git worktree is created.
+    #[tokio::test]
+    async fn dispatch_scm_worktree_add_rejects_bad_branch() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir(&repo).unwrap();
+        let repo_s = repo.to_string_lossy().to_string();
+        run_git(&["-C", &repo_s, "init", "-q", "-b", "master"]);
+
+        let ctx = scm_test_context(tmp.path().join("projects.json"), None);
+        let dispatcher = RpcDispatcher::new(ctx);
+        let resp = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "scm.worktree_add",
+                    serde_json::json!({
+                        "repo_root": repo_s,
+                        "branch": "../evil",
+                        "create_branch": true,
+                    }),
+                ),
+            )
+            .await;
+        assert!(resp.error.is_some());
+        assert_eq!(resp.error.unwrap().code, crate::protocol::INVALID_PARAMS);
     }
 }

@@ -122,6 +122,11 @@ pub struct ScmConfig {
     /// Detect and group git worktrees under their main repository.
     #[serde(default)]
     pub detect_worktrees: bool,
+    /// Template for where `scm.worktree_add` creates worktrees.
+    /// Vars: `{repo}` = repo root, `{branch}` = branch name (may contain '/').
+    /// Default: "{repo}/tree/{branch}".
+    #[serde(default)]
+    pub worktree_dir: Option<String>,
 }
 
 /// Logging configuration.

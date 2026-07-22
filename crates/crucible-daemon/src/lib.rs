@@ -54,6 +54,7 @@ pub mod replay;
 pub mod rpc;
 pub mod rpc_client;
 pub mod rpc_helpers;
+pub mod scm;
 pub mod server;
 pub mod session_bridge;
 pub mod session_manager;
@@ -108,6 +109,7 @@ pub use rpc_client::{
     LuaRegisterHooksResponse, LuaRunPluginTestsRequest, LuaRunPluginTestsResponse,
     LuaShutdownSessionRequest, LuaShutdownSessionResponse, SessionEvent, VersionCheck,
 };
+pub use scm::{ScmBranch, ScmBranchesResponse, ScmWorktreeAddResponse};
 pub use server::{BindWithPluginConfigParams, Server};
 pub use session_bridge::DaemonSessionBridge;
 pub use session_manager::{SessionError, SessionManager};
