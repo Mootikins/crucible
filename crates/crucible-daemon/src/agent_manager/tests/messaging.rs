@@ -928,3 +928,45 @@ async fn snapshot_map_round_trip_consumes_entry() {
     assert!(got.commit_id.is_none() && got.journal.is_none());
     assert!(map.is_empty());
 }
+
+/// Ended sessions are transparently resumable: sending to a session that has
+/// been ended (removed from the in-memory map) revives it from storage before
+/// processing the turn. The UI never has to gate on lifecycle state.
+#[tokio::test]
+async fn send_revives_ended_session_from_storage() {
+    let mut h = ReactorTestHarness::new().await;
+    // Scripted agent so the revived turn runs without a real provider. The
+    // agent_cache entry survives `end_session` (only RPC cleanup clears it),
+    // so the revived session reuses it.
+    h.inject_streaming_agent(vec![script::text("revived"), script::done()]);
+
+    // End the session: dropped from the in-memory `sessions` map.
+    let sm = h.agent_manager.session_manager().clone();
+    sm.end_session(&h.session_id).await.unwrap();
+    assert!(
+        sm.get_session(&h.session_id).is_none(),
+        "ended session should be evicted from memory"
+    );
+
+    // Sending to the ended session transparently revives it and accepts the turn.
+    let message_id = h.send("hello again").await;
+
+    // Revived into memory as Active.
+    let revived = sm
+        .get_session(&h.session_id)
+        .expect("session should be revived into memory on send");
+    assert_eq!(
+        revived.state,
+        crucible_core::session::SessionState::Active,
+        "revived session should be Active, not Ended"
+    );
+
+    // The turn is really processed end-to-end.
+    let user_message = h.wait_for("user_message").await;
+    assert_eq!(user_message.data["content"], "hello again");
+    assert_eq!(user_message.data["message_id"], message_id);
+
+    let complete = h.wait_for("message_complete").await;
+    assert_eq!(complete.data["message_id"], message_id);
+    assert_eq!(complete.data["full_response"], "revived");
+}

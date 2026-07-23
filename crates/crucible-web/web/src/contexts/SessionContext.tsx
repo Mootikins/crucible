@@ -240,8 +240,11 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       }
 
       setCurrentSession(existing);
-      // Auto-resume paused sessions
-      if (existing.state === 'paused') {
+      // Transparently resume idle sessions on open. Paused sessions resume
+      // warm; ended/evicted sessions revive from storage (the daemon route
+      // falls back to session.resume_from_storage). Either way the opened
+      // session is live so the composer is never a dead end.
+      if (existing.state === 'paused' || existing.state === 'ended') {
         try {
           await apiResumeSession(id);
           updateCurrentSessionState('active');
@@ -269,8 +272,9 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
         return await apiGetSession(id);
       });
       setCurrentSession(session);
-      // Auto-resume paused sessions
-      if (session.state === 'paused') {
+      // Transparently resume idle sessions on open (paused warm, ended/evicted
+      // from storage) so the opened session is always live.
+      if (session.state === 'paused' || session.state === 'ended') {
         try {
           await apiResumeSession(id);
           updateCurrentSessionState('active');

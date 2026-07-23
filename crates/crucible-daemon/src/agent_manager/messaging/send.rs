@@ -67,10 +67,10 @@ impl AgentManager {
     ) -> Result<String, AgentError> {
         let ttft_start = Instant::now();
         info!(target: "ttft", session_id = %session_id, stage = "send_message_entry", elapsed_ms = 0, "ttft");
-        let session = self
-            .session_manager
-            .get_session(session_id)
-            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
+        // Sessions are always resumable: if the target is no longer resident in
+        // memory (ended or evicted), transparently revive it from storage before
+        // processing the turn so the caller never has to gate on lifecycle state.
+        let session = self.get_or_revive_session(session_id).await?;
 
         let agent_config = session
             .agent
@@ -325,6 +325,59 @@ impl AgentManager {
         }
 
         Ok(message_id)
+    }
+
+    /// Return the live session for `session_id`, reviving it from storage if it
+    /// is no longer resident in memory (ended or evicted). This is what makes
+    /// ended sessions transparently resumable on send: the kiln is resolved from
+    /// the session→kiln index (kept across end/eviction), falling back to
+    /// probing currently-open kilns for the persisted session.
+    async fn get_or_revive_session(
+        &self,
+        session_id: &str,
+    ) -> Result<crucible_core::session::Session, AgentError> {
+        if let Some(session) = self.session_manager.get_session(session_id) {
+            return Ok(session);
+        }
+
+        // Not resident — revive from disk. Prefer the last-known kiln from the
+        // index; it survives end/eviction and does not require the kiln to be
+        // open.
+        if let Some(kiln) = self.session_manager.session_kiln(session_id) {
+            let session = self
+                .session_manager
+                .resume_session_from_storage(session_id, &kiln)
+                .await?;
+            info!(
+                session_id = %session_id,
+                kiln = %kiln.display(),
+                "Revived idle session from storage on send"
+            );
+            return Ok(session);
+        }
+
+        // Fallback (e.g. after a daemon restart, where the index is empty):
+        // probe every currently-open kiln for the persisted session.
+        for (kiln, _, _) in self.kiln_manager.list().await {
+            match self
+                .session_manager
+                .resume_session_from_storage(session_id, &kiln)
+                .await
+            {
+                Ok(session) => {
+                    info!(
+                        session_id = %session_id,
+                        kiln = %kiln.display(),
+                        "Revived idle session from open-kiln probe on send"
+                    );
+                    return Ok(session);
+                }
+                Err(SessionError::NotFound(_)) => continue,
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        Err(AgentError::SessionNotFound(session_id.to_string()))
     }
 
     async fn get_or_create_agent(

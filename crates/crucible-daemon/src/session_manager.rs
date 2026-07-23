@@ -22,6 +22,12 @@ pub struct SessionManager {
     sessions: DashMap<String, Session>,
     storage: Arc<dyn SessionStorage>,
     recording_senders: DashMap<String, mpsc::Sender<SessionEventMessage>>,
+    /// Last-known kiln for every session this manager has seen, kept even
+    /// after the session leaves the in-memory `sessions` map (end/eviction).
+    /// This is how a transparent revive resolves which kiln's storage to load
+    /// from without depending on the kiln being currently open. Cleared only
+    /// when a session is deleted.
+    session_kilns: DashMap<String, PathBuf>,
     /// Base directory under which per-session scratch workspaces are created
     /// for sessions started without an explicit workspace. When `None`, such
     /// sessions fall back to `workspace == kiln` (the historical behavior).
@@ -42,6 +48,7 @@ impl SessionManager {
             sessions: DashMap::new(),
             storage,
             recording_senders: DashMap::new(),
+            session_kilns: DashMap::new(),
             session_workspace_dir: None,
         }
     }
@@ -117,6 +124,8 @@ impl SessionManager {
 
         // Store in active sessions
         let session_clone = session.clone();
+        self.session_kilns
+            .insert(session_id.clone(), session_clone.kiln.clone());
         self.sessions.insert(session_id.clone(), session);
 
         info!(session_id = %session_id, session_type = %session_clone.session_type, "Session created");
@@ -146,6 +155,8 @@ impl SessionManager {
         let session_id = session.id.clone();
         self.storage.save(&session).await?;
         let session_clone = session.clone();
+        self.session_kilns
+            .insert(session_id.clone(), session_clone.kiln.clone());
         self.sessions.insert(session_id.clone(), session);
 
         info!(
@@ -189,14 +200,19 @@ impl SessionManager {
         // Load from storage
         let mut session = self.storage.load(session_id, kiln).await?;
 
-        // Update state to Active
-        session.resume();
+        // Always-resumable: a session loaded from storage becomes live
+        // regardless of its persisted lifecycle state. `Session::resume()`
+        // only lifts `Paused`, so set the state directly — an `Ended`,
+        // `Paused`, or `Compacting` session all revive to `Active`.
+        session.state = SessionState::Active;
 
         // Persist updated state
         self.storage.save(&session).await?;
 
         // Store in memory
         let session_clone = session.clone();
+        self.session_kilns
+            .insert(session.id.clone(), session.kiln.clone());
         self.sessions.insert(session.id.clone(), session);
 
         info!(session_id = %session_id, "Session resumed from storage");
@@ -233,13 +249,26 @@ impl SessionManager {
     }
 
     pub fn register_transient(&self, session: Session) {
+        self.session_kilns
+            .insert(session.id.clone(), session.kiln.clone());
         self.sessions.insert(session.id.clone(), session);
     }
 
     pub async fn update_session(&self, session: &Session) -> Result<(), SessionError> {
         self.storage.save(session).await?;
+        self.session_kilns
+            .insert(session.id.clone(), session.kiln.clone());
         self.sessions.insert(session.id.clone(), session.clone());
         Ok(())
+    }
+
+    /// Last-known kiln for a session, even after it has left the in-memory
+    /// `sessions` map (ended or evicted). Used by the send path to resolve
+    /// which kiln's storage to revive an idle session from. Returns `None`
+    /// only for sessions this manager has never seen (e.g. after a daemon
+    /// restart), where the caller must fall back to another kiln source.
+    pub fn session_kiln(&self, session_id: &str) -> Option<PathBuf> {
+        self.session_kilns.get(session_id).map(|r| r.clone())
     }
 
     /// List all active sessions.
@@ -431,6 +460,7 @@ impl SessionManager {
 
         self.sessions.remove(session_id);
         self.recording_senders.remove(session_id);
+        self.session_kilns.remove(session_id);
 
         let session_dir = FileSessionStorage::sessions_base(kiln).join(session_id);
         let persisted_exists = session_dir.exists();

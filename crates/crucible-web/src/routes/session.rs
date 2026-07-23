@@ -368,7 +368,21 @@ async fn resume_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    let result = state.daemon.session_resume(&id).await.daemon_err()?;
+    // Transparent resume: sessions are always resumable. Try the warm path
+    // (session still resident and merely paused); on any failure — ended,
+    // evicted, or not in memory — fall back to reloading it from its kiln's
+    // storage so an idle session is never a dead end for the UI.
+    let result = match state.daemon.session_resume(&id).await {
+        Ok(result) => result,
+        Err(_) => {
+            let kiln = resolve_session_kiln(&state, &id).await?;
+            state
+                .daemon
+                .session_resume_from_storage(&id, std::path::Path::new(&kiln), None, None)
+                .await
+                .map_err(|e| map_session_not_found(e, &id))?
+        }
+    };
 
     let session_id = id.as_str();
     state

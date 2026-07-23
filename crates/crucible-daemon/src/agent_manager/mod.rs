@@ -800,6 +800,14 @@ impl AgentManager {
         &self.background_manager
     }
 
+    /// Access the session manager. Used by tests that need to drive session
+    /// lifecycle (end/resume) directly against the same manager the agent
+    /// manager reads from.
+    #[cfg(test)]
+    pub(crate) fn session_manager(&self) -> &Arc<SessionManager> {
+        &self.session_manager
+    }
+
     pub fn get_session_with_agent(
         &self,
         session_id: &str,

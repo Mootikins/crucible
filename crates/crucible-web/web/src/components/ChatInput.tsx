@@ -20,9 +20,12 @@ export const ChatInput: Component = () => {
   let textareaRef: HTMLTextAreaElement | undefined;
 
   const session = () => currentSession();
+  // Sending is allowed whenever a session is selected and no turn is in flight.
+  // Lifecycle state (paused/ended) is NOT a gate: the daemon transparently
+  // revives an idle session on send, so an ended session is never a dead end.
   const canSend = () => {
     const s = session();
-    return s && s.state === 'active' && !isLoading() && input().trim().length > 0;
+    return !!s && !isLoading() && input().trim().length > 0;
   };
 
   // Palette "Switch Model" opens the same picker as the chip below.
@@ -167,7 +170,7 @@ export const ChatInput: Component = () => {
             onInput={(e) => void autocomplete.onInput(e)}
             onKeyDown={handleKeyDown}
             placeholder={session() ? 'Type a message...' : 'Select a session first...'}
-            disabled={!session() || isLoading() || session()?.state === 'ended'}
+            disabled={!session() || isLoading()}
             rows={1}
             class="w-full bg-transparent text-sm text-shell-ink placeholder-muted-dark resize-none outline-none px-1 py-1 max-h-32 min-h-[2.5rem] disabled:opacity-50"
             data-testid="chat-input"

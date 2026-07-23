@@ -151,7 +151,9 @@ describe('selectSession auto-resume', () => {
     expect(api.resumeSession).not.toHaveBeenCalled();
   });
 
-  it('does not call resumeSession for ended sessions', async () => {
+  it('transparently resumes ended sessions on select', async () => {
+    // Ended sessions are always resumable: selecting one revives it (the daemon
+    // resume route falls back to storage) so the composer is never a dead end.
     (api.getSession as ReturnType<typeof vi.fn<any>>).mockResolvedValue(makeSession('ended'));
 
     render(() => (
@@ -163,12 +165,12 @@ describe('selectSession auto-resume', () => {
     screen.getByTestId('select').click();
 
     await waitFor(() => {
-      expect(dispatchSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'crucible:open-session' })
-      );
+      expect(api.resumeSession).toHaveBeenCalledWith('test-id');
     });
 
-    expect(api.resumeSession).not.toHaveBeenCalled();
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'crucible:open-session' })
+    );
   });
 
   it('loads persisted session into daemon when selecting from existing list', async () => {
