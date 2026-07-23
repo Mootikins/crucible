@@ -59,6 +59,9 @@ export const ChipSelect: Component<{
    * and the popout stays open; the trigger shows a count badge. */
   multi?: boolean;
   selected?: string[];
+  /** Override the trigger's text outright (e.g. multi mode showing the anchor
+   * item's name + "+N" instead of the default count badge). */
+  triggerLabel?: string;
   /** Always-visible footer action (Cursor's "Add repo" idiom): a labeled row
    * that flips inline into an input + confirm button. Unlike `create`, this
    * is DISCOVERABLE — it does not require typing into the filter first. */
@@ -91,6 +94,7 @@ export const ChipSelect: Component<{
 
   const current = () => props.options.find((o) => o.value === props.value);
   const display = () => {
+    if (props.triggerLabel !== undefined) return props.triggerLabel;
     if (props.multi) {
       const n = props.selected?.length ?? 0;
       return n > 0 ? `${props.name} · ${n}` : props.name;

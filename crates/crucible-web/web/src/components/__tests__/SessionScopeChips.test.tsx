@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, cleanup, waitFor, fireEvent } from '@solidjs/testing-library';
+import { render, cleanup, waitFor, fireEvent, screen } from '@solidjs/testing-library';
 import { SessionScopeChips } from '../SessionScopeChips';
 import type { Session } from '@/lib/types';
 
@@ -65,77 +65,51 @@ afterEach(() => {
 });
 
 describe('SessionScopeChips', () => {
-  it('floating session shows "+ project" instead of a workspace chip', () => {
+  it('floating session reads "Session folder" and the primary kiln name', () => {
     mockSession = baseSession();
-    const { getByTestId, queryByTestId } = render(() => <SessionScopeChips />);
-    expect(queryByTestId('workspace-chip')).toBeNull();
-    expect(getByTestId('attach-project')).toBeTruthy();
+    render(() => <SessionScopeChips />);
+    expect(screen.getByTestId('scope-project').textContent).toContain('Session folder');
+    expect(screen.getByTestId('scope-kiln').textContent).toContain('main');
   });
 
-  it('attaching a project calls setSessionWorkspace and applies the scope', async () => {
+  it('picking a project calls setSessionWorkspace and applies the scope', async () => {
     mockSession = baseSession();
-    const { getByTestId, getByText } = render(() => <SessionScopeChips />);
-    fireEvent.click(getByTestId('attach-project'));
-    await waitFor(() => expect(getByText(/crucible —/)).toBeTruthy());
-    fireEvent.click(getByText(/crucible —/));
+    render(() => <SessionScopeChips />);
+    fireEvent.click(screen.getByTestId('scope-project'));
+    await waitFor(() => expect(screen.getByText('crucible')).toBeTruthy());
+    fireEvent.click(screen.getByText('crucible'));
     await waitFor(() => expect(setWorkspaceMock).toHaveBeenCalledWith('s1', '/repos/crucible'));
     await waitFor(() => expect(applySessionScopeMock).toHaveBeenCalled());
   });
 
-  it('attached workspace shows a chip whose ✕ detaches (workspace: null)', async () => {
+  it('attached workspace shows its basename; "Session folder" detaches (workspace: null)', async () => {
     mockSession = { ...baseSession(), workspace: '/repos/crucible' };
-    const { getByTestId } = render(() => <SessionScopeChips />);
-    expect(getByTestId('workspace-chip').textContent).toContain('crucible');
-    fireEvent.click(getByTestId('detach-workspace'));
+    render(() => <SessionScopeChips />);
+    expect(screen.getByTestId('scope-project').textContent).toContain('crucible');
+    fireEvent.click(screen.getByTestId('scope-project'));
+    await waitFor(() => expect(screen.getByText('Session folder')).toBeTruthy());
+    fireEvent.click(screen.getByText('Session folder'));
     await waitFor(() => expect(setWorkspaceMock).toHaveBeenCalledWith('s1', null));
   });
 
-  it('primary kiln has no detach control; connected kiln does', async () => {
+  it('primary kiln is locked (disabled); toggling a connected kiln detaches it', async () => {
     mockSession = { ...baseSession(), connected_kilns: ['/kilns/extra'] };
-    const { getByTestId } = render(() => <SessionScopeChips />);
-    expect(getByTestId('primary-kiln-chip').querySelector('button')).toBeNull();
-    fireEvent.click(getByTestId('detach-kiln-extra'));
+    render(() => <SessionScopeChips />);
+    expect(screen.getByTestId('scope-kiln').textContent).toContain('main +1');
+    fireEvent.click(screen.getByTestId('scope-kiln'));
+    await waitFor(() => expect(screen.getByText('extra')).toBeTruthy());
+    const mainOption = screen.getByText('main').closest('button') as HTMLButtonElement;
+    expect(mainOption.disabled).toBe(true);
+    fireEvent.click(screen.getByText('extra'));
     await waitFor(() => expect(disconnectMock).toHaveBeenCalledWith('s1', '/kilns/extra'));
   });
 
-  it('kiln picker excludes the primary and already-connected kilns', async () => {
-    mockSession = { ...baseSession(), connected_kilns: [] };
-    const { getByTestId, getByText, queryByText } = render(() => <SessionScopeChips />);
-    fireEvent.click(getByTestId('attach-kiln'));
-    await waitFor(() => expect(getByText(/extra —/)).toBeTruthy());
-    expect(queryByText(/main —/)).toBeNull();
-    fireEvent.click(getByText(/extra —/));
+  it('toggling an unconnected kiln attaches it', async () => {
+    mockSession = baseSession();
+    render(() => <SessionScopeChips />);
+    fireEvent.click(screen.getByTestId('scope-kiln'));
+    await waitFor(() => expect(screen.getByText('extra')).toBeTruthy());
+    fireEvent.click(screen.getByText('extra'));
     await waitFor(() => expect(connectMock).toHaveBeenCalledWith('s1', '/kilns/extra'));
-  });
-
-  it('Escape closes the open picker', async () => {
-    mockSession = baseSession();
-    const { getByTestId, getByText, queryByText } = render(() => <SessionScopeChips />);
-    fireEvent.click(getByTestId('attach-project'));
-    await waitFor(() => expect(getByText(/crucible —/)).toBeTruthy());
-    expect(getByTestId('attach-project').getAttribute('aria-expanded')).toBe('true');
-    // The dismissal listener is attached on the next macrotask.
-    await new Promise((r) => setTimeout(r, 0));
-    fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(queryByText(/crucible —/)).toBeNull());
-    expect(getByTestId('attach-project').getAttribute('aria-expanded')).toBe('false');
-  });
-
-  it('an outside click closes the open picker', async () => {
-    mockSession = baseSession();
-    const { getByTestId, getByText, queryByText } = render(() => <SessionScopeChips />);
-    fireEvent.click(getByTestId('attach-project'));
-    await waitFor(() => expect(getByText(/crucible —/)).toBeTruthy());
-    await new Promise((r) => setTimeout(r, 0));
-    fireEvent.click(document.body);
-    await waitFor(() => expect(queryByText(/crucible —/)).toBeNull());
-  });
-
-  it('toggle button exposes aria-haspopup/aria-expanded', () => {
-    mockSession = baseSession();
-    const { getByTestId } = render(() => <SessionScopeChips />);
-    const btn = getByTestId('attach-project');
-    expect(btn.getAttribute('aria-haspopup')).toBe('menu');
-    expect(btn.getAttribute('aria-expanded')).toBe('false');
   });
 });

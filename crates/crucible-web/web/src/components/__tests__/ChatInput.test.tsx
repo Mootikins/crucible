@@ -188,12 +188,11 @@ describe('ChatInput — session context chips', () => {
     render(() => <ChatInput />);
     const chips = screen.getByTestId('context-chips');
     expect(chips).toBeInTheDocument();
-    expect(chips.textContent).toContain('◆ test-kiln');
+    expect(chips.textContent).toContain('test-kiln');
   });
 
-  it('floating session (workspace == kiln) offers "+ project" instead of a workspace chip', () => {
+  it('floating session (workspace == kiln) reads "Session folder" for the project chip', () => {
     render(() => <ChatInput />);
-    expect(screen.queryByTestId('workspace-chip')).not.toBeInTheDocument();
-    expect(screen.getByTestId('attach-project')).toBeInTheDocument();
+    expect(screen.getByTestId('scope-project').textContent).toContain('Session folder');
   });
 });
