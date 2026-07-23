@@ -45,6 +45,8 @@ export interface FileTreeViewProps {
   dnd?: FileTreeDnd;
   /** Live dotfile-visibility state (context-menu label). */
   showHidden?: boolean;
+  /** Display-name transform (hidden-extension stripping). */
+  formatName?: (name: string) => string;
   /**
    * Inline-rename commit (absent → F2/rename disabled). `relPath` is the
    * node's CURRENT identity; `newLabel` is the typed name (a single path
@@ -126,6 +128,7 @@ export const FileTreeView: Component<FileTreeViewProps> = (props) => {
               openFilePath={props.openFilePath}
               onContextAction={props.onContextAction}
               showHidden={props.showHidden}
+              formatName={props.formatName}
               dnd={props.dnd}
             />
           )}

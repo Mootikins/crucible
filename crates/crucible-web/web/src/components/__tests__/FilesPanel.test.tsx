@@ -50,6 +50,9 @@ const NOTE_NAMES = [
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  // These assertions match full filenames; keep extensions visible (the tree
+  // hides `.md` by default now).
+  localStorage.setItem('crucible.filetree.hideExts', 'false');
   listKilnsMock.mockResolvedValue([{ path: '/project/kiln', name: 'kiln' }]);
   listNotesMock.mockResolvedValue(
     NOTE_NAMES.map((name) => ({

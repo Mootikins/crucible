@@ -83,8 +83,12 @@ export const FileTreeNode: Component<{
   openFilePath: string | null;
   onContextAction: (action: ContextAction, node: Node) => void;
   showHidden?: boolean;
+  /** Transform a node's display name (e.g. strip hidden extensions). Identity
+   * when absent; never changes `node.name` (rename/logic use the real name). */
+  formatName?: (name: string) => string;
   dnd?: FileTreeDnd;
 }> = (props) => {
+  const shown = () => (props.formatName ? props.formatName(props.node.name) : props.node.name);
   const isCurrent = () => props.node.absPath === props.openFilePath;
   const currentAttrs = () =>
     isCurrent() ? ({ 'aria-current': 'page', 'data-current': 'true' } as const) : {};
@@ -159,7 +163,7 @@ export const FileTreeNode: Component<{
               <span class={ICON_SLOT}>
                 <FileIcon name={props.node.name} />
               </span>
-              <TreeView.ItemText class="truncate py-1 ml-1">{props.node.name}</TreeView.ItemText>
+              <TreeView.ItemText class="truncate py-1 ml-1">{shown()}</TreeView.ItemText>
               <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary outline-none min-w-0 flex-1" />
             </TreeView.Item>
           </FileTreeContextMenu>
@@ -183,7 +187,7 @@ export const FileTreeNode: Component<{
               >
                 <ChevronRight class="w-3.5 h-3.5" />
               </TreeView.BranchIndicator>
-              <TreeView.BranchText class="truncate py-1 ml-1">{props.node.name}</TreeView.BranchText>
+              <TreeView.BranchText class="truncate py-1 ml-1">{shown()}</TreeView.BranchText>
               <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary outline-none min-w-0 flex-1" />
             </TreeView.BranchControl>
           </FileTreeContextMenu>
@@ -197,6 +201,8 @@ export const FileTreeNode: Component<{
                   openFilePath={props.openFilePath}
                   onContextAction={props.onContextAction}
                   showHidden={props.showHidden}
+
+                  formatName={props.formatName}
                   dnd={props.dnd}
                 />
               )}

@@ -38,7 +38,18 @@ import { ChevronsDownUp, RefreshCw, ArrowUpDown, Plus } from '@/lib/icons';
 const EXPANDED_KEY = (rootId: string) => `crucible.filetree.expanded.${rootId}`;
 const SORT_KEY = 'crucible.filetree.sort';
 const SHOW_HIDDEN_KEY = 'crucible.filetree.showHidden';
+const HIDE_EXTS_KEY = 'crucible.filetree.hideExts';
+const HIDDEN_EXTS_KEY = 'crucible.filetree.hiddenExts';
 const EXPANDED_CAP = 500;
+
+/** Strip a trailing extension from a display name when it's in `hidden`
+ * (Obsidian hides `.md`). Never touches the real node name. */
+function formatDisplayName(name: string, hide: boolean, hidden: string[]): string {
+  if (!hide) return name;
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) return name;
+  return hidden.includes(name.slice(dot).toLowerCase()) ? name.slice(0, dot) : name;
+}
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -80,6 +91,30 @@ export const FilesPanel: Component = () => {
   const [showHidden, setShowHidden] = createSignal<boolean>(
     readJson<boolean>(SHOW_HIDDEN_KEY, false),
   );
+  const [hideExts, setHideExts] = createSignal<boolean>(readJson<boolean>(HIDE_EXTS_KEY, true));
+  const [hiddenExts, setHiddenExts] = createSignal<string[]>(
+    readJson<string[]>(HIDDEN_EXTS_KEY, ['.md']),
+  );
+  const formatName = (name: string) => formatDisplayName(name, hideExts(), hiddenExts());
+
+  const toggleHideExts = () => {
+    const next = !hideExts();
+    setHideExts(next);
+    writeJson(HIDE_EXTS_KEY, next);
+  };
+  /** Edit the hidden-extension list (comma/space separated; leading dots optional). */
+  const editHiddenExts = () => {
+    const raw = window.prompt('Hide these extensions (comma-separated):', hiddenExts().join(', '));
+    if (raw === null) return;
+    const list = raw
+      .split(/[\s,]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+      .map((s) => (s.startsWith('.') ? s : '.' + s));
+    setHiddenExts(list);
+    writeJson(HIDDEN_EXTS_KEY, list);
+    if (!hideExts() && list.length) toggleHideExts();
+  };
 
   const toggleHidden = () => {
     const next = !showHidden();
@@ -467,6 +502,17 @@ export const FilesPanel: Component = () => {
           >
             <ChevronsDownUp class="w-3.5 h-3.5" />
           </button>
+          <button
+            type="button"
+            aria-label="Hide extensions"
+            title={`Hide extensions (${hiddenExts().join(' ') || 'none'}) — right-click to edit`}
+            aria-pressed={hideExts()}
+            onClick={toggleHideExts}
+            onContextMenu={(e) => { e.preventDefault(); editHiddenExts(); }}
+            classList={{ 'p-1 rounded hover:bg-hover-wash text-[10px] font-mono leading-none w-6 h-6 flex items-center justify-center': true, 'text-primary': hideExts(), 'text-muted': !hideExts() }}
+          >
+            .ext
+          </button>
           <Show when={activeRoot()?.kind === 'kiln'}>
             <button
               type="button"
@@ -530,6 +576,7 @@ export const FilesPanel: Component = () => {
                 onContextAction={onContextAction}
                 apiRef={(api) => (treeApi = api)}
                 showHidden={showHidden()}
+                formatName={formatName}
                 dnd={dndFor(root)}
                 onRenameNode={onRenameNode}
               />
