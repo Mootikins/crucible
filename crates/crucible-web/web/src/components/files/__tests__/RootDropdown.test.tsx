@@ -8,7 +8,9 @@ import type { KilnListEntry, Project } from '@/lib/types';
 vi.mock('@/lib/api', () => ({
   scmBranches: vi.fn(),
   scmWorktreeAdd: vi.fn(),
+  scmClone: vi.fn(),
   registerProject: vi.fn(),
+  isGitRepoUrl: (s: string) => /^(https?:\/\/|git@)/.test(s) || /^[\w.-]+\/[\w.-]+$/.test(s),
 }));
 
 import { scmBranches, scmWorktreeAdd, registerProject } from '@/lib/api';

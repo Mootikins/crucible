@@ -57,15 +57,28 @@ export const ChipSelect: Component<{
    * and the popout stays open; the trigger shows a count badge. */
   multi?: boolean;
   selected?: string[];
+  /** Always-visible footer action (Cursor's "Add repo" idiom): a labeled row
+   * that flips inline into an input + confirm button. Unlike `create`, this
+   * is DISCOVERABLE — it does not require typing into the filter first. */
+  action?: {
+    label: string;
+    placeholder: string;
+    buttonLabel: string;
+    validate?: (text: string) => boolean;
+    run: (text: string) => void;
+  };
 }> = (props) => {
   const [open, setOpen] = createSignal(false);
   const [filter, setFilter] = createSignal('');
   const [hover, setHover] = createSignal(-1);
   const [panelPos, setPanelPos] = createSignal({ left: 0, top: 0 });
+  const [actionMode, setActionMode] = createSignal(false);
+  const [actionText, setActionText] = createSignal('');
   let rootRef: HTMLDivElement | undefined;
   let panelRef: HTMLDivElement | undefined;
   let triggerRef: HTMLButtonElement | undefined;
   let inputRef: HTMLInputElement | undefined;
+  let actionInputRef: HTMLInputElement | undefined;
 
   const current = () => props.options.find((o) => o.value === props.value);
   const display = () => {
@@ -90,6 +103,19 @@ export const ChipSelect: Component<{
     setOpen(false);
     setFilter('');
     setHover(-1);
+    setActionMode(false);
+    setActionText('');
+  };
+
+  const actionValid = () => {
+    const text = actionText().trim();
+    return !!text && (!props.action?.validate || props.action.validate(text));
+  };
+
+  const runAction = () => {
+    if (!props.action || !actionValid()) return;
+    props.action.run(actionText().trim());
+    close();
   };
 
   const pick = (o: ChipOption) => {
@@ -133,6 +159,10 @@ export const ChipSelect: Component<{
       if (rootRef && !rootRef.contains(t) && panelRef && !panelRef.contains(t)) close();
     };
     const onKey = (e: KeyboardEvent) => {
+      // The action-mode input owns its keys (Escape exits the mode, Enter
+      // submits) — the list-navigation handler must not also close the
+      // popout or pick an option on the same event.
+      if (actionInputRef && e.target === actionInputRef) return;
       if (e.key === 'Escape') {
         e.stopPropagation();
         close();
@@ -267,6 +297,55 @@ export const ChipSelect: Component<{
                 )}
               </Show>
             </div>
+            <Show when={props.action}>
+              <Show
+                when={actionMode()}
+                fallback={
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActionMode(true);
+                      queueMicrotask(() => actionInputRef?.focus());
+                    }}
+                    class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs text-primary hover:bg-hover-wash transition-colors border-t border-hairline"
+                    data-testid={props.testid ? `${props.testid}-action` : undefined}
+                  >
+                    <span class="w-3.5 flex-shrink-0">＋</span>
+                    <span class="truncate">{props.action!.label}</span>
+                  </button>
+                }
+              >
+                <div class="px-2 py-1.5 border-t border-hairline flex items-center gap-1.5">
+                  <input
+                    ref={actionInputRef}
+                    value={actionText()}
+                    onInput={(e) => setActionText(e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        setActionMode(false);
+                        setActionText('');
+                      } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        runAction();
+                      }
+                    }}
+                    placeholder={props.action!.placeholder}
+                    aria-label={props.action!.label}
+                    class="flex-1 min-w-0 bg-control text-xs text-shell-ink placeholder-muted-dark rounded border border-hairline focus:border-primary outline-none px-2 py-1"
+                    data-testid={props.testid ? `${props.testid}-action-input` : undefined}
+                  />
+                  <button
+                    type="button"
+                    onClick={runAction}
+                    disabled={!actionValid()}
+                    class="text-xs px-2 py-1 rounded bg-primary/15 text-primary border border-primary/40 hover:bg-primary/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                    data-testid={props.testid ? `${props.testid}-action-submit` : undefined}
+                  >
+                    {props.action!.buttonLabel}
+                  </button>
+                </div>
+              </Show>
+            </Show>
           </div>
         </Portal>
       </Show>

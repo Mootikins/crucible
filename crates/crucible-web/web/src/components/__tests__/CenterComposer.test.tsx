@@ -85,6 +85,29 @@ describe('CenterComposer', () => {
     expect(createSessionMock.mock.calls[0][0].workspace).toBe('/repos/crucible');
   });
 
+  it('project popout has a discoverable clone action row', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() => expect(getByTestId('composer-project')).toBeInTheDocument());
+    fireEvent.click(getByTestId('composer-project'));
+    // Always-visible footer row — no filter typing required to find it.
+    const row = await waitFor(() => screen.getByTestId('composer-project-action'));
+    expect(row.textContent).toContain('Clone a repository…');
+
+    fireEvent.click(row);
+    const input = screen.getByTestId('composer-project-action-input') as HTMLInputElement;
+    fireEvent.input(input, { target: { value: 'octocat/Spoon-Knife' } });
+    const submit = screen.getByTestId('composer-project-action-submit') as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+
+    const { scmClone } = await import('@/lib/api');
+    vi.mocked(scmClone).mockResolvedValue({
+      path: '/home/user/Projects/Spoon-Knife',
+      project: { path: '/home/user/Projects/Spoon-Knife', name: 'Spoon-Knife', kilns: [], last_accessed: '' },
+    });
+    fireEvent.click(submit);
+    await waitFor(() => expect(scmClone).toHaveBeenCalledWith('octocat/Spoon-Knife'));
+  });
+
   it('lists recent files and opens one on click', async () => {
     recordRecentFile('/kiln/notes/a.md', 'a.md');
     recordRecentFile('/kiln/notes/b.md', 'b.md');

@@ -3,8 +3,10 @@ import type { RosterGroup, TreeRoot } from '@/lib/tree-root';
 import { rosterIndex, rootKey } from '@/lib/tree-root';
 import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
 import {
+  isGitRepoUrl,
   registerProject,
   scmBranches,
+  scmClone,
   scmWorktreeAdd,
   type ScmBranchesResponse,
 } from '@/lib/api';
@@ -87,6 +89,17 @@ export const RootDropdown: Component<{
     props.onSelect({ kind: 'project', path, name: basename(path) });
   };
 
+  const cloneRepo = async (url: string) => {
+    try {
+      const res = await scmClone(url);
+      props.onNotice?.(null);
+      await refreshProjects();
+      props.onSelect({ kind: 'project', path: res.path, name: basename(res.path) });
+    } catch (e) {
+      props.onNotice?.(e instanceof Error ? e.message : 'Failed to clone repository');
+    }
+  };
+
   const createWorktree = async (repoRoot: string, branch: string, createBranch: boolean) => {
     try {
       const res = await scmWorktreeAdd(repoRoot, branch, createBranch);
@@ -133,6 +146,13 @@ export const RootDropdown: Component<{
         onOpen={loadBranches}
         testid="root-dropdown"
         triggerClass="inline-flex items-center gap-1 max-w-[12rem] bg-surface-elevated text-shell-ink text-xs px-2 py-1 rounded border border-hairline hover:border-hairline-strong transition-colors"
+        action={{
+          label: 'Clone a repository…',
+          placeholder: 'github.com/owner/repo or git URL',
+          buttonLabel: 'Clone',
+          validate: isGitRepoUrl,
+          run: (url) => void cloneRepo(url),
+        }}
         create={
           scm()
             ? {

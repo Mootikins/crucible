@@ -236,6 +236,13 @@ export const CenterComposer: Component = () => {
                 label: (url) => `Clone ${url} as new project`,
                 run: cloneAndSelect,
               }}
+              action={{
+                label: 'Clone a repository…',
+                placeholder: 'github.com/owner/repo or git URL',
+                buttonLabel: 'Clone',
+                validate: isGitRepoUrl,
+                run: cloneAndSelect,
+              }}
             />
             <ChipSelect
               name="agent"
