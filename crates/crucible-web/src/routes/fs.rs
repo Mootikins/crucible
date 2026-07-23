@@ -33,6 +33,8 @@ struct FsListQuery {
     rel_path: String,
     #[serde(default)]
     show_ignored: bool,
+    #[serde(default)]
+    show_hidden: bool,
 }
 
 /// Proxy a one-level directory listing from the daemon. All security
@@ -44,7 +46,7 @@ async fn list_dir(
 ) -> Result<Json<serde_json::Value>, WebError> {
     let entries = state
         .daemon
-        .fs_list_dir(&query.root, &query.rel_path, query.show_ignored)
+        .fs_list_dir(&query.root, &query.rel_path, query.show_ignored, query.show_hidden)
         .await
         .daemon_err()?;
 

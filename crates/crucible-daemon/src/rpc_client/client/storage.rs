@@ -163,6 +163,7 @@ pub struct FsListDirRequest {
     pub root: String,
     pub rel_path: String,
     pub show_ignored: bool,
+    pub show_hidden: bool,
 }
 
 /// Request for `fs.move`.
@@ -730,6 +731,7 @@ impl DaemonClient {
         root: &str,
         rel_path: &str,
         show_ignored: bool,
+        show_hidden: bool,
     ) -> Result<Vec<serde_json::Value>> {
         let v: serde_json::Value = self
             .typed_call(
@@ -738,6 +740,7 @@ impl DaemonClient {
                     root: root.to_string(),
                     rel_path: rel_path.to_string(),
                     show_ignored,
+                    show_hidden,
                 },
             )
             .await?;

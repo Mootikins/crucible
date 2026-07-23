@@ -3,7 +3,7 @@ import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
 import type { FileTreeNode } from '@/lib/file-tree/types';
 import type { TreeRootKind } from '@/lib/tree-root';
-import { FileText, Target, Copy, RefreshCw, Pencil, Plus, FolderTree, Trash2 } from '@/lib/icons';
+import { Eye, FileText, Target, Copy, RefreshCw, Pencil, Plus, FolderTree, Trash2 } from '@/lib/icons';
 
 /**
  * Context menu action model. Read actions plus the Phase-2 mutations, now
@@ -18,6 +18,7 @@ export type ContextAction =
   | 'copy-relative-path'
   | 'reveal-in-tree'
   | 'refresh'
+  | 'toggle-hidden'
   | 'new-note'
   | 'new-folder'
   | 'rename'
@@ -41,6 +42,9 @@ export const CONTEXT_ITEMS: ContextItem[] = [
   { action: 'copy-path', label: 'Copy path', icon: Copy, enabledFor: 'both' },
   { action: 'copy-relative-path', label: 'Copy relative path', icon: Copy, enabledFor: 'both' },
   { action: 'refresh', label: 'Refresh', icon: RefreshCw, enabledFor: 'dir', kinds: 'project' },
+  // Tree-wide visibility toggle (dotfiles); reachable from any row so it
+  // doesn't need a dedicated toolbar slot. Also a palette command.
+  { action: 'toggle-hidden', label: 'Show hidden files', icon: Eye, enabledFor: 'both', kinds: 'project' },
   { action: 'new-note', label: 'New note', icon: Plus, enabledFor: 'dir', kinds: 'kiln', group: true },
   { action: 'new-folder', label: 'New folder', icon: FolderTree, enabledFor: 'dir' },
   { action: 'rename', label: 'Rename', icon: Pencil, enabledFor: 'both', group: true },

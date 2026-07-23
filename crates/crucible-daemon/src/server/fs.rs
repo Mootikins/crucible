@@ -23,16 +23,20 @@
 //!    (`follow_links(false)` + canonicalize check in `walk_one_level`).
 //! 5. **Read-only, metadata-only** — no file contents, no mutation.
 //!
-//! # Dotfile policy
+//! # Visibility policy (two independent axes)
 //!
-//! With `show_ignored == false` (the default) ALL dotfiles and dot-dirs are
-//! HIDDEN — not just gitignored ones — so a non-gitignored secret file (`.env`,
-//! `.netrc`, `.envrc`) is NOT enumerable by default. `show_ignored == true`
-//! reveals dotfiles AND gitignored entries AND `.git` together. This
-//! deliberately hides non-gitignored secrets by default given the web server's
-//! loopback-auth history; the residual accepted risk is that an authenticated
-//! same-origin caller can enumerate non-dotfile names/sizes within registered
-//! projects (equivalent to the user's own shell access).
+//! - `show_ignored` (default false): reveal gitignored entries. The web UI
+//!   passes `true` — a file browser must show ALL files in a folder, not
+//!   just the git-clean subset (build outputs, `thoughts/`, …).
+//! - `show_hidden` (default false): reveal dotfiles/dot-dirs. Off by
+//!   default so non-gitignored secret files (`.env`, `.netrc`, `.envrc`)
+//!   are not enumerable unless explicitly requested (the tree's
+//!   "Show hidden files" toggle).
+//! - `.git` is NEVER listed, regardless of both flags.
+//!
+//! The residual accepted risk is that an authenticated same-origin caller
+//! can enumerate names/sizes within registered projects (equivalent to the
+//! user's own shell access).
 //!
 //! Out of scope: a TOCTOU where the resolved in-root target dir is swapped for a
 //! symlink to outside the root between the containment check and the walk. Winning
@@ -78,8 +82,9 @@ pub(crate) async fn handle_fs_list_dir(req: Request, pm: &Arc<ProjectManager>) -
     let root = require_param!(req, "root", as_str);
     let rel_path = require_param!(req, "rel_path", as_str);
     let show_ignored = optional_param!(req, "show_ignored", as_bool).unwrap_or(false);
+    let show_hidden = optional_param!(req, "show_hidden", as_bool).unwrap_or(false);
 
-    match list_dir(pm, Path::new(root), rel_path, show_ignored) {
+    match list_dir(pm, Path::new(root), rel_path, show_ignored, show_hidden) {
         Ok(entries) => match serde_json::to_value(entries) {
             Ok(v) => Response::success(req.id, v),
             Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
@@ -100,6 +105,7 @@ fn list_dir(
     root: &Path,
     rel_path: &str,
     show_ignored: bool,
+    show_hidden: bool,
 ) -> Result<Vec<FsEntry>, FsListError> {
     // Fail-closed allowlist: only registered projects are listable.
     let project = pm.get(root).ok_or(FsListError::NotRegistered)?;
@@ -108,7 +114,7 @@ fn list_dir(
     if !target.is_dir() {
         return Err(FsListError::NotADir);
     }
-    walk_one_level(&base, &target, show_ignored)
+    walk_one_level(&base, &target, show_ignored, show_hidden)
 }
 
 /// Resolve `rel_path` against `base` with a component whitelist and
@@ -135,12 +141,14 @@ fn resolve_within(base: &Path, rel_path: &str) -> Result<PathBuf, FsListError> {
 }
 
 /// Enumerate exactly one level of `dir` (which is already contained in `base`),
-/// hiding dotfiles/gitignored entries by default and dropping any entry whose
-/// symlink resolves outside `base`. Dirs-first, then case-insensitive name.
+/// applying the two visibility axes (gitignored / hidden) and dropping any
+/// entry whose symlink resolves outside `base`. `.git` never lists.
+/// Dirs-first, then case-insensitive name.
 fn walk_one_level(
     base: &Path,
     dir: &Path,
     show_ignored: bool,
+    show_hidden: bool,
 ) -> Result<Vec<FsEntry>, FsListError> {
     let mut out = Vec::new();
     let walker = ignore::WalkBuilder::new(dir)
@@ -153,7 +161,7 @@ fn walk_one_level(
         // may be an invocation dir, not a repo root). Default require_git(true) would
         // silently skip gitignore rules absent a .git dir.
         .require_git(false)
-        .hidden(!show_ignored)
+        .hidden(!show_hidden)
         .follow_links(false)
         .build();
 
@@ -164,6 +172,9 @@ fn walk_one_level(
         }
         let path = dent.path();
         let name = dent.file_name().to_string_lossy().to_string();
+        if name == ".git" {
+            continue; // never enumerable, regardless of visibility flags
+        }
 
         // symlink_metadata does NOT follow the link: detect symlinks regardless
         // of destination, then drop any that resolve outside the project root.
@@ -561,7 +572,7 @@ mod tests {
         let (pm, root) = registered_pm(store.path(), proj);
 
         // Top level.
-        let entries = list_dir(&pm, &root, "", false).unwrap();
+        let entries = list_dir(&pm, &root, "", false, false).unwrap();
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         // Dirs first (case-insensitive name), then files (case-insensitive).
         assert_eq!(names, vec!["assets", "src", "Cargo.toml", "README.md"]);
@@ -577,7 +588,7 @@ mod tests {
         assert!(entries.iter().all(|e| e.status.is_none()));
 
         // One level down via rel_path.
-        let sub = list_dir(&pm, &root, "src", false).unwrap();
+        let sub = list_dir(&pm, &root, "src", false, false).unwrap();
         assert_eq!(sub.len(), 1);
         assert_eq!(sub[0].name, "main.rs");
         assert_eq!(sub[0].rel_path, "src/main.rs");
@@ -594,17 +605,22 @@ mod tests {
 
         let (pm, root) = registered_pm(store.path(), proj);
 
-        let hidden = list_dir(&pm, &root, "", false).unwrap();
+        let hidden = list_dir(&pm, &root, "", false, false).unwrap();
         let hidden_names: Vec<&str> = hidden.iter().map(|e| e.name.as_str()).collect();
         assert!(hidden_names.contains(&"kept.txt"));
         assert!(!hidden_names.contains(&"ignored.txt"));
         // `.gitignore` is itself a dotfile → also hidden by default.
         assert!(!hidden_names.contains(&".gitignore"));
 
-        let shown = list_dir(&pm, &root, "", true).unwrap();
+        // show_ignored alone reveals gitignored entries but NOT dotfiles.
+        let shown = list_dir(&pm, &root, "", true, false).unwrap();
         let shown_names: Vec<&str> = shown.iter().map(|e| e.name.as_str()).collect();
         assert!(shown_names.contains(&"ignored.txt"));
-        assert!(shown_names.contains(&".gitignore"));
+        assert!(!shown_names.contains(&".gitignore"));
+
+        // Both axes on: dotfiles too.
+        let all = list_dir(&pm, &root, "", true, true).unwrap();
+        assert!(all.iter().any(|e| e.name == ".gitignore"));
     }
 
     #[test]
@@ -618,12 +634,28 @@ mod tests {
 
         let (pm, root) = registered_pm(store.path(), proj);
 
-        let hidden = list_dir(&pm, &root, "", false).unwrap();
+        let hidden = list_dir(&pm, &root, "", false, false).unwrap();
         assert!(hidden.iter().all(|e| e.name != ".env"));
         assert!(hidden.iter().any(|e| e.name == "visible.txt"));
 
-        let shown = list_dir(&pm, &root, "", true).unwrap();
+        // show_hidden alone reveals the dotfile (no gitignore involvement).
+        let shown = list_dir(&pm, &root, "", false, true).unwrap();
         assert!(shown.iter().any(|e| e.name == ".env"));
+    }
+
+    #[test]
+    fn git_dir_never_listed_even_with_both_flags() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = tempfile::TempDir::new().unwrap();
+        let proj = tmp.path();
+        fs::create_dir_all(proj.join(".git")).unwrap();
+        fs::write(proj.join(".git").join("HEAD"), "ref: x").unwrap();
+        fs::write(proj.join("visible.txt"), "ok").unwrap();
+
+        let (pm, root) = registered_pm(store.path(), proj);
+        let all = list_dir(&pm, &root, "", true, true).unwrap();
+        assert!(all.iter().all(|e| e.name != ".git"));
+        assert!(all.iter().any(|e| e.name == "visible.txt"));
     }
 
     #[test]
@@ -640,7 +672,7 @@ mod tests {
         std::os::unix::fs::symlink(&secret, proj.join("escape.txt")).unwrap();
 
         let (pm, root) = registered_pm(store.path(), proj);
-        let entries = list_dir(&pm, &root, "", false).unwrap();
+        let entries = list_dir(&pm, &root, "", false, false).unwrap();
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         assert!(names.contains(&"inside.txt"));
         // The escaping symlink must never surface.
@@ -658,7 +690,7 @@ mod tests {
         std::os::unix::fs::symlink(proj.join("target.txt"), proj.join("link.txt")).unwrap();
 
         let (pm, root) = registered_pm(store.path(), proj);
-        let entries = list_dir(&pm, &root, "", false).unwrap();
+        let entries = list_dir(&pm, &root, "", false, false).unwrap();
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         #[cfg(unix)]
         assert!(names.contains(&"link.txt"));
@@ -674,11 +706,11 @@ mod tests {
         let (pm, root) = registered_pm(store.path(), proj);
 
         assert!(matches!(
-            list_dir(&pm, &root, "../", false),
+            list_dir(&pm, &root, "../", false, false),
             Err(FsListError::Escape)
         ));
         assert!(matches!(
-            list_dir(&pm, &root, "src/../..", false),
+            list_dir(&pm, &root, "src/../..", false, false),
             Err(FsListError::Escape)
         ));
     }
@@ -691,7 +723,7 @@ mod tests {
         let (pm, root) = registered_pm(store.path(), proj);
 
         assert!(matches!(
-            list_dir(&pm, &root, "/etc", false),
+            list_dir(&pm, &root, "/etc", false, false),
             Err(FsListError::Escape)
         ));
     }
@@ -703,7 +735,7 @@ mod tests {
         // A ProjectManager with nothing registered.
         let pm = Arc::new(ProjectManager::new(store.path().join("projects.json")));
         assert!(matches!(
-            list_dir(&pm, tmp.path(), "", false),
+            list_dir(&pm, tmp.path(), "", false, false),
             Err(FsListError::NotRegistered)
         ));
     }
@@ -717,7 +749,7 @@ mod tests {
         let (pm, root) = registered_pm(store.path(), proj);
 
         assert!(matches!(
-            list_dir(&pm, &root, "file.txt", false),
+            list_dir(&pm, &root, "file.txt", false, false),
             Err(FsListError::NotADir)
         ));
     }

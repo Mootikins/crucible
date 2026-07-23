@@ -37,6 +37,7 @@ import { ChevronsDownUp, RefreshCw, ArrowUpDown, Plus } from '@/lib/icons';
 // ---- localStorage helpers (per-root expanded state, global sort) ----------
 const EXPANDED_KEY = (rootId: string) => `crucible.filetree.expanded.${rootId}`;
 const SORT_KEY = 'crucible.filetree.sort';
+const SHOW_HIDDEN_KEY = 'crucible.filetree.showHidden';
 const EXPANDED_CAP = 500;
 
 function readJson<T>(key: string, fallback: T): T {
@@ -76,6 +77,17 @@ export const FilesPanel: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [sort, setSort] = createSignal<SortSpec>(readJson<SortSpec>(SORT_KEY, DEFAULT_SORT));
+  const [showHidden, setShowHidden] = createSignal<boolean>(
+    readJson<boolean>(SHOW_HIDDEN_KEY, false),
+  );
+
+  const toggleHidden = () => {
+    const next = !showHidden();
+    setShowHidden(next);
+    writeJson(SHOW_HIDDEN_KEY, next);
+    const r = activeRoot();
+    if (r?.kind === 'project') void loadProjectDir(r.path, '');
+  };
 
   // Live machine api (set by FileTreeView.apiRef); powers toolbar actions.
   let treeApi: UseTreeViewReturn<Node> | null = null;
@@ -118,7 +130,7 @@ export const FilesPanel: Component = () => {
     setLoading(true);
     setError(null);
     try {
-      const entries = await listDir(rootPath, rel);
+      const entries = await listDir(rootPath, rel, showHidden());
       const children = entries.map((e) => fsEntryToNode(e, rootPath));
       setRawRoot({ relPath: '', name: '', isDir: true, absPath: rootPath, children });
     } catch (e) {
@@ -152,7 +164,7 @@ export const FilesPanel: Component = () => {
 
   // Project lazy loader (kilns build the whole tree so they pass undefined).
   const loadChildren = (root: TreeRoot) => async (details: { node: Node }) => {
-    const entries = await listDir(root.path, details.node.relPath);
+    const entries = await listDir(root.path, details.node.relPath, showHidden());
     return entries.map((e) => fsEntryToNode(e, root.path));
   };
 
@@ -269,6 +281,9 @@ export const FilesPanel: Component = () => {
         // Project-only: refetch this folder (top-level refetch keeps it simple).
         if (root.kind === 'project') void loadProjectDir(root.path, '');
         break;
+      case 'toggle-hidden':
+        toggleHidden();
+        break;
       case 'rename':
         // Defer past the context menu's close + focus restoration: the menu
         // returns focus to the row AFTER onSelect, which blurs a just-mounted
@@ -366,6 +381,9 @@ export const FilesPanel: Component = () => {
   });
 
   onMount(() => {
+    const onToggleHidden = () => toggleHidden();
+    window.addEventListener('crucible:toggle-hidden-files', onToggleHidden);
+    onCleanup(() => window.removeEventListener('crucible:toggle-hidden-files', onToggleHidden));
     const unsub = subscribeToFsEvents((ev) => batcher.push(ev));
     // Project roots are refresh-on-interaction: refetch expanded folders on focus.
     const onFocus = () => {

@@ -1370,20 +1370,24 @@ export async function recordRecent(absPath: string, name: string): Promise<void>
  * List one directory level inside a registered project (daemon `fs.list_dir`,
  * read-only). Kilns never use this path — their tree is built client-side from
  * `listNotes`. `relPath` is project-root-relative POSIX (`''` = the root).
- * `showIgnored=false` hides gitignored entries and all dotfiles/dot-dirs.
+ *
+ * The tree shows ALL files (gitignored included — `show_ignored` is always
+ * sent true); dotfiles stay behind the explicit `showHidden` toggle and
+ * `.git` never lists (daemon policy).
  *
  * Bypasses `request()` to preserve the exact query-string contract the daemon
- * route parses (`root` / `rel_path` / `show_ignored`).
+ * route parses (`root` / `rel_path` / `show_ignored` / `show_hidden`).
  */
 export async function listDir(
   root: string,
   relPath = '',
-  showIgnored = false,
+  showHidden = false,
 ): Promise<FsEntry[]> {
   const q = new URLSearchParams({
     root,
     rel_path: relPath,
-    show_ignored: String(showIgnored),
+    show_ignored: 'true',
+    show_hidden: String(showHidden),
   });
   const res = await fetch(`/api/fs/list?${q}`, { credentials: 'same-origin' });
   if (!res.ok) {

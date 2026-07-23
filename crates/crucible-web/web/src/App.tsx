@@ -127,6 +127,14 @@ const App: Component = () => {
       action: () => setIsExportDialogOpen(true),
     },
     {
+      id: 'files-toggle-hidden',
+      label: 'Toggle Hidden Files',
+      description: 'Show or hide dotfiles in the file tree.',
+      category: 'Navigation',
+      keywords: ['hidden', 'dotfiles', 'files', 'tree', 'show'],
+      action: () => window.dispatchEvent(new CustomEvent('crucible:toggle-hidden-files')),
+    },
+    {
       id: 'session-switch-model',
       label: 'Switch Model',
       description: 'Open model switcher for this session.',

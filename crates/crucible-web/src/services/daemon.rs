@@ -1082,13 +1082,16 @@ impl ReconnectingDaemon {
         root: &str,
         rel_path: &str,
         show_ignored: bool,
+        show_hidden: bool,
     ) -> anyhow::Result<Vec<serde_json::Value>> {
         let root = root.to_string();
         let rel_path = rel_path.to_string();
         self.call_with_reconnect("fs.list_dir", move |daemon| {
             let root = root.clone();
             let rel_path = rel_path.clone();
-            Box::pin(async move { daemon.fs_list_dir(&root, &rel_path, show_ignored).await })
+            Box::pin(
+                async move { daemon.fs_list_dir(&root, &rel_path, show_ignored, show_hidden).await },
+            )
         })
         .await
     }
