@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, onMount } from 'solid-js';
+import { Component, For, Show, createEffect, createSignal, on, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import {
   getConfig,
@@ -8,7 +8,11 @@ import {
   listKilns,
   listProjects,
   listProviders,
+  registerProject,
+  scmBranches,
   scmClone,
+  scmWorktreeAdd,
+  type ScmBranchesResponse,
 } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
 import type { AgentProfileEntry, KilnListEntry, Project } from '@/lib/types';
@@ -17,7 +21,16 @@ import { pathBasename } from '@/stores/statusBarStore';
 import { recentFiles, syncRecentsFromServer } from '@/lib/recent-files';
 import { openFileInEditor } from '@/lib/file-actions';
 import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
-import { ArrowUp, Bot, FileText, FlaskConical, FolderGit2, History, Sparkles } from '@/lib/icons';
+import {
+  ArrowUp,
+  Bot,
+  FileText,
+  FlaskConical,
+  FolderGit2,
+  GitBranch,
+  History,
+  Sparkles,
+} from '@/lib/icons';
 
 const kbd = 'px-1.5 py-0.5 rounded bg-surface-elevated border border-hairline text-[10px] text-shell-body';
 
@@ -48,6 +61,10 @@ export const CenterComposer: Component = () => {
   const [message, setMessage] = createSignal('');
   const [busy, setBusy] = createSignal(false);
   const [cloning, setCloning] = createSignal(false);
+  // Branch data for the selected project's repo (Cursor's `repo ˅ branch ˅`
+  // pair): fetched whenever the workspace chip changes to a git checkout.
+  const [repoBranches, setRepoBranches] = createSignal<ScmBranchesResponse | null>(null);
+  const [branchBusy, setBranchBusy] = createSignal(false);
 
   let messageRef: HTMLTextAreaElement | undefined;
   const isAcp = () => agentName() !== '';
@@ -121,6 +138,98 @@ export const CenterComposer: Component = () => {
     { value: 'none', label: 'No kiln' },
   ];
 
+  createEffect(
+    on(workspace, (ws) => {
+      setRepoBranches(null);
+      if (!ws) return;
+      scmBranches(ws)
+        .then(setRepoBranches)
+        .catch(() => setRepoBranches(null)); // repo-less project: no branch chip
+    }),
+  );
+
+  const currentBranch = () => repoBranches()?.branches.find((b) => b.is_current)?.name ?? '';
+
+  const branchOptions = (): ChipOption[] =>
+    (repoBranches()?.branches ?? []).map((b) => ({
+      value: b.name,
+      label: b.name,
+      hint: b.is_current
+        ? 'current'
+        : b.worktree_path
+          ? pathBasename(b.worktree_path) || undefined
+          : b.remote_only
+            ? 'remote · new worktree'
+            : 'new worktree',
+    }));
+
+  // Selecting a branch moves the session's workspace to that branch's
+  // checkout — jumping to an existing worktree, or creating one (the
+  // parallel-agents flow: N sessions × N worktrees without leaving the
+  // composer).
+  const switchToCheckout = async (path: string) => {
+    try {
+      await registerProject(path);
+    } catch {
+      /* already registered */
+    }
+    setProjects(await listProjects().catch(() => projects()));
+    setWorkspace(path);
+  };
+
+  const pickBranch = (name: string) => {
+    const repo = repoBranches();
+    const branch = repo?.branches.find((b) => b.name === name);
+    if (!repo || !branch || branch.is_current) return;
+    setBranchBusy(true);
+    void (async () => {
+      try {
+        if (branch.worktree_path) {
+          await switchToCheckout(branch.worktree_path);
+        } else {
+          if (!window.confirm(`No worktree for '${name}' — create one?`)) return;
+          const res = await scmWorktreeAdd(repo.repo_root, name, false);
+          if (res.warning) notificationActions.addNotification('warning', res.warning);
+          setProjects(await listProjects().catch(() => projects()));
+          setWorkspace(res.path);
+        }
+      } catch (err) {
+        notificationActions.addNotification(
+          'error',
+          err instanceof Error ? err.message : 'Failed to switch branch',
+        );
+      } finally {
+        setBranchBusy(false);
+      }
+    })();
+  };
+
+  const createBranchWorktree = (name: string) => {
+    const repo = repoBranches();
+    if (!repo) return;
+    if (!window.confirm(`Create branch '${name}' and a worktree for it?`)) return;
+    setBranchBusy(true);
+    void (async () => {
+      try {
+        const res = await scmWorktreeAdd(repo.repo_root, name, true);
+        if (res.warning) notificationActions.addNotification('warning', res.warning);
+        setProjects(await listProjects().catch(() => projects()));
+        setWorkspace(res.path);
+      } catch (err) {
+        notificationActions.addNotification(
+          'error',
+          err instanceof Error ? err.message : 'Failed to create branch',
+        );
+      } finally {
+        setBranchBusy(false);
+      }
+    })();
+  };
+
+  // Loose client-side gate; the daemon runs `git check-ref-format` for real.
+  const isBranchNameish = (s: string) =>
+    !!s && !/\s|\.\.|^[-/]|\\/.test(s) && !isGitRepoUrl(s);
+
   // Paste a git URL (or owner/repo) into the project popout's filter to
   // clone-and-select without a side-panel detour — the session starts
   // against the fresh checkout.
@@ -152,8 +261,22 @@ export const CenterComposer: Component = () => {
       const repo = root ? pathBasename(root) || root : null;
       return rel && repo ? `${repo} › ${rel}` : p.name || pathBasename(p.path) || p.path;
     };
+    const label = (p: Project) =>
+      p.repository?.is_worktree ? wtLabel(p) : p.name || pathBasename(p.path) || p.path;
+    // Recents section (Cursor's picker leads with it): the daemon already
+    // sorts projects by last_accessed. Only worth a section once the full
+    // list is long enough that recency actually saves scanning.
+    const recents =
+      projects().length > 4
+        ? projects().slice(0, 3).map((p) => ({
+            value: p.path,
+            label: label(p),
+            group: 'Recent',
+          }))
+        : [];
     return [
       { value: '', label: 'No project' },
+      ...recents,
       ...main.map((p) => ({
         value: p.path,
         label: p.name || pathBasename(p.path) || p.path,
@@ -244,6 +367,26 @@ export const CenterComposer: Component = () => {
                 run: cloneAndSelect,
               }}
             />
+            {/* Branch chip — only once the selected project is a git repo
+                (Cursor's `repo ˅ branch ˅` pair). Picking a branch moves the
+                workspace to that branch's worktree, creating it on demand. */}
+            <Show when={repoBranches()}>
+              <ChipSelect
+                name="branch"
+                icon={GitBranch}
+                options={branchOptions()}
+                value={currentBranch()}
+                onSelect={pickBranch}
+                disabled={busy() || branchBusy()}
+                placeholder={branchBusy() ? 'Switching…' : 'branch'}
+                testid="composer-branch"
+                create={{
+                  when: isBranchNameish,
+                  label: (name) => `Create branch + worktree '${name}'`,
+                  run: createBranchWorktree,
+                }}
+              />
+            </Show>
             <ChipSelect
               name="agent"
               icon={Bot}

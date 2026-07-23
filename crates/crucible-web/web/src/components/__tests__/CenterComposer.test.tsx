@@ -31,6 +31,10 @@ vi.mock('@/lib/api', () => ({
   // Clone-from-popout flow.
   isGitRepoUrl: (s: string) => /^(https?:\/\/|git@)/.test(s) || /^[\w.-]+\/[\w.-]+$/.test(s),
   scmClone: vi.fn(),
+  // Branch chip: no repo unless a test overrides.
+  scmBranches: vi.fn().mockRejectedValue(new Error('no repo')),
+  scmWorktreeAdd: vi.fn(),
+  registerProject: vi.fn().mockResolvedValue({}),
 }));
 
 beforeEach(() => {
@@ -106,6 +110,60 @@ describe('CenterComposer', () => {
     });
     fireEvent.click(submit);
     await waitFor(() => expect(scmClone).toHaveBeenCalledWith('octocat/Spoon-Knife'));
+  });
+
+  it('selecting a repo project reveals a branch chip; picking a branch jumps to its worktree', async () => {
+    const { scmBranches, listProjects } = await import('@/lib/api');
+    vi.mocked(scmBranches).mockResolvedValue({
+      repo_root: '/repos/crucible',
+      current_branch: 'master',
+      branches: [
+        { name: 'master', worktree_path: '/repos/crucible', is_current: true, remote_only: false },
+        {
+          name: 'feat/x',
+          worktree_path: '/repos/crucible/tree/feat/x',
+          is_current: false,
+          remote_only: false,
+        },
+      ],
+    });
+
+    const { getByTestId, queryByTestId } = render(() => <CenterComposer />);
+    // No branch chip before a repo project is selected.
+    expect(queryByTestId('composer-branch')).toBeNull();
+
+    await waitFor(() => expect(getByTestId('composer-project')).toBeInTheDocument());
+    fireEvent.click(getByTestId('composer-project'));
+    await waitFor(() => expect(screen.getByText('crucible')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('crucible'));
+
+    // Branch chip appears showing the current branch.
+    await waitFor(() =>
+      expect(getByTestId('composer-branch').textContent).toContain('master'),
+    );
+
+    // Picking the other branch switches the workspace to its worktree
+    // (post-switch refresh returns the roster including the worktree).
+    vi.mocked(listProjects).mockResolvedValue([
+      { path: '/repos/crucible', name: 'crucible', kilns: [], last_accessed: '' },
+      {
+        path: '/repos/crucible/tree/feat/x',
+        name: 'x',
+        kilns: [],
+        last_accessed: '',
+        repository: {
+          root: '/repos/crucible',
+          is_worktree: true,
+          main_repo_git_dir: '/repos/crucible/.git',
+        },
+      },
+    ]);
+    fireEvent.click(getByTestId('composer-branch'));
+    await waitFor(() => expect(screen.getByText('feat/x')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('feat/x'));
+    await waitFor(() =>
+      expect(getByTestId('composer-project').textContent).toContain('feat/x'),
+    );
   });
 
   it('lists recent files and opens one on click', async () => {
