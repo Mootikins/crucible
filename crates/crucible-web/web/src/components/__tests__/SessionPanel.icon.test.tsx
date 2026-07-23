@@ -8,6 +8,8 @@ import { SessionFooter } from '../SessionFooter';
 vi.mock('@/lib/api', () => ({
   listKilns: vi.fn().mockResolvedValue([]),
   scmBranches: vi.fn().mockRejectedValue(new Error('no repo')),
+  scmClone: vi.fn(),
+  isGitRepoUrl: (s: string) => s.startsWith('https://'),
   searchSessions: vi.fn().mockResolvedValue([]),
 }));
 

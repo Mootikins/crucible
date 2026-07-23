@@ -1,5 +1,6 @@
 import { Component, For, Show, createSignal } from 'solid-js';
 import type { AskRequest, AskResponse } from '@/lib/types';
+import { btnPrimary } from '@/lib/button-style';
 
 interface Props {
   request: AskRequest;
@@ -68,7 +69,7 @@ export const AskInteraction: Component<Props> = (props) => {
       <button
         onClick={handleSubmit}
         disabled={!hasSelection()}
-        class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        class={btnPrimary}
       >
         Submit
       </button>

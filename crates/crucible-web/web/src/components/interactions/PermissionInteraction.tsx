@@ -204,10 +204,10 @@ export const PermissionInteraction: Component<Props> = (props) => {
             {(['once', 'session', 'project', 'user'] as PermissionScope[]).map((s) => (
               <button
                 onClick={() => setScope(s)}
-                class={`px-3 py-1 text-sm rounded-md transition-colors ${
+                class={`px-3 py-1 text-sm rounded-md border transition-colors ${
                   scope() === s
-                    ? 'bg-primary text-white'
-                    : 'bg-control text-shell-body hover:bg-hover-wash'
+                    ? 'bg-primary/20 text-primary border-primary/60'
+                    : 'bg-control text-shell-body border-transparent hover:bg-hover-wash'
                 }`}
               >
                 {s.charAt(0).toUpperCase() + s.slice(1)}

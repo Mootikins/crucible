@@ -1171,6 +1171,29 @@ export async function scmWorktreeAdd(
   });
 }
 
+export interface ScmCloneResponse {
+  path: string;
+  project: Project;
+}
+
+/** True when the add-project input reads as a REMOTE git repo rather than a
+ * local path: https/ssh URLs and `owner/repo` GitHub shorthand. */
+export function isGitRepoUrl(input: string): boolean {
+  const s = input.trim();
+  if (/^(https?:\/\/|git@)\S+$/.test(s)) return true;
+  return /^[\w.-]+\/[\w.-]+$/.test(s) && !s.startsWith('.');
+}
+
+/** Clone a remote repo into `[scm] projects_dir` and register it as a
+ * project. Slow (network clone) — no client-side timeout beyond fetch's. */
+export async function scmClone(url: string): Promise<ScmCloneResponse> {
+  return request<ScmCloneResponse>('POST', '/api/scm/clone', {
+    errorMessage: 'Failed to clone repository',
+    includeErrorText: true,
+    ...jsonRequest({ url }),
+  });
+}
+
 /** Get project by path. */
 export async function getProject(path: string): Promise<Project | null> {
   const params = new URLSearchParams({ path });

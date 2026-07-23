@@ -4,6 +4,7 @@ import type { PluginInfo } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
+import { btnPrimary } from '@/lib/button-style';
 
 /**
  * Quick client-side check on URLs the user types into the install modal.
@@ -133,7 +134,7 @@ export const PluginPanel: Component = () => {
           <button
             type="button"
             onClick={() => setShowInstall(true)}
-            class="text-[11px] px-2 py-0.5 rounded bg-primary hover:bg-primary-hover text-white"
+            class={btnPrimary}
             data-testid="plugins-install-open"
           >
             Install

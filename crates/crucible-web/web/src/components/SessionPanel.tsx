@@ -7,10 +7,11 @@ import { SessionFooter } from './SessionFooter';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
 import { ChipSelect, type ChipOption } from './composer/ChipSelect';
-import { listKilns, scmBranches } from '@/lib/api';
+import { isGitRepoUrl, listKilns, scmBranches, scmClone } from '@/lib/api';
 import type { KilnListEntry, Session } from '@/lib/types';
 import { FlaskConical, GitBranch, Plus, Search, X } from '@/lib/icons';
 import { pathBasename } from '@/stores/statusBarStore';
+import { btnPrimary, btnNeutral } from '@/lib/button-style';
 
 /**
  * The sessions panel: ONE tree of all sessions grouped by project (worktrees
@@ -20,7 +21,8 @@ import { pathBasename } from '@/stores/statusBarStore';
  * and between groups.
  */
 export const SessionPanel: Component = () => {
-  const { currentProject, projects, selectProject, registerProject } = useProjectSafe();
+  const { currentProject, projects, selectProject, registerProject, refreshProjects } =
+    useProjectSafe();
   const {
     currentSession,
     sessions,
@@ -164,18 +166,32 @@ export const SessionPanel: Component = () => {
     window.dispatchEvent(new CustomEvent('crucible:new-session'));
   };
 
-  // Inline add-project (the old ProjectSection affordance, kept minimal).
+  // Inline add-project: a local path registers, a git URL (https/ssh or
+  // owner/repo shorthand) CLONES into `[scm] projects_dir` and registers.
   const [showNewProject, setShowNewProject] = createSignal(false);
   const [newProjectPath, setNewProjectPath] = createSignal('');
+  const [addBusy, setAddBusy] = createSignal(false);
+  const [addError, setAddError] = createSignal<string | null>(null);
+  const addIsClone = () => isGitRepoUrl(newProjectPath());
   const handleRegisterProject = async () => {
-    const path = newProjectPath().trim();
-    if (!path) return;
+    const input = newProjectPath().trim();
+    if (!input || addBusy()) return;
+    setAddBusy(true);
+    setAddError(null);
     try {
-      await registerProject(path);
+      if (addIsClone()) {
+        const res = await scmClone(input);
+        await refreshProjects();
+        selectProject(res.path);
+      } else {
+        await registerProject(input);
+      }
       setNewProjectPath('');
       setShowNewProject(false);
     } catch (err) {
-      console.error('Failed to register project:', err);
+      setAddError(err instanceof Error ? err.message : 'Failed to add project');
+    } finally {
+      setAddBusy(false);
     }
   };
 
@@ -306,24 +322,36 @@ export const SessionPanel: Component = () => {
         </Show>
 
         <Show when={showNewProject()}>
-          <div class="mt-2 p-2 bg-surface-elevated rounded-lg">
+          <div class="mt-2 p-2 bg-surface-elevated rounded-lg" data-testid="add-project-form">
             <input
               type="text"
               value={newProjectPath()}
               onInput={(e) => setNewProjectPath(e.currentTarget.value)}
-              placeholder="/path/to/project"
-              class="w-full bg-control text-shell-ink px-2 py-1 rounded text-sm"
+              onKeyDown={(e) => e.key === 'Enter' && void handleRegisterProject()}
+              placeholder="/path/to/project — or a git URL / owner/repo to clone"
+              disabled={addBusy()}
+              class="w-full bg-control text-shell-ink px-2 py-1 rounded text-sm placeholder-muted-dark"
+              data-testid="add-project-input"
             />
+            <Show when={addError()} keyed>
+              {(msg) => <p class="mt-1.5 text-xs text-error break-words">{msg}</p>}
+            </Show>
             <div class="flex gap-2 mt-2">
               <button
                 onClick={() => void handleRegisterProject()}
-                class="flex-1 px-2 py-1 bg-primary text-white rounded text-sm hover:bg-primary-hover"
+                disabled={addBusy() || !newProjectPath().trim()}
+                class={`flex-1 ${btnPrimary}`}
+                data-testid="add-project-submit"
               >
-                Add
+                {addBusy() ? (addIsClone() ? 'Cloning…' : 'Adding…') : addIsClone() ? 'Clone' : 'Add'}
               </button>
               <button
-                onClick={() => setShowNewProject(false)}
-                class="px-2 py-1 bg-control text-shell-body rounded text-sm hover:bg-hover-wash"
+                onClick={() => {
+                  setShowNewProject(false);
+                  setAddError(null);
+                }}
+                disabled={addBusy()}
+                class={btnNeutral}
               >
                 Cancel
               </button>

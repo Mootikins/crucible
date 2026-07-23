@@ -15,6 +15,7 @@ pub fn scm_routes() -> Router<AppState> {
     Router::new()
         .route("/api/scm/branches", get(list_branches))
         .route("/api/scm/worktree", post(worktree_add))
+        .route("/api/scm/clone", post(clone_repo))
 }
 
 #[derive(Debug, Deserialize)]
@@ -30,6 +31,30 @@ async fn list_branches(
     let branches = state.daemon.scm_branches(&query.path).await.daemon_err()?;
     Ok(Json(serde_json::to_value(branches).map_err(|e| {
         WebError::Internal(format!("Failed to serialize branches: {e}"))
+    })?))
+}
+
+#[derive(Debug, Deserialize)]
+struct CloneRequest {
+    /// Remote repo: https://…, git@host:…, or `owner/repo` shorthand.
+    url: String,
+    dest: Option<PathBuf>,
+    name: Option<String>,
+}
+
+/// Clone a remote repo into `[scm] projects_dir` and register it as a
+/// project. Slow by nature — the daemon call carries a long timeout.
+async fn clone_repo(
+    State(state): State<AppState>,
+    Json(req): Json<CloneRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let result = state
+        .daemon
+        .scm_clone(&req.url, req.dest.as_deref(), req.name.as_deref())
+        .await
+        .daemon_err()?;
+    Ok(Json(serde_json::to_value(result).map_err(|e| {
+        WebError::Internal(format!("Failed to serialize clone result: {e}"))
     })?))
 }
 

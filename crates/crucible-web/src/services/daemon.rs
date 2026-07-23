@@ -1041,6 +1041,28 @@ impl ReconnectingDaemon {
         .await
     }
 
+    pub async fn scm_clone(
+        &self,
+        url: &str,
+        dest: Option<&Path>,
+        name: Option<&str>,
+    ) -> anyhow::Result<crucible_daemon::ScmCloneResponse> {
+        let url = url.to_string();
+        let dest = dest.map(|p| p.to_path_buf());
+        let name = name.map(|s| s.to_string());
+        self.call_with_reconnect("scm.clone", move |daemon| {
+            let url = url.clone();
+            let dest = dest.clone();
+            let name = name.clone();
+            Box::pin(async move {
+                daemon
+                    .scm_clone(&url, dest.as_deref(), name.as_deref())
+                    .await
+            })
+        })
+        .await
+    }
+
     pub async fn scm_worktree_add(
         &self,
         repo_root: &Path,
