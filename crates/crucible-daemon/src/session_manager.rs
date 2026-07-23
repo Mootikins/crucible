@@ -22,6 +22,12 @@ pub struct SessionManager {
     sessions: DashMap<String, Session>,
     storage: Arc<dyn SessionStorage>,
     recording_senders: DashMap<String, mpsc::Sender<SessionEventMessage>>,
+    /// Base directory under which per-session scratch workspaces are created
+    /// for sessions started without an explicit workspace. When `None`, such
+    /// sessions fall back to `workspace == kiln` (the historical behavior).
+    /// Resolved and tilde-expanded at construction (see
+    /// [`crate::scm::resolve_session_workspace_dir`]).
+    session_workspace_dir: Option<PathBuf>,
 }
 
 impl SessionManager {
@@ -36,7 +42,19 @@ impl SessionManager {
             sessions: DashMap::new(),
             storage,
             recording_senders: DashMap::new(),
+            session_workspace_dir: None,
         }
+    }
+
+    /// Set the base directory for per-session scratch workspaces.
+    ///
+    /// When set, sessions created without an explicit workspace get a
+    /// session-unique `<dir>/<session_id>` workspace instead of falling back to
+    /// the kiln path. The directory should already be tilde-expanded.
+    #[must_use]
+    pub fn with_session_workspace_dir(mut self, dir: Option<PathBuf>) -> Self {
+        self.session_workspace_dir = dir;
+        self
     }
 
     /// Create a new session and persist it to storage.
@@ -61,6 +79,27 @@ impl SessionManager {
 
         if let Some(ws) = workspace {
             session = session.with_workspace(ws);
+        } else if let Some(base) = &self.session_workspace_dir {
+            // No explicit workspace: give the session its own scratch workspace
+            // so its filesystem containment boundary is a private, session-unique
+            // directory rather than the shared kiln path. Created BEFORE the
+            // session is persisted/used so the path canonicalizes when trust and
+            // containment are derived. On failure, fall back to the historical
+            // `workspace == kiln` behavior — never fail session creation over a
+            // scratch directory.
+            let scratch = base.join(&session.id);
+            match std::fs::create_dir_all(&scratch) {
+                Ok(()) => {
+                    session = session.with_workspace(scratch);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        path = %scratch.display(),
+                        error = %e,
+                        "Failed to create session scratch workspace; falling back to kiln path"
+                    );
+                }
+            }
         }
 
         if !connected_kilns.is_empty() {
@@ -794,6 +833,71 @@ mod tests {
 
         assert!(session.id.starts_with("workflow-"));
         assert_eq!(session.connected_kilns, vec![extra_kiln]);
+    }
+
+    #[tokio::test]
+    async fn test_create_session_no_workspace_gets_scratch_dir() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().join("kiln");
+        std::fs::create_dir_all(&kiln).unwrap();
+        let scratch_base = tmp.path().join("workspaces");
+
+        let manager = SessionManager::new().with_session_workspace_dir(Some(scratch_base.clone()));
+        let session = manager
+            .create_session(SessionType::Chat, kiln.clone(), None, vec![], None)
+            .await
+            .unwrap();
+
+        // Workspace is a session-unique scratch dir, not the kiln.
+        assert_ne!(session.workspace, kiln);
+        assert_eq!(session.workspace, scratch_base.join(&session.id));
+        assert!(session.workspace.ends_with(&session.id));
+        assert!(session.workspace.is_dir(), "scratch dir should be created");
+    }
+
+    #[tokio::test]
+    async fn test_create_session_explicit_workspace_ignores_scratch_dir() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().join("kiln");
+        let workspace = tmp.path().join("explicit-workspace");
+        let scratch_base = tmp.path().join("workspaces");
+
+        let manager = SessionManager::new().with_session_workspace_dir(Some(scratch_base.clone()));
+        let session = manager
+            .create_session(
+                SessionType::Agent,
+                kiln.clone(),
+                Some(workspace.clone()),
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Explicit workspace wins; no scratch dir is created.
+        assert_eq!(session.workspace, workspace);
+        assert!(!scratch_base.exists());
+    }
+
+    #[tokio::test]
+    async fn test_create_session_scratch_dir_failure_falls_back_to_kiln() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().join("kiln");
+        std::fs::create_dir_all(&kiln).unwrap();
+
+        // Point the scratch base under a regular file so `create_dir_all`
+        // cannot succeed; creation must fall back to `workspace == kiln`.
+        let blocker = tmp.path().join("not-a-dir");
+        std::fs::write(&blocker, b"x").unwrap();
+        let scratch_base = blocker.join("workspaces");
+
+        let manager = SessionManager::new().with_session_workspace_dir(Some(scratch_base));
+        let session = manager
+            .create_session(SessionType::Chat, kiln.clone(), None, vec![], None)
+            .await
+            .unwrap();
+
+        assert_eq!(session.workspace, kiln);
     }
 
     #[tokio::test]

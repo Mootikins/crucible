@@ -131,6 +131,14 @@ pub struct ScmConfig {
     /// the home directory. Default: "~/Projects".
     #[serde(default)]
     pub projects_dir: Option<String>,
+    /// Where session-unique scratch workspaces are created for sessions
+    /// started WITHOUT a project/workspace. Each such session gets its own
+    /// `<session_workspace_dir>/<session_id>` directory as its workspace
+    /// (filesystem containment boundary) instead of falling back to the kiln
+    /// path. A leading `~/` expands to the home directory. When unset, defaults
+    /// to `<data root>/workspaces` — i.e. "~/.crucible/workspaces".
+    #[serde(default)]
+    pub session_workspace_dir: Option<String>,
 }
 
 /// Logging configuration.

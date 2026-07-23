@@ -153,7 +153,7 @@ async fn kilnless_kiln_resolves_to_injected_data_home() {
 }
 
 #[tokio::test]
-async fn kilnless_workspace_defaults_to_the_kiln_path() {
+async fn kilnless_no_workspace_gets_session_scratch_dir() {
     let server = TestServer::start().await.expect("Failed to start server");
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
@@ -162,20 +162,26 @@ async fn kilnless_workspace_defaults_to_the_kiln_path() {
     let created = create_kilnless_session(&client).await;
     let session_id = created["session_id"].as_str().unwrap().to_string();
 
-    // With no workspace provided, the session floats: workspace mirrors the
-    // resolved kiln (see Session::new), which for a kiln-less session is the
-    // injected data root.
+    // With no workspace provided, the session gets its own session-unique
+    // scratch workspace under `<data_home>/workspaces/<session_id>` — NOT the
+    // kiln path. This is the session's filesystem containment boundary.
     let session = client.session_get(&session_id).await.unwrap();
     let kiln = session["kiln"].as_str().expect("kiln present");
     let workspace = session["workspace"].as_str().expect("workspace present");
-    assert_eq!(
-        workspace, kiln,
-        "kiln-less workspace should default to the kiln path (floating state)"
-    );
+
+    let expected = server.data_home.join("workspaces").join(&session_id);
     assert_eq!(
         workspace,
-        server.data_home.to_str().unwrap(),
-        "the floating workspace should be the injected data root"
+        expected.to_str().unwrap(),
+        "kiln-less workspace should be a session-unique scratch dir under <data_home>/workspaces"
+    );
+    assert_ne!(
+        workspace, kiln,
+        "scratch workspace must not fall back to the kiln path"
+    );
+    assert!(
+        expected.is_dir(),
+        "the scratch workspace directory should have been created"
     );
 
     server.shutdown().await;

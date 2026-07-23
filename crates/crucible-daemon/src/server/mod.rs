@@ -272,8 +272,6 @@ impl Server {
             params.enrichment_config.clone(),
             params.max_precognition_chars,
         ));
-        let session_manager = Arc::new(SessionManager::new());
-        let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         // Resolve the daemon data root ONCE. Every crucible_home() read below and
         // in the runtime handlers (session list, archive sweep) now goes through
         // this value instead of calling the global; `None` keeps the
@@ -283,6 +281,34 @@ impl Server {
             .data_home
             .clone()
             .unwrap_or_else(crucible_core::config::crucible_home);
+
+        // SCM (git) config rides in on the serialized app config; `scm.worktree_add`
+        // reads `worktree_dir` from it, and `session_workspace_dir` (below) seeds
+        // the session manager's scratch-workspace base. Absent/unparseable → daemon
+        // defaults.
+        let scm_config = params
+            .app_config
+            .as_ref()
+            .and_then(|v| v.get("scm"))
+            .and_then(|s| {
+                serde_json::from_value::<crucible_core::config::ScmConfig>(s.clone()).ok()
+            });
+
+        // Base directory for per-session scratch workspaces (sessions created
+        // without an explicit workspace). Resolved once here so the session
+        // manager can materialize `<base>/<session_id>` on create. The default is
+        // `<data_home>/workspaces` — `~/.crucible/workspaces` in production, an
+        // injected temp dir under test — so tests never touch the real home.
+        let session_workspace_dir = crate::scm::resolve_session_workspace_dir(
+            scm_config
+                .as_ref()
+                .and_then(|c| c.session_workspace_dir.as_deref()),
+            dirs::home_dir().as_deref(),
+            &data_home,
+        );
+        let session_manager =
+            Arc::new(SessionManager::new().with_session_workspace_dir(Some(session_workspace_dir)));
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         let workspace_tools = Arc::new(WorkspaceTools::new(&data_home));
         let delegation_service =
             crate::delegation::DelegationService::new(session_manager.clone(), event_tx.clone());
@@ -305,16 +331,6 @@ impl Server {
         let project_manager = Arc::new(ProjectManager::new(data_home.join("projects.json")));
         let lua_sessions = Arc::new(DashMap::new());
         let mcp_server_manager = Arc::new(McpServerManager::new());
-
-        // SCM (git) config rides in on the serialized app config; `scm.worktree_add`
-        // reads `worktree_dir` from it. Absent/unparseable → daemon default template.
-        let scm_config = params
-            .app_config
-            .as_ref()
-            .and_then(|v| v.get("scm"))
-            .and_then(|s| {
-                serde_json::from_value::<crucible_core::config::ScmConfig>(s.clone()).ok()
-            });
 
         let ctx = RpcContext::new(
             kiln_manager.clone(),

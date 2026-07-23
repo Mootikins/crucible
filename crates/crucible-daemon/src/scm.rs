@@ -464,6 +464,36 @@ pub fn resolve_projects_dir(configured: Option<&str>, home: Option<&Path>) -> Pa
     PathBuf::from(raw)
 }
 
+/// Resolve the base directory under which per-session scratch workspaces
+/// (`<base>/<session_id>`) are created for sessions started without an explicit
+/// workspace.
+///
+/// A `configured` value wins and has a leading `~/` expanded using `home`
+/// (`home = None` leaves a `~/` prefix unexpanded, only reachable when the OS
+/// reports no home dir). When unset, the default is `<default_base>/workspaces`
+/// — seeded from the daemon's data root, which is `~/.crucible` in production
+/// (so the default path is `~/.crucible/workspaces`) but an injected temp dir
+/// under test.
+pub fn resolve_session_workspace_dir(
+    configured: Option<&str>,
+    home: Option<&Path>,
+    default_base: &Path,
+) -> PathBuf {
+    let Some(raw) = configured else {
+        return default_base.join("workspaces");
+    };
+    if let Some(rest) = raw.strip_prefix("~/") {
+        if let Some(home) = home {
+            return home.join(rest);
+        }
+    } else if raw == "~" {
+        if let Some(home) = home {
+            return home.to_path_buf();
+        }
+    }
+    PathBuf::from(raw)
+}
+
 /// Run `git clone -- <url> <dest>` with an argument vector (never a shell
 /// string). The `--` separator guarantees `url` and `dest` can't be read as
 /// flags. No timeout and no credential handling — cloning uses git's ambient
@@ -745,6 +775,34 @@ detached
         );
         assert_eq!(
             resolve_projects_dir(Some("~"), Some(home)),
+            PathBuf::from("/home/u")
+        );
+    }
+
+    #[test]
+    fn resolves_session_workspace_dir_tilde_and_default() {
+        let home = Path::new("/home/u");
+        let data_home = Path::new("/home/u/.crucible");
+        // Unset → <data_home>/workspaces (== ~/.crucible/workspaces in prod).
+        assert_eq!(
+            resolve_session_workspace_dir(None, Some(home), data_home),
+            PathBuf::from("/home/u/.crucible/workspaces")
+        );
+        // An injected data root (tests) keeps the default inside it.
+        assert_eq!(
+            resolve_session_workspace_dir(None, Some(home), Path::new("/tmp/xyz")),
+            PathBuf::from("/tmp/xyz/workspaces")
+        );
+        assert_eq!(
+            resolve_session_workspace_dir(Some("~/scratch"), Some(home), data_home),
+            PathBuf::from("/home/u/scratch")
+        );
+        assert_eq!(
+            resolve_session_workspace_dir(Some("/var/scratch"), Some(home), data_home),
+            PathBuf::from("/var/scratch")
+        );
+        assert_eq!(
+            resolve_session_workspace_dir(Some("~"), Some(home), data_home),
             PathBuf::from("/home/u")
         );
     }
