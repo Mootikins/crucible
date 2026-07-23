@@ -5,7 +5,6 @@ import { useSessionSearch } from '@/hooks/useSessionSearch';
 import { SessionTree } from './SessionTree';
 import { SessionFooter } from './SessionFooter';
 import { PanelShell } from './PanelShell';
-import { PanelHeader } from './PanelHeader';
 import { ChipSelect, type ChipOption } from './composer/ChipSelect';
 import { isGitRepoUrl, listKilns, scmBranches, scmClone } from '@/lib/api';
 import type { KilnListEntry, Session } from '@/lib/types';
@@ -21,7 +20,7 @@ import { btnPrimary, btnNeutral } from '@/lib/button-style';
  * and between groups.
  */
 export const SessionPanel: Component = () => {
-  const { currentProject, projects, selectProject, registerProject, refreshProjects } =
+  const { currentProject, projects, selectProject, refreshProjects } =
     useProjectSafe();
   const {
     currentSession,
@@ -166,30 +165,31 @@ export const SessionPanel: Component = () => {
     window.dispatchEvent(new CustomEvent('crucible:new-session'));
   };
 
-  // Inline add-project: a local path registers, a git URL (https/ssh or
-  // owner/repo shorthand) CLONES into `[scm] projects_dir` and registers.
+  // Inline add-project: git URLs ONLY from the web (https/ssh or owner/repo
+  // shorthand) — clones into `[scm] projects_dir` and registers. Local paths
+  // are a CLI/daemon affair; a browser text field is the wrong place to
+  // browse the host filesystem.
   const [showNewProject, setShowNewProject] = createSignal(false);
   const [newProjectPath, setNewProjectPath] = createSignal('');
   const [addBusy, setAddBusy] = createSignal(false);
   const [addError, setAddError] = createSignal<string | null>(null);
-  const addIsClone = () => isGitRepoUrl(newProjectPath());
   const handleRegisterProject = async () => {
     const input = newProjectPath().trim();
     if (!input || addBusy()) return;
+    if (!isGitRepoUrl(input)) {
+      setAddError('Enter a git URL (https/ssh) or owner/repo');
+      return;
+    }
     setAddBusy(true);
     setAddError(null);
     try {
-      if (addIsClone()) {
-        const res = await scmClone(input);
-        await refreshProjects();
-        selectProject(res.path);
-      } else {
-        await registerProject(input);
-      }
+      const res = await scmClone(input);
+      await refreshProjects();
+      selectProject(res.path);
       setNewProjectPath('');
       setShowNewProject(false);
     } catch (err) {
-      setAddError(err instanceof Error ? err.message : 'Failed to add project');
+      setAddError(err instanceof Error ? err.message : 'Failed to clone repository');
     } finally {
       setAddBusy(false);
     }
@@ -202,8 +202,7 @@ export const SessionPanel: Component = () => {
 
   return (
     <PanelShell>
-      <PanelHeader title="Sessions" />
-
+      {/* No "Sessions" heading — the panel tab already names it. */}
       <div class="px-3 pt-2 pb-1 flex flex-col gap-1.5 shrink-0">
         <div class="relative">
           <Search class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-dark" />
@@ -328,7 +327,7 @@ export const SessionPanel: Component = () => {
               value={newProjectPath()}
               onInput={(e) => setNewProjectPath(e.currentTarget.value)}
               onKeyDown={(e) => e.key === 'Enter' && void handleRegisterProject()}
-              placeholder="/path/to/project — or a git URL / owner/repo to clone"
+              placeholder="git URL or owner/repo"
               disabled={addBusy()}
               class="w-full bg-control text-shell-ink px-2 py-1 rounded text-sm placeholder-muted-dark"
               data-testid="add-project-input"
@@ -343,7 +342,7 @@ export const SessionPanel: Component = () => {
                 class={`flex-1 ${btnPrimary}`}
                 data-testid="add-project-submit"
               >
-                {addBusy() ? (addIsClone() ? 'Cloning…' : 'Adding…') : addIsClone() ? 'Clone' : 'Add'}
+                {addBusy() ? 'Cloning…' : 'Clone'}
               </button>
               <button
                 onClick={() => {

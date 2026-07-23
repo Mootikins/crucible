@@ -2,12 +2,15 @@ import { Component, For, Show, createSignal, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import {
   getConfig,
+  isGitRepoUrl,
   listAgents,
   listAllModels,
   listKilns,
   listProjects,
   listProviders,
+  scmClone,
 } from '@/lib/api';
+import { notificationActions } from '@/stores/notificationStore';
 import type { AgentProfileEntry, KilnListEntry, Project } from '@/lib/types';
 import { WorkingDots } from '@/components/AssistantTurn';
 import { pathBasename } from '@/stores/statusBarStore';
@@ -44,6 +47,7 @@ export const CenterComposer: Component = () => {
 
   const [message, setMessage] = createSignal('');
   const [busy, setBusy] = createSignal(false);
+  const [cloning, setCloning] = createSignal(false);
 
   let messageRef: HTMLTextAreaElement | undefined;
   const isAcp = () => agentName() !== '';
@@ -116,6 +120,28 @@ export const CenterComposer: Component = () => {
     // Explicitly kiln-less — a session with no knowledge base attached.
     { value: 'none', label: 'No kiln' },
   ];
+
+  // Paste a git URL (or owner/repo) into the project popout's filter to
+  // clone-and-select without a side-panel detour — the session starts
+  // against the fresh checkout.
+  const cloneAndSelect = (url: string) => {
+    setCloning(true);
+    void (async () => {
+      try {
+        const res = await scmClone(url);
+        setProjects(await listProjects().catch(() => projects()));
+        setWorkspace(res.path);
+        notificationActions.addNotification('info', `Cloned ${url} → ${res.path}`);
+      } catch (err) {
+        notificationActions.addNotification(
+          'error',
+          err instanceof Error ? err.message : 'Failed to clone repository',
+        );
+      } finally {
+        setCloning(false);
+      }
+    })();
+  };
 
   const projectOptions = (): ChipOption[] => {
     const main = projects().filter((p) => !p.repository?.is_worktree);
@@ -194,11 +220,22 @@ export const CenterComposer: Component = () => {
             <ChipSelect
               name="project"
               icon={FolderGit2}
-              options={projectOptions()}
+              options={
+                cloning()
+                  ? [{ value: workspace(), label: 'Cloning…', disabled: true }]
+                  : projectOptions()
+              }
               value={workspace()}
               onSelect={setWorkspace}
-              disabled={busy()}
+              disabled={busy() || cloning()}
+              placeholder={cloning() ? 'Cloning…' : undefined}
               testid="composer-project"
+              searchThreshold={1}
+              create={{
+                when: isGitRepoUrl,
+                label: (url) => `Clone ${url} as new project`,
+                run: cloneAndSelect,
+              }}
             />
             <ChipSelect
               name="agent"

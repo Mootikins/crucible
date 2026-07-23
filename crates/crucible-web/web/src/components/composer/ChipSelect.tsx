@@ -46,8 +46,13 @@ export const ChipSelect: Component<{
   /** Called when the popout opens (lazy data loads hook in here). */
   onOpen?: () => void;
   /** Offer creating from the filter text when it matches no option exactly
-   * (repo/branch-switcher "create …" row). */
-  create?: { label: (text: string) => string; run: (text: string) => void };
+   * (repo/branch-switcher "create …" row). `when` further gates on the text
+   * shape (e.g. only git URLs). */
+  create?: {
+    label: (text: string) => string;
+    run: (text: string) => void;
+    when?: (text: string) => boolean;
+  };
   /** Toggle-many mode (facet filters): picks toggle membership in `selected`
    * and the popout stays open; the trigger shows a count badge. */
   multi?: boolean;
@@ -108,6 +113,7 @@ export const ChipSelect: Component<{
     if (!props.create) return null;
     const text = filter().trim();
     if (!text) return null;
+    if (props.create.when && !props.create.when(text)) return null;
     return props.options.some((o) => o.label === text || o.value === text) ? null : text;
   };
 

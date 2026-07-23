@@ -28,6 +28,9 @@ vi.mock('@/lib/api', () => ({
   // fixtures in charge; record is fire-and-forget.
   fetchRecents: vi.fn().mockResolvedValue([]),
   recordRecent: vi.fn().mockResolvedValue(undefined),
+  // Clone-from-popout flow.
+  isGitRepoUrl: (s: string) => /^(https?:\/\/|git@)/.test(s) || /^[\w.-]+\/[\w.-]+$/.test(s),
+  scmClone: vi.fn(),
 }));
 
 beforeEach(() => {

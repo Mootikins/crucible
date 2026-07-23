@@ -64,11 +64,15 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   const refreshSessions = async (filters?: { kiln?: string; workspace?: string; includeArchived?: boolean }) => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
+      // No implicit kiln/workspace scoping: the session tree groups and
+      // facet-filters CLIENT-side over the global list. Defaulting to
+      // initialKiln/initialWorkspace here made a later scoped refetch
+      // clobber the list — "No project" sessions flashed then vanished.
       const list = await apiListSessions({
-        kiln: filters?.kiln ?? props.initialKiln,
-        workspace: filters?.workspace ?? props.initialWorkspace,
+        kiln: filters?.kiln,
+        workspace: filters?.workspace,
         includeArchived: filters?.includeArchived ?? false,
       });
       setSessions(list);
@@ -461,11 +465,8 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   };
 
   createEffect(() => {
-    if (!props.initialKiln) return; // Guard: skip when kiln not yet available
-    refreshSessions({
-      kiln: props.initialKiln,
-      workspace: props.initialWorkspace,
-    });
+    if (!props.initialKiln) return; // Guard: skip until config has loaded
+    void refreshSessions();
     refreshProviders();
   });
 
