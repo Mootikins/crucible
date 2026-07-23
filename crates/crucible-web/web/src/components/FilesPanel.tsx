@@ -86,7 +86,7 @@ export const FilesPanel: Component = () => {
     setShowHidden(next);
     writeJson(SHOW_HIDDEN_KEY, next);
     const r = activeRoot();
-    if (r?.kind === 'project') void loadProjectDir(r.path, '');
+    if (r?.kind === 'project') void loadProjectTree(r);
   };
 
   // Live machine api (set by FileTreeView.apiRef); powers toolbar actions.
@@ -126,13 +126,30 @@ export const FilesPanel: Component = () => {
     }
   }
 
-  async function loadProjectDir(rootPath: string, rel: string) {
+  // Load a project root, eagerly re-fetching every persisted-expanded folder
+  // so the tree rehydrates its open branches on reload/refocus. A flat
+  // top-level fetch would discard the loaded subtrees — the machine then
+  // paints the persisted-expanded nodes as empty, which reads as the tree
+  // spontaneously collapsing (the bug this replaces).
+  async function loadProjectTree(root: TreeRoot) {
     setLoading(true);
     setError(null);
+    const expanded = new Set(expandedFor(root));
+    const build = async (rel: string): Promise<Node[]> => {
+      const entries = await listDir(root.path, rel, showHidden());
+      return Promise.all(
+        entries.map(async (e) => {
+          const node = fsEntryToNode(e, root.path);
+          if (node.isDir && expanded.has(node.relPath)) {
+            node.children = await build(node.relPath);
+          }
+          return node;
+        }),
+      );
+    };
     try {
-      const entries = await listDir(rootPath, rel, showHidden());
-      const children = entries.map((e) => fsEntryToNode(e, rootPath));
-      setRawRoot({ relPath: '', name: '', isDir: true, absPath: rootPath, children });
+      const children = await build('');
+      setRawRoot({ relPath: '', name: '', isDir: true, absPath: root.path, children });
     } catch (e) {
       setRawRoot(null);
       setError(e instanceof Error ? e.message : 'Failed to list directory');
@@ -146,7 +163,7 @@ export const FilesPanel: Component = () => {
     setRawRoot(null);
     if (!root) return;
     if (root.kind === 'kiln') void loadKilnTree(root.path);
-    else void loadProjectDir(root.path, '');
+    else void loadProjectTree(root);
   });
 
   // Displayed collection = sorted view of the raw tree. New identity on
@@ -192,7 +209,7 @@ export const FilesPanel: Component = () => {
             : null,
         );
         if (root.kind === 'kiln') await loadKilnTree(root.path);
-        else await loadProjectDir(root.path, '');
+        else await loadProjectTree(root);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Move failed');
       }
@@ -209,7 +226,7 @@ export const FilesPanel: Component = () => {
 
   const reloadRoot = async (root: TreeRoot) => {
     if (root.kind === 'kiln') await loadKilnTree(root.path);
-    else await loadProjectDir(root.path, '');
+    else await loadProjectTree(root);
   };
 
   /** Surface a mutation failure in the banner without killing the tree. */
@@ -279,7 +296,7 @@ export const FilesPanel: Component = () => {
         break;
       case 'refresh':
         // Project-only: refetch this folder (top-level refetch keeps it simple).
-        if (root.kind === 'project') void loadProjectDir(root.path, '');
+        if (root.kind === 'project') void loadProjectTree(root);
         break;
       case 'toggle-hidden':
         toggleHidden();
@@ -376,7 +393,7 @@ export const FilesPanel: Component = () => {
     if (invalidate && invalidate.length > 0 && root.kind === 'project') {
       // Defensive path (unused in P1: only kiln dirs are watched). Any loaded
       // folder change -> refetch the whole top level (keeps it simple).
-      void loadProjectDir(root.path, '');
+      void loadProjectTree(root);
     }
   });
 
@@ -388,7 +405,7 @@ export const FilesPanel: Component = () => {
     // Project roots are refresh-on-interaction: refetch expanded folders on focus.
     const onFocus = () => {
       const root = activeRoot();
-      if (root?.kind === 'project') void loadProjectDir(root.path, '');
+      if (root?.kind === 'project') void loadProjectTree(root);
     };
     window.addEventListener('focus', onFocus);
     onCleanup(() => {
@@ -450,7 +467,7 @@ export const FilesPanel: Component = () => {
               title="Refresh"
               onClick={() => {
                 const r = activeRoot();
-                if (r) void loadProjectDir(r.path, '');
+                if (r) void loadProjectTree(r);
               }}
               class="p-1 rounded hover:bg-hover-wash text-muted"
             >

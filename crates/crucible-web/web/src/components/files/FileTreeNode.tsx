@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, createSignal, onCleanup } from 'solid-js';
+import { Component, For, Index, Show, createMemo, createSignal, onCleanup } from 'solid-js';
 import { TreeView } from '@ark-ui/solid';
 import type { FileTreeNode as Node } from '@/lib/file-tree/types';
 import type { TreeRootKind } from '@/lib/tree-root';
@@ -9,10 +9,9 @@ import {
   type FileDragData,
 } from '@/lib/file-dnd';
 import { FileTreeContextMenu, type ContextAction } from './FileTreeContextMenu';
-import { Folder, FolderOpen, ChevronRight } from '@/lib/icons';
+import { ChevronRight } from '@/lib/icons';
 import { Dynamic } from 'solid-js/web';
 import { fileIconFor } from '@/lib/file-icons';
-import { treeChevron, treeRow } from '@/components/tree/tree-style';
 
 /** VSCode-style colored filetype icon, resolved by full filename. */
 const FileIcon: Component<{ name: string }> = (props) => {
@@ -20,16 +19,29 @@ const FileIcon: Component<{ name: string }> = (props) => {
   return (
     <Dynamic
       component={meta().icon}
-      class="w-4 h-4 mr-1.5 shrink-0"
+      class="w-4 h-4 shrink-0"
       style={{ color: meta().color }}
     />
   );
 };
 
-const FolderIcon: Component<{ open?: boolean }> = (props) => (
-  <Show when={props.open} fallback={<Folder class="w-4 h-4 mr-1.5 shrink-0" />}>
-    <FolderOpen class="w-4 h-4 mr-1.5 shrink-0" />
-  </Show>
+/**
+ * One vertical indent guide per ancestor level (VSCode/Theia idiom). Each
+ * guide is a full-height column with a hairline down its middle, so guides at
+ * the same depth line up under their parent's chevron and connect across
+ * sibling rows. `depth` is 1-based (top-level = 1 → no guides).
+ */
+const IndentGuides: Component<{ depth: number }> = (props) => (
+  <Index each={Array.from({ length: Math.max(0, props.depth - 1) })}>
+    {() => (
+      <span aria-hidden="true" class="shrink-0 self-stretch" style={{ width: '1rem' }}>
+        <span
+          class="block h-full"
+          style={{ width: '1px', 'margin-left': '0.5rem', background: 'var(--color-hairline)' }}
+        />
+      </span>
+    )}
+  </Index>
 );
 
 /** DnD wiring handed down from FilesPanel (absent → tree is drag-inert). */
@@ -45,18 +57,12 @@ export interface FileTreeDnd {
 /** Hover-to-auto-expand delay while dragging over a closed folder. */
 const AUTO_EXPAND_MS = 700;
 
-/**
- * Row indentation from zag's `--depth` var (1 = top level). Branch rows
- * show a 14px (0.875rem) chevron before their icon that file rows lack, so
- * file rows take one extra chevron-width of padding — icons (and names)
- * then align within a level.
- */
-const DEPTH_INDENT = {
-  'padding-left': 'calc(0.5rem + (var(--depth, 1) - 1) * 0.875rem)',
-} as const;
-const DEPTH_INDENT_LEAF = {
-  'padding-left': 'calc(0.5rem + 0.875rem + (var(--depth, 1) - 1) * 0.875rem)',
-} as const;
+/** Shared row skin: full-height flex so indent guides run edge-to-edge. */
+const ROW =
+  'flex items-stretch pr-2 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-sm';
+/** Fixed icon column — the chevron (folders) and filetype icon (files) share
+ * it, so names align at a level regardless of node kind. */
+const ICON_SLOT = 'w-4 py-1 flex items-center justify-center shrink-0';
 
 /**
  * Recursive branch/leaf renderer built on ark-ui `TreeView`. The machine emits
@@ -64,9 +70,11 @@ const DEPTH_INDENT_LEAF = {
  * via `getBranchProps`/`getItemProps` — we never hand-author them. We only
  * AUGMENT (never overwrite) with the open-note markers (`aria-current`,
  * `data-current`) when the node's absolute path is the active editor file.
- * Depth indentation consumes the machine's `--depth` CSS var (set by zag on
- * every item/branch-control) via `DEPTH_INDENT` — files sit one chevron-width
- * deeper than their folder so names align.
+ *
+ * Indentation is drawn as explicit per-level guide columns (`IndentGuides`)
+ * keyed off `indexPath.length` — every row has ONE icon slot at the same
+ * offset (rotating chevron for folders, filetype icon for files; no separate
+ * folder glyph), so folder and file names align within a level.
  */
 export const FileTreeNode: Component<{
   node: Node;
@@ -143,12 +151,15 @@ export const FileTreeNode: Component<{
             <TreeView.Item
               {...currentAttrs()}
               ref={attachDrag}
-              class={`${treeRow} data-[selected]:bg-hover-wash data-[current=true]:font-medium data-[current=true]:border-l-2 data-[current=true]:border-primary`}
-              style={DEPTH_INDENT_LEAF}
+              title={props.node.relPath || props.node.name}
+              class={`${ROW} data-[selected]:bg-hover-wash data-[current=true]:font-medium data-[current=true]:border-l-2 data-[current=true]:border-primary`}
             >
-              <FileIcon name={props.node.name} />
-              <TreeView.ItemText class="truncate">{props.node.name}</TreeView.ItemText>
-              <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 rounded border border-primary outline-none min-w-0 flex-1" />
+              <IndentGuides depth={props.indexPath.length} />
+              <span class={ICON_SLOT}>
+                <FileIcon name={props.node.name} />
+              </span>
+              <TreeView.ItemText class="truncate py-1 ml-1">{props.node.name}</TreeView.ItemText>
+              <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary outline-none min-w-0 flex-1" />
             </TreeView.Item>
           </FileTreeContextMenu>
         }
@@ -158,18 +169,21 @@ export const FileTreeNode: Component<{
             <TreeView.BranchControl
               {...currentAttrs()}
               ref={attachFolderDrop}
+              title={props.node.relPath || props.node.name}
               data-file-drop={dropOver() ? 'true' : undefined}
-              class={`${treeRow} data-[selected]:bg-hover-wash data-[file-drop=true]:bg-primary/15 data-[file-drop=true]:outline data-[file-drop=true]:outline-1 data-[file-drop=true]:outline-primary`}
-              style={DEPTH_INDENT}
+              class={`${ROW} data-[selected]:bg-hover-wash data-[file-drop=true]:bg-primary/15 data-[file-drop=true]:outline data-[file-drop=true]:outline-1 data-[file-drop=true]:outline-primary`}
             >
-              {/* zag stamps data-state on the INDICATOR, not its children — the
-                  rotate selector must live here or it never matches. */}
-              <TreeView.BranchIndicator class={`${treeChevron} data-[state=open]:rotate-90`}>
+              <IndentGuides depth={props.indexPath.length} />
+              {/* The chevron IS the folder icon (no separate glyph). zag stamps
+                  data-state on the INDICATOR, not its children — the rotate
+                  selector must live here or it never matches. */}
+              <TreeView.BranchIndicator
+                class={`${ICON_SLOT} text-muted transition-transform duration-150 data-[state=open]:rotate-90`}
+              >
                 <ChevronRight class="w-3.5 h-3.5" />
               </TreeView.BranchIndicator>
-              <FolderIcon />
-              <TreeView.BranchText class="truncate">{props.node.name}</TreeView.BranchText>
-              <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 rounded border border-primary outline-none min-w-0 flex-1" />
+              <TreeView.BranchText class="truncate py-1 ml-1">{props.node.name}</TreeView.BranchText>
+              <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary outline-none min-w-0 flex-1" />
             </TreeView.BranchControl>
           </FileTreeContextMenu>
           <TreeView.BranchContent>
