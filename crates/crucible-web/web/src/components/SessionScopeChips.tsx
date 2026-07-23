@@ -94,7 +94,7 @@ export const SessionScopeChips: Component = () => {
 
   return (
     <Show when={session()}>
-      <div class="flex items-center gap-1.5 flex-wrap mb-2" data-testid="context-chips">
+      <div class="flex items-center gap-1.5 flex-wrap mt-2" data-testid="context-chips">
         {/* Workspace: attach a project or detach back to floating. */}
         <Show
           when={hasWorkspace()}

@@ -18,22 +18,29 @@ beforeEach(() => {
   currentMode = 'normal';
 });
 
+// The control is now the launchpad's ChipSelect dropdown (popout renders
+// through a Portal into document.body — query via screen).
 describe('ChatModeControl', () => {
-  it('clicking a mode persists it via switchMode (not just local state)', () => {
+  it('picking a mode from the dropdown persists it via switchMode', () => {
     render(() => <ChatModeControl />);
 
+    fireEvent.click(screen.getByTestId('chat-mode'));
     fireEvent.click(screen.getByTestId('mode-plan'));
     expect(mockSwitchMode).toHaveBeenCalledWith('plan');
 
+    fireEvent.click(screen.getByTestId('chat-mode'));
     fireEvent.click(screen.getByTestId('mode-auto'));
     expect(mockSwitchMode).toHaveBeenCalledWith('auto');
   });
 
-  it('highlights the current mode', () => {
+  it('shows the current mode on the trigger and checks it in the list', () => {
     currentMode = 'plan';
     render(() => <ChatModeControl />);
-    expect(screen.getByTestId('mode-plan').className).toContain('bg-primary');
-    expect(screen.getByTestId('mode-normal').className).not.toContain('bg-primary');
+    expect(screen.getByTestId('chat-mode').textContent).toContain('Plan');
+
+    fireEvent.click(screen.getByTestId('chat-mode'));
+    expect(screen.getByTestId('mode-plan').getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTestId('mode-normal').getAttribute('aria-selected')).toBe('false');
   });
 });
 

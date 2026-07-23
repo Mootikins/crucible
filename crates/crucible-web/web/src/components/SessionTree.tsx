@@ -287,6 +287,9 @@ export const SessionTree: Component<{
               </button>
             </div>
             <Show when={!collapsed().has(g.key)}>
+              {/* gap-0.5 keeps adjacent rounded rows from fusing into one
+                  outline (the figure-8 effect). */}
+              <div class="flex flex-col gap-0.5">
               <For each={g.sessions}>
                 {(s) => (
                   <SessionRow
@@ -302,6 +305,7 @@ export const SessionTree: Component<{
                   />
                 )}
               </For>
+              </div>
               <Show when={g.sessions.length === 0}>
                 <p class={`${treeSectionHeader} normal-case font-normal tracking-normal`}>
                   No sessions

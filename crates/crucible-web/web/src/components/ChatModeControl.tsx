@@ -1,6 +1,7 @@
 import { Component } from 'solid-js';
 import { useChatSafe } from '@/contexts/ChatContext';
 import type { ChatMode } from '@/lib/types';
+import { ChipSelect } from '@/components/composer/ChipSelect';
 
 const MODES: { value: ChatMode; label: string; hint: string }[] = [
   { value: 'normal', label: 'Normal', hint: 'Agent acts directly' },
@@ -10,33 +11,27 @@ const MODES: { value: ChatMode; label: string; hint: string }[] = [
 
 const MODE_ORDER: ChatMode[] = ['normal', 'plan', 'auto'];
 
-/** Cycle to the next mode: Normal → Plan → Auto → Normal */
+/** Cycle to the next mode: Normal → Plan → Auto → Normal (Shift+Tab) */
 export function nextChatMode(current: ChatMode): ChatMode {
   const idx = MODE_ORDER.indexOf(current);
   return MODE_ORDER[(idx + 1) % MODE_ORDER.length];
 }
 
+/**
+ * Chat-mode picker — the launchpad's ChipSelect dropdown idiom (was a
+ * three-button segmented control). Shift+Tab still cycles without opening.
+ */
 export const ChatModeControl: Component = () => {
   const { chatMode, switchMode } = useChatSafe();
 
   return (
-    <div class="flex items-center rounded-lg border border-hairline overflow-hidden">
-      {MODES.map((mode) => (
-        <button
-          type="button"
-          onClick={() => switchMode(mode.value)}
-          title={`${mode.label}: ${mode.hint} (Shift+Tab to cycle)`}
-          aria-pressed={chatMode() === mode.value}
-          class="px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-1 focus-visible:outline-primary/60 focus-visible:-outline-offset-1"
-          classList={{
-            'bg-primary/80 text-white': chatMode() === mode.value,
-            'text-muted hover:text-shell-ink hover:bg-hover-wash': chatMode() !== mode.value,
-          }}
-          data-testid={`mode-${mode.value}`}
-        >
-          {mode.label}
-        </button>
-      ))}
-    </div>
+    <ChipSelect
+      name="mode"
+      options={MODES.map((m) => ({ value: m.value, label: m.label, hint: m.hint }))}
+      value={chatMode()}
+      onSelect={(v) => switchMode(v as ChatMode)}
+      testid="chat-mode"
+      optionTestidPrefix="mode"
+    />
   );
 };

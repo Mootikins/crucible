@@ -71,11 +71,16 @@ export const ChipSelect: Component<{
   };
   /** Detached card under the list (status/info, e.g. a settings note). */
   footer?: JSX.Element;
+  /** Per-row data-testids: `${prefix}-${option.value}`. */
+  optionTestidPrefix?: string;
 }> = (props) => {
   const [open, setOpen] = createSignal(false);
   const [filter, setFilter] = createSignal('');
   const [hover, setHover] = createSignal(-1);
-  const [panelPos, setPanelPos] = createSignal({ left: 0, top: 0 });
+  const [panelPos, setPanelPos] = createSignal<{ left: number; top?: number; bottom?: number }>({
+    left: 0,
+    top: 0,
+  });
   const [actionMode, setActionMode] = createSignal(false);
   const [actionText, setActionText] = createSignal('');
   let rootRef: HTMLDivElement | undefined;
@@ -131,7 +136,14 @@ export const ChipSelect: Component<{
   const openPopout = () => {
     if (triggerRef) {
       const rect = triggerRef.getBoundingClientRect();
-      setPanelPos({ left: Math.round(rect.left), top: Math.round(rect.bottom + 4) });
+      // Anchor upward when the trigger sits near the viewport bottom (the
+      // chat input) — a downward panel would fall off-screen.
+      const spaceBelow = window.innerHeight - rect.bottom;
+      setPanelPos(
+        spaceBelow < 340
+          ? { left: Math.round(rect.left), bottom: Math.round(window.innerHeight - rect.top + 4) }
+          : { left: Math.round(rect.left), top: Math.round(rect.bottom + 4) },
+      );
     }
     setOpen(true);
     props.onOpen?.();
@@ -238,7 +250,12 @@ export const ChipSelect: Component<{
             ref={panelRef}
             data-testid={props.testid ? `${props.testid}-popout` : undefined}
             class="fixed z-50 min-w-[220px] max-w-[320px] bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1 cru-anim-rise"
-            style={{ left: `${panelPos().left}px`, top: `${panelPos().top}px` }}
+            style={{
+              left: `${panelPos().left}px`,
+              ...(panelPos().top !== undefined
+                ? { top: `${panelPos().top}px` }
+                : { bottom: `${panelPos().bottom}px` }),
+            }}
           >
             <Show when={searchable()}>
               <div class="px-2 pb-1 pt-0.5 border-b border-hairline">
@@ -269,6 +286,11 @@ export const ChipSelect: Component<{
                       disabled={o.disabled}
                       onMouseEnter={() => setHover(i())}
                       onClick={() => pick(o)}
+                      data-testid={
+                        props.optionTestidPrefix
+                          ? `${props.optionTestidPrefix}-${o.value}`
+                          : undefined
+                      }
                       classList={{
                         'w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors': true,
                         'bg-hover-wash': hover() === i(),

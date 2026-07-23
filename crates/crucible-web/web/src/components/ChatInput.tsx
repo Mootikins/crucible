@@ -1,4 +1,4 @@
-import { Component, createSignal, Show, For, createEffect, onCleanup } from 'solid-js';
+import { Component, createSignal, Show, onCleanup } from 'solid-js';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useMediaRecorder } from '@/hooks/useMediaRecorder';
@@ -7,15 +7,16 @@ import { MicButton } from './MicButton';
 import { ChatModeControl, nextChatMode } from './ChatModeControl';
 import { AutocompletePopup } from './AutocompletePopup';
 import { SessionScopeChips } from './SessionScopeChips';
+import { ChipSelect } from '@/components/composer/ChipSelect';
 import { executeCommand } from '@/lib/api';
 import { statusBarStore } from '@/stores/statusBarStore';
+import { ArrowUp, Sparkles, X } from '@/lib/icons';
 export const ChatInput: Component = () => {
   const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, switchMode, addSystemMessage, clearMessages } = useChatSafe();
   const { currentSession, cancelCurrentOperation, availableModels, switchModel } = useSessionSafe();
   const [input, setInput] = createSignal('');
-  const [isModelPickerOpen, setIsModelPickerOpen] = createSignal(false);
   const { isRecording, audioLevel, startRecording, stopRecording } = useMediaRecorder();
-  let modelPickerRef: HTMLDivElement | undefined;
+  let formRef: HTMLFormElement | undefined;
   let textareaRef: HTMLTextAreaElement | undefined;
 
   const session = () => currentSession();
@@ -24,13 +25,15 @@ export const ChatInput: Component = () => {
     return s && s.state === 'active' && !isLoading() && input().trim().length > 0;
   };
 
-  // Palette "Switch Model" opens the same picker as the button below.
+  // Palette "Switch Model" opens the same picker as the chip below.
   // Gate on the focused chat so split panes don't all pop their pickers
   // (activeSessionId tracks tab/pane focus via the window store).
   const onSwitchModelEvent = () => {
     const active = statusBarStore.activeSessionId();
     if (active && sessionId() !== active) return;
-    if (session()) setIsModelPickerOpen(true);
+    if (session()) {
+      (formRef?.querySelector('[data-testid="model-picker-button"]') as HTMLElement | null)?.click();
+    }
   };
   window.addEventListener('crucible:switch-model', onSwitchModelEvent);
   onCleanup(() => window.removeEventListener('crucible:switch-model', onSwitchModelEvent));
@@ -105,19 +108,6 @@ export const ChatInput: Component = () => {
   const fillPercent = () => Math.round(audioLevel() * 100);
 
 
-  // Close dropdown when clicking outside
-  createEffect(() => {
-    if (!isModelPickerOpen()) return;
-    
-    const handleClickOutside = (e: MouseEvent) => {
-      if (modelPickerRef && !modelPickerRef.contains(e.target as Node)) {
-        setIsModelPickerOpen(false);
-      }
-    };
-    
-    document.addEventListener('mousedown', handleClickOutside);
-    onCleanup(() => document.removeEventListener('mousedown', handleClickOutside));
-  });
 
   // Show the model id as-is. Prefixing with the provider's wire *type* turned
   // every model into "openai/…" for any OpenAI-compatible endpoint (e.g. a
@@ -132,14 +122,8 @@ export const ChatInput: Component = () => {
     return formatModelDisplay(s.agent_model);
   };
 
-  const handleModelSelect = async (model: string) => {
-    setIsModelPickerOpen(false);
-    await switchModel(model);
-  };
-
-  const truncateModel = (model: string, maxLen = 20) => {
-    if (model.length <= maxLen) return model;
-    return model.slice(0, maxLen - 1) + '…';
+  const handleModelSelect = (model: string) => {
+    void switchModel(model);
   };
 
   const containerStyle = () => {
@@ -155,27 +139,25 @@ export const ChatInput: Component = () => {
 
   return (
     <form
+      ref={formRef}
       onSubmit={handleSubmit}
-      class="border-t border-hairline p-4"
+      class="border-t border-hairline p-3"
       data-testid="chat-input-form"
     >
-       <Show when={error()}>
-         <div class="mb-2 px-2 py-1 text-sm text-error bg-error-dark/20 rounded">
-           {error()}
-         </div>
-       </Show>
-      
+      <Show when={error()}>
+        <div class="mb-2 px-2 py-1 text-sm text-error bg-error-dark/20 rounded">
+          {error()}
+        </div>
+      </Show>
+
       {/* No "no active session" notice here — MessageList already renders
           the full empty state above; repeating it in the input strip read
           as two stacked prompts. */}
 
-      {/* Session context strip: the workspace the session acts in and the
-          kilns it knows — attach/detach mid-session (Crucible Shell design
-          4a/5a). */}
-      <SessionScopeChips />
-
+      {/* The composer card — same skin as the launchpad (CenterComposer):
+          textarea over a footer row of ChipSelect popouts. */}
       <div
-        class="relative flex flex-col gap-2 bg-surface-base rounded-lg p-2 border border-hairline transition-colors focus-within:border-primary/40"
+        class="relative bg-surface-base border border-hairline-strong rounded-xl px-3 pt-2 pb-2 focus-within:border-primary transition-colors shadow-lg"
         style={containerStyle()}
       >
         <div class="relative">
@@ -184,10 +166,10 @@ export const ChatInput: Component = () => {
             value={input()}
             onInput={(e) => void autocomplete.onInput(e)}
             onKeyDown={handleKeyDown}
-            placeholder={session() ? "Type a message..." : "Select a session first..."}
+            placeholder={session() ? 'Type a message...' : 'Select a session first...'}
             disabled={!session() || isLoading() || session()?.state === 'ended'}
             rows={1}
-            class="flex-1 w-full bg-transparent text-shell-ink placeholder-muted-dark resize-none outline-none px-2 py-1 max-h-32 min-h-[2.5rem] disabled:opacity-50"
+            class="w-full bg-transparent text-sm text-shell-ink placeholder-muted-dark resize-none outline-none px-1 py-1 max-h-32 min-h-[2.5rem] disabled:opacity-50"
             data-testid="chat-input"
           />
           <Show when={autocomplete.isOpen()}>
@@ -199,60 +181,18 @@ export const ChatInput: Component = () => {
           </Show>
         </div>
 
-        <div class="flex items-center gap-2">
-          <div ref={modelPickerRef} class="relative">
-            <button
-              type="button"
-              onClick={() => setIsModelPickerOpen(!isModelPickerOpen())}
-              disabled={!session() || isLoading()}
-               class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-shell-body bg-surface-elevated hover:bg-surface-overlay rounded-lg border border-hairline transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              data-testid="model-picker-button"
-            >
-              <span class="max-w-[140px] truncate">{truncateModel(currentModel())}</span>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                class="w-3.5 h-3.5 transition-transform"
-                classList={{ 'rotate-180': isModelPickerOpen() }}
-              >
-                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
-              </svg>
-            </button>
-
-             <Show when={isModelPickerOpen()}>
-               <div class="absolute bottom-full left-0 mb-1 w-56 max-h-64 overflow-y-auto bg-surface-elevated border border-hairline rounded-lg shadow-xl z-50">
-                <Show
-                  when={availableModels().length > 0}
-                  fallback={
-                    <div class="px-3 py-2 text-xs text-muted-dark">No models available</div>
-                  }
-                >
-                  <For each={availableModels()}>
-                    {(model) => (
-                       <button
-                         type="button"
-                         onClick={() => handleModelSelect(model)}
-                         class="w-full px-3 py-2 text-left text-sm text-shell-ink hover:bg-surface-overlay transition-colors first:rounded-t-lg last:rounded-b-lg"
-                         classList={{ 'bg-surface-overlay/50': model === currentSession()?.agent_model }}
-                         data-testid={`model-option-${model}`}
-                      >
-                        <span class="flex items-center gap-2">
-                          <Show when={model === currentSession()?.agent_model}>
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 text-primary">
-                              <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd" />
-                            </svg>
-                          </Show>
-                          <span class="truncate">{formatModelDisplay(model)}</span>
-                        </span>
-                      </button>
-                    )}
-                  </For>
-                </Show>
-              </div>
-            </Show>
-          </div>
-
+        <div class="flex items-center gap-1">
+          <ChipSelect
+            name="model"
+            icon={Sparkles}
+            options={availableModels().map((m) => ({ value: m, label: formatModelDisplay(m) }))}
+            value={currentSession()?.agent_model ?? ''}
+            onSelect={handleModelSelect}
+            placeholder={currentModel()}
+            disabled={!session() || isLoading()}
+            testid="model-picker-button"
+            optionTestidPrefix="model-option"
+          />
           <ChatModeControl />
 
           <div class="flex-1" />
@@ -268,41 +208,38 @@ export const ChatInput: Component = () => {
           <Show
             when={isStreaming()}
             fallback={
-               <button
-                 type="submit"
-                 disabled={!canSend()}
-                 class="p-2 rounded-lg bg-primary text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary-hover transition-colors"
-                 data-testid="send-button"
-               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  class="w-5 h-5"
-                >
-                  <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
-                </svg>
+              <button
+                type="submit"
+                disabled={!canSend()}
+                aria-label="Send message"
+                classList={{
+                  'w-7 h-7 rounded-full flex items-center justify-center transition-colors': true,
+                  'bg-primary text-white hover:bg-primary-hover': !!canSend(),
+                  'bg-surface-elevated text-muted-dark cursor-not-allowed': !canSend(),
+                }}
+                data-testid="send-button"
+              >
+                <ArrowUp class="w-4 h-4" />
               </button>
             }
           >
-             <button
-               type="button"
-               onClick={handleCancel}
-               class="p-2 rounded-lg bg-error text-white hover:bg-error-dark transition-colors"
-               data-testid="cancel-button"
-             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                class="w-5 h-5"
-              >
-                <path fill-rule="evenodd" d="M5.47 5.47a.75.75 0 011.06 0L12 10.94l5.47-5.47a.75.75 0 111.06 1.06L13.06 12l5.47 5.47a.75.75 0 11-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 01-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 010-1.06z" clip-rule="evenodd" />
-              </svg>
+            <button
+              type="button"
+              onClick={handleCancel}
+              aria-label="Cancel response"
+              class="w-7 h-7 rounded-full flex items-center justify-center bg-error text-white hover:bg-error-dark transition-colors"
+              data-testid="cancel-button"
+            >
+              <X class="w-4 h-4" />
             </button>
           </Show>
         </div>
       </div>
+
+      {/* Session scope BELOW the box (launchpad layout): the kilns the
+          session knows and the workspace it acts in — attach/detach
+          mid-session (Crucible Shell design 4a/5a). */}
+      <SessionScopeChips />
     </form>
   );
 };
