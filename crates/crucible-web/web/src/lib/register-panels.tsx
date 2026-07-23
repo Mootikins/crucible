@@ -6,6 +6,7 @@ import { ActivityPanel } from '@/components/ActivityPanel';
 import { TerminalPanel } from '@/components/TerminalPanel';
 import { SessionPanel } from '@/components/SessionPanel';
 import { FilesPanel } from '@/components/FilesPanel';
+import { SearchPanel } from '@/components/SearchPanel';
 import { SkillsPanel } from '@/components/SkillsPanel';
 import { PluginPanel } from '@/components/PluginPanel';
 import FileViewerPanel from '@/components/FileViewerPanel';
@@ -26,6 +27,7 @@ export function registerPanels(): void {
   registry.register('terminal', 'Terminal', TerminalPanel, 'bottom');
   registry.register('file', 'File', FileViewerPanel, 'center');
   registry.register('files', 'Files', FilesPanel, 'left');
+  registry.register('search', 'Search', SearchPanel, 'left');
   registry.register('skills', 'Skills', SkillsPanel, 'left');
   registry.register('plugins', 'Plugins', PluginPanel, 'left');
   registry.register('backlinks', 'Backlinks', BacklinksPanel, 'right');

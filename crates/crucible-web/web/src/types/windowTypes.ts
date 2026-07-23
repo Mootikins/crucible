@@ -12,6 +12,7 @@ export type TabContentType =
   | 'inbox'
   | 'sessions'
   | 'files'
+  | 'search'
   | 'skills'
   | 'plugins'
   | 'activity'

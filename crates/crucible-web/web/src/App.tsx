@@ -253,6 +253,12 @@ const App: Component = () => {
         event.preventDefault();
         event.stopPropagation();
         openPalette('notes');
+      } else if (action === 'openSearch') {
+        event.preventDefault();
+        event.stopPropagation();
+        openPanelTab('search');
+        // Panel focuses its input on mount; re-focus if it was already open.
+        window.dispatchEvent(new CustomEvent('crucible:focus-search'));
       }
     };
 

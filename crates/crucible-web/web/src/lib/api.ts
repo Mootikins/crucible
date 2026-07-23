@@ -442,6 +442,70 @@ export async function getSession(id: string): Promise<Session> {
   );
 }
 
+// =============================================================================
+// Content Search (ripgrep) — POST /api/search/grep
+// =============================================================================
+
+/** One matched line. `matchStart`/`matchEnd` are char offsets into `text`. */
+export interface GrepHit {
+  path: string;
+  relPath: string;
+  line: number;
+  text: string;
+  matchStart: number;
+  matchEnd: number;
+}
+export interface GrepResponse {
+  hits: GrepHit[];
+  truncated: boolean;
+}
+
+interface RawGrepHit {
+  path: string;
+  rel_path: string;
+  line: number;
+  text: string;
+  match_start: number;
+  match_end: number;
+}
+
+/**
+ * Ripgrep content search over an absolute `root` (must be inside a registered
+ * kiln or project — the daemon rejects anything else). `glob` filters by name
+ * (e.g. `*.md` for notes); omit to search all files. Respects .gitignore.
+ */
+export async function grepSearch(
+  root: string,
+  query: string,
+  opts?: { glob?: string; limit?: number; caseInsensitive?: boolean },
+): Promise<GrepResponse> {
+  const data = await request<{ hits: RawGrepHit[]; truncated: boolean }>(
+    'POST',
+    '/api/search/grep',
+    {
+      errorMessage: 'Search failed',
+      ...jsonRequest({
+        root,
+        query,
+        glob: opts?.glob ?? null,
+        limit: opts?.limit ?? 100,
+        case_insensitive: opts?.caseInsensitive ?? true,
+      }),
+    },
+  );
+  return {
+    truncated: data.truncated,
+    hits: data.hits.map((h) => ({
+      path: h.path,
+      relPath: h.rel_path,
+      line: h.line,
+      text: h.text,
+      matchStart: h.match_start,
+      matchEnd: h.match_end,
+    })),
+  };
+}
+
 /** Pause a session. */
 export async function pauseSession(id: string): Promise<void> {
   await request<void>('POST', `/api/session/${encodeURIComponent(id)}/pause`, {

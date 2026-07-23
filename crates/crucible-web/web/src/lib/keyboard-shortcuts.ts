@@ -17,6 +17,8 @@ export const DEFAULT_SHORTCUTS: ShortcutAction[] = [
   // dialog intercepted with preventDefault). Opens the palette pre-scoped
   // to notes so note-open doesn't share Ctrl+P's mixed results.
   { key: 'o', modifiers: ['ctrl'], action: 'openNoteSwitcher', description: 'Open note (quick switcher)' },
+  // Content search — Ctrl+Shift+F (VSCode's "search in files" binding)
+  { key: 'f', modifiers: ['ctrl', 'shift'], action: 'openSearch', description: 'Search notes, files & sessions' },
   // Chat focus — Ctrl+/ focuses chat input
   { key: '/', modifiers: ['ctrl'], action: 'focusChatInput', description: 'Focus chat input' },
   // Overlay management — Escape closes active overlay
