@@ -1,23 +1,8 @@
 import { Component, For, Show, createMemo, createSignal } from 'solid-js';
 import { sessionDisplayTitle } from '@/lib/session-display';
 import type { Project, Session } from '@/lib/types';
-import { Archive, ChevronRight, FlaskConical, FolderGit2, GitBranch, Trash2 } from '@/lib/icons';
-import { treeChevron, treeChip, treeGroupRow, treeSectionHeader } from '@/components/tree/tree-style';
-
-/**
- * Live-vs-idle dot. Lifecycle state (paused/ended/compacting) is no longer a
- * UI axis — every session is resumable. We only surface "live" (resident in
- * memory / recently active) as a quiet green dot; idle sessions get an aligned
- * spacer and rely on their "last active" time instead.
- */
-export const StateIndicator: Component<{ state: Session['state'] }> = (props) => (
-  <Show
-    when={props.state === 'active' || props.state === 'compacting'}
-    fallback={<span class="inline-block w-2 h-2 shrink-0" />}
-  >
-    <span class="inline-block w-2 h-2 rounded-full bg-ok shrink-0" title="live" />
-  </Show>
-);
+import { Archive, ChevronRight, FolderGit2, GitBranch, Trash2 } from '@/lib/icons';
+import { treeChevron, treeGroupRow, treeSectionHeader } from '@/components/tree/tree-style';
 
 function relativeTime(iso: string | null): string | null {
   if (!iso) return null;
@@ -51,44 +36,39 @@ const SessionRow: Component<{
           props.onSelect();
         }
       }}
-      class={`group relative w-full text-left pl-6 pr-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+      class={`group relative w-full text-left px-2.5 py-1.5 rounded transition-colors cursor-pointer ${
         props.selected
-          ? 'bg-primary/20 text-primary-hover'
+          ? 'bg-primary/10 text-shell-ink'
           : 'hover:bg-hover-wash text-shell-body'
       }`}
       data-testid={`session-item-${props.session.id}`}
     >
       {/* Action-strip padding is reserved only WHILE the buttons show. */}
       <div class="flex items-center gap-2 transition-[padding] duration-150 group-hover:pr-12 group-focus-within:pr-12 [@media(hover:none)]:pr-12">
-        <StateIndicator state={props.session.state} />
-        <span class="text-[13px] font-medium flex-1 min-w-0 fade-scroll">
-          <span>{sessionDisplayTitle(props.session)}</span>
-        </span>
+        <span class="text-[13px] flex-1 min-w-0 truncate">{sessionDisplayTitle(props.session)}</span>
         <Show when={relativeTime(props.session.last_activity ?? props.session.started_at)} keyed>
-          {(t) => <span class="text-[10px] text-muted-dark shrink-0">{t}</span>}
+          {(t) => <span class="text-[11px] text-muted-dark shrink-0">{t}</span>}
         </Show>
       </div>
-      <div class="flex items-center gap-1 mt-1 min-w-0 transition-[padding] duration-150 group-hover:pr-12 group-focus-within:pr-12 [@media(hover:none)]:pr-12">
-        <Show when={props.branch} keyed>
-          {(b) => (
-            <span class={treeChip} title={`branch · ${b}`}>
-              <GitBranch class="w-3 h-3 shrink-0 text-muted-dark" />
-              <span class="truncate">{b}</span>
-            </span>
-          )}
-        </Show>
-        <Show when={props.kilnLabel} keyed>
-          {(k) => (
-            <span class={treeChip} title={`kiln · ${props.session.kiln}`}>
-              <FlaskConical class="w-3 h-3 shrink-0 text-muted-dark" />
-              <span class="truncate">{k}</span>
-            </span>
-          )}
-        </Show>
-        <span class="text-[11px] text-muted-dark truncate ml-auto">
-          {props.session.agent_model || ''}
-        </span>
-      </div>
+      {/* Muted context line: the kiln it knows + its branch chip. */}
+      <Show when={props.kilnLabel || props.branch}>
+        <div class="flex items-center gap-1.5 mt-0.5 min-w-0 text-[11px] text-muted-dark transition-[padding] duration-150 group-hover:pr-12 group-focus-within:pr-12 [@media(hover:none)]:pr-12">
+          <Show when={props.kilnLabel} keyed>
+            {(k) => <span class="truncate" title={`kiln · ${props.session.kiln}`}>{k}</span>}
+          </Show>
+          <Show when={props.branch} keyed>
+            {(b) => (
+              <span
+                class="shrink-0 inline-flex items-center gap-1 px-1 rounded bg-surface-elevated border border-hairline text-[10px]"
+                title={`branch · ${b}`}
+              >
+                <GitBranch class="w-2.5 h-2.5 shrink-0 text-muted-dark" />
+                <span class="truncate max-w-[110px]">{b}</span>
+              </span>
+            )}
+          </Show>
+        </div>
+      </Show>
 
       <div class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-150">
         <button
