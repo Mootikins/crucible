@@ -517,28 +517,32 @@ export const CenterComposer: Component = () => {
                 />
               </Show>
               <div class="ml-auto" />
-              <MicButton
-                onTranscription={handleTranscription}
-                disabled={busy()}
-                startRecording={startRecording}
-                stopRecording={stopRecording}
-                isRecording={isRecording}
-              />
-              <button
-                type="button"
-                onClick={() => void submit()}
-                disabled={!message().trim()}
-                aria-label="Start session"
-                title="Start session (Enter)"
-                classList={{
-                  'w-7 h-7 rounded-full flex items-center justify-center transition-colors': true,
-                  'bg-primary text-white hover:bg-primary-hover': !!message().trim(),
-                  'bg-surface-elevated text-muted-dark cursor-not-allowed': !message().trim(),
-                }}
-                data-testid="composer-send"
-              >
-                <ArrowUp class="w-4 h-4" />
-              </button>
+              {/* Mic and send share one pill, split by a hairline. */}
+              <div class="flex items-stretch rounded-full border border-hairline overflow-hidden">
+                <MicButton
+                  onTranscription={handleTranscription}
+                  disabled={busy()}
+                  startRecording={startRecording}
+                  stopRecording={stopRecording}
+                  isRecording={isRecording}
+                />
+                <div class="w-px bg-hairline" />
+                <button
+                  type="button"
+                  onClick={() => void submit()}
+                  disabled={!message().trim()}
+                  aria-label="Start session"
+                  title="Start session (Enter)"
+                  classList={{
+                    'px-2.5 flex items-center justify-center transition-colors': true,
+                    'bg-primary text-white hover:bg-primary-hover': !!message().trim(),
+                    'bg-transparent text-muted-dark cursor-not-allowed': !message().trim(),
+                  }}
+                  data-testid="composer-send"
+                >
+                  <ArrowUp class="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
 

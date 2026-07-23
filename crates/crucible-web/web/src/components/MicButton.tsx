@@ -106,12 +106,14 @@ export const MicButton: Component<MicButtonProps> = (props) => {
        default:
          return whisperStatus() === 'loading'
            ? 'bg-primary'
-           : 'bg-surface-elevated hover:bg-surface-overlay';
+           : 'bg-transparent hover:bg-hover-wash';
      }
    };
 
   const iconColor = () => {
-    return state() === 'recording' ? 'text-shell-bg' : 'text-white';
+    if (state() === 'recording') return 'text-shell-bg';
+    if (state() === 'idle' && whisperStatus() !== 'loading') return 'text-muted';
+    return 'text-white';
   };
 
   const getTitle = () => {
@@ -142,7 +144,7 @@ export const MicButton: Component<MicButtonProps> = (props) => {
       onTouchStart={handleMouseDown}
       onTouchEnd={handleMouseUp}
       disabled={props.disabled || whisperStatus() === 'loading'}
-      class={`relative p-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${stateStyles()}`}
+      class={`relative px-2.5 py-1.5 flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${stateStyles()}`}
       data-testid="mic-button"
       data-state={state()}
       title={getTitle()}

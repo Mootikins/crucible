@@ -196,42 +196,45 @@ export const ChatInput: Component = () => {
 
           <div class="flex-1" />
 
-          <MicButton
-            onTranscription={handleTranscription}
-            disabled={!session() || isLoading()}
-            startRecording={startRecording}
-            stopRecording={stopRecording}
-            isRecording={isRecording}
-          />
-
-          <Show
-            when={isStreaming()}
-            fallback={
-              <button
-                type="submit"
-                disabled={!canSend()}
-                aria-label="Send message"
-                classList={{
-                  'w-7 h-7 rounded-full flex items-center justify-center transition-colors': true,
-                  'bg-primary text-white hover:bg-primary-hover': !!canSend(),
-                  'bg-surface-elevated text-muted-dark cursor-not-allowed': !canSend(),
-                }}
-                data-testid="send-button"
-              >
-                <ArrowUp class="w-4 h-4" />
-              </button>
-            }
-          >
-            <button
-              type="button"
-              onClick={handleCancel}
-              aria-label="Cancel response"
-              class="w-7 h-7 rounded-full flex items-center justify-center bg-error text-white hover:bg-error-dark transition-colors"
-              data-testid="cancel-button"
+          {/* Mic and send share one pill, split by a hairline. */}
+          <div class="flex items-stretch rounded-full border border-hairline overflow-hidden">
+            <MicButton
+              onTranscription={handleTranscription}
+              disabled={!session() || isLoading()}
+              startRecording={startRecording}
+              stopRecording={stopRecording}
+              isRecording={isRecording}
+            />
+            <div class="w-px bg-hairline" />
+            <Show
+              when={isStreaming()}
+              fallback={
+                <button
+                  type="submit"
+                  disabled={!canSend()}
+                  aria-label="Send message"
+                  classList={{
+                    'px-2.5 flex items-center justify-center transition-colors': true,
+                    'bg-primary text-white hover:bg-primary-hover': !!canSend(),
+                    'bg-transparent text-muted-dark cursor-not-allowed': !canSend(),
+                  }}
+                  data-testid="send-button"
+                >
+                  <ArrowUp class="w-4 h-4" />
+                </button>
+              }
             >
-              <X class="w-4 h-4" />
-            </button>
-          </Show>
+              <button
+                type="button"
+                onClick={handleCancel}
+                aria-label="Cancel response"
+                class="px-2.5 flex items-center justify-center bg-error text-white hover:bg-error-dark transition-colors"
+                data-testid="cancel-button"
+              >
+                <X class="w-4 h-4" />
+              </button>
+            </Show>
+          </div>
         </div>
       </div>
 
