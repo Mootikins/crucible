@@ -1,4 +1,4 @@
-import { Component, For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
+import { Component, For, JSX, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { ChevronDown, Check } from '@/lib/icons';
 import { treeSectionHeader } from '@/components/tree/tree-style';
@@ -12,6 +12,8 @@ export interface ChipOption {
   /** Section header rendered above this option when it differs from the
    * previous option's group (caller keeps options sorted by group). */
   group?: string;
+  /** Leading icon on the row (Cursor's menus icon every row). */
+  icon?: Component<{ class?: string }>;
 }
 
 /**
@@ -67,6 +69,8 @@ export const ChipSelect: Component<{
     validate?: (text: string) => boolean;
     run: (text: string) => void;
   };
+  /** Detached card under the list (status/info, e.g. a settings note). */
+  footer?: JSX.Element;
 }> = (props) => {
   const [open, setOpen] = createSignal(false);
   const [filter, setFilter] = createSignal('');
@@ -265,12 +269,13 @@ export const ChipSelect: Component<{
                         'text-muted-dark cursor-not-allowed': !!o.disabled,
                       }}
                     >
-                      <span class="w-3.5 flex-shrink-0">
-                        <Show when={isPicked(o)}>
-                          <Check class="w-3.5 h-3.5 text-primary" />
-                        </Show>
-                      </span>
+                      <Show when={o.icon} keyed>
+                        {(Icon) => <Icon class="w-3.5 h-3.5 flex-shrink-0 text-muted-dark" />}
+                      </Show>
                       <span class="truncate">{o.label}</span>
+                      <Show when={isPicked(o)}>
+                        <Check class="w-3.5 h-3.5 flex-shrink-0 text-primary" />
+                      </Show>
                       <Show when={o.hint}>
                         <span class="ml-auto pl-3 text-muted-dark truncate max-w-[140px]">
                           {o.hint}
@@ -346,6 +351,7 @@ export const ChipSelect: Component<{
                 </div>
               </Show>
             </Show>
+            <Show when={props.footer}>{props.footer}</Show>
           </div>
         </Portal>
       </Show>

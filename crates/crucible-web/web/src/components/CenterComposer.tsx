@@ -24,11 +24,14 @@ import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
 import {
   ArrowUp,
   Bot,
+  Cloud,
   FileText,
   FlaskConical,
   FolderGit2,
   GitBranch,
   History,
+  Monitor,
+  Network,
   Sparkles,
 } from '@/lib/icons';
 
@@ -51,6 +54,7 @@ export const CenterComposer: Component = () => {
   const [projects, setProjects] = createSignal<Project[]>([]);
   const [defaultKiln, setDefaultKiln] = createSignal('');
   const [defaultModel, setDefaultModel] = createSignal('');
+  const [remoteShell, setRemoteShell] = createSignal(false);
 
   // '' = internal agent / default kiln / default model / no project.
   const [agentName, setAgentName] = createSignal('');
@@ -73,7 +77,10 @@ export const CenterComposer: Component = () => {
     // No barrier: each chip fills as its data arrives. Agents/providers are
     // the slow calls (daemon probes); the splash must not wait on them.
     void getConfig()
-      .then((cfg) => cfg?.kiln_path && setDefaultKiln(cfg.kiln_path))
+      .then((cfg) => {
+        if (cfg?.kiln_path) setDefaultKiln(cfg.kiln_path);
+        setRemoteShell(cfg?.remote_shell === true);
+      })
       .catch(() => {});
     void listAgents().then(setAgents).catch(() => {});
     void listAllModels()
@@ -271,12 +278,13 @@ export const CenterComposer: Component = () => {
         ? projects().slice(0, 3).map((p) => ({
             value: p.path,
             label: label(p),
-            group: 'Recent',
+            hint: p.path,
+            group: 'Recents',
           }))
         : [];
     return [
-      { value: '', label: 'No project' },
       ...recents,
+      { value: '', label: 'No project', group: 'Projects' },
       ...main.map((p) => ({
         value: p.path,
         label: p.name || pathBasename(p.path) || p.path,
@@ -387,6 +395,67 @@ export const CenterComposer: Component = () => {
                 }}
               />
             </Show>
+            {/* Execution target (Cursor's "Run on" menu). Only the local
+                machine exists today — cloud/remote rows are the declared
+                seam for the containers/targets design. Worktree creation
+                deliberately lives in the branch/project menus, not here. */}
+            <ChipSelect
+              name="run on"
+              icon={Monitor}
+              options={[
+                { value: 'local', label: 'This machine', group: 'Run on', icon: Monitor },
+                {
+                  value: 'cloud',
+                  label: 'Cloud',
+                  group: 'Run on',
+                  icon: Cloud,
+                  disabled: true,
+                  hint: 'planned',
+                },
+                {
+                  value: 'remote',
+                  label: 'Remote machines',
+                  group: 'Run on',
+                  icon: Network,
+                  disabled: true,
+                  hint: 'planned',
+                },
+              ]}
+              value="local"
+              onSelect={() => {}}
+              disabled={busy()}
+              testid="composer-target"
+              footer={
+                <div class="m-1.5 mt-1 rounded-md border border-hairline bg-surface-base p-2.5">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs font-medium text-shell-ink">Remote control</span>
+                    <span
+                      classList={{
+                        'relative inline-block w-7 h-4 rounded-full transition-colors': true,
+                        'bg-primary/60': remoteShell(),
+                        'bg-surface-elevated border border-hairline': !remoteShell(),
+                      }}
+                      role="img"
+                      aria-label={remoteShell() ? 'Remote control on' : 'Remote control off'}
+                      data-testid="remote-control-state"
+                    >
+                      <span
+                        classList={{
+                          'absolute top-0.5 w-3 h-3 rounded-full bg-shell-ink transition-all': true,
+                          'left-3.5': remoteShell(),
+                          'left-0.5 opacity-50': !remoteShell(),
+                        }}
+                      />
+                    </span>
+                  </div>
+                  <p class="mt-1 text-[11px] leading-snug text-muted-dark">
+                    Reach this machine's sessions and terminal from other devices.
+                    Configure via <code class="text-muted">[server] remote_shell</code> in
+                    config.toml.
+                  </p>
+                </div>
+              }
+            />
             <ChipSelect
               name="agent"
               icon={Bot}

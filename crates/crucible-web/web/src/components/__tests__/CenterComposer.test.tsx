@@ -166,6 +166,25 @@ describe('CenterComposer', () => {
     );
   });
 
+  it('run-on chip shows the local machine with disabled cloud/remote seams', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    const chip = getByTestId('composer-target');
+    expect(chip.textContent).toContain('This machine');
+
+    fireEvent.click(chip);
+    const pop = await waitFor(() => screen.getByTestId('composer-target-popout'));
+    expect(pop.textContent).toContain('Run on');
+    const rows = [...pop.querySelectorAll('[role="option"]')] as HTMLButtonElement[];
+    expect(rows.map((r) => r.disabled)).toEqual([false, true, true]);
+    // Remote-control status card (state from /api/config remote_shell).
+    expect(pop.textContent).toContain('Remote control');
+    await waitFor(() =>
+      expect(screen.getByTestId('remote-control-state').getAttribute('aria-label')).toBe(
+        'Remote control off',
+      ),
+    );
+  });
+
   it('lists recent files and opens one on click', async () => {
     recordRecentFile('/kiln/notes/a.md', 'a.md');
     recordRecentFile('/kiln/notes/b.md', 'b.md');
