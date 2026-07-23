@@ -70,10 +70,18 @@ export function itemsForNode(node: FileTreeNode, rootKind: TreeRootKind): Contex
  * Shift+F10 opens a `role=menu` with keyboard support; selecting an item routes
  * through `onAction`.
  */
+/** The toggle-hidden row reads its label from the live state. */
+function labelFor(item: ContextItem, showHidden: boolean | undefined): string {
+  if (item.action === 'toggle-hidden') return showHidden ? 'Hide hidden files' : 'Show hidden files';
+  return item.label;
+}
+
 export const FileTreeContextMenu: Component<{
   node: FileTreeNode;
   rootKind: TreeRootKind;
   onAction: (action: ContextAction, node: FileTreeNode) => void;
+  /** Live dotfile-visibility state (flips the toggle-hidden row's label). */
+  showHidden?: boolean;
   children: JSX.Element;
 }> = (props) => {
   const items = () => itemsForNode(props.node, props.rootKind);
@@ -103,7 +111,7 @@ export const FileTreeContextMenu: Component<{
                     classList={{ 'text-error': item.danger === true }}
                   >
                     <item.icon class="w-3.5 h-3.5 shrink-0" />
-                    <span>{item.label}</span>
+                    <span>{labelFor(item, props.showHidden)}</span>
                   </Menu.Item>
                 </>
               )}

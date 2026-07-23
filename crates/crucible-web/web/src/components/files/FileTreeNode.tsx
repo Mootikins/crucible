@@ -82,6 +82,7 @@ export const FileTreeNode: Component<{
   rootKind: TreeRootKind;
   openFilePath: string | null;
   onContextAction: (action: ContextAction, node: Node) => void;
+  showHidden?: boolean;
   dnd?: FileTreeDnd;
 }> = (props) => {
   const isCurrent = () => props.node.absPath === props.openFilePath;
@@ -147,7 +148,7 @@ export const FileTreeNode: Component<{
       <Show
         when={props.node.isDir}
         fallback={
-          <FileTreeContextMenu node={props.node} rootKind={props.rootKind} onAction={props.onContextAction}>
+          <FileTreeContextMenu node={props.node} rootKind={props.rootKind} onAction={props.onContextAction} showHidden={props.showHidden}>
             <TreeView.Item
               {...currentAttrs()}
               ref={attachDrag}
@@ -165,7 +166,7 @@ export const FileTreeNode: Component<{
         }
       >
         <TreeView.Branch>
-          <FileTreeContextMenu node={props.node} rootKind={props.rootKind} onAction={props.onContextAction}>
+          <FileTreeContextMenu node={props.node} rootKind={props.rootKind} onAction={props.onContextAction} showHidden={props.showHidden}>
             <TreeView.BranchControl
               {...currentAttrs()}
               ref={attachFolderDrop}
@@ -195,6 +196,7 @@ export const FileTreeNode: Component<{
                   rootKind={props.rootKind}
                   openFilePath={props.openFilePath}
                   onContextAction={props.onContextAction}
+                  showHidden={props.showHidden}
                   dnd={props.dnd}
                 />
               )}

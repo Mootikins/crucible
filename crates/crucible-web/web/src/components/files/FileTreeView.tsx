@@ -43,6 +43,8 @@ export interface FileTreeViewProps {
   apiRef?: (api: UseTreeViewReturn<Node>) => void;
   /** Drag-and-drop wiring (absent → tree is drag-inert, e.g. in tests). */
   dnd?: FileTreeDnd;
+  /** Live dotfile-visibility state (context-menu label). */
+  showHidden?: boolean;
   /**
    * Inline-rename commit (absent → F2/rename disabled). `relPath` is the
    * node's CURRENT identity; `newLabel` is the typed name (a single path
@@ -123,6 +125,7 @@ export const FileTreeView: Component<FileTreeViewProps> = (props) => {
               rootKind={props.rootKind}
               openFilePath={props.openFilePath}
               onContextAction={props.onContextAction}
+              showHidden={props.showHidden}
               dnd={props.dnd}
             />
           )}

@@ -1,4 +1,4 @@
-import { Component, Show, createSignal, createEffect, createMemo, onMount, onCleanup } from 'solid-js';
+import { Component, Show, createSignal, createEffect, createMemo, on, onMount, onCleanup } from 'solid-js';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { openFileInEditor, closeTabsUnder } from '@/lib/file-actions';
 import { PanelShell } from './PanelShell';
@@ -27,7 +27,7 @@ import {
   reconcileMount,
   type RootMount,
 } from '@/lib/file-tree/reconcile';
-import { FileTreeView } from './files/FileTreeView';
+import { FileTreeView, cssId } from './files/FileTreeView';
 import { RootDropdown } from './files/RootDropdown';
 import type { ContextAction } from './files/FileTreeContextMenu';
 import { currentOpenFilePath, revealLoadedPath, revealLazyPath } from './files/file-tree-a11y';
@@ -360,7 +360,28 @@ export const FilesPanel: Component = () => {
         rel,
       );
     }
+    scrollRelIntoView(rel);
   }
+
+  /** Scroll a revealed row into view. Deferred so lazy-expanded ancestors have
+   * mounted their children before we look the node up. `block: 'nearest'`
+   * avoids yanking the viewport when the row is already visible. */
+  function scrollRelIntoView(rel: string) {
+    window.setTimeout(() => {
+      document
+        .getElementById(`filetree-node-${cssId(rel)}`)
+        ?.scrollIntoView({ block: 'nearest' });
+    }, 60);
+  }
+
+  // Auto-reveal: when the open file changes, expand to it and scroll it into
+  // view (VSCode's "reveal active file"). revealActive no-ops when the open
+  // file isn't under the browsed root, so switching roots stays quiet.
+  createEffect(
+    on(openFilePath, (open) => {
+      if (open) revealActive();
+    }),
+  );
 
   const cycleSort = () => {
     const s = sort();
@@ -508,6 +529,7 @@ export const FilesPanel: Component = () => {
                 onExpandedChange={(values) => persistExpanded(root, values)}
                 onContextAction={onContextAction}
                 apiRef={(api) => (treeApi = api)}
+                showHidden={showHidden()}
                 dnd={dndFor(root)}
                 onRenameNode={onRenameNode}
               />
