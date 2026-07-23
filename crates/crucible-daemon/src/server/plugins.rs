@@ -239,6 +239,85 @@ pub(crate) async fn handle_scm_worktree_add(
     }
 }
 
+/// `scm.clone`: clone a remote git repo to a destination and register it as a
+/// project. URL is validated/normalized before git runs; `dest` (if given)
+/// must be absolute and must not exist, otherwise the clone lands in
+/// `<projects_dir>/<repo-name>`.
+pub(crate) async fn handle_scm_clone(
+    req: Request,
+    pm: &Arc<ProjectManager>,
+    projects_dir: Option<&str>,
+) -> Response {
+    let raw_url = require_param!(req, "url", as_str);
+    let dest_param = optional_param!(req, "dest", as_str);
+    let name_param = optional_param!(req, "name", as_str);
+
+    // Validate + normalize the URL before git ever sees it.
+    let url = match crate::scm::normalize_clone_url(raw_url) {
+        Ok(u) => u,
+        Err(e) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
+    };
+
+    // Resolve the destination path.
+    let dest = if let Some(dest) = dest_param {
+        let dest = Path::new(dest);
+        if !dest.is_absolute() {
+            return Response::error(
+                req.id,
+                INVALID_PARAMS,
+                format!("dest must be an absolute path: {dest:?}"),
+            );
+        }
+        dest.to_path_buf()
+    } else {
+        // repo-name comes from `name` (if given) else the URL's last segment.
+        let repo_name = match name_param {
+            Some(n) => crate::scm::sanitize_repo_name(n),
+            None => crate::scm::derive_repo_name(&url),
+        };
+        let repo_name = match repo_name {
+            Ok(n) => n,
+            Err(e) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
+        };
+        let base = crate::scm::resolve_projects_dir(projects_dir, dirs::home_dir().as_deref());
+        if let Err(e) = tokio::fs::create_dir_all(&base).await {
+            return internal_error(req.id, format!("failed to create projects dir: {e}"));
+        }
+        base.join(repo_name)
+    };
+
+    if dest.exists() {
+        return Response::error(
+            req.id,
+            INVALID_PARAMS,
+            crate::scm::ScmError::DestExists(dest.to_string_lossy().to_string()).to_string(),
+        );
+    }
+
+    if let Err(e) = crate::scm::clone_repo(&url, &dest).await {
+        return match e {
+            crate::scm::ScmError::DestExists(_) => {
+                Response::error(req.id, INVALID_PARAMS, e.to_string())
+            }
+            _ => internal_error(req.id, e),
+        };
+    }
+
+    let project = match pm.register(&dest) {
+        Ok(project) => project,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    let response = crate::scm::ScmCloneResponse {
+        path: dest.to_string_lossy().to_string(),
+        project,
+    };
+    match serde_json::to_value(response) {
+        Ok(v) => Response::success(req.id, v),
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
 pub(super) fn spawn_plugin_watcher(
     plugin_dirs: Vec<(String, PathBuf)>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,

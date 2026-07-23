@@ -446,6 +446,27 @@ impl DaemonClient {
         Ok(serde_json::from_value(result)?)
     }
 
+    /// Send a typed JSON-RPC request with an explicit per-request timeout.
+    ///
+    /// Wraps `call_with_timeout()` with automatic serialization/deserialization
+    /// for long-running methods (e.g. `scm.clone`). Not retried — a clone that
+    /// times out should surface, not silently restart.
+    pub async fn typed_call_with_timeout<Req, Resp>(
+        &self,
+        method: &str,
+        params: Req,
+        timeout: Duration,
+    ) -> Result<Resp>
+    where
+        Req: serde::Serialize,
+        Resp: serde::de::DeserializeOwned,
+    {
+        let result = self
+            .call_with_timeout(method, serde_json::to_value(params)?, timeout)
+            .await?;
+        Ok(serde_json::from_value(result)?)
+    }
+
     /// Send a typed JSON-RPC request with retry and deserialize the response.
     ///
     /// Wraps `call_with_retry()` with automatic serialization/deserialization.
@@ -524,8 +545,27 @@ impl DaemonClient {
             .and_then(|v| if v.is_null() { None } else { extract(v) }))
     }
 
-    /// Send a JSON-RPC request and get the response
+    /// Default per-request timeout for [`Self::call`] (event mode only).
+    const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+
+    /// Send a JSON-RPC request and get the response, using the default 30s
+    /// per-request timeout in event mode.
     pub async fn call(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+        self.call_with_timeout(method, params, Self::DEFAULT_TIMEOUT)
+            .await
+    }
+
+    /// Send a JSON-RPC request with an explicit per-request timeout.
+    ///
+    /// Slow operations (e.g. `scm.clone` cloning a large repo) need a generous
+    /// timeout well past the 30s default. The timeout only applies in event
+    /// mode; simple mode blocks on a direct socket read.
+    pub async fn call_with_timeout(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+        timeout: Duration,
+    ) -> Result<serde_json::Value> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
 
         let request = serde_json::json!({
@@ -559,14 +599,14 @@ impl DaemonClient {
         // Get response
         let response = if let Some(rx) = response_rx {
             // Event mode: wait for background reader to route response
-            match tokio::time::timeout(Duration::from_secs(30), rx).await {
+            match tokio::time::timeout(timeout, rx).await {
                 Ok(Ok(response)) => response,
                 Ok(Err(_)) => anyhow::bail!("Response channel closed unexpectedly"),
                 Err(_) => {
                     // Clean up pending request on timeout
                     let mut pending = self.pending_requests.lock().await;
                     pending.remove(&id);
-                    anyhow::bail!("Request timeout after 30 seconds")
+                    anyhow::bail!("Request timeout after {} seconds", timeout.as_secs())
                 }
             }
         } else {

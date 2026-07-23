@@ -125,6 +125,7 @@ pub const METHODS: &[&str] = &[
     "project.get",
     "scm.branches",
     "scm.worktree_add",
+    "scm.clone",
     "fs.list_dir",
     "fs.move",
     "fs.mkdir",
@@ -399,6 +400,7 @@ impl RpcDispatcher {
             "project.get" => to_response(id, self.handle_project_get(&req).await),
             "scm.branches" => to_response(id, self.handle_scm_branches(&req).await),
             "scm.worktree_add" => to_response(id, self.handle_scm_worktree_add(&req).await),
+            "scm.clone" => to_response(id, self.handle_scm_clone(&req).await),
             "fs.list_dir" => to_response(id, self.handle_fs_list_dir(&req).await),
             "fs.move" => to_response(id, self.handle_fs_move(&req).await),
             "fs.mkdir" => to_response(id, self.handle_fs_mkdir(&req).await),
@@ -1355,6 +1357,21 @@ impl RpcDispatcher {
         map_server_resp(resp)
     }
 
+    async fn handle_scm_clone(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let projects_dir = self
+            .ctx
+            .scm_config
+            .as_ref()
+            .and_then(|s| s.projects_dir.as_deref());
+        let resp = crate::server::plugins::handle_scm_clone(
+            req.clone(),
+            &self.ctx.project_manager,
+            projects_dir,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
     async fn handle_fs_list_dir(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::fs::handle_fs_list_dir(req.clone(), &self.ctx.project_manager).await;
@@ -2039,5 +2056,35 @@ mod tests {
             .await;
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, crate::protocol::INVALID_PARAMS);
+    }
+
+    /// `scm.clone` rejects non-remote / hostile URLs at the RPC layer before
+    /// git ever runs. (The clone *execution* path is covered by the scm.rs
+    /// integration test, which can use a local fixture path.)
+    #[tokio::test]
+    async fn dispatch_scm_clone_rejects_bad_urls() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let ctx = scm_test_context(tmp.path().join("projects.json"), None);
+        let dispatcher = RpcDispatcher::new(ctx);
+
+        for bad in [
+            "/home/user/local-repo",
+            "file:///etc/passwd",
+            "-oProxyCommand=evil",
+            "owner/repo/extra",
+        ] {
+            let resp = dispatcher
+                .dispatch(
+                    ClientId::new(),
+                    make_request("scm.clone", serde_json::json!({ "url": bad })),
+                )
+                .await;
+            assert!(resp.error.is_some(), "expected rejection for {bad:?}");
+            assert_eq!(
+                resp.error.unwrap().code,
+                crate::protocol::INVALID_PARAMS,
+                "wrong error code for {bad:?}"
+            );
+        }
     }
 }

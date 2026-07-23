@@ -839,6 +839,30 @@ impl DaemonClient {
         .await
     }
 
+    /// Clone a remote git repo and register it as a project.
+    ///
+    /// `dest` (absolute, must not exist) overrides the configured
+    /// `projects_dir/<repo-name>` default; `name` overrides the repo-name
+    /// derived from the URL. Uses a generous 10-minute timeout — cloning a
+    /// large repository can far exceed the default request timeout.
+    pub async fn scm_clone(
+        &self,
+        url: &str,
+        dest: Option<&Path>,
+        name: Option<&str>,
+    ) -> Result<crate::scm::ScmCloneResponse> {
+        self.typed_call_with_timeout(
+            "scm.clone",
+            serde_json::json!({
+                "url": url,
+                "dest": dest.map(|p| p.to_string_lossy()),
+                "name": name,
+            }),
+            std::time::Duration::from_secs(600),
+        )
+        .await
+    }
+
     pub async fn project_get(&self, path: &Path) -> Result<Option<crucible_core::Project>> {
         let result: serde_json::Value = self
             .typed_call_with_retry(

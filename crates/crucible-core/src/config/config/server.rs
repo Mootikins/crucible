@@ -127,6 +127,10 @@ pub struct ScmConfig {
     /// Default: "{repo}/tree/{branch}".
     #[serde(default)]
     pub worktree_dir: Option<String>,
+    /// Where `scm.clone` puts cloned repositories. A leading `~/` expands to
+    /// the home directory. Default: "~/Projects".
+    #[serde(default)]
+    pub projects_dir: Option<String>,
 }
 
 /// Logging configuration.
