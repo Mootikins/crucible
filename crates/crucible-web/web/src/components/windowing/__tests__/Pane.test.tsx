@@ -44,8 +44,7 @@ describe('Pane — empty center', () => {
     expect(getByTestId('center-composer')).toBeInTheDocument();
     expect(getByTestId('composer-input')).toBeInTheDocument();
     // Quick actions instead of descriptive copy.
-    expect(getByTestId('cta-open-file')).toBeInTheDocument();
-    expect(getByTestId('cta-commands')).toBeInTheDocument();
+    expect(getByTestId('composer-input')).toBeInTheDocument();
   });
 
   it('replaces the composer with the tab bar once a tab is added', () => {

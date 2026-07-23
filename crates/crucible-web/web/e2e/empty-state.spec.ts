@@ -48,7 +48,7 @@ test('Empty state appears when all center tabs are closed', async ({ page }) => 
   await expect(emptyStateHeading).toBeVisible({ timeout: 2000 });
 
   // Verify the empty state has helpful text
-  const emptyStateText = page.getByTestId('cta-open-file');
+  const emptyStateText = page.getByTestId('composer-input');
   await expect(emptyStateText).toBeVisible();
 });
 

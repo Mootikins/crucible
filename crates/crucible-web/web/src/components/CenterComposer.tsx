@@ -1,4 +1,4 @@
-import { Component, For, Show, createEffect, createSignal, on, onMount } from 'solid-js';
+import { Component, Show, createEffect, createSignal, on, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import {
   getConfig,
@@ -21,25 +21,20 @@ import { WorkingDots } from '@/components/AssistantTurn';
 import { MicButton } from '@/components/MicButton';
 import { useMediaRecorder } from '@/hooks/useMediaRecorder';
 import { pathBasename } from '@/stores/statusBarStore';
-import { recentFiles, syncRecentsFromServer } from '@/lib/recent-files';
+import { syncRecentsFromServer } from '@/lib/recent-files';
 import { kilnLabel } from '@/lib/kiln-label';
 import { swrLocal } from '@/lib/local-cache';
-import { openFileInEditor } from '@/lib/file-actions';
 import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
 import {
   ArrowUp,
   Bot,
   Cloud,
-  FileText,
   FlaskConical,
   FolderGit2,
   GitBranch,
-  History,
   Monitor,
   Network,
 } from '@/lib/icons';
-
-const kbd = 'px-1.5 py-0.5 rounded bg-surface-elevated border border-hairline text-[10px] text-shell-body';
 
 /**
  * The empty center's composer surface: a session starts from HERE — context
@@ -332,13 +327,6 @@ export const CenterComposer: Component = () => {
     ...models().map((m) => ({ value: m, label: m })),
   ];
 
-  const openNotesPalette = () =>
-    window.dispatchEvent(
-      new CustomEvent('crucible:open-command-palette', { detail: { mode: 'notes' } }),
-    );
-  const openCommandsPalette = () =>
-    window.dispatchEvent(new CustomEvent('crucible:open-command-palette'));
-
   return (
     <div class="flex-1 h-full bg-shell-bg flex flex-col items-center justify-center p-6 overflow-y-auto" data-testid="center-composer">
       <Show
@@ -546,48 +534,6 @@ export const CenterComposer: Component = () => {
             </div>
           </div>
 
-          {/* Quick actions — do, don't describe. */}
-          <div class="mt-4 flex items-center justify-center gap-6 text-xs text-muted">
-            <button
-              type="button"
-              class="flex items-center gap-2 hover:text-shell-ink transition-colors"
-              onClick={openNotesPalette}
-              data-testid="cta-open-file"
-            >
-              <FileText class="w-3.5 h-3.5" />
-              Open a file
-              <span class={kbd}>Ctrl+O</span>
-            </button>
-            <button
-              type="button"
-              class="flex items-center gap-2 hover:text-shell-ink transition-colors"
-              onClick={openCommandsPalette}
-              data-testid="cta-commands"
-            >
-              Commands
-              <span class={kbd}>Ctrl+P</span>
-            </button>
-          </div>
-
-          {/* Pick up where you left off. */}
-          <Show when={recentFiles().length > 0}>
-            <div class="mt-2 flex flex-col items-center gap-0.5" data-testid="composer-recents">
-              <For each={recentFiles().slice(0, 5)}>
-                {(r) => (
-                  <button
-                    type="button"
-                    class="flex items-center gap-2 px-2 py-1 rounded text-xs text-muted hover:text-shell-ink hover:bg-hover-wash transition-colors max-w-full"
-                    onClick={() => openFileInEditor(r.absPath, r.name)}
-                    title={r.absPath}
-                  >
-                    <History class="w-3 h-3 flex-shrink-0 text-muted-dark" />
-                    <span class="truncate">{r.name}</span>
-                    <span class="text-muted-dark truncate max-w-[240px]">{r.absPath}</span>
-                  </button>
-                )}
-              </For>
-            </div>
-          </Show>
         </div>
       </Show>
     </div>

@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, cleanup, screen, waitFor, fireEvent } from '@solidjs/testing-library';
 import { CenterComposer } from '../CenterComposer';
-import { recordRecentFile } from '@/lib/recent-files';
 
 const createSessionMock = vi.fn().mockResolvedValue({ id: 'sess-1' });
 vi.mock('@/contexts/SessionContext', () => ({
@@ -52,8 +51,6 @@ describe('CenterComposer', () => {
     expect(getByTestId('composer-kiln')).toBeInTheDocument();
     expect(getByTestId('composer-project')).toBeInTheDocument();
     expect(getByTestId('composer-agent')).toBeInTheDocument();
-    expect(getByTestId('cta-open-file')).toBeInTheDocument();
-    expect(getByTestId('cta-commands')).toBeInTheDocument();
     await waitFor(() => expect(getByTestId('composer-model')).toBeInTheDocument());
   });
 
@@ -186,24 +183,5 @@ describe('CenterComposer', () => {
     );
   });
 
-  it('lists recent files and opens one on click', async () => {
-    recordRecentFile('/kiln/notes/a.md', 'a.md');
-    recordRecentFile('/kiln/notes/b.md', 'b.md');
-    const { getByTestId, getByText } = render(() => <CenterComposer />);
-    expect(getByTestId('composer-recents')).toBeInTheDocument();
-    // Most recent first.
-    fireEvent.click(getByText('b.md'));
-    expect(openFileInEditorMock).toHaveBeenCalledWith('/kiln/notes/b.md', 'b.md');
-  });
 
-  it('quick actions dispatch palette open events with the right mode', () => {
-    const events: Array<string | undefined> = [];
-    const listener = (e: Event) => events.push((e as CustomEvent).detail?.mode);
-    window.addEventListener('crucible:open-command-palette', listener);
-    const { getByTestId } = render(() => <CenterComposer />);
-    fireEvent.click(getByTestId('cta-open-file'));
-    fireEvent.click(getByTestId('cta-commands'));
-    window.removeEventListener('crucible:open-command-palette', listener);
-    expect(events).toEqual(['notes', undefined]);
-  });
 });

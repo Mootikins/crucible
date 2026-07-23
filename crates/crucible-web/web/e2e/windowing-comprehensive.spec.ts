@@ -314,6 +314,6 @@ test.describe('Comprehensive windowing behavior', () => {
     });
 
     await expect(page.getByTestId('center-composer')).toBeVisible({ timeout: 3000 });
-    await expect(page.getByTestId('cta-open-file')).toBeVisible({ timeout: 3000 });
+    await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 3000 });
   });
 });
