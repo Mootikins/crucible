@@ -335,6 +335,32 @@ impl ReconnectingDaemon {
         .await
     }
 
+    /// Ripgrep-style content search. `root` containment (registered project or
+    /// open kiln) is enforced daemon-side.
+    pub async fn search_grep(
+        &self,
+        root: &str,
+        query: &str,
+        glob: Option<&str>,
+        limit: usize,
+        case_insensitive: bool,
+    ) -> anyhow::Result<crucible_daemon::GrepSearchResponse> {
+        let root = root.to_string();
+        let query = query.to_string();
+        let glob = glob.map(str::to_string);
+        self.call_with_reconnect("search_grep", move |daemon| {
+            let root = root.clone();
+            let query = query.clone();
+            let glob = glob.clone();
+            Box::pin(async move {
+                daemon
+                    .search_grep(&root, &query, glob.as_deref(), limit, case_insensitive)
+                    .await
+            })
+        })
+        .await
+    }
+
     pub async fn lua_discover_plugins(
         &self,
         params: LuaDiscoverPluginsRequest,

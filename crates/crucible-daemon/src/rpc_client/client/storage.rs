@@ -157,6 +157,21 @@ pub struct EmbedQueryRequest {
     pub text: String,
 }
 
+/// Request for `search_grep` (ripgrep-style content search).
+///
+/// `root` must resolve inside a registered project or open kiln — the daemon
+/// rejects anything else. `glob` filters by file name (e.g. `*.md`); `None`
+/// searches all files.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GrepSearchRequest {
+    pub root: String,
+    pub query: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub glob: Option<String>,
+    pub limit: usize,
+    pub case_insensitive: bool,
+}
+
 /// Request for `fs.list_dir`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct FsListDirRequest {
@@ -303,6 +318,30 @@ impl DaemonClient {
             .collect();
 
         Ok(results)
+    }
+
+    /// Ripgrep-style content search over `root` (which must be inside a
+    /// registered project or open kiln — the daemon enforces containment).
+    /// Returns the hits plus whether they were capped at `limit`.
+    pub async fn search_grep(
+        &self,
+        root: &str,
+        query: &str,
+        glob: Option<&str>,
+        limit: usize,
+        case_insensitive: bool,
+    ) -> Result<crate::GrepSearchResponse> {
+        self.typed_call(
+            "search_grep",
+            GrepSearchRequest {
+                root: root.to_string(),
+                query: query.to_string(),
+                glob: glob.map(str::to_string),
+                limit,
+                case_insensitive,
+            },
+        )
+        .await
     }
 
     /// List notes by metadata filter. `scope = None` defaults to the kiln's

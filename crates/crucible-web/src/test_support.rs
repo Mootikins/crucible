@@ -299,6 +299,19 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         }),
         "note.upsert" => json!({}),
         "search_vectors" => json!([]),
+        "search_grep" => json!({
+            "hits": [
+                {
+                    "path": "/tmp/test-kiln/a.md",
+                    "rel_path": "a.md",
+                    "line": 3,
+                    "text": "a needle here",
+                    "match_start": 2,
+                    "match_end": 8
+                }
+            ],
+            "truncated": false
+        }),
         // Sentinel session_type "__no_session_id__" yields a create response
         // WITHOUT a session_id, to exercise the protocol-drift guard.
         "session.create" => {

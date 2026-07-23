@@ -110,6 +110,7 @@ pub use rpc_client::{
     LuaShutdownSessionRequest, LuaShutdownSessionResponse, SessionEvent, VersionCheck,
 };
 pub use scm::{ScmBranch, ScmBranchesResponse, ScmCloneResponse, ScmWorktreeAddResponse};
+pub use tools::search::{GrepHit, GrepSearchResponse};
 pub use server::{BindWithPluginConfigParams, Server};
 pub use session_bridge::DaemonSessionBridge;
 pub use session_manager::{SessionError, SessionManager};

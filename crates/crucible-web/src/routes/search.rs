@@ -21,6 +21,7 @@ pub fn search_routes() -> Router<AppState> {
         .route("/api/notes/{name}", put(put_note))
         .route("/api/backlinks", get(get_backlinks))
         .route("/api/search/vectors", post(search_vectors))
+        .route("/api/search/grep", post(search_grep))
 }
 
 async fn list_kilns(State(state): State<AppState>) -> Result<Json<serde_json::Value>, WebError> {
@@ -323,11 +324,90 @@ async fn search_vectors(
     Ok(Json(serde_json::json!({ "results": results_json })))
 }
 
+/// `POST /api/search/grep` — ripgrep-style content search over an absolute
+/// `root`. The daemon enforces that `root` is contained within a registered
+/// project or open kiln (a root outside every known root is rejected with
+/// INVALID_PARAMS, surfaced here as 400). `glob` filters by file name
+/// (e.g. `*.md`); `null` searches all files. `.gitignore` is respected and
+/// binary files are skipped.
+#[derive(Debug, Deserialize)]
+struct GrepSearchRequest {
+    root: String,
+    query: String,
+    #[serde(default)]
+    glob: Option<String>,
+    #[serde(default = "default_grep_limit")]
+    limit: usize,
+    #[serde(default = "default_true")]
+    case_insensitive: bool,
+}
+
+fn default_grep_limit() -> usize {
+    100
+}
+
+fn default_true() -> bool {
+    true
+}
+
+async fn search_grep(
+    State(state): State<AppState>,
+    Json(req): Json<GrepSearchRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let resp = state
+        .daemon
+        .search_grep(
+            &req.root,
+            &req.query,
+            req.glob.as_deref(),
+            req.limit,
+            req.case_insensitive,
+        )
+        .await
+        .map_err(map_grep_err)?;
+
+    Ok(Json(
+        serde_json::to_value(resp).unwrap_or_else(|_| serde_json::json!({})),
+    ))
+}
+
+/// Map a `search_grep` daemon error. Containment/parameter rejections come back
+/// as JSON-RPC `INVALID_PARAMS` (-32602) — surface those as 400 Bad Request
+/// rather than a 502; everything else is a genuine upstream/daemon failure.
+fn map_grep_err(e: impl std::fmt::Display) -> WebError {
+    let msg = e.to_string();
+    if msg.contains("-32602") {
+        WebError::Chat(msg)
+    } else {
+        WebError::Daemon(msg)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{arb_safe_path, arb_traversal_path};
+    use crate::test_support::{arb_safe_path, arb_traversal_path, request_json};
     use proptest::prelude::*;
+
+    #[tokio::test]
+    async fn grep_search_maps_hits_to_wire_shape() {
+        let (status, json) = request_json(
+            "POST",
+            "/api/search/grep",
+            Some(serde_json::json!({ "root": "/tmp/test-kiln", "query": "needle" })),
+        )
+        .await;
+
+        assert_eq!(status, axum::http::StatusCode::OK);
+        let hits = json["hits"].as_array().expect("hits array");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0]["rel_path"], "a.md");
+        assert_eq!(hits[0]["line"], 3);
+        assert_eq!(hits[0]["text"], "a needle here");
+        assert_eq!(hits[0]["match_start"], 2);
+        assert_eq!(hits[0]["match_end"], 8);
+        assert_eq!(json["truncated"], false);
+    }
 
     fn is_valid_note_name(name: &str) -> bool {
         !name.contains("..")

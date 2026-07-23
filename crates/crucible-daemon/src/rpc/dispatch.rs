@@ -273,6 +273,7 @@ impl RpcDispatcher {
 
             // Note search and retrieval handlers
             "search_vectors" => to_response(id, self.handle_search_vectors(&req).await),
+            "search_grep" => to_response(id, self.handle_search_grep(&req).await),
             "embed.query" => to_response(id, self.handle_embed_query(&req).await),
             "list_notes" => to_response(id, self.handle_list_notes(&req).await),
             "get_note_by_name" => to_response(id, self.handle_get_note_by_name(&req).await),
@@ -669,6 +670,16 @@ impl RpcDispatcher {
 
     async fn handle_search_vectors(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::kiln::handle_search_vectors(req.clone(), &self.ctx.kiln).await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_search_grep(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::grep::handle_search_grep(
+            req.clone(),
+            &self.ctx.project_manager,
+            &self.ctx.kiln,
+        )
+        .await;
         map_server_resp(resp)
     }
 

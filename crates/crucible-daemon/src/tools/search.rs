@@ -21,19 +21,197 @@ use crate::multi_kiln_search::KilnSearchSource;
 use crucible_core::serde_helpers::default_true;
 use crucible_core::storage::NoteStore;
 use crucible_core::{enrichment::EmbeddingProvider, traits::KnowledgeRepository};
+use globset::Glob;
+use grep::matcher::Matcher;
 use grep::regex::RegexMatcher;
-use grep::searcher::{sinks::UTF8, Searcher};
+use grep::searcher::{sinks::UTF8, BinaryDetection, SearcherBuilder};
 use ignore::WalkBuilder;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
+use std::path::Path;
 use std::sync::Arc;
 use walkdir::WalkDir;
 
 /// Default value for limit parameter
 fn default_limit() -> usize {
     10
+}
+
+/// Max characters retained in a grep hit's `text` snippet (long lines are
+/// truncated so a minified/generated line can't blow up a response).
+const GREP_SNIPPET_CAP: usize = 300;
+
+/// A single content-search hit.
+///
+/// `match_start`/`match_end` are **character** offsets into `text` (post-trim),
+/// suitable for `<mark>` highlighting in the web UI. Only the first match on a
+/// line is reported. Wire keys (`path`/`rel_path`/`line`/`text`/`match_start`/
+/// `match_end`) are the `search_grep` RPC + `POST /api/search/grep` contract.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GrepHit {
+    /// Absolute path to the matched file.
+    pub path: String,
+    /// Path relative to the search's `rel_base` (forward-slash separators).
+    pub rel_path: String,
+    /// 1-based line number.
+    pub line: u64,
+    /// The matched line, trimmed of surrounding whitespace and capped at
+    /// [`GREP_SNIPPET_CAP`] characters.
+    pub text: String,
+    /// Character offset of the first match's start within `text`.
+    pub match_start: usize,
+    /// Character offset of the first match's end within `text`.
+    pub match_end: usize,
+}
+
+/// Result of a `search_grep` call: the hits plus whether they were capped at
+/// the requested limit. Matches the `POST /api/search/grep` response body.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GrepSearchResponse {
+    pub hits: Vec<GrepHit>,
+    pub truncated: bool,
+}
+
+/// Literal-substring content search (ripgrep-style) over files under
+/// `walk_root`, honoring `.gitignore` and skipping binary files.
+///
+/// This is the single grep engine shared by the `text_search` MCP tool and the
+/// `search_grep` RPC/HTTP endpoint.
+///
+/// * `walk_root` — directory tree to walk.
+/// * `rel_base` — paths in `GrepHit::rel_path` are reported relative to this
+///   (usually the same as `walk_root`, but `text_search` reports relative to
+///   the kiln root while walking a subfolder).
+/// * `query` — treated as a **literal** substring (regex-escaped).
+/// * `glob` — optional name filter (e.g. `*.md`); `None`/empty/`"null"` searches
+///   all files. Matched against the file's base name.
+/// * `limit` — max hits; when reached, `truncated` is `true`.
+/// * `case_insensitive` — ASCII/Unicode-insensitive matching when set.
+///
+/// Returns `(hits, truncated)`.
+pub(crate) fn grep_search(
+    walk_root: &Path,
+    rel_base: &Path,
+    query: &str,
+    glob: Option<&str>,
+    limit: usize,
+    case_insensitive: bool,
+) -> Result<(Vec<GrepHit>, bool), anyhow::Error> {
+    if query.is_empty() || limit == 0 {
+        return Ok((Vec::new(), false));
+    }
+
+    let pattern = if case_insensitive {
+        format!("(?i){}", regex::escape(query))
+    } else {
+        regex::escape(query)
+    };
+    let matcher = RegexMatcher::new_line_matcher(&pattern)?;
+
+    // Name filter. An explicit empty/"null" glob (LLMs sometimes send the
+    // literal string) is treated as "no filter".
+    let glob_matcher = match glob {
+        Some(g) if !g.is_empty() && g != "null" => Some(Glob::new(g)?.compile_matcher()),
+        _ => None,
+    };
+
+    // Quit scanning a file at the first NUL byte so binary files can't leak
+    // garbage lines into results.
+    let mut searcher = SearcherBuilder::new()
+        .binary_detection(BinaryDetection::quit(b'\x00'))
+        .line_number(true)
+        .build();
+
+    let mut hits: Vec<GrepHit> = Vec::new();
+    let mut truncated = false;
+
+    for entry in WalkBuilder::new(walk_root)
+        .standard_filters(true)
+        .build()
+        .filter_map(Result::ok)
+    {
+        if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+            continue;
+        }
+        let path = entry.path();
+
+        if let Some(ref gm) = glob_matcher {
+            let name = path.file_name().unwrap_or_default();
+            if !gm.is_match(name) {
+                continue;
+            }
+        }
+
+        let abs = path.to_string_lossy().to_string();
+        let rel = path
+            .strip_prefix(rel_base)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/");
+
+        let search_result = searcher.search_path(
+            &matcher,
+            path,
+            UTF8(|lnum, line| {
+                let (text, match_start, match_end) = format_grep_hit(&matcher, line);
+                hits.push(GrepHit {
+                    path: abs.clone(),
+                    rel_path: rel.clone(),
+                    line: lnum,
+                    text,
+                    match_start,
+                    match_end,
+                });
+                // Stop this file (and, below, the whole walk) once capped.
+                Ok(hits.len() < limit)
+            }),
+        );
+        // A per-file read error (e.g. permissions) shouldn't abort the search.
+        let _ = search_result;
+
+        if hits.len() >= limit {
+            truncated = true;
+            break;
+        }
+    }
+
+    Ok((hits, truncated))
+}
+
+/// Trim a matched line, cap it, and re-express the first match's byte span as
+/// character offsets into the trimmed+capped snippet. Leading-whitespace
+/// trimming shifts the offsets accordingly.
+fn format_grep_hit(matcher: &RegexMatcher, line: &str) -> (String, usize, usize) {
+    // Byte span of the first match in the raw line (matcher operates on the
+    // untrimmed line, so offsets are relative to it).
+    let raw_match = matcher.find(line.as_bytes()).ok().flatten();
+
+    let lead_bytes = line.len() - line.trim_start().len();
+    let trimmed = line.trim();
+
+    // Match byte offsets relative to the trimmed line (clamped into range).
+    let (mb_start, mb_end) = match raw_match {
+        Some(m) => (
+            m.start().saturating_sub(lead_bytes).min(trimmed.len()),
+            m.end().saturating_sub(lead_bytes).min(trimmed.len()),
+        ),
+        None => (0, 0),
+    };
+
+    // Byte → char offset (boundaries are valid: regex matches and whitespace
+    // trims both fall on char boundaries of a `&str`).
+    let byte_to_char = |b: usize| trimmed.get(..b).map_or(0, |s| s.chars().count());
+    let mut cs = byte_to_char(mb_start);
+    let mut ce = byte_to_char(mb_end);
+
+    let capped: String = trimmed.chars().take(GREP_SNIPPET_CAP).collect();
+    let cap_len = capped.chars().count();
+    cs = cs.min(cap_len);
+    ce = ce.min(cap_len);
+
+    (capped, cs, ce)
 }
 
 /// Custom schema for JSON object (used for required `serde_json::Value` fields).
@@ -201,80 +379,37 @@ impl SearchTools {
             ));
         }
 
-        // Build regex matcher
-        let matcher = if case_insensitive {
-            RegexMatcher::new_line_matcher(&format!("(?i){}", regex::escape(&query)))
-        } else {
-            RegexMatcher::new_line_matcher(&regex::escape(&query))
-        }
-        .mcp_err_ctx("Failed to create matcher")?;
+        // Reuse the shared grep engine, restricting to notes (`*.md`) and
+        // reporting paths relative to the kiln root even when a subfolder is
+        // walked.
+        let (hits, truncated) = grep_search(
+            &search_path,
+            std::path::Path::new(&self.kiln_path),
+            &query,
+            Some("*.md"),
+            limit,
+            case_insensitive,
+        )
+        .mcp_err_ctx("Text search failed")?;
 
-        let mut matches = Vec::new();
-        let mut searcher = Searcher::new();
-        let mut stopped_early = false;
-
-        // Walk files
-        for entry in WalkBuilder::new(&search_path)
-            .standard_filters(true)
-            .build()
-            .filter_map(Result::ok)
-        {
-            if !entry.file_type().is_some_and(|ft| ft.is_file()) {
-                continue;
-            }
-
-            let path = entry.path();
-            if path.extension().is_none_or(|ext| ext != "md") {
-                continue;
-            }
-
-            // Search this file
-            let relative_path = path
-                .strip_prefix(&self.kiln_path)
-                .unwrap_or(path)
-                .to_string_lossy()
-                .to_string();
-
-            let mut file_matches = Vec::new();
-            let mut line_num = 0u64;
-
-            let result = searcher.search_path(
-                &matcher,
-                path,
-                UTF8(|lnum, line| {
-                    line_num = lnum;
-                    file_matches.push(serde_json::json!({
-                        "path": relative_path.clone(),
-                        "line_number": lnum,
-                        "line_content": line.trim_end(),
-                    }));
-
-                    // Stop if we've hit the limit
-                    if matches.len() + file_matches.len() >= limit {
-                        Ok(false)
-                    } else {
-                        Ok(true)
-                    }
-                }),
-            );
-
-            if result.is_ok() {
-                matches.extend(file_matches);
-                if matches.len() >= limit {
-                    stopped_early = true;
-                    break;
-                }
-            }
-        }
+        let matches: Vec<serde_json::Value> = hits
+            .into_iter()
+            .map(|h| {
+                serde_json::json!({
+                    "path": h.rel_path,
+                    "line_number": h.line,
+                    "line_content": h.text,
+                })
+            })
+            .collect();
 
         let count = matches.len();
-        matches.truncate(limit);
 
         json_success(serde_json::json!({
             "query": query,
             "matches": matches,
             "count": count,
-            "truncated": stopped_early
+            "truncated": truncated
         }))
     }
 
