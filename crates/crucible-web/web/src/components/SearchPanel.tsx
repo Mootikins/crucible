@@ -20,15 +20,37 @@ import { pathBasename } from '@/stores/statusBarStore';
 import { kilnLabel } from '@/lib/kiln-label';
 import { relativeTime } from '@/lib/format-time';
 import { treeSectionHeader } from '@/components/tree/tree-style';
-import { Search, FileText, FolderGit2, FlaskConical, ClipboardList, X } from '@/lib/icons';
+import { Search, FileText, FolderGit2, FlaskConical, ClipboardList, ChevronDown, Check, X } from '@/lib/icons';
 
-type Source = 'notes' | 'files' | 'sessions';
-const ALL_SOURCES: Source[] = ['notes', 'files', 'sessions'];
 const HIT_LIMIT = 60;
 const DEBOUNCE_MS = 220;
 
-/** Split a line into [before, match, after] for <mark> highlighting without
- * innerHTML — offsets come from the daemon (char positions into `text`). */
+// ---- scope-aware search options --------------------------------------------
+type ScopeKind = 'everywhere' | 'kiln' | 'project' | 'sessions';
+type SScope = { kind: ScopeKind; name: string; path?: string };
+
+const NOTE_OPS: [string, string][] = [
+  ['path:', 'match note path'], ['file:', 'match note name'], ['tag:', 'search for tags'],
+  ['line:', 'keywords on the same line'], ['section:', 'under a heading'],
+];
+const FILE_OPS: [string, string][] = [
+  ['path:', 'match file path'], ['file:', 'match file name'], ['ext:', 'filter by extension'],
+  ['/regex/', 'regular expression'], ['case:', 'case-sensitive'],
+];
+const SESSION_OPS: [string, string][] = [
+  ['agent:', 'by agent'], ['model:', 'by model'], ['kiln:', 'by kiln'], ['after:', 'active after a date'],
+];
+function opsFor(k: ScopeKind): [string, string][] {
+  if (k === 'kiln') return NOTE_OPS;
+  if (k === 'project') return FILE_OPS;
+  if (k === 'sessions') return SESSION_OPS;
+  return [['path:', 'note/file path'], ['file:', 'note/file name'], ['tag:', 'note tags'], ['ext:', 'file extension'], ['agent:', 'session agent']];
+}
+const optionsHeader = (k: ScopeKind) =>
+  k === 'kiln' ? 'Note search' : k === 'project' ? 'File search' : k === 'sessions' ? 'Session search' : 'Search everywhere';
+const scopeIcon = (k: ScopeKind) => (k === 'everywhere' ? Search : k === 'project' ? FolderGit2 : k === 'sessions' ? ClipboardList : FlaskConical);
+
+/** Split a line into [before, match, after] for <mark> highlighting. */
 function highlightParts(hit: GrepHit): [string, string, string] {
   const s = Math.max(0, Math.min(hit.matchStart, hit.text.length));
   const e = Math.max(s, Math.min(hit.matchEnd, hit.text.length));
@@ -42,7 +64,7 @@ const HitRow: Component<{ hit: GrepHit; onOpen: () => void }> = (props) => {
       type="button"
       onClick={props.onOpen}
       title={`${props.hit.relPath}:${props.hit.line}`}
-      class="w-full text-left px-3 py-1.5 rounded hover:bg-hover-wash transition-colors group/hit"
+      class="w-full text-left px-3 py-1.5 rounded hover:bg-hover-wash transition-colors"
       data-testid="search-hit"
     >
       <div class="flex items-center gap-1.5 min-w-0">
@@ -61,20 +83,22 @@ const HitRow: Component<{ hit: GrepHit; onOpen: () => void }> = (props) => {
 };
 
 /**
- * Unified content search: notes (ripgrep over the primary kiln's .md files),
- * project files (ripgrep over the active project), and sessions (title/content).
- * One debounced query fans out to all three sources; each renders under its own
- * section with a count, and the facet chips toggle which sources show.
+ * Content search scoped by a picker: pick Everywhere / Sessions / a kiln / a
+ * project (prefilled from the current session's kiln). The scope drives which
+ * corpora are searched (kiln → its notes, project → its files, sessions always
+ * integrate) and which operator hints show. One debounced query fans out.
  */
 export const SearchPanel: Component = () => {
   const { projects } = useProjectSafe();
-  const { selectSession } = useSessionSafe();
+  const { selectSession, currentSession } = useSessionSafe();
 
   const [kilnPath, setKilnPath] = createSignal('');
   const [kilns, setKilns] = createSignal<KilnListEntry[]>([]);
   const [query, setQuery] = createSignal('');
   const [debounced, setDebounced] = createSignal('');
-  const [active, setActive] = createSignal<Set<Source>>(new Set(ALL_SOURCES));
+  const [scope, setScope] = createSignal<SScope>({ kind: 'everywhere', name: 'Everywhere' });
+  const [scopeTouched, setScopeTouched] = createSignal(false);
+  const [pickerOpen, setPickerOpen] = createSignal(false);
 
   const [noteHits, setNoteHits] = createSignal<GrepHit[]>([]);
   const [fileHits, setFileHits] = createSignal<GrepHit[]>([]);
@@ -84,116 +108,76 @@ export const SearchPanel: Component = () => {
 
   let inputRef: HTMLInputElement | undefined;
 
-  // The primary kiln (notes corpus) and the most-recently-used project (files
-  // corpus). The daemon sorts projects by last_accessed, so [0] is the MRU.
-  const projectRoot = createMemo(() => projects()[0]?.path ?? '');
-  const projectName = createMemo(() => {
-    const p = projects()[0];
-    return p ? p.name || pathBasename(p.path) : '';
-  });
-  const kilnName = createMemo(() => {
-    const k = kilns().find((x) => x.path === kilnPath());
-    return kilnLabel(kilnPath(), k?.name);
-  });
+  const primaryKiln = () => kilnPath();
+  const mruProject = () => projects()[0]?.path ?? '';
+  const kilnDisplay = (path: string) => kilnLabel(path, kilns().find((k) => k.path === path)?.name);
+
+  const scopeOptions = createMemo<SScope[]>(() => [
+    { kind: 'everywhere', name: 'Everywhere' },
+    { kind: 'sessions', name: 'Sessions' },
+    ...kilns().map((k) => ({ kind: 'kiln' as const, name: kilnDisplay(k.path), path: k.path })),
+    ...projects().map((p) => ({ kind: 'project' as const, name: p.name || pathBasename(p.path) || p.path, path: p.path })),
+  ]);
 
   onMount(() => {
     swrLocal('config', getConfig, (cfg) => cfg?.kiln_path && setKilnPath(cfg.kiln_path));
     swrLocal('kilns', listKilns, setKilns);
-    // Focus the box when the panel opens, and when a global "focus search"
-    // event fires (Ctrl+Shift+F / palette / ribbon re-open).
     queueMicrotask(() => inputRef?.focus());
-    const onFocus = () => {
-      inputRef?.focus();
-      inputRef?.select();
-    };
+    const onFocus = () => { inputRef?.focus(); inputRef?.select(); };
     window.addEventListener('crucible:focus-search', onFocus);
     onCleanup(() => window.removeEventListener('crucible:focus-search', onFocus));
   });
 
-  // Debounce the query into `debounced`.
-  createEffect(
-    on(query, (q) => {
-      const t = setTimeout(() => setDebounced(q.trim()), DEBOUNCE_MS);
-      onCleanup(() => clearTimeout(t));
-    }),
-  );
+  // Prefill the scope from the current session's kiln (context), until the user
+  // picks a scope themselves.
+  createEffect(() => {
+    if (scopeTouched()) return;
+    const k = currentSession()?.kiln;
+    if (k) setScope({ kind: 'kiln', name: kilnDisplay(k), path: k });
+  });
 
-  // Run the three searches whenever the debounced query (or corpus) changes.
-  // A per-run token drops stale responses (out-of-order guard).
-  let runToken = 0;
-  createEffect(
-    on([debounced, kilnPath, projectRoot], ([q, kiln, proj]) => {
-      const token = ++runToken;
-      if (!q) {
-        setNoteHits([]);
-        setFileHits([]);
-        setSessionHits([]);
-        setError(null);
-        setBusy(false);
-        return;
-      }
-      setBusy(true);
-      setError(null);
-      const guard = <T,>(fn: () => T) => (runToken === token ? fn() : undefined);
+  const pickScope = (s: SScope) => { setScopeTouched(true); setScope(s); setPickerOpen(false); };
 
-      const notes = kiln
-        ? grepSearch(kiln, q, { glob: '*.md', limit: HIT_LIMIT })
-            .then((r) => guard(() => setNoteHits(r.hits)))
-            .catch(() => guard(() => setNoteHits([])))
-        : Promise.resolve(guard(() => setNoteHits([])));
-
-      const files = proj
-        ? grepSearch(proj, q, { limit: HIT_LIMIT })
-            .then((r) => guard(() => setFileHits(r.hits)))
-            .catch(() => guard(() => setFileHits([])))
-        : Promise.resolve(guard(() => setFileHits([])));
-
-      const sessions = searchSessions(q, undefined, 30)
-        .then((r) => guard(() => setSessionHits(r)))
-        .catch(() => guard(() => setSessionHits([])));
-
-      void Promise.allSettled([notes, files, sessions]).then(() =>
-        guard(() => setBusy(false)),
-      );
-    }),
-  );
-
-  const toggle = (s: Source) =>
-    setActive((prev) => {
-      const next = new Set(prev);
-      if (next.has(s)) next.delete(s);
-      else next.add(s);
-      // Never allow zero facets — re-enabling all reads clearer than "nothing".
-      return next.size === 0 ? new Set(ALL_SOURCES) : next;
-    });
-
-  const counts = createMemo(() => ({
-    notes: noteHits().length,
-    files: fileHits().length,
-    sessions: sessionHits().length,
+  // Debounce.
+  createEffect(on(query, (q) => {
+    const t = setTimeout(() => setDebounced(q.trim()), DEBOUNCE_MS);
+    onCleanup(() => clearTimeout(t));
   }));
-  const total = () => counts().notes + counts().files + counts().sessions;
 
-  const facet = (s: Source, label: string, icon: Component<{ class?: string }>) => {
-    const Icon = icon;
-    return (
-      <button
-        type="button"
-        onClick={() => toggle(s)}
-        data-testid={`search-facet-${s}`}
-        aria-pressed={active().has(s)}
-        classList={{
-          'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] border transition-colors': true,
-          'border-primary/40 bg-primary/10 text-shell-ink': active().has(s),
-          'border-hairline text-muted-dark hover:bg-hover-wash': !active().has(s),
-        }}
-      >
-        <Icon class="w-3 h-3" />
-        {label}
-        <span class="text-muted-dark">{counts()[s]}</span>
-      </button>
-    );
-  };
+  const showNotes = () => scope().kind === 'everywhere' || scope().kind === 'kiln';
+  const showFiles = () => scope().kind === 'everywhere' || scope().kind === 'project';
+  // Which roots to grep for the current scope.
+  const noteRoot = () => (scope().kind === 'kiln' ? scope().path ?? '' : primaryKiln());
+  const fileRoot = () => (scope().kind === 'project' ? scope().path ?? '' : mruProject());
+
+  // Run searches on query/scope change; per-run token drops stale responses.
+  let runToken = 0;
+  createEffect(on([debounced, scope], ([q]) => {
+    const token = ++runToken;
+    if (!q) { setNoteHits([]); setFileHits([]); setSessionHits([]); setError(null); setBusy(false); return; }
+    setBusy(true);
+    setError(null);
+    const guard = <T,>(fn: () => T) => (runToken === token ? fn() : undefined);
+
+    const nRoot = noteRoot();
+    const notes = showNotes() && nRoot
+      ? grepSearch(nRoot, q, { glob: '*.md', limit: HIT_LIMIT }).then((r) => guard(() => setNoteHits(r.hits))).catch(() => guard(() => setNoteHits([])))
+      : Promise.resolve(guard(() => setNoteHits([])));
+
+    const fRoot = fileRoot();
+    const files = showFiles() && fRoot
+      ? grepSearch(fRoot, q, { limit: HIT_LIMIT }).then((r) => guard(() => setFileHits(r.hits))).catch(() => guard(() => setFileHits([])))
+      : Promise.resolve(guard(() => setFileHits([])));
+
+    // Sessions always integrate; scope to the kiln when one is selected.
+    const sessKiln = scope().kind === 'kiln' ? scope().path : undefined;
+    const sessions = searchSessions(q, sessKiln, 30).then((r) => guard(() => setSessionHits(r))).catch(() => guard(() => setSessionHits([])));
+
+    void Promise.allSettled([notes, files, sessions]).then(() => guard(() => setBusy(false)));
+  }));
+
+  const counts = createMemo(() => ({ notes: noteHits().length, files: fileHits().length, sessions: sessionHits().length }));
+  const total = () => counts().notes + counts().files + counts().sessions;
 
   return (
     <PanelShell class="overflow-hidden">
@@ -204,100 +188,90 @@ export const SearchPanel: Component = () => {
             ref={inputRef}
             value={query()}
             onInput={(e) => setQuery(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape' && query()) {
-                e.stopPropagation();
-                setQuery('');
-              }
-            }}
-            placeholder="Search notes, files, sessions…"
+            onKeyDown={(e) => { if (e.key === 'Escape' && query()) { e.stopPropagation(); setQuery(''); } }}
+            placeholder={`Search ${scope().name.toLowerCase()}…`}
             aria-label="Search content"
             class="flex-1 min-w-0 bg-transparent text-sm text-shell-ink placeholder-muted-dark outline-none"
             data-testid="search-input"
           />
           <Show when={query()}>
-            <button
-              type="button"
-              onClick={() => {
-                setQuery('');
-                inputRef?.focus();
-              }}
-              aria-label="Clear search"
-              class="p-0.5 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash"
-            >
+            <button type="button" onClick={() => { setQuery(''); inputRef?.focus(); }} aria-label="Clear search"
+              class="p-0.5 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash">
               <X class="w-3.5 h-3.5" />
             </button>
           </Show>
         </div>
-        <div class="flex items-center gap-1.5 flex-wrap">
-          {facet('notes', 'Notes', FlaskConical)}
-          {facet('files', 'Files', FolderGit2)}
-          {facet('sessions', 'Sessions', ClipboardList)}
+
+        {/* Scope picker — prefilled to context; narrows/broadens the search. */}
+        <div class="relative flex items-center gap-1.5 text-[11px]" data-search-scope>
+          <span class="text-muted-dark">in</span>
+          <button
+            type="button"
+            onClick={() => setPickerOpen((o) => !o)}
+            data-testid="search-scope"
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-hairline hover:bg-hover-wash text-shell-body"
+          >
+            {(() => { const I = scopeIcon(scope().kind); return <I class="w-3 h-3 text-muted-dark" />; })()}
+            <span class="max-w-[140px] truncate">{scope().name}</span>
+            <ChevronDown class="w-3 h-3 text-muted-dark" />
+          </button>
+          <Show when={pickerOpen()}>
+            <ScopeMenu
+              options={scopeOptions()}
+              current={scope()}
+              onPick={pickScope}
+              onClose={() => setPickerOpen(false)}
+            />
+          </Show>
         </div>
-        <p class="text-[10px] text-muted-dark truncate">
-          <Show when={kilnPath()}>{kilnName()}</Show>
-          <Show when={kilnPath() && projectRoot()}> · </Show>
-          <Show when={projectRoot()}>{projectName()}</Show>
-        </p>
       </div>
 
       <div class="flex-1 overflow-y-auto py-1" data-testid="search-results">
         <Show when={error()}>
-          <div class="mx-3 my-2 px-3 py-2 text-xs text-error bg-error/10 rounded border border-error/30">
-            {error()}
-          </div>
+          <div class="mx-3 my-2 px-3 py-2 text-xs text-error bg-error/10 rounded border border-error/30">{error()}</div>
         </Show>
 
+        {/* Empty state: contextual operator hints for the chosen scope. */}
         <Show when={!debounced()}>
-          <div class="px-3 py-8 text-center text-muted-dark text-xs">
-            Type to search notes, project files, and sessions.
+          <div class="px-3 py-2">
+            <div class="py-1 text-[11px] font-semibold text-muted-dark">{optionsHeader(scope().kind)}</div>
+            <For each={opsFor(scope().kind)}>
+              {([op, d]) => (
+                <div class="py-1 text-[12px] flex gap-2"><span class="font-semibold font-mono text-shell-ink">{op}</span><span class="text-muted-dark">{d}</span></div>
+              )}
+            </For>
           </div>
         </Show>
 
         <Show when={debounced() && !busy() && total() === 0}>
-          <div class="px-3 py-8 text-center text-muted-dark text-xs">
-            No matches for “{debounced()}”.
-          </div>
+          <div class="px-3 py-8 text-center text-muted-dark text-xs">No matches for “{debounced()}”.</div>
         </Show>
 
-        {/* Notes */}
-        <Show when={active().has('notes') && noteHits().length > 0}>
+        <Show when={showNotes() && noteHits().length > 0}>
           <div class={treeSectionHeader}>Notes · {counts().notes}</div>
           <For each={noteHits()}>
-            {(hit) => (
-              <HitRow hit={hit} onOpen={() => openFileInEditor(hit.path, pathBasename(hit.relPath) || undefined)} />
-            )}
+            {(hit) => <HitRow hit={hit} onOpen={() => openFileInEditor(hit.path, pathBasename(hit.relPath) || undefined)} />}
           </For>
         </Show>
 
-        {/* Files */}
-        <Show when={active().has('files') && fileHits().length > 0}>
+        <Show when={showFiles() && fileHits().length > 0}>
           <div class={treeSectionHeader}>Files · {counts().files}</div>
           <For each={fileHits()}>
-            {(hit) => (
-              <HitRow hit={hit} onOpen={() => openFileInEditor(hit.path, pathBasename(hit.relPath) || undefined)} />
-            )}
+            {(hit) => <HitRow hit={hit} onOpen={() => openFileInEditor(hit.path, pathBasename(hit.relPath) || undefined)} />}
           </For>
         </Show>
 
-        {/* Sessions */}
-        <Show when={active().has('sessions') && sessionHits().length > 0}>
+        <Show when={sessionHits().length > 0}>
           <div class={treeSectionHeader}>Sessions · {counts().sessions}</div>
           <For each={sessionHits()}>
             {(s) => (
-              <button
-                type="button"
-                onClick={() => selectSession(s.id)}
-                title={s.title ?? 'Untitled session'}
+              <button type="button" onClick={() => selectSession(s.id)} title={s.title ?? 'Untitled session'}
                 class="w-full text-left px-3 py-1.5 rounded hover:bg-hover-wash transition-colors flex items-center gap-1.5"
-                data-testid="search-session-hit"
-              >
+                data-testid="search-session-hit">
                 <ClipboardList class="w-3.5 h-3.5 shrink-0 text-muted-dark" />
                 <span class="text-xs text-shell-body truncate">{s.title ?? 'Untitled session'}</span>
                 <Show when={s.started_at}>
-                  <span class="text-[10px] text-muted-dark shrink-0 ml-auto pl-2">
-                    {relativeTime(s.started_at!)}
-                  </span>
+                  <span class="text-[10px] text-muted-dark shrink-0 ml-auto pl-2">{relativeTime(s.started_at!)}</span>
                 </Show>
               </button>
             )}
@@ -305,5 +279,38 @@ export const SearchPanel: Component = () => {
         </Show>
       </div>
     </PanelShell>
+  );
+};
+
+const ScopeMenu: Component<{ options: SScope[]; current: SScope; onPick: (s: SScope) => void; onClose: () => void }> = (props) => {
+  onMount(() => {
+    const close = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('[data-search-scope]')) props.onClose(); };
+    document.addEventListener('click', close);
+    onCleanup(() => document.removeEventListener('click', close));
+  });
+  const isSel = (s: SScope) => s.kind === props.current.kind && s.path === props.current.path;
+  const Row: Component<{ s: SScope }> = (r) => {
+    const I = scopeIcon(r.s.kind);
+    return (
+      <button type="button" onClick={() => props.onPick(r.s)}
+        class="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-shell-body hover:bg-hover-wash"
+        data-testid={`search-scope-${r.s.kind}${r.s.path ? '-' + pathBasename(r.s.path) : ''}`}>
+        <I class="w-3.5 h-3.5 shrink-0 text-muted-dark" /><span class="truncate">{r.s.name}</span>
+        <Show when={isSel(r.s)}><Check class="w-3.5 h-3.5 text-primary ml-auto" /></Show>
+      </button>
+    );
+  };
+  return (
+    <div class="absolute left-6 top-6 z-30 w-56 max-h-[320px] overflow-y-auto bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1">
+      <For each={props.options.filter((s) => s.kind === 'everywhere' || s.kind === 'sessions')}>{(s) => <Row s={s} />}</For>
+      <Show when={props.options.some((s) => s.kind === 'kiln')}>
+        <div class="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-dark">Kilns</div>
+        <For each={props.options.filter((s) => s.kind === 'kiln')}>{(s) => <Row s={s} />}</For>
+      </Show>
+      <Show when={props.options.some((s) => s.kind === 'project')}>
+        <div class="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-dark">Projects</div>
+        <For each={props.options.filter((s) => s.kind === 'project')}>{(s) => <Row s={s} />}</For>
+      </Show>
+    </div>
   );
 };

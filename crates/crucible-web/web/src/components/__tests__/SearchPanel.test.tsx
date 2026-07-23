@@ -7,7 +7,7 @@ vi.mock('@/contexts/ProjectContext', () => ({
   useProjectSafe: () => ({ projects: () => [{ path: '/repos/app', name: 'app', kilns: [] }] }),
 }));
 vi.mock('@/contexts/SessionContext', () => ({
-  useSessionSafe: () => ({ selectSession: selectSessionMock }),
+  useSessionSafe: () => ({ selectSession: selectSessionMock, currentSession: () => undefined }),
 }));
 // swrLocal just runs the fetcher and pipes it to the setter.
 vi.mock('@/lib/local-cache', () => ({
@@ -79,12 +79,17 @@ describe('SearchPanel', () => {
     expect(openFileMock).toHaveBeenCalled();
   });
 
-  it('facet toggle hides a source section', async () => {
+  it('scoping to Sessions drops the notes/files sections', async () => {
     render(() => <SearchPanel />);
     fireEvent.input(screen.getByTestId('search-input'), { target: { value: 'trust' } });
-    await waitFor(() => expect(screen.getByTestId('search-session-hit')).toBeTruthy());
+    // Default (no current session) = Everywhere → notes + files hits present.
+    await waitFor(() => expect(screen.getAllByTestId('search-hit').length).toBe(2));
 
-    fireEvent.click(screen.getByTestId('search-facet-sessions'));
-    await waitFor(() => expect(screen.queryByTestId('search-session-hit')).toBeNull());
+    fireEvent.click(screen.getByTestId('search-scope'));
+    await waitFor(() => expect(screen.getByTestId('search-scope-sessions')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('search-scope-sessions'));
+
+    await waitFor(() => expect(screen.queryAllByTestId('search-hit').length).toBe(0));
+    expect(screen.getByTestId('search-session-hit')).toBeTruthy();
   });
 });
