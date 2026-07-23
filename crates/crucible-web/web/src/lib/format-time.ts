@@ -35,3 +35,18 @@ export function formatRelativeTime(timestamp: number): string {
   const date = new Date(timestamp);
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
+
+/** Absolute local timestamp for message footers: "Jul 22, 9:41 PM"
+ * (year included once it differs from the current year). */
+export function formatAbsoluteTime(timestamp: number): string {
+  const d = new Date(timestamp);
+  if (Number.isNaN(d.getTime())) return '';
+  const opts: Intl.DateTimeFormatOptions = {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return d.toLocaleString(undefined, opts);
+}

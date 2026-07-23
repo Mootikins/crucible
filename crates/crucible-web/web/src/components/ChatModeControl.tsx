@@ -3,10 +3,10 @@ import { useChatSafe } from '@/contexts/ChatContext';
 import type { ChatMode } from '@/lib/types';
 import { ChipSelect } from '@/components/composer/ChipSelect';
 
-const MODES: { value: ChatMode; label: string; hint: string }[] = [
-  { value: 'normal', label: 'Normal', hint: 'Agent acts directly' },
-  { value: 'plan', label: 'Plan', hint: 'Agent drafts a plan before acting' },
-  { value: 'auto', label: 'Auto', hint: 'Agent runs autonomously' },
+const MODES: { value: ChatMode; label: string }[] = [
+  { value: 'normal', label: 'Normal' },
+  { value: 'plan', label: 'Plan' },
+  { value: 'auto', label: 'Auto' },
 ];
 
 const MODE_ORDER: ChatMode[] = ['normal', 'plan', 'auto'];
@@ -27,7 +27,7 @@ export const ChatModeControl: Component = () => {
   return (
     <ChipSelect
       name="mode"
-      options={MODES.map((m) => ({ value: m.value, label: m.label, hint: m.hint }))}
+      options={MODES.map((m) => ({ value: m.value, label: m.label }))}
       value={chatMode()}
       onSelect={(v) => switchMode(v as ChatMode)}
       testid="chat-mode"

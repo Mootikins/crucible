@@ -108,8 +108,8 @@ describe('AssistantTurn — text segment markdown', () => {
 // ── Single meta row (the regression this refactor fixes) ───────────────
 
 describe('AssistantTurn — one meta row per turn', () => {
-  it('shows EXACTLY ONE timestamp and ONE usage line for a text→tools→text turn', () => {
-    const ts = Date.now() - 5 * 60_000; // "5 min ago"
+  it('shows EXACTLY ONE timestamp and ONE usage line for a text→tools→text turn', async () => {
+    const ts = Date.now() - 5 * 60_000;
     messagesAccessor = () => [
       textMsg('a1', 'first', { timestamp: ts }),
       toolMsg('t1'),
@@ -127,7 +127,9 @@ describe('AssistantTurn — one meta row per turn', () => {
 
     // Multiple segments, but the turn carries a single meta row.
     expect(screen.getAllByText(`${(1234).toLocaleString()} tokens`)).toHaveLength(1);
-    expect(screen.getAllByText('5 min ago')).toHaveLength(1);
+    // Timestamp is now ABSOLUTE and lives in the hover strip — still one.
+    const { formatAbsoluteTime } = await import('@/lib/format-time');
+    expect(screen.getAllByText(formatAbsoluteTime(ts))).toHaveLength(1);
   });
 
   it('picks up usage from whichever (last) segment carries it', () => {

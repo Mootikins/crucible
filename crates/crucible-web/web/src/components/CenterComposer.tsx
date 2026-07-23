@@ -18,6 +18,8 @@ import {
 import { notificationActions } from '@/stores/notificationStore';
 import type { AgentProfileEntry, KilnListEntry, Project } from '@/lib/types';
 import { WorkingDots } from '@/components/AssistantTurn';
+import { MicButton } from '@/components/MicButton';
+import { useMediaRecorder } from '@/hooks/useMediaRecorder';
 import { pathBasename } from '@/stores/statusBarStore';
 import { recentFiles, syncRecentsFromServer } from '@/lib/recent-files';
 import { kilnLabel } from '@/lib/kiln-label';
@@ -35,7 +37,6 @@ import {
   History,
   Monitor,
   Network,
-  Sparkles,
 } from '@/lib/icons';
 
 const kbd = 'px-1.5 py-0.5 rounded bg-surface-elevated border border-hairline text-[10px] text-shell-body';
@@ -75,6 +76,22 @@ export const CenterComposer: Component = () => {
 
   let messageRef: HTMLTextAreaElement | undefined;
   const isAcp = () => agentName() !== '';
+
+  // Voice input — same recorder + level-fill treatment as the chat input.
+  const { isRecording, audioLevel, startRecording, stopRecording } = useMediaRecorder();
+  const handleTranscription = (text: string) =>
+    setMessage((prev) => (prev.trim() ? prev + ' ' + text : text));
+  const cardStyle = () => {
+    if (!isRecording()) return {};
+    const fill = Math.round(audioLevel() * 100);
+    return {
+      background: `linear-gradient(to top,
+        color-mix(in srgb, var(--color-primary) 40%, transparent) 0%,
+        color-mix(in srgb, var(--color-primary) 20%, transparent) ${fill}%,
+        transparent ${fill}%)`,
+      'border-color': 'color-mix(in srgb, var(--color-primary) 60%, transparent)',
+    };
+  };
 
   onMount(() => {
     // No barrier, no blank chips: every source paints its LAST-KNOWN value
@@ -308,10 +325,10 @@ export const CenterComposer: Component = () => {
   ];
 
   const modelOptions = (): ChipOption[] => [
-    {
-      value: '',
-      label: defaultModel() ? `Auto (${defaultModel()})` : 'Auto',
-    },
+    // '' = provider default; the chip shows 'Select model' while unset
+    // (ChipSelect's empty-value placeholder rule), the list still offers
+    // Auto to return to the default after picking something.
+    { value: '', label: 'Auto', hint: defaultModel() || 'provider default' },
     ...models().map((m) => ({ value: m, label: m })),
   ];
 
@@ -467,7 +484,10 @@ export const CenterComposer: Component = () => {
           </div>
 
           {/* The composer card. */}
-          <div class="bg-surface-base border border-hairline-strong rounded-xl px-3 pt-2 pb-2 focus-within:border-primary transition-colors shadow-lg">
+          <div
+            class="bg-surface-base border border-hairline-strong rounded-xl px-3 pt-2 pb-2 focus-within:border-primary transition-colors shadow-lg"
+            style={cardStyle()}
+          >
             <textarea
               ref={messageRef}
               value={message()}
@@ -488,14 +508,22 @@ export const CenterComposer: Component = () => {
               <Show when={!isAcp()}>
                 <ChipSelect
                   name="model"
-                  icon={Sparkles}
                   options={modelOptions()}
                   value={model()}
                   onSelect={setModel}
+                  placeholder="Select model"
                   disabled={busy()}
                   testid="composer-model"
                 />
               </Show>
+              <div class="ml-auto" />
+              <MicButton
+                onTranscription={handleTranscription}
+                disabled={busy()}
+                startRecording={startRecording}
+                stopRecording={stopRecording}
+                isRecording={isRecording}
+              />
               <button
                 type="button"
                 onClick={() => void submit()}
@@ -503,7 +531,7 @@ export const CenterComposer: Component = () => {
                 aria-label="Start session"
                 title="Start session (Enter)"
                 classList={{
-                  'ml-auto w-7 h-7 rounded-full flex items-center justify-center transition-colors': true,
+                  'w-7 h-7 rounded-full flex items-center justify-center transition-colors': true,
                   'bg-primary text-white hover:bg-primary-hover': !!message().trim(),
                   'bg-surface-elevated text-muted-dark cursor-not-allowed': !message().trim(),
                 }}

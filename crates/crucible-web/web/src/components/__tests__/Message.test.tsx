@@ -243,11 +243,12 @@ describe('formatRelativeTime', () => {
     expect(formatRelativeTime(old)).toBe(expected);
   });
 
-  it('renders the relative time inside the user bubble', () => {
+  it('renders the ABSOLUTE time on the user bubble (hover-revealed)', async () => {
+    const { formatAbsoluteTime } = await import('@/lib/format-time');
     render(() => (
       <Message message={makeMessage({ role: 'user', timestamp: NOW - 5 * 60_000 })} />
     ));
-    expect(screen.getByText('5 min ago')).toBeInTheDocument();
+    expect(screen.getByText(formatAbsoluteTime(NOW - 5 * 60_000))).toBeInTheDocument();
   });
 });
 

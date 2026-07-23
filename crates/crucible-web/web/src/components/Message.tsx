@@ -9,7 +9,7 @@ import { PrecognitionBadge } from './PrecognitionBadge';
 import { useChatSafe } from '@/contexts/ChatContext';
 import type { Message as MessageType } from '@/lib/types';
 import { renderPlainWithWikilinks } from '@/lib/markdown';
-import { formatRelativeTime } from '@/lib/format-time';
+import { formatAbsoluteTime } from '@/lib/format-time';
 
 interface MessageProps {
   message: MessageType;
@@ -116,13 +116,14 @@ export const Message: Component<MessageProps> = (props) => {
           />
         </Show>
 
+        {/* Absolute time, bottom-left, hover-only — ambient relative
+            timestamps under every bubble were noise. */}
         <Show when={isUser() && props.message.timestamp}>
           <div
-            class="mt-1 inline-block text-[11px] leading-none text-muted-dark"
-            data-dynamic-time
+            class="absolute left-0 -bottom-5 text-[11px] leading-none text-muted-dark opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150"
             title={new Date(props.message.timestamp).toLocaleString()}
           >
-            {formatRelativeTime(props.message.timestamp)}
+            {formatAbsoluteTime(props.message.timestamp)}
           </div>
         </Show>
       </div>

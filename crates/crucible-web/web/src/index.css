@@ -188,9 +188,9 @@
   .user-quote {
     display: block;
     width: 100%;
-    border-radius: 5px;
-    border-left: 2px solid color-mix(in srgb, var(--color-primary) 60%, transparent);
-    background: color-mix(in srgb, var(--color-surface-elevated) 60%, transparent);
+    border-radius: 8px;
+    border: 1px solid var(--color-hairline-strong);
+    background: var(--color-surface-elevated);
     padding: 0.4rem 0.7rem 0.4rem 0.7rem;
     color: var(--color-shell-ink);
     font-size: 13px;

@@ -19,7 +19,7 @@ import type { Message as MessageType, TokenUsage } from '@/lib/types';
 import { renderMarkdown, renderMarkdownChatAsync, PROSE_CLASS } from '@/lib/markdown';
 import { makeMarkdownClickHandler } from '@/lib/markdown-click';
 import { statusBarStore } from '@/stores/statusBarStore';
-import { formatRelativeTime } from '@/lib/format-time';
+import { formatAbsoluteTime } from '@/lib/format-time';
 
 export type TurnPartSpec =
   | { kind: 'text'; id: string }
@@ -219,19 +219,9 @@ export const AssistantTurn: Component<{
 
       {/* ONE meta row for the whole response — never per segment. Tiny and
           muted, out of the reading flow: usage · time, hairline-quiet. */}
-      <Show when={!turnInFlight()}>
+      <Show when={!turnInFlight() && usage()}>
         <div class="mt-2 flex items-center gap-1.5 text-[11px] leading-none text-muted-dark">
-          <Show when={usage()}>
-            <span>{formatTokenUsage(usage()!)}</span>
-          </Show>
-          <Show when={usage() && firstMessage()?.timestamp}>
-            <span aria-hidden="true">·</span>
-          </Show>
-          <Show when={firstMessage()?.timestamp}>
-            <span data-dynamic-time title={new Date(firstMessage()!.timestamp).toLocaleString()}>
-              {formatRelativeTime(firstMessage()!.timestamp)}
-            </span>
-          </Show>
+          <span>{formatTokenUsage(usage()!)}</span>
         </div>
       </Show>
 
@@ -257,6 +247,14 @@ export const AssistantTurn: Component<{
             >
               <RefreshCw size={14} />
             </button>
+          </Show>
+          <Show when={firstMessage()?.timestamp}>
+            <span
+              class="ml-1 text-[11px] leading-none text-muted-dark"
+              title={new Date(firstMessage()!.timestamp).toLocaleString()}
+            >
+              {formatAbsoluteTime(firstMessage()!.timestamp)}
+            </span>
           </Show>
         </div>
       </Show>

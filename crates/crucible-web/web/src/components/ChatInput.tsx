@@ -10,7 +10,7 @@ import { SessionScopeChips } from './SessionScopeChips';
 import { ChipSelect } from '@/components/composer/ChipSelect';
 import { executeCommand } from '@/lib/api';
 import { statusBarStore } from '@/stores/statusBarStore';
-import { ArrowUp, Sparkles, X } from '@/lib/icons';
+import { ArrowUp, X } from '@/lib/icons';
 export const ChatInput: Component = () => {
   const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, switchMode, addSystemMessage, clearMessages } = useChatSafe();
   const { currentSession, cancelCurrentOperation, availableModels, switchModel } = useSessionSafe();
@@ -184,7 +184,6 @@ export const ChatInput: Component = () => {
         <div class="flex items-center gap-1">
           <ChipSelect
             name="model"
-            icon={Sparkles}
             options={availableModels().map((m) => ({ value: m, label: formatModelDisplay(m) }))}
             value={currentSession()?.agent_model ?? ''}
             onSelect={handleModelSelect}

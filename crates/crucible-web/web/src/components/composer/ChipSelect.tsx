@@ -95,6 +95,10 @@ export const ChipSelect: Component<{
       const n = props.selected?.length ?? 0;
       return n > 0 ? `${props.name} · ${n}` : props.name;
     }
+    // An empty value with an explicit placeholder reads as "nothing chosen"
+    // even when a '' option exists in the list (e.g. the model chips' Auto
+    // row) — the chip shows the placeholder, the list still offers the row.
+    if (props.value === '' && props.placeholder) return props.placeholder;
     return current()?.label ?? props.placeholder ?? props.name;
   };
   const isPicked = (o: ChipOption) =>
