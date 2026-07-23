@@ -63,7 +63,10 @@ export function useSessionSearch(options: UseSessionSearchOptions) {
     const base = searchQuery().trim() ? searchResults() : options.sessions();
     const filter = options.sessionFilter();
     if (filter === 'active') {
-      return base.filter(s => !s.archived && s.state !== 'ended');
+      // "Sessions" = everything not archived. Lifecycle state (ended/paused)
+      // is NOT a visibility axis — every session is resumable, so ended ones
+      // must still show.
+      return base.filter(s => !s.archived);
     }
     if (filter === 'archived') {
       return base.filter(s => s.archived === true);

@@ -4,21 +4,20 @@ import type { Project, Session } from '@/lib/types';
 import { Archive, ChevronRight, FlaskConical, FolderGit2, GitBranch, Trash2 } from '@/lib/icons';
 import { treeChevron, treeChip, treeGroupRow, treeSectionHeader } from '@/components/tree/tree-style';
 
-export const StateIndicator: Component<{ state: Session['state'] }> = (props) => {
-  const colorClass = () => {
-    switch (props.state) {
-      case 'active': return 'bg-ok';
-      case 'paused': return 'bg-attention';
-      case 'compacting': return 'bg-primary';
-      case 'ended': return 'bg-muted-dark';
-      default: return 'bg-muted-dark';
-    }
-  };
-
-  return (
-    <span class={`inline-block w-2 h-2 rounded-full ${colorClass()}`} title={props.state} />
-  );
-};
+/**
+ * Live-vs-idle dot. Lifecycle state (paused/ended/compacting) is no longer a
+ * UI axis — every session is resumable. We only surface "live" (resident in
+ * memory / recently active) as a quiet green dot; idle sessions get an aligned
+ * spacer and rely on their "last active" time instead.
+ */
+export const StateIndicator: Component<{ state: Session['state'] }> = (props) => (
+  <Show
+    when={props.state === 'active' || props.state === 'compacting'}
+    fallback={<span class="inline-block w-2 h-2 shrink-0" />}
+  >
+    <span class="inline-block w-2 h-2 rounded-full bg-ok shrink-0" title="live" />
+  </Show>
+);
 
 function relativeTime(iso: string | null): string | null {
   if (!iso) return null;

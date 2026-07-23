@@ -3,7 +3,6 @@ import { useSessionSafe } from '@/contexts/SessionContext';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { useSessionSearch } from '@/hooks/useSessionSearch';
 import { SessionTree } from './SessionTree';
-import { SessionFooter } from './SessionFooter';
 import { PanelShell } from './PanelShell';
 import { ChipSelect, type ChipOption } from './composer/ChipSelect';
 import { isGitRepoUrl, listKilns, scmBranches, scmClone } from '@/lib/api';
@@ -27,8 +26,6 @@ export const SessionPanel: Component = () => {
     sessions,
     isLoading,
     selectSession,
-    pauseSession,
-    resumeSession,
     refreshSessions,
     providers,
     providersLoaded,
@@ -234,8 +231,7 @@ export const SessionPanel: Component = () => {
             }
             class="text-xs bg-surface-elevated text-shell-body border border-hairline rounded px-1 py-0.5"
           >
-            <option value="active">Active</option>
-            <option value="all">All</option>
+            <option value="active">Sessions</option>
             <option value="archived">Archived</option>
           </select>
           <ChipSelect
@@ -365,15 +361,6 @@ export const SessionPanel: Component = () => {
           Add Project
         </button>
       </div>
-
-      <Show when={session()}>
-        <SessionFooter
-          session={session()!}
-          onPause={pauseSession}
-          onResume={resumeSession}
-          onRefresh={() => refreshSessions()}
-        />
-      </Show>
     </PanelShell>
   );
 };
