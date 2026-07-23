@@ -196,7 +196,7 @@ export const SessionTree: Component<{
 
     const none: SessionGroup = {
       key: NO_PROJECT,
-      name: 'No project',
+      name: 'Session folders',
       projectPath: '',
       sessions: [],
       lastActivity: 0,

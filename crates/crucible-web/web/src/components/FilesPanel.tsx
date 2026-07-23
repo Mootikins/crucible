@@ -13,6 +13,7 @@ import {
   saveFileContent,
 } from '@/lib/api';
 import { renamedRel, isValidName } from '@/lib/file-tree/mutations';
+import { swrLocal } from '@/lib/local-cache';
 import { moveTargetRel, type FileDragData } from '@/lib/file-dnd';
 import type { KilnListEntry, FsEntry } from '@/lib/types';
 import { buildRoster, rosterIndex, rootKey, type TreeRoot } from '@/lib/tree-root';
@@ -79,12 +80,9 @@ export const FilesPanel: Component = () => {
   // Live machine api (set by FileTreeView.apiRef); powers toolbar actions.
   let treeApi: UseTreeViewReturn<Node> | null = null;
 
-  onMount(async () => {
-    try {
-      setKilns(await listKilns());
-    } catch (e) {
-      console.error('Failed to list kilns:', e);
-    }
+  onMount(() => {
+    // Last-known kilns paint the roster immediately on reload.
+    swrLocal('kilns', listKilns, setKilns);
   });
 
   const roster = createMemo(() => buildRoster(projects(), kilns()));

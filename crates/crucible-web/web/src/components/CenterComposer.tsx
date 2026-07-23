@@ -19,6 +19,7 @@ import type { AgentProfileEntry, KilnListEntry, Project } from '@/lib/types';
 import { WorkingDots } from '@/components/AssistantTurn';
 import { pathBasename } from '@/stores/statusBarStore';
 import { recentFiles, syncRecentsFromServer } from '@/lib/recent-files';
+import { swrLocal } from '@/lib/local-cache';
 import { openFileInEditor } from '@/lib/file-actions';
 import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
 import {
@@ -74,26 +75,23 @@ export const CenterComposer: Component = () => {
   const isAcp = () => agentName() !== '';
 
   onMount(() => {
-    // No barrier: each chip fills as its data arrives. Agents/providers are
-    // the slow calls (daemon probes); the splash must not wait on them.
-    void getConfig()
-      .then((cfg) => {
-        if (cfg?.kiln_path) setDefaultKiln(cfg.kiln_path);
-        setRemoteShell(cfg?.remote_shell === true);
-      })
-      .catch(() => {});
-    void listAgents().then(setAgents).catch(() => {});
-    void listAllModels()
-      .then((mo) => setModels(mo.filter((m) => !m.startsWith('[error]'))))
-      .catch(() => {});
-    void listKilns().then(setKilns).catch(() => {});
-    void listProjects().then(setProjects).catch(() => {});
-    void listProviders()
-      .then((providers) => {
-        const first = providers.find((p) => p.available);
-        if (first?.default_model) setDefaultModel(first.default_model);
-      })
-      .catch(() => {});
+    // No barrier, no blank chips: every source paints its LAST-KNOWN value
+    // synchronously (swrLocal) and the fetch corrects it — a hard reload
+    // shows real labels immediately instead of "Loading…"/fallback text.
+    swrLocal('config', getConfig, (cfg) => {
+      if (cfg?.kiln_path) setDefaultKiln(cfg.kiln_path);
+      setRemoteShell(cfg?.remote_shell === true);
+    });
+    swrLocal('agents', listAgents, setAgents);
+    swrLocal('models', () => listAllModels(), (mo) =>
+      setModels(mo.filter((m) => !m.startsWith('[error]'))),
+    );
+    swrLocal('kilns', listKilns, setKilns);
+    swrLocal('projects', () => listProjects(), setProjects);
+    swrLocal('providers', () => listProviders(), (providers) => {
+      const first = providers.find((p) => p.available);
+      if (first?.default_model) setDefaultModel(first.default_model);
+    });
     syncRecentsFromServer();
   });
 
@@ -284,7 +282,9 @@ export const CenterComposer: Component = () => {
         : [];
     return [
       ...recents,
-      { value: '', label: 'No project', group: 'Projects' },
+      // No project selected → the daemon gives the session its own scratch
+      // folder ([scm] session_workspace_dir, default ~/.crucible/workspaces).
+      { value: '', label: 'Session folder', hint: 'unique per session', group: 'Projects' },
       ...main.map((p) => ({
         value: p.path,
         label: p.name || pathBasename(p.path) || p.path,

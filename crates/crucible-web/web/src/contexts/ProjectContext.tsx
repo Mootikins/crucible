@@ -5,7 +5,7 @@ import {
   createSignal,
   onMount,
 } from 'solid-js';
-import { createStore, produce } from 'solid-js/store';
+import { createStore, produce, reconcile } from 'solid-js/store';
 import type { Project } from '@/lib/types';
 import type { ProjectContextValue } from '@/lib/types/context';
 import {
@@ -18,9 +18,19 @@ import {
 
 const ProjectContext = createContext<ProjectContextValue>();
 
+function cachedProjects(): Project[] {
+  try {
+    const raw = localStorage.getItem('crucible:cache:projects');
+    return raw ? (JSON.parse(raw) as Project[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export const ProjectProvider: ParentComponent = (props) => {
   const [currentProject, setCurrentProject] = createSignal<Project | null>(null);
-  const [projects, setProjects] = createStore<Project[]>([]);
+  // Seed with the last-known roster so the shell paints instantly on reload.
+  const [projects, setProjects] = createStore<Project[]>(cachedProjects());
   const [isLoading, setIsLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
@@ -30,7 +40,12 @@ export const ProjectProvider: ParentComponent = (props) => {
 
     try {
       const list = await apiListProjects();
-      setProjects(list);
+      setProjects(reconcile(list));
+      try {
+        localStorage.setItem('crucible:cache:projects', JSON.stringify(list));
+      } catch {
+        /* private mode */
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load projects';
       setError(msg);

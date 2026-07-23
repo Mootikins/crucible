@@ -67,12 +67,12 @@ describe('SessionTree', () => {
       <SessionTree sessions={sessions} projects={projects} {...baseProps} />
     ));
 
-    // ONE group for the repo (main + worktree), one empty 'other', one No project.
+    // ONE group for the repo (main + worktree), one empty 'other', one session-folders bucket.
     const repoGroup = getByTestId('session-group-crucible');
     expect(repoGroup).toBeTruthy();
     expect(repoGroup.textContent).toContain('2');
     expect(getByTestId('session-group-other')).toBeTruthy();
-    expect(getByTestId('session-group-No project')).toBeTruthy();
+    expect(getByTestId('session-group-Session folders')).toBeTruthy();
     expect(queryByTestId('session-group-x')).toBeNull(); // worktree never a group
 
     // All three sessions render as rows.

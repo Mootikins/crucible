@@ -6,7 +6,7 @@ import {
   createEffect,
   onCleanup,
 } from 'solid-js';
-import { createStore, produce } from 'solid-js/store';
+import { createStore, produce, reconcile } from 'solid-js/store';
 import type { Session, CreateSessionParams, ProviderInfo } from '@/lib/types';
 import type { SessionContextValue } from '@/lib/types/context';
 import {
@@ -39,11 +39,20 @@ interface SessionProviderProps {
   children: any;
 }
 
+function cachedSessions(): Session[] {
+  try {
+    const raw = localStorage.getItem('crucible:cache:sessions');
+    return raw ? (JSON.parse(raw) as Session[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 const SessionContext = createContext<SessionContextValue>();
 
 export const SessionProvider: ParentComponent<SessionProviderProps> = (props) => {
   const [currentSession, setCurrentSession] = createSignal<Session | null>(null);
-  const [sessions, setSessions] = createStore<Session[]>([]);
+  const [sessions, setSessions] = createStore<Session[]>(cachedSessions());
   const [isLoading, setIsLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [availableModels, setAvailableModels] = createSignal<string[]>([]);
@@ -75,7 +84,12 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
         workspace: filters?.workspace,
         includeArchived: filters?.includeArchived ?? false,
       });
-      setSessions(list);
+      setSessions(reconcile(list));
+      try {
+        localStorage.setItem('crucible:cache:sessions', JSON.stringify(list));
+      } catch {
+        /* private mode */
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load sessions';
       setError(msg);
