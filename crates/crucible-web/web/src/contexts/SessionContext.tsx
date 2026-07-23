@@ -70,6 +70,11 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     }
   };
 
+  // Last explicit includeArchived choice (the panel's state filter): bare
+  // refreshSessions() calls reuse it so an unarchive while viewing Archived
+  // doesn't replace the store with an active-only list.
+  let lastIncludeArchived = false;
+
   const refreshSessions = async (filters?: { kiln?: string; workspace?: string; includeArchived?: boolean }) => {
     setIsLoading(true);
     setError(null);
@@ -79,10 +84,12 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       // facet-filters CLIENT-side over the global list. Defaulting to
       // initialKiln/initialWorkspace here made a later scoped refetch
       // clobber the list — "No project" sessions flashed then vanished.
+      const includeArchived = filters?.includeArchived ?? lastIncludeArchived;
+      lastIncludeArchived = includeArchived;
       const list = await apiListSessions({
         kiln: filters?.kiln,
         workspace: filters?.workspace,
-        includeArchived: filters?.includeArchived ?? false,
+        includeArchived,
       });
       setSessions(reconcile(list));
       try {
@@ -221,7 +228,15 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     const existing = sessions.find((s) => s.id === id);
     if (existing) {
       if (!(await apiGetSession(existing.id).then(() => true).catch(() => false))) {
-        await hydrateSession(existing.id, existing.kiln);
+        // The row can come from the last-known localStorage cache — the
+        // daemon may have deleted the session since. A failed hydrate means
+        // it's really gone: prune the dead row instead of opening a chat
+        // tab that can never load.
+        if (!(await hydrateSession(existing.id, existing.kiln))) {
+          setSessions(sessions.filter((s) => s.id !== id));
+          notificationActions.addNotification('error', 'Session no longer exists');
+          return;
+        }
       }
 
       setCurrentSession(existing);

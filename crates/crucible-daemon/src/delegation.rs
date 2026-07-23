@@ -349,9 +349,11 @@ impl DelegationSpawner for DelegationService {
         // cloud target cannot. Unresolved trust still fails closed to Cloud
         // inside resolve_agent_trust.
         let child_trust = manager.resolve_agent_trust(&child_agent);
-        let classification =
-            crate::trust_resolution::resolve_kiln_classification(&parent.workspace, &parent.kiln)
-                .unwrap_or(crucible_core::config::DataClassification::Public);
+        let classification = crate::trust_resolution::resolve_session_classification(
+            &parent.workspace,
+            &parent.kiln,
+        )
+        .unwrap_or(crucible_core::config::DataClassification::Public);
         if !child_trust.satisfies(classification) {
             return Err(JobError::SpawnFailed(format!(
                 "Delegated agent's trust level '{child_trust}' is insufficient for kiln data                  classification '{classification}'. Requires '{}' trust.",

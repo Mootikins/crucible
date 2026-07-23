@@ -344,7 +344,7 @@ test.describe('Session Lifecycle', () => {
     const externalSession = {
       session_id: 'external-session-999',
       type: 'chat' as const,
-      kiln: '/home/user/.crucible/kiln',
+      kiln: '/home/user/notes',
       workspace: '/home/user/project',
       state: 'active' as const,
       title: 'External Client Session',

@@ -94,7 +94,9 @@ pub(crate) fn build_internal_delegation_context(
             .unwrap_or(51200),
         timeout_secs: delegation_config.map(|c| c.timeout_secs).unwrap_or(300),
         data_classification: kiln_path
-            .and_then(|kiln| crate::trust_resolution::resolve_kiln_classification(workspace, kiln))
+            .and_then(|kiln| {
+                crate::trust_resolution::resolve_session_classification(workspace, kiln)
+            })
             .unwrap_or(DataClassification::Public),
     })
 }

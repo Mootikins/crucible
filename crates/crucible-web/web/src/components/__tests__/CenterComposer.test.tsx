@@ -30,6 +30,7 @@ vi.mock('@/lib/api', () => ({
   recordRecent: vi.fn().mockResolvedValue(undefined),
   // Clone-from-popout flow.
   isGitRepoUrl: (s: string) => /^(https?:\/\/|git@)/.test(s) || /^[\w.-]+\/[\w.-]+$/.test(s),
+  isBranchNameish: (s: string) => !!s && !/\s|\.\.|^[-/]|\\|:|@\{|\/$/.test(s),
   scmClone: vi.fn(),
   // Branch chip: no repo unless a test overrides.
   scmBranches: vi.fn().mockRejectedValue(new Error('no repo')),

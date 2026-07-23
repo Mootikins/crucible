@@ -13,7 +13,7 @@ import { createStory } from './_helpers/story';
  * with old content fetched from GET /api/kiln/file.
  */
 
-const KILN = '/home/user/.crucible/kiln';
+const KILN = '/home/user/notes';
 const FILE = `${KILN}/Draft.md`;
 
 /** A write-permission interaction frame (drives the diff preview). */

@@ -2,6 +2,7 @@ import { Component, For, Show, createEffect, createSignal, on, onMount } from 's
 import { useSessionSafe } from '@/contexts/SessionContext';
 import {
   getConfig,
+  isBranchNameish,
   isGitRepoUrl,
   listAgents,
   listAllModels,
@@ -19,6 +20,7 @@ import type { AgentProfileEntry, KilnListEntry, Project } from '@/lib/types';
 import { WorkingDots } from '@/components/AssistantTurn';
 import { pathBasename } from '@/stores/statusBarStore';
 import { recentFiles, syncRecentsFromServer } from '@/lib/recent-files';
+import { kilnLabel } from '@/lib/kiln-label';
 import { swrLocal } from '@/lib/local-cache';
 import { openFileInEditor } from '@/lib/file-actions';
 import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
@@ -124,10 +126,7 @@ export const CenterComposer: Component = () => {
   // The default kiln's REGISTERED name (kiln.toml), not its path basename.
   const defaultKilnName = () => {
     const match = kilns().find((k) => k.path === defaultKiln());
-    return (
-      match?.name ||
-      (defaultKiln() ? pathBasename(defaultKiln()) || defaultKiln() : 'Home kiln')
-    );
+    return kilnLabel(defaultKiln(), match?.name);
   };
 
   const kilnOptions = (): ChipOption[] => [
@@ -136,7 +135,7 @@ export const CenterComposer: Component = () => {
       .filter((k) => k.path !== defaultKiln())
       .map((k) => ({
         value: k.path,
-        label: k.name || pathBasename(k.path) || k.path,
+        label: kilnLabel(k.path, k.name),
         hint: k.path,
       })),
     // Explicitly kiln-less — a session with no knowledge base attached.
@@ -147,9 +146,12 @@ export const CenterComposer: Component = () => {
     on(workspace, (ws) => {
       setRepoBranches(null);
       if (!ws) return;
+      // Out-of-order guard: a slow scmBranches(A) resolving after the user
+      // switched to project B must not land A's branches (a branch pick
+      // would then create worktrees on the WRONG repo).
       scmBranches(ws)
-        .then(setRepoBranches)
-        .catch(() => setRepoBranches(null)); // repo-less project: no branch chip
+        .then((res) => workspace() === ws && setRepoBranches(res))
+        .catch(() => workspace() === ws && setRepoBranches(null)); // repo-less project: no chip
     }),
   );
 
@@ -231,9 +233,6 @@ export const CenterComposer: Component = () => {
     })();
   };
 
-  // Loose client-side gate; the daemon runs `git check-ref-format` for real.
-  const isBranchNameish = (s: string) =>
-    !!s && !/\s|\.\.|^[-/]|\\/.test(s) && !isGitRepoUrl(s);
 
   // Paste a git URL (or owner/repo) into the project popout's filter to
   // clone-and-select without a side-panel detour — the session starts

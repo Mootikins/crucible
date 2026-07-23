@@ -55,13 +55,13 @@ test.describe('File tab flows', () => {
           json: {
             name: 'My Note',
             content: '# Hello World\n\nThis is test content.',
-            path: '/home/user/.crucible/kiln/My Note.md',
+            path: '/home/user/notes/My Note.md',
           },
         });
       } else {
         route.fulfill({
           json: [
-            { name: 'My Note', path: '/home/user/.crucible/kiln/My Note.md', is_dir: false },
+            { name: 'My Note', path: '/home/user/notes/My Note.md', is_dir: false },
           ],
         });
       }
@@ -71,7 +71,7 @@ test.describe('File tab flows', () => {
     await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 10000 });
 
     // Open a file (same code path as clicking in FilesPanel)
-    await openFile(page, '/home/user/.crucible/kiln/My Note.md', 'My Note.md');
+    await openFile(page, '/home/user/notes/My Note.md', 'My Note.md');
 
     // Assert: a file tab appears in the center pane and becomes active
     const fileTab = page.locator('[data-tab-id^="tab-file-"]');
@@ -86,8 +86,8 @@ test.describe('File tab flows', () => {
     await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 10000 });
 
     // Open the same file twice
-    await openFile(page, '/home/user/.crucible/kiln/My Note.md', 'My Note.md');
-    await openFile(page, '/home/user/.crucible/kiln/My Note.md', 'My Note.md');
+    await openFile(page, '/home/user/notes/My Note.md', 'My Note.md');
+    await openFile(page, '/home/user/notes/My Note.md', 'My Note.md');
 
     // Assert: only ONE file tab exists (deduplication works)
     const fileTabs = page.locator('[data-tab-id^="tab-file-"]');

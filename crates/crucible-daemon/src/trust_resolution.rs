@@ -44,6 +44,20 @@ pub(crate) fn resolve_kiln_classification(
     None
 }
 
+/// Runtime classification for a LIVE session: the workspace's own config
+/// first, then a walk up from the KILN. Session-unique scratch workspaces
+/// (created for projectless sessions) carry no `.crucible` config — reading
+/// only the workspace made a confidential kiln silently resolve to `None`
+/// (→ Public at the trust gates), diverging from the create-time gate which
+/// resolves against the kiln when no workspace is given.
+pub(crate) fn resolve_session_classification(
+    workspace: &Path,
+    kiln: &Path,
+) -> Option<DataClassification> {
+    resolve_kiln_classification(workspace, kiln)
+        .or_else(|| find_workspace_and_resolve_classification(kiln))
+}
+
 pub fn find_workspace_and_resolve_classification(kiln: &Path) -> Option<DataClassification> {
     let mut dir = kiln.to_path_buf();
     loop {
@@ -153,6 +167,32 @@ mod tests {
 
         let result = resolve_kiln_classification(&workspace, &kiln);
         assert_eq!(result, Some(DataClassification::Confidential));
+    }
+
+    #[test]
+    fn session_classification_falls_back_to_kiln_for_scratch_workspaces() {
+        // Regression: a session-unique scratch workspace has NO .crucible
+        // config — resolving only against it read a confidential kiln as
+        // None (→ Public at the delegation trust gates).
+        let tmp = TempDir::new().unwrap();
+        let workspace_owner = tmp.path().join("ws");
+        let kiln = workspace_owner.join("notes");
+        fs::create_dir_all(&kiln).unwrap();
+        write_workspace_config(&workspace_owner, "./notes", Some("confidential"));
+
+        let scratch = tmp.path().join("workspaces").join("chat-x");
+        fs::create_dir_all(&scratch).unwrap();
+
+        assert_eq!(resolve_kiln_classification(&scratch, &kiln), None);
+        assert_eq!(
+            resolve_session_classification(&scratch, &kiln),
+            Some(DataClassification::Confidential)
+        );
+        // A workspace WITH its own config still wins.
+        assert_eq!(
+            resolve_session_classification(&workspace_owner, &kiln),
+            Some(DataClassification::Confidential)
+        );
     }
 
     #[test]

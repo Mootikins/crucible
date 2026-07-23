@@ -6,6 +6,7 @@
  */
 import type { Project, KilnListEntry } from '@/lib/types';
 import { kilnRoot } from '@/lib/note-actions';
+import { kilnLabel } from '@/lib/kiln-label';
 
 export type { KilnListEntry } from '@/lib/types';
 
@@ -83,7 +84,9 @@ export function buildRoster(projects: Project[], kilns: KilnListEntry[]): Roster
   const nameToRoot = new Map<string, string>();
   const rootToName = new Map<string, string>();
   const learn = (rawPath: string, name: string | null) => {
-    if (!rawPath.startsWith('/')) return;
+    // Defensive: a malformed roster entry (missing/non-string path) must
+    // skip, not crash the whole roster memo.
+    if (typeof rawPath !== 'string' || !rawPath.startsWith('/')) return;
     const root = kilnRoot(rawPath);
     const trimmed = name?.trim();
     if (!trimmed) return;
@@ -95,13 +98,14 @@ export function buildRoster(projects: Project[], kilns: KilnListEntry[]): Roster
 
   const seen = new Map<string, TreeRoot>();
   const pushKiln = (rawPath: string, name: string | null) => {
+    if (typeof rawPath !== 'string') return;
     // Absolute → its normalized root; bare name → the root it aliases, or (if
     // unknown) the name itself so a genuinely name-only kiln survives.
     const root = rawPath.startsWith('/')
       ? kilnRoot(rawPath)
       : (nameToRoot.get(rawPath) ?? rawPath);
     if (!root || seen.has(root)) return;
-    const display = name?.trim() || rootToName.get(root) || basename(root);
+    const display = name?.trim() || rootToName.get(root) || kilnLabel(root);
     seen.set(root, { kind: 'kiln', path: root, name: display });
   };
 

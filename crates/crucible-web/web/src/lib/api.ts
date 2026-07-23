@@ -1184,6 +1184,13 @@ export function isGitRepoUrl(input: string): boolean {
   return /^[\w.-]+\/[\w.-]+$/.test(s) && !s.startsWith('.');
 }
 
+/** Loose client-side gate for git branch names (the daemon runs
+ * `git check-ref-format` for real). Slash-heavy conventions
+ * (feature/x, release/1.2) are the COMMON case and must pass. */
+export function isBranchNameish(s: string): boolean {
+  return !!s && !/\s|\.\.|^[-/]|\\|:|@\{|\/$/.test(s);
+}
+
 /** Clone a remote repo into `[scm] projects_dir` and register it as a
  * project. Slow (network clone) — no client-side timeout beyond fetch's. */
 export async function scmClone(url: string): Promise<ScmCloneResponse> {

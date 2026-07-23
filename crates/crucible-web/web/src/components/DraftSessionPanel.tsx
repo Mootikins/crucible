@@ -12,6 +12,7 @@ import type { AgentProfileEntry, KilnListEntry, Project } from '@/lib/types';
 import { closeDraftTab, consumeDraftPrefill } from '@/lib/draft-session';
 import { WorkingDots } from '@/components/AssistantTurn';
 import { pathBasename } from '@/stores/statusBarStore';
+import { kilnLabel } from '@/lib/kiln-label';
 
 /**
  * Draft session surface — the single session-creation path (lazy creation).
@@ -176,7 +177,7 @@ export const DraftSessionPanel: Component<{ draftTabId?: string }> = (props) => 
               data-testid="draft-kiln"
             >
               <option value="">
-                {defaultKiln() ? `${pathBasename(defaultKiln())} (default)` : 'Home kiln (default)'}
+                {`${kilnLabel(defaultKiln())} (default)`}
               </option>
               <For each={kilns().filter((k) => k.path !== defaultKiln())}>
                 {(k) => <option value={k.path}>{k.name || pathBasename(k.path)}</option>}

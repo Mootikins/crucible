@@ -11,6 +11,7 @@ import {
 import type { KilnListEntry, Project } from '@/lib/types';
 import { notificationActions } from '@/stores/notificationStore';
 import { pathBasename } from '@/stores/statusBarStore';
+import { kilnLabel } from '@/lib/kiln-label';
 
 /**
  * Interactive session-scope strip above the chat input: the workspace the
@@ -165,7 +166,7 @@ export const SessionScopeChips: Component = () => {
           class="text-[11px] text-shell-ink bg-primary/10 border border-primary/45 rounded-full px-2.5 py-0.5"
           data-testid="primary-kiln-chip"
         >
-          ◆ {pathBasename(session()!.kiln)}
+          ◆ {kilnLabel(session()!.kiln)}
         </span>
 
         {/* Connected kilns: detachable. */}
@@ -176,7 +177,7 @@ export const SessionScopeChips: Component = () => {
               class="text-[11px] text-shell-body bg-primary/5 border border-hairline rounded-full px-2.5 py-0.5 inline-flex items-center"
               data-testid="connected-kiln-chip"
             >
-              ◇ {pathBasename(kiln)}
+              ◇ {kilnLabel(kiln)}
               <button
                 type="button"
                 class={chipButton}

@@ -21,7 +21,7 @@ import { waitForFonts } from './_helpers/fonts';
  *  5. Clicking the anchor opens the note in an editor tab.
  */
 
-const KILN = '/home/user/.crucible/kiln';
+const KILN = '/home/user/notes';
 const NOTE_CONTENT = '# Kiln Note\n\nStored knowledge that grounds the agent.\n';
 
 type Frame = { type: string; data: object };

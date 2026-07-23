@@ -9,7 +9,7 @@ import { ChipSelect, type ChipOption } from './composer/ChipSelect';
 import { isGitRepoUrl, listKilns, scmBranches, scmClone } from '@/lib/api';
 import type { KilnListEntry, Session } from '@/lib/types';
 import { FlaskConical, GitBranch, Plus, Search, X } from '@/lib/icons';
-import { pathBasename } from '@/stores/statusBarStore';
+import { kilnLabel } from '@/lib/kiln-label';
 import { btnPrimary, btnNeutral } from '@/lib/button-style';
 
 /**
@@ -109,7 +109,7 @@ export const SessionPanel: Component = () => {
   const kilnName = (path: string): string | null => {
     if (!path) return null;
     const match = kilns().find((k) => k.path === path);
-    return match?.name || pathBasename(path) || path;
+    return kilnLabel(path, match?.name);
   };
 
   const sessionMatchesKilnFacet = (s: Session, facet: string[]) =>

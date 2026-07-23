@@ -188,15 +188,22 @@ export const ChipSelect: Component<{
       }
     };
     // A viewport change moves the trigger out from under the fixed panel —
-    // close instead of chasing it.
+    // close instead of chasing it. Scrolls INSIDE the panel (the options
+    // list) are fine; only background scrolls detach the trigger.
     const onViewportChange = () => close();
+    const onScroll = (e: Event) => {
+      if (panelRef && e.target instanceof Node && panelRef.contains(e.target)) return;
+      close();
+    };
     document.addEventListener('mousedown', onDocClick);
     document.addEventListener('keydown', onKey);
     window.addEventListener('resize', onViewportChange);
+    window.addEventListener('scroll', onScroll, { capture: true });
     onCleanup(() => {
       document.removeEventListener('mousedown', onDocClick);
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', onViewportChange);
+      window.removeEventListener('scroll', onScroll, { capture: true });
     });
   });
 

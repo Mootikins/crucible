@@ -16,7 +16,7 @@ declare global {
  * mounts the real EditorProvider + EditorPanel. See
  * src/test-harness/editor-harness.tsx.
  */
-export const HARNESS_KILN = '/home/user/.crucible/kiln';
+export const HARNESS_KILN = '/home/user/notes';
 
 export interface HarnessFile {
   /** Note name as the app addresses it (path minus kiln prefix, minus .md). */

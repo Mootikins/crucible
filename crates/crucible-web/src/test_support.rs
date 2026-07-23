@@ -533,6 +533,7 @@ pub fn build_mock_state(client: DaemonClient) -> AppState {
         layout_path: Arc::new(unique_test_layout_path()),
         remote_shell: false,
         swr: Arc::new(crate::services::catalog::SwrCache::default()),
+        recents_lock: Arc::new(tokio::sync::Mutex::new(())),
     }
 }
 

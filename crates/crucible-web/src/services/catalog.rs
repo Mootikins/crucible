@@ -55,7 +55,14 @@ impl SwrCache {
                     let cache = Arc::clone(self);
                     let key = key.to_string();
                     tokio::spawn(async move {
-                        let result = fetch().await;
+                        // catch_unwind: a panicking fetch must still clear
+                        // `refreshing`, or this key would serve stale forever
+                        // with no further refresh attempts.
+                        use futures::FutureExt;
+                        let result = std::panic::AssertUnwindSafe(fetch())
+                            .catch_unwind()
+                            .await
+                            .unwrap_or_else(|_| Err(anyhow::anyhow!("catalog refresh panicked")));
                         let mut entries = cache.entries.lock().await;
                         if let Some(entry) = entries.get_mut(&key) {
                             entry.refreshing = false;

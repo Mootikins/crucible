@@ -118,6 +118,23 @@ describe('buildRoster', () => {
     expect(kilnRoots(groups)).toEqual([{ kind: 'kiln', path: 'solo-kiln', name: 'solo-kiln' }]);
   });
 
+  it('names an unnamed kiln by its directory basename', () => {
+    // A kiln is a directory CONTAINING a .crucible — never a path at/under
+    // one. Fixtures model that shape.
+    const groups = buildRoster([], [kiln('/home/user/notes', null)]);
+    const roots = kilnRoots(groups);
+    expect(roots).toHaveLength(1);
+    expect(roots[0].name).toBe('notes');
+  });
+
+  it('skips malformed kiln entries (bare strings / missing path) without crashing', () => {
+    // Regression: the daemon (and an old e2e fixture) can hand back entries
+    // whose path is not a string — the roster memo crashed the whole shell.
+    const malformed = ['/home/user/notes', { name: 'nameless' }] as never[];
+    const groups = buildRoster([], malformed);
+    expect(Array.isArray(kilnRoots(groups))).toBe(true);
+  });
+
   it('does NOT collapse a project and a same-path kiln (rootKey includes kind)', () => {
     const groups = buildRoster([project('/vault', 'V')], [kiln('/vault', 'V')]);
     expect(groups[0].roots[0].path).toBe('/vault');

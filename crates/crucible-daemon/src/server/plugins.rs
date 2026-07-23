@@ -258,7 +258,14 @@ pub(crate) async fn handle_scm_clone(
         Err(e) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
     };
 
-    // Resolve the destination path.
+    // Resolve the destination path. BOTH forms are contained to the
+    // projects dir — an explicit dest is validated against it (canonicalized,
+    // no '..', symlink-hop safe), matching the containment every other write
+    // endpoint enforces.
+    let base = crate::scm::resolve_projects_dir(projects_dir, dirs::home_dir().as_deref());
+    if let Err(e) = tokio::fs::create_dir_all(&base).await {
+        return internal_error(req.id, format!("failed to create projects dir: {e}"));
+    }
     let dest = if let Some(dest) = dest_param {
         let dest = Path::new(dest);
         if !dest.is_absolute() {
@@ -267,6 +274,9 @@ pub(crate) async fn handle_scm_clone(
                 INVALID_PARAMS,
                 format!("dest must be an absolute path: {dest:?}"),
             );
+        }
+        if let Err(e) = crate::scm::validate_clone_dest(dest, &base) {
+            return Response::error(req.id, INVALID_PARAMS, e.to_string());
         }
         dest.to_path_buf()
     } else {
@@ -279,10 +289,6 @@ pub(crate) async fn handle_scm_clone(
             Ok(n) => n,
             Err(e) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
         };
-        let base = crate::scm::resolve_projects_dir(projects_dir, dirs::home_dir().as_deref());
-        if let Err(e) = tokio::fs::create_dir_all(&base).await {
-            return internal_error(req.id, format!("failed to create projects dir: {e}"));
-        }
         base.join(repo_name)
     };
 

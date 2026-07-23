@@ -3,6 +3,7 @@ import type { RosterGroup, TreeRoot } from '@/lib/tree-root';
 import { rosterIndex, rootKey } from '@/lib/tree-root';
 import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
 import {
+  isBranchNameish,
   isGitRepoUrl,
   registerProject,
   scmBranches,
@@ -48,9 +49,12 @@ export const RootDropdown: Component<{
       setScm(null);
       return;
     }
-    scmBranches(root.path)
-      .then(setScm)
-      .catch(() => setScm(null)); // repo-less project / older daemon: no section
+    // Out-of-order guard: only apply the response if the active root hasn't
+    // changed since the fetch started.
+    const forPath = root.path;
+    scmBranches(forPath)
+      .then((res) => props.activeRoot?.path === forPath && setScm(res))
+      .catch(() => props.activeRoot?.path === forPath && setScm(null)); // repo-less: no section
   };
 
   const options = (): ChipOption[] => {
@@ -156,6 +160,11 @@ export const RootDropdown: Component<{
         create={
           scm()
             ? {
+                // Branch names only — explicit URL forms (https://, git@…)
+                // contain ':' so isBranchNameish already excludes them; the
+                // clone action row owns those. owner/repo-shaped text stays
+                // valid as a branch name (feature/x is the common case).
+                when: isBranchNameish,
                 label: (text) => `Create branch + worktree '${text}'`,
                 run: (text) => {
                   const s = scm();

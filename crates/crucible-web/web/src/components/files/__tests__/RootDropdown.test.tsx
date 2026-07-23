@@ -11,6 +11,7 @@ vi.mock('@/lib/api', () => ({
   scmClone: vi.fn(),
   registerProject: vi.fn(),
   isGitRepoUrl: (s: string) => /^(https?:\/\/|git@)/.test(s) || /^[\w.-]+\/[\w.-]+$/.test(s),
+  isBranchNameish: (s: string) => !!s && !/\s|\.\.|^[-/]|\\|:|@\{|\/$/.test(s),
 }));
 
 import { scmBranches, scmWorktreeAdd, registerProject } from '@/lib/api';

@@ -2,7 +2,7 @@
 export const MOCK_SESSION = {
   session_id: 'test-session-001',
   type: 'chat' as const,
-  kiln: '/home/user/.crucible/kiln',
+  kiln: '/home/user/notes',
   workspace: '/home/user/project',
   state: 'active' as const,
   title: 'Test Session',
@@ -19,9 +19,9 @@ export const MOCK_SESSION = {
 export const MOCK_SESSION_DETAIL = {
   session_id: 'test-session-001',
   type: 'chat' as const,
-  kiln: '/home/user/.crucible/kiln',
+  kiln: '/home/user/notes',
   workspace: '/home/user/project',
-  connected_kilns: ['/home/user/.crucible/kiln'],
+  connected_kilns: ['/home/user/notes'],
   state: 'active' as const,
   title: 'Test Session',
   continued_from: null,
@@ -31,7 +31,7 @@ export const MOCK_SESSION_DETAIL = {
 export const MOCK_SESSION_2 = {
   session_id: 'test-session-002',
   type: 'chat' as const,
-  kiln: '/home/user/.crucible/kiln',
+  kiln: '/home/user/notes',
   workspace: '/home/user/project',
   state: 'active' as const,
   title: 'Second Session',
@@ -53,17 +53,18 @@ export const MOCK_PROVIDERS = {
   ],
 };
 
+// Real wire shape: kiln.list returns entries, not bare path strings.
 export const MOCK_KILNS = {
-  kilns: ['/home/user/.crucible/kiln'],
+  kilns: [{ path: '/home/user/notes', name: 'My Kiln' }],
 };
 
 export const MOCK_CONFIG = {
-  kiln_path: '/home/user/.crucible/kiln',
+  kiln_path: '/home/user/notes',
 };
 
 export const MOCK_PROJECT = {
   path: '/home/user/project',
   name: 'project',
-  kilns: [{ path: '/home/user/.crucible/kiln', name: 'My Kiln' }],
+  kilns: [{ path: '/home/user/notes', name: 'My Kiln' }],
   last_accessed: '2026-01-01T00:00:00Z',
 };

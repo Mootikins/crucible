@@ -19,7 +19,7 @@ import { setupBasicMocks } from '../helpers/mock-api';
  *     → saveFileContent → PUT /api/kiln/file (path-based, symmetric with load).
  */
 
-const KILN = '/home/user/.crucible/kiln';
+const KILN = '/home/user/notes';
 const FILE_PATH = `${KILN}/from-tui.md`;
 const INITIAL = 'terminal was here\n';
 

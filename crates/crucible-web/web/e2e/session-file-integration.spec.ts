@@ -39,7 +39,7 @@ test.describe('Session and file tab integration', () => {
     await page.route('**/api/notes**', (route) => {
       route.fulfill({
         json: [
-          { name: 'My Note', path: '/home/user/.crucible/kiln/My Note.md', is_dir: false },
+          { name: 'My Note', path: '/home/user/notes/My Note.md', is_dir: false },
         ],
       });
     });
@@ -55,7 +55,7 @@ test.describe('Session and file tab integration', () => {
     await expect(chatTab).toBeVisible({ timeout: 5000 });
 
     // Open a file → opens file tab
-    await openFile(page, '/home/user/.crucible/kiln/My Note.md', 'My Note.md');
+    await openFile(page, '/home/user/notes/My Note.md', 'My Note.md');
     const fileTab = page.locator('[data-tab-id^="tab-file-"]');
     await expect(fileTab).toBeVisible({ timeout: 5000 });
 

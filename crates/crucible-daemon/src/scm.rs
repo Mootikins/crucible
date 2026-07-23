@@ -72,6 +72,9 @@ pub enum ScmError {
     #[error("destination already exists: {0}")]
     DestExists(String),
 
+    #[error("invalid destination: {0}")]
+    InvalidDest(String),
+
     #[error("git {0} failed: {1}")]
     Git(String, String),
 
@@ -464,6 +467,47 @@ pub fn resolve_projects_dir(configured: Option<&str>, home: Option<&Path>) -> Pa
     PathBuf::from(raw)
 }
 
+/// Contain an EXPLICIT clone destination inside `base` (the resolved
+/// projects dir). Every other daemon write endpoint enforces allowlist
+/// containment; without this, an authenticated web client could point
+/// `scm.clone` at any writable absolute path (`~/.config/autostart`,
+/// systemd user units, …) and materialize an attacker-controlled tree
+/// there. Rejects `..` components lexically, then canonicalizes the
+/// deepest EXISTING ancestor so a symlink inside `base` can't hop out.
+/// `base` must exist (create it first).
+pub fn validate_clone_dest(dest: &Path, base: &Path) -> Result<(), ScmError> {
+    use std::path::Component;
+    if dest.components().any(|c| matches!(c, Component::ParentDir)) {
+        return Err(ScmError::InvalidDest(
+            "dest must not contain '..'".to_string(),
+        ));
+    }
+    let canon_base = base
+        .canonicalize()
+        .map_err(|e| ScmError::InvalidDest(format!("projects dir unavailable: {e}")))?;
+
+    let mut ancestor = dest.parent();
+    while let Some(a) = ancestor {
+        if a.exists() {
+            let canon = a
+                .canonicalize()
+                .map_err(|e| ScmError::InvalidDest(format!("cannot resolve dest: {e}")))?;
+            let rest = dest.strip_prefix(a).expect("ancestor is a prefix of dest");
+            if canon.join(rest).starts_with(&canon_base) {
+                return Ok(());
+            }
+            return Err(ScmError::InvalidDest(format!(
+                "dest must be inside the projects dir {}",
+                canon_base.display()
+            )));
+        }
+        ancestor = a.parent();
+    }
+    Err(ScmError::InvalidDest(
+        "dest has no existing ancestor".to_string(),
+    ))
+}
+
 /// Resolve the base directory under which per-session scratch workspaces
 /// (`<base>/<session_id>`) are created for sessions started without an explicit
 /// workspace.
@@ -756,6 +800,50 @@ detached
         assert!(sanitize_repo_name("-rf").is_err());
         assert!(sanitize_repo_name(".hidden").is_err());
         assert_eq!(sanitize_repo_name("my-repo").unwrap(), "my-repo");
+    }
+
+    #[test]
+    fn clone_dest_contained_to_projects_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("Projects");
+        std::fs::create_dir_all(&base).unwrap();
+
+        // Inside base: ok (including a not-yet-existing nested path).
+        assert!(validate_clone_dest(&base.join("repo"), &base).is_ok());
+        assert!(validate_clone_dest(&base.join("org/repo"), &base).is_ok());
+
+        // Outside base: rejected.
+        assert!(matches!(
+            validate_clone_dest(&tmp.path().join("elsewhere"), &base),
+            Err(ScmError::InvalidDest(_))
+        ));
+        assert!(matches!(
+            validate_clone_dest(Path::new("/etc/cron.d/evil"), &base),
+            Err(ScmError::InvalidDest(_))
+        ));
+
+        // Lexical escape: rejected before any FS access.
+        assert!(matches!(
+            validate_clone_dest(&base.join("../escape"), &base),
+            Err(ScmError::InvalidDest(_))
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn clone_dest_rejects_symlink_hop_out_of_base() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("Projects");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, base.join("link")).unwrap();
+
+        // base/link/repo lexically starts with base but resolves outside it.
+        assert!(matches!(
+            validate_clone_dest(&base.join("link/repo"), &base),
+            Err(ScmError::InvalidDest(_))
+        ));
     }
 
     #[test]

@@ -30,6 +30,9 @@ pub struct AppState {
     /// Stale-while-revalidate cache for slow daemon catalog calls
     /// (agent profiles, providers) — see `services::catalog`.
     pub swr: Arc<crate::services::catalog::SwrCache>,
+    /// Serializes /api/recents read-modify-writes (concurrent records would
+    /// clobber each other's entries).
+    pub recents_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 /// Default persistence location for the web UI layout:
@@ -1047,20 +1050,11 @@ impl ReconnectingDaemon {
         dest: Option<&Path>,
         name: Option<&str>,
     ) -> anyhow::Result<crucible_daemon::ScmCloneResponse> {
-        let url = url.to_string();
-        let dest = dest.map(|p| p.to_path_buf());
-        let name = name.map(|s| s.to_string());
-        self.call_with_reconnect("scm.clone", move |daemon| {
-            let url = url.clone();
-            let dest = dest.clone();
-            let name = name.clone();
-            Box::pin(async move {
-                daemon
-                    .scm_clone(&url, dest.as_deref(), name.as_deref())
-                    .await
-            })
-        })
-        .await
+        // Deliberately NOT call_with_reconnect: a connection error after the
+        // clone started would re-run `git clone` (the DestExists check turns
+        // that into a confusing error over a partial dir). One attempt only.
+        let daemon = self.daemon.read().await;
+        daemon.scm_clone(url, dest, name).await
     }
 
     pub async fn scm_worktree_add(
@@ -1284,6 +1278,7 @@ pub async fn init_daemon(config: CliAppConfig) -> Result<AppState> {
         // start_server overwrites this once the API key is resolved.
         remote_shell: false,
         swr: Arc::new(crate::services::catalog::SwrCache::default()),
+        recents_lock: Arc::new(tokio::sync::Mutex::new(())),
     })
 }
 

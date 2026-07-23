@@ -46,7 +46,7 @@ async fn save_layout(
 
     let bytes = serde_json::to_vec(&layout)
         .map_err(|e| WebError::Internal(format!("Failed to serialize layout: {e}")))?;
-    tokio::fs::write(path, bytes)
+    write_atomic(path, &bytes)
         .await
         .map_err(|e| WebError::Internal(format!("Failed to write layout: {e}")))?;
     Ok(Json(json!({"ok": true})))
@@ -72,6 +72,15 @@ async fn reset_layout(State(state): State<AppState>) -> Result<Json<serde_json::
 // `web-layout.recents.json`.
 
 const MAX_RECENTS: usize = 20;
+
+/// Temp-file + rename: `tokio::fs::write` truncates in place, so a crash
+/// mid-write (or a concurrent read) sees a corrupt blob — get_layout 500s
+/// and read_recents silently resets. Rename within the same dir is atomic.
+async fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp = path.with_extension("tmp");
+    tokio::fs::write(&tmp, bytes).await?;
+    tokio::fs::rename(&tmp, path).await
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct RecentFile {
@@ -107,6 +116,9 @@ async fn record_recent(
     State(state): State<AppState>,
     Json(req): Json<RecordRecentRequest>,
 ) -> Result<Json<serde_json::Value>, WebError> {
+    // Serialize concurrent read-modify-writes (two browsers recording at
+    // once would drop each other's entry).
+    let _guard = state.recents_lock.lock().await;
     let mut recents = read_recents(&state).await;
     recents.retain(|r| r.abs_path != req.abs_path);
     recents.insert(
@@ -130,7 +142,7 @@ async fn record_recent(
     }
     let bytes = serde_json::to_vec(&recents)
         .map_err(|e| WebError::Internal(format!("Failed to serialize recents: {e}")))?;
-    tokio::fs::write(&path, bytes)
+    write_atomic(&path, &bytes)
         .await
         .map_err(|e| WebError::Internal(format!("Failed to write recents: {e}")))?;
     Ok(Json(json!({ "recents": recents })))
