@@ -1,4 +1,4 @@
-import { Component, For, Index, Show, createMemo, createSignal, onCleanup } from 'solid-js';
+import { Component, For, Index, Show, createSignal, onCleanup } from 'solid-js';
 import { TreeView } from '@ark-ui/solid';
 import type { FileTreeNode as Node } from '@/lib/file-tree/types';
 import type { TreeRootKind } from '@/lib/tree-root';
@@ -10,20 +10,6 @@ import {
 } from '@/lib/file-dnd';
 import { FileTreeContextMenu, type ContextAction } from './FileTreeContextMenu';
 import { ChevronRight } from '@/lib/icons';
-import { Dynamic } from 'solid-js/web';
-import { fileIconFor } from '@/lib/file-icons';
-
-/** VSCode-style colored filetype icon, resolved by full filename. */
-const FileIcon: Component<{ name: string }> = (props) => {
-  const meta = createMemo(() => fileIconFor(props.name));
-  return (
-    <Dynamic
-      component={meta().icon}
-      class="w-4 h-4 shrink-0"
-      style={{ color: meta().color }}
-    />
-  );
-};
 
 /**
  * One vertical indent guide per ancestor level (VSCode/Theia idiom). Each
@@ -59,7 +45,7 @@ const AUTO_EXPAND_MS = 700;
 
 /** Shared row skin: full-height flex so indent guides run edge-to-edge. */
 const ROW =
-  'flex items-stretch pr-2 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-sm';
+  'flex items-stretch pr-2 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-[13px]';
 /** Fixed icon column — the chevron (folders) and filetype icon (files) share
  * it, so names align at a level regardless of node kind. */
 const ICON_SLOT = 'w-4 py-1 flex items-center justify-center shrink-0';
@@ -160,9 +146,9 @@ export const FileTreeNode: Component<{
               class={`${ROW} data-[selected]:bg-hover-wash data-[current=true]:font-medium data-[current=true]:border-l-2 data-[current=true]:border-primary`}
             >
               <IndentGuides depth={props.indexPath.length} />
-              <span class={ICON_SLOT}>
-                <FileIcon name={props.node.name} />
-              </span>
+              {/* Obsidian-minimal: no filetype glyph. The empty icon slot keeps
+                  file names aligned under folder names (chevron column). */}
+              <span class={ICON_SLOT} aria-hidden="true" />
               <TreeView.ItemText class="truncate py-1 ml-1">{shown()}</TreeView.ItemText>
               <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary outline-none min-w-0 flex-1" />
             </TreeView.Item>

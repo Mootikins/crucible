@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@solidjs/testing-library';
+import { render } from '@solidjs/testing-library';
 
 // The old test read FilesPanel.tsx as a string and asserted the SOURCE did not
 // contain emoji and did contain Lucide identifiers ("FileText", "Folder", …).
@@ -65,22 +65,14 @@ beforeEach(() => {
   );
 });
 
-describe('FilesPanel — rendered icons', () => {
-  it('renders a Lucide <svg> icon for every file row (never emoji text)', async () => {
-    const { container, findByText } = render(() => <FilesPanel />);
-
+describe('FilesPanel — rendered rows', () => {
+  it('renders every file row as plain text (Obsidian-minimal, no filetype icons)', async () => {
+    const { findByText } = render(() => <FilesPanel />);
     // Wait for the async note listing to populate the tree.
     await findByText('readme.md');
     for (const name of NOTE_NAMES) {
       await findByText(name);
     }
-
-    // Each file row renders exactly one FileIcon <svg>; there are as many
-    // rows as notes, so at least that many svgs must be present.
-    await waitFor(() => {
-      const svgs = container.querySelectorAll('svg');
-      expect(svgs.length).toBeGreaterThanOrEqual(NOTE_NAMES.length);
-    });
   });
 
   it('emits no emoji glyphs anywhere in the rendered panel', async () => {
@@ -92,9 +84,4 @@ describe('FilesPanel — rendered icons', () => {
       expect(text).not.toContain(glyph);
     }
   });
-
-  // Note: FilesPanel lists notes only (is_dir is always false), so FolderIcon
-  // and ChevronIcon — the directory-only icons — are not reachable through this
-  // panel's data. The emoji-free assertion above still covers the whole
-  // rendered subtree, and the file-icon svg assertion covers FileIcon directly.
 });
