@@ -80,7 +80,7 @@ function fsEntryToNode(e: FsEntry, rootPath: string): Node {
   };
 }
 
-export const FilesPanel: Component = () => {
+export const FilesPanel: Component<{ embedded?: boolean }> = (props) => {
   const { projects } = useProjectSafe();
 
   const [kilns, setKilns] = createSignal<KilnListEntry[]>([]);
@@ -475,14 +475,21 @@ export const FilesPanel: Component = () => {
     <PanelShell class="overflow-hidden">
       {/* No "Files" heading — the panel tab already names it. The dropdown
           leads so the browsed root reads as the panel's title. */}
-      <div class="p-3 border-b border-hairline shrink-0 flex items-center justify-between gap-2">
-        <RootDropdown
-          groups={roster()}
-          selectedKey={activeRoot() ? rootKey(activeRoot()!) : null}
-          onSelect={(r) => treeRootActions.selectRoot(r)}
-          activeRoot={activeRoot()}
-          onNotice={setError}
-        />
+      <div
+        class="shrink-0 flex items-center justify-between gap-2"
+        classList={{ 'p-3 border-b border-hairline': !props.embedded, 'px-2 py-1 border-b border-hairline/50': props.embedded }}
+      >
+        {/* Embedded in the Navigator: the swapper (above) drives the root, so
+            the panel shows just its tree toolbar. */}
+        <Show when={!props.embedded} fallback={<div class="flex-1 min-w-0" />}>
+          <RootDropdown
+            groups={roster()}
+            selectedKey={activeRoot() ? rootKey(activeRoot()!) : null}
+            onSelect={(r) => treeRootActions.selectRoot(r)}
+            activeRoot={activeRoot()}
+            onNotice={setError}
+          />
+        </Show>
         <div class="flex items-center gap-1">
           <button
             type="button"

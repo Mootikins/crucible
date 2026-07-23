@@ -26,6 +26,7 @@ const TAB_ICONS: Partial<Record<TabContentType, Component<{ class?: string }>>> 
   sessions: ClipboardList,
   backlinks: Link2,
   graph: ChartNetwork,
+  navigator: FolderTree,
   files: FolderTree,
   search: Search,
   activity: Activity,

@@ -256,7 +256,7 @@ const App: Component = () => {
       } else if (action === 'openSearch') {
         event.preventDefault();
         event.stopPropagation();
-        openPanelTab('search');
+        openPanelTab('navigator');
         // Panel focuses its input on mount; re-focus if it was already open.
         window.dispatchEvent(new CustomEvent('crucible:focus-search'));
       }

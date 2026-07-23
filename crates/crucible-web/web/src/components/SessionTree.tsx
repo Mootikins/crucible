@@ -4,7 +4,7 @@ import type { Project, Session } from '@/lib/types';
 import { Archive, ChevronRight, FolderGit2, GitBranch, Trash2 } from '@/lib/icons';
 import { treeChevron, treeGroupRow, treeSectionHeader } from '@/components/tree/tree-style';
 
-function relativeTime(iso: string | null): string | null {
+export function relativeTime(iso: string | null): string | null {
   if (!iso) return null;
   const then = Date.parse(iso);
   if (Number.isNaN(then)) return null;
@@ -16,7 +16,7 @@ function relativeTime(iso: string | null): string | null {
   return `${Math.floor(hours / 24)}d`;
 }
 
-const SessionRow: Component<{
+export const SessionRow: Component<{
   session: Session;
   selected: boolean;
   branch: string | null;

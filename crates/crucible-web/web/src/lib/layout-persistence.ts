@@ -34,11 +34,41 @@ export function setupLayoutAutoSave(): void {
   });
 }
 
+// The Navigator replaced the separate files/sessions/search left tabs. Remap
+// any of those in a persisted layout to 'navigator', and drop duplicates that
+// would otherwise land in the same tab group.
+const RETIRED_LEFT = new Set(['files', 'sessions', 'search']);
+function migrateRetiredPanels(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    let seenNavigator = false;
+    const out: unknown[] = [];
+    for (const item of value) {
+      const migrated = migrateRetiredPanels(item);
+      if (migrated && typeof migrated === 'object' && (migrated as { contentType?: string }).contentType === 'navigator') {
+        if (seenNavigator) continue;
+        seenNavigator = true;
+      }
+      out.push(migrated);
+    }
+    return out;
+  }
+  if (value && typeof value === 'object') {
+    const obj: Record<string, unknown> = { ...(value as Record<string, unknown>) };
+    if (typeof obj.contentType === 'string' && RETIRED_LEFT.has(obj.contentType)) {
+      obj.contentType = 'navigator';
+      obj.title = 'Navigator';
+    }
+    for (const key of Object.keys(obj)) obj[key] = migrateRetiredPanels(obj[key]);
+    return obj;
+  }
+  return value;
+}
+
 export async function loadLayoutOnStartup(): Promise<void> {
   try {
     const saved = await loadLayout();
     if (saved) {
-      windowActions.importLayout(saved);
+      windowActions.importLayout(migrateRetiredPanels(saved) as typeof saved);
     }
   } catch (err) {
     console.warn('Failed to restore layout, using defaults:', err);
