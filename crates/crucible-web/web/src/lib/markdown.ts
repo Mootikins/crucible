@@ -91,12 +91,15 @@ function sanitizeHtml(value: string): string {
   });
 }
 
-/** Sanitize a mermaid-produced SVG with the SVG profile (the strict HTML
- * profile strips `<svg>` and its children). Mermaid already renders with
- * `securityLevel: 'strict'`; this is defense in depth for LLM-authored
- * diagrams in chat turns. */
+/** Sanitize a mermaid-produced SVG. Mermaid already renders with
+ * `securityLevel: 'strict'` (its own DOMPurify pass); this is defense in depth
+ * for LLM-authored diagrams in chat. The DEFAULT profile is used, not the
+ * svg-only one — the svg profile strips the deeply nested `<tspan>`s that hold
+ * node-label text (empty labels) — with `<style>` (diagram theming) and
+ * `<foreignObject>` (HTML labels) explicitly kept. Scripts/event handlers are
+ * still dropped by the default allowlist. */
 function sanitizeMermaidSvg(svg: string): string {
-  return runDOMPurify(svg, { USE_PROFILES: { svg: true, svgFilters: true } });
+  return runDOMPurify(svg, { ADD_TAGS: ['style', 'foreignObject'], ADD_ATTR: ['style'] });
 }
 
 function wikilinkPlugin(md: MarkdownIt): void {
