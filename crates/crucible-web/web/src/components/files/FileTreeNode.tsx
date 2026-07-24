@@ -52,9 +52,10 @@ export interface FileTreeDnd {
 /** Hover-to-auto-expand delay while dragging over a closed folder. */
 const AUTO_EXPAND_MS = 700;
 
-/** Shared row skin: full-height flex so indent guides run edge-to-edge. */
+/** Shared row skin: full-height flex so indent guides run edge-to-edge.
+ * `group` drives the fade-scroll marquee on the name when the row is hovered. */
 const ROW =
-  'flex items-stretch pr-2 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-[13px]';
+  'group flex items-stretch pr-2 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-[13px]';
 /** Fixed icon column — the chevron (folders) and filetype icon (files) share
  * it, so names align at a level regardless of node kind. */
 const ICON_SLOT = 'w-4 py-1 flex items-center justify-center shrink-0';
@@ -158,7 +159,9 @@ export const FileTreeNode: Component<{
               <span class={ICON_SLOT}>
                 <FileIcon name={props.node.name} />
               </span>
-              <TreeView.ItemText class="truncate py-1 ml-1">{shown()}</TreeView.ItemText>
+              {/* fade-scroll masks the overflow with a gradient (no ellipsis
+                  glyph to collide with the open-file dot); marquees on hover. */}
+              <TreeView.ItemText class="flex-1 min-w-0 fade-scroll py-1 ml-1"><span>{shown()}</span></TreeView.ItemText>
               <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary outline-none min-w-0 flex-1" />
               {/* Open-in-editor marker: an absolute dot so it never shifts the
                   icon / name / indent guides (the old left border did). */}
@@ -187,7 +190,7 @@ export const FileTreeNode: Component<{
               >
                 <ChevronRight class="w-3.5 h-3.5" />
               </TreeView.BranchIndicator>
-              <TreeView.BranchText class="truncate py-1 ml-1">{shown()}</TreeView.BranchText>
+              <TreeView.BranchText class="flex-1 min-w-0 fade-scroll py-1 ml-1"><span>{shown()}</span></TreeView.BranchText>
               <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary outline-none min-w-0 flex-1" />
             </TreeView.BranchControl>
           </FileTreeContextMenu>
