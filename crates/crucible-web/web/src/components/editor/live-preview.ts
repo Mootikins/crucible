@@ -29,11 +29,12 @@ import {
   Annotation,
   EditorState,
   Facet,
+  StateEffect,
   StateField,
   type Extension,
   type Range,
 } from '@codemirror/state';
-import { syntaxTree } from '@codemirror/language';
+import { ensureSyntaxTree, syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 import { renderMarkdown, wikilinkRe, rawImageUrl, sanitizeDocHtml } from '@/lib/markdown';
 import { extractFrontmatterBlock, renderFrontmatterCardHtml } from '@/lib/frontmatter';
@@ -636,17 +637,23 @@ const blockWidgetCursorEntry = EditorState.transactionFilter.of((tr) => {
   ];
 });
 
+/** Dispatched after a scroll so blockWidgetField recomputes — a StateField
+ * can't observe the viewport itself, and scrolling isn't a transaction. */
+const syncBlockWidgets = StateEffect.define<null>();
+
 // Tables/callouts replace whole line blocks, and CM6 forbids block
 // decorations from ViewPlugins — they live in a StateField instead.
 const blockWidgetField = StateField.define<DecorationSet>({
   create: buildBlockWidgets,
   update(deco, tr) {
-    // Rebuild on the obvious triggers AND when the background parser advanced
-    // the syntax tree (a progress transaction has no docChanged/selection) —
+    // Rebuild on the obvious triggers, on a post-scroll sync (see
+    // blockWidgetViewportSync), AND when the background parser advanced the
+    // syntax tree (a progress transaction has no docChanged/selection) —
     // otherwise blocks below the initial parse boundary never widget-render.
     if (
       tr.docChanged ||
       tr.selection ||
+      tr.effects.some((e) => e.is(syncBlockWidgets)) ||
       syntaxTree(tr.startState) !== syntaxTree(tr.state)
     ) {
       return buildBlockWidgets(tr.state);
@@ -655,6 +662,28 @@ const blockWidgetField = StateField.define<DecorationSet>({
   },
   provide: (f) => EditorView.decorations.from(f),
 });
+
+/**
+ * Bridges the viewport to blockWidgetField. On scroll the field is blind (no
+ * transaction fires and StateFields can't read the viewport), so a table or
+ * callout scrolled into view stays raw until an unrelated edit/cursor move.
+ * This ViewPlugin force-parses the lazy tree up to the visible end and then
+ * dispatches syncBlockWidgets so the field rebuilds against the now-parsed
+ * region. Deferred a microtask because dispatching inside update() is illegal;
+ * the sync transaction changes neither doc nor viewport, so it can't re-trigger.
+ */
+const blockWidgetViewportSync = ViewPlugin.fromClass(
+  class {
+    update(update: ViewUpdate) {
+      if (!update.viewportChanged || update.docChanged) return;
+      const view = update.view;
+      queueMicrotask(() => {
+        ensureSyntaxTree(view.state, view.viewport.to, 50);
+        view.dispatch({ effects: syncBlockWidgets.of(null) });
+      });
+    }
+  },
+);
 
 const livePreviewPlugin = ViewPlugin.fromClass(
   class {
@@ -833,6 +862,7 @@ export function livePreview(opts?: { maxLineWidth?: number; baseDir?: string }):
       : []),
     livePreviewPlugin,
     blockWidgetField,
+    blockWidgetViewportSync,
     blockWidgetCursorEntry,
     tableAutoFormat,
     livePreviewTheme,
