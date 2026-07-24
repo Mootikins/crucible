@@ -33,10 +33,10 @@ use uuid::Uuid;
 /// They are used for interoperability with external agents and the protocol.
 pub mod schema {
     // Mode types from ACP protocol
-    pub use agent_client_protocol_schema::{SessionMode, SessionModeId, SessionModeState};
+    pub use agent_client_protocol_schema::v1::{SessionMode, SessionModeId, SessionModeState};
 
     // Command types from ACP protocol
-    pub use agent_client_protocol_schema::{
+    pub use agent_client_protocol_schema::v1::{
         AvailableCommand, AvailableCommandInput, AvailableCommandsUpdate,
     };
 }

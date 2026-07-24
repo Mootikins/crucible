@@ -5,11 +5,39 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      rust-dependencies:
+      # Routine bumps — expected to land without touching code.
+      rust-minor-patch:
         patterns:
           - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Majors get their own PR. Bundling them with the routine bumps is why
+      # every grouped PR to date has been unmergeable: one unported major
+      # break blocks 40+ safe updates, so the whole PR gets closed.
+      rust-major:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+    ignore:
+      # Each of these needs a hand-written port. Drop the entry when someone
+      # picks the port up — not on dependabot's weekly schedule.
+      # rmcp 1.x -> 2.x: transport/client API rewrite.
+      - dependency-name: "rmcp"
+        update-types: ["version-update:semver-major"]
+      # syn 2 -> 3: proc-macro API churn across every derive in the tree.
+      - dependency-name: "syn"
+        update-types: ["version-update:semver-major"]
+      # mlua 0.11 -> 0.12 (0.x minor == breaking): Lua binding API changes.
+      - dependency-name: "mlua"
+        update-types: ["version-update:semver-minor"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
