@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 import { MOCK_SESSION, MOCK_SESSION_2 } from './helpers/fixtures';
+import { openSessionsList } from './helpers/nav';
 
 type LayoutNode = {
   type: 'pane' | 'split';
@@ -42,6 +43,7 @@ async function waitForApp(page: Page) {
     await route.continue();
   });
   await page.goto('/');
+  await openSessionsList(page);
   // Readiness is asserted by the beforeEach (session-item visible), which only
   // renders once the app has fully mounted — no fixed settle needed.
 }
@@ -262,11 +264,14 @@ test.describe('Comprehensive windowing behavior', () => {
     const box = await splitter.boundingBox();
     expect(box).toBeTruthy();
 
-    const startX = box!.x + box!.width / 2;
+    // The separator is a 1px element widened only by an ::after pseudo, so a
+    // raw mouse.move at box.x + width/2 lands on a sub-pixel coordinate that
+    // can round onto the neighbouring pane and never reach pointerdown.
+    // hover() uses Playwright's actionability hit-point instead.
+    await splitter.hover();
     const startY = box!.y + box!.height / 2;
-    await page.mouse.move(startX, startY);
     await page.mouse.down();
-    await page.mouse.move(startX + 110, startY, { steps: 8 });
+    await page.mouse.move(box!.x + 110, startY, { steps: 8 });
     await page.mouse.up();
 
     // Poll the store until the drag-updated split ratio settles past the default.
@@ -313,7 +318,8 @@ test.describe('Comprehensive windowing behavior', () => {
       }
     });
 
-    await expect(page.getByTestId('center-composer')).toBeVisible({ timeout: 3000 });
-    await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 3000 });
+    // An emptied center pane is void — no composer splash, no tab strip.
+    await expect(page.getByTestId('center-composer')).toHaveCount(0);
+    await expect(page.getByTestId('composer-input')).toHaveCount(0);
   });
 });

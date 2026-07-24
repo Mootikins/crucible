@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
+import { openSessionsList } from './helpers/nav';
 
 
 /**
@@ -9,6 +10,7 @@ import { setupBasicMocks } from './helpers/mock-api';
 test('center splitter resize updates pane width', async ({ page }) => {
   await setupBasicMocks(page);
   await page.goto('/');
+  await openSessionsList(page);
 
   const sessionItem = page.getByTestId('session-item-test-session-001');
   await expect(sessionItem).toBeVisible({ timeout: 5000 });

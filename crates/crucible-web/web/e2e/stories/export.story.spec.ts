@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from '../helpers/mock-api';
 import { createStory } from './_helpers/story';
+import { openSessionsList } from '../helpers/nav';
 
 /**
  * Story: WS-109 — export a session as markdown from the browser.
@@ -30,6 +31,7 @@ test.describe('WS-109 export a session', () => {
     );
 
     await page.goto('/');
+    await openSessionsList(page);
     await page.getByTestId('session-item-test-session-001').click();
     await expect(page.getByTestId('chat-input')).toBeEnabled({ timeout: 5000 });
 

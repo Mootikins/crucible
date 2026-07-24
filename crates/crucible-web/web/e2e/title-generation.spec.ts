@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 import { MOCK_SESSION } from './helpers/fixtures';
+import { openSessionsList } from './helpers/nav';
 
 /**
  * E2E: Session auto-titles (daemon-owned).
@@ -62,6 +63,7 @@ test.describe('daemon session auto-titles', () => {
     const legacyCalls = await watchLegacyTitleCalls(page);
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Untitled sessions render the "Untitled · <date>" fallback (session-
     // display.ts) until a title arrives.
@@ -85,6 +87,7 @@ test.describe('daemon session auto-titles', () => {
     const legacyCalls = await watchLegacyTitleCalls(page);
 
     await page.goto('/');
+    await openSessionsList(page);
 
     const sessionButton = page.getByTestId(`session-item-${SESSION_ID}`);
     await expect(sessionButton).toBeVisible({ timeout: 5000 });

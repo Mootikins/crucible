@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 import { MOCK_SESSION } from './helpers/fixtures';
+import { openSessionsList } from './helpers/nav';
 
 /**
  * E2E: Session + File Tab Integration
@@ -45,6 +46,7 @@ test.describe('Session and file tab integration', () => {
     });
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Wait for session list
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
@@ -77,11 +79,11 @@ test.describe('Session and file tab integration', () => {
     });
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Wait for session list and click the ended session
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
     // Switch to 'all' filter so ended sessions are visible
-    await page.getByTestId('session-filter-dropdown').selectOption('all');
     await page.getByTestId('session-item-test-session-001').click();
 
     // Positive load signal FIRST: chat input is shown regardless of state.
@@ -108,11 +110,11 @@ test.describe('Session and file tab integration', () => {
     });
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Open the ended session
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
     // Switch to 'all' filter so ended sessions are visible
-    await page.getByTestId('session-filter-dropdown').selectOption('all');
     await page.getByTestId('session-item-test-session-001').click();
 
     // Assert: 'Continue as new session' button is NOT present

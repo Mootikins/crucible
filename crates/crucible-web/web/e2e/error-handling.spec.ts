@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
+import { openSessionsList } from './helpers/nav';
 
 /**
  * E2E: Error Handling
@@ -13,6 +14,7 @@ test.describe('Error handling', () => {
     await setupBasicMocks(page, { chatMessage: 500 });
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Click the session in the sidebar to open it in the chat tab
     const sessionItem = page.getByTestId('session-item-test-session-001');
@@ -53,6 +55,7 @@ test.describe('Error handling', () => {
     await setupBasicMocks(page, { sseEvents: errorEvents });
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Click the session in the sidebar to open it in the chat tab
     const sessionItem = page.getByTestId('session-item-test-session-001');

@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from '../helpers/mock-api';
 import { createStory } from './_helpers/story';
+import { openSessionsList } from '../helpers/nav';
 
 /**
  * Story: WS-105 — answer agent questions (Ask).
@@ -34,6 +35,7 @@ async function openAsk(page: Page, frame: { type: string; data: object }) {
     return route.fulfill({ status: 200, body: '' });
   });
   await page.goto('/');
+  await openSessionsList(page);
   await page.getByTestId('session-item-test-session-001').click();
   await expect(page.getByTestId('chat-input')).toBeEnabled({ timeout: 5000 });
   return { getRespond: () => respondBody };

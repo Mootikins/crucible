@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from '../helpers/mock-api';
 import { createSSEStream } from '../helpers/mock-sse';
 import { waitForFonts } from './_helpers/fonts';
+import { openSessionsList } from '../helpers/nav';
 
 /**
  * Rhythm story: a realistic assistant turn — heading, prose, a list, a
@@ -98,6 +99,7 @@ const RICH_STREAM: Frame[] = [
 
 async function selectSession(page: Page) {
   await page.goto('/');
+  await openSessionsList(page);
   await waitForFonts(page);
   await page.getByTestId('session-item-test-session-001').click();
   await expect(page.getByTestId('chat-input')).toBeEnabled({ timeout: 5000 });

@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 import { MOCK_SESSION, MOCK_SESSION_2 } from './helpers/fixtures';
+import { openSessionsList } from './helpers/nav';
 
 type PaneState = {
   groupId: string | null;
@@ -61,6 +62,7 @@ test.describe('New Session -> Chat Tab', () => {
   test.beforeEach(async ({ page }) => {
     await setupBasicMocks(page, { sessions: [MOCK_SESSION, MOCK_SESSION_2] });
     await page.goto('/');
+    await openSessionsList(page);
     await expect(page.getByTestId('new-session-button')).toBeVisible({ timeout: 10000 });
   });
 
@@ -91,7 +93,7 @@ test.describe('New Session -> Chat Tab', () => {
     });
 
     await page.getByTestId('new-session-button').click();
-    await expect(page.getByTestId('draft-input')).toBeVisible();
+    await expect(page.getByTestId('composer-input')).toBeVisible();
     expect(createdEarly).toBe(false);
 
     await expect
@@ -105,8 +107,8 @@ test.describe('New Session -> Chat Tab', () => {
     const createRequest = page.waitForRequest(
       (req) => req.url().includes('/api/session') && req.method() === 'POST',
     );
-    await page.getByTestId('draft-input').fill('Hello from the draft');
-    await page.getByTestId('draft-send').click();
+    await page.getByTestId('composer-input').fill('Hello from the draft');
+    await page.getByTestId('composer-send').click();
     await createRequest;
 
     await expect(page.locator('[data-tab-id="tab-chat-test-session-new"]')).toBeVisible();

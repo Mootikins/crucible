@@ -123,10 +123,15 @@ describe('CodeMirrorEditor — vim :write saves', () => {
     const cm = getCM(view);
     expect(cm).not.toBeNull();
 
-    Vim.handleEx(cm!, 'w');
+    // getCM returns CodeMirror (state.vim optional); handleEx wants CodeMirrorV
+    // (state.vim required). The adapter populates state.vim on attach, so the
+    // cast is the upstream typings being stricter than the runtime.
+    const cmv = cm as unknown as Parameters<typeof Vim.handleEx>[0];
+
+    Vim.handleEx(cmv, 'w');
     expect(onSave).toHaveBeenCalledTimes(1);
 
-    Vim.handleEx(cm!, 'wq');
+    Vim.handleEx(cmv, 'wq');
     expect(onSave).toHaveBeenCalledTimes(2);
   });
 });

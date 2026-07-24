@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
+import { openSessionsList, seedLeftTabs } from './helpers/nav';
 
 
 async function waitForApp(page: Page) {
@@ -17,6 +18,12 @@ async function waitForApp(page: Page) {
     await route.continue();
   });
   await page.goto('/');
+  // The left panel ships ONE tab (Navigator); these specs need a strip to
+  // reorder and drag across, so seed their own. Seed BEFORE opening the
+  // sessions list: activating a different left tab remounts the Navigator,
+  // which resets its scope back to Files.
+  await seedLeftTabs(page, [{ id: 'beta-tab', title: 'Beta' }]);
+  await openSessionsList(page);
   // Readiness is asserted by the beforeEach (session-item visible), which only
   // renders once the app has fully mounted — no fixed settle needed.
 }
@@ -75,12 +82,12 @@ test.describe('Tab reorder within same bar', () => {
   });
 
   test('reorder edge tab: drag first tab past third tab', async ({ page }) => {
-    const firstTab = page.locator('[data-testid="edge-tab-left-sessions-tab"]');
-    const thirdTab = page.locator('[data-testid="edge-tab-left-files-tab"]');
+    const firstTab = page.locator('[data-testid="edge-tab-left-navigator-tab"]');
+    const thirdTab = page.locator('[data-testid="edge-tab-left-beta-tab"]');
 
     const initialOrder = await getEdgeTabOrder(page, 'left');
-    expect(initialOrder.indexOf('sessions-tab')).toBeLessThan(initialOrder.indexOf('files-tab'));
-    const initialSessionsIndex = initialOrder.indexOf('sessions-tab');
+    expect(initialOrder.indexOf('navigator-tab')).toBeLessThan(initialOrder.indexOf('beta-tab'));
+    const initialSessionsIndex = initialOrder.indexOf('navigator-tab');
 
     const from = await getCenterOf(page, firstTab);
     const thirdBox = await thirdTab.boundingBox();
@@ -100,16 +107,16 @@ test.describe('Tab reorder within same bar', () => {
 
     // Poll the live tab order until the reorder lands.
     await expect
-      .poll(async () => (await getEdgeTabOrder(page, 'left')).indexOf('sessions-tab'), { timeout: 3000 })
+      .poll(async () => (await getEdgeTabOrder(page, 'left')).indexOf('navigator-tab'), { timeout: 3000 })
       .toBeGreaterThan(initialSessionsIndex);
   });
 
   test('reorder edge tab: drag last tab to first position', async ({ page }) => {
-    const lastTab = page.locator('[data-testid="edge-tab-left-files-tab"]');
-    const firstTab = page.locator('[data-testid="edge-tab-left-sessions-tab"]');
+    const lastTab = page.locator('[data-testid="edge-tab-left-beta-tab"]');
+    const firstTab = page.locator('[data-testid="edge-tab-left-navigator-tab"]');
 
     const initialOrder = await getEdgeTabOrder(page, 'left');
-    expect(initialOrder.indexOf('files-tab')).toBeGreaterThan(initialOrder.indexOf('sessions-tab'));
+    expect(initialOrder.indexOf('beta-tab')).toBeGreaterThan(initialOrder.indexOf('navigator-tab'));
 
     await lastTab.scrollIntoViewIfNeeded();
 
@@ -132,12 +139,12 @@ test.describe('Tab reorder within same bar', () => {
 
     await pointerDrag(page, from, to, 25);
 
-    // Poll until files-tab has moved ahead of sessions-tab.
+    // Poll until beta-tab has moved ahead of navigator-tab.
     await expect
       .poll(
         async () => {
           const order = await getEdgeTabOrder(page, 'left');
-          return order.indexOf('files-tab') < order.indexOf('sessions-tab');
+          return order.indexOf('beta-tab') < order.indexOf('navigator-tab');
         },
         { timeout: 3000 },
       )
@@ -197,7 +204,7 @@ test.describe('Tab reorder within same bar', () => {
   });
 
   test('no insert indicator during cross-zone drag', async ({ page }) => {
-    const edgeTab = page.locator('[data-testid="edge-tab-left-files-tab"]');
+    const edgeTab = page.locator('[data-testid="edge-tab-left-beta-tab"]');
     const centerTab = page.locator('[data-tab-id^="tab-chat-"]').first();
 
     const from = await getCenterOf(page, edgeTab);
@@ -211,7 +218,7 @@ test.describe('Tab reorder within same bar', () => {
     // threshold: the drag overlay renders the tab title. Assert on that before
     // checking the reorder indicator is absent (otherwise the absence check is
     // vacuous — it would pass before the drag even engages).
-    await expect(page.locator('text="Files"').last()).toBeVisible({ timeout: 3000 });
+    await expect(page.locator('text="Beta"').last()).toBeVisible({ timeout: 3000 });
 
     // The reorder indicator is the 2px×20px bar from TabBar — the header's
     // active mode pill is also bg-primary+rounded-full, so match the size.
@@ -232,12 +239,12 @@ test.describe('Tab reorder within same bar', () => {
     await page
       .locator('[data-tab-id="tab-settings"]:not([data-testid^="edge-tab-"])')
       .waitFor({ state: 'visible', timeout: 3000 });
-    const from = await getCenter(page, '[data-testid="edge-tab-left-files-tab"]');
+    const from = await getCenter(page, '[data-testid="edge-tab-left-beta-tab"]');
     const to = await getCenterPaneDropPoint(page);
 
     await pointerDrag(page, from, to);
 
-    await expect(page.locator('[data-testid="edge-tab-left-files-tab"]')).not.toBeVisible({ timeout: 2000 });
-    await expect(page.locator('[data-tab-id="files-tab"]:not([data-testid^="edge-tab-"])')).toBeVisible({ timeout: 2000 });
+    await expect(page.locator('[data-testid="edge-tab-left-beta-tab"]')).not.toBeVisible({ timeout: 2000 });
+    await expect(page.locator('[data-tab-id="beta-tab"]:not([data-testid^="edge-tab-"])')).toBeVisible({ timeout: 2000 });
   });
 });

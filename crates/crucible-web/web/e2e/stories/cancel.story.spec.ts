@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from '../helpers/mock-api';
 import { createStory } from './_helpers/story';
+import { openSessionsList } from '../helpers/nav';
 
 /**
  * Story: WS-108 — cancel an in-flight turn.
@@ -33,6 +34,7 @@ test.describe('WS-108 cancel a turn', () => {
     });
 
     await page.goto('/');
+    await openSessionsList(page);
     await page.getByTestId('session-item-test-session-001').click();
     const input = page.getByTestId('chat-input');
     await expect(input).toBeEnabled({ timeout: 5000 });

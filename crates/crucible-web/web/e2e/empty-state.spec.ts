@@ -1,31 +1,22 @@
 import { test, expect } from '@playwright/test';
+import { setupBasicMocks } from './helpers/mock-api';
+import { appReady, openNewSessionTab } from './helpers/nav';
 
 /**
- * E2E: Empty State Recovery
- * 
- * Verifies that when the center pane has no tabs, an empty state appears
- * with clear guidance.
+ * E2E: Empty panes are VOID.
+ *
+ * Closing every center tab used to reveal a composer splash. The composer now
+ * lives in its own New Session tab (ribbon → New session); a pane with no tabs
+ * renders nothing at all — no splash, no tab strip, no hint.
  */
 
-test('Empty state appears when all center tabs are closed', async ({ page }) => {
-  await page.goto('/');
-
-  // Wait for the app to load
-  const mainLayout = page.locator('div[class*="flex-col"][class*="h-screen"]');
-  await expect(mainLayout).toBeVisible({ timeout: 5000 });
-  await expect(page.locator('[data-tab-id]').first()).toBeVisible({ timeout: 5000 });
-
-  // Click-driven close loops over a global `[data-tab-id]` selector that
-  // spans every pane/edge-panel group; as groups empty out mid-loop (edge
-  // panels auto-collapse, center panes collapse out of the layout tree —
-  // see collapseEmptyNodes/removeTab in src/stores/tabActions.ts) the tab
-  // count and DOM order can shift under the loop. Go straight through the
-  // store instead: close every tab in every pane-tiling group (this drives
-  // the SAME removeTab action the close button calls, so it's not testing
-  // a mock — it's the deterministic form of the same close), which is what
-  // actually needs to happen for the center EmptyState to render (emptying
-  // only one group just collapses it away, leaving its non-empty sibling
-  // filling the layout with no empty state anywhere).
+/** Close every tab in every center-tiling group, through the real action. */
+async function closeAllCenterTabs(page: import('@playwright/test').Page) {
+  // Click-driven close loops over a global `[data-tab-id]` selector that spans
+  // every pane/edge-panel group; as groups empty out mid-loop (edge panels
+  // auto-collapse, center panes collapse out of the layout tree) the tab count
+  // and DOM order shift under the loop. Drive the store instead — the SAME
+  // removeTab action the close button calls.
   await page.evaluate(() => {
     const store = (window as unknown as { __windowStore: any }).__windowStore;
     const actions = (window as unknown as { __windowActions: any }).__windowActions;
@@ -42,28 +33,40 @@ test('Empty state appears when all center tabs are closed', async ({ page }) => 
       }
     }
   });
+}
 
-  // The empty state should appear in the center pane when no tabs are open
-  const emptyStateHeading = page.getByTestId('center-composer');
-  await expect(emptyStateHeading).toBeVisible({ timeout: 2000 });
+test('an emptied center pane renders nothing', async ({ page }) => {
+  await setupBasicMocks(page);
+  await page.goto('/');
+  await appReady(page);
 
-  // Verify the empty state has helpful text
-  const emptyStateText = page.getByTestId('composer-input');
-  await expect(emptyStateText).toBeVisible();
+  // Put a tab in the CENTER (the New Session tab docks right), then empty it.
+  await page.evaluate(async () => {
+    const { openPanelTab } = await import('/src/lib/panel-actions.ts');
+    openPanelTab('settings');
+  });
+  await expect(
+    page.locator('[data-tab-id="tab-settings"]:not([data-testid^="edge-tab-"])'),
+  ).toBeVisible({ timeout: 10000 });
+
+  await closeAllCenterTabs(page);
+
+  // No composer, no tab strip — void.
+  await expect(page.getByTestId('composer-input')).toHaveCount(0);
+  await expect(page.getByTestId('center-composer')).toHaveCount(0);
+  // And no leftover "select a tab" style hint.
+  await expect(page.getByText('Select a tab')).toHaveCount(0);
 });
 
-test('Empty state is not shown in non-center panes', async ({ page }) => {
+test('the session composer is reachable from the ribbon, not from an empty pane', async ({ page }) => {
+  await setupBasicMocks(page);
   await page.goto('/');
+  await appReady(page);
 
-  // Wait for the app to load
-  const mainLayout = page.locator('div[class*="flex-col"][class*="h-screen"]');
-  await expect(mainLayout).toBeVisible({ timeout: 5000 });
+  // Nothing on a fresh center pane…
+  await expect(page.getByTestId('composer-input')).toHaveCount(0);
 
-  // The left panel should show "Drop tabs here" or similar, not the empty state
-  // This test ensures the empty state is only shown in the center pane
-  const leftPanel = page.locator('[class*="EdgePanel"]').first();
-  
-  // The empty state message "Nothing open" should NOT appear in the left panel
-  const emptyStateInLeftPanel = leftPanel.getByTestId('center-composer');
-  await expect(emptyStateInLeftPanel).not.toBeVisible();
+  // …until New Session is opened deliberately.
+  await openNewSessionTab(page);
+  await expect(page.getByTestId('center-composer')).toBeVisible();
 });

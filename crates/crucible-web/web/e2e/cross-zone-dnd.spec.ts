@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
+import { openSessionsList, seedLeftTabs } from './helpers/nav';
 
 
 async function waitForApp(page: Page) {
@@ -17,6 +18,12 @@ async function waitForApp(page: Page) {
     await route.continue();
   });
   await page.goto('/');
+  // The left panel ships ONE tab (Navigator); these specs need a strip to
+  // reorder and drag across, so seed their own. Seed BEFORE opening the
+  // sessions list: activating a different left tab remounts the Navigator,
+  // which resets its scope back to Files.
+  await seedLeftTabs(page, [{ id: 'beta-tab', title: 'Beta' }]);
+  await openSessionsList(page);
   // Readiness is asserted by each caller's beforeEach (session-item visible),
   // which only renders once the app has fully mounted — no fixed settle needed.
 }
@@ -98,13 +105,13 @@ test.describe('Cross-zone tab drag and drop', () => {
 
   test('drag edge tab from expanded left panel to center pane', async ({ page }) => {
     await openSettingsCenterTab(page);
-    const from = await getCenter(page, '[data-testid="edge-tab-left-files-tab"]');
+    const from = await getCenter(page, '[data-testid="edge-tab-left-beta-tab"]');
     const to = await getCenterPaneDropPoint(page);
 
     await pointerDrag(page, from, to, 50);
 
-    await expect(page.locator('[data-testid="edge-tab-left-files-tab"]')).not.toBeVisible({ timeout: 2000 });
-    await expect(page.locator('[data-tab-id="files-tab"]:not([data-testid^="edge-tab-"])')).toBeVisible({ timeout: 2000 });
+    await expect(page.locator('[data-testid="edge-tab-left-beta-tab"]')).not.toBeVisible({ timeout: 2000 });
+    await expect(page.locator('[data-tab-id="beta-tab"]:not([data-testid^="edge-tab-"])')).toBeVisible({ timeout: 2000 });
   });
 
   test('drag center tab to left edge panel', async ({ page }) => {
@@ -124,13 +131,13 @@ test.describe('Cross-zone tab drag and drop', () => {
 
   test('drag edge tab from left panel to bottom panel', async ({ page }) => {
     await ensureBottomPanelExpanded(page);
-    const from = await getCenter(page, '[data-testid="edge-tab-left-files-tab"]');
+    const from = await getCenter(page, '[data-testid="edge-tab-left-beta-tab"]');
     const to = await getCenter(page, '[data-testid="edge-tabbar-bottom"]');
 
     await pointerDrag(page, from, to);
 
-    await expect(page.locator('[data-testid="edge-tab-left-files-tab"]')).not.toBeVisible({ timeout: 2000 });
-    await expect(page.locator('[data-testid="edge-tab-bottom-files-tab"]')).toBeVisible({ timeout: 2000 });
+    await expect(page.locator('[data-testid="edge-tab-left-beta-tab"]')).not.toBeVisible({ timeout: 2000 });
+    await expect(page.locator('[data-testid="edge-tab-bottom-beta-tab"]')).toBeVisible({ timeout: 2000 });
   });
 
   test('dragging last tab out of edge panel auto-collapses it', async ({ page }) => {
@@ -160,19 +167,21 @@ test.describe('Cross-zone tab drag and drop', () => {
       const centerGroupId = findFirstPaneGroupId(windowStore.layout);
       if (!centerGroupId || !leftGroupId) return;
 
-      for (const tabId of ['files-tab']) {
+      // Empty the left panel down to ONE tab (alpha) so the drag below is
+      // genuinely the last one out.
+      for (const tabId of ['beta-tab']) {
         windowActions.moveTab(leftGroupId, centerGroupId, tabId);
       }
     });
     // The moved tab lands in the center pane; assert on that state instead of sleeping.
-    await expect(page.locator('[data-tab-id="files-tab"]:not([data-testid^="edge-tab-"])')).toBeVisible({ timeout: 2000 });
+    await expect(page.locator('[data-tab-id="beta-tab"]:not([data-testid^="edge-tab-"])')).toBeVisible({ timeout: 2000 });
 
     const centerTarget = await getCenterPaneDropPoint(page);
 
     const leftTabBar = page.locator('[data-testid="edge-tabbar-left"]');
     await expect(leftTabBar).toBeVisible({ timeout: 2000 });
 
-    await pointerDrag(page, await getCenter(page, '[data-testid="edge-tab-left-sessions-tab"]'), centerTarget, 50);
+    await pointerDrag(page, await getCenter(page, '[data-testid="edge-tab-left-navigator-tab"]'), centerTarget, 50);
 
     // Then: left panel auto-collapses
     await expect(leftTabBar).not.toBeVisible({ timeout: 2000 });
@@ -192,7 +201,7 @@ test.describe('Cross-zone tab drag and drop', () => {
   });
 
   test('edge tab drag creates drag overlay with tab title', async ({ page }) => {
-    const from = await getCenter(page, '[data-testid="edge-tab-left-files-tab"]');
+    const from = await getCenter(page, '[data-testid="edge-tab-left-beta-tab"]');
 
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();
@@ -200,12 +209,12 @@ test.describe('Cross-zone tab drag and drop', () => {
 
     // While the pointer is held down mid-drag, the drag overlay renders the
     // tab title — poll for it rather than sleeping a fixed interval.
-    const overlay = page.locator('text="Files"').last();
+    const overlay = page.locator('text="Beta"').last();
     await expect(overlay).toBeVisible({ timeout: 2000 });
 
     await page.mouse.up();
 
-    await expect(page.locator('[data-testid="edge-tab-left-files-tab"]')).toBeVisible({ timeout: 2000 });
+    await expect(page.locator('[data-testid="edge-tab-left-beta-tab"]')).toBeVisible({ timeout: 2000 });
   });
 
   test('drag edge tab from bottom panel to center pane tab group', async ({ page }) => {

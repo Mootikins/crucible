@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 import { MOCK_SESSION, MOCK_SESSION_2 } from './helpers/fixtures';
+import { openSessionsList } from './helpers/nav';
 
 /**
  * E2E: New Session Button Position
@@ -17,6 +18,7 @@ test.describe('New Session Button Position', () => {
     });
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Wait for the session list to be visible
     const sessionList = page.getByTestId('session-list');

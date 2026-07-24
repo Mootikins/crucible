@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 import { createSSEStream } from './helpers/mock-sse';
 import { MOCK_SESSION, MOCK_SESSION_2 } from './helpers/fixtures';
+import { openSessionsList } from './helpers/nav';
 
 /**
  * E2E: Session Lifecycle
@@ -33,6 +34,7 @@ test.describe('Session Lifecycle', () => {
   test('creates a new session on first draft message and opens chat tab', async ({ page }) => {
     await setupBasicMocks(page, { sessionCreate: NEW_SESSION });
     await page.goto('/');
+    await openSessionsList(page);
 
     // Wait for the new session button
     const newSessionBtn = page.getByTestId('new-session-button');
@@ -40,14 +42,14 @@ test.describe('Session Lifecycle', () => {
 
     // Lazy creation: clicking opens the draft surface, no POST yet.
     await newSessionBtn.click();
-    await expect(page.getByTestId('draft-input')).toBeVisible();
+    await expect(page.getByTestId('composer-input')).toBeVisible();
 
     // The first message triggers session creation…
     const createPromise = page.waitForRequest(
       (req) => req.url().includes('/api/session') && req.method() === 'POST',
     );
-    await page.getByTestId('draft-input').fill('Hello');
-    await page.getByTestId('draft-send').click();
+    await page.getByTestId('composer-input').fill('Hello');
+    await page.getByTestId('composer-send').click();
     const createRequest = await createPromise;
     expect(createRequest).toBeTruthy();
 
@@ -127,6 +129,7 @@ test.describe('Session Lifecycle', () => {
     });
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Click session in sidebar to open chat
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
@@ -189,6 +192,7 @@ test.describe('Session Lifecycle', () => {
 
     await setupBasicMocks(page, { sessionHistory: historyEvents });
     await page.goto('/');
+    await openSessionsList(page);
 
     // Wait for session list
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
@@ -231,11 +235,11 @@ test.describe('Session Lifecycle', () => {
     });
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Wait for session list and click the ended session
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
     // Switch to 'all' filter so ended sessions are visible
-    await page.getByTestId('session-filter-dropdown').selectOption('all');
     await page.getByTestId('session-item-test-session-001').click();
 
 
@@ -265,6 +269,7 @@ test.describe('Session Lifecycle', () => {
     );
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Wait for session list with both sessions visible
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
@@ -308,6 +313,7 @@ test.describe('Session Lifecycle', () => {
     });
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Wait for session list
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
@@ -358,6 +364,7 @@ test.describe('Session Lifecycle', () => {
     });
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Wait for session list
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
@@ -378,6 +385,7 @@ test.describe('Session Lifecycle', () => {
     });
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Wait for session list with both sessions
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
@@ -391,6 +399,7 @@ test.describe('Session Lifecycle', () => {
 
     // Refresh the page
     await page.reload();
+    await openSessionsList(page);
 
     // Assert: sessions are still visible after refresh
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
@@ -406,6 +415,7 @@ test.describe('Session Lifecycle', () => {
   test('no End button visible for active session', async ({ page }) => {
     await setupBasicMocks(page, { sessions: [MOCK_SESSION] });
     await page.goto('/');
+    await openSessionsList(page);
 
     // Wait for session list
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
@@ -437,11 +447,11 @@ test.describe('Session Lifecycle', () => {
     });
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Wait for session list and click the ended session
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
     // Switch to 'all' filter so ended sessions are visible
-    await page.getByTestId('session-filter-dropdown').selectOption('all');
     await page.getByTestId('session-item-test-session-001').click();
 
     // Positive load signal FIRST: the ended session's chat input rendered.

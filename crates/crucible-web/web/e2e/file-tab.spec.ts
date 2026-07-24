@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
+import { appReady } from './helpers/nav';
 
 /**
  * E2E: File Tab Flows
@@ -39,9 +40,9 @@ test.describe('File tab flows', () => {
     await setupBasicMocks(page);
     await page.goto('/');
 
-    // No landing page: an empty center shows the EmptyState with a
-    // new-session action.
-    await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 10000 });
+    // No landing page and no splash: a fresh center pane is void.
+    await appReady(page);
+    await expect(page.getByTestId('composer-input')).toHaveCount(0);
   });
 
   test('opening a file creates a file tab in the center pane', async ({ page }) => {
@@ -68,7 +69,7 @@ test.describe('File tab flows', () => {
     });
 
     await page.goto('/');
-    await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 10000 });
+    await appReady(page);
 
     // Open a file (same code path as clicking in FilesPanel)
     await openFile(page, '/home/user/notes/My Note.md', 'My Note.md');
@@ -83,7 +84,7 @@ test.describe('File tab flows', () => {
   }) => {
     await setupBasicMocks(page);
     await page.goto('/');
-    await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 10000 });
+    await appReady(page);
 
     // Open the same file twice
     await openFile(page, '/home/user/notes/My Note.md', 'My Note.md');

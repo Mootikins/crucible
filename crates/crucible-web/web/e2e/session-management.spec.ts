@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 import { MOCK_SESSION, MOCK_SESSION_2 } from './helpers/fixtures';
+import { openSessionsList } from './helpers/nav';
 
 /**
  * E2E: Session Management
@@ -12,6 +13,7 @@ test.describe('Session Management', () => {
   test('displays sessions in the session panel', async ({ page }) => {
     await setupBasicMocks(page, { sessions: [MOCK_SESSION, MOCK_SESSION_2] });
     await page.goto('/');
+    await openSessionsList(page);
 
     // Wait for session list to be visible (requires project to load first)
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
@@ -29,6 +31,7 @@ test.describe('Session Management', () => {
     const newSession = { ...MOCK_SESSION, session_id: 'test-session-new', title: 'New Session' };
     await setupBasicMocks(page, { sessionCreate: newSession });
     await page.goto('/');
+    await openSessionsList(page);
 
     // Wait for the new session button to be visible
     const newSessionBtn = page.getByTestId('new-session-button');
@@ -40,15 +43,15 @@ test.describe('Session Management', () => {
       if (req.url().endsWith('/api/session') && req.method() === 'POST') createdEarly = true;
     });
     await newSessionBtn.click();
-    await expect(page.getByTestId('draft-input')).toBeVisible();
+    await expect(page.getByTestId('composer-input')).toBeVisible();
     expect(createdEarly).toBe(false);
 
     // Sending the first message creates the session.
     const requestPromise = page.waitForRequest(
       (req) => req.url().includes('/api/session') && req.method() === 'POST',
     );
-    await page.getByTestId('draft-input').fill('First message');
-    await page.getByTestId('draft-send').click();
+    await page.getByTestId('composer-input').fill('First message');
+    await page.getByTestId('composer-send').click();
     await requestPromise;
   });
 
@@ -61,6 +64,7 @@ test.describe('Session Management', () => {
     );
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Wait for session list to be visible
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });

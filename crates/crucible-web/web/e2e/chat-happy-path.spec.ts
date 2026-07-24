@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 import { createSSEStream } from './helpers/mock-sse';
 import { MOCK_SESSION } from './helpers/fixtures';
+import { openSessionsList } from './helpers/nav';
 
 /**
  * E2E: Chat Happy Path
@@ -85,6 +86,7 @@ test.describe('Chat happy path', () => {
     });
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Click the session in the left panel to select it and open in chat tab
     const sessionButton = page.getByTestId('session-item-test-session-001');
@@ -151,6 +153,7 @@ test.describe('Chat happy path', () => {
     );
 
     await page.goto('/');
+    await openSessionsList(page);
 
     // Click the session in the left panel to select it and open in chat tab
     const sessionButton = page.getByTestId('session-item-test-session-001');

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
+import { openSessionsList } from './helpers/nav';
 
 /**
  * E2E: Model Switching
@@ -11,6 +12,7 @@ import { setupBasicMocks } from './helpers/mock-api';
 test('model picker opens and shows available models', async ({ page }) => {
   await setupBasicMocks(page);
   await page.goto('/');
+  await openSessionsList(page);
 
   // Click the session in the sidebar to open it in the chat tab
   const sessionItem = page.getByTestId('session-item-test-session-001');
@@ -43,6 +45,7 @@ test('switching model calls the API', async ({ page }) => {
 
   await setupBasicMocks(page);
   await page.goto('/');
+  await openSessionsList(page);
 
   // Click the session in the sidebar to open it in the chat tab
   const sessionItem = page.getByTestId('session-item-test-session-001');
