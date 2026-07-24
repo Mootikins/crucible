@@ -641,7 +641,16 @@ const blockWidgetCursorEntry = EditorState.transactionFilter.of((tr) => {
 const blockWidgetField = StateField.define<DecorationSet>({
   create: buildBlockWidgets,
   update(deco, tr) {
-    if (tr.docChanged || tr.selection) return buildBlockWidgets(tr.state);
+    // Rebuild on the obvious triggers AND when the background parser advanced
+    // the syntax tree (a progress transaction has no docChanged/selection) —
+    // otherwise blocks below the initial parse boundary never widget-render.
+    if (
+      tr.docChanged ||
+      tr.selection ||
+      syntaxTree(tr.startState) !== syntaxTree(tr.state)
+    ) {
+      return buildBlockWidgets(tr.state);
+    }
     return deco.map(tr.changes);
   },
   provide: (f) => EditorView.decorations.from(f),
@@ -656,7 +665,17 @@ const livePreviewPlugin = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate) {
-      if (update.docChanged || update.selectionSet || update.viewportChanged) {
+      // The last condition catches background-parse progress: CM6 parses
+      // lazily (viewport-bounded), and the worker dispatches a bare
+      // transaction — no doc/selection/viewport change — when the tree
+      // advances. Without rebuilding on it, syntax below the first parse
+      // boundary stays visible as raw markdown until an unrelated edit.
+      if (
+        update.docChanged ||
+        update.selectionSet ||
+        update.viewportChanged ||
+        syntaxTree(update.startState) !== syntaxTree(update.state)
+      ) {
         this.decorations = buildDecorations(update.view);
       }
     }
