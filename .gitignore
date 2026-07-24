@@ -70,7 +70,14 @@ crates/crucible-llm/.fastembed_cache/
 .aider*
 
 # Temporary directories
-tree/
+# Anchored: this is the git-worktree convention at the REPO ROOT
+# (tree/feat/<name>). Unanchored, it matches any directory named tree/
+# anywhere — which silently swallowed web source for two days.
+/tree/
+# Some developers also carry an unanchored `tree/` in their GLOBAL gitignore,
+# which this repo's rules override. A file cannot be re-included once its
+# parent directory is excluded, so the directory itself is un-ignored here.
+!crates/crucible-web/web/src/components/tree/
 .worktrees/
 .cargo/*
 !.cargo/config.toml
