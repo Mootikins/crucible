@@ -353,10 +353,7 @@ pub(crate) async fn handle_get_backlinks(req: Request, km: &Arc<KilnManager>) ->
     let kiln_path = require_param!(req, "kiln", as_str);
     let name = require_param!(req, "name", as_str);
 
-    let scope = match decode_request_scope(&req, Path::new(kiln_path)) {
-        Ok(s) => s,
-        Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
-    };
+    let scope = request_scope(Path::new(kiln_path));
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
@@ -397,10 +394,7 @@ pub(crate) async fn handle_get_backlinks(req: Request, km: &Arc<KilnManager>) ->
 pub(crate) async fn handle_kiln_graph(req: Request, km: &Arc<KilnManager>) -> Response {
     let kiln_path = require_param!(req, "kiln", as_str);
 
-    let scope = match decode_request_scope(&req, Path::new(kiln_path)) {
-        Ok(s) => s,
-        Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
-    };
+    let scope = request_scope(Path::new(kiln_path));
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
@@ -577,10 +571,7 @@ pub(crate) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> R
     let kiln_path = require_param!(req, "kiln", as_str);
     let path = require_param!(req, "path", as_str);
 
-    let scope = match decode_request_scope(&req, Path::new(kiln_path)) {
-        Ok(s) => s,
-        Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
-    };
+    let scope = request_scope(Path::new(kiln_path));
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
