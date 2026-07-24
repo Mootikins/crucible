@@ -4,9 +4,8 @@ import { useProjectSafe } from '@/contexts/ProjectContext';
 import { listKilns, scmBranches } from '@/lib/api';
 import type { KilnListEntry, Session } from '@/lib/types';
 import { kilnLabel } from '@/lib/kiln-label';
-import { sessionDisplayTitle } from '@/lib/session-display';
 import { SessionRow } from '../SessionTree';
-import { Search, Plus, ChevronRight, X } from '@/lib/icons';
+import { Plus, ChevronRight } from '@/lib/icons';
 
 const byRecency = (a: Session, b: Session) =>
   (Date.parse(b.last_activity ?? b.started_at) || 0) - (Date.parse(a.last_activity ?? a.started_at) || 0);
@@ -22,7 +21,6 @@ export const SessionsBody: Component = () => {
 
   const [kilns, setKilns] = createSignal<KilnListEntry[]>([]);
   const [checkoutBranch, setCheckoutBranch] = createSignal<Map<string, string>>(new Map());
-  const [q, setQ] = createSignal('');
   const [showArchived, setShowArchived] = createSignal(false);
 
   onMount(() => {
@@ -61,12 +59,8 @@ export const SessionsBody: Component = () => {
   const kilnName = (path: string): string | null =>
     path ? kilnLabel(path, kilns().find((k) => k.path === path)?.name) : null;
 
-  const matches = (s: Session) => {
-    const query = q().trim().toLowerCase();
-    return !query || (sessionDisplayTitle(s) || '').toLowerCase().includes(query);
-  };
-  const activeList = createMemo(() => sessions().filter((s) => !s.archived && matches(s)).sort(byRecency));
-  const archivedList = createMemo(() => sessions().filter((s) => s.archived && matches(s)).sort(byRecency));
+  const activeList = createMemo(() => sessions().filter((s) => !s.archived).sort(byRecency));
+  const archivedList = createMemo(() => sessions().filter((s) => s.archived).sort(byRecency));
 
   const row = (s: Session) => (
     <SessionRow
@@ -82,23 +76,7 @@ export const SessionsBody: Component = () => {
 
   return (
     <div class="flex flex-col h-full">
-      <div class="p-2.5 shrink-0 flex flex-col gap-2">
-        <div class="relative">
-          <Search class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-dark" />
-          <input
-            type="text"
-            value={q()}
-            onInput={(e) => setQ(e.currentTarget.value)}
-            placeholder="Search sessions…"
-            class="w-full bg-control text-shell-ink text-sm pl-8 pr-7 py-1.5 rounded border border-hairline focus:border-primary focus:outline-none placeholder:text-muted-dark"
-            data-testid="session-search-input"
-          />
-          <Show when={q()}>
-            <button onClick={() => setQ('')} class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-muted-dark hover:text-shell-body rounded">
-              <X class="w-3 h-3" />
-            </button>
-          </Show>
-        </div>
+      <div class="p-2.5 shrink-0">
         <button
           onClick={() => window.dispatchEvent(new CustomEvent('crucible:new-session'))}
           class="w-full px-3 py-2 text-sm text-muted hover:text-shell-ink hover:bg-hover-wash rounded-lg transition-colors flex items-center justify-center gap-2"
@@ -112,7 +90,7 @@ export const SessionsBody: Component = () => {
         <div class="flex flex-col gap-0.5">
           <For each={activeList()}>{row}</For>
         </div>
-        <Show when={!activeList().length && !q()}>
+        <Show when={!activeList().length}>
           <p class="px-3 py-6 text-center text-muted-dark text-sm">No sessions yet</p>
         </Show>
         <Show when={archivedList().length}>
