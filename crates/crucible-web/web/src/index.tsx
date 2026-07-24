@@ -9,6 +9,8 @@ import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-sans/700.css';
 import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/500.css';
+// KaTeX math styling; Vite bundles the woff2 fonts its url()s reference.
+import 'katex/dist/katex.min.css';
 import './index.css';
 import { initializeHighlighter } from '@/lib/shiki';
 

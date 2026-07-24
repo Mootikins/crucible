@@ -2,6 +2,7 @@ import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
 import { initializeHighlighter, SHIKI_THEME } from './shiki';
 import { calloutPlugin } from './callouts';
+import { mathPlugin } from './math';
 
 /**
  * Fresh global regex matching `[[wikilink]]` bodies (capture group 1 = inner
@@ -258,6 +259,7 @@ export function createMarkdownRenderer(
   wikilinkPlugin(renderer);
   calloutPlugin(renderer);
   taskListPlugin(renderer);
+  mathPlugin(renderer);
   return renderer;
 }
 

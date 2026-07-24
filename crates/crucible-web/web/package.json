@@ -44,8 +44,10 @@
     "d3-force": "^3.0.0",
     "diff": "^8.0.4",
     "dompurify": "^3.3.3",
+    "katex": "^0.18.1",
     "lucide-solid": "^1.8.0",
     "markdown-it": "^14.1.1",
+    "mermaid": "^11.16.0",
     "shiki": "^4.0.2",
     "solid-js": "^1.9.12"
   },
@@ -58,6 +60,7 @@
     "@types/d3-force": "^3.0.10",
     "@types/diff": "^8.0.0",
     "@types/dompurify": "^3.2.0",
+    "@types/katex": "^0.16.8",
     "@types/markdown-it": "^14.1.2",
     "@vitest/coverage-v8": "^4.1.4",
     "fast-check": "^4.6.0",
