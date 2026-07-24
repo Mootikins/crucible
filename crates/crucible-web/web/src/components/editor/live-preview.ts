@@ -36,7 +36,14 @@ import {
 } from '@codemirror/state';
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
-import { renderMarkdown, wikilinkRe, rawImageUrl, sanitizeDocHtml } from '@/lib/markdown';
+import {
+  renderMarkdown,
+  wikilinkRe,
+  rawImageUrl,
+  sanitizeDocHtml,
+  renderMermaidDiagram,
+} from '@/lib/markdown';
+import { renderMath as renderKatex } from '@/lib/math';
 import { extractFrontmatterBlock, renderFrontmatterCardHtml } from '@/lib/frontmatter';
 import { resolveCalloutKind } from '@/lib/callouts';
 import { formatTableLines } from '@/lib/table-format';
@@ -99,6 +106,16 @@ const IMAGE_RE = /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)$/;
  * view does (through the raw project-file endpoint). */
 const baseDirFacet = Facet.define<string, string>({
   combine: (values) => values[0] ?? '',
+});
+
+/** Whether to render `$…$`/`$$…$$` as KaTeX in the editor (settings toggle). */
+const renderMathFacet = Facet.define<boolean, boolean>({
+  combine: (values) => values[0] ?? true,
+});
+
+/** Whether to render ```mermaid fences as diagrams in the editor. */
+const renderDiagramsFacet = Facet.define<boolean, boolean>({
+  combine: (values) => values[0] ?? true,
 });
 
 /** A GFM task-list checkbox rendered in place of a `[ ]`/`[x]` marker.
@@ -170,6 +187,118 @@ class ImageWidget extends WidgetType {
     return false;
   }
 }
+
+/** Inline (`$…$`) or display (`$$…$$`) math rendered with KaTeX, snapping back
+ * to raw source when the cursor enters. KaTeX `output:'html'` is safe styled
+ * markup (no scripts), so it's injected directly. */
+class MathWidget extends WidgetType {
+  constructor(
+    readonly src: string,
+    readonly display: boolean,
+  ) {
+    super();
+  }
+
+  override eq(other: MathWidget): boolean {
+    return other.src === this.src && other.display === this.display;
+  }
+
+  override toDOM(view: EditorView): HTMLElement {
+    const el = document.createElement(this.display ? 'div' : 'span');
+    el.className = this.display ? 'cm-lp-math cm-lp-math-display' : 'cm-lp-math';
+    // eslint-disable-next-line solid/no-innerhtml -- KaTeX output:'html' is safe styled markup
+    el.innerHTML = renderKatex(this.src, this.display);
+    el.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const pos = view.posAtDOM(el);
+      view.dispatch({ selection: { anchor: pos } });
+      view.focus();
+    });
+    return el;
+  }
+
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+/** A ```mermaid fence rendered as a diagram. Mermaid renders async, so toDOM
+ * shows a placeholder that fills in when the SVG resolves — then re-measures
+ * the block height. Clicking drops into the source for editing. */
+class MermaidWidget extends WidgetType {
+  constructor(readonly code: string) {
+    super();
+  }
+
+  override eq(other: MermaidWidget): boolean {
+    return other.code === this.code;
+  }
+
+  override toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'cm-lp-mermaid';
+    wrap.setAttribute('data-testid', 'lp-mermaid');
+    wrap.textContent = '…';
+    void renderMermaidDiagram(this.code).then((svg) => {
+      if (svg) {
+        // eslint-disable-next-line solid/no-innerhtml -- sanitized by renderMermaidDiagram
+        wrap.innerHTML = svg;
+      } else {
+        wrap.classList.add('cm-lp-mermaid-error');
+        wrap.textContent = this.code;
+      }
+      view.requestMeasure();
+    });
+    wrap.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const pos = view.posAtDOM(wrap);
+      view.dispatch({ selection: { anchor: pos } });
+      view.focus();
+    });
+    return wrap;
+  }
+
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+/** Inner text of a fenced code block's info string (the ` ```mermaid ` word),
+ * lowercased; '' when none. */
+function fencedCodeInfo(state: EditorState, node: SyntaxNode): string {
+  const info = node.getChildren('CodeInfo')[0];
+  return info ? state.doc.sliceString(info.from, info.to).trim().toLowerCase() : '';
+}
+
+/** `$$` on its own line opens a display-math block that runs until the next
+ * `$$` line. Returns each block's replace range + inner LaTeX. (Single-line
+ * `$$…$$` is handled by the inline pass.) */
+function displayMathRanges(
+  state: EditorState,
+): Array<{ from: number; to: number; content: string }> {
+  const doc = state.doc;
+  const out: Array<{ from: number; to: number; content: string }> = [];
+  let n = 1;
+  while (n <= doc.lines) {
+    if (doc.line(n).text.trim() === '$$') {
+      let m = n + 1;
+      while (m <= doc.lines && doc.line(m).text.trim() !== '$$') m++;
+      if (m <= doc.lines) {
+        const content = m > n + 1 ? doc.sliceString(doc.line(n + 1).from, doc.line(m - 1).to) : '';
+        out.push({ from: doc.line(n).from, to: doc.line(m).to, content });
+        n = m + 1;
+        continue;
+      }
+    }
+    n++;
+  }
+  return out;
+}
+
+/** Inline math: `$…$` not in code/table context, guarding against currency
+ * (`$5`) and escaped `\$`. Mirrors the markdown-it-katex delimiter rules
+ * closely enough for editor parity; the settings toggle is the escape hatch. */
+const INLINE_MATH_RE = /(?<![\\$\d])\$(?!\s)((?:\\.|[^$\\\n])+?)(?<![\s\\])\$(?!\d)/g;
 
 function buildDecorations(view: EditorView): DecorationSet {
   const { state } = view;
@@ -382,6 +511,23 @@ function buildDecorations(view: EditorView): DecorationSet {
       }
       decorations.push(HIDE.range(end - 2, end));
     }
+
+    // Inline math: `$…$` → a KaTeX widget (revealed when the cursor is on it).
+    // Not lezer nodes; skipped in code/table context (a `$` in a shell snippet
+    // isn't math). Display `$$` blocks are handled as block widgets instead.
+    if (state.facet(renderMathFacet)) {
+      INLINE_MATH_RE.lastIndex = 0;
+      let mm: RegExpExecArray | null;
+      while ((mm = INLINE_MATH_RE.exec(text))) {
+        const start = from + mm.index;
+        const end = start + mm[0].length;
+        if (selectionTouches(state, start, end)) continue;
+        if (inCodeOrTableContext(state, start)) continue;
+        decorations.push(
+          Decoration.replace({ widget: new MathWidget(mm[1], false) }).range(start, end),
+        );
+      }
+    }
   }
 
   return Decoration.set(decorations, true);
@@ -514,8 +660,47 @@ function buildBlockWidgets(state: EditorState): DecorationSet {
   const toml = tomlFrontmatterRange(state);
   if (toml) pushWidget('frontmatter', toml.from, toml.to);
 
+  const diagramsOn = state.facet(renderDiagramsFacet);
+
+  // Display math (`$$` on its own lines) — not a lezer node, scan manually.
+  // A block replace range can end AT the next line's start; clamp to the last
+  // real line so the trailing newline isn't swallowed (like frontmatter/table).
+  if (state.facet(renderMathFacet)) {
+    for (const { from, to, content } of displayMathRanges(state)) {
+      if (!content.trim()) continue;
+      const endLine = state.doc.lineAt(to);
+      const realTo = endLine.from === to ? state.doc.line(endLine.number - 1).to : to;
+      if (selectionTouches(state, from, realTo)) continue;
+      decorations.push(
+        Decoration.replace({ widget: new MathWidget(content, true), block: true }).range(
+          from,
+          realTo,
+        ),
+      );
+    }
+  }
+
   syntaxTree(state).iterate({
     enter: (nodeRef) => {
+      // ```mermaid fence → a diagram block widget (unless the cursor is inside,
+      // which reveals the source, or diagrams are disabled in the editor).
+      if (nodeRef.name === 'FencedCode' && diagramsOn) {
+        if (fencedCodeInfo(state, nodeRef.node) === 'mermaid') {
+          if (!selectionTouches(state, nodeRef.from, nodeRef.to)) {
+            const codeText = nodeRef.node.getChildren('CodeText')[0];
+            const code = codeText ? state.doc.sliceString(codeText.from, codeText.to) : '';
+            if (code.trim()) {
+              decorations.push(
+                Decoration.replace({ widget: new MermaidWidget(code), block: true }).range(
+                  nodeRef.from,
+                  nodeRef.to,
+                ),
+              );
+            }
+          }
+          return false;
+        }
+      }
       const kind = renderedBlockKind(state, nodeRef.name, nodeRef.from);
       if (!kind) return; // descend — plain blockquotes may contain tables
       pushWidget(kind, nodeRef.from, nodeRef.to);
@@ -804,6 +989,30 @@ const livePreviewTheme = EditorView.baseTheme({
   // demo). whiteSpace reset for the same pre-wrap reason as callouts.
   '.cm-lp-html': { cursor: 'text', padding: '2px 0', whiteSpace: 'normal' },
   '.cm-lp-html img': { maxWidth: '100%', height: 'auto' },
+  // Display math + mermaid block widgets: centered, click drops into source.
+  '.cm-lp-math-display': {
+    display: 'block',
+    textAlign: 'center',
+    padding: '2px 0',
+    cursor: 'text',
+    whiteSpace: 'normal',
+  },
+  '.cm-lp-mermaid': {
+    display: 'flex',
+    justifyContent: 'center',
+    cursor: 'text',
+    padding: '4px 0',
+    overflowX: 'auto',
+    whiteSpace: 'normal',
+  },
+  '.cm-lp-mermaid svg': { maxWidth: '100%', height: 'auto' },
+  '.cm-lp-mermaid-error': {
+    display: 'block',
+    fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+    fontSize: '12px',
+    whiteSpace: 'pre-wrap',
+    color: 'var(--color-muted, #928d99)',
+  },
   // Inline images (badges, `![](…)`) render at their natural size, capped to
   // the column; a broken/blank src just collapses rather than showing an icon.
   '.cm-lp-img': {
@@ -839,13 +1048,20 @@ const livePreviewTheme = EditorView.baseTheme({
   },
 });
 
-export function livePreview(opts?: { maxLineWidth?: number; baseDir?: string }): Extension {
+export function livePreview(opts?: {
+  maxLineWidth?: number;
+  baseDir?: string;
+  renderMath?: boolean;
+  renderDiagrams?: boolean;
+}): Extension {
   const width = opts?.maxLineWidth ?? 0;
   return [
     // Scope the prose font to live-preview editors only.
     EditorView.editorAttributes.of({ class: 'cm-lp' }),
     // The document's directory, for resolving relative image srcs.
     baseDirFacet.of(opts?.baseDir ?? ''),
+    renderMathFacet.of(opts?.renderMath ?? true),
+    renderDiagramsFacet.of(opts?.renderDiagrams ?? true),
     // Prose wraps; horizontal scrolling is a source-mode behavior.
     EditorView.lineWrapping,
     // Readable line length (Obsidian-style): center a prose column instead

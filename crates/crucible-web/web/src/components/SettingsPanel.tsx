@@ -621,6 +621,30 @@ const EditorSettingsSection: Component = () => {
           data-testid="settings-editor-save-button"
         />
       </SettingRow>
+      <SettingRow
+        label="Render math in editor"
+        description="Show $…$ / $$…$$ as KaTeX in live preview. Off keeps the raw source. (Reading view always renders it.)"
+      >
+        <input
+          type="checkbox"
+          checked={settings.editor.renderMath}
+          onChange={(e) => updateSetting('editor', 'renderMath', e.currentTarget.checked)}
+          class="h-4 w-4 cursor-pointer"
+          data-testid="settings-editor-render-math"
+        />
+      </SettingRow>
+      <SettingRow
+        label="Render diagrams in editor"
+        description="Show ```mermaid fences as diagrams in live preview. Off keeps the raw source. (Reading view always renders them.)"
+      >
+        <input
+          type="checkbox"
+          checked={settings.editor.renderDiagrams}
+          onChange={(e) => updateSetting('editor', 'renderDiagrams', e.currentTarget.checked)}
+          class="h-4 w-4 cursor-pointer"
+          data-testid="settings-editor-render-diagrams"
+        />
+      </SettingRow>
     </>
   );
 };

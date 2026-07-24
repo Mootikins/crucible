@@ -252,6 +252,14 @@ async function highlightCodeBlocks(
   return result;
 }
 
+/** Render mermaid source to a sanitized SVG string (or null on failure).
+ * Shared by the reading-view pipeline and the live-preview editor widget so
+ * both go through the same render + sanitize path. */
+export async function renderMermaidDiagram(code: string): Promise<string | null> {
+  const svg = await renderMermaid(code);
+  return svg ? sanitizeMermaidSvg(svg) : null;
+}
+
 /** Placeholder emitted by {@link highlightCodeBlocks} for a ```mermaid fence;
  * inner text is the HTML-escaped diagram source. */
 const MERMAID_PENDING_PATTERN = /<div class="mermaid-pending">([\s\S]*?)<\/div>/g;

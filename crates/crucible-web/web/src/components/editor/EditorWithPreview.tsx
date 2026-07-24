@@ -31,6 +31,10 @@ export const EditorWithPreview: Component<{
   initialMode?: EditorMode;
   /** Readable line length in px (0 = full width). */
   lineWidth?: number;
+  /** Render `$…$`/`$$…$$` as KaTeX in live preview (default true). */
+  renderMath?: boolean;
+  /** Render ```mermaid fences as diagrams in live preview (default true). */
+  renderDiagrams?: boolean;
   /** Hand the live EditorView up (context-menu clipboard ops). */
   editorApiRef?: (view: import('@codemirror/view').EditorView) => void;
   /** Scroll to the first wikilink targeting this note key on open. */
@@ -104,6 +108,8 @@ export const EditorWithPreview: Component<{
           vimMode={props.vimMode}
           livePreview={isMarkdown() && mode() === 'live'}
           lineWidth={props.lineWidth}
+          renderMath={props.renderMath}
+          renderDiagrams={props.renderDiagrams}
           onTogglePreview={isMarkdown() ? () => setMode('reading') : undefined}
           scrollToNote={props.scrollToNote}
           scrollToLine={props.scrollToLine}

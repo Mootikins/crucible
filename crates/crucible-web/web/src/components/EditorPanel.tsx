@@ -127,6 +127,8 @@ export const EditorPanel: Component = () => {
                 onFollowLink={(target) => void followLink(target)}
                 lineWidth={settings.editor.maxLineWidth}
                 vimMode={settings.editor.vimMode}
+                renderMath={settings.editor.renderMath}
+                renderDiagrams={settings.editor.renderDiagrams}
               />
             )}
           </Show>

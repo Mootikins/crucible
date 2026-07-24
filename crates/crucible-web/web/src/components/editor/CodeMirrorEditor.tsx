@@ -94,6 +94,10 @@ export const CodeMirrorEditor: Component<{
   livePreview?: boolean;
   /** Readable line length in px for live preview (0/undefined = full). */
   lineWidth?: number;
+  /** Render `$…$`/`$$…$$` as KaTeX in live preview (default true). */
+  renderMath?: boolean;
+  /** Render ```mermaid fences as diagrams in live preview (default true). */
+  renderDiagrams?: boolean;
   /** Switch to the rendered preview (Mod-Shift-E). */
   onTogglePreview?: () => void;
   /** Hand the live EditorView to the parent (context-menu clipboard ops). */
@@ -225,6 +229,8 @@ export const CodeMirrorEditor: Component<{
         livePreview({
           maxLineWidth: props.lineWidth,
           baseDir: props.path.replace(/\/[^/]*$/, ''),
+          renderMath: props.renderMath ?? true,
+          renderDiagrams: props.renderDiagrams ?? true,
         }),
       );
     }
@@ -321,6 +327,8 @@ export const CodeMirrorEditor: Component<{
     props.vimMode;
     props.livePreview;
     props.lineWidth;
+    props.renderMath;
+    props.renderDiagrams;
     if (view) {
       view.dispatch({
         effects: StateEffect.reconfigure.of(createExtensions()),

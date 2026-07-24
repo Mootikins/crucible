@@ -31,6 +31,10 @@ export interface EditorSettings {
   hoverMode: 'reading' | 'live' | 'source';
   /** Show the save affordance (dirty dot + Save) in the status bar. */
   showSaveButton: boolean;
+  /** Render `$…$`/`$$…$$` math as KaTeX in live preview (off = raw source). */
+  renderMath: boolean;
+  /** Render ```mermaid fences as diagrams in live preview (off = raw source). */
+  renderDiagrams: boolean;
 }
 
 /** Appearance / typography settings */
@@ -73,6 +77,8 @@ export const defaultSettings: AppSettings = {
     // Matches the reading view's prose column (max-w-3xl).
     maxLineWidth: 768,
     hoverMode: 'reading',
+    renderMath: true,
+    renderDiagrams: true,
   },
   // Empty = use the built-in @theme defaults (IBM Plex) from index.css.
   appearance: {

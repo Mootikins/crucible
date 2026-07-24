@@ -225,6 +225,8 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
                   }
                   vimMode={settings.editor.vimMode}
                   lineWidth={settings.editor.maxLineWidth}
+                  renderMath={settings.editor.renderMath}
+                  renderDiagrams={settings.editor.renderDiagrams}
                   editorApiRef={(view) => (editorView = view)}
                   initialMode={
                     props.initialMode === 'reading' || props.initialMode === 'live' || props.initialMode === 'source'
