@@ -556,6 +556,20 @@ details.callout[open] > summary.callout-title::after {
   animation: fade-scroll-pingpong 2600ms ease-in-out 250ms infinite alternate;
 }
 
+/* Mermaid diagrams (lib/markdown.ts renderMermaidBlocks): centered, capped to
+   the column, and horizontally scrollable rather than overflowing a narrow
+   pane. The SVG scales down but never blows past the text column. */
+.mermaid-diagram {
+  display: flex;
+  justify-content: center;
+  margin: 0.75rem 0;
+  overflow-x: auto;
+}
+.mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
 /* Frontmatter Properties card (lib/frontmatter.ts renderFrontmatterCardHtml)
    — the SAME card in the reading view and the live-preview widget. Quiet
    key/value rows; array values render as pill chips. */

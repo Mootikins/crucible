@@ -3,6 +3,7 @@ import DOMPurify from 'dompurify';
 import { initializeHighlighter, SHIKI_THEME } from './shiki';
 import { calloutPlugin } from './callouts';
 import { mathPlugin } from './math';
+import { renderMermaid } from './mermaid';
 
 /**
  * Fresh global regex matching `[[wikilink]]` bodies (capture group 1 = inner
@@ -64,17 +65,11 @@ function decodeHtml(value: string): string {
   return doc.documentElement.textContent ?? '';
 }
 
-function sanitizeHtml(value: string): string {
-  const sanitizeOptions = {
-    // `align` keeps `<p align="center">` (README demo blocks); `data-copy`
-    // marks code-block copy buttons for the reading-view click delegate.
-    ADD_ATTR: ['data-note', 'data-copy', 'style', 'align'],
-  };
-
+function runDOMPurify(value: string, options: unknown): string {
   const directSanitize = (DOMPurify as { sanitize?: (html: string, options?: unknown) => string })
     .sanitize;
   if (typeof directSanitize === 'function') {
-    return directSanitize(value, sanitizeOptions);
+    return directSanitize(value, options);
   }
 
   const domPurifyFactory = DOMPurify as unknown as ((windowObj: Window) => {
@@ -82,10 +77,26 @@ function sanitizeHtml(value: string): string {
   });
 
   if (typeof window !== 'undefined') {
-    return domPurifyFactory(window).sanitize(value, sanitizeOptions);
+    return domPurifyFactory(window).sanitize(value, options);
   }
 
   return value.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
+}
+
+function sanitizeHtml(value: string): string {
+  return runDOMPurify(value, {
+    // `align` keeps `<p align="center">` (README demo blocks); `data-copy`
+    // marks code-block copy buttons for the reading-view click delegate.
+    ADD_ATTR: ['data-note', 'data-copy', 'style', 'align'],
+  });
+}
+
+/** Sanitize a mermaid-produced SVG with the SVG profile (the strict HTML
+ * profile strips `<svg>` and its children). Mermaid already renders with
+ * `securityLevel: 'strict'`; this is defense in depth for LLM-authored
+ * diagrams in chat turns. */
+function sanitizeMermaidSvg(svg: string): string {
+  return runDOMPurify(svg, { USE_PROFILES: { svg: true, svgFilters: true } });
 }
 
 function wikilinkPlugin(md: MarkdownIt): void {
@@ -211,10 +222,20 @@ async function highlightCodeBlocks(
     const [fullMatch, languageClass, encodedCode] = match;
     const index = match.index ?? 0;
     const language = languageClass && languageClass.length > 0 ? languageClass : 'text';
-    const source = decodeHtml(encodedCode);
 
     result += renderedHtml.slice(lastIndex, index);
+    lastIndex = index + fullMatch.length;
 
+    // Mermaid diagrams render async and produce SVG, which the strict HTML
+    // sanitizer would strip — defer to renderMermaidBlocks, which runs AFTER
+    // sanitizeHtml. Emit a placeholder (source kept HTML-escaped) that
+    // survives DOMPurify. No shiki, no copy button.
+    if (language === 'mermaid') {
+      result += `<div class="mermaid-pending">${encodedCode}</div>`;
+      continue;
+    }
+
+    const source = decodeHtml(encodedCode);
     let block: string;
     try {
       block = highlighter.codeToHtml(source, { lang: language, theme: SHIKI_THEME });
@@ -222,11 +243,41 @@ async function highlightCodeBlocks(
       block = fullMatch;
     }
     result += opts.copyButton ? wrapWithCopyButton(block) : block;
-
-    lastIndex = index + fullMatch.length;
   }
 
   result += renderedHtml.slice(lastIndex);
+  return result;
+}
+
+/** Placeholder emitted by {@link highlightCodeBlocks} for a ```mermaid fence;
+ * inner text is the HTML-escaped diagram source. */
+const MERMAID_PENDING_PATTERN = /<div class="mermaid-pending">([\s\S]*?)<\/div>/g;
+
+/**
+ * Replace mermaid placeholders with rendered, SVG-sanitized diagrams. Runs as
+ * the LAST render step (after the strict sanitize) so the injected SVG isn't
+ * stripped. A diagram that fails to parse falls back to its source as a code
+ * block, so nothing is lost. No placeholders → the input string is returned
+ * untouched (and mermaid is never imported).
+ */
+async function renderMermaidBlocks(html: string): Promise<string> {
+  const matches = [...html.matchAll(MERMAID_PENDING_PATTERN)];
+  if (matches.length === 0) return html;
+
+  let result = '';
+  let lastIndex = 0;
+  for (const match of matches) {
+    const index = match.index ?? 0;
+    result += html.slice(lastIndex, index);
+    lastIndex = index + match[0].length;
+
+    const source = decodeHtml(match[1]);
+    const svg = await renderMermaid(source);
+    result += svg
+      ? `<div class="mermaid-diagram">${sanitizeMermaidSvg(svg)}</div>`
+      : `<pre class="mermaid-error"><code>${match[1]}</code></pre>`;
+  }
+  result += html.slice(lastIndex);
   return result;
 }
 
@@ -287,7 +338,7 @@ export function renderMarkdown(content: string): string {
 export async function renderMarkdownAsync(content: string): Promise<string> {
   const renderedHtml = getRenderer().render(content);
   const highlightedHtml = await highlightCodeBlocks(renderedHtml);
-  return sanitizeHtml(highlightedHtml);
+  return renderMermaidBlocks(sanitizeHtml(highlightedHtml));
 }
 
 /** Join a relative POSIX path onto a base dir, resolving `.`/`..`. */
@@ -344,7 +395,7 @@ export async function renderMarkdownDocAsync(
 ): Promise<string> {
   const renderedHtml = getDocRenderer().render(content);
   const highlightedHtml = await highlightCodeBlocks(renderedHtml, { copyButton: true });
-  return sanitizeHtml(resolveDocImages(highlightedHtml, baseDir));
+  return renderMermaidBlocks(sanitizeHtml(resolveDocImages(highlightedHtml, baseDir)));
 }
 
 /**
@@ -358,7 +409,7 @@ export async function renderMarkdownDocAsync(
 export async function renderMarkdownChatAsync(content: string): Promise<string> {
   const renderedHtml = getRenderer().render(content);
   const highlightedHtml = await highlightCodeBlocks(renderedHtml, { copyButton: true });
-  return sanitizeHtml(highlightedHtml);
+  return renderMermaidBlocks(sanitizeHtml(highlightedHtml));
 }
 
 /**
