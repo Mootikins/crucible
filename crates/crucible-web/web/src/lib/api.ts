@@ -506,6 +506,48 @@ export async function grepSearch(
   };
 }
 
+// =============================================================================
+// Semantic Search (vector) — POST /api/search/semantic
+// =============================================================================
+
+/** One semantically-matched note. `score` is a bounded similarity (higher =
+ * closer). `path` is absolute (open in the editor); `relPath` is kiln-relative
+ * (display). Requires the kiln's notes to be embedded/processed. */
+export interface SemanticHit {
+  path: string;
+  relPath: string;
+  score: number;
+}
+
+interface RawSemanticHit {
+  path: string;
+  rel_path: string;
+  document_id: string;
+  score: number;
+}
+
+/**
+ * Semantic (vector) search over a kiln's processed notes: the daemon embeds
+ * `query` with the kiln's embedding provider, then ranks notes by vector
+ * similarity. Returns [] if the kiln has no embeddings or no provider is
+ * configured. Unlike grep, this matches meaning, not literal text.
+ */
+export async function semanticSearch(
+  kiln: string,
+  query: string,
+  limit = 20,
+): Promise<SemanticHit[]> {
+  const data = await request<{ results: RawSemanticHit[] }>('POST', '/api/search/semantic', {
+    errorMessage: 'Semantic search failed',
+    ...jsonRequest({ kiln, query, limit }),
+  });
+  return data.results.map((r) => ({
+    path: r.path,
+    relPath: r.rel_path,
+    score: r.score,
+  }));
+}
+
 /** Pause a session. */
 export async function pauseSession(id: string): Promise<void> {
   await request<void>('POST', `/api/session/${encodeURIComponent(id)}/pause`, {

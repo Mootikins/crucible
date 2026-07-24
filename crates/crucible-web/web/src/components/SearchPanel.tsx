@@ -12,7 +12,15 @@ import {
 import { PanelShell } from './PanelShell';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import { getConfig, grepSearch, listKilns, searchSessions, type GrepHit } from '@/lib/api';
+import {
+  getConfig,
+  grepSearch,
+  listKilns,
+  searchSessions,
+  semanticSearch,
+  type GrepHit,
+  type SemanticHit,
+} from '@/lib/api';
 import type { KilnListEntry, Session } from '@/lib/types';
 import { swrLocal } from '@/lib/local-cache';
 import { openFileInEditor } from '@/lib/file-actions';
@@ -23,11 +31,14 @@ import { treeSectionHeader } from '@/components/tree/tree-style';
 import { Search, FileText, FolderGit2, FlaskConical, ClipboardList, ChevronDown, Check, X } from '@/lib/icons';
 
 const HIT_LIMIT = 60;
+const SEMANTIC_LIMIT = 20;
 const DEBOUNCE_MS = 220;
 
 // ---- scope-aware search options --------------------------------------------
 type ScopeKind = 'everywhere' | 'kiln' | 'project' | 'sessions';
 type SScope = { kind: ScopeKind; name: string; path?: string };
+/** Text = ripgrep (literal); Semantic = vector similarity over embedded notes. */
+type SearchMode = 'text' | 'semantic';
 
 const NOTE_OPS: [string, string][] = [
   ['path:', 'match note path'], ['file:', 'match note name'], ['tag:', 'search for tags'],
@@ -82,11 +93,34 @@ const HitRow: Component<{ hit: GrepHit; onOpen: () => void }> = (props) => {
   );
 };
 
+/** A semantic (vector) note hit: note name, kiln-relative path, similarity. */
+const SemanticRow: Component<{ hit: SemanticHit; onOpen: () => void }> = (props) => (
+  <button
+    type="button"
+    onClick={props.onOpen}
+    title={props.hit.relPath}
+    class="w-full text-left px-3 py-1.5 rounded hover:bg-hover-wash transition-colors flex items-center gap-1.5"
+    data-testid="search-semantic-hit"
+  >
+    <FileText class="w-3.5 h-3.5 shrink-0 text-muted-dark" />
+    <span class="text-xs text-shell-body truncate">{pathBasename(props.hit.relPath)}</span>
+    <span class="text-[10px] text-muted-dark truncate min-w-0">{props.hit.relPath}</span>
+    <span
+      class="ml-auto shrink-0 text-[10px] font-mono tabular-nums text-primary/90 bg-primary/10 rounded px-1"
+      title="similarity"
+    >
+      {Math.round(props.hit.score * 100)}%
+    </span>
+  </button>
+);
+
 /**
  * Content search scoped by a picker: pick Everywhere / Sessions / a kiln / a
  * project (prefilled from the current session's kiln). The scope drives which
  * corpora are searched (kiln → its notes, project → its files, sessions always
- * integrate) and which operator hints show. One debounced query fans out.
+ * integrate) and which operator hints show. A Text/Semantic mode toggle swaps
+ * note search between ripgrep (literal) and vector similarity. One debounced
+ * query fans out.
  */
 export const SearchPanel: Component = () => {
   const { projects } = useProjectSafe();
@@ -99,9 +133,11 @@ export const SearchPanel: Component = () => {
   const [scope, setScope] = createSignal<SScope>({ kind: 'everywhere', name: 'Everywhere' });
   const [scopeTouched, setScopeTouched] = createSignal(false);
   const [pickerOpen, setPickerOpen] = createSignal(false);
+  const [mode, setMode] = createSignal<SearchMode>('text');
 
   const [noteHits, setNoteHits] = createSignal<GrepHit[]>([]);
   const [fileHits, setFileHits] = createSignal<GrepHit[]>([]);
+  const [semanticHits, setSemanticHits] = createSignal<SemanticHit[]>([]);
   const [sessionHits, setSessionHits] = createSignal<Session[]>([]);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -150,22 +186,38 @@ export const SearchPanel: Component = () => {
   const noteRoot = () => (scope().kind === 'kiln' ? scope().path ?? '' : primaryKiln());
   const fileRoot = () => (scope().kind === 'project' ? scope().path ?? '' : mruProject());
 
-  // Run searches on query/scope change; per-run token drops stale responses.
+  // Run searches on query/scope/mode change; per-run token drops stale responses.
   let runToken = 0;
-  createEffect(on([debounced, scope], ([q]) => {
+  createEffect(on([debounced, scope, mode], ([q]) => {
     const token = ++runToken;
-    if (!q) { setNoteHits([]); setFileHits([]); setSessionHits([]); setError(null); setBusy(false); return; }
+    if (!q) { setNoteHits([]); setFileHits([]); setSemanticHits([]); setSessionHits([]); setError(null); setBusy(false); return; }
     setBusy(true);
     setError(null);
     const guard = <T,>(fn: () => T) => (runToken === token ? fn() : undefined);
 
     const nRoot = noteRoot();
-    const notes = showNotes() && nRoot
-      ? grepSearch(nRoot, q, { glob: '*.md', limit: HIT_LIMIT }).then((r) => guard(() => setNoteHits(r.hits))).catch(() => guard(() => setNoteHits([])))
-      : Promise.resolve(guard(() => setNoteHits([])));
+    const semantic = mode() === 'semantic';
 
+    // Notes: semantic (vector) or text (grep). The other note bucket is cleared
+    // so switching modes never leaves stale hits of the wrong kind on screen.
+    let notes: Promise<unknown>;
+    if (!(showNotes() && nRoot)) {
+      notes = Promise.resolve(guard(() => { setNoteHits([]); setSemanticHits([]); }));
+    } else if (semantic) {
+      setNoteHits([]);
+      notes = semanticSearch(nRoot, q, SEMANTIC_LIMIT)
+        .then((r) => guard(() => setSemanticHits(r)))
+        .catch(() => guard(() => setSemanticHits([])));
+    } else {
+      setSemanticHits([]);
+      notes = grepSearch(nRoot, q, { glob: '*.md', limit: HIT_LIMIT })
+        .then((r) => guard(() => setNoteHits(r.hits)))
+        .catch(() => guard(() => setNoteHits([])));
+    }
+
+    // Files: grep only (semantic search is notes-only). Hidden in semantic mode.
     const fRoot = fileRoot();
-    const files = showFiles() && fRoot
+    const files = !semantic && showFiles() && fRoot
       ? grepSearch(fRoot, q, { limit: HIT_LIMIT }).then((r) => guard(() => setFileHits(r.hits))).catch(() => guard(() => setFileHits([])))
       : Promise.resolve(guard(() => setFileHits([])));
 
@@ -176,8 +228,13 @@ export const SearchPanel: Component = () => {
     void Promise.allSettled([notes, files, sessions]).then(() => guard(() => setBusy(false)));
   }));
 
-  const counts = createMemo(() => ({ notes: noteHits().length, files: fileHits().length, sessions: sessionHits().length }));
-  const total = () => counts().notes + counts().files + counts().sessions;
+  const counts = createMemo(() => ({
+    notes: noteHits().length,
+    semantic: semanticHits().length,
+    files: fileHits().length,
+    sessions: sessionHits().length,
+  }));
+  const total = () => counts().notes + counts().semantic + counts().files + counts().sessions;
 
   return (
     <PanelShell class="overflow-hidden">
@@ -223,6 +280,24 @@ export const SearchPanel: Component = () => {
               onClose={() => setPickerOpen(false)}
             />
           </Show>
+
+          {/* Text vs Semantic note search. Semantic ranks notes by meaning
+              (vector similarity over embeddings); Text is literal ripgrep. */}
+          <div class="ml-auto inline-flex rounded-full border border-hairline overflow-hidden" role="group" aria-label="Search mode">
+            <For each={['text', 'semantic'] as SearchMode[]}>
+              {(m) => (
+                <button
+                  type="button"
+                  onClick={() => setMode(m)}
+                  aria-pressed={mode() === m}
+                  data-testid={`search-mode-${m}`}
+                  class={`px-2 py-0.5 capitalize transition-colors ${mode() === m ? 'bg-primary/15 text-shell-ink' : 'text-muted-dark hover:bg-hover-wash'}`}
+                >
+                  {m}
+                </button>
+              )}
+            </For>
+          </div>
         </div>
       </div>
 
@@ -247,7 +322,14 @@ export const SearchPanel: Component = () => {
           <div class="px-3 py-8 text-center text-muted-dark text-xs">No matches for “{debounced()}”.</div>
         </Show>
 
-        <Show when={showNotes() && noteHits().length > 0}>
+        <Show when={mode() === 'semantic' && showNotes() && semanticHits().length > 0}>
+          <div class={treeSectionHeader}>Notes · semantic · {counts().semantic}</div>
+          <For each={semanticHits()}>
+            {(hit) => <SemanticRow hit={hit} onOpen={() => openFileInEditor(hit.path, pathBasename(hit.relPath) || undefined)} />}
+          </For>
+        </Show>
+
+        <Show when={mode() === 'text' && showNotes() && noteHits().length > 0}>
           <div class={treeSectionHeader}>Notes · {counts().notes}</div>
           <For each={noteHits()}>
             {(hit) => <HitRow hit={hit} onOpen={() => openFileInEditor(hit.path, pathBasename(hit.relPath) || undefined)} />}
