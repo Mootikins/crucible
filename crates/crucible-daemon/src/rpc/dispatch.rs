@@ -19,6 +19,7 @@ pub const METHODS: &[&str] = &[
     "kiln.list",
     "kiln.set_classification",
     "search_vectors",
+    "search_grep",
     "embed.query",
     "list_notes",
     "get_note_by_name",
