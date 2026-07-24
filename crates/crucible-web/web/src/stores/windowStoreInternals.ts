@@ -8,7 +8,6 @@ import type {
 } from '@/types/windowTypes';
 import {
   Activity,
-  ClipboardList,
   FolderTree,
   Link2,
   MessageCircle,
@@ -216,17 +215,15 @@ export function primaryEdgeGroupId(
 const createSampleTabs = (): Tab[] => [];
 
 // Only IMPLEMENTED panels ship in the default layout — no placeholder tabs.
+// The Navigator absorbed the old separate Files/Sessions tabs; persisted
+// layouts get remapped by migrateRetiredPanels, and this default must match
+// it or a FRESH profile opens two tabs with no registered panel ("Unknown
+// content type").
 const createLeftPanelTabs = (): Tab[] => [
   {
-    id: 'sessions-tab',
-    title: 'Sessions',
-    contentType: 'sessions',
-    icon: ClipboardList,
-  },
-  {
-    id: 'files-tab',
-    title: 'Files',
-    contentType: 'files',
+    id: 'navigator-tab',
+    title: 'Navigator',
+    contentType: 'navigator',
     icon: FolderTree,
   },
 ];
@@ -267,6 +264,12 @@ export function createInitialState(): WindowState {
   const leftGroupId = generateId();
   const rightGroupId = generateId();
   const bottomGroupId = generateId();
+  // Open each edge panel on its FIRST tab, derived rather than hard-coded: a
+  // literal id that a tab-roster change orphans leaves the panel showing "No
+  // tab selected" (it has happened for both the left and right panels).
+  const leftTabs = createLeftPanelTabs();
+  const rightTabs = createRightPanelTabs();
+  const bottomTabs = createBottomPanelTabs();
   return {
     layout: {
       id: mainPaneId,
@@ -281,21 +284,18 @@ export function createInitialState(): WindowState {
       },
       [leftGroupId]: {
         id: leftGroupId,
-        tabs: createLeftPanelTabs(),
-        activeTabId: 'sessions-tab',
+        tabs: leftTabs,
+        activeTabId: leftTabs[0]?.id ?? null,
       },
       [rightGroupId]: {
         id: rightGroupId,
-        tabs: createRightPanelTabs(),
-        // 'backlinks-tab' is the first tab createRightPanelTabs produces;
-        // 'outline-tab' was removed in the clean-slate roster refactor, so the
-        // right panel opened to an empty "Select a tab" instead of Backlinks.
-        activeTabId: 'backlinks-tab',
+        tabs: rightTabs,
+        activeTabId: rightTabs[0]?.id ?? null,
       },
       [bottomGroupId]: {
         id: bottomGroupId,
-        tabs: createBottomPanelTabs(),
-        activeTabId: 'terminal-tab-1',
+        tabs: bottomTabs,
+        activeTabId: bottomTabs[0]?.id ?? null,
       },
     },
     edgePanels: {

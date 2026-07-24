@@ -69,8 +69,14 @@ describe('EdgePanel — tab icons', () => {
   it('the default edge roster gives every tab a component icon', () => {
     const positions: EdgePanelPosition[] = ['left', 'right', 'bottom'];
     const tabs = positions.flatMap((p) => edgeTabs(p));
-    // Sessions, Files, Backlinks, Activity, Terminal, Chat.
-    expect(tabs.length).toBe(6);
+    // The Navigator absorbed the separate Sessions/Files left tabs.
+    expect(tabs.map((t) => t.title)).toEqual([
+      'Navigator',
+      'Backlinks',
+      'Activity',
+      'Terminal',
+      'Chat',
+    ]);
     for (const tab of tabs) {
       expect(typeof tab.icon, `${tab.title} should carry a component icon`).toBe('function');
     }
