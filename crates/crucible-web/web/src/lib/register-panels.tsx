@@ -1,7 +1,7 @@
 import { getGlobalRegistry } from './panel-registry';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import { ChatPanel } from '@/components/ChatPanel';
-import { DraftSessionPanel } from '@/components/DraftSessionPanel';
+import { CenterComposer } from '@/components/CenterComposer';
 import { ActivityPanel } from '@/components/ActivityPanel';
 import { TerminalPanel } from '@/components/TerminalPanel';
 import { NavigatorPanel } from '@/components/NavigatorPanel';
@@ -21,7 +21,7 @@ export function registerPanels(): void {
   registry.register('navigator', 'Navigator', NavigatorPanel, 'left');
   registry.register('settings', 'Settings', SettingsPanel, 'center');
   registry.register('chat', 'Chat', ChatPanel, 'center');
-  registry.register('chat-draft', 'New Session', DraftSessionPanel, 'center');
+  registry.register('chat-draft', 'New Session', CenterComposer, 'center');
   registry.register('inbox', 'Inbox', InboxPanel, 'center');
   registry.register('activity', 'Activity', ActivityPanel, 'right');
   registry.register('terminal', 'Terminal', TerminalPanel, 'bottom');

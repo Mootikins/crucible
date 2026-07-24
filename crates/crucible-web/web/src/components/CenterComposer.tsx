@@ -16,6 +16,7 @@ import {
   type ScmBranchesResponse,
 } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
+import { closeDraftTab } from '@/lib/draft-session';
 import type { AgentProfileEntry, KilnListEntry, Project } from '@/lib/types';
 import { WorkingDots } from '@/components/AssistantTurn';
 import { MicButton } from '@/components/MicButton';
@@ -37,14 +38,17 @@ import {
 } from '@/lib/icons';
 
 /**
- * The empty center's composer surface: a session starts from HERE — context
- * chips (kiln / project / agent) over a prompt box, model picker in the box's
- * footer, quick actions and recent files below. Nothing touches the daemon
- * until the first message is sent (same lazy-create flow as the draft
- * surface); the created chat docks right per WS-220 and the center stays the
- * editing surface.
+ * The session-creation surface — the content of a "New Session" tab. Context
+ * chips (kiln / project / agent) over a prompt box with the model picker in
+ * its footer. Nothing touches the daemon until the first message is sent
+ * (lazy creation); the created chat docks right per WS-220 and this tab
+ * closes behind it, leaving the center as the editing surface.
+ *
+ * This used to double as the empty-pane splash. An empty pane now renders
+ * nothing — starting a session is a deliberate act (the ribbon's New Session,
+ * the command palette), not something a pane falls back into.
  */
-export const CenterComposer: Component = () => {
+export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
   const { createSession } = useSessionSafe();
 
   const [agents, setAgents] = createSignal<AgentProfileEntry[]>([]);
@@ -128,9 +132,13 @@ export const CenterComposer: Component = () => {
         },
       );
       setMessage('');
+      // The real chat tab is open now — this draft has served its purpose.
+      if (props.draftTabId) closeDraftTab(props.draftTabId);
     } catch {
       // Error surfaced via the session context's notification.
     } finally {
+      // Always clear busy: on success closeDraftTab unmounts us, but a
+      // draftTabId-less mount (or any failure) must re-enable the composer.
       setBusy(false);
     }
   };

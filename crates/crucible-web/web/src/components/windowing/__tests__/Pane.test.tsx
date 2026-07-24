@@ -6,11 +6,9 @@ import { Pane } from '../Pane';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import { createInitialState, findFirstPane } from '@/stores/windowStoreInternals';
 
-// The old test read Pane.tsx as a string and asserted it "contains" the text
-// of the fallback import. That passes even if the Show/fallback wiring is
-// broken. Here we render Pane against the real windowStore and assert the
-// center composer actually appears when the pane has no tabs — and disappears
-// once a tab is added.
+// Renders Pane against the real windowStore. An empty pane is VOID — the
+// session composer moved into its own New Session tab, so a pane with no tabs
+// renders no splash, no hint, and no tab bar (it stays a drop target only).
 
 let paneId: string;
 let groupId: string;
@@ -34,27 +32,28 @@ beforeEach(() => {
 });
 
 describe('Pane — empty center', () => {
-  it('renders the center composer (no tabs) with its input and quick actions', () => {
-    const { getByTestId } = render(() => (
-      <DragDropProvider>
-        <Pane paneId={paneId} />
-      </DragDropProvider>
-    ));
-
-    expect(getByTestId('center-composer')).toBeInTheDocument();
-    expect(getByTestId('composer-input')).toBeInTheDocument();
-    // Quick actions instead of descriptive copy.
-    expect(getByTestId('composer-input')).toBeInTheDocument();
-  });
-
-  it('replaces the composer with the tab bar once a tab is added', () => {
+  it('renders nothing but the drop surface when the pane has no tabs', () => {
     const { queryByTestId, container } = render(() => (
       <DragDropProvider>
         <Pane paneId={paneId} />
       </DragDropProvider>
     ));
 
-    expect(queryByTestId('center-composer')).toBeInTheDocument();
+    expect(queryByTestId('center-composer')).toBeNull();
+    expect(queryByTestId('composer-input')).toBeNull();
+    // No tab strip either — nothing to strip.
+    expect(container.querySelector('[data-tab-id]')).toBeNull();
+    expect(container.textContent?.trim()).toBe('');
+  });
+
+  it('renders the tab bar once a tab is added', () => {
+    const { container } = render(() => (
+      <DragDropProvider>
+        <Pane paneId={paneId} />
+      </DragDropProvider>
+    ));
+
+    expect(container.querySelector('[data-tab-id="note-tab"]')).toBeNull();
 
     windowActions.addTab(groupId, {
       id: 'note-tab',
@@ -62,8 +61,6 @@ describe('Pane — empty center', () => {
       contentType: 'file',
     });
 
-    expect(queryByTestId('center-composer')).toBeNull();
-    // The tab strip now renders the tab row.
     expect(container.querySelector('[data-tab-id="note-tab"]')).toBeTruthy();
   });
 });

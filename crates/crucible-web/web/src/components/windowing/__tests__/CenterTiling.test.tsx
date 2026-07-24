@@ -3,7 +3,7 @@ import { render } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
 import { DragDropProvider } from '@thisbeyond/solid-dnd';
 import { CenterTiling } from '../CenterTiling';
-import { windowStore, setStore } from '@/stores/windowStore';
+import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import { createInitialState, findFirstPane, generateId } from '@/stores/windowStoreInternals';
 
 // The old test only scraped CenterTiling.tsx to prove the string "Set ratio"
@@ -35,14 +35,20 @@ beforeEach(() => {
 
 describe('CenterTiling', () => {
   it('renders the pane content and no dev-only "Set ratio" control', () => {
+    // An empty pane is void, so give it a tab to have content at all.
+    windowActions.addTab(mainGroupId, {
+      id: 'tiling-tab',
+      title: 'note.md',
+      contentType: 'file',
+    });
     const { queryByText, container } = render(() => (
       <DragDropProvider>
         <CenterTiling />
       </DragDropProvider>
     ));
 
-    // Single-pane layout with an empty tab group → the pane's composer.
-    expect(container.querySelector('[data-testid="center-composer"]')).toBeTruthy();
+    // Single-pane layout → that pane's tab strip.
+    expect(container.querySelector('[data-tab-id="tiling-tab"]')).toBeTruthy();
     // The removed dev-only ratio buttons must not render.
     expect(queryByText(/Set ratio/i)).toBeNull();
   });

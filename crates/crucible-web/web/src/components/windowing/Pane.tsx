@@ -3,11 +3,9 @@ import { Dynamic } from 'solid-js/web';
 import { createDroppable, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { TabBar } from './TabBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
-import { regionOfPane } from '@/stores/windowStoreInternals';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import { attachFileDropTarget } from '@/lib/file-dnd';
 import { openFileInGroup } from '@/lib/file-actions';
-import { CenterComposer } from '@/components/CenterComposer';
 
 type PaneDropPosition = 'left' | 'right' | 'top' | 'bottom';
 
@@ -149,21 +147,10 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       }}
       onClick={() => windowActions.setActivePane(props.paneId)}
     >
-      <Show
-        when={tabs().length > 0}
-        fallback={
-          // The composer belongs to the CENTER (sessions start there and
-          // dock right) — an empty EDGE pane gets a neutral hint, as the
-          // old edge panel body did.
-          regionOfPane(windowStore, props.paneId) === 'center' ? (
-            <CenterComposer />
-          ) : (
-            <div class="h-full flex items-center justify-center text-xs text-muted-dark">
-              Select a tab
-            </div>
-          )
-        }
-      >
+      {/* A pane with no tabs is VOID — no splash, no hint. The session
+          composer lives in its own New Session tab; an empty pane is just
+          empty space (and still a drop target). */}
+      <Show when={tabs().length > 0}>
         <TabBar
           groupId={tabGroupId()!}
           paneId={props.paneId}
