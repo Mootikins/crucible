@@ -791,6 +791,13 @@ const blockWidgetCursorEntry = EditorState.transactionFilter.of((tr) => {
   const nextLine = doc.lineAt(next);
   const col = prev - prevLine.from;
 
+  // A hop that CLEARED a block spans at least three lines (above, the block,
+  // below). Bailing on anything shorter keeps ordinary typing and single-line
+  // motion off the scans below — this filter is synchronous on the input path.
+  if (Math.abs(nextLine.number - prevLine.number) < 2) return tr;
+  const scanFrom = Math.min(prevLine.from, nextLine.from);
+  const scanTo = Math.max(prevLine.to, nextLine.to);
+
   /** Where the cursor should land for a hop that cleared this block, if any. */
   const entryFor = (from: number, to: number): number | null => {
     // Only blocks currently rendered as widgets (cursor was outside).
@@ -814,6 +821,7 @@ const blockWidgetCursorEntry = EditorState.transactionFilter.of((tr) => {
   // Display math is a manual scan, not a syntax node — check it first.
   if (state.facet(renderMathFacet)) {
     for (const { from, to, content } of displayMathRanges(state)) {
+      if (to < scanFrom || from > scanTo) continue;
       if (!content.trim()) continue;
       redirect = entryFor(from, to);
       if (redirect !== null) break;
@@ -822,7 +830,11 @@ const blockWidgetCursorEntry = EditorState.transactionFilter.of((tr) => {
 
   if (redirect === null) {
     const diagramsOn = state.facet(renderDiagramsFacet);
+    // Bounded to the hop: only a block between the two lines can matter, and
+    // `return false` from enter() skips children, never siblings.
     syntaxTree(state).iterate({
+      from: scanFrom,
+      to: scanTo,
       enter: (nodeRef) => {
         if (redirect !== null) return false;
         // A mermaid fence is widgeted by buildBlockWidgets, but it is not a

@@ -99,11 +99,14 @@ function sanitizeHtml(value: string): string {
  * `<foreignObject>` (HTML labels) explicitly kept. Scripts/event handlers are
  * still dropped by the default allowlist. */
 function sanitizeMermaidSvg(svg: string): string {
-  // Fit AFTER sanitizing: fitMermaidViewBox attaches the markup to the
-  // document to measure it, so it must never see unsanitized input.
-  return fitMermaidViewBox(
-    runDOMPurify(svg, { ADD_TAGS: ['style', 'foreignObject'], ADD_ATTR: ['style'] }),
-  );
+  const purify = (value: string) =>
+    runDOMPurify(value, { ADD_TAGS: ['style', 'foreignObject'], ADD_ATTR: ['style'] });
+  // Sanitize BEFORE fitting — fitMermaidViewBox attaches the markup to the
+  // document to measure it, so it must never see unsanitized input — and
+  // again AFTER, because fitting reparses and re-serializes: that round trip
+  // is exactly the shape mXSS exploits, and svg/foreignObject is where it
+  // lives. Both passes are cheap next to rendering the diagram.
+  return purify(fitMermaidViewBox(purify(svg)));
 }
 
 function wikilinkPlugin(md: MarkdownIt): void {

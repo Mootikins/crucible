@@ -24,7 +24,7 @@ import { wikilinkNavigation } from './wikilink-extension';
 import { attachFileDropTarget, insertTextFor } from '@/lib/file-dnd';
 import { crucibleEditorChrome } from './editor-theme';
 import { livePreview } from './live-preview';
-import { unifiedMergeView } from '@codemirror/merge';
+import { getOriginalDoc, unifiedMergeView } from '@codemirror/merge';
 
 type LanguageSupport = ReturnType<typeof markdown>;
 
@@ -141,6 +141,17 @@ export const CodeMirrorEditor: Component<{
     }
   };
 
+  /** The merge view's CURRENT original (chunks accepted so far), or null when
+   * no merge view is mounted — getOriginalDoc throws if its field is absent. */
+  const liveMergeOriginal = (): string | null => {
+    if (!view) return null;
+    try {
+      return getOriginalDoc(view.state).toString();
+    } catch {
+      return null;
+    }
+  };
+
   const createExtensions = (): Extension[] => {
     const ext0 = props.path.split('.').pop()?.toLowerCase() ?? '';
     // A pending diff forces plain source (with the unified-merge overlay); live
@@ -246,10 +257,15 @@ export const CodeMirrorEditor: Component<{
     // against `diffOriginal` (the on-disk baseline) — green additions, red
     // deletions, per-chunk Accept/Reject in the gutter. `openFileWithDiff`
     // seeds the doc with the proposed content and the original here.
+    //
+    // Accepting a chunk advances the merge view's OWN original, so a rebuild
+    // must carry that forward: reconfiguring from the prop (which any
+    // unrelated toggle — vim, live preview, line width — triggers) would
+    // resurrect every chunk the user already accepted.
     if (diffMode) {
       extensions.push(
         unifiedMergeView({
-          original: props.diffOriginal!,
+          original: liveMergeOriginal() ?? props.diffOriginal!,
           mergeControls: true,
           gutter: true,
         }),
