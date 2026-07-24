@@ -46,7 +46,12 @@ async fn list_dir(
 ) -> Result<Json<serde_json::Value>, WebError> {
     let entries = state
         .daemon
-        .fs_list_dir(&query.root, &query.rel_path, query.show_ignored, query.show_hidden)
+        .fs_list_dir(
+            &query.root,
+            &query.rel_path,
+            query.show_ignored,
+            query.show_hidden,
+        )
         .await
         .daemon_err()?;
 

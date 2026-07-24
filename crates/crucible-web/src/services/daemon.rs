@@ -1129,9 +1129,11 @@ impl ReconnectingDaemon {
         self.call_with_reconnect("fs.list_dir", move |daemon| {
             let root = root.clone();
             let rel_path = rel_path.clone();
-            Box::pin(
-                async move { daemon.fs_list_dir(&root, &rel_path, show_ignored, show_hidden).await },
-            )
+            Box::pin(async move {
+                daemon
+                    .fs_list_dir(&root, &rel_path, show_ignored, show_hidden)
+                    .await
+            })
         })
         .await
     }
