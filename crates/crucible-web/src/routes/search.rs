@@ -21,6 +21,7 @@ pub fn search_routes() -> Router<AppState> {
         .route("/api/notes/{name}", put(put_note))
         .route("/api/backlinks", get(get_backlinks))
         .route("/api/search/vectors", post(search_vectors))
+        .route("/api/search/semantic", post(search_semantic))
         .route("/api/search/grep", post(search_grep))
 }
 
@@ -316,6 +317,57 @@ async fn search_vectors(
         .map(|(doc_id, score)| {
             serde_json::json!({
                 "document_id": doc_id,
+                "score": score,
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({ "results": results_json })))
+}
+
+/// `POST /api/search/semantic` — text semantic search over a kiln's notes.
+/// Embeds the query with the kiln's embedding provider, then vector-searches
+/// the Lance index. Two daemon RPCs (`embed.query` + `search_vectors`) mirror
+/// the CLI's `run_semantic_search`. Each hit's `document_id` is the
+/// kiln-relative note path; `path` is the absolute path for the editor to open.
+/// Requires an embedding provider (else `embed.query` fails) AND processed
+/// notes (an empty Lance index yields no hits).
+#[derive(Debug, Deserialize)]
+struct SemanticSearchRequest {
+    kiln: PathBuf,
+    query: String,
+    #[serde(default = "default_limit")]
+    limit: usize,
+}
+
+async fn search_semantic(
+    State(state): State<AppState>,
+    Json(req): Json<SemanticSearchRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    // Blank query → empty results (skip the embed round-trip).
+    if req.query.trim().is_empty() {
+        return Ok(Json(serde_json::json!({ "results": [] })));
+    }
+
+    let embedding = state
+        .daemon
+        .embed_query(&req.kiln, &req.query)
+        .await
+        .daemon_err()?;
+
+    let results = state
+        .daemon
+        .search_vectors(&req.kiln, &embedding, req.limit)
+        .await
+        .daemon_err()?;
+
+    let results_json: Vec<serde_json::Value> = results
+        .into_iter()
+        .map(|(doc_id, score)| {
+            serde_json::json!({
+                "document_id": doc_id,
+                "rel_path": doc_id,
+                "path": absolute_note_path(&req.kiln, &doc_id),
                 "score": score,
             })
         })

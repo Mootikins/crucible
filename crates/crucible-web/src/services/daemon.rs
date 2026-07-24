@@ -335,6 +335,20 @@ impl ReconnectingDaemon {
         .await
     }
 
+    /// Embed a query string into a vector via the kiln's configured embedding
+    /// provider (the first half of semantic search; feed the result to
+    /// [`Self::search_vectors`]).
+    pub async fn embed_query(&self, kiln_path: &Path, text: &str) -> anyhow::Result<Vec<f32>> {
+        let kiln_path = kiln_path.to_path_buf();
+        let text = text.to_string();
+        self.call_with_reconnect("embed.query", move |daemon| {
+            let kiln_path = kiln_path.clone();
+            let text = text.clone();
+            Box::pin(async move { daemon.embed_query(&kiln_path, &text).await })
+        })
+        .await
+    }
+
     /// Ripgrep-style content search. `root` containment (registered project or
     /// open kiln) is enforced daemon-side.
     pub async fn search_grep(

@@ -173,6 +173,71 @@ async fn search_vectors_returns_200_with_results() {
     );
 }
 
+#[tokio::test]
+async fn search_semantic_returns_200_with_results() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/search/semantic")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "kiln": "/tmp/test-kiln",
+                        "query": "how do links work",
+                        "limit": 5
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        json["results"].is_array(),
+        "Response must have 'results' array"
+    );
+}
+
+#[tokio::test]
+async fn search_semantic_blank_query_returns_empty() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/search/semantic")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "kiln": "/tmp/test-kiln", "query": "   " }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["results"].as_array().map(|a| a.len()), Some(0));
+}
+
 // ============================================================================
 // GET /api/backlinks
 // ============================================================================

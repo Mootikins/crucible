@@ -298,6 +298,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             ]
         }),
         "note.upsert" => json!({}),
+        "embed.query" => json!({ "vector": [0.1, 0.2, 0.3] }),
         "search_vectors" => json!([]),
         "search_grep" => json!({
             "hits": [
