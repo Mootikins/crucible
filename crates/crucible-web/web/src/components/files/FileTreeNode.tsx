@@ -152,7 +152,7 @@ export const FileTreeNode: Component<{
               {...currentAttrs()}
               ref={attachDrag}
               title={props.node.relPath || props.node.name}
-              class={`${ROW} data-[selected]:bg-hover-wash data-[current=true]:font-medium data-[current=true]:border-l-2 data-[current=true]:border-primary`}
+              class={`${ROW} relative data-[selected]:bg-hover-wash data-[current=true]:font-medium`}
             >
               <IndentGuides depth={props.indexPath.length} />
               <span class={ICON_SLOT}>
@@ -160,6 +160,11 @@ export const FileTreeNode: Component<{
               </span>
               <TreeView.ItemText class="truncate py-1 ml-1">{shown()}</TreeView.ItemText>
               <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary outline-none min-w-0 flex-1" />
+              {/* Open-in-editor marker: an absolute dot so it never shifts the
+                  icon / name / indent guides (the old left border did). */}
+              <Show when={isCurrent()}>
+                <span aria-hidden="true" class="absolute right-1.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-primary" />
+              </Show>
             </TreeView.Item>
           </FileTreeContextMenu>
         }
