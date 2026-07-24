@@ -619,6 +619,6 @@ HTTP Gateway (crucible-web wired to daemon)
 
 ## Links
 
-- [[Meta/Systems]] — System architecture and boundaries
+- [[Meta/Analysis/Systems]] — System architecture and boundaries
 - [[Meta/TUI User Stories]] — TUI requirements
 - [[Meta/Plugin User Stories]] — Plugin requirements

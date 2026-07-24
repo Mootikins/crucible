@@ -956,6 +956,6 @@ See [`examples/plugins/custom-ui.lua`](../../../examples/plugins/custom-ui.lua) 
 
 ## See Also
 
-- [Plugin System Overview](./Plugins.md)
+- [Creating Plugins](../Extending/Creating%20Plugins.md)
 - [Lua Scripting Guide](../Concepts/Scripting%20Languages.md)
 - [Example Plugins](../../../examples/plugins/)

@@ -179,7 +179,7 @@ Provider (base trait)
 
 ### Systems
 
-See **[docs/Meta/Systems.md](./docs/Meta/Systems.md)** for full details.
+See **[docs/Meta/Analysis/Systems.md](./docs/Meta/Analysis/Systems.md)** for full details.
 
 | System | Scope |
 |--------|-------|
@@ -516,7 +516,7 @@ Before submitting changes:
 ## Key Resources
 
 - **[README.md](./README.md)** — Project overview and quick start
-- **[docs/Meta/Systems.md](./docs/Meta/Systems.md)** — System boundaries
+- **[docs/Meta/Analysis/Systems.md](./docs/Meta/Analysis/Systems.md)** — System boundaries
 - **[docs/](./docs/)** — Reference kiln (user guides + test fixture)
 - **[justfile](./justfile)** — Development recipes
 - **[vendor/README.md](./vendor/README.md)** — Patched upstream dependencies
