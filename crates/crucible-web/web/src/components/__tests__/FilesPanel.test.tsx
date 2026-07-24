@@ -66,13 +66,15 @@ beforeEach(() => {
 });
 
 describe('FilesPanel — rendered rows', () => {
-  it('renders every file row as plain text (Obsidian-minimal, no filetype icons)', async () => {
-    const { findByText } = render(() => <FilesPanel />);
-    // Wait for the async note listing to populate the tree.
+  it('renders a colored filetype <svg> for every file row (never emoji text)', async () => {
+    const { container, findByText } = render(() => <FilesPanel />);
     await findByText('readme.md');
     for (const name of NOTE_NAMES) {
       await findByText(name);
     }
+    // Each file row carries a FileIcon <svg>; at least one per note.
+    const svgs = container.querySelectorAll('svg');
+    expect(svgs.length).toBeGreaterThanOrEqual(NOTE_NAMES.length);
   });
 
   it('emits no emoji glyphs anywhere in the rendered panel', async () => {

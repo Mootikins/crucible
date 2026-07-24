@@ -1,5 +1,6 @@
-import { Component, For, Index, Show, createSignal, onCleanup } from 'solid-js';
+import { Component, For, Index, Show, createMemo, createSignal, onCleanup } from 'solid-js';
 import { TreeView } from '@ark-ui/solid';
+import { Dynamic } from 'solid-js/web';
 import type { FileTreeNode as Node } from '@/lib/file-tree/types';
 import type { TreeRootKind } from '@/lib/tree-root';
 import {
@@ -8,8 +9,16 @@ import {
   canDropIntoFolder,
   type FileDragData,
 } from '@/lib/file-dnd';
+import { fileIconFor } from '@/lib/file-icons';
 import { FileTreeContextMenu, type ContextAction } from './FileTreeContextMenu';
 import { ChevronRight } from '@/lib/icons';
+
+/** Colored filetype icon, resolved by full filename — slightly smaller than
+ * the folder chevron so files read as lighter than folders. */
+const FileIcon: Component<{ name: string }> = (props) => {
+  const meta = createMemo(() => fileIconFor(props.name));
+  return <Dynamic component={meta().icon} class="w-3.5 h-3.5 shrink-0" style={{ color: meta().color }} />;
+};
 
 /**
  * One vertical indent guide per ancestor level (VSCode/Theia idiom). Each
@@ -146,9 +155,9 @@ export const FileTreeNode: Component<{
               class={`${ROW} data-[selected]:bg-hover-wash data-[current=true]:font-medium data-[current=true]:border-l-2 data-[current=true]:border-primary`}
             >
               <IndentGuides depth={props.indexPath.length} />
-              {/* Obsidian-minimal: no filetype glyph. The empty icon slot keeps
-                  file names aligned under folder names (chevron column). */}
-              <span class={ICON_SLOT} aria-hidden="true" />
+              <span class={ICON_SLOT}>
+                <FileIcon name={props.node.name} />
+              </span>
               <TreeView.ItemText class="truncate py-1 ml-1">{shown()}</TreeView.ItemText>
               <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary outline-none min-w-0 flex-1" />
             </TreeView.Item>
