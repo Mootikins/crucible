@@ -66,7 +66,9 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true, // Listen on all interfaces
-    allowedHosts: ['localhost'],
+    // Dev server only: accept any Host header so the app is reachable over the
+    // LAN by hostname (phones, other machines) instead of localhost alone.
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'http://localhost:3000',
