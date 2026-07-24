@@ -35,6 +35,9 @@ export const EditorWithPreview: Component<{
   renderMath?: boolean;
   /** Render ```mermaid fences as diagrams in live preview (default true). */
   renderDiagrams?: boolean;
+  /** Proposed-edit review: `content` is the proposed text shown as an inline
+   * diff against this original. Forces the source editor (not the reading view). */
+  diffOriginal?: string;
   /** Hand the live EditorView up (context-menu clipboard ops). */
   editorApiRef?: (view: import('@codemirror/view').EditorView) => void;
   /** Scroll to the first wikilink targeting this note key on open. */
@@ -88,7 +91,7 @@ export const EditorWithPreview: Component<{
         </div>
       </Show>
       <Show
-        when={mode() !== 'reading' || !isMarkdown()}
+        when={mode() !== 'reading' || !isMarkdown() || props.diffOriginal != null}
         fallback={
           <MarkdownPreview
             content={props.content}
@@ -102,6 +105,7 @@ export const EditorWithPreview: Component<{
           apiRef={props.editorApiRef}
           content={props.content}
           path={props.path}
+          diffOriginal={props.diffOriginal}
           onChange={props.onChange}
           onSave={props.onSave}
           onFollowLink={props.onFollowLink}

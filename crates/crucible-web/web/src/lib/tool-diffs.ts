@@ -66,3 +66,36 @@ export function extractDiffFromToolCall(call: ToolCallDisplay): ToolDiff | null 
   }
   return { kind: 'multi', fileName, edits };
 }
+
+/**
+ * Apply a tool diff onto a file's current content, yielding the PROPOSED full
+ * content — for showing the change in the editor's inline diff against the
+ * current file. Write replaces the whole file; Edit/MultiEdit replace the first
+ * occurrence of each `oldContent` (matching the daemon's edit semantics). An
+ * `oldContent` that isn't found (already applied, or a stale match) is skipped,
+ * so a completed edit simply shows no change rather than corrupting content.
+ */
+export function applyToolDiff(original: string, diff: ToolDiff): string {
+  if (diff.kind === 'single') {
+    // Write (empty oldContent) overwrites; Edit replaces the first match.
+    if (diff.oldContent === '') return diff.newContent;
+    return replaceFirstLiteral(original, diff.oldContent, diff.newContent);
+  }
+  let out = original;
+  for (const e of diff.edits) {
+    out = e.oldContent === '' ? e.newContent : replaceFirstLiteral(out, e.oldContent, e.newContent);
+  }
+  return out;
+}
+
+/**
+ * Literal first-occurrence splice. NOT `String.replace(needle, replacement)`:
+ * that reads `$&`, `` $` ``, `$'`, `$1`, `$$` in the REPLACEMENT as substitution
+ * patterns, so an edit inserting shell/regex/jQuery code (`echo "$&"`, `$1`)
+ * would be silently mangled. Splicing by index is also a single scan.
+ */
+function replaceFirstLiteral(haystack: string, needle: string, replacement: string): string {
+  const at = haystack.indexOf(needle);
+  if (at === -1) return haystack;
+  return haystack.slice(0, at) + replacement + haystack.slice(at + needle.length);
+}

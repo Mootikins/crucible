@@ -3,9 +3,13 @@ import { Dynamic } from 'solid-js/web';
 import type { ToolCallDisplay } from '@/lib/types';
 import { DiffViewer } from './DiffViewer';
 import { MultiEditDiff } from './MultiEditDiff';
-import { extractDiffFromToolCall } from '@/lib/tool-diffs';
+import { extractDiffFromToolCall, applyToolDiff } from '@/lib/tool-diffs';
+import { openFileWithDiff } from '@/lib/file-actions';
+import { getFileContent } from '@/lib/api';
+import { notificationActions } from '@/stores/notificationStore';
 import {
   ChevronRight,
+  FileOutput,
   FileText,
   Globe,
   Pencil,
@@ -104,6 +108,42 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   });
 
   const diff = createMemo(() => extractDiffFromToolCall(props.toolCall));
+
+  // Open the edited file in the real editor with this change overlaid as an
+  // inline diff: fetch the current content, apply the tool's edit to get the
+  // proposed content, and hand both to openFileWithDiff (opens or focuses the
+  // tab).
+  const [opening, setOpening] = createSignal(false);
+  const openInEditor = async () => {
+    const d = diff();
+    if (!d || opening()) return;
+    setOpening(true);
+    try {
+      // A Write proposes the whole file, so an unreadable path just means a
+      // new file — diff against empty. An Edit NEEDS the real baseline: with
+      // an empty one its old_string can't match, and the "proposed" content
+      // would be an empty document, i.e. a delete-everything diff the user
+      // could save. Refuse instead.
+      const wholeFile = d.kind === 'single' && d.oldContent === '';
+      let original: string;
+      try {
+        original = await getFileContent(d.fileName);
+      } catch {
+        if (!wholeFile) {
+          notificationActions.addNotification(
+            'warning',
+            `Can't open the diff — ${d.fileName} could not be read`,
+          );
+          return;
+        }
+        original = '';
+      }
+      const proposed = applyToolDiff(original, d);
+      openFileWithDiff(d.fileName, original, proposed, d.fileName.split('/').pop());
+    } finally {
+      setOpening(false);
+    }
+  };
 
   // Results are often serialized JSON — pretty-print them instead of showing
   // one raw line of bytes. Nested JSON-in-strings (MCP text payloads) gets
@@ -212,6 +252,19 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
           <Show when={diff()}>
             {(d) => (
               <div class={`px-3 py-2 ${props.toolCall.status === 'error' && props.toolCall.result ? 'border-t border-hairline' : ''} bg-surface-base`}>
+                {/* Review this change in the real editor (inline diff overlay). */}
+                <div class="flex items-center justify-end mb-1.5">
+                  <button
+                    type="button"
+                    onClick={openInEditor}
+                    disabled={opening()}
+                    data-testid="tool-open-in-editor"
+                    class="inline-flex items-center gap-1 rounded-md border border-hairline px-2 py-1 text-[11px] text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50"
+                    title="Open the file in the editor with this change shown as an inline diff"
+                  >
+                    <FileOutput class="w-3.5 h-3.5" /> Open in editor
+                  </button>
+                </div>
                 <Show
                   when={d().kind === 'single'}
                   fallback={

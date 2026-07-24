@@ -24,6 +24,7 @@ import { wikilinkNavigation } from './wikilink-extension';
 import { attachFileDropTarget, insertTextFor } from '@/lib/file-dnd';
 import { crucibleEditorChrome } from './editor-theme';
 import { livePreview } from './live-preview';
+import { unifiedMergeView } from '@codemirror/merge';
 
 type LanguageSupport = ReturnType<typeof markdown>;
 
@@ -98,6 +99,9 @@ export const CodeMirrorEditor: Component<{
   renderMath?: boolean;
   /** Render ```mermaid fences as diagrams in live preview (default true). */
   renderDiagrams?: boolean;
+  /** When set, `content` is a PROPOSED edit shown as an inline unified-merge
+   * diff against this original (on-disk) content — per-chunk accept/reject. */
+  diffOriginal?: string;
   /** Switch to the rendered preview (Mod-Shift-E). */
   onTogglePreview?: () => void;
   /** Hand the live EditorView to the parent (context-menu clipboard ops). */
@@ -139,7 +143,10 @@ export const CodeMirrorEditor: Component<{
 
   const createExtensions = (): Extension[] => {
     const ext0 = props.path.split('.').pop()?.toLowerCase() ?? '';
-    const liveMode = !!props.livePreview && (ext0 === 'md' || ext0 === 'markdown');
+    // A pending diff forces plain source (with the unified-merge overlay); live
+    // preview's markdown decorations would fight the merge chunk widgets.
+    const diffMode = props.diffOriginal != null;
+    const liveMode = !diffMode && !!props.livePreview && (ext0 === 'md' || ext0 === 'markdown');
     const extensions: Extension[] = [
       // vim() must precede other keymaps so modal keys win while active.
       ...(props.vimMode ? [vim()] : []),
@@ -231,6 +238,20 @@ export const CodeMirrorEditor: Component<{
           baseDir: props.path.replace(/\/[^/]*$/, ''),
           renderMath: props.renderMath ?? true,
           renderDiagrams: props.renderDiagrams ?? true,
+        }),
+      );
+    }
+
+    // Inline diff overlay: show the current doc (the proposed content) diffed
+    // against `diffOriginal` (the on-disk baseline) — green additions, red
+    // deletions, per-chunk Accept/Reject in the gutter. `openFileWithDiff`
+    // seeds the doc with the proposed content and the original here.
+    if (diffMode) {
+      extensions.push(
+        unifiedMergeView({
+          original: props.diffOriginal!,
+          mergeControls: true,
+          gutter: true,
         }),
       );
     }
@@ -329,6 +350,7 @@ export const CodeMirrorEditor: Component<{
     props.lineWidth;
     props.renderMath;
     props.renderDiagrams;
+    props.diffOriginal;
     if (view) {
       view.dispatch({
         effects: StateEffect.reconfigure.of(createExtensions()),

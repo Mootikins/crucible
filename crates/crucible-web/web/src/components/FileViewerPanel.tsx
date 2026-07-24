@@ -5,9 +5,10 @@ import {
   onCleanup,
   untrack,
 } from 'solid-js';
-import { FileText } from '@/lib/icons';
+import { FileText, Pencil } from '@/lib/icons';
 import { useEditorSafe } from '@/contexts/EditorContext';
 import { EditorWithPreview } from './editor/EditorWithPreview';
+import { pendingDiffStore, pendingDiffActions } from '@/stores/pendingDiffStore';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
 import { findTabByFilePath } from '@/lib/file-actions';
 import { openNoteInEditor } from '@/lib/note-actions';
@@ -96,6 +97,42 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
     'flex items-center gap-2 px-3 py-1.5 cursor-pointer data-[highlighted]:bg-hover-wash';
 
   const fileData = () => openFiles().find(f => f.path === props.filePath) ?? null;
+
+  // A pending proposed edit for this file → the editor shows it as an inline
+  // diff (openFileWithDiff). Cleared on Dismiss.
+  const pendingDiff = () => (props.filePath ? pendingDiffStore.get(props.filePath) : undefined);
+
+  // Stage the proposal into the BUFFER MODEL, not just the editor view.
+  // Accepting a merge chunk only drops the deletion widget — the doc already
+  // holds the new text, so it fires no change event. If the model kept the
+  // on-disk content, saving after accepting would write the ORIGINAL back and
+  // silently discard the whole proposal. Staging makes "accept everything then
+  // save" the identity it looks like, and a REJECT (which does edit the doc)
+  // flows back through onChange as usual. Guarded on the staged text so that
+  // reject-driven store updates don't get forced back to the proposal.
+  let staged: string | null = null;
+  createEffect(() => {
+    const diff = pendingDiff();
+    const path = props.filePath;
+    const loaded = !!fileData();
+    if (!diff || !path || !loaded) {
+      staged = null;
+      return;
+    }
+    if (staged === diff.proposed) return;
+    staged = diff.proposed;
+    untrack(() => updateFileContent(path, diff.proposed));
+  });
+
+  const dismissDiff = () => {
+    const path = props.filePath;
+    if (!path) return;
+    // Put the staged proposal back to the on-disk baseline — dismissing a
+    // review must not leave the proposed text sitting in the buffer.
+    const diff = pendingDiffStore.get(path);
+    if (diff) updateFileContent(path, diff.original);
+    pendingDiffActions.clear(path);
+  };
 
   const handleSave = () => {
     if (props.filePath) void saveFile(props.filePath);
@@ -191,6 +228,23 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
         </div>
       </Show>
 
+      {/* Proposed-edit review banner — shown while an agent's diff is overlaid
+          on this file (openFileWithDiff). Accept/reject per hunk lives in the
+          editor gutter; this bar frames it and offers a one-click Dismiss. */}
+      <Show when={pendingDiff()}>
+        <div class="mx-3 mt-2 px-3 py-1.5 rounded-md border border-attention/50 bg-attention/[0.06] flex items-center gap-2 text-[12px]">
+          <Pencil class="w-3.5 h-3.5 text-attention shrink-0" />
+          <span class="text-shell-ink">Reviewing proposed change</span>
+          <span class="text-muted-dark">— accept or reject each hunk in the gutter, then save to apply</span>
+          <button
+            onClick={dismissDiff}
+            class="ml-auto shrink-0 rounded px-2 py-0.5 text-muted-dark hover:text-shell-ink hover:bg-hover-wash"
+          >
+            Dismiss
+          </button>
+        </div>
+      </Show>
+
       {/* Editor area. Right-click opens the app menu (clipboard actions for
           browser-stolen keybind parity); Shift+right-click and images/links
           inside the rendered preview keep the NATIVE menu so Copy Image /
@@ -216,7 +270,12 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
             >
               {(file) => (
                 <EditorWithPreview
+                  // The proposal is staged INTO the buffer above, so the file
+                  // content is the single source of truth here — per-hunk
+                  // rejections stay put instead of being overwritten by a
+                  // stale copy of the original proposal.
                   content={file().content}
+                  diffOriginal={pendingDiff()?.original}
                   path={file().path}
                   onChange={(content) => updateFileContent(file().path, content)}
                   onSave={handleSave}

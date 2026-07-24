@@ -3,6 +3,7 @@ import type { Tab } from '@/types/windowTypes';
 import { findFirstCenterPaneGroupId } from './panel-actions';
 import { iconForContentType } from './tab-icons';
 import { recordRecentFile } from './recent-files';
+import { pendingDiffActions } from '@/stores/pendingDiffStore';
 
 export function findTabByFilePath(filePath: string): { groupId: string; tab: Tab } | null {
   for (const [groupId, group] of Object.entries(windowStore.tabGroups)) {
@@ -14,6 +15,24 @@ export function findTabByFilePath(filePath: string): { groupId: string; tab: Tab
 
 export function openFileInEditor(filePath: string, fileName?: string): void {
   openFileInGroup(findFirstCenterPaneGroupId(), filePath, fileName);
+}
+
+/**
+ * Open (or focus, if already open) a file and overlay a proposed edit as an
+ * inline diff in the real editor buffer: `original` is the current content,
+ * `proposed` is what the agent wants. The file's editor renders the proposed
+ * content diffed against the original (unified merge view), so a pending edit
+ * is reviewed in place. Registering the diff before opening means an
+ * already-open tab picks it up reactively too.
+ */
+export function openFileWithDiff(
+  filePath: string,
+  original: string,
+  proposed: string,
+  fileName?: string,
+): void {
+  pendingDiffActions.set(filePath, { original, proposed });
+  openFileInEditor(filePath, fileName);
 }
 
 /**
