@@ -3,7 +3,7 @@ import DOMPurify from 'dompurify';
 import { initializeHighlighter, SHIKI_THEME } from './shiki';
 import { calloutPlugin } from './callouts';
 import { mathPlugin } from './math';
-import { renderMermaid } from './mermaid';
+import { fitMermaidViewBox, renderMermaid } from './mermaid';
 
 /**
  * Fresh global regex matching `[[wikilink]]` bodies (capture group 1 = inner
@@ -99,7 +99,11 @@ function sanitizeHtml(value: string): string {
  * `<foreignObject>` (HTML labels) explicitly kept. Scripts/event handlers are
  * still dropped by the default allowlist. */
 function sanitizeMermaidSvg(svg: string): string {
-  return runDOMPurify(svg, { ADD_TAGS: ['style', 'foreignObject'], ADD_ATTR: ['style'] });
+  // Fit AFTER sanitizing: fitMermaidViewBox attaches the markup to the
+  // document to measure it, so it must never see unsanitized input.
+  return fitMermaidViewBox(
+    runDOMPurify(svg, { ADD_TAGS: ['style', 'foreignObject'], ADD_ATTR: ['style'] }),
+  );
 }
 
 function wikilinkPlugin(md: MarkdownIt): void {

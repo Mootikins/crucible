@@ -280,12 +280,16 @@ function displayMathRanges(
   const out: Array<{ from: number; to: number; content: string }> = [];
   let n = 1;
   while (n <= doc.lines) {
-    if (doc.line(n).text.trim() === '$$') {
+    const line = doc.line(n);
+    // A `$$` inside a fence is SOURCE, not math — a markdown snippet showing
+    // how to write display math would otherwise get its example rendered, and
+    // the widget would split the code block in half around it.
+    if (line.text.trim() === '$$' && !inCodeOrTableContext(state, line.from)) {
       let m = n + 1;
       while (m <= doc.lines && doc.line(m).text.trim() !== '$$') m++;
       if (m <= doc.lines) {
         const content = m > n + 1 ? doc.sliceString(doc.line(n + 1).from, doc.line(m - 1).to) : '';
-        out.push({ from: doc.line(n).from, to: doc.line(m).to, content });
+        out.push({ from: line.from, to: doc.line(m).to, content });
         n = m + 1;
         continue;
       }
@@ -778,40 +782,65 @@ const tableAutoFormat = EditorView.updateListener.of((update) => {
  */
 const blockWidgetCursorEntry = EditorState.transactionFilter.of((tr) => {
   if (tr.docChanged || !tr.selection) return tr;
-  const prev = tr.startState.selection.main.head;
+  const state = tr.startState;
+  const prev = state.selection.main.head;
   const next = tr.newSelection.main.head;
   if (prev === next) return tr;
-  const doc = tr.startState.doc;
+  const doc = state.doc;
+  const prevLine = doc.lineAt(prev);
+  const nextLine = doc.lineAt(next);
+  const col = prev - prevLine.from;
+
+  /** Where the cursor should land for a hop that cleared this block, if any. */
+  const entryFor = (from: number, to: number): number | null => {
+    // Only blocks currently rendered as widgets (cursor was outside).
+    if (selectionTouches(state, from, to)) return null;
+    const firstLine = doc.lineAt(from);
+    // Like Frontmatter, the Table node can end AT the next line's start —
+    // its last real line is then the one before.
+    const endLine = doc.lineAt(to);
+    const lastLine = endLine.from === to ? doc.line(endLine.number - 1) : endLine;
+    if (prevLine.number === firstLine.number - 1 && nextLine.number === lastLine.number + 1) {
+      return Math.min(firstLine.from + col, firstLine.to);
+    }
+    if (prevLine.number === lastLine.number + 1 && nextLine.number === firstLine.number - 1) {
+      return Math.min(lastLine.from + col, lastLine.to);
+    }
+    return null;
+  };
+
   let redirect: number | null = null;
-  syntaxTree(tr.startState).iterate({
-    enter: (nodeRef) => {
-      if (!renderedBlockKind(tr.startState, nodeRef.name, nodeRef.from)) return;
-      if (redirect !== null) return false;
-      const { from, to } = nodeRef;
-      // Only blocks currently rendered as widgets (cursor was outside).
-      if (selectionTouches(tr.startState, from, to)) return false;
-      const firstLine = doc.lineAt(from);
-      // Like Frontmatter, the Table node can end AT the next line's start —
-      // its last real line is then the one before.
-      const endLine = doc.lineAt(to);
-      const lastLine = endLine.from === to ? doc.line(endLine.number - 1) : endLine;
-      const prevLine = doc.lineAt(prev);
-      const nextLine = doc.lineAt(next);
-      const col = prev - prevLine.from;
-      if (
-        prevLine.number === firstLine.number - 1 &&
-        nextLine.number === lastLine.number + 1
-      ) {
-        redirect = Math.min(firstLine.from + col, firstLine.to);
-      } else if (
-        prevLine.number === lastLine.number + 1 &&
-        nextLine.number === firstLine.number - 1
-      ) {
-        redirect = Math.min(lastLine.from + col, lastLine.to);
-      }
-      return false;
-    },
-  });
+
+  // Display math is a manual scan, not a syntax node — check it first.
+  if (state.facet(renderMathFacet)) {
+    for (const { from, to, content } of displayMathRanges(state)) {
+      if (!content.trim()) continue;
+      redirect = entryFor(from, to);
+      if (redirect !== null) break;
+    }
+  }
+
+  if (redirect === null) {
+    const diagramsOn = state.facet(renderDiagramsFacet);
+    syntaxTree(state).iterate({
+      enter: (nodeRef) => {
+        if (redirect !== null) return false;
+        // A mermaid fence is widgeted by buildBlockWidgets, but it is not a
+        // `renderedBlockKind` — without this the keyboard skips diagrams.
+        if (
+          nodeRef.name === 'FencedCode' &&
+          diagramsOn &&
+          fencedCodeInfo(state, nodeRef.node) === 'mermaid'
+        ) {
+          redirect = entryFor(nodeRef.from, nodeRef.to);
+          return false;
+        }
+        if (!renderedBlockKind(state, nodeRef.name, nodeRef.from)) return;
+        redirect = entryFor(nodeRef.from, nodeRef.to);
+        return false;
+      },
+    });
+  }
   if (redirect === null) return tr;
   const main = tr.newSelection.main;
   return [

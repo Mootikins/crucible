@@ -81,6 +81,17 @@ function mathInline(state: StateInline, silent: boolean): boolean {
     return true;
   }
 
+  // Never span a code span. This rule runs BEFORE markdown-it's `backticks`
+  // rule, so it scans raw source: without this guard a stray currency `$`
+  // ("$20 …") happily closes on the `$` inside a later `` `$E = mc^2$` ``,
+  // swallowing the whole sentence as math. No KaTeX command uses a backtick,
+  // so refusing to cross one costs nothing.
+  if (state.src.indexOf('`', start) !== -1 && state.src.indexOf('`', start) < match) {
+    if (!silent) state.pending += '$';
+    state.pos = start;
+    return true;
+  }
+
   if (!silent) {
     const token = state.push('math_inline', 'math', 0);
     token.markup = '$';

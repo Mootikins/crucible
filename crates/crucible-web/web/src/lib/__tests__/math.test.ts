@@ -32,6 +32,24 @@ describe('KaTeX math rendering', () => {
     expect(html).toContain('$10');
   });
 
+  // Regression: this rule runs before markdown-it's `backticks` rule and
+  // scans raw source, so a currency `$` used to close on the `$` inside a
+  // later code span and eat the whole sentence as math.
+  it('does not let a code span close a stray currency dollar', () => {
+    const html = renderMarkdown(
+      'Prices like $5 and $20 stay prose. Math is skipped in code spans — `$E = mc^2$` — really.',
+    );
+    expect(html).not.toContain('class="katex"');
+    expect(html).toContain('$20 stay prose');
+    expect(html).toContain('<code>$E = mc^2$</code>');
+  });
+
+  it('still renders real inline math in a paragraph that also has code spans', () => {
+    const html = renderMarkdown('The norm $\\|v\\|_2$ is written `norm(v)` in code.');
+    expect(html).toContain('class="katex"');
+    expect(html).toContain('<code>norm(v)</code>');
+  });
+
   it('leaves an escaped \\$ as a literal dollar', () => {
     const html = renderMarkdown('Price is \\$42 flat.');
     expect(html).not.toContain('class="katex"');

@@ -328,6 +328,50 @@ describe('live preview: styled everywhere except the construct at the cursor', (
       view.dispatch({ selection: { anchor: far } });
       expect(view.state.selection.main.head).toBe(far);
     });
+
+    // Mermaid fences and `$$` blocks are widgeted too, but neither is a
+    // `renderedBlockKind` node — they were skipped by the same motion that
+    // tables handled, so a diagram could only be opened by clicking it.
+    it('a downward hop over a mermaid diagram lands in the fence', () => {
+      const doc = ['Before.', '', '```mermaid', 'flowchart LR', '  A --> B', '```', '', 'After.'].join('\n');
+      const view = track(makeView(doc));
+      const blankAbove = doc.indexOf('\n```mermaid');
+      const fenceFrom = doc.indexOf('```mermaid');
+      const blankBelow = doc.indexOf('\nAfter.');
+      cursorAt(view, blankAbove);
+      view.dispatch({ selection: { anchor: blankBelow } });
+      expect(view.state.selection.main.head).toBe(fenceFrom);
+      expect(view.dom.querySelector('[data-testid="lp-mermaid"]')).toBeNull();
+    });
+
+    it('an upward hop over a display-math block lands in its last line', () => {
+      const doc = ['Before.', '', '$$', 'E = mc^2', '$$', '', 'After.'].join('\n');
+      const view = track(makeView(doc));
+      const blankAbove = doc.indexOf('\n$$');
+      const lastLineFrom = doc.lastIndexOf('$$');
+      const blankBelow = doc.indexOf('\nAfter.');
+      cursorAt(view, blankBelow);
+      view.dispatch({ selection: { anchor: blankAbove } });
+      expect(view.state.selection.main.head).toBe(lastLineFrom);
+    });
+  });
+
+  describe('display math vs code fences', () => {
+    it('does not render a $$ block that is quoted inside a code fence', () => {
+      const doc = ['Example:', '', '````markdown', '$$', 'E = mc^2', '$$', '````', '', 'After.'].join('\n');
+      const view = track(makeView(doc));
+      cursorAt(view, 0);
+      // The fence is source: no math widget, and its lines stay in the doc.
+      expect(view.dom.querySelector('.cm-lp-math-display')).toBeNull();
+      expect(view.dom.textContent).toContain('E = mc^2');
+    });
+
+    it('still renders a real $$ block in the same document', () => {
+      const doc = ['$$', 'E = mc^2', '$$', '', 'Text.'].join('\n');
+      const view = track(makeView(doc));
+      cursorAt(view, doc.indexOf('Text.'));
+      expect(view.dom.querySelector('.cm-lp-math-display')).not.toBeNull();
+    });
   });
 
   describe('table auto-format on cursor entry/exit', () => {

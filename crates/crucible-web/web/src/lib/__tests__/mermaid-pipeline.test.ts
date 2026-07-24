@@ -5,6 +5,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const renderMermaidMock = vi.fn();
 vi.mock('../mermaid', () => ({
   renderMermaid: (...args: unknown[]) => renderMermaidMock(...args),
+  // Real refit needs layout (getBBox); jsdom has none, so pass through — the
+  // fitting itself is covered by the browser-level render check.
+  fitMermaidViewBox: (svg: string) => svg,
 }));
 
 import { renderMarkdownChatAsync } from '../markdown';
