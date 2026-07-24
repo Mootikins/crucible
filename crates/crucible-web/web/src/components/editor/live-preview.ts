@@ -336,6 +336,17 @@ function buildDecorations(view: EditorView): DecorationSet {
           return;
         }
 
+        // `---` / `***` / `___` → a horizontal rule (reading view renders <hr>).
+        // Reveal the raw markers when the cursor is on the line.
+        if (name === 'HorizontalRule') {
+          if (!selectionTouches(state, nodeRef.from, nodeRef.to)) {
+            decorations.push(
+              Decoration.line({ class: 'cm-lp-hr' }).range(doc.lineAt(nodeRef.from).from),
+            );
+          }
+          return;
+        }
+
         if (name === 'TaskMarker') {
           // `[ ]`/`[x]` → a clickable checkbox, unless the cursor is on it.
           if (selectionTouches(state, nodeRef.from, nodeRef.to)) return;
@@ -700,7 +711,16 @@ const livePreviewTheme = EditorView.baseTheme({
     color: 'var(--color-muted, #928d99)',
     fontStyle: 'italic',
   },
-  '.cm-lp-bullet': { color: 'var(--color-primary, #e0653a)' },
+  // !important so the accent wins over oneDark's syntax highlight for the
+  // list marker (which otherwise renders it green, unlike the reading view).
+  '.cm-lp-bullet': { color: 'var(--color-primary, #e0653a) !important' },
+  // Horizontal rule: hide the raw `---` (transparent text) and paint a 1px
+  // line centered across the line box.
+  '.cm-lp-hr': {
+    color: 'transparent',
+    background:
+      'linear-gradient(var(--color-hairline-strong, #2a2830), var(--color-hairline-strong, #2a2830)) no-repeat center / 100% 1px',
+  },
   '.cm-lp-frontmatter': {
     fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
     fontSize: '0.85em',
