@@ -26,6 +26,7 @@ import { syncRecentsFromServer } from '@/lib/recent-files';
 import { kilnLabel } from '@/lib/kiln-label';
 import { swrLocal } from '@/lib/local-cache';
 import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
+import { iconForAgent } from '@/lib/agent-icons';
 import {
   ArrowUp,
   Bot,
@@ -318,19 +319,20 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
   };
 
   const agentOptions = (): ChipOption[] => [
-    { value: '', label: 'Internal agent' },
+    { value: '', label: 'Internal agent', icon: Bot },
     ...agents().map((a) => ({
       value: a.name,
       label: a.name,
       hint: a.available ? a.description : 'not installed',
       disabled: !a.available,
+      icon: iconForAgent(a.name),
     })),
   ];
 
   const modelOptions = (): ChipOption[] => [
-    // '' = provider default; the chip shows 'Select model' while unset
-    // (ChipSelect's empty-value placeholder rule), the list still offers
-    // Auto to return to the default after picking something.
+    // '' = provider default. No placeholder on the chip, so an unset model
+    // reads as the 'Auto' row that is actually selected rather than implying
+    // a choice is still owed.
     { value: '', label: 'Auto', hint: defaultModel() || 'provider default' },
     ...models().map((m) => ({ value: m, label: m })),
   ];
@@ -470,7 +472,9 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
             />
             <ChipSelect
               name="agent"
-              icon={Bot}
+              // The trigger wears the SELECTED agent's mark, so the chosen
+              // agent is readable without opening the picker.
+              icon={iconForAgent(agentName())}
               options={agentOptions()}
               value={agentName()}
               onSelect={setAgentName}
@@ -507,7 +511,6 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
                   options={modelOptions()}
                   value={model()}
                   onSelect={setModel}
-                  placeholder="Select model"
                   disabled={busy()}
                   testid="composer-model"
                 />

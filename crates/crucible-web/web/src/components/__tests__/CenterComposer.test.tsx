@@ -54,6 +54,35 @@ describe('CenterComposer', () => {
     await waitFor(() => expect(getByTestId('composer-model')).toBeInTheDocument());
   });
 
+  it('shows the model chip as Auto, not a "choose one" placeholder', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    const chip = await waitFor(() => getByTestId('composer-model'));
+    // An unset model IS the Auto row (provider default) — the chip names it
+    // rather than implying a choice is still owed.
+    expect(chip.textContent).toContain('Auto');
+    expect(chip.textContent).not.toContain('Select model');
+  });
+
+  it('marks each ACP agent row with its own icon', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    const chip = await waitFor(() => getByTestId('composer-agent'));
+    fireEvent.click(chip);
+
+    // Internal agent + the mocked 'claude' profile, each iconed. (The chip
+    // trigger repeats the selected label, so scope to the option list.)
+    const list = await screen.findByRole('listbox', { name: 'agent' });
+    for (const label of ['Internal agent', 'claude']) {
+      const row = [...list.querySelectorAll('button')].find((b) =>
+        b.textContent?.includes(label),
+      );
+      expect(row, `no ${label} row`).toBeTruthy();
+      expect(row!.querySelector('svg'), `${label} row has no icon`).toBeTruthy();
+    }
+    // The two marks are different glyphs, not the same fallback.
+    const paths = [...list.querySelectorAll('button svg')].map((s) => s.innerHTML);
+    expect(new Set(paths).size).toBe(paths.length);
+  });
+
   it('Enter submits the first message through createSession', async () => {
     const { getByTestId } = render(() => <CenterComposer />);
     // Wait for the async defaults (config/kilns) to land before submitting —
