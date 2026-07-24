@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-07-24
+
+### Added
+- **Unified Navigator.** One left panel with a scope swapper (Sessions / each kiln / each project) that swaps the body, plus a search button that takes it over — replacing the separate Files, Sessions and Search tabs. It composes the existing engines, so drag-and-drop, context menus, grep and session actions all keep working.
+- **Search across notes, files and sessions.** A new `search_grep` RPC exposes the ripgrep engine (previously reachable only from the MCP tool) over RPC and `POST /api/search/grep`, with fail-closed containment: a `root` is accepted only if it canonicalizes inside a registered project or open kiln. The search pane fans one debounced query out to notes, files and sessions, highlights match spans from the daemon's char offsets, and takes its scope from context — a kiln searches its notes, a project its files, with operator hints that follow the scope.
+- **Semantic search in the web UI.** `POST /api/search/semantic` embeds the query and runs a vector search (the same two-step the CLI uses); the search panel gains a Text | Semantic toggle with per-hit similarity scores.
+- **LaTeX and Mermaid render everywhere.** `$…$` / `$$…$$` render with KaTeX and ` ```mermaid ` fences render as diagrams — in the reading view, in chat, and in the live-preview editor, each behind its own Settings → Editor toggle. Mermaid is lazily imported the first time a diagram actually renders, so notes without diagrams pay nothing.
+- **Review an agent's proposed edit in the real editor.** An Edit/Write/MultiEdit tool card gains "Open in editor": it opens (or focuses) the file with the proposed change overlaid as an inline unified-merge diff — green/red with per-hunk Accept/Reject in the gutter. Accept the hunks you want and save; the accepted text is what reaches disk. A proposal is never staged over a buffer with unsaved edits.
+- **Git-aware project setup.** `scm.clone` creates a project from a remote repo URL (contained to the projects dir), and `scm.branches` / `scm.worktree_add` back a repo/branch picker pair on the composer: pick a branch to jump to its existing worktree or create one from a configurable `worktree_dir` template — N sessions across N worktrees without leaving the composer.
+- **Session-unique scratch workspaces.** A session created without an explicit workspace now gets a private directory at `<session_workspace_dir>/<session_id>` (`[scm] session_workspace_dir`, default `~/.crucible/workspaces`) as its filesystem containment boundary, instead of falling back to the kiln. Directory-creation failure warns and falls back; session creation never fails over it.
+- **Edge panels host full split trees.** An edge panel carries the same recursive pane/split layout as the center tiling, rendered by the same stack: directional drop zones, keyboard split, per-pane tab bars, and ribbons that aggregate tabs across every leaf group.
+- **The file tree shows the whole folder.** `fs.list_dir`'s single flag conflated gitignored entries with dotfiles; split into `show_ignored` (the tree always requests them — a file browser shows the folder, not the git index) and `show_hidden` (off by default, toggled from the context menu or the palette, persisted per browser). `.git` is never listed. Configured extensions can be hidden (default `.md`), and the tree reveals and syncs to the active file.
+- **ACP agents wear their own mark** in the composer's agent picker — a glyph per built-in agent, resolved by name so a custom profile extending one keeps its family's mark.
+- Docs: `Help/Diagrams and Math` documents both renderers and doubles as a render check.
+
+### Changed
+- **The session composer is a New Session tab**, not an empty-pane splash: a pane with no tabs now renders nothing at all, in any region. Starting a session is a deliberate act (the ribbon, the command palette). The older, plainer draft surface is gone — one creation path.
+- **Sessions are always resumable.** A session's event log is on disk, so lifecycle state never blocks continuing a conversation: sending to an ended or evicted session transparently revives it (resident, else resumed from storage, with the kiln resolved from a new `session_kilns` index). The sessions surface drops the lifecycle axis entirely, and the session list is global rather than implicitly kiln-scoped.
+- The composer paints last-known values instantly from an SWR catalog cache instead of blank chips, and recents are served from the daemon.
+- An Obsidian-minimal pass over the shell: 13px tree rows, quiet user bubbles, hover-only absolute times, mic and send sharing one pill, chat input matching the composer.
+
+### Fixed
+- **A proposed edit could destroy unsaved work.** The proposal's baseline is the file on disk; staging it into a buffer with unsaved edits overwrote content that baseline never contained, and dismissing then "restored" the disk text. The review now waits for a clean buffer, clears itself once saved, and survives an unrelated editor reconfigure without resurrecting accepted hunks.
+- **A fresh profile opened a dead left panel.** The Navigator refactor unregistered the `files` and `sessions` panels and remapped them in persisted layouts, but left them in the default seed — two tabs rendering "Unknown content type". Edge panels now derive their opening tab from their own roster.
+- **Inline math could swallow a sentence.** A currency `$` closed on the `$` inside a later code span, consuming everything between; inline math may no longer cross a backtick.
+- **Diagrams rendered as a speck in a huge empty box.** Every dagre-based diagram (flowchart, state, class, ER, git) shipped a viewBox several times its content; the frame is now refitted to what was actually drawn.
+- **Live preview rendered `$$` blocks quoted inside code fences**, splitting the fence around a formula, and keyboard motion skipped mermaid and display-math blocks so they could only be opened by clicking.
+- `search_grep` was dispatched but missing from the RPC `METHODS` list, so clients enumerating methods could not discover it.
+- Live preview renders the tail of large files, `---` as a rule, and tables and callouts on scroll rather than only on cursor move; mermaid node labels survive sanitization.
+- Edge panels stay mounted while collapsed so expanding is a pure translate; a partial or corrupt layout payload degrades to an empty pane instead of bricking the shell; standalone instances persist layout separately.
+
+### Security
+- `scm.clone` with an explicit destination is contained to the projects dir (canonicalized, `..`-free, symlink-hop safe) — it was the one write path skipping the allowlist containment every other endpoint enforces.
+- Delegation and agent trust gates resolve data classification through the workspace config *and* a kiln walk-up: session-unique scratch workspaces carry no `.crucible` config, and the workspace-only lookup had been silently downgrading confidential kilns to Public at delegation time.
+- Mermaid SVG is sanitized on both sides of the viewBox refit, since fitting reparses and re-serializes the markup.
+
 ## [0.14.0] - 2026-07-22
 
 ### Added
