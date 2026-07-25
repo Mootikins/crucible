@@ -134,7 +134,7 @@ Fires once when a session begins. Use for per-session setup (starting containers
 
 ```lua
 crucible.on_session_start(function(session)
-  cru.log("info", "Session started: " .. session.session_id)
+  cru.log("info", "Session started: " .. session.id)
 end)
 ```
 
@@ -161,7 +161,7 @@ Fires when a session ends. Use for cleanup (stopping containers, closing files).
 
 ```lua
 crucible.on_session_end(function(session)
-  cleanup(session.session_id)
+  cleanup(session.id)
 end)
 ```
 

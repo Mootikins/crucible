@@ -799,7 +799,19 @@ impl RpcDispatcher {
                         error = %e,
                         "plugin session_start hook failed; refusing the session"
                     );
-                    self.ctx.sessions.end_session(&session_id).await.ok();
+                    // Hooks run in order and every one runs even after a
+                    // failure, so an earlier plugin may already hold a
+                    // container or socket. Tear down before ending, or the
+                    // refusal leaks exactly the resource the fail-closed path
+                    // exists to control.
+                    self.fire_plugin_session_end(&session_id).await;
+                    if let Err(end_err) = self.ctx.sessions.end_session(&session_id).await {
+                        tracing::error!(
+                            session_id = %session_id,
+                            error = %end_err,
+                            "refused session could not be ended; it may be orphaned"
+                        );
+                    }
                     return Err(RpcError {
                         code: INTERNAL_ERROR,
                         message: format!(
@@ -817,6 +829,25 @@ impl RpcDispatcher {
     ///
     /// A failing plugin hook must not fail session creation — the session
     /// already exists by this point, and the caller is waiting on it.
+    /// Fire plugin `on_session_end` hooks, best-effort.
+    ///
+    /// Unlike the start path this never propagates: refusing to *end* a session
+    /// strands the user with something they cannot clean up, which is the
+    /// opposite of the start-hook tradeoff. Shared by the normal end path and
+    /// the create-refusal path so a refused session tears down identically.
+    async fn fire_plugin_session_end(&self, session_id: &str) {
+        let mut guard = self.ctx.plugin_loader.lock().await;
+        let Some(loader) = guard.as_mut() else { return };
+        let mut session = crucible_lua::Session::new(session_id.to_string());
+        if let Some(daemon_session) = self.ctx.sessions.get_session(session_id) {
+            session = session.with_workspace(daemon_session.workspace.to_string_lossy());
+        }
+        session.bind(Box::new(crate::server::NoopSessionRpc));
+        if let Err(e) = loader.fire_session_end(&session).await {
+            tracing::warn!(session_id = %session_id, error = %e, "plugin session_end hooks failed");
+        }
+    }
+
     async fn fire_plugin_session_start(&self, session_id: &str) -> anyhow::Result<()> {
         let mut guard = self.ctx.plugin_loader.lock().await;
         let Some(loader) = guard.as_mut() else {
@@ -889,16 +920,7 @@ impl RpcDispatcher {
             // Plugin runtime first — it's a separate VM from the per-session
             // `lua_sessions` executors below, and a plugin that acquired a
             // resource in `on_session_start` needs the matching teardown.
-            {
-                let mut guard = self.ctx.plugin_loader.lock().await;
-                if let Some(loader) = guard.as_mut() {
-                    let session = crucible_lua::Session::new(session_id.to_string());
-                    session.bind(Box::new(crate::server::NoopSessionRpc));
-                    if let Err(e) = loader.fire_session_end(&session).await {
-                        tracing::warn!(session_id = %session_id, error = %e, "plugin session_end hooks failed");
-                    }
-                }
-            }
+            self.fire_plugin_session_end(session_id).await;
 
             if let Some(state) = self.ctx.lua_sessions.get(session_id) {
                 let state = state.value().clone();

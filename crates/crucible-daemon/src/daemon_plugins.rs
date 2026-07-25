@@ -1349,6 +1349,56 @@ mod tests {
         assert!(readonly, "session.workspace must be read-only from Lua");
     }
 
+    /// An ordinary plugin's failing start hook must not refuse the session;
+    /// only a hook that opted in with `{ required = true }` may.
+    ///
+    /// Refusal exists for hooks that own an isolation boundary (`oci` and its
+    /// container). Making *every* hook fatal meant one typo in any loaded
+    /// plugin refused every session daemon-wide — and a shipped doc example
+    /// used a `Session` property that raises, so copying it bricked session
+    /// creation.
+    #[tokio::test]
+    async fn only_required_start_hooks_can_refuse_a_session() {
+        use crucible_lua::{Session, SessionConfigRpc};
+
+        struct TestRpc;
+        impl SessionConfigRpc for TestRpc {}
+
+        // An ordinary plugin that raises — logged, session proceeds.
+        let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+        loader
+            .plugin_lua()
+            .load(r#"crucible.on_session_start(function(s) error("ordinary boom") end)"#)
+            .exec()
+            .unwrap();
+        let session = Session::new("s1".to_string());
+        session.bind(Box::new(TestRpc));
+        assert!(
+            loader.fire_session_start(&session).await.is_ok(),
+            "an ordinary plugin's failure must not refuse the session"
+        );
+
+        // A plugin that opted in — refuses.
+        let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+        loader
+            .plugin_lua()
+            .load(
+                r#"crucible.on_session_start(function(s) error("gate boom") end, { required = true })"#,
+            )
+            .exec()
+            .unwrap();
+        let session = Session::new("s2".to_string());
+        session.bind(Box::new(TestRpc));
+        let err = loader
+            .fire_session_start(&session)
+            .await
+            .expect_err("a required hook's failure must refuse the session");
+        assert!(
+            err.to_string().contains("gate boom"),
+            "refusal must name the underlying failure, got: {err}"
+        );
+    }
+
     #[test]
     fn default_paths_includes_config_dir() {
         let paths = default_daemon_plugin_paths();

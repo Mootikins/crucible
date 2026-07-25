@@ -30,6 +30,9 @@ pub struct LuaExecutor {
     fennel: Option<FennelCompiler>,
     session_manager: SessionManager,
     on_session_start_hooks: Vec<RegistryKey>,
+    /// Parallel to `on_session_start_hooks`: whether each opted into refusing
+    /// the session on failure via `{ required = true }`.
+    on_session_start_required: Vec<bool>,
     on_session_end_hooks: Vec<RegistryKey>,
     on_tools_registered_hooks: Vec<RegistryKey>,
 }
@@ -69,6 +72,7 @@ impl LuaExecutor {
             fennel,
             session_manager,
             on_session_start_hooks: Vec::new(),
+            on_session_start_required: Vec::new(),
             on_session_end_hooks: Vec::new(),
             on_tools_registered_hooks: Vec::new(),
         })
@@ -102,9 +106,9 @@ impl LuaExecutor {
 
     /// Sync session start hooks from Lua environment
     pub fn sync_session_start_hooks(&mut self) -> Result<(), LuaError> {
-        use crate::hooks::get_session_start_hooks;
-        let hooks = get_session_start_hooks(&self.lua)?;
-        self.on_session_start_hooks = hooks;
+        use crate::hooks::{get_session_start_hooks, get_session_start_required_flags};
+        self.on_session_start_hooks = get_session_start_hooks(&self.lua)?;
+        self.on_session_start_required = get_session_start_required_flags(&self.lua)?;
         Ok(())
     }
 
@@ -115,30 +119,46 @@ impl LuaExecutor {
     /// must be driven from a coroutine — a plain `Function::call` cannot suspend
     /// them. Firing these synchronously meant a hook that starts a container
     /// (the `oci` plugin's entire purpose) could never work.
-    /// A raising hook is **fatal to the session**, not logged and swallowed.
+    /// A hook registered with `{ required = true }` is **fatal to the
+    /// session**; every other hook's failure is logged and the session
+    /// continues.
     ///
-    /// This is what makes sandboxing an invariant rather than a status: the
-    /// `oci` plugin acquires its container here, and if that fails the session
-    /// must not proceed to run the agent's tools on the host. A plugin that
-    /// wants a failure to be non-fatal catches it itself (`pcall`) — the
-    /// default is fail-closed, matching `pre_tool_call`.
+    /// That opt-in is the whole point. A hook owning an isolation boundary
+    /// (`oci` and its container) must be able to stop a session that would
+    /// otherwise run unsandboxed — but if *every* hook were fatal, a single
+    /// typo in any loaded plugin would refuse every session daemon-wide.
     ///
     /// Every hook still runs even after one fails, so one plugin's failure
-    /// can't skip another's setup; the errors are collected and reported
-    /// together.
+    /// can't skip another's setup; required failures are collected and
+    /// reported together.
     pub async fn fire_session_start_hooks(&self, session: &Session) -> Result<(), LuaError> {
         let mut failures = Vec::new();
-        for key in &self.on_session_start_hooks {
+        for (i, key) in self.on_session_start_hooks.iter().enumerate() {
+            // Absent flag => not required, so a hook registered by older code
+            // stays non-fatal.
+            let required = self
+                .on_session_start_required
+                .get(i)
+                .copied()
+                .unwrap_or(false);
             match self.lua.registry_value::<Function>(key) {
                 Ok(func) => {
                     if let Err(e) = func.call_async::<()>(session.clone()).await {
-                        tracing::error!("Session start hook failed: {}", e);
-                        failures.push(e.to_string());
+                        tracing::error!(required, "Session start hook failed: {}", e);
+                        if required {
+                            failures.push(e.to_string());
+                        }
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to retrieve session start hook from registry: {}", e);
-                    failures.push(e.to_string());
+                    tracing::error!(
+                        required,
+                        "Failed to retrieve session start hook from registry: {}",
+                        e
+                    );
+                    if required {
+                        failures.push(e.to_string());
+                    }
                 }
             }
         }
