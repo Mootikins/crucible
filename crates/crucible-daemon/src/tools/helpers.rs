@@ -1,24 +1,24 @@
 //! Shared helper functions for constructing MCP tool responses.
 
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, ContentBlock};
 use serde::Serialize;
 
 /// Create a successful tool response containing JSON content.
 ///
-/// Replaces the verbose `Ok(CallToolResult::success(vec![Content::json(value)?]))` pattern.
+/// Replaces the verbose `Ok(CallToolResult::success(vec![ContentBlock::json(value)?]))` pattern.
 ///
 /// # Errors
 ///
 /// Returns `rmcp::ErrorData` if the value cannot be serialized to JSON.
 pub fn json_success(value: impl Serialize) -> Result<CallToolResult, rmcp::ErrorData> {
-    Ok(CallToolResult::success(vec![Content::json(value)?]))
+    Ok(CallToolResult::success(vec![ContentBlock::json(value)?]))
 }
 
 /// Create a successful tool response containing text content.
 ///
-/// Replaces the verbose `Ok(CallToolResult::success(vec![Content::text(...)]))` pattern.
+/// Replaces the verbose `Ok(CallToolResult::success(vec![ContentBlock::text(...)]))` pattern.
 pub fn text_success(text: impl Into<String>) -> CallToolResult {
-    CallToolResult::success(vec![Content::text(text)])
+    CallToolResult::success(vec![ContentBlock::text(text)])
 }
 
 /// Extension trait to convert any error into `rmcp::ErrorData`.
@@ -69,7 +69,9 @@ impl<T, E: std::fmt::Display> McpResultExt<T> for Result<T, E> {
 /// duplicating the server info construction.
 pub(crate) fn make_server_info(instructions: &str) -> rmcp::model::ServerInfo {
     let mut capabilities = rmcp::model::ServerCapabilities::default();
-    capabilities.tools = Some(rmcp::model::ToolsCapability { list_changed: None });
+    // ToolsCapability is #[non_exhaustive], so it can't be built with a struct
+    // expression. Its only field (`list_changed`) already defaults to None.
+    capabilities.tools = Some(rmcp::model::ToolsCapability::default());
     let server_info =
         rmcp::model::Implementation::new("crucible-mcp-server", env!("CARGO_PKG_VERSION"))
             .with_title("Crucible MCP Server");

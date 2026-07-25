@@ -23,9 +23,6 @@ updates:
     ignore:
       # Each of these needs a hand-written port. Drop the entry when someone
       # picks the port up — not on dependabot's weekly schedule.
-      # rmcp 1.x -> 2.x: transport/client API rewrite.
-      - dependency-name: "rmcp"
-        update-types: ["version-update:semver-major"]
       # syn 2 -> 3: proc-macro API churn across every derive in the tree.
       - dependency-name: "syn"
         update-types: ["version-update:semver-major"]

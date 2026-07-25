@@ -19,7 +19,7 @@
 #![allow(clippy::needless_pass_by_value)] // Tools take owned strings for JSON compat
 
 use super::helpers::{text_success, McpResultExt};
-use rmcp::model::{CallToolResult, RawContent, Tool};
+use rmcp::model::{CallToolResult, ContentBlock, Tool};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::process::Command;
@@ -509,8 +509,8 @@ impl ToolExecutor for WorkspaceTools {
                         let text: String = call_result
                             .content
                             .iter()
-                            .filter_map(|c| match &c.raw {
-                                RawContent::Text(t) => Some(t.text.clone()),
+                            .filter_map(|c| match c {
+                                ContentBlock::Text(t) => Some(t.text.clone()),
                                 _ => None,
                             })
                             .collect::<Vec<_>>()

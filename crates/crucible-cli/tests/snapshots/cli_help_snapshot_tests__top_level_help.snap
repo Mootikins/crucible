@@ -1,6 +1,5 @@
 ---
 source: crates/crucible-cli/tests/cli_help_snapshot_tests.rs
-assertion_line: 16
 expression: help
 ---
 cru - Crucible CLI - Interactive knowledge management with semantic search
@@ -8,14 +7,14 @@ cru - Crucible CLI - Interactive knowledge management with semantic search
 Usage: cru [OPTIONS] [COMMAND]
 
 Commands:
-  chat         Interactive AI chat with session persistence and tool access [aliases: c]
+  chat         Interactive AI chat with session persistence and tool access [alias: c]
   mcp          Start MCP server exposing Crucible tools for external AI agents
   acp          Run Crucible as an ACP agent for editors (speaks ACP over stdio)
-  process      Process markdown files through the pipeline (parse, enrich, store) [aliases: p]
+  process      Process markdown files through the pipeline (parse, enrich, store) [alias: p]
   search       Search kiln notes using semantic and/or text search
   stats        Display kiln statistics
   models       List available models from configured LLM provider
-  config       Manage Crucible configuration (initialize, view, export) [aliases: cfg]
+  config       Manage Crucible configuration (initialize, view, export) [alias: cfg]
   status       Display storage status and statistics for the knowledge base
   doctor       Run installation diagnostics for Crucible
   storage      Manage storage operations (migration, verification, backup, cleanup)
@@ -29,7 +28,7 @@ Commands:
   plugin       Manage and develop Lua plugins
   install      Install a plugin from a git URL (alias for `cru plugin add`)
   lua          Evaluate Lua code in the daemon's plugin runtime
-  init         Initialize a new kiln or project [aliases: i]
+  init         Initialize a new kiln or project [alias: i]
   session      Manage chat sessions (create, configure, send, pause, resume, end) [aliases: s, sess]
   auth         Manage LLM provider credentials (login, logout, list)
   set          Configure a running session's settings (same syntax as TUI :set)

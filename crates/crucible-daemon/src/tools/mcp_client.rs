@@ -25,7 +25,8 @@ use crucible_core::traits::mcp::{
     ContentBlock, McpError, McpServerInfo, McpToolInfo, ToolCallResult,
 };
 use rmcp::model::{
-    CallToolRequestParams, Content, InitializeResult, ListToolsResult, RawContent, Tool as RmcpTool,
+    CallToolRequestParams, ContentBlock as RmcpContentBlock, InitializeResult, ListToolsResult,
+    Tool as RmcpTool,
 };
 use rmcp::service::{RunningService, ServiceExt};
 use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
@@ -212,38 +213,43 @@ fn convert_tool(tool: RmcpTool, upstream: &str) -> McpToolInfo {
     }
 }
 
-fn convert_content(content: Content) -> ContentBlock {
-    // Content is Annotated<RawContent>, access via .raw field
-    match content.raw {
-        RawContent::Text(t) => ContentBlock::Text { text: t.text },
-        RawContent::Image(i) => ContentBlock::Image {
+fn convert_content(content: RmcpContentBlock) -> ContentBlock {
+    match content {
+        RmcpContentBlock::Text(t) => ContentBlock::Text { text: t.text },
+        RmcpContentBlock::Image(i) => ContentBlock::Image {
             data: i.data,
             mime_type: i.mime_type,
         },
-        RawContent::Resource(r) => {
+        RmcpContentBlock::Resource(r) => {
             // EmbeddedResource contains ResourceContents
             ContentBlock::Resource {
                 uri: String::new(),
                 text: Some(embedded_resource_to_text(&r)),
             }
         }
-        RawContent::Audio(_) => ContentBlock::Text {
+        RmcpContentBlock::Audio(_) => ContentBlock::Text {
             text: "[Audio content]".to_string(),
         },
-        RawContent::ResourceLink(r) => ContentBlock::Resource {
+        RmcpContentBlock::ResourceLink(r) => ContentBlock::Resource {
             uri: r.uri,
             text: Some(r.name),
+        },
+        // RmcpContentBlock is #[non_exhaustive].
+        _ => ContentBlock::Text {
+            text: "[unsupported content]".to_string(),
         },
     }
 }
 
-fn embedded_resource_to_text(resource: &rmcp::model::RawEmbeddedResource) -> String {
+fn embedded_resource_to_text(resource: &rmcp::model::EmbeddedResource) -> String {
     // ResourceContents is an enum with TextResourceContents or BlobResourceContents
     match &resource.resource {
         rmcp::model::ResourceContents::TextResourceContents { text, .. } => text.clone(),
         rmcp::model::ResourceContents::BlobResourceContents { blob, .. } => {
             format!("[Binary blob: {} bytes]", blob.len())
         }
+        // ResourceContents is #[non_exhaustive].
+        _ => "[unsupported resource contents]".to_string(),
     }
 }
 

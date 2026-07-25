@@ -21,6 +21,13 @@
 //! # Or: /tmp/crucible.sock
 //! ```
 //!
+
+// `spawn_delegation`'s future nests deeply enough that auto-trait resolution
+// blows the default limit once lance's moka cache pulls in
+// `portable_atomic::AtomicU64` (deep `PhantomData` chain). Not a real cycle —
+// rustc just needs more headroom.
+#![recursion_limit = "256"]
+
 pub mod acp;
 pub mod acp_handle;
 pub mod agent_cards;

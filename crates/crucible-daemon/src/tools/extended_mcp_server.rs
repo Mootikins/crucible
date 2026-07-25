@@ -32,7 +32,7 @@ use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::events::{Reactor, ReactorEmitResult, SessionEvent};
 use crucible_core::traits::KnowledgeRepository;
 use crucible_lua::{LuaScriptHandlerRegistry, LuaToolRegistry};
-use rmcp::model::{CallToolResult, Content, Tool};
+use rmcp::model::{CallToolResult, ContentBlock, Tool};
 use rmcp::service::RequestContext;
 use rmcp::ServerHandler;
 use serde_json::{json, Value};
@@ -520,10 +520,10 @@ impl ExtendedMcpServer {
                 drop(gateway);
                 self.emit_event(post_event).await;
 
-                let content_vec: Vec<Content> = result
+                let content_vec: Vec<ContentBlock> = result
                     .content
                     .into_iter()
-                    .filter_map(|c| c.as_text().map(|t| Content::text(t.to_string())))
+                    .filter_map(|c| c.as_text().map(|t| ContentBlock::text(t.to_string())))
                     .collect();
                 Ok(if result.is_error {
                     CallToolResult::error(content_vec)

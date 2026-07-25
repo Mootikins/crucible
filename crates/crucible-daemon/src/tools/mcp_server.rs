@@ -355,7 +355,7 @@ impl CrucibleMcpServer {
 
     /// Wrap a serializable value as a successful single-content tool result.
     fn json_ok(value: impl serde::Serialize) -> Result<CallToolResult, rmcp::ErrorData> {
-        let content = rmcp::model::Content::json(value)?;
+        let content = rmcp::model::ContentBlock::json(value)?;
         Ok(CallToolResult::success(vec![content]))
     }
 }
@@ -687,7 +687,7 @@ impl CrucibleMcpServer {
                 .delegation_spawner
                 .list_delegations(&delegation.session_id),
         );
-        jobs.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+        jobs.sort_by_key(|j| std::cmp::Reverse(j.started_at));
         Self::json_ok(serde_json::to_value(&jobs).mcp_err_ctx("Failed to serialize jobs")?)
     }
 

@@ -5,7 +5,7 @@ use crucible_core::traits::tools::{
 use crucible_core::types::{ToolRef, ToolSource};
 use futures::FutureExt;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{RawContent, Tool};
+use rmcp::model::{ContentBlock, Tool};
 use serde::de::DeserializeOwned;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -42,8 +42,8 @@ fn call_tool_result_to_value(
     let text = result
         .content
         .into_iter()
-        .filter_map(|c| match c.raw {
-            RawContent::Text(t) => Some(t.text),
+        .filter_map(|c| match c {
+            ContentBlock::Text(t) => Some(t.text),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -275,18 +275,21 @@ impl McpToolExecutor {
         let mut text_parts = Vec::new();
 
         for content in result.content {
-            match content.raw {
-                RawContent::Text(text) => {
+            match content {
+                ContentBlock::Text(text) => {
                     if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text.text) {
                         values.push(value);
                     } else {
                         text_parts.push(text.text);
                     }
                 }
-                RawContent::Image(_) => text_parts.push("[image content]".to_string()),
-                RawContent::Resource(_) => text_parts.push("[resource content]".to_string()),
-                RawContent::Audio(_) => text_parts.push("[audio content]".to_string()),
-                RawContent::ResourceLink(link) => text_parts.push(link.uri),
+                ContentBlock::Image(_) => text_parts.push("[image content]".to_string()),
+                ContentBlock::Resource(_) => text_parts.push("[resource content]".to_string()),
+                ContentBlock::Audio(_) => text_parts.push("[audio content]".to_string()),
+                ContentBlock::ResourceLink(link) => text_parts.push(link.uri),
+                // ContentBlock is #[non_exhaustive] — new upstream variants
+                // shouldn't silently drop a tool result on the floor.
+                _ => text_parts.push("[unsupported content]".to_string()),
             }
         }
 

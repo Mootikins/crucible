@@ -9,7 +9,7 @@
 //! use crucible_daemon::tools::toon_response::toon_success;
 //!
 //! // Instead of:
-//! // Ok(CallToolResult::success(vec![rmcp::model::Content::json(json!({...}))?]))
+//! // Ok(CallToolResult::success(vec![rmcp::model::ContentBlock::json(json!({...}))?]))
 //!
 //! // Use:
 //! Ok(toon_success(json!({
@@ -21,7 +21,7 @@
 
 #![allow(clippy::needless_pass_by_value)]
 
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, ContentBlock};
 
 /// Create a successful tool response with TOON-formatted content
 ///
@@ -30,7 +30,7 @@ use rmcp::model::{CallToolResult, Content};
 #[must_use]
 pub fn toon_success(value: serde_json::Value) -> CallToolResult {
     let formatted = oq::format_tool_response(&value);
-    CallToolResult::success(vec![Content::text(formatted)])
+    CallToolResult::success(vec![ContentBlock::text(formatted)])
 }
 
 /// Create a successful tool response with smart TOON formatting
@@ -39,7 +39,7 @@ pub fn toon_success(value: serde_json::Value) -> CallToolResult {
 #[must_use]
 pub fn toon_success_smart(value: serde_json::Value) -> CallToolResult {
     let formatted = oq::format_tool_response_smart(&value);
-    CallToolResult::success(vec![Content::text(formatted)])
+    CallToolResult::success(vec![ContentBlock::text(formatted)])
 }
 
 /// Create a successful tool response with tool-type-aware formatting
@@ -49,18 +49,18 @@ pub fn toon_success_smart(value: serde_json::Value) -> CallToolResult {
 pub fn toon_success_for_tool(tool_name: &str, value: serde_json::Value) -> CallToolResult {
     let tool_type = oq::ToolType::from_name(tool_name);
     let formatted = oq::format_tool_response_with(&value, tool_type);
-    CallToolResult::success(vec![Content::text(formatted)])
+    CallToolResult::success(vec![ContentBlock::text(formatted)])
 }
 
-/// Convert an existing `Content::json` response to TOON format
+/// Convert an existing `ContentBlock::json` response to TOON format
 ///
 /// Useful for migrating existing tool implementations.
 #[must_use]
-pub fn content_to_toon(content: &Content) -> Content {
+pub fn content_to_toon(content: &ContentBlock) -> ContentBlock {
     if let Some(text_content) = content.as_text() {
         // Try to parse as JSON and convert to TOON
         let formatted = oq::format_content(&text_content.text);
-        Content::text(formatted)
+        ContentBlock::text(formatted)
     } else {
         // Return as-is if not text content
         content.clone()
@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn test_content_to_toon_from_json_string() {
         let json_str = r#"{"name": "test", "value": 42}"#;
-        let content = Content::text(json_str);
+        let content = ContentBlock::text(json_str);
         let converted = content_to_toon(&content);
 
         let text = converted.as_text().unwrap();
@@ -310,7 +310,7 @@ mod tests {
     #[test]
     fn test_content_to_toon_from_plain_text() {
         let plain = "This is not JSON";
-        let content = Content::text(plain);
+        let content = ContentBlock::text(plain);
         let converted = content_to_toon(&content);
 
         let text = converted.as_text().unwrap();
