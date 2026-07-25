@@ -136,6 +136,36 @@ async fn plugin_declared_tool_is_dispatchable_by_the_agent() {
     );
 }
 
+#[tokio::test]
+async fn plugin_declared_command_is_listed_and_invocable() {
+    let tmp = TempDir::new().expect("tempdir");
+    let loader = loader_with_fixture(tmp.path()).await;
+    let registry = loader.plugin_registry();
+
+    let commands = registry.commands_json();
+    assert_eq!(commands.len(), 1, "expected one command, got {commands:?}");
+    assert_eq!(commands[0]["name"], "greet");
+    assert_eq!(commands[0]["plugin"], "shout");
+    assert_eq!(commands[0]["hint"], "[name]");
+    assert_eq!(commands[0]["description"], "Greet someone");
+
+    let result = registry
+        .run_command("greet", serde_json::json!({ "who": "crucible" }))
+        .await
+        .expect("command should run")
+        .expect("command should be found");
+    assert_eq!(result, serde_json::json!("hello crucible"));
+
+    assert!(
+        registry
+            .run_command("nope", serde_json::json!({}))
+            .await
+            .expect("lookup should not error")
+            .is_none(),
+        "unknown commands report absence, not failure"
+    );
+}
+
 #[test]
 fn plugin_commands_are_reachable_over_rpc() {
     assert!(

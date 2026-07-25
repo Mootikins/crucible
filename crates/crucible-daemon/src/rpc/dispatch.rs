@@ -106,6 +106,8 @@ pub const METHODS: &[&str] = &[
     "session.undo_depth",
     "plugin.reload",
     "plugin.list",
+    "plugin.commands",
+    "plugin.run_command",
     "plugin.install",
     "plugin.remove",
     "lua.init_session",
@@ -392,6 +394,8 @@ impl RpcDispatcher {
             // Plugin RPC handlers
             "plugin.reload" => to_response(id, self.handle_plugin_reload(&req).await),
             "plugin.list" => to_response(id, self.handle_plugin_list(&req).await),
+            "plugin.commands" => to_response(id, self.handle_plugin_commands(&req).await),
+            "plugin.run_command" => to_response(id, self.handle_plugin_run_command(&req).await),
             "plugin.install" => to_response(id, self.handle_plugin_install(&req).await),
             "plugin.remove" => to_response(id, self.handle_plugin_remove(&req).await),
 
@@ -1160,8 +1164,12 @@ impl RpcDispatcher {
     // ── Lua RPC wrappers ─────────────────────────────────────────────────
 
     async fn handle_lua_init_session(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::lua::handle_lua_init_session(req.clone(), &self.ctx.lua_sessions).await;
+        let resp = crate::server::lua::handle_lua_init_session(
+            req.clone(),
+            &self.ctx.lua_sessions,
+            &self.ctx.plugin_loader,
+        )
+        .await;
         map_server_resp(resp)
     }
 
@@ -1302,6 +1310,20 @@ impl RpcDispatcher {
     async fn handle_plugin_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::plugins::handle_plugin_list(req.clone(), &self.ctx.plugin_loader).await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_plugin_commands(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp =
+            crate::server::plugins::handle_plugin_commands(req.clone(), &self.ctx.plugin_loader)
+                .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_plugin_run_command(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp =
+            crate::server::plugins::handle_plugin_run_command(req.clone(), &self.ctx.plugin_loader)
+                .await;
         map_server_resp(resp)
     }
 

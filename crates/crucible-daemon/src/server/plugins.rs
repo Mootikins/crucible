@@ -68,6 +68,56 @@ pub(crate) async fn handle_plugin_list(
     }
 }
 
+/// List the commands loaded plugins declared.
+///
+/// Commands are an agent-level concern, not a TUI-local one — the web client
+/// gets slash commands from the same source — so they are served from the
+/// daemon's plugin loader rather than from a per-client Lua session.
+pub(crate) async fn handle_plugin_commands(
+    req: Request,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+) -> Response {
+    let loader_guard = plugin_loader.lock().await;
+    let commands = loader_guard
+        .as_ref()
+        .map(|l| l.plugin_registry().commands_json())
+        .unwrap_or_default();
+    Response::success(req.id, serde_json::json!({ "commands": commands }))
+}
+
+/// Invoke a plugin command by name.
+pub(crate) async fn handle_plugin_run_command(
+    req: Request,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+) -> Response {
+    let name = require_param!(req, "name", as_str).to_string();
+    let args = req
+        .params
+        .get("args")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+
+    // Clone the registry Arc out of the guard: a command handler can call back
+    // into daemon APIs, and holding the loader mutex across that awaits a lock
+    // we may already own.
+    let registry = {
+        let loader_guard = plugin_loader.lock().await;
+        loader_guard.as_ref().map(|l| l.plugin_registry())
+    };
+    let Some(registry) = registry else {
+        return internal_error(req.id, "Plugin loader not initialized");
+    };
+
+    match registry.run_command(&name, args).await {
+        Ok(Some(result)) => Response::success(
+            req.id,
+            serde_json::json!({ "name": name, "result": result }),
+        ),
+        Ok(None) => internal_error(req.id, format!("Unknown plugin command: {name}")),
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
 // --- Install / remove handlers ---
 
 pub(crate) async fn handle_plugin_install(req: Request) -> Response {
@@ -446,3 +496,39 @@ pub(super) fn find_owning_plugin(
 // Session observe RPC handlers (load_events, list_persisted, render_markdown,
 //                                export_to_file, cleanup, reindex)
 // ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod plugin_command_rpc_tests {
+    use super::*;
+    use crate::protocol::RequestId;
+
+    fn request(params: serde_json::Value) -> Request {
+        Request {
+            jsonrpc: "2.0".to_string(),
+            id: Some(RequestId::Number(1)),
+            method: "test".to_string(),
+            params,
+        }
+    }
+
+    /// A daemon started without plugins is not an error state — clients ask for
+    /// the command list unconditionally at startup.
+    #[tokio::test]
+    async fn commands_without_a_loader_is_an_empty_list_not_an_error() {
+        let loader: Arc<Mutex<Option<DaemonPluginLoader>>> = Arc::new(Mutex::new(None));
+        let resp = handle_plugin_commands(request(serde_json::Value::Null), &loader).await;
+
+        let result = resp.result.expect("should succeed");
+        assert_eq!(result["commands"], serde_json::json!([]));
+    }
+
+    #[tokio::test]
+    async fn run_command_without_a_loader_reports_an_error() {
+        let loader: Arc<Mutex<Option<DaemonPluginLoader>>> = Arc::new(Mutex::new(None));
+        let resp =
+            handle_plugin_run_command(request(serde_json::json!({ "name": "greet" })), &loader)
+                .await;
+
+        assert!(resp.error.is_some(), "expected an error response");
+    }
+}
