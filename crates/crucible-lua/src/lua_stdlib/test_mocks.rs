@@ -16,6 +16,7 @@ local function default_fixtures()
         http = { responses = {} },
         fs = { files = {}, dirs = {} },
         session = { temperature = 0.7, max_tokens = nil, model = "mock-model", mode = "act", thinking_budget = nil },
+        sessions = { info = { kiln = "/mock/kiln" }, messages = {}, response_parts = {} },
     }
 end
 
@@ -182,6 +183,46 @@ local function create_session_mock(fixtures)
     return session
 end
 
+-- `cru.sessions` — the subagent-delegation API. Plugins that spin up a helper
+-- session (kiln-expert's search, reflection's review pass) are untestable
+-- without it: the real module is registered by the daemon, not by the bare
+-- executor the plugin test runner builds.
+local function create_sessions_mock(fixtures)
+    local f = fixtures.sessions
+    local counter = 0
+    return {
+        create = function(opts)
+            record_call("sessions", "create", opts)
+            counter = counter + 1
+            return { id = string.format("mock-session-%d", counter) }, nil
+        end,
+        get = function(id)
+            record_call("sessions", "get", id)
+            return deep_copy(f.info)
+        end,
+        messages = function(id, opts)
+            record_call("sessions", "messages", id, opts)
+            return deep_copy(f.messages or {})
+        end,
+        configure_agent = function(id, config)
+            record_call("sessions", "configure_agent", id, config)
+        end,
+        -- Returns an iterator over response parts, exhausting to nil.
+        send_and_collect = function(id, prompt, opts)
+            record_call("sessions", "send_and_collect", id, prompt, opts)
+            local parts = f.response_parts or {}
+            local i = 0
+            return function()
+                i = i + 1
+                return deep_copy(parts[i])
+            end, nil
+        end,
+        end_session = function(id)
+            record_call("sessions", "end_session", id)
+        end,
+    }
+end
+
 function test_mocks.setup(overrides)
     overrides = overrides or {}
     _fixtures = default_fixtures()
@@ -197,6 +238,7 @@ function test_mocks.setup(overrides)
     cru.http = create_http_mock(_fixtures)
     cru.fs = create_fs_mock(_fixtures)
     cru.session = create_session_mock(_fixtures)
+    cru.sessions = create_sessions_mock(_fixtures)
     http = cru.http
     fs = cru.fs
     if crucible then
