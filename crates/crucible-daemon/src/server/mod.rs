@@ -96,7 +96,10 @@ pub struct Server {
     socket_lock: Option<std::fs::File>,
 }
 
-struct NoopSessionRpc;
+/// Session handle backing for contexts that only need identity, not the full
+/// config RPC surface (plugin lifecycle hooks, `lua.init_session`). Every
+/// `SessionConfigRpc` method has a default.
+pub(crate) struct NoopSessionRpc;
 impl SessionConfigRpc for NoopSessionRpc {}
 
 pub struct LuaSessionState {

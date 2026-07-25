@@ -137,6 +137,36 @@ impl DaemonPluginLoader {
         Arc::clone(&self.handler_registry)
     }
 
+    /// Fire `crucible.on_session_start` hooks registered by plugins.
+    ///
+    /// Syncs first: hooks live in Lua globals until pulled into the executor's
+    /// list, and plugins register them at load — long before any session
+    /// exists. Without this the plugin runtime's lifecycle hooks never ran at
+    /// all, so a plugin that registers its `crucible.on` handlers inside
+    /// `on_session_start` (as `oci` does) never registered anything.
+    ///
+    /// Errors are logged per-hook by the executor and never propagate to the
+    /// session — one bad plugin must not stop a session from starting.
+    pub fn fire_session_start(&mut self, session: &crucible_lua::Session) -> anyhow::Result<()> {
+        self.executor
+            .sync_session_start_hooks()
+            .map_err(|e| anyhow::anyhow!("sync session_start hooks: {e}"))?;
+        self.executor
+            .fire_session_start_hooks(session)
+            .map_err(|e| anyhow::anyhow!("fire session_start hooks: {e}"))
+    }
+
+    /// Fire `crucible.on_session_end` hooks registered by plugins.
+    /// See [`Self::fire_session_start`] for why this syncs first.
+    pub fn fire_session_end(&mut self, session: &crucible_lua::Session) -> anyhow::Result<()> {
+        self.executor
+            .sync_session_end_hooks()
+            .map_err(|e| anyhow::anyhow!("sync session_end hooks: {e}"))?;
+        self.executor
+            .fire_session_end_hooks(session)
+            .map_err(|e| anyhow::anyhow!("fire session_end hooks: {e}"))
+    }
+
     /// Shared registry of Lua-defined output validators.
     ///
     /// Hand this `Arc` to `AgentManager::set_lua_validators` together with
@@ -984,6 +1014,59 @@ mod tests {
                  at load, and the loader downgrades that to a warning"
             );
         }
+    }
+
+    /// Session lifecycle hooks registered by a plugin must fire.
+    ///
+    /// `oci` — the reference interception plugin — registers its `crucible.on`
+    /// handlers *inside* `on_session_start` (`init.lua:261,306`). Making
+    /// `crucible.on` callable is not enough on its own: if nothing fires the
+    /// plugin runtime's lifecycle hooks, that registration never runs.
+    ///
+    /// `fire_session_start_hooks` was only ever called at `server/lua.rs:34`,
+    /// on the per-call `lua.init_session` executor — never on the plugin
+    /// loader's.
+    #[test]
+    fn plugin_session_lifecycle_hooks_fire() {
+        use crucible_lua::{Session, SessionConfigRpc};
+
+        // `SessionConfigRpc`'s methods all have defaults; the hooks under test
+        // never call them.
+        struct TestRpc;
+        impl SessionConfigRpc for TestRpc {}
+
+        let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+        loader
+            .plugin_lua()
+            .load(
+                r#"
+            start_fired = false
+            end_fired = false
+            crucible.on_session_start(function(s) start_fired = true end)
+            crucible.on_session_end(function(s) end_fired = true end)
+        "#,
+            )
+            .exec()
+            .expect("register lifecycle hooks");
+
+        let session = Session::new("test-session".to_string());
+        session.bind(Box::new(TestRpc));
+
+        loader.fire_session_start(&session).expect("fire start");
+        let started: bool = loader
+            .plugin_lua()
+            .load("return start_fired")
+            .eval()
+            .unwrap();
+        assert!(
+            started,
+            "plugin on_session_start hook did not fire — plugins that register \
+             handlers there (oci) never run"
+        );
+
+        loader.fire_session_end(&session).expect("fire end");
+        let ended: bool = loader.plugin_lua().load("return end_fired").eval().unwrap();
+        assert!(ended, "plugin on_session_end hook did not fire");
     }
 
     #[test]

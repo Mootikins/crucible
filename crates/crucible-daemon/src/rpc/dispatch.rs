@@ -775,7 +775,32 @@ impl RpcDispatcher {
             self.ctx.mcp_config.as_ref(),
         )
         .await;
-        map_server_resp(resp)
+        let mapped = map_server_resp(resp);
+
+        // Plugins register their `crucible.on` handlers inside
+        // `on_session_start` (oci does), so these hooks have to fire on the
+        // plugin runtime — not just the per-call `lua.init_session` executor,
+        // which was the only place firing them.
+        if let Ok(value) = &mapped {
+            if let Some(session_id) = value.get("session_id").and_then(|v| v.as_str()) {
+                self.fire_plugin_session_start(session_id).await;
+            }
+        }
+        mapped
+    }
+
+    /// Fire plugin `on_session_start` hooks, best-effort.
+    ///
+    /// A failing plugin hook must not fail session creation — the session
+    /// already exists by this point, and the caller is waiting on it.
+    async fn fire_plugin_session_start(&self, session_id: &str) {
+        let mut guard = self.ctx.plugin_loader.lock().await;
+        let Some(loader) = guard.as_mut() else { return };
+        let session = crucible_lua::Session::new(session_id.to_string());
+        session.bind(Box::new(crate::server::NoopSessionRpc));
+        if let Err(e) = loader.fire_session_start(&session) {
+            tracing::warn!(session_id = %session_id, error = %e, "plugin session_start hooks failed");
+        }
     }
 
     async fn handle_session_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -832,6 +857,20 @@ impl RpcDispatcher {
             .and_then(|v| v.as_str())
             .unwrap_or("");
         if !session_id.is_empty() {
+            // Plugin runtime first — it's a separate VM from the per-session
+            // `lua_sessions` executors below, and a plugin that acquired a
+            // resource in `on_session_start` needs the matching teardown.
+            {
+                let mut guard = self.ctx.plugin_loader.lock().await;
+                if let Some(loader) = guard.as_mut() {
+                    let session = crucible_lua::Session::new(session_id.to_string());
+                    session.bind(Box::new(crate::server::NoopSessionRpc));
+                    if let Err(e) = loader.fire_session_end(&session) {
+                        tracing::warn!(session_id = %session_id, error = %e, "plugin session_end hooks failed");
+                    }
+                }
+            }
+
             if let Some(state) = self.ctx.lua_sessions.get(session_id) {
                 let state = state.value().clone();
                 let mut state = state.lock().await;
