@@ -26,7 +26,7 @@ describe("my-plugin", function()
 
   it("greets by name", function()
     local result = plugin.tools.greet.fn({ name = "Alice" })
-    assert.equal(result.message, "Hello, Alice!")
+    assert.equal("Hello, Alice!", result.message)
   end)
 
   it("rejects missing name", function()
@@ -38,14 +38,23 @@ end)
 
 ## Assertions
 
+Expected value first. The runner reports a mismatch as `Expected: <first>` /
+`Actual: <second>`, so passing them the other way round makes a failure read
+backwards.
+
 ```lua
-assert(condition, "message")         -- basic
-assert.equal(expected, actual)       -- value equality
-assert.truthy(value)                 -- not nil/false
-assert.falsy(value)                  -- nil or false
-assert.is_nil(value)                 -- nil check
-assert.is_not_nil(value)             -- not nil
-assert.error(fn, pattern?)           -- expect error
+assert(condition, "message")            -- basic
+assert.equal(expected, actual)          -- value equality (alias: assert.equals)
+assert.deep_equal(expected, actual)     -- recursive table equality
+assert.truthy(value)                    -- not nil/false
+assert.falsy(value)                     -- nil or false
+assert.is_nil(value)                    -- nil check
+assert.is_not_nil(value)                -- not nil
+assert.is_string(value)                 -- type checks
+assert.is_number(value)
+assert.is_table(value)
+assert.is_function(value)
+assert.has_error(fn, substring?)        -- expect an error, optionally matching
 ```
 
 ## Test Lifecycle
@@ -107,7 +116,7 @@ Inspect what was called:
 
 ```lua
 local calls = test_mocks.get_calls("kiln", "search")
-assert.equal(#calls, 1)
+assert.equal(1, #calls)
 ```
 
 ## Testing Tool Functions

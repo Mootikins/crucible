@@ -25,6 +25,7 @@ use std::sync::{Arc, Mutex};
 use tracing::warn;
 
 pub use builders::{CommandBuilder, HandlerBuilder, ToolBuilder, ViewBuilder};
+pub use discovery::PluginDiscoveryError;
 pub use error::{LifecycleError, LifecycleResult};
 pub use error_log::{PluginErrorEntry, PluginErrorLog};
 pub use registration::RegistrationHandle;
@@ -43,6 +44,12 @@ pub struct PluginManager {
     on_unload_hooks: HashMap<String, RegistryKey>,
     on_load_hooks: HashMap<String, RegistryKey>,
     error_log: Arc<Mutex<PluginErrorLog>>,
+    /// Directories that failed to become plugins during `discover()`.
+    ///
+    /// A plugin whose manifest doesn't parse never enters `plugins`, so it has
+    /// no `PluginState` to mark `Error` — before this the only trace was a
+    /// `warn!` in the daemon log, which is how `reflection` stayed invisible.
+    discovery_errors: Vec<PluginDiscoveryError>,
 }
 
 impl Default for PluginManager {
@@ -91,6 +98,7 @@ impl PluginManager {
             on_unload_hooks: HashMap::new(),
             on_load_hooks: HashMap::new(),
             error_log,
+            discovery_errors: Vec::new(),
         }
     }
 

@@ -3,13 +3,12 @@ pub(super) const LUA_TEST_RUNNER: &str = r#"
 --
 -- Provides describe/it/before_each/after_each/pending globals and assert table.
 -- No external dependencies — pure Lua with pcall/error only.
-
-local COLORS = {
-    reset = "\27[0m",
-    green = "\27[32m",
-    red = "\27[31m",
-    yellow = "\27[33m",
-}
+--
+-- Results are RETURNED from run_tests(), never printed. `print` writes to the
+-- host process's stdout, and the daemon that runs plugin tests is normally
+-- auto-spawned with stdout and stderr set to /dev/null
+-- (rpc_client/client/mod.rs), so anything printed here is written to a null
+-- device and is unrecoverable by the caller who asked for the results.
 
 local test_state = {
     suites = {},
@@ -184,7 +183,6 @@ function it(name, fn)
         suite = test_state.current_suite,
         status = "pending",
         error = nil,
-        traceback = nil,
     }
     table.insert(test_state.current_suite.tests, test)
 end
@@ -199,7 +197,6 @@ function pending(name, fn)
         suite = test_state.current_suite,
         status = "pending",
         error = nil,
-        traceback = nil,
         is_pending = true,
     }
     table.insert(test_state.current_suite.tests, test)
@@ -219,9 +216,33 @@ function after_each(fn)
     table.insert(test_state.current_suite.after_each_fns, fn)
 end
 
-local function get_line_number(traceback)
-    local line = string.match(traceback, ":(%d+):")
-    return line or "?"
+--- Full `describe` path for a test, outermost first.
+---
+--- Reporting the bare `it` name is ambiguous the moment two suites share one:
+--- several plugins have their own "returns nil on non-JSON".
+local function describe_path(suite)
+    local parts = {}
+    while suite do
+        table.insert(parts, 1, suite.name)
+        suite = suite.parent
+    end
+    return table.concat(parts, " / ")
+end
+
+--- Split `chunk:line: message` into file, line, and the bare message.
+---
+--- Every assertion here raises at level 2, so Lua has already prefixed the
+--- *caller's* location — the line in the test file. That is the location worth
+--- reporting. `debug.traceback()` cannot give it: its innermost frame is always
+--- inside this runner, so matching the first `:%d+:` there (as this code used
+--- to) reported the runner's own line, identically for every failure.
+local function split_location(err)
+    err = tostring(err)
+    local file, line, message = string.match(err, "^(.-):(%d+): (.*)$")
+    if file then
+        return file, line, message
+    end
+    return nil, nil, err
 end
 
 local function run_test(test)
@@ -239,7 +260,6 @@ local function run_test(test)
             if not ok then
                 test.status = "failed"
                 test.error = err
-                test.traceback = debug.traceback()
                 return
             end
         end
@@ -250,7 +270,6 @@ local function run_test(test)
     else
         test.status = "failed"
         test.error = err
-        test.traceback = debug.traceback()
     end
     for i = #after_fns, 1, -1 do
         local fns = after_fns[i]
@@ -259,7 +278,6 @@ local function run_test(test)
             if not ok and test.status == "passed" then
                 test.status = "failed"
                 test.error = err
-                test.traceback = debug.traceback()
             end
         end
     end
@@ -275,45 +293,23 @@ function run_tests()
     for _, test in ipairs(test_state.tests) do
         if test.is_pending then
             test_state.results.pending = test_state.results.pending + 1
-            print(string.format("%s⊘ %s%s", COLORS.yellow, test.name, COLORS.reset))
         else
             run_test(test)
             if test.status == "passed" then
                 test_state.results.passed = test_state.results.passed + 1
-                print(string.format("%s✓ %s%s", COLORS.green, test.name, COLORS.reset))
             else
                 test_state.results.failed = test_state.results.failed + 1
-                local line = get_line_number(test.traceback or "")
-                print(string.format(
-                    "%s✗ %s%s\n  %s (line %s)",
-                    COLORS.red,
-                    test.name,
-                    COLORS.reset,
-                    test.error or "Unknown error",
-                    line
-                ))
+                local file, line, message = split_location(test.error or "Unknown error")
                 table.insert(test_state.results.errors, {
                     name = test.name,
-                    error = test.error,
-                    traceback = test.traceback,
+                    suite = describe_path(test.suite),
+                    error = message,
+                    file = file,
+                    line = line,
                 })
             end
         end
     end
-    local total = test_state.results.passed + test_state.results.failed + test_state.results.pending
-    print(string.format(
-        "\n%s%d passed%s, %s%d failed%s, %s%d pending%s (total: %d)",
-        COLORS.green,
-        test_state.results.passed,
-        COLORS.reset,
-        COLORS.red,
-        test_state.results.failed,
-        COLORS.reset,
-        COLORS.yellow,
-        test_state.results.pending,
-        COLORS.reset,
-        total
-    ))
     return test_state.results
 end
 

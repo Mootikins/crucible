@@ -106,11 +106,41 @@ pub struct LuaRunPluginTestsRequest {
     pub filter: Option<String>,
 }
 
+/// A single failed Lua test, as the plugin test runner saw it.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PluginTestFailure {
+    pub name: String,
+    /// Full `describe` path. The bare test name is ambiguous across suites.
+    #[serde(default)]
+    pub suite: Option<String>,
+    pub error: String,
+    /// Test file and line the assertion fired on, taken from the location Lua
+    /// prefixes onto a level-2 `error()` — not from `debug.traceback()`, whose
+    /// innermost frame is always inside the runner.
+    #[serde(default)]
+    pub file: Option<String>,
+    #[serde(default)]
+    pub line: Option<String>,
+}
+
+/// A test file that could not be read or parsed at all.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PluginTestLoadFailure {
+    pub file: String,
+    pub error: String,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LuaRunPluginTestsResponse {
     pub passed: usize,
     pub failed: usize,
     pub load_failures: usize,
+    /// Per-test diagnostics. Without these the caller sees only counts — the
+    /// runner's own `✗` output goes to the daemon's stdout, not the client's.
+    #[serde(default)]
+    pub failures: Vec<PluginTestFailure>,
+    #[serde(default)]
+    pub load_failure_details: Vec<PluginTestLoadFailure>,
     #[serde(default)]
     pub message: Option<String>,
 }

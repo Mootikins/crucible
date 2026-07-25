@@ -992,6 +992,8 @@ export interface PluginInfo {
   version: string;
   source: 'User' | 'Runtime' | 'EnvPath' | 'Builtin' | string;
   state: 'Active' | 'Error' | 'Disabled' | string;
+  /** Why the plugin is not Active. Null for healthy plugins. */
+  last_error?: string | null;
   dir: string;
   tools: number;
   commands: number;

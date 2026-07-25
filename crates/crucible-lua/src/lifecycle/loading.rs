@@ -76,6 +76,20 @@ impl PluginManager {
         Ok(())
     }
 
+    /// Mark a plugin as failed after `load()` already succeeded.
+    ///
+    /// `PluginManager::load` only covers its own stages. The daemon executes
+    /// each plugin a second time in the *real* Lua VM and calls its `setup()`
+    /// — neither of which the spec sandbox does — so a plugin can be `Active`
+    /// here while having blown up there. Without this the daemon could only
+    /// `warn!`, and `plugin.list` kept reporting `Active`.
+    pub fn mark_error(&mut self, name: &str, error: impl Into<String>) {
+        if let Some(plugin) = self.plugins.get_mut(name) {
+            plugin.state = PluginState::Error;
+            plugin.last_error = Some(error.into());
+        }
+    }
+
     pub fn load_all(&mut self) -> LifecycleResult<Vec<String>> {
         let names: Vec<String> = self.plugins.keys().cloned().collect();
         let order = self.resolve_load_order(&names)?;

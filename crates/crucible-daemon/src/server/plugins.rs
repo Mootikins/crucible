@@ -55,6 +55,10 @@ pub(crate) async fn handle_plugin_list(
                 serde_json::json!({
                     "plugins": names,
                     "plugin_info": plugins,
+                    // Directories that never became plugins at all — a manifest
+                    // that doesn't parse has no `plugin_info` entry to carry its
+                    // error, so it would otherwise reach no client.
+                    "errors": l.discovery_errors(),
                 }),
             )
         }
@@ -63,6 +67,7 @@ pub(crate) async fn handle_plugin_list(
             serde_json::json!({
                 "plugins": [],
                 "plugin_info": [],
+                "errors": [],
             }),
         ),
     }
@@ -530,5 +535,139 @@ mod plugin_command_rpc_tests {
                 .await;
 
         assert!(resp.error.is_some(), "expected an error response");
+    }
+}
+
+/// `plugin.list` is the only window a client has onto plugin health. Every
+/// failure mode below used to be invisible there: the plugin was either
+/// filtered out of the response entirely or reported `Active`.
+#[cfg(test)]
+mod plugin_health_visibility_tests {
+    use super::*;
+    use crate::protocol::RequestId;
+    use crucible_lua::PluginSource;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn write_plugin(root: &Path, name: &str, manifest: &str, init_lua: &str) {
+        let dir = root.join(name);
+        fs::create_dir_all(&dir).expect("plugin dir");
+        fs::write(dir.join("plugin.yaml"), manifest).expect("manifest");
+        fs::write(dir.join("init.lua"), init_lua).expect("init.lua");
+    }
+
+    /// Load `root` as a plugin search path and return the `plugin.list` result.
+    async fn list_after_loading(root: &Path) -> serde_json::Value {
+        let mut loader = DaemonPluginLoader::new(std::collections::HashMap::new()).expect("loader");
+        loader
+            .load_plugins(&[(root.to_path_buf(), PluginSource::Runtime)])
+            .await
+            .expect("load_plugins");
+
+        let loader = Arc::new(Mutex::new(Some(loader)));
+        let req = Request {
+            jsonrpc: "2.0".to_string(),
+            id: Some(RequestId::Number(1)),
+            method: "plugin.list".to_string(),
+            params: serde_json::Value::Null,
+        };
+        handle_plugin_list(req, &loader)
+            .await
+            .result
+            .expect("plugin.list result")
+    }
+
+    fn entry<'a>(result: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
+        result["plugin_info"]
+            .as_array()
+            .expect("plugin_info array")
+            .iter()
+            .find(|p| p["name"] == name)
+            .unwrap_or_else(|| panic!("plugin '{name}' missing from {result:#}"))
+    }
+
+    /// A plugin that raises while loading is dropped from `plugin.list`
+    /// altogether, because `loaded_plugin_info` filtered on
+    /// `PluginState::Active`. "Not listed" is indistinguishable from
+    /// "not installed".
+    #[tokio::test]
+    async fn a_plugin_that_raises_at_load_is_listed_with_its_error() {
+        let tmp = TempDir::new().unwrap();
+        write_plugin(
+            tmp.path(),
+            "raiser",
+            "name: raiser\nversion: \"0.1.0\"\nmain: init.lua\n",
+            "error('kaboom')\n",
+        );
+
+        let result = list_after_loading(tmp.path()).await;
+        let plugin = entry(&result, "raiser");
+
+        assert_ne!(
+            plugin["state"], "Active",
+            "a plugin that never executed must not report Active: {result:#}"
+        );
+        let last_error = plugin["last_error"].as_str().unwrap_or("");
+        assert!(
+            last_error.contains("kaboom"),
+            "last_error should carry the Lua error, got {last_error:?} in {result:#}"
+        );
+    }
+
+    /// `setup()` runs only in the daemon's real VM — the spec sandbox never
+    /// calls it — so a raising `setup()` was downgraded to `warn!` while
+    /// `load_plugin_spec` still returned `Ok`, leaving the plugin `Active`.
+    #[tokio::test]
+    async fn a_plugin_whose_setup_raises_is_not_active() {
+        let tmp = TempDir::new().unwrap();
+        write_plugin(
+            tmp.path(),
+            "badsetup",
+            "name: badsetup\nversion: \"0.1.0\"\nmain: init.lua\n",
+            "return { name = 'badsetup', setup = function() error('setup exploded') end }\n",
+        );
+
+        let result = list_after_loading(tmp.path()).await;
+        let plugin = entry(&result, "badsetup");
+
+        assert_ne!(
+            plugin["state"], "Active",
+            "a plugin whose setup() raised must not report Active: {result:#}"
+        );
+        let last_error = plugin["last_error"].as_str().unwrap_or("");
+        assert!(
+            last_error.contains("setup exploded"),
+            "last_error should carry the setup failure, got {last_error:?} in {result:#}"
+        );
+    }
+
+    /// A manifest that doesn't parse keeps the plugin out of
+    /// `PluginManager::plugins` entirely — there is no entry to mark broken.
+    /// `reflection` shipped for months in exactly this state, with the only
+    /// trace a `warn!` in the daemon's log.
+    #[tokio::test]
+    async fn a_plugin_with_an_unparseable_manifest_reaches_the_client() {
+        let tmp = TempDir::new().unwrap();
+        write_plugin(
+            tmp.path(),
+            "bogus-caps",
+            "name: bogus-caps\nversion: \"0.1.0\"\nmain: init.lua\ncapabilities:\n  - teleportation\n",
+            "return { name = 'bogus-caps' }\n",
+        );
+
+        let result = list_after_loading(tmp.path()).await;
+        let errors = result["errors"]
+            .as_array()
+            .unwrap_or_else(|| panic!("plugin.list must report discovery errors: {result:#}"));
+
+        assert!(
+            errors.iter().any(|e| {
+                e["path"].as_str().is_some_and(|p| p.contains("bogus-caps"))
+                    && e["error"]
+                        .as_str()
+                        .is_some_and(|m| m.contains("teleportation"))
+            }),
+            "discovery failure for 'bogus-caps' should be reported: {result:#}"
+        );
     }
 }

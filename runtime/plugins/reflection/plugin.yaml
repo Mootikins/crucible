@@ -7,10 +7,10 @@ license: MIT
 main: init.lua
 
 capabilities:
-  - session
+  - kiln
   - agent
   - config
-  - fs
+  - filesystem
 
 config:
   properties:

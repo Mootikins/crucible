@@ -4,10 +4,35 @@ use super::{LifecycleError, LifecycleResult, PluginManager};
 use crate::error::format_lua_error;
 use crate::manifest::{LoadedPlugin, PluginManifest, PluginSource};
 use mlua::Value;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
+/// A directory that looked like a plugin but could not be loaded as one.
+///
+/// Discovery failures have no `LoadedPlugin` to hang a `PluginState::Error`
+/// off, so they are collected here and surfaced through `plugin.list`.
+/// Otherwise "broken" and "not installed" look identical to every client.
+#[derive(Debug, Clone)]
+pub struct PluginDiscoveryError {
+    pub path: PathBuf,
+    pub error: String,
+}
+
 impl PluginManager {
+    /// Directories that failed discovery on the last [`Self::discover`] call.
+    pub fn discovery_errors(&self) -> &[PluginDiscoveryError] {
+        &self.discovery_errors
+    }
+
+    fn record_discovery_error(&mut self, path: &Path, error: impl std::fmt::Display) {
+        let error = error.to_string();
+        warn!("Plugin discovery failed for {}: {}", path.display(), error);
+        self.discovery_errors.push(PluginDiscoveryError {
+            path: path.to_path_buf(),
+            error,
+        });
+    }
+
     /// Get the provenance source for a plugin directory.
     pub(super) fn source_for_dir(&self, plugin_dir: &Path) -> PluginSource {
         // Walk search paths to find which one contains this plugin dir
@@ -23,6 +48,7 @@ impl PluginManager {
 
     pub fn discover(&mut self) -> LifecycleResult<Vec<String>> {
         let mut discovered = Vec::new();
+        self.discovery_errors.clear();
 
         for search_path in &self.search_paths.clone() {
             if !search_path.exists() {
@@ -77,11 +103,7 @@ impl PluginManager {
                                         discovered.push(name);
                                     }
                                     Err(e) => {
-                                        warn!(
-                                            "Failed to create default manifest for {}: {}",
-                                            path.display(),
-                                            e
-                                        );
+                                        self.record_discovery_error(&path, e);
                                     }
                                 }
                             } else {
@@ -89,7 +111,7 @@ impl PluginManager {
                             }
                         }
                         Err(e) => {
-                            warn!("Failed to load manifest from {}: {}", path.display(), e);
+                            self.record_discovery_error(&path, e);
                         }
                     }
                 } else if path.is_file() {
@@ -188,12 +210,20 @@ impl PluginManager {
                                 plugin.manifest.description = spec_desc.clone();
                             }
                         }
-                        // Merge capabilities from spec
+                        // Merge capabilities from spec. An unrecognised name is
+                        // a typo in the plugin, not a no-op — say so rather
+                        // than dropping it the way the manifest path used to.
                         for cap_str in &spec.capabilities {
-                            if let Some(cap) = parse_capability(cap_str) {
-                                if !plugin.manifest.capabilities.contains(&cap) {
-                                    plugin.manifest.capabilities.push(cap);
+                            match parse_capability(cap_str) {
+                                Some(cap) => {
+                                    if !plugin.manifest.capabilities.contains(&cap) {
+                                        plugin.manifest.capabilities.push(cap);
+                                    }
                                 }
+                                None => warn!(
+                                    "Plugin {} declares unknown capability '{}' in its spec table; ignoring",
+                                    name, cap_str
+                                ),
                             }
                         }
                     }

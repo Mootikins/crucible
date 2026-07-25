@@ -119,11 +119,6 @@ async fn test_plugin_test_roundtrip() {
         .set_name("test_mocks_setup")
         .exec()
         .unwrap();
-    lua.load(
-        "assert.is_not_nil = function(val) if val == nil then error('Expected non-nil value', 2) end end",
-    )
-    .exec()
-    .unwrap();
 
     lua.load(&tests_source)
         .set_name("tests/init_test.lua")
