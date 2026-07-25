@@ -1,5 +1,17 @@
 --- reflection configuration
---- Reads from cru.config["reflection"], falling back to setup() defaults.
+---
+--- Resolution order, highest priority first:
+---   1. `[plugins.reflection]` in config.toml, read through
+---      `crucible.config.get("reflection.<key>")`. Note this is NOT
+---      `cru.config[...]` — `cru.config` is the *app* config store and holds
+---      only `get`/`set` functions; it is not indexable by plugin name.
+---   2. values passed to `setup({...})` — the daemon calls it with the TOML
+---      section at load time, and a user may call it again with more.
+---   3. the `defaults` table below.
+---   4. the caller's `fallback` argument, as a last resort for keys this
+---      module does not declare.
+
+local PLUGIN = "reflection"
 
 local M = {}
 
@@ -21,20 +33,42 @@ local defaults = {
     timeout = 120,
 }
 
---- Merge user-provided config into defaults. Called by setup() in init.lua.
+-- setup() values. Kept in their own table so the order above stays
+-- observable — folding them into `defaults` would make the two layers
+-- indistinguishable.
+local configured = {}
+
+--- Merge user-provided config into the setup layer.
+--- Called by setup() in init.lua.
 function M.init(cfg)
     if not cfg then return end
     for k, v in pairs(cfg) do
-        defaults[k] = v
+        configured[k] = v
     end
 end
 
+--- Read `[plugins.reflection].<key>`. Returns nil when unset, and also when
+--- `crucible.config` is absent — the plugin test runner has no daemon behind
+--- it, and the spec-extraction sandbox stubs `crucible` with a metatable
+--- (hence rawget, which sees through neither).
+local function from_toml(key)
+    local crucible = rawget(_G, "crucible")
+    if type(crucible) ~= "table" then return nil end
+    local cfg = rawget(crucible, "config")
+    if type(cfg) ~= "table" then return nil end
+    local get = rawget(cfg, "get")
+    if type(get) ~= "function" then return nil end
+    local ok, val = pcall(get, PLUGIN .. "." .. key)
+    if ok then return val end
+    return nil
+end
+
 function M.get(key, fallback)
-    local cfg = cru.config and cru.config["reflection"] or {}
-    local val = cfg[key]
+    local val = from_toml(key)
     if val ~= nil then return val end
-    if fallback ~= nil then return fallback end
-    return defaults[key]
+    if configured[key] ~= nil then return configured[key] end
+    if defaults[key] ~= nil then return defaults[key] end
+    return fallback
 end
 
 return M
