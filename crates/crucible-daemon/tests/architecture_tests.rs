@@ -624,7 +624,9 @@ const SIZE_LEDGER: &[&str] = &[
     "crates/crucible-daemon/src/agent_manager/tests/messaging.rs",
     "crates/crucible-daemon/src/agent_manager/tests/models/list.rs",
     "crates/crucible-daemon/src/agent_manager/tests/models_discovery.rs",
-    "crates/crucible-daemon/src/daemon_plugins.rs",
+    // Renamed from daemon_plugins.rs when its 641-line test module split out
+    // (file-size gate); 1169 lines, down from 1809. Shrinks further in Phase 7e.
+    "crates/crucible-daemon/src/daemon_plugins/mod.rs",
     "crates/crucible-daemon/src/kiln_manager.rs",
     "crates/crucible-daemon/src/provider/genai_handle.rs",
     "crates/crucible-daemon/src/rpc/dispatch.rs",
