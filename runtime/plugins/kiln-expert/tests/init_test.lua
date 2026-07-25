@@ -1,5 +1,5 @@
 describe("kiln-expert", function()
-  local plugin = require("init")
+  local plugin = require("kiln-expert")
 
   describe("list_kilns", function()
     it("returns empty when no kilns configured", function()

@@ -1,5 +1,5 @@
 describe("reflection", function()
-  local plugin = require("init")
+  local plugin = require("reflection")
 
   describe("count_user_turns", function()
     it("counts only user messages", function()

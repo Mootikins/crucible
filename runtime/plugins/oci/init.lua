@@ -10,6 +10,7 @@
 -- Uses generic crucible.on() hooks with pattern matching and the Handled result convention.
 
 local container = require("container")
+local remap = require("remap")
 
 -- Per session, because handlers are registered once at plugin load and are
 -- shared by every session. A single global was only ever correct when
@@ -24,39 +25,11 @@ local function active_for(ctx)
   return sessions[id]
 end
 
--- ─────────────────────────────────────────────────────────────────────────────
--- Path remapping
--- ─────────────────────────────────────────────────────────────────────────────
-
-local function remap_path(workspace_host, path)
-  if not path then return "/workspace" end
-  if path:sub(1, #workspace_host) == workspace_host then
-    local suffix = path:sub(#workspace_host + 1)
-    if suffix == "" or suffix == "/" then return "/workspace" end
-    if suffix:sub(1, 1) == "/" then suffix = suffix:sub(2) end
-    return "/workspace/" .. suffix
-  elseif path:sub(1, 1) == "/" then
-    return path -- outside workspace, pass through
-  else
-    return "/workspace/" .. path -- relative
-  end
-end
-
--- Shell-escape a string for use inside single quotes
-local function sq(s)
-  return s:gsub("'", "'\\''")
-end
-
--- Format a list of lines with a count footer, truncating if over limit
-local function truncate_lines(lines, limit, noun)
-  local truncated = #lines > limit
-  local kept = {}
-  for i = 1, math.min(#lines, limit) do kept[i] = lines[i] end
-  local suffix = truncated
-    and string.format("\n\n[%d %s, truncated at %d]", #kept, noun, limit)
-    or  string.format("\n\n[%d %s]", #kept, noun)
-  return table.concat(kept, "\n") .. suffix
-end
+-- Pure helpers live in lua/remap.lua so tests exercise the same code the
+-- plugin runs, not a copy.
+local remap_path = remap.remap_path
+local sq = remap.sq
+local truncate_lines = remap.truncate_lines
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Tool handlers

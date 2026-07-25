@@ -1,24 +1,16 @@
--- Unit tests for path remapping logic
+-- Unit tests for path remapping and shell quoting.
 -- Run with: cru plugin test runtime/plugins/oci
+--
+-- Requires the real module. The previous version of this file declared its
+-- own copies of remap_path and sq, so it passed no matter how broken the
+-- plugin was — a green badge over dead code.
 
--- Extract remap_path from init.lua by loading it directly
--- Since remap_path is local, we test it via a standalone copy
+local remap = require("remap")
+local remap_path = remap.remap_path
+local sq = remap.sq
+local truncate_lines = remap.truncate_lines
 
-local function remap_path(workspace_host, path)
-  if not path then return "/workspace" end
-  if path:sub(1, #workspace_host) == workspace_host then
-    local suffix = path:sub(#workspace_host + 1)
-    if suffix == "" or suffix == "/" then return "/workspace" end
-    if suffix:sub(1, 1) == "/" then suffix = suffix:sub(2) end
-    return "/workspace/" .. suffix
-  elseif path:sub(1, 1) == "/" then
-    return path
-  else
-    return "/workspace/" .. path
-  end
-end
-
-describe("remap_path", function()
+describe("remap.remap_path", function()
   it("remaps absolute host path to container path", function()
     assert.equals(
       "/workspace/src/main.rs",
@@ -69,16 +61,24 @@ describe("remap_path", function()
   end)
 end)
 
-local function sq(s)
-  return s:gsub("'", "'\\''")
-end
-
-describe("sq (shell quote)", function()
+describe("remap.sq (shell quote)", function()
   it("escapes single quotes", function()
     assert.equals("it'\\''s", sq("it's"))
   end)
 
   it("leaves clean strings unchanged", function()
     assert.equals("hello", sq("hello"))
+  end)
+end)
+
+describe("remap.truncate_lines", function()
+  it("keeps everything under the limit with a count footer", function()
+    local out = truncate_lines({ "a", "b" }, 10, "files")
+    assert.equals("a\nb\n\n[2 files]", out)
+  end)
+
+  it("truncates over the limit and says so", function()
+    local out = truncate_lines({ "a", "b", "c" }, 2, "matches")
+    assert.equals("a\nb\n\n[2 matches, truncated at 2]", out)
   end)
 end)

@@ -480,21 +480,35 @@ pub(crate) async fn handle_lua_run_plugin_tests(req: Request) -> Response {
         Err(e) => return internal_error(req.id, e),
     };
 
-    // Set package.path to include the plugin root
+    // Mirror the runtime plugin loader's package.path EXACTLY. The loader
+    // gives a plugin `<plugins_parent>/?.lua`, `<plugins_parent>/?/init.lua`
+    // (configure_runtime_path) and `<plugin_dir>/lua/?.lua` (execute_plugin) —
+    // nothing else. The harness previously also granted `<plugin_dir>/?.lua`,
+    // under which `require("lua.container")` resolved in tests while failing
+    // in the daemon: a suite could be green against a plugin that could not
+    // load. Tests load their plugin the way the runtime does:
+    // `require("<plugin-name>")` via the parent's `?/init.lua` entry.
     let plugin_root = test_path
         .canonicalize()
         .unwrap_or_else(|_| test_path.clone());
+    let plugin_root = if plugin_root.is_file() {
+        plugin_root
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or(plugin_root)
+    } else {
+        plugin_root
+    };
     let plugin_root_str = plugin_root.to_string_lossy();
     if let Err(e) = executor
         .lua()
         .load(format!(
             r#"
 local plugin_root = {plugin_root_str:?}
+local plugin_parent = plugin_root:match("^(.*)/[^/]+$") or plugin_root
 local entries = {{
-    plugin_root .. "/?.lua",
-    plugin_root .. "/?/init.lua",
-    -- Mirror the runtime plugin loader: sibling modules live in lua/, so
-    -- `require("config")` from init.lua must resolve there in tests too.
+    plugin_parent .. "/?.lua",
+    plugin_parent .. "/?/init.lua",
     plugin_root .. "/lua/?.lua",
 }}
 for _, entry in ipairs(entries) do
@@ -989,5 +1003,41 @@ mod plugin_test_diagnostics_tests {
             details[0]["error"].as_str().is_some_and(|e| !e.is_empty()),
             "load failure must say why: {result:#}"
         );
+    }
+
+    // The oci suite loads the real init.lua (its tests/init_test.lua stubs the
+    // crucible.* surface and requires the plugin entry point), so this fails if
+    // the plugin stops loading — unlike the earlier suite, which tested
+    // hand-copied duplicates of the plugin's functions and stayed green while
+    // the plugin itself was broken.
+    #[test]
+    fn oci_plugin_lua_tests_pass() {
+        let plugin_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/plugins/oci");
+        let result = run_plugin_tests(plugin_dir);
+
+        let passed = result["passed"].as_u64().unwrap_or(0);
+        let failed = result["failed"].as_u64().unwrap_or(u64::MAX);
+        let load_failures = result["load_failures"].as_u64().unwrap_or(u64::MAX);
+
+        assert_eq!(load_failures, 0, "test files should load: {result:?}");
+        assert_eq!(failed, 0, "no Lua test should fail: {result:?}");
+        assert!(passed > 0, "expected passing assertions: {result:?}");
+    }
+
+    #[test]
+    fn kiln_expert_plugin_lua_tests_pass() {
+        let plugin_dir = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../runtime/plugins/kiln-expert"
+        );
+        let result = run_plugin_tests(plugin_dir);
+
+        let passed = result["passed"].as_u64().unwrap_or(0);
+        let failed = result["failed"].as_u64().unwrap_or(u64::MAX);
+        let load_failures = result["load_failures"].as_u64().unwrap_or(u64::MAX);
+
+        assert_eq!(load_failures, 0, "test files should load: {result:?}");
+        assert_eq!(failed, 0, "no Lua test should fail: {result:?}");
+        assert!(passed > 0, "expected passing assertions: {result:?}");
     }
 }

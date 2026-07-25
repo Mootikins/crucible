@@ -13,18 +13,21 @@ M.CANDIDATES = { "podman", "docker", "nerdctl" }
 ---
 --- Returns `runtime`, or `nil, reason`. The reason names everything tried:
 --- "no container runtime" is unactionable, "tried podman, docker, nerdctl" is.
+---
+--- Probes with `cru.shell.which` — a PATH lookup, no subprocess. Running
+--- `--version` was considered and proves little more: `docker --version`
+--- succeeds with no daemon running, so a which-hit that can't actually serve
+--- fails at container start with a real error either way.
 function M.detect(configured)
   if configured and configured ~= "" then
-    local probe = cru.shell.exec(configured, { "--version" })
-    if probe and probe.success then
+    if cru.shell.which(configured) then
       return configured
     end
-    return nil, string.format("configured runtime '%s' is not usable", configured)
+    return nil, string.format("configured runtime '%s' is not installed", configured)
   end
 
   for _, candidate in ipairs(M.CANDIDATES) do
-    local probe = cru.shell.exec(candidate, { "--version" })
-    if probe and probe.success then
+    if cru.shell.which(candidate) then
       return candidate
     end
   end
@@ -74,8 +77,9 @@ function M.host_ids()
   return uid, gid
 end
 
---- Create and start a container with the sleep infinity sidecar pattern.
-function M.run(runtime, opts)
+--- The argv for `run`, as a pure function so tests can assert on it without
+--- a runtime present. `run` is exactly `exec(runtime, run_args(opts))`.
+function M.run_args(opts)
   local args = {
     "run", "-d",
     "--name", opts.name,
@@ -112,8 +116,12 @@ function M.run(runtime, opts)
   table.insert(args, opts.image)
   table.insert(args, "sleep")
   table.insert(args, "infinity")
+  return args
+end
 
-  return cru.shell.exec(runtime, args, { timeout = 300 })
+--- Create and start a container with the sleep infinity sidecar pattern.
+function M.run(runtime, opts)
+  return cru.shell.exec(runtime, M.run_args(opts), { timeout = 300 })
 end
 
 --- Build an image from a Dockerfile.
