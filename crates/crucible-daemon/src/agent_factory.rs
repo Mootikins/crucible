@@ -106,12 +106,17 @@ pub(crate) fn build_internal_delegation_context(
     })
 }
 
-/// Build the internal agent's tool definitions and the set of names eligible
-/// for progressive disclosure. Core tools (kiln MCP + workspace) are never
-/// deferrable; the deferrable set is exactly the gateway (user MCP) tool names.
+/// Build the internal agent's tool definitions plus two name sets: the tools
+/// eligible for progressive disclosure (exactly the gateway/user-MCP names —
+/// core kiln + workspace tools are never deferrable), and the plugin-declared
+/// tool names (for the per-request plan-mode filter and dispatch guard).
 async fn create_internal_mcp_tool_defs(
     params: CreateInternalMcpToolDefsParams<'_>,
-) -> (Vec<LlmToolDefinition>, std::collections::HashSet<String>) {
+) -> (
+    Vec<LlmToolDefinition>,
+    std::collections::HashSet<String>,
+    std::collections::HashSet<String>,
+) {
     let CreateInternalMcpToolDefsParams {
         workspace,
         kiln_path,
@@ -190,13 +195,20 @@ async fn create_internal_mcp_tool_defs(
     // Plugin-declared tools. Never deferrable: there are few of them and the
     // progressive-disclosure bridge exists to keep large gateway catalogs out
     // of the prompt, not to hide the handful a user installed on purpose.
-    // Plan mode still excludes them — plan mode is an allowlist, and a plugin
-    // tool's side effects are unknown to us.
+    //
+    // Attached in every mode; plan-mode exclusion happens per-request in
+    // `visible_tools()` (and at dispatch), keyed by the names returned here.
+    // Excluding them at creation looked equivalent but wasn't: mode is
+    // captured when the agent is built, so a session switched to plan mid-run
+    // kept its plugin tools advertised and dispatchable — plan mode is an
+    // allowlist, and a plugin tool's side effects are unknown to us.
+    let mut plugin_tool_names = std::collections::HashSet::new();
     if let Some(registry) = plugin_tools {
         for def in registry.tool_definitions() {
-            if mode == "plan" || denied(&def.name) {
+            if denied(&def.name) {
                 continue;
             }
+            plugin_tool_names.insert(def.name.clone());
             tool_defs.push(LlmToolDefinition::new(
                 def.name,
                 def.description,
@@ -249,7 +261,7 @@ async fn create_internal_mcp_tool_defs(
         .map(|t| t.function.name.clone())
         .collect();
     tool_defs.extend(user_mcp_tools);
-    (tool_defs, deferrable_names)
+    (tool_defs, deferrable_names, plugin_tool_names)
 }
 
 fn is_plan_mode_tool(name: &str) -> bool {
@@ -269,20 +281,21 @@ async fn create_internal_mcp_tool_names_for_tests(
     mode: &str,
     gateway_all_tools_override: Option<&[McpToolInfo]>,
 ) -> Vec<String> {
-    let (tools, _deferrable) = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
-        workspace,
-        kiln_path,
-        mcp_gateway,
-        server_names,
-        knowledge_repo,
-        embedding_provider,
-        delegation_context,
-        mode,
-        gateway_all_tools_override,
-        tool_policy: None,
-        plugin_tools: None,
-    })
-    .await;
+    let (tools, _deferrable, _plugin_names) =
+        create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+            workspace,
+            kiln_path,
+            mcp_gateway,
+            server_names,
+            knowledge_repo,
+            embedding_provider,
+            delegation_context,
+            mode,
+            gateway_all_tools_override,
+            tool_policy: None,
+            plugin_tools: None,
+        })
+        .await;
     tools.into_iter().map(|t| t.function.name).collect()
 }
 
@@ -544,7 +557,7 @@ pub async fn create_agent_from_session_config(
         workspace,
         kiln_path,
     );
-    let (tool_defs, deferrable_tool_names) =
+    let (tool_defs, deferrable_tool_names, plugin_tool_names) =
         create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
             workspace,
             kiln_path,
@@ -595,7 +608,8 @@ pub async fn create_agent_from_session_config(
         agent_config.thinking_budget,
         workspace.to_path_buf(),
     )
-    .with_deferrable_tools(deferrable_tool_names);
+    .with_deferrable_tools(deferrable_tool_names)
+    .with_plugin_tools(plugin_tool_names);
 
     info!(
         provider = %agent_config.provider,
@@ -822,20 +836,21 @@ mod tests {
         let gateway = Arc::new(RwLock::new(
             crate::tools::mcp_gateway::McpGatewayManager::new(),
         ));
-        let (defs, deferrable) = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
-            workspace: Path::new("/tmp"),
-            kiln_path: Some(Path::new("/tmp")),
-            mcp_gateway: Some(gateway),
-            server_names: &["gh".to_string()],
-            knowledge_repo: None,
-            embedding_provider: None,
-            delegation_context: None,
-            mode: "auto",
-            gateway_all_tools_override: Some(&gateway_tools),
-            tool_policy: None,
-            plugin_tools: None,
-        })
-        .await;
+        let (defs, deferrable, _plugin_names) =
+            create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+                workspace: Path::new("/tmp"),
+                kiln_path: Some(Path::new("/tmp")),
+                mcp_gateway: Some(gateway),
+                server_names: &["gh".to_string()],
+                knowledge_repo: None,
+                embedding_provider: None,
+                delegation_context: None,
+                mode: "auto",
+                gateway_all_tools_override: Some(&gateway_tools),
+                tool_policy: None,
+                plugin_tools: None,
+            })
+            .await;
         assert_eq!(deferrable.len(), 12, "all gateway tools are deferrable");
 
         let config = LlmProviderConfig::builder(BackendType::OpenAI)
@@ -1097,20 +1112,21 @@ mod tests {
         let knowledge_repo: Arc<dyn KnowledgeRepository> = Arc::new(EmptyKnowledgeRepository);
         let embedding_provider: Arc<dyn EmbeddingProvider> = Arc::new(EmptyEmbeddingProvider);
 
-        let (tools, _deferrable) = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
-            workspace: Path::new("/tmp"),
-            kiln_path: Some(kiln_path),
-            mcp_gateway: None,
-            server_names: &[],
-            knowledge_repo: Some(knowledge_repo),
-            embedding_provider: Some(embedding_provider),
-            delegation_context: None,
-            mode: "auto",
-            gateway_all_tools_override: None,
-            tool_policy: None,
-            plugin_tools: None,
-        })
-        .await;
+        let (tools, _deferrable, _plugin_names) =
+            create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+                workspace: Path::new("/tmp"),
+                kiln_path: Some(kiln_path),
+                mcp_gateway: None,
+                server_names: &[],
+                knowledge_repo: Some(knowledge_repo),
+                embedding_provider: Some(embedding_provider),
+                delegation_context: None,
+                mode: "auto",
+                gateway_all_tools_override: None,
+                tool_policy: None,
+                plugin_tools: None,
+            })
+            .await;
 
         let get_kiln_info_tool = tools
             .iter()
@@ -1155,20 +1171,21 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
         let (_lua, registry) = registry_with_one_plugin_tool();
 
-        let (tools, deferrable) = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
-            workspace: Path::new("/tmp"),
-            kiln_path: Some(temp_dir.path()),
-            mcp_gateway: None,
-            server_names: &[],
-            knowledge_repo: None,
-            embedding_provider: None,
-            delegation_context: None,
-            mode: "auto",
-            gateway_all_tools_override: None,
-            tool_policy: None,
-            plugin_tools: Some(registry),
-        })
-        .await;
+        let (tools, deferrable, _plugin_names) =
+            create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+                workspace: Path::new("/tmp"),
+                kiln_path: Some(temp_dir.path()),
+                mcp_gateway: None,
+                server_names: &[],
+                knowledge_repo: None,
+                embedding_provider: None,
+                delegation_context: None,
+                mode: "auto",
+                gateway_all_tools_override: None,
+                tool_policy: None,
+                plugin_tools: Some(registry),
+            })
+            .await;
 
         let echo = tools
             .iter()
@@ -1190,29 +1207,40 @@ mod tests {
         );
     }
 
+    /// Plugin defs are attached in EVERY mode and their names returned, so
+    /// the per-request filter (`visible_tools`) and the dispatch guard own
+    /// plan-mode exclusion. Skipping them at creation looked equivalent but
+    /// wasn't: mode is captured when the agent is built, so a session
+    /// switched to plan mid-run kept its plugin tools advertised — and one
+    /// created in plan could never gain them back in act.
     #[tokio::test]
-    async fn plugin_tools_are_withheld_in_plan_mode() {
+    async fn plugin_tools_are_attached_in_plan_mode_and_reported_for_filtering() {
         let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
         let (_lua, registry) = registry_with_one_plugin_tool();
 
-        let (tools, _deferrable) = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
-            workspace: Path::new("/tmp"),
-            kiln_path: Some(temp_dir.path()),
-            mcp_gateway: None,
-            server_names: &[],
-            knowledge_repo: None,
-            embedding_provider: None,
-            delegation_context: None,
-            mode: "plan",
-            gateway_all_tools_override: None,
-            tool_policy: None,
-            plugin_tools: Some(registry),
-        })
-        .await;
+        let (tools, _deferrable, plugin_names) =
+            create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+                workspace: Path::new("/tmp"),
+                kiln_path: Some(temp_dir.path()),
+                mcp_gateway: None,
+                server_names: &[],
+                knowledge_repo: None,
+                embedding_provider: None,
+                delegation_context: None,
+                mode: "plan",
+                gateway_all_tools_override: None,
+                tool_policy: None,
+                plugin_tools: Some(registry),
+            })
+            .await;
 
         assert!(
-            !tools.iter().any(|t| t.function.name == "plugin_echo"),
-            "plan mode is an allowlist; a plugin tool's side effects are unknown"
+            tools.iter().any(|t| t.function.name == "plugin_echo"),
+            "plugin defs attach in every mode; visible_tools() filters per request"
+        );
+        assert!(
+            plugin_names.contains("plugin_echo"),
+            "the name set is what lets the runtime filter and dispatch guard act"
         );
     }
 
@@ -1224,20 +1252,21 @@ mod tests {
         let knowledge_repo: Arc<dyn KnowledgeRepository> = Arc::new(EmptyKnowledgeRepository);
         let embedding_provider: Arc<dyn EmbeddingProvider> = Arc::new(EmptyEmbeddingProvider);
 
-        let (tools, _deferrable) = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
-            workspace: Path::new("/tmp"),
-            kiln_path: Some(kiln_path),
-            mcp_gateway: None,
-            server_names: &[],
-            knowledge_repo: Some(knowledge_repo),
-            embedding_provider: Some(embedding_provider),
-            delegation_context: None,
-            mode: "auto",
-            gateway_all_tools_override: None,
-            tool_policy: None,
-            plugin_tools: None,
-        })
-        .await;
+        let (tools, _deferrable, _plugin_names) =
+            create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+                workspace: Path::new("/tmp"),
+                kiln_path: Some(kiln_path),
+                mcp_gateway: None,
+                server_names: &[],
+                knowledge_repo: Some(knowledge_repo),
+                embedding_provider: Some(embedding_provider),
+                delegation_context: None,
+                mode: "auto",
+                gateway_all_tools_override: None,
+                tool_policy: None,
+                plugin_tools: None,
+            })
+            .await;
 
         let tool_names: Vec<String> = tools.iter().map(|t| t.function.name.clone()).collect();
 

@@ -197,6 +197,13 @@ impl AgentManager {
         // path can enforce plan-mode restrictions on unwrapped invoke_tool
         // calls without reaching back into the agent handle.
         let session_mode = agent.lock().await.get_mode_id().to_string();
+        // Snapshot the plugin tool names for the plan-mode dispatch guard —
+        // resolved per turn, so tools from a plugin loaded mid-session are
+        // still covered.
+        let plugin_tool_names = match self.plugin_registry().await {
+            Some(registry) => registry.tool_names(),
+            None => Default::default(),
+        };
         let stream_ctx = StreamContext {
             session_id: session_id_owned.clone(),
             message_id: message_id.clone(),
@@ -216,6 +223,7 @@ impl AgentManager {
                     plugin_lua,
                     self.plugin_handlers(),
                     self.isolation(),
+                    plugin_tool_names,
                 )
             },
             tool_dispatcher: self.get_or_create_session_dispatcher(&session).await,

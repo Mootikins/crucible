@@ -188,6 +188,30 @@ impl AgentManager {
             .clone()
             .unwrap_or(serde_json::Value::Null);
 
+        // Plan mode excludes plugin tools categorically — their side effects
+        // are unknown, so the write-name blocklist cannot classify them.
+        // Enforced here (not only in the advertised tool set) because the
+        // dispatcher always contains them and the mode can change mid-run:
+        // before this guard, a session switched to plan kept every plugin
+        // tool dispatchable. Before the hook loop, so a plugin cannot
+        // "handle" its own tool around the ban.
+        if stream_ctx.session_mode == "plan"
+            && stream_ctx
+                .agent_stream_config
+                .plugin_tool_names
+                .contains(&tool_call.name)
+        {
+            return deny_tool_call(
+                stream_ctx,
+                &call_id,
+                &tool_call.name,
+                format!(
+                    "Tool '{}' is a plugin tool and not available in plan mode",
+                    tool_call.name
+                ),
+            );
+        }
+
         {
             let mut state = stream_ctx.session_state.lock().await;
             let pre_tool_event = SessionEvent::internal(InternalSessionEvent::PreToolCall {

@@ -214,6 +214,13 @@ impl PluginRegistry {
         }
     }
 
+    /// Names of every registered plugin tool. Feeds the plan-mode filter and
+    /// dispatch guard, which exclude plugin tools categorically in plan.
+    pub fn tool_names(&self) -> std::collections::HashSet<String> {
+        let tools = self.tools.read().expect("plugin tools lock poisoned");
+        tools.keys().cloned().collect()
+    }
+
     /// Tool definitions for every registered plugin tool, sorted by name so the
     /// model-facing tool list is stable across daemon restarts.
     pub fn tool_definitions(&self) -> Vec<ToolDefinition> {

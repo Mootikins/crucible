@@ -369,6 +369,10 @@ pub struct GenaiAgentHandle {
     /// and workspace tools are never deferrable. Empty means the handle
     /// never defers, regardless of schema size.
     deferrable_tool_names: std::collections::HashSet<String>,
+    /// Plugin-declared tool names among `tools`. Plan mode excludes these
+    /// per-request — the write-name blocklist cannot classify a plugin
+    /// tool's side effects, so plan fails closed on all of them.
+    plugin_tool_names: std::collections::HashSet<String>,
 }
 
 /// The tool set attached to a single request, plus how many tools were
@@ -741,6 +745,7 @@ impl GenaiAgentHandle {
             autocompact_threshold: None,
             workspace_root,
             deferrable_tool_names: std::collections::HashSet::new(),
+            plugin_tool_names: std::collections::HashSet::new(),
         }
     }
 
@@ -753,6 +758,16 @@ impl GenaiAgentHandle {
         self
     }
 
+    /// Declare which attached tools are plugin-declared. Plan mode excludes
+    /// them categorically — their side effects are unknown, so the write-name
+    /// blocklist cannot classify them — and per-request, so a session
+    /// switched to plan mid-run stops advertising them (the mode captured at
+    /// creation used to be the only filter).
+    pub fn with_plugin_tools(mut self, names: std::collections::HashSet<String>) -> Self {
+        self.plugin_tool_names = names;
+        self
+    }
+
     /// Compute the tool set for a single request: apply the plan-mode filter,
     /// then — if a deferrable set is present and the mode-filtered schemas
     /// exceed the budget share — drop the deferrable defs and append the
@@ -761,13 +776,18 @@ impl GenaiAgentHandle {
     fn visible_tools(&self) -> VisibleToolSet {
         let in_plan = self.current_mode_id == "plan";
 
-        // Native attach candidates after the plan-mode write blocklist. This
-        // set still contains gateway tools; the budget trigger is computed over
-        // it so a large upstream tool set forces deferral even in plan mode.
+        // Native attach candidates after the plan-mode filter: the write-name
+        // blocklist for built-ins, plus every plugin tool (unknown side
+        // effects — plan mode fails closed on them). This set still contains
+        // gateway tools; the budget trigger is computed over it so a large
+        // upstream tool set forces deferral even in plan mode.
         let write_filtered: Vec<LlmToolDefinition> = if in_plan {
             self.tools
                 .iter()
-                .filter(|t| !is_write_tool_name(&t.function.name))
+                .filter(|t| {
+                    !is_write_tool_name(&t.function.name)
+                        && !self.plugin_tool_names.contains(&t.function.name)
+                })
                 .cloned()
                 .collect()
         } else {
@@ -1864,6 +1884,41 @@ mod tests {
 
     fn visible_names(set: &VisibleToolSet) -> Vec<String> {
         set.tools.iter().map(|t| t.function.name.clone()).collect()
+    }
+
+    /// M9 regression: mode is captured at agent creation, so plan-mode
+    /// exclusion of plugin tools must be per-request. The write-name
+    /// blocklist can't classify a plugin tool — before the plugin-name set,
+    /// a session switched to plan mid-run kept plugin tools advertised.
+    #[tokio::test]
+    async fn switching_to_plan_mid_run_hides_plugin_tools() {
+        let tools = vec![tool_def("read_file"), tool_def("my_plugin_tool")];
+        let plugin_names: std::collections::HashSet<String> = ["my_plugin_tool".to_string()].into();
+        let mut handle = test_handle_with_tools(tools).with_plugin_tools(plugin_names);
+
+        let (act_names, _) = handle.visible_tool_names_for_test();
+        assert!(
+            act_names.iter().any(|n| n == "my_plugin_tool"),
+            "plugin tools are visible outside plan mode"
+        );
+
+        handle.set_mode_str("plan").await.unwrap();
+        let (plan_names, _) = handle.visible_tool_names_for_test();
+        assert!(
+            !plan_names.iter().any(|n| n == "my_plugin_tool"),
+            "a mid-run switch to plan must stop advertising plugin tools"
+        );
+        assert!(
+            plan_names.iter().any(|n| n == "read_file"),
+            "read-only built-ins stay visible in plan"
+        );
+
+        handle.set_mode_str("normal").await.unwrap();
+        let (back_names, _) = handle.visible_tool_names_for_test();
+        assert!(
+            back_names.iter().any(|n| n == "my_plugin_tool"),
+            "leaving plan restores plugin tools — they are attached, only filtered"
+        );
     }
 
     #[test]

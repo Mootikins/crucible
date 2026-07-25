@@ -481,6 +481,10 @@ struct AgentStreamConfig {
     /// Sessions a plugin claimed isolation for. When set and the session is
     /// claimed, a host-touching tool that no handler took over is refused.
     isolation: Option<crucible_lua::IsolationRegistry>,
+    /// Plugin-declared tool names, for the plan-mode dispatch guard: the
+    /// dispatcher always contains plugin tools and the mode can change
+    /// mid-run, so plan must deny them at dispatch, not only at creation.
+    plugin_tool_names: std::collections::HashSet<String>,
 }
 
 impl AgentStreamConfig {
@@ -490,6 +494,7 @@ impl AgentStreamConfig {
         plugin_lua: Option<Arc<Lua>>,
         plugin_handlers: Option<(Arc<LuaScriptHandlerRegistry>, Arc<Lua>)>,
         isolation: Option<crucible_lua::IsolationRegistry>,
+        plugin_tool_names: std::collections::HashSet<String>,
     ) -> Self {
         Self {
             model: session_agent.model.clone(),
@@ -512,6 +517,7 @@ impl AgentStreamConfig {
             plugin_lua,
             plugin_handlers,
             isolation,
+            plugin_tool_names,
         }
     }
 }
