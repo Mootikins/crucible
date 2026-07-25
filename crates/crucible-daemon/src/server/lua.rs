@@ -576,11 +576,16 @@ end
             }
         };
 
-        let chunk_name = file.to_string_lossy();
+        // `@` marks the chunk name as a file path. Without it Lua treats the
+        // name as literal source text and renders every location as
+        // `[string "/path/to/foo_test.lua"]:3:` instead of
+        // `/path/to/foo_test.lua:3:` — which is both noisier to read and not a
+        // path a caller can use.
+        let chunk_name = format!("@{}", file.to_string_lossy());
         if let Err(e) = executor
             .lua()
             .load(&file_contents)
-            .set_name(chunk_name.as_ref())
+            .set_name(chunk_name.as_str())
             .exec()
         {
             note_load_failure(file, crucible_lua::format_lua_error(None, &e));
