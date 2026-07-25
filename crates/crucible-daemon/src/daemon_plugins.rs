@@ -41,6 +41,11 @@ pub struct DaemonPluginLoader {
     /// a `RegistryKey` into this map; the agent stream loop dispatches
     /// validations by name without re-entering Lua's globals table.
     validator_registry: Arc<LuaValidatorRegistry>,
+    /// `[plugins.*]` sections from config.toml, keyed by plugin name.
+    ///
+    /// Also exposed to Lua as `crucible.config.get("<plugin>.<key>")`; kept
+    /// here so each plugin's section can be handed to its `setup()` at load.
+    plugin_config: HashMap<String, serde_json::Value>,
 }
 
 impl DaemonPluginLoader {
@@ -81,7 +86,10 @@ impl DaemonPluginLoader {
         reg("sessions", register_sessions_module(lua))?;
         reg("tools", register_tools_module(lua))?;
         reg("schedule", register_schedule_module(lua))?;
-        reg("config", Self::register_plugin_config(lua, plugin_config))?;
+        reg(
+            "config",
+            Self::register_plugin_config(lua, plugin_config.clone()),
+        )?;
 
         let plugin_manager = PluginManager::new();
 
@@ -100,6 +108,7 @@ impl DaemonPluginLoader {
             loaded_specs: Vec::new(),
             service_fns: Vec::new(),
             validator_registry,
+            plugin_config,
         })
     }
 
@@ -372,7 +381,7 @@ impl DaemonPluginLoader {
         // Execute the plugin in the daemon's real Lua runtime using eval_async
         // so that async Lua functions (gateway.connect, etc.) can yield.
         // Also extract service Function refs from the returned spec table.
-        match self.execute_plugin(&main_path).await {
+        match self.execute_plugin(name, &main_path).await {
             Ok(services) => {
                 for (svc_name, func) in services {
                     debug!(
@@ -399,10 +408,14 @@ impl DaemonPluginLoader {
     /// to files in the plugin's `lua/` directory, then evaluates the init file
     /// using `eval_async` to enable async Lua function yielding.
     ///
+    /// Calls the returned spec's `setup(cfg)` with this plugin's
+    /// `[plugins.<name>]` section — the documented configuration mechanism.
+    ///
     /// Returns extracted service `(name, Function)` pairs from the returned
     /// spec table's `services` field.
     async fn execute_plugin(
         &self,
+        name: &str,
         init_path: &std::path::Path,
     ) -> anyhow::Result<Vec<(String, mlua::Function)>> {
         let lua = self.executor.lua();
@@ -421,6 +434,11 @@ impl DaemonPluginLoader {
             .exec()
             .map_err(|e| anyhow::anyhow!("package.path setup: {e}"))?;
 
+        // All plugins share one Lua VM, so `package.loaded` is shared too.
+        // Several plugins ship a module named `config`; without this, the
+        // second one to load silently gets the first one's module.
+        self.clear_plugin_lua_cache(&lua_dir)?;
+
         // Execute init.lua with eval_async — captures return value AND enables async Lua
         let source = std::fs::read_to_string(init_path)
             .map_err(|e| anyhow::anyhow!("read {}: {e}", init_path.display()))?;
@@ -431,9 +449,11 @@ impl DaemonPluginLoader {
             .await
             .map_err(|e| anyhow::anyhow!("exec {}: {e}", init_path.display()))?;
 
-        // Extract service functions from the returned spec table
         let mut services = Vec::new();
         if let mlua::Value::Table(spec) = return_val {
+            self.call_plugin_setup(name, &spec).await?;
+
+            // Extract service functions from the returned spec table
             if let Ok(svc_table) = spec.get::<mlua::Table>("services") {
                 for (name, entry) in svc_table.pairs::<String, mlua::Table>().flatten() {
                     if let Ok(func) = entry.get::<mlua::Function>("fn") {
@@ -446,21 +466,43 @@ impl DaemonPluginLoader {
         info!("Executed plugin in daemon runtime: {}", init_path.display());
         Ok(services)
     }
-    /// Reload a plugin: clear its Lua module cache, unload registrations,
-    /// re-execute `init.lua`, and re-extract service functions.
-    pub async fn reload_plugin(&mut self, name: &str) -> anyhow::Result<PluginSpec> {
-        let plugin = self
-            .plugin_manager
+
+    /// Hand `[plugins.<name>]` to the plugin's `setup(cfg)`, if it declares one.
+    ///
+    /// Always passes a table — plugins treat `setup()` as their activation
+    /// point, so an absent config section must not mean "never configured".
+    async fn call_plugin_setup(&self, name: &str, spec: &mlua::Table) -> anyhow::Result<()> {
+        let Ok(setup) = spec.get::<mlua::Function>("setup") else {
+            return Ok(());
+        };
+
+        let cfg = self
+            .plugin_config
             .get(name)
-            .ok_or_else(|| anyhow::anyhow!("plugin '{}' not found", name))?;
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+        let cfg = self
+            .executor
+            .lua()
+            .to_value(&cfg)
+            .map_err(|e| anyhow::anyhow!("setup config for '{name}': {e}"))?;
 
-        let main_path = plugin.main_path();
-        let plugin_dir = main_path
-            .parent()
-            .ok_or_else(|| anyhow::anyhow!("plugin main path has no parent"))?;
-        let lua_dir = plugin_dir.join("lua");
+        setup
+            .call_async::<()>(cfg)
+            .await
+            .map_err(|e| anyhow::anyhow!("setup() for '{name}': {e}"))?;
 
-        self.clear_plugin_lua_cache(&lua_dir)?;
+        debug!("Called setup() for plugin '{}'", name);
+        Ok(())
+    }
+
+    /// Reload a plugin: unload registrations, re-execute `init.lua`, and
+    /// re-extract service functions. `execute_plugin` clears the plugin's
+    /// `package.loaded` entries so its `lua/` modules are re-required.
+    pub async fn reload_plugin(&mut self, name: &str) -> anyhow::Result<PluginSpec> {
+        if self.plugin_manager.get(name).is_none() {
+            anyhow::bail!("plugin '{}' not found", name);
+        }
 
         self.plugin_manager
             .unload(name)

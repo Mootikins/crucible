@@ -107,6 +107,15 @@ function assert.is_nil(val)
     end
 end
 
+function assert.is_not_nil(val)
+    if val == nil then
+        error("Expected a non-nil value, got: nil", 2)
+    end
+end
+
+-- `oci`'s suite spells it `equals`; alias rather than rewrite every call site.
+assert.equals = assert.equal
+
 function assert.is_string(val)
     if type(val) ~= "string" then
         error(string.format("Expected string, got: %s", type(val)), 2)
