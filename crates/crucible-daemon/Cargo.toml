@@ -29,8 +29,8 @@ tokio-util = { version = "0.7", features = ["rt", "compat"] }
 crucible-core = { path = "../crucible-core", features = ["test-utils"] }
 
 lancedb = { version = "0.31.0", default-features = false }
-arrow-array = "58"
-arrow-schema = "58"
+arrow-array = "59"
+arrow-schema = "59"
 
 crucible-lua = { path = "../crucible-lua", features = ["send"] }
 genai = "0.6"
@@ -40,7 +40,7 @@ async-stream = "0.3"
 # explicitly-unstable ACP feature — real claude-agent-acp implements it as
 # `unstable_setSessionModel`. Re-verify model switching when bumping this crate.
 agent-client-protocol = { version = "0.10.4", features = ["unstable_session_model"] }
-gix = { version = "0.85", default-features = false, features = ["blocking-network-client", "sha1"] }
+gix = { version = "0.86", default-features = false, features = ["blocking-network-client", "sha1"] }
 mlua = { workspace = true }
 notify = { workspace = true }
 notify-debouncer-full = { workspace = true }
