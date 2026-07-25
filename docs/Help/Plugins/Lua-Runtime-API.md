@@ -139,6 +139,8 @@ end
   - `cwd` (string) — working directory
   - `env` (table) — additional environment variables as key/value pairs
   - `stdin` (string) — data to pipe to the process's stdin
+  - `timeout` (number) — seconds to wait for this call, overriding the policy
+    default. Capped at 3600.
 
 **Returns a table:**
 - `success` (bool) — `true` if exit code was 0
@@ -146,7 +148,7 @@ end
 - `stdout` (string)
 - `stderr` (string)
 
-Default timeout is 30 seconds; plugins running trusted commands can be granted a longer 300-second policy.
+Default timeout is 30 seconds; plugins running trusted commands can be granted a longer 300-second policy. Pass `timeout` per call for the ones that legitimately run for minutes — pulling or building a container image, say — rather than raising the default for every caller.
 
 ### cru.shell.which(cmd)
 

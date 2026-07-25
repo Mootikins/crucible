@@ -54,6 +54,12 @@ Event fields:
 - `event.type` — the event name, `"pre_tool_call"` (string)
 - `event.tool` — tool name (string)
 - `event.args` — tool arguments (table)
+- `event.session_id` — the session the call belongs to (string)
+
+`event.session_id` is not decoration. Plugin handlers are registered once, into
+one Lua state shared by every session in the daemon, so a handler holding
+per-session state must key it by this — see `runtime/plugins/oci/init.lua`,
+which looks up the session's container with it.
 
 Handlers receive one flat table. There is no `event.payload` envelope — it used
 to leak through from the internal Rust event type, and `event.name` meant the
@@ -138,6 +144,13 @@ crucible.on_session_start(function(session)
 end)
 ```
 
+The `session` argument exposes:
+- `session.id` — session id (string, read-only)
+- `session.workspace` — the session's working directory, or nil (string, read-only)
+
+Handlers may call async APIs (`cru.shell.exec`, `cru.http`, ...) — lifecycle
+hooks run inside the daemon's async runtime.
+
 ### `crucible.on_tools_registered(fn)`
 
 Fires when tools from an MCP server or backend become available.
@@ -217,7 +230,7 @@ When multiple handlers fire for the same event, they run in ascending priority o
 
 ## Reference Plugin
 
-The `runtime/plugins/oci/init.lua` plugin is the canonical reference for production-grade hook use. It registers one `pre_tool_call` handler per tool (with `pattern` and priority 10), uses `{ handled = true, result = ... }` to redirect execution, and uses `on_session_start`/`on_session_end` for container lifecycle.
+The `runtime/plugins/oci/init.lua` plugin is the canonical reference for production-grade hook use. It registers one `pre_tool_call` handler per tool at load time (with `pattern` and priority 10), uses `{ handled = true, result = ... }` to redirect execution into a container, and uses `on_session_start`/`on_session_end` for container lifecycle — keying its per-session state on `event.session_id`, since the one registration serves every session.
 
 ## Best Practices
 
