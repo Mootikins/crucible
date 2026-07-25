@@ -1190,6 +1190,41 @@ mod tests {
         names
     }
 
+    /// Discovery alone proves nothing about a plugin's health — `oci` was
+    /// discovered `Active` for months while dying on its first `require`,
+    /// because `execute_plugin` errors were downgraded to a `warn!` on a
+    /// stdout auto-spawn points at /dev/null. This is the Phase-6 smoke:
+    /// every shipped plugin must load through the REAL loader and *execute* —
+    /// state `Active`, no `last_error`, and a spec extracted (proof its
+    /// `init.lua` ran to completion and returned its table).
+    #[tokio::test]
+    async fn every_shipped_plugin_executes() {
+        let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+        loader
+            .load_plugins(&[(shipped_plugins_dir(), PluginSource::Runtime)])
+            .await
+            .expect("load shipped plugins");
+
+        let info = loader.loaded_plugin_info();
+        for name in shipped_plugin_names() {
+            let entry = info
+                .iter()
+                .find(|p| p["name"].as_str() == Some(name.as_str()))
+                .unwrap_or_else(|| panic!("shipped plugin '{name}' missing from plugin info"));
+
+            assert_eq!(
+                entry["state"].as_str(),
+                Some("Active"),
+                "shipped plugin '{name}' did not reach Active: {entry:#}"
+            );
+            let last_error = entry["last_error"].as_str().unwrap_or("");
+            assert!(
+                last_error.is_empty(),
+                "shipped plugin '{name}' recorded an error: {last_error}"
+            );
+        }
+    }
+
     /// A shipped plugin whose manifest doesn't parse is not merely broken —
     /// it never enters `PluginManager::plugins` at all, so it is absent from
     /// `plugin.list` with no error anywhere but the daemon log.

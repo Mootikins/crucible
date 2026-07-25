@@ -153,6 +153,22 @@ end
             }
         };
 
+        // `.fnl` suites compile to Lua first — discovery has always accepted
+        // them, but they were loaded raw, so every Fennel test file counted
+        // as a load failure with a Lua parse error that never said why.
+        let is_fennel = file.extension().is_some_and(|e| e == "fnl");
+        let file_contents = if is_fennel {
+            match executor.compile_fennel_source(&file_contents) {
+                Ok(lua_source) => lua_source,
+                Err(e) => {
+                    note_load_failure(file, format!("fennel compile: {e}"));
+                    continue;
+                }
+            }
+        } else {
+            file_contents
+        };
+
         // `@` marks the chunk name as a file path. Without it Lua treats the
         // name as literal source text and renders every location as
         // `[string "/path/to/foo_test.lua"]:3:` instead of
@@ -381,6 +397,51 @@ mod plugin_test_diagnostics_tests {
             .block_on(super::handle_lua_run_plugin_tests(req));
         assert!(resp.error.is_none(), "handler errored: {:?}", resp.error);
         resp.result.expect("result present")
+    }
+
+    /// `.fnl` suites have always been *discovered*; until the compile step
+    /// they were loaded as raw Lua and every one counted as a load failure.
+    #[test]
+    fn a_fennel_test_file_compiles_and_runs() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(
+            tmp.path().join("arith_test.fnl"),
+            "(describe \"fennel math\" (fn []\n\
+               (it \"adds two numbers\" (fn []\n\
+                 (assert.equal 2 (+ 1 1))))))\n",
+        )
+        .unwrap();
+
+        let result = run(tmp.path());
+        assert_eq!(
+            result["load_failures"].as_u64(),
+            Some(0),
+            "fennel suite should compile, not fail to load: {result:#}"
+        );
+        assert_eq!(result["passed"].as_u64(), Some(1), "{result:#}");
+        assert_eq!(result["failed"].as_u64(), Some(0), "{result:#}");
+    }
+
+    /// A Fennel syntax error is reported as a compile failure naming the
+    /// file, not a baffling Lua parse error.
+    #[test]
+    fn a_broken_fennel_file_reports_a_compile_error() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(
+            tmp.path().join("broken_test.fnl"),
+            "(describe \"unclosed\"\n",
+        )
+        .unwrap();
+
+        let result = run(tmp.path());
+        assert_eq!(result["load_failures"].as_u64(), Some(1), "{result:#}");
+        let detail = &result["load_failure_details"][0];
+        assert!(
+            detail["error"]
+                .as_str()
+                .is_some_and(|e| e.contains("fennel compile")),
+            "failure should say it was a fennel compile error: {result:#}"
+        );
     }
 
     #[test]

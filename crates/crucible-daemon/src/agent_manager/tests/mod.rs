@@ -641,6 +641,18 @@ fn test_agent() -> SessionAgent {
     }
 }
 
+/// Manager-level fallback `WorkspaceTools` for tests, rooted in a per-run
+/// tempdir instead of a literal `/tmp`. The literal violated the project's
+/// own no-hardcoded-`/tmp` rule and shared one real directory across every
+/// test (and every *user*) on the machine — a test observing tool output
+/// could read another run's writes. Held in a static so the dir outlives
+/// every manager built from it; the OS reaps it with the rest of tempdir.
+fn test_workspace_tools() -> Arc<WorkspaceTools> {
+    static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    let dir = DIR.get_or_init(|| tempfile::tempdir().expect("test workspace tempdir"));
+    Arc::new(WorkspaceTools::new(dir.path().to_path_buf()))
+}
+
 fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
@@ -653,7 +665,7 @@ fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManag
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
+        workspace_tools: test_workspace_tools(),
     })
 }
 
@@ -672,7 +684,7 @@ fn create_test_agent_manager_with_providers(
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
+        workspace_tools: test_workspace_tools(),
     })
 }
 
@@ -695,7 +707,7 @@ fn create_test_agent_manager_with_enrichment(
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
+        workspace_tools: test_workspace_tools(),
     })
 }
 
@@ -714,7 +726,7 @@ fn create_test_agent_manager_with_llm_config(
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
+        workspace_tools: test_workspace_tools(),
     })
 }
 
@@ -814,7 +826,7 @@ fn create_test_agent_manager_with_both(
         acp_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
+        workspace_tools: test_workspace_tools(),
     })
 }
 

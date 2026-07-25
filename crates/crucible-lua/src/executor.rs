@@ -342,6 +342,34 @@ end
         self.execute_source(&source, is_fennel, args).await
     }
 
+    /// Compile Fennel source to Lua with this executor's compiler.
+    ///
+    /// Public so callers that `lua().load()` sources directly (the plugin
+    /// test runner) can handle `.fnl` files the same way `execute_source`
+    /// does — those files used to be discovered, loaded raw, and counted as
+    /// a load failure with a parse error that never said why.
+    pub fn compile_fennel_source(&self, source: &str) -> Result<String, LuaError> {
+        #[cfg(feature = "fennel")]
+        {
+            match &self.fennel {
+                Some(fennel) => fennel.compile_with_lua(&self.lua, source),
+                None => Err(LuaError::FennelCompile(
+                    "Fennel compiler not available. Download fennel.lua from \
+                    https://fennel-lang.org/downloads and place in \
+                    crates/crucible-lua/vendor/fennel.lua"
+                        .into(),
+                )),
+            }
+        }
+        #[cfg(not(feature = "fennel"))]
+        {
+            let _ = source;
+            Err(LuaError::FennelCompile(
+                "Fennel support not enabled (compile with 'fennel' feature)".into(),
+            ))
+        }
+    }
+
     /// Execute Lua or Fennel source code
     pub async fn execute_source(
         &self,
@@ -354,17 +382,7 @@ end
         // Compile Fennel to Lua if needed
         #[cfg(feature = "fennel")]
         let lua_source = if is_fennel {
-            match &self.fennel {
-                Some(fennel) => fennel.compile_with_lua(&self.lua, source)?,
-                None => {
-                    return Err(LuaError::FennelCompile(
-                        "Fennel compiler not available. Download fennel.lua from \
-                        https://fennel-lang.org/downloads and place in \
-                        crates/crucible-lua/vendor/fennel.lua"
-                            .into(),
-                    ));
-                }
-            }
+            self.compile_fennel_source(source)?
         } else {
             source.to_string()
         };
