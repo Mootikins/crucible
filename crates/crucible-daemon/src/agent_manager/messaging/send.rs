@@ -210,7 +210,12 @@ impl AgentManager {
                     Some((r, l)) => (Some(r), Some(l)),
                     None => (None, None),
                 };
-                AgentStreamConfig::from_session_agent(&agent_config, lua_validators, plugin_lua)
+                AgentStreamConfig::from_session_agent(
+                    &agent_config,
+                    lua_validators,
+                    plugin_lua,
+                    self.plugin_handlers(),
+                )
             },
             tool_dispatcher: self.get_or_create_session_dispatcher(&session).await,
             permission_override,

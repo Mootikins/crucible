@@ -473,6 +473,11 @@ struct AgentStreamConfig {
     /// Plugin runtime `Lua` handle used to call into validator functions.
     /// Paired with `lua_validators`; both are `Some` together or both `None`.
     plugin_lua: Option<Arc<Lua>>,
+    /// Hooks registered by plugins via `crucible.on`, with the `Lua` state
+    /// their bodies live in. Separate from the per-session registry: plugins
+    /// load once into the loader's VM, and a `RegistryKey` is only valid
+    /// against the state that created it.
+    plugin_handlers: Option<(Arc<LuaScriptHandlerRegistry>, Arc<Lua>)>,
 }
 
 impl AgentStreamConfig {
@@ -480,6 +485,7 @@ impl AgentStreamConfig {
         session_agent: &SessionAgent,
         lua_validators: Option<Arc<LuaValidatorRegistry>>,
         plugin_lua: Option<Arc<Lua>>,
+        plugin_handlers: Option<(Arc<LuaScriptHandlerRegistry>, Arc<Lua>)>,
     ) -> Self {
         Self {
             model: session_agent.model.clone(),
@@ -500,6 +506,7 @@ impl AgentStreamConfig {
             tool_policy: session_agent.tool_policy.clone(),
             lua_validators,
             plugin_lua,
+            plugin_handlers,
         }
     }
 }
@@ -619,6 +626,10 @@ pub struct AgentManager {
     /// it empty and `OutputValidation::Lua` surfaces as a validation
     /// failure with a clear reason instead of panicking.
     lua_validators: std::sync::OnceLock<(Arc<LuaValidatorRegistry>, Arc<Lua>)>,
+    /// Plugin `crucible.on` handler registry + the plugin `Lua` handle.
+    /// Bound at daemon startup alongside `lua_validators`. Empty in tests and
+    /// isolated managers, where plugin hooks simply don't fire.
+    plugin_handlers: std::sync::OnceLock<(Arc<LuaScriptHandlerRegistry>, Arc<Lua>)>,
     /// Sessions with a title generation currently in flight — the RPC path
     /// and the message_complete auto-trigger can race.
     titles_in_flight: Arc<DashMap<String, ()>>,
@@ -687,6 +698,7 @@ impl AgentManager {
             session_trees: Arc::new(DashMap::new()),
             cache_stats: Arc::new(DashMap::new()),
             lua_validators: std::sync::OnceLock::new(),
+            plugin_handlers: std::sync::OnceLock::new(),
             titles_in_flight: Arc::new(DashMap::new()),
             snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),
             agent_factory_override: std::sync::OnceLock::new(),
@@ -718,6 +730,21 @@ impl AgentManager {
     /// when no plugin loader has bound validators (test contexts).
     pub(crate) fn lua_validators(&self) -> Option<(Arc<LuaValidatorRegistry>, Arc<Lua>)> {
         self.lua_validators
+            .get()
+            .map(|(r, l)| (Arc::clone(r), Arc::clone(l)))
+    }
+
+    /// Bind the plugin loader's `crucible.on` registry + `Lua` handle, so
+    /// hooks registered by plugins reach the stream loop. Without this,
+    /// plugins can register handlers that never fire. Idempotent.
+    pub fn set_plugin_handlers(&self, registry: Arc<LuaScriptHandlerRegistry>, lua: Arc<Lua>) {
+        let _ = self.plugin_handlers.set((registry, lua));
+    }
+
+    /// Snapshot of the plugin hook registry for the stream loop. `None` when
+    /// no plugin loader has bound one.
+    pub(crate) fn plugin_handlers(&self) -> Option<(Arc<LuaScriptHandlerRegistry>, Arc<Lua>)> {
+        self.plugin_handlers
             .get()
             .map(|(r, l)| (Arc::clone(r), Arc::clone(l)))
     }

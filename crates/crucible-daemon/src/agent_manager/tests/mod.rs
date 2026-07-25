@@ -543,6 +543,15 @@ impl ReactorTestHarness {
         self.agent_manager.set_lua_validators(registry, lua);
     }
 
+    /// Bind a plugin `crucible.on` registry, as the daemon does at startup.
+    fn set_plugin_handlers(
+        &self,
+        registry: Arc<crucible_lua::LuaScriptHandlerRegistry>,
+        lua: Arc<mlua::Lua>,
+    ) {
+        self.agent_manager.set_plugin_handlers(registry, lua);
+    }
+
     /// Send a message and return the generated `message_id`.
     async fn send(&mut self, msg: &str) -> String {
         self.agent_manager

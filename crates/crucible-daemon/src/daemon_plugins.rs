@@ -11,12 +11,13 @@ use anyhow::Context;
 use crucible_core::storage::NoteStore;
 use crucible_core::storage::PropertyStore;
 use crucible_lua::{
-    register_context_module, register_context_validators, register_graph_module,
-    register_oq_module, register_paths_module, register_schedule_module, register_sessions_module,
-    register_sessions_module_with_api, register_shell_module, register_storage_module,
-    register_storage_module_with_store, register_tools_module, register_tools_module_with_api,
-    register_vault_module, register_ws_module, DaemonSessionApi, DaemonToolsApi, LuaExecutor,
-    LuaValidatorRegistry, PathsContext, PluginManager, PluginSource, PluginSpec, ShellPolicy,
+    register_context_module, register_context_validators, register_crucible_on_api,
+    register_graph_module, register_oq_module, register_paths_module, register_schedule_module,
+    register_sessions_module, register_sessions_module_with_api, register_shell_module,
+    register_storage_module, register_storage_module_with_store, register_tools_module,
+    register_tools_module_with_api, register_vault_module, register_ws_module, DaemonSessionApi,
+    DaemonToolsApi, LuaExecutor, LuaScriptHandlerRegistry, LuaValidatorRegistry, PathsContext,
+    PluginManager, PluginSource, PluginSpec, ShellPolicy,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -41,6 +42,14 @@ pub struct DaemonPluginLoader {
     /// a `RegistryKey` into this map; the agent stream loop dispatches
     /// validations by name without re-entering Lua's globals table.
     validator_registry: Arc<LuaValidatorRegistry>,
+    /// Handlers registered by plugins via `crucible.on(event, opts, fn)`.
+    ///
+    /// Paired with [`Self::plugin_lua`] the same way `validator_registry` is:
+    /// the handler bodies are `RegistryKey`s into *this* loader's Lua state,
+    /// so dispatching them requires both halves. Plugin hooks live here rather
+    /// than in the per-session registry because plugins are loaded once, at
+    /// daemon start, into a VM no session owns.
+    handler_registry: Arc<LuaScriptHandlerRegistry>,
 }
 
 impl DaemonPluginLoader {
@@ -94,13 +103,38 @@ impl DaemonPluginLoader {
         register_context_validators(lua, Arc::clone(&validator_registry))
             .map_err(|e| anyhow::anyhow!("context validators: {e}"))?;
 
+        // `crucible.on` must exist on *this* VM. Registering it only on the
+        // per-session and `lua.init_session` runtimes left it nil for plugins,
+        // so every hook-registering plugin raised at load and was downgraded
+        // to a warning. Covered by
+        // `plugin_runtime_exposes_the_documented_api_surface`.
+        let handler_registry = Arc::new(LuaScriptHandlerRegistry::new());
+        reg(
+            "crucible.on",
+            register_crucible_on_api(
+                lua,
+                handler_registry.runtime_handlers(),
+                handler_registry.handler_functions(),
+            ),
+        )?;
+
         Ok(Self {
             executor,
             plugin_manager,
             loaded_specs: Vec::new(),
             service_fns: Vec::new(),
             validator_registry,
+            handler_registry,
         })
+    }
+
+    /// Handlers registered by plugins via `crucible.on`.
+    ///
+    /// Hand this to `AgentManager` together with [`Self::plugin_lua`] — the
+    /// handler bodies are registry keys into that specific Lua state, so
+    /// neither half dispatches without the other.
+    pub fn plugin_handlers(&self) -> Arc<LuaScriptHandlerRegistry> {
+        Arc::clone(&self.handler_registry)
     }
 
     /// Shared registry of Lua-defined output validators.
@@ -916,6 +950,40 @@ mod tests {
             "DaemonPluginLoader::new() failed: {:?}",
             loader.err()
         );
+    }
+
+    /// Contract test for the plugin runtime's API surface.
+    ///
+    /// Plugins execute in this loader's VM, which is disjoint from the
+    /// per-session VM and the per-`lua.init_session` VM. Anything a plugin is
+    /// documented to call must be registered *here* — registering it on the
+    /// other two is invisible to plugins.
+    ///
+    /// `crucible.on` was missing for exactly this reason: it was registered on
+    /// the other two VMs, so every hook-registering plugin (`oci`, the
+    /// reference interception plugin) raised "attempt to call a nil value" at
+    /// load and was silently downgraded to a `warn!`.
+    #[test]
+    fn plugin_runtime_exposes_the_documented_api_surface() {
+        let loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+        let lua = loader.plugin_lua();
+
+        for symbol in [
+            "crucible.on",
+            "crucible.on_session_start",
+            "crucible.on_session_end",
+        ] {
+            let is_function: bool = lua
+                .load(format!("return type({symbol}) == 'function'"))
+                .eval()
+                .unwrap_or(false);
+            assert!(
+                is_function,
+                "`{symbol}` must be a function in the plugin runtime — plugins \
+                 documented to call it would raise 'attempt to call a nil value' \
+                 at load, and the loader downgrades that to a warning"
+            );
+        }
     }
 
     #[test]

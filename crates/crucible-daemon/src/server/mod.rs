@@ -417,6 +417,11 @@ impl Server {
                 // validators. Bind once; `set_lua_validators` is idempotent.
                 self.agent_manager
                     .set_lua_validators(loader.validator_registry(), loader.plugin_lua());
+                // Same pairing for `crucible.on` hooks — without this bind,
+                // plugins register handlers into a registry the stream loop
+                // never reads.
+                self.agent_manager
+                    .set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
 
                 let tools_api: Arc<dyn crucible_lua::DaemonToolsApi> = Arc::new(
                     crate::tools_bridge::DaemonToolsBridge::new(Arc::clone(&self.workspace_tools)),
