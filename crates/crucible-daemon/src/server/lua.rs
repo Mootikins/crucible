@@ -602,15 +602,18 @@ end
     let passed: usize = results.get("passed").unwrap_or(0);
     let failed: usize = results.get("failed").unwrap_or(0);
 
-    // The runner prints `✗ name / error / line` to *this process's* stdout —
-    // the daemon's, not the caller's. Ship the same detail over the wire so
-    // `cru plugin test` can show why a test failed, not just how many did.
+    // The runner used to report failures by `print`ing them, which reaches only
+    // the daemon process's stdout — and an auto-spawned daemon has stdout and
+    // stderr on /dev/null, so those results were unrecoverable. They are
+    // returned from `run_tests()` now; ship them to whoever asked.
     let mut failures: Vec<serde_json::Value> = Vec::new();
     if let Ok(errors) = results.get::<mlua::Table>("errors") {
         for entry in errors.sequence_values::<mlua::Table>().flatten() {
             failures.push(serde_json::json!({
                 "name": entry.get::<String>("name").unwrap_or_default(),
+                "suite": entry.get::<String>("suite").ok(),
                 "error": entry.get::<String>("error").unwrap_or_default(),
+                "file": entry.get::<String>("file").ok(),
                 "line": entry.get::<String>("line").ok(),
             }));
         }
@@ -893,10 +896,15 @@ mod plugin_test_diagnostics_tests {
     #[test]
     fn a_failing_test_returns_its_name_error_and_line() {
         let tmp = TempDir::new().unwrap();
+        // The failing assertion is on line 3 of this file, deliberately not
+        // line 1 — a location scraped from `debug.traceback()` points inside
+        // the runner and would not match.
         fs::write(
             tmp.path().join("arithmetic_test.lua"),
             "describe('math', function()\n\
-               it('adds two numbers', function() assert.equal(3, 1 + 1) end)\n\
+               it('adds two numbers', function()\n\
+                 assert.equal(3, 1 + 1)\n\
+               end)\n\
              end)\n",
         )
         .unwrap();
@@ -915,10 +923,39 @@ mod plugin_test_diagnostics_tests {
                 .is_some_and(|e| e.contains("Expected")),
             "failure should carry the assertion message: {result:#}"
         );
-        assert!(
-            failures[0]["line"].as_str().is_some(),
-            "failure should carry a line number: {result:#}"
+        assert_eq!(
+            failures[0]["line"], "3",
+            "line must point at the assertion in the test file, not at a frame \
+             inside the runner: {result:#}"
         );
+        assert!(
+            failures[0]["file"]
+                .as_str()
+                .is_some_and(|f| f.ends_with("arithmetic_test.lua")),
+            "failure should name the test file: {result:#}"
+        );
+    }
+
+    /// Two suites can share an `it` name — several shipped plugins have their
+    /// own "returns nil on non-JSON". Reporting the bare name makes a red run
+    /// ambiguous about which suite broke.
+    #[test]
+    fn a_failure_carries_its_full_describe_path() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(
+            tmp.path().join("nested_test.lua"),
+            "describe('outer', function()\n\
+               describe('inner', function()\n\
+                 it('fails', function() assert.truthy(false) end)\n\
+               end)\n\
+             end)\n",
+        )
+        .unwrap();
+
+        let result = run(tmp.path());
+        let failures = result["failures"].as_array().expect("failures array");
+        assert_eq!(failures.len(), 1, "{result:#}");
+        assert_eq!(failures[0]["suite"], "outer / inner", "{result:#}");
     }
 
     #[test]

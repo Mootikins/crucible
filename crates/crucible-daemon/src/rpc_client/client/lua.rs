@@ -110,8 +110,15 @@ pub struct LuaRunPluginTestsRequest {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PluginTestFailure {
     pub name: String,
+    /// Full `describe` path. The bare test name is ambiguous across suites.
+    #[serde(default)]
+    pub suite: Option<String>,
     pub error: String,
-    /// Line the assertion fired on, recovered from the Lua traceback.
+    /// Test file and line the assertion fired on, taken from the location Lua
+    /// prefixes onto a level-2 `error()` — not from `debug.traceback()`, whose
+    /// innermost frame is always inside the runner.
+    #[serde(default)]
+    pub file: Option<String>,
     #[serde(default)]
     pub line: Option<String>,
 }

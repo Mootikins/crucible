@@ -38,18 +38,20 @@ pub async fn execute(_config: CliConfig, args: TestArgs) -> Result<()> {
     }
 
     for failure in &response.failures {
-        let where_ = failure
-            .line
-            .as_deref()
-            .map(|l| format!(" (line {l})"))
-            .unwrap_or_default();
-        eprintln!(
-            "{} {}{}\n    {}",
-            "✗".red(),
-            failure.name,
-            where_,
-            failure.error
-        );
+        let title = match &failure.suite {
+            Some(suite) if !suite.is_empty() => format!("{suite} / {}", failure.name),
+            _ => failure.name.clone(),
+        };
+        let location = match (&failure.file, &failure.line) {
+            (Some(file), Some(line)) => format!("\n    at {file}:{line}"),
+            (None, Some(line)) => format!("\n    at line {line}"),
+            _ => String::new(),
+        };
+        // Indent continuation lines: assertion messages are multi-line
+        // ("Expected: ...\nActual: ...") and unindented they run into the
+        // next failure.
+        let message = failure.error.replace('\n', "\n    ");
+        eprintln!("{} {}\n    {}{}", "✗".red(), title, message, location);
     }
 
     println!(
