@@ -3,58 +3,70 @@ title: "Agent Configuration"
 description: "Configuration reference for AI agents in Crucible"
 ---
 
-Configure AI agent behavior and provider settings.
+Crucible runs AI agents through two complementary systems:
+
+1. **Chat agents** (`[chat]`) — Crucible's own REPL agent backed by one of the configured LLM providers.
+2. **ACP agents** (`[acp]`) — external agents (Claude Code, OpenCode, Gemini, etc.) hosted via the [Agent Client Protocol](../concepts/agent-client-protocol/).
+
+LLM provider credentials and endpoints live in [[llm](./llm/)]; this page covers the two agent-selection sections.
 
 ## Configuration Location
 
-Agent settings are defined in your kiln's `Config.toml` or globally in `~/.config/crucible/config.toml`.
+Agent settings live in `~/.config/crucible/config.toml` (global) or in a kiln's `.crucible/config.toml` (scoped).
 
-## Options
+## `[chat]` — Chat Defaults
+
+Applied when you run `cru chat` without `--agent` or `--provider`.
 
 ```toml
-[agents]
-# Default provider for chat agents
-provider = "ollama"  # or "openai"
-
-# Default model
+[chat]
+# Override the default model (otherwise inherited from the default provider)
 model = "llama3.2"
 
-# Request timeout in seconds
-timeout = 60
+# Render markdown in responses (default true)
+enable_markdown = true
 
-# Maximum context tokens
-max_context = 8000
+# Prefer external ACP agents or Crucible's built-in agent
+# Values: "acp" or "crucible" (default)
+agent_preference = "crucible"
+
+# Override provider endpoint for Ollama/compatible
+# endpoint = "http://localhost:11434"
+
+# Generation controls (optional)
+# temperature = 0.7
+# max_tokens = 4096
+# timeout_secs = 120
+
+# Stream thinking/reasoning tokens below the spinner
+show_thinking = false
 ```
 
-## Provider-Specific Settings
-
-### Ollama
+The actual **provider** default lives under `[llm]`:
 
 ```toml
-[agents.ollama]
-endpoint = "http://localhost:11434"
+[llm]
+default = "ollama"          # key from [llm.providers.*]
+
+[llm.providers.ollama]
+type = "ollama"
+default_model = "llama3.2"
 ```
 
-### OpenAI
+See [[llm](./llm/)] for the full provider reference.
 
-```toml
-[agents.openai]
-# API key from environment: OPENAI_API_KEY
-model = "gpt-4"
-```
+## `[acp]` — ACP Agent Defaults
 
-## ACP Agent Configuration
-
-Configure ACP (Agent Context Protocol) agent behavior:
+Applied when you run `cru chat --agent <name>` or bring up the agent picker.
 
 ```toml
 [acp]
-# Default ACP agent to use (optional)
-default_agent = "opencode"  # or "claude", "gemini", etc.
+# Default ACP agent to use when --agent is omitted (optional)
+default_agent = "opencode"  # or "claude", "gemini", "codex", "cursor"
 
-# Enable lazy agent selection (show splash screen to select agent)
-# When true (default): Show splash screen to select agent interactively
-# When false: Use default agent immediately, skip splash screen
+# Show splash picker in `cru chat` when no agent is chosen.
+# true (default): interactive picker with j/k navigation.
+# false: use default_agent immediately, skip picker.
 lazy_agent_selection = true
 
 # Session timeout in minutes
@@ -64,24 +76,23 @@ session_timeout_minutes = 30
 streaming_timeout_minutes = 15
 ```
 
-### Agent Selection Behavior
+The `--agent` CLI flag always bypasses the picker regardless of `lazy_agent_selection`.
 
-The `lazy_agent_selection` option controls when and how agents are selected:
+### Custom ACP Agent Profiles
 
-**When `lazy_agent_selection = true` (default):**
-- Interactive `cru chat` shows a splash screen with available agents
-- You can select an agent using vim keys (j/k navigate, Enter confirm)
-- Useful when you want to choose different agents for different tasks
+Extend a built-in agent profile with additional environment or arguments under `[acp.agents.<name>]`:
 
-**When `lazy_agent_selection = false`:**
-- Crucible immediately uses the default agent (or first available)
-- Splash screen is skipped
-- Useful for automation or when you always use the same agent
+```toml
+[acp.agents.my-claude]
+extends = "claude"
+env = { ANTHROPIC_BASE_URL = "http://localhost:4000" }
+```
 
-**Note:** The `--agent` CLI flag always skips the splash screen regardless of this setting.
+The extended name is then selectable via `cru chat --agent my-claude`.
 
 ## See Also
 
-- [chat](../cli/chat/) - Chat command reference
-- [llm](./llm/) - LLM configuration
-- [Agent Cards](../extending/agent-cards/) - Creating agent definitions
+- [chat](../cli/chat/) — `cru chat` reference
+- [llm](./llm/) — LLM provider configuration
+- [Agent Cards](../extending/agent-cards/) — authoring agent cards
+- [Agent Client Protocol](../concepts/agent-client-protocol/) — ACP architecture

@@ -104,6 +104,51 @@ This is primarily needed when gateway event handlers (which run under `pcall`) n
 
 Errors in the spawned function are logged as warnings but do not propagate to the caller.
 
+## Shell
+
+Execute external commands with policy enforcement. Also available as the global `shell` for brevity. All calls are async — they yield without blocking the runtime.
+
+Dangerous commands (`rm`, `sudo`, `chmod`, `chown`) are blocked by default. The OCI plugin and other container-runtime plugins are the expected consumers; for ad-hoc scripting, prefer targeted MCP tools over direct shell access.
+
+### cru.shell.exec(cmd, args, opts?)
+
+Run a command and wait for it to finish.
+
+```lua
+local r = cru.shell.exec("git", { "status", "--short" })
+if r.success then
+  cru.log("info", r.stdout)
+end
+```
+
+**Arguments:**
+- `cmd` (string) — executable name or path
+- `args` (table of strings) — command-line arguments
+- `opts` (table, optional):
+  - `cwd` (string) — working directory
+  - `env` (table) — additional environment variables as key/value pairs
+  - `stdin` (string) — data to pipe to the process's stdin
+  - `timeout` (number) — seconds to wait for this call, overriding the policy
+    default. Capped at 3600.
+
+**Returns a table:**
+- `success` (bool) — `true` if exit code was 0
+- `exit_code` (integer)
+- `stdout` (string)
+- `stderr` (string)
+
+Default timeout is 30 seconds; plugins running trusted commands can be granted a longer 300-second policy. Pass `timeout` per call for the ones that legitimately run for minutes — pulling or building a container image, say — rather than raising the default for every caller.
+
+### cru.shell.which(cmd)
+
+Return the full path to `cmd` if it exists in `PATH`, else `nil`. Synchronous.
+
+```lua
+if cru.shell.which("docker") then
+  -- docker is available
+end
+```
+
 ## HTTP
 
 HTTP client backed by `reqwest`. All methods are async. The default timeout is 30 seconds.
@@ -577,6 +622,49 @@ services = {
 ```
 
 The `gateway.connect` function uses `cru.retry` with reconnection backoff, `cru.ws.connect` for the WebSocket, and `cru.timer` for heartbeat scheduling.
+
+## Plugin Tools and Commands
+
+A plugin's spec table can also declare `tools` (callable by the agent's model) and `commands` (invocable by clients, e.g. as slash commands). Both take a `desc`, an optional `params` list, and a `fn`:
+
+```lua
+return {
+    name = "shout",
+
+    tools = {
+        shout = {
+            desc = "Uppercase the given text",
+            params = {
+                { name = "text", type = "string", desc = "Text to shout" },
+            },
+            fn = M.shout,
+        },
+    },
+
+    commands = {
+        greet = {
+            desc = "Greet someone",
+            hint = "[name]",
+            params = {
+                { name = "who", type = "string", desc = "Who to greet", optional = true },
+            },
+            fn = M.greet,
+        },
+    },
+}
+```
+
+A tool's `fn` receives one table of arguments and returns any JSON-representable value. `params` becomes the JSON Schema the model sees; a param is required unless marked `optional = true`.
+
+Commands are listed over the `plugin.commands` RPC and invoked with `plugin.run_command`, so the TUI and the web client see the same set.
+
+### Name collisions
+
+**A plugin tool whose name collides with a built-in tool is rejected, not shadowed.** Built-ins (`bash`, `read_file`, `edit_file`, `write_file`, `glob`, `grep`, the kiln MCP tools, and the tool-discovery bridge) always win; the plugin's tool is dropped with a warning in the daemon log and never advertised to the model. Rename it.
+
+Two plugins claiming the same tool name resolve first-loaded-wins, also with a warning. Commands are a separate namespace: a command may share a name with a built-in tool.
+
+A tool or command declared without a `fn` is not registered — declaring one the plugin doesn't export would advertise a call that always fails.
 
 ## See Also
 

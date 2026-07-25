@@ -56,44 +56,92 @@ sudo ln -s /path/to/crucible/target/release/cru /usr/local/bin/cru
 
 ## Configuration
 
-### Set Your Kiln Path
+### Initialize with `cru init`
 
-Crucible stores notes in a "kiln", your markdown directory. The easiest way to get started is with `cru init`, which walks you through creating a config file interactively.
+Crucible stores notes in a **kiln** — a directory of markdown files that forms your knowledge graph. Projects (code repositories) can bind to one or more kilns.
+
+The fastest way to set up is `cru init`. It detects what kind of directory you are in and walks you through an interactive setup.
+
+#### Initializing a kiln
+
+Run `cru init` inside your notes directory:
 
 ```bash
+cd ~/notes
 cru init
 ```
 
-This creates `~/.config/crucible/config.toml` with your kiln path and provider settings.
+Crucible detects whether `.crucible/kiln.toml` or `.crucible/project.toml` already exists. If neither is found, it asks what this directory is:
 
-You can also set it up manually:
+```
+? What is this directory?
+> Kiln (knowledge store for notes and sessions)
+  Project (code repository with kiln bindings)
+```
 
-**Option 1: Configuration File**
+For a kiln, it prompts for a **name** and **data classification** (public, internal, confidential, restricted), then creates `.crucible/kiln.toml` and registers the kiln in your global config under `[kilns]`.
+
+#### Initializing a project
+
+Run `cru init` inside a code repository:
+
+```bash
+cd ~/myproject
+cru init
+```
+
+Choose "Project" when prompted. Crucible creates `.crucible/project.toml` and asks which of your registered kilns to bind. The project is registered in your global config under `[projects.*]`.
+
+#### Non-interactive mode
+
+Use `-y` to skip prompts and accept defaults (defaults to kiln, uses the directory name as the kiln name):
+
+```bash
+cru init -y
+```
+
+Use `--force` to reinitialize an already-configured directory.
+
+#### First-run setup wizard
+
+If no global config exists yet (`~/.config/crucible/config.toml`), `cru init` automatically runs a first-run wizard that walks you through choosing an LLM provider, model, and embedding backend before creating the kiln or project.
+
+### Manual configuration
+
+You can also create the config file by hand. See [Configuration](../help/configuration/) for the full reference.
 
 Create `~/.config/crucible/config.toml`:
 
 ```toml
-kiln_path = "/home/user/Documents/my-kiln"
+default_kiln = "notes"
 
-[llm]
-default = "local"
+[kilns]
+notes = "~/notes"
 
-[llm.providers.local]
-type = "ollama"
-default_model = "llama3.2"
-endpoint = "http://localhost:11434"
+[chat]
+provider = "ollama"
+model = "llama3.2"
 
-[enrichment.provider]
-type = "fastembed"
-
-[cli]
-show_progress = true
+[embedding]
+provider = "fastembed"
 ```
 
-**Option 2: Environment Variable**
-```bash
-export CRUCIBLE_KILN_PATH="/path/to/your/notes"
+For multiple kilns and project bindings:
+
+```toml
+default_kiln = "vault"
+
+[kilns]
+vault = "~/vault"
+docs = "~/crucible/docs"
+
+[projects.crucible]
+path = "~/crucible"
+kilns = ["docs", "vault"]
+default_kiln = "vault"
 ```
+
+See [Configuration](../help/configuration/#migrating-from-code0-to-code1) if you have an existing `kiln_path` setup.
 
 ## Your First Commands
 
@@ -145,7 +193,7 @@ The first time you run `cru chat`, Crucible automatically starts a background da
 - **Plan**: Read-only, agent can search and read but not modify
 - **Auto**: Auto-approve tool calls without prompting
 
-**Slash commands:** `/plan`, `/auto`, `/normal`, `/search`, `/help`
+**Slash commands:** `/mode`, `/plan`, `/auto`, `/default`, `/search`, `/new`, `/resume`, `/models`
 **REPL commands:** `:model`, `:set`, `:export`, `:clear`, `:help`
 
 **Implementation:** `crates/crucible-cli/src/commands/chat.rs`
@@ -177,7 +225,7 @@ This database contains:
 
 ### "Error: kiln path does not exist"
 
-Check that `CRUCIBLE_KILN_PATH` is set correctly or configure it in your config file.
+Check that your kiln is registered under `[kilns]` in `~/.config/crucible/config.toml` and that the path resolves. Alternatively, the legacy `CRUCIBLE_KILN_PATH` environment variable is still honored as a fallback.
 
 ### Processing is slow
 
@@ -186,6 +234,45 @@ Reduce parallel workers: `cru process --parallel 1`
 ### Chat doesn't respond
 
 Make sure your LLM provider is running and configured. For Ollama: `cru chat --provider ollama`. For other providers, check your `config.toml` settings.
+
+## Uninstalling
+
+### Stop the daemon
+
+```bash
+cru daemon stop
+```
+
+### Remove the binary
+
+If installed via the installer script or `cargo binstall`:
+
+```bash
+rm ~/.cargo/bin/cru
+```
+
+If installed via Homebrew:
+
+```bash
+brew uninstall crucible
+```
+
+### Remove configuration and data (optional)
+
+These directories contain your settings, plugins, session history, and project registry. Only remove them if you want a clean slate:
+
+```bash
+# Configuration (config.toml, plugins, MCP settings, permission whitelists)
+rm -rf ~/.config/crucible/
+
+# Project registry and session data
+rm -rf ~/.crucible/
+
+# Runtime socket (auto-cleaned on reboot)
+rm -f "${XDG_RUNTIME_DIR:-/tmp}/crucible.sock"
+```
+
+Your **kilns** (note collections) are plain markdown directories and are never modified by uninstalling. They remain wherever you created them.
 
 ## See Also
 

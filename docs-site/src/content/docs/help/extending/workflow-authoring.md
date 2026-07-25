@@ -81,7 +81,7 @@ cru workflow list
 ## See Also
 
 - [Index](../workflows/index/) - Workflow system overview
-- [Markup](../workflows/markup/) - Planned prose syntax
+- [Workflow Syntax](../workflows/workflow-syntax/) - Markdown workflow syntax
 - [Sessions](../core/sessions/) - Session tracking
 - [Creating Plugins](./creating-plugins/) - Plugin development
 - [Custom Tools](./custom-tools/) - Creating tools

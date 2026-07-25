@@ -790,10 +790,6 @@ impl RpcDispatcher {
         self.enforce_plugin_session_start(mapped, req).await
     }
 
-    /// Fire plugin `on_session_start` hooks, best-effort.
-    ///
-    /// A failing plugin hook must not fail session creation — the session
-    /// already exists by this point, and the caller is waiting on it.
     /// Fire plugin start hooks for a session that just became live, and refuse
     /// it if a `required` hook failed.
     ///

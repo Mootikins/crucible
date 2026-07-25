@@ -5,16 +5,18 @@
 -- Precognition context formatter
 --
 -- Customizes how relevant notes are injected before each LLM turn.
--- Receives: ctx, event (or event.payload depending on runtime shape).
--- Return a string to use as the context block, or nil to fall back.
+-- Receives: ctx, event — one flat table, payload fields at the top level
+-- (event.user_message, event.results, ...). Return a string to use as the
+-- context block, or nil to fall back.
 --
 -- Override example in your .crucible/lua/init.lua:
 --   crucible.on("precognition_format", function(ctx, event)
---     local payload = event.payload or event
---     return "## Notes\n" .. payload.user_message
+--     return "## Notes\n" .. event.user_message
 --   end)
 if crucible and type(crucible.on) == "function" then
   crucible.on("precognition_format", function(ctx, event)
+    -- `event.payload` guard kept for sessions replaying pre-flattening
+    -- recordings; live events are flat.
     local payload = event.payload or event
     local results = payload and payload.results
 

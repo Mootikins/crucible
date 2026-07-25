@@ -8,8 +8,21 @@ Crucible uses TOML configuration files. The main config file is at `~/.config/cr
 ## Quick Start
 
 ```toml
-# Minimal config - just set your kiln path
+# Minimal config — single kiln (legacy shorthand, still supported)
 kiln_path = "/home/user/notes"
+
+[chat]
+provider = "ollama"
+model = "llama3.2"
+```
+
+Or with the newer named kilns:
+
+```toml
+default_kiln = "vault"
+
+[kilns]
+vault = "~/vault"
 
 [chat]
 provider = "ollama"
@@ -22,8 +35,55 @@ model = "llama3.2"
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `kiln_path` | path | current dir | Path to your notes directory (kiln) |
+| `kiln_path` | path | current dir | Path to your notes directory (kiln). Legacy — prefer `[kilns]`. |
+| `default_kiln` | string | first alphabetically | Name of the default kiln (session storage, tool scoping) |
 | `agent_directories` | list | `[]` | Additional directories to search for agent cards |
+
+### [kilns] — Named Kiln Registry
+
+Register kilns by name. Each entry can be a **shorthand** (just a path string) or a **full table** with extra options.
+
+```toml
+[kilns]
+# Shorthand — path only
+vault = "~/vault"
+docs = "~/crucible/docs"
+
+# Full form — path plus options
+[kilns.work]
+path = "~/work/notes"
+lazy = true           # Don't open until explicitly requested
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `path` | string | required | Filesystem path to the kiln root |
+| `lazy` | bool | `false` | If true, the kiln is not opened at daemon start; it must be opened explicitly |
+
+If `[kilns]` is empty or absent, Crucible falls back to `kiln_path` (synthesized as a kiln named `"default"`). When `[kilns]` is present, `kiln_path` is ignored.
+
+### [projects.*] — Project Registry
+
+Register projects (code repositories, workspaces) and bind them to kilns. The daemon auto-opens a project's kilns when a session starts in that directory.
+
+```toml
+[projects.crucible]
+path = "~/crucible"
+kilns = ["docs", "vault"]     # Kiln names from [kilns] section
+default_kiln = "vault"        # Primary kiln for this project
+
+[projects.website]
+path = "~/website"
+kilns = ["vault"]
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `path` | string | required | Filesystem path to the project root |
+| `kilns` | list | `[]` | Named kilns this project uses (resolved from `[kilns]`) |
+| `default_kiln` | string | first in list | Which kiln is primary for sessions in this project |
+
+Projects are registered automatically by `cru init` when run inside a project directory, or manually by editing the config file.
 
 ### [chat] - Chat Configuration
 
@@ -39,9 +99,7 @@ Controls the chat interface and LLM settings for internal agents.
 | `max_tokens` | int | `2048` | Maximum tokens to generate |
 | `timeout_secs` | int | `120` | API timeout in seconds |
 | `enable_markdown` | bool | `true` | Enable markdown rendering |
-| `size_aware_prompts` | bool | `true` | Enable size-aware prompt optimization for small models |
-
-**Size-aware prompts:** When enabled, models under 4B parameters get explicit tool guidance and read-only tools only, preventing tool loops. Disable if you want to experiment with small models having full tool access.
+| `show_thinking` | bool | `false` | Show extended thinking/reasoning blocks in chat output |
 
 ### [acp] - Agent Client Protocol
 
@@ -92,8 +150,9 @@ Controls how text embeddings are generated for semantic search.
 - `ollama` - Local Ollama (default: `nomic-embed-text`)
 - `openai` - OpenAI API (default: `text-embedding-3-small`)
 - `anthropic` - Anthropic API
+- `cohere` - Cohere API
+- `vertexai` - Google Vertex AI API
 - `burn` - Local GPU via Burn framework
-- `llamacpp` - Local GPU via llama.cpp
 
 ### [context] - Context Configuration
 
@@ -217,10 +276,13 @@ Workspace config overrides global config.
 
 ## Example Configurations
 
-### Local Ollama Setup
+### Single Kiln (Simplest)
 
 ```toml
-kiln_path = "/home/user/notes"
+default_kiln = "notes"
+
+[kilns]
+notes = "~/notes"
 
 [chat]
 provider = "ollama"
@@ -228,30 +290,40 @@ model = "llama3.2"
 endpoint = "http://localhost:11434"
 
 [embedding]
-provider = "ollama"
-model = "nomic-embed-text"
+provider = "fastembed"
 ```
 
-### Remote Ollama (e.g., llama-swappo)
+### Multi-Kiln (Work / Personal Split)
 
 ```toml
-kiln_path = "/home/user/notes"
+default_kiln = "personal"
+
+[kilns]
+personal = "~/vault"
+work = "~/work/notes"
+
+[kilns.reference]
+path = "~/reference-docs"
+lazy = true                   # Only opened on demand
+
+[projects.my-app]
+path = "~/projects/my-app"
+kilns = ["work"]
+
+[projects.dotfiles]
+path = "~/dotfiles"
+kilns = ["personal"]
 
 [chat]
-provider = "ollama"
-model = "qwen2.5-coder-32b"
-endpoint = "https://llama.example.com"
-
-[embedding]
-provider = "ollama"
-model = "nomic-embed-text"
-api_url = "https://llama.example.com"
+provider = "openai"
+model = "gpt-4o"
 ```
 
 ### OpenAI Setup
 
 ```toml
-kiln_path = "/home/user/notes"
+[kilns]
+vault = "~/vault"
 
 [chat]
 provider = "openai"
@@ -262,10 +334,11 @@ provider = "openai"
 model = "text-embedding-3-small"
 ```
 
-### Mixed Setup (Local embeddings, Cloud chat)
+### Mixed Setup (Local Embeddings, Cloud Chat)
 
 ```toml
-kiln_path = "/home/user/notes"
+[kilns]
+vault = "~/vault"
 
 [chat]
 provider = "openai"
@@ -276,13 +349,26 @@ provider = "fastembed"
 model = "BAAI/bge-small-en-v1.5"
 ```
 
-### Small Model Optimization Disabled
+## Migrating from `kiln_path` to `[kilns]`
 
+The old `kiln_path` field still works and is read for backward compatibility. When `[kilns]` is empty, `kiln_path` is synthesized as a kiln named `"default"`. To migrate:
+
+**Before:**
 ```toml
-[chat]
-model = "granite-3b"
-size_aware_prompts = false  # Give small model all tools
+kiln_path = "/home/user/notes"
 ```
+
+**After:**
+```toml
+default_kiln = "notes"
+
+[kilns]
+notes = "/home/user/notes"
+```
+
+You can also run `cru init` in your kiln directory to register it by name, or `cru init` in a project directory to create a project entry with kiln bindings.
+
+The `CRUCIBLE_KILN_PATH` environment variable continues to work as an override for the legacy `kiln_path` field.
 
 ## See Also
 

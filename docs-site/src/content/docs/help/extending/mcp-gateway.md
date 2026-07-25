@@ -276,6 +276,36 @@ The daemon manages gateway connections through a shared `McpGatewayManager`, so 
 
 For SSE transport connections, a 30-second keepalive ping prevents idle timeouts. This is automatic and requires no configuration.
 
+## Progressive Tool Disclosure
+
+Every MCP tool you attach costs context: its name, description, and JSON
+schema are sent on every turn. As you connect more servers, that overhead
+grows and crowds out the conversation.
+
+Crucible handles this automatically. When the internal agent's tool schemas
+would exceed **15% of the effective context budget**, the gateway (user MCP)
+tools are *deferred*: they are dropped from the request and replaced by a
+small discovery bridge, while the kiln and workspace tools stay attached. The
+agent is told how many tools were deferred and reaches them through three
+built-in tools:
+
+- **`discover_tools`** — search available tools by name, description, or source.
+- **`get_tool_schema`** — fetch a specific tool's full input schema.
+- **`invoke_tool`** — call a tool by name with an `args` object.
+
+`invoke_tool` is unwrapped to the real tool *before* hooks and permission
+checks run, so `pre_tool_call` handlers, permission prompts, and the TUI all
+see the actual tool name — not `invoke_tool`.
+
+**Plan mode disables upstream MCP tools entirely.** Because Crucible can't
+tell which upstream tools mutate state, plan mode fails closed: gateway tools
+are never attached (on either the direct or the deferred path), and
+`invoke_tool` refuses to call anything outside the read-only plan tool set.
+Plan mode stays limited to kiln and read-only workspace tools.
+
+This is automatic and needs no configuration. Sessions with a modest tool set
+behave exactly as before (all schemas attached, no bridge).
+
 ## Troubleshooting
 
 **Server won't start:**

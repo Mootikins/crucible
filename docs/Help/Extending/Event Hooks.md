@@ -130,6 +130,10 @@ end)
 
 Return `{ inject = { content = "...", position = "user_prefix" } }` to prepend/append content to the user's next prompt. `position` can be `"user_prefix"` or `"user_suffix"`.
 
+> **`turn:complete` only.** Inject is collected by the turn-completion
+> dispatcher; every other event (including `pre_tool_call`) ignores it
+> silently. If two handlers inject in the same turn, the last one wins.
+
 ## Lifecycle Hooks
 
 Three named hooks for session lifecycle. These are separate from `crucible.on()` and take a single function.

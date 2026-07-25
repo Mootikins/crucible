@@ -3,7 +3,9 @@ title: "Workflow Syntax"
 description: "Define planning and execution workflows in readable markdown"
 ---
 
-Workflows define high-level planning and orchestration in readable markdown. Unlike Tasks which focus on execution details, workflows describe *what* needs to happen and *why*, letting the system derive execution steps.
+Workflows define high-level planning and orchestration in readable markdown. Unlike [task notes](../task-management/) which focus on execution details, workflows describe *what* needs to happen and *why*, letting the system derive execution steps.
+
+> **Status:** the syntax, parsing, and execution on this page are implemented — workflows parse into a typed `WorkflowDoc` AST (inspect with `cru workflow list` / `cru workflow show`) and run via the daemon's workflow engine, including parallel step groups. Sections still marked **(Future)** are not yet implemented; see [Index](./index/) for the roadmap.
 
 ## Overview
 
@@ -102,6 +104,22 @@ we can proceed. Invalid configs should fail early with
 clear error messages.
 ```
 
+## Step Attributes
+
+Steps can carry attributes using Dataview-style inline metadata on the heading line:
+
+```markdown
+## Build Artifacts [type:: fan] [timeout:: 5m]
+```
+
+Reserved attribute keys (interpreted by the execution runtime):
+
+- `[type:: gate|fan|ralph|<custom>]` — step execution kind. Custom types dispatch to Lua executors registered via `crucible.workflow.register`.
+- `[timeout:: <duration>]` — max wall-clock time (e.g. `30s`, `5m`, `1h`).
+- `[on_error:: halt|skip|retry|continue]` — per-step failure policy.
+
+Any `[k:: v]` pair is accepted on a heading; unrecognized keys are passed through to plugins.
+
 ## Agent Hints
 
 Reference agents or roles with `@name`:
@@ -184,36 +202,63 @@ Goals are:
 
 Use task list syntax (`- [ ]`) for trackable goals, bullets for aspirational guidance.
 
+## Validation Section
+
+A `## Validation` heading, parallel to Goals, captures success/failure criteria — *how* we know the workflow succeeded, distinct from *what* we're building:
+
+```markdown
+## Validation
+
+- `cargo test` passes
+- `cargo clippy --all-targets` clean
+- Manual: CSV download completes in under 2s for 10k rows
+```
+
+Items containing **exactly one** inline-code span are treated as runnable commands; everything else is a manual check. At execution time, validation entries prime agent context ("success looks like X, Y, Z") and serve as the default pass-criterion for `[type:: ralph]` steps.
+
+Goals describe the *outcome*; validation describes the *acceptance criteria*. They are independent — a workflow can have either, both, or neither.
+
 ## Checkbox Semantics
 
-Extended checkbox syntax for richer status:
+Workflows use standard task-list checkboxes in the `## Goals` section:
 
 | Syntax | Meaning |
 |--------|---------|
 | `- [ ]` | Pending |
 | `- [x]` | Complete |
-| `- [/]` | In progress |
-| `- [-]` | Blocked |
-| `- [?]` | Needs clarification |
 
-## Parallel Execution (Future)
+## Parallel Execution
 
-*This is post-MVP. Possible approaches being considered:*
+Two equivalent markers mark steps for concurrent execution. Steps are headings, so both markers apply to heading lines.
 
-**Heading suffix:**
+**Heading suffix** — a trailing `(parallel)` (case-insensitive) on a section heading runs all of that section's direct child steps concurrently. The marker is stripped from the section title:
+
 ```markdown
 ## Build Artifacts (parallel)
 
-- [ ] Build frontend
-- [ ] Build backend
+### Build frontend
+
+### Build backend
 ```
 
-**Symbol prefix:**
+**Symbol prefix** — a leading `&` on a step heading. Consecutive `&`-prefixed steps run concurrently; the next unprefixed step waits for all of them:
+
 ```markdown
-- [ ] &Build frontend
-- [ ] &Build backend
-- [ ] Run tests (waits for above)
+## &Build frontend
+## &Build backend
+## Run tests
 ```
+
+The `&` is stripped from the step title and composes with the other heading markers (`## &Build @builder -> artifact`). A literal `&` elsewhere in a title (`## Fix A & B`) is not a marker.
+
+**Semantics:**
+
+- Each parallel step is a *branch*: the step plus its sub-steps, which run sequentially within the branch. Only sibling branches overlap.
+- Branches see outputs (`-> name`) produced *before* the group started; sibling branches cannot see each other's outputs. When all branches finish, their outputs merge into the scope in document order.
+- Step started/completed events are emitted per step and delivered in document order once the group joins.
+- If any branch fails, the engine still waits for every branch, then fails the workflow with **all** branch failures reported. Successful branches keep their outputs.
+- Gates (`> [!gate]` callouts or `[type:: gate]` steps) are not supported inside a parallel group — a gated branch fails with a clear reason. Place gates before or after the group instead.
+- Steps that drive the session's own agent (the default step type) serialize their LLM turns — a session holds a single conversation. The group's join and failure semantics still apply; per-branch agent dispatch is `fan` territory (future).
 
 ## Branches (Future)
 
@@ -348,5 +393,5 @@ Based on **severity**, take immediate action:
 ## Related
 
 - [Sessions](../core/sessions/) — Workflow execution tracking
-- Tasks — Task execution format
+- [Task Management](../task-management/) — Task execution format
 - [Markdown Handlers](../extending/markdown-handlers/) — Event-driven context injection

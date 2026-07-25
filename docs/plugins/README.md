@@ -91,7 +91,8 @@ end
 --- Brief description
 -- @handler event="tool:after" pattern="*" priority=100
 function my_handler(ctx, event)
-    -- Modify event.payload as needed
+    -- `event` is one flat table: payload fields at the top level alongside
+    -- event.type. Modify fields as needed.
     -- Use ctx:set/get for cross-handler state
     -- Use ctx:emit for new events
     return event  -- Must return event

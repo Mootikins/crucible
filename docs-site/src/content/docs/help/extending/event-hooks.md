@@ -3,139 +3,208 @@ title: "Event Hooks"
 description: "React to events in your kiln with Lua scripts"
 ---
 
-Event hooks let you react to things happening in your kiln - tool calls, note changes, server connections. Write a Lua function, add an annotation, and Crucible calls it automatically.
+Event hooks let you react to things happening in a Crucible session — tool calls, session startup, tool output display. Register a Lua function with `crucible.on()` and it runs when the matching event fires.
 
 ## Basic Example
 
 ```lua
---- Log every tool call
--- @handler event="tool:after" pattern="*" priority=100
-function log_tools(ctx, event)
-    cru.log("info", "Tool called: " .. event.identifier)
-    return event
-end
+-- Log every tool call
+crucible.on("pre_tool_call", function(ctx, event)
+  cru.log("info", "Tool called: " .. event.tool)
+end)
 ```
 
-Place this in a `.lua` file in your `plugins/` folder and it runs whenever a tool executes.
+Place this in your plugin's `init.lua` or in a `.lua` file in a loaded plugins directory. Crucible registers the handler on plugin load.
 
-## The Handler Annotation
-
-Every hook needs the `@handler` annotation:
+## The `crucible.on()` API
 
 ```lua
---- My hook description
--- @handler event="tool:after" pattern="gh_*" priority=50
-function my_hook(ctx, event)
-    -- Process event
-    return event  -- Always return the event
-end
+-- Simple form (no options):
+crucible.on(event_type, handler)
+
+-- With options:
+crucible.on(event_type, { pattern = "...", priority = 50 }, handler)
 ```
 
-**Parameters:**
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `event` | Yes | - | Event type to handle |
-| `pattern` | No | `"*"` | Glob pattern for filtering |
-| `priority` | No | `100` | Lower runs first |
+| Argument | Type | Description |
+|---|---|---|
+| `event_type` | string | Event name (e.g. `"pre_tool_call"`) |
+| `opts.pattern` | string, optional | Glob filter applied to the event's identifier (e.g. tool name). Default: match all. |
+| `opts.priority` | integer, optional | Lower runs first. Default: `100`. |
+| `handler` | `function(ctx, event)` | Called when the event fires and matches |
 
 ## Event Types
 
-**Tool Events:**
-- `tool:before` - Before tool runs (can cancel)
-- `tool:after` - After tool completes
-- `tool:error` - Tool failed
-- `tool:discovered` - New tool registered
+### `pre_tool_call`
 
-**Note Events:**
-- `note:parsed` - Note was parsed
-- `note:created` - New note created
-- `note:modified` - Note changed
+Fires just before a tool executes. Handlers can observe, transform, cancel, or fully handle the call.
 
-**Server Events:**
-- `mcp:attached` - External MCP server connected
+Event fields:
+- `event.type` — the event name, `"pre_tool_call"` (string)
+- `event.tool` — tool name (string)
+- `event.args` — tool arguments (table)
+- `event.session_id` — the session the call belongs to (string)
+
+`event.session_id` is not decoration. Plugin handlers are registered once, into
+one Lua state shared by every session in the daemon, so a handler holding
+per-session state must key it by this — see `runtime/plugins/oci/init.lua`,
+which looks up the session's container with it.
+
+Handlers receive one flat table. There is no `event.payload` envelope — it used
+to leak through from the internal Rust event type, and `event.name` meant the
+event type in code but the tool name in this document. Both are gone; the key
+names above are pinned by `handlers::tests::conversion`.
+
+Pattern is matched against the tool name.
+
+### `tool:display_start` / `tool:display_complete`
+
+Fire around tool output display in the TUI. Use these to transform or filter how tool output is shown to the user (they don't affect the result returned to the agent).
+
+### `tool:before_execute`
+
+Lower-level hook fired by the in-process handler pipeline. Most plugins should use `pre_tool_call` instead — it's the canonical interception point and works uniformly across local and ACP agents.
+
+## Handler Return Values
+
+The handler's return value controls what happens next:
+
+### Pass-through (observe only)
+
+Return `nil` or no value. The event continues unchanged.
+
+```lua
+crucible.on("pre_tool_call", function(ctx, event)
+  cru.log("info", "Observing: " .. event.tool)
+end)
+```
+
+### Transform
+
+Return a table with modified fields. The event continues with the new values.
+
+```lua
+crucible.on("pre_llm_call", function(ctx, event)
+  return { prompt = event.prompt .. " (be concise)" }
+end)
+```
+
+> **Not supported for `pre_tool_call`.** That dispatcher honours only Cancel and
+> Handle; a returned table is ignored. Mutating `event.args` and returning it
+> looks like it sanitises the call but the original arguments still execute — use
+> **Handle** to run a sanitised version yourself, or **Cancel** to block it.
+
+### Cancel
+
+Return `{ cancel = true, reason = "why" }`. The tool call is aborted and the reason surfaces to the agent as an error.
+
+```lua
+crucible.on("pre_tool_call", { pattern = "*delete*", priority = 5 }, function(ctx, event)
+  return { cancel = true, reason = "Deletes are blocked in this session" }
+end)
+```
+
+### Handle (intercept execution)
+
+Return `{ handled = true, result = ... }`. Default tool execution is skipped and your `result` becomes the tool result. Used by plugins that fully replace tool behavior — e.g. the `oci` plugin runs shell commands inside containers instead of on the host.
+
+```lua
+crucible.on("pre_tool_call", { pattern = "bash", priority = 10 }, function(ctx, event)
+  local output = run_in_container(event.args.command)
+  return { handled = true, result = output }
+end)
+```
+
+### Inject
+
+Return `{ inject = { content = "...", position = "user_prefix" } }` to prepend/append content to the user's next prompt. `position` can be `"user_prefix"` or `"user_suffix"`.
+
+> **`turn:complete` only.** Inject is collected by the turn-completion
+> dispatcher; every other event (including `pre_tool_call`) ignores it
+> silently. If two handlers inject in the same turn, the last one wins.
+
+## Lifecycle Hooks
+
+Three named hooks for session lifecycle. These are separate from `crucible.on()` and take a single function.
+
+### `crucible.on_session_start(fn)`
+
+Fires once when a session begins. Use for per-session setup (starting containers, opening connections, seeding state).
+
+```lua
+crucible.on_session_start(function(session)
+  cru.log("info", "Session started: " .. session.id)
+end)
+```
+
+The `session` argument exposes:
+- `session.id` — session id (string, read-only)
+- `session.workspace` — the session's working directory, or nil (string, read-only)
+
+Handlers may call async APIs (`cru.shell.exec`, `cru.http`, ...) — lifecycle
+hooks run inside the daemon's async runtime.
+
+### `crucible.on_tools_registered(fn)`
+
+Fires when tools from an MCP server or backend become available.
+
+```lua
+crucible.on_tools_registered(function(evt)
+  cru.log("info", "Tools from " .. evt.server_name .. ":")
+  for _, tool in ipairs(evt.tools) do
+    cru.log("info", "  - " .. tool.name)
+  end
+end)
+```
+
+Event fields:
+- `evt.server_name` — name of the MCP/tool source
+- `evt.tools` — array of `{ name, description, display_name }`
+
+### `crucible.on_session_end(fn)`
+
+Fires when a session ends. Use for cleanup (stopping containers, closing files).
+
+```lua
+crucible.on_session_end(function(session)
+  cleanup(session.id)
+end)
+```
+
+## Permission Hooks
+
+The permission layer can be driven from Lua. Register a callback that decides whether a tool call needs a prompt:
+
+```lua
+crucible.permissions.on_request(function(request)
+  if request.tool_name == "read_file" then
+    return { allow = true }          -- auto-allow
+  end
+  if request.tool_name == "shell" and looks_dangerous(request.args) then
+    return { deny = true }           -- auto-deny
+  end
+  return nil                         -- fall through to normal prompt
+end)
+```
+
+Request fields:
+- `request.tool_name` — tool being requested
+- `request.args` — tool arguments
+- `request.file_path` — path (if the tool touches a file)
+
+Return:
+- `{ allow = true }` — grant without prompting
+- `{ deny = true }` — deny without prompting
+- `nil` — show the normal permission prompt
 
 ## Pattern Matching
 
-Patterns use glob syntax:
+The `pattern` option uses glob syntax against the event's identifier. For `pre_tool_call`, the identifier is the tool name:
 
 ```lua
--- @handler event="tool:after" pattern="*"           -- All tools
--- @handler event="tool:after" pattern="gh_*"        -- GitHub tools
--- @handler event="tool:after" pattern="just_test*"  -- Just test recipes
-```
-
-## Practical Examples
-
-### Filter Verbose Output
-
-```lua
---- Keep only summary from test output
--- @handler event="tool:after" pattern="just_test*" priority=10
-function filter_test_output(ctx, event)
-    local result = event.payload.result
-
-    if result and result.content then
-        local text = result.content[1].text
-        local filtered = keep_summary_lines(text)
-        result.content[1].text = filtered
-    end
-
-    return event
-end
-```
-
-### Block Dangerous Operations
-
-```lua
---- Prevent accidental deletions
--- @handler event="tool:before" pattern="*delete*" priority=5
-function block_deletes(ctx, event)
-    cru.log("warn", "Blocked: " .. event.identifier)
-    event.cancelled = true
-    return event
-end
-```
-
-### Add Metadata to Tools
-
-```lua
---- Tag tools by category
--- @handler event="tool:discovered" pattern="just_*" priority=5
-function categorize_recipes(ctx, event)
-    local name = event.identifier
-
-    if string.find(name, "test") then
-        event.payload.category = "testing"
-    elseif string.find(name, "build") then
-        event.payload.category = "build"
-    end
-
-    return event
-end
-```
-
-## The Event Object
-
-Hooks receive an `event` with these fields:
-
-```lua
-event.event_type    -- "tool:after", "note:parsed", etc.
-event.identifier    -- Tool name, note path, etc.
-event.payload       -- Event-specific data
-event.timestamp_ms  -- When it happened
-event.cancelled     -- Set true to cancel (tool:before only)
-```
-
-## The Context Object
-
-Use `ctx` to store data and emit new events:
-
-```lua
-ctx:set("key", value)           -- Store data
-ctx:get("key")                  -- Retrieve data
-ctx:emit("my:event", {          -- Emit custom event
-    data = "value"
-})
+crucible.on("pre_tool_call", { pattern = "*" },           fn)  -- all tools
+crucible.on("pre_tool_call", { pattern = "gh_*" },        fn)  -- GitHub tools
+crucible.on("pre_tool_call", { pattern = "just_test*" },  fn)  -- just test recipes
 ```
 
 ## Priority Guide
@@ -144,59 +213,29 @@ Lower numbers run earlier:
 
 | Range | Use |
 |-------|-----|
-| 0-9 | Security/validation |
-| 10-49 | Early processing |
-| 50-99 | Transformation |
-| 100-149 | General (default) |
-| 150-199 | Cleanup |
-| 200+ | Logging/audit |
+| 0–9 | Security / validation / cancels |
+| 10–49 | Interception (container runtimes, sandboxing) |
+| 50–99 | Transformation |
+| 100–149 | General observation (default) |
+| 150–199 | Logging / audit |
 
-## Common Patterns
+When multiple handlers fire for the same event, they run in ascending priority order. A handler that cancels or handles the call stops the chain.
 
-### Multi-Stage Processing
+## Reference Plugin
 
-```lua
---- Stage 1: Extract data
--- @handler event="note:parsed" pattern="*" priority=10
-function extract(ctx, event)
-    ctx:set("tags", event.payload.tags)
-    return event
-end
-
---- Stage 2: Use extracted data
--- @handler event="note:parsed" pattern="*" priority=20
-function process(ctx, event)
-    local tags = ctx:get("tags")
-    if tags then
-        -- Process tags
-    end
-    return event
-end
-```
-
-### Conditional Processing
-
-```lua
--- @handler event="tool:after" pattern="*" priority=100
-function conditional(ctx, event)
-    if should_process(event) then
-        -- Do something
-    end
-    return event
-end
-```
+The `runtime/plugins/oci/init.lua` plugin is the canonical reference for production-grade hook use. It registers one `pre_tool_call` handler per tool at load time (with `pattern` and priority 10), uses `{ handled = true, result = ... }` to redirect execution into a container, and uses `on_session_start`/`on_session_end` for container lifecycle — keying its per-session state on `event.session_id`, since the one registration serves every session.
 
 ## Best Practices
 
-1. **Always return the event** - even if unchanged
-2. **Keep hooks fast** - avoid blocking operations
-3. **Use specific patterns** - reduces unnecessary invocations
-4. **Handle errors gracefully** - check before accessing fields
-5. **Add doc comments** - explain what the hook does
+1. **Keep handlers fast.** They run on the hot path; long operations should use `cru.timer.sleep` / `cru.spawn` to yield.
+2. **Use specific patterns.** A `pattern = "*"` handler runs for every tool call; narrow it if possible.
+3. **Return explicitly.** If you want pass-through, `return` with no value. If you transform, return the modified event. Don't accidentally return a truthy value that Crucible interprets as a transform.
+4. **Handle errors gracefully.** Check fields with `event.tool and event.tool:find(...)` rather than assuming shape.
+5. **Register once.** Calls to `crucible.on()` accumulate; register at plugin load, not inside another handler.
 
 ## See Also
 
-- [Custom Handlers](./custom-handlers/) - Advanced handler development
-- [MCP Gateway](./mcp-gateway/) - External tool integration
-- [Language Basics](../lua/language-basics/) - Lua syntax
-- Extending Crucible - All extension points
+- [Lua-Runtime-API](../plugins/lua-runtime-api/) — full `cru.*` reference
+- [Custom Handlers](./custom-handlers/) — design notes for advanced handlers
+- [MCP Gateway](./mcp-gateway/) — external tool integration
+- [Language Basics](../lua/language-basics/) — Lua syntax
