@@ -204,6 +204,10 @@ pub enum ChatAppMsg {
     },
     /// **Command** (TUI → daemon): Execute a slash command (/:command args).
     ExecuteSlashCommand(String),
+    /// **Command** (TUI → daemon): Invoke a plugin-declared command via
+    /// `plugin.run_command`. Distinct from `ExecuteSlashCommand`, which
+    /// forwards unknown slashes to the agent as chat text.
+    RunPluginCommand { name: String, args: String },
     /// **Command** (TUI → daemon): Export session to markdown file.
     ExportSession(PathBuf),
     /// **Event** (daemon → TUI): Precognition result (auto-injected context notes).
@@ -308,6 +312,7 @@ impl ChatAppMsg {
             | Self::CloseInteraction { .. }
             | Self::PrecognitionResult { .. }
             | Self::ExecuteSlashCommand(_)
+            | Self::RunPluginCommand { .. }
             | Self::ExportSession(_)
             | Self::ReloadPlugin(_)
             | Self::EvalLua(_)

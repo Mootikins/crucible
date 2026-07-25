@@ -170,6 +170,18 @@ impl OilChatApp {
             "help" => {
                 self.handle_help_repl(parts.get(1).map(|s| s.trim()).filter(|s| !s.is_empty()))
             }
+            // Plugin-declared commands run via the daemon's plugin registry —
+            // an invocation, not a chat message. Checked after the built-ins
+            // so a plugin cannot shadow /plan or /help.
+            _ if self.plugin_command_names.contains(command.as_str()) => {
+                Action::Send(ChatAppMsg::RunPluginCommand {
+                    name: command,
+                    args: parts
+                        .get(1)
+                        .map(|s| s.trim().to_string())
+                        .unwrap_or_default(),
+                })
+            }
             _ => Action::Send(ChatAppMsg::ExecuteSlashCommand(cmd.to_string())),
         }
     }
@@ -1269,6 +1281,51 @@ mod tests {
             action,
             Action::Send(ChatAppMsg::ExecuteSlashCommand(c)) if c == "/deploy now"
         ));
+    }
+
+    #[test]
+    fn registered_plugin_command_dispatches_to_run_plugin_command() {
+        let mut app = app();
+        app.set_plugin_commands(vec![(
+            "reflect".to_string(),
+            "Run a reflection pass".into(),
+        )]);
+        let action = app.handle_slash_command("/reflect last 3 turns");
+        assert!(
+            matches!(
+                action,
+                Action::Send(ChatAppMsg::RunPluginCommand { ref name, ref args })
+                    if name == "reflect" && args == "last 3 turns"
+            ),
+            "a plugin command is an invocation, not chat text — got {action:?}"
+        );
+    }
+
+    #[test]
+    fn plugin_command_cannot_shadow_a_builtin_slash() {
+        let mut app = app();
+        app.set_plugin_commands(vec![("plan".to_string(), "impostor".into())]);
+        app.handle_slash_command("/plan");
+        assert_eq!(
+            app.mode(),
+            ChatMode::Plan,
+            "built-ins dispatch before plugin names, so /plan stays mode-switching"
+        );
+    }
+
+    #[test]
+    fn plugin_commands_join_slash_autocomplete() {
+        let mut app = app();
+        app.set_plugin_commands(vec![(
+            "reflect".to_string(),
+            "Run a reflection pass".into(),
+        )]);
+        assert!(
+            app.slash_commands
+                .iter()
+                .any(|(n, d)| n == "reflect" && d.contains("(plugin)")),
+            "plugin commands must be discoverable, not just callable"
+        );
     }
 
     #[test]

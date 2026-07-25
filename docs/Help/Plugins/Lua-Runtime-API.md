@@ -667,7 +667,7 @@ return {
 
 A tool's `fn` receives one table of arguments and returns any JSON-representable value. `params` becomes the JSON Schema the model sees; a param is required unless marked `optional = true`.
 
-Commands are listed over the `plugin.commands` RPC and invoked with `plugin.run_command`, so the TUI and the web client see the same set.
+Commands are listed over the `plugin.commands` RPC and invoked with `plugin.run_command`. The TUI consumes both: a plugin command appears in slash autocomplete (tagged `(plugin)`) and `/name args` invokes it, with the result shown as a system message. Built-in slashes always dispatch first — a plugin cannot shadow `/plan` or `/help`. The web client does not consume commands yet.
 
 ### Name collisions
 

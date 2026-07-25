@@ -667,6 +667,46 @@ impl OilChatRunner {
                             }
                         }));
                     }
+                    // Gated on `!self.is_replay`: runs the command in the
+                    // daemon's plugin registry. The result renders as a
+                    // system message — an invocation, not a chat turn.
+                    ChatAppMsg::RunPluginCommand { ref name, ref args } if !self.is_replay => {
+                        tracing::info!(command = %name, "Running plugin command");
+                        let name = name.clone();
+                        let args = if args.is_empty() {
+                            serde_json::Value::Null
+                        } else {
+                            serde_json::json!({ "input": args })
+                        };
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
+                            match crucible_daemon::DaemonClient::connect().await {
+                                Ok(client) => match client.plugin_run_command(&name, args).await {
+                                    Ok(result) => {
+                                        let rendered = match result.get("result") {
+                                            Some(serde_json::Value::String(s)) => s.clone(),
+                                            Some(other) => serde_json::to_string_pretty(other)
+                                                .unwrap_or_else(|_| other.to_string()),
+                                            None => "(no result)".to_string(),
+                                        };
+                                        let _ = tx.send(ChatAppMsg::Status(format!(
+                                            "/{name}: {rendered}"
+                                        )));
+                                    }
+                                    Err(e) => {
+                                        let _ = tx.send(ChatAppMsg::Error(format!(
+                                            "/{name} failed: {e}"
+                                        )));
+                                    }
+                                },
+                                Err(e) => {
+                                    let _ = tx.send(ChatAppMsg::Error(format!(
+                                        "Cannot connect to daemon: {e}"
+                                    )));
+                                }
+                            }
+                        }));
+                    }
                     // Gated on `!self.is_replay`: slash commands forward to the
                     // agent (and thus the daemon). Defense-in-depth — user
                     // keystrokes during replay must not hit the daemon.
@@ -733,6 +773,7 @@ impl OilChatRunner {
                     | ChatAppMsg::EvalLua(_)
                     | ChatAppMsg::ConfigSet { .. }
                     | ChatAppMsg::ExecuteSlashCommand(_)
+                    | ChatAppMsg::RunPluginCommand { .. }
                     | ChatAppMsg::ExportSession(_)
                     | ChatAppMsg::FetchModels
                         if self.is_replay =>

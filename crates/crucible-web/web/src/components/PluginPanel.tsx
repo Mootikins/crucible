@@ -208,6 +208,16 @@ export const PluginPanel: Component = () => {
                       {plugin.tools}T {plugin.commands}C {plugin.handlers}H {plugin.services}S
                     </span>
                   </div>
+                  {/* Why a broken plugin broke — the state chip alone left
+                      "Error" with no reason anywhere a user looks. */}
+                  <Show when={plugin.last_error}>
+                    <div
+                      class="mt-1 text-[11px] text-error break-words"
+                      data-testid={`plugin-error-${plugin.name}`}
+                    >
+                      {plugin.last_error}
+                    </div>
+                  </Show>
                 </div>
               )}
             </For>

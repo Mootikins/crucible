@@ -96,6 +96,7 @@ pub struct OilChatRunner {
     pub(super) show_diffs: bool,
     pub(super) session_cmd_rx: Option<mpsc::UnboundedReceiver<SessionCommand>>,
     pub(super) slash_commands: Vec<(String, String)>,
+    pub(super) plugin_commands: Vec<(String, String)>,
     pub(super) agent_name: Option<String>,
     pub(super) initial_sets: Vec<SetEffect>,
     pub(super) recording_mode: Option<String>,
@@ -152,6 +153,7 @@ impl OilChatRunner {
             show_diffs: true,
             session_cmd_rx: None,
             slash_commands: Vec::new(),
+            plugin_commands: Vec::new(),
             agent_name: None,
             initial_sets: Vec::new(),
             recording_mode: None,
@@ -224,6 +226,14 @@ impl OilChatRunner {
 
     pub fn with_slash_commands(mut self, commands: Vec<(String, String)>) -> Self {
         self.slash_commands = commands;
+        self
+    }
+
+    /// Plugin-declared commands (name, description) from the daemon's
+    /// `plugin.commands` RPC — dispatched to `plugin.run_command`, and
+    /// surfaced in slash autocomplete alongside the built-ins.
+    pub fn with_plugin_commands(mut self, commands: Vec<(String, String)>) -> Self {
+        self.plugin_commands = commands;
         self
     }
 

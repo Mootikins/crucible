@@ -78,6 +78,9 @@ impl OilChatRunner {
         if !self.slash_commands.is_empty() {
             app.set_slash_commands(std::mem::take(&mut self.slash_commands));
         }
+        if !self.plugin_commands.is_empty() {
+            app.set_plugin_commands(std::mem::take(&mut self.plugin_commands));
+        }
 
         let terminal_size = self.terminal.size();
         let ctx = ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);

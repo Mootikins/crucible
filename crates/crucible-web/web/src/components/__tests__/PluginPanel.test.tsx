@@ -57,6 +57,26 @@ describe('PluginPanel', () => {
     expect(screen.getByText(/3T 1C 2H 0S/)).toBeInTheDocument();
   });
 
+  it('shows last_error for a broken plugin, and no error row for a healthy one', async () => {
+    getPluginsMock.mockResolvedValue([
+      RICH_ROW,
+      {
+        ...RICH_ROW,
+        name: 'broken-plugin',
+        state: 'Error',
+        last_error: "init.lua:12: module 'lua.container' not found",
+      },
+    ]);
+    render(() => <PluginPanel />);
+    await waitFor(() => expect(screen.getByTestId('plugin-row-broken-plugin')).toBeInTheDocument());
+
+    // The reason, where the user is looking — "Error" alone is unactionable.
+    expect(screen.getByTestId('plugin-error-broken-plugin')).toHaveTextContent(
+      "module 'lua.container' not found",
+    );
+    expect(screen.queryByTestId('plugin-error-demo-plugin')).not.toBeInTheDocument();
+  });
+
   it('reload button triggers reloadPlugin and shows a success toast', async () => {
     render(() => <PluginPanel />);
     await waitFor(() => expect(screen.getByTestId('plugin-reload-demo-plugin')).toBeInTheDocument());

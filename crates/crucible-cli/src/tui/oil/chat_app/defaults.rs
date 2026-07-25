@@ -52,6 +52,7 @@ impl Default for OilChatApp {
             workspace_files: Vec::new(),
             kiln_notes: Vec::new(),
             slash_commands: crate::commands::chat::known_slash_commands(),
+            plugin_command_names: std::collections::HashSet::new(),
             statusline_config: Some(
                 crucible_lua::get_statusline_config()
                     .unwrap_or_else(crucible_lua::statusline::StatuslineConfig::builtin_default),

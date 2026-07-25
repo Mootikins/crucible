@@ -447,6 +447,26 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
                     views = response.views.len(),
                     "Initialized Lua session via daemon RPC"
                 );
+                // Plugin-declared slash commands: `/name` dispatches to the
+                // daemon's `plugin.run_command` and autocompletes alongside
+                // the built-ins. This response is where every client is meant
+                // to learn the set — until here, nothing consumed it.
+                let plugin_commands: Vec<(String, String)> = response
+                    .commands
+                    .iter()
+                    .filter_map(|c| {
+                        let name = c.get("name")?.as_str()?.to_string();
+                        let description = c
+                            .get("description")
+                            .and_then(|d| d.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        Some((name, description))
+                    })
+                    .collect();
+                if !plugin_commands.is_empty() {
+                    runner = runner.with_plugin_commands(plugin_commands);
+                }
                 true
             }
             Err(e) => {
