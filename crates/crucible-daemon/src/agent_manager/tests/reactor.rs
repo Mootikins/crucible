@@ -213,6 +213,71 @@ async fn runtime_dispatch_pre_tool_call_cancels_execution() {
         .contains("blocked"));
 }
 
+/// A `pre_tool_call` handler that raises must block the tool, not admit it.
+///
+/// This hook is the enforcement point for gate-style plugins (the `oci`
+/// container interception is the reference case): the isolation *is* the
+/// handler returning `handled = true`. Nothing downstream re-checks — not the
+/// agent-card policy, not `[permissions]`, not the permission gate — so
+/// letting a raising handler fall through to the default executor silently
+/// downgrades sandboxed execution to host execution. `pre_tool_call` is
+/// therefore the one hook that fails closed; every other hook still fails
+/// open so a broken plugin can't kill a session (see
+/// `reactor_pre_llm_error_fails_open`).
+///
+/// What this asserts is the dispatcher contract: a raising handler produces a
+/// denial. It does not observe the filesystem, because this harness builds
+/// `WorkspaceTools` over a hardcoded `/tmp` rather than the session tempdir
+/// and runs with `mcp_gateway: None`, so no tool reaches real execution here.
+/// Pre-fix this test times out with no `tool_result` at all (the call falls
+/// through to a dispatcher that can't complete it); post-fix the gate denies
+/// and emits one.
+#[tokio::test]
+async fn runtime_dispatch_pre_tool_call_handler_error_blocks_execution() {
+    let mut h = ReactorTestHarness::new().await;
+
+    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
+    {
+        let state = session_state.lock().await;
+        state
+            .lua
+            .load(
+                r#"
+            crucible.on("pre_tool_call", function(ctx, event)
+                error("handler exploded")
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+    }
+
+    h.inject_streaming_agent(vec![
+        script::tool_call(
+            "call-runtime-pre-tool-error",
+            "write",
+            serde_json::json!({ "path": "escaped.txt", "content": "host write" }),
+        ),
+        script::text("done"),
+        script::done(),
+    ]);
+
+    h.send("run tool").await;
+
+    let tool_result = h.wait_for("tool_result").await;
+    h.wait_for("message_complete").await;
+
+    assert_eq!(tool_result.data["tool"], "write");
+    let error = tool_result.data["result"]["error"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        error.contains("handler exploded") || error.contains("handler error"),
+        "raising handler must deny the call and surface the failure, got: {:?}",
+        tool_result.data["result"]
+    );
+}
+
 #[tokio::test]
 async fn runtime_dispatch_post_llm_call_fires_handler() {
     let mut h = ReactorTestHarness::new().await;
@@ -510,5 +575,60 @@ async fn runtime_pre_tool_terminate_mixed_batch_does_not_end() {
     assert!(
         !saw_terminate_ended,
         "mixed batch should not emit terminate-reason ended; saw: {complete:?}"
+    );
+}
+
+/// A hook registered by a *plugin* must actually fire on a tool call.
+///
+/// This is the gap that let the whole plugin hook system ship broken: the
+/// suite above registers handlers directly into the per-session VM, which
+/// proves the dispatcher works but never that a plugin can reach it. Plugins
+/// load into `DaemonPluginLoader`'s VM — a third, disjoint Lua state — where
+/// `crucible.on` was simply absent, so `oci` (the reference interception
+/// plugin) raised at load and was downgraded to a `warn!`.
+///
+/// Deliberately drives a real `DaemonPluginLoader` rather than a hand-rolled
+/// registry, so it covers both halves: that the plugin runtime exposes
+/// `crucible.on`, and that what it registers reaches tool dispatch.
+#[tokio::test]
+async fn plugin_registered_pre_tool_call_handler_intercepts_tool() {
+    use crate::daemon_plugins::DaemonPluginLoader;
+
+    let mut h = ReactorTestHarness::new().await;
+
+    let loader = DaemonPluginLoader::new(std::collections::HashMap::new()).expect("loader");
+    let plugin_lua = loader.plugin_lua();
+    plugin_lua
+        .load(
+            r#"
+        crucible.on("pre_tool_call", { pattern = "write" }, function(ctx, event)
+            return { handled = true, result = "intercepted by plugin" }
+        end)
+    "#,
+        )
+        .exec()
+        .expect("plugin must be able to call crucible.on");
+
+    h.set_plugin_handlers(loader.plugin_handlers(), plugin_lua);
+
+    h.inject_streaming_agent(vec![
+        script::tool_call(
+            "call-plugin-hook",
+            "write",
+            serde_json::json!({ "path": "foo.txt", "content": "x" }),
+        ),
+        script::text("done"),
+        script::done(),
+    ]);
+
+    h.send("run tool").await;
+    let tool_result = h.wait_for("tool_result").await;
+    h.wait_for("message_complete").await;
+
+    assert_eq!(tool_result.data["tool"], "write");
+    assert_eq!(
+        tool_result.data["result"]["result"], "intercepted by plugin",
+        "plugin-registered handler did not intercept; got {:?}",
+        tool_result.data["result"]
     );
 }

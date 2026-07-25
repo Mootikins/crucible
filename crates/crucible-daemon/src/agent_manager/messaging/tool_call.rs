@@ -8,6 +8,152 @@ use crucible_lua::{
     ToolDisplayStartEvent,
 };
 
+/// Deny a tool call: emit the `tool_result` so views show the outcome, and
+/// hand the agent loop an errored result.
+///
+/// `pre_tool_call` is the enforcement point for gate-style plugins — the
+/// isolation *is* the handler taking the call over. Nothing downstream
+/// re-checks, so every way a gate can fail to approve must land here rather
+/// than falling through to the default executor.
+fn deny_tool_call(
+    stream_ctx: &StreamContext,
+    call_id: &str,
+    tool_name: &str,
+    error_msg: String,
+) -> Option<crucible_core::traits::chat::ChatToolResult> {
+    if !emit_event(
+        &stream_ctx.event_tx,
+        SessionEventMessage::tool_result(
+            &stream_ctx.session_id,
+            call_id,
+            tool_name,
+            serde_json::json!({ "error": &error_msg }),
+        ),
+    ) {
+        warn!(
+            session_id = %stream_ctx.session_id,
+            tool = %tool_name,
+            "No subscribers for handler denied tool_result event"
+        );
+    }
+    Some(crucible_core::traits::chat::ChatToolResult {
+        name: tool_name.to_string(),
+        result: String::new(),
+        error: Some(error_msg),
+        call_id: Some(call_id.to_string()),
+        terminate: false,
+    })
+}
+
+/// Run every `crucible.on("pre_tool_call", …)` handler in one registry.
+///
+/// `Some` short-circuits the call — a handler cancelled, took it over, or
+/// raised. `None` means every handler observed without intervening, so the
+/// caller continues to the next registry (or to real dispatch).
+///
+/// Takes `registry` and `lua` explicitly because handler bodies are
+/// `RegistryKey`s valid only against the state that created them: session
+/// handlers live in the session VM, plugin handlers in the loader's.
+async fn run_pre_tool_call_handlers(
+    stream_ctx: &StreamContext,
+    registry: &crucible_lua::LuaScriptHandlerRegistry,
+    lua: &mlua::Lua,
+    tool_name: &str,
+    args: &serde_json::Value,
+    call_id: &str,
+) -> Option<crucible_core::traits::chat::ChatToolResult> {
+    for handler in registry.runtime_handlers_for("pre_tool_call", Some(tool_name)) {
+        let event = SessionEvent::Custom {
+            name: "pre_tool_call".to_string(),
+            payload: serde_json::json!({
+                "tool": tool_name,
+                "args": args,
+            }),
+        };
+        match registry
+            .execute_runtime_handler(lua, &handler.name, &event)
+            .await
+        {
+            Ok(crucible_lua::ScriptHandlerResult::Cancel { reason }) => {
+                debug!(
+                    session_id = %stream_ctx.session_id,
+                    tool = %tool_name,
+                    handler = %handler.name,
+                    reason = %reason,
+                    "pre_tool_call handler cancelled"
+                );
+                return deny_tool_call(
+                    stream_ctx,
+                    call_id,
+                    tool_name,
+                    format!("Tool blocked by crucible.on handler: {}", reason),
+                );
+            }
+            Ok(crucible_lua::ScriptHandlerResult::Handled { result, terminate }) => {
+                debug!(
+                    session_id = %stream_ctx.session_id,
+                    tool = %tool_name,
+                    handler = %handler.name,
+                    "pre_tool_call handler provided result"
+                );
+                // Emit tool_call event so TUI shows tool running
+                emit_event(
+                    &stream_ctx.event_tx,
+                    SessionEventMessage::tool_call(
+                        &stream_ctx.session_id,
+                        call_id,
+                        tool_name,
+                        args.clone(),
+                    ),
+                );
+                let result_string = match result {
+                    serde_json::Value::String(s) => s,
+                    other => other.to_string(),
+                };
+                // Emit tool_result event so TUI shows completion
+                emit_event(
+                    &stream_ctx.event_tx,
+                    SessionEventMessage::tool_result_with_terminate(
+                        &stream_ctx.session_id,
+                        call_id,
+                        tool_name,
+                        serde_json::json!({ "result": &result_string }),
+                        terminate,
+                    ),
+                );
+                return Some(crucible_core::traits::chat::ChatToolResult {
+                    name: tool_name.to_string(),
+                    result: result_string,
+                    error: None,
+                    call_id: Some(call_id.to_string()),
+                    terminate,
+                });
+            }
+            Ok(_) => {}
+            // Fail closed — see `deny_tool_call`.
+            Err(error) => {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    tool = %tool_name,
+                    handler = %handler.name,
+                    error = %error,
+                    "pre_tool_call handler error, denying tool (fail-closed)"
+                );
+                return deny_tool_call(
+                    stream_ctx,
+                    call_id,
+                    tool_name,
+                    format!(
+                        "Tool denied: pre_tool_call handler error in '{}': {error}",
+                        handler.name
+                    ),
+                );
+            }
+        }
+    }
+    None
+}
+
 impl AgentManager {
     pub(super) async fn handle_tool_call_in_stream(
         stream_ctx: &StreamContext,
@@ -80,13 +226,22 @@ impl AgentManager {
                         terminate: false,
                     });
                 }
+                // Fail closed. A gate that raises has not approved the call,
+                // and admitting it would silently downgrade sandboxed
+                // execution to host execution.
                 Ok(EmitResult::Failed { handler, error, .. }) => {
                     warn!(
                         session_id = %stream_ctx.session_id,
                         tool = %tool_call.name,
                         handler = %handler,
                         error = %error,
-                        "PreToolCall handler failed, continuing (fail-open)"
+                        "PreToolCall handler failed, denying tool (fail-closed)"
+                    );
+                    return deny_tool_call(
+                        stream_ctx,
+                        &call_id,
+                        &tool_call.name,
+                        format!("Tool denied: pre_tool_call handler error in '{handler}': {error}"),
                     );
                 }
                 Ok(EmitResult::Completed { .. }) => {}
@@ -95,109 +250,48 @@ impl AgentManager {
                         session_id = %stream_ctx.session_id,
                         tool = %tool_call.name,
                         error = %error,
-                        "PreToolCall emit failed, continuing (fail-open)"
+                        "PreToolCall emit failed, denying tool (fail-closed)"
+                    );
+                    return deny_tool_call(
+                        stream_ctx,
+                        &call_id,
+                        &tool_call.name,
+                        format!("Tool denied: pre_tool_call handler error: {error}"),
                     );
                 }
             }
 
-            for handler in state
-                .registry
-                .runtime_handlers_for("pre_tool_call", Some(&tool_call.name))
+            // Session-scoped handlers, then plugin-registered ones. Plugins
+            // live in the loader's VM with their own registry; a RegistryKey
+            // is only valid against the state that made it, so the two can't
+            // be merged into one registry.
+            if let Some(result) = run_pre_tool_call_handlers(
+                stream_ctx,
+                &state.registry,
+                &state.lua,
+                &tool_call.name,
+                &args,
+                &call_id,
+            )
+            .await
             {
-                let event = SessionEvent::Custom {
-                    name: "pre_tool_call".to_string(),
-                    payload: serde_json::json!({
-                        "tool": &tool_call.name,
-                        "args": &args,
-                    }),
-                };
-                match state
-                    .registry
-                    .execute_runtime_handler(&state.lua, &handler.name, &event)
-                    .await
+                return Some(result);
+            }
+
+            if let Some((plugin_registry, plugin_lua)) =
+                stream_ctx.agent_stream_config.plugin_handlers.as_ref()
+            {
+                if let Some(result) = run_pre_tool_call_handlers(
+                    stream_ctx,
+                    plugin_registry,
+                    plugin_lua,
+                    &tool_call.name,
+                    &args,
+                    &call_id,
+                )
+                .await
                 {
-                    Ok(crucible_lua::ScriptHandlerResult::Cancel { reason }) => {
-                        debug!(
-                            session_id = %stream_ctx.session_id,
-                            tool = %tool_call.name,
-                            handler = %handler.name,
-                            reason = %reason,
-                            "pre_tool_call handler cancelled"
-                        );
-                        let error_msg = format!("Tool blocked by crucible.on handler: {}", reason);
-                        if !emit_event(
-                            &stream_ctx.event_tx,
-                            SessionEventMessage::tool_result(
-                                &stream_ctx.session_id,
-                                &call_id,
-                                &tool_call.name,
-                                serde_json::json!({ "error": error_msg }),
-                            ),
-                        ) {
-                            warn!(
-                                session_id = %stream_ctx.session_id,
-                                tool = %tool_call.name,
-                                "No subscribers for handler denied tool_result event"
-                            );
-                        }
-                        return Some(crucible_core::traits::chat::ChatToolResult {
-                            name: tool_call.name.clone(),
-                            result: String::new(),
-                            error: Some(error_msg),
-                            call_id: Some(call_id.clone()),
-                            terminate: false,
-                        });
-                    }
-                    Ok(crucible_lua::ScriptHandlerResult::Handled { result, terminate }) => {
-                        debug!(
-                            session_id = %stream_ctx.session_id,
-                            tool = %tool_call.name,
-                            handler = %handler.name,
-                            "pre_tool_call handler provided result"
-                        );
-                        // Emit tool_call event so TUI shows tool running
-                        emit_event(
-                            &stream_ctx.event_tx,
-                            SessionEventMessage::tool_call(
-                                &stream_ctx.session_id,
-                                &call_id,
-                                &tool_call.name,
-                                args.clone(),
-                            ),
-                        );
-                        let result_string = match result {
-                            serde_json::Value::String(s) => s,
-                            other => other.to_string(),
-                        };
-                        // Emit tool_result event so TUI shows completion
-                        emit_event(
-                            &stream_ctx.event_tx,
-                            SessionEventMessage::tool_result_with_terminate(
-                                &stream_ctx.session_id,
-                                &call_id,
-                                &tool_call.name,
-                                serde_json::json!({ "result": &result_string }),
-                                terminate,
-                            ),
-                        );
-                        return Some(crucible_core::traits::chat::ChatToolResult {
-                            name: tool_call.name.clone(),
-                            result: result_string,
-                            error: None,
-                            call_id: Some(call_id.clone()),
-                            terminate,
-                        });
-                    }
-                    Ok(_) => {}
-                    Err(error) => {
-                        warn!(
-                            session_id = %stream_ctx.session_id,
-                            tool = %tool_call.name,
-                            handler = %handler.name,
-                            error = %error,
-                            "pre_tool_call handler error (fail-open)"
-                        );
-                    }
+                    return Some(result);
                 }
             }
         }
