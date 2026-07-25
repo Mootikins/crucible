@@ -9,9 +9,20 @@
 -- Zero Rust docker knowledge — all container logic lives here in Lua.
 -- Uses generic crucible.on() hooks with pattern matching and the Handled result convention.
 
-local container = require("lua.container")
+local container = require("container")
 
-local active = nil -- { name: string, runtime: string, workspace: string }
+-- Per session, because handlers are registered once at plugin load and are
+-- shared by every session. A single global was only ever correct when
+-- handlers were (re-)registered per session — which also made them
+-- accumulate, one stale copy per session, for the daemon's lifetime.
+local sessions = {} -- session_id -> { name, runtime, workspace }
+
+--- The container serving this tool call, or nil if the session has none.
+local function active_for(ctx)
+  local id = ctx and ctx.session_id
+  if not id then return nil end
+  return sessions[id]
+end
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Path remapping
@@ -52,6 +63,7 @@ end
 -- ─────────────────────────────────────────────────────────────────────────────
 
 local function handle_bash(ctx, event)
+  local active = active_for(ctx)
   if not active then return nil end
   local args = event.args or {}
   local cmd = args.command or ""
@@ -69,6 +81,7 @@ local function handle_bash(ctx, event)
 end
 
 local function handle_read_file(ctx, event)
+  local active = active_for(ctx)
   if not active then return nil end
   local args = event.args or {}
   local path = remap_path(active.workspace, args.path)
@@ -92,6 +105,7 @@ local function handle_read_file(ctx, event)
 end
 
 local function handle_write_file(ctx, event)
+  local active = active_for(ctx)
   if not active then return nil end
   local args = event.args or {}
   local path = remap_path(active.workspace, args.path)
@@ -111,6 +125,7 @@ local function handle_write_file(ctx, event)
 end
 
 local function handle_edit_file(ctx, event)
+  local active = active_for(ctx)
   if not active then return nil end
   local args = event.args or {}
   local path = remap_path(active.workspace, args.path)
@@ -152,6 +167,7 @@ local function handle_edit_file(ctx, event)
 end
 
 local function handle_glob(ctx, event)
+  local active = active_for(ctx)
   if not active then return nil end
   local args = event.args or {}
   local pattern = args.pattern or "*"
@@ -181,6 +197,7 @@ local function handle_glob(ctx, event)
 end
 
 local function handle_grep(ctx, event)
+  local active = active_for(ctx)
   if not active then return nil end
   local args = event.args or {}
   local pattern = args.pattern or ""
@@ -226,22 +243,31 @@ local TOOL_HANDLERS = {
 -- Config resolution
 -- ─────────────────────────────────────────────────────────────────────────────
 
+-- Populated by setup() from [plugins.oci]. `cru.config.get("container")`
+-- never resolved: cru.config is the app-config store, so it read a top-level
+-- `container` key that does not exist, resolve_config returned nil, and the
+-- session silently started with no container at all.
+local config = nil
+
 local function resolve_config()
-  local cfg = cru.config.get("container")
-  if not cfg or not cfg.image then return nil end
-  cfg.runtime = cfg.runtime or "docker"
-  cfg.mounts = cfg.mounts or {}
-  cfg.env = cfg.env or {}
-  return cfg
+  if not config or not config.image then return nil end
+  return {
+    image = config.image,
+    runtime = config.runtime,
+    dockerfile = config.dockerfile,
+    mounts = config.mounts or {},
+    env = config.env or {},
+    userns = config.userns,
+    exempt = config.exempt or {},
+  }
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Orphan cleanup
 -- ─────────────────────────────────────────────────────────────────────────────
 
-local function cleanup_orphans()
-  local cfg = cru.config.get("container")
-  local runtime = cfg and cfg.runtime or "docker"
+local function cleanup_orphans(runtime)
+  if not runtime then return end
   local containers = container.list_crucible(runtime)
   for _, c in ipairs(containers) do
     local session = cru.sessions and cru.sessions.get(c.session_id)
@@ -252,67 +278,118 @@ local function cleanup_orphans()
   end
 end
 
-pcall(cleanup_orphans)
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Session lifecycle + tool registration
 -- ─────────────────────────────────────────────────────────────────────────────
 
+-- Handlers register ONCE, at load — not inside on_session_start.
+--
+-- The registry is append-only with no unregister, so registering per session
+-- left one stale copy per session firing against a dead container for the
+-- daemon's lifetime. Each handler resolves its own session via ctx.session_id
+-- and no-ops when that session has no container.
+for tool_name, handler_fn in pairs(TOOL_HANDLERS) do
+  crucible.on("pre_tool_call", { pattern = tool_name, priority = 10 }, handler_fn)
+end
+
+--- `required = true`: a failure here refuses the session.
+---
+--- This is the whole contract. Previously a build or start failure logged one
+--- ERROR line, skipped handler registration, and let the session run every
+--- tool on the host — so "sandbox broken" and "sandbox working" were
+--- indistinguishable from the outside. Refusing makes "session exists" imply
+--- "session is sandboxed".
 crucible.on_session_start(function(session)
   local cfg = resolve_config()
+  -- Not configured is not a failure: no [plugins.oci] image means the user
+  -- never asked for isolation, and every session would otherwise be refused.
   if not cfg then return end
 
-  local name = "crucible-" .. session.id
-  local workspace = session.workspace or "."
+  local runtime, detect_err = container.detect(cfg.runtime)
+  if not runtime then
+    error("oci: " .. detect_err)
+  end
 
-  -- Build from Dockerfile if configured
+  pcall(cleanup_orphans, runtime)
+
+  local name = "crucible-" .. session.id
+  local workspace = session.workspace
+  if not workspace or workspace == "" then
+    error("oci: session has no workspace to isolate")
+  end
+
   if cfg.dockerfile and cfg.dockerfile ~= "" then
-    cru.log("info", "Building container image: " .. cfg.image)
-    local r = container.build(cfg.runtime, {
-      image = cfg.image,
-      dockerfile = cfg.dockerfile,
-      context = workspace,
+    crucible.set_status{
+      session = session.id, key = "oci", plugin = "oci",
+      text = "building " .. cfg.image, level = "info",
+    }
+    local b = container.build(runtime, {
+      image = cfg.image, dockerfile = cfg.dockerfile, context = workspace,
     })
-    if not r.success then
-      cru.log("error", "Container build failed: " .. (r.stderr or "unknown error"))
-      return
+    if not b.success then
+      error("oci: image build failed: " .. (b.stderr or "unknown error"))
     end
   end
 
-  -- Create and start container
-  local r = container.run(cfg.runtime, {
-    name = name,
-    session_id = session.id,
-    workspace = workspace,
-    image = cfg.image,
-    mounts = cfg.mounts,
-    env = cfg.env,
+  crucible.set_status{
+    session = session.id, key = "oci", plugin = "oci",
+    text = "starting " .. cfg.image, level = "info",
+  }
+
+  -- Uid mapping only when the image runs as non-root; see container.lua for
+  -- the measurements. Both keep-id and an explicit --user are required.
+  local userns, run_as_uid, run_as_gid = cfg.userns, nil, nil
+  if userns == nil and container.image_runs_as_non_root(runtime, cfg.image) then
+    userns = "keep-id"
+    run_as_uid, run_as_gid = container.host_ids()
+    if not run_as_uid then
+      error("oci: image runs as non-root but the host uid could not be read; "
+        .. "workspace writes would fail with permission denied")
+    end
+  end
+
+  local r = container.run(runtime, {
+    name = name, session_id = session.id, workspace = workspace,
+    image = cfg.image, mounts = cfg.mounts, env = cfg.env,
+    userns = userns, run_as_uid = run_as_uid, run_as_gid = run_as_gid,
   })
-
   if not r.success then
-    cru.log("error", "Container start failed: " .. (r.stderr or "unknown error"))
-    return
+    error("oci: container start failed: " .. (r.stderr or "unknown error"))
   end
 
-  active = { name = name, runtime = cfg.runtime, workspace = workspace }
-  cru.log("info", "Container started: " .. name .. " (" .. cfg.image .. ")")
+  sessions[session.id] = { name = name, runtime = runtime, workspace = workspace }
 
-  -- Register tool interception handlers for all workspace tools
-  for tool_name, handler_fn in pairs(TOOL_HANDLERS) do
-    crucible.on("pre_tool_call", { pattern = tool_name, priority = 10 }, handler_fn)
-  end
-end)
+  -- Default-deny: anything these handlers do not take over is refused rather
+  -- than run on the host. The six intercepted tools were complete only by
+  -- coincidence; a seventh would have escaped silently.
+  crucible.require_isolation{
+    session = session.id, plugin = "oci", exempt = cfg.exempt,
+  }
+
+  crucible.set_status{
+    session = session.id, key = "oci", plugin = "oci",
+    text = string.format("sandboxed: %s (%s)", cfg.image, runtime), level = "info",
+  }
+  cru.log("info", "oci: container started " .. name .. " (" .. cfg.image .. ")")
+end, { required = true })
 
 crucible.on_session_end(function(session)
+  local active = sessions[session.id]
   if not active then return end
   container.stop(active.runtime, active.name)
   container.rm(active.runtime, active.name)
-  cru.log("info", "Container removed: " .. active.name)
-  active = nil
+  sessions[session.id] = nil
+  crucible.clear_status{ session = session.id, key = "oci" }
+  cru.log("info", "oci: container removed " .. active.name)
 end)
 
 return {
   name = "oci",
+  --- Receives the `[plugins.oci]` section at load.
+  setup = function(cfg)
+    config = cfg or {}
+  end,
   version = "0.2.0",
   description = "Run agent tools inside OCI containers via generic hook interception",
 }

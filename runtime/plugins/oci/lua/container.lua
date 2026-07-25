@@ -59,6 +59,21 @@ function M.image_runs_as_non_root(runtime, image)
   return user ~= "" and user ~= "root" and user ~= "0"
 end
 
+--- The invoking user's uid/gid on the host.
+---
+--- Needed to pin the container's running uid when mapping a non-root image;
+--- `keep-id` alone is not enough. Read via `id` rather than a Lua API because
+--- none exposes it, and `id` is present anywhere a container runtime is.
+function M.host_ids()
+  local u = cru.shell.exec("id", { "-u" })
+  local g = cru.shell.exec("id", { "-g" })
+  if not u or not u.success then return nil end
+  local uid = (u.stdout or ""):gsub("%s+", "")
+  local gid = (g and g.success) and (g.stdout or ""):gsub("%s+", "") or uid
+  if uid == "" then return nil end
+  return uid, gid
+end
+
 --- Create and start a container with the sleep infinity sidecar pattern.
 function M.run(runtime, opts)
   local args = {
