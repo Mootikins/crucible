@@ -15,11 +15,11 @@ use crucible_lua::{
     register_context_module, register_context_validators, register_crucible_on_api,
     register_graph_module, register_isolation_module, register_oq_module, register_paths_module,
     register_schedule_module, register_sessions_module, register_sessions_module_with_api,
-    register_shell_module, register_storage_module, register_storage_module_with_store,
-    register_tools_module, register_tools_module_with_api, register_vault_module,
-    register_ws_module, DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor,
-    LuaScriptHandlerRegistry, LuaValidatorRegistry, PathsContext, PluginManager, PluginSource,
-    PluginSpec, ShellPolicy,
+    register_shell_module, register_status_module, register_storage_module,
+    register_storage_module_with_store, register_tools_module, register_tools_module_with_api,
+    register_vault_module, register_ws_module, DaemonSessionApi, DaemonToolsApi, IsolationRegistry,
+    LuaExecutor, LuaScriptHandlerRegistry, LuaValidatorRegistry, PathsContext, PluginManager,
+    PluginSource, PluginSpec, ShellPolicy, StatusRegistry,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -72,6 +72,8 @@ pub struct DaemonPluginLoader {
     /// Sessions a plugin has claimed isolation for. Read by the tool-call
     /// dispatcher to refuse unhandled host-touching tools.
     isolation: IsolationRegistry,
+    /// Per-session status slots published by plugins, read by TUI and web.
+    status: StatusRegistry,
 }
 
 impl DaemonPluginLoader {
@@ -146,6 +148,19 @@ impl DaemonPluginLoader {
             ),
         )?;
 
+        // `crucible.set_status` — a durable, session-scoped UI slot. Without
+        // it a plugin could only emit transient notifications, so a session's
+        // isolation state was unverifiable from the UI.
+        let status = StatusRegistry::new();
+        reg(
+            "status",
+            register_status_module(
+                lua,
+                &lua.globals().get::<mlua::Table>("crucible")?,
+                status.clone(),
+            ),
+        )?;
+
         let handler_registry = Arc::new(LuaScriptHandlerRegistry::new());
         reg(
             "crucible.on",
@@ -166,6 +181,7 @@ impl DaemonPluginLoader {
             plugin_config,
             plugin_registry: Arc::new(PluginRegistry::new()),
             isolation,
+            status,
         })
     }
 
@@ -185,6 +201,11 @@ impl DaemonPluginLoader {
     /// handlers missed is refused rather than silently run on the host.
     pub fn isolation(&self) -> IsolationRegistry {
         self.isolation.clone()
+    }
+
+    /// Per-session status slots published by plugins, for the RPC layer.
+    pub fn status(&self) -> StatusRegistry {
+        self.status.clone()
     }
 
     /// Fire `crucible.on_session_start` hooks registered by plugins.

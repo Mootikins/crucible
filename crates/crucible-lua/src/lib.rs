@@ -71,6 +71,7 @@ pub mod notify;
 mod oil;
 mod panel;
 mod paths;
+pub mod plugin_status;
 mod popup;
 mod ratelimit;
 mod registry;
@@ -199,3 +200,4 @@ pub use sessions::{
 pub use tools_api::{register_tools_module, register_tools_module_with_api, DaemonToolsApi};
 
 pub use isolation::{register_isolation_module, IsolationClaim, IsolationRegistry};
+pub use plugin_status::{register_status_module, StatusEntry, StatusRegistry};

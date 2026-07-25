@@ -78,6 +78,35 @@ pub(crate) async fn handle_plugin_list(
 /// Commands are an agent-level concern, not a TUI-local one — the web client
 /// gets slash commands from the same source — so they are served from the
 /// daemon's plugin loader rather than from a per-client Lua session.
+/// `session.status` — the status slots plugins published for a session.
+///
+/// Read by TUI and web so a plugin's durable state (e.g. "sandboxed:
+/// alpine:latest") is visible. Keyed and sorted, so the chrome owner renders
+/// any plugin's slots without knowing which plugins exist.
+pub(crate) async fn handle_session_status(
+    req: Request,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let loader_guard = plugin_loader.lock().await;
+    let slots = loader_guard
+        .as_ref()
+        .map(|l| l.status().get(session_id))
+        .unwrap_or_default();
+    let status: Vec<_> = slots
+        .into_iter()
+        .map(|(key, e)| {
+            serde_json::json!({
+                "key": key,
+                "plugin": e.plugin,
+                "text": e.text,
+                "level": e.level,
+            })
+        })
+        .collect();
+    Response::success(req.id, serde_json::json!({ "status": status }))
+}
+
 pub(crate) async fn handle_plugin_commands(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,

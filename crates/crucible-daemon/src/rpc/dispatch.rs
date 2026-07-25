@@ -107,6 +107,7 @@ pub const METHODS: &[&str] = &[
     "plugin.reload",
     "plugin.list",
     "plugin.commands",
+    "session.status",
     "plugin.run_command",
     "plugin.install",
     "plugin.remove",
@@ -395,6 +396,7 @@ impl RpcDispatcher {
             "plugin.reload" => to_response(id, self.handle_plugin_reload(&req).await),
             "plugin.list" => to_response(id, self.handle_plugin_list(&req).await),
             "plugin.commands" => to_response(id, self.handle_plugin_commands(&req).await),
+            "session.status" => to_response(id, self.handle_session_status(&req).await),
             "plugin.run_command" => to_response(id, self.handle_plugin_run_command(&req).await),
             "plugin.install" => to_response(id, self.handle_plugin_install(&req).await),
             "plugin.remove" => to_response(id, self.handle_plugin_remove(&req).await),
@@ -860,6 +862,7 @@ impl RpcDispatcher {
         // container would keep denying tools for a session id that may be
         // reused, and a stale claim is indistinguishable from a live one.
         loader.isolation().release(session_id);
+        loader.status().release(session_id);
         let mut session = crucible_lua::Session::new(session_id.to_string());
         if let Some(daemon_session) = self.ctx.sessions.get_session(session_id) {
             session = session.with_workspace(daemon_session.workspace.to_string_lossy());
@@ -1430,6 +1433,13 @@ impl RpcDispatcher {
     async fn handle_plugin_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::plugins::handle_plugin_list(req.clone(), &self.ctx.plugin_loader).await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_status(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp =
+            crate::server::plugins::handle_session_status(req.clone(), &self.ctx.plugin_loader)
+                .await;
         map_server_resp(resp)
     }
 
