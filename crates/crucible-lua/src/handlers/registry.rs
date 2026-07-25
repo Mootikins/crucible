@@ -55,9 +55,45 @@ pub struct RuntimeHandler {
     pub priority: i64,
     /// Optional glob pattern to filter events (e.g., tool name for pre_tool_call)
     pub pattern: Option<String>,
+    /// Plugin that registered this handler, when it was registered during a
+    /// plugin's load. Needed so a reload can drop that plugin's handlers —
+    /// without it, every reload appends another copy of every handler and the
+    /// stale ones keep firing against dead state.
+    pub plugin: Option<String>,
 }
 
 impl LuaScriptHandlerRegistry {
+    /// Drop every runtime handler registered by `plugin`, and its stored
+    /// functions.
+    ///
+    /// Called before a plugin is (re)executed. `PluginRegistry` already does
+    /// the equivalent for tools and commands; without it here, each reload
+    /// appended another copy of every `crucible.on` handler and the stale ones
+    /// kept firing — and since `pre_tool_call` fails closed, one stale handler
+    /// raising against dead state would deny every tool call in every session.
+    pub fn clear_plugin_handlers(&self, plugin: &str) {
+        let Ok(mut handlers) = self.runtime_handlers.lock() else {
+            return;
+        };
+        let mut dropped = Vec::new();
+        handlers.retain(|h| {
+            let keep = h.plugin.as_deref() != Some(plugin);
+            if !keep {
+                dropped.push(h.name.clone());
+            }
+            keep
+        });
+        if dropped.is_empty() {
+            return;
+        }
+        if let Ok(mut functions) = self.handler_functions.lock() {
+            for name in &dropped {
+                functions.remove(name);
+            }
+        }
+        tracing::debug!(plugin, count = dropped.len(), "cleared plugin handlers");
+    }
+
     /// Create an empty registry
     pub fn new() -> Self {
         Self {

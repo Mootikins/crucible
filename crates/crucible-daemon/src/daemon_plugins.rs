@@ -574,6 +574,15 @@ impl DaemonPluginLoader {
         // second one to load silently gets the first one's module.
         self.clear_plugin_lua_cache(&lua_dir)?;
 
+        // Drop this plugin's previously-registered handlers, and mark it as
+        // the loading plugin so anything it registers now is attributed to it.
+        // Without both halves a reload appends a second copy of every
+        // `crucible.on` handler, and the stale copies keep firing against dead
+        // state — which, with `pre_tool_call` failing closed, denies every
+        // tool call in every session.
+        self.handler_registry.clear_plugin_handlers(name);
+        lua.globals().set("__crucible_loading_plugin__", name)?;
+
         // Execute init.lua with eval_async — captures return value AND enables async Lua
         let source = std::fs::read_to_string(init_path)
             .map_err(|e| anyhow::anyhow!("read {}: {e}", init_path.display()))?;
@@ -583,6 +592,12 @@ impl DaemonPluginLoader {
             .eval_async()
             .await
             .map_err(|e| anyhow::anyhow!("exec {}: {e}", init_path.display()))?;
+
+        // Anything registered after this point (e.g. from a lifecycle hook at
+        // session start) is not attributable to a load, so it is left
+        // unowned rather than mis-attributed to whichever plugin loaded last.
+        lua.globals()
+            .set("__crucible_loading_plugin__", mlua::Value::Nil)?;
 
         // Extract the callables from the returned spec table. The sandbox pass
         // in `load_plugin_spec` sees the same table but in a throwaway VM, so
@@ -1396,6 +1411,56 @@ mod tests {
         assert!(
             err.to_string().contains("gate boom"),
             "refusal must name the underlying failure, got: {err}"
+        );
+    }
+
+    /// Reloading a plugin must replace its handlers, not append a second set.
+    ///
+    /// The registry is loader-global and append-only, so before attribution
+    /// every `plugin.reload` (and every file-watcher trigger) left the previous
+    /// handlers registered and firing against dead state. With `pre_tool_call`
+    /// failing closed, one stale handler raising denies every tool call in
+    /// every session — so the append-only registry and the fail-closed gate
+    /// were a bad pair.
+    #[tokio::test]
+    async fn reloading_a_plugin_replaces_its_handlers() {
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("reloadable");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("init.lua"),
+            r#"
+            crucible.on("pre_tool_call", { pattern = "bash" }, function(ctx, event) end)
+            return { name = "reloadable", version = "0.1.0" }
+        "#,
+        )
+        .unwrap();
+
+        let loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+        let init = dir.join("init.lua");
+        loader
+            .execute_plugin("reloadable", &init)
+            .await
+            .expect("first load");
+        let after_first = loader
+            .plugin_handlers()
+            .runtime_handlers_for("pre_tool_call", Some("bash"))
+            .len();
+        assert_eq!(after_first, 1, "first load should register exactly one");
+
+        loader
+            .execute_plugin("reloadable", &init)
+            .await
+            .expect("reload");
+        let after_reload = loader
+            .plugin_handlers()
+            .runtime_handlers_for("pre_tool_call", Some("bash"))
+            .len();
+        assert_eq!(
+            after_reload, 1,
+            "reload duplicated handlers — stale copies keep firing against dead state"
         );
     }
 

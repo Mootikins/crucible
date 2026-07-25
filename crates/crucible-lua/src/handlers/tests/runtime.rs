@@ -176,18 +176,21 @@ fn runtime_handlers_for_returns_matching_handlers() {
             name: "handler_a".to_string(),
             priority: 100,
             pattern: None,
+            plugin: None,
         });
         handlers.push(RuntimeHandler {
             event_type: "pre_tool_call".to_string(),
             name: "handler_b".to_string(),
             priority: 50,
             pattern: None,
+            plugin: None,
         });
         handlers.push(RuntimeHandler {
             event_type: "turn:complete".to_string(),
             name: "handler_c".to_string(),
             priority: 200,
             pattern: None,
+            plugin: None,
         });
     }
 
@@ -215,18 +218,21 @@ fn runtime_handlers_for_returns_sorted_by_priority() {
             name: "low_priority".to_string(),
             priority: 200,
             pattern: None,
+            plugin: None,
         });
         handlers.push(RuntimeHandler {
             event_type: "turn:complete".to_string(),
             name: "high_priority".to_string(),
             priority: 10,
             pattern: None,
+            plugin: None,
         });
         handlers.push(RuntimeHandler {
             event_type: "turn:complete".to_string(),
             name: "medium_priority".to_string(),
             priority: 100,
             pattern: None,
+            plugin: None,
         });
     }
 
@@ -250,12 +256,14 @@ fn pattern_filtering_matches_exact_tool_name() {
             name: "bash_handler".to_string(),
             priority: 10,
             pattern: Some("bash".to_string()),
+            plugin: None,
         });
         handlers.push(RuntimeHandler {
             event_type: "pre_tool_call".to_string(),
             name: "all_handler".to_string(),
             priority: 100,
             pattern: None,
+            plugin: None,
         });
     }
 
@@ -286,6 +294,7 @@ fn pattern_filtering_supports_glob() {
             name: "read_handler".to_string(),
             priority: 10,
             pattern: Some("read_*".to_string()),
+            plugin: None,
         });
     }
 

@@ -84,12 +84,21 @@ pub fn register_crucible_on_api(
             .lock()
             .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock handlers: {}", e)))?;
 
+        // Set by the loader around a plugin's execution so handlers can be
+        // attributed and later dropped on reload.
+        let plugin: Option<String> = lua
+            .globals()
+            .get::<Option<String>>("__crucible_loading_plugin__")
+            .ok()
+            .flatten();
+
         let name = format!("runtime_handler_{}", guard.len());
         guard.push(RuntimeHandler {
             event_type: event_type.clone(),
             name: name.clone(),
             priority,
             pattern: pattern.clone(),
+            plugin: plugin.clone(),
         });
 
         let key = lua.create_registry_value(handler)?;

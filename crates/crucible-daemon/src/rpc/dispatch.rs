@@ -785,50 +785,68 @@ impl RpcDispatcher {
         // `on_session_start` (oci does), so these hooks have to fire on the
         // plugin runtime — not just the per-call `lua.init_session` executor,
         // which was the only place firing them.
-        //
-        // A raising hook refuses the session. `oci` acquires its container
-        // here; if that fails, continuing would silently run every tool on the
-        // host — the exact "sandboxed or not?" ambiguity this design removes.
-        // The session is ended again so a refused create leaves nothing behind.
-        if let Ok(value) = &mapped {
-            if let Some(session_id) = value.get("session_id").and_then(|v| v.as_str()) {
-                if let Err(e) = self.fire_plugin_session_start(session_id).await {
-                    let session_id = session_id.to_string();
-                    tracing::error!(
-                        session_id = %session_id,
-                        error = %e,
-                        "plugin session_start hook failed; refusing the session"
-                    );
-                    // Hooks run in order and every one runs even after a
-                    // failure, so an earlier plugin may already hold a
-                    // container or socket. Tear down before ending, or the
-                    // refusal leaks exactly the resource the fail-closed path
-                    // exists to control.
-                    self.fire_plugin_session_end(&session_id).await;
-                    if let Err(end_err) = self.ctx.sessions.end_session(&session_id).await {
-                        tracing::error!(
-                            session_id = %session_id,
-                            error = %end_err,
-                            "refused session could not be ended; it may be orphaned"
-                        );
-                    }
-                    return Err(RpcError {
-                        code: INTERNAL_ERROR,
-                        message: format!(
-                            "session refused: a plugin's session_start hook failed: {e}"
-                        ),
-                        data: None,
-                    });
-                }
-            }
-        }
-        mapped
+        self.enforce_plugin_session_start(mapped, req).await
     }
 
     /// Fire plugin `on_session_start` hooks, best-effort.
     ///
     /// A failing plugin hook must not fail session creation — the session
     /// already exists by this point, and the caller is waiting on it.
+    /// Fire plugin start hooks for a session that just became live, and refuse
+    /// it if a `required` hook failed.
+    ///
+    /// Shared by create, resume and resume-from-storage. The invariant is
+    /// "a live session is sandboxed" — if only create enforced it, resuming a
+    /// session would silently run every tool on the host, which is exactly the
+    /// ambiguity the fail-closed design removes.
+    ///
+    /// On refusal the session is torn down (end hooks first, so an earlier
+    /// plugin's container is released) and ended, so a refused session leaves
+    /// nothing behind.
+    async fn enforce_plugin_session_start(
+        &self,
+        mapped: RpcResult<serde_json::Value>,
+        req: &Request,
+    ) -> RpcResult<serde_json::Value> {
+        let Ok(value) = &mapped else { return mapped };
+        // create returns the id in the response; resume is addressed by it.
+        let session_id = value
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .or_else(|| {
+                req.params
+                    .get("session_id")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+            });
+        let Some(session_id) = session_id else {
+            return mapped;
+        };
+
+        if let Err(e) = self.fire_plugin_session_start(&session_id).await {
+            tracing::error!(
+                session_id = %session_id,
+                error = %e,
+                "required plugin session_start hook failed; refusing the session"
+            );
+            self.fire_plugin_session_end(&session_id).await;
+            if let Err(end_err) = self.ctx.sessions.end_session(&session_id).await {
+                tracing::error!(
+                    session_id = %session_id,
+                    error = %end_err,
+                    "refused session could not be ended; it may be orphaned"
+                );
+            }
+            return Err(RpcError {
+                code: INTERNAL_ERROR,
+                message: format!("session refused: a plugin's session_start hook failed: {e}"),
+                data: None,
+            });
+        }
+        mapped
+    }
+
     /// Fire plugin `on_session_end` hooks, best-effort.
     ///
     /// Unlike the start path this never propagates: refusing to *end* a session
@@ -883,13 +901,24 @@ impl RpcDispatcher {
     async fn handle_session_pause(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_pause(req.clone(), &self.ctx.sessions).await;
-        map_server_resp(resp)
+        let mapped = map_server_resp(resp);
+        // Symmetric with resume firing start hooks: without this a paused
+        // session holds its container for the daemon's lifetime, and pause/
+        // resume cycles would acquire one each time without releasing any.
+        if mapped.is_ok() {
+            if let Some(session_id) = req.params.get("session_id").and_then(|v| v.as_str()) {
+                self.fire_plugin_session_end(session_id).await;
+            }
+        }
+        mapped
     }
 
     async fn handle_session_resume(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_resume(req.clone(), &self.ctx.sessions).await;
-        map_server_resp(resp)
+        // A resumed session must satisfy the same invariant as a created one.
+        self.enforce_plugin_session_start(map_server_resp(resp), req)
+            .await
     }
 
     async fn handle_session_resume_from_storage(
@@ -901,7 +930,8 @@ impl RpcDispatcher {
             &self.ctx.sessions,
         )
         .await;
-        map_server_resp(resp)
+        self.enforce_plugin_session_start(map_server_resp(resp), req)
+            .await
     }
 
     async fn handle_session_end(&self, req: &Request) -> RpcResult<serde_json::Value> {
