@@ -828,21 +828,67 @@ impl RpcDispatcher {
                 error = %e,
                 "required plugin session_start hook failed; refusing the session"
             );
-            self.fire_plugin_session_end(&session_id).await;
-            if let Err(end_err) = self.ctx.sessions.end_session(&session_id).await {
-                tracing::error!(
-                    session_id = %session_id,
-                    error = %end_err,
-                    "refused session could not be ended; it may be orphaned"
-                );
-            }
+            self.refuse_session(&session_id).await;
             return Err(RpcError {
                 code: INTERNAL_ERROR,
                 message: format!("session refused: a plugin's session_start hook failed: {e}"),
                 data: None,
             });
         }
+
+        // A claim the daemon cannot enforce is worse than no claim: the
+        // session would LOOK sandboxed while every tool runs on the host.
+        if let Some(reason) = self.unenforceable_isolation(&session_id).await {
+            tracing::error!(session_id = %session_id, %reason, "refusing session");
+            self.refuse_session(&session_id).await;
+            return Err(RpcError {
+                code: INTERNAL_ERROR,
+                message: format!("session refused: {reason}"),
+                data: None,
+            });
+        }
         mapped
+    }
+
+    /// Tear down a session being refused: plugin end hooks first (so an
+    /// earlier plugin's container is released), then end the session.
+    async fn refuse_session(&self, session_id: &str) {
+        self.fire_plugin_session_end(session_id).await;
+        if let Err(end_err) = self.ctx.sessions.end_session(session_id).await {
+            tracing::error!(
+                session_id = %session_id,
+                error = %end_err,
+                "refused session could not be ended; it may be orphaned"
+            );
+        }
+    }
+
+    /// The reason a session's isolation claim cannot be enforced, or `None`.
+    ///
+    /// Isolation is enforceable only for internal agents: the daemon
+    /// dispatches their tools, so `pre_tool_call` handlers and the
+    /// default-deny gate sit *before* execution. An ACP agent executes tools
+    /// in its own process and reports them as notifications — a handler's
+    /// Cancel/Handled arrives after the fact and stops nothing. Refusing is
+    /// the fail-closed answer; the ACP permission channel
+    /// (`session/request_permission`) is the seam a future enforcement could
+    /// use, but it only fires when the external agent chooses to ask.
+    async fn unenforceable_isolation(&self, session_id: &str) -> Option<String> {
+        let claim = {
+            let guard = self.ctx.plugin_loader.lock().await;
+            guard.as_ref().and_then(|l| l.isolation().get(session_id))
+        }?;
+        let session = self.ctx.sessions.get_session(session_id)?;
+        let agent_type = session.agent.as_ref().map(|a| a.agent_type.clone())?;
+        if agent_type == "internal" {
+            return None;
+        }
+        Some(format!(
+            "plugin '{}' claims isolation for this session, but its agent is external \
+             (agent_type '{agent_type}'): external agents execute tools in their own \
+             process, so the sandbox cannot be enforced",
+            claim.plugin
+        ))
     }
 
     /// Fire plugin `on_session_end` hooks, best-effort.
@@ -1083,6 +1129,38 @@ impl RpcDispatcher {
     // ── Agent operation wrappers ─────────────────────────────────────────────
 
     async fn handle_session_configure_agent(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        // Refuse switching an isolation-claimed session to an external agent
+        // BEFORE applying the config — after would leave the session already
+        // reconfigured when the error returns. Mirror of the create-time
+        // check in `enforce_plugin_session_start`.
+        let requested_type = req
+            .params
+            .get("agent")
+            .and_then(|a| a.get("agent_type"))
+            .and_then(|t| t.as_str());
+        if requested_type.is_some_and(|t| t != "internal") {
+            let session_id = req
+                .params
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            let claim = {
+                let guard = self.ctx.plugin_loader.lock().await;
+                guard.as_ref().and_then(|l| l.isolation().get(session_id))
+            };
+            if let Some(claim) = claim {
+                return Err(RpcError {
+                    code: INTERNAL_ERROR,
+                    message: format!(
+                        "cannot switch this session to an external agent: plugin '{}' \
+                         claims isolation for it, and external agents execute tools in \
+                         their own process where the sandbox cannot be enforced",
+                        claim.plugin
+                    ),
+                    data: None,
+                });
+            }
+        }
         let resp =
             crate::server::session::handle_session_configure_agent(req.clone(), &self.ctx.agents)
                 .await;
@@ -1775,6 +1853,130 @@ mod tests {
             std::path::PathBuf::from("/tmp"),
             None,
         )
+    }
+
+    /// Context with a real plugin loader, so tests can plant isolation claims.
+    fn test_context_with_loader() -> RpcContext {
+        let ctx = test_context();
+        let loader =
+            crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
+                .expect("loader");
+        *ctx.plugin_loader.try_lock().expect("fresh mutex") = Some(loader);
+        ctx
+    }
+
+    /// H2: isolation is enforceable only for internal agents — an external
+    /// (ACP) agent executes tools in its own process, where pre_tool_call
+    /// denials arrive after the fact. A claimed session must refuse the
+    /// switch, BEFORE the config is applied.
+    #[tokio::test]
+    async fn switching_an_isolated_session_to_an_external_agent_is_refused() {
+        let ctx = test_context_with_loader();
+        {
+            let guard = ctx.plugin_loader.lock().await;
+            guard.as_ref().unwrap().isolation().claim(
+                "iso-1",
+                crucible_lua::IsolationClaim {
+                    plugin: "oci".to_string(),
+                    exempt: Default::default(),
+                },
+            );
+        }
+        let dispatcher = RpcDispatcher::new(ctx);
+
+        let req = make_request(
+            "session.configure_agent",
+            serde_json::json!({
+                "session_id": "iso-1",
+                "agent": { "agent_type": "acp" },
+            }),
+        );
+        let resp = dispatcher.dispatch(ClientId::new(), req).await;
+        let err = resp.error.expect("switch must be refused");
+        assert!(
+            err.message.contains("cannot switch") && err.message.contains("oci"),
+            "refusal must name the claiming plugin: {}",
+            err.message
+        );
+    }
+
+    /// The mirror case: with no isolation claim, the external-agent switch
+    /// proceeds to the normal handler (which fails on the missing session —
+    /// the point is it is NOT the isolation refusal).
+    #[tokio::test]
+    async fn switching_an_unclaimed_session_to_an_external_agent_is_not_blocked_by_isolation() {
+        let dispatcher = RpcDispatcher::new(test_context_with_loader());
+        let req = make_request(
+            "session.configure_agent",
+            serde_json::json!({
+                "session_id": "no-claim",
+                "agent": { "agent_type": "acp" },
+            }),
+        );
+        let resp = dispatcher.dispatch(ClientId::new(), req).await;
+        if let Some(err) = resp.error {
+            assert!(
+                !err.message.contains("cannot switch"),
+                "unclaimed session must not hit the isolation guard: {}",
+                err.message
+            );
+        }
+    }
+
+    /// The create-time half of the same invariant, tested through the
+    /// dispatcher's own check: a claimed session whose agent is external is
+    /// reported unenforceable; internal or unclaimed sessions are not.
+    #[tokio::test]
+    async fn isolation_claim_on_an_external_agent_session_is_unenforceable() {
+        use crucible_core::session::{SessionAgent, SessionType};
+
+        let ctx = test_context_with_loader();
+        let kiln = tempfile::tempdir().expect("kiln tempdir");
+        let session = ctx
+            .sessions
+            .create_session(
+                SessionType::Chat,
+                kiln.path().to_path_buf(),
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .expect("create session");
+        let agent: SessionAgent = serde_json::from_value(serde_json::json!({
+            "agent_type": "acp",
+            "provider": "ollama",
+            "model": "test-model",
+            "system_prompt": "",
+        }))
+        .expect("minimal agent config");
+        ctx.agents
+            .configure_agent(&session.id, agent)
+            .await
+            .expect("configure agent");
+        {
+            let guard = ctx.plugin_loader.lock().await;
+            guard.as_ref().unwrap().isolation().claim(
+                &session.id,
+                crucible_lua::IsolationClaim {
+                    plugin: "oci".to_string(),
+                    exempt: Default::default(),
+                },
+            );
+        }
+        let dispatcher = RpcDispatcher::new(ctx);
+
+        let reason = dispatcher
+            .unenforceable_isolation(&session.id)
+            .await
+            .expect("an ACP-backed claimed session must be reported unenforceable");
+        assert!(reason.contains("oci") && reason.contains("acp"), "{reason}");
+
+        // No claim → enforceable regardless of agent type.
+        assert!(
+            dispatcher.unenforceable_isolation("other").await.is_none(),
+            "sessions without a claim must be unaffected"
+        );
     }
 
     #[test]

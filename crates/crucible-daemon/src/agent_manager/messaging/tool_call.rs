@@ -15,6 +15,13 @@ use crucible_lua::{
 /// isolation *is* the handler taking the call over. Nothing downstream
 /// re-checks, so every way a gate can fail to approve must land here rather
 /// than falling through to the default executor.
+///
+/// This guarantee holds for INTERNAL agents only: the daemon dispatches
+/// their tools, so a denial here prevents execution. An ACP agent executes
+/// tools in its own process and reports them as notifications — a denial
+/// arrives after the fact and stops nothing. That is why the dispatch layer
+/// refuses to pair an isolation claim with an external agent
+/// (`unenforceable_isolation` in rpc/dispatch.rs).
 fn deny_tool_call(
     stream_ctx: &StreamContext,
     call_id: &str,
