@@ -632,6 +632,49 @@ services = {
 
 The `gateway.connect` function uses `cru.retry` with reconnection backoff, `cru.ws.connect` for the WebSocket, and `cru.timer` for heartbeat scheduling.
 
+## Plugin Tools and Commands
+
+A plugin's spec table can also declare `tools` (callable by the agent's model) and `commands` (invocable by clients, e.g. as slash commands). Both take a `desc`, an optional `params` list, and a `fn`:
+
+```lua
+return {
+    name = "shout",
+
+    tools = {
+        shout = {
+            desc = "Uppercase the given text",
+            params = {
+                { name = "text", type = "string", desc = "Text to shout" },
+            },
+            fn = M.shout,
+        },
+    },
+
+    commands = {
+        greet = {
+            desc = "Greet someone",
+            hint = "[name]",
+            params = {
+                { name = "who", type = "string", desc = "Who to greet", optional = true },
+            },
+            fn = M.greet,
+        },
+    },
+}
+```
+
+A tool's `fn` receives one table of arguments and returns any JSON-representable value. `params` becomes the JSON Schema the model sees; a param is required unless marked `optional = true`.
+
+Commands are listed over the `plugin.commands` RPC and invoked with `plugin.run_command`, so the TUI and the web client see the same set.
+
+### Name collisions
+
+**A plugin tool whose name collides with a built-in tool is rejected, not shadowed.** Built-ins (`bash`, `read_file`, `edit_file`, `write_file`, `glob`, `grep`, the kiln MCP tools, and the tool-discovery bridge) always win; the plugin's tool is dropped with a warning in the daemon log and never advertised to the model. Rename it.
+
+Two plugins claiming the same tool name resolve first-loaded-wins, also with a warning. Commands are a separate namespace: a command may share a name with a built-in tool.
+
+A tool or command declared without a `fn` is not registered — declaring one the plugin doesn't export would advertise a call that always fails.
+
 ## See Also
 
 - [[Help/Lua/Language Basics]] -- Lua scripting overview

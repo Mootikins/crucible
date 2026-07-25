@@ -53,6 +53,7 @@ pub mod observe;
 pub mod permission_bridge;
 pub mod pipeline;
 pub mod plugin_ops;
+pub mod plugin_tools;
 pub mod project_manager;
 pub mod protocol;
 pub mod provider;

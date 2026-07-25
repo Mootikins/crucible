@@ -7,6 +7,7 @@
 //! UI modules (oil, popup, panel, statusline) are intentionally excluded —
 //! the daemon is headless.
 
+use crate::plugin_tools::PluginRegistry;
 use anyhow::Context;
 use crucible_core::storage::NoteStore;
 use crucible_core::storage::PropertyStore;
@@ -24,6 +25,15 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
+
+/// Callables extracted from a plugin's returned spec table, live in the
+/// daemon's Lua VM.
+#[derive(Default)]
+struct PluginExports {
+    services: Vec<(String, mlua::Function)>,
+    tools: HashMap<String, mlua::Function>,
+    commands: HashMap<String, mlua::Function>,
+}
 
 /// Daemon-side plugin loader with its own Lua runtime.
 ///
@@ -55,6 +65,9 @@ pub struct DaemonPluginLoader {
     /// Also exposed to Lua as `crucible.config.get("<plugin>.<key>")`; kept
     /// here so each plugin's section can be handed to its `setup()` at load.
     plugin_config: HashMap<String, serde_json::Value>,
+    /// Spec-declared tools and commands paired with their live `mlua::Function`
+    /// handles. Shared with the agent's tool dispatcher and the plugin RPCs.
+    plugin_registry: Arc<PluginRegistry>,
 }
 
 impl DaemonPluginLoader {
@@ -134,6 +147,7 @@ impl DaemonPluginLoader {
             validator_registry,
             handler_registry,
             plugin_config,
+            plugin_registry: Arc::new(PluginRegistry::new()),
         })
     }
 
@@ -174,6 +188,16 @@ impl DaemonPluginLoader {
         self.executor
             .fire_session_end_hooks(session)
             .map_err(|e| anyhow::anyhow!("fire session_end hooks: {e}"))
+    }
+
+    /// Tools and commands contributed by loaded plugins.
+    ///
+    /// Hand this `Arc` to the agent's tool dispatcher (via
+    /// [`crate::plugin_tools::PluginToolExecutor`]) and to the plugin RPC
+    /// handlers. It updates in place on plugin reload, so holders never go
+    /// stale.
+    pub fn plugin_registry(&self) -> Arc<PluginRegistry> {
+        Arc::clone(&self.plugin_registry)
     }
 
     /// Shared registry of Lua-defined output validators.
@@ -444,16 +468,26 @@ impl DaemonPluginLoader {
 
         // Execute the plugin in the daemon's real Lua runtime using eval_async
         // so that async Lua functions (gateway.connect, etc.) can yield.
-        // Also extract service Function refs from the returned spec table.
+        // Also extract service/tool/command Function refs from the returned
+        // spec table — the sandbox pass above only yields metadata. `name` is
+        // needed to hand the plugin its `[plugins.<name>]` section in setup().
         match self.execute_plugin(name, &main_path).await {
-            Ok(services) => {
-                for (svc_name, func) in services {
+            Ok(exports) => {
+                for (svc_name, func) in exports.services {
                     debug!(
                         "Extracted service function '{}' from plugin '{}'",
                         svc_name, name
                     );
                     self.service_fns.push((svc_name, func));
                 }
+                self.plugin_registry.register_plugin(
+                    name,
+                    self.executor.lua(),
+                    &spec.tools,
+                    &spec.commands,
+                    exports.tools,
+                    exports.commands,
+                );
             }
             Err(e) => {
                 warn!(
@@ -475,13 +509,12 @@ impl DaemonPluginLoader {
     /// Calls the returned spec's `setup(cfg)` with this plugin's
     /// `[plugins.<name>]` section — the documented configuration mechanism.
     ///
-    /// Returns extracted service `(name, Function)` pairs from the returned
-    /// spec table's `services` field.
+    /// Returns the callables the plugin exported: services, tools and commands.
     async fn execute_plugin(
         &self,
         name: &str,
         init_path: &std::path::Path,
-    ) -> anyhow::Result<Vec<(String, mlua::Function)>> {
+    ) -> anyhow::Result<PluginExports> {
         let lua = self.executor.lua();
         let plugin_dir = init_path
             .parent()
@@ -513,7 +546,10 @@ impl DaemonPluginLoader {
             .await
             .map_err(|e| anyhow::anyhow!("exec {}: {e}", init_path.display()))?;
 
-        let mut services = Vec::new();
+        // Extract the callables from the returned spec table. The sandbox pass
+        // in `load_plugin_spec` sees the same table but in a throwaway VM, so
+        // its functions are useless — only these handles can be invoked.
+        let mut exports = PluginExports::default();
         if let mlua::Value::Table(spec) = return_val {
             self.call_plugin_setup(name, &spec).await?;
 
@@ -521,14 +557,26 @@ impl DaemonPluginLoader {
             if let Ok(svc_table) = spec.get::<mlua::Table>("services") {
                 for (name, entry) in svc_table.pairs::<String, mlua::Table>().flatten() {
                     if let Ok(func) = entry.get::<mlua::Function>("fn") {
-                        services.push((name, func));
+                        exports.services.push((name, func));
+                    }
+                }
+            }
+            for (field, target) in [
+                ("tools", &mut exports.tools),
+                ("commands", &mut exports.commands),
+            ] {
+                if let Ok(table) = spec.get::<mlua::Table>(field) {
+                    for (name, entry) in table.pairs::<String, mlua::Table>().flatten() {
+                        if let Ok(func) = entry.get::<mlua::Function>("fn") {
+                            target.insert(name, func);
+                        }
                     }
                 }
             }
         }
 
         info!("Executed plugin in daemon runtime: {}", init_path.display());
-        Ok(services)
+        Ok(exports)
     }
 
     /// Hand `[plugins.<name>]` to the plugin's `setup(cfg)`, if it declares one.

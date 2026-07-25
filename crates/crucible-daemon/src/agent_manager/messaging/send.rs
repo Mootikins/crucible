@@ -543,12 +543,18 @@ impl AgentManager {
 
         // Resolve the Lua reference: clone the inner Lua handle (Arc-backed)
         // so we don't need to hold the MutexGuard across the async agent creation.
-        let lua_handle: Option<mlua::Lua> = match &self.plugin_loader {
+        let (lua_handle, plugin_tools): (
+            Option<mlua::Lua>,
+            Option<Arc<crate::plugin_tools::PluginRegistry>>,
+        ) = match &self.plugin_loader {
             Some(loader) => {
                 let guard = loader.lock().await;
-                guard.as_ref().map(|l| l.executor().lua().clone())
+                match guard.as_ref() {
+                    Some(l) => (Some(l.executor().lua().clone()), Some(l.plugin_registry())),
+                    None => (None, None),
+                }
             }
-            None => None,
+            None => (None, None),
         };
 
         let agent = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
@@ -565,6 +571,7 @@ impl AgentManager {
             acp_config: self.acp_config.as_ref(),
             knowledge_repo,
             embedding_provider,
+            plugin_tools,
         })
         .await?;
 

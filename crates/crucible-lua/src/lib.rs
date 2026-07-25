@@ -96,8 +96,8 @@ pub mod config;
 pub mod theme;
 
 pub use annotations::{
-    DiscoveredCommand, DiscoveredHandler, DiscoveredPlugin, DiscoveredService, DiscoveredTool,
-    DiscoveredView,
+    DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredPlugin, DiscoveredService,
+    DiscoveredTool, DiscoveredView,
 };
 pub use ask::{
     core_answer_to_lua, core_batch_to_lua, core_question_to_lua, core_response_to_lua,
@@ -143,7 +143,10 @@ pub use popup::{lua_entry_to_core, lua_request_to_core, register_popup_module};
 pub use ratelimit::register_ratelimit_module;
 pub use registry::LuaToolRegistry;
 pub use schedule::register_schedule_module;
-pub use schema::{generate_input_schema, type_to_string, FunctionSignature, LuauType, TypedParam};
+pub use schema::{
+    discovered_params_to_json_schema, generate_input_schema, type_to_string, FunctionSignature,
+    LuauType, TypedParam,
+};
 pub use shell::{register_shell_module, ExecResult, ShellPolicy};
 pub use statusline::{
     parse_statusline_config, register_statusline_module, ColorSpec, ModeStyleSpec,

@@ -710,6 +710,39 @@ impl DaemonClient {
             .unwrap_or_default())
     }
 
+    /// Commands declared by loaded plugins: `plugin`, `name`, `description`,
+    /// `hint`, `parameters`. Served from the daemon so TUI and web show the
+    /// same slash-command set.
+    pub async fn plugin_commands(&self) -> Result<Vec<serde_json::Value>> {
+        let result: serde_json::Value = self.typed_call("plugin.commands", EmptyParams {}).await?;
+        Ok(result
+            .get("commands")
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default())
+    }
+
+    /// Invoke a plugin command. `args` is passed to the command's Lua `fn` as
+    /// its single table argument.
+    pub async fn plugin_run_command(
+        &self,
+        name: &str,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        #[derive(serde::Serialize)]
+        struct RunCommandParams {
+            name: String,
+            args: serde_json::Value,
+        }
+        self.typed_call(
+            "plugin.run_command",
+            RunCommandParams {
+                name: name.to_string(),
+                args,
+            },
+        )
+        .await
+    }
+
     /// Install a plugin by URL. Synchronous (waits for the clone to
     /// finish) — can take 10+ seconds for first-clone over a slow network.
     pub async fn plugin_install(

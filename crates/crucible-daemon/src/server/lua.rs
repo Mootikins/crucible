@@ -3,6 +3,7 @@ use super::*;
 pub(crate) async fn handle_lua_init_session(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str).to_string();
     let kiln_root = optional_param!(req, "kiln_path", as_str)
@@ -53,11 +54,22 @@ pub(crate) async fn handle_lua_init_session(
         })),
     );
 
+    // Commands come from the daemon's plugin loader, not this per-call
+    // executor: a plugin's command handlers only exist in the loader's VM, and
+    // every client (TUI, web) must see the same set.
+    let commands = {
+        let guard = plugin_loader.lock().await;
+        guard
+            .as_ref()
+            .map(|l| l.plugin_registry().commands_json())
+            .unwrap_or_default()
+    };
+
     Response::success(
         req.id,
         serde_json::json!({
             "session_id": session_id,
-            "commands": [],
+            "commands": commands,
             "views": [],
         }),
     )

@@ -41,6 +41,8 @@ pub struct CreateInternalMcpToolDefsParams<'a> {
     pub gateway_all_tools_override: Option<&'a [McpToolInfo]>,
     /// Agent-card tool policy: tools marked Deny are never advertised.
     pub tool_policy: Option<&'a crucible_core::agent::ToolPolicyMap>,
+    /// Spec-declared plugin tools. `None` when no plugin loader is attached.
+    pub plugin_tools: Option<Arc<crate::plugin_tools::PluginRegistry>>,
 }
 
 /// Parameters for creating an agent from session configuration.
@@ -58,6 +60,9 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     pub acp_config: Option<&'a crucible_core::config::components::acp::AcpConfig>,
     pub knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
     pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    /// Spec-declared plugin tools, so the model can see what the dispatcher
+    /// can already run. `None` when no plugin loader is attached.
+    pub plugin_tools: Option<Arc<crate::plugin_tools::PluginRegistry>>,
 }
 
 /// Build a `DelegationContext` for a session's MCP server.
@@ -118,6 +123,7 @@ async fn create_internal_mcp_tool_defs(
         mode,
         gateway_all_tools_override,
         tool_policy,
+        plugin_tools,
     } = params;
     let denied = |name: &str| {
         tool_policy
@@ -179,6 +185,24 @@ async fn create_internal_mcp_tool_defs(
             tool.description.map(|d| d.to_string()).unwrap_or_default(),
             serde_json::Value::Object((*tool.input_schema).clone()),
         ));
+    }
+
+    // Plugin-declared tools. Never deferrable: there are few of them and the
+    // progressive-disclosure bridge exists to keep large gateway catalogs out
+    // of the prompt, not to hide the handful a user installed on purpose.
+    // Plan mode still excludes them — plan mode is an allowlist, and a plugin
+    // tool's side effects are unknown to us.
+    if let Some(registry) = plugin_tools {
+        for def in registry.tool_definitions() {
+            if mode == "plan" || denied(&def.name) {
+                continue;
+            }
+            tool_defs.push(LlmToolDefinition::new(
+                def.name,
+                def.description,
+                def.parameters.unwrap_or_else(|| serde_json::json!({})),
+            ));
+        }
     }
 
     let user_mcp_tools: Vec<LlmToolDefinition> = if let Some(ref gw) = mcp_gateway {
@@ -256,6 +280,7 @@ async fn create_internal_mcp_tool_names_for_tests(
         mode,
         gateway_all_tools_override,
         tool_policy: None,
+        plugin_tools: None,
     })
     .await;
     tools.into_iter().map(|t| t.function.name).collect()
@@ -482,6 +507,7 @@ pub async fn create_agent_from_session_config(
         acp_config,
         knowledge_repo,
         embedding_provider,
+        plugin_tools,
     } = params;
     if agent_config.agent_type == "acp" {
         let handle = AcpAgentHandle::new(AcpAgentHandleParams {
@@ -530,6 +556,7 @@ pub async fn create_agent_from_session_config(
             mode,
             gateway_all_tools_override: None,
             tool_policy: agent_config.tool_policy.as_ref(),
+            plugin_tools,
         })
         .await;
 
@@ -735,6 +762,7 @@ mod tests {
                 acp_config: None,
                 knowledge_repo: None,
                 embedding_provider: None,
+                plugin_tools: None,
             })
             .await
         });
@@ -805,6 +833,7 @@ mod tests {
             mode: "auto",
             gateway_all_tools_override: Some(&gateway_tools),
             tool_policy: None,
+            plugin_tools: None,
         })
         .await;
         assert_eq!(deferrable.len(), 12, "all gateway tools are deferrable");
@@ -906,6 +935,7 @@ mod tests {
             acp_config: None,
             knowledge_repo: None,
             embedding_provider: None,
+            plugin_tools: None,
         })
         .await;
         assert!(result.is_ok());
@@ -933,6 +963,7 @@ mod tests {
             acp_config: None,
             knowledge_repo: None,
             embedding_provider: None,
+            plugin_tools: None,
         })
         .await;
 
@@ -962,6 +993,7 @@ mod tests {
             acp_config: None,
             knowledge_repo: None,
             embedding_provider: None,
+            plugin_tools: None,
         })
         .await;
 
@@ -1076,6 +1108,7 @@ mod tests {
             mode: "auto",
             gateway_all_tools_override: None,
             tool_policy: None,
+            plugin_tools: None,
         })
         .await;
 
@@ -1084,6 +1117,103 @@ mod tests {
             .find(|t| t.function.name == "get_kiln_info")
             .expect("get_kiln_info tool should exist in in-process tools");
         assert!(!get_kiln_info_tool.function.description.is_empty());
+    }
+
+    /// A registry holding one plugin tool named `plugin_echo`.
+    fn registry_with_one_plugin_tool() -> (mlua::Lua, Arc<crate::plugin_tools::PluginRegistry>) {
+        let lua = mlua::Lua::new();
+        let func: mlua::Function = lua
+            .load("return function(args) return args end")
+            .eval()
+            .expect("eval fn");
+        let registry = Arc::new(crate::plugin_tools::PluginRegistry::new());
+        registry.register_plugin(
+            "fixture",
+            &lua,
+            &[crucible_lua::DiscoveredTool {
+                name: "plugin_echo".to_string(),
+                description: "Echo the input".to_string(),
+                params: vec![crucible_lua::DiscoveredParam {
+                    name: "text".to_string(),
+                    param_type: "string".to_string(),
+                    description: "Text".to_string(),
+                    optional: false,
+                }],
+                return_type: None,
+                source_path: "fixture".to_string(),
+                is_fennel: false,
+            }],
+            &[],
+            std::collections::HashMap::from([("plugin_echo".to_string(), func)]),
+            std::collections::HashMap::new(),
+        );
+        (lua, registry)
+    }
+
+    #[tokio::test]
+    async fn plugin_tools_are_advertised_to_the_model() {
+        let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        let (_lua, registry) = registry_with_one_plugin_tool();
+
+        let (tools, deferrable) = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+            workspace: Path::new("/tmp"),
+            kiln_path: Some(temp_dir.path()),
+            mcp_gateway: None,
+            server_names: &[],
+            knowledge_repo: None,
+            embedding_provider: None,
+            delegation_context: None,
+            mode: "auto",
+            gateway_all_tools_override: None,
+            tool_policy: None,
+            plugin_tools: Some(registry),
+        })
+        .await;
+
+        let echo = tools
+            .iter()
+            .find(|t| t.function.name == "plugin_echo")
+            .expect("plugin tool should be advertised to the model");
+        assert_eq!(echo.function.description, "Echo the input");
+        let schema = echo
+            .function
+            .parameters
+            .as_ref()
+            .expect("plugin tool should carry a parameter schema");
+        assert_eq!(
+            schema["properties"]["text"]["type"], "string",
+            "spec params should become a JSON schema: {schema:?}"
+        );
+        assert!(
+            !deferrable.contains("plugin_echo"),
+            "plugin tools are not deferrable"
+        );
+    }
+
+    #[tokio::test]
+    async fn plugin_tools_are_withheld_in_plan_mode() {
+        let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        let (_lua, registry) = registry_with_one_plugin_tool();
+
+        let (tools, _deferrable) = create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+            workspace: Path::new("/tmp"),
+            kiln_path: Some(temp_dir.path()),
+            mcp_gateway: None,
+            server_names: &[],
+            knowledge_repo: None,
+            embedding_provider: None,
+            delegation_context: None,
+            mode: "plan",
+            gateway_all_tools_override: None,
+            tool_policy: None,
+            plugin_tools: Some(registry),
+        })
+        .await;
+
+        assert!(
+            !tools.iter().any(|t| t.function.name == "plugin_echo"),
+            "plan mode is an allowlist; a plugin tool's side effects are unknown"
+        );
     }
 
     #[tokio::test]
@@ -1105,6 +1235,7 @@ mod tests {
             mode: "auto",
             gateway_all_tools_override: None,
             tool_policy: None,
+            plugin_tools: None,
         })
         .await;
 
