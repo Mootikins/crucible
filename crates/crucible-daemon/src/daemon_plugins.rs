@@ -1293,6 +1293,62 @@ mod tests {
         );
     }
 
+    /// A lifecycle hook must see the session's real workspace.
+    ///
+    /// `oci` bind-mounts `session.workspace` into the container. If it is nil
+    /// the plugin can't start; if it is a placeholder the plugin isolates the
+    /// wrong directory — which looks like it worked. The property is read-only
+    /// for the same reason.
+    #[tokio::test]
+    async fn a_lifecycle_hook_sees_the_session_workspace() {
+        use crucible_lua::{Session, SessionConfigRpc};
+
+        struct TestRpc;
+        impl SessionConfigRpc for TestRpc {}
+
+        let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+        loader
+            .plugin_lua()
+            .load(
+                r#"
+            seen_workspace = nil
+            readonly_enforced = false
+            crucible.on_session_start(function(s)
+                seen_workspace = s.workspace
+                readonly_enforced = not pcall(function() s.workspace = "/hijacked" end)
+            end)
+        "#,
+            )
+            .exec()
+            .expect("register hook");
+
+        let session =
+            Session::new("ws-test".to_string()).with_workspace("/tmp/crucible-ws-fixture");
+        session.bind(Box::new(TestRpc));
+        loader
+            .fire_session_start(&session)
+            .await
+            .expect("hook runs");
+
+        let seen: Option<String> = loader
+            .plugin_lua()
+            .load("return seen_workspace")
+            .eval()
+            .unwrap();
+        assert_eq!(
+            seen.as_deref(),
+            Some("/tmp/crucible-ws-fixture"),
+            "hook did not receive the session's workspace"
+        );
+
+        let readonly: bool = loader
+            .plugin_lua()
+            .load("return readonly_enforced")
+            .eval()
+            .unwrap();
+        assert!(readonly, "session.workspace must be read-only from Lua");
+    }
+
     #[test]
     fn default_paths_includes_config_dir() {
         let paths = default_daemon_plugin_paths();

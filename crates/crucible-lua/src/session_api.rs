@@ -281,6 +281,11 @@ impl SessionConfigRpc for ChannelSessionRpc {
 pub struct Session {
     rpc: Arc<Mutex<Option<Box<dyn SessionConfigRpc>>>>,
     id: String,
+    /// The session's working directory. Identity, not mutable config, so it
+    /// lives here rather than behind `SessionConfigRpc` — a plugin that needs
+    /// to mount or scope the workspace (`oci`) must be able to read it during
+    /// `on_session_start`, before any agent is configured.
+    workspace: Option<String>,
 }
 
 impl Session {
@@ -288,7 +293,17 @@ impl Session {
         Self {
             rpc: Arc::new(Mutex::new(None)),
             id,
+            workspace: None,
         }
+    }
+
+    /// Attach the session's working directory. `None` when the caller has no
+    /// workspace to give (`lua.init_session`, tests), in which case Lua sees
+    /// `session.workspace == nil` rather than a wrong path.
+    #[must_use]
+    pub fn with_workspace(mut self, workspace: impl Into<String>) -> Self {
+        self.workspace = Some(workspace.into());
+        self
     }
 
     pub fn bind(&self, rpc: Box<dyn SessionConfigRpc>) {
@@ -323,6 +338,10 @@ impl UserData for Session {
         methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| {
             match key.as_str() {
                 "id" => lua.create_string(&this.id).map(Value::String),
+                "workspace" => match &this.workspace {
+                    Some(w) => lua.create_string(w).map(Value::String),
+                    None => Ok(Value::Nil),
+                },
                 "temperature" => this
                     .with_rpc(|r| Ok(r.get_temperature()))
                     .map(|v| v.map(Value::Number).unwrap_or(Value::Nil)),
@@ -353,7 +372,9 @@ impl UserData for Session {
         methods.add_meta_method(
             MetaMethod::NewIndex,
             |lua, this, (key, val): (String, Value)| match key.as_str() {
-                "id" | "model" => Err(mlua::Error::runtime(format!("{} is read-only", key))),
+                "id" | "model" | "workspace" => {
+                    Err(mlua::Error::runtime(format!("{} is read-only", key)))
+                }
                 "temperature" => {
                     let temp: f64 = lua.unpack(val)?;
                     if !(0.0..=2.0).contains(&temp) {

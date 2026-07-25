@@ -822,7 +822,12 @@ impl RpcDispatcher {
         let Some(loader) = guard.as_mut() else {
             return Ok(());
         };
-        let session = crucible_lua::Session::new(session_id.to_string());
+        // The real workspace, not a placeholder: `oci` bind-mounts it, so a
+        // wrong or absent path means it isolates the wrong directory.
+        let mut session = crucible_lua::Session::new(session_id.to_string());
+        if let Some(daemon_session) = self.ctx.sessions.get_session(session_id) {
+            session = session.with_workspace(daemon_session.workspace.to_string_lossy());
+        }
         session.bind(Box::new(crate::server::NoopSessionRpc));
         loader.fire_session_start(&session).await
     }
