@@ -25,8 +25,8 @@ pub use client::{
     LuaGenerateStubsResponse, LuaInitSessionRequest, LuaInitSessionResponse,
     LuaPluginHealthRequest, LuaPluginHealthResponse, LuaRegisterHooksRequest,
     LuaRegisterHooksResponse, LuaRunPluginTestsRequest, LuaRunPluginTestsResponse,
-    LuaShutdownSessionRequest, LuaShutdownSessionResponse, SessionAgentSpec, SessionCreateParams,
-    SessionEvent, VersionCheck,
+    LuaShutdownSessionRequest, LuaShutdownSessionResponse, PluginTestFailure,
+    PluginTestLoadFailure, SessionAgentSpec, SessionCreateParams, SessionEvent, VersionCheck,
 };
 pub use error_ext::ChatResultExt;
 pub use storage::{DaemonNoteStore, DaemonStorageClient};

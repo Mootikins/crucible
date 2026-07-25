@@ -115,7 +115,8 @@ pub use rpc_client::{
     LuaGenerateStubsResponse, LuaInitSessionRequest, LuaInitSessionResponse,
     LuaPluginHealthRequest, LuaPluginHealthResponse, LuaRegisterHooksRequest,
     LuaRegisterHooksResponse, LuaRunPluginTestsRequest, LuaRunPluginTestsResponse,
-    LuaShutdownSessionRequest, LuaShutdownSessionResponse, SessionEvent, VersionCheck,
+    LuaShutdownSessionRequest, LuaShutdownSessionResponse, PluginTestFailure,
+    PluginTestLoadFailure, SessionEvent, VersionCheck,
 };
 pub use scm::{ScmBranch, ScmBranchesResponse, ScmCloneResponse, ScmWorktreeAddResponse};
 pub use server::{BindWithPluginConfigParams, Server};

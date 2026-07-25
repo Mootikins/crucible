@@ -26,6 +26,32 @@ pub async fn execute(_config: CliConfig, args: TestArgs) -> Result<()> {
     let failed = response.failed;
     let load_failures = response.load_failures;
 
+    // The runner's own per-test output goes to the *daemon's* stdout, so
+    // without printing these the user sees a bare count and nothing to act on.
+    for failure in &response.load_failure_details {
+        eprintln!(
+            "{} could not load {}\n    {}",
+            "✗".red(),
+            failure.file,
+            failure.error
+        );
+    }
+
+    for failure in &response.failures {
+        let where_ = failure
+            .line
+            .as_deref()
+            .map(|l| format!(" (line {l})"))
+            .unwrap_or_default();
+        eprintln!(
+            "{} {}{}\n    {}",
+            "✗".red(),
+            failure.name,
+            where_,
+            failure.error
+        );
+    }
+
     println!(
         "{}, {}",
         format!("{} passed", passed).green(),

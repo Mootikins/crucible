@@ -464,7 +464,14 @@ pub(crate) async fn handle_lua_run_plugin_tests(req: Request) -> Response {
     if test_files.is_empty() {
         return Response::success(
             req.id,
-            serde_json::json!({ "passed": 0, "failed": 0, "load_failures": 0, "message": "No test files found" }),
+            serde_json::json!({
+                "passed": 0,
+                "failed": 0,
+                "load_failures": 0,
+                "failures": [],
+                "load_failure_details": [],
+                "message": "No test files found",
+            }),
         );
     }
 
@@ -550,28 +557,36 @@ end
         }
     }
 
-    // Load test files
-    let mut load_failures: usize = 0;
+    // Load test files. Failures record *which* file and *why* — a bare count
+    // tells a CLI user nothing they can act on.
+    let mut load_failure_details: Vec<serde_json::Value> = Vec::new();
+    let mut note_load_failure = |file: &Path, error: String| {
+        load_failure_details.push(serde_json::json!({
+            "file": file.to_string_lossy(),
+            "error": error,
+        }));
+    };
+
     for file in &test_files {
         let file_contents = match std::fs::read_to_string(file) {
             Ok(contents) => contents,
-            Err(_) => {
-                load_failures += 1;
+            Err(e) => {
+                note_load_failure(file, e.to_string());
                 continue;
             }
         };
 
         let chunk_name = file.to_string_lossy();
-        if executor
+        if let Err(e) = executor
             .lua()
             .load(&file_contents)
             .set_name(chunk_name.as_ref())
             .exec()
-            .is_err()
         {
-            load_failures += 1;
+            note_load_failure(file, crucible_lua::format_lua_error(None, &e));
         }
     }
+    let load_failures = load_failure_details.len();
 
     // Run tests
     let results: mlua::Table = match executor
@@ -587,12 +602,28 @@ end
     let passed: usize = results.get("passed").unwrap_or(0);
     let failed: usize = results.get("failed").unwrap_or(0);
 
+    // The runner prints `✗ name / error / line` to *this process's* stdout —
+    // the daemon's, not the caller's. Ship the same detail over the wire so
+    // `cru plugin test` can show why a test failed, not just how many did.
+    let mut failures: Vec<serde_json::Value> = Vec::new();
+    if let Ok(errors) = results.get::<mlua::Table>("errors") {
+        for entry in errors.sequence_values::<mlua::Table>().flatten() {
+            failures.push(serde_json::json!({
+                "name": entry.get::<String>("name").unwrap_or_default(),
+                "error": entry.get::<String>("error").unwrap_or_default(),
+                "line": entry.get::<String>("line").ok(),
+            }));
+        }
+    }
+
     Response::success(
         req.id,
         serde_json::json!({
             "passed": passed,
             "failed": failed,
             "load_failures": load_failures,
+            "failures": failures,
+            "load_failure_details": load_failure_details,
         }),
     )
 }
@@ -726,8 +757,22 @@ mod discover_plugins_tests {
 }
 
 #[cfg(test)]
-mod reflection_plugin_tests {
+mod shipped_plugin_tests {
     use crucible_core::protocol::Request;
+    use std::path::PathBuf;
+    use test_case::test_case;
+
+    /// Every plugin that ships in `runtime/plugins/`. Kept in sync with the
+    /// directory listing by `every_shipped_plugin_has_a_test_case` — a new
+    /// plugin cannot land without its suite joining CI.
+    const SHIPPED_PLUGINS: &[&str] = &["kiln-expert", "oci", "reflection"];
+
+    fn shipped_plugins_dir() -> PathBuf {
+        PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../runtime/plugins"
+        ))
+    }
 
     fn run_plugin_tests(plugin_dir: &str) -> serde_json::Value {
         let req = Request {
@@ -743,23 +788,164 @@ mod reflection_plugin_tests {
         resp.result.expect("result present")
     }
 
-    // Runs the reflection plugin's busted-style Lua tests in-process through the
-    // same handler `cru plugin test` uses. Also exercises the package.path fix
-    // that lets `require("config")` resolve the plugin's lua/ submodule.
-    #[test]
-    fn reflection_plugin_lua_tests_pass() {
-        let plugin_dir = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../runtime/plugins/reflection"
-        );
-        let result = run_plugin_tests(plugin_dir);
+    /// Render the failure diagnostics the handler returns, so a red CI run
+    /// says *which* assertion broke rather than only how many did.
+    fn describe_failures(result: &serde_json::Value) -> String {
+        let mut out = String::new();
+        for f in result["load_failure_details"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            out.push_str(&format!(
+                "\n  load error in {}: {}",
+                f["file"].as_str().unwrap_or("?"),
+                f["error"].as_str().unwrap_or("?")
+            ));
+        }
+        for f in result["failures"].as_array().into_iter().flatten() {
+            out.push_str(&format!(
+                "\n  ✗ {} (line {})\n      {}",
+                f["name"].as_str().unwrap_or("?"),
+                f["line"].as_str().unwrap_or("?"),
+                f["error"].as_str().unwrap_or("?")
+            ));
+        }
+        out
+    }
+
+    /// Runs each shipped plugin's busted-style Lua suite in-process through the
+    /// same handler `cru plugin test` uses — no daemon, so it runs under
+    /// nextest alongside everything else. Also exercises the package.path
+    /// setup that lets `require("config")` resolve a plugin's lua/ submodule.
+    #[test_case("kiln-expert")]
+    #[test_case("oci")]
+    #[test_case("reflection")]
+    fn shipped_plugin_lua_suite_passes(plugin: &str) {
+        let plugin_dir = shipped_plugins_dir().join(plugin);
+        let result = run_plugin_tests(&plugin_dir.to_string_lossy());
 
         let passed = result["passed"].as_u64().unwrap_or(0);
         let failed = result["failed"].as_u64().unwrap_or(u64::MAX);
         let load_failures = result["load_failures"].as_u64().unwrap_or(u64::MAX);
 
-        assert_eq!(load_failures, 0, "test files should load: {result:?}");
-        assert_eq!(failed, 0, "no Lua test should fail: {result:?}");
-        assert!(passed > 0, "expected passing assertions: {result:?}");
+        assert_eq!(
+            load_failures,
+            0,
+            "{plugin}: test files should load:{}",
+            describe_failures(&result)
+        );
+        assert_eq!(
+            failed,
+            0,
+            "{plugin}: {failed} Lua test(s) failed:{}",
+            describe_failures(&result)
+        );
+        assert!(passed > 0, "{plugin}: expected passing assertions");
+    }
+
+    /// A shipped plugin with no entry above is a suite nobody runs. Five of the
+    /// six were in that state until this test existed.
+    #[test]
+    fn every_shipped_plugin_has_a_test_case() {
+        let mut on_disk: Vec<String> = std::fs::read_dir(shipped_plugins_dir())
+            .expect("runtime/plugins must exist")
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .filter_map(|e| e.file_name().to_str().map(str::to_string))
+            .collect();
+        on_disk.sort();
+
+        let mut declared: Vec<String> = SHIPPED_PLUGINS.iter().map(|s| s.to_string()).collect();
+        declared.sort();
+
+        assert_eq!(
+            on_disk, declared,
+            "add a #[test_case] arm to shipped_plugin_lua_suite_passes for every \
+             plugin in runtime/plugins/, and update SHIPPED_PLUGINS"
+        );
+    }
+}
+
+/// `cru plugin test` reported bare counts: the runner's per-test `✗ name /
+/// error / line` output went to the *daemon's* stdout, so a CLI user saw
+/// "0 passed, 9 failed" and nothing actionable.
+#[cfg(test)]
+mod plugin_test_diagnostics_tests {
+    use crucible_core::protocol::Request;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn run(dir: &std::path::Path) -> serde_json::Value {
+        let req = Request {
+            jsonrpc: "2.0".to_string(),
+            id: None,
+            method: "lua.run_plugin_tests".to_string(),
+            params: serde_json::json!({ "test_path": dir.to_string_lossy() }),
+        };
+        let resp = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(super::handle_lua_run_plugin_tests(req));
+        assert!(resp.error.is_none(), "handler errored: {:?}", resp.error);
+        resp.result.expect("result present")
+    }
+
+    #[test]
+    fn a_failing_test_returns_its_name_error_and_line() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(
+            tmp.path().join("arithmetic_test.lua"),
+            "describe('math', function()\n\
+               it('adds two numbers', function() assert.equal(3, 1 + 1) end)\n\
+             end)\n",
+        )
+        .unwrap();
+
+        let result = run(tmp.path());
+        assert_eq!(result["failed"], 1, "{result:#}");
+
+        let failures = result["failures"]
+            .as_array()
+            .unwrap_or_else(|| panic!("expected a `failures` array: {result:#}"));
+        assert_eq!(failures.len(), 1, "{result:#}");
+        assert_eq!(failures[0]["name"], "adds two numbers");
+        assert!(
+            failures[0]["error"]
+                .as_str()
+                .is_some_and(|e| e.contains("Expected")),
+            "failure should carry the assertion message: {result:#}"
+        );
+        assert!(
+            failures[0]["line"].as_str().is_some(),
+            "failure should carry a line number: {result:#}"
+        );
+    }
+
+    #[test]
+    fn a_test_file_that_does_not_load_reports_which_file_and_why() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(
+            tmp.path().join("broken_test.lua"),
+            "describe('unclosed', function()\n",
+        )
+        .unwrap();
+
+        let result = run(tmp.path());
+        assert_eq!(result["load_failures"], 1, "{result:#}");
+
+        let details = result["load_failure_details"]
+            .as_array()
+            .unwrap_or_else(|| panic!("expected `load_failure_details`: {result:#}"));
+        assert_eq!(details.len(), 1, "{result:#}");
+        assert!(
+            details[0]["file"]
+                .as_str()
+                .is_some_and(|f| f.ends_with("broken_test.lua")),
+            "{result:#}"
+        );
+        assert!(
+            details[0]["error"].as_str().is_some_and(|e| !e.is_empty()),
+            "load failure must say why: {result:#}"
+        );
     }
 }

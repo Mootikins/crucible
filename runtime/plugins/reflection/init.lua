@@ -333,7 +333,7 @@ return {
     name = "reflection",
     version = "0.1.0",
     description = "Retrospective self-improvement: propose kiln notes after a session ends",
-    capabilities = { "session", "config" },
+    capabilities = { "kiln", "agent", "config", "filesystem" },
 
     -- Exposed for unit tests and manual invocation.
     run = M.run,

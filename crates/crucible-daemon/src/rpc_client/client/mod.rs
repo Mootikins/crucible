@@ -55,6 +55,7 @@ pub use lua::{
     LuaInitSessionRequest, LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
     LuaRegisterHooksRequest, LuaRegisterHooksResponse, LuaRunPluginTestsRequest,
     LuaRunPluginTestsResponse, LuaShutdownSessionRequest, LuaShutdownSessionResponse,
+    PluginTestFailure, PluginTestLoadFailure,
 };
 pub use session::{SessionAgentSpec, SessionCreateParams};
 pub use types::{DaemonCapabilities, NameRequest, SessionEvent, VersionCheck};

@@ -106,11 +106,34 @@ pub struct LuaRunPluginTestsRequest {
     pub filter: Option<String>,
 }
 
+/// A single failed Lua test, as the plugin test runner saw it.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PluginTestFailure {
+    pub name: String,
+    pub error: String,
+    /// Line the assertion fired on, recovered from the Lua traceback.
+    #[serde(default)]
+    pub line: Option<String>,
+}
+
+/// A test file that could not be read or parsed at all.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PluginTestLoadFailure {
+    pub file: String,
+    pub error: String,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LuaRunPluginTestsResponse {
     pub passed: usize,
     pub failed: usize,
     pub load_failures: usize,
+    /// Per-test diagnostics. Without these the caller sees only counts — the
+    /// runner's own `✗` output goes to the daemon's stdout, not the client's.
+    #[serde(default)]
+    pub failures: Vec<PluginTestFailure>,
+    #[serde(default)]
+    pub load_failure_details: Vec<PluginTestLoadFailure>,
     #[serde(default)]
     pub message: Option<String>,
 }

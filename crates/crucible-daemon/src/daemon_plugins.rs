@@ -436,12 +436,30 @@ impl DaemonPluginLoader {
                 }
                 Err(e) => {
                     warn!("Failed to extract spec for plugin '{}': {}", name, e);
+                    self.plugin_manager.mark_error(name, e.to_string());
                 }
             }
         }
 
         self.loaded_specs = specs.clone();
         Ok(specs)
+    }
+
+    /// Plugin directories that failed discovery, as `{path, error}` objects.
+    ///
+    /// These have no entry in `plugin.list`'s `plugin_info` — they never became
+    /// plugins — so they are reported alongside it.
+    pub fn discovery_errors(&self) -> Vec<serde_json::Value> {
+        self.plugin_manager
+            .discovery_errors()
+            .iter()
+            .map(|e| {
+                serde_json::json!({
+                    "path": e.path.to_string_lossy(),
+                    "error": e.error,
+                })
+            })
+            .collect()
     }
 
     /// Drain and return all extracted service functions.
@@ -494,6 +512,11 @@ impl DaemonPluginLoader {
                     "Failed to execute plugin '{}' in daemon runtime: {}",
                     name, e
                 );
+                // The spec still describes the plugin, so keep returning it for
+                // display — but nothing was registered from it, so it is not
+                // Active. Reporting Active here is what let a dead reference
+                // plugin look healthy for months.
+                self.plugin_manager.mark_error(name, e.to_string());
             }
         }
 
@@ -669,15 +692,19 @@ impl DaemonPluginLoader {
             .collect()
     }
 
-    /// Return plugin info including provenance source for each loaded plugin.
+    /// Return plugin info including provenance source for every discovered
+    /// plugin — **not** only the healthy ones.
     ///
     /// Includes capability counts (`tools`, `commands`, `handlers`, `services`)
     /// sourced from `loaded_specs`, so UIs can show what each plugin provides
-    /// without a second RPC.
+    /// without a second RPC, plus `last_error` for the ones that broke.
+    ///
+    /// This deliberately does not filter on `Active`: a plugin that failed to
+    /// load was previously dropped from the response entirely, making "broken"
+    /// indistinguishable from "not installed" for every client.
     pub fn loaded_plugin_info(&self) -> Vec<serde_json::Value> {
         self.plugin_manager
             .list()
-            .filter(|p| p.state == crucible_lua::PluginState::Active)
             .map(|p| {
                 let spec = self
                     .loaded_specs
@@ -688,6 +715,7 @@ impl DaemonPluginLoader {
                     "version": p.manifest.version,
                     "source": p.source.to_string(),
                     "state": p.state.to_string(),
+                    "last_error": p.last_error,
                     "dir": p.dir.to_string_lossy(),
                     "tools": spec.map(|s| s.tools.len()).unwrap_or(0),
                     "commands": spec.map(|s| s.commands.len()).unwrap_or(0),
@@ -698,14 +726,15 @@ impl DaemonPluginLoader {
             .collect()
     }
 
-    /// Return `(plugin_name, plugin_dir)` pairs for all loaded plugins.
+    /// Return `(plugin_name, plugin_dir)` pairs for all discovered plugins.
     ///
     /// Used by the plugin file watcher to know which directories to monitor
-    /// and which plugin name to reload when a file changes.
+    /// and which plugin name to reload when a file changes. Broken plugins are
+    /// included on purpose — a failed plugin's directory is precisely the one
+    /// being edited to fix it, and `reload_plugin` handles a non-Active state.
     pub fn loaded_plugin_dirs(&self) -> Vec<(String, PathBuf)> {
         self.plugin_manager
             .list()
-            .filter(|p| p.state == crucible_lua::PluginState::Active)
             .filter_map(|p| {
                 let name = p.manifest.name.clone();
                 let dir = p.dir.clone();
@@ -1061,6 +1090,48 @@ fn normalize_git_url(url: &str) -> anyhow::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Directory holding the plugins that ship with the repo.
+    pub(crate) fn shipped_plugins_dir() -> PathBuf {
+        PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../runtime/plugins"
+        ))
+    }
+
+    /// Names of every shipped plugin directory, read from disk so a newly
+    /// added plugin is covered without editing this list.
+    pub(crate) fn shipped_plugin_names() -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(shipped_plugins_dir())
+            .expect("runtime/plugins must exist")
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .filter_map(|e| e.file_name().to_str().map(str::to_string))
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// A shipped plugin whose manifest doesn't parse is not merely broken —
+    /// it never enters `PluginManager::plugins` at all, so it is absent from
+    /// `plugin.list` with no error anywhere but the daemon log.
+    ///
+    /// `reflection` shipped that way: `plugin.yaml` declared the capabilities
+    /// `session` and `fs`, neither a `Capability` variant.
+    #[test]
+    fn every_shipped_plugin_is_discovered() {
+        let mut manager = PluginManager::new();
+        manager.add_search_path_with_source(shipped_plugins_dir(), PluginSource::Runtime);
+
+        let mut discovered = manager.discover().expect("discovery");
+        discovered.sort();
+
+        assert_eq!(
+            discovered,
+            shipped_plugin_names(),
+            "a shipped plugin failed discovery — it will be invisible in `plugin.list`"
+        );
+    }
 
     #[test]
     fn daemon_plugin_loader_creates_successfully() {

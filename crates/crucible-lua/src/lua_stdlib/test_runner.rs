@@ -295,6 +295,10 @@ function run_tests()
                 table.insert(test_state.results.errors, {
                     name = test.name,
                     error = test.error,
+                    -- `line` is carried on the entry, not just printed: this
+                    -- table is what `cru plugin test` reports back to the CLI,
+                    -- and the print above only reaches the daemon's stdout.
+                    line = line,
                     traceback = test.traceback,
                 })
             end
