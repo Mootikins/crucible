@@ -969,6 +969,17 @@ impl AgentManager {
                 }
             }
 
+            // Plugin tools go LAST so a built-in always wins the dispatch walk.
+            // `PluginRegistry` also refuses to register a name that collides
+            // with a built-in, so this ordering is a second line of defence
+            // rather than the policy itself.
+            if let Some(registry) = self.plugin_registry().await {
+                providers.push(
+                    Arc::new(crate::plugin_tools::PluginToolExecutor::new(registry))
+                        as Arc<dyn ToolExecutor>,
+                );
+            }
+
             Arc::new(DaemonToolDispatcher::new(providers))
         } else {
             self.tool_dispatcher.clone()
@@ -978,6 +989,14 @@ impl AgentManager {
         self.session_dispatchers
             .insert(session_id.clone(), dispatcher.clone());
         dispatcher
+    }
+
+    /// Plugin-contributed tools and commands, or `None` when no plugin loader
+    /// is attached (most tests).
+    pub(crate) async fn plugin_registry(&self) -> Option<Arc<crate::plugin_tools::PluginRegistry>> {
+        let loader = self.plugin_loader.as_ref()?;
+        let guard = loader.lock().await;
+        guard.as_ref().map(|l| l.plugin_registry())
     }
 
     /// Access the delegation service (child-session spawning).

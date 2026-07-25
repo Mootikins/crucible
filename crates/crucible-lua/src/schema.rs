@@ -18,6 +18,7 @@
 //!
 //! Tool parameters are converted to schemas using this module's types.
 
+use crate::annotations::DiscoveredParam;
 use crate::types::LuaTool;
 #[cfg(test)]
 use crate::types::ToolParam;
@@ -206,27 +207,26 @@ pub fn type_to_string(ty: &LuauType) -> String {
     }
 }
 
-/// Generate a JSON Schema for a tool's input parameters
-pub fn generate_input_schema(tool: &LuaTool) -> JsonValue {
-    let properties: serde_json::Map<String, JsonValue> = tool
-        .params
-        .iter()
-        .map(|p| {
-            let schema = match p.param_type.as_str() {
-                "string" => serde_json::json!({ "type": "string", "description": p.description }),
-                "number" => serde_json::json!({ "type": "number", "description": p.description }),
-                "boolean" => serde_json::json!({ "type": "boolean", "description": p.description }),
-                _ => serde_json::json!({ "type": "string", "description": p.description }),
+/// Build an object JSON Schema from `(name, ldoc_type, description, required)` tuples.
+fn object_schema<'a>(
+    params: impl Iterator<Item = (&'a str, &'a str, &'a str, bool)> + Clone,
+) -> JsonValue {
+    let properties: serde_json::Map<String, JsonValue> = params
+        .clone()
+        .map(|(name, ty, desc, _)| {
+            let schema = match ty {
+                "string" => serde_json::json!({ "type": "string", "description": desc }),
+                "number" => serde_json::json!({ "type": "number", "description": desc }),
+                "boolean" => serde_json::json!({ "type": "boolean", "description": desc }),
+                _ => serde_json::json!({ "type": "string", "description": desc }),
             };
-            (p.name.clone(), schema)
+            (name.to_string(), schema)
         })
         .collect();
 
-    let required: Vec<String> = tool
-        .params
-        .iter()
-        .filter(|p| p.required)
-        .map(|p| p.name.clone())
+    let required: Vec<String> = params
+        .filter(|(_, _, _, required)| *required)
+        .map(|(name, _, _, _)| name.to_string())
         .collect();
 
     serde_json::json!({
@@ -234,6 +234,34 @@ pub fn generate_input_schema(tool: &LuaTool) -> JsonValue {
         "properties": properties,
         "required": required
     })
+}
+
+/// Generate a JSON Schema for a tool's input parameters
+pub fn generate_input_schema(tool: &LuaTool) -> JsonValue {
+    object_schema(tool.params.iter().map(|p| {
+        (
+            p.name.as_str(),
+            p.param_type.as_str(),
+            p.description.as_str(),
+            p.required,
+        )
+    }))
+}
+
+/// Generate a JSON Schema from spec-declared params.
+///
+/// [`DiscoveredParam`] flags `optional` where [`crate::types::ToolParam`] flags
+/// `required` — the two declaration syntaxes are inverses, so they cannot share
+/// one struct without lying about one of them.
+pub fn discovered_params_to_json_schema(params: &[DiscoveredParam]) -> JsonValue {
+    object_schema(params.iter().map(|p| {
+        (
+            p.name.as_str(),
+            p.param_type.as_str(),
+            p.description.as_str(),
+            !p.optional,
+        )
+    }))
 }
 
 #[cfg(test)]
