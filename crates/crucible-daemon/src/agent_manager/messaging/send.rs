@@ -215,6 +215,7 @@ impl AgentManager {
                     lua_validators,
                     plugin_lua,
                     self.plugin_handlers(),
+                    self.isolation(),
                 )
             },
             tool_dispatcher: self.get_or_create_session_dispatcher(&session).await,

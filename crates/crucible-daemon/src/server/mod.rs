@@ -425,6 +425,7 @@ impl Server {
                 // never reads.
                 self.agent_manager
                     .set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
+                self.agent_manager.set_isolation(loader.isolation());
 
                 let tools_api: Arc<dyn crucible_lua::DaemonToolsApi> = Arc::new(
                     crate::tools_bridge::DaemonToolsBridge::new(Arc::clone(&self.workspace_tools)),

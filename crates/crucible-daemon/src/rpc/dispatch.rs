@@ -856,6 +856,10 @@ impl RpcDispatcher {
     async fn fire_plugin_session_end(&self, session_id: &str) {
         let mut guard = self.ctx.plugin_loader.lock().await;
         let Some(loader) = guard.as_mut() else { return };
+        // Drop the isolation claim with the session. A claim that outlives its
+        // container would keep denying tools for a session id that may be
+        // reused, and a stale claim is indistinguishable from a live one.
+        loader.isolation().release(session_id);
         let mut session = crucible_lua::Session::new(session_id.to_string());
         if let Some(daemon_session) = self.ctx.sessions.get_session(session_id) {
             session = session.with_workspace(daemon_session.workspace.to_string_lossy());

@@ -478,6 +478,9 @@ struct AgentStreamConfig {
     /// load once into the loader's VM, and a `RegistryKey` is only valid
     /// against the state that created it.
     plugin_handlers: Option<(Arc<LuaScriptHandlerRegistry>, Arc<Lua>)>,
+    /// Sessions a plugin claimed isolation for. When set and the session is
+    /// claimed, a host-touching tool that no handler took over is refused.
+    isolation: Option<crucible_lua::IsolationRegistry>,
 }
 
 impl AgentStreamConfig {
@@ -486,6 +489,7 @@ impl AgentStreamConfig {
         lua_validators: Option<Arc<LuaValidatorRegistry>>,
         plugin_lua: Option<Arc<Lua>>,
         plugin_handlers: Option<(Arc<LuaScriptHandlerRegistry>, Arc<Lua>)>,
+        isolation: Option<crucible_lua::IsolationRegistry>,
     ) -> Self {
         Self {
             model: session_agent.model.clone(),
@@ -507,6 +511,7 @@ impl AgentStreamConfig {
             lua_validators,
             plugin_lua,
             plugin_handlers,
+            isolation,
         }
     }
 }
@@ -630,6 +635,8 @@ pub struct AgentManager {
     /// Bound at daemon startup alongside `lua_validators`. Empty in tests and
     /// isolated managers, where plugin hooks simply don't fire.
     plugin_handlers: std::sync::OnceLock<(Arc<LuaScriptHandlerRegistry>, Arc<Lua>)>,
+    /// Plugin isolation claims, bound at daemon startup alongside the handlers.
+    isolation: std::sync::OnceLock<crucible_lua::IsolationRegistry>,
     /// Sessions with a title generation currently in flight — the RPC path
     /// and the message_complete auto-trigger can race.
     titles_in_flight: Arc<DashMap<String, ()>>,
@@ -699,6 +706,7 @@ impl AgentManager {
             cache_stats: Arc::new(DashMap::new()),
             lua_validators: std::sync::OnceLock::new(),
             plugin_handlers: std::sync::OnceLock::new(),
+            isolation: std::sync::OnceLock::new(),
             titles_in_flight: Arc::new(DashMap::new()),
             snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),
             agent_factory_override: std::sync::OnceLock::new(),
@@ -747,6 +755,15 @@ impl AgentManager {
         self.plugin_handlers
             .get()
             .map(|(r, l)| (Arc::clone(r), Arc::clone(l)))
+    }
+
+    /// Bind the plugin isolation registry. Idempotent, like the others.
+    pub fn set_isolation(&self, registry: crucible_lua::IsolationRegistry) {
+        let _ = self.isolation.set(registry);
+    }
+
+    pub(crate) fn isolation(&self) -> Option<crucible_lua::IsolationRegistry> {
+        self.isolation.get().cloned()
     }
 
     /// Snapshot the prompt-cache aggregate for `session_id`. Returns

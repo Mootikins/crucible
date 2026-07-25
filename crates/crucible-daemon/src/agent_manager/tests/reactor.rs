@@ -632,3 +632,50 @@ async fn plugin_registered_pre_tool_call_handler_intercepts_tool() {
         tool_result.data["result"]
     );
 }
+
+/// A tool no handler took over must be refused when the session is isolated.
+///
+/// Interception used to be an allowlist of six tool names. That was complete
+/// only by coincidence: a new workspace tool, a plugin-contributed tool (now
+/// dispatchable), or an MCP gateway tool would run on the host while the user
+/// believed the session was sandboxed. Under an isolation claim the default is
+/// deny, and the exemption list is the only way to opt a tool back onto the
+/// host.
+#[tokio::test]
+async fn an_isolated_session_refuses_a_tool_no_handler_took_over() {
+    let mut h = ReactorTestHarness::new().await;
+
+    let isolation = crucible_lua::IsolationRegistry::new();
+    isolation.claim(
+        &h.session_id,
+        crucible_lua::IsolationClaim {
+            plugin: "oci".to_string(),
+            exempt: Default::default(),
+        },
+    );
+    h.set_isolation(isolation);
+
+    // No pre_tool_call handler is registered, so nothing takes this over.
+    h.inject_streaming_agent(vec![
+        script::tool_call(
+            "call-unhandled",
+            "write",
+            serde_json::json!({ "path": "escapes.txt", "content": "x" }),
+        ),
+        script::text("done"),
+        script::done(),
+    ]);
+
+    h.send("run tool").await;
+    let tool_result = h.wait_for("tool_result").await;
+    h.wait_for("message_complete").await;
+
+    let error = tool_result.data["result"]["error"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        error.contains("isolated") && error.contains("oci"),
+        "an unhandled tool must be refused and name the isolating plugin, got: {:?}",
+        tool_result.data["result"]
+    );
+}

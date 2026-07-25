@@ -296,6 +296,39 @@ impl AgentManager {
             }
         }
 
+        // Default-deny for a session a plugin claimed isolation over.
+        //
+        // Reaching here means no handler took the call over, so it would run on
+        // the host. Interception used to be an allowlist of six tool names —
+        // complete only by coincidence, and silently bypassed by any new
+        // workspace tool, plugin-contributed tool, or MCP gateway tool. Under a
+        // claim the plugin asserts a category instead: anything it did not
+        // handle is refused unless explicitly exempted.
+        if let Some(isolation) = stream_ctx.agent_stream_config.isolation.as_ref() {
+            if !isolation.host_execution_allowed(&stream_ctx.session_id, &tool_call.name) {
+                let claim = isolation.get(&stream_ctx.session_id);
+                let plugin = claim.map(|c| c.plugin).unwrap_or_else(|| "a plugin".into());
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    tool = %tool_call.name,
+                    plugin = %plugin,
+                    "refusing tool: session is isolated and no handler took the call"
+                );
+                return deny_tool_call(
+                    stream_ctx,
+                    &call_id,
+                    &tool_call.name,
+                    format!(
+                        "Tool '{}' refused: this session is isolated by '{}', which did not \
+                         handle it. Running it here would execute on the host, outside the \
+                         sandbox. Add it to that plugin's `exempt` list if host execution is \
+                         intended.",
+                        tool_call.name, plugin
+                    ),
+                );
+            }
+        }
+
         // Agent-card tool policy: Deny refuses outright (defense in depth —
         // denied tools are also excluded from the advertised definitions),
         // Ask forces the permission gate even for safe tools, Allow skips it.

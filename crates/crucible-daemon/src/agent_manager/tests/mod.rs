@@ -543,6 +543,11 @@ impl ReactorTestHarness {
         self.agent_manager.set_lua_validators(registry, lua);
     }
 
+    /// Bind a plugin isolation registry, as the daemon does at startup.
+    fn set_isolation(&self, registry: crucible_lua::IsolationRegistry) {
+        self.agent_manager.set_isolation(registry);
+    }
+
     /// Bind a plugin `crucible.on` registry, as the daemon does at startup.
     fn set_plugin_handlers(
         &self,

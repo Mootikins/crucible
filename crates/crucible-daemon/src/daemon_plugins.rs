@@ -13,12 +13,13 @@ use crucible_core::storage::NoteStore;
 use crucible_core::storage::PropertyStore;
 use crucible_lua::{
     register_context_module, register_context_validators, register_crucible_on_api,
-    register_graph_module, register_oq_module, register_paths_module, register_schedule_module,
-    register_sessions_module, register_sessions_module_with_api, register_shell_module,
-    register_storage_module, register_storage_module_with_store, register_tools_module,
-    register_tools_module_with_api, register_vault_module, register_ws_module, DaemonSessionApi,
-    DaemonToolsApi, LuaExecutor, LuaScriptHandlerRegistry, LuaValidatorRegistry, PathsContext,
-    PluginManager, PluginSource, PluginSpec, ShellPolicy,
+    register_graph_module, register_isolation_module, register_oq_module, register_paths_module,
+    register_schedule_module, register_sessions_module, register_sessions_module_with_api,
+    register_shell_module, register_storage_module, register_storage_module_with_store,
+    register_tools_module, register_tools_module_with_api, register_vault_module,
+    register_ws_module, DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor,
+    LuaScriptHandlerRegistry, LuaValidatorRegistry, PathsContext, PluginManager, PluginSource,
+    PluginSpec, ShellPolicy,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -68,6 +69,9 @@ pub struct DaemonPluginLoader {
     /// Spec-declared tools and commands paired with their live `mlua::Function`
     /// handles. Shared with the agent's tool dispatcher and the plugin RPCs.
     plugin_registry: Arc<PluginRegistry>,
+    /// Sessions a plugin has claimed isolation for. Read by the tool-call
+    /// dispatcher to refuse unhandled host-touching tools.
+    isolation: IsolationRegistry,
 }
 
 impl DaemonPluginLoader {
@@ -129,6 +133,19 @@ impl DaemonPluginLoader {
         // so every hook-registering plugin raised at load and was downgraded
         // to a warning. Covered by
         // `plugin_runtime_exposes_the_documented_api_surface`.
+        // `crucible.require_isolation` — a plugin sandboxing the session
+        // declares it here so the dispatcher can default-deny anything the
+        // plugin did not handle.
+        let isolation = IsolationRegistry::new();
+        reg(
+            "isolation",
+            register_isolation_module(
+                lua,
+                &lua.globals().get::<mlua::Table>("crucible")?,
+                isolation.clone(),
+            ),
+        )?;
+
         let handler_registry = Arc::new(LuaScriptHandlerRegistry::new());
         reg(
             "crucible.on",
@@ -148,6 +165,7 @@ impl DaemonPluginLoader {
             handler_registry,
             plugin_config,
             plugin_registry: Arc::new(PluginRegistry::new()),
+            isolation,
         })
     }
 
@@ -158,6 +176,15 @@ impl DaemonPluginLoader {
     /// neither half dispatches without the other.
     pub fn plugin_handlers(&self) -> Arc<LuaScriptHandlerRegistry> {
         Arc::clone(&self.handler_registry)
+    }
+
+    /// Isolation claims made by plugins, for the tool-call dispatcher.
+    ///
+    /// Paired with [`Self::plugin_handlers`]: handlers do the sandboxing, this
+    /// says which sessions are *supposed* to be sandboxed so anything the
+    /// handlers missed is refused rather than silently run on the host.
+    pub fn isolation(&self) -> IsolationRegistry {
+        self.isolation.clone()
     }
 
     /// Fire `crucible.on_session_start` hooks registered by plugins.

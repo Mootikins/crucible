@@ -60,6 +60,7 @@ mod handlers;
 mod hooks;
 mod http;
 mod interaction;
+pub mod isolation;
 mod json_query;
 pub mod lifecycle;
 mod lua_stdlib;
@@ -196,3 +197,5 @@ pub use sessions::{
     register_sessions_module, register_sessions_module_with_api, DaemonSessionApi, ResponsePart,
 };
 pub use tools_api::{register_tools_module, register_tools_module_with_api, DaemonToolsApi};
+
+pub use isolation::{register_isolation_module, IsolationClaim, IsolationRegistry};
