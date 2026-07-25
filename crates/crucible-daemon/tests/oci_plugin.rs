@@ -10,9 +10,9 @@
 //! Container-backed cases are `#[ignore]`d and runtime-agnostic: they resolve
 //! whichever of podman/docker/nerdctl is on PATH, exactly as the plugin does.
 
+use crucible_core::events::SessionEvent;
 use crucible_daemon::daemon_plugins::DaemonPluginLoader;
 use crucible_lua::{PluginSource, ScriptHandlerResult, Session, SessionConfigRpc};
-use crucible_core::events::SessionEvent;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -134,7 +134,14 @@ async fn oci_registers_interception_handlers_for_every_workspace_tool() {
     let loader = load_oci(tmp.path(), serde_json::Value::Null).await;
 
     let registry = loader.plugin_handlers();
-    for tool in ["bash", "read_file", "write_file", "edit_file", "glob", "grep"] {
+    for tool in [
+        "bash",
+        "read_file",
+        "write_file",
+        "edit_file",
+        "glob",
+        "grep",
+    ] {
         assert!(
             !registry
                 .runtime_handlers_for("pre_tool_call", Some(tool))
@@ -224,7 +231,10 @@ async fn oci_fails_closed_when_the_container_runtime_is_missing() {
 
     for (tool, args) in [
         ("bash", serde_json::json!({ "command": "id" })),
-        ("write_file", serde_json::json!({ "path": "x", "content": "y" })),
+        (
+            "write_file",
+            serde_json::json!({ "path": "x", "content": "y" }),
+        ),
         ("read_file", serde_json::json!({ "path": "x" })),
     ] {
         let result = pre_tool_call(&loader, "blocked", tool, args).await;
