@@ -2,6 +2,7 @@ use crate::annotations::DiscoveredHandler;
 
 use super::LuaScriptHandler;
 
+mod conversion;
 mod display;
 mod execution;
 mod interpret;

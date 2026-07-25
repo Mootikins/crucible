@@ -859,7 +859,7 @@ mod precognition_format_hook_tests {
             .load(
                 r###"
                 crucible.on("precognition_format", function(ctx, event)
-                    return "## Custom Format\n" .. event.payload.user_message .. "\n" .. event.payload.results[1].title
+                    return "## Custom Format\n" .. event.user_message .. "\n" .. event.results[1].title
                 end)
             "###,
             )

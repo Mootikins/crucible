@@ -154,7 +154,7 @@ async fn runtime_dispatch_pre_llm_call_transforms_prompt() {
             .load(
                 r#"
             crucible.on("pre_llm_call", function(ctx, event)
-                return { prompt = event.payload.prompt .. " [modified]" }
+                return { prompt = event.prompt .. " [modified]" }
             end)
         "#,
             )
@@ -423,7 +423,7 @@ async fn runtime_transform_context_appends_system_message() {
             .load(
                 r#"
             crucible.on("transform_context", function(ctx, event)
-                local msgs = event.payload.messages
+                local msgs = event.messages
                 table.insert(msgs, {
                     role = "system",
                     content = "[precognition] note about widgets",
@@ -525,7 +525,7 @@ async fn runtime_pre_tool_terminate_mixed_batch_does_not_end() {
             .load(
                 r#"
             crucible.on("pre_tool_call", function(ctx, event)
-                local tool = event.payload.tool
+                local tool = event.tool
                 if tool == "submit_final" then
                     return { handled = true, result = "done", terminate = true }
                 elseif tool == "keep_going" then

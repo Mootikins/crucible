@@ -691,7 +691,7 @@ async fn test_transform_context_handler_dropping_precog_triggers_reprepend() {
         crucible.on("transform_context", function(ctx, event)
             -- Rebuild without the precog system message (losing its tag)
             local out = {}
-            for _, m in ipairs(event.payload.messages) do
+            for _, m in ipairs(event.messages) do
                 if m.role == "user" then
                     table.insert(out, { role = m.role, content = m.content })
                 end
@@ -732,7 +732,7 @@ async fn test_transform_context_handler_mutating_precog_does_not_duplicate() {
     // the mutated content.
     let lua = r#"
         crucible.on("transform_context", function(ctx, event)
-            for _, m in ipairs(event.payload.messages) do
+            for _, m in ipairs(event.messages) do
                 if m.metadata and m.metadata.tags then
                     for _, tag in ipairs(m.metadata.tags) do
                         if tag == "precognition" then
@@ -741,7 +741,7 @@ async fn test_transform_context_handler_mutating_precog_does_not_duplicate() {
                     end
                 end
             end
-            return { messages = event.payload.messages }
+            return { messages = event.messages }
         end)
     "#;
 

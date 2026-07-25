@@ -229,15 +229,12 @@ impl Handler for LuaHandler {
         // Serialize context metadata and event to JSON
         let ctx_json =
             serde_json::to_value(ctx.metadata()).unwrap_or(JsonValue::Object(Default::default()));
-        let event_json = match serde_json::to_value(&event) {
-            Ok(j) => j,
-            Err(e) => {
-                return HandlerResult::soft_error(
-                    event,
-                    format!("Failed to serialize event: {}", e),
-                );
-            }
-        };
+        // Same flat shape `crucible.on` handlers get — both paths are live, so
+        // they must not present two different contracts.
+        let event_json = crate::handlers::session_event_to_flat_json(&event);
+        if event_json.is_null() {
+            return HandlerResult::soft_error(event, "Failed to serialize event".to_string());
+        }
 
         // Run Lua execution on blocking thread pool
         // Create Lua state inside spawn_blocking to avoid Send/Sync issues
@@ -376,6 +373,9 @@ fn parse_handler_result(
             }
         }
     }
+
+    // Rebuild the Custom envelope the handler never saw before deserializing.
+    let result = crate::handlers::flat_json_to_session_event_json(result, &original_event);
 
     // Try to deserialize back to SessionEvent
     match serde_json::from_value::<SessionEvent>(result.clone()) {
@@ -644,7 +644,7 @@ end
             &script_path,
             r#"
 function modifier(ctx, event)
-    event.payload.modified = true
+    event.modified = true
     return event
 end
 "#,

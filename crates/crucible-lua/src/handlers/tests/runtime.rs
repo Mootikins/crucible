@@ -320,7 +320,7 @@ async fn todo_enforcer_pattern_integration() {
         r#"
         crucible.on("turn:complete", function(ctx, event)
             -- Check if response contains incomplete todos
-            local response = event.payload.response or ""
+            local response = event.response or ""
             if response:find("%[ %]") then  -- Finds "[ ]" pattern
                 return {
                     inject = {

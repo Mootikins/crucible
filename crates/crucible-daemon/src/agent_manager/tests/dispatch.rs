@@ -198,8 +198,8 @@ mod event_dispatch {
             received_session_id = nil
             received_message_id = nil
             crucible.on("turn:complete", function(ctx, event)
-                received_session_id = event.payload.session_id
-                received_message_id = event.payload.message_id
+                received_session_id = event.session_id
+                received_message_id = event.message_id
                 return nil
             end)
         "#,
@@ -404,8 +404,8 @@ mod event_dispatch {
                     r#"
                 received_continuation = nil
                 crucible.on("turn:complete", function(ctx, event)
-                    received_continuation = event.payload.is_continuation
-                    if event.payload.is_continuation then
+                    received_continuation = event.is_continuation
+                    if event.is_continuation then
                         return nil  -- Skip injection on continuation
                     end
                     return { inject = { content = "Should not inject" } }

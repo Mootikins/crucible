@@ -21,7 +21,7 @@ Event hooks let you react to things happening in a Crucible session — tool cal
 ```lua
 -- Log every tool call
 crucible.on("pre_tool_call", function(ctx, event)
-  cru.log("info", "Tool called: " .. event.name)
+  cru.log("info", "Tool called: " .. event.tool)
 end)
 ```
 
@@ -51,8 +51,14 @@ crucible.on(event_type, { pattern = "...", priority = 50 }, handler)
 Fires just before a tool executes. Handlers can observe, transform, cancel, or fully handle the call.
 
 Event fields:
-- `event.name` — tool name (string)
+- `event.type` — the event name, `"pre_tool_call"` (string)
+- `event.tool` — tool name (string)
 - `event.args` — tool arguments (table)
+
+Handlers receive one flat table. There is no `event.payload` envelope — it used
+to leak through from the internal Rust event type, and `event.name` meant the
+event type in code but the tool name in this document. Both are gone; the key
+names above are pinned by `handlers::tests::conversion`.
 
 Pattern is matched against the tool name.
 
@@ -74,7 +80,7 @@ Return `nil` or no value. The event continues unchanged.
 
 ```lua
 crucible.on("pre_tool_call", function(ctx, event)
-  cru.log("info", "Observing: " .. event.name)
+  cru.log("info", "Observing: " .. event.tool)
 end)
 ```
 
@@ -83,11 +89,15 @@ end)
 Return a table with modified fields. The event continues with the new values.
 
 ```lua
-crucible.on("pre_tool_call", { pattern = "shell" }, function(ctx, event)
-  event.args.command = sanitize(event.args.command)
-  return event
+crucible.on("pre_llm_call", function(ctx, event)
+  return { prompt = event.prompt .. " (be concise)" }
 end)
 ```
+
+> **Not supported for `pre_tool_call`.** That dispatcher honours only Cancel and
+> Handle; a returned table is ignored. Mutating `event.args` and returning it
+> looks like it sanitises the call but the original arguments still execute — use
+> **Handle** to run a sanitised version yourself, or **Cancel** to block it.
 
 ### Cancel
 
@@ -214,7 +224,7 @@ The `runtime/plugins/oci/init.lua` plugin is the canonical reference for product
 1. **Keep handlers fast.** They run on the hot path; long operations should use `cru.timer.sleep` / `cru.spawn` to yield.
 2. **Use specific patterns.** A `pattern = "*"` handler runs for every tool call; narrow it if possible.
 3. **Return explicitly.** If you want pass-through, `return` with no value. If you transform, return the modified event. Don't accidentally return a truthy value that Crucible interprets as a transform.
-4. **Handle errors gracefully.** Check fields with `event.name and event.name:find(...)` rather than assuming shape.
+4. **Handle errors gracefully.** Check fields with `event.tool and event.tool:find(...)` rather than assuming shape.
 5. **Register once.** Calls to `crucible.on()` accumulate; register at plugin load, not inside another handler.
 
 ## See Also
