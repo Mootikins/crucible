@@ -110,17 +110,17 @@ impl FilterTransform {
             match bytes[i] {
                 b'(' => depth += 1,
                 b')' => depth = depth.saturating_sub(1),
-                b'|' if depth == 0 => {
-                    // Check if this is " | " (with spaces)
-                    if i > 0 && i + 1 < bytes.len() {
-                        let before_space = i > 0 && bytes[i - 1] == b' ';
-                        let after_space = i + 1 < bytes.len() && bytes[i + 1] == b' ';
-                        if before_space && after_space {
-                            segments.push(&input[last_split..i - 1]);
-                            last_split = i + 2; // Skip " | "
-                            i += 1; // Skip past the space after |
-                        }
-                    }
+                // Only a `|` surrounded by spaces separates segments; a bare
+                // `|` is part of the expression.
+                b'|' if depth == 0
+                    && i > 0
+                    && i + 1 < bytes.len()
+                    && bytes[i - 1] == b' '
+                    && bytes[i + 1] == b' ' =>
+                {
+                    segments.push(&input[last_split..i - 1]);
+                    last_split = i + 2; // Skip " | "
+                    i += 1; // Skip past the space after |
                 }
                 _ => {}
             }

@@ -86,7 +86,7 @@ impl BackgroundJobManager {
             }
         }
 
-        jobs.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+        jobs.sort_by_key(|j| std::cmp::Reverse(j.started_at));
 
         jobs
     }

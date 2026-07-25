@@ -93,7 +93,7 @@ impl LayoutEngine {
             .new_leaf(Style {
                 flex_shrink: if shrink { 1.0 } else { 0.0 },
                 min_size: Size {
-                    width: length(0.0),
+                    width: length(0.0_f32),
                     height: auto(),
                 },
                 size: Size {
@@ -204,7 +204,7 @@ impl LayoutEngine {
                         flex_grow: 1.0,
                         size: Size {
                             width: auto(),
-                            height: length(1.0),
+                            height: length(1.0_f32),
                         },
                         ..Default::default()
                     })
@@ -289,7 +289,7 @@ impl LayoutEngine {
         // which matter more. Real fix: min-content via Taffy measure
         // functions (see backlog "Layout engine consolidation").
         let min_width = if content_sized && flex_grow > 0.0 && boxnode.children.is_empty() {
-            length(1.0)
+            length(1.0_f32)
         } else {
             auto()
         };

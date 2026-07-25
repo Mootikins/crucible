@@ -130,7 +130,7 @@ impl ProjectManager {
                 }
             })
             .collect();
-        projects.sort_by(|a, b| b.last_accessed.cmp(&a.last_accessed));
+        projects.sort_by_key(|p| std::cmp::Reverse(p.last_accessed));
         projects
     }
 

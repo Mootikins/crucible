@@ -95,11 +95,9 @@ impl PerformanceMonitor {
         let current_memory = self.current_memory_usage.load(Ordering::Relaxed);
         let max_memory = self.max_memory_usage.load(Ordering::Relaxed);
 
-        let avg_processing_time_ms = if total_events > 0 {
-            (total_time_nanos / total_events) as f64 / 1_000_000.0
-        } else {
-            0.0
-        };
+        let avg_processing_time_ms = total_time_nanos
+            .checked_div(total_events)
+            .map_or(0.0, |nanos| nanos as f64 / 1_000_000.0);
 
         let (p50, p95, p99) = self.calculate_percentiles();
 

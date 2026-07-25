@@ -439,19 +439,22 @@ fn render_unified(
             let ctx_share = contexts.min(remaining_budget / 4);
             let change_budget = remaining_budget.saturating_sub(ctx_share);
             let total_changes = deletes + inserts;
-            let (delete_cap, insert_cap) = if total_changes == 0 {
-                (0, 0)
-            } else {
-                let mut dcap = (change_budget * deletes / total_changes).min(deletes);
-                if deletes > 0 && dcap == 0 && change_budget >= 1 {
-                    dcap = 1;
-                }
-                if inserts > 0 && dcap == change_budget && change_budget >= 2 {
-                    dcap = change_budget - 1;
-                }
-                let icap = change_budget.saturating_sub(dcap).min(inserts);
-                (dcap, icap)
-            };
+            // `checked_div` is None exactly when there are no changes at all.
+            let (delete_cap, insert_cap) =
+                match (change_budget * deletes).checked_div(total_changes) {
+                    None => (0, 0),
+                    Some(delete_share) => {
+                        let mut dcap = delete_share.min(deletes);
+                        if deletes > 0 && dcap == 0 && change_budget >= 1 {
+                            dcap = 1;
+                        }
+                        if inserts > 0 && dcap == change_budget && change_budget >= 2 {
+                            dcap = change_budget - 1;
+                        }
+                        let icap = change_budget.saturating_sub(dcap).min(inserts);
+                        (dcap, icap)
+                    }
+                };
 
             let mut emitted_deletes = 0usize;
             let mut emitted_inserts = 0usize;

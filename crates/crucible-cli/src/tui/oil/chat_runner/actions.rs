@@ -734,10 +734,10 @@ impl OilChatRunner {
                     | ChatAppMsg::ConfigSet { .. }
                     | ChatAppMsg::ExecuteSlashCommand(_)
                     | ChatAppMsg::ExportSession(_)
-                    | ChatAppMsg::FetchModels => {
-                        if self.is_replay {
-                            tracing::debug!(?msg, "daemon-bound message ignored in replay mode");
-                        }
+                    | ChatAppMsg::FetchModels
+                        if self.is_replay =>
+                    {
+                        tracing::debug!(?msg, "daemon-bound message ignored in replay mode");
                     }
                     _ => {}
                 }

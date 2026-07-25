@@ -99,25 +99,13 @@ impl ExtendedBackendRegistry {
         // Check performance requirements
         if let Some(max_latency) = requirements.max_latency_ms {
             // Different backends have different latency characteristics
+            // Each backend has its own latency floor — notify is event-driven,
+            // polling is bounded by its interval, editor integration is low
+            // frequency. A requirement tighter than the floor rules it out.
             match capabilities.platforms.first().map(|s| s.as_str()) {
-                Some("notify") => {
-                    // Notify typically has low latency (< 50ms)
-                    if max_latency < 50 {
-                        return false;
-                    }
-                }
-                Some("polling") => {
-                    // Polling latency depends on interval
-                    if max_latency < 1000 {
-                        return false;
-                    }
-                }
-                Some("editor") => {
-                    // Editor integration is low frequency
-                    if max_latency < 5000 {
-                        return false;
-                    }
-                }
+                Some("notify") if max_latency < 50 => return false,
+                Some("polling") if max_latency < 1000 => return false,
+                Some("editor") if max_latency < 5000 => return false,
                 _ => {}
             }
         }
