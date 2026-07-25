@@ -108,24 +108,48 @@ impl LuaExecutor {
         Ok(())
     }
 
-    /// Fire all registered session start hooks
+    /// Fire all registered session start hooks.
     ///
-    /// Calls each hook with the session object. Logs errors but continues
-    /// to next hook (error isolation). Returns Ok even if some hooks fail.
-    pub fn fire_session_start_hooks(&self, session: &Session) -> Result<(), LuaError> {
+    /// Async because hooks routinely call async `cru.*` APIs. `cru.shell.exec`,
+    /// `cru.http.*` and `cru.timer.sleep` are all `create_async_function`s, which
+    /// must be driven from a coroutine — a plain `Function::call` cannot suspend
+    /// them. Firing these synchronously meant a hook that starts a container
+    /// (the `oci` plugin's entire purpose) could never work.
+    /// A raising hook is **fatal to the session**, not logged and swallowed.
+    ///
+    /// This is what makes sandboxing an invariant rather than a status: the
+    /// `oci` plugin acquires its container here, and if that fails the session
+    /// must not proceed to run the agent's tools on the host. A plugin that
+    /// wants a failure to be non-fatal catches it itself (`pcall`) — the
+    /// default is fail-closed, matching `pre_tool_call`.
+    ///
+    /// Every hook still runs even after one fails, so one plugin's failure
+    /// can't skip another's setup; the errors are collected and reported
+    /// together.
+    pub async fn fire_session_start_hooks(&self, session: &Session) -> Result<(), LuaError> {
+        let mut failures = Vec::new();
         for key in &self.on_session_start_hooks {
             match self.lua.registry_value::<Function>(key) {
                 Ok(func) => {
-                    if let Err(e) = func.call::<()>(session.clone()) {
+                    if let Err(e) = func.call_async::<()>(session.clone()).await {
                         tracing::error!("Session start hook failed: {}", e);
+                        failures.push(e.to_string());
                     }
                 }
                 Err(e) => {
                     tracing::error!("Failed to retrieve session start hook from registry: {}", e);
+                    failures.push(e.to_string());
                 }
             }
         }
-        Ok(())
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(LuaError::Runtime(format!(
+                "session_start hook(s) failed: {}",
+                failures.join("; ")
+            )))
+        }
     }
 
     /// Sync session end hooks from Lua environment
@@ -136,15 +160,18 @@ impl LuaExecutor {
         Ok(())
     }
 
-    /// Fire all registered session end hooks
+    /// Fire all registered session end hooks.
     ///
-    /// Calls each hook with the session object. Logs errors but continues
-    /// to next hook (error isolation). Returns Ok even if some hooks fail.
-    pub fn fire_session_end_hooks(&self, session: &Session) -> Result<(), LuaError> {
+    /// Errors are logged per-hook and do not propagate — unlike the start
+    /// hooks. Async for the same reason as [`Self::fire_session_start_hooks`] — and it
+    /// matters more here: teardown hooks stop containers and release resources
+    /// via async `cru.shell.exec`, so a synchronous call leaks whatever the
+    /// start hook acquired.
+    pub async fn fire_session_end_hooks(&self, session: &Session) -> Result<(), LuaError> {
         for key in &self.on_session_end_hooks {
             match self.lua.registry_value::<Function>(key) {
                 Ok(func) => {
-                    if let Err(e) = func.call::<()>(session.clone()) {
+                    if let Err(e) = func.call_async::<()>(session.clone()).await {
                         tracing::error!("Session end hook failed: {}", e);
                     }
                 }
@@ -503,8 +530,8 @@ mod tests {
         assert_eq!(executor.session_start_hooks().len(), 1);
     }
 
-    #[test]
-    fn test_fire_hooks_calls_registered_hooks() {
+    #[tokio::test]
+    async fn test_fire_hooks_calls_registered_hooks() {
         use crate::session_api::Session;
 
         let mut executor = LuaExecutor::new().unwrap();
@@ -524,7 +551,7 @@ mod tests {
 
         let session = Session::new("test".to_string());
         session.bind(Box::new(crate::session_api::tests::MockRpc::new()));
-        executor.fire_session_start_hooks(&session).unwrap();
+        executor.fire_session_start_hooks(&session).await.unwrap();
 
         let called: bool = executor.lua().load("return test_called").eval().unwrap();
         assert!(called);
@@ -542,8 +569,8 @@ mod tests {
         assert_eq!(executor.on_session_end_hooks.len(), 1);
     }
 
-    #[test]
-    fn test_fire_session_end_hooks_calls_registered_hooks() {
+    #[tokio::test]
+    async fn test_fire_session_end_hooks_calls_registered_hooks() {
         use crate::session_api::Session;
 
         let mut executor = LuaExecutor::new().unwrap();
@@ -563,7 +590,7 @@ mod tests {
 
         let session = Session::new("test".to_string());
         session.bind(Box::new(crate::session_api::tests::MockRpc::new()));
-        executor.fire_session_end_hooks(&session).unwrap();
+        executor.fire_session_end_hooks(&session).await.unwrap();
 
         let called: bool = executor
             .lua()

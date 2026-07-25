@@ -32,7 +32,7 @@ pub(crate) async fn handle_lua_init_session(
     if let Err(e) = executor.sync_session_start_hooks() {
         warn!(session_id = %session_id, error = %e, "Failed to sync session_start hooks");
     }
-    if let Err(e) = executor.fire_session_start_hooks(&session) {
+    if let Err(e) = executor.fire_session_start_hooks(&session).await {
         warn!(session_id = %session_id, error = %e, "Failed to fire session_start hooks");
     }
 
@@ -230,7 +230,7 @@ pub(crate) async fn handle_lua_shutdown_session(
                 warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
             }
             if let Some(session) = state.executor.session_manager().get_current() {
-                if let Err(e) = state.executor.fire_session_end_hooks(&session) {
+                if let Err(e) = state.executor.fire_session_end_hooks(&session).await {
                     warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
                 }
             }

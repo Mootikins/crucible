@@ -168,25 +168,40 @@ impl DaemonPluginLoader {
     /// all, so a plugin that registers its `crucible.on` handlers inside
     /// `on_session_start` (as `oci` does) never registered anything.
     ///
-    /// Errors are logged per-hook by the executor and never propagate to the
-    /// session — one bad plugin must not stop a session from starting.
-    pub fn fire_session_start(&mut self, session: &crucible_lua::Session) -> anyhow::Result<()> {
+    /// A raising hook propagates — the caller must refuse the session. A plugin
+    /// that acquires an isolation boundary here (`oci` and its container) has
+    /// no other way to say "do not proceed", and silently continuing would run
+    /// the agent's tools on the host. Plugins wanting non-fatal failure catch
+    /// it themselves.
+    pub async fn fire_session_start(
+        &mut self,
+        session: &crucible_lua::Session,
+    ) -> anyhow::Result<()> {
         self.executor
             .sync_session_start_hooks()
             .map_err(|e| anyhow::anyhow!("sync session_start hooks: {e}"))?;
         self.executor
             .fire_session_start_hooks(session)
+            .await
             .map_err(|e| anyhow::anyhow!("fire session_start hooks: {e}"))
     }
 
     /// Fire `crucible.on_session_end` hooks registered by plugins.
     /// See [`Self::fire_session_start`] for why this syncs first.
-    pub fn fire_session_end(&mut self, session: &crucible_lua::Session) -> anyhow::Result<()> {
+    ///
+    /// Teardown failures are reported but must not block the session ending —
+    /// refusing to end a session leaves the user stuck, which is the opposite
+    /// of the start-hook tradeoff.
+    pub async fn fire_session_end(
+        &mut self,
+        session: &crucible_lua::Session,
+    ) -> anyhow::Result<()> {
         self.executor
             .sync_session_end_hooks()
             .map_err(|e| anyhow::anyhow!("sync session_end hooks: {e}"))?;
         self.executor
             .fire_session_end_hooks(session)
+            .await
             .map_err(|e| anyhow::anyhow!("fire session_end hooks: {e}"))
     }
 
@@ -1116,8 +1131,8 @@ mod tests {
     /// `fire_session_start_hooks` was only ever called at `server/lua.rs:34`,
     /// on the per-call `lua.init_session` executor — never on the plugin
     /// loader's.
-    #[test]
-    fn plugin_session_lifecycle_hooks_fire() {
+    #[tokio::test]
+    async fn plugin_session_lifecycle_hooks_fire() {
         use crucible_lua::{Session, SessionConfigRpc};
 
         // `SessionConfigRpc`'s methods all have defaults; the hooks under test
@@ -1142,7 +1157,10 @@ mod tests {
         let session = Session::new("test-session".to_string());
         session.bind(Box::new(TestRpc));
 
-        loader.fire_session_start(&session).expect("fire start");
+        loader
+            .fire_session_start(&session)
+            .await
+            .expect("fire start");
         let started: bool = loader
             .plugin_lua()
             .load("return start_fired")
@@ -1154,9 +1172,54 @@ mod tests {
              handlers there (oci) never run"
         );
 
-        loader.fire_session_end(&session).expect("fire end");
+        loader.fire_session_end(&session).await.expect("fire end");
         let ended: bool = loader.plugin_lua().load("return end_fired").eval().unwrap();
         assert!(ended, "plugin on_session_end hook did not fire");
+    }
+
+    /// A lifecycle hook must be able to call the async `cru.*` APIs.
+    ///
+    /// `cru.shell.exec`, `cru.http.*` and `cru.timer.sleep` are all
+    /// `create_async_function`s, which cannot suspend under a plain
+    /// `Function::call`. Firing hooks synchronously meant a plugin could not
+    /// start a container from `on_session_start` — the entire point of `oci`.
+    #[tokio::test]
+    async fn a_lifecycle_hook_can_call_async_apis() {
+        use crucible_lua::{Session, SessionConfigRpc};
+
+        struct TestRpc;
+        impl SessionConfigRpc for TestRpc {}
+
+        let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+        loader
+            .plugin_lua()
+            .load(
+                r#"
+            async_ok = false
+            crucible.on_session_start(function(s)
+                -- cru.timer.sleep is async; under a synchronous call this
+                -- either raises or never resumes.
+                cru.timer.sleep(1)
+                async_ok = true
+            end)
+        "#,
+            )
+            .exec()
+            .expect("register hook");
+
+        let session = Session::new("async-hook".to_string());
+        session.bind(Box::new(TestRpc));
+        loader
+            .fire_session_start(&session)
+            .await
+            .expect("hook runs");
+
+        let ok: bool = loader.plugin_lua().load("return async_ok").eval().unwrap();
+        assert!(
+            ok,
+            "hook calling an async cru API did not complete — lifecycle hooks \
+             are being fired without an async context"
+        );
     }
 
     #[test]

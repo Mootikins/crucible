@@ -785,9 +785,29 @@ impl RpcDispatcher {
         // `on_session_start` (oci does), so these hooks have to fire on the
         // plugin runtime — not just the per-call `lua.init_session` executor,
         // which was the only place firing them.
+        //
+        // A raising hook refuses the session. `oci` acquires its container
+        // here; if that fails, continuing would silently run every tool on the
+        // host — the exact "sandboxed or not?" ambiguity this design removes.
+        // The session is ended again so a refused create leaves nothing behind.
         if let Ok(value) = &mapped {
             if let Some(session_id) = value.get("session_id").and_then(|v| v.as_str()) {
-                self.fire_plugin_session_start(session_id).await;
+                if let Err(e) = self.fire_plugin_session_start(session_id).await {
+                    let session_id = session_id.to_string();
+                    tracing::error!(
+                        session_id = %session_id,
+                        error = %e,
+                        "plugin session_start hook failed; refusing the session"
+                    );
+                    self.ctx.sessions.end_session(&session_id).await.ok();
+                    return Err(RpcError {
+                        code: INTERNAL_ERROR,
+                        message: format!(
+                            "session refused: a plugin's session_start hook failed: {e}"
+                        ),
+                        data: None,
+                    });
+                }
             }
         }
         mapped
@@ -797,14 +817,14 @@ impl RpcDispatcher {
     ///
     /// A failing plugin hook must not fail session creation — the session
     /// already exists by this point, and the caller is waiting on it.
-    async fn fire_plugin_session_start(&self, session_id: &str) {
+    async fn fire_plugin_session_start(&self, session_id: &str) -> anyhow::Result<()> {
         let mut guard = self.ctx.plugin_loader.lock().await;
-        let Some(loader) = guard.as_mut() else { return };
+        let Some(loader) = guard.as_mut() else {
+            return Ok(());
+        };
         let session = crucible_lua::Session::new(session_id.to_string());
         session.bind(Box::new(crate::server::NoopSessionRpc));
-        if let Err(e) = loader.fire_session_start(&session) {
-            tracing::warn!(session_id = %session_id, error = %e, "plugin session_start hooks failed");
-        }
+        loader.fire_session_start(&session).await
     }
 
     async fn handle_session_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -869,7 +889,7 @@ impl RpcDispatcher {
                 if let Some(loader) = guard.as_mut() {
                     let session = crucible_lua::Session::new(session_id.to_string());
                     session.bind(Box::new(crate::server::NoopSessionRpc));
-                    if let Err(e) = loader.fire_session_end(&session) {
+                    if let Err(e) = loader.fire_session_end(&session).await {
                         tracing::warn!(session_id = %session_id, error = %e, "plugin session_end hooks failed");
                     }
                 }
@@ -891,7 +911,7 @@ impl RpcDispatcher {
                         tracing::warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
                     }
                     if let Some(session) = state.executor.session_manager().get_current() {
-                        if let Err(e) = state.executor.fire_session_end_hooks(&session) {
+                        if let Err(e) = state.executor.fire_session_end_hooks(&session).await {
                             tracing::warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
                         }
                     }
