@@ -65,9 +65,66 @@ async fn execute_runtime_handler_receives_event() {
     };
 
     let result = registry
-        .execute_runtime_handler(&lua, "test_handler", &event)
+        .execute_runtime_handler(&lua, "test_handler", &event, None)
         .await;
     assert!(result.is_ok());
+}
+
+/// A handler registered once at plugin load serves every session; the only
+/// way it can tell sessions apart is `ctx.session_id`. This was silently
+/// absent — `oci` keyed containers by it and every lookup returned nil, so
+/// interception no-opped for all sessions while looking registered.
+#[tokio::test]
+async fn execute_runtime_handler_delivers_session_id_in_ctx() {
+    let lua = Lua::new();
+    let registry = LuaScriptHandlerRegistry::new();
+
+    let handler_fn = lua
+        .create_function(|_, (ctx, _event): (mlua::Table, mlua::Table)| {
+            let session_id: String = ctx.get("session_id")?;
+            assert_eq!(session_id, "s-ctx");
+            Ok(mlua::Value::Nil)
+        })
+        .unwrap();
+    let key = lua.create_registry_value(handler_fn).unwrap();
+    registry
+        .handler_functions
+        .lock()
+        .unwrap()
+        .insert("ctx_handler".to_string(), key);
+
+    let event = SessionEvent::Custom {
+        name: "pre_tool_call".to_string(),
+        payload: serde_json::json!({}),
+    };
+
+    let result = registry
+        .execute_runtime_handler(&lua, "ctx_handler", &event, Some("s-ctx"))
+        .await;
+    assert!(
+        result.is_ok(),
+        "handler must see ctx.session_id when the dispatch site provides it: {result:?}"
+    );
+
+    // Without a session id the field is absent, not empty — a handler can
+    // distinguish "no session context" from a session named "".
+    let handler_fn = lua
+        .create_function(|_, (ctx, _event): (mlua::Table, mlua::Table)| {
+            let session_id: Option<String> = ctx.get("session_id")?;
+            assert!(session_id.is_none());
+            Ok(mlua::Value::Nil)
+        })
+        .unwrap();
+    let key = lua.create_registry_value(handler_fn).unwrap();
+    registry
+        .handler_functions
+        .lock()
+        .unwrap()
+        .insert("no_ctx_handler".to_string(), key);
+    let result = registry
+        .execute_runtime_handler(&lua, "no_ctx_handler", &event, None)
+        .await;
+    assert!(result.is_ok(), "{result:?}");
 }
 
 #[tokio::test]
@@ -98,7 +155,7 @@ async fn execute_runtime_handler_returns_cancel() {
     };
 
     let result = registry
-        .execute_runtime_handler(&lua, "cancel_handler", &event)
+        .execute_runtime_handler(&lua, "cancel_handler", &event, None)
         .await;
     assert!(result.is_ok());
     match result.unwrap() {
@@ -138,7 +195,7 @@ async fn execute_runtime_handler_returns_handled() {
     };
 
     let result = registry
-        .execute_runtime_handler(&lua, "handled_handler", &event)
+        .execute_runtime_handler(&lua, "handled_handler", &event, None)
         .await;
     assert!(result.is_ok());
     match result.unwrap() {
@@ -160,7 +217,7 @@ async fn execute_runtime_handler_not_found() {
     };
 
     let result = registry
-        .execute_runtime_handler(&lua, "nonexistent", &event)
+        .execute_runtime_handler(&lua, "nonexistent", &event, None)
         .await;
     assert!(result.is_err());
 }
@@ -354,7 +411,7 @@ async fn todo_enforcer_pattern_integration() {
     };
 
     let result = registry
-        .execute_runtime_handler(&lua, "runtime_handler_0", &event_with_todo)
+        .execute_runtime_handler(&lua, "runtime_handler_0", &event_with_todo, None)
         .await
         .unwrap();
 
@@ -382,7 +439,7 @@ async fn todo_enforcer_pattern_integration() {
     };
 
     let result = registry
-        .execute_runtime_handler(&lua, "runtime_handler_0", &event_complete)
+        .execute_runtime_handler(&lua, "runtime_handler_0", &event_complete, None)
         .await
         .unwrap();
 

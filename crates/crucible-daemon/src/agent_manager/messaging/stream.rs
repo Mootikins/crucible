@@ -972,7 +972,12 @@ impl AgentManager {
             };
             if let Err(error) = state
                 .registry
-                .execute_runtime_handler(&state.lua, &handler.name, &event)
+                .execute_runtime_handler(
+                    &state.lua,
+                    &handler.name,
+                    &event,
+                    Some(&stream_ctx.session_id),
+                )
                 .await
             {
                 warn!(
@@ -1024,7 +1029,7 @@ impl AgentManager {
         for handler in handlers {
             match state
                 .registry
-                .execute_runtime_handler(&state.lua, &handler.name, &event)
+                .execute_runtime_handler(&state.lua, &handler.name, &event, Some(session_id))
                 .await
             {
                 Ok(result) => {

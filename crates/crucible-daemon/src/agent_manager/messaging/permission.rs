@@ -291,7 +291,12 @@ impl AgentManager {
             };
             match state
                 .registry
-                .execute_runtime_handler(&state.lua, &handler.name, &event)
+                .execute_runtime_handler(
+                    &state.lua,
+                    &handler.name,
+                    &event,
+                    Some(&stream_ctx.session_id),
+                )
                 .await
             {
                 Ok(crucible_lua::ScriptHandlerResult::Transform(val)) => {
@@ -368,7 +373,12 @@ impl AgentManager {
             };
             match state
                 .registry
-                .execute_runtime_handler(&state.lua, &handler.name, &event)
+                .execute_runtime_handler(
+                    &state.lua,
+                    &handler.name,
+                    &event,
+                    Some(&stream_ctx.session_id),
+                )
                 .await
             {
                 Ok(crucible_lua::ScriptHandlerResult::Transform(val)) => {

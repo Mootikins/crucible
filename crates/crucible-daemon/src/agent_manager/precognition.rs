@@ -223,7 +223,7 @@ impl AgentManager {
         for handler in handlers {
             match state
                 .registry
-                .execute_runtime_handler(&state.lua, &handler.name, &event)
+                .execute_runtime_handler(&state.lua, &handler.name, &event, Some(session_id))
                 .await
             {
                 Ok(ScriptHandlerResult::Transform(value)) => {

@@ -52,6 +52,7 @@ pub mod kiln;
 mod socket_lock;
 use socket_lock::acquire_socket_lock;
 pub mod lua;
+pub mod lua_plugin_suite;
 pub mod note_refactor;
 pub mod observe;
 pub mod platform;

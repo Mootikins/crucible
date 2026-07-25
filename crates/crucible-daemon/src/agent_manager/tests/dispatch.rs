@@ -35,7 +35,7 @@ mod event_dispatch {
 
         let result = state
             .registry
-            .execute_runtime_handler(&state.lua, &handlers[0].name, &event)
+            .execute_runtime_handler(&state.lua, &handlers[0].name, &event, Some("test-session"))
             .await;
         assert!(result.is_ok());
     }
@@ -78,7 +78,7 @@ mod event_dispatch {
         for handler in &handlers {
             let _ = state
                 .registry
-                .execute_runtime_handler(&state.lua, &handler.name, &event)
+                .execute_runtime_handler(&state.lua, &handler.name, &event, Some("test-session"))
                 .await;
         }
 
@@ -122,7 +122,7 @@ mod event_dispatch {
         for handler in &handlers {
             let _result = state
                 .registry
-                .execute_runtime_handler(&state.lua, &handler.name, &event)
+                .execute_runtime_handler(&state.lua, &handler.name, &event, Some("test-session"))
                 .await;
         }
 
@@ -218,7 +218,7 @@ mod event_dispatch {
 
         let _ = state
             .registry
-            .execute_runtime_handler(&state.lua, &handlers[0].name, &event)
+            .execute_runtime_handler(&state.lua, &handlers[0].name, &event, Some("test-session"))
             .await;
 
         let session_id: String = state.lua.load("return received_session_id").eval().unwrap();
@@ -256,7 +256,7 @@ mod event_dispatch {
 
         let result = state
             .registry
-            .execute_runtime_handler(&state.lua, &handlers[0].name, &event)
+            .execute_runtime_handler(&state.lua, &handlers[0].name, &event, Some("test-session"))
             .await
             .unwrap();
 

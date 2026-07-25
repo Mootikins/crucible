@@ -71,7 +71,7 @@ async fn run_pre_tool_call_handlers(
             }),
         };
         match registry
-            .execute_runtime_handler(lua, &handler.name, &event)
+            .execute_runtime_handler(lua, &handler.name, &event, Some(&stream_ctx.session_id))
             .await
         {
             Ok(crucible_lua::ScriptHandlerResult::Cancel { reason }) => {

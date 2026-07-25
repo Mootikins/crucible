@@ -1332,7 +1332,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_lua_run_plugin_tests(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::lua::handle_lua_run_plugin_tests(req.clone()).await;
+        let resp = crate::server::lua_plugin_suite::handle_lua_run_plugin_tests(req.clone()).await;
         map_server_resp(resp)
     }
 

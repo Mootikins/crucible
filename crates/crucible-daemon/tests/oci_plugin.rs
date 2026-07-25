@@ -64,21 +64,36 @@ async fn load_oci(tmp: &Path, config: serde_json::Value) -> DaemonPluginLoader {
     loader
 }
 
-async fn start_session(loader: &mut DaemonPluginLoader, id: &str, workspace: &Path) {
-    let _ = workspace; // RED PASS: Session has no workspace yet
-    let session = Session::new(id.to_string());
+/// Fire `on_session_start` as the daemon does at `session.create`.
+///
+/// Returns the loader's result: with `[plugins.oci]` configured, `oci`'s hook
+/// is `required`, so a failure here is how the daemon knows to refuse the
+/// session.
+async fn try_start_session(
+    loader: &mut DaemonPluginLoader,
+    id: &str,
+    workspace: &Path,
+) -> anyhow::Result<()> {
+    let session =
+        Session::new(id.to_string()).with_workspace(workspace.to_string_lossy().to_string());
     session.bind(Box::new(StubRpc));
-    loader.fire_session_start(&session).expect("start"); // RED PASS: sync API
+    loader.fire_session_start(&session).await
+}
+
+async fn start_session(loader: &mut DaemonPluginLoader, id: &str, workspace: &Path) {
+    try_start_session(loader, id, workspace)
+        .await
+        .expect("session start");
 }
 
 async fn end_session(loader: &mut DaemonPluginLoader, id: &str) {
     let session = Session::new(id.to_string());
     session.bind(Box::new(StubRpc));
-    loader.fire_session_end(&session).expect("end"); // RED PASS: sync API
+    loader.fire_session_end(&session).await.expect("end");
 }
 
 /// Dispatch a `pre_tool_call` exactly as `agent_manager::messaging::tool_call`
-/// does, so the payload shape is the real one.
+/// does: tool and args in the flattened event, session id in `ctx`.
 async fn pre_tool_call(
     loader: &DaemonPluginLoader,
     session_id: &str,
@@ -92,7 +107,6 @@ async fn pre_tool_call(
         payload: serde_json::json!({
             "tool": tool,
             "args": args,
-            "session_id": session_id,
         }),
     };
     let handlers = registry.runtime_handlers_for("pre_tool_call", Some(tool));
@@ -102,7 +116,7 @@ async fn pre_tool_call(
          dispatch it straight to the host executor"
     );
     registry
-        .execute_runtime_handler(&lua, &handlers[0].name, &event)
+        .execute_runtime_handler(&lua, &handlers[0].name, &event, Some(session_id))
         .await
         .expect("handler execution")
 }
@@ -177,7 +191,9 @@ async fn oci_passes_tools_through_when_no_image_is_configured() {
 ///
 /// It never did: `resolve_config()` asked `cru.config.get("container")` — the
 /// *app* config store, under a key no config file writes — so it returned nil,
-/// `on_session_start` bailed, and no container was ever created.
+/// `on_session_start` bailed, and no container was ever created. Config landing
+/// means the plugin *acts* on it: with a bogus runtime the required start hook
+/// raises, which is how the daemon knows to refuse the session.
 #[tokio::test]
 async fn oci_reads_its_config_from_the_plugins_section() {
     let tmp = tempfile::tempdir().unwrap();
@@ -189,20 +205,14 @@ async fn oci_reads_its_config_from_the_plugins_section() {
         }),
     )
     .await;
-    start_session(&mut loader, "configured", tmp.path()).await;
 
-    // Config landed => the plugin tried to isolate => with a bogus runtime it
-    // must be in its blocked state rather than passing through.
-    let result = pre_tool_call(
-        &loader,
-        "configured",
-        "bash",
-        serde_json::json!({ "command": "echo hi" }),
-    )
-    .await;
+    let err = try_start_session(&mut loader, "configured", tmp.path())
+        .await
+        .expect_err("a configured oci with an unusable runtime must refuse the session");
     assert!(
-        matches!(result, ScriptHandlerResult::Cancel { .. }),
-        "configured oci did not act on its config, got {result:?}"
+        err.to_string()
+            .contains("crucible-no-such-container-runtime"),
+        "refusal must name the cause; got: {err}"
     );
 }
 
@@ -213,9 +223,11 @@ async fn oci_reads_its_config_from_the_plugins_section() {
 /// Isolation that cannot be established must not silently become no isolation.
 ///
 /// The old behaviour was one `cru.log("error", ...)` and a bare `return`: the
-/// handlers were never registered, so every tool call ran on the host while the
-/// operator believed it was contained. A log line the user never sees is not
-/// consent — the tool has to be refused, with the reason in the transcript.
+/// session ran every tool on the host while the operator believed it was
+/// contained. Now the start hook is `required`, so the failure propagates and
+/// the caller refuses the session — and the failed start must leave no
+/// half-registered state behind, or the *next* session's tools would route
+/// into a container that never existed.
 #[tokio::test]
 async fn oci_fails_closed_when_the_container_runtime_is_missing() {
     let tmp = tempfile::tempdir().unwrap();
@@ -227,8 +239,19 @@ async fn oci_fails_closed_when_the_container_runtime_is_missing() {
         }),
     )
     .await;
-    start_session(&mut loader, "blocked", tmp.path()).await;
 
+    let err = try_start_session(&mut loader, "blocked", tmp.path())
+        .await
+        .expect_err("start must fail when the runtime is missing");
+    assert!(
+        err.to_string()
+            .contains("crucible-no-such-container-runtime"),
+        "refusal must name the cause; got: {err}"
+    );
+
+    // The session was refused, so nothing should key to it: its tool calls
+    // (which the daemon will never make) pass through rather than routing
+    // into a phantom container.
     for (tool, args) in [
         ("bash", serde_json::json!({ "command": "id" })),
         (
@@ -238,18 +261,16 @@ async fn oci_fails_closed_when_the_container_runtime_is_missing() {
         ("read_file", serde_json::json!({ "path": "x" })),
     ] {
         let result = pre_tool_call(&loader, "blocked", tool, args).await;
-        let ScriptHandlerResult::Cancel { reason } = result else {
-            panic!("'{tool}' was allowed to run on the host after isolation failed: {result:?}");
-        };
         assert!(
-            reason.contains("crucible-no-such-container-runtime"),
-            "denial must name the cause; got: {reason}"
+            matches!(result, ScriptHandlerResult::PassThrough),
+            "a refused session must leave no interception state, got {result:?}"
         );
     }
 }
 
-/// Two sessions share one plugin VM. State keyed by anything but the session id
-/// routes one session's tools into the other's container.
+/// Two sessions share one plugin VM and one set of load-time handlers. A
+/// session `oci` never started must not inherit interception state from one it
+/// refused — state keyed by anything but the session id would do exactly that.
 #[tokio::test]
 async fn oci_keeps_sessions_isolated_from_each_other() {
     let tmp = tempfile::tempdir().unwrap();
@@ -261,29 +282,19 @@ async fn oci_keeps_sessions_isolated_from_each_other() {
         }),
     )
     .await;
-    // Only one of the two sessions ever starts.
-    start_session(&mut loader, "started", tmp.path()).await;
 
-    let started = pre_tool_call(
-        &loader,
-        "started",
-        "bash",
-        serde_json::json!({ "command": "id" }),
-    )
-    .await;
-    assert!(matches!(started, ScriptHandlerResult::Cancel { .. }));
+    try_start_session(&mut loader, "refused", tmp.path())
+        .await
+        .expect_err("bogus runtime must refuse the session");
 
-    let other = pre_tool_call(
-        &loader,
-        "never-started",
-        "bash",
-        serde_json::json!({ "command": "id" }),
-    )
-    .await;
-    assert!(
-        matches!(other, ScriptHandlerResult::PassThrough),
-        "a session oci never started must not inherit another session's state, got {other:?}"
-    );
+    for id in ["refused", "never-started"] {
+        let result =
+            pre_tool_call(&loader, id, "bash", serde_json::json!({ "command": "id" })).await;
+        assert!(
+            matches!(result, ScriptHandlerResult::PassThrough),
+            "session '{id}' must not inherit another session's state, got {result:?}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

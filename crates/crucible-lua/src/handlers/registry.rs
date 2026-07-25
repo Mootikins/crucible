@@ -281,14 +281,15 @@ impl LuaScriptHandlerRegistry {
 
     /// Execute a runtime-registered handler by name
     ///
-    /// Retrieves the stored function from the registry and executes it with the event.
-    /// The handler receives (ctx, event) as parameters where ctx is an empty table.
+    /// Retrieves the stored function from the registry and executes it with the
+    /// event. The handler receives `(ctx, event)`; `ctx.session_id` carries the
+    /// session the event belongs to when the dispatch site knows it.
     ///
-    /// # Arguments
-    ///
-    /// * `lua` - The Lua context
-    /// * `name` - Handler name (e.g., "runtime_handler_0")
-    /// * `event` - The session event to pass to the handler
+    /// That field is what lets a handler registered once at plugin load serve
+    /// many sessions (`oci` keys its containers by it). Registering handlers
+    /// per-session instead is not an alternative: the registry is append-only,
+    /// so per-session registration accumulates one stale copy per session for
+    /// the daemon's lifetime.
     ///
     /// # Returns
     ///
@@ -298,6 +299,7 @@ impl LuaScriptHandlerRegistry {
         lua: &Lua,
         name: &str,
         event: &SessionEvent,
+        session_id: Option<&str>,
     ) -> LuaResult<ScriptHandlerResult> {
         // Get the handler Function while holding the lock, then drop it before await
         let handler: Function = {
@@ -312,6 +314,9 @@ impl LuaScriptHandlerRegistry {
         };
 
         let ctx_table = lua.create_table()?;
+        if let Some(id) = session_id {
+            ctx_table.set("session_id", id)?;
+        }
         let event_table = session_event_to_lua(lua, event)?;
 
         let result: Value = handler.call_async((ctx_table, event_table)).await?;
