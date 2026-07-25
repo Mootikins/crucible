@@ -9,12 +9,12 @@ describe("reflection", function()
         { role = "user", content = "again" },
         { role = "system", content = "sys" },
       }
-      assert.equal(plugin.count_user_turns(msgs), 2)
+      assert.equal(2, plugin.count_user_turns(msgs))
     end)
 
     it("handles empty and nil", function()
-      assert.equal(plugin.count_user_turns({}), 0)
-      assert.equal(plugin.count_user_turns(nil), 0)
+      assert.equal(0, plugin.count_user_turns({}))
+      assert.equal(0, plugin.count_user_turns(nil))
     end)
   end)
 
@@ -34,18 +34,18 @@ describe("reflection", function()
   describe("parse_proposals", function()
     it("parses a JSON array", function()
       local p = plugin.parse_proposals('[{"title":"T","body":"B"}]')
-      assert.equal(#p, 1)
-      assert.equal(p[1].title, "T")
+      assert.equal(1, #p)
+      assert.equal("T", p[1].title)
     end)
 
     it("treats empty array as nothing to save", function()
       local p = plugin.parse_proposals("[]")
-      assert.equal(#p, 0)
+      assert.equal(0, #p)
     end)
 
     it("strips code fences", function()
       local p = plugin.parse_proposals('```json\n[{"title":"T","body":"B"}]\n```')
-      assert.equal(#p, 1)
+      assert.equal(1, #p)
     end)
 
     it("returns nil on non-JSON", function()
@@ -54,12 +54,12 @@ describe("reflection", function()
 
     it("wraps a single proposal object into a one-element array", function()
       local p = plugin.parse_proposals('{"title":"T","body":"B"}')
-      assert.equal(#p, 1)
-      assert.equal(p[1].title, "T")
+      assert.equal(1, #p)
+      assert.equal("T", p[1].title)
     end)
 
     it("treats empty string as empty list", function()
-      assert.equal(#plugin.parse_proposals(""), 0)
+      assert.equal(0, #plugin.parse_proposals(""))
     end)
   end)
 
