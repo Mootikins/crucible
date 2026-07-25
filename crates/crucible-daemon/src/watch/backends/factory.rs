@@ -98,7 +98,6 @@ impl ExtendedBackendRegistry {
 
         // Check performance requirements
         if let Some(max_latency) = requirements.max_latency_ms {
-            // Different backends have different latency characteristics
             // Each backend has its own latency floor — notify is event-driven,
             // polling is bounded by its interval, editor integration is low
             // frequency. A requirement tighter than the floor rules it out.
