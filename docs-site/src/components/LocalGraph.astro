@@ -192,7 +192,7 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 	}
 
 	.node {
-		fill: var(--cru-ember);
+		fill: var(--cru-ember-text);
 		opacity: 0.75;
 		transition: opacity var(--cru-quick) var(--cru-ease);
 	}
@@ -217,7 +217,7 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 
 	.node-link:hover .node-label,
 	.node-link:focus-visible .node-label {
-		fill: var(--cru-ember);
+		fill: var(--cru-ember-text);
 	}
 	.node-link:hover .node,
 	.node-link:focus-visible .node {
@@ -246,7 +246,7 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 	}
 
 	.localgraph-count {
-		color: var(--cru-ember);
+		color: var(--cru-ember-text);
 	}
 
 	.localgraph-lists ul {
@@ -263,7 +263,7 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 	}
 
 	.localgraph-lists a:hover {
-		color: var(--cru-ember);
+		color: var(--cru-ember-text);
 		text-decoration: underline;
 		text-underline-offset: 0.2em;
 	}

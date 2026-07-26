@@ -61,14 +61,14 @@
    cheap. Every neutral here carries some red. */
 :root[data-theme='light'] {
 	--sl-color-accent-low: #ffe9d6;
-	--sl-color-accent: #c2560c;
+	--sl-color-accent: var(--cru-ember-on-paper);
 	--sl-color-accent-high: #7a3405;
 
 	--sl-color-white: var(--cru-ink-on-paper);
 	--sl-color-gray-1: #2a2521;
 	--sl-color-gray-2: #4a423b;
 	--sl-color-gray-3: var(--cru-ash-on-paper);
-	--sl-color-gray-4: #857c73;
+	--sl-color-gray-4: #797067; /* 4.5:1 on paper; was #857c73 at 3.8:1 */
 	--sl-color-gray-5: #d8cfc3;
 	--sl-color-gray-6: var(--cru-paper-raised);
 	--sl-color-gray-7: #f5efe6;
@@ -83,8 +83,12 @@
 	--sl-color-hairline-shade: rgba(26, 23, 20, 0.09);
 
 	--sl-color-text: var(--cru-ash-on-paper);
-	--sl-color-text-accent: #c2560c;
+	--sl-color-text-accent: var(--cru-ember-on-paper);
 	--sl-color-text-invert: var(--cru-paper);
+
+	/* Full-strength amber is nowhere near AA on paper, so anything that
+	   colours text with it has to pick up the burnt variant here. */
+	--cru-ember-text: var(--cru-ember-on-paper);
 }
 
 /* ══ Typography ═══════════════════════════════════════════════════════ */
@@ -194,7 +198,7 @@
 .site-title {
 	font-family: var(--cru-font-display);
 	font-weight: 600;
-	color: var(--cru-ember);
+	color: var(--cru-ember-text);
 }
 
 /* ══ Table of contents ════════════════════════════════════════════════ */
@@ -218,7 +222,7 @@ starlight-toc a {
 
 starlight-toc a[aria-current='true'],
 starlight-toc a[aria-current='true']:hover {
-	color: var(--cru-ember);
+	color: var(--cru-ember-text);
 	border-inline-start-color: var(--cru-ember);
 	font-weight: 600;
 }
@@ -235,7 +239,7 @@ starlight-toc a[aria-current='true']:hover {
 }
 
 .sl-markdown-content a:not(:where(.not-content *)):hover {
-	color: var(--cru-ember);
+	color: var(--cru-ember-text);
 	text-decoration-color: var(--cru-ember);
 }
 

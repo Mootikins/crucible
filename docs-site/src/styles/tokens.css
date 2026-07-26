@@ -18,6 +18,12 @@
 	--cru-gold: #ffdd57; /* Bubble Gold — sparks, rare accents */
 	--cru-scoria: #5c2a0d; /* burnt amber — faint ink, dead edges */
 
+	/* Amber when it is *text*. Defaults to the dark-field value, which is what
+	   the landing page always wants; the Starlight light theme overrides it to
+	   the burnt variant. Rails, borders and fills keep using --cru-ember
+	   directly — this alias is only for things that have to be read. */
+	--cru-ember-text: var(--cru-ember);
+
 	/* Ember at opacity. Named by job so call sites read as intent. */
 	--cru-ember-wash: rgba(255, 140, 66, 0.08); /* tinted fills */
 	--cru-ember-edge: rgba(255, 140, 66, 0.22); /* hairlines on amber things */
@@ -36,15 +42,21 @@
 	/* ── Text ─────────────────────────────────────────────────────
 	 * --cru-ash is warm on purpose. The old #9CA3AF was a cool
 	 * blue-grey and went muddy against amber. */
-	--cru-bright: #f4f1ec; /* headings, high emphasis */
-	--cru-ash: #a39d97; /* body on dark */
-	--cru-dim: #6f6862; /* captions, disabled */
+	/* Every value below clears WCAG AA (4.5:1) against the field it is used
+	   on. --cru-dim in particular carries real content — table "No" cells,
+	   terminal comments — and was 3.61:1 before. */
+	--cru-bright: #f4f1ec; /* headings, high emphasis — 17.6:1 */
+	--cru-ash: #a39d97; /* body on dark — 7.4:1 */
+	--cru-dim: #847d75; /* captions, muted — 4.9:1 */
 
 	/* Light mode inverts the field but keeps the same ember ramp. */
 	--cru-paper: #faf7f2;
 	--cru-paper-raised: #f2ece3;
-	--cru-ink-on-paper: #1a1714;
-	--cru-ash-on-paper: #5a534c;
+	--cru-ink-on-paper: #1a1714; /* 16.7:1 */
+	--cru-ash-on-paper: #5a534c; /* 7.1:1 */
+	/* Amber cannot be used as-is for text on paper — #FF8C42 is far under
+	   AA there. This is the ramp burnt down until it passes. */
+	--cru-ember-on-paper: #b34e0a; /* 4.9:1 */
 
 	/* Structural blue-grey. Terminal chrome, window dots, muted marks.
 	 * The one deliberately cool colour — it reads as "machine". */
