@@ -97,6 +97,78 @@ Fire around tool output display in the TUI. Use these to transform or filter how
 
 Lower-level hook fired by the in-process handler pipeline. Most plugins should use `pre_tool_call` instead — it's the canonical interception point and works uniformly across local and ACP agents.
 
+### `precognition_select`
+
+Fires after the kiln search, before the retrieved notes are formatted into the
+system message. Handlers choose **which** notes reach the agent, in what order,
+and how the snippet character budget is spent across them.
+
+```lua
+crucible.on("precognition_select", function(ctx, event)
+  -- Keep only strong matches from the primary kiln, best first.
+  local picked = {}
+  for _, note in ipairs(event.results) do
+    if note.score > 0.7 and note.is_primary_kiln then
+      picked[#picked + 1] = { index = note.index }
+    end
+  end
+  return picked
+end)
+```
+
+Event fields:
+- `event.user_message` — the query text (string)
+- `event.note_count` — number of retrieved notes
+- `event.char_budget` — total snippet characters the handler may allocate
+- `event.results` — array of `{ index, title, score, snippet, kiln_path, is_primary_kiln }`
+
+Return an array of `{ index = n, snippet = "..." }`, where `index` is the
+handle from `event.results` and `snippet` optionally replaces that note's text.
+Returned order is the order the agent sees. Selection is addressed **by index
+rather than by value** so a handler can reorder, drop and re-snippet but cannot
+fabricate a note that isn't in the kiln — precognition output goes straight into
+the model's context, so it stays traceable to indexed content.
+
+| Return | Effect |
+|--------|--------|
+| `nil` | built-in behaviour stands |
+| array of entries | those notes, in that order |
+| `{}` | suppress precognition for this turn |
+| anything else | warns and falls back to the built-in |
+
+Out-of-range, duplicate and non-numeric indices are dropped with a warning
+rather than failing the turn. Like every hook except `pre_tool_call`, this one
+fails open: a handler that errors leaves the default in place.
+
+The character cap still runs after your handler. It only truncates when the
+total exceeds `char_budget`, so it is invisible to a handler that respects the
+budget and a hard stop for one that doesn't — allocation is yours, enforcement
+stays with the daemon.
+
+> **Snippets are measured in characters, not bytes.** Lua string indexing is
+> byte-based, so `snippet:sub(1, n)` disagrees with the budget on any non-ASCII
+> text and can slice a UTF-8 sequence in half. Use `utf8.offset`:
+>
+> ```lua
+> local stop = utf8.offset(snippet, n + 1)
+> snippet = stop and snippet:sub(1, stop - 1) or snippet
+> ```
+
+Use `precognition_format` (below) to change how the chosen notes are *rendered*;
+use this to change *which* ones there are.
+
+### `precognition_format`
+
+Fires after selection, over the notes that survived it. Return a string to
+replace the entire system-message body that carries the kiln context.
+
+Event fields: `event.user_message`, `event.note_count`, and `event.results`
+(array of `{ title, score, snippet, kiln_path }`).
+
+Does **not** fire when the search returned nothing — the daemon short-circuits
+before invoking it. To inject something on the empty case, use
+`transform_context`, which fires every turn.
+
 ## Handler Return Values
 
 The handler's return value controls what happens next:
