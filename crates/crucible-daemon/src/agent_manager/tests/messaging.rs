@@ -1015,3 +1015,119 @@ async fn send_revives_ended_session_from_storage() {
     assert_eq!(complete.data["message_id"], message_id);
     assert_eq!(complete.data["full_response"], "revived");
 }
+
+/// The load-bearing test for `cru.context.attach`: content retrieved by a
+/// `tool_result` handler must reach the agent for its next LLM call of the
+/// SAME turn, and must NOT enter the conversation tree.
+///
+/// Unit tests on `ContextAttachRegistry` pass with the stream-loop drain
+/// unwired — only this one fails. Same gap that let the plugin-hook break ship.
+#[tokio::test]
+async fn attached_context_reaches_the_agent_within_the_same_turn() {
+    let mut h = ReactorTestHarness::new().await;
+
+    // Bind before load_lua: session VMs are built lazily and cached, so
+    // binding afterwards leaves `cru.context.attach` nil in the handler.
+    let registry = Arc::new(crucible_lua::ContextAttachRegistry::default());
+    h.set_context_attach(registry.clone());
+
+    h.load_lua(
+        r#"
+        -- No real tool executor in this harness; `handled` supplies the
+        -- result. tool_result still fires over it, which is the point.
+        crucible.on("pre_tool_call", function(ctx, event)
+            return { handled = true, result = "file contents" }
+        end)
+        crucible.on("tool_result", function(ctx, event)
+            cru.context.attach(ctx.session_id, "SENTINEL-ATTACHED-KNOWLEDGE",
+                               { key = "k1" })
+        end)
+    "#,
+    )
+    .await;
+
+    let recorded = Arc::new(StdMutex::new(Vec::new()));
+    h.inject_agent(Box::new(InboundRecordingAgent {
+        events: vec![script::tool_call(
+            "call1",
+            "Read",
+            serde_json::json!({"file_path": "notes.md"}),
+        )],
+        recorded: recorded.clone(),
+    }));
+
+    h.send("read the notes").await;
+    let _ = h.wait_for("tool_result").await;
+    let _ = h.wait_for("message_complete").await;
+
+    let events = recorded.lock().unwrap().clone();
+    let attached: Vec<String> = events
+        .iter()
+        .filter_map(|e| match e {
+            TurnEvent::ContextAttach { content } => Some(content.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        attached,
+        vec!["SENTINEL-ATTACHED-KNOWLEDGE".to_string()],
+        "attachment should reach the agent inbound; got {events:?}"
+    );
+
+    // Read-only guarantee: context is derived per call, history is not.
+    let tree = h
+        .agent_manager
+        .get_session_tree(&h.session_id)
+        .expect("session tree");
+    let messages = tree.lock().await.flatten_current_path_to_context();
+    assert!(
+        !messages
+            .iter()
+            .any(|m| m.content.contains("SENTINEL-ATTACHED-KNOWLEDGE")),
+        "attachment must not enter the conversation tree: {messages:?}"
+    );
+}
+
+/// A handler firing on every tool call is the expected shape, so the dedup
+/// must hold across calls rather than per batch.
+#[tokio::test]
+async fn repeated_triggers_attach_once_per_key() {
+    let mut h = ReactorTestHarness::new().await;
+    let registry = Arc::new(crucible_lua::ContextAttachRegistry::default());
+    h.set_context_attach(registry.clone());
+
+    h.load_lua(
+        r#"
+        crucible.on("pre_tool_call", function(ctx, event)
+            return { handled = true, result = "file contents" }
+        end)
+        crucible.on("tool_result", function(ctx, event)
+            cru.context.attach(ctx.session_id, "CPP-NOTES", { key = "filetype:cpp" })
+        end)
+    "#,
+    )
+    .await;
+
+    let recorded = Arc::new(StdMutex::new(Vec::new()));
+    h.inject_agent(Box::new(InboundRecordingAgent {
+        events: vec![
+            script::tool_call("c1", "Read", serde_json::json!({"file_path": "a.cpp"})),
+            script::tool_call("c2", "Read", serde_json::json!({"file_path": "b.cpp"})),
+            script::tool_call("c3", "Read", serde_json::json!({"file_path": "c.cpp"})),
+        ],
+        recorded: recorded.clone(),
+    }));
+
+    h.send("read the cpp files").await;
+    let _ = h.wait_for("message_complete").await;
+
+    let attaches = recorded
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|e| matches!(e, TurnEvent::ContextAttach { .. }))
+        .count();
+
+    assert_eq!(attaches, 1, "three .cpp reads should attach the notes once");
+}

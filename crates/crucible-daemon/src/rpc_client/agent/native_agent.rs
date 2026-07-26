@@ -122,6 +122,7 @@ fn _terminal_variant_check(event: TurnEvent) -> bool {
         | TurnEvent::ToolBatchEnd
         | TurnEvent::HandlerInjection { .. }
         | TurnEvent::DepthCapHit { .. }
+        | TurnEvent::ContextAttach { .. }
         | TurnEvent::Usage(_) => false,
     }
 }

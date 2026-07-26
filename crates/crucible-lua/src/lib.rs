@@ -47,6 +47,7 @@ pub mod annotations;
 mod ask;
 pub mod auth_plugin;
 mod context;
+mod context_attach;
 pub mod core_handler;
 mod error;
 mod error_ext;
@@ -115,6 +116,9 @@ pub use config::{
 pub use context::{
     register_context_module, register_context_module_stub, register_context_validators,
     LuaValidatorRegistry,
+};
+pub use context_attach::{
+    register_context_attach, AttachRejection, ContextAttachRegistry, DEFAULT_ATTACH_BUDGET_CHARS,
 };
 pub use core_handler::{LuaHandler, LuaHandlerMeta};
 pub use error::{format_lua_error, LuaError};

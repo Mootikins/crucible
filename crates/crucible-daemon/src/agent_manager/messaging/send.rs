@@ -245,6 +245,7 @@ impl AgentManager {
                     )),
                 )
             }),
+            context_attach: self.context_attach(),
         };
 
         let task = tokio::spawn(async move {

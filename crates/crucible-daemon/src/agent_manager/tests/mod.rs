@@ -548,6 +548,15 @@ impl ReactorTestHarness {
         self.agent_manager.set_isolation(registry);
     }
 
+    /// Bind the mid-turn attachment registry, as the daemon does at startup.
+    ///
+    /// Must be called BEFORE `load_lua`: session VMs are built lazily and
+    /// cached, and `cru.context.attach` is registered at construction. Bind
+    /// after the VM exists and the handler sees a nil function.
+    fn set_context_attach(&self, registry: Arc<crucible_lua::ContextAttachRegistry>) {
+        self.agent_manager.set_context_attach(registry);
+    }
+
     /// Bind a plugin `crucible.on` registry, as the daemon does at startup.
     fn set_plugin_handlers(
         &self,
@@ -847,3 +856,83 @@ mod permissions;
 mod precognition;
 mod reactor;
 mod workspace;
+
+/// Mock agent that runs a scheduler-driven tool loop and records every event
+/// the runtime feeds back on `ctx.inbound`.
+///
+/// `OwnsToolsMockAgent` drops `ctx`, so it cannot see inbound traffic at all;
+/// this one keeps the receiver, which is the whole point — `ContextAttach` is
+/// inbound-only and invisible from the event stream.
+pub(super) struct InboundRecordingAgent {
+    pub(super) events: Vec<TurnEvent>,
+    pub(super) recorded: Arc<StdMutex<Vec<TurnEvent>>>,
+}
+
+#[async_trait::async_trait]
+impl crucible_core::turn::Agent for InboundRecordingAgent {
+    fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+        // Same as StreamingMockAgent: the scheduler owns tool dispatch.
+        crucible_core::turn::AgentCapabilities::default()
+    }
+    async fn turn<'a>(
+        &'a mut self,
+        ctx: crucible_core::turn::TurnContext,
+    ) -> Result<futures::stream::BoxStream<'a, TurnEvent>, crucible_core::turn::AgentError> {
+        let events = self.events.clone();
+        let recorded = self.recorded.clone();
+        let mut inbound = ctx.inbound;
+        Ok(Box::pin(async_stream::stream! {
+            let mut pending: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            for ev in events {
+                if let TurnEvent::ToolCall { ref id, .. } = ev {
+                    pending.insert(id.clone());
+                }
+                yield ev;
+            }
+            yield TurnEvent::ToolBatchEnd;
+
+            if let Some(rx) = inbound.as_mut() {
+                // Keep reading past the last ToolResult: attachments are sent
+                // straight after it, so stopping at the result would race them.
+                while !pending.is_empty() {
+                    let Some(event) = rx.recv().await else { break };
+                    if let TurnEvent::ToolResult { id, .. } = &event {
+                        pending.remove(id);
+                    }
+                    if let Ok(mut g) = recorded.lock() {
+                        g.push(event);
+                    }
+                }
+                while let Ok(event) = tokio::time::timeout(
+                    Duration::from_millis(200),
+                    rx.recv(),
+                )
+                .await
+                {
+                    let Some(event) = event else { break };
+                    if let Ok(mut g) = recorded.lock() {
+                        g.push(event);
+                    }
+                }
+            }
+            yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+        }))
+    }
+    async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+        Ok(())
+    }
+    async fn switch_model(&mut self, _: &str) -> Result<(), crucible_core::turn::NotSupported> {
+        Err(crucible_core::turn::NotSupported::new("switch_model"))
+    }
+}
+
+#[async_trait::async_trait]
+impl AgentHandle for InboundRecordingAgent {
+    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
+        Ok(())
+    }
+    async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
+        Ok(())
+    }
+}

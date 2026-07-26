@@ -101,6 +101,23 @@ pub enum TurnEvent {
     /// user message.
     HandlerInjection { content: String, position: String },
 
+    /// Inbound only. Knowledge retrieved mid-turn (a Lua handler called
+    /// `cru.context.attach`) that the agent should have available for its
+    /// next LLM call.
+    ///
+    /// Distinct from `HandlerInjection`, which speaks *as the user*. This is
+    /// reference material, so agents append it as a system message.
+    ///
+    /// **Append at the end; never prepend.** Inserting ahead of the existing
+    /// messages invalidates the whole prompt-cache prefix, and the cost then
+    /// scales with conversation length — the opposite of what a
+    /// fires-often retrieval path needs.
+    ///
+    /// Context only: this never enters the conversation tree or the session
+    /// log. History stays append-only and owned by the scheduler; forking is
+    /// the only way to diverge from it.
+    ContextAttach { content: String },
+
     /// Inbound only. Maximum tool-call depth was reached; the agent
     /// should produce a final response without further tool calls.
     DepthCapHit { max_depth: usize },

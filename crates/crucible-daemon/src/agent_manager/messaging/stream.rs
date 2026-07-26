@@ -690,6 +690,23 @@ impl AgentManager {
                         // Adapter dropped; end turn.
                         break;
                     }
+
+                    // A `tool_result` handler may have retrieved something via
+                    // `cru.context.attach`. Hand it over now so the agent has
+                    // it for the next LLM call of this turn. Context only —
+                    // deliberately NOT committed to the conversation tree
+                    // above, because history is append-only and scheduler-owned.
+                    if let Some(registry) = stream_ctx.context_attach.as_ref() {
+                        for content in registry.drain(&stream_ctx.session_id) {
+                            if inbound_tx
+                                .send(TurnEvent::ContextAttach { content })
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                    }
                 }
                 TurnEvent::ToolResult {
                     id,
@@ -807,7 +824,9 @@ impl AgentManager {
                 TurnEvent::Usage(usage) => {
                     last_usage = Some(usage);
                 }
-                TurnEvent::HandlerInjection { .. } | TurnEvent::DepthCapHit { .. } => {
+                TurnEvent::HandlerInjection { .. }
+                | TurnEvent::DepthCapHit { .. }
+                | TurnEvent::ContextAttach { .. } => {
                     // Inbound-only variants. Adapter should not echo
                     // them, but tolerate if it ever does.
                 }
@@ -937,6 +956,10 @@ impl AgentManager {
                 session_mode: stream_ctx.session_mode.clone(),
                 is_interactive: stream_ctx.is_interactive,
                 permission_engine: stream_ctx.permission_engine.clone(),
+                // Carried across the retry: dedup and budget are per session,
+                // so a validation retry must not get a fresh allowance to
+                // re-attach what the original turn already attached.
+                context_attach: stream_ctx.context_attach.clone(),
             };
 
             continuation_outcome = Box::pin(Self::execute_agent_stream(

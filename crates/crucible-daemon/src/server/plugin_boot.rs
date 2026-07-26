@@ -35,6 +35,8 @@ impl Server {
             self.agent_manager
                 .set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
             self.agent_manager.set_isolation(loader.isolation());
+            self.agent_manager
+                .set_context_attach(loader.context_attach());
             // Cached so per-turn reads never queue behind the loader
             // mutex while a session-start hook builds a container.
             self.agent_manager

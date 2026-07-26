@@ -1131,6 +1131,10 @@ impl GenaiAgentHandle {
                     .filter_map(|c| c.id.clone())
                     .collect();
                 let mut collected: Vec<ChatToolResult> = Vec::with_capacity(pending_calls.len());
+                // Knowledge attached by Lua handlers while this batch's
+                // results were coming back. Folded in after the tool
+                // responses below.
+                let mut attached: Vec<String> = Vec::new();
                 while collected.len() < pending_calls.len() {
                     let Some(event) = rx.recv().await else {
                         yield TurnEvent::Done { stop_reason: StopReason::Cancelled };
@@ -1159,6 +1163,16 @@ impl GenaiAgentHandle {
                             messages.push(ChatMessage::user(&content));
                             chat_stream = self.stream_chat_from_messages(messages.clone());
                             continue 'turn;
+                        }
+                        TurnEvent::ContextAttach { content } => {
+                            // Retrieved reference material, not a user turn —
+                            // system role. Buffered rather than restarting the
+                            // stream: we are mid tool-result collection, and
+                            // the attachment is folded in below so it lands
+                            // after the tool responses, at the end of the
+                            // message list. Restarting here would drop the
+                            // tool results we are still waiting on.
+                            attached.push(content);
                         }
                         TurnEvent::DepthCapHit { .. } => {
                             drop(chat_stream);
@@ -1199,6 +1213,13 @@ impl GenaiAgentHandle {
                             .unwrap_or_else(|| format!("tool_call_{idx}"))
                     });
                     messages.push(ChatMessage::from(ToolResponse::new(call_id, result.result)));
+                }
+
+                // Attached knowledge goes last, after the tool responses:
+                // appending keeps the entire preceding prefix cacheable, which
+                // is what makes a retrieval path that fires often affordable.
+                for content in attached.drain(..) {
+                    messages.push(ChatMessage::system(&content));
                 }
 
                 drop(chat_stream);

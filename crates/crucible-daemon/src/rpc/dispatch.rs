@@ -935,6 +935,10 @@ impl RpcDispatcher {
         // reused, and a stale claim is indistinguishable from a live one.
         loader.isolation().release(session_id);
         loader.status().release(session_id);
+        // Dedup keys and the spent attach budget are per session and
+        // deliberately survive a drain — so without this they would outlive the
+        // session itself and silently deny a reused id its first attachment.
+        loader.context_attach().release(session_id);
         let session = crucible_lua::Session::new(session_id.to_string())
             .with_workspace(daemon_session.workspace.to_string_lossy());
         session.bind(Box::new(crate::server::NoopSessionRpc));

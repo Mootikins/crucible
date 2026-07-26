@@ -12,14 +12,15 @@ use anyhow::Context;
 use crucible_core::storage::NoteStore;
 use crucible_core::storage::PropertyStore;
 use crucible_lua::{
-    register_context_module, register_context_validators, register_crucible_on_api,
-    register_graph_module, register_isolation_module, register_oq_module, register_paths_module,
-    register_schedule_module, register_sessions_module, register_sessions_module_with_api,
-    register_shell_module, register_status_module, register_storage_module,
-    register_storage_module_with_store, register_tools_module, register_tools_module_with_api,
-    register_vault_module, register_ws_module, DaemonSessionApi, DaemonToolsApi, IsolationRegistry,
-    LuaExecutor, LuaScriptHandlerRegistry, LuaValidatorRegistry, PathsContext, PluginManager,
-    PluginSource, PluginSpec, ShellPolicy, StatusRegistry,
+    register_context_attach, register_context_module, register_context_validators,
+    register_crucible_on_api, register_graph_module, register_isolation_module, register_oq_module,
+    register_paths_module, register_schedule_module, register_sessions_module,
+    register_sessions_module_with_api, register_shell_module, register_status_module,
+    register_storage_module, register_storage_module_with_store, register_tools_module,
+    register_tools_module_with_api, register_vault_module, register_ws_module,
+    ContextAttachRegistry, DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor,
+    LuaScriptHandlerRegistry, LuaValidatorRegistry, PathsContext, PluginManager, PluginSource,
+    PluginSpec, ShellPolicy, StatusRegistry,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -94,6 +95,7 @@ pub struct DaemonPluginLoader {
     isolation: IsolationRegistry,
     /// Per-session status slots published by plugins, read by TUI and web.
     status: StatusRegistry,
+    context_attach: Arc<ContextAttachRegistry>,
 }
 
 impl DaemonPluginLoader {
@@ -181,6 +183,16 @@ impl DaemonPluginLoader {
             ),
         )?;
 
+        // `cru.context.attach` — mid-turn knowledge attachment. A handler
+        // that retrieves something partway through a turn needs somewhere the
+        // agent's *next* LLM call will look; without it, retrieval mid-turn
+        // has nowhere to land.
+        let context_attach = Arc::new(ContextAttachRegistry::default());
+        reg(
+            "context.attach",
+            register_context_attach(lua, context_attach.clone()),
+        )?;
+
         let handler_registry = Arc::new(LuaScriptHandlerRegistry::new());
         reg(
             "crucible.on",
@@ -202,6 +214,7 @@ impl DaemonPluginLoader {
             plugin_registry: Arc::new(PluginRegistry::new()),
             isolation,
             status,
+            context_attach,
         })
     }
 
@@ -226,6 +239,10 @@ impl DaemonPluginLoader {
     /// Per-session status slots published by plugins, for the RPC layer.
     pub fn status(&self) -> StatusRegistry {
         self.status.clone()
+    }
+
+    pub fn context_attach(&self) -> Arc<ContextAttachRegistry> {
+        self.context_attach.clone()
     }
 
     /// Fire `crucible.on_session_start` hooks registered by plugins.
