@@ -104,8 +104,12 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 					viewBox={`0 0 ${W} ${H}`}
 					class="localgraph-svg"
 					data-graph={graphData}
-					role="img"
-					aria-label={`${hood!.node.title} links out to ${hood!.totalOutbound} page${hood!.totalOutbound === 1 ? '' : 's'} and is linked to from ${hood!.totalInbound}. The same pages are listed below.`}
+					{/* Presentational, not an image: role="img" promises a leaf
+					    node, and this subtree contains links. Everything it shows
+					    is in the two lists below, which are better navigation for
+					    a screen reader anyway, so the graph is hidden rather than
+					    described twice. */}
+					aria-hidden="true"
 				>
 					<g data-role="edges">
 						{links.map((l: any) => (
@@ -126,6 +130,7 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 							<a
 								href={p.self ? undefined : `${base}/${p.slug}/`}
 								class="node-link"
+								tabindex="-1"
 								data-slug={p.slug}
 								data-self={p.self ? 'true' : undefined}
 							>
@@ -639,8 +644,6 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 			n.anchor.addEventListener('pointerleave', () => {
 				if (!drag) setHover(null);
 			});
-			n.anchor.addEventListener('focus', () => setHover(n.slug));
-			n.anchor.addEventListener('blur', () => setHover(null));
 		}
 
 		// ── Drag: pin while held, reheat on release ────────────────────────

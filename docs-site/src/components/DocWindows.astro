@@ -322,9 +322,15 @@
 		}
 
 		async function loadPage(url: string) {
-			if (cache.has(url)) return cache.get(url);
+			// Successes are cached forever; failures are not. A transient network
+			// blip would otherwise mark a page permanently unavailable for the
+			// rest of the session.
+			if (cache.get(url)) return cache.get(url);
 			try {
-				const res = await fetch(url, { credentials: 'same-origin' });
+				const res = await fetch(url, {
+					credentials: 'same-origin',
+					signal: AbortSignal.timeout(8000),
+				});
 				if (!res.ok) throw new Error(String(res.status));
 				const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
 				const content = doc.querySelector('.sl-markdown-content');
@@ -334,7 +340,8 @@
 					doc.title.split('|')[0].trim();
 				cache.set(url, { title, html: content.innerHTML });
 			} catch {
-				cache.set(url, null);
+				cache.delete(url);
+				return null;
 			}
 			return cache.get(url);
 		}
@@ -472,8 +479,13 @@
 			const oy = win.y;
 
 			const move = (ev: MouseEvent) => {
-				win.x = Math.max(0, ox + ev.clientX - sx);
-				win.y = Math.max(0, oy + ev.clientY - sy);
+				// Clamped on all four edges. Clamping only the top-left let a
+				// window be dragged almost entirely off the right or bottom,
+				// with no way to bring it back.
+				const maxX = Math.max(0, window.innerWidth - win.w);
+				const maxY = Math.max(0, window.innerHeight - win.h);
+				win.x = Math.min(maxX, Math.max(0, ox + ev.clientX - sx));
+				win.y = Math.min(maxY, Math.max(0, oy + ev.clientY - sy));
 				place(win);
 			};
 			const up = () => {
@@ -716,6 +728,10 @@
 		// pinned several and does not want to hunt for close buttons.
 		document.addEventListener('keydown', (e) => {
 			if (e.key !== 'Escape' || wins.length === 0) return;
+			// Starlight's search is a <dialog> with its own Escape handling;
+			// closing a doc window at the same time makes one keypress do two
+			// unrelated things.
+			if (document.querySelector('dialog[open]')) return;
 			const top = wins.reduce((a, b) =>
 				Number(a.el.style.zIndex) >= Number(b.el.style.zIndex) ? a : b
 			);

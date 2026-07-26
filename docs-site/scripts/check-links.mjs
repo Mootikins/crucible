@@ -36,7 +36,12 @@ async function htmlFiles(dir) {
 
 /** Does a site-absolute URL correspond to something in dist/? */
 function resolves(urlPath) {
-	const rel = urlPath.startsWith(BASE) ? urlPath.slice(BASE.length) : urlPath;
+	// Anything outside the configured base is broken in production, whatever
+	// happens to exist in dist/. Treating a base-less path as site-relative made
+	// the checker pass links that 404 once deployed — the precise class of bug
+	// it exists to catch.
+	if (urlPath !== BASE && !urlPath.startsWith(`${BASE}/`)) return false;
+	const rel = urlPath.slice(BASE.length);
 	const clean = decodeURIComponent(rel).replace(/^\/+/, '').replace(/\/+$/, '');
 	const candidates = [
 		path.join(DIST, clean, 'index.html'),
@@ -48,16 +53,34 @@ function resolves(urlPath) {
 
 const pages = await htmlFiles(DIST);
 const broken = [];
+const missingBody = [];
 let checked = 0;
 
 for (const file of pages) {
 	const html = readFileSync(file, 'utf8');
 
-	// Only check links inside the rendered doc body. Sidebar and header links
+	// On Starlight pages, only the rendered doc body. Sidebar and header links
 	// are Starlight's own output — if those break the problem is upstream, and
 	// including them drowns the signal we care about in duplicates.
-	const body = html.match(/<div class="sl-markdown-content">([\s\S]*)$/)?.[1] ?? '';
-	if (!body) continue;
+	let body = html.match(/<div class="sl-markdown-content">([\s\S]*)$/)?.[1] ?? '';
+
+	if (!body) {
+		// The landing page bypasses Starlight and has no content block, but its
+		// links still need checking — there is no sidebar to drown them.
+		const isStarlightPage = /data-has-sidebar|class="sl-/.test(html);
+		if (isStarlightPage) {
+			// Fail loudly. Skipping silently means a Starlight markup change
+			// turns this into a checker that inspects nothing and still reports
+			// success, which is worse than not having it at all.
+			missingBody.push(path.relative(DIST, file));
+			continue;
+		}
+		body = html.match(/<body[^>]*>([\s\S]*)<\/body>/)?.[1] ?? '';
+		if (!body) {
+			missingBody.push(path.relative(DIST, file));
+			continue;
+		}
+	}
 
 	// The page's own URL, needed to resolve any link still written relatively.
 	const pageUrl = `${BASE}/${path
@@ -75,6 +98,16 @@ for (const file of pages) {
 			broken.push({ page: pageUrl, href, resolved });
 		}
 	}
+}
+
+if (missingBody.length) {
+	console.error(
+		`\n${missingBody.length} page(s) had no .sl-markdown-content block, so their links were never checked:\n`
+	);
+	for (const f of missingBody.slice(0, 10)) console.error(`  ${f}`);
+	if (missingBody.length > 10) console.error(`  ... and ${missingBody.length - 10} more`);
+	console.error('\nStarlight\'s content markup probably changed; update the selector.');
+	process.exit(1);
 }
 
 if (broken.length) {

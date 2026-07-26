@@ -27,14 +27,21 @@ import { Icon } from '@astrojs/starlight/components';
 <script is:inline>
 	window.StarlightThemeProvider = (() => {
 		const storageKey = 'starlight-theme';
-		const hasStorage = typeof localStorage !== 'undefined';
 
-		// Claim the default before ThemeSelect hydrates and resolves 'auto'.
-		if (hasStorage && !localStorage.getItem(storageKey)) {
-			localStorage.setItem(storageKey, 'dark');
+		// Existence is not availability: localStorage throws on access in
+		// Safari private browsing and under some cookie policies, which would
+		// take the whole inline script down and leave the page unthemed.
+		let storedTheme = null;
+		try {
+			storedTheme = localStorage.getItem(storageKey);
+			// Claim the default before ThemeSelect hydrates and resolves 'auto'.
+			if (!storedTheme) {
+				localStorage.setItem(storageKey, 'dark');
+				storedTheme = 'dark';
+			}
+		} catch (e) {
+			storedTheme = null;
 		}
-
-		const storedTheme = hasStorage && localStorage.getItem(storageKey);
 		const prefersLight =
 			typeof window !== 'undefined' &&
 			window.matchMedia('(prefers-color-scheme: light)').matches;

@@ -61,7 +61,7 @@ export default defineConfig({
 					attrs: {
 						rel: 'preconnect',
 						href: 'https://fonts.gstatic.com',
-						crossorigin: true,
+						crossorigin: 'anonymous',
 					},
 				},
 				{

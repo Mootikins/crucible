@@ -6,8 +6,8 @@
 |---|---|
 | **Files** | `khunrath-laboratory-{560,900,1600}.webp` |
 | **Source work** | Plate from Heinrich Khunrath, *Amphitheatrum sapientiae aeternae* (Amphitheatre of Eternal Wisdom), c. 1595 |
-| **Engraver** | Hans Vredeman de Vries |
-| **License** | **Public domain** — published c. 1595, author died 1607; PD worldwide by age |
+| **After** | Hans Vredeman de Vries — the plate is signed *HF vriese pinxit*, i.e. he supplied the design; the engraver is not recorded on the source record |
+| **License** | **Public domain** — published c. 1595; every contributor died more than three centuries ago, so it is PD worldwide by age |
 | **Source file** | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Alchemist%27s_Laboratory,_Heinrich_Khunrath,_Amphitheatrum_sapientiae_aeternae,_1595_c.jpg) |
 | **Original scan** | 1750 × 1782, hand-coloured impression |
 

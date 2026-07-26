@@ -22,6 +22,9 @@ export function remarkKilnWikilinks({ base = '/crucible' } = {}) {
 	return (tree) => {
 		visit(tree, 'text', (node, index, parent) => {
 			if (!parent || index === null) return;
+			// A wikilink inside a markdown link label would splice a link into a
+			// link, which serialises as nested <a> and is invalid HTML.
+			if (parent.type === 'link' || parent.type === 'linkReference') return;
 			WIKILINK_RE.lastIndex = 0;
 			if (!WIKILINK_RE.test(node.value)) return;
 			WIKILINK_RE.lastIndex = 0;

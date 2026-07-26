@@ -47,7 +47,10 @@ function buildFileMap() {
 				walk(full);
 				continue;
 			}
-			if (!name.endsWith('.md')) continue;
+			// Mirrors the loader's `[^_]*.md` glob. Without this an `_draft.md`
+			// is a valid wikilink target that resolves to a page which was
+			// never built.
+			if (!name.endsWith('.md') || name.startsWith('_')) continue;
 
 			const relNoExt = path.relative(KILN, full).replace(/\.md$/, '');
 			const slug = slugifyRelPath(relNoExt);
