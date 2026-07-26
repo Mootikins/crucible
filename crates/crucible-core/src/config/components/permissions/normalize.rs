@@ -16,7 +16,7 @@
 /// # Examples
 ///
 /// ```
-/// # use crate::config::components::permissions::normalize_path_for_matching;
+/// # use crucible_core::config::components::permissions::normalize_path_for_matching;
 /// assert_eq!(normalize_path_for_matching("src/../.env"), ".env");
 /// assert_eq!(normalize_path_for_matching("src/./main.rs"), "src/main.rs");
 /// assert_eq!(normalize_path_for_matching("src//deep///file.rs"), "src/deep/file.rs");
@@ -91,7 +91,7 @@ pub fn normalize_path_for_matching(path: &str) -> String {
 ///
 /// # Examples
 /// ```
-/// use crate::config::components::permissions::split_chained_commands;
+/// use crucible_core::config::components::permissions::split_chained_commands;
 ///
 /// // Basic chaining
 /// assert_eq!(

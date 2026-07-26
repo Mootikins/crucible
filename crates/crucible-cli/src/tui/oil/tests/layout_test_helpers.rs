@@ -7,7 +7,7 @@
 //! # Examples
 //!
 //! ```ignore
-//! use crate::tui::oil::tests::layout_test_helpers::*;
+//! use crucible_cli::tui::oil::tests::layout_test_helpers::*;
 //!
 //! let tree = create_test_tree();
 //!

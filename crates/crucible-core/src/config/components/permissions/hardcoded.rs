@@ -9,7 +9,7 @@
 ///
 /// # Examples
 /// ```
-/// use crate::config::components::permissions::is_hardcoded_denied;
+/// use crucible_core::config::components::permissions::is_hardcoded_denied;
 ///
 /// assert_eq!(
 ///     is_hardcoded_denied("bash", "rm -rf /"),

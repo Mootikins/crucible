@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use crate::tui::oil::config::{ConfigStack, ConfigValue, ModSource};
+//! use crucible_cli::tui::oil::config::{ConfigStack, ConfigValue, ModSource};
 //!
 //! // Create a stack with a default value
 //! let mut stack = ConfigStack::new(ConfigValue::Bool(true), ModSource::Default);

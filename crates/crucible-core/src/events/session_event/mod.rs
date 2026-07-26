@@ -16,7 +16,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use crate::events::{SessionEvent, NoteChangeType};
+//! use crucible_core::events::{SessionEvent, NoteChangeType};
 //! use std::path::PathBuf;
 //!
 //! let event = SessionEvent::NoteModified {
@@ -306,7 +306,7 @@ impl SessionEvent {
     /// # Example
     ///
     /// ```
-    /// use crate::events::{SessionEvent, InternalSessionEvent, FileChangeKind, Priority};
+    /// use crucible_core::events::{SessionEvent, InternalSessionEvent, FileChangeKind, Priority};
     /// use std::path::PathBuf;
     ///
     /// let created = SessionEvent::internal(InternalSessionEvent::FileChanged {
@@ -336,7 +336,7 @@ impl SessionEvent {
     /// # Example
     ///
     /// ```
-    /// use crate::events::SessionEvent;
+    /// use crucible_core::events::SessionEvent;
     /// use serde_json::Value as JsonValue;
     ///
     /// let event = SessionEvent::ToolCalled {
@@ -379,7 +379,7 @@ impl SessionEvent {
     /// # Example
     ///
     /// ```
-    /// use crate::events::SessionEvent;
+    /// use crucible_core::events::SessionEvent;
     /// use serde_json::Value as JsonValue;
     ///
     /// let event = SessionEvent::ToolCalled {
@@ -509,7 +509,7 @@ impl SessionEvent {
     /// # Example
     ///
     /// ```
-    /// use crate::events::SessionEvent;
+    /// use crucible_core::events::SessionEvent;
     ///
     /// let event = SessionEvent::MessageReceived {
     ///     content: "Hello, world!".into(),
@@ -536,7 +536,7 @@ impl SessionEvent {
     /// # Example
     ///
     /// ```
-    /// use crate::events::SessionEvent;
+    /// use crucible_core::events::SessionEvent;
     ///
     /// let event = SessionEvent::MessageReceived {
     ///     content: "Hello, world!".into(),

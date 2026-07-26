@@ -83,7 +83,7 @@ pub fn kiln_path_str(path: &Path) -> String {
 /// # Example
 ///
 /// ```rust
-/// use crate::test_support::nonexistent_path;
+/// use crucible_core::test_support::nonexistent_path;
 ///
 /// let path = nonexistent_path("missing_note.md");
 /// assert!(!path.exists());

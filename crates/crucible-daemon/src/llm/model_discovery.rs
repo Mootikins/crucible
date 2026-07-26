@@ -15,7 +15,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use crate::llm::model_discovery::{ModelDiscovery, DiscoveryConfig};
+//! use crucible_daemon::llm::model_discovery::{ModelDiscovery, DiscoveryConfig};
 //! use std::path::PathBuf;
 //!
 //! #[tokio::main]

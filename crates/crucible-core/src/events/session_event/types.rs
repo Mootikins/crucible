@@ -64,7 +64,7 @@ impl std::fmt::Display for NoteChangeType {
 /// # Example
 ///
 /// ```ignore
-/// use crate::events::{SessionEvent, FileChangeKind};
+/// use crucible_core::events::{SessionEvent, FileChangeKind};
 /// use std::path::PathBuf;
 ///
 /// let event = SessionEvent::FileChanged {
@@ -100,7 +100,7 @@ impl std::fmt::Display for FileChangeKind {
 /// # Example
 ///
 /// ```ignore
-/// use crate::events::{SessionEvent, InputType};
+/// use crucible_core::events::{SessionEvent, InputType};
 ///
 /// let event = SessionEvent::AwaitingInput {
 ///     input_type: InputType::Approval,
@@ -139,7 +139,7 @@ impl std::fmt::Display for InputType {
 /// # Example
 ///
 /// ```ignore
-/// use crate::events::{SessionEvent, EntityType};
+/// use crucible_core::events::{SessionEvent, EntityType};
 ///
 /// let event = SessionEvent::EntityStored {
 ///     entity_id: "note:my-note".into(),
@@ -189,7 +189,7 @@ impl std::fmt::Display for EntityType {
 /// # Example
 ///
 /// ```
-/// use crate::events::Priority;
+/// use crucible_core::events::Priority;
 ///
 /// assert!(Priority::Critical > Priority::High);
 /// assert!(Priority::High > Priority::Normal);

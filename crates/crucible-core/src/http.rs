@@ -5,7 +5,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use crate::http::{HttpRequest, HttpExecutor};
+//! use crucible_core::http::{HttpRequest, HttpExecutor};
 //!
 //! let executor = HttpExecutor::new();
 //! let request = HttpRequest::get("https://api.example.com/data")

@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use crate::config::PatternStore;
+//! use crucible_core::config::PatternStore;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // Load patterns for a project
@@ -109,7 +109,7 @@ impl PatternStore {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use crate::config::PatternStore;
+    /// use crucible_core::config::PatternStore;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let store = PatternStore::load("/home/user/my-project").await?;
@@ -152,7 +152,7 @@ impl PatternStore {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use crate::config::PatternStore;
+    /// use crucible_core::config::PatternStore;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let mut store = PatternStore::new();
@@ -197,7 +197,7 @@ impl PatternStore {
     /// # Example
     ///
     /// ```rust
-    /// use crate::config::PatternStore;
+    /// use crucible_core::config::PatternStore;
     ///
     /// let mut store = PatternStore::new();
     /// store.add_bash_pattern("npm install").unwrap();
@@ -225,7 +225,7 @@ impl PatternStore {
     /// # Example
     ///
     /// ```rust
-    /// use crate::config::PatternStore;
+    /// use crucible_core::config::PatternStore;
     ///
     /// let mut store = PatternStore::new();
     /// store.add_file_pattern("src/").unwrap();
@@ -253,7 +253,7 @@ impl PatternStore {
     /// # Example
     ///
     /// ```rust
-    /// use crate::config::PatternStore;
+    /// use crucible_core::config::PatternStore;
     ///
     /// let mut store = PatternStore::new();
     /// store.add_tool_pattern("read_note").unwrap();
@@ -277,7 +277,7 @@ impl PatternStore {
     /// # Example
     ///
     /// ```rust
-    /// use crate::config::PatternStore;
+    /// use crucible_core::config::PatternStore;
     ///
     /// let mut store = PatternStore::new();
     /// store.add_bash_pattern("cargo ").unwrap();
@@ -298,7 +298,7 @@ impl PatternStore {
     /// # Example
     ///
     /// ```rust
-    /// use crate::config::PatternStore;
+    /// use crucible_core::config::PatternStore;
     ///
     /// let mut store = PatternStore::new();
     /// store.add_file_pattern("src/").unwrap();
@@ -319,7 +319,7 @@ impl PatternStore {
     /// # Example
     ///
     /// ```rust
-    /// use crate::config::PatternStore;
+    /// use crucible_core::config::PatternStore;
     ///
     /// let mut store = PatternStore::new();
     /// store.add_tool_pattern("read_note").unwrap();
@@ -348,7 +348,7 @@ impl PatternStore {
     /// # Example
     ///
     /// ```rust
-    /// use crate::config::PatternStore;
+    /// use crucible_core::config::PatternStore;
     ///
     /// let mut base = PatternStore::new();
     /// base.add_bash_pattern("cargo ").unwrap();

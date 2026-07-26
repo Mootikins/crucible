@@ -64,7 +64,7 @@ impl ShellPolicy {
     /// # Examples
     ///
     /// ```
-    /// use crate::config::ShellPolicy;
+    /// use crucible_core::config::ShellPolicy;
     ///
     /// let mut policy = ShellPolicy::default();
     /// policy.whitelist.push("git".to_string());
@@ -176,7 +176,7 @@ impl ShellPolicy {
     /// # Examples
     ///
     /// ```
-    /// use crate::config::ShellPolicy;
+    /// use crucible_core::config::ShellPolicy;
     ///
     /// let policy = ShellPolicy::with_defaults();
     /// assert!(policy.is_allowed("git", &["status"]));
@@ -197,7 +197,7 @@ impl ShellPolicy {
     /// # Examples
     ///
     /// ```
-    /// use crate::config::ShellPolicy;
+    /// use crucible_core::config::ShellPolicy;
     ///
     /// let base = ShellPolicy::with_defaults();
     /// let mut overlay = ShellPolicy::default();

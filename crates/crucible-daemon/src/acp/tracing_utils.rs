@@ -12,7 +12,7 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use crate::acp::tracing_utils::{TraceContext, init_test_subscriber};
+//! use crucible_daemon::acp::tracing_utils::{TraceContext, init_test_subscriber};
 //!
 //! // Create a trace context for a session
 //! let ctx = TraceContext::new_session();
@@ -43,7 +43,7 @@ use uuid::Uuid;
 /// # Example
 ///
 /// ```rust
-/// use crate::acp::tracing_utils::TraceContext;
+/// use crucible_daemon::acp::tracing_utils::TraceContext;
 ///
 /// let ctx = TraceContext::new_session();
 /// println!("Session trace: {}", ctx.session_id());

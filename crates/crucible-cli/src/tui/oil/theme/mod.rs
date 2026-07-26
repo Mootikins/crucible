@@ -9,7 +9,7 @@
 //! # Usage
 //!
 //! ```rust,ignore
-//! use crate::tui::oil::theme;
+//! use crucible_cli::tui::oil::theme;
 //!
 //! let config = theme::active();
 //! let color = config.resolve_color(config.colors.error);

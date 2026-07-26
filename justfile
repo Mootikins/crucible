@@ -271,12 +271,17 @@ coverage-open: coverage
 # === CI ===
 
 # Run full CI check (mirrors GitHub CI workflow)
-ci: fmt-check clippy file-size-check test-ci web-test-unit web-test
+ci: fmt-check clippy file-size-check test-ci test-doc web-test-unit web-test
     @echo "CI checks passed!"
 
 # Run tests with CI profile (matches GitHub Actions)
 test-ci: build-test-fixtures
     cargo nextest run --profile ci --workspace
+
+# Run doctests. nextest cannot execute them, so `test-ci` alone leaves every
+# example in a doc comment unverified — which is how they rotted unnoticed.
+test-doc:
+    cargo test --workspace --doc
 
 # Build test fixtures required by integration tests
 build-test-fixtures: build-mock-acp-agent

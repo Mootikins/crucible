@@ -7,7 +7,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use crate::serde_md;
+//! use crucible_core::serde_md;
 //!
 //! #[derive(serde::Serialize)]
 //! struct Message { role: String, content: String }

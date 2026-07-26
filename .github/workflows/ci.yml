@@ -63,6 +63,10 @@ jobs:
         run: cargo nextest run --profile ci -p crucible-oil --features serde,test-utils
       - name: Verify Lua stubs are not stale
         run: cargo nextest run --profile ci -p crucible-lua -E 'test(stubs)' --no-capture
+      # nextest does not execute doctests, so every example in a doc comment
+      # was unverified until this step existed — they had rotted to 62 failures.
+      - name: Run doctests
+        run: cargo test --workspace --doc
 
   test-sqlite:
     name: Test SQLite Backend

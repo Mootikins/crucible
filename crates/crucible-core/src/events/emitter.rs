@@ -10,7 +10,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use crate::events::{EventEmitter, EmitResult, SessionEvent, NoteChangeType};
+//! use crucible_core::events::{EventEmitter, EmitResult, SessionEvent, NoteChangeType};
 //!
 //! async fn notify_file_change<E: EventEmitter>(emitter: &E, path: &str) -> EmitResult<()> {
 //!     emitter.emit(SessionEvent::NoteModified {
@@ -267,7 +267,7 @@ impl fmt::Display for HandlerErrorInfo {
 /// # Example
 ///
 /// ```ignore
-/// use crate::events::{EventEmitter, EmitOutcome};
+/// use crucible_core::events::{EventEmitter, EmitOutcome};
 ///
 /// struct MyComponent<E: EventEmitter> {
 ///     emitter: E,

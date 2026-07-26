@@ -24,7 +24,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use crate::llm::embeddings::{create_provider, EmbeddingConfig};
+//! use crucible_daemon::llm::embeddings::{create_provider, EmbeddingConfig};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {

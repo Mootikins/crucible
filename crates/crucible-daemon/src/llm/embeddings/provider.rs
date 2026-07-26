@@ -434,7 +434,7 @@ impl EmbeddingResponse {
     /// # Example
     ///
     /// ```rust
-    /// use crate::llm::embeddings::EmbeddingResponse;
+    /// use crucible_daemon::llm::embeddings::EmbeddingResponse;
     ///
     /// let embedding = vec![0.1, 0.2, 0.3, 0.4];
     /// let response = EmbeddingResponse::new(embedding, "test-model".to_string());
@@ -476,7 +476,7 @@ impl EmbeddingResponse {
     /// # Example
     ///
     /// ```rust
-    /// use crate::llm::embeddings::EmbeddingResponse;
+    /// use crucible_daemon::llm::embeddings::EmbeddingResponse;
     ///
     /// let response = EmbeddingResponse::new(vec![0.1; 768], "nomic-embed-text".to_string());
     /// assert!(response.validate_dimensions(768).is_ok());

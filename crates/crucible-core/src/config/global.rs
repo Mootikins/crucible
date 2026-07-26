@@ -35,7 +35,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```no_run
-    /// use crate::config::GlobalConfig;
+    /// use crucible_core::config::GlobalConfig;
     ///
     /// let config = GlobalConfig::load()?;
     /// # Ok::<(), Box<dyn std::error::Error>>(())

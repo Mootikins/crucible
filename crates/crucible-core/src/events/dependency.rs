@@ -15,7 +15,7 @@
 //! ## Usage
 //!
 //! ```rust
-//! use crate::events::dependency::DependencyGraph;
+//! use crucible_core::events::dependency::DependencyGraph;
 //!
 //! let mut graph = DependencyGraph::new();
 //! graph.add("persist", vec![]).unwrap();

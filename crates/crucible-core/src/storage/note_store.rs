@@ -16,7 +16,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use crate::storage::{NoteStore, NoteRecord, Filter, Op};
+//! use crucible_core::storage::{NoteStore, NoteRecord, Filter, Op};
 //!
 //! async fn example(store: &dyn NoteStore) -> Result<(), StorageError> {
 //!     // Upsert a note record
