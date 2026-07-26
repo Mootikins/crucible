@@ -643,6 +643,14 @@ pub struct AgentManager {
     plugin_handlers: std::sync::OnceLock<(Arc<LuaScriptHandlerRegistry>, Arc<Lua>)>,
     /// Plugin isolation claims, bound at daemon startup alongside the handlers.
     isolation: std::sync::OnceLock<crucible_lua::IsolationRegistry>,
+    /// Plugin tool/command registry, bound at daemon startup like the others.
+    ///
+    /// The loader mutex must not be the read path: `fire_session_start` holds
+    /// it across plugin hook execution — which since the oci repair includes
+    /// container builds — so a read that locks the loader stalls behind any
+    /// session's slow start. The registry updates in place on reload, so a
+    /// cached `Arc` never goes stale.
+    plugin_tool_registry: std::sync::OnceLock<Arc<crate::plugin_tools::PluginRegistry>>,
     /// Sessions with a title generation currently in flight — the RPC path
     /// and the message_complete auto-trigger can race.
     titles_in_flight: Arc<DashMap<String, ()>>,
@@ -713,6 +721,7 @@ impl AgentManager {
             lua_validators: std::sync::OnceLock::new(),
             plugin_handlers: std::sync::OnceLock::new(),
             isolation: std::sync::OnceLock::new(),
+            plugin_tool_registry: std::sync::OnceLock::new(),
             titles_in_flight: Arc::new(DashMap::new()),
             snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),
             agent_factory_override: std::sync::OnceLock::new(),
@@ -770,6 +779,11 @@ impl AgentManager {
 
     pub(crate) fn isolation(&self) -> Option<crucible_lua::IsolationRegistry> {
         self.isolation.get().cloned()
+    }
+
+    /// Bind the plugin tool/command registry. Idempotent, like the others.
+    pub fn set_plugin_tool_registry(&self, registry: Arc<crate::plugin_tools::PluginRegistry>) {
+        let _ = self.plugin_tool_registry.set(registry);
     }
 
     /// Snapshot the prompt-cache aggregate for `session_id`. Returns
@@ -1044,6 +1058,13 @@ impl AgentManager {
     /// Plugin-contributed tools and commands, or `None` when no plugin loader
     /// is attached (most tests).
     pub(crate) async fn plugin_registry(&self) -> Option<Arc<crate::plugin_tools::PluginRegistry>> {
+        // Cache first: the loader mutex is held across plugin lifecycle hook
+        // execution (container builds included), and per-turn reads must not
+        // queue behind another session's slow start. Falls back to the loader
+        // for managers the server didn't wire (tests, isolated setups).
+        if let Some(registry) = self.plugin_tool_registry.get() {
+            return Some(Arc::clone(registry));
+        }
         let loader = self.plugin_loader.as_ref()?;
         let guard = loader.lock().await;
         guard.as_ref().map(|l| l.plugin_registry())

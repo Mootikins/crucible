@@ -873,11 +873,19 @@ impl RpcDispatcher {
     /// the fail-closed answer; the ACP permission channel
     /// (`session/request_permission`) is the seam a future enforcement could
     /// use, but it only fires when the external agent chooses to ask.
+    /// The isolation registry without waiting on the loader mutex — which is
+    /// held across session-start hook execution (container builds included).
+    /// Falls back to the loader for contexts the server didn't wire.
+    async fn isolation_registry(&self) -> Option<crucible_lua::IsolationRegistry> {
+        if let Some(registry) = self.ctx.agents.isolation() {
+            return Some(registry);
+        }
+        let guard = self.ctx.plugin_loader.lock().await;
+        guard.as_ref().map(|l| l.isolation())
+    }
+
     async fn unenforceable_isolation(&self, session_id: &str) -> Option<String> {
-        let claim = {
-            let guard = self.ctx.plugin_loader.lock().await;
-            guard.as_ref().and_then(|l| l.isolation().get(session_id))
-        }?;
+        let claim = self.isolation_registry().await?.get(session_id)?;
         let session = self.ctx.sessions.get_session(session_id)?;
         let agent_type = session.agent.as_ref().map(|a| a.agent_type.clone())?;
         if agent_type == "internal" {
@@ -1144,9 +1152,9 @@ impl RpcDispatcher {
                 .get("session_id")
                 .and_then(|v| v.as_str())
                 .unwrap_or_default();
-            let claim = {
-                let guard = self.ctx.plugin_loader.lock().await;
-                guard.as_ref().and_then(|l| l.isolation().get(session_id))
+            let claim = match self.isolation_registry().await {
+                Some(registry) => registry.get(session_id),
+                None => None,
             };
             if let Some(claim) = claim {
                 return Err(RpcError {
