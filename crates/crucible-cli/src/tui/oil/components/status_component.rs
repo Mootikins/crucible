@@ -1,5 +1,3 @@
-use crucible_lua::statusline::StatuslineConfig;
-
 use crate::tui::oil::chat_app::ChatMode;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::status_bar::{NotificationToastKind, StatusBar};
@@ -22,10 +20,11 @@ pub struct StatusComponent<'a> {
     pub error: Option<&'a str>,
     pub toast: Option<(&'a str, NotificationToastKind)>,
     pub notification_counts: Vec<(NotificationToastKind, usize)>,
-    pub config: Option<&'a StatuslineConfig>,
     /// Latest prompt-cache hit rate (0.0..=1.0), or `None` until a
     /// `message_complete` event has reported cache token counts.
     pub cache_hit_rate: Option<f64>,
+    /// Whether a turn is streaming — readable by `sl.when("streaming", ...)`.
+    pub streaming: bool,
 }
 
 impl<'a> StatusComponent<'a> {
@@ -68,13 +67,13 @@ impl<'a> StatusComponent<'a> {
         self
     }
 
-    pub fn config(mut self, config: &'a StatuslineConfig) -> Self {
-        self.config = Some(config);
+    pub fn cache_hit_rate(mut self, rate: Option<f64>) -> Self {
+        self.cache_hit_rate = rate;
         self
     }
 
-    pub fn cache_hit_rate(mut self, rate: Option<f64>) -> Self {
-        self.cache_hit_rate = rate;
+    pub fn streaming(mut self, streaming: bool) -> Self {
+        self.streaming = streaming;
         self
     }
 }
@@ -104,11 +103,7 @@ impl Component for StatusComponent<'_> {
             status_bar = status_bar.counts(self.notification_counts.clone());
         }
 
-        let bar_node = if let Some(cfg) = self.config {
-            status_bar.view_from_config(cfg)
-        } else {
-            status_bar.emergency_view()
-        };
+        let bar_node = status_bar.view_from_items(self.streaming);
 
         col(vec![error_node, bar_node])
     }
@@ -120,19 +115,14 @@ mod tests {
     use crate::tui::oil::component::ComponentHarness;
     use crucible_oil::render::render_to_plain_text;
 
-    fn default_statusline_config() -> StatuslineConfig {
-        StatuslineConfig::builtin_default()
-    }
-
     #[test]
     fn status_no_error_shows_bar_only() {
-        let cfg = default_statusline_config();
         let mut harness = ComponentHarness::new(80, 4);
         let comp = StatusComponent::new()
             .mode(ChatMode::Normal)
             .model("gpt-4")
             .context(4000, 8000)
-            .config(&cfg);
+            ;
         harness.render_component(&comp);
         let plain = render_to_plain_text(&comp.view(&ViewContext::new(harness.focus())), 80);
         assert!(plain.contains("NORMAL"));
@@ -157,13 +147,12 @@ mod tests {
 
     #[test]
     fn status_with_toast_renders_toast() {
-        let cfg = default_statusline_config();
         let harness = ComponentHarness::new(80, 4);
         let comp = StatusComponent::new()
             .mode(ChatMode::Auto)
             .model("claude")
             .toast("Processing", NotificationToastKind::Info)
-            .config(&cfg);
+            ;
         let plain = render_to_plain_text(&comp.view(&ViewContext::new(harness.focus())), 80);
         assert!(plain.contains("Processing"));
         assert!(plain.contains("INFO"));
@@ -172,7 +161,6 @@ mod tests {
 
     #[test]
     fn status_with_notification_counts() {
-        let cfg = default_statusline_config();
         let harness = ComponentHarness::new(80, 4);
         let comp = StatusComponent::new()
             .mode(ChatMode::Plan)
@@ -181,7 +169,7 @@ mod tests {
                 (NotificationToastKind::Warning, 3),
                 (NotificationToastKind::Error, 1),
             ])
-            .config(&cfg);
+            ;
         let plain = render_to_plain_text(&comp.view(&ViewContext::new(harness.focus())), 80);
         assert!(plain.contains("PLAN"));
         assert!(plain.contains("WARN"));

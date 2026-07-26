@@ -4,7 +4,7 @@ pub use oil::{
     clamp_lines_bottom, clamp_lines_top, composite_overlays, ensure_min_height, pad_lines_to,
     pad_popup_region, run_sync, Action, AgentSelection, App, AppHarness, ChatAppMsg, ChatMode,
     Component, ComponentHarness, ComposerConfig, Event, FramePlan, FramePlanner, FrameSnapshot,
-    InputAction, InputArea, InputBuffer, InputMode, LuaView, McpServerDisplay, OilChatApp,
+    InputAction, InputArea, InputBuffer, InputMode, McpServerDisplay, OilChatApp,
     OilChatRunner, OilRunner, Overlay, OverlayAnchor, PluginStatusEntry, RenderState, Role,
-    StatusBar, Terminal, TestRuntime, ViewAction, ViewContext, INPUT_MAX_CONTENT_LINES,
+    StatusBar, Terminal, TestRuntime, ViewContext, INPUT_MAX_CONTENT_LINES,
 };

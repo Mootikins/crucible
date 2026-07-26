@@ -11,6 +11,7 @@ mod popup_overlay;
 mod shell_modal;
 mod shell_render;
 pub(crate) mod status_bar;
+pub(crate) mod status_items;
 pub(crate) mod status_component;
 mod subagent_render;
 pub(crate) mod thinking_component;

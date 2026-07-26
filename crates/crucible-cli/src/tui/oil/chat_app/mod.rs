@@ -125,8 +125,6 @@ pub struct OilChatApp {
     /// the daemon's `plugin.run_command` instead of forwarding to the agent
     /// as a chat message — plugin commands are invocations, not prose.
     plugin_command_names: std::collections::HashSet<String>,
-    /// Lua statusline layout config (loaded once at startup)
-    statusline_config: Option<crucible_lua::statusline::StatuslineConfig>,
 }
 
 // ─── App Trait ────────────────────────────────────────────────────────────────
@@ -357,10 +355,8 @@ impl OilChatApp {
             .model(&self.model)
             .context(self.context_used, self.context_total)
             .cache_hit_rate(self.cache_hit_rate)
+            .streaming(self.container_list.is_streaming())
             .status(&self.status);
-        if let Some(ref cfg) = self.statusline_config {
-            status = status.config(cfg);
-        }
         if let Some((text, kind)) = self.notification_area.active_toast() {
             status = status.toast(text, kind);
         }

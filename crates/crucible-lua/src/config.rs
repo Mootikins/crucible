@@ -24,26 +24,25 @@
 //! ```
 
 use crate::error::LuaError;
-use crate::statusline::{parse_statusline_config, StatuslineConfig};
 use crate::theme::ThemeConfig;
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use tracing::{debug, info, warn};
 
-const DEFAULT_STATUSLINE_LUA: &str = include_str!("defaults/statusline.lua");
 const DEFAULT_THEME_LUA: &str = include_str!("../../../runtime/themes/default.lua");
 
 /// Global config state - stores parsed configuration from Lua
 #[derive(Debug, Default)]
 pub struct ConfigState {
-    pub statusline: Option<StatuslineConfig>,
     pub theme: Option<ThemeConfig>,
     /// Highlight groups authored via `crucible.hl.set/link`. Open namespace —
     /// plugins name their own — so it is a map, not a fixed struct.
     pub hl: crate::hl::HlRegistry,
     /// Per-surface geometry from `crucible.ui.setup{}`.
     pub ui: Option<crate::ui_geometry::UiGeometry>,
+    /// Statusline bars authored as item trees.
+    pub bars: Option<crate::statusline_items::StatusBars>,
     /// Daemon/app config values set via cru.config.set() or seeded from TOML.
     /// Stored as JSON for easy extraction by Rust callers.
     pub app_config: Option<serde_json::Value>,
@@ -54,18 +53,6 @@ static CONFIG: std::sync::OnceLock<Arc<RwLock<ConfigState>>> = std::sync::OnceLo
 
 fn get_config() -> &'static Arc<RwLock<ConfigState>> {
     CONFIG.get_or_init(|| Arc::new(RwLock::new(ConfigState::default())))
-}
-
-/// Get the current statusline configuration (if set)
-pub fn get_statusline_config() -> Option<StatuslineConfig> {
-    get_config().read().ok()?.statusline.clone()
-}
-
-/// Set the statusline configuration
-fn set_statusline_config(config: StatuslineConfig) {
-    if let Ok(mut state) = get_config().write() {
-        state.statusline = Some(config);
-    }
 }
 
 /// Get the current theme configuration (if set via crucible.theme.setup())
@@ -93,6 +80,18 @@ pub fn get_hl_registry() -> crate::hl::HlRegistry {
 pub fn set_hl_group(name: String, group: crate::hl::HlGroup) {
     if let Ok(mut state) = get_config().write() {
         state.hl.insert(name, group);
+    }
+}
+
+/// Statusline bars, if a config defined any.
+pub fn get_status_bars() -> Option<crate::statusline_items::StatusBars> {
+    get_config().read().ok()?.bars.clone()
+}
+
+/// Store statusline bars.
+pub fn set_status_bars(bars: crate::statusline_items::StatusBars) {
+    if let Ok(mut state) = get_config().write() {
+        state.bars = Some(bars);
     }
 }
 
@@ -207,156 +206,11 @@ pub fn reset_config() {
     }
 }
 
-/// Register the crucible.statusline module with setup() support
+/// Register the `crucible.statusline` table. The item vocabulary
+/// ([`crate::statusline_lua`]) fills it in; this only creates it so both
+/// registrations have somewhere to hang.
 pub fn register_statusline_namespace(lua: &Lua, crucible: &Table) -> Result<(), LuaError> {
-    let statusline = lua.create_table()?;
-
-    // Component factory functions (same as before, but under crucible.statusline)
-
-    // crucible.statusline.mode({ normal = {...}, plan = {...}, auto = {...} })
-    let mode_fn = lua.create_function(|lua, config: Option<Table>| {
-        let component = lua.create_table()?;
-        component.set("type", "mode")?;
-        if let Some(cfg) = config {
-            if let Ok(v) = cfg.get::<Table>("normal") {
-                component.set("normal", v)?;
-            }
-            if let Ok(v) = cfg.get::<Table>("plan") {
-                component.set("plan", v)?;
-            }
-            if let Ok(v) = cfg.get::<Table>("auto") {
-                component.set("auto", v)?;
-            }
-        } else {
-            // Default mode styles
-            let normal = lua.create_table()?;
-            normal.set("text", " NORMAL ")?;
-            normal.set("bg", "green")?;
-            normal.set("fg", "black")?;
-            component.set("normal", normal)?;
-
-            let plan = lua.create_table()?;
-            plan.set("text", " PLAN ")?;
-            plan.set("bg", "blue")?;
-            plan.set("fg", "black")?;
-            component.set("plan", plan)?;
-
-            let auto = lua.create_table()?;
-            auto.set("text", " AUTO ")?;
-            auto.set("bg", "yellow")?;
-            auto.set("fg", "black")?;
-            component.set("auto", auto)?;
-        }
-        Ok(component)
-    })?;
-    statusline.set("mode", mode_fn)?;
-
-    // crucible.statusline.model({ max_length = 20, fallback = "...", fg = "cyan" })
-    let model_fn = lua.create_function(|lua, config: Option<Table>| {
-        let component = lua.create_table()?;
-        component.set("type", "model")?;
-        if let Some(cfg) = config {
-            if let Ok(v) = cfg.get::<Value>("max_length") {
-                component.set("max_length", v)?;
-            }
-            if let Ok(v) = cfg.get::<Value>("fallback") {
-                component.set("fallback", v)?;
-            }
-            if let Ok(v) = cfg.get::<Value>("fg") {
-                component.set("fg", v)?;
-            }
-            if let Ok(v) = cfg.get::<Value>("bg") {
-                component.set("bg", v)?;
-            }
-        }
-        Ok(component)
-    })?;
-    statusline.set("model", model_fn)?;
-
-    // crucible.statusline.context({ format = "{percent}% ctx", fg = "gray" })
-    let context_fn = lua.create_function(|lua, config: Option<Table>| {
-        let component = lua.create_table()?;
-        component.set("type", "context")?;
-        if let Some(cfg) = config {
-            if let Ok(v) = cfg.get::<Value>("format") {
-                component.set("format", v)?;
-            }
-            if let Ok(v) = cfg.get::<Value>("fg") {
-                component.set("fg", v)?;
-            }
-            if let Ok(v) = cfg.get::<Value>("bg") {
-                component.set("bg", v)?;
-            }
-        }
-        Ok(component)
-    })?;
-    statusline.set("context", context_fn)?;
-
-    // crucible.statusline.text("content", { fg = "white" })
-    let text_fn = lua.create_function(|lua, (content, style): (String, Option<Table>)| {
-        let component = lua.create_table()?;
-        component.set("type", "text")?;
-        component.set("content", content)?;
-        if let Some(s) = style {
-            if let Ok(v) = s.get::<Value>("fg") {
-                component.set("fg", v)?;
-            }
-            if let Ok(v) = s.get::<Value>("bg") {
-                component.set("bg", v)?;
-            }
-            if let Ok(v) = s.get::<Value>("bold") {
-                component.set("bold", v)?;
-            }
-        }
-        Ok(component)
-    })?;
-    statusline.set("text", text_fn)?;
-
-    // crucible.statusline.spacer()
-    let spacer_fn = lua.create_function(|lua, ()| {
-        let component = lua.create_table()?;
-        component.set("type", "spacer")?;
-        Ok(component)
-    })?;
-    statusline.set("spacer", spacer_fn)?;
-
-    // crucible.statusline.notification({ fg = "yellow", fallback = crucible.statusline.context() })
-    let notification_fn = lua.create_function(|lua, config: Option<Table>| {
-        let component = lua.create_table()?;
-        component.set("type", "notification")?;
-        if let Some(cfg) = config {
-            if let Ok(v) = cfg.get::<Value>("fg") {
-                component.set("fg", v)?;
-            }
-            if let Ok(v) = cfg.get::<Value>("bg") {
-                component.set("bg", v)?;
-            }
-            if let Ok(v) = cfg.get::<Value>("fallback") {
-                component.set("fallback", v)?;
-            }
-        }
-        Ok(component)
-    })?;
-    statusline.set("notification", notification_fn)?;
-
-    // crucible.statusline.setup(config) - parses and stores the config
-    let setup_fn =
-        lua.create_function(
-            |_lua, config: Table| match parse_statusline_config(&config) {
-                Ok(parsed) => {
-                    debug!("Statusline config parsed successfully");
-                    set_statusline_config(parsed);
-                    Ok(())
-                }
-                Err(e) => Err(mlua::Error::RuntimeError(format!(
-                    "Invalid statusline config: {}",
-                    e
-                ))),
-            },
-        )?;
-    statusline.set("setup", setup_fn)?;
-
-    crucible.set("statusline", statusline)?;
+    crucible.set("statusline", lua.create_table()?)?;
     Ok(())
 }
 
@@ -457,6 +311,11 @@ pub fn register_ui_namespaces(lua: &Lua) -> Result<(), LuaError> {
     register_theme_namespace(lua, &crucible)?;
     crate::hl_lua::register_hl_namespace(lua, &crucible)?;
     crate::ui_geometry::register_ui_namespace(lua, &crucible)?;
+    // Item vocabulary hangs off the same `crucible.statusline` table the
+    // component factories already live on.
+    if let Ok(sl) = crucible.get::<Table>("statusline") {
+        crate::statusline_lua::register_statusline_items(lua, &sl)?;
+    }
 
     // Embedded defaults. User init.lua overrides these via setup(), which runs
     // after this point in every caller.
@@ -466,13 +325,6 @@ pub fn register_ui_namespaces(lua: &Lua) -> Result<(), LuaError> {
             warn!("Failed to load default theme: {}, using Rust defaults", e);
             set_theme_config(ThemeConfig::default_dark());
         }
-    }
-    if let Err(e) = lua
-        .load(DEFAULT_STATUSLINE_LUA)
-        .set_name("[builtin] statusline.lua")
-        .exec()
-    {
-        warn!("Failed to load default statusline: {}", e);
     }
 
     Ok(())
@@ -578,27 +430,27 @@ mod tests {
         reset_config();
 
         let lua = create_test_lua();
-        let crucible: Table = lua.globals().get("crucible").unwrap();
-        register_statusline_namespace(&lua, &crucible).unwrap();
+        register_ui_namespaces(&lua).unwrap();
 
         lua.load(
             r#"
-            crucible.statusline.setup({
-                left = { crucible.statusline.mode() },
-                center = { crucible.statusline.model({ max_length = 20 }) },
-                right = { crucible.statusline.context() },
+            local sl = crucible.statusline
+            sl.setup({
+                main = {
+                    anchor = "footer.below_input",
+                    items = { sl.mode, " ", sl.model{ max = 20 }, sl.align, sl.context },
+                },
             })
         "#,
         )
         .exec()
         .unwrap();
 
-        let config = get_statusline_config();
-        assert!(config.is_some());
-        let config = config.unwrap();
-        assert_eq!(config.left.len(), 1);
-        assert_eq!(config.center.len(), 1);
-        assert_eq!(config.right.len(), 1);
+        let bars = get_status_bars().expect("setup defines bars");
+        let main = &bars.get("main").expect("named bar").items;
+        assert_eq!(main.len(), 5, "each entry is one item: {main:?}");
+        assert_eq!(main[0], crate::statusline_items::StatusItem::Mode);
+        assert_eq!(main[3], crate::statusline_items::StatusItem::Align);
     }
 
     #[test]
@@ -652,7 +504,7 @@ mod tests {
             tmp.path().join("init.lua"),
             r#"
             crucible.statusline.setup({
-                left = { crucible.statusline.mode() },
+                main = { items = { crucible.statusline.mode } },
             })
         "#,
         )
@@ -662,25 +514,16 @@ mod tests {
         let lua = create_test_lua();
         loader.load(&lua).unwrap();
 
-        let config = get_statusline_config();
-        assert!(config.is_some());
-    }
-
-    #[test]
-    fn test_mode_defaults() {
-        let lua = create_test_lua();
-        let crucible: Table = lua.globals().get("crucible").unwrap();
-        register_statusline_namespace(&lua, &crucible).unwrap();
-
-        // mode() with no args should have defaults
-        let result: Table = lua
-            .load("return crucible.statusline.mode()")
-            .eval()
-            .unwrap();
-
-        let normal: Table = result.get("normal").unwrap();
-        assert_eq!(normal.get::<String>("text").unwrap(), " NORMAL ");
-        assert_eq!(normal.get::<String>("bg").unwrap(), "green");
+        // The pre-item `left/center/right` shape is migrated to an item bar
+        // rather than dropped, so this asserts on bars, not on the superseded
+        // component-table config.
+        let bars = get_status_bars().expect("legacy setup shape defines a bar");
+        let main = bars.get("main").expect("legacy sections become the main bar");
+        assert_eq!(
+            main.items,
+            vec![crate::statusline_items::StatusItem::Mode],
+            "a left-only config needs no alignment split"
+        );
     }
 
     #[test]

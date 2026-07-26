@@ -1,8 +1,8 @@
 use crate::error::LuaError;
 use crate::{
     register_context_module_stub, register_graph_module, register_mcp_module_stub,
-    register_oq_module, register_paths_module, register_popup_module, register_sessions_module,
-    register_statusline_module, register_tools_module, register_ui_module, register_vault_module,
+    register_oq_module, register_paths_module, register_sessions_module, register_tools_module,
+    register_vault_module,
     LuaExecutor, PathsContext,
 };
 
@@ -31,7 +31,12 @@ const UNIVERSAL_MODULES: &[&str] = &[
     "ask",
 ];
 
-const UI_ONLY_MODULES: &[&str] = &["oil", "popup", "panel", "interaction", "statusline"];
+/// Modules that exist only in the UI process, so daemon-side stubs would be
+/// misleading. `popup`, `panel` and `statusline` used to be listed here and
+/// stubbed — but they were registered nowhere in production, so autocomplete
+/// advertised an API that did not exist. A stub for a nonexistent function is
+/// worse than a stale doc: it looks authoritative.
+const UI_ONLY_MODULES: &[&str] = &["oil", "interaction"];
 
 const UI_NOTE: &str = "UI-only: requires TUI context, not available in daemon plugins";
 
@@ -63,9 +68,6 @@ impl StubGenerator {
         register_context_module_stub(lua)?;
         register_tools_module(lua)?;
         register_mcp_module_stub(lua)?;
-        register_popup_module(lua)?;
-        register_ui_module(lua)?;
-        register_statusline_module(lua)?;
 
         mirror_modules_into_cru(lua)?;
 
@@ -115,8 +117,6 @@ fn mirror_modules_into_cru(lua: &Lua) -> Result<(), LuaError> {
     copy_global_table(&globals, &cru, "oq", "oq")?;
     copy_global_table(&globals, &cru, "paths", "paths")?;
     copy_global_table(&globals, &cru, "mcp", "mcp")?;
-    copy_global_table(&globals, &cru, "popup", "popup")?;
-    copy_global_table(&globals, &cru, "statusline", "statusline")?;
     copy_global_table(&globals, &cru, "ui", "panel")?;
 
     if let Ok(get_session) = cru.get::<Value>("get_session") {

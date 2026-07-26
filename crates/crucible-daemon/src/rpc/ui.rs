@@ -48,5 +48,9 @@ pub fn handle_ui_config(_ctx: &RpcContext, _req: &Request) -> serde_json::Value 
         "ui": crucible_lua::ui_geometry::geometry_to_wire(
             &crucible_lua::config::get_ui_geometry().unwrap_or_default(),
         ),
+        "bars": crucible_lua::statusline_items::bars_to_wire(
+            &crucible_lua::config::get_status_bars()
+                .unwrap_or_else(crucible_lua::statusline_items::builtin_default),
+        ),
     })
 }

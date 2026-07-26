@@ -129,10 +129,10 @@ impl StatusBar {
 }
 
 impl StatusBar {
-    pub fn view_from_config(&self, config: &crucible_lua::statusline::StatuslineConfig) -> Node {
-        use crate::tui::oil::lua_bridge::{render_component_node, StatusBarData};
+    /// Render the `main` bar from the active item tree.
+    pub fn view_from_items(&self, streaming: bool) -> Node {
+        use crate::tui::oil::components::status_items::{render_bar, ItemContext, StatusBarData};
 
-        let t = crate::tui::oil::theme::active();
         let data = StatusBarData {
             mode: self.mode,
             model: self.model.clone(),
@@ -144,53 +144,22 @@ impl StatusBar {
             cache_hit_rate: self.cache_hit_rate,
         };
 
-        let sep = config.separator.as_deref().unwrap_or(" ");
-
-        let mut items: Vec<Node> = Vec::new();
-
-        let render_section = |components: &[crucible_lua::statusline::StatuslineComponent],
-                              data: &StatusBarData,
-                              sep: &str|
-         -> Vec<Node> {
-            let mut nodes = Vec::new();
-            for (i, component) in components.iter().enumerate() {
-                if i > 0 && !sep.is_empty() {
-                    nodes.push(styled(
-                        sep.to_string(),
-                        Style::new().fg(t.resolve_color(t.colors.text_muted)),
-                    ));
-                }
-                nodes.push(render_component_node(component, data));
-            }
-            nodes
+        let bars = crate::tui::oil::theme::bars::active();
+        let Some(main) = bars.get("main").or_else(|| bars.values().next()) else {
+            return Node::Empty;
         };
 
-        items.extend(render_section(&config.left, &data, sep));
-
-        if !config.center.is_empty() {
-            items.push(spacer());
-            items.extend(render_section(&config.center, &data, sep));
-        }
-
-        if !config.right.is_empty() {
-            items.push(spacer());
-            let right_ends_with_notification = matches!(
-                config.right.last(),
-                Some(crucible_lua::statusline::StatuslineComponent::Notification { .. })
-            );
-            let has_active_notification =
-                data.notification_toast.is_some() || !data.notification_counts.is_empty();
-            items.extend(render_section(&config.right, &data, sep));
-            if !(right_ends_with_notification && has_active_notification) {
-                items.push(styled(" ".to_string(), Style::new()));
-            }
-        }
-
-        row(items)
+        let exprs = crate::tui::oil::theme::exprs::snapshot();
+        render_bar(
+            &main.items,
+            &ItemContext {
+                data: &data,
+                streaming,
+                exprs: &exprs,
+            },
+        )
     }
-}
 
-impl StatusBar {
     pub fn emergency_view(&self) -> Node {
         let t = crate::tui::oil::theme::active();
         row(vec![
@@ -295,185 +264,9 @@ mod tests {
         );
     }
 
-    mod config_driven {
-        use super::*;
-        use crucible_lua::statusline::{
-            ModeStyleSpec, StatuslineComponent, StatuslineConfig, StyleSpec,
-        };
-
-        fn make_config(
-            left: Vec<StatuslineComponent>,
-            center: Vec<StatuslineComponent>,
-            right: Vec<StatuslineComponent>,
-        ) -> StatuslineConfig {
-            StatuslineConfig {
-                left,
-                center,
-                right,
-                separator: None,
-            }
-        }
-
-        fn mode_component() -> StatuslineComponent {
-            StatuslineComponent::Mode {
-                normal: ModeStyleSpec::default(),
-                plan: ModeStyleSpec::default(),
-                auto: ModeStyleSpec::default(),
-            }
-        }
-
-        #[test]
-        fn config_with_left_mode_center_model_right_context() {
-            let config = make_config(
-                vec![mode_component()],
-                vec![StatuslineComponent::Model {
-                    max_length: None,
-                    fallback: None,
-                    style: StyleSpec::default(),
-                }],
-                vec![StatuslineComponent::Context {
-                    format: None,
-                    style: StyleSpec::default(),
-                }],
-            );
-            let bar = StatusBar::new()
-                .mode(ChatMode::Normal)
-                .model("gpt-4o")
-                .context(4000, 8000);
-            let node = bar.view_from_config(&config);
-            let plain = render_to_plain_text(&node, 120);
-            assert!(
-                plain.contains("NORMAL"),
-                "Should contain mode label: {}",
-                plain
-            );
-            assert!(plain.contains("gpt-4o"), "Should contain model: {}", plain);
-            assert!(
-                plain.contains("50% ctx"),
-                "Should contain context: {}",
-                plain
-            );
-        }
-
-        #[test]
-        fn config_with_text() {
-            let config = make_config(
-                vec![StatuslineComponent::Text {
-                    content: "hello".to_string(),
-                    style: StyleSpec::default(),
-                }],
-                vec![],
-                vec![],
-            );
-            let bar = StatusBar::new();
-            let node = bar.view_from_config(&config);
-            let plain = render_to_plain_text(&node, 80);
-            assert!(plain.contains("hello"), "Should contain text: {}", plain);
-        }
-
-        #[test]
-        fn config_with_mode_spacer_model() {
-            let config = make_config(
-                vec![
-                    mode_component(),
-                    StatuslineComponent::Spacer,
-                    StatuslineComponent::Model {
-                        max_length: None,
-                        fallback: None,
-                        style: StyleSpec::default(),
-                    },
-                ],
-                vec![],
-                vec![],
-            );
-            let bar = StatusBar::new().mode(ChatMode::Plan).model("claude-3");
-            let node = bar.view_from_config(&config);
-            let plain = render_to_plain_text(&node, 120);
-            assert!(plain.contains("PLAN"), "Should contain mode: {}", plain);
-            assert!(
-                plain.contains("claude-3"),
-                "Should contain model: {}",
-                plain
-            );
-        }
-
-        #[test]
-        fn empty_config_produces_empty_row() {
-            let config = make_config(vec![], vec![], vec![]);
-            let bar = StatusBar::new();
-            let node = bar.view_from_config(&config);
-            let plain = render_to_plain_text(&node, 80);
-            assert!(
-                !plain.contains("NORMAL") && !plain.contains("ctx"),
-                "Empty config should produce empty output: {}",
-                plain
-            );
-        }
-
-        #[test]
-        fn config_with_custom_separator() {
-            let config = StatuslineConfig {
-                left: vec![
-                    StatuslineComponent::Text {
-                        content: "A".to_string(),
-                        style: StyleSpec::default(),
-                    },
-                    StatuslineComponent::Text {
-                        content: "B".to_string(),
-                        style: StyleSpec::default(),
-                    },
-                ],
-                center: vec![],
-                right: vec![],
-                separator: Some(" | ".to_string()),
-            };
-            let bar = StatusBar::new();
-            let node = bar.view_from_config(&config);
-            let plain = render_to_plain_text(&node, 80);
-            assert!(
-                plain.contains("A") && plain.contains("|") && plain.contains("B"),
-                "Should contain separator between components: {}",
-                plain
-            );
-        }
-
-        #[test]
-        fn view_from_config_right_aligns_right_section_notification() {
-            let config = make_config(
-                vec![StatuslineComponent::Text {
-                    content: "LEFT".to_string(),
-                    style: StyleSpec::default(),
-                }],
-                vec![],
-                vec![StatuslineComponent::Notification {
-                    style: StyleSpec::default(),
-                    fallback: None,
-                }],
-            );
-
-            let bar =
-                StatusBar::new().toast("Ctrl+C again to quit", NotificationToastKind::Warning);
-            let node = bar.view_from_config(&config);
-            let plain = render_to_plain_text(&node, 80);
-
-            let toast_start = plain
-                .find("Ctrl+C again to quit")
-                .expect("notification toast should render in right section");
-            let last_non_space = plain
-                .char_indices()
-                .rev()
-                .find(|(_, c)| *c != ' ')
-                .map(|(idx, _)| idx)
-                .expect("status bar output should include visible content");
-
-            assert!(
-                toast_start >= 52,
-                "notification should start near the right edge (>=52 at width 80), got {toast_start}: {plain:?}"
-            );
-            assert_eq!(
-                last_non_space, 78,
-                "right section should end flush-right at index 78 (with badge trailing space), got {last_non_space}: {plain:?}"
-            );
-        }
-    }
+    // The `config_driven` module that lived here tested the pre-item
+    // component-table renderer, which no longer exists. Its coverage moved to
+    // `status_items::tests`: section splitting, literal text, built-in
+    // rendering, the empty bar, and the right-hand gutter. `separator` has no
+    // successor by design — separators are now explicit text items.
 }

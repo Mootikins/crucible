@@ -442,8 +442,6 @@ pub fn lua_ask_to_core(table: &Table) -> LuaResult<AskRequest> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::panel::lua_panel_to_core;
-    use crate::popup::lua_request_to_core;
     use crucible_core::interaction::PermAction;
 
     #[test]
@@ -520,71 +518,7 @@ mod tests {
         assert!(!ask_request.allow_other);
     }
 
-    #[test]
-    fn test_interaction_popup() {
-        let lua = Lua::new();
-        register_interaction_module(&lua).expect("Should register");
 
-        let script = r#"
-            return cru.interaction.popup({
-                title = "Select a note",
-                items = {
-                    { label = "Daily Note", description = "Today's journal" },
-                    { label = "Todo List" }
-                },
-                allow_other = true
-            })
-        "#;
-
-        let result: Table = lua.load(script).eval().expect("Should execute");
-        assert_eq!(result.get::<String>("title").unwrap(), "Select a note");
-        assert!(result.get::<bool>("allow_other").unwrap());
-
-        let entries: Table = result.get("entries").expect("entries should exist");
-        let entry1: Table = entries.get(1).expect("entry1 should exist");
-        assert_eq!(entry1.get::<String>("label").unwrap(), "Daily Note");
-        assert_eq!(
-            entry1.get::<String>("description").unwrap(),
-            "Today's journal"
-        );
-
-        // Can convert to core type
-        let popup_request = lua_request_to_core(&result).expect("Should convert");
-        assert_eq!(popup_request.title, "Select a note");
-        assert_eq!(popup_request.entries.len(), 2);
-    }
-
-    #[test]
-    fn test_interaction_panel() {
-        let lua = Lua::new();
-        register_interaction_module(&lua).expect("Should register");
-
-        let script = r#"
-            return cru.interaction.panel({
-                header = "Select features",
-                items = {
-                    { label = "Auth", description = "Authentication" },
-                    { label = "Logging" }
-                },
-                filterable = true,
-                multi_select = true
-            })
-        "#;
-
-        let result: Table = lua.load(script).eval().expect("Should execute");
-        assert_eq!(result.get::<String>("header").unwrap(), "Select features");
-
-        let hints: Table = result.get("hints").expect("hints should exist");
-        assert!(hints.get::<bool>("filterable").unwrap());
-        assert!(hints.get::<bool>("multi_select").unwrap());
-
-        // Can convert to core type
-        let panel = lua_panel_to_core(&result).expect("Should convert");
-        assert_eq!(panel.header, "Select features");
-        assert_eq!(panel.items.len(), 2);
-        assert!(panel.hints.filterable);
-        assert!(panel.hints.multi_select);
-    }
 
     #[test]
     fn test_interaction_permission_bash() {

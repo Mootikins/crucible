@@ -56,6 +56,14 @@ pub fn apply_ui_config(payload: &Value) -> bool {
     if let Some(ui) = payload.get("ui") {
         super::geometry::set(crucible_lua::ui_geometry::geometry_from_wire(ui));
     }
+    if let Some(b) = payload.get("bars") {
+        let parsed = crucible_lua::statusline_items::bars_from_wire(b);
+        // An empty set would leave a blank statusline; keep the built-in rather
+        // than draw nothing.
+        if !parsed.is_empty() {
+            super::bars::set(parsed);
+        }
+    }
 
     debug!(theme = %name, "applied theme from ui.config");
     true

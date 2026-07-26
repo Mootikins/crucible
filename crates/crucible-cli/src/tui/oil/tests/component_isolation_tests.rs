@@ -128,13 +128,13 @@ mod status_bar_tests {
 
     fn render_configured_bar(bar: &StatusBar, width: usize) -> String {
         let node =
-            bar.view_from_config(&crucible_lua::statusline::StatuslineConfig::builtin_default());
+            bar.view_from_items(false);
         render_to_plain_text(&node, width)
     }
 
     fn render_configured_bar_ansi(bar: &StatusBar, width: usize) -> String {
         let node =
-            bar.view_from_config(&crucible_lua::statusline::StatuslineConfig::builtin_default());
+            bar.view_from_items(false);
         render_to_string(&node, width)
     }
 
@@ -280,7 +280,7 @@ mod status_bar_tests {
         let bar = StatusBar::new()
             .mode(ChatMode::Normal)
             .toast("Processing", NotificationToastKind::Info);
-        let node = bar.view_from_config(&default_statusline_config());
+        let node = bar.view_from_items(false);
         let plain = render_to_plain_text(&node, 80);
 
         let mode_pos = plain.find("NORMAL").expect("mode should exist");
@@ -444,7 +444,7 @@ mod status_bar_tests {
                 (NotificationToastKind::Warning, 3),
                 (NotificationToastKind::Error, 1),
             ]);
-        let node = bar.view_from_config(&default_statusline_config());
+        let node = bar.view_from_items(false);
         let plain = render_to_plain_text(&node, 80);
 
         assert_fits_width(&plain, 80);
@@ -469,9 +469,6 @@ mod status_bar_tests {
         assert_snapshot!("status_bar_plan", render_bar(&bar, 80));
     }
 
-    fn default_statusline_config() -> crucible_lua::statusline::StatuslineConfig {
-        crucible_lua::statusline::StatuslineConfig::builtin_default()
-    }
 }
 
 mod input_area_tests {

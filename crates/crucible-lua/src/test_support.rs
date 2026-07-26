@@ -12,7 +12,7 @@ use crate::notify::register_notify_module;
 use crate::{
     register_graph_module, register_hooks_module, register_lua_stdlib, register_oil_module,
     register_oq_module, register_session_module, register_sessions_module,
-    register_sessions_module_with_api, register_statusline_module, register_storage_module,
+    register_sessions_module_with_api, register_storage_module,
     register_storage_module_with_store, register_tools_module, register_tools_module_with_api,
     register_vault_module, register_vault_module_with_graph, register_vault_module_with_store,
     DaemonSessionApi, DaemonToolsApi, SessionManager,
@@ -112,12 +112,6 @@ impl TestLuaBuilder {
     /// Register the json_query (oq) module.
     pub fn with_json_query(self) -> Self {
         register_oq_module(&self.lua).unwrap();
-        self
-    }
-
-    /// Register the statusline module.
-    pub fn with_statusline(self) -> Self {
-        register_statusline_module(&self.lua).expect("Should register statusline module");
         self
     }
 

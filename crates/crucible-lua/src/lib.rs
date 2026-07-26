@@ -69,10 +69,8 @@ pub mod manifest;
 mod mcp;
 pub mod notify;
 mod oil;
-mod panel;
 mod paths;
 pub mod plugin_status;
-mod popup;
 mod ratelimit;
 mod registry;
 pub mod schedule;
@@ -81,7 +79,6 @@ pub mod session;
 mod session_api;
 mod sessions;
 mod shell;
-pub mod statusline;
 mod storage_api;
 pub mod stubs;
 mod timer;
@@ -97,6 +94,8 @@ pub(crate) mod test_support;
 pub mod config;
 pub mod hl;
 pub mod hl_lua;
+pub mod statusline_items;
+pub mod statusline_lua;
 pub mod theme;
 pub mod theme_wire;
 pub mod ui_geometry;
@@ -114,7 +113,7 @@ pub use ask::{
 };
 pub use auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
 pub use config::{
-    get_app_config, get_statusline_config, get_theme_config, list_available_themes,
+    get_app_config, get_status_bars, get_theme_config, get_ui_geometry, list_available_themes,
     merge_app_config, seed_app_config, ConfigLoader, ConfigState,
 };
 pub use context::{
@@ -140,11 +139,7 @@ pub use json_query::{
 };
 pub use lua_stdlib::register_lua_stdlib;
 pub use oil::{register_oil_module, LuaNode};
-pub use panel::{
-    core_result_to_lua, lua_item_to_core, lua_panel_to_core, lua_result_to_core, register_ui_module,
-};
 pub use paths::{register_paths_module, PathsContext};
-pub use popup::{lua_entry_to_core, lua_request_to_core, register_popup_module};
 pub use ratelimit::register_ratelimit_module;
 pub use registry::LuaToolRegistry;
 pub use schedule::register_schedule_module;
@@ -153,10 +148,6 @@ pub use schema::{
     LuauType, TypedParam,
 };
 pub use shell::{register_shell_module, ExecResult, ShellPolicy};
-pub use statusline::{
-    parse_statusline_config, register_statusline_module, ColorSpec, ModeStyleSpec,
-    StatuslineComponent, StatuslineConfig, StyleSpec,
-};
 pub use storage_api::{register_storage_module, register_storage_module_with_store};
 pub use timer::register_timer_module;
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
