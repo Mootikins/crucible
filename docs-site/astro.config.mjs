@@ -25,7 +25,7 @@ export default defineConfig({
 
 	integrations: [
 		starlight({
-			title: '⚗️ Crucible',
+			title: 'Crucible',
 			description:
 				'A knowledge-grounded agent runtime. Agents that draw from a knowledge graph make better decisions.',
 			social: [

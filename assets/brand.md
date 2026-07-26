@@ -1,11 +1,13 @@
 # Crucible Brand
 
-## Icon
+## Wordmark
 
-⚗️ Alembic (U+2697 FE0F) — the project's text logo.
+**Crucible**, set in Bodoni Moda. No emoji or glyph prefix — the wordmark stands
+on its own in the README, the web UI title, and the docs site header.
 
-An alembic is a distillation apparatus historically used with crucibles.
-It captures both the "vessel" meaning and the transformative/refinement metaphor.
+The alembic (U+2697) was previously used as a text logo. It is retired: it
+renders differently on every platform, carries a colour we do not control, and
+made the product name look like a chat message.
 
 ## Favicon
 

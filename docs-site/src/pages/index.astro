@@ -154,7 +154,9 @@ const heroEdges = edges.filter((e) => keep.has(e.from) && keep.has(e.to));
 			.nav-brand {
 				font-family: var(--cru-font-display);
 				font-size: 1.3rem;
-				font-weight: 600;
+				font-weight: 700;
+				font-optical-sizing: none;
+				font-variation-settings: var(--cru-display-opsz);
 				color: var(--cru-ember);
 				text-decoration: none;
 			}
@@ -588,6 +590,9 @@ const heroEdges = edges.filter((e) => keep.has(e.from) && keep.has(e.to));
 			.foot-brand {
 				font-family: var(--cru-font-display);
 				font-size: 1.15rem;
+				font-weight: 700;
+				font-optical-sizing: none;
+				font-variation-settings: var(--cru-display-opsz);
 				color: var(--cru-ember);
 			}
 			.foot-links {
@@ -738,7 +743,7 @@ const heroEdges = edges.filter((e) => keep.has(e.from) && keep.has(e.to));
 						srcset={`${base}art/khunrath-laboratory-560.webp 560w, ${base}art/khunrath-laboratory-900.webp 900w, ${base}art/khunrath-laboratory-1600.webp 1600w`}
 						sizes="(max-width: 1000px) 100vw, 58vw"
 						width="900"
-						height="916"
+						height="915"
 						fetchpriority="high"
 						alt="Heinrich Khunrath's Alchemist's Laboratory, 1595: a hall split between a study of books and a furnace of glassware, with instruments laid across the table between them."
 					/>
