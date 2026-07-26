@@ -214,10 +214,12 @@ impl AgentManager {
     /// Run one registry's `pre_llm_call` handlers over the prompt, chained.
     ///
     /// Returns the transformed prompt and whether a handler cancelled — which
-    /// stops the rest of the chain, including the other registry's handlers.
-    /// Extracted so the session VM and the plugin VM share one loop body:
-    /// plugins registering this event used to get documented silence, because
-    /// only the per-session registry was ever dispatched.
+    /// cancels the TURN: the caller emits the ended event and returns `None`,
+    /// same as the reactor path and `transform_context`. (The old loop
+    /// `break`-ed on Cancel and sent the prompt anyway — a cancel that
+    /// didn't cancel.) Extracted so the session VM and the plugin VM share
+    /// one loop body: plugins registering this event used to get documented
+    /// silence, because only the per-session registry was ever dispatched.
     async fn run_pre_llm_call_handlers(
         stream_ctx: &StreamContext,
         registry: &crucible_lua::LuaScriptHandlerRegistry,
@@ -336,7 +338,7 @@ impl AgentManager {
         // lock; then plugin handlers with the lock RELEASED — plugin Lua can
         // call `cru.shell`/`cru.http` for seconds, and holding the session's
         // whole state across that starves everything else on the session.
-        let (content, cancelled) = Self::run_pre_llm_call_handlers(
+        let (content, mut cancelled) = Self::run_pre_llm_call_handlers(
             stream_ctx,
             &state.registry,
             &state.lua,
@@ -351,7 +353,7 @@ impl AgentManager {
             if let Some((plugin_registry, plugin_lua)) =
                 stream_ctx.agent_stream_config.plugin_handlers.as_ref()
             {
-                let (content, _) = Self::run_pre_llm_call_handlers(
+                let (content, plugin_cancelled) = Self::run_pre_llm_call_handlers(
                     stream_ctx,
                     plugin_registry,
                     plugin_lua,
@@ -360,19 +362,32 @@ impl AgentManager {
                 )
                 .await;
                 current_content = content;
+                cancelled = plugin_cancelled;
             }
+        }
+
+        // A crucible.on Cancel cancels the TURN — same as the reactor path
+        // above and transform_context. It used to merely stop the handler
+        // chain and send the prompt anyway.
+        if cancelled {
+            if !emit_event(
+                &stream_ctx.event_tx,
+                SessionEventMessage::ended(
+                    &stream_ctx.session_id,
+                    "cancelled by pre_llm_call handler".to_string(),
+                ),
+            ) {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    "No subscribers for cancelled event"
+                );
+            }
+            return None;
         }
 
         Some(current_content)
     }
 
-    /// Fire `transform_context` for handlers that want to mutate the
-    /// `Vec<ContextMessage>` going to the provider. This is the rich-
-    /// message-array seam (Pi's `transformContext`); the existing
-    /// `pre_llm_call` is the later string-level seam. Both fire per turn.
-    ///
-    /// Returns the (possibly mutated) message vec. `None` means a
-    /// handler cancelled and the caller should abort the turn.
     /// Run one registry's `transform_context` handlers over the messages,
     /// chained. `Err(())` means a handler cancelled the turn (the ended
     /// event has already been emitted).
@@ -444,6 +459,13 @@ impl AgentManager {
         Ok(current)
     }
 
+    /// Fire `transform_context` for handlers that want to mutate the
+    /// `Vec<ContextMessage>` going to the provider. This is the rich-
+    /// message-array seam (Pi's `transformContext`); the existing
+    /// `pre_llm_call` is the later string-level seam. Both fire per turn.
+    ///
+    /// Returns the (possibly mutated) message vec. `None` means a
+    /// handler cancelled and the caller should abort the turn.
     pub(super) async fn apply_transform_context_handlers(
         messages: Vec<crucible_core::traits::ContextMessage>,
         stream_ctx: &StreamContext,

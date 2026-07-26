@@ -75,7 +75,7 @@ local entries = {{
     plugin_root .. "/lua/?.lua",
 }}
 for _, entry in ipairs(entries) do
-    if not package.path:find(entry, 1, true) then
+    if not ((";" .. package.path .. ";"):find(";" .. entry .. ";", 1, true)) then
         package.path = entry .. ";" .. package.path
     end
 end

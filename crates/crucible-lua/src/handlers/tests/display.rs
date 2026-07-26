@@ -22,7 +22,8 @@ async fn lua_display_start_hook_returns_label_and_detail() {
         crucible.on("tool:display_start", function(ctx, event)
             return {
                 label = "Custom " .. event.name,
-                detail = "custom_detail"
+                -- Prove ctx.session_id reaches display handlers.
+                detail = "seen:" .. tostring(ctx.session_id)
             }
         end)
     "#,
@@ -42,7 +43,7 @@ async fn lua_display_start_hook_returns_label_and_detail() {
         result,
         Some(ToolDisplayStartHints {
             label: Some("Custom semantic_search".to_string()),
-            detail: Some("custom_detail".to_string()),
+            detail: Some("seen:s-test".to_string()),
             primary_arg: None,
             max_lines: None,
         })

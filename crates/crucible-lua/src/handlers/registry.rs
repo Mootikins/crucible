@@ -63,14 +63,6 @@ pub struct RuntimeHandler {
 }
 
 impl LuaScriptHandlerRegistry {
-    /// Drop every runtime handler registered by `plugin`, and its stored
-    /// functions.
-    ///
-    /// Called before a plugin is (re)executed. `PluginRegistry` already does
-    /// the equivalent for tools and commands; without it here, each reload
-    /// appended another copy of every `crucible.on` handler and the stale ones
-    /// kept firing — and since `pre_tool_call` fails closed, one stale handler
-    /// raising against dead state would deny every tool call in every session.
     /// How many runtime handlers a plugin has registered via `crucible.on`.
     ///
     /// This is the count `plugin.list` reports. It used to come from the
@@ -89,6 +81,14 @@ impl LuaScriptHandlerRegistry {
             .unwrap_or(0)
     }
 
+    /// Drop every runtime handler registered by `plugin`, and its stored
+    /// functions.
+    ///
+    /// Called before a plugin is (re)executed. `PluginRegistry` already does
+    /// the equivalent for tools and commands; without it here, each reload
+    /// appended another copy of every `crucible.on` handler and the stale ones
+    /// kept firing — and since `pre_tool_call` fails closed, one stale handler
+    /// raising against dead state would deny every tool call in every session.
     pub fn clear_plugin_handlers(&self, plugin: &str) {
         let Ok(mut handlers) = self.runtime_handlers.lock() else {
             return;

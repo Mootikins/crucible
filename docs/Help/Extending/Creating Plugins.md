@@ -291,15 +291,15 @@ watch = true
 Plugins can execute shell commands using `cru.shell()`:
 
 ```lua
---- Run project tests
--- @tool name="run_tests" description="Run the test suite"
-function run_tests(args)
-    local result = cru.shell("cargo", {"test"})
-    return { 
-        stdout = result.stdout,
-        exit_code = result.exit_code
-    }
-end
+tools = {
+    run_tests = {
+        desc = "Run the test suite",
+        fn = function(args)
+            local result = cru.shell.exec("cargo", { "test" })
+            return { stdout = result.stdout, exit_code = result.exit_code }
+        end,
+    },
+}
 ```
 
 ### Security Model
@@ -355,21 +355,27 @@ Fennel files are compiled to Lua at load time. See [[Help/Lua/Language Basics]] 
 Commands are slash-commands that users can invoke in the TUI:
 
 ```lua
---- List all tasks
--- @command name="tasks" hint="[add|list|done] <args>"
--- @param action string "Action to perform"
-function M.tasks(ctx, args)
-    if args.action == "list" then
-        ctx:display_info("Listing tasks...")
-    elseif args.action == "add" then
-        ctx:display_info("Adding task: " .. (args[2] or ""))
-    end
-end
+commands = {
+    tasks = {
+        desc = "Manage tasks",
+        hint = "[add|list|done] <args>",
+        fn = function(args)
+            return "tasks: " .. (args and args.input or "list")
+        end,
+    },
+}
 ```
 
-Commands receive a context object with display methods.
+A command's `fn` receives the argument table and returns any
+JSON-representable value; the TUI shows it as a system message. Commands
+surface as `/name` with autocomplete (tagged `(plugin)`).
 
 ## Providing Views
+
+> **Not yet consumed.** Spec-table `views` are parsed and counted but no
+> client renders them — plugin-declared UI is the next arc (a declarative
+> slot vocabulary shared by TUI and web). Declaring views today does
+> nothing beyond the count in `plugin.list`.
 
 Views are custom UI components rendered in the TUI:
 

@@ -462,7 +462,9 @@ impl DaemonPluginLoader {
         let code = format!(
             r#"
 for entry in string.gmatch({new_paths:?}, "[^;]+") do
-    if not package.path:find(entry, 1, true) then
+    -- Delimiter-aware membership: a plain substring find lets a longer
+    -- pattern suppress insertion of a distinct shorter one.
+    if not ((";" .. package.path .. ";"):find(";" .. entry .. ";", 1, true)) then
         package.path = entry .. ";" .. package.path
     end
 end
@@ -657,7 +659,7 @@ end
         let setup_code = format!(
             r#"
 local entry = "{}/?.lua"
-if not package.path:find(entry, 1, true) then
+if not ((";" .. package.path .. ";"):find(";" .. entry .. ";", 1, true)) then
     package.path = entry .. ";" .. package.path
 end
 "#,

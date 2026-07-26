@@ -119,7 +119,10 @@ capabilities:
   - system        # Access system information
 ```
 
-Plugins without declared capabilities run in a restricted sandbox. Users may be prompted to grant capabilities on first use.
+Capabilities are informational: all plugins share one Lua VM, so per-plugin
+module gating is not enforced. There is no restricted sandbox and no
+grant prompt — declare capabilities as documentation of what the plugin
+touches. An invalid value fails manifest parsing and the plugin never loads.
 
 ### Dependencies
 
@@ -158,7 +161,8 @@ exports:
   auto_discover: true   # Reserved; plugin callables come from the spec table
 ```
 
-If `auto_discover` is true (default), Crucible also scans plugin files for annotated functions. Set to `false` to only export explicitly listed items.
+`auto_discover` is reserved. Plugin callables come exclusively from the spec
+table `init.lua` returns; annotated functions are not scanned for plugins.
 
 ### Configuration
 

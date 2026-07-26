@@ -863,16 +863,6 @@ impl RpcDispatcher {
         }
     }
 
-    /// The reason a session's isolation claim cannot be enforced, or `None`.
-    ///
-    /// Isolation is enforceable only for internal agents: the daemon
-    /// dispatches their tools, so `pre_tool_call` handlers and the
-    /// default-deny gate sit *before* execution. An ACP agent executes tools
-    /// in its own process and reports them as notifications — a handler's
-    /// Cancel/Handled arrives after the fact and stops nothing. Refusing is
-    /// the fail-closed answer; the ACP permission channel
-    /// (`session/request_permission`) is the seam a future enforcement could
-    /// use, but it only fires when the external agent chooses to ask.
     /// The isolation registry without waiting on the loader mutex — which is
     /// held across session-start hook execution (container builds included).
     /// Falls back to the loader for contexts the server didn't wire.
@@ -884,6 +874,16 @@ impl RpcDispatcher {
         guard.as_ref().map(|l| l.isolation())
     }
 
+    /// The reason a session's isolation claim cannot be enforced, or `None`.
+    ///
+    /// Isolation is enforceable only for internal agents: the daemon
+    /// dispatches their tools, so `pre_tool_call` handlers and the
+    /// default-deny gate sit *before* execution. An ACP agent executes tools
+    /// in its own process and reports them as notifications — a handler's
+    /// Cancel/Handled arrives after the fact and stops nothing. Refusing is
+    /// the fail-closed answer; the ACP permission channel
+    /// (`session/request_permission`) is the seam a future enforcement could
+    /// use, but it only fires when the external agent chooses to ask.
     async fn unenforceable_isolation(&self, session_id: &str) -> Option<String> {
         let claim = self.isolation_registry().await?.get(session_id)?;
         let session = self.ctx.sessions.get_session(session_id)?;

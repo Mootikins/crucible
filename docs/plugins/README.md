@@ -15,46 +15,41 @@ Example Lua plugins demonstrating tools and hooks for the Crucible plugin system
 
 ## Installation
 
-Plugins can be installed at three levels:
+Install plugins into the global plugin directory:
 
-1. **Global personal** (applies to all kilns):
-   ```bash
-   cp *.lua ~/.config/crucible/plugins/
-   ```
+```bash
+cp -r my-plugin/ ~/.config/crucible/plugins/
+```
 
-2. **Kiln personal** (kiln-specific, gitignored):
-   ```bash
-   cp *.lua KILN/.crucible/plugins/
-   ```
-
-3. **Kiln shared** (version-controlled with kiln):
-   ```bash
-   cp *.lua KILN/plugins/
-   ```
-
-Restart Crucible to load plugins, or wait for hot-reload if enabled.
+(Kiln-local plugin directories are deliberately not loaded — see
+[[Help/Extending/Creating Plugins]] for why.) Restart the daemon to load, or
+enable `[plugins] watch = true` for hot-reload; `cru plugin reload <name>`
+reloads one on demand.
 
 ## Plugin Structure
 
 ### Single-File Plugin
 
-Most plugins are single `.lua` files with tool annotations:
+A single `.lua` file returns a spec table; handlers register with
+`crucible.on` at load:
 
 ```lua
---- Description of what this plugin does
--- @tool name="my_tool" description="Does something useful"
--- @param query string "Search query"
-function my_tool(args)
-    -- Implementation
-    return { result = "success" }
-end
+crucible.on("pre_tool_call", function(ctx, event)
+    cru.log("info", "Tool called: " .. event.tool)
+end)
 
---- Event handler example
--- @handler event="tool:after" pattern="*" priority=100
-function on_tool_complete(ctx, event)
-    cru.log("info", "Tool completed: " .. event.tool_name)
-    return event
-end
+return {
+    name = "my-plugin",
+    tools = {
+        my_tool = {
+            desc = "Does something useful",
+            params = { { name = "query", type = "string", desc = "Search query" } },
+            fn = function(args)
+                return { result = "success" }
+            end,
+        },
+    },
+}
 ```
 
 ### Module Plugin
@@ -73,20 +68,19 @@ my_plugin/
 ### Tool Template
 
 ```lua
---- Tool description shown to agents
--- @tool name="my_tool" description="What this tool does"
--- @param query string "Search query to execute"
--- @param limit number "Maximum results (optional)"
-function my_tool(args)
-    local query = args.query
-    local limit = args.limit or 10
-    
-    local results = cru.kiln.search(query)
-    return {
-        count = #results,
-        items = results
-    }
-end
+tools = {
+    my_tool = {
+        desc = "What this tool does",
+        params = {
+            { name = "query", type = "string", desc = "Search query to execute" },
+            { name = "limit", type = "number", desc = "Maximum results", optional = true },
+        },
+        fn = function(args)
+            local results = cru.kiln.search(args.query)
+            return { count = #results, items = results }
+        end,
+    },
+}
 ```
 
 ### Handler Template
