@@ -203,23 +203,19 @@ GITHUB_TOKEN = "${GITHUB_PERSONAL_TOKEN}"
 
 All gateway tools emit events. Use hooks to filter, transform, or audit:
 
-```rune
-/// Transform GitHub results
-#[hook(event = "tool:after", pattern = "gh_*", priority = 50)]
-pub fn transform_github(ctx, event) {
-    // Modify results
-    event
-}
+```lua
+-- Transform GitHub results. `tool_result` patches the outcome as the model
+-- receives it; `pattern` globs the tool name.
+crucible.on("tool_result", { pattern = "gh_*", priority = 50 }, function(ctx, event)
+    return { result = summarise(event.result) }
+end)
 
-/// Audit external access
-#[hook(event = "tool:after", pattern = "fs_*", priority = 200)]
-pub fn audit_filesystem(ctx, event) {
-    ctx.emit_custom("audit:external_access", #{
-        tool: event.identifier,
-        time: event.timestamp_ms,
-    });
-    event
-}
+-- Audit external access. Handlers may call async APIs directly; there is no
+-- custom-event emit on this path.
+crucible.on("tool_result", { pattern = "fs_*", priority = 200 }, function(ctx, event)
+    cru.log("info", string.format(
+        "external access: session=%s tool=%s", tostring(ctx.session_id), event.tool))
+end)
 ```
 
 ## Security

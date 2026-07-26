@@ -10,6 +10,13 @@ tags:
 
 # Markdown Handlers
 
+> [!WARNING] Design document — not implemented
+> Nothing on this page works yet. There is no parser support for the
+> `[Event:: ...]` heading syntax and no dispatch for the `tool:*`, `note:*`,
+> and `agent:*` event names used below; they are this design's proposed
+> vocabulary, not events the daemon fires. For handlers that run today, see
+> [[Help/Extending/Event Hooks]] and [[Help/Extending/Custom Handlers]].
+
 Define event handlers using pure markdown — no code required. Handler content flows into agent context when events fire, influencing agent behavior through contextual instructions.
 
 ## Overview
@@ -131,8 +138,7 @@ Paragraphs between the event heading and first pattern heading are explanations 
 
 | Event | Fires | Use Case |
 |-------|-------|----------|
-| `pre_llm_call` | Before LLM call | System prompt additions |
-| `transform_context` | Before LLM call | Rewrite the message list |
+| `agent:before_llm` | Before LLM call | System prompt additions |
 
 ## Pattern Matching
 

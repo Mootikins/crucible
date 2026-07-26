@@ -244,7 +244,7 @@ Associate registrations with an owner for bulk removal:
 ```rust
 // Register multiple items owned by a workflow
 let tool = ToolBuilder::new("workflow_tool").build();
-let handler = HandlerBuilder::new("workflow_handler", "tool:after").build();
+let handler = HandlerBuilder::new("workflow_handler", "tool_result").build();
 
 manager.register_tool(tool, Some("my_workflow"));
 manager.register_handler(handler, Some("my_workflow"));

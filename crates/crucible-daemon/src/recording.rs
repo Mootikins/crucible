@@ -24,6 +24,16 @@ pub struct RecordingWriter {
     recording_mode: RecordingMode,
     terminal_size: Option<(u16, u16)>,
     rx: mpsc::Receiver<SessionEventMessage>,
+    /// Stamped at construction, not when the spawned task first runs.
+    ///
+    /// The recording covers everything from the moment the writer exists —
+    /// senders can already be queueing events before the task is scheduled.
+    /// Capturing these inside `run()` also made `duration_ms` load-dependent:
+    /// under contention the task wasn't scheduled until after its senders had
+    /// finished and dropped, so it drained instantly and recorded a 0ms
+    /// recording.
+    started_at: chrono::DateTime<Utc>,
+    start_time: Instant,
 }
 
 impl RecordingWriter {
@@ -41,6 +51,8 @@ impl RecordingWriter {
                 recording_mode,
                 terminal_size,
                 rx,
+                started_at: Utc::now(),
+                start_time: Instant::now(),
             },
             tx,
         )
@@ -63,8 +75,8 @@ impl RecordingWriter {
             .await?;
         let mut writer = BufWriter::new(file);
 
-        let started_at = Utc::now();
-        let start_time = Instant::now();
+        let started_at = self.started_at;
+        let start_time = self.start_time;
         let header = RecordingHeader {
             version: 1,
             session_id: self.session_id.clone(),
