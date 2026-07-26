@@ -253,32 +253,39 @@ store:set_state("config", new_state)
 
 ### Hook Points
 
+There is no `agent:*` event namespace — these are the events that actually
+fire. See [[Help/Extending/Event Hooks]] for each one's payload and return
+contract.
+
 | Event | Description |
 |-------|-------------|
-| `agent:session_start` | Session beginning |
-| `agent:session_end` | Session closing |
-| `agent:before_llm` | Before LLM call (modify context) |
-| `agent:after_llm` | After LLM response |
-| `agent:task_update` | Task list changed |
-| `agent:tool_call` | Tool about to execute |
+| `crucible.on_session_start(fn)` | Session beginning (can refuse the session) |
+| `crucible.on_session_end(fn)` | Session closing |
+| `pre_llm_call` | Before the LLM call — transform the prompt |
+| `transform_context` | Before the LLM call — rewrite the message list |
+| `turn:complete` | After the assistant response, can inject a follow-up |
+| `pre_tool_call` | Tool about to execute (observe/transform/cancel/handle) |
+| `tool_result` | Tool finished, patch what the model receives |
 
 ### Example: Custom Context Injection
 
 ```lua
---- Inject recently modified notes into context
--- @handler event="agent:before_llm" pattern="*" priority=100
-function inject_recent(ctx, state)
-    -- Add recently modified notes to context
+-- Prepend recently modified notes to the prompt. Registered at load time;
+-- `pre_llm_call` hands the handler `{ prompt, model }` and a returned
+-- `{ prompt = ... }` replaces it. Returning `{ cancel = true }` cancels the
+-- turn outright.
+crucible.on("pre_llm_call", { priority = 100 }, function(ctx, event)
     local recent = cru.kiln.search({
         modified_after = os.time() - 86400  -- 24 hours
     })
-
-    if #recent > 0 then
-        state:inject_context("## Recent Activity", recent)
+    if #recent == 0 then
+        return
     end
-
-    return state
-end
+    return {
+        prompt = "## Recent Activity\n" .. table.concat(recent, "\n")
+            .. "\n\n" .. event.prompt,
+    }
+end)
 ```
 
 ## Using the Internal Agent

@@ -99,14 +99,6 @@ impl PluginRegistry {
         Self::default()
     }
 
-    /// Replace everything registered by `plugin`, then register the given
-    /// tools/commands. Idempotent so plugin reload doesn't accumulate stale
-    /// `mlua::Function` handles pointing at the previous module instance.
-    ///
-    /// `funcs` maps declared name → the function extracted from the daemon VM.
-    /// A declaration with no matching function is skipped: the plugin declared
-    /// a tool it did not export, and advertising it would produce a tool call
-    /// that always fails.
     /// Remove every tool and command a plugin registered.
     ///
     /// The failed-reload path: `register_plugin` only replaces entries on a
@@ -123,6 +115,14 @@ impl PluginRegistry {
             .retain(|_, entry| entry.plugin != plugin);
     }
 
+    /// Replace everything registered by `plugin`, then register the given
+    /// tools/commands. Idempotent so plugin reload doesn't accumulate stale
+    /// `mlua::Function` handles pointing at the previous module instance.
+    ///
+    /// `funcs` maps declared name → the function extracted from the daemon VM.
+    /// A declaration with no matching function is skipped: the plugin declared
+    /// a tool it did not export, and advertising it would produce a tool call
+    /// that always fails.
     pub fn register_plugin(
         &self,
         plugin: &str,

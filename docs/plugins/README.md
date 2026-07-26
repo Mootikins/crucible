@@ -67,50 +67,65 @@ my_plugin/
 
 ### Tool Template
 
+A plugin file returns its spec table; `tools` is one field of it.
+
 ```lua
-tools = {
-    my_tool = {
-        desc = "What this tool does",
-        params = {
-            { name = "query", type = "string", desc = "Search query to execute" },
-            { name = "limit", type = "number", desc = "Maximum results", optional = true },
+return {
+    name = "my-plugin",
+    tools = {
+        my_tool = {
+            desc = "What this tool does",
+            params = {
+                { name = "query", type = "string", desc = "Search query to execute" },
+                { name = "limit", type = "number", desc = "Maximum results", optional = true },
+            },
+            fn = function(args)
+                local results = cru.kiln.search(args.query)
+                -- Honor every param you declare: an ignored `limit` is a
+                -- documented knob that silently does nothing.
+                local limit = args.limit or #results
+                local items = {}
+                for i = 1, math.min(limit, #results) do
+                    items[i] = results[i]
+                end
+                return { count = #items, items = items }
+            end,
         },
-        fn = function(args)
-            local results = cru.kiln.search(args.query)
-            return { count = #results, items = results }
-        end,
     },
 }
 ```
 
 ### Handler Template
 
+Handlers register by calling `crucible.on` at load time. Doc-comment
+`@handler` annotations are NOT discovered — a handler declared that way never
+fires. See [[Help/Extending/Event Hooks]] for the full event list.
+
 ```lua
---- Brief description
--- @handler event="tool:after" pattern="*" priority=100
-function my_handler(ctx, event)
+crucible.on("pre_tool_call", { pattern = "*", priority = 100 }, function(ctx, event)
     -- `event` is one flat table: payload fields at the top level alongside
-    -- event.type. Modify fields as needed.
-    -- Use ctx:set/get for cross-handler state
-    -- Use ctx:emit for new events
-    return event  -- Must return event
-end
+    -- event.type. `ctx.session_id` identifies the calling session.
+    -- Return nil to observe; see Event Hooks for cancel/handled/transform.
+end)
 ```
 
 ### Handler Patterns
 
+`pattern` globs the event's identifier (the tool name, for tool events) and
+`priority` orders handlers, lower first.
+
 ```lua
 -- Match specific tools
--- @handler event="tool:after" pattern="search_*" priority=10
+crucible.on("pre_tool_call", { pattern = "search_*", priority = 10 }, fn)
 
--- Match all tools
--- @handler event="tool:after" pattern="*" priority=50
+-- Match all tools (pattern defaults to match-all if omitted)
+crucible.on("tool_result", { pattern = "*", priority = 50 }, fn)
 
 -- Very early processing (validation, security)
--- @handler event="tool:before" pattern="*" priority=5
+crucible.on("pre_tool_call", { pattern = "*", priority = 5 }, fn)
 
 -- Very late processing (audit, logging)
--- @handler event="tool:after" pattern="*" priority=200
+crucible.on("tool_result", { pattern = "*", priority = 200 }, fn)
 ```
 
 ### Priority Levels

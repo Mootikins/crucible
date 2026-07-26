@@ -906,11 +906,8 @@ impl RpcDispatcher {
     /// opposite of the start-hook tradeoff. Shared by the normal end path and
     /// the create-refusal path so a refused session tears down identically.
     async fn fire_plugin_session_end(&self, session_id: &str) {
-        // Only fire for a session the manager still knows. End hooks run
-        // BEFORE `end_session` removes it, so this doubles as the idempotency
-        // guard the per-session hooks get from `end_hooks_fired`: a duplicate
-        // `session.end` (or one for a made-up id) finds no session and fires
-        // nothing — plugins were promised they need not be idempotent.
+        // Only fire for a session the manager still knows — this rejects
+        // made-up ids and sessions already torn down and removed.
         let Some(daemon_session) = self.ctx.sessions.get_session(session_id) else {
             tracing::debug!(
                 session_id = %session_id,
@@ -918,6 +915,19 @@ impl RpcDispatcher {
             );
             return;
         };
+        // ...but existence is a CHECK, not a CLAIM. End hooks run before
+        // `end_session` removes the session, so two concurrent `session.end`
+        // requests both pass the guard above and both fire teardown — and
+        // plugins are promised they need not be idempotent (a double `oci`
+        // teardown removes an already-removed container). Claim atomically;
+        // the loser returns. Mirrors `end_hooks_fired` for per-session hooks.
+        if !self.ctx.plugin_end_claimed.insert(session_id.to_string()) {
+            tracing::debug!(
+                session_id = %session_id,
+                "plugin session_end hooks already claimed; skipping"
+            );
+            return;
+        }
         let mut guard = self.ctx.plugin_loader.lock().await;
         let Some(loader) = guard.as_mut() else { return };
         // Drop the isolation claim with the session. A claim that outlives its
@@ -1881,6 +1891,75 @@ mod tests {
                 .expect("loader");
         *ctx.plugin_loader.try_lock().expect("fresh mutex") = Some(loader);
         ctx
+    }
+
+    /// Two concurrent `session.end` requests must fire plugin `on_session_end`
+    /// exactly once. Session existence was the only guard, but end hooks run
+    /// BEFORE `end_session` removes the session, so both requests passed it —
+    /// a check, not a claim. Plugins are promised they need not be idempotent,
+    /// and a double `oci` teardown removes an already-removed container.
+    ///
+    /// Observed through the isolation release the teardown performs: re-plant
+    /// the claim, fire again, and a short-circuited second run leaves it alone.
+    #[tokio::test]
+    async fn concurrent_session_end_fires_plugin_end_hooks_exactly_once() {
+        use crucible_core::session::SessionType;
+        use tempfile::TempDir;
+
+        let tempdir = TempDir::new().unwrap();
+        let kiln_root = tempdir.path().to_path_buf();
+        let ctx = test_context_with_loader();
+
+        let session = ctx
+            .sessions
+            .create_session(
+                SessionType::Chat,
+                kiln_root.clone(),
+                Some(kiln_root.clone()),
+                Vec::new(),
+                None,
+            )
+            .await
+            .expect("create session");
+        let session_id = session.id.clone();
+
+        let dispatcher = RpcDispatcher::new(ctx);
+
+        async fn plant(dispatcher: &RpcDispatcher, session_id: &str) {
+            let guard = dispatcher.ctx.plugin_loader.lock().await;
+            guard.as_ref().unwrap().isolation().claim(
+                session_id,
+                crucible_lua::IsolationClaim {
+                    plugin: "oci".to_string(),
+                    exempt: Default::default(),
+                },
+            );
+        }
+        async fn claim_present(dispatcher: &RpcDispatcher, session_id: &str) -> bool {
+            let guard = dispatcher.ctx.plugin_loader.lock().await;
+            guard
+                .as_ref()
+                .unwrap()
+                .isolation()
+                .get(session_id)
+                .is_some()
+        }
+
+        plant(&dispatcher, &session_id).await;
+        dispatcher.fire_plugin_session_end(&session_id).await;
+        assert!(
+            !claim_present(&dispatcher, &session_id).await,
+            "first teardown must release the isolation claim"
+        );
+
+        // A second `session.end` racing the first: the session is still in the
+        // manager, so the existence guard passes again.
+        plant(&dispatcher, &session_id).await;
+        dispatcher.fire_plugin_session_end(&session_id).await;
+        assert!(
+            claim_present(&dispatcher, &session_id).await,
+            "second teardown must short-circuit, not fire hooks a second time"
+        );
     }
 
     /// H2: isolation is enforceable only for internal agents — an external

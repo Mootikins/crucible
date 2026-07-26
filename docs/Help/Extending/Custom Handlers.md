@@ -97,31 +97,37 @@ impl StorageHandler {
 
 Lua handlers are scripts that process events without requiring Rust compilation.
 
+> [!WARNING] The Lua examples in this section document an API that does not exist
+> Every `-- @handler event=...` annotation below is **not discovered** — the
+> daemon never scans doc comments, so a handler declared that way silently
+> never fires. `{kiln}/.crucible/handlers/*.lua` is likewise **not a load
+> path**; kiln-local handler directories are deliberately not loaded.
+>
+> The real API is `crucible.on(event, opts, handler)`, called at load time from
+> a plugin under `~/.config/crucible/plugins/`. The event names used below
+> (`note:parsed`, `file:changed`, `tool:before`) are illustrative and largely
+> not dispatched either — see [[Help/Extending/Event Hooks]] for the events that
+> actually fire and [[Help/Extending/Creating Plugins]] for plugin layout.
+> This section is pending a rewrite: treat it as background on the handler
+> *concept*, not as something to copy.
+
 ### Location
 
-Place Lua handler files in:
+Plugins — which is where handlers live — are loaded from:
 ```
-{kiln}/.crucible/handlers/*.lua
+~/.config/crucible/plugins/
 ```
 
 ### Basic Structure
 
 ```lua
--- my_handler.lua
+-- ~/.config/crucible/plugins/my-plugin.lua
 
---- Handle events
--- @handler event="note:parsed" pattern="*" priority=100
-function handle_note_parsed(ctx, event)
-    cru.log("info", "Note parsed: " .. event.identifier)
-    return event
-end
+crucible.on("pre_tool_call", { pattern = "*", priority = 100 }, function(ctx, event)
+    cru.log("info", "Tool called: " .. tostring(event.tool))
+end)
 
---- Handle file changes
--- @handler event="file:changed" pattern="*" priority=100
-function handle_file_changed(ctx, event)
-    cru.log("info", "File changed: " .. event.identifier)
-    return event
-end
+return { name = "my-plugin" }
 ```
 
 ### Event API in Lua

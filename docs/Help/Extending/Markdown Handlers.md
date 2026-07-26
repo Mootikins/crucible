@@ -131,7 +131,8 @@ Paragraphs between the event heading and first pattern heading are explanations 
 
 | Event | Fires | Use Case |
 |-------|-------|----------|
-| `agent:before_llm` | Before LLM call | System prompt additions |
+| `pre_llm_call` | Before LLM call | System prompt additions |
+| `transform_context` | Before LLM call | Rewrite the message list |
 
 ## Pattern Matching
 
