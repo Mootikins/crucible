@@ -1084,6 +1084,13 @@ impl GenaiAgentHandle {
         let body = async_stream::stream! {
             let mut chat_stream = self.stream_chat_from_messages(messages.clone());
 
+            // Knowledge attached by Lua handlers mid-turn. Declared outside
+            // `'turn: loop` because both `continue 'turn` paths below restart
+            // the iteration — a per-iteration binding silently dropped whatever
+            // had been attached, and the registry has already charged its
+            // budget and burned its dedup key, so it can never be re-supplied.
+            let mut attached: Vec<String> = Vec::new();
+
             'turn: loop {
                 // Collect ToolCall events emitted during this LLM iteration
                 // so the outer loop can dispatch them when the stream ends.
@@ -1131,10 +1138,6 @@ impl GenaiAgentHandle {
                     .filter_map(|c| c.id.clone())
                     .collect();
                 let mut collected: Vec<ChatToolResult> = Vec::with_capacity(pending_calls.len());
-                // Knowledge attached by Lua handlers while this batch's
-                // results were coming back. Folded in after the tool
-                // responses below.
-                let mut attached: Vec<String> = Vec::new();
                 while collected.len() < pending_calls.len() {
                     let Some(event) = rx.recv().await else {
                         yield TurnEvent::Done { stop_reason: StopReason::Cancelled };
@@ -1160,6 +1163,9 @@ impl GenaiAgentHandle {
                         }
                         TurnEvent::HandlerInjection { content, .. } => {
                             drop(chat_stream);
+                            for attachment in attached.drain(..) {
+                                messages.push(ChatMessage::system(&attachment));
+                            }
                             messages.push(ChatMessage::user(&content));
                             chat_stream = self.stream_chat_from_messages(messages.clone());
                             continue 'turn;
@@ -1176,6 +1182,9 @@ impl GenaiAgentHandle {
                         }
                         TurnEvent::DepthCapHit { .. } => {
                             drop(chat_stream);
+                            for attachment in attached.drain(..) {
+                                messages.push(ChatMessage::system(&attachment));
+                            }
                             messages.push(ChatMessage::user(DEPTH_CAP_PROMPT));
                             chat_stream = self.stream_chat_from_messages(messages.clone());
                             continue 'turn;

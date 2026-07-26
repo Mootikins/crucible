@@ -854,6 +854,7 @@ impl RpcDispatcher {
     /// earlier plugin's container is released), then end the session.
     async fn refuse_session(&self, session_id: &str) {
         self.fire_plugin_session_end(session_id).await;
+        self.ctx.agents.context_attach().release(session_id);
         if let Err(end_err) = self.ctx.sessions.end_session(session_id).await {
             tracing::error!(
                 session_id = %session_id,
@@ -938,7 +939,6 @@ impl RpcDispatcher {
         // Dedup keys and the spent attach budget are per session and
         // deliberately survive a drain — so without this they would outlive the
         // session itself and silently deny a reused id its first attachment.
-        self.ctx.agents.context_attach().release(session_id);
         let session = crucible_lua::Session::new(session_id.to_string())
             .with_workspace(daemon_session.workspace.to_string_lossy());
         session.bind(Box::new(crate::server::NoopSessionRpc));
@@ -1032,6 +1032,13 @@ impl RpcDispatcher {
             // `lua_sessions` executors below, and a plugin that acquired a
             // resource in `on_session_start` needs the matching teardown.
             self.fire_plugin_session_end(session_id).await;
+
+            // Attachment state is not a plugin concern: session VMs can attach
+            // with no plugin runtime bound at all, so releasing inside
+            // `fire_plugin_session_end` leaked every session on a plugin-less
+            // daemon. It also must NOT fire on pause — that would hand a
+            // resumed session a fresh budget and a cleared dedup set.
+            self.ctx.agents.context_attach().release(session_id);
 
             if let Some(state) = self.ctx.lua_sessions.get(session_id) {
                 let state = state.value().clone();

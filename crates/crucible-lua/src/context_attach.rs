@@ -35,6 +35,10 @@ pub enum AttachRejection {
     BudgetExhausted { used: usize, budget: usize },
     /// Empty content — nothing to attach.
     Empty,
+    /// The registry lock was poisoned. Practically unreachable (no user code
+    /// runs under it), but reporting this as `Empty` handed a handler a
+    /// misleading diagnostic for an internal fault.
+    Unavailable,
 }
 
 impl AttachRejection {
@@ -45,6 +49,7 @@ impl AttachRejection {
                 format!("attach budget exhausted ({used}/{budget} chars)")
             }
             Self::Empty => "empty content".to_string(),
+            Self::Unavailable => "attachment registry unavailable".to_string(),
         }
     }
 }
@@ -85,10 +90,6 @@ impl ContextAttachRegistry {
         }
     }
 
-    pub fn budget(&self) -> usize {
-        self.budget
-    }
-
     /// Queue content for the session's next LLM call.
     ///
     /// Enforcement lives here, allocation lives in the handler — the same
@@ -106,7 +107,7 @@ impl ContextAttachRegistry {
         let Ok(mut guard) = self.sessions.lock() else {
             // Poisoned lock: drop the attachment rather than panic. Losing a
             // retrieval degrades an answer; panicking kills the turn.
-            return Err(AttachRejection::Empty);
+            return Err(AttachRejection::Unavailable);
         };
         let entry = guard.entry(session_id.to_string()).or_default();
 
@@ -142,15 +143,6 @@ impl ContextAttachRegistry {
             .get_mut(session_id)
             .map(|entry| std::mem::take(&mut entry.pending))
             .unwrap_or_default()
-    }
-
-    /// Whether anything is queued, without taking it.
-    pub fn has_pending(&self, session_id: &str) -> bool {
-        self.sessions
-            .lock()
-            .ok()
-            .and_then(|g| g.get(session_id).map(|e| !e.pending.is_empty()))
-            .unwrap_or(false)
     }
 
     /// Drop a session's buffer and its dedup state at session end.
@@ -229,9 +221,8 @@ mod tests {
         let registry = ContextAttachRegistry::default();
         registry.attach("s1", "note body", None).unwrap();
 
-        assert!(registry.has_pending("s1"));
         assert_eq!(registry.drain("s1"), vec!["note body".to_string()]);
-        assert!(!registry.has_pending("s1"));
+        assert!(registry.drain("s1").is_empty(), "drain should consume");
     }
 
     #[test]
@@ -334,7 +325,7 @@ mod tests {
         registry.attach("s1", "1234567890", Some("k")).unwrap();
         registry.release("s1");
 
-        assert!(!registry.has_pending("s1"));
+        assert!(registry.drain("s1").is_empty());
         // Budget and keys reset with the session.
         registry.attach("s1", "1234567890", Some("k")).unwrap();
     }

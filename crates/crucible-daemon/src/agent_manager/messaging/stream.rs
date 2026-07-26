@@ -679,6 +679,35 @@ impl AgentManager {
                     // conjunctive batch-terminate check at ToolBatchEnd.
                     batch_terminate_signals.push(tool_result.terminate);
 
+                    // Hand over anything a `tool_result` handler retrieved via
+                    // `cru.context.attach` BEFORE the result itself.
+                    //
+                    // Ordering is load-bearing: the adapter collects results
+                    // with `while collected.len() < pending_calls.len()`, so it
+                    // stops reading the instant the final result arrives.
+                    // Anything sent after that sits unread in the channel until
+                    // the next batch — or forever, if the model answers instead
+                    // of calling another tool. The handler has already run by
+                    // this point, so the attachment is queued and ready.
+                    //
+                    // Context only — deliberately NOT committed to the
+                    // conversation tree above, because history is append-only
+                    // and scheduler-owned.
+                    let mut adapter_gone = false;
+                    for content in stream_ctx.context_attach.drain(&stream_ctx.session_id) {
+                        if inbound_tx
+                            .send(TurnEvent::ContextAttach { content })
+                            .await
+                            .is_err()
+                        {
+                            adapter_gone = true;
+                            break;
+                        }
+                    }
+                    if adapter_gone {
+                        break;
+                    }
+
                     // Feed back to the adapter so it can continue the turn.
                     let reply = TurnEvent::ToolResult {
                         id: tool_result.call_id.clone().unwrap_or_else(|| id.clone()),
@@ -689,21 +718,6 @@ impl AgentManager {
                     if inbound_tx.send(reply).await.is_err() {
                         // Adapter dropped; end turn.
                         break;
-                    }
-
-                    // A `tool_result` handler may have retrieved something via
-                    // `cru.context.attach`. Hand it over now so the agent has
-                    // it for the next LLM call of this turn. Context only —
-                    // deliberately NOT committed to the conversation tree
-                    // above, because history is append-only and scheduler-owned.
-                    for content in stream_ctx.context_attach.drain(&stream_ctx.session_id) {
-                        if inbound_tx
-                            .send(TurnEvent::ContextAttach { content })
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
                     }
                 }
                 TurnEvent::ToolResult {
@@ -735,6 +749,23 @@ impl AgentManager {
                         error,
                     )
                     .await;
+                    // Same boundary as the patch caveat above: an external
+                    // agent owns its own tool loop and never reads our inbound
+                    // channel, so an attachment can never reach its model.
+                    // Drain and say so — leaving it queued would burn the
+                    // session's budget and dedup keys on content nobody will
+                    // ever see, and grow the buffer for the session's lifetime.
+                    let stranded = stream_ctx.context_attach.drain(&stream_ctx.session_id);
+                    if !stranded.is_empty() {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            count = stranded.len(),
+                            "cru.context.attach is not supported for external (ACP) agents; \
+                             discarding attachments — the agent runs its own tool loop and \
+                             never reads the runtime's inbound channel"
+                        );
+                    }
+
                     // Structured results survive verbatim when no handler
                     // touched them; a handler's patch is a string by contract.
                     let result = if patched_text == result_text {

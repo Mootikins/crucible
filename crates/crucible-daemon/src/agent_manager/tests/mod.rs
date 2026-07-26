@@ -884,24 +884,18 @@ impl crucible_core::turn::Agent for InboundRecordingAgent {
             yield TurnEvent::ToolBatchEnd;
 
             if let Some(rx) = inbound.as_mut() {
-                // Keep reading past the last ToolResult: attachments are sent
-                // straight after it, so stopping at the result would race them.
+                // Mirrors GenaiAgentHandle::scheduler_driven_turn exactly: stop
+                // the instant the last ToolResult of the batch arrives.
+                //
+                // This mock previously kept reading afterwards, which made the
+                // attachment tests pass against a runtime that never delivered
+                // the attachment — the real adapter had already stopped. A mock
+                // that reads more eagerly than production tests the mock.
                 while !pending.is_empty() {
                     let Some(event) = rx.recv().await else { break };
                     if let TurnEvent::ToolResult { id, .. } = &event {
                         pending.remove(id);
                     }
-                    if let Ok(mut g) = recorded.lock() {
-                        g.push(event);
-                    }
-                }
-                while let Ok(event) = tokio::time::timeout(
-                    Duration::from_millis(200),
-                    rx.recv(),
-                )
-                .await
-                {
-                    let Some(event) = event else { break };
                     if let Ok(mut g) = recorded.lock() {
                         g.push(event);
                     }
