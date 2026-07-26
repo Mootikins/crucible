@@ -68,6 +68,12 @@
 	 * engraving's burin line. It is fragile below ~1.5rem — do not
 	 * use it for body, labels, or anything under 24px. */
 	--cru-font-display: 'Bodoni Moda', 'Didot', 'Bodoni MT', Georgia, serif;
+
+	/* Bodoni Moda is optical-size aware, and its display cuts (opsz 72+)
+	 * thin the hairlines to near-invisible at hero sizes — striking in a
+	 * specimen, hard to read as a sentence. Pinning opsz to a text cut
+	 * keeps the Didone character with strokes that survive. */
+	--cru-display-opsz: 'opsz' 18;
 	--cru-font-body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
 	--cru-font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
 

@@ -12,13 +12,14 @@ const INSTALL =
 	'curl -fsSL https://github.com/Mootikins/crucible/releases/latest/download/crucible-cli-installer.sh | sh';
 
 // The hero constellation is the real documentation graph, not decoration.
-// Only the best-connected pages are drawn: all 84 nodes behind a headline is a
-// hairball, and the shape stops being readable well before it stops being busy.
+// The best-connected pages are drawn, enough of them to cover the field without
+// the edges collapsing into a hairball — density is governed by the draw-side
+// edge-length fade rather than by starving the node count.
 const { nodes, edges } = await getDocGraph();
 const ranked = [...nodes]
 	.map((n) => ({ ...n, degree: n.inbound.length + n.outbound.length }))
 	.sort((a, b) => b.degree - a.degree)
-	.slice(0, 34);
+	.slice(0, 60);
 const keep = new Set(ranked.map((n) => n.slug));
 const heroNodes = ranked.map(({ slug, section, degree }) => ({ slug, section, degree }));
 const heroEdges = edges.filter((e) => keep.has(e.from) && keep.has(e.to));
@@ -128,9 +129,11 @@ const heroEdges = edges.filter((e) => keep.has(e.from) && keep.has(e.to));
 
 			.display {
 				font-family: var(--cru-font-display);
-				font-weight: 500;
+				font-weight: 600;
+				font-optical-sizing: none;
+				font-variation-settings: var(--cru-display-opsz);
 				letter-spacing: var(--cru-track-display);
-				line-height: 1.04;
+				line-height: 1.08;
 				color: var(--cru-bright);
 			}
 
@@ -225,7 +228,6 @@ const heroEdges = edges.filter((e) => keep.has(e.from) && keep.has(e.to));
 
 			.hero h1 {
 				font-size: var(--cru-size-hero);
-				text-transform: uppercase;
 				margin-bottom: 1.5rem;
 			}
 			.hero h1 em {
@@ -258,6 +260,12 @@ const heroEdges = edges.filter((e) => keep.has(e.from) && keep.has(e.to));
 				display: block;
 				width: 100%;
 				height: auto;
+				/* Cropped to the circle. The asset is a square with the page
+				   colour baked into its corners, which is invisible against the
+				   page but opaque to anything behind it — and the constellation
+				   runs behind it, so those corners were punching a square hole
+				   in the graph. */
+				border-radius: 50%;
 				/* Held back so the headline wins the contrast fight. The plate is
 				   dense enough that at full strength it reads as the subject and
 				   the type reads as a caption. */

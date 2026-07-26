@@ -101,6 +101,10 @@
 .sl-markdown-content h2 {
 	font-family: var(--cru-font-display);
 	font-weight: 600;
+	/* Pinned to a text optical size — the display cuts thin the hairlines to
+	   near-invisible at heading sizes. See tokens.css. */
+	font-optical-sizing: none;
+	font-variation-settings: var(--cru-display-opsz);
 	letter-spacing: var(--cru-track-display);
 	line-height: 1.14;
 }
