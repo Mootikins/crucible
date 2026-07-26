@@ -306,6 +306,21 @@
 			return url.origin + url.pathname;
 		}
 
+		/**
+		 * Whether hovering `target` should spawn a preview for `anchor`.
+		 *
+		 * In the neighbourhood graph a node is one <a> wrapping both a dot and a
+		 * label, but the two have different jobs: the dot is the drag handle, so
+		 * previews come from the label only. Otherwise picking a node up spawns a
+		 * window over the graph you are rearranging.
+		 */
+		function previewable(target: Element, anchor: Element) {
+			if (!anchor.classList?.contains('node-link')) return true;
+			// Never mid-drag, whichever part the pointer happens to be over.
+			if (anchor.closest('svg')?.hasAttribute('data-dragging')) return false;
+			return !!target.closest?.('.node-label');
+		}
+
 		async function loadPage(url: string) {
 			if (cache.has(url)) return cache.get(url);
 			try {
@@ -649,7 +664,7 @@
 			}
 
 			const anchor = target.closest?.(LINK_SELECTOR);
-			const url = anchor ? previewUrl(anchor) : null;
+			const url = anchor && previewable(target, anchor) ? previewUrl(anchor) : null;
 
 			if (anchor && url) {
 				window.clearTimeout(hideTimer);
