@@ -1,15 +1,24 @@
 ---
 /**
- * The page's neighbourhood in the documentation graph.
+ * The page's neighbourhood in the documentation graph, as a live force graph.
  *
  * Answers "what is this page connected to, and what points here?" — the second
  * half of which the sidebar cannot show, because the sidebar is a filing
  * decision and these are the links the prose actually makes.
  *
- * Rendered as inline SVG at build time. There is nothing to interact with
- * beyond following a link, so this ships no JavaScript: a canvas or a force
- * simulation here would be script and layout jitter in exchange for nothing the
- * reader can use.
+ * Interaction follows the web UI's graph panel: drag a node to move it (pinned
+ * while held, sim reheats on release), hover to highlight its neighbourhood and
+ * dim the rest, click to navigate. Pan and zoom are deliberately omitted — this
+ * graph is at most seventeen nodes in a fixed box and always fits, so they would
+ * be friction rather than navigation.
+ *
+ * The physics are hand-rolled rather than d3-force. The web UI has a whole kiln
+ * to lay out and earns the dependency; shipping it to every docs page to settle
+ * seventeen nodes would not.
+ *
+ * Progressive enhancement: the SVG below is fully laid out at build time and
+ * every node is a real <a>. Without JavaScript it is a static diagram that still
+ * navigates and still takes keyboard focus; the script only makes it move.
  */
 import { getNeighbourhood } from '../lib/docgraph.mjs';
 
@@ -26,35 +35,58 @@ const hood = await getNeighbourhood(slug);
 const total = hood ? hood.outbound.length + hood.inbound.length : 0;
 const show = hood && total > 0;
 
-/**
- * Lay the neighbours out on two arcs — outbound to the right, inbound to the
- * left — around the current page. Direction is the whole point of the widget,
- * so it is carried by position rather than by a legend the reader has to
- * consult.
- */
 const W = 680;
-const H = 260;
+const H = 380;
 const CX = W / 2;
 const CY = H / 2;
 
+/**
+ * Build-time layout: outbound on a right-hand arc, inbound on a left-hand one.
+ * This is the no-JS view, and it is also the sim's starting state — seeding it
+ * somewhere sensible means the first frames settle rather than explode.
+ */
 function arc(items: any[], side: -1 | 1) {
 	const n = items.length;
 	return items.map((item, i) => {
-		// Spread across a vertical fan; a single neighbour sits on the axis.
 		const t = n === 1 ? 0.5 : i / (n - 1);
 		const spread = Math.min(0.86, 0.3 + n * 0.1);
 		const angle = (t - 0.5) * Math.PI * spread;
-		const radius = 190 + (i % 2) * 34; // stagger so labels do not collide
+		const radius = 190 + (i % 2) * 34;
 		return {
 			...item,
 			x: CX + side * Math.cos(angle) * radius,
-			y: CY + Math.sin(angle) * (H / 2.35),
+			y: CY + Math.sin(angle) * (H / 2.6),
 			side,
 		};
 	});
 }
 
-const placed = show ? [...arc(hood!.outbound, 1), ...arc(hood!.inbound, -1)] : [];
+const placed = show
+	? [
+			{ ...hood!.node, x: CX, y: CY, side: 0, self: true },
+			...arc(hood!.outbound, 1),
+			...arc(hood!.inbound, -1),
+		]
+	: [];
+
+const posBySlug = new Map(placed.map((p) => [p.slug, p]));
+const links = show
+	? hood!.links
+			.map((l: any) => ({ ...l, a: posBySlug.get(l.from), b: posBySlug.get(l.to) }))
+			.filter((l: any) => l.a && l.b)
+	: [];
+
+const graphData = show
+	? JSON.stringify({
+			nodes: placed.map((p: any) => ({
+				slug: p.slug,
+				x: Math.round(p.x),
+				y: Math.round(p.y),
+				self: !!p.self,
+			})),
+			links: hood!.links,
+		})
+	: '';
 
 /** Trim a long title so labels stay on one line. */
 const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' : s);
@@ -71,40 +103,54 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 				<svg
 					viewBox={`0 0 ${W} ${H}`}
 					class="localgraph-svg"
+					data-graph={graphData}
 					role="img"
 					aria-label={`${hood!.node.title} links out to ${hood!.totalOutbound} page${hood!.totalOutbound === 1 ? '' : 's'} and is linked to from ${hood!.totalInbound}. The same pages are listed below.`}
 				>
-					{placed.map((p) => (
-						<line
-							x1={CX}
-							y1={CY}
-							x2={p.x}
-							y2={p.y}
-							class={p.side === 1 ? 'edge edge-out' : 'edge edge-in'}
-						/>
-					))}
+					<g data-role="edges">
+						{links.map((l: any) => (
+							<line
+								x1={l.a.x}
+								y1={l.a.y}
+								x2={l.b.x}
+								y2={l.b.y}
+								class="edge"
+								data-from={l.from}
+								data-to={l.to}
+							/>
+						))}
+					</g>
 
-					{placed.map((p) => (
-						<a href={`${base}/${p.slug}/`} class="node-link">
-							<circle cx={p.x} cy={p.y} r="4" class="node" />
-							<text
-								x={p.side === 1 ? p.x + 10 : p.x - 10}
-								y={p.y + 4}
-								text-anchor={p.side === 1 ? 'start' : 'end'}
-								class="node-label"
+					<g data-role="nodes">
+						{placed.map((p: any) => (
+							<a
+								href={p.self ? undefined : `${base}/${p.slug}/`}
+								class="node-link"
+								data-slug={p.slug}
+								data-self={p.self ? 'true' : undefined}
 							>
-								{short(p.title)}
-							</text>
-						</a>
-					))}
-
-					<circle cx={CX} cy={CY} r="7" class="node node-self" />
+								<circle
+									cx={p.x}
+									cy={p.y}
+									r={p.self ? 7 : 4}
+									class={p.self ? 'node node-self' : 'node'}
+								/>
+								<text
+									x={p.side === -1 ? p.x - 10 : p.x + 10}
+									y={p.y + 4}
+									text-anchor={p.side === -1 ? 'end' : 'start'}
+									class="node-label"
+								>
+									{short(p.title)}
+								</text>
+							</a>
+						))}
+					</g>
 				</svg>
 			</div>
 
-			{/* The SVG is decorative for anyone not reading it visually; these
-			    lists are the real navigation, and they also carry the counts
-			    when the graph is capped. */}
+			{/* The lists are the real navigation for anyone not using a pointer,
+			    and they carry the counts when the graph is capped. */}
 			<div class="localgraph-lists">
 				{hood!.outbound.length > 0 && (
 					<div>
@@ -175,26 +221,22 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 		width: 100%;
 		height: auto;
 		overflow: visible;
+		touch-action: none;
 	}
 
 	.edge {
-		stroke-width: 1;
 		stroke: var(--cru-ember);
-		opacity: 0.28;
-	}
-
-	/* Inbound edges are dashed. Direction is already encoded by which side a
-	   node sits on; the dash is the redundant cue for anyone who does not
-	   read the layout that way. */
-	.edge-in {
-		stroke-dasharray: 3 3;
-		opacity: 0.2;
+		stroke-width: 1;
+		opacity: 0.26;
+		transition: opacity var(--cru-quick) var(--cru-ease);
 	}
 
 	.node {
 		fill: var(--cru-ember-text);
 		opacity: 0.75;
-		transition: opacity var(--cru-quick) var(--cru-ease);
+		transition:
+			opacity var(--cru-quick) var(--cru-ease),
+			r var(--cru-quick) var(--cru-ease);
 	}
 
 	.node-self {
@@ -208,11 +250,21 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 		font-family: var(--cru-font-body);
 		font-size: 12px;
 		fill: var(--sl-color-gray-2);
-		transition: fill var(--cru-quick) var(--cru-ease);
+		transition:
+			fill var(--cru-quick) var(--cru-ease),
+			opacity var(--cru-quick) var(--cru-ease);
 	}
 
+	/* Grab affordance only where dragging does something. The centre node is
+	   the page you are on, so it is fixed. */
 	.node-link {
-		cursor: pointer;
+		cursor: grab;
+	}
+	.node-link[data-self] {
+		cursor: default;
+	}
+	.localgraph-svg[data-dragging] .node-link {
+		cursor: grabbing;
 	}
 
 	.node-link:hover .node-label,
@@ -226,6 +278,28 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 	.node-link:focus-visible {
 		outline: 2px solid var(--cru-ember);
 		outline-offset: 2px;
+	}
+
+	/* Hover dimming. Driven by a class on the svg so the whole neighbourhood
+	   responds, not just the element under the pointer. */
+	.localgraph-svg[data-hover] .edge {
+		opacity: 0.07;
+	}
+	.localgraph-svg[data-hover] .edge[data-active] {
+		opacity: 0.6;
+	}
+	.localgraph-svg[data-hover] .node {
+		opacity: 0.22;
+	}
+	.localgraph-svg[data-hover] .node-label {
+		opacity: 0.18;
+	}
+	.localgraph-svg[data-hover] [data-active] .node,
+	.localgraph-svg[data-hover] [data-active] .node-label {
+		opacity: 1;
+	}
+	.localgraph-svg[data-hover] [data-active] .node-label {
+		fill: var(--cru-ember-text);
 	}
 
 	.localgraph-lists {
@@ -279,3 +353,301 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 		}
 	}
 </style>
+
+<script>
+	type N = {
+		slug: string;
+		x: number;
+		y: number;
+		vx: number;
+		vy: number;
+		self: boolean;
+		pinned: boolean;
+		circle: SVGCircleElement;
+		label: SVGTextElement;
+		anchor: SVGAElement;
+	};
+
+	const svg = document.querySelector<SVGSVGElement>('.localgraph-svg[data-graph]');
+	if (svg) {
+		const raw = JSON.parse(svg.dataset.graph!) as {
+			nodes: { slug: string; x: number; y: number; self: boolean }[];
+			links: { from: string; to: string }[];
+		};
+
+		const W = 680;
+		const H = 380;
+		const PAD = 26;
+		const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+		const byId = new Map<string, N>();
+		const nodes: N[] = [];
+
+		for (const spec of raw.nodes) {
+			const anchor = svg.querySelector<SVGAElement>(`[data-slug="${CSS.escape(spec.slug)}"]`);
+			if (!anchor) continue;
+			const node: N = {
+				slug: spec.slug,
+				x: spec.x,
+				y: spec.y,
+				vx: 0,
+				vy: 0,
+				self: spec.self,
+				pinned: spec.self, // the page you are on stays put
+				circle: anchor.querySelector('circle')!,
+				label: anchor.querySelector('text')!,
+				anchor,
+			};
+			byId.set(node.slug, node);
+			nodes.push(node);
+		}
+
+		const edgeEls = [...svg.querySelectorAll<SVGLineElement>('.edge')];
+		const links = edgeEls
+			.map((el) => ({
+				el,
+				a: byId.get(el.dataset.from!)!,
+				b: byId.get(el.dataset.to!)!,
+			}))
+			.filter((l) => l.a && l.b);
+
+		/** slug -> everything one hop away, for hover highlighting. */
+		const adjacency = new Map<string, Set<string>>();
+		for (const n of nodes) adjacency.set(n.slug, new Set([n.slug]));
+		for (const l of links) {
+			adjacency.get(l.a.slug)!.add(l.b.slug);
+			adjacency.get(l.b.slug)!.add(l.a.slug);
+		}
+
+		// ── Physics ────────────────────────────────────────────────────────
+		const LINK_DIST = 78;
+		const LINK_K = 0.03;
+		// Repulsion is capped by distance. Uncapped inverse-square over a box
+		// this small means every pair pushes every other pair and the whole
+		// graph pins itself to the walls.
+		const CHARGE = 520;
+		const CHARGE_MAX_DIST2 = 170 * 170;
+		const CENTRE_K = 0.016;
+		const DAMPING = 0.82;
+
+		/** Simulation temperature. Reheated by interaction, decays to rest. */
+		let alpha = 1;
+
+		function tick() {
+			for (const l of links) {
+				const dx = l.b.x - l.a.x;
+				const dy = l.b.y - l.a.y;
+				const dist = Math.hypot(dx, dy) || 1;
+				const f = ((dist - LINK_DIST) / dist) * LINK_K * alpha;
+				if (!l.a.pinned) {
+					l.a.vx += dx * f;
+					l.a.vy += dy * f;
+				}
+				if (!l.b.pinned) {
+					l.b.vx -= dx * f;
+					l.b.vy -= dy * f;
+				}
+			}
+
+			for (let i = 0; i < nodes.length; i++) {
+				for (let j = i + 1; j < nodes.length; j++) {
+					const a = nodes[i];
+					const b = nodes[j];
+					const dx = b.x - a.x;
+					const dy = b.y - a.y;
+					const d2 = dx * dx + dy * dy || 1;
+					if (d2 > CHARGE_MAX_DIST2) continue;
+					const f = (CHARGE / d2) * alpha;
+					if (!a.pinned) {
+						a.vx -= dx * f;
+						a.vy -= dy * f;
+					}
+					if (!b.pinned) {
+						b.vx += dx * f;
+						b.vy += dy * f;
+					}
+				}
+			}
+
+			for (const n of nodes) {
+				if (n.pinned) continue;
+				n.vx += (W / 2 - n.x) * CENTRE_K * alpha;
+				n.vy += (H / 2 - n.y) * CENTRE_K * alpha;
+				n.x += n.vx;
+				n.y += n.vy;
+				n.vx *= DAMPING;
+				n.vy *= DAMPING;
+				// Soft wall before the hard clamp. Clamping alone lets nodes
+				// pile up flat against the edge, which is what "pinned to the
+				// wall" looked like; a restoring force keeps them off it.
+				const M = PAD + 14;
+				if (n.x < M) n.vx += (M - n.x) * 0.08;
+				if (n.x > W - M) n.vx -= (n.x - (W - M)) * 0.08;
+				if (n.y < M) n.vy += (M - n.y) * 0.08;
+				if (n.y > H - M) n.vy -= (n.y - (H - M)) * 0.08;
+
+				n.x = Math.max(PAD, Math.min(W - PAD, n.x));
+				n.y = Math.max(PAD, Math.min(H - PAD, n.y));
+			}
+		}
+
+		function render() {
+			for (const n of nodes) {
+				n.circle.setAttribute('cx', String(n.x));
+				n.circle.setAttribute('cy', String(n.y));
+				// Labels flip to whichever side has room, so they never run off
+				// the box when a node is dragged across the middle.
+				const left = n.x > W * 0.62;
+				n.label.setAttribute('x', String(left ? n.x - 10 : n.x + 10));
+				n.label.setAttribute('y', String(n.y + 4));
+				n.label.setAttribute('text-anchor', left ? 'end' : 'start');
+			}
+			for (const l of links) {
+				l.el.setAttribute('x1', String(l.a.x));
+				l.el.setAttribute('y1', String(l.a.y));
+				l.el.setAttribute('x2', String(l.b.x));
+				l.el.setAttribute('y2', String(l.b.y));
+			}
+		}
+
+		let raf = 0;
+		let running = false;
+
+		function frame() {
+			tick();
+			render();
+			alpha *= 0.985;
+			// Idle below a floor rather than spinning forever; any interaction
+			// reheats. Dragging holds alpha up explicitly.
+			if (alpha < 0.008 && !drag) {
+				running = false;
+				return;
+			}
+			raf = requestAnimationFrame(frame);
+		}
+
+		function reheat(to = 0.7) {
+			if (reduceMotion.matches) return;
+			alpha = Math.max(alpha, to);
+			if (!running) {
+				running = true;
+				raf = requestAnimationFrame(frame);
+			}
+		}
+
+		// ── Hover: highlight the neighbourhood ─────────────────────────────
+		function setHover(slug: string | null) {
+			const near = slug ? adjacency.get(slug) : null;
+			if (!near) {
+				delete svg!.dataset.hover;
+				for (const n of nodes) delete n.anchor.dataset.active;
+				for (const l of links) delete l.el.dataset.active;
+				return;
+			}
+			svg!.dataset.hover = 'true';
+			for (const n of nodes) {
+				if (near.has(n.slug)) n.anchor.dataset.active = 'true';
+				else delete n.anchor.dataset.active;
+			}
+			for (const l of links) {
+				if (near.has(l.a.slug) && near.has(l.b.slug)) l.el.dataset.active = 'true';
+				else delete l.el.dataset.active;
+			}
+		}
+
+		for (const n of nodes) {
+			n.anchor.addEventListener('pointerenter', () => {
+				if (!drag) setHover(n.slug);
+			});
+			n.anchor.addEventListener('pointerleave', () => {
+				if (!drag) setHover(null);
+			});
+			n.anchor.addEventListener('focus', () => setHover(n.slug));
+			n.anchor.addEventListener('blur', () => setHover(null));
+		}
+
+		// ── Drag: pin while held, reheat on release ────────────────────────
+		type Drag = { node: N; moved: number; pointerId: number };
+		let drag: Drag | null = null;
+
+		/** Viewport px -> the SVG's own 680x300 coordinate space. */
+		function toLocal(e: PointerEvent) {
+			const r = svg!.getBoundingClientRect();
+			return {
+				x: ((e.clientX - r.left) / r.width) * W,
+				y: ((e.clientY - r.top) / r.height) * H,
+			};
+		}
+
+		for (const n of nodes) {
+			if (n.self) continue; // the current page is the anchor of the view
+			n.anchor.addEventListener('pointerdown', (e) => {
+				const ev = e as PointerEvent;
+				if (ev.button !== 0) return;
+				ev.preventDefault();
+				drag = { node: n, moved: 0, pointerId: ev.pointerId };
+				n.pinned = true;
+				svg!.dataset.dragging = 'true';
+				n.anchor.setPointerCapture(ev.pointerId);
+				setHover(n.slug);
+				reheat(0.5);
+			});
+		}
+
+		svg.addEventListener('pointermove', (e) => {
+			if (!drag) return;
+			const ev = e as PointerEvent;
+			const p = toLocal(ev);
+			drag.moved += Math.abs(ev.movementX) + Math.abs(ev.movementY);
+			drag.node.x = Math.max(PAD, Math.min(W - PAD, p.x));
+			drag.node.y = Math.max(PAD, Math.min(H - PAD, p.y));
+			drag.node.vx = 0;
+			drag.node.vy = 0;
+			// Held up rather than reheated, so the rest keeps reacting for as
+			// long as the drag lasts.
+			alpha = Math.max(alpha, 0.45);
+			if (!running) {
+				running = true;
+				raf = requestAnimationFrame(frame);
+			}
+		});
+
+		function endDrag(e: PointerEvent) {
+			if (!drag) return;
+			const d = drag;
+			drag = null;
+			delete svg!.dataset.dragging;
+			d.node.pinned = false;
+			try {
+				d.node.anchor.releasePointerCapture(e.pointerId);
+			} catch {
+				/* pointer already gone */
+			}
+			// A drag is not a click. Without this, letting go over a node
+			// navigates away from the page you were rearranging.
+			if (d.moved > 4) {
+				const swallow = (ev: Event) => ev.preventDefault();
+				d.node.anchor.addEventListener('click', swallow, { once: true, capture: true });
+				setTimeout(() => d.node.anchor.removeEventListener('click', swallow, true), 0);
+			}
+			setHover(null);
+			reheat(0.6);
+		}
+
+		svg.addEventListener('pointerup', (e) => endDrag(e as PointerEvent));
+		svg.addEventListener('pointercancel', (e) => endDrag(e as PointerEvent));
+
+		// Settle on entry, but only when the reader can actually see it.
+		new IntersectionObserver(
+			([entry], obs) => {
+				if (!entry.isIntersecting) return;
+				reheat(1);
+				obs.disconnect();
+			},
+			{ threshold: 0.15 }
+		).observe(svg);
+
+		// Under reduced motion the build-time layout is the final layout.
+		if (reduceMotion.matches) render();
+	}
+</script>
