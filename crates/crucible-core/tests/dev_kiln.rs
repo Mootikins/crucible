@@ -15,7 +15,6 @@
 //! 2. **Frontmatter**: Required fields (title, description, tags)
 //! 3. **Wikilinks**: STRICT - ALL wikilinks must resolve to existing files
 //! 4. **Code References**: All `crates/...` paths must exist in repo
-//! 5. **Rune Scripts**: `.rn` files must have valid syntax
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

@@ -51,7 +51,7 @@ pub enum ToolSource {
         server: String,
     },
 
-    /// Plugin-provided tool (future: Rune scripts)
+    /// Plugin-provided tool
     Plugin {
         /// Plugin name
         name: String,

@@ -190,26 +190,32 @@ GITHUB_TOKEN = "${GITHUB_PERSONAL_TOKEN}"
 
 ## Using with Hooks
 
-All gateway tools emit events. Use hooks to filter, transform, or audit:
+Gateway tools go through the same event pipeline as built-in tools, so
+[Event Hooks](./event-hooks/) can observe, block, or intercept them. The
+`prefix` you gave each server is what `pattern` matches against.
 
-```rust
-/// Transform GitHub results
-#[hook(event = "tool:after", pattern = "gh_*", priority = 50)]
-pub fn transform_github(ctx, event) {
-    // Modify results
-    event
-}
+Audit every call that leaves the machine:
 
-/// Audit external access
-#[hook(event = "tool:after", pattern = "fs_*", priority = 200)]
-pub fn audit_filesystem(ctx, event) {
-    ctx.emit_custom("audit:external_access", #{
-        tool: event.identifier,
-        time: event.timestamp_ms,
-    });
-    event
-}
+```lua
+crucible.on("tool_result", { pattern = "gh_*", priority = 200 }, function(ctx, event)
+  cru.log("info", "external call: " .. event.tool)
+end)
 ```
+
+Block writes through a read-only server, whatever the agent asks for:
+
+```lua
+crucible.on("pre_tool_call", { pattern = "gh_*", priority = 5 }, function(ctx, event)
+  if event.tool:match("create") or event.tool:match("delete") then
+    return { cancel = true, reason = "This GitHub server is read-only" }
+  end
+end)
+```
+
+See [Event Hooks](./event-hooks/) for the full set of events and return
+conventions. Note that `pre_tool_call` honours only Cancel and Handle — a
+returned table of modified arguments is ignored, so a hook cannot rewrite a
+gateway call's arguments in place.
 
 ## Security
 
@@ -239,20 +245,22 @@ blocked_tools = ["delete_*", "create_*", "update_*"]
 
 ### Validation Hooks
 
-Add validation before external calls:
+`allowed_tools` and `blocked_tools` filter by tool name. To gate on the
+*arguments* — which the config cannot see — cancel from a hook:
 
-```rust
-#[hook(event = "tool:before", pattern = "db_*", priority = 5)]
-pub fn validate_query(ctx, event) {
-    let query = event.payload.query;
-
-    if query.contains("DROP ") {
-        event.cancelled = true;
-    }
-
-    event
-}
+```lua
+crucible.on("pre_tool_call", { pattern = "db_*", priority = 5 }, function(ctx, event)
+  local query = event.args and event.args.query or ""
+  if query:upper():find("DROP ") then
+    return { cancel = true, reason = "DROP statements are blocked" }
+  end
+end)
 ```
+
+Cancel rather than edit: `pre_tool_call` ignores a returned argument table, so a
+handler that "sanitises" `event.args` and returns it looks like it worked while
+the original query still runs. To run a checked version instead, return
+`{ handled = true, result = ... }` and issue the call yourself.
 
 ## Runtime Behavior
 

@@ -845,7 +845,7 @@ async fn test_watch_detects_file_deletion() -> Result<()> {
 // =============================================================================
 //
 // These tests verify that processing emits note lifecycle events through
-// the Reactor, allowing Rune handlers to react to note changes.
+// the Reactor, allowing handlers to react to note changes.
 
 use async_trait::async_trait;
 use crucible_core::events::{
@@ -928,7 +928,7 @@ end
     // WHEN: Processing files
     let result = process::execute(config, None, false, false, false, false, None, false).await;
 
-    // THEN: Should succeed and Rune handlers should have been loaded
+    // THEN: Should succeed and handlers should have been loaded
     assert!(result.is_ok(), "Process command should succeed");
 
     Ok(())
@@ -990,7 +990,7 @@ async fn test_reactor_receives_note_modified_events() -> Result<()> {
 
 #[tokio::test]
 async fn test_reactor_wildcard_pattern_receives_note_events() -> Result<()> {
-    // GIVEN: A reactor with a wildcard handler (like Rune handlers use)
+    // GIVEN: A reactor with a wildcard handler
     let all_events_count = Arc::new(AtomicUsize::new(0));
 
     let mut reactor = Reactor::new();
