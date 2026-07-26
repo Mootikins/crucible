@@ -93,10 +93,9 @@ Extension and customization layer.
 - Hook points (pre/post processing)
 - Scripting runtime (Lua with Fennel support)
 - Runtime modules under unified `cru.*` namespace (`cru.timer`, `cru.ratelimit`, `cru.retry`, `cru.emitter`, `cru.check`, `cru.fs`, `cru.http`, `cru.session`, etc.)
-- Event handlers in markdown
 - Daemon-side plugins (e.g., Discord integration as a Lua plugin)
 
-See: [[Help/Extending/Event Hooks]], [[Help/Extending/Markdown Handlers]]
+See: [[Help/Extending/Event Hooks]], [[Help/Extending/Custom Handlers]]
 
 ### apis
 

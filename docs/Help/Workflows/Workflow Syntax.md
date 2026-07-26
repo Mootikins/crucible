@@ -401,4 +401,3 @@ Based on **severity**, take immediate action:
 
 - [[Sessions]] — Workflow execution tracking
 - [[Task Management]] — Task execution format
-- [[Markdown Handlers]] — Event-driven context injection
