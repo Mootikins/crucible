@@ -1026,11 +1026,6 @@ async fn send_revives_ended_session_from_storage() {
 async fn attached_context_reaches_the_agent_within_the_same_turn() {
     let mut h = ReactorTestHarness::new().await;
 
-    // Bind before load_lua: session VMs are built lazily and cached, so
-    // binding afterwards leaves `cru.context.attach` nil in the handler.
-    let registry = Arc::new(crucible_lua::ContextAttachRegistry::default());
-    h.set_context_attach(registry.clone());
-
     h.load_lua(
         r#"
         -- No real tool executor in this harness; `handled` supplies the
@@ -1094,9 +1089,6 @@ async fn attached_context_reaches_the_agent_within_the_same_turn() {
 #[tokio::test]
 async fn repeated_triggers_attach_once_per_key() {
     let mut h = ReactorTestHarness::new().await;
-    let registry = Arc::new(crucible_lua::ContextAttachRegistry::default());
-    h.set_context_attach(registry.clone());
-
     h.load_lua(
         r#"
         crucible.on("pre_tool_call", function(ctx, event)
@@ -1130,4 +1122,29 @@ async fn repeated_triggers_attach_once_per_key() {
         .count();
 
     assert_eq!(attaches, 1, "three .cpp reads should attach the notes once");
+}
+
+/// The registry must exist from `AgentManager::new`, not from plugin boot.
+///
+/// It used to be bound late, so a session VM built before the bind got a nil
+/// `cru.context.attach` — permanently, because VMs are cached — and the
+/// resulting failure was silent: the handler raised, the hook failed open, and
+/// the retrieval just never happened.
+#[tokio::test]
+async fn context_attach_is_available_without_any_plugin_boot() {
+    let h = ReactorTestHarness::new().await;
+
+    let session_state = h.agent_manager.get_or_create_session_state(&h.session_id);
+    let state = session_state.lock().await;
+
+    let kind: String = state
+        .lua
+        .load("return type(cru and cru.context and cru.context.attach)")
+        .eval()
+        .expect("probe should evaluate");
+
+    assert_eq!(
+        kind, "function",
+        "cru.context.attach must be present on a session VM with no plugin runtime bound"
+    );
 }

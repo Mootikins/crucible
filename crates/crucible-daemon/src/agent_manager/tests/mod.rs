@@ -548,15 +548,6 @@ impl ReactorTestHarness {
         self.agent_manager.set_isolation(registry);
     }
 
-    /// Bind the mid-turn attachment registry, as the daemon does at startup.
-    ///
-    /// Must be called BEFORE `load_lua`: session VMs are built lazily and
-    /// cached, and `cru.context.attach` is registered at construction. Bind
-    /// after the VM exists and the handler sees a nil function.
-    fn set_context_attach(&self, registry: Arc<crucible_lua::ContextAttachRegistry>) {
-        self.agent_manager.set_context_attach(registry);
-    }
-
     /// Bind a plugin `crucible.on` registry, as the daemon does at startup.
     fn set_plugin_handlers(
         &self,

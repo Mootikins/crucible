@@ -95,7 +95,6 @@ pub struct DaemonPluginLoader {
     isolation: IsolationRegistry,
     /// Per-session status slots published by plugins, read by TUI and web.
     status: StatusRegistry,
-    context_attach: Arc<ContextAttachRegistry>,
 }
 
 impl DaemonPluginLoader {
@@ -183,16 +182,6 @@ impl DaemonPluginLoader {
             ),
         )?;
 
-        // `cru.context.attach` — mid-turn knowledge attachment. A handler
-        // that retrieves something partway through a turn needs somewhere the
-        // agent's *next* LLM call will look; without it, retrieval mid-turn
-        // has nowhere to land.
-        let context_attach = Arc::new(ContextAttachRegistry::default());
-        reg(
-            "context.attach",
-            register_context_attach(lua, context_attach.clone()),
-        )?;
-
         let handler_registry = Arc::new(LuaScriptHandlerRegistry::new());
         reg(
             "crucible.on",
@@ -214,7 +203,6 @@ impl DaemonPluginLoader {
             plugin_registry: Arc::new(PluginRegistry::new()),
             isolation,
             status,
-            context_attach,
         })
     }
 
@@ -241,8 +229,18 @@ impl DaemonPluginLoader {
         self.status.clone()
     }
 
-    pub fn context_attach(&self) -> Arc<ContextAttachRegistry> {
-        self.context_attach.clone()
+    /// Register `cru.context.attach` on the plugin VM against the daemon's
+    /// registry.
+    ///
+    /// The registry is owned by `AgentManager`, not by this loader: it is a
+    /// per-session buffer with no plugin dependency, and having the loader own
+    /// it meant session VMs raced plugin boot for a working binding.
+    pub fn register_context_attach(
+        &self,
+        registry: Arc<ContextAttachRegistry>,
+    ) -> anyhow::Result<()> {
+        register_context_attach(self.executor.lua(), registry)
+            .map_err(|e| anyhow::anyhow!("context.attach module: {e}"))
     }
 
     /// Fire `crucible.on_session_start` hooks registered by plugins.

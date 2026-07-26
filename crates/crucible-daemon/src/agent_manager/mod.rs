@@ -435,9 +435,8 @@ struct StreamContext {
         Option<Arc<crucible_core::config::components::permissions::PermissionEngine>>,
     /// Mid-turn knowledge attachments queued by Lua handlers. Drained after
     /// each tool result and forwarded to the agent as `ContextAttach`, so the
-    /// next LLM call in this turn sees what was retrieved. `None` when no
-    /// plugin runtime is bound.
-    context_attach: Option<Arc<crucible_lua::ContextAttachRegistry>>,
+    /// next LLM call in this turn sees what was retrieved.
+    context_attach: Arc<crucible_lua::ContextAttachRegistry>,
 }
 
 #[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration
@@ -649,9 +648,14 @@ pub struct AgentManager {
     /// Plugin isolation claims, bound at daemon startup alongside the handlers.
     isolation: std::sync::OnceLock<crucible_lua::IsolationRegistry>,
 
-    /// Mid-turn knowledge attachments, bound at daemon startup alongside
-    /// the handlers. Written by Lua, drained by the stream loop.
-    context_attach: std::sync::OnceLock<std::sync::Arc<crucible_lua::ContextAttachRegistry>>,
+    /// Mid-turn knowledge attachments. Written by Lua, drained by the stream
+    /// loop.
+    ///
+    /// Created eagerly rather than bound later: it is a per-session buffer with
+    /// no dependency on the plugin system, and late binding meant a session VM
+    /// built before the bind silently got a nil `cru.context.attach` — for that
+    /// session, permanently, because VMs are cached.
+    context_attach: std::sync::Arc<crucible_lua::ContextAttachRegistry>,
     /// Plugin tool/command registry, bound at daemon startup like the others.
     ///
     /// The loader mutex must not be the read path: `fire_session_start` holds
@@ -730,7 +734,7 @@ impl AgentManager {
             lua_validators: std::sync::OnceLock::new(),
             plugin_handlers: std::sync::OnceLock::new(),
             isolation: std::sync::OnceLock::new(),
-            context_attach: std::sync::OnceLock::new(),
+            context_attach: std::sync::Arc::new(crucible_lua::ContextAttachRegistry::default()),
             plugin_tool_registry: std::sync::OnceLock::new(),
             titles_in_flight: Arc::new(DashMap::new()),
             snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),
@@ -787,18 +791,9 @@ impl AgentManager {
         let _ = self.isolation.set(registry);
     }
 
-    /// Bind the mid-turn attachment registry. Idempotent, like the others.
-    pub fn set_context_attach(
-        &self,
-        registry: std::sync::Arc<crucible_lua::ContextAttachRegistry>,
-    ) {
-        let _ = self.context_attach.set(registry);
-    }
-
-    pub(crate) fn context_attach(
-        &self,
-    ) -> Option<std::sync::Arc<crucible_lua::ContextAttachRegistry>> {
-        self.context_attach.get().cloned()
+    /// The mid-turn attachment registry. Always present — see the field.
+    pub fn context_attach(&self) -> std::sync::Arc<crucible_lua::ContextAttachRegistry> {
+        self.context_attach.clone()
     }
 
     pub(crate) fn isolation(&self) -> Option<crucible_lua::IsolationRegistry> {
@@ -1353,11 +1348,10 @@ impl AgentManager {
 
         // Session handlers get the same attachment surface plugin handlers
         // have; a handler shouldn't behave differently depending on which VM
-        // it was registered in.
-        if let Some(registry) = self.context_attach() {
-            if let Err(e) = crucible_lua::register_context_attach(&lua, registry) {
-                error!(session_id = %session_id, error = %e, "Failed to register cru.context.attach");
-            }
+        // it was registered in. Unconditional — the registry exists from
+        // `AgentManager::new`, so there is no ordering to get wrong.
+        if let Err(e) = crucible_lua::register_context_attach(&lua, self.context_attach()) {
+            error!(session_id = %session_id, error = %e, "Failed to register cru.context.attach");
         }
 
         if let Err(e) = lua.load(crucible_lua::BUILTIN_INIT_LUA).exec() {

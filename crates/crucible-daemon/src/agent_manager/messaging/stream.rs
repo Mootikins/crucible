@@ -696,15 +696,13 @@ impl AgentManager {
                     // it for the next LLM call of this turn. Context only —
                     // deliberately NOT committed to the conversation tree
                     // above, because history is append-only and scheduler-owned.
-                    if let Some(registry) = stream_ctx.context_attach.as_ref() {
-                        for content in registry.drain(&stream_ctx.session_id) {
-                            if inbound_tx
-                                .send(TurnEvent::ContextAttach { content })
-                                .await
-                                .is_err()
-                            {
-                                break;
-                            }
+                    for content in stream_ctx.context_attach.drain(&stream_ctx.session_id) {
+                        if inbound_tx
+                            .send(TurnEvent::ContextAttach { content })
+                            .await
+                            .is_err()
+                        {
+                            break;
                         }
                     }
                 }
