@@ -1227,9 +1227,68 @@ mod precognition_select_hook_tests {
         .await
     }
 
+    async fn run_select_with_budget(
+        state: &SessionEventState,
+        results: &[crucible_core::SearchResult],
+        char_budget: usize,
+    ) -> Option<Vec<crucible_core::SearchResult>> {
+        AgentManager::execute_precognition_select_handlers(
+            "session-1",
+            "what is alpha?",
+            results,
+            Path::new(KILN),
+            char_budget,
+            state,
+            None,
+        )
+        .await
+    }
+
     fn titles(results: &[crucible_core::SearchResult]) -> Vec<String> {
         results.iter().map(result_title).collect()
     }
+
+    fn snippets(results: &[crucible_core::SearchResult]) -> Vec<String> {
+        results
+            .iter()
+            .map(|r| r.snippet.clone().unwrap_or_default())
+            .collect()
+    }
+
+    /// The dogfood: the Rust default's snippet-budget policy, reimplemented in
+    /// Lua using only what the seam hands a handler.
+    ///
+    /// `utf8.offset` rather than `string.sub` is load-bearing — the Rust cap
+    /// counts *characters* (`.chars().take(n)`) while Lua string indexing is
+    /// byte-based, so the naive port silently disagrees on any non-ASCII
+    /// snippet and can slice a UTF-8 sequence in half.
+    const LUA_EQUAL_SPLIT_CAP: &str = r#"
+        crucible.on("precognition_select", function(ctx, event)
+            local total = 0
+            for _, r in ipairs(event.results) do
+                total = total + utf8.len(r.snippet)
+            end
+
+            local out = {}
+            if total <= event.char_budget then
+                for _, r in ipairs(event.results) do
+                    out[#out + 1] = { index = r.index }
+                end
+                return out
+            end
+
+            local per = math.floor(event.char_budget / event.note_count)
+            for _, r in ipairs(event.results) do
+                local snippet = r.snippet
+                if utf8.len(snippet) > per then
+                    local stop = utf8.offset(snippet, per + 1)
+                    snippet = stop and snippet:sub(1, stop - 1) or snippet
+                end
+                out[#out + 1] = { index = r.index, snippet = snippet }
+            end
+            return out
+        end)
+    "#;
 
     #[tokio::test]
     async fn select_hook_narrows_and_reorders() {
@@ -1429,5 +1488,81 @@ mod precognition_select_hook_tests {
             .map(|r| r.snippet.as_deref().unwrap_or_default().chars().count())
             .sum();
         assert_eq!(total, 1000);
+    }
+
+    /// Rust default: the built-in policy applied to the same inputs.
+    fn rust_default(
+        results: &[crucible_core::SearchResult],
+        budget: usize,
+    ) -> Vec<crucible_core::SearchResult> {
+        let mut baseline = results.to_vec();
+        apply_precognition_char_cap(&mut baseline, budget);
+        baseline
+    }
+
+    /// Lua path: handler decides, then the core backstop still runs.
+    async fn lua_reference(
+        results: &[crucible_core::SearchResult],
+        budget: usize,
+    ) -> Vec<crucible_core::SearchResult> {
+        let state = make_session_event_state();
+        state
+            .lua
+            .load(LUA_EQUAL_SPLIT_CAP)
+            .exec()
+            .expect("reference handler should load");
+
+        let mut selected = run_select_with_budget(&state, results, budget)
+            .await
+            .expect("reference handler should take the decision");
+        apply_precognition_char_cap(&mut selected, budget);
+        selected
+    }
+
+    #[tokio::test]
+    async fn lua_reference_matches_rust_default_under_budget() {
+        let results = three_results();
+        let budget = 3000;
+
+        assert_eq!(
+            snippets(&lua_reference(&results, budget).await),
+            snippets(&rust_default(&results, budget)),
+        );
+    }
+
+    #[tokio::test]
+    async fn lua_reference_matches_rust_default_over_budget() {
+        let results = vec![
+            make_result("notes/One.md", 0.9, &"a".repeat(800)),
+            make_result("notes/Two.md", 0.8, &"b".repeat(800)),
+            make_result("notes/Three.md", 0.7, &"c".repeat(800)),
+        ];
+        let budget = 900;
+
+        let lua = lua_reference(&results, budget).await;
+        let rust = rust_default(&results, budget);
+
+        assert_eq!(snippets(&lua), snippets(&rust));
+        // Guard the fixture: if this didn't truncate, the test proves nothing.
+        assert!(lua[0].snippet.as_deref().unwrap().len() < 800);
+    }
+
+    #[tokio::test]
+    async fn lua_reference_matches_rust_default_on_multibyte_snippets() {
+        // The Rust cap counts characters; Lua string indexing counts bytes.
+        // A `string.sub`-based port disagrees here and can also slice a UTF-8
+        // sequence in half — this is the case that forces `utf8.offset`.
+        let body: String = "日本語テキスト".repeat(20);
+        let results = vec![
+            make_result("notes/JaOne.md", 0.9, &body),
+            make_result("notes/JaTwo.md", 0.8, &body),
+        ];
+        let budget = 60;
+
+        let lua = lua_reference(&results, budget).await;
+        let rust = rust_default(&results, budget);
+
+        assert_eq!(snippets(&lua), snippets(&rust));
+        assert_eq!(lua[0].snippet.as_deref().unwrap().chars().count(), 30);
     }
 }
