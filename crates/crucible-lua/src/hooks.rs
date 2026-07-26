@@ -8,8 +8,7 @@
 //! Tool execution hooks use the RuntimeHandler system via `crucible.on("tool:before_execute", fn)`.
 //! See `handlers.rs` for details.
 
-use mlua::{Function, Lua, Result as LuaResult, Table, Value};
-use tracing::{debug, warn};
+use mlua::{Function, Lua, Result as LuaResult, Table};
 
 /// Register the hooks module on the crucible table
 ///
@@ -23,7 +22,6 @@ use tracing::{debug, warn};
 /// crucible.on_session_start(function(session)
 ///     session.temperature = 0.5
 /// end)
-
 /// ```
 pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
     // `crucible.on_session_start(fn)` — a failure is logged and the session

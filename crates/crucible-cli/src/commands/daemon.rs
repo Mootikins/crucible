@@ -65,12 +65,14 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
         // Run server directly in this process
         info!("Starting daemon in foreground");
         let config = CliConfig::load(config_path.clone(), None, None)?;
+        let (plugin_sections, plugin_watch) =
+            crucible_daemon::daemon_plugins::split_plugins_config(&config.plugins);
         let server = Server::bind_with_plugin_config(BindWithPluginConfigParams {
             path: sock.clone(),
             mcp_config: None,
-            plugin_config: config.plugins.clone(),
+            plugin_config: plugin_sections.clone(),
             runtimepath: config.runtimepath.clone(),
-            plugin_watch: false,
+            plugin_watch,
             auto_archive_hours: config.server.as_ref().and_then(|s| s.auto_archive_hours),
             llm_config: Some(config.llm.clone()),
             enrichment_config: config.enrichment.as_ref().map(|e| e.provider.clone()),

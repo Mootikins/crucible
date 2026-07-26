@@ -36,6 +36,26 @@ struct PluginExports {
     commands: HashMap<String, mlua::Function>,
 }
 
+/// Split the raw `[plugins]` TOML table into per-plugin sections and the
+/// `watch` knob.
+///
+/// `[plugins] watch = true` shares the table with `[plugins.<name>]`
+/// sections, so scalar entries are knobs, not plugin configs — without the
+/// split, `watch = true` would be handed to a phantom plugin named "watch"
+/// and the file watcher stayed hardcoded off (`plugin_watch: false` at every
+/// construction site, with no config key at all).
+pub fn split_plugins_config(
+    raw: &HashMap<String, serde_json::Value>,
+) -> (HashMap<String, serde_json::Value>, bool) {
+    let watch = raw.get("watch").and_then(|v| v.as_bool()).unwrap_or(false);
+    let sections = raw
+        .iter()
+        .filter(|(_, v)| v.is_object())
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    (sections, watch)
+}
+
 /// Daemon-side plugin loader with its own Lua runtime.
 ///
 /// The daemon gets a separate `LuaExecutor` — it does **not** share
@@ -307,18 +327,17 @@ impl DaemonPluginLoader {
                 return Ok(mlua::Value::Nil);
             };
 
-            // Split on first dot: "discord.bot_token" -> ("discord", "bot_token")
-            if let Some(dot_pos) = key.find('.') {
-                let namespace = &key[..dot_pos];
-                let subkey = &key[dot_pos + 1..];
-                let ns_val: mlua::Value = data_table.get(namespace.to_string())?;
-                if let mlua::Value::Table(ns_table) = ns_val {
-                    return ns_table.get(subkey.to_string());
-                }
-                Ok(mlua::Value::Nil)
-            } else {
-                data_table.get(key)
+            // Walk every dot segment: "oci.container.image" descends
+            // oci → container → image. It used to split on the FIRST dot
+            // only, so nested TOML tables were unreachable past one level.
+            let mut current: mlua::Value = mlua::Value::Table(data_table);
+            for segment in key.split('.') {
+                let mlua::Value::Table(table) = current else {
+                    return Ok(mlua::Value::Nil);
+                };
+                current = table.get(segment.to_string())?;
             }
+            Ok(current)
         })?;
         config_table.set("get", get_fn)?;
 
@@ -437,7 +456,18 @@ impl DaemonPluginLoader {
         }
 
         let new_paths = entries.join(";");
-        let code = format!(r#"package.path = "{new_paths};" .. package.path"#);
+        // Guarded prepend: reload re-runs this, and unguarded prepends grew
+        // package.path by one copy of every entry per reload for the
+        // daemon's lifetime.
+        let code = format!(
+            r#"
+for entry in string.gmatch({new_paths:?}, "[^;]+") do
+    if not package.path:find(entry, 1, true) then
+        package.path = entry .. ";" .. package.path
+    end
+end
+"#
+        );
         lua.load(&code)
             .exec()
             .map_err(|e| anyhow::anyhow!("configure runtime path: {e}"))?;
@@ -493,6 +523,18 @@ impl DaemonPluginLoader {
                         info!(
                             "  service '{}' (fn={}) — {}",
                             svc.name, svc.service_fn, svc.description
+                        );
+                    }
+                    // Spec-table handlers are parsed for discovery display but
+                    // NEVER dispatched — `crucible.on` at load is the working
+                    // API. Say so loudly instead of letting the declaration
+                    // look registered.
+                    if !spec.handlers.is_empty() {
+                        warn!(
+                            "Plugin '{}' declares {} spec-table handler(s), which are not \
+                             dispatched; register them with crucible.on(...) in init.lua instead",
+                            name,
+                            spec.handlers.len(),
                         );
                     }
                     specs.push(spec);
@@ -612,7 +654,15 @@ impl DaemonPluginLoader {
             .to_string_lossy()
             .replace('\\', "\\\\")
             .replace('"', "\\\"");
-        let setup_code = format!(r#"package.path = "{}/?.lua;" .. package.path"#, lua_dir_str);
+        let setup_code = format!(
+            r#"
+local entry = "{}/?.lua"
+if not package.path:find(entry, 1, true) then
+    package.path = entry .. ";" .. package.path
+end
+"#,
+            lua_dir_str
+        );
         lua.load(&setup_code)
             .exec()
             .map_err(|e| anyhow::anyhow!("package.path setup: {e}"))?;
@@ -833,7 +883,9 @@ impl DaemonPluginLoader {
                     "dir": p.dir.to_string_lossy(),
                     "tools": spec.map(|s| s.tools.len()).unwrap_or(0),
                     "commands": spec.map(|s| s.commands.len()).unwrap_or(0),
-                    "handlers": spec.map(|s| s.handlers.len()).unwrap_or(0),
+                    "handlers": self
+                        .handler_registry
+                        .plugin_handler_count(&p.manifest.name),
                     "services": spec.map(|s| s.services.len()).unwrap_or(0),
                 })
             })

@@ -52,8 +52,9 @@ author: Your Name <you@example.com>
 license: MIT
 
 main: lua/init.lua
-init: setup
 
+# Informational — not enforced (all plugins share one Lua VM). An invalid
+# value fails manifest parsing and the plugin never loads.
 capabilities:
   - filesystem
   - shell
@@ -75,16 +76,6 @@ exports:
   views:
     - task-board
   auto_discover: false
-
-config:
-  properties:
-    default_file:
-      type: string
-      description: Default TASKS.md location
-      default: "TASKS.md"
-    auto_archive:
-      type: boolean
-      default: true
 
 enabled: true
 ```
@@ -111,7 +102,6 @@ enabled: true
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `main` | string | "init.lua" | Main file path relative to plugin dir |
-| `init` | string | null | Optional init function name to call after load |
 
 ### Capabilities
 
@@ -165,29 +155,19 @@ exports:
     - my-view
   handlers:
     - my_handler
-  auto_discover: true   # Also scan files for @tool/@command annotations
+  auto_discover: true   # Reserved; plugin callables come from the spec table
 ```
 
 If `auto_discover` is true (default), Crucible also scans plugin files for annotated functions. Set to `false` to only export explicitly listed items.
 
-### Configuration Schema
+### Configuration
 
-Define plugin-specific configuration:
+There is no manifest-level config schema. Plugin configuration is the
+`[plugins.<name>]` section of `config.toml`, handed to your `setup()` at
+load, overridable from `~/.config/crucible/init.lua` — see
+[[Help/Extending/Creating Plugins]] for the precedence rules (Lua beats
+TOML). A `config:` block in plugin.yaml is ignored.
 
-```yaml
-config:
-  properties:
-    api_key:
-      type: string
-      description: API key for external service
-    max_results:
-      type: number
-      default: 10
-    enabled_features:
-      type: array
-```
-
-Supported types: `string`, `number`, `boolean`, `array`, `object`
 
 ### Enable/Disable
 

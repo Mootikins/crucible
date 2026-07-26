@@ -95,13 +95,15 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
 
     // Standalone mode: start the in-process daemon on the pre-configured socket.
     let _standalone_guard = if let Some(sock) = standalone_sock {
+        let (plugin_sections, plugin_watch) =
+            crucible_daemon::daemon_plugins::split_plugins_config(&config.plugins);
         let server = crucible_daemon::Server::bind_with_plugin_config(
             crucible_daemon::BindWithPluginConfigParams {
                 path: sock.clone(),
                 mcp_config: None,
-                plugin_config: config.plugins.clone(),
+                plugin_config: plugin_sections.clone(),
                 runtimepath: config.runtimepath.clone(),
-                plugin_watch: false,
+                plugin_watch,
                 auto_archive_hours: config.server.as_ref().and_then(|s| s.auto_archive_hours),
                 llm_config: Some(config.llm.clone()),
                 enrichment_config: config.enrichment.as_ref().map(|e| e.provider.clone()),

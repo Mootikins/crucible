@@ -22,7 +22,6 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -64,9 +63,6 @@ pub struct PluginManifest {
     pub main: String,
 
     #[serde(default)]
-    pub init: Option<String>,
-
-    #[serde(default)]
     pub capabilities: Vec<Capability>,
 
     #[serde(default)]
@@ -74,12 +70,6 @@ pub struct PluginManifest {
 
     #[serde(default)]
     pub exports: ExportDeclarations,
-
-    #[serde(default)]
-    pub config: Option<ConfigSchema>,
-
-    #[serde(default)]
-    pub storage: Option<StorageDeclaration>,
 
     #[serde(default)]
     pub enabled: Option<bool>,
@@ -164,64 +154,6 @@ pub struct ExportDeclarations {
     pub auto_discover: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ConfigSchema {
-    #[serde(default)]
-    pub properties: HashMap<String, ConfigProperty>,
-}
-
-/// Declares storage needs for a plugin.
-///
-/// Properties are stored in the EAV `properties` table with `namespace = "plugin:{name}"`.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-pub struct StorageDeclaration {
-    /// Property keys this plugin uses (for documentation and validation)
-    #[serde(default)]
-    pub properties: Vec<PropertyDeclaration>,
-}
-
-/// A single property declaration within a plugin's storage manifest.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct PropertyDeclaration {
-    /// Property key name
-    pub key: String,
-    /// Value type hint (text, number, boolean, json)
-    #[serde(rename = "type", default = "default_property_type")]
-    pub value_type: String,
-    /// Human description
-    #[serde(default)]
-    pub description: String,
-}
-
-fn default_property_type() -> String {
-    "text".to_string()
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ConfigProperty {
-    #[serde(rename = "type")]
-    pub prop_type: ConfigType,
-
-    #[serde(default)]
-    pub description: Option<String>,
-
-    #[serde(default)]
-    pub default: Option<serde_yaml::Value>,
-
-    #[serde(default, rename = "enum")]
-    pub allowed_values: Option<Vec<serde_yaml::Value>>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum ConfigType {
-    String,
-    Number,
-    Boolean,
-    Array,
-    Object,
-}
-
 impl PluginManifest {
     pub fn from_yaml(yaml: &str) -> ManifestResult<Self> {
         let manifest: Self = serde_yaml::from_str(yaml)?;
@@ -272,15 +204,12 @@ impl PluginManifest {
             author: String::new(),
             license: None,
             main: "init.lua".to_string(),
-            init: None,
             capabilities: Vec::new(),
             dependencies: Vec::new(),
             exports: ExportDeclarations {
                 auto_discover: true,
                 ..Default::default()
             },
-            config: None,
-            storage: None,
             enabled: None,
         })
     }
@@ -512,7 +441,6 @@ exports:
         assert_eq!(manifest.author, "Test Author");
         assert_eq!(manifest.license, Some("MIT".to_string()));
         assert_eq!(manifest.main, "lua/init.lua");
-        assert_eq!(manifest.init, Some("setup".to_string()));
         assert_eq!(manifest.capabilities.len(), 3);
         assert!(manifest.has_capability(Capability::Filesystem));
         assert!(manifest.has_capability(Capability::Shell));
@@ -610,36 +538,6 @@ main: lua/main.lua
     }
 
     #[test]
-    fn test_config_schema() {
-        let yaml = r#"
-name: config-plugin
-version: "1.0.0"
-
-config:
-  properties:
-    api_key:
-      type: string
-      description: API key for service
-    max_results:
-      type: number
-      default: 10
-    enabled:
-      type: boolean
-      default: true
-  required:
-    - api_key
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        let config = manifest.config.unwrap();
-        assert_eq!(config.properties.len(), 3);
-        assert_eq!(config.properties["api_key"].prop_type, ConfigType::String);
-        assert_eq!(
-            config.properties["max_results"].prop_type,
-            ConfigType::Number
-        );
-    }
-
-    #[test]
     fn test_manifest_enabled_default() {
         let yaml = r#"
 name: test
@@ -690,80 +588,5 @@ capabilities:
         let manifest = PluginManifest::from_yaml(yaml).unwrap();
         assert!(manifest.has_capability(Capability::Kiln));
         assert!(manifest.has_capability(Capability::Ui));
-    }
-
-    #[test]
-    fn test_parse_storage_declaration() {
-        let yaml = r#"
-name: entity-memory
-version: "0.1.0"
-capabilities:
-  - kiln
-storage:
-  properties:
-    - key: last_seen
-      type: text
-      description: Last seen timestamp
-    - key: interaction_count
-      type: number
-    - key: metadata
-      type: json
-      description: Arbitrary metadata blob
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        let storage = manifest.storage.unwrap();
-        assert_eq!(storage.properties.len(), 3);
-        assert_eq!(storage.properties[0].key, "last_seen");
-        assert_eq!(storage.properties[0].value_type, "text");
-        assert_eq!(storage.properties[0].description, "Last seen timestamp");
-        assert_eq!(storage.properties[1].key, "interaction_count");
-        assert_eq!(storage.properties[1].value_type, "number");
-        assert_eq!(storage.properties[2].key, "metadata");
-        assert_eq!(storage.properties[2].value_type, "json");
-    }
-
-    #[test]
-    fn test_storage_declaration_default_type() {
-        let yaml = r#"
-name: simple-store
-version: "0.1.0"
-storage:
-  properties:
-    - key: status
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        let storage = manifest.storage.unwrap();
-        assert_eq!(storage.properties[0].value_type, "text");
-    }
-
-    #[test]
-    fn test_manifest_without_storage() {
-        let yaml = r#"
-name: no-storage
-version: "1.0.0"
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        assert!(manifest.storage.is_none());
-    }
-
-    #[test]
-    fn test_parse_config_enum_values() {
-        let yaml = r#"
-name: graph-view
-version: "0.1.0"
-config:
-  properties:
-    layout:
-      type: string
-      description: Graph layout algorithm
-      default: "force"
-      enum: ["force", "tree", "radial"]
-"#;
-        let manifest = PluginManifest::from_yaml(yaml).unwrap();
-        let config = manifest.config.unwrap();
-        let layout = &config.properties["layout"];
-        assert_eq!(layout.prop_type, ConfigType::String);
-        let allowed = layout.allowed_values.as_ref().unwrap();
-        assert_eq!(allowed.len(), 3);
     }
 }

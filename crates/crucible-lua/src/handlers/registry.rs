@@ -71,6 +71,24 @@ impl LuaScriptHandlerRegistry {
     /// appended another copy of every `crucible.on` handler and the stale ones
     /// kept firing — and since `pre_tool_call` fails closed, one stale handler
     /// raising against dead state would deny every tool call in every session.
+    /// How many runtime handlers a plugin has registered via `crucible.on`.
+    ///
+    /// This is the count `plugin.list` reports. It used to come from the
+    /// spec-table `handlers` field — which is parsed but never dispatched —
+    /// so plugins using the real API showed 0 and plugins using the dead one
+    /// showed a number that meant nothing.
+    pub fn plugin_handler_count(&self, plugin: &str) -> usize {
+        self.runtime_handlers
+            .lock()
+            .map(|handlers| {
+                handlers
+                    .iter()
+                    .filter(|h| h.plugin.as_deref() == Some(plugin))
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+
     pub fn clear_plugin_handlers(&self, plugin: &str) {
         let Ok(mut handlers) = self.runtime_handlers.lock() else {
             return;

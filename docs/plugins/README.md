@@ -7,6 +7,10 @@ tags:
 
 # Plugin Examples
 
+> **Example status:** the plugins under `docs/plugins/` (daily-notes,
+> todo-list) are documentation examples. Their test files are NOT run by CI —
+> only `runtime/plugins/` suites are gated (`shipped_plugin_lua_suite_passes`).
+
 Example Lua plugins demonstrating tools and hooks for the Crucible plugin system.
 
 ## Installation

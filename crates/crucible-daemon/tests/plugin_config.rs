@@ -382,7 +382,7 @@ async fn toml_config_resolves_via_crucible_config_get() {
 
     let config = std::collections::HashMap::from([(
         "cfgprobe".to_string(),
-        serde_json::json!({ "greeting": "hi", "count": 7 }),
+        serde_json::json!({ "greeting": "hi", "count": 7, "nested": { "deep": "found" } }),
     )]);
     let loader = load_from(tmp.path(), config).await;
 
@@ -392,6 +392,15 @@ async fn toml_config_resolves_via_crucible_config_get() {
             .await
             .unwrap(),
         "hi"
+    );
+    // Every dot segment descends — this used to split on the FIRST dot only,
+    // so nested TOML tables were unreachable past one level.
+    assert_eq!(
+        loader
+            .eval(r#"=crucible.config.get("cfgprobe.nested.deep")"#)
+            .await
+            .unwrap(),
+        "found"
     );
     assert_eq!(
         loader

@@ -46,7 +46,6 @@
 pub mod annotations;
 mod ask;
 pub mod auth_plugin;
-pub mod capability_gate;
 mod context;
 pub mod core_handler;
 mod error;
@@ -109,7 +108,6 @@ pub use ask::{
     LuaAskContext, LuaAskError, LuaAskQuestion, LuaQuestionAnswer,
 };
 pub use auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
-pub use capability_gate::{check_module_access, module_capability_map, ModuleCapabilityMapping};
 pub use config::{
     get_app_config, get_statusline_config, get_theme_config, list_available_themes,
     merge_app_config, seed_app_config, ConfigLoader, ConfigState,
@@ -177,9 +175,8 @@ pub use lifecycle::{
     LifecycleResult, PluginManager, PluginSpec, RegistrationHandle, ToolBuilder, ViewBuilder,
 };
 pub use manifest::{
-    Capability, ConfigProperty, ConfigSchema, ConfigType, ExportDeclarations, LoadedPlugin,
-    ManifestError, ManifestResult, PluginDependency, PluginManifest, PluginSource, PluginState,
-    PropertyDeclaration, StorageDeclaration,
+    Capability, ExportDeclarations, LoadedPlugin, ManifestError, ManifestResult, PluginDependency,
+    PluginManifest, PluginSource, PluginState,
 };
 pub use mcp::{
     register_mcp_module, register_mcp_module_stub, LuaMcpClient, McpToolInfo, McpToolResult,
