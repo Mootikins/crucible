@@ -34,6 +34,37 @@ export default defineConfig({
 			],
 			favicon: '/favicon.svg',
 			customCss: ['./src/styles/custom.css'],
+
+			components: {
+				// Makes dark the default when the reader has no stored
+				// preference; see the component for why and how to revert.
+				ThemeProvider: './src/components/ThemeProvider.astro',
+			},
+
+			head: [
+				// The docs share the landing page's faces. Loaded here rather
+				// than via @import in the CSS, which would serialise the font
+				// request behind the stylesheet.
+				{
+					tag: 'link',
+					attrs: { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+				},
+				{
+					tag: 'link',
+					attrs: {
+						rel: 'preconnect',
+						href: 'https://fonts.gstatic.com',
+						crossorigin: true,
+					},
+				},
+				{
+					tag: 'link',
+					attrs: {
+						rel: 'stylesheet',
+						href: 'https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap',
+					},
+				},
+			],
 			sidebar: [
 				{ slug: 'overview', label: 'Overview' },
 				{

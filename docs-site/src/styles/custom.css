@@ -1,41 +1,396 @@
 /*
- * Crucible brand colors
+ * Crucible's Starlight theme.
  *
- * Primary:   #FF8C42 (Crucible Amber) — fire, warmth, primary accent
- * Secondary: #64748B (Slate) — terminal feel, body text, borders
- * Accent:    #22D3EE (Cyan) — links, highlights, interactive elements
+ * Palette and type live in tokens.css, shared with the landing page — the two
+ * halves of the site diverged because this file used to declare its own. Add
+ * nothing here that belongs there.
  *
- * Extended palette:
- *   Flame Dark:  #FF6B1A — hover states, emphasis
- *   Flame Light: #FFAA33 — gradients, secondary highlights
- *   Bubble Gold: #FFDD57 — sparkle effects, notifications
- *   Slate Dark:  #334155 — backgrounds, cards
- *   Slate Light: #C8D6E5 — borders, muted text
+ * Everything below maps Crucible's tokens onto Starlight's `--sl-*` variables,
+ * or restyles a Starlight component its variables do not reach.
  */
 
-/* ── Light mode ────────────────────────────────────── */
+@import './tokens.css';
+
+/* ══ Starlight variable mapping ═══════════════════════════════════════ */
+
 :root {
-	--sl-color-accent-low: #fff3e6;
-	--sl-color-accent: #ff8c42;
-	--sl-color-accent-high: #b35400;
-	--sl-color-text-accent: #d96800;
+	--sl-font: var(--cru-font-body);
+	--sl-font-mono: var(--cru-font-mono);
+
+	/* IBM Plex Sans has a large x-height and runs loose at Starlight's stock
+	   line height. */
+	--sl-line-height: 1.7;
+	--sl-text-code: 0.875em;
+
+	/* The stock 18rem sidebar cannot hold "Embedding & Enrichment
+	   Configuration" without wrapping to three lines. */
+	--sl-sidebar-width: 19.5rem;
+	--sl-content-width: 47rem;
 }
 
-/* ── Dark mode ─────────────────────────────────────── */
+/* ── Dark: the default, see components/ThemeProvider.astro ──────────── */
 :root[data-theme='dark'] {
-	--sl-color-accent-low: #3d2200;
-	--sl-color-accent: #ff8c42;
+	--sl-color-accent-low: #2e1608;
+	--sl-color-accent: var(--cru-ember);
 	--sl-color-accent-high: #ffc999;
-	--sl-color-text-accent: #ffaa33;
+
+	--sl-color-white: var(--cru-bright);
+	--sl-color-gray-1: #e8e4de;
+	--sl-color-gray-2: #c4beb7;
+	--sl-color-gray-3: var(--cru-ash);
+	--sl-color-gray-4: var(--cru-dim);
+	--sl-color-gray-5: #3a3630;
+	--sl-color-gray-6: #24211d;
+	--sl-color-black: var(--cru-ink);
+
+	--sl-color-bg: var(--cru-ink);
+	--sl-color-bg-nav: rgba(10, 10, 12, 0.82);
+	--sl-color-bg-sidebar: var(--cru-ink);
+	--sl-color-bg-inline-code: rgba(255, 140, 66, 0.1);
+	--sl-color-hairline: var(--cru-rule);
+	--sl-color-hairline-light: var(--cru-rule);
+	--sl-color-hairline-shade: var(--cru-rule);
+
+	--sl-color-text: var(--cru-ash);
+	--sl-color-text-accent: var(--cru-flame);
+	--sl-color-text-invert: var(--cru-ink);
 }
 
-/* ── Typography ────────────────────────────────────── */
-:root {
-	--sl-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-	--sl-font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+/* ── Light: warm paper, not stock white ─────────────────────────────
+   A neutral-grey light mode next to this much amber reads blue and
+   cheap. Every neutral here carries some red. */
+:root[data-theme='light'] {
+	--sl-color-accent-low: #ffe9d6;
+	--sl-color-accent: #c2560c;
+	--sl-color-accent-high: #7a3405;
+
+	--sl-color-white: var(--cru-ink-on-paper);
+	--sl-color-gray-1: #2a2521;
+	--sl-color-gray-2: #4a423b;
+	--sl-color-gray-3: var(--cru-ash-on-paper);
+	--sl-color-gray-4: #857c73;
+	--sl-color-gray-5: #d8cfc3;
+	--sl-color-gray-6: var(--cru-paper-raised);
+	--sl-color-gray-7: #f5efe6;
+	--sl-color-black: var(--cru-paper);
+
+	--sl-color-bg: var(--cru-paper);
+	--sl-color-bg-nav: rgba(250, 247, 242, 0.85);
+	--sl-color-bg-sidebar: var(--cru-paper);
+	--sl-color-bg-inline-code: rgba(194, 86, 12, 0.09);
+	--sl-color-hairline: rgba(26, 23, 20, 0.1);
+	--sl-color-hairline-light: rgba(26, 23, 20, 0.07);
+	--sl-color-hairline-shade: rgba(26, 23, 20, 0.09);
+
+	--sl-color-text: var(--cru-ash-on-paper);
+	--sl-color-text-accent: #c2560c;
+	--sl-color-text-invert: var(--cru-paper);
 }
 
-/* ── Link hover uses flame dark ────────────────────── */
-a:hover {
-	color: #ff6b1a;
+/* ══ Typography ═══════════════════════════════════════════════════════ */
+
+/* The Didone carries the identity, but it is fragile — hairlines vanish
+   below about 1.5rem. Page title and h2 only. h3 and below stay in the
+   body face, where they still have to work at 0.95rem inside a dense
+   reference page. */
+.content-panel h1,
+.sl-markdown-content h2 {
+	font-family: var(--cru-font-display);
+	font-weight: 600;
+	letter-spacing: var(--cru-track-display);
+	line-height: 1.14;
+}
+
+.content-panel h1 {
+	font-size: clamp(2.1rem, 4vw, 2.9rem);
+}
+
+.sl-markdown-content h2 {
+	font-size: clamp(1.55rem, 2.4vw, 1.95rem);
+	margin-top: 2.75rem;
+	padding-top: 1.5rem;
+	border-top: 1px solid var(--sl-color-hairline);
+}
+
+/* The rule above h2 is a section divider; on the first one it would sit
+   just under the page title and read as a stray line. */
+.sl-markdown-content > h2:first-child {
+	border-top: 0;
+	padding-top: 0;
+	margin-top: 0;
+}
+
+.sl-markdown-content h3 {
+	font-size: 1.15rem;
+	font-weight: 600;
+	color: var(--sl-color-white);
+	margin-top: 2rem;
+}
+
+.sl-markdown-content h4 {
+	font-size: 1rem;
+	font-weight: 600;
+	color: var(--sl-color-gray-1);
+}
+
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) > a {
+	text-decoration: none;
+	color: inherit;
+}
+
+/* ══ Sidebar ══════════════════════════════════════════════════════════ */
+
+.sidebar-content {
+	font-size: 0.875rem;
+}
+
+/* Group labels take the mono-caps label device — the same mark the
+   landing page uses for its eyebrows. */
+.sidebar-content summary,
+.sidebar-content .large {
+	font-family: var(--cru-font-mono);
+	font-size: 0.7rem;
+	font-weight: 500;
+	letter-spacing: var(--cru-track-label);
+	text-transform: uppercase;
+	color: var(--sl-color-gray-3);
+}
+
+.sidebar-content a {
+	border-radius: 3px;
+	/* Space is reserved for the active rail so nothing shifts when it
+	   appears. */
+	border-inline-start: 2px solid transparent;
+	padding-inline-start: 0.6rem;
+	transition:
+		color var(--cru-quick) var(--cru-ease),
+		border-color var(--cru-quick) var(--cru-ease),
+		background-color var(--cru-quick) var(--cru-ease);
+}
+
+.sidebar-content a:hover {
+	color: var(--sl-color-white);
+	background: var(--cru-ember-wash);
+}
+
+/* Active page: an amber rail, not a filled block. Starlight's stock solid
+   fill is the loudest thing on screen and competes with the content it is
+   supposed to be pointing at. */
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover {
+	background: var(--cru-ember-wash);
+	border-inline-start-color: var(--cru-ember);
+	color: var(--sl-color-white);
+	font-weight: 600;
+}
+
+/* ══ Header ═══════════════════════════════════════════════════════════ */
+
+.header {
+	border-bottom: 1px solid var(--sl-color-hairline);
+	backdrop-filter: blur(14px);
+}
+
+.site-title {
+	font-family: var(--cru-font-display);
+	font-weight: 600;
+	color: var(--cru-ember);
+}
+
+/* ══ Table of contents ════════════════════════════════════════════════ */
+
+.right-sidebar h2 {
+	font-family: var(--cru-font-mono);
+	font-size: 0.7rem;
+	font-weight: 500;
+	letter-spacing: var(--cru-track-label);
+	text-transform: uppercase;
+	color: var(--sl-color-gray-3);
+}
+
+starlight-toc a {
+	border-inline-start: 2px solid var(--sl-color-hairline);
+	padding-inline-start: 0.75rem;
+	transition:
+		color var(--cru-quick) var(--cru-ease),
+		border-color var(--cru-quick) var(--cru-ease);
+}
+
+starlight-toc a[aria-current='true'],
+starlight-toc a[aria-current='true']:hover {
+	color: var(--cru-ember);
+	border-inline-start-color: var(--cru-ember);
+	font-weight: 600;
+}
+
+/* ══ Content ══════════════════════════════════════════════════════════ */
+
+.sl-markdown-content a:not(:where(.not-content *)) {
+	text-decoration-thickness: 1px;
+	text-underline-offset: 0.2em;
+	text-decoration-color: var(--cru-ember-edge);
+	transition:
+		color var(--cru-quick) var(--cru-ease),
+		text-decoration-color var(--cru-quick) var(--cru-ease);
+}
+
+.sl-markdown-content a:not(:where(.not-content *)):hover {
+	color: var(--cru-ember);
+	text-decoration-color: var(--cru-ember);
+}
+
+/* Inline code: amber-tinted so it reads as machine text without the
+   full-strength accent shouting from mid-sentence. */
+.sl-markdown-content code:not(:where(.not-content *, pre code, .expressive-code *)) {
+	border: 1px solid var(--cru-ember-edge);
+	border-radius: 3px;
+	padding: 0.1em 0.35em;
+	color: var(--sl-color-text-accent);
+	font-size: 0.85em;
+}
+
+/* Code blocks. Expressive Code owns its own frame; this only reconciles
+   its chrome with the rest of the page. */
+.expressive-code .frame {
+	--ec-brdRad: 5px;
+}
+
+:root[data-theme='dark'] .expressive-code .frame pre {
+	border-color: var(--cru-rule);
+}
+
+/* Blockquotes take the amber rail, matching the sidebar's active mark and
+   the landing page's install block. One device, used consistently. */
+.sl-markdown-content blockquote:not(:where(.not-content *)) {
+	border-inline-start: 2px solid var(--cru-ember);
+	padding-inline-start: 1.25rem;
+	color: var(--sl-color-gray-2);
+	font-style: normal;
+}
+
+/* ══ Tables ═══════════════════════════════════════════════════════════
+   Wide reference tables are common here — keybindings, config keys, CLI
+   flags — and must scroll inside the column rather than widen the page. */
+
+.sl-markdown-content table:not(:where(.not-content *)) {
+	display: block;
+	overflow-x: auto;
+	max-width: 100%;
+	border-collapse: collapse;
+	font-size: 0.9rem;
+}
+
+.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
+	border: 0;
+	border-bottom: 1px solid var(--sl-color-hairline);
+	padding: 0.65rem 0.9rem;
+	text-align: left;
+	vertical-align: top;
+}
+
+.sl-markdown-content th:not(:where(.not-content *)) {
+	font-family: var(--cru-font-mono);
+	font-size: 0.7rem;
+	font-weight: 500;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	color: var(--sl-color-gray-3);
+	border-bottom-color: var(--sl-color-gray-5);
+	white-space: nowrap;
+}
+
+/* ══ Asides ═══════════════════════════════════════════════════════════
+   Starlight ships a coloured rail plus a tinted panel. The panel fights
+   the page at this contrast, so keep the rail and near enough drop the
+   fill. */
+
+.starlight-aside {
+	border-inline-start-width: 2px;
+	border-radius: 0 4px 4px 0;
+	background: rgba(255, 255, 255, 0.022);
+	padding: 1rem 1.25rem;
+}
+
+:root[data-theme='light'] .starlight-aside {
+	background: rgba(26, 23, 20, 0.025);
+}
+
+.starlight-aside__title {
+	font-family: var(--cru-font-mono);
+	font-size: 0.7rem;
+	font-weight: 500;
+	letter-spacing: var(--cru-track-label);
+	text-transform: uppercase;
+}
+
+/* Note and tip move onto the brand's own two colours: slate for
+   machine-neutral asides, amber for the ones worth stopping at. Caution
+   and danger keep Starlight's yellow and red — those carry meaning that
+   is not ours to restyle. */
+.starlight-aside--note {
+	--sl-color-asides-text-accent: var(--cru-slate);
+	border-inline-start-color: var(--cru-slate);
+}
+
+.starlight-aside--tip {
+	--sl-color-asides-text-accent: var(--cru-ember);
+	border-inline-start-color: var(--cru-ember);
+}
+
+/* ══ Pagination ═══════════════════════════════════════════════════════ */
+
+.pagination-links a {
+	border-color: var(--sl-color-hairline);
+	border-radius: 5px;
+	transition:
+		border-color var(--cru-quick) var(--cru-ease),
+		background-color var(--cru-quick) var(--cru-ease);
+}
+
+.pagination-links a:hover {
+	border-color: var(--cru-ember-edge);
+	background: var(--cru-ember-wash);
+}
+
+.pagination-links a > span:first-of-type {
+	font-family: var(--cru-font-mono);
+	font-size: 0.68rem;
+	letter-spacing: var(--cru-track-label);
+	text-transform: uppercase;
+	color: var(--sl-color-gray-3);
+}
+
+/* ══ Search ═══════════════════════════════════════════════════════════ */
+
+site-search button[data-open-modal] {
+	border-color: var(--sl-color-hairline);
+	border-radius: 5px;
+	transition: border-color var(--cru-quick) var(--cru-ease);
+}
+
+site-search button[data-open-modal]:hover {
+	border-color: var(--cru-ember-edge);
+}
+
+/* ══ Focus ════════════════════════════════════════════════════════════
+   Starlight's default ring is the accent colour, which disappears against
+   the amber-tinted surfaces introduced above. */
+
+:focus-visible {
+	outline: 2px solid var(--cru-ember);
+	outline-offset: 2px;
+	border-radius: 2px;
+}
+
+/* ══ Motion ═══════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
 }

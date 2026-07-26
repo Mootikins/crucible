@@ -1,0 +1,74 @@
+---
+/**
+ * Overrides Starlight's ThemeProvider to make dark the default.
+ *
+ * Starlight resolves an unset preference from `prefers-color-scheme`, so a
+ * reader whose OS is in light mode landed on stock-white docs one click after a
+ * near-black landing page. Dark is the brand's default state, so it is the
+ * default here too.
+ *
+ * Setting `data-theme` here is not enough on its own: ThemeSelect re-resolves
+ * the theme when it hydrates, and with nothing stored it falls back to 'auto',
+ * which reads the OS and flips the page back. Rather than also fork ThemeSelect
+ * — whose `Select.astro` dependency the package does not export, so overriding
+ * it means copying internals — seed the stored preference before ThemeSelect
+ * ever reads it. This script is inline and therefore runs first.
+ *
+ * The picker keeps all three options and an explicit choice always wins,
+ * including 'auto', which still means "follow the OS". Only the never-touched-
+ * it case changes. To restore Starlight's behaviour, drop the
+ * `components.ThemeProvider` override in astro.config.mjs; nothing else
+ * depends on this file.
+ */
+import { Icon } from '@astrojs/starlight/components';
+---
+
+{/* Inlined to avoid a flash of the wrong theme. */}
+<script is:inline>
+	window.StarlightThemeProvider = (() => {
+		const storageKey = 'starlight-theme';
+		const hasStorage = typeof localStorage !== 'undefined';
+
+		// Claim the default before ThemeSelect hydrates and resolves 'auto'.
+		if (hasStorage && !localStorage.getItem(storageKey)) {
+			localStorage.setItem(storageKey, 'dark');
+		}
+
+		const storedTheme = hasStorage && localStorage.getItem(storageKey);
+		const prefersLight =
+			typeof window !== 'undefined' &&
+			window.matchMedia('(prefers-color-scheme: light)').matches;
+		const resolved =
+			storedTheme === 'light' || storedTheme === 'dark'
+				? storedTheme
+				: storedTheme === 'auto' && prefersLight
+					? 'light'
+					: 'dark';
+
+		document.documentElement.dataset.theme = resolved;
+
+		return {
+			updatePickers(theme = storedTheme || 'dark') {
+				document.querySelectorAll('starlight-theme-select').forEach((picker) => {
+					const select = picker.querySelector('select');
+					if (select) select.value = theme;
+					/** @type {HTMLTemplateElement | null} */
+					const tmpl = document.querySelector(`#theme-icons`);
+					const newIcon = tmpl && tmpl.content.querySelector('.' + theme);
+					if (newIcon) {
+						const oldIcon = picker.querySelector('svg.label-icon');
+						if (oldIcon) {
+							oldIcon.replaceChildren(...newIcon.cloneNode(true).childNodes);
+						}
+					}
+				});
+			},
+		};
+	})();
+</script>
+
+<template id="theme-icons">
+	<Icon name="sun" class="light" />
+	<Icon name="moon" class="dark" />
+	<Icon name="laptop" class="auto" />
+</template>
