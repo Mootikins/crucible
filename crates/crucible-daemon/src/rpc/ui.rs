@@ -44,5 +44,6 @@ pub fn handle_ui_config(_ctx: &RpcContext, _req: &Request) -> serde_json::Value 
     serde_json::json!({
         "version": UI_CONFIG_VERSION,
         "theme": theme_to_wire(&theme),
+        "hl": crucible_lua::hl_lua::registry_to_wire(&crucible_lua::config::get_hl_registry()),
     })
 }

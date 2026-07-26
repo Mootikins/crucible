@@ -95,6 +95,8 @@ mod ws;
 pub(crate) mod test_support;
 
 pub mod config;
+pub mod hl;
+pub mod hl_lua;
 pub mod theme;
 pub mod theme_wire;
 

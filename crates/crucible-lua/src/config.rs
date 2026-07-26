@@ -39,6 +39,9 @@ const DEFAULT_THEME_LUA: &str = include_str!("../../../runtime/themes/default.lu
 pub struct ConfigState {
     pub statusline: Option<StatuslineConfig>,
     pub theme: Option<ThemeConfig>,
+    /// Highlight groups authored via `crucible.hl.set/link`. Open namespace —
+    /// plugins name their own — so it is a map, not a fixed struct.
+    pub hl: crate::hl::HlRegistry,
     /// Daemon/app config values set via cru.config.set() or seeded from TOML.
     /// Stored as JSON for easy extraction by Rust callers.
     pub app_config: Option<serde_json::Value>,
@@ -72,6 +75,22 @@ pub fn get_theme_config() -> Option<ThemeConfig> {
 fn set_theme_config(config: ThemeConfig) {
     if let Ok(mut state) = get_config().write() {
         state.theme = Some(config);
+    }
+}
+
+/// Snapshot the highlight-group table.
+pub fn get_hl_registry() -> crate::hl::HlRegistry {
+    get_config()
+        .read()
+        .ok()
+        .map(|s| s.hl.clone())
+        .unwrap_or_default()
+}
+
+/// Define or replace one highlight group.
+pub fn set_hl_group(name: String, group: crate::hl::HlGroup) {
+    if let Ok(mut state) = get_config().write() {
+        state.hl.insert(name, group);
     }
 }
 
@@ -422,6 +441,7 @@ pub fn register_ui_namespaces(lua: &Lua) -> Result<(), LuaError> {
 
     register_statusline_namespace(lua, &crucible)?;
     register_theme_namespace(lua, &crucible)?;
+    crate::hl_lua::register_hl_namespace(lua, &crucible)?;
 
     // Embedded defaults. User init.lua overrides these via setup(), which runs
     // after this point in every caller.
