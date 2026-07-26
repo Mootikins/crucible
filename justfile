@@ -1,6 +1,20 @@
 # Crucible development recipes
 # Run `just` to see available commands
 
+# Cap cargo's BUILD parallelism for every recipe below.
+#
+# The compile phase is what overloads a dev box, not the tests: `rust-lld`
+# peaks around 7GB per link job, so an uncapped `--workspace` build runs ~30
+# linkers at once and can take the machine down. Capping it is what makes a
+# full-workspace `just test` / `just ci` safe to run.
+#
+# TRAP this encodes: nextest's `-j` caps TEST THREADS ONLY — the compile phase
+# still uses every core. `CARGO_BUILD_JOBS` is the knob that actually throttles
+# the build, and as an export it covers build/check/clippy/nextest uniformly.
+#
+# Raise it on a big or idle box: `CARGO_BUILD_JOBS=12 just test`
+export CARGO_BUILD_JOBS := env_var_or_default("CARGO_BUILD_JOBS", "6")
+
 # Default recipe - show help
 default:
     @just --list
@@ -166,9 +180,9 @@ web-dev:
 # ALWAYS --standalone: a debug client on the shared socket detects the git-SHA
 # mismatch with the installed daemon and SHUTS IT DOWN to respawn its own
 # (verify_or_restart) — killing the production instance on 3000 out from
-# under you. Throttled -j4 build (full-parallel builds can lock this box up).
+# under you. Build parallelism comes from CARGO_BUILD_JOBS at the top.
 web-debug port="3001": web-build
-    cargo build -j4 -p crucible-cli --bin cru
+    cargo build -p crucible-cli --bin cru
     cargo run -p crucible-cli -- --standalone web --port {{port}} --static-dir crates/crucible-web/web/dist
 
 # Build release with embedded web assets
@@ -205,12 +219,11 @@ web-test-live:
 
 # Run the cross-surface hero flow (TUI → web → TUI, one session; deterministic
 # via a fake Ollama server). Builds `cru`, the web assets, and the TUI test
-# binary (throttled -j4), then runs only the hero spec. Skips cleanly if `cru`
-# is absent.
+# binary, then runs only the hero spec. Skips cleanly if `cru` is absent.
 hero:
-    cargo build -j4 -p crucible-cli --bin cru
+    cargo build -p crucible-cli --bin cru
     cd crates/crucible-web/web && bun install && bun run build
-    cargo test -j4 -p crucible-cli --test tui_e2e_tests --no-run
+    cargo test -p crucible-cli --test tui_e2e_tests --no-run
     cd crates/crucible-web/web && bunx playwright test --config=playwright.hero.config.ts
 
 # === Daemon Management ===
