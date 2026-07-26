@@ -96,6 +96,7 @@ pub(crate) mod test_support;
 
 pub mod config;
 pub mod theme;
+pub mod theme_wire;
 
 pub use annotations::{
     DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredPlugin, DiscoveredService,

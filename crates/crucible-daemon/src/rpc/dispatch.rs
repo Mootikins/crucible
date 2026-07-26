@@ -123,6 +123,7 @@ pub const METHODS: &[&str] = &[
     "lua.eval",
     "config.get",
     "config.set",
+    "ui.config",
     "project.register",
     "project.unregister",
     "project.list",
@@ -391,6 +392,10 @@ impl RpcDispatcher {
             // App-config store (the same store `cru.config.*` reads in Lua)
             "config.get" => to_response(id, self.handle_config_get(&req)),
             "config.set" => to_response(id, self.handle_config_set(&req)),
+
+            // Lua-defined UI config (theme now; surfaces and bars follow).
+            // Snapshot half of the handshake — see `rpc::ui`.
+            "ui.config" => to_response(id, Ok(crate::rpc::ui::handle_ui_config(&self.ctx, &req))),
 
             // Plugin RPC handlers
             "plugin.reload" => to_response(id, self.handle_plugin_reload(&req).await),

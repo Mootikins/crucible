@@ -87,6 +87,16 @@ impl Server {
                 }
             }
 
+            // Register `crucible.theme` / `crucible.statusline` on the PLUGIN VM
+            // before user init.lua runs — this is the VM that evaluates it.
+            // Without this they are nil there, so `crucible.theme.setup{...}`
+            // errors and the user's theme never parses. Registration only; the
+            // init.lua evaluation is `eval_user_init` below, and doing both here
+            // would evaluate it twice.
+            if let Err(e) = crucible_lua::config::register_ui_namespaces(&loader.plugin_lua()) {
+                warn!("Failed to register UI config namespaces on the plugin VM: {e}");
+            }
+
             // User init.lua runs AFTER plugins so its setup() calls override
             // the TOML each plugin was loaded with — Lua beats TOML.
             if let Some(config_dir) = dirs::config_dir() {

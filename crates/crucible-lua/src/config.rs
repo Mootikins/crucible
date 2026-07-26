@@ -394,6 +394,55 @@ fn register_include(lua: &Lua, crucible: &Table, config_dir: PathBuf) -> Result<
     Ok(())
 }
 
+/// Register the UI-config namespaces (`crucible.statusline`, `crucible.theme`)
+/// and seed the embedded defaults into the config store.
+///
+/// Split out of [`ConfigLoader::load`] because the daemon's **plugin VM** needs
+/// the registration half *without* the init.lua half. `ConfigLoader::load` also
+/// evaluates `init.lua`, but the plugin runtime evaluates it separately (and
+/// deliberately later, after plugins, so user `setup()` calls win over plugin
+/// TOML). Calling the whole of `load` there would evaluate `init.lua` twice and
+/// double-register every hook in it.
+///
+/// Without this on the plugin VM, `crucible.theme` and `crucible.statusline` are
+/// **nil in the VM that actually runs the user's init.lua**, so
+/// `crucible.theme.setup{...}` fails with "attempt to index a nil value" and the
+/// user's theme never even parses.
+pub fn register_ui_namespaces(lua: &Lua) -> Result<(), LuaError> {
+    let globals = lua.globals();
+    // The plugin VM has a `crucible` table already; a bare VM may not.
+    let crucible: Table = match globals.get::<Table>("crucible") {
+        Ok(t) => t,
+        Err(_) => {
+            let t = lua.create_table()?;
+            globals.set("crucible", t.clone())?;
+            t
+        }
+    };
+
+    register_statusline_namespace(lua, &crucible)?;
+    register_theme_namespace(lua, &crucible)?;
+
+    // Embedded defaults. User init.lua overrides these via setup(), which runs
+    // after this point in every caller.
+    match crate::theme::load_theme_from_lua(DEFAULT_THEME_LUA) {
+        Ok(config) => set_theme_config(config),
+        Err(e) => {
+            warn!("Failed to load default theme: {}, using Rust defaults", e);
+            set_theme_config(ThemeConfig::default_dark());
+        }
+    }
+    if let Err(e) = lua
+        .load(DEFAULT_STATUSLINE_LUA)
+        .set_name("[builtin] statusline.lua")
+        .exec()
+    {
+        warn!("Failed to load default statusline: {}", e);
+    }
+
+    Ok(())
+}
+
 /// Configuration loader
 pub struct ConfigLoader {
     config_dir: PathBuf,
@@ -430,32 +479,10 @@ impl ConfigLoader {
     /// 2. Loads init.lua from config_dir (if exists)
     /// 3. Loads init.lua from kiln_config_dir (if exists, as override)
     pub fn load(&self, lua: &Lua) -> Result<(), LuaError> {
-        // Get or create the crucible table
+        register_ui_namespaces(lua)?;
+
         let globals = lua.globals();
         let crucible: Table = globals.get("crucible")?;
-
-        // Register crucible.statusline
-        register_statusline_namespace(lua, &crucible)?;
-
-        // Register crucible.theme
-        register_theme_namespace(lua, &crucible)?;
-
-        // Load embedded default theme (user init.lua can override via crucible.theme.setup())
-        match crate::theme::load_theme_from_lua(DEFAULT_THEME_LUA) {
-            Ok(config) => set_theme_config(config),
-            Err(e) => {
-                warn!("Failed to load default theme: {}, using Rust defaults", e);
-                set_theme_config(ThemeConfig::default_dark());
-            }
-        }
-        // Load embedded default statusline (user init.lua can override via setup())
-        if let Err(e) = lua
-            .load(DEFAULT_STATUSLINE_LUA)
-            .set_name("[builtin] statusline.lua")
-            .exec()
-        {
-            warn!("Failed to load default statusline: {}", e);
-        }
 
         // Register crucible.include()
         register_include(lua, &crucible, self.config_dir.clone())?;

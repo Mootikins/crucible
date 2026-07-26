@@ -727,7 +727,7 @@ fn parse_adaptive_color(value: &Value) -> Option<AdaptiveColor> {
     }
 }
 
-fn parse_color_string(s: &str) -> Option<Color> {
+pub(crate) fn parse_color_string(s: &str) -> Option<Color> {
     if let Some(hex) = s.strip_prefix('#') {
         if hex.len() == 6 {
             let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
@@ -873,7 +873,7 @@ impl ThemeLayout {
 }
 
 impl ThemeSpinnerStyle {
-    fn from_name(s: &str) -> Option<Self> {
+    pub(crate) fn from_name(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "braille" => Some(Self::Braille),
             "braille_minidot" => Some(Self::BrailleMinidot),
@@ -886,7 +886,7 @@ impl ThemeSpinnerStyle {
 }
 
 impl BorderStyle {
-    fn from_name(s: &str) -> Option<Self> {
+    pub(crate) fn from_name(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "rounded" => Some(Self::Rounded),
             "sharp" => Some(Self::Sharp),
@@ -900,7 +900,7 @@ impl BorderStyle {
 }
 
 impl StatusBarPosition {
-    fn from_name(s: &str) -> Option<Self> {
+    pub(crate) fn from_name(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "top" => Some(Self::Top),
             "bottom" => Some(Self::Bottom),

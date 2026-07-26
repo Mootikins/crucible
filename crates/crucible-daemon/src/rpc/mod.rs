@@ -6,6 +6,7 @@
 mod context;
 mod dispatch;
 mod params;
+mod ui;
 mod workflow_handlers;
 
 pub use context::RpcContext;
