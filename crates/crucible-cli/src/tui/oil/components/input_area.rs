@@ -29,12 +29,23 @@ impl InputMode {
         }
     }
 
+    /// The prompt glyph, themed if `crucible.ui.setup{ prompt = ... }` set one.
+    ///
+    /// Stays `&'static str` because the geometry store is a `OnceLock`, so a
+    /// themed glyph borrows from it for the life of the process — no allocation
+    /// per frame, and no signature change rippling through `InputStyle`.
     pub fn prompt(&self) -> &'static str {
-        match self {
+        let themed = &theme::geometry::active().prompt;
+        let override_glyph = match self {
+            InputMode::Normal => themed.normal.as_deref(),
+            InputMode::Command => themed.command.as_deref(),
+            InputMode::Shell => themed.shell.as_deref(),
+        };
+        override_glyph.unwrap_or(match self {
             InputMode::Normal => " > ",
             InputMode::Command => " : ",
             InputMode::Shell => " ! ",
-        }
+        })
     }
 
     pub fn from_content(content: &str) -> Self {

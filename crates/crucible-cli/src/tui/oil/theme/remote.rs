@@ -53,6 +53,9 @@ pub fn apply_ui_config(payload: &Value) -> bool {
     if let Some(hl) = payload.get("hl") {
         super::groups::set(crucible_lua::hl_lua::registry_from_wire(hl));
     }
+    if let Some(ui) = payload.get("ui") {
+        super::geometry::set(crucible_lua::ui_geometry::geometry_from_wire(ui));
+    }
 
     debug!(theme = %name, "applied theme from ui.config");
     true

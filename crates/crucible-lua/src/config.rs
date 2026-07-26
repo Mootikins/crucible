@@ -42,6 +42,8 @@ pub struct ConfigState {
     /// Highlight groups authored via `crucible.hl.set/link`. Open namespace —
     /// plugins name their own — so it is a map, not a fixed struct.
     pub hl: crate::hl::HlRegistry,
+    /// Per-surface geometry from `crucible.ui.setup{}`.
+    pub ui: Option<crate::ui_geometry::UiGeometry>,
     /// Daemon/app config values set via cru.config.set() or seeded from TOML.
     /// Stored as JSON for easy extraction by Rust callers.
     pub app_config: Option<serde_json::Value>,
@@ -91,6 +93,18 @@ pub fn get_hl_registry() -> crate::hl::HlRegistry {
 pub fn set_hl_group(name: String, group: crate::hl::HlGroup) {
     if let Ok(mut state) = get_config().write() {
         state.hl.insert(name, group);
+    }
+}
+
+/// Per-surface geometry, if a theme set any.
+pub fn get_ui_geometry() -> Option<crate::ui_geometry::UiGeometry> {
+    get_config().read().ok()?.ui.clone()
+}
+
+/// Store per-surface geometry.
+pub fn set_ui_geometry(geometry: crate::ui_geometry::UiGeometry) {
+    if let Ok(mut state) = get_config().write() {
+        state.ui = Some(geometry);
     }
 }
 
@@ -442,6 +456,7 @@ pub fn register_ui_namespaces(lua: &Lua) -> Result<(), LuaError> {
     register_statusline_namespace(lua, &crucible)?;
     register_theme_namespace(lua, &crucible)?;
     crate::hl_lua::register_hl_namespace(lua, &crucible)?;
+    crate::ui_geometry::register_ui_namespace(lua, &crucible)?;
 
     // Embedded defaults. User init.lua overrides these via setup(), which runs
     // after this point in every caller.

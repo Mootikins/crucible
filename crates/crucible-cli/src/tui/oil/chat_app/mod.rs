@@ -457,9 +457,15 @@ impl OilChatApp {
         };
 
         let mode = ComponentInputMode::from_content(self.input.content());
+        // `crucible.ui.setup{ popup = { max_visible = N } }` overrides how many
+        // rows show before scrolling; unset keeps the built-in.
+        let max_visible = crate::tui::oil::theme::geometry::active()
+            .popup
+            .max_visible
+            .map_or(POPUP_HEIGHT, usize::from);
         let overlay = PopupOverlay::new(items)
             .selected(self.popup.selected)
-            .max_visible(POPUP_HEIGHT);
+            .max_visible(max_visible);
 
         let overlay = if minimal {
             // nvim-pmenu style: content-width box anchored at the trigger's

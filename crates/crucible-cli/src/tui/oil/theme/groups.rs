@@ -12,6 +12,7 @@ use crucible_lua::hl::{HlRegistry, ResolvedHl};
 use std::sync::OnceLock;
 
 static GROUPS: OnceLock<HlRegistry> = OnceLock::new();
+static FALLBACK: OnceLock<HlRegistry> = OnceLock::new();
 
 /// Install the highlight table. Set-once, mirroring the active theme, so a late
 /// snapshot cannot restyle a half-drawn screen.
@@ -20,8 +21,12 @@ pub fn set(registry: HlRegistry) {
 }
 
 /// The active highlight table; empty when none was delivered.
+///
+/// Reading never initializes `GROUPS`; see the note in `geometry::active`.
 pub fn active() -> &'static HlRegistry {
-    GROUPS.get_or_init(HlRegistry::new)
+    GROUPS
+        .get()
+        .unwrap_or_else(|| FALLBACK.get_or_init(HlRegistry::new))
 }
 
 /// Resolve a group against the active theme.

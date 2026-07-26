@@ -99,6 +99,7 @@ pub mod hl;
 pub mod hl_lua;
 pub mod theme;
 pub mod theme_wire;
+pub mod ui_geometry;
 
 pub use annotations::{
     DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredPlugin, DiscoveredService,

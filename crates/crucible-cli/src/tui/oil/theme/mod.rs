@@ -21,6 +21,7 @@ pub use config::*;
 pub mod global;
 pub use global::{active, is_initialized, set};
 
+pub mod geometry;
 pub mod groups;
 
 pub mod remote;

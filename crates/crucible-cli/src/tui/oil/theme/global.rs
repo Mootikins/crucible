@@ -8,6 +8,7 @@ use std::sync::OnceLock;
 use super::config::ThemeConfig;
 
 static ACTIVE_THEME: OnceLock<ThemeConfig> = OnceLock::new();
+static FALLBACK_THEME: OnceLock<ThemeConfig> = OnceLock::new();
 
 // NOTE: ACTIVE_THEME uses OnceLock and cannot be safely reset between tests.
 // OnceLock only allows initialization once per process — the first call to set() or
@@ -16,12 +17,17 @@ static ACTIVE_THEME: OnceLock<ThemeConfig> = OnceLock::new();
 // Tests requiring specific themes should use a test-local theme mechanism (e.g., passing
 // ThemeConfig as a parameter) rather than relying on the global singleton.
 
-/// Returns the active theme configuration.
+/// Returns the active theme configuration, or the built-in dark theme when none
+/// has been installed.
 ///
-/// Initializes with [`ThemeConfig::default_dark()`] on first call if
-/// [`set`] was not called beforehand.
+/// Reading deliberately does NOT initialize `ACTIVE_THEME`. If it did, any
+/// render or probe before the daemon's `ui.config` arrives would lock in the
+/// default and make every later [`set`] a silent no-op — the theme would never
+/// apply, with nothing logged and nothing to catch it.
 pub fn active() -> &'static ThemeConfig {
-    ACTIVE_THEME.get_or_init(ThemeConfig::default_dark)
+    ACTIVE_THEME
+        .get()
+        .unwrap_or_else(|| FALLBACK_THEME.get_or_init(ThemeConfig::default_dark))
 }
 
 /// Initialize the global theme. Intended to be called once at startup.
@@ -55,9 +61,25 @@ mod tests {
         assert!(std::ptr::eq(t1, t2));
     }
 
+    /// `is_initialized` means "a theme was installed", not "a theme was read".
+    ///
+    /// This previously asserted the opposite, which encoded a real bug: reading
+    /// the theme marked it initialized, so a render or probe before the daemon's
+    /// `ui.config` arrived would both lock in the default AND make
+    /// `apply_ui_config` skip installing the real one — the theme silently never
+    /// applied, from either side.
     #[test]
-    fn theme_global_is_initialized_after_active() {
+    fn reading_the_theme_does_not_count_as_installing_one() {
         let _ = active();
+        assert!(
+            !is_initialized(),
+            "a read must leave the slot open for a later set"
+        );
+    }
+
+    #[test]
+    fn installing_a_theme_marks_it_initialized() {
+        set(ThemeConfig::default_dark());
         assert!(is_initialized());
     }
 
