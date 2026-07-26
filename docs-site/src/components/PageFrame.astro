@@ -1,0 +1,20 @@
+---
+/**
+ * Wraps Starlight's page frame to mount the doc-window layer.
+ *
+ * DocWindows sits as a sibling of `.page`, not inside it: a `position: fixed`
+ * layer is trapped by any ancestor with a transform, filter or containment, and
+ * `.page` is a flex column that Starlight is free to change. Keeping the layer
+ * at the top of the frame means windows are positioned against the viewport and
+ * stack above the header regardless of what happens inside.
+ */
+import Default from '@astrojs/starlight/components/PageFrame.astro';
+import DocWindows from './DocWindows.astro';
+---
+
+<Default>
+	<slot name="header" slot="header" />
+	<slot name="sidebar" slot="sidebar" />
+	<slot />
+</Default>
+<DocWindows />

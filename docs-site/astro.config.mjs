@@ -41,6 +41,8 @@ export default defineConfig({
 				ThemeProvider: './src/components/ThemeProvider.astro',
 				// Wraps Starlight's footer to prepend the neighbourhood graph.
 				Footer: './src/components/Footer.astro',
+				// Wraps the page frame to mount the hover-preview window layer.
+				PageFrame: './src/components/PageFrame.astro',
 			},
 
 			head: [
