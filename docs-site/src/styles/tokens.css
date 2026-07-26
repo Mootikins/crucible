@@ -1,0 +1,89 @@
+/*
+ * Crucible design tokens — the single source for palette and type.
+ *
+ * Imported by BOTH the landing page (src/pages/index.astro) and the Starlight
+ * theme (src/styles/custom.css). Change a value here and both move together;
+ * that is the whole point of the file. Do not redeclare these anywhere else.
+ *
+ * Palette origin: assets/brand.md at the repo root.
+ */
+
+:root {
+	/* ── Ember ramp ───────────────────────────────────────────────
+	 * Amber is the brand's one loud colour. It marks heat: primary
+	 * actions, active state, live things. Never body text on dark. */
+	--cru-ember: #ff8c42; /* Crucible Amber — primary */
+	--cru-flame: #ffaa33; /* Flame Light — highlights, hot edges */
+	--cru-forge: #ff6b1a; /* Flame Dark — hover, pressed */
+	--cru-gold: #ffdd57; /* Bubble Gold — sparks, rare accents */
+	--cru-scoria: #5c2a0d; /* burnt amber — faint ink, dead edges */
+
+	/* Ember at opacity. Named by job so call sites read as intent. */
+	--cru-ember-wash: rgba(255, 140, 66, 0.08); /* tinted fills */
+	--cru-ember-edge: rgba(255, 140, 66, 0.22); /* hairlines on amber things */
+	--cru-ember-halo: rgba(255, 140, 66, 0.3); /* glows, focus rings */
+
+	/* ── Field ────────────────────────────────────────────────────
+	 * Warm-shifted neutrals. A pure grey next to this much amber
+	 * reads blue; every step here carries a few points of red. */
+	--cru-ink: #0a0a0c; /* page field */
+	--cru-pitch: #111114; /* raised surface */
+	--cru-char: #17161a; /* card */
+	--cru-char-lit: #1e1d22; /* card hover */
+	--cru-rule: rgba(255, 255, 255, 0.07); /* hairline */
+	--cru-rule-lit: rgba(255, 255, 255, 0.14); /* hairline, emphasised */
+
+	/* ── Text ─────────────────────────────────────────────────────
+	 * --cru-ash is warm on purpose. The old #9CA3AF was a cool
+	 * blue-grey and went muddy against amber. */
+	--cru-bright: #f4f1ec; /* headings, high emphasis */
+	--cru-ash: #a39d97; /* body on dark */
+	--cru-dim: #6f6862; /* captions, disabled */
+
+	/* Light mode inverts the field but keeps the same ember ramp. */
+	--cru-paper: #faf7f2;
+	--cru-paper-raised: #f2ece3;
+	--cru-ink-on-paper: #1a1714;
+	--cru-ash-on-paper: #5a534c;
+
+	/* Structural blue-grey. Terminal chrome, window dots, muted marks.
+	 * The one deliberately cool colour — it reads as "machine". */
+	--cru-slate: #64748b;
+	--cru-slate-deep: #334155;
+
+	/* ── Type ─────────────────────────────────────────────────────
+	 * Display is a Didone: high stroke contrast, same logic as the
+	 * engraving's burin line. It is fragile below ~1.5rem — do not
+	 * use it for body, labels, or anything under 24px. */
+	--cru-font-display: 'Bodoni Moda', 'Didot', 'Bodoni MT', Georgia, serif;
+	--cru-font-body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+	--cru-font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+
+	/* Scale. Display sizes are fluid; text sizes are fixed so that
+	 * line length, not viewport width, governs reading. */
+	--cru-size-hero: clamp(2.75rem, 6.5vw, 5.25rem);
+	--cru-size-title: clamp(2rem, 4vw, 3rem);
+	--cru-size-section: clamp(1.5rem, 2.5vw, 2rem);
+	--cru-size-lead: clamp(1.05rem, 1.5vw, 1.2rem);
+	--cru-size-body: 1rem;
+	--cru-size-small: 0.875rem;
+	--cru-size-micro: 0.75rem;
+
+	/* Eyebrows and labels. Mono + wide tracking + caps is the site's
+	 * one repeating structural device; it marks machine-side text. */
+	--cru-track-label: 0.14em;
+	--cru-track-display: -0.02em; /* Didones need negative tracking at size */
+
+	/* ── Motion ───────────────────────────────────────────────────
+	 * Two speeds only. Anything slower than --cru-slow feels broken. */
+	--cru-quick: 0.16s;
+	--cru-slow: 0.4s;
+	--cru-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	:root {
+		--cru-quick: 0.01ms;
+		--cru-slow: 0.01ms;
+	}
+}

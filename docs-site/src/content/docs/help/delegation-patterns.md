@@ -191,7 +191,7 @@ Three reasons:
   pipelines, retries, fan-out-fan-in, chained delegation, and
   workflows the authors didn't think of — anything you can put into
   Lua control flow.
-- **Surface area honesty.** Crucible's [Code Principles](../../AGENTS.md)
+- **Surface area honesty.** Crucible's [Code Principles](https://github.com/Mootikins/crucible/blob/master/AGENTS.md)
   call out "no type without a use site." Hardcoded delegation types
   shipped without consumers; recipes ship as docs and stay current
   because users see and edit them.

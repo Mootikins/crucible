@@ -1,12 +1,24 @@
 // @ts-check
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import { rehypeResolveDocLinks } from './src/plugins/rehype-resolve-doc-links.mjs';
+
+const CONTENT_DIR = fileURLToPath(new URL('./src/content/docs', import.meta.url));
+const BASE = '/crucible';
 
 // https://astro.build/config
 export default defineConfig({
 	// GitHub Pages: https://mootikins.github.io/crucible/
 	site: 'https://mootikins.github.io',
-	base: '/crucible',
+	base: BASE,
+
+	markdown: {
+		// Doc bodies are authored file-relative, like the kiln they came from;
+		// pages serve at trailing-slash directory URLs. Resolve the difference
+		// at build. See the plugin for the full explanation.
+		rehypePlugins: [[rehypeResolveDocLinks, { contentDir: CONTENT_DIR, base: BASE }]],
+	},
 
 	integrations: [
 		starlight({
