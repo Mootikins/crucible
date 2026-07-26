@@ -49,6 +49,7 @@ mod core;
 pub mod fs;
 pub mod grep;
 pub mod kiln;
+mod file_event_hooks;
 mod plugin_boot;
 mod socket_lock;
 use socket_lock::acquire_socket_lock;

@@ -110,6 +110,18 @@ impl Server {
                     .await;
             }
 
+            // Give Lua a trigger on the workspace changing. Until now every
+            // hookable event was on the agent turn loop, so a handler could not
+            // react to files at all — which is why a value like git status had
+            // no honest trigger and fell back to polling.
+            if let Some((registry, plugin_lua)) = self.agent_manager.plugin_handlers() {
+                crate::server::file_event_hooks::spawn_file_event_hooks(
+                    self.event_tx.subscribe(),
+                    registry,
+                    plugin_lua,
+                );
+            }
+
             // Extract service functions and spawn them as independent async tasks.
             // Each mlua::Function holds an internal ref to the Lua VM; mlua's
             // reentrant mutex serializes actual Lua execution, giving cooperative
