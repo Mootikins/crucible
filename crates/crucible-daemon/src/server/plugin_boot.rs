@@ -82,6 +82,14 @@ impl Server {
                 }
             }
 
+            // User init.lua runs AFTER plugins so its setup() calls override
+            // the TOML each plugin was loaded with — Lua beats TOML.
+            if let Some(config_dir) = dirs::config_dir() {
+                loader
+                    .eval_user_init(&config_dir.join("crucible").join("init.lua"))
+                    .await;
+            }
+
             // Extract service functions and spawn them as independent async tasks.
             // Each mlua::Function holds an internal ref to the Lua VM; mlua's
             // reentrant mutex serializes actual Lua execution, giving cooperative

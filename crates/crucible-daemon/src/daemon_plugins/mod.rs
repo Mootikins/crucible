@@ -709,6 +709,42 @@ impl DaemonPluginLoader {
         Ok(())
     }
 
+    /// Evaluate the user's init.lua in the plugin runtime, if one exists.
+    ///
+    /// Runs AFTER plugins load — that ordering is the configuration
+    /// precedence contract: the daemon applies `[plugins.<name>]` TOML as
+    /// each plugin's base config via `setup()` at load, and the user's
+    /// `require("<plugin>").setup{...}` here lands last and wins. Lua beats
+    /// TOML, the Neovim convention (it used to be silently backwards: TOML
+    /// was both base and final word, with no user-Lua entry point at all).
+    ///
+    /// Fail-open: this is user configuration, not a gate — a broken init.lua
+    /// is warned about and the daemon runs with TOML-only config.
+    pub async fn eval_user_init(&self, path: &std::path::Path) {
+        if !path.exists() {
+            return;
+        }
+        let source = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => {
+                warn!("Failed to read {}: {e}", path.display());
+                return;
+            }
+        };
+        let chunk_name = format!("@{}", path.to_string_lossy());
+        match self
+            .executor
+            .lua()
+            .load(&source)
+            .set_name(chunk_name)
+            .eval_async::<mlua::Value>()
+            .await
+        {
+            Ok(_) => info!("Evaluated user init: {}", path.display()),
+            Err(e) => warn!("User init.lua error ({}): {e}", path.display()),
+        }
+    }
+
     /// Reload a plugin: unload registrations, re-execute `init.lua`, and
     /// re-extract service functions. `execute_plugin` clears the plugin's
     /// `package.loaded` entries so its `lua/` modules are re-required.

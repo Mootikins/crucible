@@ -59,6 +59,14 @@ require("kiln-expert").setup({
 
 Bundled plugins (in `runtime/plugins/`) load with defaults automatically. Your `setup()` call overrides those defaults. To skip a bundled plugin entirely, don't call `require()` for it.
 
+Configuration precedence, highest first — **Lua beats TOML**, the Neovim convention:
+
+1. `setup({...})` calls — last call wins per key. The daemon evaluates `~/.config/crucible/init.lua` *after* plugins load, so your calls land after the TOML seed.
+2. `[plugins.<name>]` in `config.toml` — the daemon passes this section to each plugin's `setup()` at load, so TOML is the base configuration.
+3. The plugin's own declared defaults.
+
+A broken init.lua is warned about and skipped (the daemon runs with TOML-only config); it never blocks startup.
+
 A plugin's `setup()` merges user config into its defaults:
 
 ```lua

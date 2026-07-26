@@ -145,15 +145,21 @@ fn setup_kilns_are_visible_through_the_kilns_accessor() {
     assert_eq!(kilns.get::<String>("docs").unwrap(), "/tmp/docs");
 }
 
+/// Lua beats TOML — the Neovim convention. The daemon seeds `setup()` with
+/// the TOML section at load, so TOML applies as the base; a user's later
+/// `setup{}` call (their init.lua runs after plugins load) must win. This
+/// used to be backwards: TOML silently overrode every setup() value, so
+/// configuring a plugin from Lua was impossible whenever a TOML key existed.
 #[test]
-fn explicit_toml_beats_setup_values() {
+fn setup_values_beat_explicit_toml() {
     let (lua, module) = shipped_config_module(
         "kiln-expert",
         serde_json::json!({ "kiln-expert": { "timeout": 99 } }),
     );
+    // Before any setup() call, TOML is the resolved value.
     assert_eq!(get_i64(&module, "timeout"), 99);
     init(&module, &lua, "{ timeout = 7 }");
-    assert_eq!(get_i64(&module, "timeout"), 99);
+    assert_eq!(get_i64(&module, "timeout"), 7);
 }
 
 #[test]
@@ -212,6 +218,75 @@ async fn load_from(
         .await
         .unwrap();
     loader
+}
+
+/// End-to-end through the loader: TOML seeds setup() at load, and the user's
+/// init.lua — evaluated AFTER plugins load — calls setup() again and wins.
+/// Lua beats TOML; the ordering IS the precedence mechanism.
+#[tokio::test]
+async fn user_init_lua_setup_overrides_toml() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_plugin(
+        tmp.path(),
+        "prefs",
+        r#"
+return {
+    name = "prefs",
+    setup = function(cfg) _G.__prefs_config = cfg end,
+}
+"#,
+    );
+    let config = std::collections::HashMap::from([(
+        "prefs".to_string(),
+        serde_json::json!({ "greeting": "from-toml" }),
+    )]);
+    let loader = load_from(tmp.path(), config).await;
+
+    let seeded = loader.eval("return __prefs_config.greeting").await.unwrap();
+    assert_eq!(seeded, "from-toml", "TOML is the base at load");
+
+    let init_path = tmp.path().join("init.lua");
+    std::fs::write(
+        &init_path,
+        r#"require("prefs").setup({ greeting = "from-lua" })"#,
+    )
+    .unwrap();
+    loader.eval_user_init(&init_path).await;
+
+    let resolved = loader.eval("return __prefs_config.greeting").await.unwrap();
+    assert_eq!(
+        resolved, "from-lua",
+        "the user's init.lua setup() call must override the TOML seed"
+    );
+}
+
+/// A broken user init.lua is user configuration, not a gate: it must warn
+/// and leave the TOML-seeded config intact, never take the daemon down.
+#[tokio::test]
+async fn broken_user_init_lua_fails_open() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_plugin(
+        tmp.path(),
+        "prefs",
+        r#"
+return {
+    name = "prefs",
+    setup = function(cfg) _G.__prefs_config = cfg end,
+}
+"#,
+    );
+    let config = std::collections::HashMap::from([(
+        "prefs".to_string(),
+        serde_json::json!({ "greeting": "from-toml" }),
+    )]);
+    let loader = load_from(tmp.path(), config).await;
+
+    let init_path = tmp.path().join("init.lua");
+    std::fs::write(&init_path, "this is not lua (").unwrap();
+    loader.eval_user_init(&init_path).await;
+
+    let resolved = loader.eval("return __prefs_config.greeting").await.unwrap();
+    assert_eq!(resolved, "from-toml");
 }
 
 #[tokio::test]

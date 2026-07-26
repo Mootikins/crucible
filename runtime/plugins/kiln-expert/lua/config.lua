@@ -1,12 +1,15 @@
 --- kiln-expert configuration
 ---
---- Resolution order, highest priority first:
----   1. `[plugins.kiln-expert]` in config.toml, read through
----      `crucible.config.get("kiln-expert.<key>")`. Note this is NOT
----      `cru.config[...]` — `cru.config` is the *app* config store and holds
----      only `get`/`set` functions; it is not indexable by plugin name.
----   2. values passed to `setup({...})` — the daemon calls it with the TOML
----      section at load time, and a user may call it again with more.
+--- Resolution order, highest priority first (Lua beats TOML, the Neovim
+--- convention — the daemon seeds setup() with the TOML section at load, and
+--- a user's later `setup{}` call, e.g. from ~/.config/crucible/init.lua
+--- which runs after plugins load, overrides it):
+---   1. values passed to `setup({...})` — last call wins per key.
+---   2. `[plugins.kiln-expert]` in config.toml, read through
+---      `crucible.config.get("kiln-expert.<key>")` — covers keys read before
+---      any setup() call lands. Note this is NOT `cru.config[...]` —
+---      `cru.config` is the *app* config store and holds only `get`/`set`
+---      functions; it is not indexable by plugin name.
 ---   3. the `defaults` table below.
 ---   4. the caller's `fallback` argument, as a last resort for keys this
 ---      module does not declare.
@@ -51,9 +54,9 @@ local function from_toml(key)
 end
 
 function M.get(key, fallback)
+    if configured[key] ~= nil then return configured[key] end
     local val = from_toml(key)
     if val ~= nil then return val end
-    if configured[key] ~= nil then return configured[key] end
     if defaults[key] ~= nil then return defaults[key] end
     return fallback
 end
