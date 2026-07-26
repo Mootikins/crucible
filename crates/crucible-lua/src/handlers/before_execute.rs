@@ -28,8 +28,8 @@ pub struct ToolBeforeExecuteResult {
 pub async fn execute_tool_before_execute_hooks(
     lua: &Lua,
     registry: &LuaScriptHandlerRegistry,
-    event: &ToolBeforeExecuteEvent,
     session_id: Option<&str>,
+    event: &ToolBeforeExecuteEvent,
 ) -> LuaResult<Option<ToolBeforeExecuteResult>> {
     let handlers = registry.runtime_handlers_for(TOOL_BEFORE_EXECUTE_EVENT, None);
     if handlers.is_empty() {

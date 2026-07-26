@@ -1,10 +1,13 @@
-//! Display/before-execute hook resolution for tool calls.
+//! Display, before-execute, and tool-result hook resolution for tool calls.
 //!
 //! Each resolver runs the session VM's handlers first (under the session
 //! state lock), then the plugin VM's with the lock released — plugin Lua may
 //! run for seconds and must not hold the session's whole state hostage.
 //! Display hints are first-non-empty-wins; env maps merge with session
 //! entries winning a key collision (the more specific scope overrides).
+//! `apply_tool_result_handlers` is the odd one out: chained partial patches
+//! that shape the finished result as the model receives it, so every handler
+//! sees the previous ones' edits rather than the first answer winning.
 
 use crucible_lua::{
     execute_tool_before_execute_hooks, execute_tool_display_complete_hooks,
@@ -223,8 +226,8 @@ pub(super) async fn resolve_before_execute_env(
         match execute_tool_before_execute_hooks(
             &state.lua,
             &state.registry,
-            event,
             Some(&stream_ctx.session_id),
+            event,
         )
         .await
         {
@@ -246,8 +249,8 @@ pub(super) async fn resolve_before_execute_env(
             match execute_tool_before_execute_hooks(
                 plugin_lua,
                 plugin_registry,
-                event,
                 Some(&stream_ctx.session_id),
+                event,
             )
             .await
             {

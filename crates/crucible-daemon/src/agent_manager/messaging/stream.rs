@@ -28,7 +28,7 @@ use crucible_core::traits::chat::{ChatToolCall, ChatToolResult};
 use crucible_core::traits::llm::TokenUsage;
 use crucible_core::turn::{Agent as TurnAgent, StopReason, TurnContext, TurnEvent};
 use futures::StreamExt;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc;
 
 /// Outcome of running output validation on an accumulated response.
@@ -317,6 +317,11 @@ impl AgentManager {
         let mut last_failure_key: Option<(String, String)> = None;
         let mut consecutive_failure_count = 0usize;
         let mut tool_calls_dispatched = false;
+        // Args of tool calls an ACP-style agent announced but executed itself,
+        // kept so the pass-through `tool_result` below can hand handlers the
+        // same `{tool, args, ...}` payload the dispatched path gets. Keyed by
+        // call id; entries are removed when the matching result arrives.
+        let mut acp_tool_args: HashMap<String, serde_json::Value> = HashMap::new();
 
         // Batch detection: true once a ToolCall is seen in this batch,
         // reset on the next non-ToolCall event from the agent.
@@ -447,6 +452,7 @@ impl AgentManager {
                     // count it toward the tool-depth cap. The agent streams its
                     // own ToolResult + follow-up text, handled below.
                     if agent_owns_tools {
+                        acp_tool_args.insert(id.clone(), args.clone());
                         {
                             let mut tree = stream_ctx.conversation_tree.lock().await;
                             let parent = tree.current();
@@ -692,7 +698,36 @@ impl AgentManager {
                     error,
                 } => {
                     // The agent observed an external tool result
-                    // (ACP-style). Pass through to subscribers.
+                    // (ACP-style). Pass through to subscribers — but run the
+                    // `tool_result` handlers first, so a redactor scrubs the
+                    // transcript no matter who executed the tool. Caveat: the
+                    // external agent already consumed this result in its own
+                    // process, so unlike the dispatched path these patches
+                    // shape what subscribers and the session log see, NOT what
+                    // that agent's model saw. Same boundary as isolation
+                    // claims on external agents.
+                    let args = acp_tool_args.remove(&id).unwrap_or(serde_json::Value::Null);
+                    let original = result.clone();
+                    let result_text = match &result {
+                        serde_json::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    let (patched_text, error) = super::tool_hooks::apply_tool_result_handlers(
+                        &stream_ctx,
+                        &name,
+                        &args,
+                        result_text.clone(),
+                        error,
+                    )
+                    .await;
+                    // Structured results survive verbatim when no handler
+                    // touched them; a handler's patch is a string by contract.
+                    let result = if patched_text == result_text {
+                        original
+                    } else {
+                        serde_json::Value::String(patched_text)
+                    };
+
                     let event_result = if let Some(err) = error {
                         serde_json::json!({ "error": err })
                     } else {

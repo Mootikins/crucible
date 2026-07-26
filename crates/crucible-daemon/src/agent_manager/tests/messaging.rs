@@ -175,6 +175,51 @@ async fn owns_history_agent_tool_call_passes_through_without_truncating_turn() {
     assert_eq!(complete.data["full_response"], "Line two is: LINE TWO beta");
 }
 
+/// A `tool_result` handler must fire for tool calls an ACP-style agent ran
+/// itself, not just for ones the daemon dispatched. The pass-through arm used
+/// to emit straight to subscribers, so a redactor scrubbed the transcript for
+/// internal agents and silently did nothing for external ones — the same
+/// documented-but-silent shape this seam exists to close. The handler also
+/// receives the announced `args`, so it can filter on them like on the
+/// dispatched path.
+#[tokio::test]
+async fn tool_result_handlers_patch_acp_pass_through_results() {
+    let mut h = ReactorTestHarness::new().await;
+
+    h.load_lua(
+        r#"
+        crucible.on("tool_result", function(ctx, event)
+            return {
+                result = "redacted<" .. tostring(event.args.file_path) .. ">"
+            }
+        end)
+    "#,
+    )
+    .await;
+
+    h.inject_agent(Box::new(OwnsToolsMockAgent {
+        events: vec![
+            script::tool_call(
+                "call1",
+                "Read",
+                serde_json::json!({"file_path": "secrets.txt"}),
+            ),
+            script::tool_result("call1", "Read", "SUPER SECRET"),
+            script::text("done"),
+            script::done(),
+        ],
+    }));
+
+    h.send("read secrets").await;
+
+    let tool_result = h.wait_for("tool_result").await;
+    assert_eq!(tool_result.data["tool"], "Read");
+    assert_eq!(
+        tool_result.data["result"]["result"], "redacted<secrets.txt>",
+        "tool_result handler must patch ACP pass-through results and see their args"
+    );
+}
+
 #[tokio::test]
 async fn send_message_emits_tool_call_and_tool_result_events() {
     let mut h = ReactorTestHarness::new().await;
