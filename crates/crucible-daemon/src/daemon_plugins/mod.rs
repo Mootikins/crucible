@@ -811,7 +811,25 @@ end
             .load(name)
             .map_err(|e| anyhow::anyhow!("reload plugin '{}': {e}", name))?;
 
-        let spec = self.load_plugin_spec(name).await?;
+        let spec = match self.load_plugin_spec(name).await {
+            Ok(spec) => spec,
+            Err(e) => {
+                // A failed reload must leave the plugin fully inert, not
+                // half-alive: `register_plugin` only replaces entries on a
+                // SUCCESSFUL load, so without this the previous version's
+                // tools/commands/handlers stayed registered while state said
+                // Error — 'broken' looked exactly like 'working'.
+                self.plugin_registry.remove_plugin(name);
+                self.handler_registry.clear_plugin_handlers(name);
+                // Dropped RegistryKeys only mark their slots; reclaim them so
+                // repeated failed reloads don't grow the Lua registry.
+                self.executor.lua().expire_registry_values();
+                return Err(e);
+            }
+        };
+        // Same reclaim on the success path — the old version's handler keys
+        // were just dropped by re-registration.
+        self.executor.lua().expire_registry_values();
 
         let spec_name = spec.name.clone();
         if let Some(existing) = self.loaded_specs.iter_mut().find(|s| s.name == spec_name) {

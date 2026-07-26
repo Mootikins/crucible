@@ -906,6 +906,18 @@ impl RpcDispatcher {
     /// opposite of the start-hook tradeoff. Shared by the normal end path and
     /// the create-refusal path so a refused session tears down identically.
     async fn fire_plugin_session_end(&self, session_id: &str) {
+        // Only fire for a session the manager still knows. End hooks run
+        // BEFORE `end_session` removes it, so this doubles as the idempotency
+        // guard the per-session hooks get from `end_hooks_fired`: a duplicate
+        // `session.end` (or one for a made-up id) finds no session and fires
+        // nothing — plugins were promised they need not be idempotent.
+        let Some(daemon_session) = self.ctx.sessions.get_session(session_id) else {
+            tracing::debug!(
+                session_id = %session_id,
+                "skipping plugin session_end hooks for unknown/already-ended session"
+            );
+            return;
+        };
         let mut guard = self.ctx.plugin_loader.lock().await;
         let Some(loader) = guard.as_mut() else { return };
         // Drop the isolation claim with the session. A claim that outlives its
@@ -913,10 +925,8 @@ impl RpcDispatcher {
         // reused, and a stale claim is indistinguishable from a live one.
         loader.isolation().release(session_id);
         loader.status().release(session_id);
-        let mut session = crucible_lua::Session::new(session_id.to_string());
-        if let Some(daemon_session) = self.ctx.sessions.get_session(session_id) {
-            session = session.with_workspace(daemon_session.workspace.to_string_lossy());
-        }
+        let session = crucible_lua::Session::new(session_id.to_string())
+            .with_workspace(daemon_session.workspace.to_string_lossy());
         session.bind(Box::new(crate::server::NoopSessionRpc));
         if let Err(e) = loader.fire_session_end(&session).await {
             tracing::warn!(session_id = %session_id, error = %e, "plugin session_end hooks failed");
@@ -995,9 +1005,9 @@ impl RpcDispatcher {
         // Fire on_session_end Lua hooks before ending the session.
         // Plugins use this for cleanup (e.g., releasing resources, stopping
         // services) and for agent-learning extraction (session digest, entity
-        // memory). Before firing, enrich the Session userdata with kiln_path,
-        // agent_name, and end_reason so handlers don't need extra RPC
-        // round-trips to do their work.
+        // memory). The Session handed to hooks carries id + workspace — the
+        // documented surface; richer metadata (kiln, agent, end reason) is
+        // future session-API growth, not something this comment promises.
         let session_id = req
             .params
             .get("session_id")

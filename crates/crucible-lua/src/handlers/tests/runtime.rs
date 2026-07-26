@@ -450,3 +450,36 @@ async fn todo_enforcer_pattern_integration() {
         result
     );
 }
+
+/// A handler returning the (flat) event table is a TRANSFORM, even when the
+/// event's payload contains a `cancel`/`handled` field — flat events carry
+/// the envelope `type` key, and only directive-shaped returns (no `type`)
+/// may cancel. Without this, a payload key silently cancelled the event.
+#[tokio::test]
+async fn returning_the_event_with_a_cancel_payload_key_is_not_a_cancellation() {
+    let lua = Lua::new();
+    let registry = LuaScriptHandlerRegistry::new();
+
+    let handler_fn = lua
+        .create_function(|_, (_ctx, event): (mlua::Table, mlua::Table)| Ok(event))
+        .unwrap();
+    let key = lua.create_registry_value(handler_fn).unwrap();
+    registry
+        .handler_functions
+        .lock()
+        .unwrap()
+        .insert("echo_handler".to_string(), key);
+
+    let event = SessionEvent::Custom {
+        name: "weird_event".to_string(),
+        payload: serde_json::json!({ "cancel": true, "handled": true, "tool": "bash" }),
+    };
+    let result = registry
+        .execute_runtime_handler(&lua, "echo_handler", &event, None)
+        .await
+        .unwrap();
+    assert!(
+        matches!(result, ScriptHandlerResult::Transform(_)),
+        "an echoed event must stay a transform, got {result:?}"
+    );
+}

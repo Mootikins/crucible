@@ -107,6 +107,22 @@ impl PluginRegistry {
     /// A declaration with no matching function is skipped: the plugin declared
     /// a tool it did not export, and advertising it would produce a tool call
     /// that always fails.
+    /// Remove every tool and command a plugin registered.
+    ///
+    /// The failed-reload path: `register_plugin` only replaces entries on a
+    /// successful load, so a plugin that broke on reload otherwise kept its
+    /// previous version's tools registered while `plugin.list` said Error.
+    pub fn remove_plugin(&self, plugin: &str) {
+        self.tools
+            .write()
+            .expect("plugin tools lock poisoned")
+            .retain(|_, entry| entry.plugin != plugin);
+        self.commands
+            .write()
+            .expect("plugin commands lock poisoned")
+            .retain(|_, entry| entry.plugin != plugin);
+    }
+
     pub fn register_plugin(
         &self,
         plugin: &str,

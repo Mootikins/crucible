@@ -356,20 +356,28 @@ fn parse_handler_result(
         return HandlerResult::ok(original_event);
     }
 
-    // Check for cancel directive
+    // Check for directives — but only on directive-SHAPED returns. Flat
+    // events always carry the envelope `type` key, so a handler returning
+    // the event (possibly modified) is a transform even when the event's
+    // payload happens to contain a `cancel` or `emit` field. Without this
+    // guard, a pass-through of `{ type = "x", cancel = true }` was silently
+    // converted into a cancellation of the whole event.
     if let Some(obj) = result.as_object() {
-        if obj.get("cancel") == Some(&JsonValue::Bool(true)) {
+        let is_directive_shape = !obj.contains_key("type");
+        if is_directive_shape && obj.get("cancel") == Some(&JsonValue::Bool(true)) {
             return HandlerResult::cancel();
         }
 
         // Check for emit directive
-        if let Some(events) = obj.get("emit") {
-            if events.is_array() {
-                tracing::debug!(
-                    "Handler {} wants to emit {} events (not yet implemented in unified handler)",
-                    handler_name,
-                    events.as_array().map(|a| a.len()).unwrap_or(0)
-                );
+        if is_directive_shape {
+            if let Some(events) = obj.get("emit") {
+                if events.is_array() {
+                    tracing::debug!(
+                        "Handler {} wants to emit {} events (not yet implemented in unified handler)",
+                        handler_name,
+                        events.as_array().map(|a| a.len()).unwrap_or(0)
+                    );
+                }
             }
         }
     }

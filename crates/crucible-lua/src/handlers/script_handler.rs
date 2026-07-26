@@ -250,29 +250,38 @@ pub fn interpret_handler_result(result: &Value) -> LuaResult<ScriptHandlerResult
     match result {
         Value::Nil => Ok(ScriptHandlerResult::PassThrough),
         Value::Table(t) => {
-            // {inject={content="...", position="..."}}
-            if let Ok(inject_table) = t.get::<Table>("inject") {
-                let content = inject_table.get::<String>("content")?;
-                let position = inject_table
-                    .get::<String>("position")
-                    .unwrap_or_else(|_| "user_prefix".to_string());
-                return Ok(ScriptHandlerResult::Inject { content, position });
-            }
-            // {handled=true, result=..., terminate=bool}
-            if let Ok(true) = t.get::<bool>("handled") {
-                let result = match lua_table_to_json(t) {
-                    Ok(json) => json.get("result").cloned().unwrap_or(JsonValue::Null),
-                    Err(_) => JsonValue::Null,
-                };
-                let terminate = t.get::<bool>("terminate").unwrap_or(false);
-                return Ok(ScriptHandlerResult::Handled { result, terminate });
-            }
-            // {cancel=true, reason="..."}
-            if t.get::<bool>("cancel").unwrap_or(false) {
-                let reason = t
-                    .get::<String>("reason")
-                    .unwrap_or_else(|_| "cancelled".to_string());
-                return Ok(ScriptHandlerResult::Cancel { reason });
+            // Directives only apply to directive-SHAPED returns. Flat events
+            // carry the envelope `type` key, so a handler returning the event
+            // table (a documented transform pattern) must stay a transform
+            // even when the event's payload contains `cancel`/`handled`/
+            // `inject` fields — otherwise a payload key silently becomes a
+            // cancellation.
+            let is_directive_shape = !t.contains_key("type").unwrap_or(false);
+            if is_directive_shape {
+                // {inject={content="...", position="..."}}
+                if let Ok(inject_table) = t.get::<Table>("inject") {
+                    let content = inject_table.get::<String>("content")?;
+                    let position = inject_table
+                        .get::<String>("position")
+                        .unwrap_or_else(|_| "user_prefix".to_string());
+                    return Ok(ScriptHandlerResult::Inject { content, position });
+                }
+                // {handled=true, result=..., terminate=bool}
+                if let Ok(true) = t.get::<bool>("handled") {
+                    let result = match lua_table_to_json(t) {
+                        Ok(json) => json.get("result").cloned().unwrap_or(JsonValue::Null),
+                        Err(_) => JsonValue::Null,
+                    };
+                    let terminate = t.get::<bool>("terminate").unwrap_or(false);
+                    return Ok(ScriptHandlerResult::Handled { result, terminate });
+                }
+                // {cancel=true, reason="..."}
+                if t.get::<bool>("cancel").unwrap_or(false) {
+                    let reason = t
+                        .get::<String>("reason")
+                        .unwrap_or_else(|_| "cancelled".to_string());
+                    return Ok(ScriptHandlerResult::Cancel { reason });
+                }
             }
             // Anything else is a transform
             let json = lua_table_to_json(t)?;
