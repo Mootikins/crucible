@@ -39,6 +39,8 @@ export default defineConfig({
 				// Makes dark the default when the reader has no stored
 				// preference; see the component for why and how to revert.
 				ThemeProvider: './src/components/ThemeProvider.astro',
+				// Wraps Starlight's footer to prepend the neighbourhood graph.
+				Footer: './src/components/Footer.astro',
 			},
 
 			head: [

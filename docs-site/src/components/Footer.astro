@@ -1,0 +1,21 @@
+---
+/**
+ * Adds the neighbourhood graph above Starlight's footer.
+ *
+ * It sits at the end of the content rather than in the right sidebar: the
+ * sidebar column is around 200px, which is not enough to label a graph, and
+ * "where do I go next" belongs at the point where the reader has finished
+ * reading.
+ *
+ * Importing the package path rather than the `virtual:starlight/components/*`
+ * alias is deliberate — the alias resolves to this file, so using it here would
+ * recurse.
+ */
+import Default from '@astrojs/starlight/components/Footer.astro';
+import LocalGraph from './LocalGraph.astro';
+
+const { entry } = Astro.locals.starlightRoute;
+---
+
+<LocalGraph slug={entry.id} />
+<Default><slot /></Default>

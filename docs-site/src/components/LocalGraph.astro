@@ -1,0 +1,281 @@
+---
+/**
+ * The page's neighbourhood in the documentation graph.
+ *
+ * Answers "what is this page connected to, and what points here?" — the second
+ * half of which the sidebar cannot show, because the sidebar is a filing
+ * decision and these are the links the prose actually makes.
+ *
+ * Rendered as inline SVG at build time. There is nothing to interact with
+ * beyond following a link, so this ships no JavaScript: a canvas or a force
+ * simulation here would be script and layout jitter in exchange for nothing the
+ * reader can use.
+ */
+import { getNeighbourhood } from '../lib/docgraph.mjs';
+
+interface Props {
+	slug: string;
+}
+
+const { slug } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+const hood = await getNeighbourhood(slug);
+
+// Orphans get nothing rather than an empty box explaining its own emptiness.
+const total = hood ? hood.outbound.length + hood.inbound.length : 0;
+const show = hood && total > 0;
+
+/**
+ * Lay the neighbours out on two arcs — outbound to the right, inbound to the
+ * left — around the current page. Direction is the whole point of the widget,
+ * so it is carried by position rather than by a legend the reader has to
+ * consult.
+ */
+const W = 680;
+const H = 260;
+const CX = W / 2;
+const CY = H / 2;
+
+function arc(items: any[], side: -1 | 1) {
+	const n = items.length;
+	return items.map((item, i) => {
+		// Spread across a vertical fan; a single neighbour sits on the axis.
+		const t = n === 1 ? 0.5 : i / (n - 1);
+		const spread = Math.min(0.86, 0.3 + n * 0.1);
+		const angle = (t - 0.5) * Math.PI * spread;
+		const radius = 190 + (i % 2) * 34; // stagger so labels do not collide
+		return {
+			...item,
+			x: CX + side * Math.cos(angle) * radius,
+			y: CY + Math.sin(angle) * (H / 2.35),
+			side,
+		};
+	});
+}
+
+const placed = show ? [...arc(hood!.outbound, 1), ...arc(hood!.inbound, -1)] : [];
+
+/** Trim a long title so labels stay on one line. */
+const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' : s);
+---
+
+{
+	show && (
+		<aside class="localgraph not-content" aria-labelledby="localgraph-heading">
+			<h2 id="localgraph-heading" class="localgraph-title">
+				Nearby
+			</h2>
+
+			<div class="localgraph-figure">
+				<svg
+					viewBox={`0 0 ${W} ${H}`}
+					class="localgraph-svg"
+					role="img"
+					aria-label={`${hood!.node.title} links out to ${hood!.totalOutbound} page${hood!.totalOutbound === 1 ? '' : 's'} and is linked to from ${hood!.totalInbound}. The same pages are listed below.`}
+				>
+					{placed.map((p) => (
+						<line
+							x1={CX}
+							y1={CY}
+							x2={p.x}
+							y2={p.y}
+							class={p.side === 1 ? 'edge edge-out' : 'edge edge-in'}
+						/>
+					))}
+
+					{placed.map((p) => (
+						<a href={`${base}/${p.slug}/`} class="node-link">
+							<circle cx={p.x} cy={p.y} r="4" class="node" />
+							<text
+								x={p.side === 1 ? p.x + 10 : p.x - 10}
+								y={p.y + 4}
+								text-anchor={p.side === 1 ? 'start' : 'end'}
+								class="node-label"
+							>
+								{short(p.title)}
+							</text>
+						</a>
+					))}
+
+					<circle cx={CX} cy={CY} r="7" class="node node-self" />
+				</svg>
+			</div>
+
+			{/* The SVG is decorative for anyone not reading it visually; these
+			    lists are the real navigation, and they also carry the counts
+			    when the graph is capped. */}
+			<div class="localgraph-lists">
+				{hood!.outbound.length > 0 && (
+					<div>
+						<h3 class="localgraph-label">
+							Links to{' '}
+							<span class="localgraph-count">
+								{hood!.outbound.length < hood!.totalOutbound
+									? `${hood!.outbound.length} of ${hood!.totalOutbound}`
+									: hood!.totalOutbound}
+							</span>
+						</h3>
+						<ul>
+							{hood!.outbound.map((n: any) => (
+								<li>
+									<a href={`${base}/${n.slug}/`}>{n.title}</a>
+								</li>
+							))}
+						</ul>
+					</div>
+				)}
+
+				{hood!.inbound.length > 0 && (
+					<div>
+						<h3 class="localgraph-label">
+							Linked from{' '}
+							<span class="localgraph-count">
+								{hood!.inbound.length < hood!.totalInbound
+									? `${hood!.inbound.length} of ${hood!.totalInbound}`
+									: hood!.totalInbound}
+							</span>
+						</h3>
+						<ul>
+							{hood!.inbound.map((n: any) => (
+								<li>
+									<a href={`${base}/${n.slug}/`}>{n.title}</a>
+								</li>
+							))}
+						</ul>
+					</div>
+				)}
+			</div>
+		</aside>
+	)
+}
+
+<style>
+	.localgraph {
+		margin-top: 3.5rem;
+		padding-top: 1.75rem;
+		border-top: 1px solid var(--sl-color-hairline);
+	}
+
+	.localgraph-title {
+		font-family: var(--cru-font-mono);
+		font-size: 0.7rem;
+		font-weight: 500;
+		letter-spacing: var(--cru-track-label);
+		text-transform: uppercase;
+		color: var(--sl-color-gray-3);
+		margin: 0 0 0.5rem;
+	}
+
+	.localgraph-figure {
+		margin: 0 -0.5rem;
+	}
+
+	.localgraph-svg {
+		width: 100%;
+		height: auto;
+		overflow: visible;
+	}
+
+	.edge {
+		stroke-width: 1;
+		stroke: var(--cru-ember);
+		opacity: 0.28;
+	}
+
+	/* Inbound edges are dashed. Direction is already encoded by which side a
+	   node sits on; the dash is the redundant cue for anyone who does not
+	   read the layout that way. */
+	.edge-in {
+		stroke-dasharray: 3 3;
+		opacity: 0.2;
+	}
+
+	.node {
+		fill: var(--cru-ember);
+		opacity: 0.75;
+		transition: opacity var(--cru-quick) var(--cru-ease);
+	}
+
+	.node-self {
+		fill: var(--cru-flame);
+		opacity: 1;
+		stroke: var(--sl-color-bg);
+		stroke-width: 3;
+	}
+
+	.node-label {
+		font-family: var(--cru-font-body);
+		font-size: 12px;
+		fill: var(--sl-color-gray-2);
+		transition: fill var(--cru-quick) var(--cru-ease);
+	}
+
+	.node-link {
+		cursor: pointer;
+	}
+
+	.node-link:hover .node-label,
+	.node-link:focus-visible .node-label {
+		fill: var(--cru-ember);
+	}
+	.node-link:hover .node,
+	.node-link:focus-visible .node {
+		opacity: 1;
+	}
+	.node-link:focus-visible {
+		outline: 2px solid var(--cru-ember);
+		outline-offset: 2px;
+	}
+
+	.localgraph-lists {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1.5rem 2.5rem;
+		margin-top: 1.5rem;
+	}
+
+	.localgraph-label {
+		font-family: var(--cru-font-mono);
+		font-size: 0.68rem;
+		font-weight: 500;
+		letter-spacing: var(--cru-track-label);
+		text-transform: uppercase;
+		color: var(--sl-color-gray-3);
+		margin: 0 0 0.6rem;
+	}
+
+	.localgraph-count {
+		color: var(--cru-ember);
+	}
+
+	.localgraph-lists ul {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		font-size: 0.875rem;
+		line-height: 1.7;
+	}
+
+	.localgraph-lists a {
+		color: var(--sl-color-gray-2);
+		text-decoration: none;
+	}
+
+	.localgraph-lists a:hover {
+		color: var(--cru-ember);
+		text-decoration: underline;
+		text-underline-offset: 0.2em;
+	}
+
+	/* The diagram is the first thing to go: at narrow widths the labels
+	   overlap into noise, and the lists below say the same thing better. */
+	@media (max-width: 640px) {
+		.localgraph-figure {
+			display: none;
+		}
+		.localgraph-lists {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>

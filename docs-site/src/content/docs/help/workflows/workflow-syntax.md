@@ -394,4 +394,4 @@ Based on **severity**, take immediate action:
 
 - [Sessions](../core/sessions/) — Workflow execution tracking
 - [Task Management](../task-management/) — Task execution format
-- [Markdown Handlers](../extending/markdown-handlers/) — Event-driven context injection
+- [Event Hooks](../extending/event-hooks/) — Intercepting and reacting to events

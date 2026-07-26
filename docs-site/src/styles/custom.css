@@ -352,12 +352,24 @@ starlight-toc a[aria-current='true']:hover {
 	background: var(--cru-ember-wash);
 }
 
-.pagination-links a > span:first-of-type {
+/* Starlight nests the page title inside the same span as the
+   "Previous"/"Next" label, so the label device has to be undone on
+   .link-title or the title inherits mono caps too. */
+.pagination-links a > span {
 	font-family: var(--cru-font-mono);
 	font-size: 0.68rem;
 	letter-spacing: var(--cru-track-label);
 	text-transform: uppercase;
 	color: var(--sl-color-gray-3);
+}
+
+.pagination-links a .link-title {
+	font-family: var(--cru-font-body);
+	font-size: 1rem;
+	font-weight: 600;
+	letter-spacing: normal;
+	text-transform: none;
+	color: var(--sl-color-white);
 }
 
 /* ══ Search ═══════════════════════════════════════════════════════════ */

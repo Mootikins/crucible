@@ -192,7 +192,7 @@ GITHUB_TOKEN = "${GITHUB_PERSONAL_TOKEN}"
 
 All gateway tools emit events. Use hooks to filter, transform, or audit:
 
-```rune
+```rust
 /// Transform GitHub results
 #[hook(event = "tool:after", pattern = "gh_*", priority = 50)]
 pub fn transform_github(ctx, event) {
@@ -241,7 +241,7 @@ blocked_tools = ["delete_*", "create_*", "update_*"]
 
 Add validation before external calls:
 
-```rune
+```rust
 #[hook(event = "tool:before", pattern = "db_*", priority = 5)]
 pub fn validate_query(ctx, event) {
     let query = event.payload.query;
