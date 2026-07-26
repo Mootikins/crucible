@@ -101,7 +101,6 @@ export default defineConfig({
 						{ slug: 'help/extending/custom-tools' },
 						{ slug: 'help/extending/event-hooks' },
 						{ slug: 'help/extending/custom-handlers' },
-						{ slug: 'help/extending/markdown-handlers' },
 						{ slug: 'help/extending/mcp-gateway' },
 						{ slug: 'help/extending/scripted-ui' },
 						{ slug: 'help/extending/script-agent-queries' },
