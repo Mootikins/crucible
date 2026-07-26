@@ -1,0 +1,407 @@
+---
+/**
+ * The hero constellation.
+ *
+ * Draws the documentation's actual link graph — the same edges the per-page
+ * widget draws — laid out around the engraving so the laboratory reads as a
+ * node in the graph rather than a picture sitting on top of one.
+ *
+ * Canvas 2D, not WebGL: ~34 nodes and ~60 edges is nowhere near needing a GPU,
+ * and 2D has no context-loss handling, no shader compile step, and a far better
+ * worst-case on weak hardware. Reaching for WebGL here would cost more than it
+ * bought.
+ */
+interface GraphNode {
+	slug: string;
+	section: string;
+	degree: number;
+}
+interface GraphEdge {
+	from: string;
+	to: string;
+}
+interface Props {
+	nodes: GraphNode[];
+	edges: GraphEdge[];
+}
+const { nodes, edges } = Astro.props;
+---
+
+<canvas
+	class="hero-graph"
+	aria-hidden="true"
+	data-graph={JSON.stringify({ nodes, edges })}></canvas>
+
+<style>
+	.hero-graph {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		display: block;
+		pointer-events: none;
+		z-index: 0;
+	}
+
+	/* Below the wide breakpoint there is no medallion to encircle and no column
+	   free of copy, so the constellation just draws lines across the headline.
+	   The engraving wash already carries the identity at this size. */
+	@media (max-width: 1000px) {
+		.hero-graph {
+			display: none;
+		}
+	}
+</style>
+
+<script>
+	type Node = {
+		slug: string;
+		section: string;
+		degree: number;
+		x: number;
+		y: number;
+		vx: number;
+		vy: number;
+		phase: number;
+		heat: number;
+	};
+
+	const canvas = document.querySelector<HTMLCanvasElement>('.hero-graph');
+	if (canvas) {
+		const ctx = canvas.getContext('2d', { alpha: true })!;
+		const raw = JSON.parse(canvas.dataset.graph!) as {
+			nodes: { slug: string; section: string; degree: number }[];
+			edges: { from: string; to: string }[];
+		};
+
+		const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+		// Deterministic PRNG. The layout must be identical on every load and on
+		// every resize — a constellation that reshuffles when you rotate your
+		// phone reads as a bug, not as life.
+		function makeRng(seed: number) {
+			let s = seed >>> 0;
+			return () => {
+				s = (s * 1664525 + 1013904223) >>> 0;
+				return s / 4294967296;
+			};
+		}
+
+		let nodes: Node[] = [];
+		let links: { a: Node; b: Node }[] = [];
+		let W = 0,
+			H = 0,
+			DPR = 1;
+		// Medallion geometry, mirrored from CSS so edges can terminate on its rim.
+		let mx = 0,
+			my = 0,
+			mr = 0;
+		// Left edge of the region nodes may occupy — keeps them off the copy.
+		let leftBound = 0;
+
+		const pointer = { x: -9999, y: -9999, active: false };
+
+		function measure() {
+			const rect = canvas!.getBoundingClientRect();
+			W = rect.width;
+			H = rect.height;
+			DPR = Math.min(window.devicePixelRatio || 1, 2);
+			canvas!.width = Math.round(W * DPR);
+			canvas!.height = Math.round(H * DPR);
+			ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+			// Mirrors the .hero-art placement in index.astro: a disc of
+			// width min(46vw, 620px), inset 2.5% from the right, vertically
+			// centred. Below the wide breakpoint the art becomes a faint wash
+			// behind the copy, so the constellation spreads over the whole hero.
+			const wide = W >= 1000;
+			const artW = Math.min(W * 0.38, 520);
+			mr = wide ? artW / 2 : 0;
+			mx = wide ? W - W * 0.04 - artW / 2 : W * 0.5;
+			my = H * 0.5;
+
+			// Nodes are kept clear of the type column. Dots drifting behind a
+			// headline read as dirt on the screen, not as a graph. The bound sits
+			// just past the copy's 36rem measure.
+			leftBound = wide ? Math.max(W * 0.46, (W - 1240) / 2 + 32 + 600) : 24;
+		}
+
+		function layout() {
+			const rng = makeRng(0x63727563); // 'cruc'
+			const byId = new Map<string, Node>();
+
+			nodes = raw.nodes.map((n, i) => {
+				// Seeded on an annulus at even angles rather than at random.
+				// A random scatter plus a disc-exclusion force reliably drifts into
+				// one lopsided clump wherever the sim happens to find room; placing
+				// the ring up front and letting the springs only deform it locally
+				// is what actually keeps the plate encircled.
+				const a = (i / raw.nodes.length) * Math.PI * 2 + rng() * 0.22;
+				const d = mr + 46 + rng() * 132;
+				const node: Node = {
+					...n,
+					x: mx + Math.cos(a) * d,
+					y: my + Math.sin(a) * d * 0.94,
+					vx: 0,
+					vy: 0,
+					phase: rng() * Math.PI * 2,
+					heat: 0,
+				};
+				byId.set(n.slug, node);
+				return node;
+			});
+
+			links = raw.edges
+				.map((e) => ({ a: byId.get(e.from)!, b: byId.get(e.to)! }))
+				.filter((l) => l.a && l.b);
+
+			// Force settle. Runs once per resize on ~34 nodes — cheap enough to do
+			// synchronously, and doing it up front means no visible reflow.
+			// Deliberately short: the seeded ring is most of the answer, and a
+			// long run just lets the springs pull it back into a blob.
+			const PAD = 28;
+			const ITERS = 90;
+			for (let iter = 0; iter < ITERS; iter++) {
+				const cool = 1 - iter / ITERS;
+
+				// Short rest length and mild repulsion. Tuned so linked pages sit
+				// close enough to read as clusters — a longer spring spreads all
+				// 34 nodes to the viewport edges and the edges between them
+				// degenerate into big triangles spanning the whole hero.
+				for (const l of links) {
+					const dx = l.b.x - l.a.x,
+						dy = l.b.y - l.a.y;
+					const dist = Math.hypot(dx, dy) || 1;
+					const f = ((dist - 82) / dist) * 0.02 * cool;
+					l.a.vx += dx * f;
+					l.a.vy += dy * f;
+					l.b.vx -= dx * f;
+					l.b.vy -= dy * f;
+				}
+
+				for (let i = 0; i < nodes.length; i++) {
+					for (let j = i + 1; j < nodes.length; j++) {
+						const a = nodes[i],
+							b = nodes[j];
+						const dx = b.x - a.x,
+							dy = b.y - a.y;
+						const d2 = dx * dx + dy * dy || 1;
+						if (d2 > 22000) continue;
+						const f = (420 / d2) * cool;
+						a.vx -= dx * f;
+						a.vy -= dy * f;
+						b.vx += dx * f;
+						b.vy += dy * f;
+					}
+				}
+
+				// Hold each node near the annulus it was seeded on. This is a
+				// radial spring, not a pull toward the centre — a centre pull
+				// collapses the ring into whichever gap is closest to the middle.
+				if (mr > 0) {
+					for (const n of nodes) {
+						const dx = n.x - mx,
+							dy = n.y - my;
+						const d = Math.hypot(dx, dy) || 1;
+						const band = Math.min(Math.max(d, mr + 46), mr + 178);
+						n.vx += ((mx + (dx / d) * band - n.x)) * 0.05 * cool;
+						n.vy += ((my + (dy / d) * band - n.y)) * 0.05 * cool;
+					}
+				}
+
+				for (const n of nodes) {
+					// Push out of the medallion. The engraving has to stay legible,
+					// so nothing is allowed to settle on top of it.
+					if (mr > 0) {
+						const dx = n.x - mx,
+							dy = n.y - my;
+						const d = Math.hypot(dx, dy) || 1;
+						const want = mr + PAD;
+						if (d < want) {
+							const push = ((want - d) / d) * 0.5;
+							n.vx += dx * push;
+							n.vy += dy * push;
+						}
+					}
+					n.x += n.vx;
+					n.y += n.vy;
+					n.vx *= 0.82;
+					n.vy *= 0.82;
+					n.x = Math.max(leftBound + PAD, Math.min(W - PAD, n.x));
+					n.y = Math.max(PAD, Math.min(H - PAD, n.y));
+				}
+			}
+		}
+
+		// Ember ramp, matched to tokens.css.
+		const EMBER = [255, 140, 66];
+		const FLAME = [255, 170, 51];
+		const SCORIA = [92, 42, 13];
+
+		function mix(a: number[], b: number[], t: number) {
+			return [
+				Math.round(a[0] + (b[0] - a[0]) * t),
+				Math.round(a[1] + (b[1] - a[1]) * t),
+				Math.round(a[2] + (b[2] - a[2]) * t),
+			];
+		}
+
+		let t = 0;
+
+		function draw(animate: boolean) {
+			ctx.clearRect(0, 0, W, H);
+			if (animate) t += 0.0045;
+
+			// Drift. Small enough to read as breathing, not as movement.
+			for (const n of nodes) {
+				const dx = animate ? Math.cos(t + n.phase) * 5 : 0;
+				const dy = animate ? Math.sin(t * 0.8 + n.phase * 1.3) * 5 : 0;
+				(n as any).rx = n.x + dx;
+				(n as any).ry = n.y + dy;
+
+				if (pointer.active) {
+					const d = Math.hypot((n as any).rx - pointer.x, (n as any).ry - pointer.y);
+					// Mild, as asked: proximity warms a node, it does not move it.
+					n.heat += ((d < 190 ? 1 - d / 190 : 0) - n.heat) * 0.14;
+				} else {
+					n.heat += (0 - n.heat) * 0.08;
+				}
+			}
+
+			// Edges under nodes. A pair that ends up far apart is drawn faintly or
+			// not at all: a 700px hairline across the hero reads as a stray
+			// scratch, not as a relationship between two pages.
+			const FADE_FROM = 240;
+			const FADE_TO = 420;
+			for (const l of links) {
+				const a = l.a as any,
+					b = l.b as any;
+				const span = Math.hypot(b.rx - a.rx, b.ry - a.ry);
+				if (span > FADE_TO) continue;
+				const near = 1 - Math.max(0, (span - FADE_FROM) / (FADE_TO - FADE_FROM));
+				const heat = Math.max(l.a.heat, l.b.heat);
+				const [r, g, bl] = mix(EMBER, FLAME, heat);
+				ctx.strokeStyle = `rgba(${r},${g},${bl},${(0.3 + heat * 0.45) * near})`;
+				ctx.lineWidth = 0.8 + heat * 0.9;
+				ctx.beginPath();
+				ctx.moveTo(a.rx, a.ry);
+				ctx.lineTo(b.rx, b.ry);
+				ctx.stroke();
+			}
+
+			// Tie the constellation to the engraving: the nearest nodes throw a
+			// line to the medallion's rim, so the laboratory is part of the graph.
+			if (mr > 0) {
+				const anchors = [...nodes]
+					.sort(
+						(p, q) =>
+							Math.hypot((p as any).rx - mx, (p as any).ry - my) -
+							Math.hypot((q as any).rx - mx, (q as any).ry - my)
+					)
+					.slice(0, 7);
+				for (const n of anchors) {
+					const nx = (n as any).rx,
+						ny = (n as any).ry;
+					const ang = Math.atan2(ny - my, nx - mx);
+					const [r, g, bl] = mix(SCORIA, FLAME, n.heat);
+					ctx.strokeStyle = `rgba(${r},${g},${bl},${0.26 + n.heat * 0.44})`;
+					ctx.lineWidth = 0.8 + n.heat * 0.8;
+					ctx.beginPath();
+					ctx.moveTo(nx, ny);
+					ctx.lineTo(mx + Math.cos(ang) * mr, my + Math.sin(ang) * mr);
+					ctx.stroke();
+				}
+			}
+
+			for (const n of nodes) {
+				const nx = (n as any).rx,
+					ny = (n as any).ry;
+				const size = 1.8 + Math.min(n.degree, 14) * 0.16 + n.heat * 1.8;
+				const [r, g, bl] = mix(EMBER, FLAME, n.heat);
+
+				if (n.heat > 0.02) {
+					ctx.fillStyle = `rgba(${r},${g},${bl},${n.heat * 0.13})`;
+					ctx.beginPath();
+					ctx.arc(nx, ny, size * 5, 0, Math.PI * 2);
+					ctx.fill();
+				}
+
+				ctx.fillStyle = `rgba(${r},${g},${bl},${0.55 + n.heat * 0.45})`;
+				ctx.beginPath();
+				ctx.arc(nx, ny, size, 0, Math.PI * 2);
+				ctx.fill();
+			}
+		}
+
+		let raf = 0;
+		let running = false;
+
+		function loop() {
+			draw(true);
+			raf = requestAnimationFrame(loop);
+		}
+		function start() {
+			if (running || reduceMotion.matches || hidden()) return;
+			running = true;
+			raf = requestAnimationFrame(loop);
+		}
+		function stop() {
+			running = false;
+			cancelAnimationFrame(raf);
+		}
+
+		/** Hidden by CSS below 1000px, which collapses the canvas to 0x0. */
+		function hidden() {
+			return W === 0 || H === 0;
+		}
+
+		function rebuild() {
+			measure();
+			if (hidden()) {
+				stop();
+				return;
+			}
+			layout();
+			draw(!reduceMotion.matches);
+		}
+
+		rebuild();
+
+		// Only animate while the hero is actually on screen. Scrolling away from
+		// a landing page should not leave a rAF loop burning battery.
+		const hero = canvas.closest('section') ?? canvas.parentElement!;
+		new IntersectionObserver(
+			([entry]) => (entry.isIntersecting ? start() : stop()),
+			{ threshold: 0 }
+		).observe(hero);
+
+		document.addEventListener('visibilitychange', () => {
+			document.hidden ? stop() : start();
+		});
+
+		let resizeTimer = 0;
+		window.addEventListener('resize', () => {
+			clearTimeout(resizeTimer);
+			resizeTimer = window.setTimeout(rebuild, 150);
+		});
+
+		// Pointer tracking lives on the hero, not the canvas — the canvas is
+		// pointer-events:none so it never intercepts a click on the CTA.
+		hero.addEventListener('pointermove', (e) => {
+			if (reduceMotion.matches) return;
+			const rect = canvas.getBoundingClientRect();
+			pointer.x = (e as PointerEvent).clientX - rect.left;
+			pointer.y = (e as PointerEvent).clientY - rect.top;
+			pointer.active = true;
+		});
+		hero.addEventListener('pointerleave', () => {
+			pointer.active = false;
+		});
+
+		reduceMotion.addEventListener('change', () => {
+			stop();
+			rebuild();
+			start();
+		});
+	}
+</script>

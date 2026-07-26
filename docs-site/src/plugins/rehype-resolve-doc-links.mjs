@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { visit } from 'unist-util-visit';
+import { resolveDocLink, splitHash } from '../lib/doc-links.mjs';
 
 /**
  * Rewrites file-relative links in doc bodies into root-absolute site URLs.
@@ -34,23 +35,10 @@ export function rehypeResolveDocLinks({ contentDir, base }) {
 			if (node.tagName !== 'a') return;
 			const href = node.properties?.href;
 			if (typeof href !== 'string') return;
-			if (!href.startsWith('./') && !href.startsWith('../')) return;
 
-			const hashAt = href.indexOf('#');
-			const hash = hashAt === -1 ? '' : href.slice(hashAt);
-			let target = hashAt === -1 ? href : href.slice(0, hashAt);
-			if (!target) return; // bare "#anchor" after a ./ — nothing to resolve
-
-			// Resolve as a file path, then normalise to a page slug.
-			let slug = path.posix.normalize(path.posix.join(sourceDir, target));
-			slug = slug.replace(/\.mdx?$/, '').replace(/\/+$/, '');
-			slug = slug.replace(/(^|\/)index$/, ''); // help/cli/index -> help/cli
-			slug = slug.replace(/^\.\/?/, '').replace(/^\/+/, '');
-
-			// A link that climbs above the content root is a content bug; leave
-			// it untouched so it surfaces in the link check rather than being
-			// silently rewritten into something that resolves but is wrong.
-			if (slug.startsWith('..')) return;
+			const [, hash] = splitHash(href);
+			const slug = resolveDocLink(sourceDir, href);
+			if (slug === null) return;
 
 			node.properties.href = slug ? `${basePrefix}/${slug}/${hash}` : `${basePrefix}/${hash}`;
 		});
