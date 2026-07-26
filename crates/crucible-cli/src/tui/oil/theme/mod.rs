@@ -21,6 +21,9 @@ pub use config::*;
 pub mod global;
 pub use global::{active, is_initialized, set};
 
+pub mod remote;
+pub use remote::apply_ui_config;
+
 #[cfg(test)]
 mod tests {
     use super::*;

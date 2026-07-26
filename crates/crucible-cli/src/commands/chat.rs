@@ -433,6 +433,19 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
         }
     }
 
+    // Pull the Lua-defined theme before the first frame. Strictly an upgrade:
+    // the TUI already holds a complete compiled-in default, so a missing daemon,
+    // an RPC error, or an older daemon that does not know `ui.config` all leave a
+    // correct screen. Never make this a precondition for rendering.
+    if let Some(client) = lua_client.as_ref() {
+        match client.call("ui.config", serde_json::json!({})).await {
+            Ok(payload) => {
+                crate::tui::oil::theme::apply_ui_config(&payload);
+            }
+            Err(e) => debug!("ui.config unavailable, using the built-in theme: {e}"),
+        }
+    }
+
     let lua_initialized = if let Some(client) = lua_client.as_ref() {
         let init_params = LuaInitSessionRequest {
             session_id: lua_session_id.clone(),
