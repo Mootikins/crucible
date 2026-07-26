@@ -56,6 +56,14 @@ pub fn apply_ui_config(payload: &Value) -> bool {
     if let Some(ui) = payload.get("ui") {
         super::geometry::set(crucible_lua::ui_geometry::geometry_from_wire(ui));
     }
+    // Values already pushed before this client attached.
+    if let Some(map) = payload.get("exprs").and_then(Value::as_object) {
+        for (key, value) in map {
+            if let Some(text) = value.as_str() {
+                super::exprs::set(key, text);
+            }
+        }
+    }
     if let Some(b) = payload.get("bars") {
         let parsed = crucible_lua::statusline_items::bars_from_wire(b);
         // An empty set would leave a blank statusline; keep the built-in rather

@@ -94,6 +94,7 @@ pub(crate) mod test_support;
 pub mod config;
 pub mod hl;
 pub mod hl_lua;
+pub mod statusline_exprs;
 pub mod statusline_items;
 pub mod statusline_lua;
 pub mod theme;
@@ -119,6 +120,9 @@ pub use config::{
 pub use context::{
     register_context_module, register_context_module_stub, register_context_validators,
     LuaValidatorRegistry,
+};
+pub use statusline_exprs::{
+    register_statusline_exprs, ExprRejection, StatuslineExprRegistry, MAX_KEYS_PER_SESSION,
 };
 pub use context_attach::{
     register_context_attach, AttachRejection, ContextAttachRegistry, DEFAULT_ATTACH_BUDGET_CHARS,

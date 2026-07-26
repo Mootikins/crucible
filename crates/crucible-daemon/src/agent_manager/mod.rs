@@ -656,6 +656,9 @@ pub struct AgentManager {
     /// built before the bind silently got a nil `cru.context.attach` — for that
     /// session, permanently, because VMs are cached.
     context_attach: std::sync::Arc<crucible_lua::ContextAttachRegistry>,
+    /// Statusline expression values, created eagerly for the same reason as
+    /// `context_attach` — see `statusline_exprs()`.
+    statusline_exprs: std::sync::Arc<crucible_lua::StatuslineExprRegistry>,
     /// Plugin tool/command registry, bound at daemon startup like the others.
     ///
     /// The loader mutex must not be the read path: `fire_session_start` holds
@@ -735,6 +738,7 @@ impl AgentManager {
             plugin_handlers: std::sync::OnceLock::new(),
             isolation: std::sync::OnceLock::new(),
             context_attach: std::sync::Arc::new(crucible_lua::ContextAttachRegistry::default()),
+            statusline_exprs: std::sync::Arc::new(crucible_lua::StatuslineExprRegistry::new()),
             plugin_tool_registry: std::sync::OnceLock::new(),
             titles_in_flight: Arc::new(DashMap::new()),
             snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),
@@ -794,6 +798,13 @@ impl AgentManager {
     /// The mid-turn attachment registry. Always present — see the field.
     pub fn context_attach(&self) -> std::sync::Arc<crucible_lua::ContextAttachRegistry> {
         self.context_attach.clone()
+    }
+
+    /// Statusline expression values. Created eagerly for the same reason as
+    /// `context_attach`: session VMs are lazy and cached, so a registry bound
+    /// later leaves earlier VMs holding a nil function forever.
+    pub fn statusline_exprs(&self) -> std::sync::Arc<crucible_lua::StatuslineExprRegistry> {
+        self.statusline_exprs.clone()
     }
 
     pub(crate) fn isolation(&self) -> Option<crucible_lua::IsolationRegistry> {
@@ -1352,6 +1363,14 @@ impl AgentManager {
         // `AgentManager::new`, so there is no ordering to get wrong.
         if let Err(e) = crucible_lua::register_context_attach(&lua, self.context_attach()) {
             error!(session_id = %session_id, error = %e, "Failed to register cru.context.attach");
+        }
+
+        if let Ok(cru) = lua.globals().get::<mlua::Table>("cru") {
+            if let Err(e) =
+                crucible_lua::register_statusline_exprs(&lua, &cru, self.statusline_exprs())
+            {
+                error!(session_id = %session_id, error = %e, "Failed to register cru.statusline");
+            }
         }
 
         if let Err(e) = lua.load(crucible_lua::BUILTIN_INIT_LUA).exec() {

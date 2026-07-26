@@ -37,7 +37,16 @@ use crucible_lua::theme_wire::{theme_to_wire, UI_CONFIG_VERSION};
 ///
 /// Falls back to the built-in dark theme when Lua has not populated the config
 /// store — a complete, coherent theme, never a partial one.
-pub fn handle_ui_config(_ctx: &RpcContext, _req: &Request) -> serde_json::Value {
+pub fn handle_ui_config(ctx: &RpcContext, req: &Request) -> serde_json::Value {
+    // Current expression values ride along, so a TUI attaching after a provider
+    // has already pushed is not blank until the next change.
+    let exprs = req
+        .params
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .map(|id| ctx.agents.statusline_exprs().snapshot(id))
+        .unwrap_or_default();
+
     let theme = crucible_lua::get_theme_config()
         .unwrap_or_else(crucible_lua::theme::ThemeConfig::default_dark);
 
@@ -48,6 +57,7 @@ pub fn handle_ui_config(_ctx: &RpcContext, _req: &Request) -> serde_json::Value 
         "ui": crucible_lua::ui_geometry::geometry_to_wire(
             &crucible_lua::config::get_ui_geometry().unwrap_or_default(),
         ),
+        "exprs": exprs,
         "bars": crucible_lua::statusline_items::bars_to_wire(
             &crucible_lua::config::get_status_bars()
                 .unwrap_or_else(crucible_lua::statusline_items::builtin_default),

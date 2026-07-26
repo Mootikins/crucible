@@ -243,6 +243,22 @@ impl DaemonPluginLoader {
             .map_err(|e| anyhow::anyhow!("context.attach module: {e}"))
     }
 
+    /// Bind the statusline expression registry onto the plugin VM. Same
+    /// ownership rule as `register_context_attach`: the registry is created by
+    /// the agent manager, never here.
+    pub fn register_statusline_exprs(
+        &self,
+        registry: Arc<crucible_lua::StatuslineExprRegistry>,
+    ) -> anyhow::Result<()> {
+        let lua = self.executor.lua();
+        let cru: mlua::Table = lua
+            .globals()
+            .get("cru")
+            .map_err(|e| anyhow::anyhow!("cru table: {e}"))?;
+        crucible_lua::register_statusline_exprs(lua, &cru, registry)
+            .map_err(|e| anyhow::anyhow!("statusline module: {e}"))
+    }
+
     /// Fire `crucible.on_session_start` hooks registered by plugins.
     ///
     /// Syncs first: hooks live in Lua globals until pulled into the executor's

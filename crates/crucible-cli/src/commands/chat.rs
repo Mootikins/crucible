@@ -438,7 +438,8 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
     // an RPC error, or an older daemon that does not know `ui.config` all leave a
     // correct screen. Never make this a precondition for rendering.
     if let Some(client) = lua_client.as_ref() {
-        match client.call("ui.config", serde_json::json!({})).await {
+        let ui_params = serde_json::json!({ "session_id": lua_session_id });
+        match client.call("ui.config", ui_params).await {
             Ok(payload) => {
                 crate::tui::oil::theme::apply_ui_config(&payload);
             }
