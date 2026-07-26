@@ -345,55 +345,116 @@ pub enum Border {
     Double,
     Rounded,
     Heavy,
+    /// An arbitrary character set, including asymmetric ones.
+    ///
+    /// Distinct top and bottom edges are not a hypothetical: the messages drawer
+    /// draws `▀` above and `▄` below, which a shared `horizontal` could not
+    /// express. That is why [`BorderChars`] carries eight edges rather than the
+    /// four corners plus two shared runs it started with.
+    Custom(BorderChars),
 }
 
 impl Border {
     pub fn chars(&self) -> BorderChars {
         match self {
-            Border::Single => BorderChars {
-                top_left: '┌',
-                top_right: '┐',
-                bottom_left: '└',
-                bottom_right: '┘',
-                horizontal: '─',
-                vertical: '│',
-            },
-            Border::Double => BorderChars {
-                top_left: '╔',
-                top_right: '╗',
-                bottom_left: '╚',
-                bottom_right: '╝',
-                horizontal: '═',
-                vertical: '║',
-            },
-            Border::Rounded => BorderChars {
-                top_left: '╭',
-                top_right: '╮',
-                bottom_left: '╰',
-                bottom_right: '╯',
-                horizontal: '─',
-                vertical: '│',
-            },
-            Border::Heavy => BorderChars {
-                top_left: '┏',
-                top_right: '┓',
-                bottom_left: '┗',
-                bottom_right: '┛',
-                horizontal: '━',
-                vertical: '┃',
-            },
+            Border::Single => BorderChars::uniform('┌', '─', '┐', '│', '┘', '─', '└', '│'),
+            Border::Double => BorderChars::uniform('╔', '═', '╗', '║', '╝', '═', '╚', '║'),
+            Border::Rounded => BorderChars::uniform('╭', '─', '╮', '│', '╯', '─', '╰', '│'),
+            Border::Heavy => BorderChars::uniform('┏', '━', '┓', '┃', '┛', '━', '┗', '┃'),
+            Border::Custom(chars) => *chars,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+/// The eight characters of a border, clockwise from the top-left corner.
+///
+/// Each is optional: `None` means that edge is **absent and occupies no cell**,
+/// which is distinct from `Some(' ')` — a blank edge that still consumes one.
+/// Layout honours the difference, so a surface can have a top rule and no sides
+/// without paying for margins it does not draw.
+///
+/// The order matches Neovim's `nvim_open_win` border list, so a character set
+/// can be copied between the two without reshuffling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BorderChars {
-    pub top_left: char,
-    pub top_right: char,
-    pub bottom_left: char,
-    pub bottom_right: char,
-    pub horizontal: char,
-    pub vertical: char,
+    pub top_left: Option<char>,
+    pub top: Option<char>,
+    pub top_right: Option<char>,
+    pub right: Option<char>,
+    pub bottom_right: Option<char>,
+    pub bottom: Option<char>,
+    pub bottom_left: Option<char>,
+    pub left: Option<char>,
+}
+
+impl BorderChars {
+    /// Build a set where every position is present, clockwise from top-left.
+    #[allow(clippy::too_many_arguments)]
+    pub const fn uniform(
+        top_left: char,
+        top: char,
+        top_right: char,
+        right: char,
+        bottom_right: char,
+        bottom: char,
+        bottom_left: char,
+        left: char,
+    ) -> Self {
+        Self {
+            top_left: Some(top_left),
+            top: Some(top),
+            top_right: Some(top_right),
+            right: Some(right),
+            bottom_right: Some(bottom_right),
+            bottom: Some(bottom),
+            bottom_left: Some(bottom_left),
+            left: Some(left),
+        }
+    }
+
+    /// Build from a clockwise-from-top-left list, repeating to fill eight.
+    ///
+    /// Matches Neovim: a list shorter than eight repeats modularly, so one entry
+    /// fills every position, two alternate corner/edge, and four cycle. An empty
+    /// string means that position is absent. A length that does not divide eight
+    /// still works — position `i` takes `items[i % len]` — rather than being
+    /// rejected, because a theme is not a gate.
+    pub fn from_list(items: &[Option<char>]) -> Option<Self> {
+        if items.is_empty() {
+            return None;
+        }
+        let at = |i: usize| items[i % items.len()];
+        Some(Self {
+            top_left: at(0),
+            top: at(1),
+            top_right: at(2),
+            right: at(3),
+            bottom_right: at(4),
+            bottom: at(5),
+            bottom_left: at(6),
+            left: at(7),
+        })
+    }
+
+    /// Whether the left edge occupies a cell.
+    pub fn has_left(&self) -> bool {
+        self.left.is_some() || self.top_left.is_some() || self.bottom_left.is_some()
+    }
+
+    /// Whether the right edge occupies a cell.
+    pub fn has_right(&self) -> bool {
+        self.right.is_some() || self.top_right.is_some() || self.bottom_right.is_some()
+    }
+
+    /// Whether the top edge occupies a row.
+    pub fn has_top(&self) -> bool {
+        self.top.is_some() || self.top_left.is_some() || self.top_right.is_some()
+    }
+
+    /// Whether the bottom edge occupies a row.
+    pub fn has_bottom(&self) -> bool {
+        self.bottom.is_some() || self.bottom_left.is_some() || self.bottom_right.is_some()
+    }
 }
 
 #[cfg_attr(
@@ -568,15 +629,86 @@ mod tests {
     #[test]
     fn test_border_chars_single() {
         let chars = Border::Single.chars();
-        assert_eq!(chars.top_left, '┌');
-        assert_eq!(chars.horizontal, '─');
+        assert_eq!(chars.top_left, Some('┌'));
+        assert_eq!(chars.top, Some('─'));
+        assert_eq!(chars.bottom, Some('─'));
     }
 
     #[test]
     fn test_border_chars_rounded() {
         let chars = Border::Rounded.chars();
-        assert_eq!(chars.top_left, '╭');
-        assert_eq!(chars.top_right, '╮');
+        assert_eq!(chars.top_left, Some('╭'));
+        assert_eq!(chars.top_right, Some('╮'));
+    }
+
+    /// Neovim's shorthand: a list shorter than eight repeats modularly.
+    #[test]
+    fn a_single_element_border_list_fills_every_position() {
+        let chars = BorderChars::from_list(&[Some('─')]).unwrap();
+        assert_eq!(chars.top_left, Some('─'));
+        assert_eq!(chars.left, Some('─'));
+        assert_eq!(chars.bottom_right, Some('─'));
+    }
+
+    #[test]
+    fn a_two_element_border_list_alternates_corners_and_edges() {
+        let chars = BorderChars::from_list(&[Some('+'), Some('-')]).unwrap();
+        assert_eq!(chars.top_left, Some('+'));
+        assert_eq!(chars.top, Some('-'));
+        assert_eq!(chars.top_right, Some('+'));
+        assert_eq!(chars.right, Some('-'));
+    }
+
+    #[test]
+    fn an_eight_element_border_list_is_clockwise_from_top_left() {
+        let items: Vec<Option<char>> = "╔═╗║╝═╚║".chars().map(Some).collect();
+        let chars = BorderChars::from_list(&items).unwrap();
+        assert_eq!(chars.top_left, Some('╔'));
+        assert_eq!(chars.top, Some('═'));
+        assert_eq!(chars.top_right, Some('╗'));
+        assert_eq!(chars.right, Some('║'));
+        assert_eq!(chars.bottom_right, Some('╝'));
+        assert_eq!(chars.bottom, Some('═'));
+        assert_eq!(chars.bottom_left, Some('╚'));
+        assert_eq!(chars.left, Some('║'));
+    }
+
+    /// The drawer's shape: horizontal rules, no sides. An absent edge reports
+    /// itself absent so layout can decline to reserve a cell for it.
+    #[test]
+    fn absent_edges_are_distinguishable_from_present_ones() {
+        let chars = BorderChars::from_list(&[
+            None,
+            Some('▀'),
+            None,
+            None,
+            None,
+            Some('▄'),
+            None,
+            None,
+        ])
+        .unwrap();
+
+        assert!(chars.has_top());
+        assert!(chars.has_bottom());
+        assert!(!chars.has_left(), "no left edge should be reserved");
+        assert!(!chars.has_right(), "no right edge should be reserved");
+    }
+
+    /// A blank edge still occupies its cell — that is the difference between
+    /// "no border here" and "an intentionally empty border here".
+    #[test]
+    fn a_space_edge_occupies_a_cell_unlike_an_absent_one() {
+        let blank = BorderChars::from_list(&[Some(' ')]).unwrap();
+        assert!(blank.has_left());
+
+        let absent = BorderChars::from_list(&[None]).unwrap();
+        assert!(!absent.has_left());
+    }
+
+    #[test]
+    fn an_empty_border_list_is_rejected() {
+        assert_eq!(BorderChars::from_list(&[]), None);
     }
 
     #[test]

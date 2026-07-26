@@ -234,10 +234,22 @@ impl LayoutEngine {
     ) -> NodeId {
         let padding = &boxnode.padding;
         let margin = &boxnode.margin;
-        let border_width = if boxnode.border.is_some() { 1.0 } else { 0.0 };
+        // Per-edge, because an edge with no character occupies no cell. A border
+        // drawn only along the top must not reserve side columns it never fills.
+        let (bt, br, bb, bl) = match boxnode.border {
+            Some(b) => {
+                let c = b.chars();
+                (
+                    f32::from(u8::from(c.has_top())),
+                    f32::from(u8::from(c.has_right())),
+                    f32::from(u8::from(c.has_bottom())),
+                    f32::from(u8::from(c.has_left())),
+                )
+            }
+            None => (0.0, 0.0, 0.0, 0.0),
+        };
 
-        let inner_width =
-            available_width - padding.left as f32 - padding.right as f32 - border_width * 2.0;
+        let inner_width = available_width - padding.left as f32 - padding.right as f32 - bl - br;
 
         let is_row = matches!(boxnode.direction, Direction::Row);
         // Inside a row, every descendant must size to content, not to the full
@@ -324,10 +336,10 @@ impl LayoutEngine {
                         left: length(margin.left as f32),
                     },
                     border: Rect {
-                        top: length(border_width),
-                        right: length(border_width),
-                        bottom: length(border_width),
-                        left: length(border_width),
+                        top: length(bt),
+                        right: length(br),
+                        bottom: length(bb),
+                        left: length(bl),
                     },
                     ..Default::default()
                 },

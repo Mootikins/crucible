@@ -46,7 +46,19 @@ impl TestServer {
             let _ = server.run().await;
         });
 
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Poll for readiness rather than sleeping a fixed interval. A fixed
+        // startup sleep is the standard flake source here: under a loaded box
+        // the socket may not be accepting yet when the timer elapses.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if DaemonClient::connect_to(&socket_path).await.is_ok() {
+                break;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                anyhow::bail!("daemon did not start accepting connections within 5s");
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
 
         Ok(Self {
             _temp_dir: temp_dir,

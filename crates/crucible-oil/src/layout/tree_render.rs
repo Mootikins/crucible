@@ -351,42 +351,64 @@ fn render_box_content(
 
     if let Some(border) = border {
         let chars = border.chars();
-        let inner_width = width.saturating_sub(2);
 
-        // Top border
-        let top = format!(
-            "{}{}{}",
-            chars.top_left,
-            chars.horizontal.to_string().repeat(inner_width),
-            chars.top_right
-        );
-        grid.blit_line(&apply_style(&top, style), x, y);
+        // Only edges that exist consume a cell, so `inner_width` is no longer
+        // `width - 2`: a border with no sides spans the full width.
+        let left_cells = usize::from(chars.has_left());
+        let right_cells = usize::from(chars.has_right());
+        let inner_width = width.saturating_sub(left_cells + right_cells);
 
-        // Side borders for each row
-        for row in 1..height.saturating_sub(1) {
+        // A run character is required to draw a horizontal edge; corners alone
+        // leave the span between them untouched.
+        let horizontal_row = |corner_l: Option<char>, run: Option<char>, corner_r: Option<char>| {
+            let mut s = String::new();
+            if let Some(c) = corner_l {
+                s.push(c);
+            } else if left_cells == 1 {
+                s.push(' ');
+            }
+            match run {
+                Some(c) => s.push_str(&c.to_string().repeat(inner_width)),
+                None => s.push_str(&" ".repeat(inner_width)),
+            }
+            if let Some(c) = corner_r {
+                s.push(c);
+            } else if right_cells == 1 {
+                s.push(' ');
+            }
+            s
+        };
+
+        let top_rows = usize::from(chars.has_top());
+        let bottom_rows = usize::from(chars.has_bottom());
+
+        if chars.has_top() {
+            let top = horizontal_row(chars.top_left, chars.top, chars.top_right);
+            grid.blit_line(&apply_style(&top, style), x, y);
+        }
+
+        // Vertical runs span the rows between whichever horizontal edges exist.
+        let first_side_row = top_rows;
+        let last_side_row = height.saturating_sub(bottom_rows);
+        for row in first_side_row..last_side_row {
             let target_y = y + row;
-            if target_y < grid.height() {
+            if target_y >= grid.height() {
+                continue;
+            }
+            if let Some(c) = chars.left {
+                grid.blit_line(&apply_style(&c.to_string(), style), x, target_y);
+            }
+            if let Some(c) = chars.right {
                 grid.blit_line(
-                    &apply_style(&chars.vertical.to_string(), style),
-                    x,
-                    target_y,
-                );
-                grid.blit_line(
-                    &apply_style(&chars.vertical.to_string(), style),
+                    &apply_style(&c.to_string(), style),
                     x + width.saturating_sub(1),
                     target_y,
                 );
             }
         }
 
-        // Bottom border
-        if height > 1 {
-            let bottom = format!(
-                "{}{}{}",
-                chars.bottom_left,
-                chars.horizontal.to_string().repeat(inner_width),
-                chars.bottom_right
-            );
+        if chars.has_bottom() && height > top_rows {
+            let bottom = horizontal_row(chars.bottom_left, chars.bottom, chars.bottom_right);
             grid.blit_line(
                 &apply_style(&bottom, style),
                 x,
