@@ -747,6 +747,44 @@ mod precognition_select_hook_tests {
         assert_eq!(titles(&selected), vec!["Beta"]);
     }
 
+    #[tokio::test]
+    async fn select_hook_all_invalid_indices_falls_back_rather_than_suppressing() {
+        // Distinct from the empty-table case: this handler *asked* for notes
+        // and every entry was unusable, which is a typo, not a decision.
+        // Suppressing here would silently strip the agent's grounding.
+        let state = make_session_event_state();
+        state
+            .lua
+            .load(
+                r#"
+                crucible.on("precognition_select", function(ctx, event)
+                    return { { index = 99 }, { index = 0 }, { nope = 1 } }
+                end)
+            "#,
+            )
+            .exec()
+            .expect("Lua handler should load");
+
+        assert!(run_select(&state, &three_results()).await.is_none());
+    }
+
+    #[test]
+    fn apply_selection_falls_back_when_every_entry_is_unusable() {
+        let results = three_results();
+        let selection = serde_json::json!([{ "index": 99 }, { "index": 0 }]);
+        assert!(apply_precognition_selection(&results, &selection).is_none());
+    }
+
+    #[test]
+    fn apply_selection_still_honours_a_genuinely_empty_selection() {
+        // Empty in, empty out — this is the suppress path and must survive the
+        // all-unusable guard above.
+        let results = three_results();
+        let selected = apply_precognition_selection(&results, &serde_json::json!([]))
+            .expect("an empty selection is a decision");
+        assert!(selected.is_empty());
+    }
+
     #[test]
     fn char_cap_still_bounds_a_runaway_handler_selection() {
         // Budget enforcement stays core's job even when Lua allocated.

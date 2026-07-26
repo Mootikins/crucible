@@ -632,6 +632,7 @@ fn apply_precognition_selection(
     selection: &serde_json::Value,
 ) -> Option<Vec<crucible_core::SearchResult>> {
     let entries = selection_entries(selection)?;
+    let requested = entries.len();
     let mut seen = std::collections::HashSet::new();
     let mut selected = Vec::with_capacity(entries.len());
 
@@ -658,6 +659,18 @@ fn apply_precognition_selection(
             result.snippet = Some(snippet.to_string());
         }
         selected.push(result);
+    }
+
+    // A handler that asked for notes and produced nothing usable is buggy, not
+    // decisive: every entry was malformed, out of range or duplicated. Fall
+    // back rather than dropping the agent's grounding on a typo. Only a
+    // genuinely empty return means "suppress this turn".
+    if requested > 0 && selected.is_empty() {
+        warn!(
+            requested,
+            "precognition_select produced no usable entries; falling back to the default"
+        );
+        return None;
     }
 
     Some(selected)
