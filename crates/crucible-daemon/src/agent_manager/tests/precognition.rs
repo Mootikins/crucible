@@ -587,7 +587,7 @@ async fn test_precognition_emits_note_info_in_event() {
 /// precognition_enabled. Returns the agent_manager, session id, event
 /// channels, and captured messages handle. Tests register their own
 /// Lua handler and then send a message.
-async fn setup_precog_drop_protection(
+async fn setup_precog_session_with_handler(
     lua_handler: &str,
 ) -> (
     Arc<AgentManager>,
@@ -701,7 +701,7 @@ async fn test_transform_context_handler_dropping_precog_triggers_reprepend() {
     "#;
 
     let (am, sid, event_tx, mut event_rx, received_messages, _tmp) =
-        setup_precog_drop_protection(lua).await;
+        setup_precog_session_with_handler(lua).await;
 
     am.send_message(&sid, "query".into(), &event_tx, true, None)
         .await
@@ -746,7 +746,7 @@ async fn test_transform_context_handler_mutating_precog_does_not_duplicate() {
     "#;
 
     let (am, sid, event_tx, mut event_rx, received_messages, _tmp) =
-        setup_precog_drop_protection(lua).await;
+        setup_precog_session_with_handler(lua).await;
 
     am.send_message(&sid, "query".into(), &event_tx, true, None)
         .await
@@ -772,4 +772,50 @@ async fn test_transform_context_handler_mutating_precog_does_not_duplicate() {
     );
 
     crate::embedding::clear_embedding_provider_cache();
+}
+
+#[tokio::test]
+async fn test_precognition_select_handler_reaches_the_agent() {
+    // The seam is only real if a handler registered the ordinary way changes
+    // what the model actually sees. Unit-testing
+    // `execute_precognition_select_handlers` in isolation would pass even if
+    // the call site in `compute_precognition_message` were never wired — that
+    // is exactly how the plugin-hook gap shipped undetected before.
+    let lua = r#"
+        crucible.on("precognition_select", function(ctx, event)
+            return { { index = 1, snippet = "SENTINEL-SELECTED-SNIPPET" } }
+        end)
+    "#;
+
+    let (agent_manager, session_id, event_tx, mut event_rx, received_messages, _tmp) =
+        setup_precog_session_with_handler(lua).await;
+
+    agent_manager
+        .send_message(
+            &session_id,
+            "tell me about the note".to_string(),
+            &event_tx,
+            true,
+            None,
+        )
+        .await
+        .unwrap();
+
+    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+    let _ = next_event_or_skip(&mut event_rx, "precognition_complete").await;
+    let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+
+    let messages = received_messages
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("agent should have received messages");
+
+    assert!(
+        messages
+            .iter()
+            .any(|m| m.content.contains("SENTINEL-SELECTED-SNIPPET")),
+        "the select handler's snippet should reach the agent, got: {:?}",
+        messages.iter().map(|m| &m.content).collect::<Vec<_>>()
+    );
 }

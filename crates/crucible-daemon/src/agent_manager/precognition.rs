@@ -72,13 +72,7 @@ impl AgentManager {
         }
         let mut context = format!("<system>\nFound {} relevant notes:\n", results.len());
         for result in results {
-            let title = result
-                .document_id
-                .0
-                .split('/')
-                .next_back()
-                .unwrap_or(&result.document_id.0)
-                .trim_end_matches(".md");
+            let title = result_title(result);
             let kiln_label = result
                 .kiln_path
                 .as_ref()
@@ -112,17 +106,8 @@ impl AgentManager {
         let results_payload: Vec<serde_json::Value> = results
             .iter()
             .map(|r| {
-                let title = r
-                    .document_id
-                    .0
-                    .split('/')
-                    .next_back()
-                    .unwrap_or(&r.document_id.0)
-                    .trim_end_matches(".md")
-                    .to_string();
-
                 serde_json::json!({
-                    "title": title,
+                    "title": result_title(r),
                     "score": r.score,
                     "snippet": r.snippet.clone().unwrap_or_default(),
                     "kiln_path": r
@@ -193,6 +178,131 @@ impl AgentManager {
                         session_id = %session_id,
                         error = %error,
                         "precognition_format handler error (fail-open)"
+                    );
+                }
+            }
+        }
+        None
+    }
+
+    /// Run the `precognition_select` seam: let Lua choose which retrieved
+    /// notes reach the agent, in what order, and how the snippet budget is
+    /// spent across them.
+    ///
+    /// Distinct from `precognition_format`, which reshapes notes that were
+    /// already chosen. Formatting still runs afterward.
+    ///
+    /// Returns `None` when no handler took the decision, leaving the Rust
+    /// default in place.
+    async fn execute_precognition_select_handlers(
+        session_id: &str,
+        original_content: &str,
+        results: &[crucible_core::SearchResult],
+        primary_kiln: &std::path::Path,
+        char_budget: usize,
+        state: &SessionEventState,
+        plugin_handlers: Option<&(
+            std::sync::Arc<crucible_lua::LuaScriptHandlerRegistry>,
+            std::sync::Arc<mlua::Lua>,
+        )>,
+    ) -> Option<Vec<crucible_core::SearchResult>> {
+        let results_payload: Vec<serde_json::Value> = results
+            .iter()
+            .enumerate()
+            .map(|(position, r)| {
+                serde_json::json!({
+                    // 1-based: this is the handle handlers return to select a
+                    // result, and Lua arrays are 1-based.
+                    "index": position + 1,
+                    "title": result_title(r),
+                    "score": r.score,
+                    "snippet": r.snippet.clone().unwrap_or_default(),
+                    "kiln_path": r
+                        .kiln_path
+                        .as_ref()
+                        .and_then(|path| path.to_str())
+                        .unwrap_or_default(),
+                    // Otherwise only derivable by string-comparing kiln_path
+                    // against the session kiln, which is a trap.
+                    "is_primary_kiln": r
+                        .kiln_path
+                        .as_ref()
+                        .is_none_or(|path| path.as_path() == primary_kiln),
+                })
+            })
+            .collect();
+
+        let event = SessionEvent::Custom {
+            name: "precognition_select".to_string(),
+            payload: serde_json::json!({
+                "user_message": original_content,
+                "note_count": results.len(),
+                // Handlers allocate within this; core still enforces it after.
+                "char_budget": char_budget,
+                "results": results_payload,
+            }),
+        };
+
+        // Session VM before plugin VM, first Transform wins — same precedence
+        // as `precognition_format`, so a session's policy overrides a plugin's.
+        if let Some(selected) = Self::run_precognition_select_pass(
+            session_id,
+            &state.registry,
+            &state.lua,
+            &event,
+            results,
+        )
+        .await
+        {
+            return Some(selected);
+        }
+        if let Some((plugin_registry, plugin_lua)) = plugin_handlers {
+            return Self::run_precognition_select_pass(
+                session_id,
+                plugin_registry,
+                plugin_lua,
+                &event,
+                results,
+            )
+            .await;
+        }
+        None
+    }
+
+    /// One registry's `precognition_select` pass; its first usable Transform wins.
+    async fn run_precognition_select_pass(
+        session_id: &str,
+        registry: &crucible_lua::LuaScriptHandlerRegistry,
+        lua: &mlua::Lua,
+        event: &SessionEvent,
+        results: &[crucible_core::SearchResult],
+    ) -> Option<Vec<crucible_core::SearchResult>> {
+        use crucible_lua::ScriptHandlerResult;
+
+        for handler in registry.runtime_handlers_for("precognition_select", None) {
+            match registry
+                .execute_runtime_handler(lua, &handler.name, event, Some(session_id))
+                .await
+            {
+                Ok(ScriptHandlerResult::Transform(value)) => {
+                    if let Some(selected) = apply_precognition_selection(results, &value) {
+                        return Some(selected);
+                    }
+                    warn!(
+                        session_id = %session_id,
+                        handler = %handler.name,
+                        "precognition_select handler returned a non-array; ignoring"
+                    );
+                }
+                Ok(ScriptHandlerResult::PassThrough)
+                | Ok(ScriptHandlerResult::Cancel { .. })
+                | Ok(ScriptHandlerResult::Inject { .. })
+                | Ok(ScriptHandlerResult::Handled { .. }) => {}
+                Err(error) => {
+                    warn!(
+                        session_id = %session_id,
+                        error = %error,
+                        "precognition_select handler error (fail-open)"
                     );
                 }
             }
@@ -367,7 +477,32 @@ impl AgentManager {
             })
             .await?;
 
-        apply_precognition_char_cap(&mut results, self.kiln_manager.max_precognition_chars());
+        let char_budget = self.kiln_manager.max_precognition_chars();
+
+        // Selection seam: Lua may narrow, reorder and re-snippet before the
+        // budget backstop below. Runs ahead of `precognition_format`, which
+        // then formats whatever survives.
+        if let Some(selected) = {
+            let plugin_pair = self.plugin_handlers();
+            let session_state = self.get_or_create_session_state(session_id);
+            let state = session_state.lock().await;
+            Self::execute_precognition_select_handlers(
+                session_id,
+                original_content,
+                &results,
+                &session.kiln,
+                char_budget,
+                &state,
+                plugin_pair.as_ref(),
+            )
+            .await
+        } {
+            results = selected;
+        }
+
+        // Budget enforcement stays core's job even when a handler allocated:
+        // a no-op for a well-behaved handler, a hard cap on a runaway one.
+        apply_precognition_char_cap(&mut results, char_budget);
 
         let context_block = {
             let plugin_pair = self.plugin_handlers();
@@ -418,6 +553,104 @@ impl AgentManager {
 /// system block. The `transform_context` seam uses this to detect when
 /// a Lua handler has dropped the message and needs it re-prepended.
 pub(crate) const PRECOGNITION_TAG: &str = "precognition";
+
+/// Display title for a search result: the document-ID filename without `.md`.
+///
+/// Shared by the context block and the handler payloads so the three stay in
+/// step. `extract_note_info` deliberately keeps its own `Path`-based version —
+/// it dedupes on the filename component, which is a different question.
+fn result_title(result: &crucible_core::SearchResult) -> String {
+    result
+        .document_id
+        .0
+        .split('/')
+        .next_back()
+        .unwrap_or(&result.document_id.0)
+        .trim_end_matches(".md")
+        .to_string()
+}
+
+/// Normalize a handler's returned selection list into ordered entries.
+///
+/// `lua_table_to_json` converts every Lua table — sequences included — into a
+/// JSON *object* with stringified integer keys (`{"1": …, "2": …}`), so a Lua
+/// list never arrives here as a JSON array. We accept both shapes, and sort the
+/// object form numerically: serde_json's map ordering would otherwise place
+/// `"10"` before `"2"`, silently scrambling the handler's chosen order.
+///
+/// Returns `None` for a table that has entries but no numeric keys at all, so a
+/// malformed return falls back to the Rust default instead of silently
+/// suppressing precognition. A genuinely empty table yields an empty selection,
+/// which is the documented "suppress this turn" outcome.
+fn selection_entries(selection: &serde_json::Value) -> Option<Vec<serde_json::Value>> {
+    if let Some(array) = selection.as_array() {
+        return Some(array.clone());
+    }
+
+    let map = selection.as_object()?;
+    if map.is_empty() {
+        return Some(Vec::new());
+    }
+
+    let mut keyed: Vec<(u64, serde_json::Value)> = map
+        .iter()
+        .filter_map(|(key, value)| key.parse::<u64>().ok().map(|k| (k, value.clone())))
+        .collect();
+
+    if keyed.is_empty() {
+        return None;
+    }
+
+    keyed.sort_by_key(|(key, _)| *key);
+    Some(keyed.into_iter().map(|(_, value)| value).collect())
+}
+
+/// Apply a `precognition_select` handler's return value to the search results.
+///
+/// Handlers return `[{ index = n, snippet = "..." }]` — an index handle rather
+/// than free-form result objects, so a handler can reorder, drop and re-snippet
+/// but cannot fabricate a note that isn't in the kiln. Precognition output goes
+/// straight into the agent's context; keeping it addressed by index means
+/// injected context stays traceable to real indexed content.
+///
+/// Malformed entries are dropped with a warning rather than failing the turn —
+/// selection is not a gate, so it fails open like every hook except
+/// `pre_tool_call`.
+fn apply_precognition_selection(
+    results: &[crucible_core::SearchResult],
+    selection: &serde_json::Value,
+) -> Option<Vec<crucible_core::SearchResult>> {
+    let entries = selection_entries(selection)?;
+    let mut seen = std::collections::HashSet::new();
+    let mut selected = Vec::with_capacity(entries.len());
+
+    for entry in &entries {
+        let Some(index) = entry.get("index").and_then(|value| value.as_u64()) else {
+            warn!("precognition_select entry missing numeric `index`; dropping");
+            continue;
+        };
+        // 1-based on the Lua side; index 0 underflows to None and is dropped.
+        let Some(original) = index
+            .checked_sub(1)
+            .and_then(|zero_based| results.get(zero_based as usize))
+        else {
+            warn!(index, "precognition_select index out of range; dropping");
+            continue;
+        };
+        if !seen.insert(index) {
+            warn!(index, "precognition_select duplicate index; dropping");
+            continue;
+        }
+
+        let mut result = original.clone();
+        if let Some(snippet) = entry.get("snippet").and_then(|value| value.as_str()) {
+            result.snippet = Some(snippet.to_string());
+        }
+        selected.push(result);
+    }
+
+    Some(selected)
+}
 
 fn apply_precognition_char_cap(results: &mut [crucible_core::SearchResult], cap: usize) {
     if results.is_empty() {
@@ -927,5 +1160,274 @@ mod precognition_format_hook_tests {
         assert_eq!(info.len(), 2);
         assert!(info[0].kiln_label.is_none()); // primary kiln
         assert_eq!(info[1].kiln_label.as_deref(), Some("secondary"));
+    }
+}
+
+#[cfg(test)]
+mod precognition_select_hook_tests {
+    use super::*;
+    use crucible_core::types::database::DocumentId;
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Mutex as StdMutex};
+
+    const KILN: &str = "/home/user/notes";
+
+    fn make_result(doc_id: &str, score: f64, snippet: &str) -> crucible_core::SearchResult {
+        crucible_core::SearchResult {
+            document_id: DocumentId(doc_id.to_string()),
+            score,
+            highlights: None,
+            snippet: Some(snippet.to_string()),
+            kiln_path: Some(PathBuf::from(KILN)),
+        }
+    }
+
+    fn three_results() -> Vec<crucible_core::SearchResult> {
+        vec![
+            make_result("notes/Alpha.md", 0.9, "alpha body"),
+            make_result("notes/Beta.md", 0.8, "beta body"),
+            make_result("notes/Gamma.md", 0.7, "gamma body"),
+        ]
+    }
+
+    fn make_session_event_state() -> SessionEventState {
+        let lua = mlua::Lua::new();
+        let registry = crucible_lua::LuaScriptHandlerRegistry::new();
+        register_crucible_on_api(
+            &lua,
+            registry.runtime_handlers(),
+            registry.handler_functions(),
+        )
+        .expect("register_crucible_on_api should succeed");
+
+        SessionEventState {
+            lua,
+            registry,
+            permission_hooks: Arc::new(StdMutex::new(Vec::new())),
+            permission_functions: Arc::new(StdMutex::new(HashMap::new())),
+            reactor: Reactor::new(),
+            spill_counter: std::sync::atomic::AtomicU32::new(1),
+        }
+    }
+
+    async fn run_select(
+        state: &SessionEventState,
+        results: &[crucible_core::SearchResult],
+    ) -> Option<Vec<crucible_core::SearchResult>> {
+        AgentManager::execute_precognition_select_handlers(
+            "session-1",
+            "what is alpha?",
+            results,
+            Path::new(KILN),
+            3000,
+            state,
+            None,
+        )
+        .await
+    }
+
+    fn titles(results: &[crucible_core::SearchResult]) -> Vec<String> {
+        results.iter().map(result_title).collect()
+    }
+
+    #[tokio::test]
+    async fn select_hook_narrows_and_reorders() {
+        let state = make_session_event_state();
+        state
+            .lua
+            .load(
+                r#"
+                crucible.on("precognition_select", function(ctx, event)
+                    return { { index = 3 }, { index = 1 } }
+                end)
+            "#,
+            )
+            .exec()
+            .expect("Lua handler should load");
+
+        let selected = run_select(&state, &three_results())
+            .await
+            .expect("handler should take the decision");
+
+        assert_eq!(titles(&selected), vec!["Gamma", "Alpha"]);
+    }
+
+    #[tokio::test]
+    async fn select_hook_overrides_snippet() {
+        let state = make_session_event_state();
+        state
+            .lua
+            .load(
+                r#"
+                crucible.on("precognition_select", function(ctx, event)
+                    return { { index = 1, snippet = "rewritten" } }
+                end)
+            "#,
+            )
+            .exec()
+            .expect("Lua handler should load");
+
+        let selected = run_select(&state, &three_results())
+            .await
+            .expect("selection");
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].snippet.as_deref(), Some("rewritten"));
+    }
+
+    #[tokio::test]
+    async fn select_hook_receives_index_and_budget() {
+        let state = make_session_event_state();
+        state
+            .lua
+            .load(
+                r#"
+                crucible.on("precognition_select", function(ctx, event)
+                    -- Assert the payload contract from inside Lua: picking by
+                    -- these fields is the whole point of the seam.
+                    if event.char_budget ~= 3000 then return {} end
+                    if event.note_count ~= 3 then return {} end
+                    if not event.results[2].is_primary_kiln then return {} end
+                    return { { index = event.results[2].index } }
+                end)
+            "#,
+            )
+            .exec()
+            .expect("Lua handler should load");
+
+        let selected = run_select(&state, &three_results())
+            .await
+            .expect("selection");
+
+        assert_eq!(titles(&selected), vec!["Beta"]);
+    }
+
+    #[tokio::test]
+    async fn select_hook_empty_table_suppresses_precognition() {
+        let state = make_session_event_state();
+        state
+            .lua
+            .load(
+                r#"
+                crucible.on("precognition_select", function(ctx, event)
+                    return {}
+                end)
+            "#,
+            )
+            .exec()
+            .expect("Lua handler should load");
+
+        let selected = run_select(&state, &three_results())
+            .await
+            .expect("empty selection is a decision, not a fall-through");
+
+        assert!(selected.is_empty());
+    }
+
+    #[tokio::test]
+    async fn select_hook_error_falls_back_to_rust_default() {
+        let state = make_session_event_state();
+        state
+            .lua
+            .load(
+                r#"
+                crucible.on("precognition_select", function(ctx, event)
+                    error("boom")
+                end)
+            "#,
+            )
+            .exec()
+            .expect("Lua handler should load");
+
+        // Selection is not a gate, so it fails open — only pre_tool_call
+        // fails closed.
+        assert!(run_select(&state, &three_results()).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn select_hook_malformed_return_falls_back_rather_than_suppressing() {
+        let state = make_session_event_state();
+        state
+            .lua
+            .load(
+                r#"
+                crucible.on("precognition_select", function(ctx, event)
+                    return { oops = "not a selection" }
+                end)
+            "#,
+            )
+            .exec()
+            .expect("Lua handler should load");
+
+        // A table with entries but no numeric keys is a bug in the handler.
+        // Falling back beats silently dropping the agent's grounding.
+        assert!(run_select(&state, &three_results()).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn no_handler_leaves_the_rust_default_in_place() {
+        let state = make_session_event_state();
+        assert!(run_select(&state, &three_results()).await.is_none());
+    }
+
+    #[test]
+    fn selection_entries_orders_numerically_not_lexically() {
+        // lua_table_to_json stringifies integer keys, so "10" sorts before "2"
+        // under plain map ordering. Guard the numeric sort.
+        let selection = serde_json::json!({
+            "1":  { "index": 1 },
+            "2":  { "index": 2 },
+            "10": { "index": 10 },
+        });
+
+        let entries = selection_entries(&selection).expect("object form is accepted");
+        let order: Vec<u64> = entries
+            .iter()
+            .map(|e| e["index"].as_u64().unwrap())
+            .collect();
+
+        assert_eq!(order, vec![1, 2, 10]);
+    }
+
+    #[test]
+    fn selection_entries_accepts_a_real_json_array() {
+        let selection = serde_json::json!([{ "index": 2 }, { "index": 1 }]);
+        let entries = selection_entries(&selection).expect("array form is accepted");
+        assert_eq!(entries.len(), 2);
+    }
+
+    #[test]
+    fn apply_selection_drops_out_of_range_duplicate_and_zero_indices() {
+        let results = three_results();
+        let selection = serde_json::json!([
+            { "index": 2 },
+            { "index": 2 },   // duplicate
+            { "index": 99 },  // out of range
+            { "index": 0 },   // 0 is not a valid 1-based index
+            { "no_index": 1 },
+        ]);
+
+        let selected =
+            apply_precognition_selection(&results, &selection).expect("array form is accepted");
+
+        assert_eq!(titles(&selected), vec!["Beta"]);
+    }
+
+    #[test]
+    fn char_cap_still_bounds_a_runaway_handler_selection() {
+        // Budget enforcement stays core's job even when Lua allocated.
+        let mut selected = vec![
+            make_result("notes/One.md", 0.9, &"a".repeat(4000)),
+            make_result("notes/Two.md", 0.8, &"b".repeat(4000)),
+        ];
+
+        apply_precognition_char_cap(&mut selected, 1000);
+
+        let total: usize = selected
+            .iter()
+            .map(|r| r.snippet.as_deref().unwrap_or_default().chars().count())
+            .sum();
+        assert_eq!(total, 1000);
     }
 }
