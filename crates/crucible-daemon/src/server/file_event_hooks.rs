@@ -95,7 +95,10 @@ mod tests {
 
     #[test]
     fn a_file_changed_message_rebuilds_the_typed_event() {
-        let m = msg("file_changed", json!({ "path": "/w/a.md", "kind": "modified" }));
+        let m = msg(
+            "file_changed",
+            json!({ "path": "/w/a.md", "kind": "modified" }),
+        );
         assert!(matches!(
             to_internal_event(&m),
             Some(InternalSessionEvent::FileChanged { .. })
@@ -104,7 +107,10 @@ mod tests {
 
     #[test]
     fn the_created_kind_survives_the_round_trip() {
-        let m = msg("file_changed", json!({ "path": "/w/a.md", "kind": "created" }));
+        let m = msg(
+            "file_changed",
+            json!({ "path": "/w/a.md", "kind": "created" }),
+        );
         assert!(matches!(
             to_internal_event(&m),
             Some(InternalSessionEvent::FileChanged {

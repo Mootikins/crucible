@@ -126,8 +126,16 @@ fn padding_from_lua(v: &Value) -> Option<Padding> {
 
 fn surface_from_lua(table: &Table) -> SurfaceStyle {
     SurfaceStyle {
-        border: table.get::<Value>("border").ok().as_ref().and_then(border_from_lua),
-        padding: table.get::<Value>("padding").ok().as_ref().and_then(padding_from_lua),
+        border: table
+            .get::<Value>("border")
+            .ok()
+            .as_ref()
+            .and_then(border_from_lua),
+        padding: table
+            .get::<Value>("padding")
+            .ok()
+            .as_ref()
+            .and_then(padding_from_lua),
         max_height: table.get("max_height").ok(),
         min_width: table.get("min_width").ok(),
         max_visible: table.get("max_visible").ok(),
@@ -435,7 +443,10 @@ mod tests {
 
     #[test]
     fn a_malformed_payload_yields_defaults_not_a_panic() {
-        assert_eq!(geometry_from_wire(&json!("nonsense")), UiGeometry::default());
+        assert_eq!(
+            geometry_from_wire(&json!("nonsense")),
+            UiGeometry::default()
+        );
     }
 
     #[test]

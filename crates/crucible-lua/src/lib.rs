@@ -121,9 +121,6 @@ pub use context::{
     register_context_module, register_context_module_stub, register_context_validators,
     LuaValidatorRegistry,
 };
-pub use statusline_exprs::{
-    register_statusline_exprs, ExprRejection, StatuslineExprRegistry, MAX_KEYS_PER_SESSION,
-};
 pub use context_attach::{
     register_context_attach, AttachRejection, ContextAttachRegistry, DEFAULT_ATTACH_BUDGET_CHARS,
 };
@@ -152,6 +149,9 @@ pub use schema::{
     LuauType, TypedParam,
 };
 pub use shell::{register_shell_module, ExecResult, ShellPolicy};
+pub use statusline_exprs::{
+    register_statusline_exprs, ExprRejection, StatuslineExprRegistry, MAX_KEYS_PER_SESSION,
+};
 pub use storage_api::{register_storage_module, register_storage_module_with_store};
 pub use timer::register_timer_module;
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};

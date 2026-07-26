@@ -37,8 +37,7 @@ impl Server {
             self.agent_manager.set_isolation(loader.isolation());
             // Registry lives on the AgentManager (created eagerly, so session
             // VMs never race this); the plugin VM just gets the same instance.
-            if let Err(e) =
-                loader.register_statusline_exprs(self.agent_manager.statusline_exprs())
+            if let Err(e) = loader.register_statusline_exprs(self.agent_manager.statusline_exprs())
             {
                 tracing::warn!(error = %e, "failed to register cru.statusline on the plugin VM");
             }

@@ -224,18 +224,21 @@ fn eval(item: &StatusItem, ctx: &ItemContext<'_>, inherited: Style) -> Vec<Fragm
 
             claim_last(
                 ctx.data
-                .notification_counts
-                .iter()
-                .flat_map(|(kind, count)| {
-                    [
-                        Fragment::badge(
-                            format!(" {} ", kind.label()),
-                            Style::new().fg(kind.color()).bold().reverse(),
-                        ),
-                        Fragment::new(format!(" {count} "), Style::new().fg(kind.color()).bold()),
-                    ]
-                })
-                .collect(),
+                    .notification_counts
+                    .iter()
+                    .flat_map(|(kind, count)| {
+                        [
+                            Fragment::badge(
+                                format!(" {} ", kind.label()),
+                                Style::new().fg(kind.color()).bold().reverse(),
+                            ),
+                            Fragment::new(
+                                format!(" {count} "),
+                                Style::new().fg(kind.color()).bold(),
+                            ),
+                        ]
+                    })
+                    .collect(),
             )
         }
 
@@ -338,7 +341,10 @@ fn mode_label(ctx: &ItemContext<'_>) -> &'static str {
 fn context_label(ctx: &ItemContext<'_>) -> String {
     let (used, total) = (ctx.data.context_used, ctx.data.context_total);
     if total > 0 {
-        format!("{}% ctx", (used as f64 / total as f64 * 100.0).round() as usize)
+        format!(
+            "{}% ctx",
+            (used as f64 / total as f64 * 100.0).round() as usize
+        )
     } else if used > 0 {
         format!("{}k tok", used / 1000)
     } else {
@@ -391,7 +397,13 @@ mod tests {
     #[test]
     fn built_ins_render_from_tui_local_state() {
         let out = render(
-            &[StatusItem::Mode, StatusItem::Model { max: None, fallback: None }],
+            &[
+                StatusItem::Mode,
+                StatusItem::Model {
+                    max: None,
+                    fallback: None,
+                },
+            ],
             &data(),
             false,
         );
@@ -401,7 +413,14 @@ mod tests {
 
     #[test]
     fn model_is_truncated_to_its_max() {
-        let out = render(&[StatusItem::Model { max: Some(8), fallback: None }], &data(), false);
+        let out = render(
+            &[StatusItem::Model {
+                max: Some(8),
+                fallback: None,
+            }],
+            &data(),
+            false,
+        );
         assert!(!out.contains("claude-opus-5"), "got {out:?}");
     }
 
@@ -550,4 +569,3 @@ mod tests {
         assert!(out.contains("50% ctx"), "got {out:?}");
     }
 }
-

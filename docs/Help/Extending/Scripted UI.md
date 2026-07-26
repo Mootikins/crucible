@@ -1,346 +1,192 @@
 ---
 title: Scripted UI
-description: Create interactive popups and panels from scripts
+description: Theme the TUI, style its surfaces, and build statuslines from Lua
 status: implemented
 tags:
   - scripting
   - ui
-  - popup
-  - panel
+  - theme
+  - statusline
   - lua
 ---
 
 # Scripted UI
 
-Scripts can display interactive UI elements — popups for selection and panels for structured choices — that work in both TUI and Web interfaces.
+Crucible's terminal UI is configured from Lua: colours, per-surface geometry, and
+statusline layout.
 
-## Concepts
+> **Where this runs.** The Lua VM lives in the daemon, not in the `cru` process.
+> Your `init.lua` is evaluated once, daemon-side, and the result is delivered to
+> every attached client over the `ui.config` RPC as data. That is why styling is
+> declarative, and why statusline values are *pushed* rather than computed per
+> frame — see [[#Statusline]].
+>
+> An earlier version of this page documented `cru.popup`, `cru.ui` and
+> `cru.panel` modules for building interactive popups from scripts. Those were
+> never registered in a running daemon and have been removed. For asking the user
+> something from a handler, use `cru.interaction`.
 
-### PopupRequest vs InteractivePanel
+## Themes
 
-Two primitives are available:
-
-| Type | Use Case | Features |
-|------|----------|----------|
-| **PopupRequest** | Quick selections with optional free-text | Simple entries with labels and descriptions |
-| **InteractivePanel** | Structured choices with hints | Filtering, multi-select, custom data |
-
-Use `PopupRequest` for simple "pick one" scenarios. Use `InteractivePanel` for richer interactions like confirmation dialogs, multi-select, or searchable lists.
-
-## Lua API
-
-### PopupRequest
+A theme is a palette. Define one inline, or drop a file in
+`~/.config/crucible/themes/`.
 
 ```lua
-local popup = require("cru.popup")  -- or require("crucible.popup")
+crucible.theme.setup{
+  name = "my-theme",
+  is_dark = true,
+  colors = {
+    primary    = "cyan",
+    background = "#282c34",
+    popup_bg   = "#282c34",
+    -- adaptive: the client picks using its own terminal background
+    text       = { dark = "#ffffff", light = "#1a1a1a" },
+  },
+}
+```
 
--- Create entries
-local entries = {
-    popup.entry("Daily Note", "Today's journal"),
-    popup.entry("Todo List"),
+Colour values are a named colour (`"cyan"`), hex (`"#282c34"`), or an adaptive
+pair. Adaptive pairs cross the wire **unresolved** — the daemon cannot know which
+terminal a client is attached to, so the client resolves them.
+
+## Highlight groups
+
+Groups are an open namespace: define your own, and link one to another.
+
+```lua
+crucible.hl.set("StatusMode", { fg = "black", bg = "mode_normal", bold = true })
+crucible.hl.link("PopupSelected", "Visual")
+```
+
+A colour is a literal, an adaptive pair, or a **palette reference** — the name of
+a field in the active theme (`"mode_normal"` above). References resolve at use
+time, so swapping the palette moves every group that references it.
+
+`link` is a base to override, not a rename: attributes set on the linking group
+beat the target, so you can say "like `Visual`, but red".
+
+## Surfaces
+
+Geometry is a closed set — the renderer has to know how to draw each surface.
+
+```lua
+crucible.ui.setup{
+  popup  = { border = "rounded", padding = 1, max_visible = 10 },
+  modal  = { border = "double", padding = 1 },
+  drawer = { border = { "", "▀", "", "", "", "▄", "", "" } },
+  prompt = {
+    normal  = { glyph = "❯ " },
+    command = { glyph = ": " },
+    shell   = { glyph = "! " },
+  },
+}
+```
+
+Surfaces: `popup`, `modal`, `drawer`, `toast`, `statusline`, `prompt`. Every
+field is optional, and omitting one keeps the built-in — a surface you do not
+mention is untouched, not blanked.
+
+### Borders
+
+A preset name (`"none"`, `"single"`, `"double"`, `"rounded"`, `"heavy"`) or a
+list of eight characters clockwise from the top-left, matching Neovim's
+`nvim_open_win`:
+
+```lua
+border = { "─" }                              -- one char fills all eight
+border = { "+", "-" }                         -- corners then edges
+border = { "╔","═","╗","║","╝","═","╚","║" }  -- tl, top, tr, r, br, bottom, bl, l
+border = { "", "▀", "", "", "", "▄", "", "" } -- rules above and below, no sides
+```
+
+A shorter list repeats. An empty string means that edge is **absent and occupies
+no cell** — distinct from `" "`, a blank edge that still takes one.
+
+## Statusline
+
+A bar is a list of items. Items are values, so a bar reads as a list:
+
+```lua
+local sl = crucible.statusline
+
+sl.setup{
+  main = {
+    anchor = "footer.below_input",
+    items  = { sl.mode:hl("StatusMode"), " ", sl.model{ max = 25 },
+               sl.align,
+               sl.any(sl.notification, sl.context) },
+  },
+  context = {
+    anchor = "footer.above_input",
+    items  = { sl.when("streaming", sl.cache) },
+  },
+}
+```
+
+Anchors: `top`, `bottom`, `footer.above_input`, `footer.below_input`.
+
+Built-in items — `mode`, `model`, `context`, `cache`, `status`, `notification` —
+are evaluated by the TUI every frame and cost no RPC. Bare strings are literal
+text. `sl.align` splits the bar; one gives left/right, two give left/centre/right.
+
+### Conditionals
+
+Lua's `or` will not work here — item objects are truthy, so `a or b` always takes
+the first, and the branch has to survive being sent to the client. Use
+combinators:
+
+- `sl.any(a, b, …)` — the first that renders something
+- `sl.when(cond, item)` — render only when `cond` holds
+
+Conditions are facts only the TUI knows: `"streaming"`, `"has_notification"`,
+`"mode:plan"`. Lua places them; the TUI answers them.
+
+### Custom values
+
+Anything the daemon has to compute — a git branch, a queue depth — is an
+expression. Place it in a bar, then supply it from a handler:
+
+```lua
+local sl = crucible.statusline
+
+sl.setup{
+  main = { items = { sl.mode, sl.align, sl.expr("git"):hl("Git") } },
 }
 
--- Basic popup
-local request = popup.request("Select a note", entries)
-
--- Allow free-text input
-local search = popup.request_with_other("Search or select", entries)
-```
-
-### InteractivePanel
-
-```lua
-local ui = require("cru.ui")  -- or require("crucible.ui")
-
--- Create panel items
-local items = {
-    ui.panel_item("PostgreSQL", "Full-featured RDBMS"),
-    ui.panel_item("SQLite", "Embedded, single-file"),
-}
-
--- Basic panel
-local db_panel = ui.panel("Select database", items)
-
--- Convenience functions
-local confirmed = ui.confirm("Delete this file?")
-local choice = ui.select("Pick one", {"A", "B", "C"})
-local choices = ui.multi_select("Pick many", {"X", "Y"})
-```
-
-### Panel Hints
-
-Control panel behavior with hints:
-
-```lua
-local ui = require("cru.ui")  -- or require("crucible.ui")
-
--- Create hints
-local hints = ui.panel_hints()
-    :filterable()      -- Enable search/filter
-    :multi_select()    -- Allow multiple selections
-    :allow_other()     -- Allow free-text input
-
--- Panel with hints
-local panel = ui.panel_with_hints("Choose", items, hints)
-```
-
-## Handling Results
-
-### PopupResponse
-
-When user selects from a popup:
-
-```lua
-if response.selected_index then
-    handle_selection(response.selected_index, response.selected_entry)
-elseif response.other then
-    handle_text(response.other)
-else
-    handle_dismiss()
-end
-```
-
-### PanelResult
-
-When user interacts with a panel:
-
-```lua
-if result.cancelled then
-    handle_cancel()
-elseif result.other then
-    handle_text(result.other)
-else
-    for _, idx in ipairs(result.selected) do
-        handle_selection(idx)
-    end
-end
-```
-
-## Example: Database Selector Tool
-
-A complete example showing a panel-based tool:
-
-```lua
--- database_selector.lua
-local ui = require("cru.ui")  -- or require("crucible.ui")
-
---- Select a database type for your project
--- @tool name="choose_database" description="Select a database type for your project"
-function choose_database(args)
-    local items = {
-        ui.panel_item("PostgreSQL", "Full-featured, ACID-compliant RDBMS"),
-        ui.panel_item("SQLite", "Embedded, zero-configuration"),
-        ui.panel_item("MongoDB", "Document database with flexible schema"),
-    }
-
-    local panel = ui.panel("Select database", items)
-
-    -- Display panel and get result
-    local result = cru.show_panel(panel)
-
-    if result.cancelled then
-        return { message = "Cancelled" }
-    else
-        local selected = items[result.selected[1]].label
-        return { message = "You chose: " .. selected }
-    end
-end
-```
-
-## cru.oil: Building Views (Obvious Interface Language)
-
-The `cru.oil` module provides a **functional, React-like API** for building TUI nodes. Components are functions that return node trees, and composition happens via function calls.
-
-### Basic Usage (Lua)
-
-```lua
-local oil = cru.oil
-
--- Text with styling
-local heading = oil.text("Tasks", { bold = true, fg = "blue" })
-
--- Layout containers (col = vertical, row = horizontal)
-local view = oil.col({ gap = 1, padding = 1, border = "rounded" },
-    oil.text("Header", { bold = true }),
-    oil.row(
-        oil.badge("OK", { fg = "green" }),
-        oil.spacer(),
-        oil.text("Status")
-    ),
-    oil.divider()
-)
-
--- Lists
-local bullets = oil.bullet_list({ "First item", "Second item" })
-
--- Progress indicators
-local progress = oil.progress(0.75)
-local loading = oil.spinner("Loading...")
-```
-
-### Control Flow
-
-Use control flow functions for conditional and iterative rendering:
-
-```lua
--- Conditional rendering
-oil.when(is_loading, oil.spinner("Loading..."))
-
--- Conditional with else branch
-oil.if_else(is_online,
-    oil.text("Online", { fg = "green" }),
-    oil.text("Offline", { fg = "red" })
-)
-
--- Iterate over items
-oil.each(items, function(item)
-    return oil.text(item.name)
+crucible.on("FileChanged", function(ctx)
+  local out = cru.shell.exec("git status -b --porcelain")
+  cru.statusline.set(ctx.session_id, "git", parse_branch(out))
 end)
 ```
 
-### Reusable Components
+`FileChanged` fires when the workspace changes, which is the trigger a value like
+git status actually needs — turn boundaries are the wrong moment, since files
+change while you are not in a turn.
 
-Create reusable components with the `component` factory:
+An unset expression renders nothing, so a bar does not jump when a value first
+arrives. Re-setting an unchanged value is reported as `unchanged` and costs no
+repaint.
 
-```lua
--- Create a Card component with default props
-local Card = oil.component(oil.col, { padding = 2, border = "rounded" })
+Values are **text**, not escape sequences. Styling goes on the item
+(`:hl("Git")`), which is what lets Crucible strip control characters from a value
+unconditionally — a branch name should not be able to move your cursor.
 
--- Use with additional props (merged with defaults)
-local view = Card({ gap = 1 },
-    oil.text("Card Title", { bold = true }),
-    oil.text("Card body content")
-)
-```
+Limits: 256 characters per value, 16 expressions per session. The character limit
+is a safety bound, not layout; display truncation is the TUI's job, because only
+the TUI knows the terminal width.
 
-Or define components as regular functions:
+## Failure behaviour
 
-```lua
-local function StatusBar(props)
-    return oil.row({ justify = "space_between" },
-        oil.text(props.title, { bold = true }),
-        oil.badge(props.status, { fg = props.color })
-    )
-end
+Styling is not a gate, so nothing here fails closed — but "fail open" means
+falling back to a *coherent whole*, never a partial one. A malformed theme yields
+the complete built-in rather than a half-applied palette, because `bg` without
+`fg` is invisible text. An unknown palette name drops that one attribute rather
+than substituting a guess. A bar anchored somewhere unrecognised is skipped
+entirely, since drawing it in the wrong place is worse than not drawing it.
 
--- Usage
-StatusBar({ title = "Dashboard", status = "OK", color = "green" })
-```
+The TUI holds a complete compiled-in theme and renders correctly with no daemon
+at all. `ui.config` is an upgrade, never a precondition for the first frame.
 
-### Available Components
+## See also
 
-| Function | Description |
-|----------|-------------|
-| `oil.text(content, style?)` | Styled text |
-| `oil.col(props?, children...)` | Vertical flex container |
-| `oil.row(props?, children...)` | Horizontal flex container |
-| `oil.fragment(children...)` | Invisible wrapper |
-| `oil.spacer()` | Flexible space filler |
-| `oil.divider(char?, width?)` | Horizontal line |
-| `oil.hr()` | Full-width horizontal rule |
-| `oil.badge(label, style?)` | Colored badge |
-| `oil.spinner(label?)` | Loading spinner |
-| `oil.progress(value, width?)` | Progress bar (value 0-1) |
-| `oil.input(opts)` | Text input field |
-| `oil.popup(items, selected?, max?)` | Popup menu |
-| `oil.bullet_list(items)` | Bulleted list |
-| `oil.numbered_list(items)` | Numbered list |
-| `oil.kv(key, value)` | Key-value pair row |
-| `oil.scrollback(key, children...)` | Scrollable container |
-
-### Control Flow Functions
-
-| Function | Description |
-|----------|-------------|
-| `oil.when(cond, node)` | Show node if condition is truthy |
-| `oil.if_else(cond, t, f)` | Show t if true, f if false (alias: `either`) |
-| `oil.each(items, fn)` | Map items to nodes |
-| `oil.component(base, defaults)` | Create component with default props |
-
-### Style Options
-
-```lua
-local style = {
-    fg = "red",        -- Foreground: red, green, blue, yellow, etc. or "#hex"
-    bg = "blue",       -- Background color
-    bold = true,       -- Bold text
-    dim = true,        -- Dimmed text
-    italic = true,     -- Italic text
-    underline = true,  -- Underlined text
-}
-```
-
-### Container Options
-
-```lua
-local opts = {
-    gap = 1,                -- Space between children
-    padding = 2,            -- Inner padding (all sides)
-    margin = 1,             -- Outer margin (all sides)
-    border = "rounded",     -- single, double, rounded, heavy
-    justify = "center",     -- start, end, center, space_between, space_around, space_evenly
-    align = "stretch",      -- start, end, center, stretch
-}
-```
-
-### Markup Syntax
-
-For template-driven UI, parse XML-like markup:
-
-```lua
-local view = oil.markup([[
-    <col border="rounded" gap="1">
-        <text bold="true">Header</text>
-        <divider />
-        <text>Content here</text>
-    </col>
-]])
-```
-
-## Fennel Support
-
-The `lib/oil.fnl` module provides idiomatic Fennel wrappers:
-
-```fennel
-;; Load the oil module
-(local oil (require :oil))
-
-;; Define a reusable component
-(oil.defui status-bar [{: title : status : color}]
-  (oil.row {:justify :space-between}
-    (oil.text title {:bold true})
-    (oil.badge status {:fg color})))
-
-;; Build a view
-(oil.col {:gap 1 :padding 1 :border :rounded}
-  (status-bar {:title "Dashboard" :status "OK" :color :green})
-  (oil.text "Welcome back!")
-  (oil.when loading (oil.spinner "Loading..."))
-  (oil.map-each items (fn [item]
-    (oil.text item.name))))
-```
-
-### Fennel-Specific Features
-
-| Macro/Function | Description |
-|----------------|-------------|
-| `(oil.defui name [props] body)` | Define a component function |
-| `(oil.cond-ui ...)` | Multi-branch conditional |
-| `(oil.when cond node)` | Conditional rendering |
-| `(oil.map-each items fn)` | Iterate items (named to avoid shadowing) |
-
-### Multi-Branch Conditional
-
-```fennel
-(oil.cond-ui
-  loading (oil.spinner "Loading...")
-  error   (oil.text error {:fg :red})
-  :else   (oil.text "Ready" {:fg :green}))
-```
-
-## See Also
-
-- [[Help/Lua/Language Basics]] - Lua reference
-- [[Help/Lua/Configuration]] - Lua configuration
-- [[Help/Extending/Creating Plugins]] - Plugin development
-- [[Help/Extending/Plugin Manifest]] - Plugin manifest format
+- [[Help/Lua/Configuration]] — where `init.lua` lives and how it loads

@@ -127,14 +127,12 @@ mod status_bar_tests {
     }
 
     fn render_configured_bar(bar: &StatusBar, width: usize) -> String {
-        let node =
-            bar.view_from_items(false);
+        let node = bar.view_from_items(false);
         render_to_plain_text(&node, width)
     }
 
     fn render_configured_bar_ansi(bar: &StatusBar, width: usize) -> String {
-        let node =
-            bar.view_from_items(false);
+        let node = bar.view_from_items(false);
         render_to_string(&node, width)
     }
 
@@ -468,7 +466,6 @@ mod status_bar_tests {
             .status("Thinking...");
         assert_snapshot!("status_bar_plan", render_bar(&bar, 80));
     }
-
 }
 
 mod input_area_tests {

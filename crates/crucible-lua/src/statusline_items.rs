@@ -120,12 +120,17 @@ pub enum StatusItem {
         item: Box<StatusItem>,
     },
     /// Style the child with a highlight group.
-    Hl { group: String, item: Box<StatusItem> },
+    Hl {
+        group: String,
+        item: Box<StatusItem>,
+    },
 
     // ── Daemon-pushed ──
     /// A value computed daemon-side and pushed. Renders nothing when unset, so
     /// a bar does not jump as values arrive.
-    Expr { key: String },
+    Expr {
+        key: String,
+    },
 }
 
 /// A named bar: where it goes and what it holds.
@@ -235,7 +240,9 @@ pub fn bars_to_wire(bars: &StatusBars) -> Json {
 
 pub fn bars_from_wire(v: &Json) -> StatusBars {
     let mut bars = StatusBars::new();
-    let Some(obj) = v.as_object() else { return bars };
+    let Some(obj) = v.as_object() else {
+        return bars;
+    };
 
     for (name, def) in obj {
         let Some(anchor) = def

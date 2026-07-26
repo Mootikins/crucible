@@ -518,7 +518,9 @@ mod tests {
         // rather than dropped, so this asserts on bars, not on the superseded
         // component-table config.
         let bars = get_status_bars().expect("legacy setup shape defines a bar");
-        let main = bars.get("main").expect("legacy sections become the main bar");
+        let main = bars
+            .get("main")
+            .expect("legacy sections become the main bar");
         assert_eq!(
             main.items,
             vec![crate::statusline_items::StatusItem::Mode],

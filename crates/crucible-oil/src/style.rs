@@ -677,17 +677,9 @@ mod tests {
     /// itself absent so layout can decline to reserve a cell for it.
     #[test]
     fn absent_edges_are_distinguishable_from_present_ones() {
-        let chars = BorderChars::from_list(&[
-            None,
-            Some('▀'),
-            None,
-            None,
-            None,
-            Some('▄'),
-            None,
-            None,
-        ])
-        .unwrap();
+        let chars =
+            BorderChars::from_list(&[None, Some('▀'), None, None, None, Some('▄'), None, None])
+                .unwrap();
 
         assert!(chars.has_top());
         assert!(chars.has_bottom());

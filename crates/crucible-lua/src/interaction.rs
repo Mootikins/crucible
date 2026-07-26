@@ -518,8 +518,6 @@ mod tests {
         assert!(!ask_request.allow_other);
     }
 
-
-
     #[test]
     fn test_interaction_permission_bash() {
         let lua = Lua::new();

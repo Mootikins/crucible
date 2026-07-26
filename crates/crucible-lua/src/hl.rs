@@ -361,7 +361,10 @@ mod tests {
             g
         })]);
 
-        assert_eq!(resolve("A", &registry, &theme).unwrap().fg, Some(Color::Cyan));
+        assert_eq!(
+            resolve("A", &registry, &theme).unwrap().fg,
+            Some(Color::Cyan)
+        );
     }
 
     #[test]

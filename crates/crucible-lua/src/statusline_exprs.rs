@@ -39,7 +39,9 @@ pub enum ExprRejection {
     /// one crosses a socket.
     Unchanged,
     /// This session already defines the maximum number of expressions.
-    TooManyKeys { max: usize },
+    TooManyKeys {
+        max: usize,
+    },
     /// Empty key.
     EmptyKey,
     Unavailable,
@@ -85,7 +87,10 @@ impl StatuslineExprRegistry {
         }
         let clean = sanitize(value);
 
-        let mut sessions = self.sessions.lock().map_err(|_| ExprRejection::Unavailable)?;
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| ExprRejection::Unavailable)?;
         let entry = sessions.entry(session_id.to_string()).or_default();
 
         if entry.get(key).is_some_and(|existing| *existing == clean) {
@@ -187,7 +192,10 @@ mod tests {
     fn a_value_is_recorded_and_readable() {
         let r = StatuslineExprRegistry::new();
         assert_eq!(r.set("s1", "git", "main*"), Ok("main*".to_string()));
-        assert_eq!(r.snapshot("s1").get("git").map(String::as_str), Some("main*"));
+        assert_eq!(
+            r.snapshot("s1").get("git").map(String::as_str),
+            Some("main*")
+        );
     }
 
     /// The dirty check: a provider firing every turn with the same value must
@@ -251,7 +259,9 @@ mod tests {
     #[test]
     fn values_are_capped_by_character_not_byte() {
         let r = StatuslineExprRegistry::new();
-        let stored = r.set("s1", "cjk", &"日".repeat(MAX_VALUE_CHARS * 2)).unwrap();
+        let stored = r
+            .set("s1", "cjk", &"日".repeat(MAX_VALUE_CHARS * 2))
+            .unwrap();
         assert_eq!(stored.chars().count(), MAX_VALUE_CHARS);
         assert!(
             stored.chars().all(|c| c == '日'),

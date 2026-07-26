@@ -121,8 +121,7 @@ mod tests {
         let comp = StatusComponent::new()
             .mode(ChatMode::Normal)
             .model("gpt-4")
-            .context(4000, 8000)
-            ;
+            .context(4000, 8000);
         harness.render_component(&comp);
         let plain = render_to_plain_text(&comp.view(&ViewContext::new(harness.focus())), 80);
         assert!(plain.contains("NORMAL"));
@@ -151,8 +150,7 @@ mod tests {
         let comp = StatusComponent::new()
             .mode(ChatMode::Auto)
             .model("claude")
-            .toast("Processing", NotificationToastKind::Info)
-            ;
+            .toast("Processing", NotificationToastKind::Info);
         let plain = render_to_plain_text(&comp.view(&ViewContext::new(harness.focus())), 80);
         assert!(plain.contains("Processing"));
         assert!(plain.contains("INFO"));
@@ -168,8 +166,7 @@ mod tests {
             .counts(vec![
                 (NotificationToastKind::Warning, 3),
                 (NotificationToastKind::Error, 1),
-            ])
-            ;
+            ]);
         let plain = render_to_plain_text(&comp.view(&ViewContext::new(harness.focus())), 80);
         assert!(plain.contains("PLAN"));
         assert!(plain.contains("WARN"));

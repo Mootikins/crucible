@@ -12,10 +12,10 @@ use crate::notify::register_notify_module;
 use crate::{
     register_graph_module, register_hooks_module, register_lua_stdlib, register_oil_module,
     register_oq_module, register_session_module, register_sessions_module,
-    register_sessions_module_with_api, register_storage_module,
-    register_storage_module_with_store, register_tools_module, register_tools_module_with_api,
-    register_vault_module, register_vault_module_with_graph, register_vault_module_with_store,
-    DaemonSessionApi, DaemonToolsApi, SessionManager,
+    register_sessions_module_with_api, register_storage_module, register_storage_module_with_store,
+    register_tools_module, register_tools_module_with_api, register_vault_module,
+    register_vault_module_with_graph, register_vault_module_with_store, DaemonSessionApi,
+    DaemonToolsApi, SessionManager,
 };
 
 /// Builder for constructing Lua test environments with specific module registrations.

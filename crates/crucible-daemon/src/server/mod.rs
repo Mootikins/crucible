@@ -46,10 +46,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 mod core;
+mod file_event_hooks;
 pub mod fs;
 pub mod grep;
 pub mod kiln;
-mod file_event_hooks;
 mod plugin_boot;
 mod socket_lock;
 use socket_lock::acquire_socket_lock;

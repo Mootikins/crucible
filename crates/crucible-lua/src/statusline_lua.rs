@@ -102,8 +102,7 @@ pub fn register_statusline_items(lua: &Lua, statusline: &Table) -> Result<(), Lu
     }
 
     // sl.text("literal")
-    let text_fn =
-        lua.create_function(|_, s: String| Ok(LuaItem(StatusItem::Text(s))))?;
+    let text_fn = lua.create_function(|_, s: String| Ok(LuaItem(StatusItem::Text(s))))?;
     statusline.set("text", text_fn)?;
 
     // sl.any(a, b, ...) — first non-empty wins.
@@ -346,9 +345,6 @@ mod tests {
             r#"local sl = crucible.statusline
                return { main = { items = { sl.mode, 42, sl.context } } }"#,
         );
-        assert_eq!(
-            b["main"].items,
-            vec![StatusItem::Mode, StatusItem::Context]
-        );
+        assert_eq!(b["main"].items, vec![StatusItem::Mode, StatusItem::Context]);
     }
 }
