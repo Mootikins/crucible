@@ -5,8 +5,8 @@
 //! 1. `[plugins.<name>]` from config.toml reaches the plugin runtime as
 //!    `crucible.config.get("<name>.<key>")`, and is handed to the plugin's
 //!    `setup()` function at load time.
-//! 2. The plugin's own config module resolves in a defined order:
-//!    explicit TOML → `setup()` → declared defaults → caller fallback.
+//! 2. The plugin's own config module resolves in a defined order (Lua beats
+//!    TOML): `setup()` → explicit TOML → declared defaults → caller fallback.
 //!
 //! These tests pin both, plus the module-cache isolation that keeps two
 //! plugins with a same-named local module (`config.lua`) from sharing one.

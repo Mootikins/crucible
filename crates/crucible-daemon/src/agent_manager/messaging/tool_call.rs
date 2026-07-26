@@ -51,8 +51,17 @@ fn deny_tool_call(
 /// Run every `crucible.on("pre_tool_call", …)` handler in one registry.
 ///
 /// `Some` short-circuits the call — a handler cancelled, took it over, or
-/// raised. `None` means every handler observed without intervening, so the
-/// caller continues to the next registry (or to real dispatch).
+/// raised. `None` means every handler observed (possibly rewriting `args`),
+/// so the caller continues to the next registry (or to real dispatch).
+///
+/// A `Transform` return of `{ args = {...} }` rewrites the call's arguments
+/// in `args`, chained: later handlers (and the other registry) see the
+/// rewritten value, and dispatch executes it. Honoured as a *returned* value
+/// — never Lua-side mutation of the event table, which would skip this
+/// explicit chaining — and the executor's own typed parsing remains the
+/// validation boundary, exactly as it is for model-supplied arguments. This
+/// was parsed and silently dropped before, so `event.args.command = ...`
+/// looked like sanitisation while the original still executed.
 ///
 /// Takes `registry` and `lua` explicitly because handler bodies are
 /// `RegistryKey`s valid only against the state that created them: session
@@ -62,7 +71,7 @@ async fn run_pre_tool_call_handlers(
     registry: &crucible_lua::LuaScriptHandlerRegistry,
     lua: &mlua::Lua,
     tool_name: &str,
-    args: &serde_json::Value,
+    args: &mut serde_json::Value,
     call_id: &str,
 ) -> Option<crucible_core::traits::chat::ChatToolResult> {
     for handler in registry.runtime_handlers_for("pre_tool_call", Some(tool_name)) {
@@ -70,7 +79,7 @@ async fn run_pre_tool_call_handlers(
             name: "pre_tool_call".to_string(),
             payload: serde_json::json!({
                 "tool": tool_name,
-                "args": args,
+                "args": &*args,
             }),
         };
         match registry
@@ -99,31 +108,14 @@ async fn run_pre_tool_call_handlers(
                     handler = %handler.name,
                     "pre_tool_call handler provided result"
                 );
-                // Emit tool_call event so TUI shows tool running
-                emit_event(
-                    &stream_ctx.event_tx,
-                    SessionEventMessage::tool_call(
-                        &stream_ctx.session_id,
-                        call_id,
-                        tool_name,
-                        args.clone(),
-                    ),
-                );
                 let result_string = match result {
                     serde_json::Value::String(s) => s,
                     other => other.to_string(),
                 };
-                // Emit tool_result event so TUI shows completion
-                emit_event(
-                    &stream_ctx.event_tx,
-                    SessionEventMessage::tool_result_with_terminate(
-                        &stream_ctx.session_id,
-                        call_id,
-                        tool_name,
-                        serde_json::json!({ "result": &result_string }),
-                        terminate,
-                    ),
-                );
+                // Events are emitted by the CALLER after the `tool_result`
+                // seam runs — a redaction handler must see a plugin-executed
+                // result (oci's bash output) the same as a dispatched one,
+                // and the emitted events must carry the patched value.
                 return Some(crucible_core::traits::chat::ChatToolResult {
                     name: tool_name.to_string(),
                     result: result_string,
@@ -131,6 +123,26 @@ async fn run_pre_tool_call_handlers(
                     call_id: Some(call_id.to_string()),
                     terminate,
                 });
+            }
+            Ok(crucible_lua::ScriptHandlerResult::Transform(val)) => {
+                if let Some(new_args) = val.get("args") {
+                    if new_args.is_object() {
+                        debug!(
+                            session_id = %stream_ctx.session_id,
+                            tool = %tool_name,
+                            handler = %handler.name,
+                            "pre_tool_call handler rewrote arguments"
+                        );
+                        *args = new_args.clone();
+                    } else {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            tool = %tool_name,
+                            handler = %handler.name,
+                            "pre_tool_call Transform `args` is not an object; ignoring"
+                        );
+                    }
+                }
             }
             Ok(_) => {}
             // Fail closed — see `deny_tool_call`.
@@ -186,7 +198,7 @@ impl AgentManager {
             tool_call
         };
 
-        let args = tool_call
+        let mut args = tool_call
             .arguments
             .clone()
             .unwrap_or(serde_json::Value::Null);
@@ -215,7 +227,7 @@ impl AgentManager {
             );
         }
 
-        {
+        let mut intercepted = {
             let mut state = stream_ctx.session_state.lock().await;
             let pre_tool_event = SessionEvent::internal(InternalSessionEvent::PreToolCall {
                 name: tool_call.name.clone(),
@@ -292,40 +304,78 @@ impl AgentManager {
             // live in the loader's VM with their own registry; a RegistryKey
             // is only valid against the state that made it, so the two can't
             // be merged into one registry.
-            if let Some(result) = run_pre_tool_call_handlers(
+            run_pre_tool_call_handlers(
                 stream_ctx,
                 &state.registry,
                 &state.lua,
                 &tool_call.name,
-                &args,
+                &mut args,
                 &call_id,
             )
             .await
-            {
-                return Some(result);
-            }
-        }
+        };
 
         // Plugin handlers run OUTSIDE the session-state lock: a handler like
         // oci's exec-into-container can legitimately run for minutes, and
         // holding the session's whole state across that starves every other
         // operation on the session (and deadlocks a handler that calls back
         // into an API needing the same lock).
-        if let Some((plugin_registry, plugin_lua)) =
-            stream_ctx.agent_stream_config.plugin_handlers.as_ref()
-        {
-            if let Some(result) = run_pre_tool_call_handlers(
-                stream_ctx,
-                plugin_registry,
-                plugin_lua,
-                &tool_call.name,
-                &args,
-                &call_id,
-            )
-            .await
+        if intercepted.is_none() {
+            if let Some((plugin_registry, plugin_lua)) =
+                stream_ctx.agent_stream_config.plugin_handlers.as_ref()
             {
-                return Some(result);
+                intercepted = run_pre_tool_call_handlers(
+                    stream_ctx,
+                    plugin_registry,
+                    plugin_lua,
+                    &tool_call.name,
+                    &mut args,
+                    &call_id,
+                )
+                .await;
             }
+        }
+        if let Some(mut result) = intercepted {
+            // A denial already emitted its events inside deny_tool_call. A
+            // Handled result runs the `tool_result` seam first, then emits —
+            // the TUI and the model must both see the patched value.
+            if result.error.is_none() {
+                let (patched, patched_error) = super::tool_hooks::apply_tool_result_handlers(
+                    stream_ctx,
+                    &tool_call.name,
+                    &args,
+                    result.result,
+                    None,
+                )
+                .await;
+                result.result = patched;
+                result.error = patched_error;
+                emit_event(
+                    &stream_ctx.event_tx,
+                    SessionEventMessage::tool_call(
+                        &stream_ctx.session_id,
+                        &call_id,
+                        &tool_call.name,
+                        args.clone(),
+                    ),
+                );
+                let payload = if let Some(ref err) = result.error {
+                    serde_json::json!({ "error": err })
+                } else {
+                    serde_json::json!({ "result": &result.result })
+                };
+                emit_event(
+                    &stream_ctx.event_tx,
+                    SessionEventMessage::tool_result_with_terminate(
+                        &stream_ctx.session_id,
+                        &call_id,
+                        &tool_call.name,
+                        payload,
+                        result.terminate,
+                    ),
+                );
+            }
+            return Some(result);
         }
 
         // Default-deny for a session a plugin claimed isolation over.
@@ -566,7 +616,7 @@ impl AgentManager {
                 .dispatch_tool(&tool_call.name, args.clone(), hook_env_vars),
         )
         .await;
-        let (mut result_str, error_str) = match tool_result {
+        let (mut result_str, mut error_str) = match tool_result {
             Ok(Ok(val)) => (val.to_string(), None),
             Ok(Err(e)) => (String::new(), Some(e)),
             Err(_elapsed) => (
@@ -581,6 +631,19 @@ impl AgentManager {
                 ),
             ),
         };
+
+        // `tool_result` seam: chained post-execution patches over what the
+        // MODEL receives (`tool:display_complete` only changes what the user
+        // sees). Runs BEFORE spill, so a redacted secret never reaches the
+        // spill file either.
+        (result_str, error_str) = super::tool_hooks::apply_tool_result_handlers(
+            stream_ctx,
+            &tool_call.name,
+            &args,
+            result_str,
+            error_str,
+        )
+        .await;
 
         // Spill large tool outputs to disk and replace with a token-efficient reference.
         // Skip tools whose output is trivially reproducible from existing data on disk.

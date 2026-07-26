@@ -633,6 +633,123 @@ async fn plugin_registered_pre_tool_call_handler_intercepts_tool() {
     );
 }
 
+/// A `Transform` return of `{ args = ... }` from a plugin's `pre_tool_call`
+/// handler rewrites the call's arguments — previously parsed and silently
+/// dropped, so mutation-style "sanitisation" left the original executing.
+/// The emitted `tool_call` event carries the rewritten args, which is the
+/// same value dispatch receives.
+#[tokio::test]
+async fn plugin_pre_tool_call_transform_rewrites_arguments() {
+    use crate::daemon_plugins::DaemonPluginLoader;
+
+    let mut h = ReactorTestHarness::new().await;
+
+    let loader = DaemonPluginLoader::new(std::collections::HashMap::new()).expect("loader");
+    let plugin_lua = loader.plugin_lua();
+    plugin_lua
+        .load(
+            r#"
+        crucible.on("pre_tool_call", { pattern = "read_file" }, function(ctx, event)
+            return { args = { path = "rewritten-" .. event.args.path } }
+        end)
+    "#,
+        )
+        .exec()
+        .expect("register transform handler");
+    h.set_plugin_handlers(loader.plugin_handlers(), plugin_lua);
+
+    h.inject_streaming_agent(vec![
+        script::tool_call(
+            "call-rewrite",
+            "read_file",
+            serde_json::json!({ "path": "foo.txt" }),
+        ),
+        script::text("done"),
+        script::done(),
+    ]);
+
+    // Only the REWRITTEN path exists on disk, so a successful read proves
+    // dispatch executed the rewritten arguments, not the originals. Written
+    // into both candidate roots (the session dir and the manager fallback)
+    // so the assertion tests the rewrite, not dispatcher-root trivia.
+    std::fs::write(
+        h._tmp.path().join("rewritten-foo.txt"),
+        "rewrite reached execution",
+    )
+    .unwrap();
+    std::fs::write(
+        super::test_workspace_root().join("rewritten-foo.txt"),
+        "rewrite reached execution",
+    )
+    .unwrap();
+
+    h.send("run tool").await;
+    let tool_call = h.wait_for("tool_call").await;
+    let tool_result = h.wait_for("tool_result").await;
+    h.wait_for("message_complete").await;
+
+    assert_eq!(
+        tool_call.data["args"]["path"], "rewritten-foo.txt",
+        "rewritten args must be what every event consumer sees; got {:?}",
+        tool_call.data["args"]
+    );
+    let result = tool_result.data["result"]["result"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        result.contains("rewrite reached execution"),
+        "dispatch must execute the rewritten arguments; got {:?}",
+        tool_result.data["result"]
+    );
+}
+
+/// The `tool_result` seam patches what the model receives — including a
+/// result another plugin handler produced via `handled = true` (oci's bash
+/// output must be redactable like any dispatched output).
+#[tokio::test]
+async fn plugin_tool_result_handler_patches_a_handled_result() {
+    use crate::daemon_plugins::DaemonPluginLoader;
+
+    let mut h = ReactorTestHarness::new().await;
+
+    let loader = DaemonPluginLoader::new(std::collections::HashMap::new()).expect("loader");
+    let plugin_lua = loader.plugin_lua();
+    plugin_lua
+        .load(
+            r#"
+        crucible.on("pre_tool_call", { pattern = "write" }, function(ctx, event)
+            return { handled = true, result = "token=SECRET ok" }
+        end)
+        crucible.on("tool_result", { pattern = "write" }, function(ctx, event)
+            return { result = event.result:gsub("token=%S+", "token=[REDACTED]") }
+        end)
+    "#,
+        )
+        .exec()
+        .expect("register handlers");
+    h.set_plugin_handlers(loader.plugin_handlers(), plugin_lua);
+
+    h.inject_streaming_agent(vec![
+        script::tool_call(
+            "call-redact",
+            "write",
+            serde_json::json!({ "path": "foo.txt", "content": "x" }),
+        ),
+        script::text("done"),
+        script::done(),
+    ]);
+
+    h.send("run tool").await;
+    let tool_result = h.wait_for("tool_result").await;
+    h.wait_for("message_complete").await;
+
+    assert_eq!(
+        tool_result.data["result"]["result"], "token=[REDACTED] ok",
+        "the emitted result must be the seam-patched value; got {:?}",
+        tool_result.data["result"]
+    );
+}
+
 /// A tool no handler took over must be refused when the session is isolated.
 ///
 /// Interception used to be an allowlist of six tool names. That was complete

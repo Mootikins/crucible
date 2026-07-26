@@ -648,9 +648,15 @@ fn test_agent() -> SessionAgent {
 /// could read another run's writes. Held in a static so the dir outlives
 /// every manager built from it; the OS reaps it with the rest of tempdir.
 fn test_workspace_tools() -> Arc<WorkspaceTools> {
+    Arc::new(WorkspaceTools::new(test_workspace_root().to_path_buf()))
+}
+
+/// Root of the shared test workspace, for tests that must place real files
+/// where the fallback dispatcher's tools will read them.
+pub(super) fn test_workspace_root() -> &'static std::path::Path {
     static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
-    let dir = DIR.get_or_init(|| tempfile::tempdir().expect("test workspace tempdir"));
-    Arc::new(WorkspaceTools::new(dir.path().to_path_buf()))
+    DIR.get_or_init(|| tempfile::tempdir().expect("test workspace tempdir"))
+        .path()
 }
 
 fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManager {

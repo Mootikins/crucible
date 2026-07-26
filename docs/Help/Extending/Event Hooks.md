@@ -54,12 +54,12 @@ Event fields:
 - `event.type` — the event name, `"pre_tool_call"` (string)
 - `event.tool` — tool name (string)
 - `event.args` — tool arguments (table)
-- `event.session_id` — the session the call belongs to (string)
 
-`event.session_id` is not decoration. Plugin handlers are registered once, into
-one Lua state shared by every session in the daemon, so a handler holding
-per-session state must key it by this — see `runtime/plugins/oci/init.lua`,
-which looks up the session's container with it.
+The session the call belongs to arrives as `ctx.session_id` (first handler
+argument), not on the event. It is not decoration: plugin handlers are
+registered once, into one Lua state shared by every session in the daemon, so
+a handler holding per-session state must key it by this — see
+`runtime/plugins/oci/init.lua`, which looks up the session's container with it.
 
 Handlers receive one flat table. There is no `event.payload` envelope — it used
 to leak through from the internal Rust event type, and `event.name` meant the
@@ -67,6 +67,27 @@ event type in code but the tool name in this document. Both are gone; the key
 names above are pinned by `handlers::tests::conversion`.
 
 Pattern is matched against the tool name.
+
+### `tool_result`
+
+Fires after a tool call finishes, over the outcome **as the model will
+receive it** — including results a `pre_tool_call` handler produced via
+`handled = true`, and before large outputs spill to disk. Return a partial
+patch:
+
+```lua
+crucible.on("tool_result", { pattern = "bash" }, function(ctx, event)
+  return { result = event.result:gsub("token=%S+", "token=[REDACTED]") }
+end)
+```
+
+Event fields: `event.tool`, `event.args`, `event.result` (string),
+`event.error` (string or nil). Patches chain — each handler sees the previous
+one's output; `{ result = ... }` and `{ error = ... }` replace those halves,
+omitted keys keep the current value. Execution already happened, so Cancel
+and Handle are ignored here; a handler that must be able to veto belongs in
+`pre_tool_call`. Use for redaction and summarisation of what the model sees;
+`tool:display_complete` is the equivalent for what the *user* sees.
 
 ### `tool:display_start` / `tool:display_complete`
 
@@ -100,10 +121,13 @@ crucible.on("pre_llm_call", function(ctx, event)
 end)
 ```
 
-> **Not supported for `pre_tool_call`.** That dispatcher honours only Cancel and
-> Handle; a returned table is ignored. Mutating `event.args` and returning it
-> looks like it sanitises the call but the original arguments still execute — use
-> **Handle** to run a sanitised version yourself, or **Cancel** to block it.
+> **For `pre_tool_call`, return `{ args = { ... } }`** to rewrite the call's
+> arguments before execution — path remapping, flag injection, sanitisation.
+> Rewrites chain: later handlers see the rewritten value, and the executor's
+> own typed argument parsing validates the result exactly as it validates
+> model-supplied arguments. The rewrite must be *returned*; mutating
+> `event.args` in place does nothing (the event table is a projection, not
+> the call).
 
 ### Cancel
 
