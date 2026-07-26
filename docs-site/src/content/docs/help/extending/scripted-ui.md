@@ -333,6 +333,5 @@ The `lib/oil.fnl` module provides idiomatic Fennel wrappers:
 
 - [Language Basics](../lua/language-basics/) - Lua reference
 - [Configuration](../lua/configuration/) - Lua configuration
-- [Component Architecture](../tui/component-architecture/) - UI internals
 - [Creating Plugins](./creating-plugins/) - Plugin development
 - [Plugin Manifest](./plugin-manifest/) - Plugin manifest format

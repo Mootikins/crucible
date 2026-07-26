@@ -200,8 +200,3 @@ Decrease `batch_size`.
 ### Switched models
 
 Reprocess: `cru process --force`.
-
-## Implementation
-
-**Source code:** `crates/crucible-daemon/src/llm/embeddings/`  
-**Config struct:** `crates/crucible-core/src/config/enrichment.rs`

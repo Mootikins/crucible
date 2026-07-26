@@ -42,8 +42,9 @@ author: Your Name <you@example.com>
 license: MIT
 
 main: lua/init.lua
-init: setup
 
+# Informational — not enforced (all plugins share one Lua VM). An invalid
+# value fails manifest parsing and the plugin never loads.
 capabilities:
   - filesystem
   - shell
@@ -65,16 +66,6 @@ exports:
   views:
     - task-board
   auto_discover: false
-
-config:
-  properties:
-    default_file:
-      type: string
-      description: Default TASKS.md location
-      default: "TASKS.md"
-    auto_archive:
-      type: boolean
-      default: true
 
 enabled: true
 ```
@@ -101,7 +92,6 @@ enabled: true
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `main` | string | "init.lua" | Main file path relative to plugin dir |
-| `init` | string | null | Optional init function name to call after load |
 
 ### Capabilities
 
@@ -119,7 +109,10 @@ capabilities:
   - system        # Access system information
 ```
 
-Plugins without declared capabilities run in a restricted sandbox. Users may be prompted to grant capabilities on first use.
+Capabilities are informational: all plugins share one Lua VM, so per-plugin
+module gating is not enforced. There is no restricted sandbox and no
+grant prompt — declare capabilities as documentation of what the plugin
+touches. An invalid value fails manifest parsing and the plugin never loads.
 
 ### Dependencies
 
@@ -155,29 +148,20 @@ exports:
     - my-view
   handlers:
     - my_handler
-  auto_discover: true   # Also scan files for @tool/@command annotations
+  auto_discover: true   # Reserved; plugin callables come from the spec table
 ```
 
-If `auto_discover` is true (default), Crucible also scans plugin files for annotated functions. Set to `false` to only export explicitly listed items.
+`auto_discover` is reserved. Plugin callables come exclusively from the spec
+table `init.lua` returns; annotated functions are not scanned for plugins.
 
-### Configuration Schema
+### Configuration
 
-Define plugin-specific configuration:
+There is no manifest-level config schema. Plugin configuration is the
+`[plugins.<name>]` section of `config.toml`, handed to your `setup()` at
+load, overridable from `~/.config/crucible/init.lua` — see
+[Creating Plugins](./creating-plugins/) for the precedence rules (Lua beats
+TOML). A `config:` block in plugin.yaml is ignored.
 
-```yaml
-config:
-  properties:
-    api_key:
-      type: string
-      description: API key for external service
-    max_results:
-      type: number
-      default: 10
-    enabled_features:
-      type: array
-```
-
-Supported types: `string`, `number`, `boolean`, `array`, `object`
 
 ### Enable/Disable
 
@@ -250,7 +234,7 @@ Associate registrations with an owner for bulk removal:
 ```rust
 // Register multiple items owned by a workflow
 let tool = ToolBuilder::new("workflow_tool").build();
-let handler = HandlerBuilder::new("workflow_handler", "tool:after").build();
+let handler = HandlerBuilder::new("workflow_handler", "tool_result").build();
 
 manager.register_tool(tool, Some("my_workflow"));
 manager.register_handler(handler, Some("my_workflow"));

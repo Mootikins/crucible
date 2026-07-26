@@ -60,18 +60,22 @@ All HTTP functions return a table with:
 Use HTTP in handlers to fetch external data:
 
 ```lua
--- Handler that enriches tool calls with external data
--- @handler event="tool:before" pattern="fetch_prices" priority=10
-function on_fetch_prices(ctx, event)
+-- Handler that enriches tool calls with external data.
+-- Handlers register with `crucible.on` at load time; `pattern` globs the
+-- tool name. Handlers may call async APIs like `cru.http` directly.
+crucible.on("pre_tool_call", { pattern = "fetch_prices", priority = 10 }, function(ctx, event)
     local response = cru.http.get("https://api.prices.com/latest")
     if not response.ok then
-        event.cancelled = true
-        event.cancel_reason = response.error
-        return event
+        -- Cancel blocks the call with an error; `pre_tool_call` is the only
+        -- hook that fails CLOSED, so a raising handler denies the call too.
+        return { cancel = true, reason = response.error }
     end
-    event.payload.prices = cru.oq.parse(response.body)
-    return event
-end
+    -- Rewrite the args the tool runs with. `args` REPLACES the whole table,
+    -- so extend the existing one rather than returning just the new key.
+    -- Mutating `event.args` alone is ignored — the rewrite must be RETURNED.
+    event.args.prices = cru.oq.parse(response.body)
+    return { args = event.args }
+end)
 ```
 
 ## Error Handling

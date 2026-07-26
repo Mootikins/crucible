@@ -63,6 +63,18 @@ tools on the host. Every workspace tool is refused for that session with the
 reason attached, so it appears in the transcript rather than only in the daemon
 log. Isolation you asked for and did not get is never silently downgraded.
 
+## Internal agents only
+
+Isolation is enforceable only for **internal** agents, whose tools the daemon
+dispatches — interception and the default-deny gate sit *before* execution.
+An external ACP agent (`cru chat -a claude` and friends) executes tools in its
+own process and reports them to the daemon as notifications; nothing the
+daemon does can stop a call it learns about after the fact. Rather than let a
+session look sandboxed while every tool runs on the host, the daemon
+**refuses** to pair an isolation claim with an external agent: creating such
+a session fails, and switching an isolated session to an ACP agent is
+rejected.
+
 ## See Also
 
 - [Event Hooks](./event-hooks/) — the hook API `oci` is built on

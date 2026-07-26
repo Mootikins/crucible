@@ -260,10 +260,6 @@ ollama pull llama3.2
 
 For cloud providers, check that the model name is correct. Run `cru models` to list available models.
 
-## Implementation
-
-**Source code:** `crates/crucible-core/src/config/components/llm.rs`
-
 ## See Also
 
 - `:h config.embedding` — Embedding configuration

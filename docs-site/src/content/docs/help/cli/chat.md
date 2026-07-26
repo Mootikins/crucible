@@ -362,10 +362,6 @@ Ask the agent to cite sources:
 "What's my approach to error handling? Cite the specific notes."
 ```
 
-## Implementation
-
-**Source code:** `crates/crucible-cli/src/commands/chat.rs`
-
 ## See Also
 
 - [Commands](../tui/commands/) - REPL command reference

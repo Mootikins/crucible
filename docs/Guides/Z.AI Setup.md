@@ -154,6 +154,6 @@ cru chat  # daemon auto-starts with the new environment
 
 ## See Also
 
-- [[Guides/OpenRouter-Setup|OpenRouter Setup]]
+- [[Guides/OpenRouter Setup|OpenRouter Setup]]
 - [[Guides/GitHub Copilot Setup|GitHub Copilot Setup]]
 - [[Help/Config/LLM Providers|LLM Providers Reference]]

@@ -156,15 +156,6 @@ For large kilns (>1000 files):
 - Adjust parallelism: `--parallel 8`
 - Use `--dry-run` to preview scope
 
-## Implementation
-
-**Source code:** `crates/crucible-cli/src/commands/process.rs`
-
-**Related modules:**
-- `crates/crucible-daemon/src/storage/sqlite/` - SQLite storage layer (default)
-- `crates/crucible-core/src/parser/` - Markdown parsing
-- `crates/crucible-daemon/src/llm/embeddings/` - Embedding generation
-
 ## See Also
 
 - `:h stats` - View kiln statistics

@@ -84,10 +84,6 @@ The stats command:
 - Uses filesystem metadata for file sizes
 - Uses saturating addition to prevent overflow on very large kilns
 
-## Source Code
-
-**Implementation:** `crates/crucible-cli/src/commands/stats.rs`
-
 ## See Also
 
 - `:h process` - Process your kiln for search and queries

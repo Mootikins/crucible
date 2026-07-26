@@ -338,7 +338,7 @@ The `runtime/plugins/oci/init.lua` plugin is the canonical reference for product
 
 ## See Also
 
-- [[Help/Plugins/Lua-Runtime-API]] — full `cru.*` reference
+- [[Help/Plugins/Lua Runtime API]] — full `cru.*` reference
 - [[Help/Extending/Custom Handlers]] — design notes for advanced handlers
 - [[Help/Extending/MCP Gateway]] — external tool integration
 - [[Help/Lua/Language Basics]] — Lua syntax

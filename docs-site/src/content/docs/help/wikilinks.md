@@ -92,7 +92,7 @@ Wikilinks support hierarchical paths for notes organized in folders:
 
 ### 1. Parsing Phase
 
-The parser (`crates/crucible-core/src/parser/wikilinks.rs`) uses a regex to extract wikilinks:
+The parser uses a regex to extract wikilinks:
 
 ```rust
 Regex::new(r"(!?)\[\[([^\]]+)\]\]")
@@ -162,16 +162,6 @@ There is **no escape mechanism** for wikilink syntax. If you need to display lit
 1. Use inline code: `` `[[not a link]]` ``
 2. Use HTML entities: `&#91;&#91;not a link&#93;&#93;`
 3. Place in a code block
-
-## Parser Implementation
-
-**Main extension:** `crates/crucible-core/src/parser/wikilinks.rs`
-
-**markdown-it plugin:** `crates/crucible-core/src/parser/markdown_it/plugins/wikilink.rs`
-
-**Type definition:** `crates/crucible-core/src/parser/types/links.rs`
-
-**Edge case tests:** `crates/crucible-core/src/parser/wikilinks.rs` (inline test module)
 
 ## See Also
 

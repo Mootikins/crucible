@@ -246,20 +246,23 @@ blocked_tools = ["delete_*", "create_*", "update_*"]
 
 ### Validation Hooks
 
-Add validation before external calls:
+`allowed_tools` and `blocked_tools` filter by tool name. To gate on the
+*arguments* — which the config cannot see — cancel from a hook:
 
-```rune
-#[hook(event = "tool:before", pattern = "db_*", priority = 5)]
-pub fn validate_query(ctx, event) {
-    let query = event.payload.query;
-
-    if query.contains("DROP ") {
-        event.cancelled = true;
-    }
-
-    event
-}
+```lua
+crucible.on("pre_tool_call", { pattern = "db_*", priority = 5 }, function(ctx, event)
+    local query = event.args and event.args.query or ""
+    if query:upper():find("DROP ") then
+        return { cancel = true, reason = "DROP statements are blocked" }
+    end
+end)
 ```
+
+Cancel rather than edit: `pre_tool_call` ignores a returned argument table, so a
+handler that "sanitises" `event.args` and returns it looks like it worked while
+the original query still runs. To run a checked version instead, return
+`{ handled = true, result = ... }` and issue the call yourself. See
+[[Help/Extending/Event Hooks|Event Hooks]] for the full set of return conventions.
 
 ## Runtime Behavior
 

@@ -18,9 +18,12 @@ Plugins are discovered from these directories (highest priority first):
 |----------|--------|----------|
 | `CRUCIBLE_PLUGIN_PATH` dirs | EnvPath | Development, CI |
 | `~/.config/crucible/plugins/` | User | Personal plugins |
-| `<kiln>/.crucible/plugins/` | Kiln | Kiln-specific plugins (personal, gitignored) |
-| `<kiln>/plugins/` | Kiln | Kiln-specific plugins (shared, version-controlled) |
 | `$CRUCIBLE_RUNTIME/plugins/` | Runtime | Bundled with Crucible |
+
+Kiln- and project-local plugin directories are deliberately NOT loaded: a
+plugin directory that auto-loads on `cd` would turn `git clone` into
+arbitrary code execution inside a long-lived daemon shared by every session.
+If that lands later it ships together with a trust gate, not before.
 
 Same-name plugins at higher priority shadow lower ones.
 
@@ -48,6 +51,14 @@ require("kiln-expert").setup({
 ```
 
 Bundled plugins (in `runtime/plugins/`) load with defaults automatically. Your `setup()` call overrides those defaults. To skip a bundled plugin entirely, don't call `require()` for it.
+
+Configuration precedence, highest first — **Lua beats TOML**, the Neovim convention:
+
+1. `setup({...})` calls — last call wins per key. The daemon evaluates `~/.config/crucible/init.lua` *after* plugins load, so your calls land after the TOML seed.
+2. `[plugins.<name>]` in `config.toml` — the daemon passes this section to each plugin's `setup()` at load, so TOML is the base configuration.
+3. The plugin's own declared defaults.
+
+A broken init.lua is warned about and skipped (the daemon runs with TOML-only config); it never blocks startup.
 
 A plugin's `setup()` merges user config into its defaults:
 
@@ -99,17 +110,27 @@ File extension determines the runtime. All languages use the same discovery and 
 The simplest plugin is a single `.lua` file:
 
 ```lua
--- .crucible/plugins/greet.lua
+-- ~/.config/crucible/plugins/greet.lua
 
---- A friendly greeting tool
--- @tool name="greet" description="Say hello to someone"
--- @param name string "Name to greet"
-function greet(args)
-    return { message = "Hello, " .. args.name .. "!" }
-end
+return {
+    name = "greet",
+    tools = {
+        greet = {
+            desc = "Say hello to someone",
+            params = {
+                { name = "name", type = "string", desc = "Name to greet" },
+            },
+            fn = function(args)
+                return { message = "Hello, " .. (args.name or "world") .. "!" }
+            end,
+        },
+    },
+}
 ```
 
-This registers one tool. Agents can now call `greet`.
+This registers one tool. Agents can now call `greet`. (Doc-comment `@tool`
+annotations appear in older examples; the daemon does not discover them from
+plugins — the returned spec table is the contract.)
 
 ## Directory Plugin
 
@@ -140,7 +161,11 @@ dependencies:
   - name: core-utils
     version: ">=1.0.0"
 
-# Optional: request capabilities
+# Optional: declared capabilities — INFORMATIONAL. All plugins share one
+# Lua VM, so per-plugin module gating is not enforced; treat this as
+# documentation of what the plugin touches. Valid values: filesystem,
+# network, shell, kiln, agent, ui, config, system, websocket. An invalid
+# value fails manifest parsing and the plugin never loads.
 capabilities:
   - filesystem
   - kiln
@@ -149,74 +174,88 @@ capabilities:
 See [Plugin Manifest](./plugin-manifest/) for the complete manifest specification.
 
 ```lua
--- init.lua - Main module that exports everything
+-- init.lua - Main module: return the plugin spec table
 
 local parser = require("parser")
 local commands = require("commands")
 
---- List all tasks with status
--- @tool name="tasks_list" description="List all tasks"
--- @param path string "Path to TASKS.md"
-function tasks_list(args)
-    local tasks = parser.parse_tasks(args.path)
-    return commands.list_tasks(tasks)
-end
-
---- Get next available task
--- @tool name="tasks_next" description="Get the next available task"
--- @param path string "Path to TASKS.md"
-function tasks_next(args)
-    local tasks = parser.parse_tasks(args.path)
-    return commands.next_task(tasks)
-end
-
--- Export tools
 return {
-    tasks_list = tasks_list,
-    tasks_next = tasks_next
+    name = "tasks",
+    tools = {
+        tasks_list = {
+            desc = "List all tasks",
+            params = { { name = "path", type = "string", desc = "Path to TASKS.md" } },
+            fn = function(args)
+                return commands.list_tasks(parser.parse_tasks(args.path))
+            end,
+        },
+        tasks_next = {
+            desc = "Get the next available task",
+            params = { { name = "path", type = "string", desc = "Path to TASKS.md" } },
+            fn = function(args)
+                return commands.next_task(parser.parse_tasks(args.path))
+            end,
+        },
+    },
 }
 ```
 
 ## Providing Tools
 
-Use doc comment annotations to expose functions as MCP tools:
+Declare tools in the spec table your `init.lua` returns:
 
 ```lua
---- Search notes by content
--- @tool name="search_notes" description="Search notes by content"
--- @param query string "Search query"
--- @param limit number "Maximum results (default: 10)"
-function search_notes(args)
-    local query = args.query
-    local limit = args.limit or 10
-    local results = cru.kiln.search(query, { limit = limit })
-    return { results = results }
-end
+tools = {
+    search_notes = {
+        desc = "Search notes by content",
+        params = {
+            { name = "query", type = "string", desc = "Search query" },
+            { name = "limit", type = "number", desc = "Maximum results", optional = true },
+        },
+        fn = function(args)
+            return { results = cru.kiln.search(args.query, { limit = args.limit or 10 }) }
+        end,
+    },
+}
 ```
 
-Tools are automatically registered when the plugin loads.
+Tools register when the plugin loads; a name colliding with a built-in tool
+is rejected, not shadowed.
 
 ## Providing Hooks
 
-Use `@handler` to react to events:
+Register handlers with `crucible.on()` at the top level of your `init.lua` —
+registration happens once at plugin load, and each handler resolves its
+session via `ctx.session_id`:
 
 ```lua
---- Log all tool calls
--- @handler event="tool:after" pattern="*" priority=100
-function log_tools(ctx, event)
-    cru.log("info", "Tool called: " .. event.tool_name)
-    return event
-end
+-- Log all tool calls
+crucible.on("pre_tool_call", function(ctx, event)
+    cru.log("info", "Tool called: " .. event.tool)
+end)
 
---- Block dangerous operations
--- @handler event="tool:before" pattern="*delete*" priority=5
-function block_deletes(ctx, event)
-    event.cancelled = true
-    return event
-end
+-- Block dangerous operations
+crucible.on("pre_tool_call", { pattern = "*delete*", priority = 5 }, function(ctx, event)
+    return { cancel = true, reason = "Deletes are blocked" }
+end)
 ```
 
-See [Event Hooks](./event-hooks/) for event types and patterns.
+(`@handler` doc-comment annotations and the spec-table `handlers` field
+appear in older material; neither is dispatched for plugins — `crucible.on`
+is the contract. Declaring spec-table handlers logs a warning at load.)
+
+See [Event Hooks](./event-hooks/) for event types, return values, and patterns.
+
+## Hot Reload
+
+`cru plugin reload <name>` (TUI `:reload <name>`) re-executes a plugin's
+`init.lua`, replacing its tools, commands, and handlers. To reload
+automatically when plugin files change on disk, enable the watcher:
+
+```toml
+[plugins]
+watch = true
+```
 
 ## Plugin Lifecycle
 
@@ -242,15 +281,15 @@ See [Event Hooks](./event-hooks/) for event types and patterns.
 Plugins can execute shell commands using `cru.shell()`:
 
 ```lua
---- Run project tests
--- @tool name="run_tests" description="Run the test suite"
-function run_tests(args)
-    local result = cru.shell("cargo", {"test"})
-    return { 
-        stdout = result.stdout,
-        exit_code = result.exit_code
-    }
-end
+tools = {
+    run_tests = {
+        desc = "Run the test suite",
+        fn = function(args)
+            local result = cru.shell.exec("cargo", { "test" })
+            return { stdout = result.stdout, exit_code = result.exit_code }
+        end,
+    },
+}
 ```
 
 ### Security Model
@@ -306,21 +345,27 @@ Fennel files are compiled to Lua at load time. See [Language Basics](../lua/lang
 Commands are slash-commands that users can invoke in the TUI:
 
 ```lua
---- List all tasks
--- @command name="tasks" hint="[add|list|done] <args>"
--- @param action string "Action to perform"
-function M.tasks(ctx, args)
-    if args.action == "list" then
-        ctx:display_info("Listing tasks...")
-    elseif args.action == "add" then
-        ctx:display_info("Adding task: " .. (args[2] or ""))
-    end
-end
+commands = {
+    tasks = {
+        desc = "Manage tasks",
+        hint = "[add|list|done] <args>",
+        fn = function(args)
+            return "tasks: " .. (args and args.input or "list")
+        end,
+    },
+}
 ```
 
-Commands receive a context object with display methods.
+A command's `fn` receives the argument table and returns any
+JSON-representable value; the TUI shows it as a system message. Commands
+surface as `/name` with autocomplete (tagged `(plugin)`).
 
 ## Providing Views
+
+> **Not yet consumed.** Spec-table `views` are parsed and counted but no
+> client renders them — plugin-declared UI is the next arc (a declarative
+> slot vocabulary shared by TUI and web). Declaring views today does
+> nothing beyond the count in `plugin.list`.
 
 Views are custom UI components rendered in the TUI:
 

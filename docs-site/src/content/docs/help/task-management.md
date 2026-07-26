@@ -109,10 +109,6 @@ Tasks with `[deps:: ...]` metadata won't be available until all dependencies are
 - [ ] Add caching layer [id:: 1.1.3] [deps:: 1.1.2]          # Not available yet
 ```
 
-## Implementation
-
-Task management is implemented as a built-in CLI command in `crates/crucible-cli/src/commands/tasks.rs`, with parsing support in `crucible-core`.
-
 ## Context Optimization
 
 TASKS.md serves as more than task tracking—it's a **context management strategy** for AI agents.

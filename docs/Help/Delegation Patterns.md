@@ -37,7 +37,7 @@ The primitives you'll use:
 - `cru.sessions.end_session(id)` — clean up.
 
 See [[Help/Core/Sessions]] for full signatures and the
-[[Help/Plugins/Lua-Runtime-API|Lua Runtime API]] reference for return
+[[Help/Plugins/Lua Runtime API|Lua Runtime API]] reference for return
 shapes.
 
 ## Helper: collect the text from a streamed response
@@ -200,10 +200,9 @@ Three reasons:
   pipelines, retries, fan-out-fan-in, chained delegation, and
   workflows the authors didn't think of — anything you can put into
   Lua control flow.
-- **Surface area honesty.** Crucible's [Code Principles](../../AGENTS.md)
-  call out "no type without a use site." Hardcoded delegation types
-  shipped without consumers; recipes ship as docs and stay current
-  because users see and edit them.
+- **Surface area honesty.** A built-in type for every delegation shape
+  means shipping abstractions nobody asked for. Recipes stay current
+  precisely because you can see and edit them.
 
 If a recipe pattern recurs across many of your plugins, fold it into a
 helper module — `require("delegation_helpers").router(prompt, classify)`

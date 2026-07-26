@@ -165,11 +165,10 @@ tags:
   - topic/productivity
 ```
 
-## Implementation
+## Storage
 
-**Parser location:** `crates/crucible-core/src/parser/types/links.rs`
-
-**Storage:** Tags are extracted to the database during processing and available via `property_search`.
+Tags are extracted to the database during processing and available via
+`property_search`.
 
 ## See Also
 

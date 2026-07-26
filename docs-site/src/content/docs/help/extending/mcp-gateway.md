@@ -190,32 +190,22 @@ GITHUB_TOKEN = "${GITHUB_PERSONAL_TOKEN}"
 
 ## Using with Hooks
 
-Gateway tools go through the same event pipeline as built-in tools, so
-[Event Hooks](./event-hooks/) can observe, block, or intercept them. The
-`prefix` you gave each server is what `pattern` matches against.
-
-Audit every call that leaves the machine:
+All gateway tools emit events. Use hooks to filter, transform, or audit:
 
 ```lua
-crucible.on("tool_result", { pattern = "gh_*", priority = 200 }, function(ctx, event)
-  cru.log("info", "external call: " .. event.tool)
+-- Transform GitHub results. `tool_result` patches the outcome as the model
+-- receives it; `pattern` globs the tool name.
+crucible.on("tool_result", { pattern = "gh_*", priority = 50 }, function(ctx, event)
+    return { result = summarise(event.result) }
+end)
+
+-- Audit external access. Handlers may call async APIs directly; there is no
+-- custom-event emit on this path.
+crucible.on("tool_result", { pattern = "fs_*", priority = 200 }, function(ctx, event)
+    cru.log("info", string.format(
+        "external access: session=%s tool=%s", tostring(ctx.session_id), event.tool))
 end)
 ```
-
-Block writes through a read-only server, whatever the agent asks for:
-
-```lua
-crucible.on("pre_tool_call", { pattern = "gh_*", priority = 5 }, function(ctx, event)
-  if event.tool:match("create") or event.tool:match("delete") then
-    return { cancel = true, reason = "This GitHub server is read-only" }
-  end
-end)
-```
-
-See [Event Hooks](./event-hooks/) for the full set of events and return
-conventions. Note that `pre_tool_call` honours only Cancel and Handle — a
-returned table of modified arguments is ignored, so a hook cannot rewrite a
-gateway call's arguments in place.
 
 ## Security
 
@@ -250,17 +240,18 @@ blocked_tools = ["delete_*", "create_*", "update_*"]
 
 ```lua
 crucible.on("pre_tool_call", { pattern = "db_*", priority = 5 }, function(ctx, event)
-  local query = event.args and event.args.query or ""
-  if query:upper():find("DROP ") then
-    return { cancel = true, reason = "DROP statements are blocked" }
-  end
+    local query = event.args and event.args.query or ""
+    if query:upper():find("DROP ") then
+        return { cancel = true, reason = "DROP statements are blocked" }
+    end
 end)
 ```
 
 Cancel rather than edit: `pre_tool_call` ignores a returned argument table, so a
 handler that "sanitises" `event.args` and returns it looks like it worked while
 the original query still runs. To run a checked version instead, return
-`{ handled = true, result = ... }` and issue the call yourself.
+`{ handled = true, result = ... }` and issue the call yourself. See
+[Event Hooks](./event-hooks/) for the full set of return conventions.
 
 ## Runtime Behavior
 

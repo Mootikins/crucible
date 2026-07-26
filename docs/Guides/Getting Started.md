@@ -169,8 +169,6 @@ Kiln path: /home/user/Documents/my-kiln
 Kiln scan completed successfully.
 ```
 
-**Implementation:** `crates/crucible-cli/src/commands/stats.rs`
-
 ### 2. Process Your Notes
 
 ```bash
@@ -183,8 +181,6 @@ This parses all markdown files, extracts metadata, wikilinks, tags, and blocks, 
 - `--force` - Reprocess all files regardless of changes
 - `--watch` - Keep watching for changes
 - `--dry-run` - Preview without making changes
-
-**Implementation:** `crates/crucible-cli/src/commands/process.rs`
 
 ### 3. Start Chatting
 
@@ -201,8 +197,6 @@ The first time you run `cru chat`, Crucible automatically starts a background da
 
 **Slash commands:** `/mode`, `/plan`, `/auto`, `/default`, `/search`, `/new`, `/resume`, `/models`
 **REPL commands:** `:model`, `:set`, `:export`, `:clear`, `:help`
-
-**Implementation:** `crates/crucible-cli/src/commands/chat.rs`
 
 ## Understanding the Database
 

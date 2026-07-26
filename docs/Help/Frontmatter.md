@@ -60,13 +60,6 @@ aliases:
 Your content here...
 ```
 
-## Parsing
-
-Crucible parses frontmatter using the parser module in `crucible-core`:
-
-- Implementation: `crates/crucible-core/src/parser/` (frontmatter parsing)
-- Types: `crates/crucible-core/src/parser/types/frontmatter.rs`
-
 ## See Also
 
 - [[Tags]] - Tag syntax and conventions

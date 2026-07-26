@@ -85,84 +85,94 @@ impl StorageHandler {
 
 Lua handlers are scripts that process events without requiring Rust compilation.
 
+> [!NOTE] Registration is `crucible.on`, not doc-comment annotations
+> Earlier revisions of this page showed `-- @handler event=...` annotations and
+> a `{kiln}/.crucible/handlers/*.lua` load path. Neither is real: the daemon
+> never scans doc comments, and kiln-local handler directories are deliberately
+> not loaded, so handlers written that way silently never fired. Plugins live
+> under `~/.config/crucible/plugins/` and register with `crucible.on` at load
+> time. See [Event Hooks](./event-hooks/) for the events that actually fire.
+
 ### Location
 
-Place Lua handler files in:
+Plugins — which is where handlers live — are loaded from:
 ```
-{kiln}/.crucible/handlers/*.lua
+~/.config/crucible/plugins/
 ```
 
 ### Basic Structure
 
 ```lua
--- my_handler.lua
+-- ~/.config/crucible/plugins/my-plugin.lua
 
---- Handle events
--- @handler event="note:parsed" pattern="*" priority=100
-function handle_note_parsed(ctx, event)
-    cru.log("info", "Note parsed: " .. event.identifier)
-    return event
-end
+crucible.on("pre_tool_call", { pattern = "*", priority = 100 }, function(ctx, event)
+    cru.log("info", "Tool called: " .. tostring(event.tool))
+end)
 
---- Handle file changes
--- @handler event="file:changed" pattern="*" priority=100
-function handle_file_changed(ctx, event)
-    cru.log("info", "File changed: " .. event.identifier)
-    return event
-end
+return { name = "my-plugin" }
 ```
 
 ### Event API in Lua
 
-Events expose fields for common operations:
+Handlers receive `(ctx, event)`.
+
+`ctx` carries exactly one field: `ctx.session_id`. It is not decoration —
+plugin handlers are registered once into a single Lua state shared by every
+session in the daemon, so a handler keeping per-session state must key it by
+this.
+
+`event` is one **flat** table: `event.type` is the event name, and the payload
+fields sit alongside it at the top level. There is no `event.payload` envelope
+and no `event.identifier`.
 
 ```lua
--- @handler event="note:parsed" pattern="*" priority=100
-function handle(ctx, event)
-    -- Get event metadata
-    local event_type = event.event_type  -- "note:parsed", "file:changed", etc.
-    local identifier = event.identifier  -- Path or entity ID
-
-    -- Access payload
-    local tags = event.payload.tags
-    local content = event.payload.content
-
-    return event
-end
+crucible.on("pre_tool_call", { pattern = "*", priority = 100 }, function(ctx, event)
+    cru.log("info", string.format(
+        "session %s called %s", tostring(ctx.session_id), tostring(event.tool)))
+end)
 ```
+
+Field names differ per event — see [Event Hooks](./event-hooks/) for each
+event's payload.
 
 ### Cancelling Events
 
-Handlers can cancel preventable events:
+Return a directive table; do not mutate `event`. Lua-side mutation is ignored
+because the return value is what chains to the next handler.
 
 ```lua
--- @handler event="tool:before" pattern="*" priority=5
-function block_secrets(ctx, event)
-    if string.find(event.identifier, ".secret") then
+crucible.on("pre_tool_call", { pattern = "*", priority = 5 }, function(ctx, event)
+    local path = event.args and event.args.file_path or ""
+    if string.find(path, "%.secret") then
         cru.log("warn", "Blocked access to secret file")
-        event.cancelled = true
+        return { cancel = true, reason = "secret file access denied" }
     end
-    return event
-end
+end)
 ```
 
-### Emitting Custom Events
+`pre_tool_call` is the only hook that fails **closed**: a handler that raises
+denies the call. Every other hook fails open, so a broken handler cannot wedge
+a session. Cancel is meaningful only before execution — `tool_result` runs
+after the fact, where cancel and handle are ignored.
+
+To supply the result yourself instead of blocking, return
+`{ handled = true, result = ... }`; the default executor is skipped.
+
+### Transforming
+
+Rather than emitting new events, handlers reshape the value flowing through
+them by returning a patch. Each handler sees the previous one's output.
 
 ```lua
--- @handler event="note:parsed" pattern="*" priority=100
-function handle(ctx, event)
-    -- Process event
-    process_note(event)
-
-    -- Emit custom event
-    ctx:emit("my_handler_done", {
-        source = event.identifier,
-        timestamp = os.time()
-    })
-
-    return event
-end
+-- Redact secrets from what the model sees.
+crucible.on("tool_result", { pattern = "bash" }, function(ctx, event)
+    return { result = event.result:gsub("token=%S+", "token=[REDACTED]") }
+end)
 ```
+
+There is no `ctx:emit` for custom events on this path. To trigger downstream
+work, call the API you need directly from the handler — handlers may await
+async APIs such as `cru.shell.exec`, `cru.http`, and `cru.timer.sleep`.
 
 ## Testing Handlers
 
@@ -183,24 +193,28 @@ async fn test_my_handler() {
 
 ### Integration Tests
 
+Register the handler on a `HandlerRegistry` and drive it with a `FileEvent`
+(`crucible-daemon/src/watch/handlers/mod.rs`):
+
 ```rust
 #[tokio::test]
-async fn test_handler_in_event_system() {
-    use crucible_cli::event_system::initialize_event_system;
+async fn test_handler_in_registry() {
+    let mut registry = HandlerRegistry::new();
+    registry.register(Arc::new(MyHandler::new(service, emitter)));
 
-    let temp_dir = TempDir::new()?;
-    let config = create_test_config(temp_dir.path().to_path_buf());
+    let temp_dir = TempDir::new().unwrap();
+    let path = temp_dir.path().join("test.md");
+    std::fs::write(&path, "# Test\n\nContent").unwrap();
 
-    let handle = initialize_event_system(&config).await?;
-
-    std::fs::write(temp_dir.path().join("test.md"), "# Test\n\nContent")?;
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
+    for handler in registry.get_handlers_for_event(&event) {
+        handler.handle(&event).await.unwrap();
+    }
     // Verify expected outcomes
-    handle.shutdown().await?;
 }
 ```
+
+For Lua handlers, the shipped-plugin suites under `runtime/plugins/*/tests/`
+are the working reference; they run in CI via `shipped_plugin_lua_suite_passes`.
 
 ## Best Practices
 
@@ -271,7 +285,8 @@ async fn handle(&self, event: &SessionEvent) -> Result<()> {
 
 ## Handler Lifecycle
 
-1. **Registration**: Handlers are registered during `initialize_event_system()`
+1. **Registration**: Rust handlers are registered on a `HandlerRegistry`; Lua
+   handlers register via `crucible.on` when their plugin loads
 2. **Execution**: Handlers execute in priority order when events are emitted
 3. **Cascade**: Handlers can emit new events, triggering further handlers
 4. **Shutdown**: Handlers are dropped when the EventBus is dropped

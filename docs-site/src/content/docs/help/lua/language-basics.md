@@ -139,7 +139,7 @@ Errors in the spawned function are logged as warnings but do not propagate to th
 
 The `cru.sessions` module provides full session management for daemon plugins. All functions are async and follow the convention of returning `(result, nil)` on success or `(nil, error_string)` on failure. Without a daemon connection, all calls return `(nil, "no daemon connected")`.
 
-See [Lua-Runtime-API](../plugins/lua-runtime-api/) for the complete reference.
+See [Lua Runtime API](../plugins/lua-runtime-api/) for the complete reference.
 
 ### Quick example
 
@@ -185,7 +185,7 @@ Fennel is a Lisp that compiles to Lua. Use `.fnl` files if you prefer Lisp synta
 - [Fennel Language](https://fennel-lang.org/)
 - [Scripting Languages](../concepts/scripting-languages/) -- Language comparison
 - [Creating Plugins](../extending/creating-plugins/) -- Plugin development guide
-- [Lua-Runtime-API](../plugins/lua-runtime-api/) -- Complete daemon-side Lua API reference
+- [Lua Runtime API](../plugins/lua-runtime-api/) -- Complete daemon-side Lua API reference
 
 ## See Also
 

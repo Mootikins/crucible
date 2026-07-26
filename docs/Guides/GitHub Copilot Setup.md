@@ -198,6 +198,6 @@ The API token (30-min TTL) refreshes automatically, but if issues persist:
 ## See Also
 
 - [[Guides/Getting Started|Getting Started Guide]]
-- [[Guides/OpenRouter-Setup|OpenRouter Setup]]
+- [[Guides/OpenRouter Setup|OpenRouter Setup]]
 - [[Help/Configuration|Configuration Reference]]
 - [[Help/Config/LLM Providers|LLM Providers]]

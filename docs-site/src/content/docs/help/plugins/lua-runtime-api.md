@@ -5,7 +5,7 @@ description: "Complete reference for the cru.* Lua API available to daemon plugi
 
 This page documents the `cru.*` Lua API available to plugins running inside the Crucible daemon. All modules are registered under both the `cru` and `crucible` namespaces. Some modules (like `http`, `oq`, `fs`) are also available as standalone globals for backwards compatibility.
 
-For TUI-specific Lua APIs (Oil rendering primitives), see [Oil-Lua-API](./oil-lua-api/).
+For TUI-specific Lua APIs (Oil rendering primitives), see [Oil Lua API](./oil-lua-api/).
 
 ## Logging
 
@@ -656,7 +656,7 @@ return {
 
 A tool's `fn` receives one table of arguments and returns any JSON-representable value. `params` becomes the JSON Schema the model sees; a param is required unless marked `optional = true`.
 
-Commands are listed over the `plugin.commands` RPC and invoked with `plugin.run_command`, so the TUI and the web client see the same set.
+Commands are listed over the `plugin.commands` RPC and invoked with `plugin.run_command`. `plugin.run_command` is client-initiated (a user typing `/name`), so it does not pass the model-facing permission gate — anything with socket access can invoke any plugin command; treat commands as user-facing entry points, not as a place to hide privileged operations behind. The TUI consumes both: a plugin command appears in slash autocomplete (tagged `(plugin)`) and `/name args` invokes it, with the result shown as a system message. Built-in slashes always dispatch first — a plugin cannot shadow `/plan` or `/help`. The web client does not consume commands yet.
 
 ### Name collisions
 
@@ -671,4 +671,4 @@ A tool or command declared without a `fn` is not registered — declaring one th
 - [Language Basics](../lua/language-basics/) -- Lua scripting overview
 - [Configuration](../lua/configuration/) -- Configuration via init.lua
 - [Creating Plugins](../extending/creating-plugins/) -- Plugin development guide
-- [Oil-Lua-API](./oil-lua-api/) -- TUI rendering primitives
+- [Oil Lua API](./oil-lua-api/) -- TUI rendering primitives

@@ -97,13 +97,9 @@ Search for notes with block IDs:
 }
 ```
 
-## Parser Implementation
+## How Block IDs Are Parsed
 
-Block IDs are parsed during markdown processing:
-
-**Location:** `crates/crucible-core/src/parser/types/blocks.rs`
-
-The parser:
+Block IDs are resolved during markdown processing. The parser:
 1. Identifies blocks (paragraphs, lists, etc.)
 2. Extracts trailing `^id` patterns
 3. Stores block ID → content mapping

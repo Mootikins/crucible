@@ -30,7 +30,7 @@ The Rust node tree and the Lua DSL mirror each other. The building blocks fall i
 
 Control flow helpers (`when`, `either`, `each`, `match_state`) let you build reactive views without imperative branching, and every node supports chainable style/padding/margin/border methods.
 
-For the full Lua API with signatures and examples, see [[Help/Plugins/Oil-Lua-API]].
+For the full Lua API with signatures and examples, see [[Help/Plugins/Oil Lua API]].
 
 ## Relation to the TUI
 
@@ -47,6 +47,5 @@ The crate is kept separate from `crucible-cli` because `crucible-lua` depends on
 
 ## See Also
 
-- [[Help/Plugins/Oil-Lua-API]] — Lua API reference
-- [[Help/TUI/Component Architecture]] — how the chat TUI composes Oil trees
+- [[Help/Plugins/Oil Lua API]] — Lua API reference
 - [[Help/Extending/Scripted UI]] — writing custom views in Lua

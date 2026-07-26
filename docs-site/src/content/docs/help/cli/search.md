@@ -154,10 +154,6 @@ cru chat "Find all notes about machine learning"
 - Finding notes by status/type
 - Tag-based queries
 
-## Implementation
-
-**Code reference:** `crates/crucible-daemon/src/tools/search.rs`
-
 ## See Also
 
 - `:h mcp` - MCP server documentation

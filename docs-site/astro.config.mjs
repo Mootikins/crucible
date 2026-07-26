@@ -135,8 +135,6 @@ export default defineConfig({
 						{ slug: 'help/tui/modes' },
 						{ slug: 'help/tui/commands' },
 						{ slug: 'help/tui/shell-execution' },
-						{ slug: 'help/tui/component-architecture' },
-						{ slug: 'help/tui/e2e-testing' },
 					],
 				},
 				{

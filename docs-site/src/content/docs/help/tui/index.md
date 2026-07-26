@@ -65,10 +65,6 @@ Quick reference (see [Keybindings](./keybindings/) for complete list):
 
 Readline-style editing (`Ctrl+A/E/W/U/K`, `Alt+B/F`) is supported in the input box.
 
-## Testing
-
-For developers contributing to the TUI, see [E2E Testing](./e2e-testing/) for information on the expectrl-based test harness that enables PTY-based end-to-end testing.
-
 ## REPL Commands
 
 The TUI supports vim-style `:` commands for runtime configuration:
@@ -91,7 +87,5 @@ See [Commands](./commands/) for the complete command reference.
 - [Keybindings](./keybindings/) - Complete keyboard shortcuts
 - [Modes](./modes/) - Permission modes (normal/plan/auto)
 - [Shell Execution](./shell-execution/) - Running shell commands
-- [Component Architecture](./component-architecture/) - Widget system details
 - [Configuration](../lua/configuration/) - TUI customization via Lua
-- [E2E Testing](./e2e-testing/) - End-to-end test harness
 - [chat](../cli/chat/) - Chat command reference
