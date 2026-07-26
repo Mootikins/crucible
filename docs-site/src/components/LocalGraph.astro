@@ -36,7 +36,7 @@ const total = hood ? hood.outbound.length + hood.inbound.length : 0;
 const show = hood && total > 0;
 
 const W = 680;
-const H = 380;
+const H = 430;
 const CX = W / 2;
 const CY = H / 2;
 
@@ -363,6 +363,8 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 		vy: number;
 		self: boolean;
 		pinned: boolean;
+		/** Measured label width, for the de-collision constraint. */
+		lw: number;
 		circle: SVGCircleElement;
 		label: SVGTextElement;
 		anchor: SVGAElement;
@@ -376,7 +378,7 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 		};
 
 		const W = 680;
-		const H = 380;
+		const H = 430;
 		const PAD = 26;
 		const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -397,9 +399,20 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 				circle: anchor.querySelector('circle')!,
 				label: anchor.querySelector('text')!,
 				anchor,
+				lw: 0,
 			};
 			byId.set(node.slug, node);
 			nodes.push(node);
+		}
+
+		// Real label widths beat guessing from character count — the de-collision
+		// constraint below is only as good as the boxes it is given.
+		for (const n of nodes) {
+			try {
+				n.lw = n.label.getBBox().width;
+			} catch {
+				n.lw = n.label.textContent!.length * 6.2;
+			}
 		}
 
 		const edgeEls = [...svg.querySelectorAll<SVGLineElement>('.edge')];
@@ -420,14 +433,16 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 		}
 
 		// ── Physics ────────────────────────────────────────────────────────
-		const LINK_DIST = 78;
-		const LINK_K = 0.03;
+		// Long rest length, weak spring. Short + stiff made the graph feel taut,
+		// as if the nodes were being held rather than floating.
+		const LINK_DIST = 104;
+		const LINK_K = 0.012;
 		// Repulsion is capped by distance. Uncapped inverse-square over a box
 		// this small means every pair pushes every other pair and the whole
 		// graph pins itself to the walls.
-		const CHARGE = 520;
-		const CHARGE_MAX_DIST2 = 170 * 170;
-		const CENTRE_K = 0.016;
+		const CHARGE = 620;
+		const CHARGE_MAX_DIST2 = 200 * 200;
+		const CENTRE_K = 0.013;
 		const DAMPING = 0.82;
 
 		/** Simulation temperature. Reheated by interaction, decays to rest. */
@@ -458,13 +473,19 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 					const d2 = dx * dx + dy * dy || 1;
 					if (d2 > CHARGE_MAX_DIST2) continue;
 					const f = (CHARGE / d2) * alpha;
+					// Biased vertically. A label is ~100px wide and ~14px tall,
+					// so two nodes collide visually when their *y* is close,
+					// almost regardless of x. Pushing harder on y separates the
+					// labels; pushing hard on x only widens the graph.
+					const fx = f * 0.7;
+					const fy = f * 2.4;
 					if (!a.pinned) {
-						a.vx -= dx * f;
-						a.vy -= dy * f;
+						a.vx -= dx * fx;
+						a.vy -= dy * fy;
 					}
 					if (!b.pinned) {
-						b.vx += dx * f;
-						b.vy += dy * f;
+						b.vx += dx * fx;
+						b.vy += dy * fy;
 					}
 				}
 			}
@@ -488,6 +509,45 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 
 				n.x = Math.max(PAD, Math.min(W - PAD, n.x));
 				n.y = Math.max(PAD, Math.min(H - PAD, n.y));
+			}
+
+			separateLabels();
+		}
+
+		/**
+		 * Push apart nodes whose labels overlap.
+		 *
+		 * A positional constraint, applied after integration and iterated —
+		 * running it before the positions were updated meant the same frame
+		 * partly undid it, which left a stable equilibrium with labels still
+		 * touching. Forces alone cannot do this job either: two labels one pixel
+		 * apart look exactly as broken as two on top of each other, and a force
+		 * negotiates rather than guarantees.
+		 *
+		 * Only y is corrected. A label is ~14px tall and ~100px wide, so
+		 * separating vertically is cheap and separating horizontally is not.
+		 */
+		function separateLabels() {
+			const LABEL_H = 17;
+			for (let pass = 0; pass < 3; pass++) {
+				let moved = false;
+				for (let i = 0; i < nodes.length; i++) {
+					for (let j = i + 1; j < nodes.length; j++) {
+						const a = nodes[i];
+						const b = nodes[j];
+						const dy = b.y - a.y;
+						if (Math.abs(dy) >= LABEL_H) continue;
+						const aL = a.x > W * 0.62 ? a.x - a.lw - 10 : a.x + 10;
+						const bL = b.x > W * 0.62 ? b.x - b.lw - 10 : b.x + 10;
+						if (aL + a.lw < bL || bL + b.lw < aL) continue;
+						const push = (LABEL_H - Math.abs(dy)) / 2 + 0.4;
+						const dir = dy >= 0 ? 1 : -1;
+						if (!a.pinned) a.y = Math.max(PAD, Math.min(H - PAD, a.y - push * dir));
+						if (!b.pinned) b.y = Math.max(PAD, Math.min(H - PAD, b.y + push * dir));
+						moved = true;
+					}
+				}
+				if (!moved) break;
 			}
 		}
 
