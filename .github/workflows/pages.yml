@@ -8,7 +8,6 @@ on:
       - 'docs/Guides/**'
       - 'docs-site/**'
       - 'assets/**'
-      - 'scripts/convert-docs.mjs'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -35,11 +34,14 @@ jobs:
         run: bun install
         working-directory: docs-site
 
-      - name: Convert docs (wikilinks → markdown links)
-        run: node scripts/convert-docs.mjs
-
       - name: Build site
         run: bun run build
+        working-directory: docs-site
+
+      # A build that succeeds proves nothing about whether its links work:
+      # 240 in-content cross-references once 404'd through a green build.
+      - name: Check internal links
+        run: bun run check:links
         working-directory: docs-site
 
       - uses: actions/upload-pages-artifact@v4

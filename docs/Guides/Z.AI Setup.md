@@ -1,5 +1,5 @@
 ---
-title: Z.AI Setup
+title: "Z.AI GLM Coding Plan Setup"
 description: Set up Z.AI GLM Coding Plan as an LLM provider in Crucible
 tags:
   - guide

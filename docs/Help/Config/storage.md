@@ -1,5 +1,5 @@
 ---
-title: storage
+title: "Storage Configuration"
 description: Configuration reference for Crucible storage
 tags:
   - help

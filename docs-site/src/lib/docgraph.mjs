@@ -1,20 +1,22 @@
 import { getCollection } from 'astro:content';
-import { resolveDocLink } from './doc-links.mjs';
+import { resolveWikilink, splitTarget, WIKILINK_RE } from './kiln-links.mjs';
 
 /**
  * The documentation's link graph, built from the prose itself.
  *
- * Edges come from cross-references authors actually wrote, resolved with the
- * same function the rehype plugin uses — so an edge here is always a link a
+ * Edges come from the wikilinks authors actually wrote, resolved through the
+ * same function the remark plugin uses — so an edge here is always a link a
  * reader can follow. Sidebar nesting is deliberately NOT an edge source: the
  * sidebar is a filing decision, the prose links are where the ideas connect,
  * and only the second is worth drawing.
  *
+ * Note this reads `entry.body`, which is the RAW kiln source: wikilinks, not
+ * the markdown links the remark plugin emits downstream. Parsing for `[](...)`
+ * here silently produced an empty graph and a missing widget on every page.
+ *
  * Consumed by the hero constellation and the per-page neighbourhood widget.
  */
 
-/** Matches markdown links, ignoring image embeds. */
-const LINK_RE = /(?<!!)\[[^\]]*\]\(([^)\s]+)\)/g;
 /** Fenced and inline code — links inside are examples, not references. */
 const FENCE_RE = /```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`/g;
 
@@ -32,31 +34,29 @@ export async function getDocGraph() {
 			slug,
 			title: entry.data.title ?? slug,
 			// Top-level directory. Used to colour and cluster the constellation
-			// and to label the widget; 'overview' and other root pages get ''.
+			// and to label the widget; root pages get ''.
 			section: slug.includes('/') ? slug.split('/')[0] : '',
-			group: slug.split('/').slice(0, 2).join('/'),
 			outbound: [],
 			inbound: [],
 		});
 	}
 
 	for (const entry of entries) {
-		const sourceDir = entry.id.includes('/')
-			? entry.id.split('/').slice(0, -1).join('/')
-			: '.';
-
 		const body = (entry.body ?? '').replace(FENCE_RE, '');
 		const seen = new Set();
 
-		for (const match of body.matchAll(LINK_RE)) {
-			const target = resolveDocLink(sourceDir, match[1]);
-			if (!target || target === entry.id) continue;
-			if (!nodes.has(target)) continue; // points outside the docs
-			if (seen.has(target)) continue; // one edge per pair, not per mention
-			seen.add(target);
+		WIKILINK_RE.lastIndex = 0;
+		let match;
+		while ((match = WIKILINK_RE.exec(body)) !== null) {
+			const { target } = splitTarget(match[1]);
+			const to = resolveWikilink(target);
+			if (!to || to === entry.id) continue;
+			if (!nodes.has(to)) continue; // resolves outside the published set
+			if (seen.has(to)) continue; // one edge per pair, not per mention
+			seen.add(to);
 
-			nodes.get(entry.id).outbound.push(target);
-			nodes.get(target).inbound.push(entry.id);
+			nodes.get(entry.id).outbound.push(to);
+			nodes.get(to).inbound.push(entry.id);
 		}
 	}
 
@@ -72,9 +72,10 @@ export async function getDocGraph() {
 /**
  * The pages one hop from `slug`, split by direction.
  *
- * `related` is capped: a hub like the CLI index has dozens of inbound links and
- * a widget showing all of them is a wall, not a map. Highest-degree neighbours
- * win, since those are the pages most likely to be worth the next click.
+ * `related` is capped: a hub like the plugin guide has dozens of inbound links
+ * and a widget showing all of them is a wall, not a map. Highest-degree
+ * neighbours win, since those are the pages most likely to be worth the next
+ * click.
  */
 export async function getNeighbourhood(slug, limit = 8) {
 	const { bySlug } = await getDocGraph();
@@ -93,13 +94,11 @@ export async function getNeighbourhood(slug, limit = 8) {
 
 	const outbound = decorate(node.outbound);
 	const inbound = decorate(node.inbound.filter((s) => !node.outbound.includes(s)));
-	const mutual = decorate(node.outbound.filter((s) => node.inbound.includes(s)));
 
 	return {
 		node,
 		outbound: outbound.slice(0, limit),
 		inbound: inbound.slice(0, limit),
-		mutual,
 		totalOutbound: outbound.length,
 		totalInbound: inbound.length,
 	};

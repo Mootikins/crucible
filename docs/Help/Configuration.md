@@ -1,5 +1,5 @@
 ---
-title: Configuration
+title: "Configuration Reference"
 description: Documentation note for Configuration.
 tags: [help, configuration, reference]
 ---

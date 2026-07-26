@@ -1,5 +1,5 @@
 ---
-title: agents
+title: "Agent Configuration"
 description: Configuration reference for AI agents in Crucible
 tags:
   - help

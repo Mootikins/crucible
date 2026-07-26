@@ -1,5 +1,5 @@
 ---
-title: CLI
+title: "CLI Command Reference"
 description: Complete reference for Crucible CLI commands
 tags:
   - help

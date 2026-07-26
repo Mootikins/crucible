@@ -1,10 +1,9 @@
 // @ts-check
-import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
-import { rehypeResolveDocLinks } from './src/plugins/rehype-resolve-doc-links.mjs';
+import { remarkKilnWikilinks } from './src/plugins/remark-kiln-wikilinks.mjs';
+import { remarkStripTitleHeading } from './src/plugins/remark-strip-title-heading.mjs';
 
-const CONTENT_DIR = fileURLToPath(new URL('./src/content/docs', import.meta.url));
 const BASE = '/crucible';
 
 // https://astro.build/config
@@ -14,10 +13,14 @@ export default defineConfig({
 	base: BASE,
 
 	markdown: {
-		// Doc bodies are authored file-relative, like the kiln they came from;
-		// pages serve at trailing-slash directory URLs. Resolve the difference
-		// at build. See the plugin for the full explanation.
-		rehypePlugins: [[rehypeResolveDocLinks, { contentDir: CONTENT_DIR, base: BASE }]],
+		remarkPlugins: [
+			// The kiln is the source, so its conventions are handled here rather
+			// than by rewriting 80 files into a committed copy: wikilinks become
+			// root-absolute site links, and each note's leading H1 is dropped
+			// because Starlight renders the frontmatter title as the page H1.
+			[remarkKilnWikilinks, { base: BASE }],
+			remarkStripTitleHeading,
+		],
 	},
 
 	integrations: [

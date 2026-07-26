@@ -1,5 +1,5 @@
 ---
-title: workspaces
+title: "Workspace Configuration"
 description: Documentation note for workspaces.
 tags:
   - config

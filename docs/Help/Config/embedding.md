@@ -1,5 +1,5 @@
 ---
-title: embedding
+title: "Embedding & Enrichment Configuration"
 description: Configure embedding providers for semantic search
 tags:
   - reference

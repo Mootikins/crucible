@@ -1,5 +1,5 @@
 ---
-title: TUI
+title: "TUI Reference"
 description: Terminal User Interface reference documentation
 tags:
   - tui

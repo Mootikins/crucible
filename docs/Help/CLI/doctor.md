@@ -1,5 +1,5 @@
 ---
-title: doctor
+title: "cru doctor"
 description: Run installation diagnostics for Crucible
 tags:
   - reference

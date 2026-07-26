@@ -1,5 +1,5 @@
 ---
-title: permissions
+title: "Permission Configuration"
 description: Controlling tool access per session and per agent
 status: implemented
 tags:
