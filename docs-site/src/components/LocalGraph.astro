@@ -443,7 +443,12 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 		const CHARGE = 620;
 		const CHARGE_MAX_DIST2 = 200 * 200;
 		const CENTRE_K = 0.013;
-		const DAMPING = 0.82;
+		// Heavy damping. This is the main cure for jitter: at 0.82 the nodes
+		// oscillated around their solution instead of arriving at it, and mean
+		// per-frame movement plateaued around 1.5px instead of reaching zero.
+		const DAMPING = 0.66;
+		/** Overshoot guard. A single large step is what starts a wobble. */
+		const MAX_SPEED = 6;
 
 		/** Simulation temperature. Reheated by interaction, decays to rest. */
 		let alpha = 1;
@@ -472,7 +477,11 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 					const dy = b.y - a.y;
 					const d2 = dx * dx + dy * dy || 1;
 					if (d2 > CHARGE_MAX_DIST2) continue;
-					const f = (CHARGE / d2) * alpha;
+					// Faded to zero at the cutoff. A hard cutoff makes the force
+					// discontinuous, so a node drifting across the boundary gets
+					// a kick — which is a wobble that never damps out.
+					const taper = 1 - d2 / CHARGE_MAX_DIST2;
+					const f = (CHARGE / d2) * taper * alpha;
 					// Biased vertically. A label is ~100px wide and ~14px tall,
 					// so two nodes collide visually when their *y* is close,
 					// almost regardless of x. Pushing harder on y separates the
@@ -494,6 +503,11 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 				if (n.pinned) continue;
 				n.vx += (W / 2 - n.x) * CENTRE_K * alpha;
 				n.vy += (H / 2 - n.y) * CENTRE_K * alpha;
+				const sp = Math.hypot(n.vx, n.vy);
+				if (sp > MAX_SPEED) {
+					n.vx = (n.vx / sp) * MAX_SPEED;
+					n.vy = (n.vy / sp) * MAX_SPEED;
+				}
 				n.x += n.vx;
 				n.y += n.vy;
 				n.vx *= DAMPING;
@@ -540,7 +554,10 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 						const aL = a.x > W * 0.62 ? a.x - a.lw - 10 : a.x + 10;
 						const bL = b.x > W * 0.62 ? b.x - b.lw - 10 : b.x + 10;
 						if (aL + a.lw < bL || bL + b.lw < aL) continue;
-						const push = (LABEL_H - Math.abs(dy)) / 2 + 0.4;
+						// Relaxed rather than fully corrected each frame. A hard
+						// correction fights the springs and the pair buzzes; at
+						// 0.45 they converge in a few frames and stay put.
+						const push = ((LABEL_H - Math.abs(dy)) / 2 + 0.4) * 0.45;
 						const dir = dy >= 0 ? 1 : -1;
 						if (!a.pinned) a.y = Math.max(PAD, Math.min(H - PAD, a.y - push * dir));
 						if (!b.pinned) b.y = Math.max(PAD, Math.min(H - PAD, b.y + push * dir));
@@ -576,10 +593,10 @@ const short = (s: string) => (s.length > 26 ? s.slice(0, 25).trimEnd() + '…' :
 		function frame() {
 			tick();
 			render();
-			alpha *= 0.985;
+			alpha *= 0.972;
 			// Idle below a floor rather than spinning forever; any interaction
 			// reheats. Dragging holds alpha up explicitly.
-			if (alpha < 0.008 && !drag) {
+			if (alpha < 0.02 && !drag) {
 				running = false;
 				return;
 			}
