@@ -114,9 +114,14 @@ Event fields:
 Return an array of `{ index = n, snippet = "..." }`, where `index` is the
 handle from `event.results` and `snippet` optionally replaces that note's text.
 Returned order is the order the agent sees. Selection is addressed **by index
-rather than by value** so a handler can reorder, drop and re-snippet but cannot
-fabricate a note that isn't in the kiln — precognition output goes straight into
-the model's context, so it stays traceable to indexed content.
+rather than by value**, so the set of notes the agent sees is always a subset of
+what the kiln actually returned — a handler cannot introduce a note that isn't
+there.
+
+That constrains *identity*, not *text*. `snippet` is yours to rewrite, so a
+handler can still place arbitrary content under a real note's title, and this
+output goes straight into the model's context. Handlers are trusted code; the
+guarantee is that the note set stays real, not that its text is untouched.
 
 | Return | Effect |
 |--------|--------|

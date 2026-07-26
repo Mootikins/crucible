@@ -291,7 +291,8 @@ impl AgentManager {
                     warn!(
                         session_id = %session_id,
                         handler = %handler.name,
-                        "precognition_select handler returned a non-array; ignoring"
+                        "precognition_select handler returned neither a list of \
+                         entries nor an empty table; ignoring"
                     );
                 }
                 Ok(ScriptHandlerResult::PassThrough)
@@ -482,6 +483,12 @@ impl AgentManager {
         // Selection seam: Lua may narrow, reorder and re-snippet before the
         // budget backstop below. Runs ahead of `precognition_format`, which
         // then formats whatever survives.
+        //
+        // Takes the session-state lock in its own scope and drops it before the
+        // formatting pass below re-takes it. Two short holds beat one spanning
+        // both Lua passes — they run pre-turn on every message, so contention
+        // matters more here than the pair being atomic. Nothing depends on the
+        // two passes seeing the same registry snapshot.
         if let Some(selected) = {
             let plugin_pair = self.plugin_handlers();
             let session_state = self.get_or_create_session_state(session_id);
@@ -608,10 +615,14 @@ fn selection_entries(selection: &serde_json::Value) -> Option<Vec<serde_json::Va
 /// Apply a `precognition_select` handler's return value to the search results.
 ///
 /// Handlers return `[{ index = n, snippet = "..." }]` — an index handle rather
-/// than free-form result objects, so a handler can reorder, drop and re-snippet
-/// but cannot fabricate a note that isn't in the kiln. Precognition output goes
-/// straight into the agent's context; keeping it addressed by index means
-/// injected context stays traceable to real indexed content.
+/// than free-form result objects, so the selected set is always a subset of what
+/// the kiln returned and a handler cannot introduce a note that isn't there.
+///
+/// This constrains identity, not text: `snippet` is replaceable, so a handler
+/// can still put arbitrary content under a real note's title. Handlers are
+/// trusted code and `precognition_format` can already return an arbitrary block,
+/// so this is not an escalation — but the guarantee is "the note set is real",
+/// not "the text is unmodified".
 ///
 /// Malformed entries are dropped with a warning rather than failing the turn —
 /// selection is not a gate, so it fails open like every hook except
