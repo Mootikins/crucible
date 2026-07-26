@@ -34,7 +34,6 @@ pub struct LuaExecutor {
     /// the session on failure via `{ required = true }`.
     on_session_start_required: Vec<bool>,
     on_session_end_hooks: Vec<RegistryKey>,
-    on_tools_registered_hooks: Vec<RegistryKey>,
 }
 
 impl LuaExecutor {
@@ -74,7 +73,6 @@ impl LuaExecutor {
             on_session_start_hooks: Vec::new(),
             on_session_start_required: Vec::new(),
             on_session_end_hooks: Vec::new(),
-            on_tools_registered_hooks: Vec::new(),
         })
     }
 
@@ -200,33 +198,6 @@ impl LuaExecutor {
                 }
             }
         }
-        Ok(())
-    }
-
-    pub fn sync_tools_registered_hooks(&mut self) -> Result<(), LuaError> {
-        use crate::hooks::get_tools_registered_hooks;
-        let hooks = get_tools_registered_hooks(&self.lua)?;
-        self.on_tools_registered_hooks = hooks;
-        Ok(())
-    }
-
-    pub fn tools_registered_hooks(&self) -> &[RegistryKey] {
-        &self.on_tools_registered_hooks
-    }
-
-    pub fn fire_tools_registered_hooks(
-        &self,
-        server_name: &str,
-        tools: &mut [crate::hooks::ToolRegistrationInfo],
-        default_display_name_fn: fn(&str) -> String,
-    ) -> Result<(), LuaError> {
-        crate::hooks::fire_tools_registered_hooks(
-            &self.lua,
-            &self.on_tools_registered_hooks,
-            server_name,
-            tools,
-            default_display_name_fn,
-        )?;
         Ok(())
     }
 

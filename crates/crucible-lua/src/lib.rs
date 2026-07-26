@@ -125,10 +125,7 @@ pub use executor::LuaExecutor;
 pub use fennel::FennelCompiler;
 pub use fs::register_fs_module;
 pub use graph::{register_graph_module, register_graph_module_with_store_scoped};
-pub use hooks::{
-    fire_tools_registered_hooks, get_session_start_hooks, get_tools_registered_hooks,
-    register_hooks_module, ToolRegistrationInfo,
-};
+pub use hooks::{get_session_start_hooks, register_hooks_module};
 pub use http::register_http_module;
 pub use interaction::{lua_ask_to_core, lua_permission_to_core, register_interaction_module};
 pub use json_query::{

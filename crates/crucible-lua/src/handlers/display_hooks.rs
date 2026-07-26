@@ -53,6 +53,7 @@ impl ToolDisplayCompleteHints {
 pub async fn execute_tool_display_start_hooks(
     lua: &Lua,
     registry: &LuaScriptHandlerRegistry,
+    session_id: Option<&str>,
     event: &ToolDisplayStartEvent,
 ) -> LuaResult<Option<ToolDisplayStartHints>> {
     let handlers = registry.runtime_handlers_for(TOOL_DISPLAY_START_EVENT, None);
@@ -66,7 +67,15 @@ pub async fn execute_tool_display_start_hooks(
     });
 
     for handler in handlers {
-        match execute_runtime_json_handler(lua, registry, &handler.name, payload.clone()).await? {
+        match execute_runtime_json_handler(
+            lua,
+            registry,
+            &handler.name,
+            payload.clone(),
+            session_id,
+        )
+        .await?
+        {
             ScriptHandlerResult::Transform(payload) => {
                 let hints = parse_display_start_hints(&payload);
                 if !hints.is_empty() {
@@ -86,6 +95,7 @@ pub async fn execute_tool_display_start_hooks(
 pub async fn execute_tool_display_complete_hooks(
     lua: &Lua,
     registry: &LuaScriptHandlerRegistry,
+    session_id: Option<&str>,
     event: &ToolDisplayCompleteEvent,
 ) -> LuaResult<Option<ToolDisplayCompleteHints>> {
     let handlers = registry.runtime_handlers_for(TOOL_DISPLAY_COMPLETE_EVENT, None);
@@ -100,7 +110,15 @@ pub async fn execute_tool_display_complete_hooks(
     });
 
     for handler in handlers {
-        match execute_runtime_json_handler(lua, registry, &handler.name, payload.clone()).await? {
+        match execute_runtime_json_handler(
+            lua,
+            registry,
+            &handler.name,
+            payload.clone(),
+            session_id,
+        )
+        .await?
+        {
             ScriptHandlerResult::Transform(payload) => {
                 let hints = parse_display_complete_hints(&payload);
                 if !hints.is_empty() {

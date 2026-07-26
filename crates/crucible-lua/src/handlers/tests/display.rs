@@ -35,7 +35,7 @@ async fn lua_display_start_hook_returns_label_and_detail() {
         args: "{}".to_string(),
     };
 
-    let result = execute_tool_display_start_hooks(&lua, &registry, &event)
+    let result = execute_tool_display_start_hooks(&lua, &registry, Some("s-test"), &event)
         .await
         .unwrap();
     assert_eq!(
@@ -79,7 +79,7 @@ async fn lua_display_complete_hook_returns_summary() {
         result: "Found 5 notes about authentication".to_string(),
     };
 
-    let result = execute_tool_display_complete_hooks(&lua, &registry, &event)
+    let result = execute_tool_display_complete_hooks(&lua, &registry, Some("s-test"), &event)
         .await
         .unwrap();
     assert_eq!(

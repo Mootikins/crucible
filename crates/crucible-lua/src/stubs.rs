@@ -133,11 +133,6 @@ fn mirror_modules_into_cru(lua: &Lua) -> Result<(), LuaError> {
             hooks.set("on_session_start", f)?;
         }
     }
-    if let Ok(f) = crucible.get::<Value>("on_tools_registered") {
-        if matches!(f, Value::Function(_)) {
-            hooks.set("on_tools_registered", f)?;
-        }
-    }
     if hooks.pairs::<Value, Value>().next().is_some() {
         cru.set("hooks", hooks)?;
     }

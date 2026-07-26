@@ -21,7 +21,14 @@ pub(super) async fn resolve_display_start_hints(
 ) -> Option<ToolDisplayStartHints> {
     let session_hints = {
         let state = stream_ctx.session_state.lock().await;
-        match execute_tool_display_start_hooks(&state.lua, &state.registry, event).await {
+        match execute_tool_display_start_hooks(
+            &state.lua,
+            &state.registry,
+            Some(&stream_ctx.session_id),
+            event,
+        )
+        .await
+        {
             Ok(hints) => hints,
             Err(error) => {
                 warn!(
@@ -38,7 +45,14 @@ pub(super) async fn resolve_display_start_hints(
         return session_hints;
     }
     let (plugin_registry, plugin_lua) = stream_ctx.agent_stream_config.plugin_handlers.as_ref()?;
-    match execute_tool_display_start_hooks(plugin_lua, plugin_registry, event).await {
+    match execute_tool_display_start_hooks(
+        plugin_lua,
+        plugin_registry,
+        Some(&stream_ctx.session_id),
+        event,
+    )
+    .await
+    {
         Ok(hints) => hints,
         Err(error) => {
             warn!(
@@ -58,7 +72,14 @@ pub(super) async fn resolve_display_complete_hints(
 ) -> Option<ToolDisplayCompleteHints> {
     let session_hints = {
         let state = stream_ctx.session_state.lock().await;
-        match execute_tool_display_complete_hooks(&state.lua, &state.registry, event).await {
+        match execute_tool_display_complete_hooks(
+            &state.lua,
+            &state.registry,
+            Some(&stream_ctx.session_id),
+            event,
+        )
+        .await
+        {
             Ok(hints) => hints,
             Err(error) => {
                 warn!(
@@ -75,7 +96,14 @@ pub(super) async fn resolve_display_complete_hints(
         return session_hints;
     }
     let (plugin_registry, plugin_lua) = stream_ctx.agent_stream_config.plugin_handlers.as_ref()?;
-    match execute_tool_display_complete_hooks(plugin_lua, plugin_registry, event).await {
+    match execute_tool_display_complete_hooks(
+        plugin_lua,
+        plugin_registry,
+        Some(&stream_ctx.session_id),
+        event,
+    )
+    .await
+    {
         Ok(hints) => hints,
         Err(error) => {
             warn!(
@@ -192,7 +220,14 @@ pub(super) async fn resolve_before_execute_env(
 ) -> std::collections::HashMap<String, String> {
     let session_env = {
         let state = stream_ctx.session_state.lock().await;
-        match execute_tool_before_execute_hooks(&state.lua, &state.registry, event).await {
+        match execute_tool_before_execute_hooks(
+            &state.lua,
+            &state.registry,
+            event,
+            Some(&stream_ctx.session_id),
+        )
+        .await
+        {
             Ok(Some(result)) => result.env,
             Ok(None) => std::collections::HashMap::new(),
             Err(error) => {
@@ -208,7 +243,14 @@ pub(super) async fn resolve_before_execute_env(
     };
     let mut env = match stream_ctx.agent_stream_config.plugin_handlers.as_ref() {
         Some((plugin_registry, plugin_lua)) => {
-            match execute_tool_before_execute_hooks(plugin_lua, plugin_registry, event).await {
+            match execute_tool_before_execute_hooks(
+                plugin_lua,
+                plugin_registry,
+                event,
+                Some(&stream_ctx.session_id),
+            )
+            .await
+            {
                 Ok(Some(result)) => result.env,
                 Ok(None) => std::collections::HashMap::new(),
                 Err(error) => {

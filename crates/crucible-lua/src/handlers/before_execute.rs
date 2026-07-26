@@ -29,6 +29,7 @@ pub async fn execute_tool_before_execute_hooks(
     lua: &Lua,
     registry: &LuaScriptHandlerRegistry,
     event: &ToolBeforeExecuteEvent,
+    session_id: Option<&str>,
 ) -> LuaResult<Option<ToolBeforeExecuteResult>> {
     let handlers = registry.runtime_handlers_for(TOOL_BEFORE_EXECUTE_EVENT, None);
     if handlers.is_empty() {
@@ -44,7 +45,15 @@ pub async fn execute_tool_before_execute_hooks(
     let mut accumulated_env = std::collections::HashMap::new();
 
     for handler in handlers {
-        match execute_runtime_json_handler(lua, registry, &handler.name, payload.clone()).await? {
+        match execute_runtime_json_handler(
+            lua,
+            registry,
+            &handler.name,
+            payload.clone(),
+            session_id,
+        )
+        .await?
+        {
             ScriptHandlerResult::Transform(result) => {
                 if let Some(env_obj) = result.get("env").and_then(|v| v.as_object()) {
                     for (k, v) in env_obj {
@@ -75,6 +84,7 @@ pub(super) async fn execute_runtime_json_handler(
     registry: &LuaScriptHandlerRegistry,
     name: &str,
     payload: JsonValue,
+    session_id: Option<&str>,
 ) -> LuaResult<ScriptHandlerResult> {
     let handler: Function = {
         let handler_functions = registry
@@ -88,6 +98,11 @@ pub(super) async fn execute_runtime_json_handler(
     };
 
     let ctx_table = lua.create_table()?;
+    // Same contract as execute_runtime_handler: a handler registered once at
+    // plugin load serves every session and keys per-session state by this.
+    if let Some(id) = session_id {
+        ctx_table.set("session_id", id)?;
+    }
     let payload_val = lua.to_value(&payload)?;
     let result: Value = handler.call_async((ctx_table, payload_val)).await?;
 

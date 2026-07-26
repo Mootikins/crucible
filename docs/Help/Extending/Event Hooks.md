@@ -160,7 +160,7 @@ Return `{ inject = { content = "...", position = "user_prefix" } }` to prepend/a
 
 ## Lifecycle Hooks
 
-Three named hooks for session lifecycle. These are separate from `crucible.on()` and take a single function.
+Two named hooks for session lifecycle. These are separate from `crucible.on()`.
 
 ### `crucible.on_session_start(fn)`
 
@@ -179,22 +179,6 @@ The `session` argument exposes:
 Handlers may call async APIs (`cru.shell.exec`, `cru.http`, ...) — lifecycle
 hooks run inside the daemon's async runtime.
 
-### `crucible.on_tools_registered(fn)`
-
-Fires when tools from an MCP server or backend become available.
-
-```lua
-crucible.on_tools_registered(function(evt)
-  cru.log("info", "Tools from " .. evt.server_name .. ":")
-  for _, tool in ipairs(evt.tools) do
-    cru.log("info", "  - " .. tool.name)
-  end
-end)
-```
-
-Event fields:
-- `evt.server_name` — name of the MCP/tool source
-- `evt.tools` — array of `{ name, description, display_name }`
 
 ### `crucible.on_session_end(fn)`
 
@@ -205,6 +189,7 @@ crucible.on_session_end(function(session)
   cleanup(session.id)
 end)
 ```
+
 
 ## Permission Hooks
 
@@ -221,6 +206,12 @@ crucible.permissions.on_request(function(request)
   return nil                         -- fall through to normal prompt
 end)
 ```
+
+> **Session-scoped Lua only.** This API exists on each session's VM — put the
+> callback in your workspace's `.crucible/lua/init.lua`. It is *not*
+> registered on the plugin runtime, so a plugin's `init.lua` cannot use it
+> yet; a plugin wanting to gate tools should use `pre_tool_call` with
+> `cancel` instead.
 
 Request fields:
 - `request.tool_name` — tool being requested
@@ -258,7 +249,7 @@ When multiple handlers fire for the same event, they run in ascending priority o
 
 ## Reference Plugin
 
-The `runtime/plugins/oci/init.lua` plugin is the canonical reference for production-grade hook use. It registers one `pre_tool_call` handler per tool at load time (with `pattern` and priority 10), uses `{ handled = true, result = ... }` to redirect execution into a container, and uses `on_session_start`/`on_session_end` for container lifecycle — keying its per-session state on `event.session_id`, since the one registration serves every session.
+The `runtime/plugins/oci/init.lua` plugin is the canonical reference for production-grade hook use. It registers one `pre_tool_call` handler per tool at load time (with `pattern` and priority 10), uses `{ handled = true, result = ... }` to redirect execution into a container, and uses `on_session_start`/`on_session_end` for container lifecycle — keying its per-session state on `ctx.session_id`, since the one registration serves every session.
 
 ## Best Practices
 
