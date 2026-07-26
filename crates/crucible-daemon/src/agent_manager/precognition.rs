@@ -1565,4 +1565,59 @@ mod precognition_select_hook_tests {
         assert_eq!(snippets(&lua), snippets(&rust));
         assert_eq!(lua[0].snippet.as_deref().unwrap().chars().count(), 30);
     }
+
+    /// Measures what the seam costs on the per-turn path. We are on mlua
+    /// (Lua 5.4), not LuaJIT, so this is measured rather than assumed —
+    /// it decides whether Lua could ever *be* the default here or stays an
+    /// opt-in override with Rust shipped as the default.
+    ///
+    /// Deliberately asserts nothing about wall-clock: a timing threshold in
+    /// CI is a flake generator. Run it and read the numbers.
+    #[tokio::test]
+    #[ignore = "benchmark: run with --ignored --nocapture to read the numbers"]
+    async fn measure_lua_selection_overhead() {
+        const ITERATIONS: u32 = 500;
+        let budget = 3000;
+
+        // Realistic shape: k=5 notes (the default precognition_results) with
+        // snippets around the per-note budget.
+        let results: Vec<_> = (0..5)
+            .map(|i| make_result(&format!("notes/N{i}.md"), 0.9, &"x".repeat(600)))
+            .collect();
+
+        let start = std::time::Instant::now();
+        for _ in 0..ITERATIONS {
+            let mut baseline = results.clone();
+            apply_precognition_char_cap(&mut baseline, budget);
+            std::hint::black_box(&baseline);
+        }
+        let rust_total = start.elapsed();
+
+        // Handler registered once, as in production — this measures per-turn
+        // dispatch, not Lua compilation.
+        let state = make_session_event_state();
+        state
+            .lua
+            .load(LUA_EQUAL_SPLIT_CAP)
+            .exec()
+            .expect("reference handler should load");
+
+        let start = std::time::Instant::now();
+        for _ in 0..ITERATIONS {
+            let mut selected = run_select_with_budget(&state, &results, budget)
+                .await
+                .expect("handler should decide");
+            apply_precognition_char_cap(&mut selected, budget);
+            std::hint::black_box(&selected);
+        }
+        let lua_total = start.elapsed();
+
+        println!("iterations:   {ITERATIONS}");
+        println!("rust default: {:?}/turn", rust_total / ITERATIONS);
+        println!("lua seam:     {:?}/turn", lua_total / ITERATIONS);
+        println!(
+            "added:        {:?}/turn",
+            lua_total.saturating_sub(rust_total) / ITERATIONS
+        );
+    }
 }
