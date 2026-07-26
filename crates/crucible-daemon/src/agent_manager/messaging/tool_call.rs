@@ -2,11 +2,7 @@ use super::super::*;
 use crucible_core::events::InternalSessionEvent;
 use crucible_core::types::acp::FileDiff;
 use crucible_core::types::ToolSource;
-use crucible_lua::{
-    execute_tool_before_execute_hooks, execute_tool_display_complete_hooks,
-    execute_tool_display_start_hooks, ToolBeforeExecuteEvent, ToolDisplayCompleteEvent,
-    ToolDisplayStartEvent,
-};
+use crucible_lua::{ToolBeforeExecuteEvent, ToolDisplayCompleteEvent, ToolDisplayStartEvent};
 
 /// Deny a tool call: emit the `tool_result` so views show the outcome, and
 /// hand the agent loop an errored result.
@@ -308,22 +304,27 @@ impl AgentManager {
             {
                 return Some(result);
             }
+        }
 
-            if let Some((plugin_registry, plugin_lua)) =
-                stream_ctx.agent_stream_config.plugin_handlers.as_ref()
+        // Plugin handlers run OUTSIDE the session-state lock: a handler like
+        // oci's exec-into-container can legitimately run for minutes, and
+        // holding the session's whole state across that starves every other
+        // operation on the session (and deadlocks a handler that calls back
+        // into an API needing the same lock).
+        if let Some((plugin_registry, plugin_lua)) =
+            stream_ctx.agent_stream_config.plugin_handlers.as_ref()
+        {
+            if let Some(result) = run_pre_tool_call_handlers(
+                stream_ctx,
+                plugin_registry,
+                plugin_lua,
+                &tool_call.name,
+                &args,
+                &call_id,
+            )
+            .await
             {
-                if let Some(result) = run_pre_tool_call_handlers(
-                    stream_ctx,
-                    plugin_registry,
-                    plugin_lua,
-                    &tool_call.name,
-                    &args,
-                    &call_id,
-                )
-                .await
-                {
-                    return Some(result);
-                }
+                return Some(result);
             }
         }
 
@@ -462,33 +463,21 @@ impl AgentManager {
 
         let mut lua_primary_arg: Option<String> = None;
 
+        let hook_event = ToolDisplayStartEvent {
+            name: tool_call.name.clone(),
+            args: args_str.clone(),
+        };
+        if let Some(hints) =
+            super::tool_hooks::resolve_display_start_hints(stream_ctx, &hook_event).await
         {
-            let state = stream_ctx.session_state.lock().await;
-            let hook_event = ToolDisplayStartEvent {
-                name: tool_call.name.clone(),
-                args: args_str.clone(),
-            };
-            match execute_tool_display_start_hooks(&state.lua, &state.registry, &hook_event).await {
-                Ok(Some(hints)) => {
-                    if let Some(label) = hints.label {
-                        description = Some(label);
-                    }
-                    if let Some(detail) = hints.detail {
-                        source = Some(detail);
-                    }
-                    if let Some(pa) = hints.primary_arg {
-                        lua_primary_arg = Some(pa);
-                    }
-                }
-                Ok(None) => {}
-                Err(error) => {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        tool = %tool_call.name,
-                        error = %error,
-                        "Lua tool:display_start hook error, falling back to default metadata"
-                    );
-                }
+            if let Some(label) = hints.label {
+                description = Some(label);
+            }
+            if let Some(detail) = hints.detail {
+                source = Some(detail);
+            }
+            if let Some(pa) = hints.primary_arg {
+                lua_primary_arg = Some(pa);
             }
         }
 
@@ -512,28 +501,12 @@ impl AgentManager {
             );
         }
 
-        // Fire tool:before_execute hook for env var injection
-        let hook_env_vars = {
-            let state = stream_ctx.session_state.lock().await;
-            let hook_event = ToolBeforeExecuteEvent {
-                name: tool_call.name.clone(),
-                args: args.clone(),
-            };
-            match execute_tool_before_execute_hooks(&state.lua, &state.registry, &hook_event).await
-            {
-                Ok(Some(result)) => result.env,
-                Ok(None) => std::collections::HashMap::new(),
-                Err(error) => {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        tool = %tool_call.name,
-                        error = %error,
-                        "Lua tool:before_execute hook error, proceeding without env vars"
-                    );
-                    std::collections::HashMap::new()
-                }
-            }
+        let before_event = ToolBeforeExecuteEvent {
+            name: tool_call.name.clone(),
+            args: args.clone(),
         };
+        let hook_env_vars =
+            super::tool_hooks::resolve_before_execute_env(stream_ctx, &before_event).await;
 
         // ACP agents execute their own tools internally; Crucible only sees the
         // tool_call / tool_result as notifications. If the tool isn't in our
@@ -672,30 +645,16 @@ impl AgentManager {
             event_result["spill_path"] = serde_json::json!(path);
         }
 
+        let complete_event = ToolDisplayCompleteEvent {
+            name: tool_call.name.clone(),
+            args: args_str,
+            result: error_str.clone().unwrap_or_else(|| result_str.clone()),
+        };
+        if let Some(hints) =
+            super::tool_hooks::resolve_display_complete_hints(stream_ctx, &complete_event).await
         {
-            let state = stream_ctx.session_state.lock().await;
-            let hook_event = ToolDisplayCompleteEvent {
-                name: tool_call.name.clone(),
-                args: args_str,
-                result: error_str.clone().unwrap_or_else(|| result_str.clone()),
-            };
-            match execute_tool_display_complete_hooks(&state.lua, &state.registry, &hook_event)
-                .await
-            {
-                Ok(Some(hints)) => {
-                    if let Some(summary) = hints.summary {
-                        event_result["summary"] = serde_json::json!(summary);
-                    }
-                }
-                Ok(None) => {}
-                Err(error) => {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        tool = %tool_call.name,
-                        error = %error,
-                        "Lua tool:display_complete hook error, falling back to default metadata"
-                    );
-                }
+            if let Some(summary) = hints.summary {
+                event_result["summary"] = serde_json::json!(summary);
             }
         }
 

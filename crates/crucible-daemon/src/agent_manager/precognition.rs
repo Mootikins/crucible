@@ -11,83 +11,6 @@ struct ExecuteMultiKilnSearchParams<'a> {
 
 use super::*;
 
-/// Decide whether Precognition should run for this turn.
-///
-/// Pi-style heuristic: even when Precognition is enabled, only inject
-/// on the first user message of a session. Running every turn bloats
-/// context and degrades cache hits over a long conversation, with
-/// diminishing relevance — subsequent turns are usually about the same
-/// topic the first injection already covered.
-///
-/// Other gates: `/search` is a manual search command that shouldn't
-/// trigger auto-RAG; kiln must be configured. The handler hook seam
-/// (`transform_context`) is a separate, per-turn surface — Lua plugins
-/// can implement richer per-turn heuristics there.
-pub(super) fn should_run_precognition(
-    precognition_enabled: bool,
-    original_content: &str,
-    session_kiln: &std::path::Path,
-    is_first_user_message: bool,
-) -> bool {
-    precognition_enabled
-        && !original_content.starts_with("/search")
-        && !session_kiln.as_os_str().is_empty()
-        && is_first_user_message
-}
-
-#[cfg(test)]
-mod should_run_precognition_tests {
-    use super::*;
-    use std::path::Path;
-
-    #[test]
-    fn runs_on_first_user_message_with_precognition_enabled() {
-        assert!(should_run_precognition(
-            true,
-            "tell me about widgets",
-            Path::new("/some/kiln"),
-            true,
-        ));
-    }
-
-    #[test]
-    fn skipped_on_subsequent_user_messages_even_when_enabled() {
-        // Pi-style: don't re-inject every turn — bloats context, hurts
-        // cache, redundant for same-topic follow-ups.
-        assert!(!should_run_precognition(
-            true,
-            "follow-up question",
-            Path::new("/some/kiln"),
-            false,
-        ));
-    }
-
-    #[test]
-    fn skipped_when_disabled_in_agent_config() {
-        assert!(!should_run_precognition(
-            false,
-            "x",
-            Path::new("/some/kiln"),
-            true,
-        ));
-    }
-
-    #[test]
-    fn skipped_for_explicit_search_command() {
-        assert!(!should_run_precognition(
-            true,
-            "/search widgets",
-            Path::new("/some/kiln"),
-            true,
-        ));
-    }
-
-    #[test]
-    fn skipped_when_no_kiln_configured() {
-        assert!(!should_run_precognition(true, "x", Path::new(""), true,));
-    }
-}
-
 impl AgentManager {
     /// Build just the Precognition context block (no original-content
     /// concatenation). Used by `compute_precognition_message` which
@@ -110,6 +33,10 @@ impl AgentManager {
         results: &[crucible_core::SearchResult],
         primary_kiln: &std::path::Path,
         state: &SessionEventState,
+        plugin_handlers: Option<&(
+            std::sync::Arc<crucible_lua::LuaScriptHandlerRegistry>,
+            std::sync::Arc<mlua::Lua>,
+        )>,
     ) -> String {
         if results.is_empty() {
             return String::new();
@@ -119,6 +46,7 @@ impl AgentManager {
             original_content,
             results,
             state,
+            plugin_handlers,
         )
         .await;
 
@@ -176,16 +104,11 @@ impl AgentManager {
         original_content: &str,
         results: &[crucible_core::SearchResult],
         state: &SessionEventState,
+        plugin_handlers: Option<&(
+            std::sync::Arc<crucible_lua::LuaScriptHandlerRegistry>,
+            std::sync::Arc<mlua::Lua>,
+        )>,
     ) -> Option<String> {
-        use crucible_lua::ScriptHandlerResult;
-
-        let handlers = state
-            .registry
-            .runtime_handlers_for("precognition_format", None);
-        if handlers.is_empty() {
-            return None;
-        }
-
         let results_payload: Vec<serde_json::Value> = results
             .iter()
             .map(|r| {
@@ -220,10 +143,40 @@ impl AgentManager {
             }),
         };
 
-        for handler in handlers {
-            match state
-                .registry
-                .execute_runtime_handler(&state.lua, &handler.name, &event, Some(session_id))
+        // First Transform wins, session VM before plugin VM: a session's
+        // custom formatter overrides a plugin's default. Formatters run
+        // pre-turn and are expected to be quick, so the plugin pass runs
+        // under the same caller-held state lock rather than after it.
+        if let Some(formatted) =
+            Self::run_precognition_format_pass(session_id, &state.registry, &state.lua, &event)
+                .await
+        {
+            return Some(formatted);
+        }
+        if let Some((plugin_registry, plugin_lua)) = plugin_handlers {
+            return Self::run_precognition_format_pass(
+                session_id,
+                plugin_registry,
+                plugin_lua,
+                &event,
+            )
+            .await;
+        }
+        None
+    }
+
+    /// One registry's `precognition_format` pass; its first Transform wins.
+    async fn run_precognition_format_pass(
+        session_id: &str,
+        registry: &crucible_lua::LuaScriptHandlerRegistry,
+        lua: &mlua::Lua,
+        event: &SessionEvent,
+    ) -> Option<String> {
+        use crucible_lua::ScriptHandlerResult;
+
+        for handler in registry.runtime_handlers_for("precognition_format", None) {
+            match registry
+                .execute_runtime_handler(lua, &handler.name, event, Some(session_id))
                 .await
             {
                 Ok(ScriptHandlerResult::Transform(value)) => {
@@ -244,7 +197,6 @@ impl AgentManager {
                 }
             }
         }
-
         None
     }
 
@@ -418,6 +370,7 @@ impl AgentManager {
         apply_precognition_char_cap(&mut results, self.kiln_manager.max_precognition_chars());
 
         let context_block = {
+            let plugin_pair = self.plugin_handlers();
             let session_state = self.get_or_create_session_state(session_id);
             let state = session_state.lock().await;
             Self::format_precognition_context_block(
@@ -426,6 +379,7 @@ impl AgentManager {
                 &results,
                 &session.kiln,
                 &state,
+                plugin_pair.as_ref(),
             )
             .await
         };
@@ -883,6 +837,7 @@ mod precognition_format_hook_tests {
             &results,
             std::path::Path::new("/home/user/notes"),
             &state,
+            None,
         )
         .await;
 
@@ -907,6 +862,7 @@ mod precognition_format_hook_tests {
             &results,
             std::path::Path::new("/home/user/notes"),
             &state,
+            None,
         )
         .await;
 

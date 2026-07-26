@@ -1405,6 +1405,7 @@ mod iter;
 mod messaging;
 mod models;
 pub(crate) mod precognition;
+pub(crate) mod precognition_gate;
 pub mod providers;
 mod scope;
 pub(crate) mod title;

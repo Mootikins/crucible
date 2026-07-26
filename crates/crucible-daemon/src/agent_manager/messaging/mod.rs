@@ -7,6 +7,7 @@ mod permission;
 mod send;
 mod stream;
 mod tool_call;
+mod tool_hooks;
 
 impl AgentManager {
     fn format_tool_source(source: &ToolSource) -> String {

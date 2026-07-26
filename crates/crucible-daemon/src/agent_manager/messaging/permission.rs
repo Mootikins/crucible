@@ -211,6 +211,58 @@ impl AgentManager {
         )
     }
 
+    /// Run one registry's `pre_llm_call` handlers over the prompt, chained.
+    ///
+    /// Returns the transformed prompt and whether a handler cancelled — which
+    /// stops the rest of the chain, including the other registry's handlers.
+    /// Extracted so the session VM and the plugin VM share one loop body:
+    /// plugins registering this event used to get documented silence, because
+    /// only the per-session registry was ever dispatched.
+    async fn run_pre_llm_call_handlers(
+        stream_ctx: &StreamContext,
+        registry: &crucible_lua::LuaScriptHandlerRegistry,
+        lua: &mlua::Lua,
+        model: &str,
+        mut current_content: String,
+    ) -> (String, bool) {
+        for handler in registry.runtime_handlers_for("pre_llm_call", None) {
+            let event = SessionEvent::Custom {
+                name: "pre_llm_call".to_string(),
+                payload: serde_json::json!({
+                    "prompt": &current_content,
+                    "model": model,
+                }),
+            };
+            match registry
+                .execute_runtime_handler(lua, &handler.name, &event, Some(&stream_ctx.session_id))
+                .await
+            {
+                Ok(crucible_lua::ScriptHandlerResult::Transform(val)) => {
+                    if let Some(prompt) = val.get("prompt").and_then(|v| v.as_str()) {
+                        current_content = prompt.to_string();
+                    }
+                }
+                Ok(crucible_lua::ScriptHandlerResult::Cancel { reason }) => {
+                    debug!(
+                        session_id = %stream_ctx.session_id,
+                        reason = %reason,
+                        "pre_llm_call handler cancelled"
+                    );
+                    return (current_content, true);
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    warn!(
+                        session_id = %stream_ctx.session_id,
+                        error = %error,
+                        "pre_llm_call handler error (fail-open)"
+                    );
+                }
+            }
+        }
+        (current_content, false)
+    }
+
     pub(super) async fn apply_pre_llm_call_handlers(
         content: String,
         stream_ctx: &StreamContext,
@@ -280,46 +332,34 @@ impl AgentManager {
             }
         };
 
-        let handlers = state.registry.runtime_handlers_for("pre_llm_call", None);
-        for handler in handlers {
-            let event = SessionEvent::Custom {
-                name: "pre_llm_call".to_string(),
-                payload: serde_json::json!({
-                    "prompt": &current_content,
-                    "model": &stream_config.model,
-                }),
-            };
-            match state
-                .registry
-                .execute_runtime_handler(
-                    &state.lua,
-                    &handler.name,
-                    &event,
-                    Some(&stream_ctx.session_id),
-                )
-                .await
+        // Session-scoped handlers first (more specific), under the state
+        // lock; then plugin handlers with the lock RELEASED — plugin Lua can
+        // call `cru.shell`/`cru.http` for seconds, and holding the session's
+        // whole state across that starves everything else on the session.
+        let (content, cancelled) = Self::run_pre_llm_call_handlers(
+            stream_ctx,
+            &state.registry,
+            &state.lua,
+            &stream_config.model,
+            current_content,
+        )
+        .await;
+        current_content = content;
+        drop(state);
+
+        if !cancelled {
+            if let Some((plugin_registry, plugin_lua)) =
+                stream_ctx.agent_stream_config.plugin_handlers.as_ref()
             {
-                Ok(crucible_lua::ScriptHandlerResult::Transform(val)) => {
-                    if let Some(prompt) = val.get("prompt").and_then(|v| v.as_str()) {
-                        current_content = prompt.to_string();
-                    }
-                }
-                Ok(crucible_lua::ScriptHandlerResult::Cancel { reason }) => {
-                    debug!(
-                        session_id = %stream_ctx.session_id,
-                        reason = %reason,
-                        "pre_llm_call handler cancelled"
-                    );
-                    break;
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        error = %error,
-                        "pre_llm_call handler error (fail-open)"
-                    );
-                }
+                let (content, _) = Self::run_pre_llm_call_handlers(
+                    stream_ctx,
+                    plugin_registry,
+                    plugin_lua,
+                    &stream_config.model,
+                    current_content,
+                )
+                .await;
+                current_content = content;
             }
         }
 
@@ -333,52 +373,26 @@ impl AgentManager {
     ///
     /// Returns the (possibly mutated) message vec. `None` means a
     /// handler cancelled and the caller should abort the turn.
-    pub(super) async fn apply_transform_context_handlers(
-        messages: Vec<crucible_core::traits::ContextMessage>,
+    /// Run one registry's `transform_context` handlers over the messages,
+    /// chained. `Err(())` means a handler cancelled the turn (the ended
+    /// event has already been emitted).
+    async fn run_transform_context_handlers(
         stream_ctx: &StreamContext,
-        stream_config: &AgentStreamConfig,
-    ) -> Option<Vec<crucible_core::traits::ContextMessage>> {
-        let state = stream_ctx.session_state.lock().await;
-        let mut current = messages;
-
-        // Built-in producer: prepend the pre-computed Precognition
-        // system block, if any. Runs *before* Lua handlers so plugins
-        // can observe and mutate it via the same `transform_context`
-        // seam they'd use to inject their own context.
-        //
-        // We protect against accidental drop: a buggy handler that
-        // returns `{messages = ...}` without including the precog block
-        // would otherwise silently strip kiln context. Below, after
-        // Lua handlers run, we check whether the block is still
-        // present and re-prepend if not.
-        if let Some(ref precog_msg) = stream_ctx.precognition_message {
-            let mut with_precog = Vec::with_capacity(current.len() + 1);
-            with_precog.push(precog_msg.clone());
-            with_precog.extend(current);
-            current = with_precog;
-        }
-
-        // Lua runtime handlers can replace the message array entirely
-        // by returning `{ messages = ... }` from their callback.
-        let handlers = state
-            .registry
-            .runtime_handlers_for("transform_context", None);
-        for handler in handlers {
+        registry: &crucible_lua::LuaScriptHandlerRegistry,
+        lua: &mlua::Lua,
+        model: &str,
+        mut current: Vec<crucible_core::traits::ContextMessage>,
+    ) -> Result<Vec<crucible_core::traits::ContextMessage>, ()> {
+        for handler in registry.runtime_handlers_for("transform_context", None) {
             let event = SessionEvent::Custom {
                 name: "transform_context".to_string(),
                 payload: serde_json::json!({
                     "messages": &current,
-                    "model": &stream_config.model,
+                    "model": model,
                 }),
             };
-            match state
-                .registry
-                .execute_runtime_handler(
-                    &state.lua,
-                    &handler.name,
-                    &event,
-                    Some(&stream_ctx.session_id),
-                )
+            match registry
+                .execute_runtime_handler(lua, &handler.name, &event, Some(&stream_ctx.session_id))
                 .await
             {
                 Ok(crucible_lua::ScriptHandlerResult::Transform(val)) => {
@@ -414,7 +428,7 @@ impl AgentManager {
                             "No subscribers for cancelled event"
                         );
                     }
-                    return None;
+                    return Err(());
                 }
                 Ok(_) => {}
                 Err(error) => {
@@ -426,6 +440,68 @@ impl AgentManager {
                     );
                 }
             }
+        }
+        Ok(current)
+    }
+
+    pub(super) async fn apply_transform_context_handlers(
+        messages: Vec<crucible_core::traits::ContextMessage>,
+        stream_ctx: &StreamContext,
+        stream_config: &AgentStreamConfig,
+    ) -> Option<Vec<crucible_core::traits::ContextMessage>> {
+        let state = stream_ctx.session_state.lock().await;
+        let mut current = messages;
+
+        // Built-in producer: prepend the pre-computed Precognition
+        // system block, if any. Runs *before* Lua handlers so plugins
+        // can observe and mutate it via the same `transform_context`
+        // seam they'd use to inject their own context.
+        //
+        // We protect against accidental drop: a buggy handler that
+        // returns `{messages = ...}` without including the precog block
+        // would otherwise silently strip kiln context. Below, after
+        // Lua handlers run, we check whether the block is still
+        // present and re-prepend if not.
+        if let Some(ref precog_msg) = stream_ctx.precognition_message {
+            let mut with_precog = Vec::with_capacity(current.len() + 1);
+            with_precog.push(precog_msg.clone());
+            with_precog.extend(current);
+            current = with_precog;
+        }
+
+        // Lua runtime handlers can replace the message array entirely by
+        // returning `{ messages = ... }`. Session-scoped handlers first,
+        // under the state lock; then plugin handlers with the lock released
+        // (same rationale as `apply_pre_llm_call_handlers`).
+        current = match Self::run_transform_context_handlers(
+            stream_ctx,
+            &state.registry,
+            &state.lua,
+            &stream_config.model,
+            current,
+        )
+        .await
+        {
+            Ok(messages) => messages,
+            Err(()) => return None,
+        };
+        drop(state);
+
+        if let Some((plugin_registry, plugin_lua)) =
+            stream_ctx.agent_stream_config.plugin_handlers.as_ref()
+        {
+            current = match Self::run_transform_context_handlers(
+                stream_ctx,
+                plugin_registry,
+                plugin_lua,
+                &stream_config.model,
+                current,
+            )
+            .await
+            {
+                Ok(messages) => messages,
+                Err(()) => return None,
+            };
         }
 
         // Defensive: if a Lua handler returned a new `messages` array

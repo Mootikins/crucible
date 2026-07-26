@@ -121,6 +121,7 @@ impl AgentManager {
             &stream_ctx.message_id,
             accumulated_response,
             &stream_ctx.session_state,
+            stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
             is_continuation,
         )
         .await;
@@ -961,34 +962,58 @@ impl AgentManager {
             );
         }
 
-        for handler in state.registry.runtime_handlers_for("post_llm_call", None) {
-            let event = SessionEvent::Custom {
-                name: "post_llm_call".to_string(),
-                payload: serde_json::json!({
-                    "response_summary": &response_summary,
-                    "model": &stream_config.model,
-                    "duration_ms": duration_ms,
-                }),
-            };
-            if let Err(error) = state
-                .registry
-                .execute_runtime_handler(
-                    &state.lua,
-                    &handler.name,
-                    &event,
-                    Some(&stream_ctx.session_id),
-                )
+        // Observational event; session VM first, then plugin VM with the
+        // state lock released (plugin Lua may run for seconds).
+        let post_llm_event = SessionEvent::Custom {
+            name: "post_llm_call".to_string(),
+            payload: serde_json::json!({
+                "response_summary": &response_summary,
+                "model": &stream_config.model,
+                "duration_ms": duration_ms,
+            }),
+        };
+        Self::run_post_llm_call_handlers(
+            &stream_ctx.session_id,
+            &state.registry,
+            &state.lua,
+            &post_llm_event,
+        )
+        .await;
+        drop(state);
+        if let Some((plugin_registry, plugin_lua)) =
+            stream_ctx.agent_stream_config.plugin_handlers.as_ref()
+        {
+            Self::run_post_llm_call_handlers(
+                &stream_ctx.session_id,
+                plugin_registry,
+                plugin_lua,
+                &post_llm_event,
+            )
+            .await;
+        }
+
+        continuation_outcome
+    }
+
+    /// One registry's `post_llm_call` pass — fire-and-forget, fail-open.
+    async fn run_post_llm_call_handlers(
+        session_id: &str,
+        registry: &crucible_lua::LuaScriptHandlerRegistry,
+        lua: &mlua::Lua,
+        event: &SessionEvent,
+    ) {
+        for handler in registry.runtime_handlers_for("post_llm_call", None) {
+            if let Err(error) = registry
+                .execute_runtime_handler(lua, &handler.name, event, Some(session_id))
                 .await
             {
                 warn!(
-                    session_id = %stream_ctx.session_id,
+                    session_id = %session_id,
                     error = %error,
                     "post_llm_call handler error (fail-open)"
                 );
             }
         }
-
-        continuation_outcome
     }
 
     pub(in crate::agent_manager) async fn dispatch_turn_complete_handlers(
@@ -996,13 +1021,68 @@ impl AgentManager {
         message_id: &str,
         response: &str,
         session_state: &Arc<Mutex<SessionEventState>>,
+        plugin_handlers: Option<&(Arc<crucible_lua::LuaScriptHandlerRegistry>, Arc<mlua::Lua>)>,
+        is_continuation: bool,
+    ) -> Option<(String, String)> {
+        let event = SessionEvent::Custom {
+            name: "turn:complete".to_string(),
+            payload: serde_json::json!({
+                "session_id": session_id,
+                "message_id": message_id,
+                "response_length": response.len(),
+                "is_continuation": is_continuation,
+            }),
+        };
+
+        // Session VM first, plugin VM second — the uniform registry order.
+        // Inject is last-writer-wins within a registry and across them, so a
+        // plugin's inject overrides a session handler's; a session that must
+        // win can use priority within its own registry, but cross-registry
+        // the later (plugin) pass acts last by the same rule that lets
+        // plugin transforms see session transforms' output.
+        let mut pending_injection: Option<(String, String)> = None;
+        {
+            let state = session_state.lock().await;
+            if let Some(injection) = Self::run_turn_complete_handlers(
+                session_id,
+                &state.registry,
+                &state.lua,
+                &event,
+                is_continuation,
+            )
+            .await
+            {
+                pending_injection = Some(injection);
+            }
+        }
+        if let Some((plugin_registry, plugin_lua)) = plugin_handlers {
+            if let Some(injection) = Self::run_turn_complete_handlers(
+                session_id,
+                plugin_registry,
+                plugin_lua,
+                &event,
+                is_continuation,
+            )
+            .await
+            {
+                pending_injection = Some(injection);
+            }
+        }
+
+        pending_injection
+    }
+
+    /// One registry's `turn:complete` pass; returns its last inject, if any.
+    async fn run_turn_complete_handlers(
+        session_id: &str,
+        registry: &crucible_lua::LuaScriptHandlerRegistry,
+        lua: &mlua::Lua,
+        event: &SessionEvent,
         is_continuation: bool,
     ) -> Option<(String, String)> {
         use crucible_lua::ScriptHandlerResult;
 
-        let state = session_state.lock().await;
-        let handlers = state.registry.runtime_handlers_for("turn:complete", None);
-
+        let handlers = registry.runtime_handlers_for("turn:complete", None);
         if handlers.is_empty() {
             return None;
         }
@@ -1014,22 +1094,10 @@ impl AgentManager {
             "Dispatching turn:complete handlers"
         );
 
-        let event = SessionEvent::Custom {
-            name: "turn:complete".to_string(),
-            payload: serde_json::json!({
-                "session_id": session_id,
-                "message_id": message_id,
-                "response_length": response.len(),
-                "is_continuation": is_continuation,
-            }),
-        };
-
         let mut pending_injection: Option<(String, String)> = None;
-
         for handler in handlers {
-            match state
-                .registry
-                .execute_runtime_handler(&state.lua, &handler.name, &event, Some(session_id))
+            match registry
+                .execute_runtime_handler(lua, &handler.name, event, Some(session_id))
                 .await
             {
                 Ok(result) => {
@@ -1061,7 +1129,6 @@ impl AgentManager {
                 }
             }
         }
-
         pending_injection
     }
 }

@@ -298,6 +298,7 @@ mod event_dispatch {
             "msg-123",
             "Some response",
             &session_state,
+            None,
             false, // is_continuation
         )
         .await;
@@ -305,6 +306,118 @@ mod event_dispatch {
         assert!(injection.is_some(), "Expected injection to be returned");
         let (content, _position) = injection.unwrap();
         assert_eq!(content, "Continue working");
+    }
+
+    /// A handler registered in the PLUGIN VM (a separate registry + Lua pair,
+    /// exactly what `DaemonPluginLoader` holds) must fire for `turn:complete`.
+    /// Until the plugin pair was threaded through, `pre_tool_call` was the
+    /// only event that ever reached plugins — a plugin registering this
+    /// handler got documented silence.
+    #[tokio::test]
+    async fn plugin_vm_turn_complete_handler_fires_and_injects() {
+        use crucible_lua::{register_crucible_on_api, LuaScriptHandlerRegistry};
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let agent_manager = create_test_agent_manager(session_manager);
+        let session_state = agent_manager.get_or_create_session_state("test-session");
+
+        // A plugin VM: its own Lua state and its own registry, like the
+        // daemon's plugin loader — NOT the session VM.
+        let plugin_lua = Arc::new(mlua::Lua::new());
+        let plugin_registry = Arc::new(LuaScriptHandlerRegistry::new());
+        register_crucible_on_api(
+            &plugin_lua,
+            plugin_registry.runtime_handlers(),
+            plugin_registry.handler_functions(),
+        )
+        .unwrap();
+        plugin_lua
+            .load(
+                r#"
+            crucible.on("turn:complete", function(ctx, event)
+                return { inject = { content = "from the plugin VM: " .. ctx.session_id } }
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+        let plugin_pair = (plugin_registry, plugin_lua);
+
+        let injection = AgentManager::dispatch_turn_complete_handlers(
+            "test-session",
+            "msg-123",
+            "Some response",
+            &session_state,
+            Some(&plugin_pair),
+            false,
+        )
+        .await;
+
+        let (content, _) = injection.expect("plugin VM handler must be dispatched");
+        assert_eq!(
+            content, "from the plugin VM: test-session",
+            "handler must fire from the plugin registry and see ctx.session_id"
+        );
+    }
+
+    /// Cross-registry inject ordering: the plugin VM pass runs after the
+    /// session VM pass, so its inject wins the last-writer race — the same
+    /// rule that lets plugin transforms see session transforms' output.
+    #[tokio::test]
+    async fn plugin_inject_overrides_session_inject() {
+        use crucible_lua::{register_crucible_on_api, LuaScriptHandlerRegistry};
+
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let agent_manager = create_test_agent_manager(session_manager);
+        let session_state = agent_manager.get_or_create_session_state("test-session");
+        {
+            let state = session_state.lock().await;
+            state
+                .lua
+                .load(
+                    r#"
+                crucible.on("turn:complete", function(ctx, event)
+                    return { inject = { content = "session inject" } }
+                end)
+            "#,
+                )
+                .exec()
+                .unwrap();
+        }
+
+        let plugin_lua = Arc::new(mlua::Lua::new());
+        let plugin_registry = Arc::new(LuaScriptHandlerRegistry::new());
+        register_crucible_on_api(
+            &plugin_lua,
+            plugin_registry.runtime_handlers(),
+            plugin_registry.handler_functions(),
+        )
+        .unwrap();
+        plugin_lua
+            .load(
+                r#"
+            crucible.on("turn:complete", function(ctx, event)
+                return { inject = { content = "plugin inject" } }
+            end)
+        "#,
+            )
+            .exec()
+            .unwrap();
+        let plugin_pair = (plugin_registry, plugin_lua);
+
+        let injection = AgentManager::dispatch_turn_complete_handlers(
+            "test-session",
+            "msg-123",
+            "Some response",
+            &session_state,
+            Some(&plugin_pair),
+            false,
+        )
+        .await;
+
+        assert_eq!(injection.unwrap().0, "plugin inject");
     }
 
     #[tokio::test]
@@ -340,6 +453,7 @@ mod event_dispatch {
             "msg-123",
             "Some response",
             &session_state,
+            None,
             false,
         )
         .await;
@@ -377,6 +491,7 @@ mod event_dispatch {
             "msg-123",
             "Some response",
             &session_state,
+            None,
             false,
         )
         .await;
@@ -422,6 +537,7 @@ mod event_dispatch {
             "msg-123",
             "Some response",
             &session_state,
+            None,
             true, // is_continuation
         )
         .await;
@@ -473,6 +589,7 @@ mod event_dispatch {
             "msg-123",
             "Some response",
             &session_state,
+            None,
             false,
         )
         .await;
