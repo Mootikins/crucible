@@ -49,9 +49,23 @@ pub struct PromptStyle {
     pub shell: Option<String>,
 }
 
+/// Layout preferences that are not per-surface.
+///
+/// Lived on the colour palette as `ThemeConfig.layout`, which put "where is the
+/// status bar" next to "what colour is an error". Layout belongs with the other
+/// geometry.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UiLayout {
+    pub status_bar: Option<String>,
+    pub message_spacing: Option<u16>,
+    pub code_block_margin: Option<u16>,
+    pub input_max_lines: Option<u16>,
+}
+
 /// The closed surface set.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UiGeometry {
+    pub layout: UiLayout,
     pub popup: SurfaceStyle,
     pub modal: SurfaceStyle,
     pub drawer: SurfaceStyle,
@@ -165,7 +179,18 @@ pub fn geometry_from_lua(config: &Table) -> UiGeometry {
             .map(|t| surface_from_lua(&t))
             .unwrap_or_default()
     };
+    let layout = config
+        .get::<Table>("layout")
+        .map(|t| UiLayout {
+            status_bar: t.get("status_bar").ok(),
+            message_spacing: t.get("message_spacing").ok(),
+            code_block_margin: t.get("code_block_margin").ok(),
+            input_max_lines: t.get("input_max_lines").ok(),
+        })
+        .unwrap_or_default();
+
     UiGeometry {
+        layout,
         popup: surface("popup"),
         modal: surface("modal"),
         drawer: surface("drawer"),
@@ -299,7 +324,22 @@ pub fn geometry_to_wire(g: &UiGeometry) -> Json {
         }
     }
 
+    let mut layout = Map::new();
+    if let Some(ref v) = g.layout.status_bar {
+        layout.insert("status_bar".into(), json!(v));
+    }
+    for (key, val) in [
+        ("message_spacing", g.layout.message_spacing),
+        ("code_block_margin", g.layout.code_block_margin),
+        ("input_max_lines", g.layout.input_max_lines),
+    ] {
+        if let Some(n) = val {
+            layout.insert(key.into(), json!(n));
+        }
+    }
+
     json!({
+        "layout": Json::Object(layout),
         "popup": surface_to_wire(&g.popup),
         "modal": surface_to_wire(&g.modal),
         "drawer": surface_to_wire(&g.drawer),
@@ -322,7 +362,23 @@ pub fn geometry_from_wire(v: &Json) -> UiGeometry {
             .as_str()
             .map(std::string::ToString::to_string)
     };
+    let l = m.get("layout").and_then(Json::as_object);
+    let num = |key: &str| {
+        l.and_then(|l| l.get(key))
+            .and_then(Json::as_u64)
+            .and_then(|n| u16::try_from(n).ok())
+    };
+
     UiGeometry {
+        layout: UiLayout {
+            status_bar: l
+                .and_then(|l| l.get("status_bar"))
+                .and_then(Json::as_str)
+                .map(std::string::ToString::to_string),
+            message_spacing: num("message_spacing"),
+            code_block_margin: num("code_block_margin"),
+            input_max_lines: num("input_max_lines"),
+        },
         popup: surface_from_wire(m.get("popup")),
         modal: surface_from_wire(m.get("modal")),
         drawer: surface_from_wire(m.get("drawer")),
@@ -430,9 +486,18 @@ mod tests {
     }
 
     #[test]
+    fn layout_moves_off_the_palette_and_onto_the_ui_table() {
+        let g = setup(r#"return { layout = { status_bar = "top", message_spacing = 2 } }"#);
+        assert_eq!(g.layout.status_bar.as_deref(), Some("top"));
+        assert_eq!(g.layout.message_spacing, Some(2));
+        assert_eq!(g.layout.input_max_lines, None, "unset stays unset");
+    }
+
+    #[test]
     fn geometry_survives_a_wire_round_trip() {
         let g = setup(
             r#"return {
+                layout = { status_bar = "top", message_spacing = 2 },
                 popup = { border = "rounded", padding = 1, max_visible = 10 },
                 drawer = { border = {"", "▀", "", "", "", "▄", "", ""} },
                 prompt = { normal = { glyph = "❯ " } },

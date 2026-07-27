@@ -18,13 +18,30 @@ use serde_json::{json, Map, Value as Json};
 fn color_from_lua(table: &Table, key: &str) -> Option<HlColor> {
     match table.get::<Value>(key).ok()? {
         Value::String(s) => Some(HlColor::parse(&s.to_str().ok()?)),
+        // `fg = 4` — a bare integer is a terminal palette index.
+        Value::Integer(n) => u8::try_from(n)
+            .ok()
+            .map(|i| HlColor::Adaptive(AdaptiveColor::from_single(Color::Indexed(i)))),
         Value::Table(t) => {
-            let dark: String = t.get("dark").ok()?;
-            let light: String = t.get("light").ok()?;
-            let dark = crate::theme::parse_color_string(&dark)?;
-            let light = crate::theme::parse_color_string(&light)?;
+            if let Ok(idx) = t.get::<u8>("idx") {
+                return Some(HlColor::Adaptive(AdaptiveColor::from_single(
+                    Color::Indexed(idx),
+                )));
+            }
+            let dark = side(&t.get::<Value>("dark").ok()?)?;
+            let light = side(&t.get::<Value>("light").ok()?)?;
             Some(HlColor::Adaptive(AdaptiveColor { dark, light }))
         }
+        _ => None,
+    }
+}
+
+/// One side of an adaptive pair: a name, a hex literal, or an index.
+fn side(v: &Value) -> Option<Color> {
+    match v {
+        Value::String(s) => crate::theme::parse_color_string(&s.to_str().ok()?),
+        Value::Integer(n) => u8::try_from(*n).ok().map(Color::Indexed),
+        Value::Table(t) => t.get::<u8>("idx").ok().map(Color::Indexed),
         _ => None,
     }
 }
@@ -97,6 +114,16 @@ fn color_name(c: Color) -> String {
         Color::White => "white".into(),
         Color::Gray => "gray".into(),
         Color::DarkGray => "dark_gray".into(),
+        Color::BrightRed => "bright_red".into(),
+        Color::BrightGreen => "bright_green".into(),
+        Color::BrightYellow => "bright_yellow".into(),
+        Color::BrightBlue => "bright_blue".into(),
+        Color::BrightMagenta => "bright_magenta".into(),
+        Color::BrightCyan => "bright_cyan".into(),
+        Color::BrightWhite => "bright_white".into(),
+        // Indices cross the wire as numbers-in-strings, which `parse_color_string`
+        // reads back as an index — so the round trip is lossless.
+        Color::Indexed(i) => i.to_string(),
         Color::Reset => "reset".into(),
         Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
     }

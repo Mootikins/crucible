@@ -378,10 +378,10 @@ impl OilChatApp {
                     }
                     CompletionSource::Themes => Self::filter_commands(
                         &[
-                            ("base16-ocean.dark", "", "theme"),
-                            ("Solarized (dark)", "", "theme"),
-                            ("Solarized (light)", "", "theme"),
-                            ("InspiredGitHub", "", "theme"),
+                            ("base16-ocean.dark", "", "syntax_theme"),
+                            ("Solarized (dark)", "", "syntax_theme"),
+                            ("Solarized (light)", "", "syntax_theme"),
+                            ("InspiredGitHub", "", "syntax_theme"),
                         ],
                         filter,
                     )

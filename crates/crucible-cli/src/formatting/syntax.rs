@@ -1,4 +1,4 @@
-use crate::tui::oil::{Color, Style};
+use crate::tui::oil::Style;
 use crucible_core::config::HighlightingConfig;
 use once_cell::sync::Lazy;
 use syntect::easy::HighlightLines;
@@ -8,6 +8,9 @@ use syntect::util::LinesWithEndings;
 
 static SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(SyntaxSet::load_defaults_newlines);
 static THEME_SET: Lazy<ThemeSet> = Lazy::new(ThemeSet::load_defaults);
+
+/// Theme name meaning "build one from the active colorscheme".
+pub const DERIVED_THEME: &str = "derived";
 
 /// Process-wide highlighting state, mirroring how render code reads the TUI
 /// palette from `theme::active()`. The config-seeded values and the `:set
@@ -144,13 +147,28 @@ impl SyntaxHighlighter {
             .or_else(|| SYNTAX_SET.find_syntax_by_extension(language))
             .unwrap_or_else(|| SYNTAX_SET.find_syntax_plain_text());
 
-        let theme = THEME_SET.themes.get(&self.theme_name).unwrap_or_else(|| {
-            THEME_SET
+        // `derived` builds a theme from the active colorscheme so code blocks
+        // match the chat around them, and so a palette written against terminal
+        // colours reaches code too. A named theme still wins when one is set.
+        let derived;
+        let theme = match THEME_SET.themes.get(&self.theme_name) {
+            Some(named) => named,
+            None if self.theme_name == DERIVED_THEME => {
+                let ui = crate::tui::oil::theme::active();
+                let colors = crate::formatting::syntax_theme::SyntaxColors::derived_from(ui);
+                derived = crate::formatting::syntax_theme::build_theme(
+                    &colors,
+                    ui.resolve_color(ui.colors.background_panel),
+                    DERIVED_THEME,
+                );
+                &derived
+            }
+            None => THEME_SET
                 .themes
                 .values()
                 .next()
-                .expect("at least one theme")
-        });
+                .expect("at least one theme"),
+        };
 
         let mut highlighter = HighlightLines::new(syntax, theme);
         let mut result = Vec::new();
@@ -196,8 +214,10 @@ pub struct HighlightedSpan {
 }
 
 fn syntect_to_ink_style(syntect_style: SyntectStyle) -> Style {
-    let fg = syntect_style.foreground;
-    let mut style = Style::new().fg(Color::Rgb(fg.r, fg.g, fg.b));
+    // Decodes palette entries a derived theme encoded through the alpha
+    // channel; a colour from a normal on-disk theme comes back as RGB.
+    let fg = crate::formatting::syntax_theme::from_syntect(syntect_style.foreground);
+    let mut style = Style::new().fg(fg);
 
     if syntect_style.font_style.contains(FontStyle::BOLD) {
         style = style.bold();
@@ -215,6 +235,7 @@ fn syntect_to_ink_style(syntect_style: SyntectStyle) -> Style {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::oil::Color;
 
     #[test]
     fn highlight_rust_code_produces_colored_spans() {
@@ -232,6 +253,53 @@ mod tests {
                 .any(|span| span.style.fg != Some(Color::Reset) && span.style.fg.is_some())
         });
         assert!(has_color, "highlighted code should have colored spans");
+    }
+
+    /// The point of the derived theme: code colours come from the colorscheme,
+    /// so a code block does not clash with the chat view around it.
+    #[test]
+    fn the_derived_theme_takes_its_colors_from_the_colorscheme() {
+        let h = SyntaxHighlighter::new().with_theme(DERIVED_THEME);
+        let lines = h.highlight("fn main() {}", "rust");
+        let colors: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter_map(|s| s.style.fg)
+            .collect();
+        assert!(!colors.is_empty(), "derived theme produced no styled spans");
+
+        // Compare by palette slot, not variant. A palette colour round-trips
+        // through syntect as its index, so `Cyan` comes back as `Indexed(6)` —
+        // the same slot and the same SGR code, a different spelling.
+        let ui = crate::tui::oil::theme::active();
+        let keyword = ui.resolve_color(ui.colors.primary).palette_index();
+        let slots: Vec<_> = colors.iter().filter_map(|c| c.palette_index()).collect();
+        assert!(
+            keyword.is_some_and(|k| slots.contains(&k)),
+            "expected the colorscheme's primary slot {keyword:?} among {slots:?}"
+        );
+    }
+
+    /// Terminal palette entries must reach code blocks, not be flattened to
+    /// fixed RGB by syntect's RGB-only colour type.
+    #[test]
+    fn a_palette_colorscheme_yields_palette_colored_code() {
+        let mut ui = crucible_lua::theme::ThemeConfig::default_dark();
+        ui.colors.primary = crucible_oil::style::AdaptiveColor::from_single(Color::Indexed(5));
+        crate::tui::oil::theme::set(ui);
+
+        let h = SyntaxHighlighter::new().with_theme(DERIVED_THEME);
+        let lines = h.highlight("fn main() {}", "rust");
+        let colors: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter_map(|s| s.style.fg)
+            .collect();
+
+        assert!(
+            colors.contains(&Color::Indexed(5)),
+            "terminal palette entry did not survive into code spans: {colors:?}"
+        );
     }
 
     #[test]

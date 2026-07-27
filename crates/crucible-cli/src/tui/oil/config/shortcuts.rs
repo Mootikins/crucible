@@ -11,7 +11,7 @@
 //! let registry = ShortcutRegistry::new();
 //!
 //! // Look up a shortcut
-//! if let Some(shortcut) = registry.get("theme") {
+//! if let Some(shortcut) = registry.get("syntax_theme") {
 //!     println!("Maps to: {:?}", shortcut.target);
 //! }
 //!
@@ -20,7 +20,7 @@
 //!
 //! // Get the target path (None for Dynamic/Virtual)
 //! assert_eq!(
-//!     registry.target_path("theme"),
+//!     registry.target_path("syntax_theme"),
 //!     Some("cli.highlighting.theme")
 //! );
 //! ```
@@ -55,7 +55,7 @@ pub enum CompletionSource {
 /// A shortcut mapping from a short name to a config option.
 #[derive(Debug, Clone, Copy)]
 pub struct ConfigShortcut {
-    /// Short name users type (e.g., "model", "theme").
+    /// Short name users type (e.g., "model", "syntax_theme").
     pub short: &'static str,
     /// Where this shortcut maps to.
     pub target: ShortcutTarget,
@@ -92,10 +92,12 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         description: "Thinking token budget preset",
     },
     ConfigShortcut {
-        short: "theme",
+        // `theme` alone was ambiguous once the UI gained a colorscheme and a
+        // surface geometry; this key has only ever meant code highlighting.
+        short: "syntax_theme",
         target: ShortcutTarget::Path("cli.highlighting.theme"),
         completions: CompletionSource::Themes,
-        description: "Syntax highlighting theme",
+        description: "Syntax highlighting theme ('derived' follows the colorscheme)",
     },
     ConfigShortcut {
         short: "precognition",
@@ -266,7 +268,7 @@ mod tests {
         assert_eq!(model.target, ShortcutTarget::Dynamic);
         assert_eq!(model.completions, CompletionSource::Models);
 
-        let theme = registry.get("theme");
+        let theme = registry.get("syntax_theme");
         assert!(theme.is_some());
         let theme = theme.unwrap();
         assert_eq!(theme.target, ShortcutTarget::Path("cli.highlighting.theme"));
@@ -285,8 +287,8 @@ mod tests {
         // "model" is Dynamic, not Virtual
         assert!(!registry.is_virtual("model"));
 
-        // "theme" is Path, not Virtual
-        assert!(!registry.is_virtual("theme"));
+        // "syntax_theme" is Path, not Virtual
+        assert!(!registry.is_virtual("syntax_theme"));
 
         // Non-existent is not Virtual
         assert!(!registry.is_virtual("nonexistent"));
@@ -298,7 +300,7 @@ mod tests {
 
         // Path target returns the path
         assert_eq!(
-            registry.target_path("theme"),
+            registry.target_path("syntax_theme"),
             Some("cli.highlighting.theme")
         );
         assert_eq!(
@@ -323,7 +325,7 @@ mod tests {
         // Find short name from path
         assert_eq!(
             registry.reverse_lookup("cli.highlighting.theme"),
-            Some("theme")
+            Some("syntax_theme")
         );
         assert_eq!(
             registry.reverse_lookup("llm.thinking_budget"),
@@ -353,7 +355,7 @@ mod tests {
         assert!(shorts.contains(&"thinking"));
         assert!(shorts.contains(&"show_diffs"));
         assert!(shorts.contains(&"thinkingbudget"));
-        assert!(shorts.contains(&"theme"));
+        assert!(shorts.contains(&"syntax_theme"));
         assert!(shorts.contains(&"precognition"));
         assert!(shorts.contains(&"precognition.results"));
         assert!(shorts.contains(&"maxiterations"));
@@ -373,7 +375,7 @@ mod tests {
         let registry = ShortcutRegistry::new();
 
         assert!(registry.is_shortcut("model"));
-        assert!(registry.is_shortcut("theme"));
+        assert!(registry.is_shortcut("syntax_theme"));
         // verbose was removed 2026-07-10: no consumer in a running TUI
         assert!(!registry.is_shortcut("verbose"));
         assert!(!registry.is_shortcut("nonexistent"));
@@ -385,7 +387,10 @@ mod tests {
         let registry = ShortcutRegistry::new();
 
         assert_eq!(registry.completions_for("model"), CompletionSource::Models);
-        assert_eq!(registry.completions_for("theme"), CompletionSource::Themes);
+        assert_eq!(
+            registry.completions_for("syntax_theme"),
+            CompletionSource::Themes
+        );
         assert_eq!(
             registry.completions_for("thinkingbudget"),
             CompletionSource::ThinkingPresets
@@ -404,8 +409,8 @@ mod tests {
 
         assert_eq!(registry.description("model"), Some("Current LLM model"));
         assert_eq!(
-            registry.description("theme"),
-            Some("Syntax highlighting theme")
+            registry.description("syntax_theme"),
+            Some("Syntax highlighting theme ('derived' follows the colorscheme)")
         );
         assert_eq!(registry.description("nonexistent"), None);
     }

@@ -43,6 +43,8 @@ pub struct ConfigState {
     pub ui: Option<crate::ui_geometry::UiGeometry>,
     /// Statusline bars authored as item trees.
     pub bars: Option<crate::statusline_items::StatusBars>,
+    /// Code-highlighting config from `crucible.syntax.setup{}`.
+    pub syntax: Option<serde_json::Value>,
     /// Daemon/app config values set via cru.config.set() or seeded from TOML.
     /// Stored as JSON for easy extraction by Rust callers.
     pub app_config: Option<serde_json::Value>,
@@ -55,7 +57,7 @@ fn get_config() -> &'static Arc<RwLock<ConfigState>> {
     CONFIG.get_or_init(|| Arc::new(RwLock::new(ConfigState::default())))
 }
 
-/// Get the current theme configuration (if set via crucible.theme.setup())
+/// Get the current theme configuration (if set via crucible.colorscheme.setup())
 pub fn get_theme_config() -> Option<ThemeConfig> {
     get_config().read().ok()?.theme.clone()
 }
@@ -68,7 +70,7 @@ fn set_theme_config(config: ThemeConfig) {
 }
 
 /// Install a theme from outside the Lua evaluation path (the `ui.set_theme`
-/// RPC). Same store `crucible.theme.setup{}` writes, so a switch and a config
+/// RPC). Same store `crucible.colorscheme.setup{}` writes, so a switch and a config
 /// reload cannot disagree.
 pub fn set_theme_config_public(config: ThemeConfig) {
     set_theme_config(config);
@@ -221,11 +223,16 @@ pub fn register_statusline_namespace(lua: &Lua, crucible: &Table) -> Result<(), 
     Ok(())
 }
 
-/// Register the crucible.theme module with setup() support
+/// Register `crucible.colorscheme` — the colour palette.
+///
+/// Named for what it is. "Theme" had come to mean three different things: this
+/// palette, the surface geometry in `crucible.ui`, and the syntect theme used
+/// for code highlighting. `colorscheme` is also the word Neovim uses for
+/// exactly this — the thing highlight groups resolve against.
 pub fn register_theme_namespace(lua: &Lua, crucible: &Table) -> Result<(), LuaError> {
     let theme = lua.create_table()?;
 
-    // crucible.theme.setup(config) — parses and stores the theme config
+    // crucible.colorscheme.setup(config) — parses and stores the theme config
     let setup_fn = lua.create_function(|lua, config: Table| {
         let theme_config = crate::theme::parse_theme_from_table(lua, &config);
         debug!("Theme config parsed successfully: {}", theme_config.name);
@@ -234,7 +241,7 @@ pub fn register_theme_namespace(lua: &Lua, crucible: &Table) -> Result<(), LuaEr
     })?;
     theme.set("setup", setup_fn)?;
 
-    crucible.set("theme", theme)?;
+    crucible.set("colorscheme", theme)?;
     Ok(())
 }
 
@@ -288,7 +295,34 @@ fn register_include(lua: &Lua, crucible: &Table, config_dir: PathBuf) -> Result<
     Ok(())
 }
 
-/// Register the UI-config namespaces (`crucible.statusline`, `crucible.theme`)
+/// Register `crucible.syntax` — code-highlighting colours.
+///
+/// Separate from `crucible.colorscheme` because it addresses grammar scopes
+/// rather than UI slots, and separate from `crucible.ui` because it is colour,
+/// not geometry. `theme = "name"` picks a syntect theme by name; `colors = {}`
+/// overrides individual scopes on top of whatever the colorscheme derives.
+pub fn register_syntax_namespace(lua: &Lua, crucible: &Table) -> Result<(), LuaError> {
+    let syntax = lua.create_table()?;
+    let setup_fn = lua.create_function(|lua, config: Table| {
+        let json: serde_json::Value = lua
+            .from_value(Value::Table(config))
+            .map_err(mlua::Error::external)?;
+        if let Ok(mut state) = get_config().write() {
+            state.syntax = Some(json);
+        }
+        Ok(())
+    })?;
+    syntax.set("setup", setup_fn)?;
+    crucible.set("syntax", syntax)?;
+    Ok(())
+}
+
+/// Syntax configuration, if a config set any.
+pub fn get_syntax_config() -> Option<serde_json::Value> {
+    get_config().read().ok()?.syntax.clone()
+}
+
+/// Register the UI-config namespaces (`crucible.statusline`, `crucible.colorscheme`)
 /// and seed the embedded defaults into the config store.
 ///
 /// Split out of [`ConfigLoader::load`] because the daemon's **plugin VM** needs
@@ -298,9 +332,9 @@ fn register_include(lua: &Lua, crucible: &Table, config_dir: PathBuf) -> Result<
 /// TOML). Calling the whole of `load` there would evaluate `init.lua` twice and
 /// double-register every hook in it.
 ///
-/// Without this on the plugin VM, `crucible.theme` and `crucible.statusline` are
+/// Without this on the plugin VM, `crucible.colorscheme` and `crucible.statusline` are
 /// **nil in the VM that actually runs the user's init.lua**, so
-/// `crucible.theme.setup{...}` fails with "attempt to index a nil value" and the
+/// `crucible.colorscheme.setup{...}` fails with "attempt to index a nil value" and the
 /// user's theme never even parses.
 pub fn register_ui_namespaces(lua: &Lua) -> Result<(), LuaError> {
     let globals = lua.globals();
@@ -318,6 +352,7 @@ pub fn register_ui_namespaces(lua: &Lua) -> Result<(), LuaError> {
     register_theme_namespace(lua, &crucible)?;
     crate::hl_lua::register_hl_namespace(lua, &crucible)?;
     crate::ui_geometry::register_ui_namespace(lua, &crucible)?;
+    register_syntax_namespace(lua, &crucible)?;
     // Item vocabulary hangs off the same `crucible.statusline` table the
     // component factories already live on.
     if let Ok(sl) = crucible.get::<Table>("statusline") {
@@ -563,7 +598,7 @@ mod tests {
 
         lua.load(
             r##"
-            crucible.theme.setup({
+            crucible.colorscheme.setup({
                 colors = { error = "#ff0000" },
                 name = "custom",
             })
@@ -693,7 +728,7 @@ mod tests {
         // Setup with an invalid color — should not panic, should use default for that field
         lua.load(
             r#"
-            crucible.theme.setup({
+            crucible.colorscheme.setup({
                 colors = { error = "not_a_valid_color_xyz" },
             })
         "#,

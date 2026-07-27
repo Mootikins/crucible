@@ -91,9 +91,9 @@ impl Server {
                 }
             }
 
-            // Register `crucible.theme` / `crucible.statusline` on the PLUGIN VM
+            // Register `crucible.colorscheme` / `crucible.statusline` on the PLUGIN VM
             // before user init.lua runs — this is the VM that evaluates it.
-            // Without this they are nil there, so `crucible.theme.setup{...}`
+            // Without this they are nil there, so `crucible.colorscheme.setup{...}`
             // errors and the user's theme never parses. Registration only; the
             // init.lua evaluation is `eval_user_init` below, and doing both here
             // would evaluate it twice.

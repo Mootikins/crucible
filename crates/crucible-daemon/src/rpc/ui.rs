@@ -1,6 +1,6 @@
 //! `ui.config` — delivers Lua-defined UI configuration to an attached client.
 //!
-//! This is the transport that makes `crucible.theme.setup()` and
+//! This is the transport that makes `crucible.colorscheme.setup()` and
 //! `runtime/themes/*.lua` real. Before it existed, both parsed correctly into a
 //! process-global inside `crucible-lua` that only a *same-process* reader could
 //! see — so in the normal split (TUI process ↔ daemon process) the TUI read its
@@ -122,6 +122,7 @@ pub fn style_payload(
             &crucible_lua::config::get_ui_geometry().unwrap_or_default(),
         ),
         "exprs": exprs,
+        "syntax": crucible_lua::config::get_syntax_config(),
         "bars": crucible_lua::statusline_items::bars_to_wire(
             &crucible_lua::config::get_status_bars()
                 .unwrap_or_else(crucible_lua::statusline_items::builtin_default),

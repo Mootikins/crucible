@@ -226,7 +226,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### US-905: Theme the TUI from Lua
 **As a user**, colours, per-surface geometry and prompt glyphs come from my `init.lua` (or a `themes/*.lua` file), and a change takes effect without restarting.
-**Acceptance:** `crucible.theme.setup{}` reaches the renderer in split-process mode (not only `--standalone`); `crucible.hl.set/link` restyle named groups, with palette references re-resolving when the palette changes; `crucible.ui.setup{}` sets popup/modal/drawer/toast/prompt geometry, and a surface the theme does not name keeps its built-in; a daemon that is unreachable leaves a correct, compiled-in-themed screen rather than a blank one; a re-sent `ui.config` replaces the active theme and repaints.
+**Acceptance:** `crucible.colorscheme.setup{}` reaches the renderer in split-process mode (not only `--standalone`); `crucible.hl.set/link` restyle named groups, with palette references re-resolving when the palette changes; `crucible.ui.setup{}` sets popup/modal/drawer/toast/prompt geometry, and a surface the theme does not name keeps its built-in; a daemon that is unreachable leaves a correct, compiled-in-themed screen rather than a blank one; a re-sent `ui.config` replaces the active theme and repaints.
 **Tests:** T1 wire round-trips + group resolution/linking/cycles in `crucible-lua` (`theme_wire.rs`, `hl.rs`, `hl_lua.rs`, `ui_geometry.rs`); T2 store swap + surface application in `tui/oil/theme/{global,groups,geometry,remote}.rs` and `components/input_area.rs`; T3 delivery over real RPC in `crucible-daemon/tests/rpc_ui_config_e2e.rs` — RED-verify that suite by unwiring the handler, not the parser.
 
 ### US-906: Build a statusline

@@ -2,7 +2,7 @@
 //!
 //! This is the load-bearing test for the styling transport. Unit tests of the
 //! theme parser pass fine while the delivery path is unwired — which is exactly
-//! how `crucible.theme.setup()` came to be dead code: it parsed correctly into a
+//! how `crucible.colorscheme.setup()` came to be dead code: it parsed correctly into a
 //! process-global that, in split-process mode, nothing on the TUI side ever read.
 //!
 //! RED-verify this suite by unwiring the `ui.config` handler or the theme->wire

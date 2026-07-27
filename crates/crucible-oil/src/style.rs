@@ -142,8 +142,21 @@ pub enum Color {
     Magenta,
     Cyan,
     White,
+    /// Terminal palette 7. Named `Gray` for history; `White` is the same slot.
     Gray,
+    /// Terminal palette 8 — "bright black" in most palettes.
     DarkGray,
+    BrightRed,
+    BrightGreen,
+    BrightYellow,
+    BrightBlue,
+    BrightMagenta,
+    BrightCyan,
+    BrightWhite,
+    /// A raw palette index. 0-15 are the terminal's own colours, so a theme
+    /// written against them follows whatever the user configured; 16-255 are
+    /// the fixed xterm cube and greyscale ramp.
+    Indexed(u8),
     Rgb(u8, u8, u8),
     Reset,
 }
@@ -191,42 +204,77 @@ impl Color {
             Color::White => CtColor::White,
             Color::Gray => CtColor::Grey,
             Color::DarkGray => CtColor::DarkGrey,
+            Color::BrightRed => CtColor::DarkRed,
+            Color::BrightGreen => CtColor::DarkGreen,
+            Color::BrightYellow => CtColor::DarkYellow,
+            Color::BrightBlue => CtColor::DarkBlue,
+            Color::BrightMagenta => CtColor::DarkMagenta,
+            Color::BrightCyan => CtColor::DarkCyan,
+            Color::BrightWhite => CtColor::White,
+            Color::Indexed(i) => CtColor::AnsiValue(i),
             Color::Rgb(r, g, b) => CtColor::Rgb { r, g, b },
             Color::Reset => CtColor::Reset,
         }
     }
 
+    /// Terminal palette index, for the colours that have one.
+    ///
+    /// `None` for `Rgb` and `Reset`, which are not palette entries.
+    pub fn palette_index(self) -> Option<u8> {
+        Some(match self {
+            Color::Black => 0,
+            Color::Red => 1,
+            Color::Green => 2,
+            Color::Yellow => 3,
+            Color::Blue => 4,
+            Color::Magenta => 5,
+            Color::Cyan => 6,
+            Color::White | Color::Gray => 7,
+            Color::DarkGray => 8,
+            Color::BrightRed => 9,
+            Color::BrightGreen => 10,
+            Color::BrightYellow => 11,
+            Color::BrightBlue => 12,
+            Color::BrightMagenta => 13,
+            Color::BrightCyan => 14,
+            Color::BrightWhite => 15,
+            Color::Indexed(i) => i,
+            Color::Rgb(..) | Color::Reset => return None,
+        })
+    }
+
+    /// SGR parameters for this colour as a foreground.
+    ///
+    /// Palette entries 0-15 emit the classic 30-37 / 90-97 codes rather than
+    /// `38;5;n`, so they resolve against the terminal's own configured colours.
+    /// `Gray` and `DarkGray` used to emit `38;5;250` / `38;5;240`, which pinned
+    /// them to fixed greys the user's terminal theme could not influence — and
+    /// disagreed with `to_crossterm`, which mapped them to the palette. The two
+    /// render paths now agree.
     pub fn to_ansi_fg(self) -> Vec<u8> {
         match self {
-            Color::Black => vec![30],
-            Color::Red => vec![31],
-            Color::Green => vec![32],
-            Color::Yellow => vec![33],
-            Color::Blue => vec![34],
-            Color::Magenta => vec![35],
-            Color::Cyan => vec![36],
-            Color::White => vec![37],
-            Color::Gray => vec![38, 5, 250],
-            Color::DarkGray => vec![38, 5, 240],
             Color::Rgb(r, g, b) => vec![38, 2, r, g, b],
             Color::Reset => vec![39],
+            other => match other.palette_index() {
+                Some(i @ 0..=7) => vec![30 + i],
+                Some(i @ 8..=15) => vec![90 + (i - 8)],
+                Some(i) => vec![38, 5, i],
+                None => vec![39],
+            },
         }
     }
 
+    /// SGR parameters for this colour as a background. See [`Self::to_ansi_fg`].
     pub fn to_ansi_bg(self) -> Vec<u8> {
         match self {
-            Color::Black => vec![40],
-            Color::Red => vec![41],
-            Color::Green => vec![42],
-            Color::Yellow => vec![43],
-            Color::Blue => vec![44],
-            Color::Magenta => vec![45],
-            Color::Cyan => vec![46],
-            Color::White => vec![47],
-            Color::Gray => vec![48, 5, 250],
-            Color::DarkGray => vec![48, 5, 240],
             Color::Rgb(r, g, b) => vec![48, 2, r, g, b],
             Color::Reset => vec![49],
+            other => match other.palette_index() {
+                Some(i @ 0..=7) => vec![40 + i],
+                Some(i @ 8..=15) => vec![100 + (i - 8)],
+                Some(i) => vec![48, 5, i],
+                None => vec![49],
+            },
         }
     }
 }
@@ -624,6 +672,51 @@ mod tests {
         };
         assert_eq!(p.horizontal(), 6);
         assert_eq!(p.vertical(), 4);
+    }
+
+    /// Palette entries emit the classic SGR codes, so they resolve against the
+    /// terminal's own colours rather than a fixed 256-colour approximation.
+    #[test]
+    fn palette_colors_emit_terminal_codes_not_256_color() {
+        assert_eq!(Color::Blue.to_ansi_fg(), vec![34]);
+        assert_eq!(Color::Blue.to_ansi_bg(), vec![44]);
+        assert_eq!(Color::Indexed(4).to_ansi_fg(), vec![34]);
+    }
+
+    #[test]
+    fn bright_colors_emit_the_90_series() {
+        assert_eq!(Color::BrightBlue.to_ansi_fg(), vec![94]);
+        assert_eq!(Color::BrightBlue.to_ansi_bg(), vec![104]);
+        assert_eq!(Color::Indexed(12).to_ansi_fg(), vec![94]);
+    }
+
+    /// The regression this replaces: these two were pinned to 250/240 in the
+    /// ANSI path while `to_crossterm` mapped them to the palette, so the same
+    /// colour rendered differently depending on which path drew it.
+    #[test]
+    fn gray_and_dark_gray_follow_the_terminal_palette() {
+        assert_eq!(Color::Gray.to_ansi_fg(), vec![37]);
+        assert_eq!(Color::DarkGray.to_ansi_fg(), vec![90]);
+    }
+
+    /// Above 15 there is no terminal palette to defer to, so the fixed cube is
+    /// correct.
+    #[test]
+    fn indices_above_fifteen_use_the_256_color_form() {
+        assert_eq!(Color::Indexed(250).to_ansi_fg(), vec![38, 5, 250]);
+    }
+
+    #[test]
+    fn rgb_is_unaffected() {
+        assert_eq!(Color::Rgb(1, 2, 3).to_ansi_fg(), vec![38, 2, 1, 2, 3]);
+    }
+
+    #[test]
+    fn named_colors_and_their_indices_agree() {
+        assert_eq!(Color::Blue.palette_index(), Some(4));
+        assert_eq!(Color::DarkGray.palette_index(), Some(8));
+        assert_eq!(Color::BrightWhite.palette_index(), Some(15));
+        assert_eq!(Color::Rgb(0, 0, 0).palette_index(), None);
     }
 
     #[test]

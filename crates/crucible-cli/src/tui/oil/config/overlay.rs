@@ -582,8 +582,8 @@ mod tests {
     fn test_shortcut_resolution() {
         let config = make_config();
 
-        // "theme" should resolve to "cli.highlighting.theme"
-        let (path, is_virtual) = config.resolve_path("theme");
+        // "syntax_theme" should resolve to "cli.highlighting.theme"
+        let (path, is_virtual) = config.resolve_path("syntax_theme");
         assert_eq!(path, "cli.highlighting.theme");
         assert!(!is_virtual);
 

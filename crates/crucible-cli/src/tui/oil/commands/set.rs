@@ -294,19 +294,24 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
             key,
             value: CliValue::Set(value),
         }),
-        // Syntax-highlight theme (syntect). Validated against the loaded
-        // theme set so a typo fails loudly instead of silently falling back.
-        "theme" => {
-            if crate::formatting::SyntaxHighlighter::available_themes()
-                .iter()
-                .any(|t| *t == value)
+        // Syntax-highlight theme (syntect). Was spelled `theme`, which collided
+        // with the UI colorscheme — three different things were called "theme".
+        // Validated against the loaded theme set so a typo fails loudly instead
+        // of silently falling back.
+        "syntax_theme" | "syntaxtheme" => {
+            if value == crate::formatting::syntax::DERIVED_THEME
+                || crate::formatting::SyntaxHighlighter::available_themes()
+                    .iter()
+                    .any(|t| *t == value)
             {
                 Ok(SetEffect::TuiLocal {
                     key,
                     value: CliValue::Set(value),
                 })
             } else {
-                let valid = crate::formatting::SyntaxHighlighter::available_themes().join(", ");
+                let mut valid = crate::formatting::SyntaxHighlighter::available_themes();
+                valid.insert(0, crate::formatting::syntax::DERIVED_THEME);
+                let valid = valid.join(", ");
                 Err(SetError::InvalidValue {
                     key,
                     message: format!("unknown theme '{}'. Valid: {}", value, valid),
@@ -601,9 +606,9 @@ mod tests {
             })
         );
         assert_eq!(
-            SetCommand::parse(":set theme??"),
+            SetCommand::parse(":set syntax_theme??"),
             Ok(SetCommand::QueryHistory {
-                key: "theme".into()
+                key: "syntax_theme".into()
             })
         );
     }
@@ -696,9 +701,9 @@ mod tests {
             })
         );
         assert_eq!(
-            SetCommand::parse(":set theme=monokai"),
+            SetCommand::parse(":set syntax_theme=monokai"),
             Ok(SetCommand::Set {
-                key: "theme".into(),
+                key: "syntax_theme".into(),
                 value: "monokai".into()
             })
         );
@@ -780,9 +785,9 @@ mod tests {
     #[test]
     fn parse_value_with_spaces() {
         assert_eq!(
-            SetCommand::parse("theme base16-ocean.dark"),
+            SetCommand::parse("syntax_theme base16-ocean.dark"),
             Ok(SetCommand::Set {
-                key: "theme".into(),
+                key: "syntax_theme".into(),
                 value: "base16-ocean.dark".into()
             })
         );
@@ -878,19 +883,19 @@ mod tests {
     }
 
     #[test]
-    fn theme_valid_syntect_theme_is_tui_local() {
+    fn syntax_theme_valid_value_is_tui_local() {
         assert_eq!(
-            validate_set_for_cli("theme=InspiredGitHub"),
+            validate_set_for_cli("syntax_theme=InspiredGitHub"),
             Ok(SetEffect::TuiLocal {
-                key: "theme".to_string(),
+                key: "syntax_theme".to_string(),
                 value: CliValue::Set("InspiredGitHub".to_string()),
             })
         );
     }
 
     #[test]
-    fn theme_unknown_value_rejected_with_valid_list() {
-        match validate_set_for_cli("theme=no-such-theme") {
+    fn syntax_theme_unknown_value_rejected_with_valid_list() {
+        match validate_set_for_cli("syntax_theme=no-such-theme") {
             Err(SetError::InvalidValue { message, .. }) => assert!(
                 message.contains("base16-ocean.dark"),
                 "error should list valid themes: {message}"

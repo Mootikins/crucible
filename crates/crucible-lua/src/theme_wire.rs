@@ -49,6 +49,16 @@ fn color_to_name(color: Color) -> String {
         Color::White => "white".to_string(),
         Color::Gray => "gray".to_string(),
         Color::DarkGray => "dark_gray".to_string(),
+        Color::BrightRed => "bright_red".to_string(),
+        Color::BrightGreen => "bright_green".to_string(),
+        Color::BrightYellow => "bright_yellow".to_string(),
+        Color::BrightBlue => "bright_blue".to_string(),
+        Color::BrightMagenta => "bright_magenta".to_string(),
+        Color::BrightCyan => "bright_cyan".to_string(),
+        Color::BrightWhite => "bright_white".to_string(),
+        // Indices cross the wire as numbers-in-strings, which `parse_color_string`
+        // reads back as an index — so the round trip is lossless.
+        Color::Indexed(i) => i.to_string(),
         Color::Reset => "reset".to_string(),
         Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
     }
@@ -421,6 +431,19 @@ mod tests {
 
     /// The point of the handshake: a genuinely adaptive value must stay a pair
     /// so the client can pick using its own terminal background.
+    /// Terminal palette entries must survive the wire, or a theme written
+    /// against the user's terminal colours silently degrades to fixed RGB.
+    #[test]
+    fn palette_indices_round_trip() {
+        let mut t = ThemeConfig::default_dark();
+        t.colors.primary = AdaptiveColor::from_single(Color::Indexed(4));
+        t.colors.secondary = AdaptiveColor::from_single(Color::BrightMagenta);
+
+        let restored = theme_from_wire(&theme_to_wire(&t));
+        assert_eq!(restored.colors.primary.dark, Color::Indexed(4));
+        assert_eq!(restored.colors.secondary.dark, Color::BrightMagenta);
+    }
+
     #[test]
     fn adaptive_colors_stay_unresolved_as_a_pair() {
         let mut t = ThemeConfig::default_dark();

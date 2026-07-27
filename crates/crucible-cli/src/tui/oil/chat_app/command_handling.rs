@@ -780,12 +780,12 @@ impl OilChatApp {
                     self.permission.perm_full_commands = val.as_bool().unwrap_or(true);
                 }
             }
-            "theme" => match self.runtime_config.get("theme") {
+            "syntax_theme" => match self.runtime_config.get("syntax_theme") {
                 Some(ConfigValue::String(name)) => {
                     crate::formatting::syntax::set_active_theme(&name);
                 }
-                // Reset (`:set theme&`) removed the entry — rendering must
-                // revert to the config-seeded theme, not keep the override.
+                // Reset (`:set syntax_theme&`) removed the entry — rendering
+                // must revert to the config-seeded theme, not keep the override.
                 _ => crate::formatting::syntax::clear_theme_override(),
             },
             "precognition" => {
@@ -1181,26 +1181,26 @@ mod tests {
     /// highlighting state that diff/code renders read (US-104 honesty: the
     /// knob must do what its ack claims).
     #[test]
-    fn set_theme_updates_active_syntax_theme() {
+    fn set_syntax_theme_updates_the_active_highlighter() {
         let _guard = crate::formatting::syntax::ACTIVE_STATE_TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut app = app();
-        let action = run_set(&mut app, "theme=Solarized (dark)");
+        let action = run_set(&mut app, "syntax_theme=Solarized (dark)");
         assert!(matches!(action, Action::Continue));
         assert_eq!(
             crate::formatting::syntax::active_theme_name(),
             "Solarized (dark)"
         );
-        let stored = app.runtime_config.get("theme").expect("stored");
+        let stored = app.runtime_config.get("syntax_theme").expect("stored");
         assert_eq!(stored.as_string(), Some("Solarized (dark)"));
     }
 
-    /// `:set theme&` must revert the RENDERED theme, not just the stored
+    /// `:set syntax_theme&` must revert the RENDERED theme, not just the stored
     /// value — otherwise the query reports the default while diffs/code
     /// blocks keep highlighting with the old override.
     #[test]
-    fn set_theme_reset_reverts_active_theme_to_seed() {
+    fn set_syntax_theme_reset_reverts_active_theme_to_seed() {
         let _guard = crate::formatting::syntax::ACTIVE_STATE_TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -1209,12 +1209,12 @@ mod tests {
             theme: "base16-eighties.dark".to_string(),
         });
         let mut app = app();
-        run_set(&mut app, "theme=InspiredGitHub");
+        run_set(&mut app, "syntax_theme=InspiredGitHub");
         assert_eq!(
             crate::formatting::syntax::active_theme_name(),
             "InspiredGitHub"
         );
-        run_set(&mut app, "theme&");
+        run_set(&mut app, "syntax_theme&");
         assert_eq!(
             crate::formatting::syntax::active_theme_name(),
             "base16-eighties.dark",
@@ -1223,16 +1223,16 @@ mod tests {
     }
 
     #[test]
-    fn set_theme_invalid_value_warns_and_leaves_state() {
+    fn set_syntax_theme_invalid_value_warns_and_leaves_state() {
         let mut app = app();
-        let action = run_set(&mut app, "theme=no-such-theme");
+        let action = run_set(&mut app, "syntax_theme=no-such-theme");
         assert!(matches!(action, Action::Continue));
         assert!(
             app.has_notifications(),
             "invalid theme should surface a warning listing valid themes"
         );
         assert!(
-            app.runtime_config.get("theme").is_none(),
+            app.runtime_config.get("syntax_theme").is_none(),
             "rejected value must not be stored"
         );
     }

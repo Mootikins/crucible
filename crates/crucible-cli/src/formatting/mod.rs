@@ -12,6 +12,7 @@ mod markdown_renderer;
 pub use markdown_renderer::render_markdown;
 
 pub mod syntax;
+pub mod syntax_theme;
 pub use syntax::{HighlightedLine, HighlightedSpan, SyntaxHighlighter};
 
 /// Standard output format types supported across all commands

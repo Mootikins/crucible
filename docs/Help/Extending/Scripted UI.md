@@ -26,13 +26,23 @@ statusline layout.
 > never registered in a running daemon and have been removed. For asking the user
 > something from a handler, use `cru.interaction`.
 
-## Themes
+## Three things, three names
 
-A theme is a palette. Define one inline, or drop a file in
-`~/.config/crucible/themes/`.
+"Theme" used to mean three unrelated things here. They are now named separately:
+
+| Name | Covers |
+|---|---|
+| `crucible.colorscheme` | the colour palette, and what highlight groups resolve against |
+| `crucible.ui` | surface geometry, prompt glyphs, layout |
+| `crucible.syntax` | code highlighting inside fenced blocks |
+
+## Colorscheme
+
+A colorscheme is a palette. Define one inline, or drop a file in
+`~/.config/crucible/themes/` and switch with `ui.set_theme`.
 
 ```lua
-crucible.theme.setup{
+crucible.colorscheme.setup{
   name = "my-theme",
   is_dark = true,
   colors = {
@@ -45,8 +55,25 @@ crucible.theme.setup{
 }
 ```
 
-Colour values are a named colour (`"cyan"`), hex (`"#282c34"`), or an adaptive
-pair. Adaptive pairs cross the wire **unresolved** — the daemon cannot know which
+### Colour values
+
+| Form | Example | Meaning |
+|---|---|---|
+| slot | `term4`, `4` | terminal palette entry 4 — whatever the user put there |
+| name | `"blue"`, `"bright_magenta"` | an alias for a slot (see below) |
+| hex | `"#282c34"` | a literal colour |
+| adaptive | `{ dark = …, light = … }` | resolved by the client, per terminal background |
+| `"none"` | | the terminal's own default |
+
+**The names are slot aliases, not colour promises.** `"blue"` is exactly
+`term4`, and plenty of terminal themes put something other than blue in slot 4.
+When a theme means "whatever the user calls blue", `term4` says so honestly;
+when it means blue specifically, use hex.
+
+Slots run 0-15. Indices 16-255 are the fixed xterm cube — no terminal palette to
+defer to, so they render the same everywhere.
+
+Adaptive pairs cross the wire **unresolved** — the daemon cannot know which
 terminal a client is attached to, so the client resolves them.
 
 ## Highlight groups
@@ -101,6 +128,33 @@ border = { "", "▀", "", "", "", "▄", "", "" } -- rules above and below, no s
 
 A shorter list repeats. An empty string means that edge is **absent and occupies
 no cell** — distinct from `" "`, a blank edge that still takes one.
+
+## Syntax highlighting
+
+By default code blocks derive their colours from the colorscheme, so a fenced
+block does not clash with the chat around it:
+
+```lua
+crucible.syntax.setup{
+  theme  = "derived",        -- the default; or any syntect theme by name
+  colors = {                 -- override individual scopes
+    keyword = "#c678dd",
+    string  = "success",     -- palette reference
+    comment = "term8",       -- terminal slot
+  },
+}
+```
+
+`:set syntax_theme=monokai` switches at runtime; `:set syntax_theme=derived`
+goes back to following the colorscheme.
+
+The derivation maps keyword←`primary`, string←`success`, comment←`text_dim`,
+number←`warning`, type←`info`, function←`secondary`. That is conventional, not
+authoritative — override any slot that reads wrong.
+
+Terminal slots survive into code blocks, even though syntect's own colour type
+is RGB-only, so a colorscheme written against terminal colours applies to code
+as well as to chrome.
 
 ## Statusline
 
