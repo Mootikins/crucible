@@ -38,21 +38,35 @@ pub struct CanvasLinks {
 
 /// Extract the links and tags a canvas contributes.
 ///
-/// `file` node paths are emitted as-is; they are kiln-relative paths and the
-/// link resolver already accepts a path-form target. Wikilinks inside `text`
-/// nodes are parsed with the ordinary markdown parser, so a canvas card
-/// containing `[[Some Note]]` links exactly as a note would.
+/// `file` node paths are emitted as kiln-relative link targets, which the link
+/// resolver already accepts in path form. Wikilinks inside `text` nodes are
+/// parsed with the ordinary markdown parser, so a canvas card containing
+/// `[[Some Note]]` links exactly as a note would.
+///
+/// References that fail containment are dropped rather than indexed. They
+/// resolve to nothing by definition, so indexing them grants no access — but a
+/// dangling row keeps its raw target, and `kiln.graph` surfaces unresolved
+/// targets as ghost nodes labelled with that text. A hand-edited canvas would
+/// otherwise put an attacker-chosen string like `../../../etc/passwd` on screen
+/// in the graph view. `kiln_root` is `None` only in tests that are not
+/// exercising containment.
 pub async fn extract_links(
     canvas: &Canvas,
     parser: &dyn crucible_core::parser::MarkdownParser,
     source_path: &Path,
+    kiln_root: Option<&Path>,
 ) -> CanvasLinks {
     let mut links_to = Vec::new();
     let mut tags = Vec::new();
 
+    let contained = |reference: &str| match kiln_root {
+        Some(root) => crucible_core::canvas::containment::resolve_file_ref(reference, root).is_ok(),
+        None => true,
+    };
+
     for node in &canvas.nodes {
         match &node.kind {
-            NodeKind::File { file, .. } if !file.is_empty() => {
+            NodeKind::File { file, .. } if !file.is_empty() && contained(file) => {
                 links_to.push(file.clone());
             }
             NodeKind::Text { text } => {
@@ -90,7 +104,7 @@ pub async fn canvas_to_record(
     let canvas =
         Canvas::parse(&source).with_context(|| format!("parsing canvas '{}'", path.display()))?;
 
-    let links = extract_links(&canvas, parser, path).await;
+    let links = extract_links(&canvas, parser, path, kiln_root).await;
 
     let content_hash = BlockHash::new(*blake3::hash(source.as_bytes()).as_bytes());
 
@@ -145,7 +159,7 @@ mod tests {
             ]
         }));
 
-        let links = extract_links(&c, &parser(), Path::new("board.canvas")).await;
+        let links = extract_links(&c, &parser(), Path::new("board.canvas"), None).await;
         assert_eq!(links.links_to, ["Help/Wikilinks.md", "Meta/Systems.md"]);
     }
 
@@ -161,7 +175,7 @@ mod tests {
             }]
         }));
 
-        let links = extract_links(&c, &parser(), Path::new("board.canvas")).await;
+        let links = extract_links(&c, &parser(), Path::new("board.canvas"), None).await;
         assert!(links.links_to.contains(&"Another Note".to_string()));
         assert!(links.links_to.contains(&"Third".to_string()));
         assert!(links.tags.contains(&"topic".to_string()));
@@ -178,7 +192,7 @@ mod tests {
             ]
         }));
 
-        let links = extract_links(&c, &parser(), Path::new("board.canvas")).await;
+        let links = extract_links(&c, &parser(), Path::new("board.canvas"), None).await;
         assert!(links.links_to.is_empty(), "{:?}", links.links_to);
     }
 
@@ -191,7 +205,7 @@ mod tests {
                         "file": "" }]
         }));
 
-        let links = extract_links(&c, &parser(), Path::new("board.canvas")).await;
+        let links = extract_links(&c, &parser(), Path::new("board.canvas"), None).await;
         assert!(links.links_to.is_empty());
     }
 
@@ -233,6 +247,50 @@ mod tests {
                 .await
                 .is_err(),
             "silently indexing a broken canvas as empty would erase its real links"
+        );
+    }
+}
+
+#[cfg(test)]
+mod containment_tests {
+    use super::*;
+    use crucible_core::parser::implementation::CrucibleParser;
+
+    /// A hand-edited canvas naming a path outside the kiln must not put that
+    /// path into the link index. It resolves to nothing, so it grants no
+    /// access — but `kiln.graph` renders unresolved targets as ghost nodes
+    /// labelled with their raw text, which would display an attacker-chosen
+    /// string in the graph view.
+    #[tokio::test]
+    async fn an_uncontained_reference_never_reaches_the_link_index() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let canvas = Canvas::parse(
+            &serde_json::json!({
+                "nodes": [
+                    { "id": "ok", "type": "file", "x": 0, "y": 0, "width": 1, "height": 1,
+                      "file": "Notes/Fine.md" },
+                    { "id": "bad", "type": "file", "x": 0, "y": 0, "width": 1, "height": 1,
+                      "file": "../../../etc/passwd" },
+                    { "id": "abs", "type": "file", "x": 0, "y": 0, "width": 1, "height": 1,
+                      "file": "/etc/shadow" }
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let links = extract_links(
+            &canvas,
+            &CrucibleParser::new(),
+            Path::new("board.canvas"),
+            Some(tmp.path()),
+        )
+        .await;
+
+        assert_eq!(
+            links.links_to,
+            ["Notes/Fine.md"],
+            "only contained references may be indexed"
         );
     }
 }
