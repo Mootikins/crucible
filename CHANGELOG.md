@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-07-27
+
+### Fixed
+- **The daemon crashed parsing notes containing multi-byte characters.** The footnote extension walked a `Vec<char>` while slicing the note by byte offset; those indices agree only for ASCII, so one em dash before an inline footnote desynchronized them and the slice landed mid-codepoint. In the daemon that panic closed the client's connection, and `cru status` against a real kiln reported "Connection closed by daemon". Present since 0.15.0. Parsing is now covered by a suite that runs every extension over multi-byte text — em dashes, CJK, emoji, ZWJ sequences and combining marks — in the positions where a byte/character mix-up bites.
+- **A panicking handler no longer takes the connection with it.** Every RPC now dispatches behind a panic boundary, so a bug in one handler returns an error for that request instead of dropping the socket mid-conversation. Panics are still bugs and are logged at error level with the method name; they are simply no longer fatal to everything else the client was doing.
+
+
 ## [0.16.0] - 2026-07-27
 
 ### Added

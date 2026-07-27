@@ -132,7 +132,7 @@ impl SyntaxExtension for FootnoteExtension {
             let caret = i + rel;
 
             // A `^` directly after `[` opens a reference, not an inline note.
-            let after_bracket = content[..caret].chars().next_back() == Some('[');
+            let after_bracket = content[..caret].ends_with('[');
 
             if caret > 0 && !after_bracket {
                 if let Some(end_rel) = content[caret + 1..].find('^') {

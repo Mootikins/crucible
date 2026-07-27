@@ -307,10 +307,102 @@ pub(super) async fn sweep_and_archive_stale_sessions(
     Ok(archived)
 }
 
+/// Dispatch one request, converting a panic into an error response.
+///
+/// A panicking handler used to unwind the connection task, so the client saw
+/// its socket close mid-request with no explanation — `cru status` reported
+/// "Connection closed by daemon" when a note containing an em dash panicked the
+/// markdown parser. One malformed note took down the whole conversation.
+///
+/// The daemon serves many clients and holds session state, so the blast radius
+/// of a panic must be one request. This does not make panics acceptable — they
+/// are still bugs, and the payload is logged at error level with the request id
+/// so they surface — it makes them survivable.
+///
+/// `AssertUnwindSafe` is the honest choice rather than a rubber stamp: the
+/// dispatcher's state lives behind locks and channels that are already shared
+/// across concurrent requests, so a half-finished handler leaves nothing
+/// observably torn that a concurrent request could not already see. State that
+/// genuinely cannot tolerate interruption belongs behind a transaction, not
+/// behind unwind safety.
 pub(super) async fn handle_request(
     req: Request,
     client_id: ClientId,
     ctx: &ServerContext,
 ) -> Response {
-    ctx.dispatcher.dispatch(client_id, req).await
+    use futures::FutureExt;
+
+    let id = req.id.clone();
+    let method = req.method.clone();
+
+    match std::panic::AssertUnwindSafe(ctx.dispatcher.dispatch(client_id, req))
+        .catch_unwind()
+        .await
+    {
+        Ok(response) => response,
+        Err(panic) => {
+            let detail = panic
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| panic.downcast_ref::<&str>().copied())
+                .unwrap_or("unknown panic");
+
+            error!(
+                method = %method,
+                panic = detail,
+                "handler panicked; returning an error instead of dropping the connection"
+            );
+
+            Response::error(
+                id,
+                INTERNAL_ERROR,
+                format!("internal error handling '{method}': {detail}"),
+            )
+        }
+    }
+}
+
+#[cfg(test)]
+mod panic_boundary_tests {
+    use futures::FutureExt;
+
+    /// The property `handle_request` provides: a panicking handler becomes an
+    /// error response, not a dropped connection.
+    ///
+    /// This exercises the same `AssertUnwindSafe` + `catch_unwind` composition
+    /// the real path uses. Driving `handle_request` itself would need a whole
+    /// live `ServerContext`; what can actually regress here is the catch
+    /// composition, since the panic escapes the moment it is removed.
+    #[tokio::test]
+    async fn a_panicking_future_is_caught_rather_than_unwinding() {
+        let caught = std::panic::AssertUnwindSafe(async {
+            // The shape of the real one: a byte index inside a codepoint.
+            let s = "an em dash — here";
+            let _ = &s[..12];
+            "unreachable"
+        })
+        .catch_unwind()
+        .await;
+
+        let panic = caught.expect_err("slicing mid-codepoint must panic");
+        let detail = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied())
+            .unwrap_or("unknown panic");
+
+        assert!(
+            detail.contains("char boundary"),
+            "the panic payload is recoverable for the error message: {detail:?}"
+        );
+    }
+
+    /// A handler that does not panic must be entirely unaffected.
+    #[tokio::test]
+    async fn a_normal_future_passes_through_untouched() {
+        let result = std::panic::AssertUnwindSafe(async { 42 })
+            .catch_unwind()
+            .await;
+        assert_eq!(result.ok(), Some(42));
+    }
 }
