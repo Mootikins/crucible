@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-07-27
+
+### Added
+- **The TUI is themed from Lua.** `crucible.colorscheme.setup{}` defines a palette, `crucible.hl.set/link` define and link highlight groups, and `crucible.ui.setup{}` sets per-surface geometry — borders, padding, prompt glyphs. The Lua VM lives only in the daemon, so all of it is delivered to every attached client as data over a `ui.config` RPC, and a change repaints without a restart. Before this, `crucible.theme` was nil in the VM that evaluates your `init.lua`, so a theme never parsed at all.
+- **Colours can defer to your terminal.** `term4`, a bare `4`, or `"bright_magenta"` name a terminal palette slot rather than a fixed colour, so a colorscheme follows whatever the user's terminal theme puts there. The names are slot aliases, not appearance promises — `"blue"` is exactly slot 4, which plenty of themes fill with something else, so `term4` is the honest spelling and hex is for when you mean a specific colour. Adaptive `{ dark, light }` pairs cross the wire unresolved, because the daemon cannot know which terminal a client is attached to.
+- **Code blocks follow the colorscheme.** `crucible.syntax.setup{ theme = "derived" }` (the default) builds a syntect theme from the palette so a fenced block does not clash with the chat around it; `:set syntax_theme=<name>` switches to any bundled theme at runtime. Terminal palette slots survive into code even though syntect's colour type is RGB-only.
+- **The statusline is composed from named items.** `sl.mode`, `sl.model{ max = 25 }`, `sl.expr("git")` and friends, with `sl.any`/`sl.when` for fallback and conditions the TUI alone can answer. Deliberately not `%X` format strings: sigils need escaping rules, and the distinction between "insert as text" and "re-interpret as format" is exactly where ANSI injection lives.
+- **The screen is three ordered regions** — `top`, `prompt`, `bottom` — and `sl.input` is an element within one, so rows written above or below the editor render above or below it. Position in the list is the arrangement; there is no ordering field to get wrong. The shipped default is authored in `runtime/statusline/default.lua` in the same vocabulary you would write.
+- **Daemon-computed statusline values.** A handler supplies a git branch or a queue depth with `cru.statusline.set(session, "git", value)`, and the placed `sl.expr("git")` renders it. Values are text, never escape sequences, which is what lets the TUI strip control characters from them unconditionally. An unset value renders nothing, so a bar does not jump when one first arrives.
+- **Lua can hook file-watch events.** `crucible.on("FileChanged", ...)` fires when the workspace changes — the trigger a value like git status actually needs, since files change while you are not in a turn.
+- Per-edge border characters, matching Neovim's `nvim_open_win` order. An empty string means that edge is absent and occupies no cell, distinct from `" "`, which is blank but still takes one.
+
+### Changed
+- **"Theme" meant three unrelated things and now means none of them.** `crucible.colorscheme` is the palette, `crucible.ui` is geometry, `crucible.syntax` is code highlighting. `:set theme=` became `:set syntax_theme=`.
+- The statusline config shape changed with the region model: bars used to be named (`main = { anchor = ..., items = ... }`). That spelling still reads as valid, so a key that is not a region now warns rather than silently placing nothing.
+- Gray and dark gray now emit the terminal's own palette entries on every render path. One path mapped them to the palette while another hardcoded 256-colour approximations, so the same colour rendered differently depending on how it got there, and neither followed the user's terminal.
+
+### Fixed
+- **A theme chosen at runtime was reset by the next `cru chat`.** Registering the UI namespaces seeded the built-in default unconditionally, and `lua.init_session` re-enters that on a throwaway VM for every client — so a palette installed by `ui.set_theme` snapped back to the default the moment a second client connected.
+- **A global style change reached no one.** Delivery filters on a session id and every TUI subscribes to its own, so a change addressed to a placeholder session was dropped while the RPC reported success. The wildcard was also asymmetric: subscribing to `*` worked, but addressing `*` matched nothing.
+- **Statusline values were recorded and never delivered.** The change notifier had no production caller, so a pushed value updated only when something else happened to trigger a repaint.
+- **Bidi and zero-width characters could reorder the statusline.** They are not control characters, so stripping `is_control` let them through, and a right-to-left override changes how a bar reads without changing what it contains — in a branch name, that is attacker-influenced in any repo you clone.
+- **The completion popup could paint over the footer.** It reserved a fixed three lines, which was the footer height only while the footer was one bar and the input one line; it was already wrong for a wrapped multi-line message. It now measures the prompt region.
+- The web model picker could show a stale list, because two overlapping requests could resolve out of order and the older one win.
+
+
 ## [0.15.0] - 2026-07-24
 
 ### Added
