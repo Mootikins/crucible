@@ -79,14 +79,21 @@ async fn list_notes(
 /// different root, is how a link in one vault silently opens a same-named note
 /// from another.
 async fn resolve_note(
+    State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<ResolveQuery>,
 ) -> Result<Json<serde_json::Value>, WebError> {
     validate_note_name(&query.name)?;
 
-    let root = query
-        .kiln
-        .canonicalize()
-        .map_err(|_| WebError::NotFound("Kiln directory does not exist".to_string()))?;
+    // The caller does NOT get to nominate the root.
+    //
+    // Taking `kiln` at face value made this an existence-and-path oracle for
+    // the whole filesystem: `?kiln=/etc&name=passwd` answered, as did
+    // `?kiln=/&name=etc/shadow` (which also walked the entire disk). It ignored
+    // a project's `project_files` policy that every sibling route honours. The
+    // supplied path is resolved through the same kiln-then-project rule the
+    // canvas endpoints use, and the CANONICAL root that comes back is what gets
+    // walked — so the walk is bounded by a registered root, not by argv.
+    let (root, _policy) = super::canvas::enclosing_root(&state, &query.kiln).await?;
 
     // Strip an alias/heading/block suffix — `[[Note|alias]]`, `[[Note#Heading]]`.
     let target = query
@@ -99,6 +106,12 @@ async fn resolve_note(
     let bare = target.strip_suffix(".md").unwrap_or(&target);
 
     for candidate in [root.join(format!("{bare}.md")), root.join(&target)] {
+        // Notes only, matching the walk below. Without this the exact-path
+        // branch resolved ANY file — `.ssh/id_ed25519` answered — because
+        // `contained_file` checks containment, not kind.
+        if !crucible_core::kiln::is_note_file(&candidate) {
+            continue;
+        }
         if let Some(contained) = contained_file(&candidate, &root) {
             return Ok(Json(resolved_json(&root, &contained)));
         }

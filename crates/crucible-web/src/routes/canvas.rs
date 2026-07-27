@@ -109,14 +109,15 @@ async fn put_canvas(
         ));
     }
 
-    // Create the destination folder first: validation canonicalizes the parent
-    // and refuses one that does not exist, so a `create_dir_all` afterwards
-    // could never run. Doing it here, strictly inside the already-resolved kiln
-    // root, keeps "save into a new subfolder" working. The lexical guard is
-    // what makes that safe — `reject_path_traversal` ran above, and the join is
-    // re-checked by the validation immediately below.
-    if let Some(parent) = path.parent().filter(|p| p.starts_with(&kiln)) {
-        fs::create_dir_all(parent).await.map_err(WebError::Io)?;
+    // Create the destination folder, but only after proving the parent chain
+    // resolves inside the kiln. Guarding on `starts_with` alone is lexical, so
+    // a planted symlink got a directory created OUTSIDE the kiln and only then
+    // had the request refused — a side effect surviving a rejected write.
+    //
+    // Each missing component is checked against the canonical root as it is
+    // created, so the walk can never step through a link out of the kiln.
+    if let Some(parent) = path.parent() {
+        create_dir_within(parent, &kiln).await?;
     }
 
     // Without this, `fs::write` follows a pre-planted symlink and writes
@@ -187,7 +188,7 @@ async fn enclosing_kiln(state: &AppState, path: &Path) -> Result<PathBuf, WebErr
 }
 
 /// As [`enclosing_kiln`], but also reporting whether writes are permitted.
-async fn enclosing_root(
+pub(crate) async fn enclosing_root(
     state: &AppState,
     path: &Path,
 ) -> Result<(PathBuf, ProjectFileAccess), WebError> {
@@ -246,6 +247,49 @@ async fn enclosing_root(
     }
 }
 
+/// Create `dir` and any missing ancestors, refusing to step outside `root`.
+///
+/// Built bottom-up so every level that already exists is canonicalized and
+/// checked before the next is created. `create_dir_all` on a lexically-checked
+/// path will happily follow a symlink partway down.
+async fn create_dir_within(dir: &Path, root: &Path) -> Result<(), WebError> {
+    let mut missing = Vec::new();
+    let mut cursor = dir.to_path_buf();
+
+    let existing = loop {
+        match cursor.canonicalize() {
+            Ok(resolved) => break resolved,
+            Err(_) => {
+                let Some(parent) = cursor.parent().map(Path::to_path_buf) else {
+                    return Err(WebError::Validation(
+                        "Destination is outside the kiln".to_string(),
+                    ));
+                };
+                let Some(name) = cursor.file_name().map(|n| n.to_os_string()) else {
+                    return Err(WebError::Validation(
+                        "Destination is outside the kiln".to_string(),
+                    ));
+                };
+                missing.push(name);
+                cursor = parent;
+            }
+        }
+    };
+
+    if !existing.starts_with(root) {
+        return Err(WebError::Validation(
+            "Destination is outside the kiln".to_string(),
+        ));
+    }
+
+    let mut here = existing;
+    for name in missing.into_iter().rev() {
+        here.push(name);
+        fs::create_dir(&here).await.map_err(WebError::Io)?;
+    }
+    Ok(())
+}
+
 /// Put back any reference the read path blanked before this document was sent.
 ///
 /// Nodes are matched by position *and* id, so a reordered or restructured
@@ -257,10 +301,20 @@ async fn enclosing_root(
 fn restore_redacted(incoming: &mut Canvas, on_disk: &Canvas, kiln_root: &Path) {
     let was_redacted = |reference: &str| matches!(resolve_file_ref(reference, kiln_root), Err(e) if e != RefError::Empty);
 
-    for (node, previous) in incoming.nodes.iter_mut().zip(on_disk.nodes.iter()) {
-        if node.id != previous.id {
+    // Matched by id, not position. Zipping the two lists paired the wrong
+    // nodes the moment a card was added, deleted or brought to front (node
+    // order IS z-order), the id guard then declined, and the withheld
+    // reference was written away — precisely what this function exists to
+    // prevent, on the commonest edit there is.
+    //
+    // Ids are not guaranteed unique, so a duplicated id restores from the
+    // first on-disk node carrying it: the same conservative direction
+    // `redact` takes, and it can only ever put back a reference that was
+    // already on disk.
+    for node in incoming.nodes.iter_mut() {
+        let Some(previous) = on_disk.nodes.iter().find(|n| n.id == node.id) else {
             continue;
-        }
+        };
         match (&mut node.kind, &previous.kind) {
             (
                 NodeKind::File { file, subpath },
@@ -496,6 +550,41 @@ mod tests {
         assert!(
             !json.contains("shadow"),
             "the path must not be reflected back: {json}"
+        );
+    }
+
+    /// The commonest edit there is — adding a card — used to shift every
+    /// index, so a position-paired restore declined and wrote the blank away.
+    #[test]
+    fn a_withheld_reference_survives_a_node_being_added_above_it() {
+        let tmp = TempDir::new().unwrap();
+        let on_disk = canvas_with("../shared/Design.md");
+
+        let mut served = on_disk.clone();
+        redact(&mut served, tmp.path());
+
+        // The client prepends a card, which shifts every index by one.
+        let mut incoming = served.clone();
+        incoming.nodes.insert(
+            0,
+            Canvas::parse(
+                &serde_json::json!({
+                    "nodes": [{ "id": "added", "type": "text", "x": 0, "y": 0,
+                                "width": 1, "height": 1, "text": "new" }]
+                })
+                .to_string(),
+            )
+            .unwrap()
+            .nodes
+            .remove(0),
+        );
+
+        restore_redacted(&mut incoming, &on_disk, tmp.path());
+
+        assert_eq!(
+            incoming.file_paths().collect::<Vec<_>>(),
+            ["../shared/Design.md"],
+            "restoring must match by id, not by position"
         );
     }
 
