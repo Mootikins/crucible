@@ -40,6 +40,15 @@ use super::{Canvas, NodeKind};
 /// Why a canvas file reference was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum RefError {
+    /// The reference names nothing.
+    ///
+    /// Not a containment violation — an empty path cannot escape anything — and
+    /// [`validate_canvas`] treats it as such, because it is exactly the state
+    /// redaction leaves behind and rejecting it would make a redacted canvas
+    /// unsavable. It is still an error rather than an `Ok`, so no caller is
+    /// handed a path (the kiln root) that would *look* contained.
+    #[error("reference is empty")]
+    Empty,
     #[error("reference is an absolute path; canvas references must be kiln-relative")]
     Absolute,
     #[error("reference escapes the kiln via a parent-directory component")]
@@ -73,14 +82,8 @@ pub struct RejectedRef {
 /// there; the lexical checks apply always, so a non-existent path can never
 /// sneak through by virtue of being absent.
 pub fn resolve_file_ref(reference: &str, kiln_root: &Path) -> Result<PathBuf, RefError> {
-    // An empty reference names nothing, so it cannot escape anything. It is
-    // also the state redaction leaves behind, and treating it as a violation
-    // made a canvas with one bad reference permanently unsavable: the read path
-    // blanked the path, the client kept that document, and every subsequent
-    // write was refused for a reference the user could no longer see or fix.
-    // Callers that care (the indexer) skip empty references separately.
     if reference.is_empty() {
-        return Ok(kiln_root.to_path_buf());
+        return Err(RefError::Empty);
     }
     if reference.contains('\0') {
         return Err(RefError::InteriorNul);
@@ -140,7 +143,14 @@ pub fn validate_canvas(canvas: &Canvas, kiln_root: &Path) -> Vec<RejectedRef> {
         };
 
         for reference in references {
+            // `Empty` means "names nothing", which is the state redaction
+            // leaves behind. Reporting it would make a redacted canvas
+            // unsavable, and the user could not repair it because the offending
+            // path was deliberately never sent to them.
             if let Err(reason) = resolve_file_ref(reference, kiln_root) {
+                if reason == RefError::Empty {
+                    continue;
+                }
                 rejected.push(RejectedRef {
                     node_id: node.id.clone(),
                     reference: reference.to_string(),
@@ -259,11 +269,13 @@ mod tests {
     #[test]
     fn an_empty_reference_is_inert_not_a_violation() {
         let tmp = TempDir::new().unwrap();
-        assert!(resolve_file_ref("", tmp.path()).is_ok());
 
-        let canvas = canvas_with_file_ref("");
+        // An error, so no caller is handed the kiln root as a "contained" path…
+        assert_eq!(resolve_file_ref("", tmp.path()), Err(RefError::Empty));
+
+        // …but not a violation, so a redacted canvas stays savable.
         assert!(
-            is_contained(&canvas, tmp.path()),
+            is_contained(&canvas_with_file_ref(""), tmp.path()),
             "a redacted canvas must remain savable"
         );
     }

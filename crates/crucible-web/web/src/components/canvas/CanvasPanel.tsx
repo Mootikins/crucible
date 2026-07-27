@@ -108,6 +108,17 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
 
   let surface: HTMLDivElement | undefined;
 
+  /// Pointer capture is best-effort: it throws for a pointer id the element
+  /// does not own, and is absent entirely in jsdom. Losing capture degrades the
+  /// drag slightly; letting it throw would abort the whole interaction.
+  const capturePointer = (id: number) => {
+    try {
+      surface?.setPointerCapture(id);
+    } catch {
+      /* capture unavailable — the drag still tracks via the surface handlers */
+    }
+  };
+
   const doc = () => history().present;
   const rejectedFor = (id: string) => rejected().find((r) => r.nodeId === id)?.reason;
 
@@ -218,7 +229,10 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
 
   const onSurfacePointerDown = (e: PointerEvent) => {
     if (!surface) return;
-    surface.setPointerCapture(e.pointerId);
+    // The shortcuts live on this element now, so it has to actually take focus
+    // — otherwise they only work once the browser has incidentally focused it.
+    surface.focus();
+    capturePointer(e.pointerId);
     const point = pointerCanvas(e);
 
     // Middle button or space-drag pans; anything else on empty space marquees.
@@ -234,7 +248,8 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
   const onNodePointerDown = (e: PointerEvent, id: string) => {
     e.stopPropagation();
     if (!surface) return;
-    surface.setPointerCapture(e.pointerId);
+    surface.focus();
+    capturePointer(e.pointerId);
 
     setSelected((prev) => {
       const next = new Set<string>(e.shiftKey ? prev : []);
@@ -255,13 +270,13 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
 
   const onResizePointerDown = (e: PointerEvent, id: string) => {
     e.stopPropagation();
-    surface?.setPointerCapture(e.pointerId);
+    capturePointer(e.pointerId);
     setDrag({ kind: 'resize', id, startX: e.clientX, startY: e.clientY, origin: doc() });
   };
 
   const onConnectPointerDown = (e: PointerEvent, id: string) => {
     e.stopPropagation();
-    surface?.setPointerCapture(e.pointerId);
+    capturePointer(e.pointerId);
     const point = pointerCanvas(e);
     setDrag({ kind: 'connect', from: id, currentX: point.x, currentY: point.y });
   };
@@ -503,7 +518,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
 
       <div
         ref={surface}
-        class="relative min-h-0 flex-1 overflow-hidden"
+        class="relative min-h-0 flex-1 overflow-hidden outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary"
         classList={{ 'cursor-grab': spaceHeld() }}
         data-testid="canvas-surface"
         onWheel={onWheel}

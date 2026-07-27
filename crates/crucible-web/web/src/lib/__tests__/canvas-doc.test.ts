@@ -17,6 +17,7 @@ import {
   removeNodes,
   resizeNode,
   undo,
+  updateEdge,
   updateNode,
   withGroupMembers,
 } from '../canvas-doc';
@@ -200,6 +201,25 @@ describe('history', () => {
   it('still commits a real move', () => {
     const h = initHistory(a);
     expect(commit(h, moveSelection(a, new Set(['a']), 20, 0))).not.toBe(h);
+  });
+
+  /**
+   * A geometry-only comparison would call these "unchanged" and drop them,
+   * losing the edit while still scheduling a save over it. These are the
+   * mutations that editable cards, a colour picker and edge labels are built
+   * from, so the guard must not be blind to them.
+   */
+  it('commits edits that change no geometry', () => {
+    const base = doc([text('a')], [{ id: 'e', fromNode: 'a', toNode: 'a' }]);
+
+    for (const [name, next] of [
+      ['text', updateNode(base, 'a', { text: 'EDITED' } as Partial<CanvasNode>)],
+      ['colour', updateNode(base, 'a', { color: '4' } as Partial<CanvasNode>)],
+      ['edge label', updateEdge(base, 'e', { label: 'relates to' })],
+    ] as const) {
+      const h = initHistory(base);
+      expect(commit(h, next), `${name} edit must be committed`).not.toBe(h);
+    }
   });
 
   it('discards the redo branch once a new edit lands', () => {

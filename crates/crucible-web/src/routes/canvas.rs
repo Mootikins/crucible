@@ -11,7 +11,9 @@
 //! it, so quarantine is enforced here rather than trusted to the renderer.
 
 use axum::{extract::State, routing::get, Json, Router};
-use crucible_core::canvas::containment::{resolve_file_ref, validate_canvas, RejectedRef};
+use crucible_core::canvas::containment::{
+    resolve_file_ref, validate_canvas, RefError, RejectedRef,
+};
 use crucible_core::canvas::{Canvas, NodeKind};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -99,6 +101,17 @@ async fn put_canvas(
 
     let path = PathBuf::from(&req.path);
     let kiln = enclosing_kiln(&state, &path).await?;
+
+    // Create the destination folder first: validation canonicalizes the parent
+    // and refuses one that does not exist, so a `create_dir_all` afterwards
+    // could never run. Doing it here, strictly inside the already-resolved kiln
+    // root, keeps "save into a new subfolder" working. The lexical guard is
+    // what makes that safe — `reject_path_traversal` ran above, and the join is
+    // re-checked by the validation immediately below.
+    if let Some(parent) = path.parent().filter(|p| p.starts_with(&kiln)) {
+        fs::create_dir_all(parent).await.map_err(WebError::Io)?;
+    }
+
     // Without this, `fs::write` follows a pre-planted symlink and writes
     // outside the kiln even though the parent directory is legitimate — the
     // exact case `validate_write_target_within_kiln` documents. Every other
@@ -121,6 +134,22 @@ async fn put_canvas(
         )));
     }
 
+    // Restore any reference the READ path blanked.
+    //
+    // Redaction deliberately withholds a failing path from the client, so the
+    // document the client holds — and sends back — has an empty reference where
+    // that path was. Writing it through would permanently erase a reference the
+    // user was never shown and cannot recover: a vault synced from a machine
+    // where a note sat behind a symlink, or a canvas authored elsewhere with a
+    // `../shared/note.md` reference, would lose it on the first accidental
+    // click. The bad reference stays exactly as it was; it is not made worse.
+    let mut canvas = canvas;
+    if let Ok(on_disk) = fs::read_to_string(&path).await {
+        if let Ok(previous) = Canvas::parse(&on_disk) {
+            restore_redacted(&mut canvas, &previous, &kiln);
+        }
+    }
+
     // Re-serialize from the parsed document rather than writing the request
     // bytes through. The round-trip is lossless for unknown keys, and this way
     // anything that parsed as a canvas is what lands on disk.
@@ -128,9 +157,6 @@ async fn put_canvas(
         .to_json_pretty()
         .map_err(|e| WebError::Validation(format!("Could not serialize canvas: {e}")))?;
 
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).await.map_err(WebError::Io)?;
-    }
     fs::write(&path, &serialized).await.map_err(WebError::Io)?;
 
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -166,6 +192,46 @@ async fn enclosing_kiln(state: &AppState, path: &Path) -> Result<PathBuf, WebErr
         .ok_or_else(|| WebError::NotFound("Canvas is not within an open kiln".to_string()))
 }
 
+/// Put back any reference the read path blanked before this document was sent.
+///
+/// Nodes are matched by position *and* id, so a reordered or restructured
+/// document simply declines to restore rather than pairing the wrong nodes.
+/// Only a node whose incoming reference is empty and whose on-disk counterpart
+/// held a genuinely uncontained path is touched — a user legitimately clearing
+/// a reference is left alone, because the on-disk value would have been
+/// contained and therefore never redacted in the first place.
+fn restore_redacted(incoming: &mut Canvas, on_disk: &Canvas, kiln_root: &Path) {
+    let was_redacted = |reference: &str| matches!(resolve_file_ref(reference, kiln_root), Err(e) if e != RefError::Empty);
+
+    for (node, previous) in incoming.nodes.iter_mut().zip(on_disk.nodes.iter()) {
+        if node.id != previous.id {
+            continue;
+        }
+        match (&mut node.kind, &previous.kind) {
+            (
+                NodeKind::File { file, subpath },
+                NodeKind::File {
+                    file: old,
+                    subpath: old_subpath,
+                },
+            ) if file.is_empty() && was_redacted(old) => {
+                *file = old.clone();
+                *subpath = old_subpath.clone();
+            }
+            (
+                NodeKind::Group { background, .. },
+                NodeKind::Group {
+                    background: Some(old),
+                    ..
+                },
+            ) if background.is_none() && was_redacted(old) => {
+                *background = Some(old.clone());
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Strip every reference that fails containment from the document.
 ///
 /// Deliberately re-checks each node rather than matching the rejection list by
@@ -175,7 +241,7 @@ async fn enclosing_kiln(state: &AppState, path: &Path) -> Result<PathBuf, WebErr
 /// Walking the nodes makes the redaction structurally complete instead of
 /// dependent on a property the format does not guarantee.
 fn redact(canvas: &mut Canvas, kiln_root: &Path) {
-    let escapes = |reference: &str| resolve_file_ref(reference, kiln_root).is_err();
+    let escapes = |reference: &str| matches!(resolve_file_ref(reference, kiln_root), Err(e) if e != RefError::Empty);
     for node in &mut canvas.nodes {
         match &mut node.kind {
             NodeKind::File { file, subpath } if escapes(file) => {
@@ -208,6 +274,7 @@ fn rejected_json(rejected: &[RejectedRef]) -> Vec<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::canvas::containment::is_contained;
     use crucible_core::canvas::Canvas;
     use tempfile::TempDir;
 
@@ -278,6 +345,73 @@ mod tests {
             serialized.contains("Fine.md"),
             "the valid twin must survive"
         );
+    }
+
+    /// The read path withholds a failing reference, so the document coming back
+    /// has a blank where it was. Writing that through would permanently erase a
+    /// reference the user was never shown and cannot recover.
+    #[test]
+    fn a_save_never_overwrites_a_withheld_reference_with_the_blank() {
+        let tmp = TempDir::new().unwrap();
+
+        // What is on disk: a reference that fails containment.
+        let on_disk = canvas_with("../shared/Design.md");
+        // What the client holds after GET: the same document, redacted.
+        let mut served = on_disk.clone();
+        redact(&mut served, tmp.path());
+        assert_eq!(served.file_paths().collect::<Vec<_>>(), [""]);
+
+        // The client sends that document back after any edit.
+        let mut incoming = served.clone();
+        restore_redacted(&mut incoming, &on_disk, tmp.path());
+
+        assert_eq!(
+            incoming.file_paths().collect::<Vec<_>>(),
+            ["../shared/Design.md"],
+            "the withheld reference must survive a round trip through the client"
+        );
+        assert!(
+            !is_contained(&incoming, tmp.path()),
+            "restoring must not pretend the reference became valid"
+        );
+    }
+
+    /// Restoration must not resurrect a reference the user deliberately cleared.
+    #[test]
+    fn a_user_clearing_a_valid_reference_is_respected() {
+        let tmp = TempDir::new().unwrap();
+        let on_disk = canvas_with("Notes/Fine.md");
+
+        let mut incoming = canvas_with("");
+        restore_redacted(&mut incoming, &on_disk, tmp.path());
+
+        assert_eq!(
+            incoming.file_paths().collect::<Vec<_>>(),
+            [""],
+            "a contained path was never redacted, so clearing it was the user"
+        );
+    }
+
+    /// A restructured document must decline to restore rather than pair the
+    /// wrong nodes together.
+    #[test]
+    fn restoration_declines_when_nodes_no_longer_line_up() {
+        let tmp = TempDir::new().unwrap();
+        let on_disk = canvas_with("../escape.md");
+
+        let mut incoming = Canvas::parse(
+            &serde_json::json!({
+                "nodes": [{
+                    "id": "different", "type": "file",
+                    "x": 0, "y": 0, "width": 1, "height": 1, "file": ""
+                }]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        restore_redacted(&mut incoming, &on_disk, tmp.path());
+
+        assert_eq!(incoming.file_paths().collect::<Vec<_>>(), [""]);
     }
 
     #[test]

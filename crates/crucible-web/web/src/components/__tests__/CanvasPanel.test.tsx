@@ -120,6 +120,63 @@ describe('CanvasPanel', () => {
     expect(container.querySelector('iframe')).toBeNull();
   });
 
+  /**
+   * The shortcuts were bound to `window`, so Delete and Ctrl+Z fired while the
+   * user was focused on the file tree or another pane, and every open canvas
+   * tab acted on one keypress. They live on the surface now.
+   */
+  it('ignores destructive shortcuts pressed outside the canvas surface', async () => {
+    getCanvasMock.mockResolvedValue(response());
+    const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
+    });
+
+    // Select a node first — with an empty selection Delete is a no-op whether
+    // or not the handler fires, which would make this test prove nothing.
+    const node = container.querySelector('[data-testid="canvas-node"]') as HTMLElement;
+    node.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="canvas-resize-handle"]')).toBeTruthy();
+    });
+
+    const outsider = document.createElement('button');
+    document.body.appendChild(outsider);
+    outsider.focus();
+    outsider.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+
+    expect(
+      container.querySelectorAll('[data-testid="canvas-node"]').length,
+      'a keypress outside the canvas must not delete its nodes',
+    ).toBe(4);
+    outsider.remove();
+  });
+
+  /**
+   * The panel is disposed on every tab switch. Cancelling the debounce instead
+   * of flushing it loses any edit made inside the window, silently.
+   */
+  it('flushes a pending save when the panel unmounts', async () => {
+    getCanvasMock.mockResolvedValue(response());
+    const { container, unmount } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
+    const surface = (await waitFor(() => {
+      const el = container.querySelector('[data-testid="canvas-surface"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+
+    // Double-click empty space creates a card, which marks the doc dirty.
+    surface.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(5);
+    });
+    expect(saveCanvasMock).not.toHaveBeenCalled();
+
+    unmount();
+
+    await waitFor(() => expect(saveCanvasMock).toHaveBeenCalled());
+  });
+
   it('shows the empty canvas without error', async () => {
     getCanvasMock.mockResolvedValue(response({ canvas: { nodes: [], edges: [] } }));
     const { container } = render(() => <CanvasPanel filePath="/kiln/Empty.canvas" />);

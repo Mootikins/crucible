@@ -203,27 +203,23 @@ export function initHistory(doc: CanvasDoc): History {
 }
 
 /**
- * Whether two documents describe the same scene.
+ * Whether two documents are identical in every respect.
  *
  * Reference equality is not enough: every mutation helper returns a fresh
  * object, so a drag that resolves to zero movement — a click with a few pixels
  * of jitter, which snapping rounds to nothing — still produces a new document
  * that is structurally identical to the old one.
+ *
+ * Deliberately a *full* comparison rather than a geometry-only one. An earlier
+ * version compared position and size alone, which meant `commit` silently
+ * discarded any edit that changed text, a file reference, a colour, or an edge
+ * label — the plumbing for editable cards and edge labels — and `mutate` then
+ * saved the unchanged document over the user's work. Serializing a few hundred
+ * nodes once per gesture is cheap, and it cannot be wrong in that direction.
  */
 export function sameDocument(a: CanvasDoc, b: CanvasDoc): boolean {
   if (a === b) return true;
-  if (a.nodes.length !== b.nodes.length || a.edges.length !== b.edges.length) return false;
-  return a.nodes.every((node, i) => {
-    const other = b.nodes[i];
-    return (
-      node === other ||
-      (node.id === other.id &&
-        node.x === other.x &&
-        node.y === other.y &&
-        node.width === other.width &&
-        node.height === other.height)
-    );
-  });
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 /**
