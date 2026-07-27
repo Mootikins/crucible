@@ -169,6 +169,13 @@ impl NotePipeline {
         }
         let phase1_duration = phase1_start.elapsed().as_millis() as u64;
 
+        // A canvas is JSON, not markdown. It still earns an index row — its
+        // `file` nodes and the wikilinks in its text cards are real links — but
+        // none of the markdown phases below apply to it.
+        if crucible_core::kiln::is_canvas_file(path) {
+            return self.process_canvas(path, phase1_duration).await;
+        }
+
         // Phase 2: Parse to AST
         let phase2_start = std::time::Instant::now();
         let parsed = self.parser.parse_file(path).await.with_context(|| {
@@ -283,6 +290,50 @@ impl NotePipeline {
             blocks_enriched,
             embeddings_generated,
             warnings,
+        ))
+    }
+
+    /// Index a `.canvas` document.
+    ///
+    /// Deliberately shorter than the markdown path: a canvas has no blocks to
+    /// enrich and no prose to embed, so it skips straight from parse to
+    /// storage. It is indexed at all so that a note referenced by a canvas
+    /// shows the canvas in its backlinks — the gap Obsidian leaves open.
+    async fn process_canvas(&self, path: &Path, phase1_duration: u64) -> Result<ProcessingResult> {
+        let storage_path = match self.kiln_root.as_ref() {
+            Some(root) => crate::kiln_manager::normalize_note_path(path, root)
+                .unwrap_or_else(|| path.to_string_lossy().to_string()),
+            None => path.to_string_lossy().to_string(),
+        };
+
+        let record = super::canvas_index::canvas_to_record(
+            path,
+            &storage_path,
+            self.parser.as_ref(),
+            self.kiln_root.as_deref(),
+        )
+        .await?;
+
+        self.note_store
+            .upsert(record)
+            .await
+            .map_err(|e| anyhow::anyhow!("Storage error: {}", e))
+            .with_context(|| format!("Failed to store canvas '{}'", path.display()))?;
+
+        self.update_file_state(path)
+            .await
+            .with_context(|| format!("Failed to update file state for '{}'", path.display()))?;
+
+        debug!(
+            "Indexed canvas {} (P1:{}ms)",
+            path.display(),
+            phase1_duration
+        );
+
+        Ok(ProcessingResult::success_with_warnings(
+            0,
+            false,
+            Vec::new(),
         ))
     }
 
@@ -472,7 +523,7 @@ impl NotePipeline {
 ///
 /// Public-in-crate so tests can exercise the migration logic directly
 /// without spinning up a full pipeline.
-pub(crate) fn stamp_scope_on_properties(
+pub(super) fn stamp_scope_on_properties(
     properties: &mut HashMap<String, serde_json::Value>,
     kiln_root: Option<&std::path::Path>,
 ) {

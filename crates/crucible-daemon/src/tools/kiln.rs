@@ -108,7 +108,7 @@ impl KilnTools {
             if let Ok(metadata) = entry.metadata() {
                 total_size += metadata.len();
             }
-            if entry.path().extension().is_some_and(|ext| ext == "md") {
+            if crucible_core::kiln::is_indexable_file(entry.path()) {
                 md_files += 1;
             }
         }

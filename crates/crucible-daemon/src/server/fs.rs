@@ -489,7 +489,7 @@ fn collect_md_files(path: &Path, out: &mut Vec<PathBuf>) {
         Err(_) => return,
     };
     if meta.is_file() {
-        if path.extension().is_some_and(|e| e == "md") {
+        if crucible_core::kiln::is_indexable_file(path) {
             out.push(path.to_path_buf());
         }
         return;

@@ -732,3 +732,96 @@ async fn reprocess_does_not_empty_the_index_when_the_kiln_root_is_gone() {
         "a vanished kiln root must not be read as an instruction to delete"
     );
 }
+
+// ===========================================================================
+// Canvas indexing
+// ===========================================================================
+
+/// The headline of canvas graph citizenship: a note referenced by a canvas
+/// shows that canvas in its backlinks. Obsidian does not do this, so it is a
+/// deliberate behaviour that needs a test which would notice it regressing.
+#[tokio::test]
+async fn a_note_referenced_by_a_canvas_gains_the_canvas_as_a_backlink() {
+    let tmp = TempDir::new().unwrap();
+    let kiln = tmp.path();
+    std::fs::create_dir_all(kiln.join("Help")).unwrap();
+    std::fs::write(kiln.join("Help/Target.md"), "# Target\n").unwrap();
+    std::fs::write(kiln.join("Other.md"), "# Other\n").unwrap();
+    std::fs::write(
+        kiln.join("Board.canvas"),
+        serde_json::json!({
+            "nodes": [
+                { "id": "f", "type": "file", "x": 0, "y": 0, "width": 1, "height": 1,
+                  "file": "Help/Target.md" },
+                { "id": "t", "type": "text", "x": 0, "y": 0, "width": 1, "height": 1,
+                  "text": "context: [[Other]]" }
+            ],
+            "edges": []
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let km = KilnManager::new();
+    km.open_and_process(kiln, false).await.unwrap();
+
+    let handle = km.get(kiln).await.unwrap();
+    let store = handle.as_note_store();
+
+    assert_eq!(
+        store.backlinks("Help/Target.md").await.unwrap(),
+        vec!["Board.canvas".to_string()],
+        "a canvas file node must register as a backlink on its target"
+    );
+    assert_eq!(
+        store.backlinks("Other.md").await.unwrap(),
+        vec!["Board.canvas".to_string()],
+        "a wikilink inside a canvas text card must register too"
+    );
+}
+
+#[tokio::test]
+async fn a_canvas_is_indexed_alongside_notes() {
+    let tmp = TempDir::new().unwrap();
+    let kiln = tmp.path();
+    std::fs::write(kiln.join("note.md"), "# N\n").unwrap();
+    std::fs::write(
+        kiln.join("board.canvas"),
+        serde_json::json!({ "nodes": [] }).to_string(),
+    )
+    .unwrap();
+    // An asset is present in the kiln but must never enter the index.
+    std::fs::write(kiln.join("diagram.png"), [0x89, 0x50, 0x4e, 0x47]).unwrap();
+
+    let km = KilnManager::new();
+    let (discovered, ..) = km.open_and_process(kiln, false).await.unwrap();
+    assert_eq!(discovered, 2, "discovery covers notes and canvases only");
+
+    assert_eq!(
+        indexed_paths(&km, kiln).await,
+        vec!["board.canvas".to_string(), "note.md".to_string()]
+    );
+}
+
+/// Reconciliation must treat canvases exactly like notes — a canvas deleted
+/// while the daemon was down is as much a ghost as a note.
+#[tokio::test]
+async fn a_deleted_canvas_is_reconciled_out_of_the_index() {
+    let tmp = TempDir::new().unwrap();
+    let kiln = tmp.path();
+    std::fs::write(kiln.join("keep.md"), "# K\n").unwrap();
+    std::fs::write(
+        kiln.join("gone.canvas"),
+        serde_json::json!({ "nodes": [] }).to_string(),
+    )
+    .unwrap();
+
+    let km = KilnManager::new();
+    km.open_and_process(kiln, false).await.unwrap();
+    assert_eq!(indexed_paths(&km, kiln).await.len(), 2);
+
+    std::fs::remove_file(kiln.join("gone.canvas")).unwrap();
+    km.open_and_process(kiln, false).await.unwrap();
+
+    assert_eq!(indexed_paths(&km, kiln).await, vec!["keep.md".to_string()]);
+}

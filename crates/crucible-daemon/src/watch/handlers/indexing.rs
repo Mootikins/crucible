@@ -32,12 +32,11 @@ impl IndexingHandler {
     pub fn with_emitter(emitter: Arc<dyn EventEmitter<Event = SessionEvent>>) -> Result<Self> {
         info!("IndexingHandler created");
         Ok(Self {
-            supported_extensions: vec![
-                "md".to_string(),
-                "txt".to_string(),
-                "rst".to_string(),
-                "adoc".to_string(),
-            ],
+            supported_extensions: crucible_core::kiln::KilnFileKind::INDEXABLE_EXTENSIONS
+                .iter()
+                .map(|s| s.to_string())
+                .chain(["txt", "rst", "adoc"].iter().map(|s| s.to_string()))
+                .collect(),
             index_debounce: std::time::Duration::from_millis(500),
             emitter,
         })

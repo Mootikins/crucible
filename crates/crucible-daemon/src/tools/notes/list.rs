@@ -116,7 +116,7 @@ impl NoteTools {
                 .into_iter()
                 .filter_map(std::result::Result::ok)
                 .filter(|e| e.file_type().is_file())
-                .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
+                .filter(|e| crucible_core::kiln::is_indexable_file(e.path()))
             {
                 let path = entry.path();
                 if let Ok(relative_path) = path.strip_prefix(&self.kiln_path) {
@@ -152,7 +152,7 @@ impl NoteTools {
                 let entry = entry.mcp_err_ctx("Failed to read entry")?;
                 let path = entry.path();
 
-                if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
+                if path.is_file() && crucible_core::kiln::is_indexable_file(&path) {
                     if let Ok(relative_path) = path.strip_prefix(&self.kiln_path) {
                         let metadata = entry.metadata().ok();
                         let modified = metadata

@@ -525,7 +525,7 @@ impl SearchTools {
             .into_iter()
             .filter_map(std::result::Result::ok)
             .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
+            .filter(|e| crucible_core::kiln::is_indexable_file(e.path()))
         {
             // Read file and parse frontmatter
             let content = match std::fs::read_to_string(entry.path()) {

@@ -460,7 +460,7 @@ impl KilnManager {
         let root_present = kiln_path.is_dir();
 
         // Discover files
-        let files = discover_markdown_files(kiln_path);
+        let files = discover_indexable_files(kiln_path);
         let discovered = files.len();
 
         if root_present {
@@ -665,7 +665,7 @@ impl KilnManager {
     pub async fn handle_file_deleted(&self, kiln_path: &Path, file_path: &Path) -> Result<bool> {
         use crucible_core::events::SessionEvent;
 
-        if !is_markdown_file(file_path) {
+        if !is_indexable_kiln_file(file_path) {
             return Ok(false);
         }
 
@@ -852,11 +852,12 @@ impl KilnManager {
             return None;
         }
 
-        let filter = EXCLUDED_DIRS
-            .iter()
-            .fold(EventFilter::new().with_extension("md"), |f, dir| {
-                f.exclude_dir(kiln_path.join(dir))
-            });
+        let filter = EXCLUDED_DIRS.iter().fold(
+            crucible_core::kiln::KilnFileKind::INDEXABLE_EXTENSIONS
+                .iter()
+                .fold(EventFilter::new(), |f, ext| f.with_extension(*ext)),
+            |f, dir| f.exclude_dir(kiln_path.join(dir)),
+        );
 
         let watch_config =
             crate::watch::traits::WatchConfig::new(format!("kiln-{}", kiln_path.display()))
@@ -977,8 +978,10 @@ async fn create_storage_handle(
 // ===========================================================================
 
 /// Check if a path is a markdown file
-fn is_markdown_file(path: &Path) -> bool {
-    path.extension().and_then(|s| s.to_str()) == Some("md")
+/// Whether the kiln indexes this file. Notes and canvases both do — see
+/// [`KilnFileKind`](crucible_core::kiln::KilnFileKind).
+fn is_indexable_kiln_file(path: &Path) -> bool {
+    crucible_core::kiln::is_indexable_file(path)
 }
 
 /// Check if a directory should be excluded from file discovery
@@ -990,7 +993,7 @@ fn is_excluded_dir(path: &Path) -> bool {
 }
 
 /// Discover markdown files in a kiln directory
-fn discover_markdown_files(kiln_path: &Path) -> Vec<PathBuf> {
+fn discover_indexable_files(kiln_path: &Path) -> Vec<PathBuf> {
     use walkdir::WalkDir;
 
     WalkDir::new(kiln_path)
@@ -998,7 +1001,7 @@ fn discover_markdown_files(kiln_path: &Path) -> Vec<PathBuf> {
         .into_iter()
         .filter_entry(|e| !is_excluded_dir(e.path()))
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_file() && is_markdown_file(e.path()))
+        .filter(|e| e.path().is_file() && is_indexable_kiln_file(e.path()))
         .map(|e| e.path().to_path_buf())
         .collect()
 }

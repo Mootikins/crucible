@@ -24,6 +24,7 @@
 //! - Handles error recovery and rollback
 //! - Provides single interface for UI layers (CLI, Desktop, MCP, etc.)
 
+pub mod canvas_index;
 pub mod note_pipeline;
 
 // Re-export pipeline types
