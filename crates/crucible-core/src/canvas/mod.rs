@@ -36,9 +36,12 @@ mod tests;
 /// lowest — so this is a `Vec`, never a set or map.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Canvas {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    // Always emitted, even when empty: Obsidian writes a fresh canvas as
+    // `{"nodes":[],"edges":[]}`, and skipping empty arrays would silently
+    // rewrite every empty canvas to `{}` on first save.
+    #[serde(default)]
     pub nodes: Vec<Node>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub edges: Vec<Edge>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -71,8 +74,13 @@ impl Canvas {
     /// Edges whose endpoints are both `file` nodes, as
     /// `(from_path, to_path, edge)`.
     ///
-    /// These are the canvas's contribution the wikilink graph cannot express: a
-    /// deliberate, directional, optionally labelled relation between two notes.
+    /// A deliberate, directional, optionally labelled relation between two
+    /// notes — signal the wikilink graph cannot express.
+    ///
+    /// Currently consumed by the canvas renderer only. These relations are NOT
+    /// stored in the link index: `note_links` is keyed by a single source path,
+    /// so an A→B relation authored by a third document needs its own table, and
+    /// `GraphLink` carries no label. See `docs/Meta/Analysis/Canvas.md`.
     pub fn note_relations(&self) -> impl Iterator<Item = (&str, &str, &Edge)> {
         self.edges.iter().filter_map(move |edge| {
             let from = self.node(&edge.from_node)?.file_path()?;
@@ -379,26 +387,3 @@ pub enum End {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Color(pub String);
-
-impl Color {
-    /// The six preset slots, in spec order.
-    pub const PRESETS: [&'static str; 6] = ["1", "2", "3", "4", "5", "6"];
-
-    /// A human-facing name for a preset, or `None` for hex and unknown values.
-    pub fn preset_name(&self) -> Option<&'static str> {
-        match self.0.as_str() {
-            "1" => Some("red"),
-            "2" => Some("orange"),
-            "3" => Some("yellow"),
-            "4" => Some("green"),
-            "5" => Some("cyan"),
-            "6" => Some("purple"),
-            _ => None,
-        }
-    }
-
-    /// Whether this is a literal hex colour rather than a preset slot.
-    pub fn is_hex(&self) -> bool {
-        self.0.starts_with('#')
-    }
-}

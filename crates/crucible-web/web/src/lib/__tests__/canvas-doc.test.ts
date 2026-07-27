@@ -183,10 +183,23 @@ describe('history', () => {
     expect(redo(fresh)).toBe(fresh);
   });
 
-  /** A drag that moved nothing must not cost an undo press that does nothing. */
-  it('drops a commit identical to the present', () => {
+  /**
+   * A drag that moved nothing must not cost an undo press that does nothing.
+   * The document is a DIFFERENT object — every mutation helper returns a fresh
+   * one — so a reference-equality guard would not catch this, which is exactly
+   * what a click with a few pixels of snapped-away jitter produces.
+   */
+  it('drops a commit that changes nothing, even as a distinct object', () => {
     const h = initHistory(a);
-    expect(commit(h, a)).toBe(h);
+    const unchanged = moveSelection(a, new Set(['a']), 0, 0);
+
+    expect(unchanged).not.toBe(a);
+    expect(commit(h, unchanged)).toBe(h);
+  });
+
+  it('still commits a real move', () => {
+    const h = initHistory(a);
+    expect(commit(h, moveSelection(a, new Set(['a']), 20, 0))).not.toBe(h);
   });
 
   it('discards the redo branch once a new edit lands', () => {

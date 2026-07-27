@@ -62,10 +62,11 @@ impl ParserHandler {
         Self {
             parser: CrucibleParser::new(),
             emitter,
-            supported_extensions: crucible_core::kiln::KilnFileKind::INDEXABLE_EXTENSIONS
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            // Notes only. This handler runs the MARKDOWN parser, and feeding it a
+            // canvas would parse raw JSON as prose — a `"subpath": "#Syntax"`
+            // key would surface as a `Syntax` tag. Canvases are indexed through
+            // `pipeline::canvas_index`, which understands the format.
+            supported_extensions: vec!["md".to_string(), "markdown".to_string()],
         }
     }
 
@@ -77,10 +78,11 @@ impl ParserHandler {
         Self {
             parser,
             emitter,
-            supported_extensions: crucible_core::kiln::KilnFileKind::INDEXABLE_EXTENSIONS
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            // Notes only. This handler runs the MARKDOWN parser, and feeding it a
+            // canvas would parse raw JSON as prose — a `"subpath": "#Syntax"`
+            // key would surface as a `Syntax` tag. Canvases are indexed through
+            // `pipeline::canvas_index`, which understands the format.
+            supported_extensions: vec!["md".to_string(), "markdown".to_string()],
         }
     }
 

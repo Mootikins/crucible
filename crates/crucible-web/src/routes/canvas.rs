@@ -11,13 +11,16 @@
 //! it, so quarantine is enforced here rather than trusted to the renderer.
 
 use axum::{extract::State, routing::get, Json, Router};
-use crucible_core::canvas::containment::{validate_canvas, RejectedRef};
+use crucible_core::canvas::containment::{resolve_file_ref, validate_canvas, RejectedRef};
 use crucible_core::canvas::{Canvas, NodeKind};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
-use super::helpers::{reject_path_traversal, MAX_CONTENT_SIZE};
+use super::helpers::{
+    reject_path_traversal, validate_file_within_kiln, validate_write_target_within_kiln,
+    MAX_CONTENT_SIZE,
+};
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 
@@ -54,6 +57,9 @@ async fn get_canvas(
 
     let path = PathBuf::from(&query.path);
     let kiln = enclosing_kiln(&state, &path).await?;
+    // `enclosing_kiln` matches lexically; this resolves symlinks, so a
+    // `.canvas` that is itself a link out of the kiln cannot be read through.
+    let path = validate_file_within_kiln(&path, &kiln, &query.path)?;
 
     let source = fs::read_to_string(&path)
         .await
@@ -63,7 +69,7 @@ async fn get_canvas(
         Canvas::parse(&source).map_err(|e| WebError::Validation(format!("Invalid canvas: {e}")))?;
 
     let rejected = validate_canvas(&canvas, &kiln);
-    redact(&mut canvas, &rejected);
+    redact(&mut canvas, &kiln);
 
     Ok(Json(serde_json::json!({
         "canvas": canvas,
@@ -93,6 +99,11 @@ async fn put_canvas(
 
     let path = PathBuf::from(&req.path);
     let kiln = enclosing_kiln(&state, &path).await?;
+    // Without this, `fs::write` follows a pre-planted symlink and writes
+    // outside the kiln even though the parent directory is legitimate — the
+    // exact case `validate_write_target_within_kiln` documents. Every other
+    // kiln file route already calls it; this one was the gap.
+    validate_write_target_within_kiln(&path, &kiln)?;
 
     let canvas = Canvas::parse(&req.content)
         .map_err(|e| WebError::Validation(format!("Invalid canvas: {e}")))?;
@@ -141,35 +152,37 @@ async fn enclosing_kiln(state: &AppState, path: &Path) -> Result<PathBuf, WebErr
         .filter_map(|v| v.get("path").and_then(|p| p.as_str()).map(PathBuf::from))
         .collect();
 
-    for kiln in kilns {
-        let canonical = match kiln.canonicalize() {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-        if path.starts_with(&canonical) || path.starts_with(&kiln) {
-            return Ok(canonical);
-        }
-    }
-
-    Err(WebError::NotFound(
-        "Canvas is not within an open kiln".to_string(),
-    ))
+    // Longest match, not first. With nested kilns (`/vault` and `/vault/sub`
+    // both open) taking whichever the daemon happened to list first would
+    // attribute a canvas in the inner kiln to the outer one, letting it
+    // reference anything under `/vault` — wider than "that same kiln".
+    kilns
+        .into_iter()
+        .filter_map(|kiln| {
+            let canonical = kiln.canonicalize().ok()?;
+            (path.starts_with(&canonical) || path.starts_with(&kiln)).then_some(canonical)
+        })
+        .max_by_key(|k| k.components().count())
+        .ok_or_else(|| WebError::NotFound("Canvas is not within an open kiln".to_string()))
 }
 
-/// Strip the references named in `rejected` from the document.
-fn redact(canvas: &mut Canvas, rejected: &[RejectedRef]) {
-    for reject in rejected {
-        let Some(node) = canvas.nodes.iter_mut().find(|n| n.id == reject.node_id) else {
-            continue;
-        };
+/// Strip every reference that fails containment from the document.
+///
+/// Deliberately re-checks each node rather than matching the rejection list by
+/// node id. Ids are not enforced unique — `Canvas::node` documents as much, and
+/// a hand-edited file can repeat one — so an id-keyed lookup finds the *first*
+/// node with that id and leaves the malicious twin untouched, path and all.
+/// Walking the nodes makes the redaction structurally complete instead of
+/// dependent on a property the format does not guarantee.
+fn redact(canvas: &mut Canvas, kiln_root: &Path) {
+    let escapes = |reference: &str| resolve_file_ref(reference, kiln_root).is_err();
+    for node in &mut canvas.nodes {
         match &mut node.kind {
-            NodeKind::File { file, subpath } if *file == reject.reference => {
+            NodeKind::File { file, subpath } if escapes(file) => {
                 file.clear();
                 *subpath = None;
             }
-            NodeKind::Group { background, .. }
-                if background.as_deref() == Some(reject.reference.as_str()) =>
-            {
+            NodeKind::Group { background, .. } if background.as_deref().is_some_and(escapes) => {
                 *background = None;
             }
             _ => {}
@@ -222,7 +235,7 @@ mod tests {
         let rejected = validate_canvas(&canvas, tmp.path());
         assert_eq!(rejected.len(), 1);
 
-        redact(&mut canvas, &rejected);
+        redact(&mut canvas, tmp.path());
 
         let serialized = serde_json::to_string(&canvas).unwrap();
         assert!(
@@ -235,6 +248,38 @@ mod tests {
         );
     }
 
+    /// Node ids are not enforced unique (a hand-edited file can repeat one), so
+    /// redaction must never key off them: `find` returns the first match and
+    /// the malicious twin survives with its path intact.
+    #[test]
+    fn duplicate_node_ids_do_not_defeat_redaction() {
+        let tmp = TempDir::new().unwrap();
+        let mut canvas = Canvas::parse(
+            &serde_json::json!({
+                "nodes": [
+                    { "id": "dup", "type": "file", "x": 0, "y": 0, "width": 1, "height": 1,
+                      "file": "Fine.md" },
+                    { "id": "dup", "type": "file", "x": 0, "y": 0, "width": 1, "height": 1,
+                      "file": "../../../etc/passwd" }
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        redact(&mut canvas, tmp.path());
+
+        let serialized = serde_json::to_string(&canvas).unwrap();
+        assert!(
+            !serialized.contains("etc/passwd"),
+            "a duplicated id must not let the offending path escape: {serialized}"
+        );
+        assert!(
+            serialized.contains("Fine.md"),
+            "the valid twin must survive"
+        );
+    }
+
     #[test]
     fn redaction_leaves_valid_nodes_untouched() {
         let tmp = TempDir::new().unwrap();
@@ -242,7 +287,7 @@ mod tests {
         let rejected = validate_canvas(&canvas, tmp.path());
         assert!(rejected.is_empty());
 
-        redact(&mut canvas, &rejected);
+        redact(&mut canvas, tmp.path());
 
         assert!(serde_json::to_string(&canvas)
             .unwrap()
@@ -281,8 +326,7 @@ mod tests {
         )
         .unwrap();
 
-        let rejected = validate_canvas(&canvas, tmp.path());
-        redact(&mut canvas, &rejected);
+        redact(&mut canvas, tmp.path());
 
         let serialized = serde_json::to_string(&canvas).unwrap();
         assert!(!serialized.contains("outside.png"));

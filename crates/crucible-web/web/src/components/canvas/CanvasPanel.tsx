@@ -136,7 +136,13 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(save, 600);
   };
-  onCleanup(() => clearTimeout(saveTimer));
+  onCleanup(() => {
+    clearTimeout(saveTimer);
+    // The panel is disposed and remounted on every tab switch, so cancelling
+    // without flushing loses any edit made inside the debounce window — move a
+    // card, switch tab, and it is gone with no warning.
+    if (dirty()) void save();
+  });
 
   const save = async () => {
     const path = props.filePath;
@@ -413,14 +419,11 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
     }
   };
 
-  onMount(() => {
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-    onCleanup(() => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
-    });
-  });
+  // Bound to the surface rather than `window`: canvas shortcuts are destructive
+  // (Delete removes nodes, Ctrl+Z rewinds the document, Ctrl+S writes it), and a
+  // window listener fires them while the user is focused on the file tree, a
+  // ribbon button, or another pane entirely. With two canvas tabs open, every
+  // one of them would also act on a single keypress.
 
   const createTextNode = (e: MouseEvent) => {
     if (!surface || e.target !== surface) return;
@@ -507,6 +510,13 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
         onPointerDown={onSurfacePointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        // Touch and pen deliver pointercancel INSTEAD of pointerup when the
+        // gesture is interrupted. Without this the drag state sticks and every
+        // later move keeps dragging with no button held.
+        onPointerCancel={onPointerUp}
+        onKeyDown={onKeyDown}
+        onKeyUp={onKeyUp}
+        tabindex={0}
         onDblClick={createTextNode}
       >
         <Show when={loading()}>

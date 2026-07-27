@@ -49,9 +49,10 @@ impl KilnFileKind {
 
     /// Whether this file participates in the note index and link graph.
     ///
-    /// Both notes and canvases do: a canvas contributes its `file` nodes as
-    /// links and its edges as note-to-note relations, so leaving it out would
-    /// mean backlinks that silently omit the canvas referencing them.
+    /// Both notes and canvases do: a canvas contributes its `file` nodes and
+    /// the wikilinks in its text cards as links, so leaving it out would mean
+    /// backlinks that silently omit the canvas referencing them. (Canvas
+    /// *edges* are not yet stored — see `docs/Meta/Analysis/Canvas.md`.)
     pub fn is_indexable(self) -> bool {
         matches!(self, Self::Note | Self::Canvas)
     }

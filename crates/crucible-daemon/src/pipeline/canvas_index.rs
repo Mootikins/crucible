@@ -48,8 +48,8 @@ pub struct CanvasLinks {
 /// dangling row keeps its raw target, and `kiln.graph` surfaces unresolved
 /// targets as ghost nodes labelled with that text. A hand-edited canvas would
 /// otherwise put an attacker-chosen string like `../../../etc/passwd` on screen
-/// in the graph view. `kiln_root` is `None` only in tests that are not
-/// exercising containment.
+/// in the graph view. Without a `kiln_root` the lexical checks still apply —
+/// only symlink resolution needs one.
 pub async fn extract_links(
     canvas: &Canvas,
     parser: &dyn crucible_core::parser::MarkdownParser,
@@ -59,9 +59,13 @@ pub async fn extract_links(
     let mut links_to = Vec::new();
     let mut tags = Vec::new();
 
+    // Without a kiln root only symlink resolution is unavailable, so the
+    // lexical checks still apply. Defaulting to "allow" when the root is
+    // missing would make this stop protecting anything the moment a caller
+    // without a root appears — and `NotePipeline` genuinely supports one.
     let contained = |reference: &str| match kiln_root {
         Some(root) => crucible_core::canvas::containment::resolve_file_ref(reference, root).is_ok(),
-        None => true,
+        None => crucible_core::canvas::containment::is_lexically_contained(reference),
     };
 
     for node in &canvas.nodes {

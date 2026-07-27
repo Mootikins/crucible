@@ -82,7 +82,7 @@ pub fn index_kiln_notes(kiln_root: &Path) -> Vec<String> {
         if !entry.file_type().is_file() {
             continue;
         }
-        if !crucible_core::kiln::is_indexable_file(entry.path()) {
+        if !crucible_core::kiln::is_note_file(entry.path()) {
             continue;
         }
         if notes.len() >= MAX_ENTRIES {

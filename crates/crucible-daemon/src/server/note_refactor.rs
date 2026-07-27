@@ -36,8 +36,10 @@ use std::sync::Arc;
 pub(crate) struct SkippedRef {
     pub source_path: String,
     pub raw_target: String,
-    /// `"ambiguous"` (stem shared by several notes) or `"stale-span"`
-    /// (file bytes no longer match the index; reindex will catch up).
+    /// `"ambiguous"` (stem shared by several notes), `"stale-span"` (file bytes
+    /// no longer match the index; reindex will catch up),
+    /// `"canvas-no-exact-match"` (a canvas resolves to the target but stores it
+    /// under a different spelling), or `"canvas-unreadable"`.
     pub reason: &'static str,
 }
 
@@ -268,7 +270,15 @@ pub(crate) async fn rename_note(
 
         match rewrite_canvas_refs(&disk_path, from_rel, to_rel) {
             Ok(true) => rewritten_sources.push(source),
-            Ok(false) => {}
+            // The resolver decided this canvas points at `from_rel`, but no node
+            // stores that exact string — a bare-stem or extension-less reference
+            // resolves the same way a wikilink does. Nothing was rewritten, so
+            // say so rather than reporting a clean rename over a stale link.
+            Ok(false) => skipped.push(SkippedRef {
+                source_path: source,
+                raw_target: from_rel.to_string(),
+                reason: "canvas-no-exact-match",
+            }),
             Err(e) => {
                 tracing::warn!(source = %source, error = %e, "rename: canvas rewrite failed");
                 skipped.push(SkippedRef {

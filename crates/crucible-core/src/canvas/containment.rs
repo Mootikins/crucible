@@ -40,8 +40,6 @@ use super::{Canvas, NodeKind};
 /// Why a canvas file reference was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum RefError {
-    #[error("reference is empty")]
-    Empty,
     #[error("reference is an absolute path; canvas references must be kiln-relative")]
     Absolute,
     #[error("reference escapes the kiln via a parent-directory component")]
@@ -75,8 +73,14 @@ pub struct RejectedRef {
 /// there; the lexical checks apply always, so a non-existent path can never
 /// sneak through by virtue of being absent.
 pub fn resolve_file_ref(reference: &str, kiln_root: &Path) -> Result<PathBuf, RefError> {
+    // An empty reference names nothing, so it cannot escape anything. It is
+    // also the state redaction leaves behind, and treating it as a violation
+    // made a canvas with one bad reference permanently unsavable: the read path
+    // blanked the path, the client kept that document, and every subsequent
+    // write was refused for a reference the user could no longer see or fix.
+    // Callers that care (the indexer) skip empty references separately.
     if reference.is_empty() {
-        return Err(RefError::Empty);
+        return Ok(kiln_root.to_path_buf());
     }
     if reference.contains('\0') {
         return Err(RefError::InteriorNul);
@@ -154,6 +158,28 @@ pub fn is_contained(canvas: &Canvas, kiln_root: &Path) -> bool {
     validate_canvas(canvas, kiln_root).is_empty()
 }
 
+/// The root-independent half of [`resolve_file_ref`].
+///
+/// Absolute paths, `..` traversal and interior NULs are refusable without
+/// knowing where the kiln is; only symlink resolution needs a root. Callers that
+/// may not have one use this so their predicate still fails *closed* on the
+/// dangerous shapes — a containment check whose no-root default is "allow" is
+/// the sort that stops protecting anything the moment a caller changes.
+pub fn is_lexically_contained(reference: &str) -> bool {
+    if reference.is_empty() {
+        return true;
+    }
+    if reference.contains('\0') {
+        return false;
+    }
+    let raw = Path::new(reference);
+    if raw.is_absolute() {
+        return false;
+    }
+    raw.components()
+        .all(|component| matches!(component, Component::CurDir | Component::Normal(_)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,12 +245,26 @@ mod tests {
     }
 
     #[test]
-    fn empty_and_nul_references_are_refused() {
+    fn nul_references_are_refused() {
         let tmp = TempDir::new().unwrap();
-        assert_eq!(resolve_file_ref("", tmp.path()), Err(RefError::Empty));
         assert_eq!(
             resolve_file_ref("a\0b.md", tmp.path()),
             Err(RefError::InteriorNul)
+        );
+    }
+
+    /// The read path blanks a rejected reference. If that state were itself a
+    /// violation, the document could never be saved again — and the user could
+    /// not repair it, because the offending path was deliberately never sent.
+    #[test]
+    fn an_empty_reference_is_inert_not_a_violation() {
+        let tmp = TempDir::new().unwrap();
+        assert!(resolve_file_ref("", tmp.path()).is_ok());
+
+        let canvas = canvas_with_file_ref("");
+        assert!(
+            is_contained(&canvas, tmp.path()),
+            "a redacted canvas must remain savable"
         );
     }
 

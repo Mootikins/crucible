@@ -203,14 +203,38 @@ export function initHistory(doc: CanvasDoc): History {
 }
 
 /**
+ * Whether two documents describe the same scene.
+ *
+ * Reference equality is not enough: every mutation helper returns a fresh
+ * object, so a drag that resolves to zero movement — a click with a few pixels
+ * of jitter, which snapping rounds to nothing — still produces a new document
+ * that is structurally identical to the old one.
+ */
+export function sameDocument(a: CanvasDoc, b: CanvasDoc): boolean {
+  if (a === b) return true;
+  if (a.nodes.length !== b.nodes.length || a.edges.length !== b.edges.length) return false;
+  return a.nodes.every((node, i) => {
+    const other = b.nodes[i];
+    return (
+      node === other ||
+      (node.id === other.id &&
+        node.x === other.x &&
+        node.y === other.y &&
+        node.width === other.width &&
+        node.height === other.height)
+    );
+  });
+}
+
+/**
  * Commit a new state.
  *
- * A commit identical to the present is dropped rather than pushed: a click that
+ * A commit that changes nothing is dropped rather than pushed: a click that
  * moves a card by zero pixels must not cost the user an undo step that appears
  * to do nothing when they press it.
  */
 export function commit(history: History, next: CanvasDoc): History {
-  if (next === history.present) return history;
+  if (sameDocument(history.present, next)) return history;
 
   const past = [...history.past, history.present];
   return {

@@ -183,12 +183,6 @@ fn preset_colors_stay_strings_on_the_wire() {
     let canvas = Canvas::parse(&serde_json::to_string(&adversarial_canvas()).unwrap()).unwrap();
     let text = canvas.node("text-1").unwrap();
     assert_eq!(text.color, Some(Color("3".into())));
-    assert_eq!(text.color.as_ref().unwrap().preset_name(), Some("yellow"));
-    assert!(!text.color.as_ref().unwrap().is_hex());
-
-    let file = canvas.node("file-1").unwrap();
-    assert!(file.color.as_ref().unwrap().is_hex());
-    assert_eq!(file.color.as_ref().unwrap().preset_name(), None);
 
     let json = serde_json::to_value(text).unwrap();
     assert_eq!(
@@ -196,6 +190,21 @@ fn preset_colors_stay_strings_on_the_wire() {
         json!("3"),
         "preset must serialize as a string"
     );
+    assert_eq!(
+        serde_json::to_value(canvas.node("file-1").unwrap()).unwrap()["color"],
+        json!("#FF00AA"),
+        "hex passes through untouched"
+    );
+}
+
+/// Obsidian writes a fresh canvas as `{"nodes":[],"edges":[]}`. Dropping the
+/// empty arrays would rewrite every empty canvas on first save.
+#[test]
+fn empty_arrays_are_preserved_rather_than_collapsed() {
+    let source = r#"{"nodes":[],"edges":[]}"#;
+    let round_tripped: Value =
+        serde_json::from_str(&Canvas::parse(source).unwrap().to_json_pretty().unwrap()).unwrap();
+    assert_eq!(round_tripped, json!({ "nodes": [], "edges": [] }));
 }
 
 #[test]
