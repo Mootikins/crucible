@@ -33,8 +33,6 @@ use serde_json::{json, Map, Value as Json};
 pub struct SurfaceStyle {
     pub border: Option<Border>,
     pub padding: Option<Padding>,
-    pub max_height: Option<u16>,
-    pub min_width: Option<u16>,
     /// Popup only: rows shown before scrolling.
     pub max_visible: Option<u16>,
 }
@@ -150,8 +148,6 @@ fn surface_from_lua(table: &Table) -> SurfaceStyle {
             .ok()
             .as_ref()
             .and_then(padding_from_lua),
-        max_height: table.get("max_height").ok(),
-        min_width: table.get("min_width").ok(),
         max_visible: table.get("max_visible").ok(),
     }
 }
@@ -268,11 +264,7 @@ fn surface_to_wire(s: &SurfaceStyle) -> Json {
             json!({ "top": p.top, "right": p.right, "bottom": p.bottom, "left": p.left }),
         );
     }
-    for (key, val) in [
-        ("max_height", s.max_height),
-        ("min_width", s.min_width),
-        ("max_visible", s.max_visible),
-    ] {
+    for (key, val) in [("max_visible", s.max_visible)] {
         if let Some(n) = val {
             m.insert(key.into(), json!(n));
         }
@@ -305,8 +297,6 @@ fn surface_from_wire(v: Option<&Json>) -> SurfaceStyle {
                 left: f("left"),
             }
         }),
-        max_height: num("max_height"),
-        min_width: num("min_width"),
         max_visible: num("max_visible"),
     }
 }

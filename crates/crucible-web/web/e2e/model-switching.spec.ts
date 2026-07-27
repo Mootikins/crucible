@@ -52,8 +52,12 @@ test('switching model calls the API', async ({ page }) => {
   await expect(sessionItem).toBeVisible({ timeout: 5000 });
   await sessionItem.click();
 
-  // Wait for model picker button to be enabled
+  // Wait for the button to exist before asking whether it is enabled.
+  // `not.toBeDisabled()` passes vacuously on an element that is not there yet,
+  // so on its own it is not a readiness gate — it lets the test run ahead of
+  // the session load and spend its budget before the models are ever fetched.
   const pickerButton = page.getByTestId('model-picker-button');
+  await expect(pickerButton).toBeVisible({ timeout: 5000 });
   await expect(pickerButton).not.toBeDisabled({ timeout: 5000 });
 
   // Open the picker
