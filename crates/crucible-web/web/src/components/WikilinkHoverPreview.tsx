@@ -11,8 +11,7 @@
  * small card, since there is nothing to put in a window yet.
  */
 import { Component, Show, createSignal, onMount, onCleanup } from 'solid-js';
-import { fetchNotePreview, type NotePreview } from '@/lib/note-actions';
-import { statusBarStore } from '@/stores/statusBarStore';
+import { fetchNotePreview, kilnForElement, type NotePreview } from '@/lib/note-actions';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { iconForContentType } from '@/lib/tab-icons';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
@@ -139,10 +138,11 @@ export const WikilinkHoverPreview: Component = () => {
     // active kiln instead is how another kiln's notes got shown inside this
     // one. The status bar remains the fallback only for surfaces that have no
     // kiln of their own.
-    const kiln =
-      anchor.closest('[data-kiln]')?.getAttribute('data-kiln') ||
-      statusBarStore.kilnPath() ||
-      undefined;
+    // No fallback to the active kiln: a preview must describe the note the
+    // click will open, and the click has no such fallback. Hovering a link on
+    // an undeclared surface resolves nothing rather than previewing a
+    // same-named note from whichever kiln the navigator happens to show.
+    const kiln = kilnForElement(anchor);
     const preview = await fetchNotePreview(name, kiln);
     // A newer hover superseded this fetch, or the hover was dismissed.
     if (seq !== fetchSeq || currentAnchor !== anchor) return;

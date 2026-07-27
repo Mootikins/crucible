@@ -2,6 +2,7 @@ import { Component, Show, createEffect, createMemo, createSignal, on, onCleanup 
 import { CodeMirrorEditor } from '../editor/CodeMirrorEditor';
 import { MarkdownPreview } from '../editor/MarkdownPreview';
 import { getFileContent, saveFileContent } from '@/lib/api';
+import { openNoteInEditor } from '@/lib/note-actions';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
 
 /**
@@ -56,6 +57,10 @@ const Markdown: Component<{
         onChange={props.onChange}
         onSave={() => props.onCommit?.()}
         vimMode={settings.editor.vimMode}
+        // Without this, CodeMirror installs no wikilink decorations at all
+        // (`CodeMirrorEditor` gates the whole bundle on it), so entering edit
+        // mode silently stripped a card's links: no hover, no Ctrl+Click.
+        onFollowLink={(target) => void openNoteInEditor(target, props.kiln)}
         livePreview
       />
     </div>

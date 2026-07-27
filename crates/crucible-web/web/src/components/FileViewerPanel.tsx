@@ -17,7 +17,6 @@ import { kilnForPath, openNoteInEditor } from '@/lib/note-actions';
 import { listKilns } from '@/lib/api';
 import { swrLocal } from '@/lib/local-cache';
 import { windowActions } from '@/stores/windowStore';
-import { statusBarStore } from '@/stores/statusBarStore';
 import { PanelShell } from './PanelShell';
 import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
@@ -352,7 +351,10 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
                   onFollowLink={(target) =>
                     void openNoteInEditor(
                       target,
-                      owningKiln(file().path) ?? statusBarStore.kilnPath() ?? undefined,
+                      // The file's own kiln, or none. Falling back to the
+                      // active kiln let a project file — which belongs to no
+                      // kiln — follow links into whichever kiln was showing.
+                      owningKiln(file().path),
                     )
                   }
                   vimMode={settings.editor.vimMode}

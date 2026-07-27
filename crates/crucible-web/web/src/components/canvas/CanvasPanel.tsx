@@ -231,6 +231,37 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
     scheduleSave();
   };
 
+  /**
+   * Apply a text edit without pushing an undo step per keystroke.
+   *
+   * Typing through `mutate` made every character its own document: a 40-letter
+   * edit ate 40 of the 100 history slots, and Ctrl+Z afterwards rewound one
+   * letter instead of the last thing the user actually did. The live document
+   * updates immediately so the card stays responsive; the undo step is
+   * committed once the typing pauses, which is the granularity a person means
+   * by "undo my edit". Note cards already debounced this way — text cards, which
+   * live in the canvas document rather than a file, did not.
+   */
+  const TEXT_COMMIT_IDLE_MS = 700;
+  let textCommitTimer: ReturnType<typeof setTimeout> | undefined;
+  let textCommitBase: CanvasDoc | null = null;
+
+  const mutateText = (next: CanvasDoc) => {
+    if (textCommitBase === null) textCommitBase = doc();
+    setHistory((h) => ({ ...h, present: next }));
+    setDirty(true);
+
+    clearTimeout(textCommitTimer);
+    textCommitTimer = setTimeout(() => {
+      const settled = doc();
+      const base = textCommitBase;
+      textCommitBase = null;
+      if (base) setHistory((h) => commit({ ...h, present: base }, settled));
+      scheduleSave();
+    }, TEXT_COMMIT_IDLE_MS);
+  };
+  onCleanup(() => clearTimeout(textCommitTimer));
+
   // --- viewport -------------------------------------------------------------
 
   const measure = () => {
@@ -441,8 +472,17 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
       // cursor; commit once at the end so undo steps are whole gestures
       // rather than one entry per pointermove.
       const settled = doc();
-      setHistory((h) => commit({ ...h, present: d.origin }, settled));
-      scheduleSave();
+      // Save only if the gesture actually changed something. `commit` already
+      // drops a no-op step, but scheduling the save outside that check meant
+      // merely CLICKING a card to read it rewrote the .canvas file, bumped its
+      // mtime, woke the watcher, and lit the unsaved-changes dot.
+      let changed = false;
+      setHistory((h) => {
+        const next = commit({ ...h, present: d.origin }, settled);
+        changed = next !== h;
+        return next;
+      });
+      if (changed) scheduleSave();
       return;
     }
 
@@ -826,7 +866,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
                       kiln={kiln()}
                       editable={editingId() === node()!.id}
                       onTextChange={(id, text) =>
-                        mutate(updateNode(doc(), id, { text } as Partial<CanvasNode>))
+                        mutateText(updateNode(doc(), id, { text } as Partial<CanvasNode>))
                       }
                       onOpenFile={openFile}
                     />
@@ -947,7 +987,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
                       kiln={kiln()}
                       editable={editingId() === node()!.id}
                       onTextChange={(id, text) =>
-                        mutate(updateNode(doc(), id, { text } as Partial<CanvasNode>))
+                        mutateText(updateNode(doc(), id, { text } as Partial<CanvasNode>))
                       }
                       onOpenFile={openFile}
                     />

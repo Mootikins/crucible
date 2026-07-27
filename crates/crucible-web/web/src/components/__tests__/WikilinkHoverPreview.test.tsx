@@ -4,7 +4,10 @@ import { produce } from 'solid-js/store';
 
 const fetchNotePreviewMock = vi.fn();
 
-vi.mock('@/lib/note-actions', () => ({
+vi.mock('@/lib/note-actions', async (importOriginal) => ({
+  // Keep the REAL kiln attribution — these tests are partly about which kiln a
+  // hovered link resolves in, so stubbing it would test the stub.
+  ...(await importOriginal<Record<string, unknown>>()),
   fetchNotePreview: (...args: unknown[]) => fetchNotePreviewMock(...args),
 }));
 
@@ -61,7 +64,7 @@ beforeEach(() => {
 describe('WikilinkHoverPreview (Hover Editor popovers)', () => {
   it('hovering a resolved link spawns a transient floating window with the file tab', async () => {
     fetchNotePreviewMock.mockResolvedValue(PREVIEW);
-    const host = mountWithAnchor('<a data-note="rust">rust</a>');
+    const host = mountWithAnchor('<div data-kiln="/kiln"><a data-note="rust">rust</a></div>');
     hover(host.querySelector('a[data-note]')!);
 
     await waitFor(() => {
@@ -77,12 +80,14 @@ describe('WikilinkHoverPreview (Hover Editor popovers)', () => {
     // Popovers default to the fully rendered reading view (configurable).
     expect(tab?.metadata?.initialMode).toBe('reading');
     // Popover, not workspace state: never part of the persisted layout.
-    expect(fetchNotePreviewMock).toHaveBeenCalledWith('rust', undefined);
+    // The surface's declared kiln, not the active one — there is no longer
+    // any ambient fallback for a link to resolve through.
+    expect(fetchNotePreviewMock).toHaveBeenCalledWith('rust', '/kiln');
   });
 
   it('hovering away closes the transient window', async () => {
     fetchNotePreviewMock.mockResolvedValue(PREVIEW);
-    const host = mountWithAnchor('<a data-note="rust">rust</a><span>away</span>');
+    const host = mountWithAnchor('<div data-kiln="/kiln"><a data-note="rust">rust</a><span>away</span></div>');
     hover(host.querySelector('a[data-note]')!);
     await waitFor(() => expect(hoverWindows()).toHaveLength(1));
 
@@ -102,7 +107,7 @@ describe('WikilinkHoverPreview (Hover Editor popovers)', () => {
     vi.useFakeTimers();
     try {
       fetchNotePreviewMock.mockResolvedValue(PREVIEW);
-      const host = mountWithAnchor('<a data-note="rust">rust</a><span>away</span>');
+      const host = mountWithAnchor('<div data-kiln="/kiln"><a data-note="rust">rust</a><span>away</span></div>');
       hover(host.querySelector('a[data-note]')!);
       // Drive the SHOW_DELAY gate deterministically instead of polling: the
       // popover opens once the show timer fires and the (mocked) preview fetch
@@ -147,7 +152,7 @@ describe('WikilinkHoverPreview (Hover Editor popovers)', () => {
 
   it('shows a small not-found card for unresolvable notes (no window)', async () => {
     fetchNotePreviewMock.mockResolvedValue(null);
-    const host = mountWithAnchor('<a data-note="ghost">ghost</a>');
+    const host = mountWithAnchor('<div data-kiln="/kiln"><a data-note="ghost">ghost</a></div>');
     hover(host.querySelector('a[data-note]')!);
 
     await waitFor(() => {
