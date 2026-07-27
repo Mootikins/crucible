@@ -5,8 +5,14 @@
 //! "re-interpret as format" (Neovim's `%{}` versus `%{%…%}`). That distinction is
 //! exactly where ANSI injection lives — a branch name or model-derived string
 //! reaching a status bar could carry cursor-movement or OSC sequences. Named
-//! items delete the hazard class: text is always text, styling is always
-//! structural, and nothing an expression returns is ever re-parsed as markup.
+//! items delete the *re-parsing* hazard: styling is always structural, and
+//! nothing an expression returns is ever re-interpreted as markup.
+//!
+//! That is a narrower property than "text is safe", and the difference matters.
+//! A literal is authored but not necessarily typed — a config that writes
+//! `{ "on " .. branch }` carries the same attacker-influenced data an
+//! expression does. So text is sanitized on the way in, at both parse points,
+//! rather than trusted for having come from a config file.
 //!
 //! ```lua
 //! local sl = crucible.statusline
@@ -249,7 +255,9 @@ pub fn item_from_wire(v: &Json) -> Option<StatusItem> {
         "cache" => StatusItem::Cache,
         "status" => StatusItem::Status,
         "notification" => StatusItem::Notification,
-        "text" => StatusItem::Text(v.get("v")?.as_str()?.to_string()),
+        "text" => StatusItem::Text(crate::statusline_exprs::sanitize_uncapped(
+            v.get("v")?.as_str()?,
+        )),
         "align" => StatusItem::Align,
         "any" => StatusItem::Any(
             v.get("items")?
@@ -319,9 +327,33 @@ impl Layout {
                 .unwrap_or_default()
         };
 
-        // Two inputs would render two editors, so a stray one outside the
-        // prompt region is dropped. Erroring here would take the whole screen
-        // down for a mistake the author can see at a glance.
+        // Two inputs would render two editors sharing one buffer — and
+        // `rows_below_input` counts from the first, so the popup would sit a
+        // row short and paint over the second. The first wins; the rest are
+        // dropped. Erroring here would take the whole screen down for a
+        // mistake the author can see at a glance.
+        let keep_first_input = |elements: Vec<Element>| {
+            let mut seen = false;
+            elements
+                .into_iter()
+                .filter(|e| {
+                    if *e != Element::Input {
+                        return true;
+                    }
+                    if seen {
+                        tracing::warn!(
+                            "the prompt region places more than one input; keeping the first"
+                        );
+                        return false;
+                    }
+                    seen = true;
+                    true
+                })
+                .collect()
+        };
+
+        // A stray input outside the prompt region is dropped for the same
+        // reason.
         let strip_input = |elements: Vec<Element>, region: &str| {
             elements
                 .into_iter()
@@ -337,7 +369,7 @@ impl Layout {
 
         Self {
             top: strip_input(region("top"), "top"),
-            prompt: region("prompt"),
+            prompt: keep_first_input(region("prompt")),
             bottom: strip_input(region("bottom"), "bottom"),
         }
     }
@@ -434,6 +466,49 @@ mod tests {
         assert!(!layout.top.contains(&Element::Input));
         assert!(!layout.bottom.contains(&Element::Input));
         assert_eq!(layout.prompt, vec![Element::Input]);
+    }
+
+    /// Literal text is authored, but a config can interpolate a branch name
+    /// into it — the same untrusted data an expression carries, arriving
+    /// through the variant that used to be trusted for its origin.
+    #[test]
+    fn literal_text_is_sanitized_on_the_way_in() {
+        let wire = json!({
+            "prompt": [{
+                "t": "row",
+                "items": [{ "t": "text", "v": "on \u{202E}main\u{001B}[2J" }],
+            }],
+        });
+
+        let Element::Row(items) = &Layout::from_wire(&wire).prompt[0] else {
+            panic!("a row was parsed");
+        };
+        let StatusItem::Text(text) = &items[0] else {
+            panic!("a text item was parsed: {items:?}");
+        };
+        assert!(
+            !text.contains('\u{202E}'),
+            "bidi override survived: {text:?}"
+        );
+        assert!(!text.contains('\u{001B}'), "escape survived: {text:?}");
+        assert!(text.starts_with("on "), "legible text kept: {text:?}");
+    }
+
+    /// Two inputs would draw two editors over one buffer, and the popup would
+    /// measure from the first.
+    #[test]
+    fn a_second_input_in_the_prompt_region_is_dropped() {
+        let wire = json!({
+            "prompt": [{ "t": "input" }, { "t": "row", "items": [] }, { "t": "input" }],
+        });
+
+        let prompt = Layout::from_wire(&wire).prompt;
+        assert_eq!(
+            prompt.iter().filter(|e| **e == Element::Input).count(),
+            1,
+            "exactly one input survives: {prompt:?}"
+        );
+        assert_eq!(prompt[0], Element::Input, "the first one is the one kept");
     }
 
     #[test]

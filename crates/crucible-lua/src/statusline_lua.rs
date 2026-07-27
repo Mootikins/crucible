@@ -70,7 +70,9 @@ impl UserData for LuaItem {
 /// whole bar.
 fn value_to_item(v: &Value) -> Option<StatusItem> {
     match v {
-        Value::String(s) => Some(StatusItem::Text(s.to_str().ok()?.to_string())),
+        Value::String(s) => Some(StatusItem::Text(
+            crate::statusline_exprs::sanitize_uncapped(&s.to_str().ok()?),
+        )),
         Value::UserData(ud) => ud.borrow::<LuaItem>().ok().map(|i| i.0.clone()),
         other => {
             tracing::warn!(

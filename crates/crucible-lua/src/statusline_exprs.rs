@@ -89,7 +89,7 @@ impl std::fmt::Debug for StatuslineExprRegistry {
 /// *reads* without changing what it contains — the display-spoofing trick
 /// behind filenames like `annexe\u{202E}cod.exe`. A status bar has no use for
 /// them, so refusing them outright costs nothing.
-fn is_forbidden(c: char) -> bool {
+pub fn is_forbidden(c: char) -> bool {
     c.is_control()
         || matches!(c,
             // LRM, RLM, ALM
@@ -102,12 +102,23 @@ fn is_forbidden(c: char) -> bool {
             | '\u{200B}'..='\u{200D}' | '\u{FEFF}')
 }
 
-fn sanitize(value: &str) -> String {
-    value
+/// Strip forbidden characters and cap the length.
+pub fn sanitize(value: &str) -> String {
+    sanitize_uncapped(value)
         .chars()
-        .filter(|c| !is_forbidden(*c))
         .take(MAX_VALUE_CHARS)
         .collect()
+}
+
+/// Strip forbidden characters, leaving length to the caller.
+///
+/// Literal text in a bar is authored, not pushed, so it is not subject to the
+/// value cap — but it is not necessarily *typed* by the author either. A config
+/// that interpolates a branch name into a literal (`{ "on " .. branch }`) is
+/// carrying the same attacker-influenced data an expression would, through a
+/// variant that used to be trusted purely because of where it came from.
+pub fn sanitize_uncapped(value: &str) -> String {
+    value.chars().filter(|c| !is_forbidden(*c)).collect()
 }
 
 impl StatuslineExprRegistry {
