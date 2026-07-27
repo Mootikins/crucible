@@ -21,17 +21,18 @@ require("kiln-expert").setup({
   kilns = { docs = "~/crucible/docs" },
 })
 
--- Configure the statusline
-cru.statusline.setup({
-    left = {
-        cru.statusline.mode(),
-        cru.statusline.model({ max_length = 25 }),
-    },
-    right = {
-        cru.statusline.notification({
-            fallback = cru.statusline.context(),
-        }),
-    },
+-- Colours
+crucible.colorscheme.setup({ colors = { primary = "term4" } })
+
+-- Statusline
+local sl = crucible.statusline
+sl.setup({
+  main = {
+    anchor = "footer.below_input",
+    items  = { sl.mode, " ", sl.model{ max = 25 },
+               sl.align,
+               sl.any(sl.notification, sl.context) },
+  },
 })
 ```
 
@@ -66,11 +67,20 @@ See [[Help/Extending/Creating Plugins]] for writing your own plugins.
 
 ## Built-in Modules
 
-All built-in modules are under the `cru` namespace (canonical). The `crucible` namespace is a backwards-compatible alias.
+Runtime APIs live under `cru`; configuration lives under `crucible`. The two are
+not aliases of each other, and one pair in particular is easy to mix up:
+
+| Call | Namespace | When |
+|---|---|---|
+| `crucible.statusline.setup{}` | config | once, defining the bars |
+| `cru.statusline.set(session, key, value)` | runtime | any time, supplying a value |
+
+The UI-config namespaces — `crucible.colorscheme`, `crucible.hl`,
+`crucible.ui`, `crucible.statusline`, `crucible.syntax` — exist only under
+`crucible`, because they describe what the UI *is* rather than doing something.
 
 ```lua
--- Canonical namespace (preferred)
-cru.statusline       -- Statusline configuration
+-- Runtime namespace
 cru.log(level, msg)  -- Logging (debug, info, warn, error)
 cru.json.encode(tbl) -- Convert table to JSON string
 cru.json.decode(str) -- Parse JSON string to table
@@ -97,8 +107,18 @@ cru.spawn(fn)        -- Spawn async task (daemon context only, requires send fea
 -- Daemon-side modules (available when running as a plugin in the daemon)
 cru.sessions         -- Session management: create, get, list, send_message, subscribe, etc.
 
+-- UI configuration (crucible only — no cru equivalent)
+crucible.colorscheme -- colour palette
+crucible.hl          -- highlight groups (set, link)
+crucible.ui          -- surface geometry, prompt glyphs, layout
+crucible.statusline  -- statusline bars and item vocabulary
+crucible.syntax      -- code highlighting
+
+-- Runtime statusline values (cru only — the counterpart to the config above)
+cru.statusline.set   -- push a value for `sl.expr("key")`
+cru.statusline.clear -- drop one
+
 -- Legacy aliases (still work)
-crucible.statusline  -- same as cru.statusline
 crucible.log         -- same as cru.log
 crucible.json_encode -- same as cru.json.encode
 crucible.json_decode -- same as cru.json.decode
@@ -108,139 +128,104 @@ crucible.include     -- same as cru.include
 
 ## Statusline Configuration
 
-The statusline appears at the bottom of the TUI. Configure it with `cru.statusline.setup()`:
+A bar is a **list of items**, so it reads the way it renders:
 
 ```lua
-cru.statusline.setup({
-    left = { ... },      -- Left-aligned components
-    center = { ... },    -- Center-aligned components  
-    right = { ... },     -- Right-aligned components
-    separator = " ",     -- Between components (default: space)
+local sl = crucible.statusline
+
+sl.setup({
+  main = {
+    anchor = "footer.below_input",
+    items  = { sl.mode:hl("StatusMode"), " ", sl.model{ max = 25 },
+               sl.align,
+               sl.any(sl.notification, sl.context) },
+  },
 })
 ```
 
-### Components
+Anchors: `top`, `bottom`, `footer.above_input`, `footer.below_input`. Defining
+more than one key gives you more than one bar.
 
-#### mode()
+### Items
 
-Shows the current chat mode (Normal/Plan/Auto):
+| Item | Renders |
+|---|---|
+| `sl.mode` | the chat mode badge (Normal/Plan/Auto) |
+| `sl.model{ max = 25, fallback = "…" }` | the active model, truncated |
+| `sl.context` | context-window usage |
+| `sl.cache` | prompt-cache hit rate, once one is known |
+| `sl.status` | the daemon's status text |
+| `sl.notification` | the active toast, or pending counts |
+| `sl.align` | an alignment split |
+| `sl.expr("key")` | a value pushed from a handler |
+| `"any string"` | literal text |
 
-```lua
--- With defaults
-cru.statusline.mode()
+Built-in items are evaluated by the TUI on every frame and cost no RPC.
 
--- With custom styling
-cru.statusline.mode({
-    normal = { text = " NORMAL ", bg = "green", fg = "black" },
-    plan = { text = " PLAN ", bg = "blue", fg = "black" },
-    auto = { text = " AUTO ", bg = "yellow", fg = "black" },
-})
-```
+`:hl("GroupName")` styles any item with a highlight group.
 
-#### model()
+### Conditionals
 
-Shows the current model name:
-
-```lua
--- With defaults
-cru.statusline.model()
-
--- With options
-cru.statusline.model({
-    max_length = 20,     -- Truncate long names
-    fallback = "...",    -- Show when no model
-    fg = "cyan",         -- Text color
-})
-```
-
-#### context()
-
-Shows context window usage:
+Lua's `or` does not work here — item objects are truthy, so `a or b` always
+takes the first, and the branch has to survive being sent to the client:
 
 ```lua
--- With defaults (shows "42% ctx")
-cru.statusline.context()
-
--- With custom format
-cru.statusline.context({
-    format = "{percent}%",
-    fg = "gray",
-})
+sl.any(sl.notification, sl.context)   -- first one that renders something
+sl.when("streaming", sl.cache)        -- only while a turn is streaming
 ```
 
-#### text()
+Conditions are facts only the TUI knows: `"streaming"`, `"has_notification"`,
+`"mode:plan"`.
 
-Static text with optional styling:
+### Values the daemon computes
 
 ```lua
-cru.statusline.text(" | ", { fg = "gray" })
-cru.statusline.text("Crucible", { fg = "cyan", bold = true })
+sl.setup({ main = { items = { sl.mode, sl.align, sl.expr("git") } } })
+
+crucible.on("FileChanged", function(ctx)
+  local out = cru.shell.exec("git status -b --porcelain")
+  cru.statusline.set(ctx.session_id, "git", parse_branch(out))
+end)
 ```
 
-#### spacer()
+An unset expression renders nothing, so the bar does not jump when the first
+value arrives. Re-setting an unchanged value costs no repaint.
 
-Flexible space that pushes components apart:
-
-```lua
-cru.statusline.spacer()
-```
-
-#### notification()
-
-Shows transient notifications (toasts and warning/error counts). Supports an optional `fallback` component that renders when no notifications are active:
-
-```lua
--- Simple notification area
-cru.statusline.notification({ fg = "yellow" })
-
--- With fallback to context usage when idle
-cru.statusline.notification({
-    fg = "yellow",
-    fallback = cru.statusline.context({ fg = "gray" }),
-})
-```
-
-When a toast or warning counts are active, the notification component renders them. When idle, it renders the `fallback` component (if set) or nothing.
-
-### Colors
-
-Named colors: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `gray`, `darkgray`
-
-Hex colors: `#ff5500`, `#1a1a1a`
-
-## Including Other Files
-
-Split your config into multiple files:
-
-```lua
--- ~/.config/crucible/init.lua
-cru.include("statusline.lua")  -- loads ~/.config/crucible/statusline.lua
-cru.include("keymaps.lua")     -- loads ~/.config/crucible/keymaps.lua
-```
+See [[Extending/Scripted UI]] for colours, surfaces and borders.
 
 ## Example: Full Configuration
 
 ```lua
 -- ~/.config/crucible/init.lua
 
--- Statusline with all features
-cru.statusline.setup({
-    left = {
-        cru.statusline.mode({
-            normal = { text = " N ", bg = "#98c379", fg = "black" },
-            plan = { text = " P ", bg = "#61afef", fg = "black" },
-            auto = { text = " A ", bg = "#e5c07b", fg = "black" },
-        }),
-    },
-    center = {
-        cru.statusline.model({ max_length = 25, fg = "cyan" }),
-    },
-    right = {
-        cru.statusline.notification({
-            fg = "yellow",
-            fallback = cru.statusline.context({ fg = "gray" }),
-        }),
-    },
+-- Colours. `term4` is the terminal's slot 4 — whatever the user put there —
+-- rather than a claim that it looks blue.
+crucible.colorscheme.setup({
+  name   = "mine",
+  colors = { primary = "term4", success = "term2", text_dim = "bright_black" },
+})
+
+crucible.hl.set("StatusMode", { fg = "black", bg = "mode_normal", bold = true })
+
+-- Surfaces
+crucible.ui.setup({
+  popup  = { border = "rounded", padding = 1, max_visible = 10 },
+  prompt = { normal = { glyph = "❯ " } },
+  layout = { status_bar = "bottom", message_spacing = 1 },
+})
+
+-- Code blocks follow the colours above
+crucible.syntax.setup({ theme = "derived" })
+
+-- Statusline
+local sl = crucible.statusline
+sl.setup({
+  main = {
+    anchor = "footer.below_input",
+    items  = { sl.mode:hl("StatusMode"), " ", sl.model{ max = 25 },
+               sl.align,
+               sl.any(sl.notification, sl.context) },
+  },
 })
 
 cru.log("info", "Config loaded!")
@@ -253,12 +238,17 @@ cru.log("info", "Config loaded!")
 - Check for syntax errors: run `lua ~/.config/crucible/init.lua`
 - Check logs: `cru chat` with `RUST_LOG=crucible_lua=debug`
 
-**Statusline not changing?**
-- Ensure your `init.lua` runs before the TUI starts (check for syntax errors first)
-- `cru.statusline.setup()` is loaded at TUI startup — changes require restarting the chat session
-- Crucible ships an embedded Lua default that runs before your `init.lua`. Your config overrides it — you don't need to configure everything from scratch
-- If the Lua runtime fails entirely, a minimal emergency statusline (mode + model) renders in pure Rust
-- Check logs with `RUST_LOG=crucible_lua=debug` to verify config was loaded
+**Statusline or colours not changing?**
+- Your `init.lua` is evaluated by the **daemon**, not by `cru`. A stale daemon
+  serves stale config — `plugin.reload` re-evaluates it and pushes the result to
+  every attached client, so a restart is not required
+- Check for syntax errors first; a config that fails to load leaves the built-in
+  default in place
+- Crucible ships a built-in default that runs before your `init.lua`, so you only
+  need to configure what you want to change
+- If the daemon is unreachable entirely, the TUI renders from a complete
+  compiled-in theme rather than failing
+- Check logs with `RUST_LOG=crucible_lua=debug` to verify the config was loaded
 
 ## See Also
 

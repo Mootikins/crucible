@@ -49,7 +49,7 @@ Toggle with `Shift+Tab`.
 
 ## Extending the TUI
 
-The TUI status bar is driven by Lua configuration. Define your own layout with `cru.statusline.setup()` — choose which components appear (mode badge, model name, context usage, notifications) and style them with colors and formatting. If no Lua config is present, the TUI uses a sensible default layout.
+The TUI status bar is driven by Lua. A bar is a list of items — `crucible.statusline.setup{}` chooses which appear (mode badge, model, context usage, notifications), where they sit, and how they are styled; you can define more than one bar and anchor them above or below the input. Values the daemon computes, like a git branch, are placed with `sl.expr` and pushed from a handler. With no Lua config the TUI uses a sensible default. See [[Lua/Configuration]] and [[Extending/Scripted UI]].
 
 See [[Help/Lua/Configuration]] for the full statusline API and examples.
 

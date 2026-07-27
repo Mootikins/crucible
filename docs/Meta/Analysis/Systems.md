@@ -174,7 +174,11 @@ Crucible follows a "scriptable surfaces, not a scripted runtime" model. Lua owns
 
 | Surface | How |
 |---------|-----|
-| Statusline layout | `crucible.statusline.setup()` — components, order, colors |
+| Colour palette | `crucible.colorscheme.setup()` — semantic colours, terminal slots, adaptive pairs |
+| Highlight groups | `crucible.hl.set/link` — open, linkable namespace |
+| Surface geometry | `crucible.ui.setup()` — borders, padding, prompt glyphs, layout |
+| Statusline layout | `crucible.statusline.setup()` — item trees, multiple bars, anchors |
+| Code highlighting | `crucible.syntax.setup()` — derived from the colorscheme by default |
 | Theme tokens | *(planned)* — color palette, style overrides |
 | Keybinding remaps | *(planned)* — user-defined key → action mapping |
 | Event handlers | Hooks on session events (turn complete, tool call, etc.) |
@@ -188,7 +192,7 @@ Crucible follows a "scriptable surfaces, not a scripted runtime" model. Lua owns
 
 ### Embedded Defaults
 
-Lua surfaces ship with embedded Rust defaults (`StatuslineConfig::builtin_default()`) that match the embedded Lua default (`defaults/statusline.lua`). This ensures:
+Lua surfaces ship with embedded Rust defaults (`statusline_items::builtin_default()`, `ThemeConfig::default_dark()`) so a client renders correctly before — or without — any daemon config. This ensures:
 
 1. The TUI works without any Lua initialization (tests, emergency fallback)
 2. User's `init.lua` overrides the default — not required for basic functionality

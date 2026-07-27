@@ -110,10 +110,25 @@ const TEMPLATE_INIT_LUA: &str = r#"-- Crucible user configuration
 --   timeout = 60,
 -- })
 
--- Configure the statusline
--- cru.statusline.setup({
---   left = { cru.statusline.mode(), cru.statusline.model({ max_length = 25 }) },
---   right = { cru.statusline.notification({ fallback = cru.statusline.context() }) },
+-- Colours. "term4" is the terminal's own slot 4 — whatever you configured
+-- there — rather than a claim that it looks blue.
+-- crucible.colorscheme.setup({ colors = { primary = "term4" } })
+
+-- Surfaces
+-- crucible.ui.setup({
+--   popup  = { border = "rounded", padding = 1 },
+--   prompt = { normal = { glyph = "> " } },
+-- })
+
+-- Statusline: a bar is a list of items
+-- local sl = crucible.statusline
+-- sl.setup({
+--   main = {
+--     anchor = "footer.below_input",
+--     items  = { sl.mode, " ", sl.model({ max = 25 }),
+--                sl.align,
+--                sl.any(sl.notification, sl.context) },
+--   },
 -- })
 
 -- Session defaults

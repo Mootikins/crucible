@@ -4,10 +4,15 @@
 --
 -- Color formats:
 --   "#rrggbb"  — hex RGB
---   "name"     — named terminal color (white, black, red, green, yellow, blue, magenta, cyan, gray, dark_gray)
+--   "term4"    — terminal palette slot 4, whatever the user configured there
+--   4          — the same thing, as a bare index (0-15 = terminal, 16-255 = xterm cube)
+--   "name"     — an ALIAS for a slot: black/red/green/yellow/blue/magenta/cyan/
+--                white/gray/dark_gray and bright_*. A name is only accurate on an
+--                unmodified palette; use hex when you mean a specific colour.
 --   { dark = "...", light = "..." }  — adaptive color (different for dark/light terminals)
 --
--- This file is embedded via include_str!() in crucible-lua.
+-- Loaded by name via `ui.set_theme`; the default is also embedded via
+-- include_str!() in crucible-lua.
 
 return {
   name = "default",

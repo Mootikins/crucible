@@ -200,7 +200,9 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 - [x] **Thinking Display** `P0` — Streaming thinking blocks with token count; Ctrl+T toggles; `:set thinking`; note: token count is inaccurate (counts delta messages, not actual tokens) · `crucible-cli`
 - [x] **Markdown Rendering** `P0` — Full markdown-to-node rendering with styled output · `crucible-cli`, `crucible-oil`
 - [x] **Context Usage Display** `P0` — Token usage (used/total) in statusline; daemon pipes prompt/completion tokens via `message_complete` event · `crucible-cli`
-- [x] **Lua Statusline Bridge** `P0` — `crucible.statusline.setup()` config drives TUI `StatusBar` rendering; falls back to hardcoded layout · [[Help/Lua/Configuration]] · `crucible-cli`
+- [x] **Lua UI Config Bridge** `P0` — `ui.config` RPC delivers colorscheme, highlight groups, surface geometry and statusline bars to every attached client, with diffed `ui_style_changed` pushes for hot reload and `ui.set_theme` for runtime switching; colours cross unresolved so the client resolves adaptive pairs and terminal slots · [[Help/Lua/Configuration]] · [[Help/Extending/Scripted UI]] · `crucible-lua`, `crucible-daemon`, `crucible-cli`
+- [x] **Statusline item trees** `P0` — bars are lists of named items (`sl.mode`, `sl.model{}`, `sl.expr("git")`) with combinators (`sl.any`, `sl.when`), multiple bars, and closed anchors; daemon-computed values push via `cru.statusline.set` with a dirty check · `crucible-cli`
+- [x] **Terminal palette colours** `P1` — `term4` / bare index / `bright_*` address the user's own terminal colours; syntect derives from the colorscheme and carries palette entries through syntect's RGB-only model · `crucible-oil`, `crucible-cli`
 
 ### Tool & Agent Display
 - [x] **Tool Call Display** `P0` — Spinner while running, smart summarization (line/file/match counts), MCP prefix stripping · `crucible-cli`
