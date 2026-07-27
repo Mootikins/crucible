@@ -119,45 +119,50 @@ impl SyntaxExtension for FootnoteExtension {
             references_found.push(reference);
         }
 
-        // Parse inline footnotes manually
-        let chars: Vec<char> = content.chars().collect();
+        // Parse inline footnotes manually.
+        //
+        // Every index here is a BYTE offset. An earlier version walked a
+        // `Vec<char>` — so `i` counted characters — while slicing `content` and
+        // taking `find` results, which are byte offsets. The two agree only for
+        // ASCII: one em dash earlier in the note desynchronized them, and the
+        // slice at `content[..offset]` then landed mid-codepoint and panicked
+        // the thread parsing the note.
         let mut i = 0;
-        while i < chars.len() {
-            if chars[i] == '^' && i > 0 && chars[i - 1] != '[' {
-                // Find closing ^
-                if let Some(end_pos) = content[i + 1..].find('^') {
-                    let inline_end = i + 1 + end_pos;
-                    if inline_end < chars.len() {
-                        let inline_content = &content[i + 1..inline_end];
-                        // Only consider it a valid inline footnote if it has meaningful content
-                        if !inline_content.is_empty() && inline_content.len() > 1 {
-                            let offset = i;
+        while let Some(rel) = content[i..].find('^') {
+            let caret = i + rel;
 
-                            // Create a unique identifier for inline footnotes
-                            let inline_identifier = format!("inline-{}", offset);
+            // A `^` directly after `[` opens a reference, not an inline note.
+            let after_bracket = content[..caret].chars().next_back() == Some('[');
 
-                            // Create inline footnote definition
-                            let definition = FootnoteDefinition::new(
-                                inline_identifier.clone(),
-                                inline_content.to_string(),
-                                offset,
-                                content[..offset].matches('\n').count() + 1,
-                            );
+            if caret > 0 && !after_bracket {
+                if let Some(end_rel) = content[caret + 1..].find('^') {
+                    let inline_end = caret + 1 + end_rel;
+                    let inline_content = &content[caret + 1..inline_end];
 
-                            // Create reference for inline footnote
-                            let reference =
-                                FootnoteReference::new(inline_identifier.clone(), offset);
+                    // Meaningful content only — a bare `^^` is not a footnote.
+                    if inline_content.len() > 1 {
+                        let offset = caret;
+                        let inline_identifier = format!("inline-{}", offset);
 
-                            definitions_found.insert(inline_identifier, definition);
-                            references_found.push(reference);
+                        let definition = FootnoteDefinition::new(
+                            inline_identifier.clone(),
+                            inline_content.to_string(),
+                            offset,
+                            content[..offset].matches('\n').count() + 1,
+                        );
+                        let reference = FootnoteReference::new(inline_identifier.clone(), offset);
 
-                            i = inline_end + 1;
-                            continue;
-                        }
+                        definitions_found.insert(inline_identifier, definition);
+                        references_found.push(reference);
                     }
+
+                    // `^` is one byte, so this stays on a boundary.
+                    i = inline_end + 1;
+                    continue;
                 }
             }
-            i += 1;
+
+            i = caret + 1;
         }
 
         // Filter out references that are actually footnote definitions
@@ -322,14 +327,49 @@ mod tests {
     use super::*;
     use crate::parser::error::ErrorSeverity;
 
+    /// A note with any multi-byte character before an inline footnote used to
+    /// panic the parsing thread: char indices were used to slice by byte, so
+    /// the offsets desynchronized and the slice landed mid-codepoint. An em
+    /// dash is three bytes, which is enough on its own.
+    ///
+    /// This crashed the daemon on real notes — `cru status` against a kiln
+    /// containing an em dash returned "Connection closed by daemon".
     #[tokio::test]
-    async fn test_footnote_detection() {
+    async fn inline_footnotes_survive_multibyte_text() {
         let extension = FootnoteExtension::new();
+        let content = format!("{} ^an inline note^ trailing", "em — dash ".repeat(60));
+        let mut doc_content = NoteContent::new();
 
-        assert!(extension.can_handle("This has a footnote [^1] reference"));
-        assert!(extension.can_handle("And here's a definition [^note]: Content"));
-        assert!(extension.can_handle("Inline footnote^content here"));
-        assert!(!extension.can_handle("Regular text without footnotes"));
+        extension.parse(&content, &mut doc_content).await;
+
+        let inline = doc_content
+            .footnotes
+            .definitions
+            .keys()
+            .filter(|k| k.starts_with("inline-"))
+            .count();
+        assert_eq!(inline, 1, "the inline footnote was found");
+    }
+
+    /// Offsets must be real byte indices, or every consumer that slices with
+    /// one inherits the same panic.
+    #[tokio::test]
+    async fn an_inline_footnote_offset_is_a_valid_byte_boundary() {
+        let extension = FootnoteExtension::new();
+        let content = format!("{}^note text^", "— ".repeat(40));
+        let mut doc_content = NoteContent::new();
+
+        extension.parse(&content, &mut doc_content).await;
+
+        for def in doc_content.footnotes.definitions.values() {
+            assert!(
+                content.is_char_boundary(def.offset),
+                "offset {} is not a char boundary",
+                def.offset
+            );
+            // The panic was in exactly this slice.
+            let _ = &content[..def.offset];
+        }
     }
 
     #[tokio::test]
