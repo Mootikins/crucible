@@ -22,7 +22,7 @@ import {
 import { ArrowLeft, ArrowRight, Palette, Pencil, Trash2 } from '@/lib/icons';
 import { getCanvas, saveCanvas, rawFileUrl } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
-import { openNoteInEditor } from '@/lib/note-actions';
+import { openFileInEditor } from '@/lib/file-actions';
 import {
   anchorPoint,
   boundsOf,
@@ -602,7 +602,13 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
   const rawUrlFor = (relPath: string) => rawFileUrl(absPathFor(relPath));
 
   const openFile = (relPath: string) => {
-    void openNoteInEditor(`${kiln()}/${relPath}`);
+    // Open the file directly. This used to call `openNoteInEditor` with the
+    // absolute path as the *name* and no kiln, which meant the name was
+    // resolved against the app's DEFAULT kiln — so opening a card in one kiln
+    // reached into another, the exact leak this canvas is supposed to prevent.
+    // A file node already carries a kiln-relative path; there is nothing to
+    // resolve.
+    openFileInEditor(absPathFor(relPath), relPath.split('/').pop() ?? relPath);
   };
 
   return (
