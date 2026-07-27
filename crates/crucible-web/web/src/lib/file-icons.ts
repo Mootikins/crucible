@@ -1,5 +1,6 @@
 import type { Component, JSX } from 'solid-js';
 import {
+  ChartNetwork,
   File,
   FileText,
   FileCode,
@@ -122,10 +123,15 @@ const BY_EXT: Record<string, FileIconMeta> = {
   vue: code(GREEN), svelte: code(ORANGE), astro: code(ORANGE),
   css: style(BLUE), scss: style(PINK), sass: style(PINK), less: style(BLUE), styl: style(GREEN),
 
+  // --- knowledge ---
+  // A .canvas is a JSON Canvas document, not an image — it used to map to the
+  // image icon, which read as "picture" in every file tree.
+  canvas: { icon: ChartNetwork, color: PURPLE },
+
   // --- images ---
   svg: { icon: FileImage, color: ORANGE },
   png: img, jpg: img, jpeg: img, gif: img, webp: img, ico: img, bmp: img,
-  tiff: img, tif: img, avif: img, heic: img, psd: img, ai: img, xcf: img, canvas: img,
+  tiff: img, tif: img, avif: img, heic: img, psd: img, ai: img, xcf: img,
 
   // --- video / audio ---
   mp4: video, mov: video, webm: video, mkv: video, avi: video, m4v: video, flv: video,

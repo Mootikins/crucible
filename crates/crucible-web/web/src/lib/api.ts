@@ -1,3 +1,4 @@
+import type { CanvasDoc, CanvasResponse } from './canvas-types';
 import type {
   AgentProfileEntry,
   ChatEvent,
@@ -1640,4 +1641,38 @@ export function subscribeToFsEvents(onEvent: (event: FsEvent) => void): () => vo
     if (reconnectTimeout) clearTimeout(reconnectTimeout);
     source?.close();
   };
+}
+
+// ===========================================================================
+// Canvas
+// ===========================================================================
+
+/**
+ * Read a `.canvas` document.
+ *
+ * References that fail kiln containment come back redacted, with the node ids
+ * and reasons in `rejected`. The offending paths are deliberately not returned,
+ * so a quarantined node can be explained but never fetched.
+ */
+export async function getCanvas(path: string): Promise<CanvasResponse> {
+  const params = new URLSearchParams({ path });
+  return request<CanvasResponse>('GET', `/api/canvas?${params.toString()}`, {
+    errorMessage: 'Failed to load canvas',
+    includeErrorText: true,
+  });
+}
+
+/** Write a `.canvas` document. Refused server-side if any reference escapes the kiln. */
+export async function saveCanvas(path: string, canvas: CanvasDoc): Promise<void> {
+  await request<void>('PUT', '/api/canvas', {
+    errorMessage: 'Failed to save canvas',
+    parseAs: 'none',
+    includeErrorText: true,
+    ...jsonRequest({ path, content: JSON.stringify(canvas) }),
+  });
+}
+
+/** URL serving a file's raw bytes, for canvas media nodes and inline images. */
+export function rawFileUrl(absolutePath: string): string {
+  return `/api/file/raw?path=${encodeURIComponent(absolutePath)}`;
 }

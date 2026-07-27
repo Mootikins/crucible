@@ -11,6 +11,7 @@ import FileViewerPanel from '@/components/FileViewerPanel';
 import InboxPanel from '@/components/InboxPanel';
 import { BacklinksPanel } from '@/components/BacklinksPanel';
 import { GraphPanel } from '@/components/graph/GraphPanel';
+import { CanvasPanel } from '@/components/canvas/CanvasPanel';
 
 // Tab/ribbon icons are NOT registered here — they resolve per content type
 // through lib/tab-icons.ts (SVG components, consistent monochrome chrome).
@@ -30,4 +31,5 @@ export function registerPanels(): void {
   registry.register('plugins', 'Plugins', PluginPanel, 'left');
   registry.register('backlinks', 'Backlinks', BacklinksPanel, 'right');
   registry.register('graph', 'Graph', GraphPanel, 'center');
+  registry.register('canvas', 'Canvas', CanvasPanel, 'center');
 }

@@ -40,6 +40,14 @@ export function openFileWithDiff(
  * Falls back to activating an existing tab wherever it lives — one file, one
  * tab, matching `openFileInEditor`.
  */
+/**
+ * Which panel opens a path. A `.canvas` is a spatial document, not text, so it
+ * routes to the canvas editor rather than the file viewer.
+ */
+export function contentTypeForPath(filePath: string): 'file' | 'canvas' {
+  return /\.canvas$/i.test(filePath) ? 'canvas' : 'file';
+}
+
 export function openFileInGroup(
   groupId: string | null,
   filePath: string,
@@ -57,8 +65,8 @@ export function openFileInGroup(
     // Last-resort basename fallback: a falsy caller value would otherwise
     // mint a tab literally titled "undefined" (save prompts included).
     title: fileName || filePath.split('/').pop() || filePath,
-    contentType: 'file',
-    icon: iconForContentType('file'),
+    contentType: contentTypeForPath(filePath),
+    icon: iconForContentType(contentTypeForPath(filePath)),
     metadata: { filePath },
   };
 
