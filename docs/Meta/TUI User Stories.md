@@ -224,6 +224,16 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Acceptance:** replay never re-sends RPC; golden keyword checks pass; `--replay-speed`/`--replay-auto-exit` honored.
 **Tests:** T3 (fixture_replay + replay_mode exist), T5 (VHS demos), validate-demos.sh.
 
+### US-905: Theme the TUI from Lua
+**As a user**, colours, per-surface geometry and prompt glyphs come from my `init.lua` (or a `themes/*.lua` file), and a change takes effect without restarting.
+**Acceptance:** `crucible.theme.setup{}` reaches the renderer in split-process mode (not only `--standalone`); `crucible.hl.set/link` restyle named groups, with palette references re-resolving when the palette changes; `crucible.ui.setup{}` sets popup/modal/drawer/toast/prompt geometry, and a surface the theme does not name keeps its built-in; a daemon that is unreachable leaves a correct, compiled-in-themed screen rather than a blank one; a re-sent `ui.config` replaces the active theme and repaints.
+**Tests:** T1 wire round-trips + group resolution/linking/cycles in `crucible-lua` (`theme_wire.rs`, `hl.rs`, `hl_lua.rs`, `ui_geometry.rs`); T2 store swap + surface application in `tui/oil/theme/{global,groups,geometry,remote}.rs` and `components/input_area.rs`; T3 delivery over real RPC in `crucible-daemon/tests/rpc_ui_config_e2e.rs` — RED-verify that suite by unwiring the handler, not the parser.
+
+### US-906: Build a statusline
+**As a user**, I compose one or more status bars from named items, place them at anchors, and show values the daemon computes (a git branch) without polling.
+**Acceptance:** `sl.setup{}` defines bars at `top`/`bottom`/`footer.above_input`/`footer.below_input`; built-ins (mode, model, context, cache, notification) render every frame with no RPC; `sl.any`/`sl.when` express fallback and TUI-local conditions; `sl.expr("git")` renders nothing until a value is pushed and does not reflow the bar when it arrives; a value re-pushed unchanged causes no repaint; control characters in a value never reach the terminal; the right-hand gutter is preserved except when an active notification claims it.
+**Tests:** T1 item/bar wire round-trips and Lua vocabulary in `statusline_items.rs`/`statusline_lua.rs`, registry caps + dirty check + sanitising in `statusline_exprs.rs`; T2 evaluation, combinators, gutter and narrow-width badge survival in `components/status_items.rs` plus the statusline snapshots in `component_isolation_tests.rs`; T3 `FileChanged` dispatch in `server/file_event_hooks.rs`.
+
 ### US-HERO: One session, many consoles (cross-surface)
 **As a user**, work I start in the terminal is fully continuable in the browser and back again — the session lives in the daemon (the "hypervisor"), the TUI and web are stateless consoles, and kiln files are a shared buffer.
 **Acceptance:** a session created + advanced in `cru chat` resumes in `cru web` with turn 1 hydrated both sides; a note the terminal wrote via the shell modal opens in the web editor; the browser's edit to that note is visible from a later `cru chat --resume` via `!cat`; both consoles see the same 3-turn history and the same bytes on disk.

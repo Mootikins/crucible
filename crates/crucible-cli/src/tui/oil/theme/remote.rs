@@ -15,12 +15,12 @@ use tracing::{debug, warn};
 /// Highest `ui.config` version this client understands.
 const SUPPORTED_VERSION: u32 = 1;
 
-/// Apply a `ui.config` payload to the process-wide active theme.
+/// Apply a `ui.config` payload to the process-wide style stores.
 ///
-/// Returns `true` when a theme was installed. Returns `false` when the payload
-/// carried nothing usable, or when the theme was already initialized — the
-/// global is set-once, so a late second snapshot cannot silently retheme a
-/// half-drawn screen.
+/// Re-application is the point, not a hazard: the daemon re-sends this whenever
+/// a config is re-evaluated or a theme is switched, which is what makes hot
+/// reload and runtime theme switching work. Returns `true` when a theme was
+/// installed, `false` when the payload carried nothing usable.
 pub fn apply_ui_config(payload: &Value) -> bool {
     let version = payload.get("version").and_then(Value::as_u64).unwrap_or(0);
     if version > u64::from(SUPPORTED_VERSION) {
@@ -40,11 +40,6 @@ pub fn apply_ui_config(payload: &Value) -> bool {
 
     let theme = crucible_lua::theme_wire::theme_from_wire(theme_wire);
     let name = theme.name.clone();
-
-    if super::global::is_initialized() {
-        debug!(theme = %name, "active theme already set; ignoring later ui.config");
-        return false;
-    }
 
     super::global::set(theme);
 
@@ -127,6 +122,23 @@ mod tests {
     #[test]
     fn a_payload_with_no_theme_is_ignored() {
         assert!(!apply_ui_config(&json!({ "version": 1 })));
+    }
+
+    /// Hot reload and `:set theme=…` both depend on this: a second payload has
+    /// to replace the first, not be discarded.
+    #[test]
+    fn a_second_payload_replaces_the_first() {
+        assert!(apply_ui_config(&json!({
+            "version": 1,
+            "theme": { "name": "first" },
+        })));
+        assert_eq!(super::super::active().name, "first");
+
+        assert!(apply_ui_config(&json!({
+            "version": 1,
+            "theme": { "name": "second" },
+        })));
+        assert_eq!(super::super::active().name, "second");
     }
 
     /// A newer daemon must not brick an older TUI.

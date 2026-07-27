@@ -1,46 +1,54 @@
 //! Global theme store for the TUI.
 //!
-//! Provides a process-wide [`ThemeConfig`] via [`OnceLock`], initialized lazily
-//! with [`ThemeConfig::default_dark()`] on first access.
+//! Swappable, not set-once. The daemon re-sends `ui.config` when a config is
+//! re-evaluated or a theme is switched at runtime, and a client that could only
+//! be themed once would need restarting to see it.
+//!
+//! Installing leaks the previous theme rather than reference-counting it. That
+//! is deliberate: `active()` returning `&'static ThemeConfig` is what lets a
+//! render borrow from it for free — including `InputStyle::prompt`, which hands
+//! back a `&'static str` straight out of the store — and lets `ViewContext` stay
+//! `Copy`. An `Arc` would push a lifetime or a clone into every one of ~60 call
+//! sites on the render path. Theme installs are user-initiated and rare (a few
+//! per session at most), each leaking a few KB, so the trade is a bounded, tiny
+//! leak for a much simpler render path.
 
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 
 use super::config::ThemeConfig;
 
-static ACTIVE_THEME: OnceLock<ThemeConfig> = OnceLock::new();
+static ACTIVE_THEME: RwLock<Option<&'static ThemeConfig>> = RwLock::new(None);
 static FALLBACK_THEME: OnceLock<ThemeConfig> = OnceLock::new();
 
-// NOTE: ACTIVE_THEME uses OnceLock and cannot be safely reset between tests.
-// OnceLock only allows initialization once per process — the first call to set() or
-// get_or_init() wins, and subsequent calls are no-ops. This means tests that run in
-// parallel or sequentially in the same process will see the theme set by the first test.
-// Tests requiring specific themes should use a test-local theme mechanism (e.g., passing
-// ThemeConfig as a parameter) rather than relying on the global singleton.
+fn fallback() -> &'static ThemeConfig {
+    FALLBACK_THEME.get_or_init(ThemeConfig::default_dark)
+}
 
-/// Returns the active theme configuration, or the built-in dark theme when none
-/// has been installed.
+/// The active theme, or the built-in dark theme when none has been installed.
 ///
-/// Reading deliberately does NOT initialize `ACTIVE_THEME`. If it did, any
-/// render or probe before the daemon's `ui.config` arrives would lock in the
-/// default and make every later [`set`] a silent no-op — the theme would never
-/// apply, with nothing logged and nothing to catch it.
+/// Reading deliberately does NOT install the default. If it did, any render or
+/// probe before the daemon's `ui.config` arrives would latch the fallback and
+/// make a later [`set`] look like a no-op — the theme would never apply, with
+/// nothing logged and nothing to catch it.
 pub fn active() -> &'static ThemeConfig {
     ACTIVE_THEME
-        .get()
-        .unwrap_or_else(|| FALLBACK_THEME.get_or_init(ThemeConfig::default_dark))
+        .read()
+        .ok()
+        .and_then(|g| *g)
+        .unwrap_or_else(fallback)
 }
 
-/// Initialize the global theme. Intended to be called once at startup.
-///
-/// If the theme is already initialized (by a prior `set()` or `active()` call),
-/// this is a no-op — the original theme is preserved.
+/// Install a theme, replacing any previous one.
 pub fn set(config: ThemeConfig) {
-    let _ = ACTIVE_THEME.set(config);
+    let leaked: &'static ThemeConfig = Box::leak(Box::new(config));
+    if let Ok(mut guard) = ACTIVE_THEME.write() {
+        *guard = Some(leaked);
+    }
 }
 
-/// Returns `true` if the global theme has been initialized.
+/// Whether a theme has been installed. A read alone does not count.
 pub fn is_initialized() -> bool {
-    ACTIVE_THEME.get().is_some()
+    ACTIVE_THEME.read().is_ok_and(|g| g.is_some())
 }
 
 #[cfg(test)]
@@ -55,19 +63,29 @@ mod tests {
     }
 
     #[test]
-    fn theme_global_active_is_same_reference() {
-        let t1 = active();
-        let t2 = active();
-        assert!(std::ptr::eq(t1, t2));
+    fn theme_global_active_is_same_value() {
+        assert_eq!(active().name, active().name);
+    }
+
+    /// The property the push stream needs: a second install replaces the first.
+    #[test]
+    fn a_later_theme_replaces_an_earlier_one() {
+        let mut first = ThemeConfig::default_dark();
+        first.name = "first".to_string();
+        set(first);
+        assert_eq!(active().name, "first");
+
+        let mut second = ThemeConfig::default_dark();
+        second.name = "second".to_string();
+        set(second);
+        assert_eq!(
+            active().name,
+            "second",
+            "themes must be swappable at runtime"
+        );
     }
 
     /// `is_initialized` means "a theme was installed", not "a theme was read".
-    ///
-    /// This previously asserted the opposite, which encoded a real bug: reading
-    /// the theme marked it initialized, so a render or probe before the daemon's
-    /// `ui.config` arrived would both lock in the default AND make
-    /// `apply_ui_config` skip installing the real one — the theme silently never
-    /// applied, from either side.
     #[test]
     fn reading_the_theme_does_not_count_as_installing_one() {
         let _ = active();
@@ -88,16 +106,10 @@ mod tests {
         use std::thread;
 
         let handles: Vec<_> = (0..4)
-            .map(|_| {
-                thread::spawn(|| {
-                    let t = active();
-                    std::ptr::addr_of!(*t) as usize
-                })
-            })
+            .map(|_| thread::spawn(|| active().name.clone()))
             .collect();
 
-        let addrs: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-        // All threads got the same &'static reference
-        assert!(addrs.windows(2).all(|w| w[0] == w[1]));
+        let names: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        assert!(names.windows(2).all(|w| w[0] == w[1]));
     }
 }

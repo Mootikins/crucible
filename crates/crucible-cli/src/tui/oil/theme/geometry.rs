@@ -5,14 +5,19 @@
 //! which is what keeps an untouched surface untouched rather than blanked.
 
 use crucible_lua::ui_geometry::UiGeometry;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 
-static GEOMETRY: OnceLock<UiGeometry> = OnceLock::new();
+static GEOMETRY: RwLock<Option<&'static UiGeometry>> = RwLock::new(None);
 static FALLBACK: OnceLock<UiGeometry> = OnceLock::new();
 
-/// Install geometry. Set-once, like the theme and highlight table.
+/// Install geometry, replacing any previous set. Swappable so a re-sent
+/// `ui.config` takes effect without a restart; see `theme::global` for why the
+/// previous value is leaked rather than reference-counted.
 pub fn set(geometry: UiGeometry) {
-    let _ = GEOMETRY.set(geometry);
+    let leaked: &'static UiGeometry = Box::leak(Box::new(geometry));
+    if let Ok(mut guard) = GEOMETRY.write() {
+        *guard = Some(leaked);
+    }
 }
 
 /// Active geometry; all-default when none was delivered.
@@ -23,7 +28,9 @@ pub fn set(geometry: UiGeometry) {
 /// error anywhere. The fallback lives in its own cell for that reason.
 pub fn active() -> &'static UiGeometry {
     GEOMETRY
-        .get()
+        .read()
+        .ok()
+        .and_then(|g| *g)
         .unwrap_or_else(|| FALLBACK.get_or_init(UiGeometry::default))
 }
 

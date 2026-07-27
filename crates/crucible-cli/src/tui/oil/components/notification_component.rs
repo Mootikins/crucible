@@ -83,11 +83,13 @@ impl Component for NotificationComponent {
             return Node::Empty;
         }
 
+        use crate::tui::oil::theme::groups;
         let t = crate::tui::oil::theme::active();
-        let bg = t.resolve_color(t.colors.background);
-        let text_style = Style::new()
-            .bg(bg)
-            .fg(t.resolve_color(t.colors.overlay_text));
+        let bg = groups::bg_or("Drawer", t.resolve_color(t.colors.background));
+        let text_style = Style::new().bg(bg).fg(groups::fg_or(
+            "Drawer",
+            t.resolve_color(t.colors.overlay_text),
+        ));
 
         let content_rows: Vec<Node> = self
             .entries

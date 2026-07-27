@@ -124,6 +124,7 @@ pub const METHODS: &[&str] = &[
     "config.get",
     "config.set",
     "ui.config",
+    "ui.set_theme",
     "project.register",
     "project.unregister",
     "project.list",
@@ -396,6 +397,16 @@ impl RpcDispatcher {
             // Lua-defined UI config (theme now; surfaces and bars follow).
             // Snapshot half of the handshake — see `rpc::ui`.
             "ui.config" => to_response(id, Ok(crate::rpc::ui::handle_ui_config(&self.ctx, &req))),
+            "ui.set_theme" => to_response(
+                id,
+                crate::rpc::ui::handle_ui_set_theme(&self.ctx, &req).map_err(|message| {
+                    crate::protocol::RpcError {
+                        code: crate::protocol::INVALID_PARAMS,
+                        message,
+                        data: None,
+                    }
+                }),
+            ),
 
             // Plugin RPC handlers
             "plugin.reload" => to_response(id, self.handle_plugin_reload(&req).await),
@@ -1545,6 +1556,16 @@ impl RpcDispatcher {
         let resp =
             crate::server::plugins::handle_plugin_reload(req.clone(), &self.ctx.plugin_loader)
                 .await;
+
+        // A reload re-runs init.lua, so any `theme`/`ui`/`statusline` setup in
+        // it has just changed. Tell attached clients, or hot reload would only
+        // work at boot.
+        crate::server::ui_broadcast::broadcast_style_changed(
+            &self.ctx.event_tx,
+            &self.ctx.agents,
+            crate::server::ui_broadcast::GLOBAL,
+        );
+
         map_server_resp(resp)
     }
 

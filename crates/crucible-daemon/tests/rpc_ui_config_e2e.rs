@@ -150,6 +150,52 @@ async fn ui_config_ships_colors_unresolved_in_authoring_form() {
     server.shutdown().await;
 }
 
+/// Runtime theme switching: the whole reason the stores became swappable.
+/// A bogus name must be refused loudly rather than silently leaving the old
+/// theme, or a typo looks like the command did nothing.
+#[tokio::test]
+async fn ui_set_theme_rejects_an_unknown_name() {
+    let server = TestServer::start().await.expect("server starts");
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("client connects");
+
+    let err = client
+        .call("ui.set_theme", json!({ "name": "no-such-theme" }))
+        .await
+        .expect_err("an unknown theme must be an error");
+    assert!(
+        format!("{err}").contains("not found"),
+        "expected a not-found error, got: {err}"
+    );
+
+    server.shutdown().await;
+}
+
+/// A theme name is a bare stem by construction, so a path in it is either a
+/// mistake or an attempt to read an arbitrary file.
+#[tokio::test]
+async fn ui_set_theme_refuses_path_traversal() {
+    let server = TestServer::start().await.expect("server starts");
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("client connects");
+
+    for name in ["../../etc/passwd", "sub/theme", "..", ""] {
+        let err = client
+            .call("ui.set_theme", json!({ "name": name }))
+            .await
+            .expect_err("traversal must be refused");
+        assert!(
+            format!("{err}").contains("invalid theme name")
+                || format!("{err}").contains("not found"),
+            "name {name:?} produced: {err}"
+        );
+    }
+
+    server.shutdown().await;
+}
+
 /// A client that asks for a light background must still receive the same
 /// unresolved payload — the daemon does not resolve on the client's behalf.
 /// This pins the direction of responsibility so a later "optimisation" that

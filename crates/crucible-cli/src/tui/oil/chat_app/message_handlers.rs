@@ -317,6 +317,11 @@ impl OilChatApp {
                 }
                 self.set_plugin_status(entries);
             }
+            ChatAppMsg::StyleChanged => {
+                // The stores were already updated by the event handler; all
+                // that is left is to invalidate the frame.
+                self.needs_full_redraw = true;
+            }
             ChatAppMsg::McpServersReady(servers) => {
                 self.set_mcp_servers(servers);
                 // mcp_servers_ready is the last common setup event the daemon

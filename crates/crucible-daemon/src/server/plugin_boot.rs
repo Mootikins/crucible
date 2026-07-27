@@ -121,6 +121,15 @@ impl Server {
                 );
             }
 
+            // A re-evaluated config is a style change too — this is what makes
+            // editing init.lua and reloading take effect without restarting the
+            // TUI.
+            crate::server::ui_broadcast::broadcast_style_changed(
+                &self.event_tx,
+                &self.agent_manager,
+                crate::server::ui_broadcast::GLOBAL,
+            );
+
             // Extract service functions and spawn them as independent async tasks.
             // Each mlua::Function holds an internal ref to the Lua VM; mlua's
             // reentrant mutex serializes actual Lua execution, giving cooperative

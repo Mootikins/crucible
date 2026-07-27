@@ -6,21 +6,26 @@
 //! there is nothing sensible for a component to fall back to on its own.
 
 use crucible_lua::statusline_items::{builtin_default, StatusBars};
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 
-static BARS: OnceLock<StatusBars> = OnceLock::new();
+static BARS: RwLock<Option<&'static StatusBars>> = RwLock::new(None);
 static FALLBACK: OnceLock<StatusBars> = OnceLock::new();
 
-/// Install bar definitions.
+/// Install bar definitions, replacing any previous set.
 pub fn set(bars: StatusBars) {
-    let _ = BARS.set(bars);
+    let leaked: &'static StatusBars = Box::leak(Box::new(bars));
+    if let Ok(mut guard) = BARS.write() {
+        *guard = Some(leaked);
+    }
 }
 
 /// Active bars; the built-in default when none was delivered.
 ///
 /// Reading never initializes `BARS` — see the note in `geometry::active`.
 pub fn active() -> &'static StatusBars {
-    BARS.get()
+    BARS.read()
+        .ok()
+        .and_then(|g| *g)
         .unwrap_or_else(|| FALLBACK.get_or_init(builtin_default))
 }
 

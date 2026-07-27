@@ -242,6 +242,10 @@ pub enum ChatAppMsg {
     /// **Event** (daemon → TUI): MCP servers read from config (name, prefix, tools, connected).
     /// Arrives as `McpServerDisplay` after translation — tools are collapsed to `tool_count`.
     McpServersReady(Vec<McpServerDisplay>),
+    /// The daemon re-sent `ui.config` — theme, groups, geometry or bars
+    /// changed. Every cell may be styled differently, so this forces a full
+    /// repaint rather than a diff.
+    StyleChanged,
 }
 
 /// Category of a `ChatAppMsg` for top-level dispatch.
@@ -326,7 +330,8 @@ impl ChatAppMsg {
             | Self::WorkspaceIndexed(_)
             | Self::KilnNotesIndexed(_)
             | Self::PluginsDiscovered(_)
-            | Self::McpServersReady(_) => MsgCategory::Ui,
+            | Self::McpServersReady(_)
+            | Self::StyleChanged => MsgCategory::Ui,
         }
     }
 }

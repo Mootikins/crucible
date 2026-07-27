@@ -164,6 +164,13 @@ impl OilChatRunner {
 /// unknown event types return an empty Vec.
 pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) -> Vec<ChatAppMsg> {
     match event_type {
+        // Hot reload and runtime theme switching arrive here. Applying the
+        // payload and repainting are separate steps: over a socket, with the
+        // TUI idle-blocked on input, a changed store repaints nothing by itself.
+        "ui_style_changed" => {
+            crate::tui::oil::theme::apply_ui_config(data);
+            vec![ChatAppMsg::StyleChanged]
+        }
         "user_message" => data
             .get("content")
             .and_then(|v| v.as_str())

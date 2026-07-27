@@ -31,26 +31,34 @@ async fn rpc_call(stream: &mut UnixStream, request: &str) -> serde_json::Value {
         .await
         .expect("Failed to write request");
 
-    let mut response = Vec::new();
+    // Responses and server-pushed events share one socket, so a reply is not
+    // necessarily the next line. Skip anything without an `id` — that is a
+    // notification (e.g. `ui_style_changed`, which `plugin.reload` emits), and
+    // a real client demultiplexes the same way. Reading blindly made this
+    // helper consume an event as the next call's response.
+    let mut buffered = Vec::new();
     loop {
+        while let Some(line_end) = buffered.iter().position(|&b| b == b'\n') {
+            let line: Vec<u8> = buffered.drain(..=line_end).collect();
+            let trimmed = &line[..line.len() - 1];
+            if trimmed.is_empty() {
+                continue;
+            }
+            let value: serde_json::Value =
+                serde_json::from_slice(trimmed).expect("Failed to parse JSON line");
+            if value.get("id").is_some() {
+                return value;
+            }
+        }
+
         let mut chunk = [0u8; 1024];
         let n = stream
             .read(&mut chunk)
             .await
             .expect("Failed to read response");
         assert!(n > 0, "Connection closed before full response");
-
-        response.extend_from_slice(&chunk[..n]);
-        if response.contains(&b'\n') {
-            break;
-        }
+        buffered.extend_from_slice(&chunk[..n]);
     }
-
-    let line_end = response
-        .iter()
-        .position(|&b| b == b'\n')
-        .unwrap_or(response.len());
-    serde_json::from_slice(&response[..line_end]).expect("Failed to parse JSON response")
 }
 
 /// Daemon starts and runs with a broken Lua plugin file.

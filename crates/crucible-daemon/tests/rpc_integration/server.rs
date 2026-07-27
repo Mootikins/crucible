@@ -33,8 +33,19 @@ impl TestServer {
             let _ = server.run().await;
         });
 
-        // Wait for server to be ready
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Poll for readiness rather than sleeping a fixed interval — under load
+        // the socket may not accept before a fixed timer elapses.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if tokio::net::UnixStream::connect(&socket_path).await.is_ok() {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "server did not start accepting connections within 5s"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
 
         Ok(Self {
             _temp_dir: temp_dir,

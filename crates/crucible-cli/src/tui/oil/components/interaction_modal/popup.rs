@@ -77,9 +77,10 @@ impl InteractionModal {
     }
 
     pub(super) fn render_popup_interaction(&self, popup: &PopupRequest, term_width: usize) -> Node {
+        use crate::tui::oil::theme::groups;
         let t = crate::tui::oil::theme::active();
-        let panel_bg = t.resolve_color(t.colors.background);
-        let border_fg = t.resolve_color(t.colors.background);
+        let panel_bg = groups::bg_or("Modal", t.resolve_color(t.colors.background));
+        let border_fg = groups::fg_or("ModalBorder", t.resolve_color(t.colors.background));
 
         let title_text = format!(" {} ", popup.title);
         let title_pad = " ".repeat(term_width.saturating_sub(title_text.len()));

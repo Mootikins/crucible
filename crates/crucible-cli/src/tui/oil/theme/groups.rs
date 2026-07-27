@@ -9,15 +9,18 @@
 //! component having to know the theme exists.
 
 use crucible_lua::hl::{HlRegistry, ResolvedHl};
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 
-static GROUPS: OnceLock<HlRegistry> = OnceLock::new();
+static GROUPS: RwLock<Option<&'static HlRegistry>> = RwLock::new(None);
 static FALLBACK: OnceLock<HlRegistry> = OnceLock::new();
 
-/// Install the highlight table. Set-once, mirroring the active theme, so a late
-/// snapshot cannot restyle a half-drawn screen.
+/// Install the highlight table, replacing any previous one. See
+/// `theme::global` for the leak-on-install trade.
 pub fn set(registry: HlRegistry) {
-    let _ = GROUPS.set(registry);
+    let leaked: &'static HlRegistry = Box::leak(Box::new(registry));
+    if let Ok(mut guard) = GROUPS.write() {
+        *guard = Some(leaked);
+    }
 }
 
 /// The active highlight table; empty when none was delivered.
@@ -25,7 +28,9 @@ pub fn set(registry: HlRegistry) {
 /// Reading never initializes `GROUPS`; see the note in `geometry::active`.
 pub fn active() -> &'static HlRegistry {
     GROUPS
-        .get()
+        .read()
+        .ok()
+        .and_then(|g| *g)
         .unwrap_or_else(|| FALLBACK.get_or_init(HlRegistry::new))
 }
 
@@ -35,6 +40,19 @@ pub fn active() -> &'static HlRegistry {
 /// difference between a surface a theme chose not to touch and one it broke.
 pub fn get(name: &str) -> Option<ResolvedHl> {
     crucible_lua::hl::resolve(name, active(), super::active())
+}
+
+/// A group's background, or `fallback` when the theme did not define one.
+///
+/// The fallback is what keeps an unstyled surface correct: a theme that says
+/// nothing about `Popup` must leave the popup exactly as it was, not blank it.
+pub fn bg_or(name: &str, fallback: crucible_oil::style::Color) -> crucible_oil::style::Color {
+    get(name).and_then(|hl| hl.bg).unwrap_or(fallback)
+}
+
+/// A group's foreground, or `fallback` when the theme did not define one.
+pub fn fg_or(name: &str, fallback: crucible_oil::style::Color) -> crucible_oil::style::Color {
+    get(name).and_then(|hl| hl.fg).unwrap_or(fallback)
 }
 
 #[cfg(test)]
@@ -48,6 +66,13 @@ mod tests {
     #[test]
     fn an_absent_group_is_none_so_callers_keep_their_own_style() {
         assert_eq!(get("NoSuchGroup"), None);
+    }
+
+    /// An unstyled surface must be left alone, not blanked.
+    #[test]
+    fn bg_or_returns_the_fallback_for_an_unthemed_surface() {
+        assert_eq!(bg_or("NeverDefined", Color::Magenta), Color::Magenta);
+        assert_eq!(fg_or("NeverDefined", Color::Magenta), Color::Magenta);
     }
 
     #[test]

@@ -77,7 +77,17 @@ pub(super) async fn handle_client(
                 result = event_rx.recv() => {
                     match result {
                         Ok(event) => {
-                            if sub_manager.is_subscribed(client_id, &event.session_id) {
+                            // The wildcard is symmetric: a client subscribed to
+                            // "*" receives everything, and an event addressed
+                            // to "*" reaches everyone. Without the second half,
+                            // a genuinely global event (a theme change) would
+                            // silently reach nobody, because every client
+                            // subscribes to its own session id.
+                            let broadcast_to_all =
+                                event.session_id == crate::subscription::WILDCARD_SESSION;
+                            if broadcast_to_all
+                                || sub_manager.is_subscribed(client_id, &event.session_id)
+                            {
                                 if let Ok(json) = event.to_json_line() {
                                     let mut w = writer_clone.lock().await;
                                     if w.write_all(json.as_bytes()).await.is_err() {

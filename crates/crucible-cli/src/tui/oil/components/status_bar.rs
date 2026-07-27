@@ -13,12 +13,14 @@ pub enum NotificationToastKind {
 
 impl NotificationToastKind {
     pub fn color(&self) -> Color {
+        use crate::tui::oil::theme::groups;
         let t = crate::tui::oil::theme::active();
-        match self {
-            NotificationToastKind::Info => t.resolve_color(t.colors.info),
-            NotificationToastKind::Warning => t.resolve_color(t.colors.warning),
-            NotificationToastKind::Error => t.resolve_color(t.colors.error),
-        }
+        let (group, fallback) = match self {
+            NotificationToastKind::Info => ("ToastInfo", t.colors.info),
+            NotificationToastKind::Warning => ("ToastWarning", t.colors.warning),
+            NotificationToastKind::Error => ("ToastError", t.colors.error),
+        };
+        groups::fg_or(group, t.resolve_color(fallback))
     }
 
     pub fn label(&self) -> &'static str {

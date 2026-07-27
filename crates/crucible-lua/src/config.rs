@@ -67,6 +67,13 @@ fn set_theme_config(config: ThemeConfig) {
     }
 }
 
+/// Install a theme from outside the Lua evaluation path (the `ui.set_theme`
+/// RPC). Same store `crucible.theme.setup{}` writes, so a switch and a config
+/// reload cannot disagree.
+pub fn set_theme_config_public(config: ThemeConfig) {
+    set_theme_config(config);
+}
+
 /// Snapshot the highlight-group table.
 pub fn get_hl_registry() -> crate::hl::HlRegistry {
     get_config()

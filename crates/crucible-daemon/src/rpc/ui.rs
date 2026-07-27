@@ -38,14 +38,78 @@ use crucible_lua::theme_wire::{theme_to_wire, UI_CONFIG_VERSION};
 /// Falls back to the built-in dark theme when Lua has not populated the config
 /// store — a complete, coherent theme, never a partial one.
 pub fn handle_ui_config(ctx: &RpcContext, req: &Request) -> serde_json::Value {
-    // Current expression values ride along, so a TUI attaching after a provider
-    // has already pushed is not blank until the next change.
-    let exprs = req
+    let session_id = req
         .params
         .get("session_id")
         .and_then(|v| v.as_str())
-        .map(|id| ctx.agents.statusline_exprs().snapshot(id))
         .unwrap_or_default();
+    style_payload(&ctx.agents, session_id)
+}
+
+/// Switch the active theme by name.
+///
+/// Themes live in `<config>/crucible/themes/<name>.lua` as pure data tables, so
+/// loading one is evaluating a literal — no plugin surface is involved. On
+/// success the new palette is broadcast, which is what makes the switch appear
+/// in every attached client rather than only the one that asked.
+pub fn handle_ui_set_theme(ctx: &RpcContext, req: &Request) -> Result<serde_json::Value, String> {
+    let name = req
+        .params
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "ui.set_theme requires a 'name'".to_string())?;
+
+    // Reject separators outright rather than sanitizing: a theme name is a bare
+    // stem by construction, so anything with a path in it is a mistake or an
+    // attempt to read an arbitrary file.
+    if name.is_empty() || name.contains(['/', '\\']) || name.contains("..") {
+        return Err(format!("invalid theme name '{name}'"));
+    }
+
+    let config_dir = dirs::config_dir()
+        .ok_or_else(|| "no config directory".to_string())?
+        .join("crucible");
+    let path = config_dir.join("themes").join(format!("{name}.lua"));
+
+    let source = std::fs::read_to_string(&path).map_err(|e| {
+        let available = crucible_lua::list_available_themes(&config_dir);
+        if available.is_empty() {
+            format!("theme '{name}' not found ({e})")
+        } else {
+            format!(
+                "theme '{name}' not found; available: {}",
+                available.join(", ")
+            )
+        }
+    })?;
+
+    let theme = crucible_lua::theme::load_theme_from_lua(&source)
+        .map_err(|e| format!("theme '{name}' failed to load: {e}"))?;
+
+    let applied = theme.name.clone();
+    crucible_lua::config::set_theme_config_public(theme);
+
+    crate::server::ui_broadcast::broadcast_style_changed(
+        &ctx.event_tx,
+        &ctx.agents,
+        crate::server::ui_broadcast::GLOBAL,
+    );
+    Ok(serde_json::json!({ "theme": applied }))
+}
+
+/// The style payload, shared by the `ui.config` snapshot and the
+/// `ui_style_changed` push.
+///
+/// One builder so the two cannot drift — a client applies both with the same
+/// parser, which is what makes hot reload use the attach path rather than a
+/// second, subtly different one.
+pub fn style_payload(
+    agents: &crate::agent_manager::AgentManager,
+    session_id: &str,
+) -> serde_json::Value {
+    // Current expression values ride along, so a TUI attaching after a provider
+    // has already pushed is not blank until the next change.
+    let exprs = agents.statusline_exprs().snapshot(session_id);
 
     let theme = crucible_lua::get_theme_config()
         .unwrap_or_else(crucible_lua::theme::ThemeConfig::default_dark);

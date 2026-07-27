@@ -58,10 +58,23 @@ impl ExprRejection {
     }
 }
 
+/// Called when a value actually changes, so the host can tell clients to
+/// repaint. Boxed rather than a concrete channel type: this crate must not
+/// depend on the daemon's event bus.
+pub type ChangeNotifier = Arc<dyn Fn(&str) + Send + Sync>;
+
 /// Per-session expression values.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct StatuslineExprRegistry {
     sessions: Mutex<HashMap<String, HashMap<String, String>>>,
+    on_change: Mutex<Option<ChangeNotifier>>,
+}
+
+impl std::fmt::Debug for StatuslineExprRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StatuslineExprRegistry")
+            .finish_non_exhaustive()
+    }
 }
 
 /// Strip control characters. A value can originate in a branch name, a shell
@@ -78,6 +91,26 @@ fn sanitize(value: &str) -> String {
 impl StatuslineExprRegistry {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Install the change notifier.
+    ///
+    /// Writing a value and *telling a client about it* are different events —
+    /// over a socket, with the TUI idle-blocked on input, a changed value does
+    /// not repaint anything by itself. Every comparable statusline
+    /// implementation needs an explicit "now redraw" signal for the same reason.
+    pub fn set_change_notifier(&self, notifier: ChangeNotifier) {
+        if let Ok(mut guard) = self.on_change.lock() {
+            *guard = Some(notifier);
+        }
+    }
+
+    fn notify(&self, session_id: &str) {
+        // Cloned out before calling so the lock is not held across host code.
+        let notifier = self.on_change.lock().ok().and_then(|g| g.clone());
+        if let Some(notify) = notifier {
+            notify(session_id);
+        }
     }
 
     /// Record a value. `Ok(text)` when it changed and the TUI should repaint.
@@ -103,16 +136,23 @@ impl StatuslineExprRegistry {
         }
 
         entry.insert(key.to_string(), clean.clone());
+        drop(sessions);
+        self.notify(session_id);
         Ok(clean)
     }
 
     /// Drop a value so its item renders nothing again.
     pub fn clear(&self, session_id: &str, key: &str) -> bool {
-        self.sessions
+        let removed = self
+            .sessions
             .lock()
             .ok()
             .and_then(|mut s| s.get_mut(session_id).map(|e| e.remove(key).is_some()))
-            .unwrap_or(false)
+            .unwrap_or(false);
+        if removed {
+            self.notify(session_id);
+        }
+        removed
     }
 
     /// Current values for a session. Rides along in the `ui.config` snapshot so
@@ -267,6 +307,35 @@ mod tests {
             stored.chars().all(|c| c == '日'),
             "a byte-based cap would split a UTF-8 sequence"
         );
+    }
+
+    /// The dirty check is what makes the notifier cheap: an unchanged value
+    /// must not fire it, or every turn would repaint every client.
+    #[test]
+    fn the_notifier_fires_only_on_a_real_change() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let r = StatuslineExprRegistry::new();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&hits);
+        r.set_change_notifier(Arc::new(move |_| {
+            counter.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        r.set("s1", "git", "main").unwrap();
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+
+        let _ = r.set("s1", "git", "main");
+        assert_eq!(hits.load(Ordering::SeqCst), 1, "unchanged must not notify");
+
+        r.set("s1", "git", "main*").unwrap();
+        assert_eq!(hits.load(Ordering::SeqCst), 2);
+
+        r.clear("s1", "git");
+        assert_eq!(hits.load(Ordering::SeqCst), 3, "clearing is a change");
+
+        r.clear("s1", "git");
+        assert_eq!(hits.load(Ordering::SeqCst), 3, "clearing twice is not");
     }
 
     #[test]

@@ -52,6 +52,7 @@ pub mod grep;
 pub mod kiln;
 mod plugin_boot;
 mod socket_lock;
+pub(crate) mod ui_broadcast;
 use socket_lock::acquire_socket_lock;
 pub mod lua;
 pub mod lua_plugin_suite;

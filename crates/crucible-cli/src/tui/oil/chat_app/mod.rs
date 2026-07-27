@@ -478,9 +478,13 @@ impl OilChatApp {
             let display_pos = InputStyle::display_cursor(&mode, chars_before);
             let anchor = prompt_width + (display_pos % content_width);
 
+            use crate::tui::oil::theme::groups;
             overlay
-                .bg(t.resolve_color(t.colors.popup_bg))
-                .selected_bg(t.resolve_color(t.colors.popup_selected_bg))
+                .bg(groups::bg_or("Popup", t.resolve_color(t.colors.popup_bg)))
+                .selected_bg(groups::bg_or(
+                    "PopupSelected",
+                    t.resolve_color(t.colors.popup_selected_bg),
+                ))
                 .anchor_col(anchor as u16)
         } else {
             // Panel strip: the popup extends the prompt, so it shares the

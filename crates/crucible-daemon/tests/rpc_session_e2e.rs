@@ -287,8 +287,23 @@ async fn test_session_end_removes_from_list() {
         .await
         .expect("session_end failed");
 
-    // Allow time for cleanup
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // Poll for the cleanup to land rather than guessing how long it takes.
+    // A fixed wait passes on an idle box and fails under full-suite load, which
+    // is exactly how this test flaked.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let settled = match client.session_get(&session_id).await {
+            Err(e) => {
+                let msg = e.to_string();
+                msg.contains("not found") || msg.contains("Not found")
+            }
+            Ok(val) => val.get("state").and_then(|s| s.as_str()) == Some("ended"),
+        };
+        if settled || tokio::time::Instant::now() >= deadline {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 
     // Verify: session_get should either fail or return ended state
     let get_result = client.session_get(&session_id).await;
