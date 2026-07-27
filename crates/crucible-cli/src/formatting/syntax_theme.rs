@@ -216,3 +216,37 @@ mod tests {
         assert_eq!(built.name.as_deref(), Some("crucible-derived"));
     }
 }
+
+#[cfg(test)]
+mod palette_marker_is_unambiguous {
+    use syntect::highlighting::ThemeSet;
+
+    /// The palette-smuggling trick reads `a < 2` as "not a real colour". That is
+    /// only safe while no theme a user can actually select contains such a
+    /// colour — if one did, its tokens would decode as a palette index or as
+    /// `Reset` and render the wrong colour entirely.
+    #[test]
+    fn no_selectable_theme_contains_a_colour_the_marker_could_claim() {
+        let themes = ThemeSet::load_defaults();
+        let mut collisions = Vec::new();
+
+        for (name, theme) in &themes.themes {
+            let scope_colors = theme
+                .scopes
+                .iter()
+                .flat_map(|item| [item.style.foreground, item.style.background]);
+            let setting_colors = [theme.settings.foreground, theme.settings.background];
+
+            for color in scope_colors.chain(setting_colors).flatten() {
+                if color.a < 2 {
+                    collisions.push(format!("{name}: a={}", color.a));
+                }
+            }
+        }
+
+        assert!(
+            collisions.is_empty(),
+            "a bundled theme uses an alpha the palette marker claims: {collisions:?}"
+        );
+    }
+}

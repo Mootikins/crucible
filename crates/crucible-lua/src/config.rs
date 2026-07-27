@@ -359,13 +359,21 @@ pub fn register_ui_namespaces(lua: &Lua) -> Result<(), LuaError> {
         crate::statusline_lua::register_statusline_items(lua, &sl)?;
     }
 
-    // Embedded defaults. User init.lua overrides these via setup(), which runs
-    // after this point in every caller.
-    match crate::theme::load_theme_from_lua(DEFAULT_THEME_LUA) {
-        Ok(config) => set_theme_config(config),
-        Err(e) => {
-            warn!("Failed to load default theme: {}, using Rust defaults", e);
-            set_theme_config(ThemeConfig::default_dark());
+    // Embedded defaults, seeded only when nothing is installed yet. User
+    // init.lua overrides these via setup(), which runs after this point in
+    // every caller.
+    //
+    // Seeding unconditionally would make *registration* mutate live state:
+    // `lua.init_session` re-enters here on a throwaway VM for every `cru chat`,
+    // so a theme installed at runtime by `ui.set_theme` would be silently
+    // reset to the built-in default for every attached client.
+    if get_theme_config().is_none() {
+        match crate::theme::load_theme_from_lua(DEFAULT_THEME_LUA) {
+            Ok(config) => set_theme_config(config),
+            Err(e) => {
+                warn!("Failed to load default theme: {}, using Rust defaults", e);
+                set_theme_config(ThemeConfig::default_dark());
+            }
         }
     }
 
@@ -464,6 +472,34 @@ mod tests {
         let crucible = lua.create_table().unwrap();
         lua.globals().set("crucible", crucible).unwrap();
         lua
+    }
+
+    /// `lua.init_session` builds a throwaway executor and calls `load_config`,
+    /// which re-enters `register_ui_namespaces`. Seeding the embedded default
+    /// unconditionally there would wipe a theme installed at runtime by
+    /// `ui.set_theme` — every `cru chat` would snap the palette back to default
+    /// for every attached client.
+    #[test]
+    fn registering_namespaces_again_keeps_a_theme_set_at_runtime() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        let lua = create_test_lua();
+        register_ui_namespaces(&lua).unwrap();
+
+        let mut chosen = ThemeConfig::default_dark();
+        chosen.name = "chosen-at-runtime".to_string();
+        set_theme_config_public(chosen);
+
+        // A second client connects; its executor re-registers on a fresh VM.
+        let other = create_test_lua();
+        register_ui_namespaces(&other).unwrap();
+
+        assert_eq!(
+            get_theme_config().map(|t| t.name),
+            Some("chosen-at-runtime".to_string()),
+            "re-registering namespaces reset the active theme to the built-in default"
+        );
     }
 
     #[test]
