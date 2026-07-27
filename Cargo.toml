@@ -185,6 +185,21 @@ strip = false
 [profile.bench]
 debug = true
 
+# TRAP this encodes: cargo's default dev profile is `debug = 2` with
+# `split-debuginfo = "off"`, which makes the linker copy full DWARF into every
+# artifact. Across this workspace's ~66 test binaries that means each rust-lld
+# holds 7-9 GB resident and writes ~4 GB, and 32 of them in parallel pin an
+# encrypted disk at ~95% util for half an hour. `unpacked` leaves debuginfo in
+# the .o/.dwo files and links references instead, so the linker stops moving
+# those bytes at all.
+#
+# Cost: no variable inspection under gdb/lldb. Backtraces keep file:line, which
+# is what test failures actually need. Use `--profile release-debug` for a real
+# debugging session.
+[profile.dev]
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
 # Local patches for upstream crates with bugs
 # See vendor/README.md for details
 [patch.crates-io]
