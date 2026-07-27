@@ -1,5 +1,6 @@
 mod agents;
 mod auth;
+mod canvas;
 mod chat;
 mod config;
 mod fs;
@@ -22,6 +23,7 @@ mod webhook;
 
 pub use agents::agents_routes;
 pub use auth::auth_routes;
+pub use canvas::canvas_routes;
 pub use chat::chat_routes;
 pub use config::config_routes;
 pub use fs::fs_routes;

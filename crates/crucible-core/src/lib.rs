@@ -3,6 +3,7 @@ pub use uuid;
 
 pub mod agent;
 pub mod background;
+pub mod canvas;
 pub mod config;
 pub mod content_category;
 pub mod discovery;
