@@ -114,7 +114,7 @@ pub use ask::{
 };
 pub use auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
 pub use config::{
-    get_app_config, get_status_bars, get_theme_config, get_ui_geometry, list_available_themes,
+    get_app_config, get_layout, get_theme_config, get_ui_geometry, list_available_themes,
     merge_app_config, seed_app_config, ConfigLoader, ConfigState,
 };
 pub use context::{

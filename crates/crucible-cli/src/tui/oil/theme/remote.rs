@@ -59,12 +59,17 @@ pub fn apply_ui_config(payload: &Value) -> bool {
             }
         }
     }
-    if let Some(b) = payload.get("bars") {
-        let parsed = crucible_lua::statusline_items::bars_from_wire(b);
-        // An empty set would leave a blank statusline; keep the built-in rather
-        // than draw nothing.
-        if !parsed.is_empty() {
+    if let Some(l) = payload.get("layout") {
+        let parsed = crucible_lua::statusline_items::Layout::from_wire(l);
+        // A prompt region with no input would leave the user unable to type, so
+        // an unusable layout keeps the built-in rather than replacing it.
+        if parsed
+            .prompt
+            .contains(&crucible_lua::statusline_items::Element::Input)
+        {
             super::bars::set(parsed);
+        } else {
+            warn!("ui.config layout places no input; keeping the built-in");
         }
     }
 

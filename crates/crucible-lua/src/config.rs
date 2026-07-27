@@ -41,8 +41,8 @@ pub struct ConfigState {
     pub hl: crate::hl::HlRegistry,
     /// Per-surface geometry from `crucible.ui.setup{}`.
     pub ui: Option<crate::ui_geometry::UiGeometry>,
-    /// Statusline bars authored as item trees.
-    pub bars: Option<crate::statusline_items::StatusBars>,
+    /// Screen layout authored as ordered region lists.
+    pub layout: Option<crate::statusline_items::Layout>,
     /// Code-highlighting config from `crucible.syntax.setup{}`.
     pub syntax: Option<serde_json::Value>,
     /// Daemon/app config values set via cru.config.set() or seeded from TOML.
@@ -92,15 +92,15 @@ pub fn set_hl_group(name: String, group: crate::hl::HlGroup) {
     }
 }
 
-/// Statusline bars, if a config defined any.
-pub fn get_status_bars() -> Option<crate::statusline_items::StatusBars> {
-    get_config().read().ok()?.bars.clone()
+/// The authored layout, if a config defined one.
+pub fn get_layout() -> Option<crate::statusline_items::Layout> {
+    get_config().read().ok()?.layout.clone()
 }
 
-/// Store statusline bars.
-pub fn set_status_bars(bars: crate::statusline_items::StatusBars) {
+/// Store the screen layout.
+pub fn set_layout(layout: crate::statusline_items::Layout) {
     if let Ok(mut state) = get_config().write() {
-        state.bars = Some(bars);
+        state.layout = Some(layout);
     }
 }
 
@@ -514,9 +514,9 @@ mod tests {
             r#"
             local sl = crucible.statusline
             sl.setup({
-                main = {
-                    anchor = "footer.below_input",
-                    items = { sl.mode, " ", sl.model{ max = 20 }, sl.align, sl.context },
+                prompt = {
+                    sl.input,
+                    { sl.mode, " ", sl.model{ max = 20 }, sl.align, sl.context },
                 },
             })
         "#,
@@ -524,8 +524,12 @@ mod tests {
         .exec()
         .unwrap();
 
-        let bars = get_status_bars().expect("setup defines bars");
-        let main = &bars.get("main").expect("named bar").items;
+        use crate::statusline_items::Element;
+        let layout = get_layout().expect("setup defines a layout");
+        assert_eq!(layout.prompt[0], Element::Input);
+        let Element::Row(main) = &layout.prompt[1] else {
+            panic!("the second element is a row: {:?}", layout.prompt[1]);
+        };
         assert_eq!(main.len(), 5, "each entry is one item: {main:?}");
         assert_eq!(main[0], crate::statusline_items::StatusItem::Mode);
         assert_eq!(main[3], crate::statusline_items::StatusItem::Align);
@@ -582,7 +586,7 @@ mod tests {
             tmp.path().join("init.lua"),
             r#"
             crucible.statusline.setup({
-                main = { items = { crucible.statusline.mode } },
+                prompt = { crucible.statusline.input, { crucible.statusline.mode } },
             })
         "#,
         )
@@ -592,17 +596,15 @@ mod tests {
         let lua = create_test_lua();
         loader.load(&lua).unwrap();
 
-        // The pre-item `left/center/right` shape is migrated to an item bar
-        // rather than dropped, so this asserts on bars, not on the superseded
-        // component-table config.
-        let bars = get_status_bars().expect("legacy setup shape defines a bar");
-        let main = bars
-            .get("main")
-            .expect("legacy sections become the main bar");
+        // init.lua reached the store: the authored layout replaced the default.
+        use crate::statusline_items::Element;
+        let layout = get_layout().expect("init.lua defines a layout");
         assert_eq!(
-            main.items,
-            vec![crate::statusline_items::StatusItem::Mode],
-            "a left-only config needs no alignment split"
+            layout.prompt,
+            vec![
+                Element::Input,
+                Element::Row(vec![crate::statusline_items::StatusItem::Mode]),
+            ]
         );
     }
 

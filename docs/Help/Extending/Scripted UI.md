@@ -158,39 +158,37 @@ as well as to chrome.
 
 ## Statusline
 
-A bar is a list of items. Items are values, so a bar reads as a list:
+The screen is three ordered lists. Position in a list is the arrangement, and
+the input is an element like any other:
 
 ```lua
 local sl = crucible.statusline
 
 sl.setup{
-  main = {
-    anchor = "footer.below_input",
-    order  = 100,
-    items  = { sl.mode:hl("StatusMode"), " ", sl.model{ max = 25 },
-               sl.align,
-               sl.any(sl.notification, sl.context) },
-  },
-  context = {
-    anchor = "footer.below_input",
-    order  = 200,
-    items  = { sl.when("streaming", sl.cache) },
+  prompt = {
+    sl.input,
+    { sl.mode:hl("StatusMode"), " ", sl.model{ max = 25 },
+      sl.align,
+      sl.any(sl.notification, sl.context) },
+    { sl.when("streaming", sl.cache) },
   },
 }
 ```
 
-Anchors: `top`, `bottom`, `footer.above_input`, `footer.below_input`.
+Regions: `top`, `prompt`, `bottom`. A region holds as many rows as you write, so
+a prompt area can be several rows deep. **There is no ordering field** — a row
+renders where you put it, which is also why `sl.input` being an element is what
+lets you place rows above or below the editor.
 
-An anchor is a **slot, not a hook** — any number of bars can share one, so a
-footer can be two or three rows deep. `order` places them, lowest first
-(default `100`); bars with equal `order` fall back to name, so the result is
-never accidental. Nothing else determines position: `setup{}` is a Lua table
-with string keys, and those do not iterate in the order you wrote them.
+Only `prompt` may contain `sl.input`; one placed elsewhere is dropped, since two
+inputs would mean two editors. A region you do not mention keeps its built-in,
+so a `setup{}` naming only `top` will not blank the place you type. A key that
+is not a region places nothing and says so in the log — worth knowing, because
+bars used to be named (`main = {...}`) and that spelling still reads as valid.
 
-Convention worth keeping: put context-ish rows **below** the input alongside the
-main bar, and leave `footer.above_input` empty unless you have a reason. That
-space is where completion popups appear, and a bar there pushes the input down
-every time one opens.
+Rows above the input push it down whenever they render, and that space is also
+where completion popups open — so unless you want the editor to move, prefer
+putting context rows below it.
 
 Built-in items — `mode`, `model`, `context`, `cache`, `status`, `notification` —
 are evaluated by the TUI every frame and cost no RPC. Bare strings are literal
@@ -248,8 +246,9 @@ Styling is not a gate, so nothing here fails closed — but "fail open" means
 falling back to a *coherent whole*, never a partial one. A malformed theme yields
 the complete built-in rather than a half-applied palette, because `bg` without
 `fg` is invisible text. An unknown palette name drops that one attribute rather
-than substituting a guess. A bar anchored somewhere unrecognised is skipped
-entirely, since drawing it in the wrong place is worse than not drawing it.
+than substituting a guess. A layout that places no input is refused whole and
+the built-in kept, since a screen you cannot type into is worse than one that
+ignored your config.
 
 The TUI holds a complete compiled-in theme and renders correctly with no daemon
 at all. `ui.config` is an upgrade, never a precondition for the first frame.

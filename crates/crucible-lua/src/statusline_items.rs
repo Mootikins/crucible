@@ -27,33 +27,38 @@
 
 use serde_json::{json, Map, Value as Json};
 
-/// Where a bar attaches. A **closed** set: the widget tree stays private, so it
-/// can be restructured without breaking configs. Opening this later is additive.
+/// A screen region. A **closed** set: the widget tree stays private, so it can
+/// be restructured without breaking configs. Opening this later is additive.
+///
+/// Regions replaced an earlier `Anchor` + `order` pair. An anchor said *where*
+/// but not *in what order*, so multiple bars sharing one needed a priority
+/// integer — and neither available source of order worked: a name-keyed map
+/// sorts alphabetically, and a Lua table with string keys does not iterate in
+/// declaration order at all. A region that is simply an ordered **list** makes
+/// position the arrangement, which is the same answer tmux reached with
+/// `status-format[0]`, `[1]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Anchor {
+pub enum Region {
     Top,
+    Prompt,
     Bottom,
-    FooterAboveInput,
-    FooterBelowInput,
 }
 
-impl Anchor {
+impl Region {
     pub fn from_name(s: &str) -> Option<Self> {
         match s {
-            "top" => Some(Anchor::Top),
-            "bottom" => Some(Anchor::Bottom),
-            "footer.above_input" => Some(Anchor::FooterAboveInput),
-            "footer.below_input" => Some(Anchor::FooterBelowInput),
+            "top" => Some(Region::Top),
+            "prompt" => Some(Region::Prompt),
+            "bottom" => Some(Region::Bottom),
             _ => None,
         }
     }
 
     pub fn name(self) -> &'static str {
         match self {
-            Anchor::Top => "top",
-            Anchor::Bottom => "bottom",
-            Anchor::FooterAboveInput => "footer.above_input",
-            Anchor::FooterBelowInput => "footer.below_input",
+            Region::Top => "top",
+            Region::Prompt => "prompt",
+            Region::Bottom => "bottom",
         }
     }
 }
@@ -133,41 +138,58 @@ pub enum StatusItem {
     },
 }
 
-/// A named bar: where it goes and what it holds.
+/// One entry in a region's list.
+///
+/// The input is an element rather than a fixed landmark bars hang off, which is
+/// what lets an author put rows above or below it by writing them above or
+/// below it. It carries no fields: the input is a whole component with its own
+/// focus, cursor, popup and multi-line border, so this is a placeholder the
+/// renderer substitutes, not something expressible as [`StatusItem`]s.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StatusBarDef {
-    pub anchor: Anchor,
-    /// Stacking position within the anchor, lower first. Matches the `priority`
-    /// convention plugin hooks already use.
-    ///
-    /// An anchor holds any number of rows, so something has to order them. Name
-    /// order would work only by accident — two bars called `context` and `main`
-    /// would stack alphabetically, and the author's only lever would be renaming
-    /// them. Declaration order is not available either: `setup{}` is a Lua table
-    /// with string keys, and those iterate in an unspecified order.
-    pub order: i32,
-    pub items: Vec<StatusItem>,
+pub enum Element {
+    Row(Vec<StatusItem>),
+    Input,
 }
 
-/// Where a bar sits when it does not say. Mid-range so bars can be placed on
-/// either side of the default without renumbering.
-pub const DEFAULT_ORDER: i32 = 100;
-
-/// Every bar, by name.
-pub type StatusBars = std::collections::BTreeMap<String, StatusBarDef>;
-
-/// The bars at one anchor, top to bottom.
+/// The screen, as three ordered lists.
 ///
-/// Ties break on name so the result is stable — equal `order` must not render
-/// differently between runs.
-pub fn bars_at(bars: &StatusBars, anchor: Anchor) -> Vec<(&str, &StatusBarDef)> {
-    let mut found: Vec<(&str, &StatusBarDef)> = bars
-        .iter()
-        .filter(|(_, bar)| bar.anchor == anchor)
-        .map(|(name, bar)| (name.as_str(), bar))
-        .collect();
-    found.sort_by(|(a_name, a), (b_name, b)| a.order.cmp(&b.order).then(a_name.cmp(b_name)));
-    found
+/// Only [`Region::Prompt`] may hold [`Element::Input`]; the type does not
+/// prevent it elsewhere, so [`Layout::from_wire`] drops a stray one rather than
+/// rendering two inputs.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Layout {
+    pub top: Vec<Element>,
+    pub prompt: Vec<Element>,
+    pub bottom: Vec<Element>,
+}
+
+impl Layout {
+    pub fn region(&self, region: Region) -> &[Element] {
+        match region {
+            Region::Top => &self.top,
+            Region::Prompt => &self.prompt,
+            Region::Bottom => &self.bottom,
+        }
+    }
+
+    pub fn region_mut(&mut self, region: Region) -> &mut Vec<Element> {
+        match region {
+            Region::Top => &mut self.top,
+            Region::Prompt => &mut self.prompt,
+            Region::Bottom => &mut self.bottom,
+        }
+    }
+
+    /// Rows sitting below the input, which is what the completion popup has to
+    /// clear. Counted rather than hardcoded — the popup used to reserve a
+    /// constant that was only ever right for a one-row footer.
+    pub fn rows_below_input(&self) -> usize {
+        match self.prompt.iter().position(|e| *e == Element::Input) {
+            Some(at) => self.prompt.len() - at - 1,
+            // No input placed: nothing sits below it.
+            None => 0,
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -251,72 +273,85 @@ pub fn item_from_wire(v: &Json) -> Option<StatusItem> {
     })
 }
 
-pub fn bars_to_wire(bars: &StatusBars) -> Json {
-    let mut out = Map::new();
-    for (name, bar) in bars {
-        out.insert(
-            name.clone(),
-            json!({
-                "anchor": bar.anchor.name(),
-                "order": bar.order,
-                "items": bar.items.iter().map(item_to_wire).collect::<Vec<_>>(),
-            }),
-        );
+fn element_to_wire(e: &Element) -> Json {
+    match e {
+        Element::Input => json!({ "t": "input" }),
+        Element::Row(items) => {
+            json!({ "t": "row", "items": items.iter().map(item_to_wire).collect::<Vec<_>>() })
+        }
     }
-    Json::Object(out)
 }
 
-pub fn bars_from_wire(v: &Json) -> StatusBars {
-    let mut bars = StatusBars::new();
-    let Some(obj) = v.as_object() else {
-        return bars;
-    };
+fn element_from_wire(v: &Json) -> Option<Element> {
+    match v.get("t")?.as_str()? {
+        "input" => Some(Element::Input),
+        "row" => Some(Element::Row(
+            v.get("items")?
+                .as_array()?
+                .iter()
+                .filter_map(item_from_wire)
+                .collect(),
+        )),
+        _ => None,
+    }
+}
 
-    for (name, def) in obj {
-        let Some(anchor) = def
-            .get("anchor")
-            .and_then(Json::as_str)
-            .and_then(Anchor::from_name)
-        else {
-            tracing::warn!("statusline bar '{name}' has an unknown anchor; skipping it");
-            continue;
+impl Layout {
+    pub fn to_wire(&self) -> Json {
+        let region = |elements: &[Element]| {
+            Json::Array(elements.iter().map(element_to_wire).collect::<Vec<_>>())
         };
-        let items = def
-            .get("items")
-            .and_then(Json::as_array)
-            .map(|a| a.iter().filter_map(item_from_wire).collect())
-            .unwrap_or_default();
-        let order = def
-            .get("order")
-            .and_then(Json::as_i64)
-            .and_then(|n| i32::try_from(n).ok())
-            .unwrap_or(DEFAULT_ORDER);
-        bars.insert(
-            name.clone(),
-            StatusBarDef {
-                anchor,
-                order,
-                items,
-            },
-        );
+        json!({
+            "top": region(&self.top),
+            "prompt": region(&self.prompt),
+            "bottom": region(&self.bottom),
+        })
     }
-    bars
+
+    /// Parse a layout. An unreadable element is dropped rather than failing the
+    /// payload, matching how unknown items are handled — one bad row must not
+    /// cost the rest of the screen.
+    pub fn from_wire(v: &Json) -> Self {
+        let region = |key: &str| -> Vec<Element> {
+            v.get(key)
+                .and_then(Json::as_array)
+                .map(|a| a.iter().filter_map(element_from_wire).collect())
+                .unwrap_or_default()
+        };
+
+        // Two inputs would render two editors, so a stray one outside the
+        // prompt region is dropped. Erroring here would take the whole screen
+        // down for a mistake the author can see at a glance.
+        let strip_input = |elements: Vec<Element>, region: &str| {
+            elements
+                .into_iter()
+                .filter(|e| {
+                    if *e == Element::Input {
+                        tracing::warn!("the input can only sit in the prompt region, not {region}; dropping it");
+                        return false;
+                    }
+                    true
+                })
+                .collect()
+        };
+
+        Self {
+            top: strip_input(region("top"), "top"),
+            prompt: region("prompt"),
+            bottom: strip_input(region("bottom"), "bottom"),
+        }
+    }
 }
 
-/// The bar Crucible ships with, expressed in the new vocabulary.
-///
-/// Equivalent to the old `left/center/right` default: mode and model on the
-/// left, then a notification that falls back to context usage on the right.
-/// That fallback used to be a bespoke `Notification { fallback }` variant; it is
-/// now just [`StatusItem::Any`].
-pub fn builtin_default() -> StatusBars {
-    let mut bars = StatusBars::new();
-    bars.insert(
-        "main".to_string(),
-        StatusBarDef {
-            anchor: Anchor::FooterBelowInput,
-            order: DEFAULT_ORDER,
-            items: vec![
+/// The layout Crucible ships with: the input, and one bar under it carrying
+/// mode and model on the left with a notification that falls back to context
+/// usage on the right.
+pub fn builtin_default() -> Layout {
+    Layout {
+        top: vec![],
+        prompt: vec![
+            Element::Input,
+            Element::Row(vec![
                 StatusItem::Hl {
                     group: "StatusMode".to_string(),
                     item: Box::new(StatusItem::Mode),
@@ -328,107 +363,99 @@ pub fn builtin_default() -> StatusBars {
                 },
                 StatusItem::Align,
                 StatusItem::Any(vec![StatusItem::Notification, StatusItem::Context]),
-            ],
-        },
-    );
-    bars
+            ]),
+        ],
+        bottom: vec![],
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn bar(anchor: Anchor, order: i32) -> StatusBarDef {
-        StatusBarDef {
-            anchor,
-            order,
-            items: vec![StatusItem::Mode],
-        }
+    fn row(text: &str) -> Element {
+        Element::Row(vec![StatusItem::Text(text.into())])
     }
 
-    /// An anchor is a slot, not a hook — several bars may share one.
+    /// Position in the list is the arrangement — there is nothing else to
+    /// consult, which is the whole point of dropping anchor+order.
     #[test]
-    fn an_anchor_holds_several_bars_ordered_by_order() {
-        let mut bars = StatusBars::new();
-        bars.insert("main".into(), bar(Anchor::FooterBelowInput, 10));
-        bars.insert("ctx".into(), bar(Anchor::FooterBelowInput, 20));
+    fn a_region_keeps_the_order_it_was_written_in() {
+        let layout = Layout {
+            prompt: vec![row("first"), Element::Input, row("last")],
+            ..Layout::default()
+        };
 
-        let names: Vec<_> = bars_at(&bars, Anchor::FooterBelowInput)
-            .into_iter()
-            .map(|(n, _)| n)
-            .collect();
-        assert_eq!(names, ["main", "ctx"], "order must beat alphabetical");
+        let restored = Layout::from_wire(&layout.to_wire());
+        assert_eq!(restored.prompt, layout.prompt);
+        assert_eq!(restored.prompt[1], Element::Input);
     }
 
-    /// The bug this replaces: with no explicit order, `ctx` sorted above `main`
-    /// purely because "c" < "m", and renaming a bar was the only lever.
+    /// The count the popup needs, which used to be a hardcoded constant that
+    /// was only ever right for a one-row footer.
     #[test]
-    fn order_overrides_the_accidental_alphabetical_stacking() {
-        let mut alphabetical = StatusBars::new();
-        alphabetical.insert("ctx".into(), bar(Anchor::FooterBelowInput, DEFAULT_ORDER));
-        alphabetical.insert("main".into(), bar(Anchor::FooterBelowInput, DEFAULT_ORDER));
-        let tied: Vec<_> = bars_at(&alphabetical, Anchor::FooterBelowInput)
-            .into_iter()
-            .map(|(n, _)| n)
-            .collect();
-        assert_eq!(tied, ["ctx", "main"], "equal order falls back to name");
+    fn rows_below_the_input_are_counted_not_assumed() {
+        let none = Layout {
+            prompt: vec![Element::Input],
+            ..Layout::default()
+        };
+        assert_eq!(none.rows_below_input(), 0);
 
-        let mut ordered = StatusBars::new();
-        ordered.insert("ctx".into(), bar(Anchor::FooterBelowInput, 20));
-        ordered.insert("main".into(), bar(Anchor::FooterBelowInput, 10));
-        let placed: Vec<_> = bars_at(&ordered, Anchor::FooterBelowInput)
-            .into_iter()
-            .map(|(n, _)| n)
-            .collect();
-        assert_eq!(placed, ["main", "ctx"]);
-    }
-
-    #[test]
-    fn bars_at_returns_only_that_anchor() {
-        let mut bars = StatusBars::new();
-        bars.insert("top".into(), bar(Anchor::Top, DEFAULT_ORDER));
-        bars.insert(
-            "footer".into(),
-            bar(Anchor::FooterBelowInput, DEFAULT_ORDER),
+        let two = Layout {
+            prompt: vec![row("above"), Element::Input, row("a"), row("b")],
+            ..Layout::default()
+        };
+        assert_eq!(
+            two.rows_below_input(),
+            2,
+            "rows above the input do not count"
         );
 
-        assert_eq!(bars_at(&bars, Anchor::Top).len(), 1);
-        assert_eq!(bars_at(&bars, Anchor::Bottom).len(), 0);
-        assert_eq!(bars_at(&bars, Anchor::FooterAboveInput).len(), 0);
+        // An author who placed no input has nothing below it either.
+        let inputless = Layout {
+            prompt: vec![row("only")],
+            ..Layout::default()
+        };
+        assert_eq!(inputless.rows_below_input(), 0);
+    }
+
+    /// Two inputs would mean two editors; the stray one loses, and the screen
+    /// still renders.
+    #[test]
+    fn an_input_outside_the_prompt_region_is_dropped() {
+        let wire = json!({
+            "top": [{ "t": "input" }, { "t": "row", "items": [] }],
+            "prompt": [{ "t": "input" }],
+            "bottom": [{ "t": "input" }],
+        });
+
+        let layout = Layout::from_wire(&wire);
+        assert_eq!(layout.top.len(), 1, "the row survives, the input does not");
+        assert!(!layout.top.contains(&Element::Input));
+        assert!(!layout.bottom.contains(&Element::Input));
+        assert_eq!(layout.prompt, vec![Element::Input]);
     }
 
     #[test]
-    fn order_survives_the_wire_and_defaults_when_absent() {
-        let mut bars = StatusBars::new();
-        bars.insert("a".into(), bar(Anchor::Top, 42));
-        assert_eq!(bars_from_wire(&bars_to_wire(&bars))["a"].order, 42);
-
-        // A payload from a client that predates `order` must still place.
-        let legacy = json!({ "a": { "anchor": "top", "items": [] } });
-        assert_eq!(bars_from_wire(&legacy)["a"].order, DEFAULT_ORDER);
+    fn an_unreadable_element_is_dropped_not_fatal() {
+        let wire = json!({
+            "prompt": [{ "t": "input" }, { "t": "no-such-element" }],
+        });
+        assert_eq!(Layout::from_wire(&wire).prompt, vec![Element::Input]);
     }
 
     #[test]
-    fn anchor_names_round_trip() {
-        for a in [
-            Anchor::Top,
-            Anchor::Bottom,
-            Anchor::FooterAboveInput,
-            Anchor::FooterBelowInput,
-        ] {
-            assert_eq!(Anchor::from_name(a.name()), Some(a));
+    fn region_names_round_trip() {
+        for r in [Region::Top, Region::Prompt, Region::Bottom] {
+            assert_eq!(Region::from_name(r.name()), Some(r));
         }
-    }
-
-    #[test]
-    fn an_unknown_anchor_is_rejected() {
-        assert_eq!(Anchor::from_name("somewhere.unexpected"), None);
+        assert_eq!(Region::from_name("footer.below_input"), None);
     }
 
     #[test]
     fn the_builtin_default_survives_a_wire_round_trip() {
-        let bars = builtin_default();
-        assert_eq!(bars_from_wire(&bars_to_wire(&bars)), bars);
+        let layout = builtin_default();
+        assert_eq!(Layout::from_wire(&layout.to_wire()), layout);
     }
 
     #[test]
@@ -457,33 +484,15 @@ mod tests {
     #[test]
     fn an_unknown_item_type_is_dropped_not_fatal() {
         let wire = json!({
-            "main": {
-                "anchor": "footer.below_input",
+            "prompt": [{
+                "t": "row",
                 "items": [ { "t": "mode" }, { "t": "hologram" }, { "t": "context" } ],
-            }
+            }],
         });
 
-        let bars = bars_from_wire(&wire);
-        let items = &bars.get("main").expect("bar survives").items;
-        assert_eq!(items, &vec![StatusItem::Mode, StatusItem::Context]);
-    }
-
-    /// A bar anchored somewhere this client does not know is skipped whole —
-    /// rendering it in the wrong place would be worse than not rendering it.
-    #[test]
-    fn a_bar_with_an_unknown_anchor_is_skipped() {
-        let wire = json!({
-            "ghost": { "anchor": "nowhere", "items": [ { "t": "mode" } ] },
-            "main":  { "anchor": "top", "items": [ { "t": "mode" } ] },
-        });
-
-        let bars = bars_from_wire(&wire);
-        assert!(!bars.contains_key("ghost"));
-        assert!(bars.contains_key("main"));
-    }
-
-    #[test]
-    fn a_malformed_payload_yields_no_bars_rather_than_panicking() {
-        assert!(bars_from_wire(&json!("nonsense")).is_empty());
+        assert_eq!(
+            Layout::from_wire(&wire).prompt,
+            vec![Element::Row(vec![StatusItem::Mode, StatusItem::Context])]
+        );
     }
 }

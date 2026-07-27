@@ -6,6 +6,7 @@ use crucible_oil::node::*;
 use crucible_oil::style::Style;
 
 use super::INPUT_MAX_CONTENT_LINES;
+use crucible_oil::components::InputStyle;
 
 pub struct InputComponent<'a> {
     pub content: &'a str,
@@ -17,6 +18,25 @@ pub struct InputComponent<'a> {
 }
 
 impl<'a> InputComponent<'a> {
+    /// Rendered height in rows: the visible content lines plus both border
+    /// edges, wrapped and clamped exactly as [`Component::view`] does.
+    ///
+    /// The completion popup has to clear the input, and it can only do that if
+    /// it knows how tall the input actually is — a multi-line message makes any
+    /// fixed guess wrong.
+    pub fn height(&self) -> usize {
+        let prompt = InputStyle::prompt(&self.mode);
+        let content_width = self.width.saturating_sub(prompt.len() + 1);
+        let lines = if content_width == 0 {
+            1
+        } else {
+            crate::tui::oil::utils::wrap::wrap_chars(self.content, content_width)
+                .len()
+                .max(1)
+        };
+        lines.min(INPUT_MAX_CONTENT_LINES) + 2
+    }
+
     pub fn new(content: &'a str, cursor: usize, width: usize) -> Self {
         Self {
             content,

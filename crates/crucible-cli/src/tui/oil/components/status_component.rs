@@ -1,16 +1,13 @@
 use crate::tui::oil::chat_app::ChatMode;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::status_bar::{NotificationToastKind, StatusBar};
-use crate::tui::oil::theme;
 use crate::tui::oil::ViewContext;
-use crucible_lua::statusline_items::Anchor;
-use crucible_oil::node::{col, styled, Node};
-use crucible_oil::style::Style;
+use crucible_lua::statusline_items::Region;
+use crucible_oil::node::{col, Node};
 
-/// View-only component composing error display + [`StatusBar`].
+/// View-only projection of the prompt region.
 ///
-/// Error (when present) renders above the status bar.  All state is
-/// owned by `OilChatApp`; this struct borrows snapshots of it.
+/// All state is owned by `OilChatApp`; this struct borrows snapshots of it.
 #[derive(Default)]
 pub struct StatusComponent<'a> {
     pub mode: ChatMode,
@@ -18,7 +15,6 @@ pub struct StatusComponent<'a> {
     pub context_used: usize,
     pub context_total: usize,
     pub status: &'a str,
-    pub error: Option<&'a str>,
     pub toast: Option<(&'a str, NotificationToastKind)>,
     pub notification_counts: Vec<(NotificationToastKind, usize)>,
     /// Latest prompt-cache hit rate (0.0..=1.0), or `None` until a
@@ -53,11 +49,6 @@ impl<'a> StatusComponent<'a> {
         self
     }
 
-    pub fn error(mut self, error: Option<&'a str>) -> Self {
-        self.error = error;
-        self
-    }
-
     pub fn toast(mut self, text: &'a str, kind: NotificationToastKind) -> Self {
         self.toast = Some((text, kind));
         self
@@ -78,13 +69,12 @@ impl<'a> StatusComponent<'a> {
         self
     }
 
-    /// Bars attached to some other anchor, built from this same frame's values.
+    /// Render one region from this frame's values.
     ///
-    /// The component owns the snapshot every bar reads, so anchors rendered
-    /// elsewhere in the tree still have to come from here — otherwise a bar
-    /// above the input could disagree with the one below it.
-    pub fn views_at(&self, anchor: Anchor) -> Vec<Node> {
-        self.bar().views_at(anchor, self.streaming)
+    /// Every region reads the snapshot this component owns, so rows in
+    /// different regions cannot disagree within a frame.
+    pub fn render_region(&self, region: Region, input_node: impl FnMut() -> Node) -> Vec<Node> {
+        self.bar().render_region(region, self.streaming, input_node)
     }
 
     fn bar(&self) -> StatusBar {
@@ -105,22 +95,14 @@ impl<'a> StatusComponent<'a> {
 }
 
 impl Component for StatusComponent<'_> {
+    /// The prompt region with the input elided — the status rows on their own.
+    ///
+    /// Used where the bars are wanted without an editor: component tests, and
+    /// any surface that shows status without accepting input.
     fn view(&self, _ctx: &ViewContext<'_>) -> Node {
-        let error_node = if let Some(err) = self.error {
-            styled(format!("Error: {}", err), {
-                let t = theme::active();
-                Style::new().fg(t.resolve_color(t.colors.error)).bold()
-            })
-        } else {
-            Node::Empty
-        };
-
-        let mut nodes = vec![error_node];
-        nodes.extend(
-            self.bar()
-                .views_at(Anchor::FooterBelowInput, self.streaming),
-        );
-        col(nodes)
+        col(self
+            .bar()
+            .render_region(Region::Prompt, self.streaming, || Node::Empty))
     }
 }
 
@@ -143,20 +125,6 @@ mod tests {
         assert!(plain.contains("gpt-4"));
         assert!(plain.contains("50% ctx"));
         assert!(!plain.contains("Error:"));
-    }
-
-    #[test]
-    fn status_with_error_shows_error_above_bar() {
-        let mut harness = ComponentHarness::new(80, 4);
-        let comp = StatusComponent::new()
-            .mode(ChatMode::Normal)
-            .model("gpt-4")
-            .error(Some("connection failed"));
-        harness.render_component(&comp);
-        let plain = render_to_plain_text(&comp.view(&ViewContext::new(harness.focus())), 80);
-        assert!(plain.contains("Error: connection failed"));
-        assert!(plain.contains("NORMAL"));
-        assert!(plain.contains("gpt-4"));
     }
 
     #[test]
@@ -188,13 +156,5 @@ mod tests {
         assert!(plain.contains("3"));
         assert!(plain.contains("ERROR"));
         assert!(plain.contains("1"));
-    }
-
-    #[test]
-    fn error_none_produces_no_error_text() {
-        let harness = ComponentHarness::new(80, 4);
-        let comp = StatusComponent::new().error(None);
-        let plain = render_to_plain_text(&comp.view(&ViewContext::new(harness.focus())), 80);
-        assert!(!plain.contains("Error:"));
     }
 }

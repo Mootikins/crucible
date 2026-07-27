@@ -123,9 +123,8 @@ pub fn style_payload(
         ),
         "exprs": exprs,
         "syntax": crucible_lua::config::get_syntax_config(),
-        "bars": crucible_lua::statusline_items::bars_to_wire(
-            &crucible_lua::config::get_status_bars()
-                .unwrap_or_else(crucible_lua::statusline_items::builtin_default),
-        ),
+        "layout": crucible_lua::config::get_layout()
+            .unwrap_or_else(crucible_lua::statusline_items::builtin_default)
+            .to_wire(),
     })
 }

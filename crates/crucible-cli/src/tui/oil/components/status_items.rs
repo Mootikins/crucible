@@ -563,7 +563,11 @@ mod tests {
     #[test]
     fn the_builtin_default_bar_renders() {
         let bars = crucible_lua::statusline_items::builtin_default();
-        let out = render(&bars["main"].items, &data(), false);
+        let items = match &bars.prompt[1] {
+            crucible_lua::statusline_items::Element::Row(items) => items,
+            other => panic!("the built-in places a row after the input: {other:?}"),
+        };
+        let out = render(items, &data(), false);
         assert!(out.contains("NORMAL"), "got {out:?}");
         assert!(out.contains("claude-opus-5"), "got {out:?}");
         assert!(out.contains("50% ctx"), "got {out:?}");

@@ -13,14 +13,22 @@
 //! different spelling from `mode`.
 
 use crate::error::LuaError;
-use crate::statusline_items::{
-    Anchor, StatusBarDef, StatusBars, StatusCond, StatusItem, DEFAULT_ORDER,
-};
+use crate::statusline_items::{Element, Layout, Region, StatusCond, StatusItem};
 use mlua::{AnyUserData, Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
 
 /// A statusline item as seen from Lua.
 #[derive(Clone)]
 struct LuaItem(StatusItem);
+
+/// `sl.input` — a placeholder for the editor itself.
+///
+/// Distinct from [`LuaItem`] because the input is not a status item: it is a
+/// whole component with focus, a cursor and a multi-line border, so it can only
+/// be a position in a region, never something a row composes.
+#[derive(Clone, Copy)]
+struct LuaInput;
+
+impl UserData for LuaInput {}
 
 impl UserData for LuaItem {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
@@ -138,9 +146,11 @@ pub fn register_statusline_items(lua: &Lua, statusline: &Table) -> Result<(), Lu
     let expr_fn = lua.create_function(|_, key: String| Ok(LuaItem(StatusItem::Expr { key })))?;
     statusline.set("expr", expr_fn)?;
 
-    // sl.setup{...} — accepts either shape.
+    // sl.input — the editor's position within the prompt region.
+    statusline.set("input", LuaInput)?;
+
     let setup_fn = lua.create_function(|_, config: Table| {
-        crate::config::set_status_bars(bars_from_setup_table(&config)?);
+        crate::config::set_layout(layout_from_setup_table(&config));
         Ok(())
     })?;
     statusline.set("setup", setup_fn)?;
@@ -148,63 +158,60 @@ pub fn register_statusline_items(lua: &Lua, statusline: &Table) -> Result<(), Lu
     Ok(())
 }
 
-/// Parse a `setup{...}` table into named bars.
-pub fn bars_from_setup_table(config: &Table) -> mlua::Result<StatusBars> {
-    let mut bars = StatusBars::new();
-    for pair in config.clone().pairs::<String, Table>() {
-        let Ok((name, def)) = pair else { continue };
+/// Read one region's list.
+///
+/// An entry is the input marker, a table of items (one row), or a bare item —
+/// the last being sugar so a single-item row does not need braces.
+fn region_from_lua(value: &Value) -> Vec<Element> {
+    let Value::Table(list) = value else {
+        return Vec::new();
+    };
 
-        let anchor_name: String = def
-            .get("anchor")
-            .unwrap_or_else(|_| "footer.below_input".to_string());
-        let Some(anchor) = Anchor::from_name(&anchor_name) else {
-            return Err(mlua::Error::RuntimeError(format!(
-                "statusline bar '{name}': unknown anchor '{anchor_name}'"
-            )));
-        };
-
-        let items = def
-            .get::<Table>("items")
-            .map(|t| items_from_table(&t))
-            .unwrap_or_default();
-
-        bars.insert(
-            name,
-            StatusBarDef {
-                anchor,
-                order: def.get("order").unwrap_or(DEFAULT_ORDER),
-                items,
-            },
-        );
-    }
-    Ok(bars)
+    list.clone()
+        .sequence_values::<Value>()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            match &entry {
+                Value::UserData(ud) if ud.borrow::<LuaInput>().is_ok() => Some(Element::Input),
+                Value::Table(t) => Some(Element::Row(items_from_table(t))),
+                other => value_to_item(other).map(|i| Element::Row(vec![i])),
+            }
+        })
+        .collect()
 }
 
-/// Read a bar definition straight from a Lua table (used by tests and by any
-/// caller that wants to parse without going through the global store).
-pub fn bars_from_lua(config: &Table) -> StatusBars {
-    let mut bars = StatusBars::new();
-    for pair in config.clone().pairs::<String, Table>() {
-        let Ok((name, def)) = pair else { continue };
-        let anchor = def
-            .get::<String>("anchor")
-            .ok()
-            .and_then(|a| Anchor::from_name(&a))
-            .unwrap_or(Anchor::FooterBelowInput);
-        let items = def
-            .get::<Table>("items")
-            .map(|t| items_from_table(&t))
-            .unwrap_or_default();
-        bars.insert(
-            name,
-            StatusBarDef {
-                anchor,
-                order: def.get("order").unwrap_or(DEFAULT_ORDER),
-                items,
-            },
-        );
+/// Parse a `setup{...}` table into a layout.
+///
+/// A region the config does not mention keeps the built-in, so `setup{}` with
+/// only `prompt` does not silently blank the rest of the screen.
+pub fn layout_from_setup_table(config: &Table) -> Layout {
+    let mut layout = crate::statusline_items::builtin_default();
+
+    for region in [Region::Top, Region::Prompt, Region::Bottom] {
+        if let Ok(value) = config.get::<Value>(region.name()) {
+            if !matches!(value, Value::Nil) {
+                *layout.region_mut(region) = region_from_lua(&value);
+            }
+        }
     }
-    bars
+
+    // A key that is not a region places nothing. Saying so matters more than it
+    // looks: bars used to be named (`main = {...}`), so that spelling reads as
+    // valid and would otherwise leave the author staring at the default
+    // statusline with no clue why their config did nothing.
+    for pair in config.clone().pairs::<Value, Value>().flatten() {
+        if let Value::String(key) = pair.0 {
+            let key = key.to_str().map(|s| s.to_string()).unwrap_or_default();
+            if Region::from_name(&key).is_none() {
+                tracing::warn!(
+                    "statusline setup: '{key}' is not a region, so nothing was placed \
+                     — expected one of top, prompt, bottom"
+                );
+            }
+        }
+    }
+
+    layout
 }
 
 /// Helper for tests: is this userdata a statusline item?
@@ -226,71 +233,117 @@ mod tests {
         lua
     }
 
-    fn bars(src: &str) -> StatusBars {
+    fn bars(src: &str) -> Layout {
         let lua = lua_with_statusline();
         let table: Table = lua.load(src).eval().unwrap();
-        bars_from_lua(&table)
+        layout_from_setup_table(&table)
     }
 
-    /// Two rows in one slot, ordered by the author rather than by name.
+    /// The first row of the prompt region, for tests that only care about items.
+    fn first_row(layout: &Layout) -> &Vec<StatusItem> {
+        layout
+            .prompt
+            .iter()
+            .find_map(|e| match e {
+                Element::Row(items) => Some(items),
+                Element::Input => None,
+            })
+            .expect("a row was defined")
+    }
+
+    /// Position in the list is the arrangement — no anchor, no order field.
     #[test]
-    fn order_is_read_from_the_setup_table() {
-        let b = bars(
-            r#"
-            local sl = crucible.statusline
-            return {
-              main = { anchor = "footer.below_input", order = 10, items = { sl.mode } },
-              ctx  = { anchor = "footer.below_input", order = 20, items = { sl.context } },
-            }
-        "#,
+    fn the_prompt_region_keeps_the_order_it_was_written_in() {
+        let layout = bars(
+            r#"local sl = crucible.statusline
+               return { prompt = { { sl.context }, sl.input, { sl.mode } } }"#,
         );
 
-        assert_eq!(b["main"].order, 10);
-        assert_eq!(b["ctx"].order, 20);
-        assert_eq!(b["main"].anchor, b["ctx"].anchor, "same slot");
+        assert_eq!(
+            layout.prompt,
+            vec![
+                Element::Row(vec![StatusItem::Context]),
+                Element::Input,
+                Element::Row(vec![StatusItem::Mode]),
+            ]
+        );
+    }
+
+    /// Several rows below the input is the multi-row case that used to need an
+    /// `order` integer to disambiguate.
+    #[test]
+    fn a_region_holds_several_rows_without_an_order_field() {
+        let layout = bars(
+            r#"local sl = crucible.statusline
+               return { prompt = { sl.input, { sl.mode }, { sl.context }, { sl.cache } } }"#,
+        );
+
+        assert_eq!(layout.rows_below_input(), 3);
+        assert_eq!(layout.prompt[0], Element::Input);
     }
 
     #[test]
-    fn a_bar_without_order_takes_the_default() {
-        let b = bars(
-            r#"
-            local sl = crucible.statusline
-            return { main = { items = { sl.mode } } }
-        "#,
+    fn a_region_the_config_omits_keeps_the_builtin() {
+        let layout = bars(
+            r#"local sl = crucible.statusline
+               return { top = { { sl.mode } } }"#,
         );
-        assert_eq!(b["main"].order, DEFAULT_ORDER);
+
+        assert_eq!(layout.top, vec![Element::Row(vec![StatusItem::Mode])]);
+        assert_eq!(
+            layout.prompt,
+            crate::statusline_items::builtin_default().prompt,
+            "omitting `prompt` must not blank the input"
+        );
+    }
+
+    /// Sugar: a single item needs no braces around it.
+    #[test]
+    fn a_bare_item_is_a_row_of_one() {
+        let layout = bars(
+            r#"local sl = crucible.statusline
+               return { top = { sl.mode } }"#,
+        );
+        assert_eq!(layout.top, vec![Element::Row(vec![StatusItem::Mode])]);
     }
 
     #[test]
     fn a_bare_item_needs_no_call() {
         let b = bars(
             r#"local sl = crucible.statusline
-               return { main = { items = { sl.mode, sl.context } } }"#,
+               return { prompt = { { sl.mode, sl.context } } }"#,
         );
-        assert_eq!(b["main"].items, vec![StatusItem::Mode, StatusItem::Context]);
+        assert_eq!(first_row(&b), &vec![StatusItem::Mode, StatusItem::Context]);
     }
 
     #[test]
-    fn strings_in_an_items_list_are_literal_text() {
+    fn strings_in_a_row_are_literal_text() {
         let b = bars(
             r#"local sl = crucible.statusline
-               return { main = { items = { sl.mode, " | ", sl.context } } }"#,
+               return { prompt = { { sl.mode, " | ", sl.context } } }"#,
         );
-        assert_eq!(b["main"].items[1], StatusItem::Text(" | ".to_string()));
+        assert_eq!(
+            first_row(&b),
+            &vec![
+                StatusItem::Mode,
+                StatusItem::Text(" | ".into()),
+                StatusItem::Context
+            ]
+        );
     }
 
     #[test]
     fn calling_an_item_configures_it() {
         let b = bars(
             r#"local sl = crucible.statusline
-               return { main = { items = { sl.model{ max = 25 } } } }"#,
+               return { prompt = { { sl.model{ max = 12, fallback = "none" } } } }"#,
         );
         assert_eq!(
-            b["main"].items[0],
-            StatusItem::Model {
-                max: Some(25),
-                fallback: None
-            }
+            first_row(&b),
+            &vec![StatusItem::Model {
+                max: Some(12),
+                fallback: Some("none".into())
+            }]
         );
     }
 
@@ -298,28 +351,29 @@ mod tests {
     fn hl_wraps_an_item_without_changing_it() {
         let b = bars(
             r#"local sl = crucible.statusline
-               return { main = { items = { sl.mode:hl("StatusMode") } } }"#,
+               return { prompt = { { sl.mode:hl("StatusMode") } } }"#,
         );
         assert_eq!(
-            b["main"].items[0],
-            StatusItem::Hl {
-                group: "StatusMode".to_string(),
-                item: Box::new(StatusItem::Mode),
-            }
+            first_row(&b),
+            &vec![StatusItem::Hl {
+                group: "StatusMode".into(),
+                item: Box::new(StatusItem::Mode)
+            }]
         );
     }
 
-    /// The fallback that a format string could not express without a special
-    /// case, and that plain Lua `or` cannot express because items are truthy.
     #[test]
     fn any_expresses_the_notification_else_context_fallback() {
         let b = bars(
             r#"local sl = crucible.statusline
-               return { main = { items = { sl.any(sl.notification, sl.context) } } }"#,
+               return { prompt = { { sl.any(sl.notification, sl.context) } } }"#,
         );
         assert_eq!(
-            b["main"].items[0],
-            StatusItem::Any(vec![StatusItem::Notification, StatusItem::Context])
+            first_row(&b),
+            &vec![StatusItem::Any(vec![
+                StatusItem::Notification,
+                StatusItem::Context
+            ])]
         );
     }
 
@@ -327,14 +381,14 @@ mod tests {
     fn when_guards_an_item_on_a_tui_local_condition() {
         let b = bars(
             r#"local sl = crucible.statusline
-               return { main = { items = { sl.when("streaming", sl.cache) } } }"#,
+               return { prompt = { { sl.when("streaming", sl.cache) } } }"#,
         );
         assert_eq!(
-            b["main"].items[0],
-            StatusItem::When {
+            first_row(&b),
+            &vec![StatusItem::When {
                 cond: StatusCond::Streaming,
-                item: Box::new(StatusItem::Cache),
-            }
+                item: Box::new(StatusItem::Cache)
+            }]
         );
     }
 
@@ -342,54 +396,35 @@ mod tests {
     fn expr_items_carry_only_their_key() {
         let b = bars(
             r#"local sl = crucible.statusline
-               return { main = { items = { sl.expr("git") } } }"#,
+               return { prompt = { { sl.expr("git") } } }"#,
         );
-        assert_eq!(
-            b["main"].items[0],
-            StatusItem::Expr {
-                key: "git".to_string()
-            }
-        );
+        assert_eq!(first_row(&b), &vec![StatusItem::Expr { key: "git".into() }]);
     }
 
-    #[test]
-    fn multiple_bars_can_be_defined_at_different_anchors() {
-        let b = bars(
-            r#"local sl = crucible.statusline
-               return {
-                 main = { anchor = "footer.below_input", items = { sl.mode } },
-                 top  = { anchor = "top", items = { sl.model } },
-               }"#,
-        );
-        assert_eq!(b["main"].anchor, Anchor::FooterBelowInput);
-        assert_eq!(b["top"].anchor, Anchor::Top);
-    }
-
-    #[test]
-    fn a_bar_without_an_anchor_defaults_to_the_usual_place() {
-        let b = bars(
-            r#"local sl = crucible.statusline
-               return { main = { items = { sl.mode } } }"#,
-        );
-        assert_eq!(b["main"].anchor, Anchor::FooterBelowInput);
-    }
-
-    /// `spacer` was the old name; a config using it must keep working.
     #[test]
     fn spacer_is_an_alias_for_align() {
         let b = bars(
             r#"local sl = crucible.statusline
-               return { main = { items = { sl.spacer, sl.align } } }"#,
+               return { prompt = { { sl.mode, sl.align, sl.context } } }"#,
         );
-        assert_eq!(b["main"].items, vec![StatusItem::Align, StatusItem::Align]);
+        assert_eq!(first_row(&b)[1], StatusItem::Align);
     }
 
     #[test]
-    fn a_non_renderable_value_is_dropped_rather_than_failing_the_bar() {
+    fn a_non_renderable_value_is_dropped_rather_than_failing_the_row() {
         let b = bars(
             r#"local sl = crucible.statusline
-               return { main = { items = { sl.mode, 42, sl.context } } }"#,
+               return { prompt = { { sl.mode, 42, sl.context } } }"#,
         );
-        assert_eq!(b["main"].items, vec![StatusItem::Mode, StatusItem::Context]);
+        assert_eq!(first_row(&b), &vec![StatusItem::Mode, StatusItem::Context]);
+    }
+
+    #[test]
+    fn the_input_marker_parses_as_the_input_element() {
+        let b = bars(
+            r#"local sl = crucible.statusline
+               return { prompt = { sl.input } }"#,
+        );
+        assert_eq!(b.prompt, vec![Element::Input]);
     }
 }

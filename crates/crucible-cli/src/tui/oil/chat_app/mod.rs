@@ -1,7 +1,7 @@
 use crate::tui::oil::app::{Action, App, ViewContext};
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
-    CommandPanel, InteractionModal, NotificationArea, ShellModal, StatusComponent,
+    CommandPanel, InputComponent, InteractionModal, NotificationArea, ShellModal, StatusComponent,
 };
 use crate::tui::oil::config::RuntimeConfig;
 #[cfg(test)]
@@ -154,10 +154,12 @@ impl App for OilChatApp {
         // `top` and `bottom` frame the whole app, so they render regardless of
         // which footer surface is up — a modal or the messages drawer replaces
         // the command panel, not the window chrome around it.
-        use crucible_lua::statusline_items::Anchor;
+        use crucible_lua::statusline_items::Region;
         let status = self.build_status_component();
-        let top_bars = status.views_at(Anchor::Top);
-        let bottom_bars = status.views_at(Anchor::Bottom);
+        // Neither region may hold the input — `Layout::from_wire` strips a stray
+        // one — so an empty node here is unreachable, not a fallback.
+        let top_bars = status.render_region(Region::Top, || Node::Empty);
+        let bottom_bars = status.render_region(Region::Bottom, || Node::Empty);
 
         col(top_bars
             .into_iter()
@@ -478,9 +480,27 @@ impl OilChatApp {
             .popup
             .max_visible
             .map_or(POPUP_HEIGHT, usize::from);
+        // Lines the popup must clear: the input itself, plus whatever the
+        // author put under it, plus the bottom region.
+        //
+        // This used to be a hardcoded constant that happened to equal the
+        // footer height back when the footer was always one bar. Now that a
+        // region is a list the author controls, the only correct source is the
+        // layout.
+        let layout = crate::tui::oil::theme::bars::active();
+        let input_height = InputComponent::new(
+            self.input.content(),
+            self.input.cursor(),
+            ctx.terminal_size.0 as usize,
+        )
+        .mode(mode)
+        .height();
+        let offset_from_bottom = input_height + layout.rows_below_input() + layout.bottom.len();
+
         let overlay = PopupOverlay::new(items)
             .selected(self.popup.selected)
-            .max_visible(max_visible);
+            .max_visible(max_visible)
+            .offset_from_bottom(offset_from_bottom);
 
         let overlay = if minimal {
             // nvim-pmenu style: content-width box anchored at the trigger's

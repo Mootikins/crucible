@@ -120,14 +120,14 @@ const TEMPLATE_INIT_LUA: &str = r#"-- Crucible user configuration
 --   prompt = { normal = { glyph = "> " } },
 -- })
 
--- Statusline: a bar is a list of items
+-- Statusline: each region is an ordered list; the input is an element
 -- local sl = crucible.statusline
 -- sl.setup({
---   main = {
---     anchor = "footer.below_input",
---     items  = { sl.mode, " ", sl.model({ max = 25 }),
---                sl.align,
---                sl.any(sl.notification, sl.context) },
+--   prompt = {
+--     sl.input,
+--     { sl.mode, " ", sl.model({ max = 25 }),
+--       sl.align,
+--       sl.any(sl.notification, sl.context) },
 --   },
 -- })
 

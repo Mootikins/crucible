@@ -1,5 +1,5 @@
 use crate::tui::oil::chat_app::ChatMode;
-use crucible_lua::statusline_items::Anchor;
+use crucible_lua::statusline_items::{Element, Region};
 use crucible_oil::node::{row, spacer, styled, Node};
 use crucible_oil::style::{AdaptiveColor, Color, Style};
 
@@ -132,30 +132,40 @@ impl StatusBar {
 }
 
 impl StatusBar {
-    /// Every bar attached to `anchor`, top to bottom.
+    /// Render a region, substituting `input_node` wherever the author placed
+    /// the input.
     ///
-    /// An anchor is a slot holding any number of rows, not a single hook, so
-    /// this returns a list. Order comes from the bar's `order` field; see
-    /// [`crucible_lua::statusline_items::bars_at`].
-    pub fn views_at(&self, anchor: Anchor, streaming: bool) -> Vec<Node> {
+    /// The region is a list and position is the arrangement, so this is a plain
+    /// map over it — there is no ordering rule to apply, which is the point of
+    /// regions replacing anchor+order.
+    ///
+    /// `input_node` is a closure because most regions never contain the input
+    /// and building it is not free.
+    pub fn render_region(
+        &self,
+        region: Region,
+        streaming: bool,
+        mut input_node: impl FnMut() -> Node,
+    ) -> Vec<Node> {
         use crate::tui::oil::components::status_items::{render_bar, ItemContext};
-        use crucible_lua::statusline_items::bars_at;
 
         let data = self.item_data();
-        let bars = crate::tui::oil::theme::bars::active();
+        let layout = crate::tui::oil::theme::bars::active();
         let exprs = crate::tui::oil::theme::exprs::snapshot();
 
-        bars_at(bars, anchor)
-            .into_iter()
-            .map(|(_, bar)| {
-                render_bar(
-                    &bar.items,
+        layout
+            .region(region)
+            .iter()
+            .map(|element| match element {
+                Element::Input => input_node(),
+                Element::Row(items) => render_bar(
+                    items,
                     &ItemContext {
                         data: &data,
                         streaming,
                         exprs: &exprs,
                     },
-                )
+                ),
             })
             .collect()
     }

@@ -130,8 +130,11 @@ mod status_bar_tests {
     /// `footer.below_input`, stacked. Tests install a single bar, so this is one
     /// node — but it goes through the same path the app does.
     fn configured_bar_node(bar: &StatusBar) -> crucible_oil::node::Node {
-        use crucible_lua::statusline_items::Anchor;
-        crucible_oil::node::col(bar.views_at(Anchor::FooterBelowInput, false))
+        use crucible_lua::statusline_items::Region;
+        // The input is elided: these tests render the status rows alone.
+        crucible_oil::node::col(
+            bar.render_region(Region::Prompt, false, || crucible_oil::node::Node::Empty),
+        )
     }
 
     fn render_configured_bar(bar: &StatusBar, width: usize) -> String {
