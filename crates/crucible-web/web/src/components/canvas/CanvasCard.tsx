@@ -31,6 +31,11 @@ const Markdown: Component<{
   // preference makes it the one place in the app where muscle memory fails.
   const { settings } = useSettingsSafe();
 
+  // A canvas belongs to ONE kiln and its cards' links resolve there. The
+  // marker rides the card body rather than the preview alone, because the
+  // hover popovers are wired at the document level and fire over the editor's
+  // wikilink decorations too — an edited card must not become the one place
+  // where links escape into the active kiln.
   return (
   <Show
     when={props.editable}
@@ -39,12 +44,12 @@ const Markdown: Component<{
       // glance, and mounting an editor per visible card costs far more than it
       // buys — but the rendered output is the same engine either way, so
       // entering edit mode does not reflow the card.
-      <div class="canvas-card-body h-full overflow-auto">
+      <div class="canvas-card-body h-full overflow-auto" data-kiln={props.kiln || undefined}>
         <MarkdownPreview content={props.content} path={props.path} kiln={props.kiln} />
       </div>
     }
   >
-    <div class="canvas-card-body h-full overflow-auto">
+    <div class="canvas-card-body h-full overflow-auto" data-kiln={props.kiln || undefined}>
       <CodeMirrorEditor
         content={props.content}
         path={props.path}

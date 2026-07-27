@@ -83,9 +83,10 @@ async fn resolve_note(
 ) -> Result<Json<serde_json::Value>, WebError> {
     validate_note_name(&query.name)?;
 
-    let root = query.kiln.canonicalize().map_err(|_| {
-        WebError::NotFound("Kiln directory does not exist".to_string())
-    })?;
+    let root = query
+        .kiln
+        .canonicalize()
+        .map_err(|_| WebError::NotFound("Kiln directory does not exist".to_string()))?;
 
     // Strip an alias/heading/block suffix — `[[Note|alias]]`, `[[Note#Heading]]`.
     let target = query
@@ -128,9 +129,11 @@ async fn resolve_note(
         let Some(contained) = contained_file(path, &root) else {
             continue;
         };
-        let shallower = best
-            .as_ref()
-            .is_none_or(|b| contained.components().count() < b.components().count());
+        // `Option::is_none_or` is newer than this crate's MSRV.
+        let shallower = match best.as_ref() {
+            None => true,
+            Some(b) => contained.components().count() < b.components().count(),
+        };
         if shallower {
             best = Some(contained);
         }

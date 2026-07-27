@@ -78,6 +78,32 @@ export function kilnRoot(kilnPath: string): string {
 }
 
 /**
+ * Which open kiln owns an absolute path, or `undefined` if none does.
+ *
+ * Longest match wins, mirroring the daemon's enclosing-root rule: with nested
+ * kilns (`/vault` and `/vault/sub`) the inner one owns the file, and crediting
+ * the outer one would let that file's links reach everything under `/vault` —
+ * wider than "the kiln this file is in".
+ *
+ * A buffer's links belong to the kiln holding the FILE, never to whichever
+ * kiln the status bar is pointing at; that is the whole reason this exists.
+ */
+export function kilnForPath(
+  path: string,
+  kilns: readonly { path: string }[],
+): string | undefined {
+  let best: string | undefined;
+  for (const entry of kilns) {
+    const root = kilnRoot(entry.path ?? '');
+    if (!root) continue;
+    // Segment boundary, not a bare prefix: `/vault-archive` is not in `/vault`.
+    if (path !== root && !path.startsWith(`${root}/`)) continue;
+    if (!best || root.length > best.length) best = root;
+  }
+  return best;
+}
+
+/**
  * Note paths from the daemon are kiln-relative in normal operation, but the
  * file API addresses files absolutely. Join relative paths onto the kiln.
  */
@@ -153,15 +179,24 @@ export async function fetchNotePreview(name: string, kiln?: string): Promise<Not
 
   let preview: NotePreview | null = null;
   try {
-    const note: NoteContent = await getNote(name, resolvedKiln);
-    const absPath = noteAbsolutePath(note.path, resolvedKiln);
-    preview = {
-      title: noteDisplayName(note),
-      path: note.path,
-      absPath,
-    };
+    // Path lookup first, in the same order openNoteInEditor uses. Two reasons:
+    // an unprocessed kiln has no index, so its own notes would preview as
+    // missing; and the index matches FUZZILY, so asking it for "Architecture"
+    // in a kiln without one returns "Component Architecture" — a preview of a
+    // different note than the click opens.
+    const hit = await resolveNotePath(resolvedKiln, name);
+    preview = { title: hit.title ?? name, path: hit.path, absPath: hit.absolutePath };
   } catch {
-    preview = null;
+    try {
+      const note: NoteContent = await getNote(name, resolvedKiln);
+      preview = {
+        title: noteDisplayName(note),
+        path: note.path,
+        absPath: noteAbsolutePath(note.path, resolvedKiln),
+      };
+    } catch {
+      preview = null;
+    }
   }
 
   if (previewCache.size >= PREVIEW_CACHE_MAX) {

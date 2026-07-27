@@ -2,12 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const getNoteMock = vi.fn();
 const getConfigMock = vi.fn();
+const resolveNotePathMock = vi.fn();
 const openFileInEditorMock = vi.fn();
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getNote: (...args: unknown[]) => getNoteMock(...args),
   getConfig: (...args: unknown[]) => getConfigMock(...args),
+  resolveNotePath: (...args: unknown[]) => resolveNotePathMock(...args),
 }));
 
 vi.mock('../file-actions', async (importOriginal) => ({
@@ -17,6 +19,7 @@ vi.mock('../file-actions', async (importOriginal) => ({
 
 import {
   noteAbsolutePath,
+  kilnForPath,
   kilnRoot,
   fetchNotePreview,
   openNoteInEditor,
@@ -27,6 +30,9 @@ import {
 beforeEach(() => {
   vi.clearAllMocks();
   clearNotePreviewCache();
+  // The on-disk resolver misses by default, so each test opts INTO it; the
+  // index fallback stays the path most of these assertions exercise.
+  resolveNotePathMock.mockRejectedValue(new Error('404 Not Found'));
 });
 
 describe('kilnRoot', () => {
@@ -58,6 +64,36 @@ describe('noteAbsolutePath', () => {
 
   it('keeps absolute paths as-is', () => {
     expect(noteAbsolutePath('/abs/note.md', '/kiln')).toBe('/abs/note.md');
+  });
+});
+
+describe('kilnForPath', () => {
+  const kilns = [
+    { path: '/home/moot/crucible/docs' },
+    { path: '/home/moot/canvas-demo' },
+    { path: '/home/moot/canvas-demo/Nested' },
+  ];
+
+  it('attributes a file to the kiln containing it, not the first or the active one', () => {
+    expect(kilnForPath('/home/moot/canvas-demo/Notes/A.md', kilns)).toBe('/home/moot/canvas-demo');
+  });
+
+  it('gives a nested kiln its own files, so links cannot widen to the outer kiln', () => {
+    expect(kilnForPath('/home/moot/canvas-demo/Nested/A.md', kilns)).toBe(
+      '/home/moot/canvas-demo/Nested',
+    );
+  });
+
+  it('requires a path-segment boundary', () => {
+    expect(kilnForPath('/home/moot/canvas-demo-archive/A.md', kilns)).toBeUndefined();
+  });
+
+  it('returns undefined for a file in no kiln, rather than guessing one', () => {
+    expect(kilnForPath('/etc/passwd', kilns)).toBeUndefined();
+  });
+
+  it('understands the registry reporting a kiln as its .crucible config dir', () => {
+    expect(kilnForPath('/vault/A.md', [{ path: '/vault/.crucible' }])).toBe('/vault');
   });
 });
 
@@ -99,6 +135,36 @@ describe('fetchNotePreview', () => {
     await fetchNotePreview('rust', '/kiln');
     await fetchNotePreview('Rust', '/kiln'); // case-insensitive cache key
     expect(getNoteMock).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The index is a fuzzy matcher: asking it for "Architecture" in a kiln that
+   * has no such note happily returns "Component Architecture". A preview that
+   * only ever asks the index therefore shows a DIFFERENT note than the click
+   * would open, and shows nothing at all for a kiln that was never processed.
+   * Same order as openNoteInEditor: exact on-disk path first, index second.
+   */
+  it('prefers the on-disk resolver over the fuzzy index, like opening does', async () => {
+    resolveNotePathMock.mockResolvedValue({
+      path: 'Notes/Architecture.md',
+      absolutePath: '/kiln/Notes/Architecture.md',
+      title: 'Architecture',
+    });
+    getNoteMock.mockResolvedValue({
+      name: 'Component Architecture',
+      path: 'Meta/Component Architecture.md',
+      title: 'Component Architecture',
+      tags: [],
+      updated_at: '',
+    });
+
+    expect(await fetchNotePreview('Architecture', '/kiln')).toEqual({
+      title: 'Architecture',
+      path: 'Notes/Architecture.md',
+      absPath: '/kiln/Notes/Architecture.md',
+    });
+    expect(resolveNotePathMock).toHaveBeenCalledWith('/kiln', 'Architecture');
+    expect(getNoteMock).not.toHaveBeenCalled();
   });
 });
 

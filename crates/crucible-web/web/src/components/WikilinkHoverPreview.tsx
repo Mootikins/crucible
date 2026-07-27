@@ -131,7 +131,18 @@ export const WikilinkHoverPreview: Component = () => {
     setCard({ kind: 'loading' });
 
     const seq = ++fetchSeq;
-    const kiln = anchor.getAttribute('data-kiln') ?? statusBarStore.kilnPath() ?? undefined;
+    // The kiln comes from the SURFACE the link lives in, not from the globally
+    // active one: a canvas card, an editor buffer and a chat transcript can
+    // each belong to a different kiln, and this controller is mounted once at
+    // the document level, so a prop cannot reach it. Surfaces declare
+    // ownership with `data-kiln`; the nearest declaration wins. Reading the
+    // active kiln instead is how another kiln's notes got shown inside this
+    // one. The status bar remains the fallback only for surfaces that have no
+    // kiln of their own.
+    const kiln =
+      anchor.closest('[data-kiln]')?.getAttribute('data-kiln') ||
+      statusBarStore.kilnPath() ||
+      undefined;
     const preview = await fetchNotePreview(name, kiln);
     // A newer hover superseded this fetch, or the hover was dismissed.
     if (seq !== fetchSeq || currentAnchor !== anchor) return;

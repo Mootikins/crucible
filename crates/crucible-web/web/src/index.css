@@ -759,6 +759,7 @@ details.callout[open] > summary.callout-title::after {
    =========================================================================== */
 .canvas-card {
   --canvas-accent: var(--color-hairline);
+  --canvas-select: var(--color-primary);
   border: 1px solid color-mix(in srgb, var(--canvas-accent) 70%, transparent);
   background: color-mix(in srgb, var(--canvas-accent) 10%, var(--color-surface-elevated));
 }
@@ -769,18 +770,19 @@ details.callout[open] > summary.callout-title::after {
      you are reading. The extra weight is drawn outside the box instead — a
      box-shadow ring takes no layout space — and the existing border simply
      brightens to full accent. */
-  border-color: var(--canvas-accent);
+  border-color: var(--canvas-select);
   box-shadow:
-    0 0 0 1.5px var(--canvas-accent),
-    0 0 0 4px color-mix(in srgb, var(--canvas-accent) 22%, transparent);
+    0 0 0 1.5px var(--canvas-select),
+    0 0 0 4px color-mix(in srgb, var(--canvas-select) 22%, transparent);
 }
 
 .canvas-group {
   --canvas-accent: var(--color-muted-dark);
+  --canvas-select: var(--color-primary);
   border: 1px solid color-mix(in srgb, var(--canvas-accent) 55%, transparent);
   background: color-mix(in srgb, var(--canvas-accent) 8%, transparent);
 }
 
 .canvas-group.canvas-card-selected {
-  border-color: var(--canvas-accent);
+  border-color: var(--canvas-select);
 }

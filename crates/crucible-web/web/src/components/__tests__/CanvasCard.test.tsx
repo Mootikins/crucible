@@ -111,6 +111,32 @@ describe('CanvasNoteCard', () => {
     ).toBe(1);
   });
 
+  /**
+   * The hover popover controller listens at the DOCUMENT level, so it cannot
+   * be handed the canvas's kiln as a prop — it can only read it off the DOM.
+   * Without the marker every hovered wikilink in a canvas card resolves in
+   * whatever kiln the status bar happens to point at, which is another kiln's
+   * data appearing inside this one.
+   */
+  it('marks its kiln on the DOM so document-level link resolution stays in it', async () => {
+    const { findByTestId } = render(() => (
+      <CanvasNoteCard absPath="/canvas-demo/Notes/A.md" kiln="/canvas-demo" editable={false} />
+    ));
+
+    const embed = await findByTestId('canvas-note-embed');
+    await waitFor(() => expect(embed.querySelector('[data-kiln]')).not.toBeNull());
+    expect(embed.querySelector('[data-kiln]')!.getAttribute('data-kiln')).toBe('/canvas-demo');
+  });
+
+  it('keeps the kiln marker in edit mode, where the editor replaces the preview', async () => {
+    const { findByTestId } = render(() => (
+      <CanvasNoteCard absPath="/canvas-demo/Notes/A.md" kiln="/canvas-demo" editable={true} />
+    ));
+
+    const editor = await findByTestId('stub-editor');
+    expect(editor.closest('[data-kiln]')?.getAttribute('data-kiln')).toBe('/canvas-demo');
+  });
+
   it('surfaces a load failure', async () => {
     getFileContentMock.mockRejectedValue(new Error('File not found'));
     const { findByTestId } = render(() => (

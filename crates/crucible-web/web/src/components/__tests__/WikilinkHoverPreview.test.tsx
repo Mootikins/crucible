@@ -180,4 +180,22 @@ describe('WikilinkHoverPreview (Hover Editor popovers)', () => {
       expect(fetchNotePreviewMock).toHaveBeenCalledWith('rust', '/other-kiln');
     });
   });
+
+  /**
+   * A kiln must never expose another kiln's data. The rendered markdown carries
+   * no kiln of its own — the SURFACE hosting it does (a canvas card belongs to
+   * the canvas's kiln, an editor buffer to the kiln holding the file) — so the
+   * declaration is inherited from the nearest enclosing surface, not read off
+   * the globally-active kiln.
+   */
+  it('resolves against the enclosing surface kiln, not the active one', async () => {
+    fetchNotePreviewMock.mockResolvedValue(null);
+    const host = mountWithAnchor(
+      '<div data-kiln="/canvas-demo"><p><a data-note="rust">rust</a></p></div>',
+    );
+    hover(host.querySelector('a[data-note]')!);
+    await waitFor(() => {
+      expect(fetchNotePreviewMock).toHaveBeenCalledWith('rust', '/canvas-demo');
+    });
+  });
 });

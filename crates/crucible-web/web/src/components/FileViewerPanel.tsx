@@ -2,7 +2,9 @@ import {
   Component,
   Show,
   createEffect,
+  createSignal,
   onCleanup,
+  onMount,
   untrack,
 } from 'solid-js';
 import { FileText, Pencil } from '@/lib/icons';
@@ -11,7 +13,9 @@ import { EditorWithPreview } from './editor/EditorWithPreview';
 import { pendingDiffStore, pendingDiffActions } from '@/stores/pendingDiffStore';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
 import { findTabByFilePath } from '@/lib/file-actions';
-import { openNoteInEditor } from '@/lib/note-actions';
+import { kilnForPath, openNoteInEditor } from '@/lib/note-actions';
+import { listKilns } from '@/lib/api';
+import { swrLocal } from '@/lib/local-cache';
 import { windowActions } from '@/stores/windowStore';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { PanelShell } from './PanelShell';
@@ -45,6 +49,15 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   // Live CodeMirror view (source/live modes; undefined in reading mode) for
   // the context-menu clipboard actions.
   let editorView: EditorView | undefined;
+
+  // Which kiln owns the open file. A buffer's wikilinks resolve in the kiln
+  // holding that FILE — following a link out of a note opened from another
+  // kiln (a canvas card, a search hit, a hover popover) used to land in
+  // whichever kiln the status bar pointed at, which is one kiln serving
+  // another kiln's data.
+  const [kilns, setKilns] = createSignal<{ path: string }[]>([]);
+  onMount(() => swrLocal('kilns', listKilns, setKilns));
+  const owningKiln = (path?: string) => (path ? kilnForPath(path, kilns()) : undefined);
 
   type EditorMenuAction = 'cut' | 'copy' | 'paste' | 'select-all' | 'copy-file-path';
   const onMenuAction = (action: EditorMenuAction) => {
@@ -333,8 +346,14 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
                   path={file().path}
                   onChange={(content) => updateFileContent(file().path, content)}
                   onSave={handleSave}
+                  kiln={owningKiln(file().path)}
+                  // Files outside every kiln (project sources) have no kiln of
+                  // their own, so they keep resolving in the active one.
                   onFollowLink={(target) =>
-                    void openNoteInEditor(target, statusBarStore.kilnPath() ?? undefined)
+                    void openNoteInEditor(
+                      target,
+                      owningKiln(file().path) ?? statusBarStore.kilnPath() ?? undefined,
+                    )
                   }
                   vimMode={settings.editor.vimMode}
                   lineWidth={settings.editor.maxLineWidth}

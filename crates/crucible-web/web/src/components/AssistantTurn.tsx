@@ -175,7 +175,15 @@ export const AssistantTurn: Component<{
   };
 
   return (
-    <div class="group relative mb-6" data-testid="assistant-turn" data-role="assistant-turn">
+    <div
+      class="group relative mb-6"
+      data-testid="assistant-turn"
+      data-role="assistant-turn"
+      // Same kiln the click handler uses, declared for the document-level
+      // hover popovers: a session's transcript belongs to the session's kiln,
+      // which is not necessarily the one the status bar points at.
+      data-kiln={sessionKiln() || undefined}
+    >
       <div class="flex flex-col gap-1.5">
         <For each={props.parts}>
           {(part) => {

@@ -47,9 +47,11 @@ export const MarkdownPreview: Component<{
   // The rendered HTML is not a component tree — delegate clicks through the
   // implementation shared with chat (lib/markdown-click.ts): wikilinks open
   // notes, copy buttons copy, external/relative links behave identically.
-  const handleClick = makeMarkdownClickHandler(
-    () => props.kiln ?? statusBarStore.kilnPath() ?? undefined,
-  );
+  // `||`, not `??`: a surface whose kiln has not loaded yet passes the empty
+  // string, which is not a kiln — resolving against it silently produces
+  // whatever the server does with a blank root.
+  const kiln = () => props.kiln || statusBarStore.kilnPath() || undefined;
+  const handleClick = makeMarkdownClickHandler(kiln);
 
   let scrollHost: HTMLDivElement | undefined;
   // After the async render lands, jump to the wikilink that points at the
@@ -71,6 +73,10 @@ export const MarkdownPreview: Component<{
       ref={scrollHost}
       class="h-full overflow-y-auto bg-shell-panel px-6 py-4"
       data-testid="markdown-preview"
+      // Declares which kiln this content belongs to for the document-level
+      // hover controller, which cannot be passed props. Same value the click
+      // handler uses, so hover and click can never target different kilns.
+      data-kiln={kiln()}
       onClick={handleClick}
     >
       <div

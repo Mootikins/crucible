@@ -25,6 +25,13 @@ export const EditorWithPreview: Component<{
   onChange: (content: string) => void;
   onSave?: () => void;
   onFollowLink?: (target: string) => void;
+  /**
+   * Kiln owning the file in the buffer. Wikilinks resolve here — in the
+   * rendered view, and (via `data-kiln`) in the document-level hover
+   * popovers — so a buffer from one kiln can never follow a link into
+   * another. Absent for files that belong to no kiln.
+   */
+  kiln?: string;
   vimMode?: boolean;
   /** Mode a markdown file opens in (hover popovers pass the configured
    * hover mode; default live). Non-markdown is always source. */
@@ -60,7 +67,7 @@ export const EditorWithPreview: Component<{
   const modeButton = 'rounded border border-hairline bg-surface-elevated/90 p-1.5 text-muted hover:text-shell-ink hover:border-primary/50 transition-colors';
 
   return (
-    <div class="relative h-full w-full">
+    <div class="relative h-full w-full" data-kiln={props.kiln || undefined}>
       <Show when={isMarkdown()}>
         <div class="absolute right-3 top-2 z-10 flex items-center gap-1">
           {/* Live ↔ source: the prose flow vs the mono/raw code flow. */}
@@ -96,6 +103,7 @@ export const EditorWithPreview: Component<{
           <MarkdownPreview
             content={props.content}
             path={props.path}
+            kiln={props.kiln}
             maxWidth={props.lineWidth}
             scrollToNote={props.scrollToNote}
           />

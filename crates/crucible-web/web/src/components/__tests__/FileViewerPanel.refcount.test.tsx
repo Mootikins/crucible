@@ -16,12 +16,17 @@ vi.mock('@/lib/api', () => ({
   getFileContent: (p: string) => getFileContent(p),
   saveFileContent: vi.fn(async () => {}),
   getNote: vi.fn(async () => ({ name: '', path: '', content: '', title: null, tags: [], updated_at: '' })),
+  // The panel asks which kiln owns the open file, so links resolve there.
+  listKilns: vi.fn(async () => []),
 }));
 vi.mock('../editor/EditorWithPreview', () => ({
   EditorWithPreview: () => <div data-testid="editor-stub" />,
 }));
 vi.mock('@/lib/file-actions', () => ({ findTabByFilePath: vi.fn(() => null) }));
-vi.mock('@/lib/note-actions', () => ({ openNoteInEditor: vi.fn(async () => {}) }));
+vi.mock('@/lib/note-actions', () => ({
+  openNoteInEditor: vi.fn(async () => {}),
+  kilnForPath: vi.fn(() => undefined),
+}));
 vi.mock('@/stores/windowStore', () => ({
   windowActions: { updateTab: vi.fn() },
   windowStore: { tabGroups: {}, layout: { id: 'pane-1', type: 'pane', tabGroupId: null } },

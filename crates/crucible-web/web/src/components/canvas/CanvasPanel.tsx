@@ -765,6 +765,11 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
                   // a bare outline reads as an annotation on the card, where
                   // the colour is meant to categorise the card itself.
                   '--canvas-accent': accent() ?? 'var(--color-hairline)',
+                  // A separate selection accent: an uncoloured card's border is
+                  // deliberately faint, and brightening *that* left selection
+                  // almost invisible on the default cards, which are most of
+                  // them. A coloured card still selects in its own colour.
+                  '--canvas-select': accent() ?? 'var(--color-primary)',
                   // Groups must not eat pointer events meant for their contents.
                   'pointer-events': isGroup() ? 'none' : 'auto',
                 }}
@@ -881,6 +886,11 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
                   // a bare outline reads as an annotation on the card, where
                   // the colour is meant to categorise the card itself.
                   '--canvas-accent': accent() ?? 'var(--color-hairline)',
+                  // A separate selection accent: an uncoloured card's border is
+                  // deliberately faint, and brightening *that* left selection
+                  // almost invisible on the default cards, which are most of
+                  // them. A coloured card still selects in its own colour.
+                  '--canvas-select': accent() ?? 'var(--color-primary)',
                   // Groups must not eat pointer events meant for their contents.
                   'pointer-events': isGroup() ? 'none' : 'auto',
                 }}

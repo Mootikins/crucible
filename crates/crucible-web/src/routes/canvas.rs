@@ -223,7 +223,8 @@ async fn enclosing_root(
         .into_iter()
         .filter_map(|p| {
             let canonical = p.path.canonicalize().ok()?;
-            (path.starts_with(&canonical) || path.starts_with(&p.path)).then(|| (canonical, p.path))
+            (path.starts_with(&canonical) || path.starts_with(&p.path))
+                .then_some((canonical, p.path))
         })
         .max_by_key(|(canonical, _)| canonical.components().count());
 
