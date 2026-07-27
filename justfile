@@ -271,12 +271,23 @@ coverage-open: coverage
 # === CI ===
 
 # Run full CI check (mirrors GitHub CI workflow)
-ci: fmt-check clippy file-size-check test-ci test-doc web-test-unit web-test
+ci: fmt-check clippy file-size-check test-ci test-features test-doc web-test-unit web-test
     @echo "CI checks passed!"
 
 # Run tests with CI profile (matches GitHub Actions)
 test-ci: build-test-fixtures
     cargo nextest run --profile ci --workspace
+
+# Feature-gated suites the default build never compiles.
+#
+# `--workspace` builds every crate with its DEFAULT features, so anything
+# behind a non-default flag is not even type-checked by `test-ci`. That is how
+# a `Border::Custom(BorderChars)` variant reached CI inside a `Serialize`
+# derive without `BorderChars` implementing it: green locally, red on the one
+# step that turns the feature on. GitHub runs these; so must `just ci`.
+test-features:
+    cargo nextest run --profile ci -p crucible-oil --features serde,test-utils
+    cargo nextest run --profile ci -p crucible-lua -E 'test(stubs)' --no-capture
 
 # Run doctests. nextest cannot execute them, so `test-ci` alone leaves every
 # example in a doc comment unverified — which is how they rotted unnoticed.

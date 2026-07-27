@@ -423,6 +423,7 @@ impl Border {
 ///
 /// The order matches Neovim's `nvim_open_win` border list, so a character set
 /// can be copied between the two without reshuffling.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BorderChars {
     pub top_left: Option<char>,
