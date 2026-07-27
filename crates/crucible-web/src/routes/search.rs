@@ -17,6 +17,7 @@ pub fn search_routes() -> Router<AppState> {
     Router::new()
         .route("/api/kilns", get(list_kilns))
         .route("/api/notes", get(list_notes))
+        .route("/api/notes/resolve", get(resolve_note))
         .route("/api/notes/{name}", get(get_note))
         .route("/api/notes/{name}", put(put_note))
         .route("/api/backlinks", get(get_backlinks))
@@ -50,6 +51,122 @@ async fn list_notes(
     let notes_json: Vec<serde_json::Value> = notes.into_iter().map(note_to_metadata_json).collect();
 
     Ok(Json(serde_json::json!({ "notes": notes_json })))
+}
+
+/// `GET /api/notes/resolve?kiln=<path>&name=<target>` — resolve a wikilink
+/// target to a file, **by walking the kiln**.
+///
+/// Deliberately independent of the note index. Opening `[[Some Note]]` is a
+/// path question, and answering it from the index means a kiln that has not
+/// been processed yet resolves nothing — which does not fail loudly, it falls
+/// through to whatever kiln is configured as the default and silently opens a
+/// same-named note from the wrong vault. Indexing is an optimisation for search
+/// and backlinks; it must not be a prerequisite for following a link.
+///
+/// Resolution order, matching how wikilinks are written in practice:
+///   1. exact kiln-relative path (with or without the `.md` suffix)
+///   2. unique filename stem anywhere in the kiln
+///
+/// An ambiguous stem resolves to the shallowest match, which is the same
+/// tie-break the link index applies.
+///
+/// # Isolation
+///
+/// **A root never resolves outside itself.** Every candidate is canonicalized
+/// and checked against the canonical root, so a symlink planted inside one kiln
+/// cannot surface a note from another kiln or from a project. Resolution
+/// failing is the correct outcome — the alternative, quietly answering from a
+/// different root, is how a link in one vault silently opens a same-named note
+/// from another.
+async fn resolve_note(
+    axum::extract::Query(query): axum::extract::Query<ResolveQuery>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    validate_note_name(&query.name)?;
+
+    let root = query.kiln.canonicalize().map_err(|_| {
+        WebError::NotFound("Kiln directory does not exist".to_string())
+    })?;
+
+    // Strip an alias/heading/block suffix — `[[Note|alias]]`, `[[Note#Heading]]`.
+    let target = query
+        .name
+        .split(['|', '#'])
+        .next()
+        .unwrap_or(&query.name)
+        .trim()
+        .to_string();
+    let bare = target.strip_suffix(".md").unwrap_or(&target);
+
+    for candidate in [root.join(format!("{bare}.md")), root.join(&target)] {
+        if let Some(contained) = contained_file(&candidate, &root) {
+            return Ok(Json(resolved_json(&root, &contained)));
+        }
+    }
+
+    let wanted = bare.rsplit('/').next().unwrap_or(bare).to_ascii_lowercase();
+    let mut best: Option<std::path::PathBuf> = None;
+    for entry in walkdir::WalkDir::new(&root)
+        .into_iter()
+        .filter_entry(|e| {
+            !crucible_core::EXCLUDED_DIRS
+                .iter()
+                .any(|d| e.file_name().to_string_lossy() == *d)
+        })
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        if !path.is_file() || !crucible_core::kiln::is_note_file(path) {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        if stem != wanted {
+            continue;
+        }
+        let Some(contained) = contained_file(path, &root) else {
+            continue;
+        };
+        let shallower = best
+            .as_ref()
+            .is_none_or(|b| contained.components().count() < b.components().count());
+        if shallower {
+            best = Some(contained);
+        }
+    }
+
+    match best {
+        Some(path) => Ok(Json(resolved_json(&root, &path))),
+        None => Err(WebError::NotFound(format!(
+            "Note '{}' not found in this kiln",
+            query.name
+        ))),
+    }
+}
+
+/// The canonical path, if it is a file genuinely inside `root`.
+///
+/// Canonicalizing before the containment test is the point: a symlink is a file
+/// whose lexical path is inside the root while its contents live outside it.
+fn contained_file(path: &std::path::Path, root: &std::path::Path) -> Option<std::path::PathBuf> {
+    let canonical = path.canonicalize().ok()?;
+    (canonical.is_file() && canonical.starts_with(root)).then_some(canonical)
+}
+
+fn resolved_json(root: &std::path::Path, path: &std::path::Path) -> serde_json::Value {
+    let rel = path.strip_prefix(root).unwrap_or(path);
+    serde_json::json!({
+        "path": rel.to_string_lossy(),
+        "absolutePath": path.to_string_lossy(),
+        "title": path.file_stem().map(|s| s.to_string_lossy().to_string()),
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct ResolveQuery {
+    kiln: PathBuf,
+    name: String,
 }
 
 async fn get_note(
@@ -751,5 +868,53 @@ mod tests {
         ) {
             prop_assert!(is_valid_note_name(&path));
         }
+    }
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    /// The invariant: one root never surfaces another root's content. A link in
+    /// vault A that happens to name a note in vault B must fail to resolve, not
+    /// quietly open B's note.
+    #[test]
+    fn a_symlink_out_of_the_kiln_never_resolves() {
+        let tmp = TempDir::new().unwrap();
+        let kiln_a = tmp.path().join("a");
+        let kiln_b = tmp.path().join("b");
+        std::fs::create_dir_all(&kiln_a).unwrap();
+        std::fs::create_dir_all(&kiln_b).unwrap();
+        std::fs::write(kiln_b.join("Secret.md"), "# Secret\n").unwrap();
+
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(kiln_b.join("Secret.md"), kiln_a.join("Secret.md")).unwrap();
+
+        let root = kiln_a.canonicalize().unwrap();
+        assert!(
+            contained_file(&kiln_a.join("Secret.md"), &root).is_none(),
+            "a symlink into another kiln must not resolve"
+        );
+    }
+
+    #[test]
+    fn a_real_note_inside_the_kiln_resolves() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join("Notes")).unwrap();
+        std::fs::write(tmp.path().join("Notes/Architecture.md"), "# A\n").unwrap();
+
+        let root = tmp.path().canonicalize().unwrap();
+        let hit = contained_file(&root.join("Notes/Architecture.md"), &root);
+        assert!(hit.is_some());
+        assert!(hit.unwrap().starts_with(&root));
+    }
+
+    #[test]
+    fn a_directory_is_not_a_note() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join("Notes")).unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        assert!(contained_file(&root.join("Notes"), &root).is_none());
     }
 }

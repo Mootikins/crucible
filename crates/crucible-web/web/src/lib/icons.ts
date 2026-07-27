@@ -1,6 +1,10 @@
 // Re-export all Lucide icons for use across the Crucible web frontend
 export {
   Activity,
+  FilePlus,
+  ArrowRight,
+  ArrowLeft,
+  Type,
   ExternalLink,
   ShieldAlert,
   Archive,

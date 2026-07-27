@@ -18,6 +18,14 @@ export const MarkdownPreview: Component<{
   content: string;
   /** Absolute file path — its directory resolves relative image srcs. */
   path?: string;
+  /**
+   * Kiln to resolve `[[wikilinks]]` against, overriding the globally-active one.
+   *
+   * A canvas card renders content belonging to the canvas's OWN kiln, which is
+   * not necessarily the kiln the status bar is pointing at — without this a
+   * card's links silently resolve into a different vault.
+   */
+  kiln?: string;
   maxWidth?: number;
   /** Scroll to the first rendered wikilink pointing at this note key —
    * backlinks hover previews open at the referencing section. */
@@ -39,7 +47,9 @@ export const MarkdownPreview: Component<{
   // The rendered HTML is not a component tree — delegate clicks through the
   // implementation shared with chat (lib/markdown-click.ts): wikilinks open
   // notes, copy buttons copy, external/relative links behave identically.
-  const handleClick = makeMarkdownClickHandler(() => statusBarStore.kilnPath() ?? undefined);
+  const handleClick = makeMarkdownClickHandler(
+    () => props.kiln ?? statusBarStore.kilnPath() ?? undefined,
+  );
 
   let scrollHost: HTMLDivElement | undefined;
   // After the async render lands, jump to the wikilink that points at the

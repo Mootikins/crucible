@@ -1162,6 +1162,25 @@ export async function listNotes(kiln: string, pathFilter?: string): Promise<Note
   ).notes;
 }
 
+/**
+ * Resolve a wikilink target to a file by walking the kiln.
+ *
+ * Independent of the note index — following a link is a path question, and
+ * answering it from the index means an unprocessed kiln resolves nothing and
+ * silently falls back to the default kiln, opening a same-named note from the
+ * wrong vault.
+ */
+export async function resolveNotePath(
+  kiln: string,
+  name: string,
+): Promise<{ path: string; absolutePath: string; title?: string }> {
+  const params = new URLSearchParams({ kiln, name });
+  return request('GET', `/api/notes/resolve?${params.toString()}`, {
+    errorMessage: 'Failed to resolve note',
+    includeErrorText: true,
+  });
+}
+
 export async function getNote(name: string, kiln: string): Promise<NoteContent> {
   const params = new URLSearchParams({ kiln });
   return request<NoteContent>('GET', `/api/notes/${encodeURIComponent(name)}?${params.toString()}`, {

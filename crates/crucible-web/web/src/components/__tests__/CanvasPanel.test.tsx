@@ -46,10 +46,22 @@ describe('CanvasPanel', () => {
       expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
     });
 
+    // Groups paint first, then edges, then cards. A group is a backdrop, and
+    // once it gained a background it hid every connection crossing it — so
+    // render order is banded, and document order (which IS z-order in the
+    // format) is preserved only within the card band.
     const types = [...container.querySelectorAll('[data-testid="canvas-node"]')].map((n) =>
       n.getAttribute('data-node-type'),
     );
-    expect(types).toEqual(['text', 'file', 'link', 'group']);
+    expect(types[0], 'groups render behind everything else').toBe('group');
+    expect(types.slice(1)).toEqual(['text', 'file', 'link']);
+
+    const layer = container.querySelector('[data-testid="canvas-layer"]')!;
+    const order = [...layer.children].map((c) => c.getAttribute('data-testid') ?? c.tagName);
+    expect(
+      order.indexOf('canvas-edges'),
+      'edges must paint above groups so a group background cannot hide them',
+    ).toBeGreaterThan(0);
 
     // Edges are one SVG overlay, not per-node elements.
     expect(container.querySelectorAll('[data-testid="canvas-edges"]').length).toBe(1);
@@ -175,6 +187,100 @@ describe('CanvasPanel', () => {
     unmount();
 
     await waitFor(() => expect(saveCanvasMock).toHaveBeenCalled());
+  });
+
+  /**
+   * Selection and editing are separate. A single click focuses a card so it can
+   * be scrolled and styled; only a double click opens the editor. Conflating
+   * them meant merely selecting a card stole the keyboard.
+   */
+  it('selects on single click and only edits on double click', async () => {
+    getCanvasMock.mockResolvedValue(response());
+    const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
+    });
+
+    const card = container.querySelector('[data-node-id="text-1"]') as HTMLElement;
+    card.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="canvas-card-toolbar"]')).toBeTruthy();
+    });
+    expect(container.querySelectorAll('[data-testid="canvas-resize-handle"]').length).toBe(4);
+
+    // A real double click lands on the CONTENT inside the card, not on the
+    // node box itself.
+    const inner = card.querySelector('[data-canvas-scroll]') as HTMLElement;
+    inner.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="canvas-card-toolbar"]')).toBeNull();
+    });
+    expect(
+      container.querySelectorAll('[data-testid="canvas-node"]').length,
+      'double clicking a card must edit it, not create a new card',
+    ).toBe(4);
+  });
+
+  /** Connector dots live at edge midpoints, separate from the corner handles. */
+  it('offers four corner handles and four edge connectors on a selected card', async () => {
+    getCanvasMock.mockResolvedValue(response());
+    const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
+    });
+
+    const card = container.querySelector('[data-node-id="file-1"]') as HTMLElement;
+    card.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+
+    await waitFor(() => {
+      const corners = [...container.querySelectorAll('[data-testid="canvas-resize-handle"]')].map(
+        (el) => el.getAttribute('data-corner'),
+      );
+      expect(corners.sort()).toEqual(['ne', 'nw', 'se', 'sw']);
+    });
+
+    const sides = [...container.querySelectorAll('[data-testid="canvas-connect-zone"]')].map((el) =>
+      el.getAttribute('data-side'),
+    );
+    expect(sides.sort()).toEqual(['bottom', 'left', 'right', 'top']);
+  });
+
+  /**
+   * Dragging must MOVE a card, not rebuild it.
+   *
+   * The document is immutable — every edit returns fresh node objects, which is
+   * what makes undo a stack of snapshots — but a reference-keyed `<For>` turned
+   * that into a full teardown and remount of every card on every drag frame.
+   * Note cards refetched their file each time, which is what the "Loading…"
+   * flicker was. Keying by id keeps the element identity so only the position
+   * bindings update.
+   */
+  it('moves a card on drag without recreating its DOM element', async () => {
+    getCanvasMock.mockResolvedValue(response());
+    const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
+    });
+
+    const before = container.querySelector('[data-node-id="text-1"]') as HTMLElement;
+    const beforeLeft = before.style.left;
+
+    before.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: 10, clientY: 10 }),
+    );
+    const surface = container.querySelector('[data-testid="canvas-surface"]')!;
+    surface.dispatchEvent(
+      new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientX: 90, clientY: 10 }),
+    );
+    surface.dispatchEvent(
+      new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: 90, clientY: 10 }),
+    );
+
+    const after = container.querySelector('[data-node-id="text-1"]') as HTMLElement;
+    expect(after, 'the card element must survive a drag, not be rebuilt').toBe(before);
+    expect(after.style.left, 'but its position must have changed').not.toBe(beforeLeft);
   });
 
   it('shows the empty canvas without error', async () => {

@@ -675,3 +675,112 @@ details.callout[open] > summary.callout-title::after {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ===========================================================================
+   Canvas cards
+   ---------------------------------------------------------------------------
+   A text card and a note card must be indistinguishable, and switching a card
+   between rendered and editing must not move the text. Both surfaces therefore
+   share one padding value and sit transparently on the card's own background,
+   rather than each bringing the padding and panel colour they use elsewhere in
+   the app.
+   =========================================================================== */
+.canvas-card-body {
+  --canvas-card-pad-x: 0.85rem;
+  --canvas-card-pad-y: 0.7rem;
+}
+
+/* MarkdownPreview ships its own panel background and generous page padding,
+   which is right for a full-width reading pane and wrong inside a card. */
+.canvas-card-body > div {
+  background: transparent;
+  padding: var(--canvas-card-pad-y) var(--canvas-card-pad-x);
+}
+
+/* CodeMirror likewise: transparent, same padding, no gutter. Any mismatch here
+   shows up as the text jumping when a card enters edit mode. */
+.canvas-card-body .cm-editor,
+.canvas-card-body .cm-scroller,
+.canvas-card-body .cm-gutters {
+  background: transparent !important;
+}
+.canvas-card-body .cm-scroller {
+  padding: 0;
+}
+/* CodeMirror stacks its own padding on .cm-content AND .cm-line, so setting
+   only the former left edit mode visibly roomier than the rendered view. Both
+   are zeroed and the padding applied once, matching the preview exactly. */
+.canvas-card-body .cm-content {
+  padding: var(--canvas-card-pad-y) var(--canvas-card-pad-x);
+}
+.canvas-card-body .cm-line {
+  padding-left: 0;
+  padding-right: 0;
+}
+/* The preview's first block carries a top margin from the prose styles; the
+   editor's first line does not. Drop it so the first line of text sits at the
+   same y in both modes. */
+.canvas-card-body > div > *:first-child,
+.canvas-card-body .prose > *:first-child {
+  margin-top: 0;
+}
+.canvas-card-body .cm-gutters {
+  display: none;
+}
+.canvas-card-body .cm-editor.cm-focused {
+  outline: none;
+}
+
+/* An edge label sits ON the connection line, so it needs to knock the line out
+   behind the glyphs. Painted in the surface colour rather than a tinted chip,
+   so the label reads as part of the canvas rather than a badge stuck to it. */
+.canvas-edge-label-halo {
+  fill: var(--color-shell-panel, var(--color-surface-base));
+  stroke: var(--color-shell-panel, var(--color-surface-base));
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+
+/* A group is a labelled backdrop, so it wants a solid edge and a wash that
+   separates it from the canvas without competing with the cards inside it. */
+.canvas-group {
+  background: color-mix(in srgb, var(--color-shell-panel) 55%, transparent);
+  border-style: solid;
+}
+
+/* ===========================================================================
+   Canvas cards: colour
+   ---------------------------------------------------------------------------
+   A card's colour categorises the card, so it tints the surface as well as the
+   edge — an outline alone reads as an annotation stuck on top. Selection
+   thickens and brightens whatever border the card already has, rather than
+   swapping in an accent outline that discards the card's own colour.
+   =========================================================================== */
+.canvas-card {
+  --canvas-accent: var(--color-hairline);
+  border: 1px solid color-mix(in srgb, var(--canvas-accent) 70%, transparent);
+  background: color-mix(in srgb, var(--canvas-accent) 10%, var(--color-surface-elevated));
+}
+
+.canvas-card-selected {
+  /* The border WIDTH never changes. Growing it from 1px to 2px shrinks the
+     content box and nudges every line of text, which is very visible on a card
+     you are reading. The extra weight is drawn outside the box instead — a
+     box-shadow ring takes no layout space — and the existing border simply
+     brightens to full accent. */
+  border-color: var(--canvas-accent);
+  box-shadow:
+    0 0 0 1.5px var(--canvas-accent),
+    0 0 0 4px color-mix(in srgb, var(--canvas-accent) 22%, transparent);
+}
+
+.canvas-group {
+  --canvas-accent: var(--color-muted-dark);
+  border: 1px solid color-mix(in srgb, var(--canvas-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--canvas-accent) 8%, transparent);
+}
+
+.canvas-group.canvas-card-selected {
+  border-color: var(--canvas-accent);
+}

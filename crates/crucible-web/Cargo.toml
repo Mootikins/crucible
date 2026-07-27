@@ -28,6 +28,7 @@ futures = { workspace = true }
 
 # Embedded frontend (web/dist) for release builds; debug serves from disk.
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
+walkdir = "2.5"
 mime_guess = "2"
 
 portable-pty = "0.9"

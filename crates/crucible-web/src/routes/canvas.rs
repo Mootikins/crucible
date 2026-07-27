@@ -23,6 +23,8 @@ use super::helpers::{
     reject_path_traversal, validate_file_within_kiln, validate_write_target_within_kiln,
     MAX_CONTENT_SIZE,
 };
+use crucible_core::config::{read_project_config, ProjectFileAccess};
+
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 
@@ -100,7 +102,12 @@ async fn put_canvas(
     }
 
     let path = PathBuf::from(&req.path);
-    let kiln = enclosing_kiln(&state, &path).await?;
+    let (kiln, policy) = enclosing_root(&state, &path).await?;
+    if !policy.can_write() {
+        return Err(WebError::Forbidden(
+            "Project files are read-only".to_string(),
+        ));
+    }
 
     // Create the destination folder first: validation canonicalizes the parent
     // and refuses one that does not exist, so a `create_dir_all` afterwards
@@ -162,13 +169,28 @@ async fn put_canvas(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-/// Resolve the open kiln containing `path`, refusing project roots.
+/// Resolve the root a canvas belongs to: its kiln, or failing that its project.
 ///
-/// A canvas in a project but outside any kiln is not served at all, regardless
-/// of that project's `project_files` policy — canvases are kiln content by
-/// definition, and honouring the looser policy here would let a canvas act as a
-/// reader for arbitrary repository files.
+/// A canvas in a code repository is a legitimate thing to keep — an
+/// architecture board that references source files lives with the code, not in
+/// a notes vault. So a canvas outside any kiln resolves against its **project**
+/// root instead, and its references are contained to that root.
+///
+/// The containment rule is unchanged in substance: a canvas may only reference
+/// files inside the one root that owns it. What changes is which root that can
+/// be. A project canvas additionally obeys that project's
+/// [`ProjectFileAccess`] policy, so a repository configured `read-only` serves
+/// its canvases but refuses to save them, and one configured `off` does not
+/// serve them at all — exactly as for any other file in that project.
 async fn enclosing_kiln(state: &AppState, path: &Path) -> Result<PathBuf, WebError> {
+    enclosing_root(state, path).await.map(|(root, _)| root)
+}
+
+/// As [`enclosing_kiln`], but also reporting whether writes are permitted.
+async fn enclosing_root(
+    state: &AppState,
+    path: &Path,
+) -> Result<(PathBuf, ProjectFileAccess), WebError> {
     let kilns: Vec<PathBuf> = state
         .daemon
         .kiln_list()
@@ -182,14 +204,45 @@ async fn enclosing_kiln(state: &AppState, path: &Path) -> Result<PathBuf, WebErr
     // both open) taking whichever the daemon happened to list first would
     // attribute a canvas in the inner kiln to the outer one, letting it
     // reference anything under `/vault` — wider than "that same kiln".
-    kilns
+    let best_kiln = kilns
         .into_iter()
         .filter_map(|kiln| {
             let canonical = kiln.canonicalize().ok()?;
             (path.starts_with(&canonical) || path.starts_with(&kiln)).then_some(canonical)
         })
-        .max_by_key(|k| k.components().count())
-        .ok_or_else(|| WebError::NotFound("Canvas is not within an open kiln".to_string()))
+        .max_by_key(|k| k.components().count());
+
+    // A kiln always wins over the project containing it: kiln notes are
+    // read-write regardless of the project's file policy.
+    if let Some(kiln) = best_kiln {
+        return Ok((kiln, ProjectFileAccess::ReadWrite));
+    }
+
+    let projects = state.daemon.project_list().await.daemon_err()?;
+    let best_project = projects
+        .into_iter()
+        .filter_map(|p| {
+            let canonical = p.path.canonicalize().ok()?;
+            (path.starts_with(&canonical) || path.starts_with(&p.path)).then(|| (canonical, p.path))
+        })
+        .max_by_key(|(canonical, _)| canonical.components().count());
+
+    match best_project {
+        Some((canonical, raw)) => {
+            let policy = read_project_config(&raw)
+                .map(|c| c.security.project_files)
+                .unwrap_or_default();
+            if !policy.can_read() {
+                return Err(WebError::NotFound(
+                    "Canvas is not within an open kiln or readable project".to_string(),
+                ));
+            }
+            Ok((canonical, policy))
+        }
+        None => Err(WebError::NotFound(
+            "Canvas is not within an open kiln or registered project".to_string(),
+        )),
+    }
 }
 
 /// Put back any reference the read path blanked before this document was sent.

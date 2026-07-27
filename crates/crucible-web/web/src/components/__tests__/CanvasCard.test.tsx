@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
+import { createSignal } from 'solid-js';
 
 const getFileContentMock = vi.fn();
 const saveFileContentMock = vi.fn();
@@ -23,9 +24,9 @@ vi.mock('../editor/CodeMirrorEditor', () => ({
   ),
 }));
 
-import { CanvasNoteEmbed } from '../canvas/CanvasNoteEmbed';
+import { CanvasNoteCard } from '../canvas/CanvasCard';
 
-describe('CanvasNoteEmbed', () => {
+describe('CanvasNoteCard', () => {
   beforeEach(() => {
     getFileContentMock.mockReset();
     saveFileContentMock.mockReset();
@@ -35,7 +36,7 @@ describe('CanvasNoteEmbed', () => {
 
   it('loads the real note content', async () => {
     const { findByTestId } = render(() => (
-      <CanvasNoteEmbed absPath="/kiln/Notes/A.md" editable={false} />
+      <CanvasNoteCard absPath="/kiln/Notes/A.md" editable={false} />
     ));
 
     const embed = await findByTestId('canvas-note-embed');
@@ -46,7 +47,7 @@ describe('CanvasNoteEmbed', () => {
   /** A card is a window onto the file, not a copy — so it is read-only until selected. */
   it('is read-only until the card is selected', async () => {
     const { queryByTestId, findByTestId } = render(() => (
-      <CanvasNoteEmbed absPath="/kiln/Notes/A.md" editable={false} />
+      <CanvasNoteCard absPath="/kiln/Notes/A.md" editable={false} />
     ));
 
     await findByTestId('canvas-note-embed');
@@ -55,7 +56,7 @@ describe('CanvasNoteEmbed', () => {
 
   it('mounts a live editor when the card is selected', async () => {
     const { findByTestId } = render(() => (
-      <CanvasNoteEmbed absPath="/kiln/Notes/A.md" editable={true} />
+      <CanvasNoteCard absPath="/kiln/Notes/A.md" editable={true} />
     ));
 
     const editor = (await findByTestId('stub-editor')) as HTMLTextAreaElement;
@@ -69,7 +70,7 @@ describe('CanvasNoteEmbed', () => {
    */
   it('flushes a pending edit when the card unmounts', async () => {
     const { findByTestId, unmount } = render(() => (
-      <CanvasNoteEmbed absPath="/kiln/Notes/A.md" editable={true} />
+      <CanvasNoteCard absPath="/kiln/Notes/A.md" editable={true} />
     ));
 
     const editor = (await findByTestId('stub-editor')) as HTMLTextAreaElement;
@@ -85,10 +86,35 @@ describe('CanvasNoteEmbed', () => {
     );
   });
 
+  /**
+   * The card's path is derived from the canvas document, so reading it inside
+   * an effect subscribed that effect to the whole document — which is replaced
+   * on every drag frame. The file was refetched continuously, blanking the card
+   * to "Loading…" mid-drag.
+   */
+  it('does not refetch when unrelated props change', async () => {
+    const [pos, setPos] = createSignal(0);
+    const { findByTestId } = render(() => (
+      <CanvasNoteCard absPath={`/kiln/Notes/A.md?${''}`.replace(/\?$/, '')} editable={pos() > -1} />
+    ));
+
+    await findByTestId('canvas-note-embed');
+    await waitFor(() => expect(getFileContentMock).toHaveBeenCalledTimes(1));
+
+    // Simulate a drag: many unrelated updates, same path.
+    for (let i = 0; i < 20; i++) setPos(i);
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(
+      getFileContentMock.mock.calls.length,
+      'a card must fetch its file once, not once per frame',
+    ).toBe(1);
+  });
+
   it('surfaces a load failure', async () => {
     getFileContentMock.mockRejectedValue(new Error('File not found'));
     const { findByTestId } = render(() => (
-      <CanvasNoteEmbed absPath="/kiln/Notes/Missing.md" editable={false} />
+      <CanvasNoteCard absPath="/kiln/Notes/Missing.md" editable={false} />
     ));
 
     const err = await findByTestId('canvas-embed-error');

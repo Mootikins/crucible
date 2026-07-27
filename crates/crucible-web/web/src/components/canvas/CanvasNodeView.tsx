@@ -1,8 +1,8 @@
 import { Component, JSX, Match, Show, Switch, createMemo } from 'solid-js';
-import { MarkdownPreview } from '../editor/MarkdownPreview';
+import { CanvasNoteCard, CanvasTextCard } from './CanvasCard';
 import { ExternalLink, FileText, ShieldAlert } from '@/lib/icons';
 import { resolveCanvasColor, type CanvasNode, type FileNode } from '@/lib/canvas-types';
-import { CanvasNoteEmbed } from './CanvasNoteEmbed';
+
 
 /**
  * One canvas card.
@@ -18,6 +18,10 @@ export interface CanvasNodeViewProps {
   absPathFor: (relPath: string) => string;
   /** Selected cards get a live editor; the rest render read-only. */
   editable?: boolean;
+  /** The canvas's kiln, so card wikilinks resolve in the right vault. */
+  kiln?: string;
+  /** Text cards persist into the canvas document, so edits go back up. */
+  onTextChange?: (nodeId: string, text: string) => void;
   /** Redacted by the server for failing containment; render an explanation. */
   rejectedReason?: string;
   /** Absolute path resolver for file nodes, so media can be fetched. */
@@ -39,9 +43,13 @@ export const CanvasNodeView: Component<CanvasNodeViewProps> = (props) => {
     >
       <Switch>
         <Match when={props.node.type === 'text'}>
-          <div class="h-full overflow-auto px-3 py-2 text-sm" data-testid="canvas-text-node">
-            <MarkdownPreview content={(props.node as { text: string }).text} />
-          </div>
+          <CanvasTextCard
+            text={(props.node as { text: string }).text}
+            nodeId={props.node.id}
+            kiln={props.kiln}
+            editable={props.editable ?? false}
+            onChange={(text) => props.onTextChange?.(props.node.id, text)}
+          />
         </Match>
 
         <Match when={props.node.type === 'link'}>
@@ -54,6 +62,7 @@ export const CanvasNodeView: Component<CanvasNodeViewProps> = (props) => {
             rawUrlFor={props.rawUrlFor}
             absPathFor={props.absPathFor}
             editable={props.editable}
+            kiln={props.kiln}
             onOpenFile={props.onOpenFile}
           />
         </Match>
@@ -121,6 +130,7 @@ const FileCard: Component<{
   rawUrlFor: (relPath: string) => string;
   absPathFor: (relPath: string) => string;
   editable?: boolean;
+  kiln?: string;
   onOpenFile?: (relPath: string, subpath?: string) => void;
 }> = (props) => {
   const path = () => props.node.file;
@@ -129,12 +139,11 @@ const FileCard: Component<{
   return (
     <Switch fallback={<FileHeader node={props.node} onOpen={props.onOpenFile} />}>
       <Match when={MARKDOWN_EXT.test(path())}>
-        <FileHeader node={props.node} onOpen={props.onOpenFile}>
-          <CanvasNoteEmbed
-            absPath={props.absPathFor(path())}
-            editable={props.editable ?? false}
-          />
-        </FileHeader>
+        <CanvasNoteCard
+          absPath={props.absPathFor(path())}
+          kiln={props.kiln}
+          editable={props.editable ?? false}
+        />
       </Match>
       <Match when={IMAGE_EXT.test(path())}>
         <img
@@ -191,7 +200,7 @@ const FileHeader: Component<{
     <div class="flex h-full flex-col" data-testid="canvas-file-node">
       <button
         type="button"
-        class="flex shrink-0 items-center gap-1.5 border-b border-subtle px-3 py-1.5 text-left text-xs font-medium text-shell-ink hover:bg-hover-wash"
+        class="flex shrink-0 items-center gap-1.5 px-3 py-2 text-left text-xs text-muted hover:text-shell-ink"
         style={accent() ? { color: accent() } : undefined}
         onClick={() => props.onOpen?.(props.node.file, props.node.subpath)}
       >

@@ -5,7 +5,7 @@
  * Used by chat messages, the editor's wikilink decorations, and the
  * backlinks panel so every surface resolves links the same way.
  */
-import { getConfig, getNote } from './api';
+import { getConfig, getNote, resolveNotePath } from './api';
 import { extractFrontmatterBlock } from './frontmatter';
 import { openFileInEditor } from './file-actions';
 import { notificationActions } from '@/stores/notificationStore';
@@ -42,6 +42,18 @@ export function noteDisplayName(note: {
 export async function openNoteInEditor(name: string, kiln?: string): Promise<void> {
   try {
     const resolvedKiln = await resolveKiln(kiln);
+
+    // Path lookup first. It needs no index, so a kiln that has never been
+    // processed still follows its own links instead of falling through to
+    // whatever kiln happens to be configured as the default.
+    try {
+      const hit = await resolveNotePath(resolvedKiln, name);
+      openFileInEditor(hit.absolutePath, hit.title ?? name);
+      return;
+    } catch {
+      /* fall through to the index, which also handles fuzzy matches */
+    }
+
     const note = await getNote(name, resolvedKiln);
     openFileInEditor(noteAbsolutePath(note.path, resolvedKiln), noteDisplayName(note));
   } catch (err) {
