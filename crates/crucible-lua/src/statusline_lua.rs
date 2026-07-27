@@ -13,7 +13,9 @@
 //! different spelling from `mode`.
 
 use crate::error::LuaError;
-use crate::statusline_items::{Anchor, StatusBarDef, StatusBars, StatusCond, StatusItem};
+use crate::statusline_items::{
+    Anchor, StatusBarDef, StatusBars, StatusCond, StatusItem, DEFAULT_ORDER,
+};
 use mlua::{AnyUserData, Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
 
 /// A statusline item as seen from Lua.
@@ -166,7 +168,14 @@ pub fn bars_from_setup_table(config: &Table) -> mlua::Result<StatusBars> {
             .map(|t| items_from_table(&t))
             .unwrap_or_default();
 
-        bars.insert(name, StatusBarDef { anchor, items });
+        bars.insert(
+            name,
+            StatusBarDef {
+                anchor,
+                order: def.get("order").unwrap_or(DEFAULT_ORDER),
+                items,
+            },
+        );
     }
     Ok(bars)
 }
@@ -186,7 +195,14 @@ pub fn bars_from_lua(config: &Table) -> StatusBars {
             .get::<Table>("items")
             .map(|t| items_from_table(&t))
             .unwrap_or_default();
-        bars.insert(name, StatusBarDef { anchor, items });
+        bars.insert(
+            name,
+            StatusBarDef {
+                anchor,
+                order: def.get("order").unwrap_or(DEFAULT_ORDER),
+                items,
+            },
+        );
     }
     bars
 }
@@ -214,6 +230,35 @@ mod tests {
         let lua = lua_with_statusline();
         let table: Table = lua.load(src).eval().unwrap();
         bars_from_lua(&table)
+    }
+
+    /// Two rows in one slot, ordered by the author rather than by name.
+    #[test]
+    fn order_is_read_from_the_setup_table() {
+        let b = bars(
+            r#"
+            local sl = crucible.statusline
+            return {
+              main = { anchor = "footer.below_input", order = 10, items = { sl.mode } },
+              ctx  = { anchor = "footer.below_input", order = 20, items = { sl.context } },
+            }
+        "#,
+        );
+
+        assert_eq!(b["main"].order, 10);
+        assert_eq!(b["ctx"].order, 20);
+        assert_eq!(b["main"].anchor, b["ctx"].anchor, "same slot");
+    }
+
+    #[test]
+    fn a_bar_without_order_takes_the_default() {
+        let b = bars(
+            r#"
+            local sl = crucible.statusline
+            return { main = { items = { sl.mode } } }
+        "#,
+        );
+        assert_eq!(b["main"].order, DEFAULT_ORDER);
     }
 
     #[test]

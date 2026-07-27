@@ -166,18 +166,31 @@ local sl = crucible.statusline
 sl.setup{
   main = {
     anchor = "footer.below_input",
+    order  = 100,
     items  = { sl.mode:hl("StatusMode"), " ", sl.model{ max = 25 },
                sl.align,
                sl.any(sl.notification, sl.context) },
   },
   context = {
-    anchor = "footer.above_input",
+    anchor = "footer.below_input",
+    order  = 200,
     items  = { sl.when("streaming", sl.cache) },
   },
 }
 ```
 
 Anchors: `top`, `bottom`, `footer.above_input`, `footer.below_input`.
+
+An anchor is a **slot, not a hook** — any number of bars can share one, so a
+footer can be two or three rows deep. `order` places them, lowest first
+(default `100`); bars with equal `order` fall back to name, so the result is
+never accidental. Nothing else determines position: `setup{}` is a Lua table
+with string keys, and those do not iterate in the order you wrote them.
+
+Convention worth keeping: put context-ish rows **below** the input alongside the
+main bar, and leave `footer.above_input` empty unless you have a reason. That
+space is where completion popups appear, and a bar there pushes the input down
+every time one opens.
 
 Built-in items — `mode`, `model`, `context`, `cache`, `status`, `notification` —
 are evaluated by the TUI every frame and cost no RPC. Bare strings are literal

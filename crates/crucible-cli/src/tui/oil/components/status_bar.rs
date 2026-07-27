@@ -1,4 +1,5 @@
 use crate::tui::oil::chat_app::ChatMode;
+use crucible_lua::statusline_items::Anchor;
 use crucible_oil::node::{row, spacer, styled, Node};
 use crucible_oil::style::{AdaptiveColor, Color, Style};
 
@@ -131,11 +132,37 @@ impl StatusBar {
 }
 
 impl StatusBar {
-    /// Render the `main` bar from the active item tree.
-    pub fn view_from_items(&self, streaming: bool) -> Node {
-        use crate::tui::oil::components::status_items::{render_bar, ItemContext, StatusBarData};
+    /// Every bar attached to `anchor`, top to bottom.
+    ///
+    /// An anchor is a slot holding any number of rows, not a single hook, so
+    /// this returns a list. Order comes from the bar's `order` field; see
+    /// [`crucible_lua::statusline_items::bars_at`].
+    pub fn views_at(&self, anchor: Anchor, streaming: bool) -> Vec<Node> {
+        use crate::tui::oil::components::status_items::{render_bar, ItemContext};
+        use crucible_lua::statusline_items::bars_at;
 
-        let data = StatusBarData {
+        let data = self.item_data();
+        let bars = crate::tui::oil::theme::bars::active();
+        let exprs = crate::tui::oil::theme::exprs::snapshot();
+
+        bars_at(bars, anchor)
+            .into_iter()
+            .map(|(_, bar)| {
+                render_bar(
+                    &bar.items,
+                    &ItemContext {
+                        data: &data,
+                        streaming,
+                        exprs: &exprs,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    /// The frame's live values, as the item vocabulary sees them.
+    fn item_data(&self) -> crate::tui::oil::components::status_items::StatusBarData {
+        crate::tui::oil::components::status_items::StatusBarData {
             mode: self.mode,
             model: self.model.clone(),
             context_used: self.context_used,
@@ -144,22 +171,7 @@ impl StatusBar {
             notification_toast: self.notification_toast.clone(),
             notification_counts: self.notification_counts.clone(),
             cache_hit_rate: self.cache_hit_rate,
-        };
-
-        let bars = crate::tui::oil::theme::bars::active();
-        let Some(main) = bars.get("main").or_else(|| bars.values().next()) else {
-            return Node::Empty;
-        };
-
-        let exprs = crate::tui::oil::theme::exprs::snapshot();
-        render_bar(
-            &main.items,
-            &ItemContext {
-                data: &data,
-                streaming,
-                exprs: &exprs,
-            },
-        )
+        }
     }
 
     pub fn emergency_view(&self) -> Node {

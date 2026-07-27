@@ -126,13 +126,21 @@ mod status_bar_tests {
         render_to_string(&bar.emergency_view(), width)
     }
 
+    /// The footer bar as production renders it: everything at
+    /// `footer.below_input`, stacked. Tests install a single bar, so this is one
+    /// node — but it goes through the same path the app does.
+    fn configured_bar_node(bar: &StatusBar) -> crucible_oil::node::Node {
+        use crucible_lua::statusline_items::Anchor;
+        crucible_oil::node::col(bar.views_at(Anchor::FooterBelowInput, false))
+    }
+
     fn render_configured_bar(bar: &StatusBar, width: usize) -> String {
-        let node = bar.view_from_items(false);
+        let node = configured_bar_node(bar);
         render_to_plain_text(&node, width)
     }
 
     fn render_configured_bar_ansi(bar: &StatusBar, width: usize) -> String {
-        let node = bar.view_from_items(false);
+        let node = configured_bar_node(bar);
         render_to_string(&node, width)
     }
 
@@ -278,7 +286,7 @@ mod status_bar_tests {
         let bar = StatusBar::new()
             .mode(ChatMode::Normal)
             .toast("Processing", NotificationToastKind::Info);
-        let node = bar.view_from_items(false);
+        let node = configured_bar_node(&bar);
         let plain = render_to_plain_text(&node, 80);
 
         let mode_pos = plain.find("NORMAL").expect("mode should exist");
@@ -442,7 +450,7 @@ mod status_bar_tests {
                 (NotificationToastKind::Warning, 3),
                 (NotificationToastKind::Error, 1),
             ]);
-        let node = bar.view_from_items(false);
+        let node = configured_bar_node(&bar);
         let plain = render_to_plain_text(&node, 80);
 
         assert_fits_width(&plain, 80);

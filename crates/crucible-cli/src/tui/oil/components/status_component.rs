@@ -3,6 +3,7 @@ use crate::tui::oil::component::Component;
 use crate::tui::oil::components::status_bar::{NotificationToastKind, StatusBar};
 use crate::tui::oil::theme;
 use crate::tui::oil::ViewContext;
+use crucible_lua::statusline_items::Anchor;
 use crucible_oil::node::{col, styled, Node};
 use crucible_oil::style::Style;
 
@@ -76,6 +77,31 @@ impl<'a> StatusComponent<'a> {
         self.streaming = streaming;
         self
     }
+
+    /// Bars attached to some other anchor, built from this same frame's values.
+    ///
+    /// The component owns the snapshot every bar reads, so anchors rendered
+    /// elsewhere in the tree still have to come from here — otherwise a bar
+    /// above the input could disagree with the one below it.
+    pub fn views_at(&self, anchor: Anchor) -> Vec<Node> {
+        self.bar().views_at(anchor, self.streaming)
+    }
+
+    fn bar(&self) -> StatusBar {
+        let mut bar = StatusBar::new()
+            .mode(self.mode)
+            .model(self.model)
+            .context(self.context_used, self.context_total)
+            .status(self.status);
+        bar.cache_hit_rate = self.cache_hit_rate;
+        if let Some((text, kind)) = self.toast {
+            bar = bar.toast(text, kind);
+        }
+        if !self.notification_counts.is_empty() {
+            bar = bar.counts(self.notification_counts.clone());
+        }
+        bar
+    }
 }
 
 impl Component for StatusComponent<'_> {
@@ -89,23 +115,12 @@ impl Component for StatusComponent<'_> {
             Node::Empty
         };
 
-        let mut status_bar = StatusBar::new()
-            .mode(self.mode)
-            .model(self.model)
-            .context(self.context_used, self.context_total)
-            .status(self.status);
-        status_bar.cache_hit_rate = self.cache_hit_rate;
-
-        if let Some((text, kind)) = self.toast {
-            status_bar = status_bar.toast(text, kind);
-        }
-        if !self.notification_counts.is_empty() {
-            status_bar = status_bar.counts(self.notification_counts.clone());
-        }
-
-        let bar_node = status_bar.view_from_items(self.streaming);
-
-        col(vec![error_node, bar_node])
+        let mut nodes = vec![error_node];
+        nodes.extend(
+            self.bar()
+                .views_at(Anchor::FooterBelowInput, self.streaming),
+        );
+        col(nodes)
     }
 }
 

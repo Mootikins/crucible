@@ -51,6 +51,7 @@ mod tests {
             "custom".to_string(),
             StatusBarDef {
                 anchor: Anchor::Top,
+                order: crucible_lua::statusline_items::DEFAULT_ORDER,
                 items: vec![StatusItem::Mode],
             },
         );

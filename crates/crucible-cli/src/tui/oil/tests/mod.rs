@@ -5,6 +5,7 @@ pub(crate) mod vt100_runtime;
 mod vt100_runtime_tests;
 
 // Surviving framework tests
+mod anchor_placement_tests;
 mod component_isolation_tests;
 mod event_loop_tests;
 mod event_tests;

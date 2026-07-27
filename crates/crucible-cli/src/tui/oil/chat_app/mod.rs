@@ -151,48 +151,61 @@ impl App for OilChatApp {
             ..*ctx
         };
 
-        col([
-            // Scrollable content area (margin-top for cross-batch spacing)
-            flex(
-                1,
-                slot(
-                    "content",
-                    [col({
-                        let nodes = self.container_list.nodes();
-                        nodes.iter().enumerate().map(|(i, node)| {
-                            let prev = if i > 0 { Some(&nodes[i - 1]) } else { None };
-                            node.render(prev, ctx)
+        // `top` and `bottom` frame the whole app, so they render regardless of
+        // which footer surface is up — a modal or the messages drawer replaces
+        // the command panel, not the window chrome around it.
+        use crucible_lua::statusline_items::Anchor;
+        let status = self.build_status_component();
+        let top_bars = status.views_at(Anchor::Top);
+        let bottom_bars = status.views_at(Anchor::Bottom);
+
+        col(top_bars
+            .into_iter()
+            .chain([
+                // Scrollable content area (margin-top for cross-batch spacing)
+                flex(
+                    1,
+                    slot(
+                        "content",
+                        [col({
+                            let nodes = self.container_list.nodes();
+                            nodes.iter().enumerate().map(|(i, node)| {
+                                let prev = if i > 0 { Some(&nodes[i - 1]) } else { None };
+                                node.render(prev, ctx)
+                            })
                         })
-                    })
-                    .gap(Gap::row(1))
-                    .with_margin(Padding {
-                        top: if self.container_list.needs_cross_batch_gap() {
-                            1
-                        } else {
-                            0
-                        },
-                        ..Padding::all(0)
-                    })],
+                        .gap(Gap::row(1))
+                        .with_margin(Padding {
+                            top: if self.container_list.needs_cross_batch_gap() {
+                                1
+                            } else {
+                                0
+                            },
+                            ..Padding::all(0)
+                        })],
+                    ),
                 ),
-            ),
-            // Pinned footer
-            slot(
-                "footer",
-                [col(
-                    match (&self.interaction_modal, self.notification_area.is_visible()) {
-                        (Some(modal), _) => vec![modal.view(
-                            ctx.terminal_size.0 as usize,
-                            self.permission.permission_queue.len(),
-                        )],
-                        (_, true) => vec![self.render_messages_drawer(ctx)],
-                        _ => vec![self.build_command_panel(ctx).view(ctx)],
-                    },
-                )
-                .gap(Gap::row(1))],
-            ),
-            // Overlay
-            self.popup_overlay_view(ctx),
-        ])
+                // Pinned footer
+                slot(
+                    "footer",
+                    [col(
+                        match (&self.interaction_modal, self.notification_area.is_visible()) {
+                            (Some(modal), _) => vec![modal.view(
+                                ctx.terminal_size.0 as usize,
+                                self.permission.permission_queue.len(),
+                            )],
+                            (_, true) => vec![self.render_messages_drawer(ctx)],
+                            _ => vec![self.build_command_panel(ctx).view(ctx)],
+                        },
+                    )
+                    .gap(Gap::row(1))],
+                ),
+            ])
+            .chain(bottom_bars)
+            .chain([
+                // Overlay
+                self.popup_overlay_view(ctx),
+            ]))
         .gap(Gap::row(1))
     }
 
@@ -349,7 +362,18 @@ impl OilChatApp {
             .focused(is_focused)
             .show_popup(self.popup.show);
 
-        // Status
+        CommandPanel {
+            turn_indicator: indicator,
+            input,
+            status: self.build_status_component(),
+        }
+    }
+
+    /// The frame's status snapshot, shared by every anchor.
+    ///
+    /// Bars at different anchors must agree, so they all read one snapshot
+    /// rather than each rebuilding from `self`.
+    fn build_status_component(&self) -> StatusComponent<'_> {
         let mut status = StatusComponent::new()
             .mode(self.mode)
             .model(&self.model)
@@ -364,12 +388,7 @@ impl OilChatApp {
         if !counts.is_empty() {
             status = status.counts(counts);
         }
-
-        CommandPanel {
-            turn_indicator: indicator,
-            input,
-            status,
-        }
+        status
     }
 
     /// Messages drawer (notification history).

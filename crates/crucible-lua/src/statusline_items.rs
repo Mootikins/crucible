@@ -137,11 +137,38 @@ pub enum StatusItem {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusBarDef {
     pub anchor: Anchor,
+    /// Stacking position within the anchor, lower first. Matches the `priority`
+    /// convention plugin hooks already use.
+    ///
+    /// An anchor holds any number of rows, so something has to order them. Name
+    /// order would work only by accident — two bars called `context` and `main`
+    /// would stack alphabetically, and the author's only lever would be renaming
+    /// them. Declaration order is not available either: `setup{}` is a Lua table
+    /// with string keys, and those iterate in an unspecified order.
+    pub order: i32,
     pub items: Vec<StatusItem>,
 }
 
+/// Where a bar sits when it does not say. Mid-range so bars can be placed on
+/// either side of the default without renumbering.
+pub const DEFAULT_ORDER: i32 = 100;
+
 /// Every bar, by name.
 pub type StatusBars = std::collections::BTreeMap<String, StatusBarDef>;
+
+/// The bars at one anchor, top to bottom.
+///
+/// Ties break on name so the result is stable — equal `order` must not render
+/// differently between runs.
+pub fn bars_at(bars: &StatusBars, anchor: Anchor) -> Vec<(&str, &StatusBarDef)> {
+    let mut found: Vec<(&str, &StatusBarDef)> = bars
+        .iter()
+        .filter(|(_, bar)| bar.anchor == anchor)
+        .map(|(name, bar)| (name.as_str(), bar))
+        .collect();
+    found.sort_by(|(a_name, a), (b_name, b)| a.order.cmp(&b.order).then(a_name.cmp(b_name)));
+    found
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Wire
@@ -231,6 +258,7 @@ pub fn bars_to_wire(bars: &StatusBars) -> Json {
             name.clone(),
             json!({
                 "anchor": bar.anchor.name(),
+                "order": bar.order,
                 "items": bar.items.iter().map(item_to_wire).collect::<Vec<_>>(),
             }),
         );
@@ -258,7 +286,19 @@ pub fn bars_from_wire(v: &Json) -> StatusBars {
             .and_then(Json::as_array)
             .map(|a| a.iter().filter_map(item_from_wire).collect())
             .unwrap_or_default();
-        bars.insert(name.clone(), StatusBarDef { anchor, items });
+        let order = def
+            .get("order")
+            .and_then(Json::as_i64)
+            .and_then(|n| i32::try_from(n).ok())
+            .unwrap_or(DEFAULT_ORDER);
+        bars.insert(
+            name.clone(),
+            StatusBarDef {
+                anchor,
+                order,
+                items,
+            },
+        );
     }
     bars
 }
@@ -275,6 +315,7 @@ pub fn builtin_default() -> StatusBars {
         "main".to_string(),
         StatusBarDef {
             anchor: Anchor::FooterBelowInput,
+            order: DEFAULT_ORDER,
             items: vec![
                 StatusItem::Hl {
                     group: "StatusMode".to_string(),
@@ -296,6 +337,76 @@ pub fn builtin_default() -> StatusBars {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn bar(anchor: Anchor, order: i32) -> StatusBarDef {
+        StatusBarDef {
+            anchor,
+            order,
+            items: vec![StatusItem::Mode],
+        }
+    }
+
+    /// An anchor is a slot, not a hook — several bars may share one.
+    #[test]
+    fn an_anchor_holds_several_bars_ordered_by_order() {
+        let mut bars = StatusBars::new();
+        bars.insert("main".into(), bar(Anchor::FooterBelowInput, 10));
+        bars.insert("ctx".into(), bar(Anchor::FooterBelowInput, 20));
+
+        let names: Vec<_> = bars_at(&bars, Anchor::FooterBelowInput)
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert_eq!(names, ["main", "ctx"], "order must beat alphabetical");
+    }
+
+    /// The bug this replaces: with no explicit order, `ctx` sorted above `main`
+    /// purely because "c" < "m", and renaming a bar was the only lever.
+    #[test]
+    fn order_overrides_the_accidental_alphabetical_stacking() {
+        let mut alphabetical = StatusBars::new();
+        alphabetical.insert("ctx".into(), bar(Anchor::FooterBelowInput, DEFAULT_ORDER));
+        alphabetical.insert("main".into(), bar(Anchor::FooterBelowInput, DEFAULT_ORDER));
+        let tied: Vec<_> = bars_at(&alphabetical, Anchor::FooterBelowInput)
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert_eq!(tied, ["ctx", "main"], "equal order falls back to name");
+
+        let mut ordered = StatusBars::new();
+        ordered.insert("ctx".into(), bar(Anchor::FooterBelowInput, 20));
+        ordered.insert("main".into(), bar(Anchor::FooterBelowInput, 10));
+        let placed: Vec<_> = bars_at(&ordered, Anchor::FooterBelowInput)
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert_eq!(placed, ["main", "ctx"]);
+    }
+
+    #[test]
+    fn bars_at_returns_only_that_anchor() {
+        let mut bars = StatusBars::new();
+        bars.insert("top".into(), bar(Anchor::Top, DEFAULT_ORDER));
+        bars.insert(
+            "footer".into(),
+            bar(Anchor::FooterBelowInput, DEFAULT_ORDER),
+        );
+
+        assert_eq!(bars_at(&bars, Anchor::Top).len(), 1);
+        assert_eq!(bars_at(&bars, Anchor::Bottom).len(), 0);
+        assert_eq!(bars_at(&bars, Anchor::FooterAboveInput).len(), 0);
+    }
+
+    #[test]
+    fn order_survives_the_wire_and_defaults_when_absent() {
+        let mut bars = StatusBars::new();
+        bars.insert("a".into(), bar(Anchor::Top, 42));
+        assert_eq!(bars_from_wire(&bars_to_wire(&bars))["a"].order, 42);
+
+        // A payload from a client that predates `order` must still place.
+        let legacy = json!({ "a": { "anchor": "top", "items": [] } });
+        assert_eq!(bars_from_wire(&legacy)["a"].order, DEFAULT_ORDER);
+    }
 
     #[test]
     fn anchor_names_round_trip() {
