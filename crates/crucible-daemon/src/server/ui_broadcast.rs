@@ -44,6 +44,22 @@ pub const GLOBAL: &str = crate::subscription::WILDCARD_SESSION;
 /// Fire-and-forget: a send with no subscribers is not an error. A daemon with no
 /// attached TUI should not log noise, and the next client to attach gets the
 /// state from the snapshot anyway.
+/// Tell a session's clients that an expression value changed.
+///
+/// Addressed to the real session rather than [`GLOBAL`]: a value belongs to one
+/// session, unlike a theme or layout change.
+pub fn broadcast_exprs_changed(
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+    agents: &AgentManager,
+    session_id: &str,
+) {
+    let payload = crate::rpc::ui::expr_payload(agents, session_id);
+    let msg = SessionEventMessage::new(session_id, UI_STYLE_CHANGED, payload);
+    if event_tx.send(msg).is_err() {
+        debug!("statusline value change had no subscribers");
+    }
+}
+
 pub fn broadcast_style_changed(
     event_tx: &broadcast::Sender<SessionEventMessage>,
     agents: &AgentManager,

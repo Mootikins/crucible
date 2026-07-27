@@ -33,8 +33,20 @@ pub fn apply_ui_config(payload: &Value) -> bool {
         );
     }
 
+    // Values first, and independently of the theme: an expression changing
+    // pushes a payload carrying *only* these, so that a provider firing on
+    // every file change does not make the client reinstall four leaked stores
+    // it already has. On the full snapshot this is the same work either way.
+    if let Some(map) = payload.get("exprs").and_then(Value::as_object) {
+        for (key, value) in map {
+            if let Some(text) = value.as_str() {
+                super::exprs::set(key, text);
+            }
+        }
+    }
+
     let Some(theme_wire) = payload.get("theme") else {
-        warn!("ui.config carried no theme; keeping the compiled-in default");
+        debug!("ui.config carried no theme; values applied, styling left as-is");
         return false;
     };
 
@@ -50,14 +62,6 @@ pub fn apply_ui_config(payload: &Value) -> bool {
     }
     if let Some(ui) = payload.get("ui") {
         super::geometry::set(crucible_lua::ui_geometry::geometry_from_wire(ui));
-    }
-    // Values already pushed before this client attached.
-    if let Some(map) = payload.get("exprs").and_then(Value::as_object) {
-        for (key, value) in map {
-            if let Some(text) = value.as_str() {
-                super::exprs::set(key, text);
-            }
-        }
     }
     if let Some(l) = payload.get("layout") {
         let parsed = crucible_lua::statusline_items::Layout::from_wire(l);
@@ -144,6 +148,24 @@ mod tests {
             "theme": { "name": "second" },
         })));
         assert_eq!(super::super::active().name, "second");
+    }
+
+    /// An expression change pushes values alone. Applying it must still update
+    /// them — dropping the payload for want of a theme is how a live statusline
+    /// value silently stops updating.
+    #[test]
+    fn a_values_only_payload_still_applies_its_values() {
+        let payload = json!({ "version": 1, "exprs": { "git": "main" } });
+
+        // No theme in the payload, so nothing was styled...
+        assert!(!apply_ui_config(&payload));
+        // ...but the value landed.
+        assert_eq!(
+            super::super::exprs::snapshot()
+                .get("git")
+                .map(String::as_str),
+            Some("main")
+        );
     }
 
     /// A newer daemon must not brick an older TUI.

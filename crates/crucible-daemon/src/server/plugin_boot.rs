@@ -41,6 +41,23 @@ impl Server {
             {
                 tracing::warn!(error = %e, "failed to register cru.statusline on the plugin VM");
             }
+            // Storing a value and telling a client about it are separate
+            // events: over a socket, with the TUI idle-blocked on input, a
+            // changed value repaints nothing by itself. Without this bind the
+            // registry records values that no attached client ever sees —
+            // `sl.expr("git")` would only update when something else happened
+            // to trigger a repaint.
+            {
+                let event_tx = self.event_tx.clone();
+                let agents = self.agent_manager.clone();
+                self.agent_manager
+                    .statusline_exprs()
+                    .set_change_notifier(std::sync::Arc::new(move |session_id: &str| {
+                        crate::server::ui_broadcast::broadcast_exprs_changed(
+                            &event_tx, &agents, session_id,
+                        );
+                    }));
+            }
             if let Err(e) = loader.register_context_attach(self.agent_manager.context_attach()) {
                 tracing::warn!(error = %e, "failed to register cru.context.attach on the plugin VM");
             }

@@ -97,6 +97,23 @@ pub fn handle_ui_set_theme(ctx: &RpcContext, req: &Request) -> Result<serde_json
     Ok(serde_json::json!({ "theme": applied }))
 }
 
+/// Just the expression values, for the push that follows one changing.
+///
+/// Deliberately not [`style_payload`]: a provider can push on every file
+/// change, and re-sending the theme, highlight table, geometry and layout each
+/// time would have the client reinstall four stores it already has — each of
+/// which is intentionally leaked so `active()` can return `&\'static`. Values
+/// live in a plain lock, so this payload costs nothing to apply repeatedly.
+pub fn expr_payload(
+    agents: &crate::agent_manager::AgentManager,
+    session_id: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "version": UI_CONFIG_VERSION,
+        "exprs": agents.statusline_exprs().snapshot(session_id),
+    })
+}
+
 /// The style payload, shared by the `ui.config` snapshot and the
 /// `ui_style_changed` push.
 ///

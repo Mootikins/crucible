@@ -77,13 +77,35 @@ impl std::fmt::Debug for StatuslineExprRegistry {
     }
 }
 
-/// Strip control characters. A value can originate in a branch name, a shell
-/// command's output, or model-derived text; none of those may move the cursor
-/// or emit an OSC sequence.
+/// Whether a character may not appear in a statusline value.
+///
+/// Control characters are the obvious half: a value can originate in a branch
+/// name, a shell command's output, or model-derived text, and none of those may
+/// move the cursor or emit an OSC sequence.
+///
+/// The bidi and zero-width formatting characters are the less obvious half.
+/// They are not control characters, so `is_control` misses them, but a
+/// right-to-left override in a branch name reorders how the rest of the bar
+/// *reads* without changing what it contains — the display-spoofing trick
+/// behind filenames like `annexe\u{202E}cod.exe`. A status bar has no use for
+/// them, so refusing them outright costs nothing.
+fn is_forbidden(c: char) -> bool {
+    c.is_control()
+        || matches!(c,
+            // LRM, RLM, ALM
+            '\u{200E}' | '\u{200F}' | '\u{061C}'
+            // embeddings and overrides: LRE, RLE, PDF, LRO, RLO
+            | '\u{202A}'..='\u{202E}'
+            // isolates: LRI, RLI, FSI, PDI
+            | '\u{2066}'..='\u{2069}'
+            // zero-width space / non-joiner / joiner / no-break space
+            | '\u{200B}'..='\u{200D}' | '\u{FEFF}')
+}
+
 fn sanitize(value: &str) -> String {
     value
         .chars()
-        .filter(|c| !c.is_control())
+        .filter(|c| !is_forbidden(*c))
         .take(MAX_VALUE_CHARS)
         .collect()
 }
@@ -294,6 +316,25 @@ mod tests {
         assert!(!stored.contains('\x07'), "bell survived: {stored:?}");
         assert!(!stored.contains('\n'), "newline survived: {stored:?}");
         assert!(stored.starts_with("main"));
+    }
+
+    /// Bidi overrides are not control characters, so `is_control` alone misses
+    /// them — and they reorder how the bar reads without changing what it
+    /// contains. A branch name is attacker-influenced in any repo you clone.
+    #[test]
+    fn bidi_and_zero_width_characters_are_stripped() {
+        let r = StatuslineExprRegistry::new();
+        let stored = r
+            .set("s1", "git", "feat/\u{202E}txt.exe\u{200B}\u{2066}x")
+            .unwrap();
+
+        for bad in ['\u{202E}', '\u{200B}', '\u{2066}'] {
+            assert!(
+                !stored.contains(bad),
+                "{bad:?} survived sanitising: {stored:?}"
+            );
+        }
+        assert!(stored.starts_with("feat/"), "legible text kept: {stored:?}");
     }
 
     #[test]

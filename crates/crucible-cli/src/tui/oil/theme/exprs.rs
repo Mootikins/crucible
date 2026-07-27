@@ -22,12 +22,23 @@ const MAX_VALUE_CHARS: usize = 256;
 
 static EXPRS: RwLock<Option<BTreeMap<String, String>>> = RwLock::new(None);
 
-/// Strip control characters, which must never reach the terminal from a value
-/// computed elsewhere.
+/// Strip anything that could drive or reorder the terminal.
+///
+/// The daemon sanitises too; this is the same rule applied again on arrival,
+/// because the client should not have to trust that it did. Control characters
+/// move the cursor and emit OSC sequences; bidi overrides and zero-width
+/// characters are not control characters but reorder how the bar *reads*.
 fn sanitize(value: &str) -> String {
     value
         .chars()
-        .filter(|c| !c.is_control())
+        .filter(|c| {
+            !(c.is_control()
+                || matches!(c,
+                    '\u{200E}' | '\u{200F}' | '\u{061C}'
+                    | '\u{202A}'..='\u{202E}'
+                    | '\u{2066}'..='\u{2069}'
+                    | '\u{200B}'..='\u{200D}' | '\u{FEFF}'))
+        })
         .take(MAX_VALUE_CHARS)
         .collect()
 }
