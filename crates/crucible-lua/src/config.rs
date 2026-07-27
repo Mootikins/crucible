@@ -377,6 +377,16 @@ pub fn register_ui_namespaces(lua: &Lua) -> Result<(), LuaError> {
         }
     }
 
+    if get_layout().is_none() {
+        match crate::statusline_lua::default_layout_from_lua() {
+            Ok(layout) => set_layout(layout),
+            Err(e) => {
+                warn!("Failed to load default statusline: {e}, using Rust defaults");
+                set_layout(crate::statusline_items::builtin_default());
+            }
+        }
+    }
+
     Ok(())
 }
 

@@ -188,7 +188,13 @@ bars used to be named (`main = {...}`) and that spelling still reads as valid.
 
 Rows above the input push it down whenever they render, and that space is also
 where completion popups open — so unless you want the editor to move, prefer
-putting context rows below it.
+putting context rows below it. The popup works out how far to sit from the
+bottom by measuring the prompt region, so extra rows and a wrapped multi-line
+input both move it correctly.
+
+The shipped default lives in `runtime/statusline/default.lua` and is written in
+exactly this vocabulary — it is the real default the daemon evaluates, not an
+illustration, so it is the best starting point for your own.
 
 Built-in items — `mode`, `model`, `context`, `cache`, `status`, `notification` —
 are evaluated by the TUI every frame and cost no RPC. Bare strings are literal

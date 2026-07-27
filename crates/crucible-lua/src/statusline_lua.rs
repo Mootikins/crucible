@@ -16,6 +16,9 @@ use crate::error::LuaError;
 use crate::statusline_items::{Element, Layout, Region, StatusCond, StatusItem};
 use mlua::{AnyUserData, Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
 
+/// The shipped default layout, authored in Lua.
+const DEFAULT_STATUSLINE_LUA: &str = include_str!("../../../runtime/statusline/default.lua");
+
 /// A statusline item as seen from Lua.
 #[derive(Clone)]
 struct LuaItem(StatusItem);
@@ -212,6 +215,25 @@ pub fn layout_from_setup_table(config: &Table) -> Layout {
     }
 
     layout
+}
+
+/// The default layout, as authored in Lua.
+///
+/// The layout Crucible ships with lives in `runtime/statusline/default.lua`
+/// rather than in Rust, so it reads as configuration a user can copy. Parsing
+/// needs a VM, so [`crate::statusline_items::builtin_default`] stays as the
+/// compiled-in twin the TUI falls back to with no daemon; a test asserts the
+/// two agree.
+pub fn default_layout_from_lua() -> Result<Layout, LuaError> {
+    let lua = Lua::new();
+    let crucible = lua.create_table()?;
+    let statusline = lua.create_table()?;
+    register_statusline_items(&lua, &statusline)?;
+    crucible.set("statusline", statusline)?;
+    lua.globals().set("crucible", crucible)?;
+
+    let table: Table = lua.load(DEFAULT_STATUSLINE_LUA).eval()?;
+    Ok(layout_from_setup_table(&table))
 }
 
 /// Helper for tests: is this userdata a statusline item?
@@ -417,6 +439,17 @@ mod tests {
                return { prompt = { { sl.mode, 42, sl.context } } }"#,
         );
         assert_eq!(first_row(&b), &vec![StatusItem::Mode, StatusItem::Context]);
+    }
+
+    /// The shipped default exists twice: authored in
+    /// `runtime/statusline/default.lua`, and compiled into the TUI so it renders
+    /// with no daemon. Two copies drift, so this is the guard — edit one without
+    /// the other and this fails rather than the two silently disagreeing about
+    /// what a fresh install looks like.
+    #[test]
+    fn the_lua_default_and_the_compiled_in_default_agree() {
+        let from_lua = default_layout_from_lua().expect("the shipped default parses");
+        assert_eq!(from_lua, crate::statusline_items::builtin_default());
     }
 
     #[test]

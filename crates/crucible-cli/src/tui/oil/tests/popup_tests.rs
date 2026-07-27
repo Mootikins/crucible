@@ -724,3 +724,92 @@ mod completion_style_behavior {
         assert_eq!(col, 3, "panel style should left-anchor the strip: {line:?}");
     }
 }
+
+/// The completion popup sits above everything the prompt region draws.
+///
+/// It used to reserve a constant 3 lines, which was the footer height only
+/// while the footer was one bar and the input was one line. Both are now
+/// variable — an author can add rows, and a wrapped message grows the input —
+/// so the reservation has to be derived from what is actually on screen.
+///
+/// These drive the **panel** style (`/`, a command trigger). The minimal
+/// anchored style used for inline `@`/`[[` triggers draws at the trigger column
+/// and never consults the offset, so it cannot exercise this.
+mod popup_clears_the_prompt_region {
+    use crate::tui::oil::app::App;
+    use crate::tui::oil::chat_app::OilChatApp;
+    use crate::tui::oil::event::Event;
+    use crate::tui::oil::tests::helpers::view_with_default_ctx;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crucible_lua::statusline_items::{Element, Layout, StatusItem};
+    use crucible_oil::ansi::strip_ansi;
+    use crucible_oil::planning::FramePlanner;
+
+    fn row(text: &str) -> Element {
+        Element::Row(vec![StatusItem::Text(text.to_string())])
+    }
+
+    /// The composited frame with a `/` command popup open over `layout`.
+    fn frame_with_panel_popup(layout: Layout, typed: &str) -> String {
+        crate::tui::oil::theme::bars::set(layout);
+
+        let mut app = OilChatApp::default();
+        for c in typed.chars() {
+            app.update(Event::Key(KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::empty(),
+            )));
+        }
+
+        let tree = view_with_default_ctx(&app);
+        let mut planner = FramePlanner::new(80, 24);
+        strip_ansi(&planner.plan(&tree).viewport_with_overlays(80))
+    }
+
+    /// The prompt line is the thing a too-small reservation lands on: extra
+    /// rows push the input up, and the popup follows only if it counted them.
+    #[test]
+    fn extra_rows_below_the_input_do_not_push_the_popup_onto_it() {
+        let frame = frame_with_panel_popup(
+            Layout {
+                prompt: vec![Element::Input, row("<ROW-A>"), row("<ROW-B>")],
+                ..Layout::default()
+            },
+            "/",
+        );
+
+        assert!(
+            frame.contains("<ROW-A>") && frame.contains("<ROW-B>"),
+            "the authored rows vanished:\n{frame}"
+        );
+        let prompt_line = frame
+            .lines()
+            .find(|l| l.trim_start().starts_with('>'))
+            .unwrap_or_else(|| panic!("the input line survived:\n{frame}"));
+        assert!(
+            prompt_line.contains('/'),
+            "the popup painted over the line being typed into:\n{frame}"
+        );
+    }
+
+    #[test]
+    fn a_bottom_region_row_does_not_push_the_popup_onto_the_input() {
+        let frame = frame_with_panel_popup(
+            Layout {
+                prompt: vec![Element::Input],
+                bottom: vec![row("<BOTTOM>")],
+                ..Layout::default()
+            },
+            "/",
+        );
+
+        assert!(
+            frame.contains("<BOTTOM>"),
+            "the bottom row vanished:\n{frame}"
+        );
+        assert!(
+            frame.lines().any(|l| l.trim_start().starts_with('>')),
+            "the popup painted over the input:\n{frame}"
+        );
+    }
+}
