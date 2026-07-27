@@ -2,6 +2,7 @@ import { Component, JSX, Match, Show, Switch, createMemo } from 'solid-js';
 import { MarkdownPreview } from '../editor/MarkdownPreview';
 import { ExternalLink, FileText, ShieldAlert } from '@/lib/icons';
 import { resolveCanvasColor, type CanvasNode, type FileNode } from '@/lib/canvas-types';
+import { CanvasNoteEmbed } from './CanvasNoteEmbed';
 
 /**
  * One canvas card.
@@ -13,6 +14,10 @@ import { resolveCanvasColor, type CanvasNode, type FileNode } from '@/lib/canvas
 
 export interface CanvasNodeViewProps {
   node: CanvasNode;
+  /** Absolute path resolver, so a note card can be a live view of the file. */
+  absPathFor: (relPath: string) => string;
+  /** Selected cards get a live editor; the rest render read-only. */
+  editable?: boolean;
   /** Redacted by the server for failing containment; render an explanation. */
   rejectedReason?: string;
   /** Absolute path resolver for file nodes, so media can be fetched. */
@@ -47,6 +52,8 @@ export const CanvasNodeView: Component<CanvasNodeViewProps> = (props) => {
           <FileCard
             node={props.node as FileNode}
             rawUrlFor={props.rawUrlFor}
+            absPathFor={props.absPathFor}
+            editable={props.editable}
             onOpenFile={props.onOpenFile}
           />
         </Match>
@@ -107,9 +114,13 @@ const LinkCard: Component<{ url: string }> = (props) => {
   );
 };
 
+const MARKDOWN_EXT = /\.(md|markdown)$/i;
+
 const FileCard: Component<{
   node: FileNode;
   rawUrlFor: (relPath: string) => string;
+  absPathFor: (relPath: string) => string;
+  editable?: boolean;
   onOpenFile?: (relPath: string, subpath?: string) => void;
 }> = (props) => {
   const path = () => props.node.file;
@@ -117,6 +128,14 @@ const FileCard: Component<{
 
   return (
     <Switch fallback={<FileHeader node={props.node} onOpen={props.onOpenFile} />}>
+      <Match when={MARKDOWN_EXT.test(path())}>
+        <FileHeader node={props.node} onOpen={props.onOpenFile}>
+          <CanvasNoteEmbed
+            absPath={props.absPathFor(path())}
+            editable={props.editable ?? false}
+          />
+        </FileHeader>
+      </Match>
       <Match when={IMAGE_EXT.test(path())}>
         <img
           class="h-full w-full object-cover"

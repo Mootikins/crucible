@@ -261,5 +261,5 @@ User stories for Crucible's plugin/extension system, organized by persona and ma
 1. **Template format**: How are templates packaged? Single file with frontmatter config, or folder with manifest?
 2. **NL generation guardrails**: What constraints prevent NL-generated plugins from doing harmful things?
 3. **Registry hosting**: Self-hosted, GitHub-based, or dedicated service?
-4. **Canvas format**: Use Obsidian's JSON Canvas spec or define our own?
+4. ~~**Canvas format**: Use Obsidian's JSON Canvas spec or define our own?~~ — **Resolved**: [JSON Canvas 1.0](https://jsoncanvas.org), Obsidian's spec. Interoperating with an existing vault matters more than any format we would gain by inventing one, and the spec is small enough that full support is cheap. See [[Meta/Analysis/Canvas]].
 5. **Workflow DAG builder**: Markdown-to-DAG — what's the syntax? YAML? Custom DSL?

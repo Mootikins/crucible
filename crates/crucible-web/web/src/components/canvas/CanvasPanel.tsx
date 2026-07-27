@@ -444,7 +444,8 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
   const mounted = createMemo(() => visibleNodes(doc().nodes, viewport()));
   const lowDetail = createMemo(() => isLowDetail(viewport()));
 
-  const rawUrlFor = (relPath: string) => rawFileUrl(`${kiln()}/${relPath}`);
+  const absPathFor = (relPath: string) => `${kiln()}/${relPath}`;
+  const rawUrlFor = (relPath: string) => rawFileUrl(absPathFor(relPath));
 
   const openFile = (relPath: string) => {
     void openNoteInEditor(`${kiln()}/${relPath}`);
@@ -573,6 +574,8 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
                       node={node}
                       rejectedReason={rejectedFor(node.id)}
                       rawUrlFor={rawUrlFor}
+                      absPathFor={absPathFor}
+                      editable={selected().has(node.id) && selected().size === 1}
                       onOpenFile={openFile}
                     />
                   </div>
