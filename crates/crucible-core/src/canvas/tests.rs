@@ -258,3 +258,102 @@ fn a_dangling_edge_endpoint_yields_no_relation() {
 
     assert_eq!(canvas.note_relations().count(), 0);
 }
+
+// ===========================================================================
+// On-disk fidelity
+//
+// A canvas usually lives in a git repo or under Obsidian Sync. If saving one
+// reformats it, moving a single card becomes a whole-file diff, and Crucible
+// and Obsidian then rewrite the file back and forth on every alternating edit.
+// ===========================================================================
+
+/// The sample from the spec repository (MIT, obsidianmd/jsoncanvas), used as
+/// ground truth for what Obsidian actually writes.
+const OBSIDIAN_SAMPLE: &str = include_str!("../../tests/fixtures/canvas/sample.canvas");
+
+#[test]
+fn saving_an_untouched_obsidian_canvas_produces_no_diff() {
+    let canvas = Canvas::parse(OBSIDIAN_SAMPLE).expect("the spec's own sample must parse");
+    let written = canvas.to_json_pretty().unwrap();
+
+    assert_eq!(
+        written, OBSIDIAN_SAMPLE,
+        "round-tripping a canvas Obsidian wrote must be byte-identical"
+    );
+}
+
+#[test]
+fn the_written_form_uses_tabs_and_one_object_per_line() {
+    let canvas = Canvas::parse(OBSIDIAN_SAMPLE).unwrap();
+    let written = canvas.to_json_pretty().unwrap();
+
+    assert!(written.contains("\n\t\"nodes\":[\n"), "{written}");
+    assert!(
+        written.lines().filter(|l| l.starts_with("\t\t{")).count() >= 5,
+        "each node belongs on its own line: {written}"
+    );
+    assert!(
+        !written.contains("\n    "),
+        "space indentation would rewrite every line of a real vault's canvas"
+    );
+}
+
+/// The fidelity must survive an edit, not just an untouched load — otherwise
+/// the first real change reformats everything anyway.
+#[test]
+fn an_edited_canvas_keeps_the_canonical_shape() {
+    let mut canvas = Canvas::parse(OBSIDIAN_SAMPLE).unwrap();
+    canvas.nodes[0].x += 40;
+
+    let written = canvas.to_json_pretty().unwrap();
+    let changed: Vec<&str> = written
+        .lines()
+        .zip(OBSIDIAN_SAMPLE.lines())
+        .filter(|(a, b)| a != b)
+        .map(|(a, _)| a)
+        .collect();
+
+    assert_eq!(
+        changed.len(),
+        1,
+        "moving one card must change exactly one line, not the whole file: {changed:?}"
+    );
+}
+
+/// The shape a real vault canvas takes when it has cards but no connections.
+/// Obsidian writes the empty array compactly; expanding it would change two
+/// lines of every such file on its first save.
+#[test]
+fn an_empty_edges_array_is_written_compactly() {
+    const NO_EDGES: &str = concat!(
+        "{\n",
+        "\t\"nodes\":[\n",
+        "\t\t{\"id\":\"a\",\"type\":\"file\",\"file\":\"Pasted image 1.png\",\"x\":-1992,\"y\":160,\"width\":952,\"height\":529}\n",
+        "\t],\n",
+        "\t\"edges\":[]\n",
+        "}"
+    );
+
+    let canvas = Canvas::parse(NO_EDGES).unwrap();
+    assert_eq!(canvas.to_json_pretty().unwrap(), NO_EDGES);
+}
+
+/// A canvas whose referenced files are missing — images left behind when the
+/// canvas was copied — must still load. It renders as broken cards, not a
+/// refused document.
+#[test]
+fn references_to_missing_files_still_parse() {
+    let canvas = Canvas::parse(
+        &json!({
+            "nodes": [{
+                "id": "a", "type": "file", "file": "Pasted image 20241101155136.png",
+                "x": -1992, "y": 160, "width": 952, "height": 529
+            }],
+            "edges": []
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(canvas.file_paths().count(), 1);
+}

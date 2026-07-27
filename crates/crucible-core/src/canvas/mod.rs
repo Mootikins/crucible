@@ -53,10 +53,63 @@ impl Canvas {
         serde_json::from_str(source)
     }
 
-    /// Serialize to the on-disk form. Obsidian writes pretty-printed JSON, and
-    /// matching that keeps diffs of a canvas readable in git.
+    /// Serialize to the on-disk form Obsidian itself writes.
+    ///
+    /// Not `serde_json::to_string_pretty`. Obsidian uses tab indentation with
+    /// one compact object per line and a specific key order, so a generic
+    /// pretty-printer turns a 25-line canvas into 60 changed lines on the first
+    /// save. In a vault under git or Obsidian Sync that is a whole-file diff for
+    /// moving one card, and the two tools then reformat the file back and forth
+    /// on every alternating edit.
+    ///
+    /// Matching the canonical layout instead means saving an untouched canvas
+    /// produces no diff at all — verified byte-for-byte against the sample in
+    /// the spec repository.
     pub fn to_json_pretty(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string_pretty(self)
+        // An EMPTY array is written compactly (`"edges":[]`) — a real vault
+        // canvas with no edges proved it, and expanding it would change two
+        // lines of every such file on first save.
+        fn array<T>(
+            out: &mut String,
+            key: &str,
+            items: &[T],
+            render: impl Fn(&T) -> Result<String, serde_json::Error>,
+        ) -> Result<(), serde_json::Error> {
+            out.push('\t');
+            out.push('"');
+            out.push_str(key);
+            out.push_str("\":[");
+            if items.is_empty() {
+                out.push(']');
+                return Ok(());
+            }
+            out.push('\n');
+            for (i, item) in items.iter().enumerate() {
+                out.push_str("\t\t");
+                out.push_str(&render(item)?);
+                if i + 1 < items.len() {
+                    out.push(',');
+                }
+                out.push('\n');
+            }
+            out.push_str("\t]");
+            Ok(())
+        }
+
+        let mut out = String::from("{\n");
+        array(&mut out, "nodes", &self.nodes, |n| n.to_canonical_json())?;
+        out.push_str(",\n");
+        array(&mut out, "edges", &self.edges, serde_json::to_string)?;
+
+        // Keys outside the spec keep the same one-per-line shape.
+        for (key, value) in &self.extra {
+            out.push_str(",\n\t");
+            out.push_str(&serde_json::to_string(key)?);
+            out.push(':');
+            out.push_str(&serde_json::to_string(value)?);
+        }
+        out.push_str("\n}");
+        Ok(out)
     }
 
     /// Every `file` node's path, in document order. A path may repeat — two
@@ -119,19 +172,25 @@ pub struct Node {
 
 /// The on-disk shape of a node: spec-common fields, the `type` tag, and one
 /// undifferentiated bag for everything else.
+///
+/// Field order here IS the emitted key order, and it is chosen to match what
+/// Obsidian writes so that saving an untouched canvas produces no diff. The
+/// type-specific keys live in `rest`, which is why they land between `type` and
+/// the geometry for `file`/`text`/`link` — and why a group's `label`, which
+/// Obsidian writes *after* the geometry, is re-inserted there on the way out.
 #[derive(Serialize, Deserialize)]
 struct RawNode {
     id: String,
+    #[serde(rename = "type")]
+    node_type: String,
+    #[serde(flatten)]
+    rest: Map<String, Value>,
     x: i64,
     y: i64,
     width: i64,
     height: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     color: Option<Color>,
-    #[serde(rename = "type")]
-    node_type: String,
-    #[serde(flatten)]
-    rest: Map<String, Value>,
 }
 
 /// Pull a key out of the bag, erroring if it is absent — the spec's required
@@ -276,6 +335,85 @@ impl From<Node> for RawNode {
 }
 
 impl Node {
+    /// Serialize one node with Obsidian's key order.
+    ///
+    /// Built as an ordered list rather than a struct because the order is not
+    /// uniform: `file`, `text` and `link` put their content key immediately
+    /// after `type`, while a `group` puts `label` *after* the geometry. Values
+    /// go through `serde_json` so escaping stays correct.
+    fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
+        let mut fields: Vec<(String, Value)> = vec![
+            ("id".into(), Value::String(self.id.clone())),
+            ("type".into(), Value::String(self.type_name().into())),
+        ];
+
+        let mut geometry_first = Vec::new();
+        let mut geometry_last = Vec::new();
+        match &self.kind {
+            NodeKind::Text { text } => {
+                geometry_first.push(("text".into(), Value::String(text.clone())));
+            }
+            NodeKind::File { file, subpath } => {
+                geometry_first.push(("file".into(), Value::String(file.clone())));
+                if let Some(sub) = subpath {
+                    geometry_first.push(("subpath".into(), Value::String(sub.clone())));
+                }
+            }
+            NodeKind::Link { url } => {
+                geometry_first.push(("url".into(), Value::String(url.clone())));
+            }
+            NodeKind::Group {
+                label,
+                background,
+                background_style,
+            } => {
+                if let Some(label) = label {
+                    geometry_last.push(("label".into(), Value::String(label.clone())));
+                }
+                if let Some(background) = background {
+                    geometry_last.push(("background".into(), Value::String(background.clone())));
+                }
+                if let Some(style) = background_style {
+                    geometry_last.push(("backgroundStyle".into(), serde_json::to_value(style)?));
+                }
+            }
+        }
+
+        fields.append(&mut geometry_first);
+        fields.push(("x".into(), Value::from(self.x)));
+        fields.push(("y".into(), Value::from(self.y)));
+        fields.push(("width".into(), Value::from(self.width)));
+        fields.push(("height".into(), Value::from(self.height)));
+        fields.append(&mut geometry_last);
+        if let Some(color) = &self.color {
+            fields.push(("color".into(), serde_json::to_value(color)?));
+        }
+        for (key, value) in &self.extra {
+            fields.push((key.clone(), value.clone()));
+        }
+
+        let mut out = String::from("{");
+        for (i, (key, value)) in fields.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str(&serde_json::to_string(key)?);
+            out.push(':');
+            out.push_str(&serde_json::to_string(value)?);
+        }
+        out.push('}');
+        Ok(out)
+    }
+
+    fn type_name(&self) -> &'static str {
+        match self.kind {
+            NodeKind::Text { .. } => "text",
+            NodeKind::File { .. } => "file",
+            NodeKind::Link { .. } => "link",
+            NodeKind::Group { .. } => "group",
+        }
+    }
+
     /// The referenced path, for `file` nodes only.
     pub fn file_path(&self) -> Option<&str> {
         match &self.kind {
