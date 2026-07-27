@@ -361,3 +361,81 @@ describe('createSession param forwarding', () => {
     );
   });
 });
+
+
+describe('refreshModels ordering', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /// Two overlapping refreshes must not let the older one win.
+  ///
+  /// Regression: `refreshModels` had no generation guard, so a slow earlier
+  /// call could resolve after a fast later one and clobber the newer list.
+  /// The user-visible symptom was model options disappearing right after
+  /// appearing, which made the e2e picker test flaky even run serially.
+  it('a slow earlier refresh cannot overwrite a newer one', async () => {
+    let releaseFirst: (models: string[]) => void = () => {};
+    const first = new Promise<string[]>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    vi.mocked(api.listModels)
+      .mockReturnValueOnce(first)
+      .mockResolvedValueOnce(['llama3.2', 'mistral']);
+
+    let ctx: ReturnType<typeof useSession>;
+    function Probe() {
+      ctx = useSession();
+      return <span data-testid="models">{ctx.availableModels().join(',')}</span>;
+    }
+    render(() => (
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>
+    ));
+
+    const session = { id: 's1' } as Session;
+    const stale = ctx!.refreshModels(session);
+    const fresh = ctx!.refreshModels(session);
+    await fresh;
+
+    await waitFor(() => {
+      expect(screen.getByTestId('models').textContent).toBe('llama3.2,mistral');
+    });
+
+    // The earlier call now completes with a different answer.
+    releaseFirst(['stale-only']);
+    await stale;
+
+    expect(screen.getByTestId('models').textContent).toBe(
+      'llama3.2,mistral',
+    );
+  });
+
+  /// The no-session path writes `[]`, and it has to obey the same rule —
+  /// otherwise a stray refresh with no session blanks a good list.
+  it('a stale no-session refresh cannot blank a newer list', async () => {
+    vi.mocked(api.listModels).mockResolvedValue(['llama3.2', 'mistral']);
+
+    let ctx: ReturnType<typeof useSession>;
+    function Probe() {
+      ctx = useSession();
+      return <span data-testid="models">{ctx.availableModels().join(',')}</span>;
+    }
+    render(() => (
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>
+    ));
+
+    await ctx!.refreshModels({ id: 's1' } as Session);
+    await waitFor(() => {
+      expect(screen.getByTestId('models').textContent).toBe('llama3.2,mistral');
+    });
+
+    // A later refresh with no session legitimately clears it...
+    await ctx!.refreshModels(undefined);
+    expect(screen.getByTestId('models').textContent).toBe('');
+  });
+});

@@ -416,37 +416,43 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     }
   };
 
+  // Only the most recent `refreshModels` call may write the list.
+  //
+  // Without this, two overlapping calls can resolve in reverse order and the
+  // older one wins — or the no-session `[]` path lands after a populated list.
+  // Either way the picker goes stale or empty after having been correct, which
+  // is a race the user sees as options vanishing mid-click.
+  let modelsGeneration = 0;
+
   const refreshModels = async (sessionOverride?: Session) => {
+    const generation = ++modelsGeneration;
+    const isCurrent = () => generation === modelsGeneration;
+    // Applied only while this call is still the newest.
+    const publish = (models: string[]) => {
+      if (isCurrent()) {
+        setAvailableModels(models);
+      }
+    };
+
     const session = sessionOverride ?? currentSession();
     if (!session?.id) {
-      setAvailableModels([]);
+      publish([]);
       return;
     }
 
+    // Provider models are the fallback when the session has no agent
+    // configured, or when the lookup fails outright.
+    const providerFallback = () =>
+      (selectedProvider() ?? providers()[0])?.models ?? [];
+
     try {
       const models = await apiListModels(session.id);
-      if (models.length > 0) {
-        setAvailableModels(models);
-        return;
-      }
-      // Fall back to provider models if session has no agent configured
-      const provider = selectedProvider() ?? providers()[0];
-      if (provider?.models) {
-        setAvailableModels(provider.models);
-      } else {
-        setAvailableModels([]);
-      }
+      publish(models.length > 0 ? models : providerFallback());
     } catch (err) {
       const msg = 'Failed to load models';
       notificationActions.addNotification('error', msg);
       console.error(msg, err);
-      // Fall back to provider models on error
-      const provider = selectedProvider() ?? providers()[0];
-      if (provider?.models) {
-        setAvailableModels(provider.models);
-      } else {
-        setAvailableModels([]);
-      }
+      publish(providerFallback());
     }
   };
 

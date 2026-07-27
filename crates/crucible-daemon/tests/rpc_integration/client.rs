@@ -114,11 +114,15 @@ async fn test_client_shutdown_with_real_daemon() {
     // Send shutdown
     client.shutdown().await.expect("Shutdown failed");
 
-    // Wait for shutdown to complete
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // Poll until the daemon stops accepting rather than assuming it is down
+    // after a fixed interval — under load it may still be draining.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut result = DaemonClient::connect_to(&socket_path).await;
+    while result.is_ok() && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        result = DaemonClient::connect_to(&socket_path).await;
+    }
 
-    // Try to connect a new client - should fail because daemon is down
-    let result = DaemonClient::connect_to(&socket_path).await;
     assert!(
         result.is_err(),
         "Expected new connection to fail after shutdown"

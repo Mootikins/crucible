@@ -151,15 +151,25 @@ async fn test_recording_footer_regression_drop_ends_session() {
     // When: the handle is dropped (simulates :q in TUI)
     drop(handle);
 
-    // Drop spawns a fire-and-forget task; wait for the RPC round-trip
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    // Then: session was ended and cleaned up (session_get returns not-found or state "ended")
-    let session_result = client.session_get(&session_id).await;
-    let session_was_ended = match &session_result {
-        Err(e) => e.to_string().contains("not found") || e.to_string().contains("Not found"),
-        Ok(val) => val.get("state").and_then(|s| s.as_str()) == Some("ended"),
-    };
+    // Drop spawns a fire-and-forget task, so poll for the RPC round-trip to
+    // land rather than guessing how long it takes. A fixed wait passes on an
+    // idle box and fails under load, which is the whole flake pattern.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let (mut session_result, mut session_was_ended) = (None, false);
+    loop {
+        let result = client.session_get(&session_id).await;
+        session_was_ended = match &result {
+            Err(e) => e.to_string().contains("not found") || e.to_string().contains("Not found"),
+            Ok(val) => val.get("state").and_then(|s| s.as_str()) == Some("ended"),
+        };
+        let out_of_time = tokio::time::Instant::now() >= deadline;
+        session_result = Some(format!("{result:?}"));
+        if session_was_ended || out_of_time {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let session_result = session_result.unwrap_or_default();
     assert!(
         session_was_ended,
         "Session should be ended/removed after DaemonAgentHandle drop, got: {:?}. \
