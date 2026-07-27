@@ -100,7 +100,12 @@ pub(crate) async fn rename_note(
     from_rel: &str,
     to_rel: &str,
 ) -> Result<RenameOutcome, RenameError> {
-    if !from_rel.ends_with(".md") || !to_rel.ends_with(".md") {
+    // Both ends must name the same kind of kiln file. Renaming `a.md` to
+    // `a.canvas` is not a rename, it is a format conversion that would leave
+    // the index describing a document that no longer parses.
+    let from_kind = crucible_core::kiln::KilnFileKind::of(Path::new(from_rel));
+    let to_kind = crucible_core::kiln::KilnFileKind::of(Path::new(to_rel));
+    if !from_kind.is_indexable() || from_kind != to_kind {
         return Err(RenameError::NotMarkdown);
     }
 
@@ -119,6 +124,9 @@ pub(crate) async fn rename_note(
     let mut by_source: BTreeMap<String, Vec<&crucible_core::storage::InboundLink>> =
         BTreeMap::new();
     let mut skipped = Vec::new();
+    // Canvas sources are rewritten through the typed document model rather
+    // than by splicing bytes, so they are collected separately here.
+    let mut canvas_sources: BTreeMap<String, ()> = BTreeMap::new();
     for link in &inbound {
         if link.is_ambiguous {
             skipped.push(SkippedRef {
@@ -126,6 +134,10 @@ pub(crate) async fn rename_note(
                 raw_target: link.raw_target.clone(),
                 reason: "ambiguous",
             });
+            continue;
+        }
+        if crucible_core::kiln::is_canvas_file(Path::new(&link.source_path)) {
+            canvas_sources.insert(link.source_path.clone(), ());
             continue;
         }
         if link.span_start < 0 {
@@ -238,6 +250,36 @@ pub(crate) async fn rename_note(
         }
     }
 
+    // 3b. Rewrite canvas file-node references through the typed model.
+    //
+    // Deliberately not a byte splice: the reference lives inside a JSON string
+    // (escaping) and the surrounding document carries keys outside the spec
+    // that must survive untouched (see `crucible_core::canvas`). Parsing and
+    // re-serializing gets both for free, at the cost of rewriting the whole
+    // file — acceptable, since a canvas is small and this runs only on rename.
+    for (source, ()) in canvas_sources {
+        // If the canvas IS the file being moved, it has already been renamed on
+        // disk, so edit it at its new location.
+        let disk_path = if source == from_rel {
+            kiln_root.join(to_rel)
+        } else {
+            kiln_root.join(&source)
+        };
+
+        match rewrite_canvas_refs(&disk_path, from_rel, to_rel) {
+            Ok(true) => rewritten_sources.push(source),
+            Ok(false) => {}
+            Err(e) => {
+                tracing::warn!(source = %source, error = %e, "rename: canvas rewrite failed");
+                skipped.push(SkippedRef {
+                    source_path: source,
+                    raw_target: from_rel.to_string(),
+                    reason: "canvas-unreadable",
+                });
+            }
+        }
+    }
+
     // 4. Re-index inline (the watcher's later pass is an idempotent no-op):
     //    old identity out, new identity in, edited sources re-parsed. The
     //    upsert/delete re-resolution steps repoint every remaining bare-stem
@@ -272,6 +314,49 @@ pub(crate) async fn rename_note(
         rewritten_sources,
         skipped,
     })
+}
+
+/// Repoint every `file` node in the canvas at `path` from `from_rel` to
+/// `to_rel`, returning whether anything changed.
+///
+/// Matching is exact on the stored path. Canvas references are always full
+/// kiln-relative paths — unlike wikilinks there is no bare-stem form and so no
+/// ambiguity class to skip, which is why this needs none of the
+/// disambiguation the markdown path does.
+///
+/// A group's `background` is a file reference too, and is repointed alongside;
+/// missing it would silently break a group's image on any note move.
+pub(crate) fn rewrite_canvas_refs(
+    path: &Path,
+    from_rel: &str,
+    to_rel: &str,
+) -> anyhow::Result<bool> {
+    use crucible_core::canvas::{Canvas, NodeKind};
+
+    let source = std::fs::read_to_string(path)?;
+    let mut canvas = Canvas::parse(&source)?;
+
+    let mut changed = false;
+    for node in &mut canvas.nodes {
+        match &mut node.kind {
+            NodeKind::File { file, .. } if file == from_rel => {
+                *file = to_rel.to_string();
+                changed = true;
+            }
+            NodeKind::Group { background, .. } if background.as_deref() == Some(from_rel) => {
+                *background = Some(to_rel.to_string());
+                changed = true;
+            }
+            _ => {}
+        }
+    }
+
+    if !changed {
+        return Ok(false);
+    }
+
+    std::fs::write(path, canvas.to_json_pretty()?)?;
+    Ok(true)
 }
 
 /// Render the rewritten target token, preserving the author's link style:
@@ -547,6 +632,252 @@ mod tests {
         assert_eq!(
             read(&root, "linker.md"),
             "---\nrelated: \"[[Old]]\"\n---\nbody [[New]] end"
+        );
+    }
+}
+
+#[cfg(test)]
+mod canvas_rename_tests {
+    use super::*;
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    async fn kiln_with(files: &[(&str, &str)]) -> (TempDir, Arc<KilnManager>, PathBuf) {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        for (rel, content) in files {
+            let p = root.join(rel);
+            if let Some(parent) = p.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(&p, content).unwrap();
+        }
+        let km = Arc::new(KilnManager::new());
+        km.open_and_process(&root, false).await.unwrap();
+        (tmp, km, root)
+    }
+
+    /// THE move invariant for canvases, through the real rename path rather
+    /// than the helper: moving a note repoints every canvas that references it,
+    /// and the canvas keeps showing up as a backlink at the new path.
+    #[tokio::test]
+    async fn moving_a_note_repoints_every_canvas_that_references_it() {
+        let board = serde_json::json!({
+            "nodes": [{
+                "id": "a", "type": "file", "x": 0, "y": 0, "width": 1, "height": 1,
+                "file": "Old.md"
+            }],
+            "pluginState": { "keep": "me" }
+        })
+        .to_string();
+
+        let (_tmp, km, root) = kiln_with(&[("Old.md", "# Old\n"), ("Board.canvas", &board)]).await;
+
+        let outcome = rename_note(&km, &root, "Old.md", "Archive/New.md")
+            .await
+            .expect("rename should succeed");
+
+        assert!(
+            outcome
+                .rewritten_sources
+                .contains(&"Board.canvas".to_string()),
+            "the canvas must be reported as rewritten: {outcome:?}"
+        );
+
+        let after = crucible_core::canvas::Canvas::parse(
+            &std::fs::read_to_string(root.join("Board.canvas")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            after.file_paths().collect::<Vec<_>>(),
+            ["Archive/New.md"],
+            "the canvas reference must follow the note"
+        );
+        assert!(
+            after.extra.contains_key("pluginState"),
+            "a rename must not cost the document its non-spec keys"
+        );
+
+        let store = km.get(&root).await.unwrap().as_note_store();
+        assert_eq!(
+            store.backlinks("Archive/New.md").await.unwrap(),
+            vec!["Board.canvas".to_string()],
+            "the reindexed canvas must backlink the note at its new path"
+        );
+    }
+
+    /// Moving the canvas itself: it is a link source, so it must be reindexed
+    /// at the new path rather than left behind as a ghost.
+    #[tokio::test]
+    async fn moving_a_canvas_reindexes_it_at_the_new_path() {
+        let board = serde_json::json!({
+            "nodes": [{
+                "id": "a", "type": "file", "x": 0, "y": 0, "width": 1, "height": 1,
+                "file": "Target.md"
+            }]
+        })
+        .to_string();
+
+        let (_tmp, km, root) = kiln_with(&[("Target.md", "# T\n"), ("Board.canvas", &board)]).await;
+
+        rename_note(&km, &root, "Board.canvas", "Boards/Moved.canvas")
+            .await
+            .expect("a canvas rename should be accepted");
+
+        assert!(root.join("Boards/Moved.canvas").is_file());
+
+        let store = km.get(&root).await.unwrap().as_note_store();
+        assert_eq!(
+            store.backlinks("Target.md").await.unwrap(),
+            vec!["Boards/Moved.canvas".to_string()],
+            "the backlink must follow the canvas to its new path"
+        );
+    }
+
+    /// A rename across kinds is a format conversion, not a rename.
+    #[tokio::test]
+    async fn renaming_across_file_kinds_is_refused() {
+        let (_tmp, km, root) = kiln_with(&[("Note.md", "# N\n")]).await;
+
+        assert!(matches!(
+            rename_note(&km, &root, "Note.md", "Note.canvas").await,
+            Err(RenameError::NotMarkdown)
+        ));
+        assert!(
+            root.join("Note.md").is_file(),
+            "the note must not have moved"
+        );
+    }
+
+    fn write_canvas(dir: &Path, name: &str, body: serde_json::Value) -> std::path::PathBuf {
+        let path = dir.join(name);
+        std::fs::write(&path, serde_json::to_string_pretty(&body).unwrap()).unwrap();
+        path
+    }
+
+    #[test]
+    fn a_file_node_is_repointed_at_the_new_path() {
+        let tmp = TempDir::new().unwrap();
+        let canvas = write_canvas(
+            tmp.path(),
+            "board.canvas",
+            serde_json::json!({
+                "nodes": [
+                    { "id": "a", "type": "file", "x": 0, "y": 0, "width": 1, "height": 1,
+                      "file": "Old.md", "subpath": "#Section" },
+                    { "id": "b", "type": "file", "x": 0, "y": 0, "width": 1, "height": 1,
+                      "file": "Untouched.md" }
+                ]
+            }),
+        );
+
+        assert!(rewrite_canvas_refs(&canvas, "Old.md", "Notes/New.md").unwrap());
+
+        let after =
+            crucible_core::canvas::Canvas::parse(&std::fs::read_to_string(&canvas).unwrap())
+                .unwrap();
+        let paths: Vec<&str> = after.file_paths().collect();
+        assert_eq!(paths, ["Notes/New.md", "Untouched.md"]);
+    }
+
+    /// The whole reason canvas rewriting goes through the typed model instead
+    /// of a byte splice: a plugin's keys must survive a rename untouched.
+    #[test]
+    fn a_rewrite_preserves_keys_outside_the_spec() {
+        let tmp = TempDir::new().unwrap();
+        let canvas = write_canvas(
+            tmp.path(),
+            "board.canvas",
+            serde_json::json!({
+                "nodes": [{
+                    "id": "a", "type": "file", "x": 0, "y": 0, "width": 1, "height": 1,
+                    "file": "Old.md",
+                    "styleAttributes": { "shape": "diamond" }
+                }],
+                "metadata": { "version": "obsidian-1.5.3" }
+            }),
+        );
+
+        assert!(rewrite_canvas_refs(&canvas, "Old.md", "New.md").unwrap());
+
+        let text = std::fs::read_to_string(&canvas).unwrap();
+        assert!(text.contains("styleAttributes"), "{text}");
+        assert!(text.contains("diamond"), "{text}");
+        assert!(text.contains("obsidian-1.5.3"), "{text}");
+        assert!(text.contains("New.md"));
+        assert!(!text.contains("Old.md"));
+    }
+
+    #[test]
+    fn a_group_background_is_repointed_too() {
+        let tmp = TempDir::new().unwrap();
+        let canvas = write_canvas(
+            tmp.path(),
+            "board.canvas",
+            serde_json::json!({
+                "nodes": [{
+                    "id": "g", "type": "group", "x": 0, "y": 0, "width": 9, "height": 9,
+                    "label": "Group", "background": "assets/old.png"
+                }]
+            }),
+        );
+
+        assert!(rewrite_canvas_refs(&canvas, "assets/old.png", "img/new.png").unwrap());
+        let text = std::fs::read_to_string(&canvas).unwrap();
+        assert!(text.contains("img/new.png"), "{text}");
+    }
+
+    /// A canvas that does not reference the moved file must not be rewritten at
+    /// all — an unnecessary write churns mtimes and wakes the watcher.
+    #[test]
+    fn an_unrelated_canvas_is_left_byte_identical() {
+        let tmp = TempDir::new().unwrap();
+        let canvas = write_canvas(
+            tmp.path(),
+            "board.canvas",
+            serde_json::json!({
+                "nodes": [{ "id": "a", "type": "file", "x": 0, "y": 0, "width": 1, "height": 1,
+                            "file": "Other.md" }]
+            }),
+        );
+        let before = std::fs::read_to_string(&canvas).unwrap();
+
+        assert!(!rewrite_canvas_refs(&canvas, "Old.md", "New.md").unwrap());
+        assert_eq!(std::fs::read_to_string(&canvas).unwrap(), before);
+    }
+
+    /// Partial path matches must not be repointed: `Old.md` moving must not
+    /// touch `Archive/Old.md`, which is a different note.
+    #[test]
+    fn matching_is_exact_not_by_suffix() {
+        let tmp = TempDir::new().unwrap();
+        let canvas = write_canvas(
+            tmp.path(),
+            "board.canvas",
+            serde_json::json!({
+                "nodes": [
+                    { "id": "a", "type": "file", "x": 0, "y": 0, "width": 1, "height": 1,
+                      "file": "Archive/Old.md" },
+                    { "id": "b", "type": "file", "x": 0, "y": 0, "width": 1, "height": 1,
+                      "file": "Old.md.bak" }
+                ]
+            }),
+        );
+
+        assert!(!rewrite_canvas_refs(&canvas, "Old.md", "New.md").unwrap());
+    }
+
+    #[test]
+    fn a_malformed_canvas_errors_rather_than_being_rewritten() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("broken.canvas");
+        std::fs::write(&path, "{ not json").unwrap();
+
+        assert!(rewrite_canvas_refs(&path, "Old.md", "New.md").is_err());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{ not json",
+            "a canvas we cannot parse must be left exactly as found"
         );
     }
 }

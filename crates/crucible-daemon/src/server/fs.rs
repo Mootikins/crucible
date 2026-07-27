@@ -270,15 +270,17 @@ pub(crate) async fn handle_fs_move(
         Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
     };
 
-    // Kiln markdown notes route through the wikilink-aware rename: the move
-    // AND the inbound-link rewrite/reindex happen as one operation, so a DnD
-    // move in the web file tree can never silently break links. Directories
-    // and non-markdown files keep the plain rename (folder-level bulk rewrite
-    // is Phase 3.1; bare-stem links to children keep resolving via key
+    // Indexed kiln files route through the link-aware rename: the move AND the
+    // inbound-link rewrite/reindex happen as one operation, so a DnD move in
+    // the web file tree can never silently break links. This covers canvases
+    // as well as notes — a canvas is a link source, and moving one without
+    // repointing inbound references would break them exactly as it would for a
+    // note. Directories and assets keep the plain rename (folder-level bulk
+    // rewrite is Phase 3.1; bare-stem links to children keep resolving via key
     // re-resolution regardless).
     if kind == "kiln"
-        && from_rel.ends_with(".md")
-        && to_rel.ends_with(".md")
+        && crucible_core::kiln::is_indexable_file(std::path::Path::new(from_rel))
+        && crucible_core::kiln::is_indexable_file(std::path::Path::new(to_rel))
         && base.join(from_rel).is_file()
     {
         return match crate::server::note_refactor::rename_note(km, &base, from_rel, to_rel).await {
