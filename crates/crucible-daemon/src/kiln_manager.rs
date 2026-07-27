@@ -6,7 +6,7 @@
 use anyhow::Result;
 use crucible_core::config::read_kiln_config;
 use crucible_core::events::InternalSessionEvent;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -453,9 +453,28 @@ impl KilnManager {
         // Ensure kiln is open
         self.open(kiln_path).await?;
 
+        // A missing or unreadable root also discovers zero files. Reading that
+        // as "the user deleted everything" would empty the index on a
+        // transient fault (unmounted share, renamed directory), so the sweep
+        // below only runs when the root is demonstrably there.
+        let root_present = kiln_path.is_dir();
+
         // Discover files
         let files = discover_markdown_files(kiln_path);
         let discovered = files.len();
+
+        if root_present {
+            match self.reconcile_deleted(kiln_path, &files).await {
+                Ok(0) => {}
+                Ok(removed) => info!(
+                    "Reconciliation dropped {} deleted note(s) from the index in {:?}",
+                    removed, kiln_path
+                ),
+                // Reconciliation is cleanup, not the caller's request — a
+                // failure here must not fail the processing run.
+                Err(e) => warn!("Index reconciliation failed for {:?}: {}", kiln_path, e),
+            }
+        }
 
         if files.is_empty() {
             info!("No markdown files found in {:?}", kiln_path);
@@ -469,6 +488,84 @@ impl KilnManager {
 
         let (processed, skipped, errors) = self.process_batch(kiln_path, &files, force).await?;
         Ok((discovered, processed, skipped, errors))
+    }
+
+    /// Drop index entries whose files are no longer on disk, returning how
+    /// many were removed.
+    ///
+    /// Index deletion is otherwise only ever observed live — the watcher, the
+    /// `fs.trash` RPC, and `note.rename` all route through
+    /// [`Self::handle_file_deleted`], and all three require the daemon to be
+    /// running at the moment of deletion. A `git rm`, a branch checkout, or an
+    /// external editor while the daemon is down is never seen, and discovery
+    /// is purely additive, so nothing catches up afterwards: the entry becomes
+    /// a permanent ghost that still lists, 404s on open, and contributes
+    /// phantom backlinks.
+    ///
+    /// Deletions route back through `handle_file_deleted` rather than hitting
+    /// the note store directly, so a reconciled delete is byte-for-byte the
+    /// same operation as a live one — including dropping the Lance vector,
+    /// which would otherwise keep answering semantic searches with notes that
+    /// no longer exist.
+    ///
+    /// Note that the candidate set comes from a scope-filtered `list`, whose
+    /// SQL matches each note's recorded `properties.scope.path` against
+    /// `kiln_path`. A kiln whose notes were indexed under a different spelling
+    /// of its path (or that has since moved on disk) therefore reconciles
+    /// nothing rather than everything. That is the safe direction to fail —
+    /// under-deleting leaves ghosts, over-deleting destroys the index — but it
+    /// does mean a moved kiln needs a reindex, not just a reprocess.
+    async fn reconcile_deleted(&self, kiln_path: &Path, on_disk: &[PathBuf]) -> Result<usize> {
+        let mut present: HashSet<String> = HashSet::with_capacity(on_disk.len());
+        for file in on_disk {
+            match normalize_note_path(file, kiln_path) {
+                Some(rel) => {
+                    present.insert(rel);
+                }
+                // Every discovered path is a descendant of `kiln_path` by
+                // construction (the walk starts there), so a miss means the
+                // prefix logic disagrees with the walk. The blast radius of
+                // guessing is the whole index, so refuse to delete anything.
+                None => {
+                    warn!(
+                        "Skipping reconciliation for {:?}: discovered file {:?} did not normalize",
+                        kiln_path, file
+                    );
+                    return Ok(0);
+                }
+            }
+        }
+
+        let handle = self
+            .get(kiln_path)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Kiln not open for reconciliation"))?;
+
+        let scope = crucible_core::storage::Scope::workspace(kiln_path)
+            .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(kiln_path));
+
+        let ghosts: Vec<String> = handle
+            .as_note_store()
+            .list(&scope)
+            .await?
+            .into_iter()
+            .map(|note| note.path)
+            .filter(|path| !present.contains(path))
+            .collect();
+
+        let mut removed = 0;
+        for ghost in ghosts {
+            match self
+                .handle_file_deleted(kiln_path, &kiln_path.join(&ghost))
+                .await
+            {
+                Ok(true) => removed += 1,
+                Ok(false) => {}
+                Err(e) => warn!("Reconciliation could not drop {:?}: {}", ghost, e),
+            }
+        }
+
+        Ok(removed)
     }
 
     /// Close a kiln connection

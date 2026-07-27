@@ -629,3 +629,106 @@ fn normalize_note_path_handles_same_directory() {
     let result = normalize_note_path(&file, kiln);
     assert_eq!(result, Some("hello.md".to_string()));
 }
+
+// ===========================================================================
+// Index reconciliation
+//
+// Index deletion is otherwise only observed live (watcher / fs.trash /
+// note.rename), so anything deleted while the daemon was down never leaves
+// the index — discovery is purely additive and never catches up.
+// ===========================================================================
+
+/// Relative paths currently in a kiln's note index.
+async fn indexed_paths(km: &KilnManager, kiln_path: &Path) -> Vec<String> {
+    let handle = km.get(kiln_path).await.expect("kiln should be open");
+    let scope = crucible_core::storage::Scope::workspace(kiln_path)
+        .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(kiln_path));
+    let mut paths: Vec<String> = handle
+        .as_note_store()
+        .list(&scope)
+        .await
+        .expect("list notes")
+        .into_iter()
+        .map(|n| n.path)
+        .collect();
+    paths.sort();
+    paths
+}
+
+#[tokio::test]
+async fn reprocess_drops_notes_deleted_while_the_daemon_was_down() {
+    let tmp = TempDir::new().unwrap();
+    let kiln = tmp.path();
+    std::fs::write(kiln.join("kept.md"), "# Kept\n").unwrap();
+    std::fs::create_dir_all(kiln.join("sub")).unwrap();
+    std::fs::write(kiln.join("sub/removed.md"), "# Removed\n").unwrap();
+
+    let km = KilnManager::new();
+    km.open_and_process(kiln, false).await.unwrap();
+    assert_eq!(
+        indexed_paths(&km, kiln).await,
+        vec!["kept.md".to_string(), "sub/removed.md".to_string()],
+        "both notes should index on the first pass"
+    );
+
+    // The bug: an external delete (git rm, branch checkout, daemon down) is
+    // never routed through handle_file_deleted.
+    std::fs::remove_file(kiln.join("sub/removed.md")).unwrap();
+
+    km.open_and_process(kiln, false).await.unwrap();
+
+    assert_eq!(
+        indexed_paths(&km, kiln).await,
+        vec!["kept.md".to_string()],
+        "the deleted note must not survive as a ghost in the index"
+    );
+}
+
+#[tokio::test]
+async fn reprocess_keeps_every_note_that_still_exists() {
+    let tmp = TempDir::new().unwrap();
+    let kiln = tmp.path();
+    std::fs::create_dir_all(kiln.join("nested/deep")).unwrap();
+    std::fs::write(kiln.join("a.md"), "# A\n").unwrap();
+    std::fs::write(kiln.join("nested/b.md"), "# B\n").unwrap();
+    std::fs::write(kiln.join("nested/deep/c.md"), "# C\n").unwrap();
+
+    let km = KilnManager::new();
+    km.open_and_process(kiln, false).await.unwrap();
+    let before = indexed_paths(&km, kiln).await;
+    assert_eq!(before.len(), 3);
+
+    // Reconciling against an unchanged tree must be a no-op, at every depth.
+    km.open_and_process(kiln, false).await.unwrap();
+
+    assert_eq!(
+        indexed_paths(&km, kiln).await,
+        before,
+        "reconciliation must not delete notes that are still on disk"
+    );
+}
+
+#[tokio::test]
+async fn reprocess_does_not_empty_the_index_when_the_kiln_root_is_gone() {
+    let tmp = TempDir::new().unwrap();
+    let kiln = tmp.path().join("kiln");
+    std::fs::create_dir_all(&kiln).unwrap();
+    std::fs::write(kiln.join("note.md"), "# Note\n").unwrap();
+
+    let km = KilnManager::new();
+    km.open_and_process(&kiln, false).await.unwrap();
+    assert_eq!(indexed_paths(&km, &kiln).await, vec!["note.md".to_string()]);
+
+    // An unmounted share or a renamed directory reads as "zero files on disk".
+    // Treating that as "the user deleted everything" would wipe the index on a
+    // transient fault, so a missing root must never drive deletions.
+    std::fs::remove_dir_all(&kiln).unwrap();
+
+    let _ = km.open_and_process(&kiln, false).await;
+
+    assert_eq!(
+        indexed_paths(&km, &kiln).await,
+        vec!["note.md".to_string()],
+        "a vanished kiln root must not be read as an instruction to delete"
+    );
+}
