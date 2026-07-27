@@ -44,12 +44,12 @@ const Markdown: Component<{
       // glance, and mounting an editor per visible card costs far more than it
       // buys — but the rendered output is the same engine either way, so
       // entering edit mode does not reflow the card.
-      <div class="canvas-card-body h-full overflow-auto" data-kiln={props.kiln || undefined}>
+      <div class="canvas-card-body h-full overflow-auto">
         <MarkdownPreview content={props.content} path={props.path} kiln={props.kiln} />
       </div>
     }
   >
-    <div class="canvas-card-body h-full overflow-auto" data-kiln={props.kiln || undefined}>
+    <div class="canvas-card-body h-full overflow-auto">
       <CodeMirrorEditor
         content={props.content}
         path={props.path}

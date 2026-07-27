@@ -98,13 +98,11 @@ describe('kilnForPath', () => {
 });
 
 describe('fetchNotePreview', () => {
-  it('resolves note metadata', async () => {
-    getNoteMock.mockResolvedValue({
-      name: 'rust',
+  it('resolves note metadata via the on-disk resolver', async () => {
+    resolveNotePathMock.mockResolvedValue({
       path: 'notes/rust.md',
+      absolutePath: '/kiln/notes/rust.md',
       title: 'Rust',
-      tags: [],
-      updated_at: '',
     });
 
     const preview = await fetchNotePreview('rust', '/kiln');
@@ -116,25 +114,23 @@ describe('fetchNotePreview', () => {
   });
 
   it('returns null for unresolvable notes and caches the miss', async () => {
-    getNoteMock.mockRejectedValue(new Error('404 Not Found'));
+    resolveNotePathMock.mockRejectedValue(new Error('404 Not Found'));
 
     expect(await fetchNotePreview('ghost', '/kiln')).toBeNull();
     expect(await fetchNotePreview('ghost', '/kiln')).toBeNull();
-    expect(getNoteMock).toHaveBeenCalledTimes(1);
+    expect(resolveNotePathMock).toHaveBeenCalledTimes(1);
   });
 
   it('caches hits per kiln and note name', async () => {
-    getNoteMock.mockResolvedValue({
-      name: 'rust',
+    resolveNotePathMock.mockResolvedValue({
       path: 'notes/rust.md',
+      absolutePath: '/kiln/notes/rust.md',
       title: 'Rust',
-      tags: [],
-      updated_at: '',
     });
 
     await fetchNotePreview('rust', '/kiln');
     await fetchNotePreview('Rust', '/kiln'); // case-insensitive cache key
-    expect(getNoteMock).toHaveBeenCalledTimes(1);
+    expect(resolveNotePathMock).toHaveBeenCalledTimes(1);
   });
 
   /**
@@ -170,6 +166,11 @@ describe('fetchNotePreview', () => {
 
 describe('openNoteInEditor', () => {
   it('opens the resolved note by absolute path', async () => {
+    resolveNotePathMock.mockResolvedValue({
+      path: 'notes/rust.md',
+      absolutePath: '/kiln/notes/rust.md',
+      title: 'Rust',
+    });
     getNoteMock.mockResolvedValue({
       name: 'rust',
       path: 'notes/rust.md',
@@ -182,31 +183,31 @@ describe('openNoteInEditor', () => {
     expect(openFileInEditorMock).toHaveBeenCalledWith('/kiln/notes/rust.md', 'Rust');
   });
 
-  it('falls back to the configured kiln when none is given', async () => {
+  /**
+   * There is deliberately NO default kiln. Resolving a link in "whichever kiln
+   * is configured" is how a link in one vault opened a same-named note from
+   * another; content with no known kiln has no links to follow.
+   */
+  it('refuses to resolve when no kiln is given, rather than guessing one', async () => {
     getConfigMock.mockResolvedValue({ kiln_path: '/default-kiln' });
-    getNoteMock.mockResolvedValue({
-      name: 'rust',
-      path: '/default-kiln/notes/rust.md',
+    resolveNotePathMock.mockResolvedValue({
+      path: 'notes/rust.md',
+      absolutePath: '/default-kiln/notes/rust.md',
       title: 'Rust',
-      tags: [],
-      updated_at: '',
     });
 
     await openNoteInEditor('rust');
-    expect(getNoteMock).toHaveBeenCalledWith('rust', '/default-kiln');
-    expect(openFileInEditorMock).toHaveBeenCalledWith('/default-kiln/notes/rust.md', 'Rust');
+
+    expect(resolveNotePathMock).not.toHaveBeenCalled();
+    expect(getNoteMock).not.toHaveBeenCalled();
+    expect(openFileInEditorMock).not.toHaveBeenCalled();
   });
 
-  // Regression: the real GET /api/notes/{name} payload has NO `name` field
-  // (path/title/tags/links only) — passing note.name straight through minted
-  // tabs literally titled "undefined" ("Discard unsaved changes to
-  // undefined?" on close).
-  it('derives a tab title when the payload has no name field', async () => {
-    getNoteMock.mockResolvedValue({
+  it('titles the tab from the resolved file when the resolver gives no title', async () => {
+    // No `title` in the payload: the tab falls back to the link target.
+    resolveNotePathMock.mockResolvedValue({
       path: 'Help/Wikilinks.md',
-      title: null,
-      tags: [],
-      updated_at: '',
+      absolutePath: '/kiln/Help/Wikilinks.md',
     });
 
     await openNoteInEditor('Wikilinks', '/kiln');

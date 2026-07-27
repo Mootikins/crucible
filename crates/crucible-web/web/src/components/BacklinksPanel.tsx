@@ -9,28 +9,31 @@
  */
 import { Component, Show, For, createSignal, createResource, createMemo } from 'solid-js';
 import { useEditorSafe } from '@/contexts/EditorContext';
-import { useSessionSafe } from '@/contexts/SessionContext';
-import { getBacklinks, getConfig, getFileContent } from '@/lib/api';
+import { getBacklinks, getFileContent } from '@/lib/api';
 import type { BacklinksResponse, UnlinkedMention } from '@/lib/types';
 import { blockAtByteOffset, findLinkingBlock, type LinkingBlock } from '@/lib/backlink-context';
-import { insertWikilink } from '@/lib/note-actions';
+import { insertWikilink, kilnForPath } from '@/lib/note-actions';
 import { notificationActions } from '@/stores/notificationStore';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
 import { RefreshCw } from '@/lib/icons';
+import { listKilns } from '@/lib/api';
 
-/** Session kiln when set, else the daemon's configured default. */
-function useKilnPath() {
-  const { currentSession } = useSessionSafe();
-  return createResource<string | null>(async () => {
-    const sess = currentSession();
-    if (sess?.kiln) return sess.kiln;
-    try {
-      const config = await getConfig();
-      return config.kiln_path || null;
-    } catch {
-      return null;
-    }
+/**
+ * The kiln holding the file the panel is describing.
+ *
+ * Derived from that file's own path, not from the session or the configured
+ * default. This panel follows whichever file has focus, and that file can live
+ * in a different kiln from the session — asking the session (or worse, the
+ * active kiln) meant the panel queried one kiln for a file belonging to
+ * another, and its rows then resolved in a third.
+ */
+function useKilnPath(focusedFile: () => string | undefined) {
+  const [kilns] = createResource(listKilns);
+  return createMemo(() => {
+    const path = focusedFile();
+    if (!path) return null;
+    return kilnForPath(path, kilns() ?? []) ?? null;
   });
 }
 
@@ -53,7 +56,6 @@ const suggestionKey = (s: UnlinkedMention) => `${s.target}:${s.offset}:${s.menti
 
 export const BacklinksPanel: Component = () => {
   const editor = useEditorSafe();
-  const [kilnPath] = useKilnPath();
   // Suggestions applied (or failed) since the last fetch — hidden locally.
   const [dismissed, setDismissed] = createSignal<Set<string>>(new Set());
   const [refreshTick, setRefreshTick] = createSignal(0);
@@ -63,6 +65,8 @@ export const BacklinksPanel: Component = () => {
     if (!path || !/\.(md|markdown)$/i.test(path)) return null;
     return path;
   });
+
+  const kilnPath = useKilnPath(() => focusedFile() ?? undefined);
 
   const [backlinks] = createResource(
     () => {
@@ -151,6 +155,11 @@ export const BacklinksPanel: Component = () => {
 
   return (
     <PanelShell>
+      {/* The panel's links belong to the kiln holding the FOCUSED FILE, which
+          need not be the session's kiln or the active one. Declaring it here
+          covers every row, so hover resolves in the same kiln that produced
+          the row rather than in whatever the navigator is showing. */}
+      <div class="contents" data-kiln={kilnPath() || undefined}>
       <PanelHeader title="Backlinks" class="shrink-0">
         <div class="mt-1 flex items-center justify-between gap-2">
           <span class="truncate text-xs text-muted-dark" data-testid="backlinks-note-title">
@@ -273,6 +282,7 @@ export const BacklinksPanel: Component = () => {
             </For>
           </Show>
         </Show>
+      </div>
       </div>
     </PanelShell>
   );

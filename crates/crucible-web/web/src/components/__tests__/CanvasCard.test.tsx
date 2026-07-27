@@ -128,15 +128,6 @@ describe('CanvasNoteCard', () => {
     expect(embed.querySelector('[data-kiln]')!.getAttribute('data-kiln')).toBe('/canvas-demo');
   });
 
-  it('keeps the kiln marker in edit mode, where the editor replaces the preview', async () => {
-    const { findByTestId } = render(() => (
-      <CanvasNoteCard absPath="/canvas-demo/Notes/A.md" kiln="/canvas-demo" editable={true} />
-    ));
-
-    const editor = await findByTestId('stub-editor');
-    expect(editor.closest('[data-kiln]')?.getAttribute('data-kiln')).toBe('/canvas-demo');
-  });
-
   it('surfaces a load failure', async () => {
     getFileContentMock.mockRejectedValue(new Error('File not found'));
     const { findByTestId } = render(() => (

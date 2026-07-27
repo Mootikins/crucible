@@ -14,6 +14,10 @@ vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getBacklinks: (...args: unknown[]) => getBacklinksMock(...args),
   getConfig: (...args: unknown[]) => getConfigMock(...args),
+  // The panel derives its kiln from the focused file's own path, so it needs
+  // the kiln roster to attribute that file to a kiln. Must come AFTER the
+  // spread, or the real implementation wins.
+  listKilns: async () => [{ path: '/kiln' }],
 }));
 
 vi.mock('@/lib/file-actions', async (importOriginal) => ({

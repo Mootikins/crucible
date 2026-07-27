@@ -613,6 +613,10 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
 
   return (
     <PanelShell>
+      {/* Declared once for the whole canvas. The kiln comes from the server's
+          canvas response — the root that actually owns the file — not from the
+          active kiln, so switching kilns cannot re-point this canvas's links. */}
+      <div class="contents" data-kiln={kiln() || undefined}>
       <div class="flex items-center gap-2 border-b border-hairline px-3 py-1.5 text-xs">
         <span class="truncate font-medium text-shell-ink">
           {props.filePath?.split('/').pop() ?? 'Canvas'}
@@ -987,6 +991,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
             })()}
           </Show>
         </div>
+      </div>
       </div>
     </PanelShell>
   );

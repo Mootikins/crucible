@@ -9,7 +9,6 @@ import { renderMarkdownDocAsync, PROSE_CLASS } from '@/lib/markdown';
 import { extractFrontmatterBlock, renderFrontmatterCardHtml } from '@/lib/frontmatter';
 import { makeMarkdownClickHandler } from '@/lib/markdown-click';
 import { wikilinkTargetMatches } from '@/lib/backlink-context';
-import { statusBarStore } from '@/stores/statusBarStore';
 
 const dirOf = (path?: string): string | undefined =>
   path ? path.replace(/\/[^/]*$/, '') : undefined;
@@ -50,8 +49,12 @@ export const MarkdownPreview: Component<{
   // `||`, not `??`: a surface whose kiln has not loaded yet passes the empty
   // string, which is not a kiln — resolving against it silently produces
   // whatever the server does with a blank root.
-  const kiln = () => props.kiln || statusBarStore.kilnPath() || undefined;
-  const handleClick = makeMarkdownClickHandler(kiln);
+  // No fallback to the active kiln. This preview renders a specific file, and
+  // that file's kiln does not change because the user switched kilns in the
+  // navigator. A caller that cannot say which kiln its content belongs to has
+  // content whose links cannot be followed, and that should be visible.
+  const kiln = () => props.kiln || undefined;
+  const handleClick = makeMarkdownClickHandler();
 
   let scrollHost: HTMLDivElement | undefined;
   // After the async render lands, jump to the wikilink that points at the

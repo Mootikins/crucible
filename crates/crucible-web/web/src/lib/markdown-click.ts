@@ -1,4 +1,4 @@
-import { openNoteInEditor } from '@/lib/note-actions';
+import { kilnForElement, openNoteInEditor } from '@/lib/note-actions';
 
 /**
  * Click delegation for rendered-markdown containers. Chat transcripts and the
@@ -7,13 +7,14 @@ import { openNoteInEditor } from '@/lib/note-actions';
  * anchors (wikilinks) open notes, external links open a new tab, and other
  * relative hrefs are treated as kiln note references.
  *
- * `kiln` is an accessor because the surface decides where notes resolve
- * (chat: the session's kiln; preview: the active kiln) and it can change
+ * The kiln is read from the DOM — the nearest `data-kiln` ancestor of the
+ * clicked link — rather than passed in. Hover reads it from the same element,
+ * so the two cannot disagree about which kiln a link belongs to; when the kiln
+ * was a parameter here and an attribute there, they agreed only because every
+ * surface remembered to set both, and one did not.
  * between clicks.
  */
-export function makeMarkdownClickHandler(
-  kiln: () => string | undefined,
-): (event: MouseEvent) => void {
+export function makeMarkdownClickHandler(): (event: MouseEvent) => void {
   return (event: MouseEvent) => {
     const target = event.target as HTMLElement | null;
 
@@ -39,7 +40,7 @@ export function makeMarkdownClickHandler(
     if (noteElement) {
       event.preventDefault();
       const note = noteElement.dataset.note;
-      if (note) void openNoteInEditor(note, kiln());
+      if (note) void openNoteInEditor(note, kilnForElement(noteElement));
       return;
     }
 
@@ -55,6 +56,6 @@ export function makeMarkdownClickHandler(
     const note = decodeURIComponent(href)
       .replace(/^\.?\//, '')
       .replace(/\.md$/i, '');
-    void openNoteInEditor(note, kiln());
+    void openNoteInEditor(note, kilnForElement(anchor));
   };
 }

@@ -110,7 +110,7 @@ export const AssistantTurn: Component<{
 
   // One click-delegation implementation shared with the note reading view
   // (lib/markdown-click.ts) — chat and notes must keep identical semantics.
-  const handleMarkdownClick = makeMarkdownClickHandler(sessionKiln);
+  const handleMarkdownClick = makeMarkdownClickHandler();
 
   // Turn-level meta: ONE timestamp (turn start) and ONE usage line (whichever
   // part carries it — the daemon attaches usage to the turn's final segment).

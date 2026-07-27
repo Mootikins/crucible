@@ -5,15 +5,77 @@
  * Used by chat messages, the editor's wikilink decorations, and the
  * backlinks panel so every surface resolves links the same way.
  */
-import { getConfig, getNote, resolveNotePath } from './api';
+import { resolveNotePath } from './api';
 import { extractFrontmatterBlock } from './frontmatter';
 import { openFileInEditor } from './file-actions';
 import { notificationActions } from '@/stores/notificationStore';
-import type { NoteContent } from './types';
 
-/** Resolve the kiln to search: explicit > configured default. */
-async function resolveKiln(kiln?: string): Promise<string> {
-  return kiln ?? (await getConfig()).kiln_path;
+/**
+ * Normalise the kiln a caller supplied.
+ *
+ * There is no default. Resolving a link in "whichever kiln is configured" is
+ * how a link in one vault opened a same-named note from another; a link belongs
+ * to the content that contains it, and content with no known kiln has no links
+ * to follow. Callers that genuinely have no kiln get `undefined` and fail.
+ */
+function resolveKiln(kiln?: string): string | undefined {
+  // Normalised the same way `kilnForPath` normalises its candidates. The
+  // registry has reported a kiln as its `.crucible` config dir before now, and
+  // one helper applying that fix while its sibling does not is how a path ends
+  // up as `/vault/.crucible/Note.md`.
+  return kiln ? kilnRoot(kiln) : undefined;
+}
+
+/**
+ * Which kiln do links inside this element resolve in?
+ *
+ * **The single answer to that question**, shared by hover and click so the two
+ * cannot describe different notes. They previously used different mechanisms —
+ * an attribute for hover, a prop for click — which agreed only because each
+ * surface remembered to set both, and user chat bubbles set neither.
+ *
+ * # The attribute is a carrier, not a source of truth
+ *
+ * `data-kiln` must be populated from canonical data: the *file's* own location
+ * (via [`kilnForPath`] against the daemon's kiln list) or the *session's* kiln.
+ * It must never be populated from whichever kiln happens to be active, and
+ * there is deliberately **no fallback to the active kiln here**. Falling back
+ * meant switching kilns in the navigator silently re-pointed the links inside
+ * an already-open buffer — the content did not move, so its links must not
+ * either. An undeclared surface now resolves nothing, which surfaces the
+ * omission instead of quietly guessing.
+ *
+ * This is not a security boundary and is not trying to be one: anything that
+ * can write this attribute can already run script in the page. Containment is
+ * enforced by the server, which canonicalizes every candidate against the kiln
+ * root. This is about being *correct*, not about being tamper-proof.
+ */
+export function kilnForElement(el: Element | null | undefined): string | undefined {
+  return el?.closest?.('[data-kiln]')?.getAttribute('data-kiln') || undefined;
+}
+
+/**
+ * A wikilink target resolved to a file, or `null` if this kiln has no such note.
+ *
+ * The ONE resolution ladder. Open and preview were separate copies of this,
+ * agreeing by coincidence; the last time they drifted, hovering a link showed
+ * a different note than clicking it opened.
+ *
+ * Resolution is a path lookup — exact relative path, then unique filename stem
+ * — performed by walking the kiln. It deliberately does NOT fall back to the
+ * note index: the index matches fuzzily, so `[[Architecture]]` in a kiln
+ * without one answers with `Component Architecture`. A link that names no note
+ * should render as broken, not silently open a different note.
+ */
+async function resolveTarget(name: string, kiln?: string): Promise<NotePreview | null> {
+  const resolvedKiln = resolveKiln(kiln);
+  if (!resolvedKiln) return null;
+  try {
+    const hit = await resolveNotePath(resolvedKiln, name);
+    return { title: hit.title ?? name, path: hit.path, absPath: hit.absolutePath };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -41,21 +103,9 @@ export function noteDisplayName(note: {
  */
 export async function openNoteInEditor(name: string, kiln?: string): Promise<void> {
   try {
-    const resolvedKiln = await resolveKiln(kiln);
-
-    // Path lookup first. It needs no index, so a kiln that has never been
-    // processed still follows its own links instead of falling through to
-    // whatever kiln happens to be configured as the default.
-    try {
-      const hit = await resolveNotePath(resolvedKiln, name);
-      openFileInEditor(hit.absolutePath, hit.title ?? name);
-      return;
-    } catch {
-      /* fall through to the index, which also handles fuzzy matches */
-    }
-
-    const note = await getNote(name, resolvedKiln);
-    openFileInEditor(noteAbsolutePath(note.path, resolvedKiln), noteDisplayName(note));
+    const hit = await resolveTarget(name, kiln);
+    if (!hit) throw new Error(`not found: ${name}`);
+    openFileInEditor(hit.absPath, hit.title);
   } catch (err) {
     const message =
       err instanceof Error && /not found|404/i.test(err.message)
@@ -171,33 +221,16 @@ export function clearNotePreviewCache(): void {
  * doesn't resolve. Results (including misses) are cached per kiln+name.
  */
 export async function fetchNotePreview(name: string, kiln?: string): Promise<NotePreview | null> {
-  const resolvedKiln = await resolveKiln(kiln);
+  const resolvedKiln = resolveKiln(kiln);
+  if (!resolvedKiln) return null;
   const cacheKey = `${resolvedKiln}:${name.toLowerCase()}`;
   if (previewCache.has(cacheKey)) {
     return previewCache.get(cacheKey) ?? null;
   }
 
-  let preview: NotePreview | null = null;
-  try {
-    // Path lookup first, in the same order openNoteInEditor uses. Two reasons:
-    // an unprocessed kiln has no index, so its own notes would preview as
-    // missing; and the index matches FUZZILY, so asking it for "Architecture"
-    // in a kiln without one returns "Component Architecture" — a preview of a
-    // different note than the click opens.
-    const hit = await resolveNotePath(resolvedKiln, name);
-    preview = { title: hit.title ?? name, path: hit.path, absPath: hit.absolutePath };
-  } catch {
-    try {
-      const note: NoteContent = await getNote(name, resolvedKiln);
-      preview = {
-        title: noteDisplayName(note),
-        path: note.path,
-        absPath: noteAbsolutePath(note.path, resolvedKiln),
-      };
-    } catch {
-      preview = null;
-    }
-  }
+  // Same ladder as opening — literally the same function, so a preview can
+  // never describe a different note than the click will open.
+  const preview = await resolveTarget(name, resolvedKiln);
 
   if (previewCache.size >= PREVIEW_CACHE_MAX) {
     previewCache.clear();

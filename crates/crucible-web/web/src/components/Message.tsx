@@ -3,10 +3,12 @@
  * MessageList groups an entire assistant response (text segments + tool
  * runs) into one AssistantTurn block with a single meta row.
  */
+import { makeMarkdownClickHandler } from '@/lib/markdown-click';
 import { Component, Show, createSignal } from 'solid-js';
 import { Copy, Check, Pencil } from 'lucide-solid';
 import { PrecognitionBadge } from './PrecognitionBadge';
 import { useChatSafe } from '@/contexts/ChatContext';
+import { useSessionSafe } from '@/contexts/SessionContext';
 import type { Message as MessageType } from '@/lib/types';
 import { renderPlainWithWikilinks } from '@/lib/markdown';
 import { formatAbsoluteTime } from '@/lib/format-time';
@@ -17,6 +19,18 @@ interface MessageProps {
 
 export const Message: Component<MessageProps> = (props) => {
   const chat = useChatSafe();
+  const sessionCtx = useSessionSafe();
+
+  /**
+   * The kiln a transcript's links belong to is the SESSION's kiln — canonical
+   * state from the session record, not whichever kiln the navigator is showing.
+   * Switching kilns must not re-point the links in an open conversation.
+   */
+  const sessionKiln = () => {
+    const sid = chat.sessionId?.();
+    return sessionCtx.sessions().find((s) => s.id === sid)?.kiln;
+  };
+  const handleMarkdownClick = makeMarkdownClickHandler();
   const isUser = () => props.message.role === 'user';
   const isSystem = () => props.message.role === 'system';
   const hasPrecognition = () => !!props.message.precognition;
@@ -106,6 +120,12 @@ export const Message: Component<MessageProps> = (props) => {
         }>
           <p
             class="whitespace-pre-wrap break-words"
+            // A user bubble renders wikilinks exactly like an assistant turn,
+            // so it needs the same handler and the same kiln declaration. It
+            // had neither: hovering a link worked (the controller is global)
+            // while clicking it did nothing at all.
+            data-kiln={sessionKiln() || undefined}
+            onClick={handleMarkdownClick}
             innerHTML={renderPlainWithWikilinks(props.message.content)}
           />
         </Show>
