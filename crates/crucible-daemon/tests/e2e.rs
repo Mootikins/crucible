@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::TestDaemon;
+use common::{RpcConn, TestDaemon};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -260,37 +260,6 @@ async fn test_e2e_client_disconnect_handling() {
 
 mod session_helpers {
     use std::path::{Path, PathBuf};
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::UnixStream;
-
-    /// Send a JSON-RPC request and parse the response
-    pub async fn rpc_call(stream: &mut UnixStream, request: &str) -> serde_json::Value {
-        stream
-            .write_all(format!("{}\n", request).as_bytes())
-            .await
-            .expect("Failed to write request");
-
-        let mut response = Vec::new();
-        loop {
-            let mut chunk = [0u8; 1024];
-            let n = stream
-                .read(&mut chunk)
-                .await
-                .expect("Failed to read response");
-            assert!(n > 0, "Connection closed before full response");
-
-            response.extend_from_slice(&chunk[..n]);
-            if response.contains(&b'\n') {
-                break;
-            }
-        }
-
-        let line_end = response
-            .iter()
-            .position(|&b| b == b'\n')
-            .unwrap_or(response.len());
-        serde_json::from_slice(&response[..line_end]).expect("Failed to parse JSON response")
-    }
 
     /// Extract the "result" field from a JSON-RPC response
     pub fn get_result(response: &serde_json::Value) -> &serde_json::Value {
@@ -347,7 +316,7 @@ use session_helpers::*;
 async fn test_e2e_session_lifecycle() {
     let mut daemon = TestDaemon::start().await.expect("Failed to start daemon");
 
-    let mut stream = UnixStream::connect(&daemon.socket_path)
+    let mut conn = RpcConn::connect(&daemon.socket_path)
         .await
         .expect("Failed to connect");
 
@@ -355,25 +324,27 @@ async fn test_e2e_session_lifecycle() {
     let kiln_path = kiln_dir.to_string_lossy();
 
     // 1. Create session
-    let response = rpc_call(&mut stream, &session_create_request(1, &kiln_path)).await;
+    let response = conn.call(&session_create_request(1, &kiln_path)).await;
     let result = get_result(&response);
     let session_id = get_str(result, "session_id");
     assert_state_contains(result, "active", "New session");
 
     // 2. Pause session
-    let response = rpc_call(&mut stream, &session_action_request(2, "pause", session_id)).await;
+    let response = conn
+        .call(&session_action_request(2, "pause", session_id))
+        .await;
     assert_state_contains(get_result(&response), "paused", "After pause");
 
     // 3. Resume session
-    let response = rpc_call(
-        &mut stream,
-        &session_action_request(3, "resume", session_id),
-    )
-    .await;
+    let response = conn
+        .call(&session_action_request(3, "resume", session_id))
+        .await;
     assert_state_contains(get_result(&response), "active", "After resume");
 
     // 4. End session
-    let response = rpc_call(&mut stream, &session_action_request(4, "end", session_id)).await;
+    let response = conn
+        .call(&session_action_request(4, "end", session_id))
+        .await;
     assert_state_contains(get_result(&response), "ended", "After end");
 
     daemon.stop().await.expect("Failed to stop daemon");
@@ -384,7 +355,7 @@ async fn test_e2e_session_lifecycle() {
 async fn test_e2e_session_list() {
     let mut daemon = TestDaemon::start().await.expect("Failed to start daemon");
 
-    let mut stream = UnixStream::connect(&daemon.socket_path)
+    let mut conn = RpcConn::connect(&daemon.socket_path)
         .await
         .expect("Failed to connect");
 
@@ -393,7 +364,7 @@ async fn test_e2e_session_list() {
 
     // Create two sessions
     for i in 1..=2 {
-        rpc_call(&mut stream, &session_create_request(i, &kiln_path)).await;
+        conn.call(&session_create_request(i, &kiln_path)).await;
     }
 
     // List sessions
@@ -401,7 +372,7 @@ async fn test_e2e_session_list() {
         r#"{{"jsonrpc":"2.0","id":3,"method":"session.list","params":{{"kiln":"{}"}}}}"#,
         kiln_path
     );
-    let response = rpc_call(&mut stream, &list_req).await;
+    let response = conn.call(&list_req).await;
 
     let result = get_result(&response);
     let total = result.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
@@ -415,7 +386,7 @@ async fn test_e2e_session_list() {
 async fn test_e2e_model_switching() {
     let mut daemon = TestDaemon::start().await.expect("Failed to start daemon");
 
-    let mut stream = UnixStream::connect(&daemon.socket_path)
+    let mut conn = RpcConn::connect(&daemon.socket_path)
         .await
         .expect("Failed to connect");
 
@@ -423,7 +394,7 @@ async fn test_e2e_model_switching() {
     let kiln_path = kiln_dir.to_string_lossy();
 
     // 1. Create session
-    let response = rpc_call(&mut stream, &session_create_request(1, &kiln_path)).await;
+    let response = conn.call(&session_create_request(1, &kiln_path)).await;
     let session_id = get_str(get_result(&response), "session_id");
 
     // 2. Configure agent with initial model
@@ -431,7 +402,7 @@ async fn test_e2e_model_switching() {
         r#"{{"jsonrpc":"2.0","id":2,"method":"session.configure_agent","params":{{"session_id":"{}","agent":{{"agent_type":"internal","provider":"ollama","model":"initial-model","system_prompt":"test"}}}}}}"#,
         session_id
     );
-    let response = rpc_call(&mut stream, &configure_request).await;
+    let response = conn.call(&configure_request).await;
     assert!(
         response.get("result").is_some(),
         "Configure should succeed: {:?}",
@@ -443,7 +414,7 @@ async fn test_e2e_model_switching() {
         r#"{{"jsonrpc":"2.0","id":3,"method":"session.get","params":{{"session_id":"{}"}}}}"#,
         session_id
     );
-    let response = rpc_call(&mut stream, &get_request).await;
+    let response = conn.call(&get_request).await;
     let result = get_result(&response);
     let agent = result.get("agent").expect("Should have agent");
     let initial_model = agent.get("model").and_then(|v| v.as_str()).unwrap_or("");
@@ -454,7 +425,7 @@ async fn test_e2e_model_switching() {
         r#"{{"jsonrpc":"2.0","id":4,"method":"session.switch_model","params":{{"session_id":"{}","model_id":"switched-model"}}}}"#,
         session_id
     );
-    let response = rpc_call(&mut stream, &switch_request).await;
+    let response = conn.call(&switch_request).await;
     assert!(
         response.get("result").is_some(),
         "Switch should succeed: {:?}",
@@ -472,7 +443,7 @@ async fn test_e2e_model_switching() {
         r#"{{"jsonrpc":"2.0","id":5,"method":"session.get","params":{{"session_id":"{}"}}}}"#,
         session_id
     );
-    let response = rpc_call(&mut stream, &get_request).await;
+    let response = conn.call(&get_request).await;
     let result = get_result(&response);
     let agent = result.get("agent").expect("Should have agent after switch");
     let new_model = agent.get("model").and_then(|v| v.as_str()).unwrap_or("");
@@ -489,7 +460,7 @@ async fn test_e2e_model_switching() {
 async fn test_e2e_session_persistence() {
     let mut daemon = TestDaemon::start().await.expect("Failed to start daemon");
 
-    let mut stream = UnixStream::connect(&daemon.socket_path)
+    let mut conn = RpcConn::connect(&daemon.socket_path)
         .await
         .expect("Failed to connect");
 
@@ -497,7 +468,7 @@ async fn test_e2e_session_persistence() {
     let kiln_path = kiln_dir.to_string_lossy();
 
     // Create a session
-    let response = rpc_call(&mut stream, &session_create_request(1, &kiln_path)).await;
+    let response = conn.call(&session_create_request(1, &kiln_path)).await;
     let session_id = get_str(get_result(&response), "session_id");
 
     // Check that meta.json was created

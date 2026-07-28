@@ -10,66 +10,35 @@
 
 mod common;
 
-use common::TestDaemon;
+use common::{RpcConn, TestDaemon};
 use crucible_core::types::Notification;
 use serde_json::json;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::UnixStream;
 
-async fn setup_daemon() -> (TestDaemon, UnixStream) {
+async fn setup_daemon() -> (TestDaemon, RpcConn) {
     let daemon = TestDaemon::start().await.expect("Failed to start daemon");
 
-    let stream = UnixStream::connect(&daemon.socket_path)
+    let conn = RpcConn::connect(&daemon.socket_path)
         .await
         .expect("Failed to connect to daemon");
 
-    (daemon, stream)
+    (daemon, conn)
 }
 
-async fn rpc_call(
-    stream: &mut UnixStream,
-    method: &str,
-    params: serde_json::Value,
-    id: i64,
-) -> serde_json::Value {
-    let request = json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "method": method,
-        "params": params,
-    });
-
-    let request_str = format!("{}\n", serde_json::to_string(&request).unwrap());
-
-    stream
-        .write_all(request_str.as_bytes())
-        .await
-        .expect("Failed to write request");
-
-    let mut buf = vec![0u8; 4096];
-    let n = stream
-        .read(&mut buf)
-        .await
-        .expect("Failed to read response");
-
-    serde_json::from_slice(&buf[..n]).expect("Failed to parse response")
-}
-
-async fn create_test_session(stream: &mut UnixStream, daemon: &TestDaemon) -> String {
+async fn create_test_session(conn: &mut RpcConn, daemon: &TestDaemon) -> String {
     // Create a kiln directory in the daemon's temp directory
     let kiln_dir = daemon.socket_path.parent().unwrap().join("kiln");
     std::fs::create_dir_all(&kiln_dir).expect("Failed to create kiln dir");
 
-    let response = rpc_call(
-        stream,
-        "session.create",
-        json!({
-            "type": "chat",
-            "kiln": kiln_dir.to_string_lossy(),
-        }),
-        1,
-    )
-    .await;
+    let response = conn
+        .call_method(
+            "session.create",
+            json!({
+                "type": "chat",
+                "kiln": kiln_dir.to_string_lossy(),
+            }),
+            1,
+        )
+        .await;
 
     response["result"]["session_id"]
         .as_str()
@@ -80,8 +49,8 @@ async fn create_test_session(stream: &mut UnixStream, daemon: &TestDaemon) -> St
 #[tokio::test]
 
 async fn test_add_notification_contract() {
-    let (mut daemon, mut stream) = setup_daemon().await;
-    let session_id = create_test_session(&mut stream, &daemon).await;
+    let (mut daemon, mut conn) = setup_daemon().await;
+    let session_id = create_test_session(&mut conn, &daemon).await;
 
     let notification = Notification::toast("Test notification");
 
@@ -94,7 +63,9 @@ async fn test_add_notification_contract() {
         }
     });
 
-    let response = rpc_call(&mut stream, "session.add_notification", params, 2).await;
+    let response = conn
+        .call_method("session.add_notification", params, 2)
+        .await;
 
     assert_eq!(response["jsonrpc"], "2.0");
     assert_eq!(response["id"], 2);
@@ -111,14 +82,16 @@ async fn test_add_notification_contract() {
 #[tokio::test]
 
 async fn test_list_notifications_contract() {
-    let (mut daemon, mut stream) = setup_daemon().await;
-    let session_id = create_test_session(&mut stream, &daemon).await;
+    let (mut daemon, mut conn) = setup_daemon().await;
+    let session_id = create_test_session(&mut conn, &daemon).await;
 
     let params = json!({
         "session_id": session_id,
     });
 
-    let response = rpc_call(&mut stream, "session.list_notifications", params, 2).await;
+    let response = conn
+        .call_method("session.list_notifications", params, 2)
+        .await;
 
     assert_eq!(response["jsonrpc"], "2.0");
     assert_eq!(response["id"], 2);
@@ -143,15 +116,17 @@ async fn test_list_notifications_contract() {
 #[tokio::test]
 
 async fn test_dismiss_notification_contract() {
-    let (mut daemon, mut stream) = setup_daemon().await;
-    let session_id = create_test_session(&mut stream, &daemon).await;
+    let (mut daemon, mut conn) = setup_daemon().await;
+    let session_id = create_test_session(&mut conn, &daemon).await;
 
     let params = json!({
         "session_id": session_id,
         "notification_id": "notif-12345678",
     });
 
-    let response = rpc_call(&mut stream, "session.dismiss_notification", params, 2).await;
+    let response = conn
+        .call_method("session.dismiss_notification", params, 2)
+        .await;
 
     assert_eq!(response["jsonrpc"], "2.0");
     assert_eq!(response["id"], 2);
@@ -175,8 +150,8 @@ async fn test_dismiss_notification_contract() {
 #[tokio::test]
 
 async fn test_add_notification_with_progress_kind() {
-    let (mut daemon, mut stream) = setup_daemon().await;
-    let session_id = create_test_session(&mut stream, &daemon).await;
+    let (mut daemon, mut conn) = setup_daemon().await;
+    let session_id = create_test_session(&mut conn, &daemon).await;
 
     let notification = Notification::progress(5, 10, "Processing files");
 
@@ -194,7 +169,9 @@ async fn test_add_notification_with_progress_kind() {
         }
     });
 
-    let response = rpc_call(&mut stream, "session.add_notification", params, 2).await;
+    let response = conn
+        .call_method("session.add_notification", params, 2)
+        .await;
 
     assert_eq!(response["jsonrpc"], "2.0");
     assert_eq!(response["id"], 2);
@@ -206,8 +183,8 @@ async fn test_add_notification_with_progress_kind() {
 #[tokio::test]
 
 async fn test_add_notification_with_warning_kind() {
-    let (mut daemon, mut stream) = setup_daemon().await;
-    let session_id = create_test_session(&mut stream, &daemon).await;
+    let (mut daemon, mut conn) = setup_daemon().await;
+    let session_id = create_test_session(&mut conn, &daemon).await;
 
     let notification = Notification::warning("Low disk space");
 
@@ -220,7 +197,9 @@ async fn test_add_notification_with_warning_kind() {
         }
     });
 
-    let response = rpc_call(&mut stream, "session.add_notification", params, 2).await;
+    let response = conn
+        .call_method("session.add_notification", params, 2)
+        .await;
 
     assert_eq!(response["jsonrpc"], "2.0");
     assert_eq!(response["id"], 2);
@@ -232,8 +211,8 @@ async fn test_add_notification_with_warning_kind() {
 #[tokio::test]
 
 async fn test_list_notifications_after_adding() {
-    let (mut daemon, mut stream) = setup_daemon().await;
-    let session_id = create_test_session(&mut stream, &daemon).await;
+    let (mut daemon, mut conn) = setup_daemon().await;
+    let session_id = create_test_session(&mut conn, &daemon).await;
 
     let notification = Notification::toast("Test message");
     let add_params = json!({
@@ -245,13 +224,16 @@ async fn test_list_notifications_after_adding() {
         }
     });
 
-    rpc_call(&mut stream, "session.add_notification", add_params, 2).await;
+    conn.call_method("session.add_notification", add_params, 2)
+        .await;
 
     let list_params = json!({
         "session_id": session_id,
     });
 
-    let response = rpc_call(&mut stream, "session.list_notifications", list_params, 3).await;
+    let response = conn
+        .call_method("session.list_notifications", list_params, 3)
+        .await;
 
     let notifications = response["result"]["notifications"]
         .as_array()
@@ -269,8 +251,8 @@ async fn test_list_notifications_after_adding() {
 #[tokio::test]
 
 async fn test_dismiss_notification_removes_from_list() {
-    let (mut daemon, mut stream) = setup_daemon().await;
-    let session_id = create_test_session(&mut stream, &daemon).await;
+    let (mut daemon, mut conn) = setup_daemon().await;
+    let session_id = create_test_session(&mut conn, &daemon).await;
 
     let notification = Notification::toast("Test message");
     let add_params = json!({
@@ -282,20 +264,17 @@ async fn test_dismiss_notification_removes_from_list() {
         }
     });
 
-    rpc_call(&mut stream, "session.add_notification", add_params, 2).await;
+    conn.call_method("session.add_notification", add_params, 2)
+        .await;
 
     let dismiss_params = json!({
         "session_id": session_id,
         "notification_id": notification.id,
     });
 
-    let dismiss_response = rpc_call(
-        &mut stream,
-        "session.dismiss_notification",
-        dismiss_params,
-        3,
-    )
-    .await;
+    let dismiss_response = conn
+        .call_method("session.dismiss_notification", dismiss_params, 3)
+        .await;
 
     assert!(
         dismiss_response["result"]["success"].as_bool().unwrap(),
@@ -306,7 +285,9 @@ async fn test_dismiss_notification_removes_from_list() {
         "session_id": session_id,
     });
 
-    let list_response = rpc_call(&mut stream, "session.list_notifications", list_params, 4).await;
+    let list_response = conn
+        .call_method("session.list_notifications", list_params, 4)
+        .await;
 
     let notifications = list_response["result"]["notifications"]
         .as_array()
@@ -323,15 +304,17 @@ async fn test_dismiss_notification_removes_from_list() {
 #[tokio::test]
 
 async fn test_dismiss_nonexistent_notification_returns_false() {
-    let (mut daemon, mut stream) = setup_daemon().await;
-    let session_id = create_test_session(&mut stream, &daemon).await;
+    let (mut daemon, mut conn) = setup_daemon().await;
+    let session_id = create_test_session(&mut conn, &daemon).await;
 
     let params = json!({
         "session_id": session_id,
         "notification_id": "notif-nonexist",
     });
 
-    let response = rpc_call(&mut stream, "session.dismiss_notification", params, 2).await;
+    let response = conn
+        .call_method("session.dismiss_notification", params, 2)
+        .await;
 
     assert_eq!(response["jsonrpc"], "2.0");
     assert!(
@@ -345,13 +328,15 @@ async fn test_dismiss_nonexistent_notification_returns_false() {
 #[tokio::test]
 
 async fn test_session_not_found_error() {
-    let (mut daemon, mut stream) = setup_daemon().await;
+    let (mut daemon, mut conn) = setup_daemon().await;
 
     let params = json!({
         "session_id": "sess-nonexistent",
     });
 
-    let response = rpc_call(&mut stream, "session.list_notifications", params, 1).await;
+    let response = conn
+        .call_method("session.list_notifications", params, 1)
+        .await;
 
     assert!(response["error"].is_object(), "Expected error object");
     assert!(

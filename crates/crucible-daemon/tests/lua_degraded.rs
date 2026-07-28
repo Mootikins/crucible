@@ -20,46 +20,7 @@
 
 mod common;
 
-use common::TestDaemon;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::UnixStream;
-
-/// Send a JSON-RPC request and return the parsed response.
-async fn rpc_call(stream: &mut UnixStream, request: &str) -> serde_json::Value {
-    stream
-        .write_all(format!("{}\n", request).as_bytes())
-        .await
-        .expect("Failed to write request");
-
-    // Responses and server-pushed events share one socket, so a reply is not
-    // necessarily the next line. Skip anything without an `id` — that is a
-    // notification (e.g. `ui_style_changed`, which `plugin.reload` emits), and
-    // a real client demultiplexes the same way. Reading blindly made this
-    // helper consume an event as the next call's response.
-    let mut buffered = Vec::new();
-    loop {
-        while let Some(line_end) = buffered.iter().position(|&b| b == b'\n') {
-            let line: Vec<u8> = buffered.drain(..=line_end).collect();
-            let trimmed = &line[..line.len() - 1];
-            if trimmed.is_empty() {
-                continue;
-            }
-            let value: serde_json::Value =
-                serde_json::from_slice(trimmed).expect("Failed to parse JSON line");
-            if value.get("id").is_some() {
-                return value;
-            }
-        }
-
-        let mut chunk = [0u8; 1024];
-        let n = stream
-            .read(&mut chunk)
-            .await
-            .expect("Failed to read response");
-        assert!(n > 0, "Connection closed before full response");
-        buffered.extend_from_slice(&chunk[..n]);
-    }
-}
+use common::{RpcConn, TestDaemon};
 
 /// Daemon starts and runs with a broken Lua plugin file.
 ///
@@ -109,12 +70,14 @@ async fn test_e2e_lua_degraded_daemon_starts_with_broken_plugin() {
     );
 
     // Connect and verify core RPC works
-    let mut stream = UnixStream::connect(&daemon.socket_path)
+    let mut conn = RpcConn::connect(&daemon.socket_path)
         .await
         .expect("Failed to connect to daemon");
 
     // 1. Ping should work — core daemon is functional
-    let response = rpc_call(&mut stream, r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#).await;
+    let response = conn
+        .call(r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#)
+        .await;
     assert_eq!(
         response.get("result").and_then(|v| v.as_str()),
         Some("pong"),
@@ -122,11 +85,9 @@ async fn test_e2e_lua_degraded_daemon_starts_with_broken_plugin() {
     );
 
     // 2. plugin.list should return empty — broken plugin was not loaded
-    let response = rpc_call(
-        &mut stream,
-        r#"{"jsonrpc":"2.0","id":2,"method":"plugin.list"}"#,
-    )
-    .await;
+    let response = conn
+        .call(r#"{"jsonrpc":"2.0","id":2,"method":"plugin.list"}"#)
+        .await;
     let result = response.get("result").expect("Should have result");
     let plugins = result
         .get("plugins")
@@ -147,7 +108,7 @@ async fn test_e2e_lua_degraded_daemon_starts_with_broken_plugin() {
         r#"{{"jsonrpc":"2.0","id":3,"method":"session.create","params":{{"type":"chat","kiln":"{}"}}}}"#,
         kiln_path
     );
-    let response = rpc_call(&mut stream, &create_req).await;
+    let response = conn.call(&create_req).await;
     let result = response
         .get("result")
         .expect("Session create should succeed");
@@ -191,16 +152,14 @@ async fn test_e2e_lua_degraded_state_detectable_via_rpc() {
     .await
     .expect("Daemon should start without any plugins");
 
-    let mut stream = UnixStream::connect(&daemon.socket_path)
+    let mut conn = RpcConn::connect(&daemon.socket_path)
         .await
         .expect("Failed to connect to daemon");
 
     // 1. Detect degraded state: plugin.list returns empty
-    let response = rpc_call(
-        &mut stream,
-        r#"{"jsonrpc":"2.0","id":1,"method":"plugin.list"}"#,
-    )
-    .await;
+    let response = conn
+        .call(r#"{"jsonrpc":"2.0","id":1,"method":"plugin.list"}"#)
+        .await;
     let result = response.get("result").expect("Should have result");
     let plugins = result
         .get("plugins")
@@ -215,9 +174,7 @@ async fn test_e2e_lua_degraded_state_detectable_via_rpc() {
     // 2. Detect degraded state: plugin.reload returns error for any plugin name
     //    When plugin_loader is Some but plugin not found, this returns internal error.
     //    This is the key signal that Lua plugin functionality is unavailable.
-    let response = rpc_call(
-        &mut stream,
-        r#"{"jsonrpc":"2.0","id":2,"method":"plugin.reload","params":{"name":"nonexistent_plugin"}}"#,
+    let response = conn.call(r#"{"jsonrpc":"2.0","id":2,"method":"plugin.reload","params":{"name":"nonexistent_plugin"}}"#,
     )
     .await;
     assert!(
@@ -236,7 +193,7 @@ async fn test_e2e_lua_degraded_state_detectable_via_rpc() {
         r#"{{"jsonrpc":"2.0","id":3,"method":"session.create","params":{{"type":"chat","kiln":"{}"}}}}"#,
         kiln_path
     );
-    let response = rpc_call(&mut stream, &create_req).await;
+    let response = conn.call(&create_req).await;
     let result = response
         .get("result")
         .expect("Session create should succeed");
@@ -250,7 +207,7 @@ async fn test_e2e_lua_degraded_state_detectable_via_rpc() {
         r#"{{"jsonrpc":"2.0","id":4,"method":"session.pause","params":{{"session_id":"{}"}}}}"#,
         session_id
     );
-    let response = rpc_call(&mut stream, &pause_req).await;
+    let response = conn.call(&pause_req).await;
     let result = response
         .get("result")
         .expect("Session pause should succeed");
@@ -266,7 +223,7 @@ async fn test_e2e_lua_degraded_state_detectable_via_rpc() {
         r#"{{"jsonrpc":"2.0","id":5,"method":"session.resume","params":{{"session_id":"{}"}}}}"#,
         session_id
     );
-    let response = rpc_call(&mut stream, &resume_req).await;
+    let response = conn.call(&resume_req).await;
     let result = response
         .get("result")
         .expect("Session resume should succeed");
@@ -282,7 +239,7 @@ async fn test_e2e_lua_degraded_state_detectable_via_rpc() {
         r#"{{"jsonrpc":"2.0","id":6,"method":"session.list","params":{{"kiln":"{}"}}}}"#,
         kiln_path
     );
-    let response = rpc_call(&mut stream, &list_req).await;
+    let response = conn.call(&list_req).await;
     let result = response.get("result").expect("Session list should succeed");
     let total = result.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
     assert_eq!(total, 1, "Should have exactly 1 session");
@@ -292,7 +249,7 @@ async fn test_e2e_lua_degraded_state_detectable_via_rpc() {
         r#"{{"jsonrpc":"2.0","id":7,"method":"session.end","params":{{"session_id":"{}"}}}}"#,
         session_id
     );
-    let response = rpc_call(&mut stream, &end_req).await;
+    let response = conn.call(&end_req).await;
     let result = response.get("result").expect("Session end should succeed");
     let state = result.get("state").and_then(|v| v.as_str()).unwrap_or("");
     assert!(
@@ -334,7 +291,7 @@ async fn test_e2e_lua_degraded_kiln_operations_work() {
     .await
     .expect("Daemon should start with broken plugin");
 
-    let mut stream = UnixStream::connect(&daemon.socket_path)
+    let mut conn = RpcConn::connect(&daemon.socket_path)
         .await
         .expect("Failed to connect to daemon");
 
@@ -348,7 +305,7 @@ async fn test_e2e_lua_degraded_kiln_operations_work() {
         r#"{{"jsonrpc":"2.0","id":1,"method":"kiln.open","params":{{"path":"{}"}}}}"#,
         kiln_path
     );
-    let response = rpc_call(&mut stream, &open_req).await;
+    let response = conn.call(&open_req).await;
     let result = response.get("result");
     assert!(
         result.is_some(),
@@ -357,11 +314,9 @@ async fn test_e2e_lua_degraded_kiln_operations_work() {
     );
 
     // List kilns — opened kiln should appear
-    let response = rpc_call(
-        &mut stream,
-        r#"{"jsonrpc":"2.0","id":2,"method":"kiln.list"}"#,
-    )
-    .await;
+    let response = conn
+        .call(r#"{"jsonrpc":"2.0","id":2,"method":"kiln.list"}"#)
+        .await;
     let result = response.get("result").and_then(|v| v.as_array());
     assert!(
         result.is_some() && !result.unwrap().is_empty(),
@@ -374,7 +329,7 @@ async fn test_e2e_lua_degraded_kiln_operations_work() {
         r#"{{"jsonrpc":"2.0","id":3,"method":"kiln.close","params":{{"path":"{}"}}}}"#,
         kiln_path
     );
-    let response = rpc_call(&mut stream, &close_req).await;
+    let response = conn.call(&close_req).await;
     assert!(
         response.get("result").is_some(),
         "kiln.close should succeed: {:?}",
