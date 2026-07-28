@@ -181,9 +181,13 @@ web-dev:
 # mismatch with the installed daemon and SHUTS IT DOWN to respawn its own
 # (verify_or_restart) — killing the production instance on 3000 out from
 # under you. Build parallelism comes from CARGO_BUILD_JOBS at the top.
-web-debug port="3001": web-build
+# Debug web server on a side port. Binds 0.0.0.0 so the instance is reachable
+# from another machine on the LAN, which is how it actually gets looked at;
+# pass a host to narrow it. --standalone is NOT optional: a debug `cru` that
+# talks to the installed daemon will kill it for a version mismatch.
+web-debug port="3001" host="0.0.0.0": web-build
     cargo build -p crucible-cli --bin cru
-    cargo run -p crucible-cli -- --standalone web --port {{port}} --static-dir crates/crucible-web/web/dist
+    cargo run -p crucible-cli -- --standalone web --host {{host}} --port {{port}} --static-dir crates/crucible-web/web/dist
 
 # Build release with embedded web assets
 release-web: web-build
