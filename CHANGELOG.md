@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-27
+
+### Added
+- **Crucible reads and writes JSON Canvas 1.0** — the `.canvas` format Obsidian uses for its infinite-canvas view — with an editor in the web UI. Cards, groups, images, links and edges; pan, zoom, marquee select, grid snapping, undo/redo. Using Obsidian's spec rather than inventing one is the whole point: an existing vault opens without conversion, and a canvas Crucible saves is byte-identical to one Obsidian saves, down to tab indentation and key order. Unknown keys round-trip verbatim, so styling authored by a plugin like Advanced Canvas survives a save here instead of being silently dropped.
+- **Canvases are citizens of the knowledge graph.** A canvas contributes each file card, and every wikilink written inside a text card, as links to those notes — so a note's backlinks show the canvases that reference it. Obsidian does neither: canvas references never appear in backlinks there, and text-card wikilinks never appear at all. Renames and moves rewrite canvas references through the typed document model rather than by splicing bytes into a JSON string.
+- **Note cards are live views of the file, not copies.** A card renders the real note through the same markdown engine as the rest of the app, and editing one writes back to the source. The canvas stores only the path, so note edits never touch the `.canvas` file — they are separate documents with separate undo histories, which is the only way Ctrl+Z stays unambiguous.
+- **A canvas may only reference files inside the root that owns it.** Not "any open kiln" — the specific kiln, or, for a canvas that lives in a repository rather than a vault, that project, so an architecture board can sit with the code it describes. Enforced in three layers, because the UI layer is worth nothing alone: drop targets filter and explain rejections, the save path validates every reference before anything touches disk, and the read path redacts references that fail the check so a client never receives a path it could not have asked for. Otherwise a text editor is a bypass. Rejections cover `..` traversal, absolute paths, interior NULs, and symlinks escaping the root; a reference to a merely *deleted* note stays legal and renders as a broken card.
+
+### Changed
+- **One predicate decides what the kiln considers a file.** `KilnFileKind` replaced twelve hardcoded `extension == "md"` checks that had already drifted apart — some accepted `.markdown`, none were case-insensitive, so a note named `Notes.MD` was indexed by some code paths and invisible to others.
+- **Wikilink resolution is one ladder with no ambient fallback.** Resolving a link used to be able to fall back to "whichever kiln is currently configured", which is how a link in one vault opened a same-named note from another. A file's kiln is now derived from the file's own path, and content whose kiln is unknown has no links to follow rather than guessing one. Resolution is a path lookup and no longer depends on a note having been indexed.
+
+### Fixed
+- **The note index never removed notes that were deleted from disk.** Reprocessing a kiln added and updated, but never diffed against the filesystem, so a note deleted or moved outside the app stayed in the index forever — surfacing in search results, backlinks and autocomplete as a file that could not be opened. The documentation kiln had accumulated 70 such ghosts out of 180 entries. Reprocessing now reconciles against disk, and declines to do so when the kiln root is missing entirely, so an unmounted or renamed directory does not empty the index it was supposed to refresh.
+- Following a wikilink from the standalone editor panel resolved nothing, because the panel passed no kiln.
+
 ## [0.16.1] - 2026-07-27
 
 ### Fixed
