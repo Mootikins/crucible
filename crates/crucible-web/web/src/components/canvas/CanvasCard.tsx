@@ -43,22 +43,12 @@ const Markdown: Component<{
   // wikilink decorations too — an edited card must not become the one place
   // where links escape into the active kiln.
   return (
-  <Show
-    when={props.editable}
-    fallback={
-      // Read-only until the card is focused. A canvas is mostly read at a
-      // glance, and mounting an editor per visible card costs far more than it
-      // buys — but the rendered output is the same engine either way, so
-      // entering edit mode does not reflow the card.
-      <div class="canvas-card-body h-full overflow-auto">
-        <MarkdownPreview content={props.content} path={props.path} kiln={props.kiln} />
-      </div>
-    }
-  >
     <div class="canvas-card-body relative h-full overflow-auto">
-      {/* The live/source switch every other markdown surface has. A card had
-          no way to reach raw text at all — live preview was hardcoded — so
-          fixing a link's syntax or a fence meant opening the note elsewhere.
+      {/* The live/source switch every other markdown surface has, and it is
+          present whether or not the card is open for editing — it used to
+          render only in edit mode, which is a mode you reach by double
+          clicking, so in practice it was never visible.
+
           Reading-vs-edit is deliberately NOT duplicated here: on a canvas that
           is the click/double-click gate, and a second control for it would be
           two ways to say the same thing. */}
@@ -69,26 +59,49 @@ const Markdown: Component<{
         aria-label={sourceMode() ? 'Live preview' : 'Source'}
         data-testid="canvas-card-mode-toggle"
         onPointerDown={(e) => e.stopPropagation()}
+        onDblClick={(e) => e.stopPropagation()}
         onClick={() => setSourceMode((v) => !v)}
       >
         <Show when={sourceMode()} fallback={<Code class="h-3 w-3" />}>
           <Eye class="h-3 w-3" />
         </Show>
       </button>
-      <CodeMirrorEditor
-        content={props.content}
-        path={props.path}
-        onChange={props.onChange}
-        onSave={() => props.onCommit?.()}
-        vimMode={settings.editor.vimMode}
-        // Without this, CodeMirror installs no wikilink decorations at all
-        // (`CodeMirrorEditor` gates the whole bundle on it), so entering edit
-        // mode silently stripped a card's links: no hover, no Ctrl+Click.
-        onFollowLink={(target) => void openNoteInEditor(target, props.kiln)}
-        livePreview={!sourceMode()}
-      />
+
+      <Show
+        when={props.editable}
+        fallback={
+          // Read-only until the card is focused. A canvas is mostly read at a
+          // glance, and mounting an editor per visible card costs far more than
+          // it buys — but the rendered output is the same engine either way, so
+          // entering edit mode does not reflow the card.
+          <Show
+            when={sourceMode()}
+            fallback={
+              <MarkdownPreview content={props.content} path={props.path} kiln={props.kiln} />
+            }
+          >
+            {/* Raw text without mounting an editor: source is a way of LOOKING
+                at a card, not a reason to make an unfocused one editable. */}
+            <pre class="canvas-card-source" data-testid="canvas-card-source">
+              {props.content}
+            </pre>
+          </Show>
+        }
+      >
+        <CodeMirrorEditor
+          content={props.content}
+          path={props.path}
+          onChange={props.onChange}
+          onSave={() => props.onCommit?.()}
+          vimMode={settings.editor.vimMode}
+          // Without this, CodeMirror installs no wikilink decorations at all
+          // (`CodeMirrorEditor` gates the whole bundle on it), so entering edit
+          // mode silently stripped a card's links: no hover, no Ctrl+Click.
+          onFollowLink={(target) => void openNoteInEditor(target, props.kiln)}
+          livePreview={!sourceMode()}
+        />
+      </Show>
     </div>
-    </Show>
   );
 };
 

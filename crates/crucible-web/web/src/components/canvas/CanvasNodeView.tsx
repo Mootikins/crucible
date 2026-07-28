@@ -167,9 +167,12 @@ const LinkCard: Component<{ url: string; interactive?: boolean }> = (props) => {
     <a
       class="flex items-center gap-1.5 px-3 text-xs text-muted no-underline"
       classList={{
-        // Embedded: a thin bar over the page, since the page itself is the
-        // content. Otherwise the card IS the link, so it fills the box.
-        'absolute inset-x-0 top-0 z-10 h-6 border-b border-hairline bg-surface-elevated/90 backdrop-blur-sm':
+        // Embedded: a small tab in the top-left corner, not a full-width bar.
+        // The bar only ever needs to hold a hostname and open the page, and
+        // spanning the card put a link across the whole top edge of something
+        // you are otherwise trying to click INTO — every near-miss at the top
+        // of the page navigated away instead.
+        'absolute left-0 top-0 z-10 h-6 max-w-[75%] rounded-br-md border-b border-r border-hairline bg-surface-elevated/90 backdrop-blur-sm':
           embeddable(),
         'h-full flex-col justify-center gap-1': !embeddable(),
       }}
@@ -200,7 +203,7 @@ const LinkCard: Component<{ url: string; interactive?: boolean }> = (props) => {
             and render its black body text unreadable. */}
         <iframe
           src={props.url}
-          class="h-full w-full border-0 bg-white pt-6"
+          class="h-full w-full border-0 bg-white"
           classList={{ 'pointer-events-none': !props.interactive }}
           sandbox={EMBED_SANDBOX}
           referrerpolicy="no-referrer"

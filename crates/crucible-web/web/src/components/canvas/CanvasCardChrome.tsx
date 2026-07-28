@@ -36,6 +36,12 @@ const CORNERS: { corner: ResizeCorner; class: string; cursor: string }[] = [
  * sits inside it. Splitting them across separate invisible zones meant the
  * edge midpoint could only ever do one of the two, and which one was
  * unguessable because neither was drawn.
+ *
+ * The box runs nearly the full edge (`inset-*-3`) rather than a short stub at
+ * the midpoint: an edge you can only grab in the middle is a target you have
+ * to aim for. The inset leaves a gap for the corner handles, which sit at the
+ * ends and must stay reachable — overlapping them would make a corner
+ * resize one axis depending on which element happened to be on top.
  */
 const SIDES: {
   side: EdgeSide;
@@ -47,28 +53,28 @@ const SIDES: {
   {
     side: 'top',
     handle: 'n',
-    zone: 'left-1/2 -translate-x-1/2 -top-2 h-4 w-16',
+    zone: 'inset-x-3 -top-2 h-4',
     dot: 'left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2',
     cursor: 'ns-resize',
   },
   {
     side: 'bottom',
     handle: 's',
-    zone: 'left-1/2 -translate-x-1/2 -bottom-2 h-4 w-16',
+    zone: 'inset-x-3 -bottom-2 h-4',
     dot: 'left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2',
     cursor: 'ns-resize',
   },
   {
     side: 'left',
     handle: 'w',
-    zone: 'top-1/2 -translate-y-1/2 -left-2 w-4 h-16',
+    zone: 'inset-y-3 -left-2 w-4',
     dot: 'top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2',
     cursor: 'ew-resize',
   },
   {
     side: 'right',
     handle: 'e',
-    zone: 'top-1/2 -translate-y-1/2 -right-2 w-4 h-16',
+    zone: 'inset-y-3 -right-2 w-4',
     dot: 'top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2',
     cursor: 'ew-resize',
   },

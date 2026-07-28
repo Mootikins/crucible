@@ -607,13 +607,16 @@ details.callout[open] > summary.callout-title::after {
   color: var(--color-shell-ink);
   border-color: var(--color-hairline-strong);
 }
-/* Open, the square becomes the card's own header row rather than a box
-   floating inside a box. */
+/* Open, the square becomes the card's own header ROW rather than a box
+   floating inside a box — and the row is the hit target. As a shrink-wrapped
+   box the only thing you could click to collapse it again was the caret
+   itself, which is 8px of arrow. */
 .fm-card[open] .fm-summary {
   height: auto;
-  width: auto;
+  width: 100%;
   justify-content: flex-end;
   border: 0;
+  padding: 2px 0 8px;
 }
 .fm-summary::-webkit-details-marker {
   display: none;
@@ -763,6 +766,20 @@ details.callout[open] > summary.callout-title::after {
    top of each other. */
 .canvas-card-body:has(.canvas-card-mode) .fm-card:not([open]) {
   margin-right: 1.5rem;
+}
+
+/* Raw source view of an unfocused card: the same text an editor would show,
+   without mounting one. Wrapped, because a card is narrow and a horizontal
+   scrollbar for one long line is worse than a soft break. */
+.canvas-card-source {
+  margin: 0;
+  padding: var(--canvas-card-pad-y) var(--canvas-card-pad-x);
+  font-family: var(--font-mono);
+  font-size: var(--canvas-card-font);
+  line-height: 1.55;
+  color: var(--color-shell-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* MarkdownPreview ships its own panel background and generous page padding,

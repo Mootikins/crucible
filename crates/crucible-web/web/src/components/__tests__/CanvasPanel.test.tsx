@@ -173,6 +173,34 @@ describe('CanvasPanel', () => {
     expect(frame.className).toContain('pointer-events-none');
   });
 
+  /**
+   * The live/source toggle used to render only when a card was open for
+   * editing — a state reached by double-clicking — so in practice it was never
+   * on screen and cards appeared to have no mode control at all.
+   */
+  it('offers the live/source toggle on a card that is not being edited', async () => {
+    getCanvasMock.mockResolvedValue(response());
+    const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
+
+    const toggle = (await waitFor(() => {
+      const el = container.querySelector(
+        '[data-node-id="text-1"] [data-testid="canvas-card-mode-toggle"]',
+      );
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+
+    // Raw text without mounting an editor: source is a way of looking at a
+    // card, not a reason to make an unfocused one editable.
+    expect(container.querySelector('[data-testid="canvas-card-source"]')).toBeNull();
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      const raw = container.querySelector('[data-testid="canvas-card-source"]');
+      expect(raw?.textContent).toContain('Hello **world**');
+    });
+  });
+
   /** One click to work in the page, as in Obsidian — not a double-click. */
   it('hands the pointer to the embed as soon as the card is selected', async () => {
     getCanvasMock.mockResolvedValue(response());
