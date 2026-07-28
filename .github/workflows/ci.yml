@@ -32,6 +32,31 @@ jobs:
       - name: Check for god files
         run: scripts/check-file-sizes.sh
 
+  deny:
+    name: Dependency Licences
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Runs `cargo-deny --all-features check licenses`, matching
+      # `just license-check` exactly — the two have to stay in step or the gate
+      # only ever runs on whichever side you remembered.
+      #
+      # `licenses` and nothing else: deny.toml states a policy for that check
+      # alone. The action's default of `check` (all checks) would additionally
+      # enforce `advisories`, `bans` and `sources` against cargo-deny's built-in
+      # defaults rather than anything this repo has decided — turning an
+      # upstream advisory published overnight into a red build on a branch that
+      # changed nothing.
+      #
+      # `--all-features` is deliberately broader than the release binary's
+      # `fastembed,web`: it means a licence cannot enter through a feature that
+      # is off today and on in a later release.
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          arguments: --all-features
+          command: check
+          command-arguments: licenses
+
   test:
     name: Test
     runs-on: ubuntu-latest

@@ -190,10 +190,11 @@ web-debug port="3001" host="0.0.0.0": web-build-debug
     cargo run -p crucible-cli -- --standalone web --host {{host}} --port {{port}} --static-dir crates/crucible-web/web/dist
 
 # Fail on a dependency whose licence is not on the allowlist in deny.toml.
-# NOTE: GitHub's workflow does not invoke `just ci`, so this gate is local
-# only until it is wired into .github/workflows/ci.yml as well.
+# Mirrored by the `deny` job in .github/workflows/ci.yml — GitHub does not
+# invoke `just ci`, so every gate has to exist in both places or it only ever
+# runs on whichever side you remembered.
 license-check:
-    cargo deny check licenses
+    cargo deny --all-features check licenses
 
 # Regenerate THIRD-PARTY-NOTICES.md from the dependency graph that ships.
 # Needs the web tree's node_modules present, since the font and icon notices
