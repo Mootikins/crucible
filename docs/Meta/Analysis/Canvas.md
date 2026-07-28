@@ -146,9 +146,36 @@ The canvas document stores only the *path*, so note edits never touch the
 documents with separate histories, and conflating them would make Ctrl+Z
 ambiguous.
 
-Link nodes render as cards, not iframes. An iframe silently contacts a third
-party the moment a canvas is opened, which is not a decision the user made by
-drawing a box.
+## Web pages
+
+`link` nodes are part of the spec and always round-tripped, but for a while they
+rendered as a static card and could not be created here at all — a canvas
+authored in Obsidian showed its web cards, and Crucible could not add one.
+
+Both are now closed: the page is **embedded live**, matching Obsidian, and a
+card is created either from the toolbar or by pasting a URL onto the canvas.
+
+Embedding does mean opening a canvas contacts every third party it references.
+That is a real change in posture from the static card, and the sandbox is what
+makes it defensible: the frame is granted scripts, forms and popups but
+explicitly **not** `allow-same-origin`. That absence is load-bearing rather than
+incidental. A link URL is arbitrary document text, so it can name this app's own
+origin, and the web UI authenticates with a session cookie — with
+`allow-same-origin` the frame would be same-origin with the app, able to read
+those pages and call the API as the user. It is also the pairing that would let
+a framed page drop its own sandbox. Without it the frame gets an opaque origin
+whatever it points at.
+
+Only `http:`/`https:` are embeddable, and only those two can be authored;
+`mailto:` still renders as a plain card. A dangerous scheme is rejected at
+creation rather than merely rendered inert, so it never reaches the document —
+relying on every future reader to keep treating it as inert is the weaker
+guarantee.
+
+The frame stays pointer-inert until the card is opened with a double-click, like
+every other card type. An iframe swallows the pointer, so without that gate the
+card could not be dragged, selected or marquee'd and the canvas would have holes
+in it. Below the LOD threshold no frame mounts at all.
 
 ## Where the code lives
 

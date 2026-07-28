@@ -53,7 +53,10 @@ export const CanvasNodeView: Component<CanvasNodeViewProps> = (props) => {
         </Match>
 
         <Match when={props.node.type === 'link'}>
-          <LinkCard url={(props.node as { url: string }).url} />
+          <LinkCard
+            url={(props.node as { url: string }).url}
+            interactive={props.editable ?? false}
+          />
         </Match>
 
         <Match when={props.node.type === 'file'}>
@@ -105,7 +108,35 @@ const QuarantinedNode: Component<{ reason: string }> = (props) => (
  */
 const SAFE_SCHEMES = ['http:', 'https:', 'mailto:'];
 
-const LinkCard: Component<{ url: string }> = (props) => {
+/** Schemes that may additionally be rendered *inside* the canvas. */
+const EMBEDDABLE_SCHEMES = ['http:', 'https:'];
+
+/**
+ * Everything the frame is allowed to do.
+ *
+ * `allow-same-origin` is deliberately absent, which is the load-bearing part.
+ * A link node's URL is arbitrary document text, so it can name this app's own
+ * origin — and the web UI authenticates with a session cookie. With
+ * `allow-same-origin` the frame would be same-origin with the app and could
+ * read that cookie's pages and call the API as the user. Without it the frame
+ * gets an opaque origin and cannot reach the app's storage, DOM or session,
+ * whatever it points at. It also cannot pair with `allow-scripts` to remove
+ * its own sandbox.
+ */
+const EMBED_SANDBOX = 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms';
+
+/**
+ * A web page on the canvas.
+ *
+ * Obsidian embeds the live page, so Crucible does too. That is a real change in
+ * posture — opening a canvas now contacts every third party it references — and
+ * the sandbox above is what makes it defensible rather than merely convenient.
+ *
+ * The frame is inert until the card is opened with a double-click, like every
+ * other card type. Otherwise the iframe swallows the pointer and the card
+ * cannot be dragged, selected, or marquee'd: the canvas would have holes in it.
+ */
+const LinkCard: Component<{ url: string; interactive?: boolean }> = (props) => {
   const parsed = createMemo(() => {
     try {
       return new URL(props.url);
@@ -117,27 +148,56 @@ const LinkCard: Component<{ url: string }> = (props) => {
     const u = parsed();
     return u !== null && SAFE_SCHEMES.includes(u.protocol);
   });
+  const embeddable = createMemo(() => {
+    const u = parsed();
+    return u !== null && EMBEDDABLE_SCHEMES.includes(u.protocol);
+  });
   const host = createMemo(() => parsed()?.host ?? props.url);
 
-  // A link card rather than an iframe by default: embedding silently contacts
-  // a third party the moment a canvas is opened, which is a privacy decision
-  // the user has not made just by drawing a box.
-  return (
+  const chrome = (
     <a
-      class="flex h-full flex-col justify-center gap-1 px-3 no-underline"
+      class="flex items-center gap-1.5 px-3 text-xs text-muted no-underline"
+      classList={{
+        // Embedded: a thin bar over the page, since the page itself is the
+        // content. Otherwise the card IS the link, so it fills the box.
+        'absolute inset-x-0 top-0 z-10 h-6 border-b border-hairline bg-surface-elevated/90 backdrop-blur-sm':
+          embeddable(),
+        'h-full flex-col justify-center gap-1': !embeddable(),
+      }}
       href={safe() ? props.url : undefined}
       target="_blank"
       rel="noopener noreferrer"
       data-testid="canvas-link-node"
       data-unsafe-scheme={safe() ? undefined : 'true'}
-      title={safe() ? undefined : 'Blocked: unsupported URL scheme'}
+      title={safe() ? props.url : 'Blocked: unsupported URL scheme'}
     >
-      <span class="flex items-center gap-1.5 text-xs text-muted">
-        <ExternalLink class="h-3 w-3" />
+      <span class="flex items-center gap-1.5 truncate text-xs text-muted">
+        <ExternalLink class="h-3 w-3 shrink-0" />
         {host()}
       </span>
-      <span class="truncate text-sm text-shell-ink">{props.url}</span>
+      <Show when={!embeddable()}>
+        <span class="truncate text-sm text-shell-ink">{props.url}</span>
+      </Show>
     </a>
+  );
+
+  return (
+    <Show when={embeddable()} fallback={chrome}>
+      <div class="relative h-full w-full overflow-hidden">
+        {chrome}
+        <iframe
+          src={props.url}
+          class="h-full w-full border-0 bg-white pt-6"
+          classList={{ 'pointer-events-none': !props.interactive }}
+          sandbox={EMBED_SANDBOX}
+          referrerpolicy="no-referrer"
+          loading="lazy"
+          title={host()}
+          data-testid="canvas-link-embed"
+          data-interactive={props.interactive ? 'true' : 'false'}
+        />
+      </div>
+    </Show>
   );
 };
 

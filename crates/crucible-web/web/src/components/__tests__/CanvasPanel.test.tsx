@@ -118,18 +118,59 @@ describe('CanvasPanel', () => {
     expect(err.textContent).toContain('not within an open kiln');
   });
 
-  it('renders a link node as a card that opens in a new tab', async () => {
+  it('embeds a link node as a live page with chrome that opens in a new tab', async () => {
     getCanvasMock.mockResolvedValue(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
 
     await waitFor(() => {
       const link = container.querySelector('[data-testid="canvas-link-node"]') as HTMLAnchorElement;
       expect(link).toBeTruthy();
-      // An iframe would contact the third party on open; a card does not.
       expect(link.tagName).toBe('A');
       expect(link.rel).toContain('noopener');
     });
-    expect(container.querySelector('iframe')).toBeNull();
+    expect(container.querySelector('[data-testid="canvas-link-embed"]')).toBeTruthy();
+  });
+
+  /**
+   * A link node's URL is arbitrary document text, so it can name this app's own
+   * origin — and the web UI authenticates with a session cookie. `allow-scripts`
+   * together with `allow-same-origin` would let the frame reach that session and
+   * drop its own sandbox, so the absence of `allow-same-origin` is the property
+   * that makes embedding safe at all.
+   */
+  it('sandboxes the embed into an opaque origin so it cannot reach the session', async () => {
+    getCanvasMock.mockResolvedValue(response());
+    const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
+
+    const frame = (await waitFor(() => {
+      const el = container.querySelector('[data-testid="canvas-link-embed"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLIFrameElement;
+
+    expect(frame.getAttribute('sandbox')).toBeTruthy();
+    expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
+    expect(frame.getAttribute('referrerpolicy')).toBe('no-referrer');
+  });
+
+  /**
+   * An iframe swallows the pointer, so a card that embeds one could not be
+   * dragged, selected or marquee'd — the canvas would have holes in it. The
+   * frame only takes the pointer once the card is opened with a double-click,
+   * matching how every other card type behaves.
+   */
+  it('keeps the embed inert until the card is opened for editing', async () => {
+    getCanvasMock.mockResolvedValue(response());
+    const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
+
+    const frame = (await waitFor(() => {
+      const el = container.querySelector('[data-testid="canvas-link-embed"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLIFrameElement;
+
+    expect(frame.getAttribute('data-interactive')).toBe('false');
+    expect(frame.className).toContain('pointer-events-none');
   });
 
   /**

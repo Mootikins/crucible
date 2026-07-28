@@ -11,6 +11,7 @@ import {
 import { PanelShell } from '../PanelShell';
 import { CanvasNodeView } from './CanvasNodeView';
 import { NotePicker } from './NotePicker';
+import { LinkPrompt, normaliseUrl } from './LinkPrompt';
 import {
   CanvasCardChrome,
   SwatchRow,
@@ -131,6 +132,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
   // touch any of them once drawn.
   const [selectedEdge, setSelectedEdge] = createSignal<string | null>(null);
   const [pickingNote, setPickingNote] = createSignal(false);
+  const [addingLink, setAddingLink] = createSignal(false);
   const [drag, setDrag] = createSignal<Drag | null>(null);
   const [snapping, setSnapping] = createSignal(true);
 
@@ -640,6 +642,38 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
     setSelected(new Set([node.id]));
   };
 
+  /** Drop a web card at the middle of the view, like the note picker does. */
+  const createLinkNode = (url: string) => {
+    const centre = screenToCanvas(viewport(), viewport().width / 2, viewport().height / 2);
+    const node: CanvasNode = {
+      id: uid('node'),
+      type: 'link',
+      url,
+      x: snap(centre.x - 200, snapping()),
+      y: snap(centre.y - 140, snapping()),
+      width: 400,
+      height: 280,
+    };
+    mutate(addNode(doc(), node));
+    setSelected(new Set<string>([node.id]));
+  };
+
+  /**
+   * Pasting a URL onto the canvas makes a web card, as it does in Obsidian.
+   *
+   * Ignored while a card is open for editing, where the paste belongs to that
+   * card's text, and when the clipboard holds anything that is not a bare URL.
+   */
+  const onPaste = (e: ClipboardEvent) => {
+    if (editingId() !== null) return;
+    const text = e.clipboardData?.getData('text/plain');
+    if (!text) return;
+    const url = normaliseUrl(text);
+    if (!url) return;
+    e.preventDefault();
+    createLinkNode(url);
+  };
+
   /**
    * One node's box, chrome and content.
    *
@@ -846,6 +880,15 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
           >
             + Note
           </button>
+          <button
+            type="button"
+            class="rounded px-1.5 py-0.5 hover:bg-hover-wash"
+            title="Add a card embedding a web page"
+            data-testid="canvas-add-link"
+            onClick={() => setAddingLink(true)}
+          >
+            + Web
+          </button>
           <button type="button" class="rounded px-1.5 py-0.5 hover:bg-hover-wash" onClick={frameAll}>
             Fit
           </button>
@@ -874,6 +917,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
         onPointerCancel={onPointerUp}
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
+        onPaste={onPaste}
         tabindex={0}
         onDblClick={createTextNode}
       >
@@ -899,6 +943,16 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
               };
               mutate(addNode(doc(), node));
               setSelected(new Set<string>([node.id]));
+            }}
+          />
+        </Show>
+
+        <Show when={addingLink()}>
+          <LinkPrompt
+            onClose={() => setAddingLink(false)}
+            onSubmit={(url) => {
+              setAddingLink(false);
+              createLinkNode(url);
             }}
           />
         </Show>
