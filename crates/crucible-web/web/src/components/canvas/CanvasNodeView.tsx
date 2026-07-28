@@ -18,6 +18,12 @@ export interface CanvasNodeViewProps {
   absPathFor: (relPath: string) => string;
   /** Selected cards get a live editor; the rest render read-only. */
   editable?: boolean;
+  /**
+   * The card is selected. Distinct from `editable`, which is the deeper
+   * double-click state: a web card takes the pointer as soon as it is
+   * selected, matching Obsidian, while a note card waits to be opened.
+   */
+  focused?: boolean;
   /** The canvas's kiln, so card wikilinks resolve in the right vault. */
   kiln?: string;
   /** Text cards persist into the canvas document, so edits go back up. */
@@ -55,7 +61,7 @@ export const CanvasNodeView: Component<CanvasNodeViewProps> = (props) => {
         <Match when={props.node.type === 'link'}>
           <LinkCard
             url={(props.node as { url: string }).url}
-            interactive={props.editable ?? false}
+            interactive={props.focused ?? false}
           />
         </Match>
 
@@ -132,9 +138,12 @@ const EMBED_SANDBOX = 'allow-scripts allow-popups allow-popups-to-escape-sandbox
  * posture — opening a canvas now contacts every third party it references — and
  * the sandbox above is what makes it defensible rather than merely convenient.
  *
- * The frame is inert until the card is opened with a double-click, like every
- * other card type. Otherwise the iframe swallows the pointer and the card
- * cannot be dragged, selected, or marquee'd: the canvas would have holes in it.
+ * The frame is inert until the card is SELECTED, then it takes the pointer —
+ * one click to work in the page, which is how Obsidian behaves. It cannot be
+ * live while unselected: an iframe swallows the pointer, so the card could
+ * never be clicked, dragged or marquee'd and the canvas would have holes in
+ * it. Selecting first is what makes the page reachable at all; to move a live
+ * card, drag it by the chrome bar or deselect it.
  */
 const LinkCard: Component<{ url: string; interactive?: boolean }> = (props) => {
   const parsed = createMemo(() => {
@@ -183,7 +192,7 @@ const LinkCard: Component<{ url: string; interactive?: boolean }> = (props) => {
 
   return (
     <Show when={embeddable()} fallback={chrome}>
-      <div class="relative h-full w-full overflow-hidden">
+      <div class="group relative h-full w-full overflow-hidden">
         {chrome}
         {/* `bg-white` is deliberately a raw colour rather than a surface token:
             this is the framed page's paper, not app chrome. A page that sets no
@@ -200,6 +209,20 @@ const LinkCard: Component<{ url: string; interactive?: boolean }> = (props) => {
           data-testid="canvas-link-embed"
           data-interactive={props.interactive ? 'true' : 'false'}
         />
+
+        {/* A page that ignores the pointer looks broken rather than gated.
+            Shown on hover while inert; `pointer-events-none` so the hint never
+            eats the very click that dismisses it. */}
+        <Show when={!props.interactive}>
+          <div
+            class="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-2 opacity-0 transition-opacity group-hover:opacity-100"
+            data-testid="canvas-link-hint"
+          >
+            <span class="rounded-full border border-hairline bg-surface-elevated/90 px-2 py-0.5 text-[10px] text-muted backdrop-blur-sm">
+              Click to interact
+            </span>
+          </div>
+        </Show>
       </div>
     </Show>
   );

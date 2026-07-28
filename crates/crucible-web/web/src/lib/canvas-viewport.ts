@@ -202,6 +202,23 @@ export function sliderToZoom(t: number): number {
   return clampZoom(MIN_ZOOM * Math.pow(MAX_ZOOM / MIN_ZOOM, clamped));
 }
 
+/**
+ * How close to the 100% mark counts as "on it", in slider units.
+ *
+ * The one zoom worth hitting exactly is 1:1 — it is the only value where a
+ * card is its real size — and on a logarithmic track it is a single position
+ * among thousands, so dragging to precisely 100% is otherwise luck.
+ */
+export const ZOOM_DETENT_TOLERANCE = 0.025;
+
+/** Slider position → zoom, pulled to exactly 100% near the detent. */
+export function sliderToZoomWithDetent(t: number): number {
+  const clamped = Math.min(1, Math.max(0, t));
+  return Math.abs(clamped - zoomToSlider(1)) <= ZOOM_DETENT_TOLERANCE
+    ? 1
+    : sliderToZoom(clamped);
+}
+
 /** Zoom about the centre of the viewport, keeping what is centred centred. */
 export function zoomToLevel(viewport: Viewport, zoom: number): Viewport {
   const target = clampZoom(zoom);
@@ -216,6 +233,23 @@ export function centreOn(viewport: Viewport, point: { x: number; y: number }): V
     x: point.x - viewport.width / (2 * viewport.zoom),
     y: point.y - viewport.height / (2 * viewport.zoom),
   };
+}
+
+/**
+ * Eased progress through a tween, as a 0..1 fraction.
+ *
+ * The clamp at ZERO is load-bearing, not defensive. A rAF callback is handed
+ * the timestamp of the frame it belongs to, and that frame may have started
+ * BEFORE the handler that scheduled the callback ran — so `elapsed` is
+ * routinely negative on the first frame. Easing a negative fraction through
+ * `1-(1-t)³` yields a negative result, which interpolates the viewport
+ * backwards: zooming in visibly flashed *out* (100% → 62%) before climbing.
+ */
+export function tweenProgress(elapsedMs: number, durationMs: number): number {
+  if (durationMs <= 0) return 1;
+  const t = Math.min(1, Math.max(0, elapsedMs / durationMs));
+  // Ease-out cubic: quick off the mark, settling rather than stopping dead.
+  return 1 - Math.pow(1 - t, 3);
 }
 
 /** Snap a canvas coordinate to the grid, unless snapping is suppressed. */

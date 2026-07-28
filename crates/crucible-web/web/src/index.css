@@ -574,13 +574,48 @@ details.callout[open] > summary.callout-title::after {
    — the SAME card in the reading view and the live-preview widget. Quiet
    key/value rows; array values render as pill chips. */
 .fm-card {
-  display: grid;
-  gap: 3px;
   margin: 0 0 1rem;
   padding: 8px 12px;
   border: 1px solid var(--color-hairline);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--color-surface-elevated) 45%, transparent);
+}
+/* The whole summary row is the hit target, with the caret sitting top-right.
+   The default disclosure triangle is suppressed on both engines — WebKit
+   needs the vendor pseudo-element, everything else honours `list-style`. */
+.fm-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-muted-dark);
+  user-select: none;
+}
+.fm-summary::-webkit-details-marker {
+  display: none;
+}
+.fm-caret {
+  width: 0;
+  height: 0;
+  flex: none;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+  transition: transform 120ms ease;
+}
+.fm-card[open] .fm-caret {
+  transform: rotate(180deg);
+}
+/* Only the expanded body carries the row spacing; a collapsed card is one
+   line and must not reserve the grid gap. */
+.fm-card[open] .fm-rows {
+  display: grid;
+  gap: 3px;
+  margin-top: 6px;
 }
 .fm-row {
   display: grid;
@@ -688,6 +723,19 @@ details.callout[open] > summary.callout-title::after {
 .canvas-card-body {
   --canvas-card-pad-x: 0.85rem;
   --canvas-card-pad-y: 0.7rem;
+  /* A notch below the reading pane: a card is a few hundred pixels wide, not a
+     full-width page, and body text at reading-pane size fits very little in
+     one. Declared once and inherited by BOTH the rendered view and CodeMirror
+     — set on only one of them and text visibly resizes on entering edit mode,
+     the same class of mismatch the padding rules below exist to prevent. */
+  --canvas-card-font: 0.8125rem;
+  font-size: var(--canvas-card-font);
+}
+.canvas-card-body .prose,
+.canvas-card-body .cm-editor,
+.canvas-card-body .cm-content,
+.canvas-card-body .cm-line {
+  font-size: var(--canvas-card-font);
 }
 
 /* MarkdownPreview ships its own panel background and generous page padding,

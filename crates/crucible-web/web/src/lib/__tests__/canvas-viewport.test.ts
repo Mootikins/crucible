@@ -10,6 +10,9 @@ import {
   panBy,
   screenToCanvas,
   sliderToZoom,
+  sliderToZoomWithDetent,
+  tweenProgress,
+  ZOOM_DETENT_TOLERANCE,
   snap,
   visibleNodes,
   zoomAt,
@@ -316,5 +319,61 @@ describe('centreOn', () => {
     expect(centre.x).toBeCloseTo(1000);
     expect(centre.y).toBeCloseTo(500);
     expect(after.zoom).toBe(before.zoom);
+  });
+});
+
+describe('zoom detent', () => {
+  it('snaps to exactly 100% near the mark', () => {
+    const at100 = zoomToSlider(1);
+    expect(sliderToZoomWithDetent(at100)).toBe(1);
+    expect(sliderToZoomWithDetent(at100 + ZOOM_DETENT_TOLERANCE / 2)).toBe(1);
+    expect(sliderToZoomWithDetent(at100 - ZOOM_DETENT_TOLERANCE / 2)).toBe(1);
+  });
+
+  /** A detent that captured a wide band would make nearby zooms unreachable. */
+  it('leaves zooms outside the detent alone', () => {
+    const at100 = zoomToSlider(1);
+    const outside = at100 + ZOOM_DETENT_TOLERANCE * 2;
+    expect(sliderToZoomWithDetent(outside)).not.toBe(1);
+    expect(sliderToZoomWithDetent(outside)).toBeCloseTo(sliderToZoom(outside), 6);
+  });
+
+  it('still honours the ends of the track', () => {
+    expect(sliderToZoomWithDetent(0)).toBeCloseTo(MIN_ZOOM);
+    expect(sliderToZoomWithDetent(1)).toBeCloseTo(MAX_ZOOM);
+  });
+});
+
+describe('tweenProgress', () => {
+  it('runs from 0 to 1 over the duration', () => {
+    expect(tweenProgress(0, 100)).toBe(0);
+    expect(tweenProgress(100, 100)).toBe(1);
+    expect(tweenProgress(50, 100)).toBeGreaterThan(0);
+    expect(tweenProgress(50, 100)).toBeLessThan(1);
+  });
+
+  it('eases out — more progress in the first half than the second', () => {
+    const firstHalf = tweenProgress(50, 100);
+    expect(firstHalf).toBeGreaterThan(0.5);
+  });
+
+  /**
+   * A rAF callback receives the timestamp of the frame it belongs to, and that
+   * frame can have started BEFORE the handler that scheduled it ran — so the
+   * first frame's elapsed time is routinely negative. Eased unclamped, that
+   * interpolates the viewport BACKWARDS: zooming in flashed out to 62% before
+   * climbing to 182%.
+   */
+  it('never reports negative progress, however early the first frame is', () => {
+    expect(tweenProgress(-1, 100)).toBe(0);
+    expect(tweenProgress(-1000, 100)).toBe(0);
+  });
+
+  it('saturates rather than overshooting past the end', () => {
+    expect(tweenProgress(10_000, 100)).toBe(1);
+  });
+
+  it('treats a zero-length tween as already finished', () => {
+    expect(tweenProgress(0, 0)).toBe(1);
   });
 });

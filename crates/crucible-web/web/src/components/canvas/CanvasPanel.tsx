@@ -57,7 +57,8 @@ import {
   isLowDetail,
   panBy,
   screenToCanvas,
-  sliderToZoom,
+  sliderToZoomWithDetent,
+  tweenProgress,
   snap,
   visibleNodes,
   zoomAt,
@@ -207,7 +208,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
         setRejected(res.rejected);
         setHistory(initHistory(res.canvas));
         setDirty(false);
-        queueMicrotask(frameAll);
+        queueMicrotask(openAtNaturalZoom);
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
@@ -293,7 +294,28 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
     const bounds = boundsOf(doc().nodes);
     // frameRect declines when the viewport has no usable area, so an
     // unmeasured panel keeps its default zoom rather than snapping to minimum.
-    if (bounds) setViewport((v) => frameRect(v, bounds));
+    if (bounds) tweenTo(frameRect(targetViewport(), bounds));
+  };
+
+  /**
+   * How a canvas opens: 100%, centred on the content.
+   *
+   * Fitting the content instead means the zoom on open depends on how spread
+   * out the canvas happens to be, so the same note card is a different size in
+   * every canvas and text lands at some arbitrary fraction of its real size.
+   * Natural zoom is the predictable default; `Fit` is one click away when the
+   * whole board is what you want.
+   */
+  const openAtNaturalZoom = () => {
+    const bounds = boundsOf(doc().nodes);
+    setViewport((v) => {
+      const natural = { ...v, zoom: 1 };
+      if (!bounds) return natural;
+      return centreViewportOn(natural, {
+        x: bounds.x + bounds.width / 2,
+        y: bounds.y + bounds.height / 2,
+      });
+    });
   };
 
   const frameSelection = () => {
@@ -341,12 +363,22 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
     const rect = surface.getBoundingClientRect();
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
-      setViewport((v) => zoomAt(v, e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY / 400)));
+      // Composed against the pending target, not the current frame, so notches
+      // in quick succession accumulate instead of each restarting the ease.
+      tweenTo(
+        zoomAt(
+          targetViewport(),
+          e.clientX - rect.left,
+          e.clientY - rect.top,
+          Math.exp(-e.deltaY / 400),
+        ),
+      );
       return;
     }
     e.preventDefault();
     // Shift swaps the axis, matching Obsidian and every other canvas tool.
     const [dx, dy] = e.shiftKey ? [-e.deltaY, 0] : [-e.deltaX, -e.deltaY];
+    cancelZoomTween();
     setViewport((v) => panBy(v, dx, dy));
   };
 
@@ -362,6 +394,10 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
     // The shortcuts live on this element now, so it has to actually take focus
     // — otherwise they only work once the browser has incidentally focused it.
     surface.focus();
+    // A drag beats an in-flight zoom ease. Otherwise the canvas keeps drifting
+    // under a pointer that is trying to place or select something, and the
+    // coordinates the drag started from are already stale.
+    cancelZoomTween();
     armCapture(e.pointerId);
     const point = pointerCanvas(e);
 
@@ -827,6 +863,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
                       absPathFor={absPathFor}
                       kiln={kiln()}
                       editable={editingId() === node()!.id}
+                      focused={selected().has(node()!.id)}
                       onTextChange={(id, text) =>
                         mutateText(updateNode(doc(), id, { text } as Partial<CanvasNode>))
                       }
@@ -872,9 +909,70 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
   const nodeById = (id: string) => doc().nodes.find((n) => n.id === id);
   const lowDetail = createMemo(() => isLowDetail(viewport()));
 
-  const setZoomLevel = (zoom: number) => setViewport((v) => zoomToLevel(v, zoom));
-  const centreOn = (point: { x: number; y: number }) =>
+  /**
+   * Zoom is tweened; pan is not.
+   *
+   * A wheel notch that jumps the zoom makes it hard to tell how far you moved,
+   * which is why Obsidian eases it. Panning is different — a drag is already
+   * continuous, and easing it would lag the cursor.
+   *
+   * `pendingViewport` is where the canvas is heading, not where it is. Rapid
+   * wheel notches must compose: reading the *current* animated value each time
+   * would restart the ease from wherever the last frame happened to land, so
+   * spinning the wheel would crawl instead of accelerating.
+   */
+  const ZOOM_TWEEN_MS = 110;
+  let pendingViewport: Viewport | null = null;
+  let tweenFrame: number | null = null;
+
+  const cancelZoomTween = () => {
+    if (tweenFrame !== null) cancelAnimationFrame(tweenFrame);
+    tweenFrame = null;
+    pendingViewport = null;
+  };
+  onCleanup(cancelZoomTween);
+
+  /** The viewport the canvas is heading toward — the base for the next input. */
+  const targetViewport = () => pendingViewport ?? viewport();
+
+  const tweenTo = (to: Viewport) => {
+    const from = viewport();
+    pendingViewport = to;
+    if (tweenFrame !== null) cancelAnimationFrame(tweenFrame);
+
+    const started = performance.now();
+    const step = (now: number) => {
+      const e = tweenProgress(now - started, ZOOM_TWEEN_MS);
+      setViewport({
+        ...to,
+        zoom: from.zoom + (to.zoom - from.zoom) * e,
+        x: from.x + (to.x - from.x) * e,
+        y: from.y + (to.y - from.y) * e,
+      });
+      if (e < 1) {
+        tweenFrame = requestAnimationFrame(step);
+      } else {
+        tweenFrame = null;
+        pendingViewport = null;
+      }
+    };
+    tweenFrame = requestAnimationFrame(step);
+  };
+
+  // Dragging must win instantly over an in-flight ease, or the canvas keeps
+  // drifting under a pointer that is trying to place something.
+  const setZoomLevel = (zoom: number, tween = true) => {
+    const to = zoomToLevel(targetViewport(), zoom);
+    if (tween) tweenTo(to);
+    else {
+      cancelZoomTween();
+      setViewport(to);
+    }
+  };
+  const centreOn = (point: { x: number; y: number }) => {
+    cancelZoomTween();
     setViewport((v) => centreViewportOn(v, point));
+  };
 
   const absPathFor = (relPath: string) => `${kiln()}/${relPath}`;
   const rawUrlFor = (relPath: string) => rawFileUrl(absPathFor(relPath));
@@ -1015,9 +1113,19 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
                     step="0.001"
                     aria-label="Zoom level"
                     data-testid="canvas-zoom-slider"
+                    list="canvas-zoom-detents"
                     value={zoomToSlider(viewport().zoom)}
-                    onInput={(e) => setZoomLevel(sliderToZoom(Number(e.currentTarget.value)))}
+                    // Untweened: the thumb is already the animation, and easing
+                    // toward it makes the canvas lag the handle being dragged.
+                    onInput={(e) =>
+                      setZoomLevel(sliderToZoomWithDetent(Number(e.currentTarget.value)), false)
+                    }
                   />
+                  {/* The tick the detent snaps to, so 100% is visible on the
+                      track rather than only felt while dragging. */}
+                  <datalist id="canvas-zoom-detents">
+                    <option value={zoomToSlider(1)} label="100%" />
+                  </datalist>
                   <button
                     type="button"
                     class="rounded p-1 hover:bg-hover-wash"

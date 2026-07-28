@@ -67,21 +67,66 @@ export const CanvasMinimap: Component<{
     };
   });
 
-  const navigate = (e: MouseEvent & { currentTarget: SVGSVGElement }) => {
-    const rect = e.currentTarget.getBoundingClientRect();
+  const pointTo = (clientX: number, clientY: number, el: SVGSVGElement) => {
+    const rect = el.getBoundingClientRect();
     props.onNavigate({
-      x: extent().x + (e.clientX - rect.left) / scale(),
-      y: extent().y + (e.clientY - rect.top) / scale(),
+      x: extent().x + (clientX - rect.left) / scale(),
+      y: extent().y + (clientY - rect.top) / scale(),
     });
+  };
+
+  /**
+   * Drag to scrub the view around, not click-to-jump.
+   *
+   * A single click can only guess where you meant; dragging lets the canvas
+   * follow continuously, which is the point of having an overview. Pointer
+   * capture means the gesture survives leaving the little map — releasing
+   * outside it is otherwise a stuck drag.
+   */
+  let dragging = false;
+
+  const onPointerDown = (e: PointerEvent & { currentTarget: SVGSVGElement }) => {
+    // Left button only: a right-click here should not fling the viewport.
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragging = true;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* capture unavailable (jsdom); the move handler still tracks */
+    }
+    pointTo(e.clientX, e.clientY, e.currentTarget);
+  };
+
+  const onPointerMove = (e: PointerEvent & { currentTarget: SVGSVGElement }) => {
+    if (!dragging) return;
+    e.preventDefault();
+    pointTo(e.clientX, e.clientY, e.currentTarget);
+  };
+
+  const endDrag = (e: PointerEvent & { currentTarget: SVGSVGElement }) => {
+    if (!dragging) return;
+    dragging = false;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* nothing captured */
+    }
   };
 
   return (
     <svg
-      class="w-full cursor-pointer rounded border border-hairline bg-surface-sunken"
+      class="w-full cursor-grab touch-none rounded border border-hairline bg-surface-sunken active:cursor-grabbing"
       width={width()}
       height={height()}
       data-testid="canvas-minimap"
-      onClick={navigate}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      // Touch and pen send pointercancel instead of pointerup when the gesture
+      // is interrupted; without this the drag sticks.
+      onPointerCancel={endDrag}
     >
       <For each={props.nodes}>
         {(node) => {

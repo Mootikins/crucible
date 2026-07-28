@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@solidjs/testing-library';
+import { fireEvent, render, waitFor } from '@solidjs/testing-library';
 import type { CanvasResponse } from '@/lib/canvas-types';
 
 const getCanvasMock = vi.fn();
@@ -155,11 +155,11 @@ describe('CanvasPanel', () => {
 
   /**
    * An iframe swallows the pointer, so a card that embeds one could not be
-   * dragged, selected or marquee'd — the canvas would have holes in it. The
-   * frame only takes the pointer once the card is opened with a double-click,
-   * matching how every other card type behaves.
+   * clicked, dragged or marquee'd — the canvas would have holes in it. The
+   * frame takes the pointer only once the card is selected, which is both what
+   * makes the page reachable and what keeps an unselected card grabbable.
    */
-  it('keeps the embed inert until the card is opened for editing', async () => {
+  it('keeps the embed inert until the card is selected', async () => {
     getCanvasMock.mockResolvedValue(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
 
@@ -171,6 +171,28 @@ describe('CanvasPanel', () => {
 
     expect(frame.getAttribute('data-interactive')).toBe('false');
     expect(frame.className).toContain('pointer-events-none');
+  });
+
+  /** One click to work in the page, as in Obsidian — not a double-click. */
+  it('hands the pointer to the embed as soon as the card is selected', async () => {
+    getCanvasMock.mockResolvedValue(response());
+    const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
+
+    const card = (await waitFor(() => {
+      const el = container.querySelector('[data-node-id="link-1"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+
+    fireEvent.pointerDown(card, { button: 0, clientX: 10, clientY: 210 });
+
+    await waitFor(() => {
+      const frame = container.querySelector(
+        '[data-testid="canvas-link-embed"]',
+      ) as HTMLIFrameElement;
+      expect(frame.getAttribute('data-interactive')).toBe('true');
+      expect(frame.className).not.toContain('pointer-events-none');
+    });
   });
 
   /**
