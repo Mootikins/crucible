@@ -185,6 +185,10 @@ const LinkCard: Component<{ url: string; interactive?: boolean }> = (props) => {
     <Show when={embeddable()} fallback={chrome}>
       <div class="relative h-full w-full overflow-hidden">
         {chrome}
+        {/* `bg-white` is deliberately a raw colour rather than a surface token:
+            this is the framed page's paper, not app chrome. A page that sets no
+            background of its own would otherwise show the dark card through it
+            and render its black body text unreadable. */}
         <iframe
           src={props.url}
           class="h-full w-full border-0 bg-white pt-6"

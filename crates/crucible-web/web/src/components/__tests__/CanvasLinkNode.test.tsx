@@ -132,4 +132,52 @@ describe('authoring a web card', () => {
 
     expect(container.querySelector('[data-testid="canvas-link-node"]')).toBeNull();
   });
+
+  const drop = async (data: Record<string, string>) => {
+    getCanvasMock.mockResolvedValue(empty());
+    const { container } = render(() => <CanvasPanel filePath="/kiln/B.canvas" />);
+    const surface = await waitFor(() => {
+      const el = container.querySelector('[data-testid="canvas-surface"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    fireEvent.drop(surface, {
+      clientX: 100,
+      clientY: 100,
+      dataTransfer: {
+        types: Object.keys(data),
+        getData: (type: string) => data[type] ?? '',
+      },
+    });
+    return container;
+  };
+
+  it('creates a web card from a link dragged out of the browser', async () => {
+    const container = await drop({ 'text/uri-list': 'https://jsoncanvas.org' });
+
+    await waitFor(() => {
+      const link = container.querySelector('[data-testid="canvas-link-node"]') as HTMLAnchorElement;
+      expect(link).toBeTruthy();
+      expect(link.getAttribute('href')).toBe('https://jsoncanvas.org/');
+    });
+  });
+
+  /** `text/uri-list` is a list and the spec allows `#` comment lines. */
+  it('skips comment lines in a uri-list payload', async () => {
+    const container = await drop({
+      'text/uri-list': '# a comment\r\nhttps://example.com/page\r\n',
+    });
+
+    await waitFor(() => {
+      const link = container.querySelector('[data-testid="canvas-link-node"]') as HTMLAnchorElement;
+      expect(link).toBeTruthy();
+      expect(link.getAttribute('href')).toBe('https://example.com/page');
+    });
+  });
+
+  it('ignores a drag that carries no URL', async () => {
+    const container = await drop({ 'text/plain': 'some dragged prose' });
+
+    expect(container.querySelector('[data-testid="canvas-link-node"]')).toBeNull();
+  });
 });

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Canvas web cards embed the live page, and can now be created.** `link` nodes were always read, written and rendered, but as a static card that could not be authored here at all — a canvas made in Obsidian showed its web cards and Crucible could not add one. The page now renders in place, matching Obsidian, and a card is created from the toolbar, by pasting a URL onto the canvas, or by dragging a link out of the browser onto the spot you want it.
+
+### Changed
+- Embedding means opening a canvas contacts every third party it references, which is a real change from the inert card. The frame is sandboxed into an opaque origin — it may run scripts, submit forms and open popups, but is deliberately never granted `allow-same-origin`, so a card pointed at Crucible's own address cannot read the session cookie or call the API as you. Only `http:` and `https:` can be embedded or authored at all, and a dangerous scheme is refused when the card is made rather than merely rendered inert, so it never reaches the document. The frame ignores the pointer until the card is opened with a double-click, so cards stay draggable.
+
 ## [0.17.0] - 2026-07-27
 
 ### Added

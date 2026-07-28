@@ -642,20 +642,65 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
     setSelected(new Set([node.id]));
   };
 
-  /** Drop a web card at the middle of the view, like the note picker does. */
-  const createLinkNode = (url: string) => {
-    const centre = screenToCanvas(viewport(), viewport().width / 2, viewport().height / 2);
+  /**
+   * Drop a web card on the canvas.
+   *
+   * Defaults to the middle of the view, like the note picker does; a drag drops
+   * it where the pointer actually was.
+   */
+  const createLinkNode = (url: string, at?: { x: number; y: number }) => {
+    const point = at ?? screenToCanvas(viewport(), viewport().width / 2, viewport().height / 2);
     const node: CanvasNode = {
       id: uid('node'),
       type: 'link',
       url,
-      x: snap(centre.x - 200, snapping()),
-      y: snap(centre.y - 140, snapping()),
+      x: snap(point.x - 200, snapping()),
+      y: snap(point.y - 140, snapping()),
       width: 400,
       height: 280,
     };
     mutate(addNode(doc(), node));
     setSelected(new Set<string>([node.id]));
+  };
+
+  /**
+   * The first usable address in a drag payload.
+   *
+   * `text/uri-list` is a list, and the spec allows `#` comment lines, so the
+   * whole blob is not a URL even when the drag came from a browser.
+   */
+  const firstUrlIn = (raw: string): string | null => {
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line.trim() || line.trimStart().startsWith('#')) continue;
+      return normaliseUrl(line);
+    }
+    return null;
+  };
+
+  /**
+   * Dragging a link out of the browser makes a web card, as it does in Obsidian.
+   *
+   * Only drags actually carrying a URL are claimed — `preventDefault` is what
+   * takes the drop, so anything else is left for whoever else wants it rather
+   * than being swallowed by the canvas.
+   */
+  const onDragOver = (e: DragEvent) => {
+    const types = e.dataTransfer?.types;
+    if (!types) return;
+    if (!types.includes('text/uri-list') && !types.includes('text/plain')) return;
+    e.preventDefault();
+    e.dataTransfer!.dropEffect = 'copy';
+  };
+
+  const onDrop = (e: DragEvent) => {
+    if (!surface) return;
+    const raw =
+      e.dataTransfer?.getData('text/uri-list') || e.dataTransfer?.getData('text/plain') || '';
+    const url = firstUrlIn(raw);
+    if (!url) return;
+    e.preventDefault();
+    const rect = surface.getBoundingClientRect();
+    createLinkNode(url, screenToCanvas(viewport(), e.clientX - rect.left, e.clientY - rect.top));
   };
 
   /**
@@ -918,6 +963,8 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
         onPaste={onPaste}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
         tabindex={0}
         onDblClick={createTextNode}
       >
