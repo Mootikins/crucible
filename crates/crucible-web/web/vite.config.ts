@@ -13,6 +13,16 @@ export default defineConfig({
       registerType: 'prompt',
       // Dev flow stays untouched: no SW or manifest in `bun run dev`.
       devOptions: { enabled: false },
+      // A debug build ships a SW that UNREGISTERS itself and drops the
+      // precache, rather than simply omitting one.
+      //
+      // `prompt` is right in production but ruinous on a rebuild loop: the
+      // precache keeps serving the previous bundle until someone accepts the
+      // update toast, so a freshly deployed change is invisible and looks like
+      // a bug in the change. Omitting the SW would not help either — one
+      // already registered in the browser keeps serving the old assets forever.
+      // Self-destructing is what actually rescues a browser that has one.
+      selfDestroying: process.env.VITE_DISABLE_PWA === '1',
       manifest: {
         name: 'Crucible',
         short_name: 'Crucible',

@@ -185,9 +185,16 @@ web-dev:
 # from another machine on the LAN, which is how it actually gets looked at;
 # pass a host to narrow it. --standalone is NOT optional: a debug `cru` that
 # talks to the installed daemon will kill it for a version mismatch.
-web-debug port="3001" host="0.0.0.0": web-build
+web-debug port="3001" host="0.0.0.0": web-build-debug
     cargo build -p crucible-cli --bin cru
     cargo run -p crucible-cli -- --standalone web --host {{host}} --port {{port}} --static-dir crates/crucible-web/web/dist
+
+# Same build, minus the service worker. See the `selfDestroying` note in
+# vite.config.ts: with the production SW a rebuild keeps serving the PREVIOUS
+# bundle until the update toast is accepted, so changes look like they did not
+# deploy. Never use this output for a release.
+web-build-debug:
+    cd crates/crucible-web/web && bun install && VITE_DISABLE_PWA=1 bun run build
 
 # Build release with embedded web assets
 release-web: web-build
