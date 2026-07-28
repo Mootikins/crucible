@@ -557,8 +557,16 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
 
     if (mod && e.key.toLowerCase() === 'z') {
       e.preventDefault();
-      setHistory((h) => (e.shiftKey ? redo(h) : undo(h)));
-      scheduleSave();
+      // `undo`/`redo` are no-ops at either end of the stack. Saving regardless
+      // rewrote the file and lit the dirty dot for a keypress that changed
+      // nothing — the same needless write already guarded on pointerup.
+      let moved = false;
+      setHistory((h) => {
+        const next = e.shiftKey ? redo(h) : undo(h);
+        moved = next !== h;
+        return next;
+      });
+      if (moved) scheduleSave();
       return;
     }
     if (mod && e.key.toLowerCase() === 'a') {
@@ -632,6 +640,124 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
     setSelected(new Set([node.id]));
   };
 
+  /**
+   * One node's box, chrome and content.
+   *
+   * Rendered from BOTH bands — groups paint behind the edges, cards in front —
+   * which previously meant two byte-identical ~110-line blocks that any future
+   * fix would have had to touch twice and would inevitably have drifted.
+   */
+  const NodeShell: Component<{ nodeId: string }> = (shell) => {
+    const nodeId = shell.nodeId;
+
+            // An accessor, not a value: the callback runs once per id, but the
+            // node object is replaced on every edit, so geometry has to be read
+            // reactively or a dragged card would never move.
+            const node = () => nodeById(nodeId);
+            const isGroup = () => node()?.type === 'group';
+            const accent = () => resolveCanvasColor(node()!.color);
+
+            return (
+              <div
+                class="absolute origin-top-left rounded-lg transition-colors"
+                classList={{
+                  // Every non-group card gets identical chrome, whatever it
+                  // holds — an image card and a text card differing in border
+                  // or shadow made the same object look like two kinds.
+                  'shadow-sm': !isGroup(),
+                  'canvas-group': isGroup(),
+                  'canvas-card': !isGroup(),
+                  // Selection thickens and brightens the card's OWN border
+                  // rather than replacing it with an accent outline, so a
+                  // coloured card keeps its colour while selected.
+                  'canvas-card-selected': selected().has(node()!.id),
+                }}
+                style={{
+                  left: `${node()!.x}px`,
+                  top: `${node()!.y}px`,
+                  width: `${node()!.width}px`,
+                  height: `${node()!.height}px`,
+                  // A card's colour tints its background as well as its edge:
+                  // a bare outline reads as an annotation on the card, where
+                  // the colour is meant to categorise the card itself.
+                  '--canvas-accent': accent() ?? 'var(--color-hairline)',
+                  // A separate selection accent: an uncoloured card's border is
+                  // deliberately faint, and brightening *that* left selection
+                  // almost invisible on the default cards, which are most of
+                  // them. A coloured card still selects in its own colour.
+                  '--canvas-select': accent() ?? 'var(--color-primary)',
+                  // Groups must not eat pointer events meant for their contents.
+                  'pointer-events': isGroup() ? 'none' : 'auto',
+                }}
+                data-testid="canvas-node"
+                data-node-id={node()!.id}
+                data-node-type={node()!.type}
+                data-low-detail={lowDetail() ? 'true' : 'false'}
+                onPointerDown={(e) => onNodePointerDown(e, node()!.id)}
+                onDblClick={(e) => {
+                  e.stopPropagation();
+                  if (!isGroup()) setEditingId(node()!.id);
+                }}
+              >
+                <Show when={isGroup() && (node()! as GroupNode).label}>
+                  <span
+                    class="absolute -top-5 left-0 text-xs font-medium text-muted"
+                    style={{ 'pointer-events': 'auto' }}
+                  >
+                    {(node()! as GroupNode).label}
+                  </span>
+                </Show>
+
+                <Show
+                  when={!lowDetail()}
+                  fallback={
+                    // The LOD placeholder. Applied to every node type including
+                    // media — exempting media is exactly what makes zoomed-out
+                    // Obsidian canvases slow.
+                    <div
+                      class="h-full w-full rounded-lg bg-surface-elevated"
+                      data-testid="canvas-node-placeholder"
+                    />
+                  }
+                >
+                  <div
+                    class="h-full w-full overflow-auto rounded-lg"
+                    data-canvas-scroll
+                  >
+                    <CanvasNodeView
+                      node={node()!}
+                      rejectedReason={rejectedFor(node()!.id)}
+                      rawUrlFor={rawUrlFor}
+                      absPathFor={absPathFor}
+                      kiln={kiln()}
+                      editable={editingId() === node()!.id}
+                      onTextChange={(id, text) =>
+                        mutateText(updateNode(doc(), id, { text } as Partial<CanvasNode>))
+                      }
+                      onOpenFile={openFile}
+                    />
+                  </div>
+                </Show>
+
+                <CanvasCardChrome
+                  selected={selected().has(node()!.id) && !lowDetail()}
+                  editing={editingId() === node()!.id}
+                  color={node()!.color}
+                  onResizeStart={(e, corner) => onResizePointerDown(e, node()!.id, corner)}
+                  onConnectStart={(e, side) => onConnectPointerDown(e, node()!.id, side)}
+                  canEdit={node()!.type === 'text' || (node()!.type === 'file' && /\.(md|markdown)$/i.test((node()! as { file?: string }).file ?? ''))}
+                  onEdit={() => setEditingId(node()!.id)}
+                  onColor={(color) => mutate(updateNode(doc(), node()!.id, { color } as Partial<CanvasNode>))}
+                  onDelete={() => {
+                    mutate(removeNodes(doc(), new Set([node()!.id])));
+                    setSelected(new Set<string>());
+                  }}
+                />
+              </div>
+            );
+          
+  };
+
   // --- render ---------------------------------------------------------------
 
   const mounted = createMemo(() => visibleNodes(doc().nodes, viewport()));
@@ -684,8 +810,13 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
             class="rounded px-1.5 py-0.5 hover:bg-hover-wash disabled:opacity-40"
             disabled={!canUndo(history())}
             onClick={() => {
-              setHistory(undo);
-              scheduleSave();
+              let moved = false;
+              setHistory((h) => {
+                const next = undo(h);
+                moved = next !== h;
+                return next;
+              });
+              if (moved) scheduleSave();
             }}
           >
             Undo
@@ -695,8 +826,13 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
             class="rounded px-1.5 py-0.5 hover:bg-hover-wash disabled:opacity-40"
             disabled={!canRedo(history())}
             onClick={() => {
-              setHistory(redo);
-              scheduleSave();
+              let moved = false;
+              setHistory((h) => {
+                const next = redo(h);
+                moved = next !== h;
+                return next;
+              });
+              if (moved) scheduleSave();
             }}
           >
             Redo
@@ -795,113 +931,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
           />
 
         <For each={groupIds()}>
-          {(nodeId) => {
-            // An accessor, not a value: the callback runs once per id, but the
-            // node object is replaced on every edit, so geometry has to be read
-            // reactively or a dragged card would never move.
-            const node = () => nodeById(nodeId);
-            const isGroup = () => node()?.type === 'group';
-            const accent = () => resolveCanvasColor(node()!.color);
-
-            return (
-              <div
-                class="absolute origin-top-left rounded-lg transition-colors"
-                classList={{
-                  // Every non-group card gets identical chrome, whatever it
-                  // holds — an image card and a text card differing in border
-                  // or shadow made the same object look like two kinds.
-                  'shadow-sm': !isGroup(),
-                  'canvas-group': isGroup(),
-                  'canvas-card': !isGroup(),
-                  // Selection thickens and brightens the card's OWN border
-                  // rather than replacing it with an accent outline, so a
-                  // coloured card keeps its colour while selected.
-                  'canvas-card-selected': selected().has(node()!.id),
-                }}
-                style={{
-                  left: `${node()!.x}px`,
-                  top: `${node()!.y}px`,
-                  width: `${node()!.width}px`,
-                  height: `${node()!.height}px`,
-                  // A card's colour tints its background as well as its edge:
-                  // a bare outline reads as an annotation on the card, where
-                  // the colour is meant to categorise the card itself.
-                  '--canvas-accent': accent() ?? 'var(--color-hairline)',
-                  // A separate selection accent: an uncoloured card's border is
-                  // deliberately faint, and brightening *that* left selection
-                  // almost invisible on the default cards, which are most of
-                  // them. A coloured card still selects in its own colour.
-                  '--canvas-select': accent() ?? 'var(--color-primary)',
-                  // Groups must not eat pointer events meant for their contents.
-                  'pointer-events': isGroup() ? 'none' : 'auto',
-                }}
-                data-testid="canvas-node"
-                data-node-id={node()!.id}
-                data-node-type={node()!.type}
-                data-low-detail={lowDetail() ? 'true' : 'false'}
-                onPointerDown={(e) => onNodePointerDown(e, node()!.id)}
-                onDblClick={(e) => {
-                  e.stopPropagation();
-                  if (!isGroup()) setEditingId(node()!.id);
-                }}
-              >
-                <Show when={isGroup() && (node()! as GroupNode).label}>
-                  <span
-                    class="absolute -top-5 left-0 text-xs font-medium text-muted"
-                    style={{ 'pointer-events': 'auto' }}
-                  >
-                    {(node()! as GroupNode).label}
-                  </span>
-                </Show>
-
-                <Show
-                  when={!lowDetail()}
-                  fallback={
-                    // The LOD placeholder. Applied to every node type including
-                    // media — exempting media is exactly what makes zoomed-out
-                    // Obsidian canvases slow.
-                    <div
-                      class="h-full w-full rounded-lg bg-surface-elevated"
-                      data-testid="canvas-node-placeholder"
-                    />
-                  }
-                >
-                  <div
-                    class="h-full w-full overflow-auto rounded-lg"
-                    data-canvas-scroll
-                  >
-                    <CanvasNodeView
-                      node={node()!}
-                      rejectedReason={rejectedFor(node()!.id)}
-                      rawUrlFor={rawUrlFor}
-                      absPathFor={absPathFor}
-                      kiln={kiln()}
-                      editable={editingId() === node()!.id}
-                      onTextChange={(id, text) =>
-                        mutateText(updateNode(doc(), id, { text } as Partial<CanvasNode>))
-                      }
-                      onOpenFile={openFile}
-                    />
-                  </div>
-                </Show>
-
-                <CanvasCardChrome
-                  selected={selected().has(node()!.id) && !lowDetail()}
-                  editing={editingId() === node()!.id}
-                  color={node()!.color}
-                  onResizeStart={(e, corner) => onResizePointerDown(e, node()!.id, corner)}
-                  onConnectStart={(e, side) => onConnectPointerDown(e, node()!.id, side)}
-                  canEdit={node()!.type === 'text' || (node()!.type === 'file' && /\.(md|markdown)$/i.test((node()! as { file?: string }).file ?? ''))}
-                  onEdit={() => setEditingId(node()!.id)}
-                  onColor={(color) => mutate(updateNode(doc(), node()!.id, { color } as Partial<CanvasNode>))}
-                  onDelete={() => {
-                    mutate(removeNodes(doc(), new Set([node()!.id])));
-                    setSelected(new Set<string>());
-                  }}
-                />
-              </div>
-            );
-          }}
+          {(nodeId) => <NodeShell nodeId={nodeId} />}
         </For>
 
           <EdgeLayer
@@ -916,113 +946,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
           />
 
         <For each={cardIds()}>
-          {(nodeId) => {
-            // An accessor, not a value: the callback runs once per id, but the
-            // node object is replaced on every edit, so geometry has to be read
-            // reactively or a dragged card would never move.
-            const node = () => nodeById(nodeId);
-            const isGroup = () => node()?.type === 'group';
-            const accent = () => resolveCanvasColor(node()!.color);
-
-            return (
-              <div
-                class="absolute origin-top-left rounded-lg transition-colors"
-                classList={{
-                  // Every non-group card gets identical chrome, whatever it
-                  // holds — an image card and a text card differing in border
-                  // or shadow made the same object look like two kinds.
-                  'shadow-sm': !isGroup(),
-                  'canvas-group': isGroup(),
-                  'canvas-card': !isGroup(),
-                  // Selection thickens and brightens the card's OWN border
-                  // rather than replacing it with an accent outline, so a
-                  // coloured card keeps its colour while selected.
-                  'canvas-card-selected': selected().has(node()!.id),
-                }}
-                style={{
-                  left: `${node()!.x}px`,
-                  top: `${node()!.y}px`,
-                  width: `${node()!.width}px`,
-                  height: `${node()!.height}px`,
-                  // A card's colour tints its background as well as its edge:
-                  // a bare outline reads as an annotation on the card, where
-                  // the colour is meant to categorise the card itself.
-                  '--canvas-accent': accent() ?? 'var(--color-hairline)',
-                  // A separate selection accent: an uncoloured card's border is
-                  // deliberately faint, and brightening *that* left selection
-                  // almost invisible on the default cards, which are most of
-                  // them. A coloured card still selects in its own colour.
-                  '--canvas-select': accent() ?? 'var(--color-primary)',
-                  // Groups must not eat pointer events meant for their contents.
-                  'pointer-events': isGroup() ? 'none' : 'auto',
-                }}
-                data-testid="canvas-node"
-                data-node-id={node()!.id}
-                data-node-type={node()!.type}
-                data-low-detail={lowDetail() ? 'true' : 'false'}
-                onPointerDown={(e) => onNodePointerDown(e, node()!.id)}
-                onDblClick={(e) => {
-                  e.stopPropagation();
-                  if (!isGroup()) setEditingId(node()!.id);
-                }}
-              >
-                <Show when={isGroup() && (node()! as GroupNode).label}>
-                  <span
-                    class="absolute -top-5 left-0 text-xs font-medium text-muted"
-                    style={{ 'pointer-events': 'auto' }}
-                  >
-                    {(node()! as GroupNode).label}
-                  </span>
-                </Show>
-
-                <Show
-                  when={!lowDetail()}
-                  fallback={
-                    // The LOD placeholder. Applied to every node type including
-                    // media — exempting media is exactly what makes zoomed-out
-                    // Obsidian canvases slow.
-                    <div
-                      class="h-full w-full rounded-lg bg-surface-elevated"
-                      data-testid="canvas-node-placeholder"
-                    />
-                  }
-                >
-                  <div
-                    class="h-full w-full overflow-auto rounded-lg"
-                    data-canvas-scroll
-                  >
-                    <CanvasNodeView
-                      node={node()!}
-                      rejectedReason={rejectedFor(node()!.id)}
-                      rawUrlFor={rawUrlFor}
-                      absPathFor={absPathFor}
-                      kiln={kiln()}
-                      editable={editingId() === node()!.id}
-                      onTextChange={(id, text) =>
-                        mutateText(updateNode(doc(), id, { text } as Partial<CanvasNode>))
-                      }
-                      onOpenFile={openFile}
-                    />
-                  </div>
-                </Show>
-
-                <CanvasCardChrome
-                  selected={selected().has(node()!.id) && !lowDetail()}
-                  editing={editingId() === node()!.id}
-                  color={node()!.color}
-                  onResizeStart={(e, corner) => onResizePointerDown(e, node()!.id, corner)}
-                  onConnectStart={(e, side) => onConnectPointerDown(e, node()!.id, side)}
-                  canEdit={node()!.type === 'text' || (node()!.type === 'file' && /\.(md|markdown)$/i.test((node()! as { file?: string }).file ?? ''))}
-                  onEdit={() => setEditingId(node()!.id)}
-                  onColor={(color) => mutate(updateNode(doc(), node()!.id, { color } as Partial<CanvasNode>))}
-                  onDelete={() => {
-                    mutate(removeNodes(doc(), new Set([node()!.id])));
-                    setSelected(new Set<string>());
-                  }}
-                />
-              </div>
-            );
-          }}
+          {(nodeId) => <NodeShell nodeId={nodeId} />}
         </For>
 
           {/* Every dimension is read INSIDE the style bindings. `Show`

@@ -153,6 +153,21 @@ fn every_node_type_parses_with_its_own_fields() {
     }
 }
 
+/// A third-party writer emitting fractional geometry must not make the whole
+/// file unopenable — with `i64` a single such node failed the entire parse.
+#[test]
+fn fractional_geometry_parses_and_round_trips() {
+    let src = r#"{"nodes":[{"id":"a","type":"text","text":"x","x":0.5,"y":-1.25,"width":260.5,"height":100}],"edges":[]}"#;
+    let canvas = Canvas::parse(src).expect("fractional coordinates must parse");
+    assert_eq!(canvas.nodes[0].x, 0.5);
+
+    let written = canvas.to_json_pretty().unwrap();
+    assert!(written.contains("\"x\":0.5"), "{written}");
+    // A whole value stays integral, so integer canvases are untouched.
+    assert!(written.contains("\"height\":100"), "{written}");
+    assert!(!written.contains("\"height\":100.0"), "{written}");
+}
+
 #[test]
 fn an_empty_canvas_is_legal() {
     let canvas = Canvas::parse("{}").expect("a canvas with no keys is valid per spec");
@@ -303,7 +318,7 @@ fn the_written_form_uses_tabs_and_one_object_per_line() {
 #[test]
 fn an_edited_canvas_keeps_the_canonical_shape() {
     let mut canvas = Canvas::parse(OBSIDIAN_SAMPLE).unwrap();
-    canvas.nodes[0].x += 40;
+    canvas.nodes[0].x += 40.0;
 
     let written = canvas.to_json_pretty().unwrap();
     let changed: Vec<&str> = written

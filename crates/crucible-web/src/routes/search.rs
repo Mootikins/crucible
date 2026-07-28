@@ -117,40 +117,53 @@ async fn resolve_note(
         }
     }
 
-    let wanted = bare.rsplit('/').next().unwrap_or(bare).to_ascii_lowercase();
-    let mut best: Option<std::path::PathBuf> = None;
-    for entry in walkdir::WalkDir::new(&root)
-        .into_iter()
-        .filter_entry(|e| {
-            !crucible_core::EXCLUDED_DIRS
-                .iter()
-                .any(|d| e.file_name().to_string_lossy() == *d)
+    // The walk is blocking: `canonicalize` plus a full `WalkDir` of the kiln.
+    // Running it inline stalled a Tokio worker for the duration, and hover
+    // previews hit this path on every unresolved stem.
+    let best = {
+        let root = root.clone();
+        let bare = bare.to_string();
+        tokio::task::spawn_blocking(move || {
+            let bare = bare.as_str();
+            let wanted = bare.rsplit('/').next().unwrap_or(bare).to_ascii_lowercase();
+            let mut best: Option<std::path::PathBuf> = None;
+            for entry in walkdir::WalkDir::new(&root)
+                .into_iter()
+                .filter_entry(|e| {
+                    !crucible_core::EXCLUDED_DIRS
+                        .iter()
+                        .any(|d| e.file_name().to_string_lossy() == *d)
+                })
+                .filter_map(|e| e.ok())
+            {
+                let path = entry.path();
+                if !path.is_file() || !crucible_core::kiln::is_note_file(path) {
+                    continue;
+                }
+                let stem = path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_ascii_lowercase())
+                    .unwrap_or_default();
+                if stem != wanted {
+                    continue;
+                }
+                let Some(contained) = contained_file(path, &root) else {
+                    continue;
+                };
+                // `Option::is_none_or` is newer than this crate's MSRV.
+                let shallower = match best.as_ref() {
+                    None => true,
+                    Some(b) => contained.components().count() < b.components().count(),
+                };
+                if shallower {
+                    best = Some(contained);
+                }
+            }
+            best
         })
-        .filter_map(|e| e.ok())
-    {
-        let path = entry.path();
-        if !path.is_file() || !crucible_core::kiln::is_note_file(path) {
-            continue;
-        }
-        let stem = path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_ascii_lowercase())
-            .unwrap_or_default();
-        if stem != wanted {
-            continue;
-        }
-        let Some(contained) = contained_file(path, &root) else {
-            continue;
-        };
-        // `Option::is_none_or` is newer than this crate's MSRV.
-        let shallower = match best.as_ref() {
-            None => true,
-            Some(b) => contained.components().count() < b.components().count(),
-        };
-        if shallower {
-            best = Some(contained);
-        }
-    }
+        .await
+        .map_err(|e| WebError::Internal(format!("resolve walk failed: {e}")))?
+    };
 
     match best {
         Some(path) => Ok(Json(resolved_json(&root, &path))),

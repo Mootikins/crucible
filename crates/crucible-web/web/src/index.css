@@ -744,11 +744,6 @@ details.callout[open] > summary.callout-title::after {
 
 /* A group is a labelled backdrop, so it wants a solid edge and a wash that
    separates it from the canvas without competing with the cards inside it. */
-.canvas-group {
-  background: color-mix(in srgb, var(--color-shell-panel) 55%, transparent);
-  border-style: solid;
-}
-
 /* ===========================================================================
    Canvas cards: colour
    ---------------------------------------------------------------------------
@@ -760,6 +755,7 @@ details.callout[open] > summary.callout-title::after {
 .canvas-card {
   --canvas-accent: var(--color-hairline);
   --canvas-select: var(--color-primary);
+
   border: 1px solid color-mix(in srgb, var(--canvas-accent) 70%, transparent);
   background: color-mix(in srgb, var(--canvas-accent) 10%, var(--color-surface-elevated));
 }
@@ -779,6 +775,7 @@ details.callout[open] > summary.callout-title::after {
 .canvas-group {
   --canvas-accent: var(--color-muted-dark);
   --canvas-select: var(--color-primary);
+
   border: 1px solid color-mix(in srgb, var(--canvas-accent) 55%, transparent);
   background: color-mix(in srgb, var(--canvas-accent) 8%, transparent);
 }

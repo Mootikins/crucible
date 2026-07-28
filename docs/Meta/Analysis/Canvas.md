@@ -53,8 +53,20 @@ Only re-parsing our own output failed. Nodes now go through an explicit
 
 ## Containment
 
-**A canvas must live in a kiln, and may only reference files inside that same
-kiln.** Not "any open kiln", and never a project root.
+**A canvas may only reference files inside the one root that owns it.** Not
+"any open kiln" — the specific root the canvas lives in.
+
+That root is normally a kiln. A canvas outside every kiln resolves against its
+**project** root instead, because an architecture board that references source
+files belongs with the code rather than in a notes vault. A project canvas
+additionally obeys that project's `project_files` policy, so a repository set
+to `read-only` serves its canvases but refuses to save them, and one set to
+`off` does not serve them at all.
+
+Known and deliberate: a canvas at a project root is contained to that project,
+which may itself *contain* a kiln — so it can reference that kiln's notes. The
+rule is "the one root that owns it", and for a repo-root canvas that root is
+the repo.
 
 This is stricter than the `project_files` policy governing the web file browser,
 which permits reading project files by default. The reasons differ: a file
@@ -65,7 +77,7 @@ code.
 
 Three layers, because the UI layer is worth nothing on its own:
 
-1. **UI (advisory)** — drop targets filter to the owning kiln and explain
+1. **UI (advisory)** — drop targets filter to the owning root and explain
    rejections. Good UX, zero security value.
 2. **Write path (authoritative)** — `PUT /api/canvas` validates every reference
    before anything touches disk, refusing the document and naming the offending

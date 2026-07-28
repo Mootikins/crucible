@@ -136,9 +136,7 @@ export const WikilinkHoverPreview: Component = () => {
     // the document level, so a prop cannot reach it. Surfaces declare
     // ownership with `data-kiln`; the nearest declaration wins. Reading the
     // active kiln instead is how another kiln's notes got shown inside this
-    // one. The status bar remains the fallback only for surfaces that have no
-    // kiln of their own.
-    // No fallback to the active kiln: a preview must describe the note the
+    // one.    // No fallback to the active kiln: a preview must describe the note the
     // click will open, and the click has no such fallback. Hovering a link on
     // an undeclared surface resolves nothing rather than previewing a
     // same-named note from whichever kiln the navigator happens to show.

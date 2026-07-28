@@ -441,7 +441,8 @@ impl KilnManager {
         Ok(())
     }
 
-    /// Open a kiln and process all markdown files through the pipeline.
+    /// Open a kiln and process all indexable files (notes and canvases)
+    /// through the pipeline.
     ///
     /// Returns (discovered_count, processed_count, skipped_count, errors).
     /// If the kiln is already open, still runs processing.
@@ -477,12 +478,12 @@ impl KilnManager {
         }
 
         if files.is_empty() {
-            info!("No markdown files found in {:?}", kiln_path);
+            info!("No indexable files found in {:?}", kiln_path);
             return Ok((0, 0, 0, Vec::new()));
         }
 
         info!(
-            "Discovered {} markdown files in {:?}",
+            "Discovered {} indexable files in {:?}",
             discovered, kiln_path
         );
 

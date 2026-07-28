@@ -1,4 +1,13 @@
-import { Component, For, Show, createMemo, createResource, createSignal, onMount } from 'solid-js';
+import {
+  Component,
+  For,
+  Show,
+  createMemo,
+  createResource,
+  createSignal,
+  onCleanup,
+  onMount,
+} from 'solid-js';
 import { listNotes } from '@/lib/api';
 import { FileText } from '@/lib/icons';
 
@@ -22,6 +31,7 @@ export const NotePicker: Component<{
 }> = (props) => {
   const [query, setQuery] = createSignal('');
   let input: HTMLInputElement | undefined;
+  let dialog: HTMLDivElement | undefined;
 
   const [notes] = createResource(
     () => props.kiln,
@@ -49,19 +59,53 @@ export const NotePicker: Component<{
     return all.filter((n) => `${n.rel} ${n.title}`.toLowerCase().includes(q)).slice(0, 50);
   });
 
-  onMount(() => input?.focus());
+  // Focus management: the picker is modal, so focus must enter it, stay in it
+  // while it is open, and return to wherever it came from on close. Without
+  // this, tabbing walked straight out onto the canvas behind the backdrop.
+  let restoreFocusTo: HTMLElement | null = null;
+  onMount(() => {
+    restoreFocusTo = document.activeElement as HTMLElement | null;
+    input?.focus();
+  });
+  onCleanup(() => restoreFocusTo?.focus());
+
+  const trapFocus = (e: KeyboardEvent) => {
+    if (e.key !== 'Tab') return;
+    const focusable = dialog?.querySelectorAll<HTMLElement>(
+      'input, button, [href], [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusable?.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
 
   return (
     <div
       class="absolute inset-0 z-20 flex items-start justify-center bg-black/30 pt-16"
       data-testid="canvas-note-picker"
       onPointerDown={(e) => {
-        if (e.target === e.currentTarget) props.onClose();
+        if (e.target !== e.currentTarget) return;
+        // Stop the backdrop click reaching the canvas, which would clear the
+        // selection and begin a marquee behind the closing dialog.
+        e.stopPropagation();
+        props.onClose();
       }}
     >
       <div
+        ref={dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Reference a note"
         class="flex max-h-[60%] w-96 flex-col overflow-hidden rounded-lg border border-hairline bg-surface-elevated shadow-lg"
         onPointerDown={(e) => e.stopPropagation()}
+        onKeyDown={trapFocus}
       >
         <input
           ref={input}

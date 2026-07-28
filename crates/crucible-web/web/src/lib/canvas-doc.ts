@@ -137,6 +137,8 @@ export function nodesInRect(doc: CanvasDoc, rect: Rect): string[] {
  * last would cover the very cards it contains.
  */
 export const GROUP_PADDING = 32;
+/** Space above the box for the group's label, which renders outside it. */
+export const GROUP_LABEL_HEADROOM = 32;
 export function groupSelection(
   doc: CanvasDoc,
   selected: Set<string>,
@@ -151,9 +153,12 @@ export function groupSelection(
     id,
     type: 'group',
     x: bounds.x - GROUP_PADDING,
-    y: bounds.y - GROUP_PADDING,
+    y: bounds.y - GROUP_PADDING - GROUP_LABEL_HEADROOM,
     width: bounds.width + GROUP_PADDING * 2,
-    height: bounds.height + GROUP_PADDING * 2 + GROUP_PADDING,
+    // Symmetric padding, plus headroom at the TOP for the label, which renders
+    // above the group box. The extra term used to be added to `height` without
+    // shifting `y`, so the slack appeared at the bottom where nothing needs it.
+    height: bounds.height + GROUP_PADDING * 2 + GROUP_LABEL_HEADROOM,
     label,
   };
 

@@ -113,6 +113,11 @@ export const CanvasNoteCard: Component<{
 
   createEffect(
     on(path, (current) => {
+      // Flush before switching. Resetting `content` with a save still queued
+      // meant the timer either saw `null` and silently dropped the edit, or
+      // fired after the new file loaded and wrote ITS content back over the
+      // old path.
+      flushPending();
       setError(null);
       setContent(null);
       getFileContent(current)
@@ -122,6 +127,10 @@ export const CanvasNoteCard: Component<{
   );
 
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  // The path the pending edit belongs to. A queued save must land on the file
+  // it was typed into, not on whichever file the card is showing when the timer
+  // fires.
+  let pendingPath: string | null = null;
   onCleanup(() => {
     clearTimeout(saveTimer);
     // Virtualization unmounts cards that leave the viewport. Without this,
@@ -130,20 +139,32 @@ export const CanvasNoteCard: Component<{
     if (dirty()) void flush();
   });
 
+  /** Write the pending edit to the path it was made against. */
   const flush = async () => {
     const text = content();
+    const target = pendingPath ?? props.absPath;
     if (text === null) return;
     try {
-      await saveFileContent(props.absPath, text);
-      setDirty(false);
+      await saveFileContent(target, text);
+      if (target === props.absPath) setDirty(false);
+      pendingPath = null;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
 
+  /** Synchronously hand off any queued edit before the card changes file. */
+  const flushPending = () => {
+    clearTimeout(saveTimer);
+    if (dirty() && content() !== null) void flush();
+    setDirty(false);
+    pendingPath = null;
+  };
+
   const onChange = (next: string) => {
     setContent(next);
     setDirty(true);
+    pendingPath = props.absPath;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(flush, 800);
   };

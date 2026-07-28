@@ -55,8 +55,25 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   // whichever kiln the status bar pointed at, which is one kiln serving
   // another kiln's data.
   const [kilns, setKilns] = createSignal<{ path: string }[]>([]);
-  onMount(() => swrLocal('kilns', listKilns, setKilns));
+  // Kept as a promise as well as a signal. `swrLocal` applies nothing
+  // synchronously on a cold start (first run, cleared storage, private mode),
+  // and a click in that window has no kiln to resolve against — it would toast
+  // a misleading "Note not found" and never retry. Follow-link awaits this.
+  let kilnsReady: Promise<void> | undefined;
+  onMount(() => {
+    kilnsReady = Promise.resolve(swrLocal('kilns', listKilns, setKilns)).then(() => undefined);
+  });
+
   const owningKiln = (path?: string) => (path ? kilnForPath(path, kilns()) : undefined);
+
+  /** Resolve the owning kiln, waiting for the roster on a cold start. */
+  const owningKilnAsync = async (path?: string) => {
+    if (!path) return undefined;
+    const immediate = owningKiln(path);
+    if (immediate || kilns().length > 0) return immediate;
+    await kilnsReady?.catch(() => undefined);
+    return owningKiln(path);
+  };
 
   type EditorMenuAction = 'cut' | 'copy' | 'paste' | 'select-all' | 'copy-file-path';
   const onMenuAction = (action: EditorMenuAction) => {
@@ -346,15 +363,12 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
                   onChange={(content) => updateFileContent(file().path, content)}
                   onSave={handleSave}
                   kiln={owningKiln(file().path)}
-                  // Files outside every kiln (project sources) have no kiln of
-                  // their own, so they keep resolving in the active one.
                   onFollowLink={(target) =>
-                    void openNoteInEditor(
-                      target,
-                      // The file's own kiln, or none. Falling back to the
-                      // active kiln let a project file — which belongs to no
-                      // kiln — follow links into whichever kiln was showing.
-                      owningKiln(file().path),
+                    // The file's own kiln, or none. Falling back to the active
+                    // kiln let a project file — which belongs to no kiln —
+                    // follow links into whichever kiln was showing.
+                    void owningKilnAsync(file().path).then((kiln) =>
+                      openNoteInEditor(target, kiln),
                     )
                   }
                   vimMode={settings.editor.vimMode}

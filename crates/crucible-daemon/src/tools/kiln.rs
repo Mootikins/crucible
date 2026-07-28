@@ -108,7 +108,11 @@ impl KilnTools {
             if let Ok(metadata) = entry.metadata() {
                 total_size += metadata.len();
             }
-            if crucible_core::kiln::is_indexable_file(entry.path()) {
+            // Notes only. This counter is reported to agents under the key
+            // `markdown_files`; widening it to canvases would have made the
+            // number quietly disagree with its own name, and renaming the key
+            // would break a wire format agents already read.
+            if crucible_core::kiln::is_note_file(entry.path()) {
                 md_files += 1;
             }
         }

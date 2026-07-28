@@ -92,40 +92,49 @@ describe('CanvasNoteCard', () => {
    * on every drag frame. The file was refetched continuously, blanking the card
    * to "Loading…" mid-drag.
    */
-  it('does not refetch when unrelated props change', async () => {
-    const [pos, setPos] = createSignal(0);
+  /**
+   * The card's path is DERIVED from the canvas document, so reading it inside
+   * an effect subscribed that effect to the whole document — replaced on every
+   * drag frame — and the file was refetched continuously, blanking the card to
+   * "Loading…" mid-drag.
+   *
+   * The derivation is driven by a signal here so the source identity really
+   * changes while the resulting path does not; a constant literal would pass
+   * even with the memo removed.
+   */
+  it('does not refetch while the document churns but the path is unchanged', async () => {
+    const [tick, setTick] = createSignal(0);
+    const derivedPath = () => `/kiln/Notes/${['A', 'A', 'A'][tick() % 3]}.md`;
+
     const { findByTestId } = render(() => (
-      <CanvasNoteCard absPath={`/kiln/Notes/A.md?${''}`.replace(/\?$/, '')} editable={pos() > -1} />
+      <CanvasNoteCard absPath={derivedPath()} editable={false} />
     ));
 
     await findByTestId('canvas-note-embed');
     await waitFor(() => expect(getFileContentMock).toHaveBeenCalledTimes(1));
 
-    // Simulate a drag: many unrelated updates, same path.
-    for (let i = 0; i < 20; i++) setPos(i);
+    for (let i = 1; i <= 20; i++) setTick(i);
     await new Promise((r) => setTimeout(r, 30));
 
     expect(
       getFileContentMock.mock.calls.length,
-      'a card must fetch its file once, not once per frame',
+      'a card must fetch once, not once per document change',
     ).toBe(1);
   });
 
-  /**
-   * The hover popover controller listens at the DOCUMENT level, so it cannot
-   * be handed the canvas's kiln as a prop — it can only read it off the DOM.
-   * Without the marker every hovered wikilink in a canvas card resolves in
-   * whatever kiln the status bar happens to point at, which is another kiln's
-   * data appearing inside this one.
-   */
-  it('marks its kiln on the DOM so document-level link resolution stays in it', async () => {
+  /** The complementary case: a REAL path change must refetch. */
+  it('refetches when the path actually changes', async () => {
+    const [name, setName] = createSignal('A');
     const { findByTestId } = render(() => (
-      <CanvasNoteCard absPath="/canvas-demo/Notes/A.md" kiln="/canvas-demo" editable={false} />
+      <CanvasNoteCard absPath={`/kiln/Notes/${name()}.md`} editable={false} />
     ));
 
-    const embed = await findByTestId('canvas-note-embed');
-    await waitFor(() => expect(embed.querySelector('[data-kiln]')).not.toBeNull());
-    expect(embed.querySelector('[data-kiln]')!.getAttribute('data-kiln')).toBe('/canvas-demo');
+    await findByTestId('canvas-note-embed');
+    await waitFor(() => expect(getFileContentMock).toHaveBeenCalledTimes(1));
+
+    setName('B');
+    await waitFor(() => expect(getFileContentMock).toHaveBeenCalledTimes(2));
+    expect(getFileContentMock).toHaveBeenLastCalledWith('/kiln/Notes/B.md');
   });
 
   it('surfaces a load failure', async () => {

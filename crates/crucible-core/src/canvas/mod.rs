@@ -160,10 +160,17 @@ impl Canvas {
 #[serde(try_from = "RawNode", into = "RawNode")]
 pub struct Node {
     pub id: String,
-    pub x: i64,
-    pub y: i64,
-    pub width: i64,
-    pub height: i64,
+    /// Geometry is `f64` although the spec says integer.
+    ///
+    /// Third-party writers do emit fractional coordinates, and with `i64` a
+    /// single one made `Canvas::parse` fail for the ENTIRE file — it would not
+    /// open, index, or survive a rename. Being liberal here costs nothing:
+    /// whole values round-trip as integers, so an Obsidian-authored canvas is
+    /// still written back byte-identically.
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
     pub color: Option<Color>,
     pub kind: NodeKind,
     /// Keys outside the spec, preserved verbatim.
@@ -185,12 +192,21 @@ struct RawNode {
     node_type: String,
     #[serde(flatten)]
     rest: Map<String, Value>,
-    x: i64,
-    y: i64,
-    width: i64,
-    height: i64,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     color: Option<Color>,
+}
+
+/// Serialize a coordinate, preferring the integer form when it is whole.
+fn coord(value: f64) -> Value {
+    if value.fract() == 0.0 && value.abs() < 9.007_199_254_740_992e15 {
+        Value::from(value as i64)
+    } else {
+        Value::from(value)
+    }
 }
 
 /// Pull a key out of the bag, erroring if it is absent — the spec's required
@@ -380,10 +396,12 @@ impl Node {
         }
 
         fields.append(&mut geometry_first);
-        fields.push(("x".into(), Value::from(self.x)));
-        fields.push(("y".into(), Value::from(self.y)));
-        fields.push(("width".into(), Value::from(self.width)));
-        fields.push(("height".into(), Value::from(self.height)));
+        // A whole value is emitted as an integer, so a canvas Obsidian wrote
+        // with `"x":-1992` comes back as `-1992` and not `-1992.0`.
+        fields.push(("x".into(), coord(self.x)));
+        fields.push(("y".into(), coord(self.y)));
+        fields.push(("width".into(), coord(self.width)));
+        fields.push(("height".into(), coord(self.height)));
         fields.append(&mut geometry_last);
         if let Some(color) = &self.color {
             fields.push(("color".into(), serde_json::to_value(color)?));

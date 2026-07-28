@@ -138,7 +138,7 @@ describe('fetchNotePreview', () => {
    * has no such note happily returns "Component Architecture". A preview that
    * only ever asks the index therefore shows a DIFFERENT note than the click
    * would open, and shows nothing at all for a kiln that was never processed.
-   * Same order as openNoteInEditor: exact on-disk path first, index second.
+   * Same order as openNoteInEditor: exact on-disk path, then a unique filename stem.
    */
   it('prefers the on-disk resolver over the fuzzy index, like opening does', async () => {
     resolveNotePathMock.mockResolvedValue({

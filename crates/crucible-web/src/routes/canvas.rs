@@ -109,17 +109,6 @@ async fn put_canvas(
         ));
     }
 
-    // Create the destination folder, but only after proving the parent chain
-    // resolves inside the kiln. Guarding on `starts_with` alone is lexical, so
-    // a planted symlink got a directory created OUTSIDE the kiln and only then
-    // had the request refused — a side effect surviving a rejected write.
-    //
-    // Each missing component is checked against the canonical root as it is
-    // created, so the walk can never step through a link out of the kiln.
-    if let Some(parent) = path.parent() {
-        create_dir_within(parent, &kiln).await?;
-    }
-
     // Without this, `fs::write` follows a pre-planted symlink and writes
     // outside the kiln even though the parent directory is legitimate — the
     // exact case `validate_write_target_within_kiln` documents. Every other
@@ -140,6 +129,21 @@ async fn put_canvas(
                 .collect::<Vec<_>>()
                 .join("; ")
         )));
+    }
+
+    // Directories are created LAST, after parsing and containment have both
+    // passed. Doing it first meant a malformed or escaping document still
+    // created its destination folder chain and only then returned 400/403 —
+    // the same side-effect-surviving-a-rejected-write this guards against.
+    // Only after proving the parent chain
+    // resolves inside the kiln. Guarding on `starts_with` alone is lexical, so
+    // a planted symlink got a directory created OUTSIDE the kiln and only then
+    // had the request refused — a side effect surviving a rejected write.
+    //
+    // Each missing component is checked against the canonical root as it is
+    // created, so the walk can never step through a link out of the kiln.
+    if let Some(parent) = path.parent() {
+        create_dir_within(parent, &kiln).await?;
     }
 
     // Restore any reference the READ path blanked.
@@ -292,8 +296,9 @@ async fn create_dir_within(dir: &Path, root: &Path) -> Result<(), WebError> {
 
 /// Put back any reference the read path blanked before this document was sent.
 ///
-/// Nodes are matched by position *and* id, so a reordered or restructured
-/// document simply declines to restore rather than pairing the wrong nodes.
+/// Nodes are matched by **id**. Pairing by position broke on the commonest
+/// edit there is — adding a card shifts every index, the pairing goes wrong,
+/// and the withheld reference is written away.
 /// Only a node whose incoming reference is empty and whose on-disk counterpart
 /// held a genuinely uncontained path is touched — a user legitimately clearing
 /// a reference is left alone, because the on-disk value would have been
