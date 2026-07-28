@@ -184,6 +184,40 @@ export function frameRect(viewport: Viewport, bounds: Rect, padding = 80): Viewp
   };
 }
 
+/**
+ * Zoom ⇄ slider position, mapped logarithmically.
+ *
+ * A linear slider over [MIN_ZOOM, MAX_ZOOM] is unusable: 100% lands at 24% of
+ * the track and the entire 5%–100% range — where most of the useful travel is —
+ * is squeezed into the first quarter. Equal slider distances should mean equal
+ * *ratios* of zoom, which is what makes dragging feel even.
+ */
+export function zoomToSlider(zoom: number): number {
+  const t = Math.log(clampZoom(zoom) / MIN_ZOOM) / Math.log(MAX_ZOOM / MIN_ZOOM);
+  return Math.min(1, Math.max(0, t));
+}
+
+export function sliderToZoom(t: number): number {
+  const clamped = Math.min(1, Math.max(0, t));
+  return clampZoom(MIN_ZOOM * Math.pow(MAX_ZOOM / MIN_ZOOM, clamped));
+}
+
+/** Zoom about the centre of the viewport, keeping what is centred centred. */
+export function zoomToLevel(viewport: Viewport, zoom: number): Viewport {
+  const target = clampZoom(zoom);
+  if (target === viewport.zoom) return viewport;
+  return zoomAt(viewport, viewport.width / 2, viewport.height / 2, target / viewport.zoom);
+}
+
+/** Recentre the viewport on a canvas-space point, without changing zoom. */
+export function centreOn(viewport: Viewport, point: { x: number; y: number }): Viewport {
+  return {
+    ...viewport,
+    x: point.x - viewport.width / (2 * viewport.zoom),
+    y: point.y - viewport.height / (2 * viewport.zoom),
+  };
+}
+
 /** Snap a canvas coordinate to the grid, unless snapping is suppressed. */
 export const GRID = 20;
 export function snap(value: number, enabled: boolean): number {

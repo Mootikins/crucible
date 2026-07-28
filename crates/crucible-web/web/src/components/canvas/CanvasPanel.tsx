@@ -20,7 +20,19 @@ import {
   type EdgeSide,
   type ResizeCorner,
 } from './CanvasCardChrome';
-import { ArrowLeft, ArrowRight, Palette, Pencil, Trash2 } from '@/lib/icons';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Frame,
+  Palette,
+  Pencil,
+  Redo2,
+  Trash2,
+  Undo2,
+  ZoomIn,
+  ZoomOut,
+} from '@/lib/icons';
+import { CanvasMinimap } from './CanvasMinimap';
 import { getCanvas, saveCanvas, rawFileUrl } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
 import { openFileInEditor } from '@/lib/file-actions';
@@ -40,13 +52,17 @@ import {
   type RejectedRef,
 } from '@/lib/canvas-types';
 import {
+  centreOn as centreViewportOn,
   frameRect,
   isLowDetail,
   panBy,
   screenToCanvas,
+  sliderToZoom,
   snap,
   visibleNodes,
   zoomAt,
+  zoomToLevel,
+  zoomToSlider,
   type Viewport,
 } from '@/lib/canvas-viewport';
 import {
@@ -133,6 +149,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
   const [selectedEdge, setSelectedEdge] = createSignal<string | null>(null);
   const [pickingNote, setPickingNote] = createSignal(false);
   const [addingLink, setAddingLink] = createSignal(false);
+  const [zoomOpen, setZoomOpen] = createSignal(false);
   const [drag, setDrag] = createSignal<Drag | null>(null);
   const [snapping, setSnapping] = createSignal(true);
 
@@ -855,6 +872,10 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
   const nodeById = (id: string) => doc().nodes.find((n) => n.id === id);
   const lowDetail = createMemo(() => isLowDetail(viewport()));
 
+  const setZoomLevel = (zoom: number) => setViewport((v) => zoomToLevel(v, zoom));
+  const centreOn = (point: { x: number; y: number }) =>
+    setViewport((v) => centreViewportOn(v, point));
+
   const absPathFor = (relPath: string) => `${kiln()}/${relPath}`;
   const rawUrlFor = (relPath: string) => rawFileUrl(absPathFor(relPath));
 
@@ -886,7 +907,10 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
         <div class="ml-auto flex items-center gap-1 text-muted-dark">
           <button
             type="button"
-            class="rounded px-1.5 py-0.5 hover:bg-hover-wash disabled:opacity-40"
+            class="rounded p-1 hover:bg-hover-wash disabled:opacity-40"
+            title="Undo"
+            aria-label="Undo"
+            data-testid="canvas-undo"
             disabled={!canUndo(history())}
             onClick={() => {
               let moved = false;
@@ -898,11 +922,14 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
               if (moved) scheduleSave();
             }}
           >
-            Undo
+            <Undo2 class="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
-            class="rounded px-1.5 py-0.5 hover:bg-hover-wash disabled:opacity-40"
+            class="rounded p-1 hover:bg-hover-wash disabled:opacity-40"
+            title="Redo"
+            aria-label="Redo"
+            data-testid="canvas-redo"
             disabled={!canRedo(history())}
             onClick={() => {
               let moved = false;
@@ -914,7 +941,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
               if (moved) scheduleSave();
             }}
           >
-            Redo
+            <Redo2 class="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
@@ -934,10 +961,77 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
           >
             + Web
           </button>
-          <button type="button" class="rounded px-1.5 py-0.5 hover:bg-hover-wash" onClick={frameAll}>
-            Fit
+          <button
+            type="button"
+            class="rounded p-1 hover:bg-hover-wash"
+            title="Fit to content"
+            aria-label="Fit to content"
+            data-testid="canvas-fit"
+            onClick={frameAll}
+          >
+            <Frame class="h-3.5 w-3.5" />
           </button>
-          <span class="tabular-nums">{Math.round(viewport().zoom * 100)}%</span>
+
+          <div class="relative">
+            <button
+              type="button"
+              class="rounded px-1.5 py-0.5 tabular-nums hover:bg-hover-wash"
+              title="Zoom"
+              data-testid="canvas-zoom-toggle"
+              onClick={() => setZoomOpen((open) => !open)}
+            >
+              {Math.round(viewport().zoom * 100)}%
+            </button>
+
+            <Show when={zoomOpen()}>
+              <div
+                class="absolute right-0 top-full z-30 mt-1 w-56 rounded-lg border border-hairline bg-surface-elevated p-2 shadow-lg"
+                data-testid="canvas-zoom-popover"
+                // The popover sits over the surface, which treats a pointer
+                // down on itself as "clear the selection and start a marquee".
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <CanvasMinimap
+                  nodes={doc().nodes}
+                  viewport={viewport()}
+                  onNavigate={centreOn}
+                />
+                <div class="mt-2 flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    class="rounded p-1 hover:bg-hover-wash"
+                    title="Zoom out"
+                    aria-label="Zoom out"
+                    data-testid="canvas-zoom-out"
+                    onClick={() => setZoomLevel(viewport().zoom / 1.25)}
+                  >
+                    <ZoomOut class="h-3.5 w-3.5" />
+                  </button>
+                  <input
+                    type="range"
+                    class="min-w-0 flex-1 accent-primary"
+                    min="0"
+                    max="1"
+                    step="0.001"
+                    aria-label="Zoom level"
+                    data-testid="canvas-zoom-slider"
+                    value={zoomToSlider(viewport().zoom)}
+                    onInput={(e) => setZoomLevel(sliderToZoom(Number(e.currentTarget.value)))}
+                  />
+                  <button
+                    type="button"
+                    class="rounded p-1 hover:bg-hover-wash"
+                    title="Zoom in"
+                    aria-label="Zoom in"
+                    data-testid="canvas-zoom-in"
+                    onClick={() => setZoomLevel(viewport().zoom * 1.25)}
+                  >
+                    <ZoomIn class="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            </Show>
+          </div>
         </div>
       </div>
 
@@ -1119,9 +1213,15 @@ const EdgeLayer: Component<{
   return (
     <svg
       class="pointer-events-none absolute left-0 top-0 h-px w-px overflow-visible"
-      // The community perf patch for Obsidian's canvas sets exactly this;
-      // edge curves gain nothing from geometric-precision rendering.
-      shape-rendering="optimizeSpeed"
+      // `shape-rendering` is deliberately left at the browser default.
+      //
+      // This used to say `optimizeSpeed`, copied from a community perf patch
+      // for Obsidian's canvas on the reasoning that curves gain nothing from
+      // geometric precision. That conflated two different things: the value
+      // does not merely relax precision, it switches ANTI-ALIASING OFF, which
+      // is what made every curved edge visibly jagged. The default is the
+      // anti-aliased one, and edges are a handful of paths — nowhere near the
+      // cost that patch existed to address.
       data-testid="canvas-edges"
     >
       <defs>

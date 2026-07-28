@@ -9,9 +9,13 @@ import {
   isLowDetail,
   panBy,
   screenToCanvas,
+  sliderToZoom,
   snap,
   visibleNodes,
   zoomAt,
+  zoomToLevel,
+  zoomToSlider,
+  centreOn,
   type Viewport,
 } from '../canvas-viewport';
 import {
@@ -244,5 +248,73 @@ describe('canvas document helpers', () => {
     };
 
     expect(groupMembers(doc, group).map((n) => n.id)).toEqual(['inside']);
+  });
+});
+
+describe('zoom slider mapping', () => {
+  it('puts the ends of the track at the zoom limits', () => {
+    expect(zoomToSlider(MIN_ZOOM)).toBeCloseTo(0);
+    expect(zoomToSlider(MAX_ZOOM)).toBeCloseTo(1);
+    expect(sliderToZoom(0)).toBeCloseTo(MIN_ZOOM);
+    expect(sliderToZoom(1)).toBeCloseTo(MAX_ZOOM);
+  });
+
+  it('round-trips a zoom through the slider position', () => {
+    for (const zoom of [0.1, 0.35, 1, 2, 3.5]) {
+      expect(sliderToZoom(zoomToSlider(zoom))).toBeCloseTo(zoom, 5);
+    }
+  });
+
+  /**
+   * The mapping is logarithmic on purpose. Linearly, 100% sits at 22% of the
+   * track and everything below it — most of the useful travel — is crushed into
+   * the first fifth. Equal distances should mean equal RATIOS of zoom.
+   */
+  it('gives equal slider distances equal zoom ratios', () => {
+    const a = sliderToZoom(0.3);
+    const b = sliderToZoom(0.5);
+    const c = sliderToZoom(0.7);
+    expect(b / a).toBeCloseTo(c / b, 5);
+  });
+
+  it('clamps out-of-range slider positions instead of escaping the limits', () => {
+    expect(sliderToZoom(-1)).toBeCloseTo(MIN_ZOOM);
+    expect(sliderToZoom(2)).toBeCloseTo(MAX_ZOOM);
+    expect(zoomToSlider(100)).toBeCloseTo(1);
+    expect(zoomToSlider(0.0001)).toBeCloseTo(0);
+  });
+});
+
+describe('zoomToLevel', () => {
+  const view = (zoom: number): Viewport => ({ x: 0, y: 0, zoom, width: 1000, height: 600 });
+
+  /** Zooming from a control, unlike the wheel, has no cursor to anchor on. */
+  it('keeps the centre of the view fixed', () => {
+    const before = view(1);
+    const centreBefore = screenToCanvas(before, before.width / 2, before.height / 2);
+
+    const after = zoomToLevel(before, 2);
+    const centreAfter = screenToCanvas(after, after.width / 2, after.height / 2);
+
+    expect(after.zoom).toBeCloseTo(2);
+    expect(centreAfter.x).toBeCloseTo(centreBefore.x);
+    expect(centreAfter.y).toBeCloseTo(centreBefore.y);
+  });
+
+  it('respects the zoom limits', () => {
+    expect(zoomToLevel(view(1), 99).zoom).toBeCloseTo(MAX_ZOOM);
+    expect(zoomToLevel(view(1), 0).zoom).toBeCloseTo(MIN_ZOOM);
+  });
+});
+
+describe('centreOn', () => {
+  it('puts the requested point at the middle of the view, leaving zoom alone', () => {
+    const before: Viewport = { x: 0, y: 0, zoom: 2, width: 800, height: 400 };
+    const after = centreOn(before, { x: 1000, y: 500 });
+
+    const centre = screenToCanvas(after, after.width / 2, after.height / 2);
+    expect(centre.x).toBeCloseTo(1000);
+    expect(centre.y).toBeCloseTo(500);
+    expect(after.zoom).toBe(before.zoom);
   });
 });

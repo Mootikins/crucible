@@ -95,4 +95,9 @@ export {
   Sparkles,
   StickyNote,
   Wrench,
+  Undo2,
+  Redo2,
+  ZoomIn,
+  ZoomOut,
+  Frame,
 } from 'lucide-solid';
