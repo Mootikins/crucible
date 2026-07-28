@@ -35,8 +35,16 @@ jobs:
   deny:
     name: Dependency Licences
     runs-on: ubuntu-latest
+    # This is the one job here that hands the checkout to a third-party
+    # container action, so it gets least privilege explicitly: read-only, and
+    # no git credentials left behind in the workspace for that container to
+    # find. Neither checkout nor cargo-deny performs an authenticated push.
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       # Runs `cargo-deny --all-features check licenses`, matching
       # `just license-check` exactly — the two have to stay in step or the gate
       # only ever runs on whichever side you remembered.

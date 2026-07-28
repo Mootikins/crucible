@@ -1,6 +1,6 @@
 //! Common test utilities for daemon E2E tests
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::time::Duration;
@@ -46,7 +46,9 @@ impl RpcConn {
     /// Connect to a daemon's socket.
     pub async fn connect(socket_path: &Path) -> Result<Self> {
         Ok(Self {
-            stream: UnixStream::connect(socket_path).await?,
+            stream: UnixStream::connect(socket_path).await.with_context(|| {
+                format!("connecting to daemon socket at {}", socket_path.display())
+            })?,
             buffered: Vec::new(),
         })
     }
