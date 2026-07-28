@@ -591,6 +591,15 @@ details.callout[open] > summary.callout-title::after {
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--color-surface-elevated) 45%, transparent);
 }
+/* Collapsed, the card is floated out of the flow, so the block after it is
+   visually the FIRST one — but `:first-child` no longer matches it, and it kept
+   the top margin that rule exists to remove. A note's heading therefore sat
+   14px lower than the identical heading in a card with no frontmatter, and
+   below the toggle it is supposed to line up with. */
+.fm-card:not([open]) + * {
+  margin-top: 0;
+}
+
 /* The default disclosure triangle is suppressed on both engines — WebKit needs
    the vendor pseudo-element, everything else honours `list-style`. */
 .fm-summary {
