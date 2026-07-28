@@ -189,6 +189,12 @@ web-debug port="3001" host="0.0.0.0": web-build-debug
     cargo build -p crucible-cli --bin cru
     cargo run -p crucible-cli -- --standalone web --host {{host}} --port {{port}} --static-dir crates/crucible-web/web/dist
 
+# Fail on a dependency whose licence is not on the allowlist in deny.toml.
+# NOTE: GitHub's workflow does not invoke `just ci`, so this gate is local
+# only until it is wired into .github/workflows/ci.yml as well.
+license-check:
+    cargo deny check licenses
+
 # Regenerate THIRD-PARTY-NOTICES.md from the dependency graph that ships.
 # Needs the web tree's node_modules present, since the font and icon notices
 # are read from the packages themselves rather than transcribed.
@@ -288,7 +294,7 @@ coverage-open: coverage
 # === CI ===
 
 # Run full CI check (mirrors GitHub CI workflow)
-ci: fmt-check clippy file-size-check test-ci test-features test-doc web-test-unit web-test
+ci: fmt-check clippy license-check file-size-check test-ci test-features test-doc web-test-unit web-test
     @echo "CI checks passed!"
 
 # Run tests with CI profile (matches GitHub Actions)

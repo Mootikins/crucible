@@ -1,0 +1,67 @@
+# cargo-deny: licence policy for the dependency graph.
+#
+# There was no licence gate until now, which is how a CDDL-1.0 crate reached the
+# release binary unnoticed (see the exception below). An allowlist is the point:
+# anything whose licence is not named here fails, so a new dependency carrying
+# an unexpected licence is a build failure rather than a discovery made during
+# an audit months later.
+#
+# Run: `cargo deny check licenses` (wired into `just ci`).
+
+[licenses]
+# Anything not on this list is rejected. GPL, LGPL and AGPL are deliberately
+# absent rather than explicitly denied — several dependencies offer them as one
+# arm of an `OR`, and omitting them here makes cargo-deny elect the permissive
+# arm instead of failing. A GPL-only dependency has nothing to elect and fails,
+# which is the intent.
+allow = [
+    # Crucible's own terms, and the overwhelming majority of the tree.
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    # The LLVM exception relaxes Apache-2.0's attribution requirement for
+    # binaries; it is strictly more permissive, but SPDX treats a `WITH`
+    # expression as its own identifier, so it has to be named.
+    "Apache-2.0 WITH LLVM-exception",
+
+    # Permissive, no obligations beyond notice retention.
+    "ISC",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "Zlib",
+    "BSL-1.0",
+    "NCSA",
+    "CC0-1.0",
+    "Unlicense",
+    "Unicode-3.0",
+
+    # Data licence carried by the webpki root-certificate crates.
+    "CDLA-Permissive-2.0",
+
+    # --- File-level copyleft: allowed by exception, not by preference ---
+    #
+    # Both bind their own files and not Crucible's source, and both are
+    # recorded in THIRD-PARTY-NOTICES.md with a source-availability pointer.
+    #
+    # MPL-2.0: `colored`, `nucleo-matcher`, `option-ext`. Section 3.2 expressly
+    # permits distributing a Larger Work under other terms.
+    "MPL-2.0",
+    #
+    # CDDL-1.0: `inferno`, reached only because LanceDB declares `lance-testing`
+    # as a normal dependency rather than a dev-dependency, dragging a flamegraph
+    # profiler into every consumer's release build. This entry is a WORKAROUND,
+    # not an endorsement — CDDL is GPL-incompatible and sits on many corporate
+    # denylists. Remove it once the upstream dependency is gated.
+    "CDDL-1.0",
+]
+
+# `ring` and the aws-lc crates use `AND` expressions across several licences;
+# the default confidence threshold occasionally misreads their bundled licence
+# files. Raising it is not appropriate — leave detection strict.
+confidence-threshold = 0.8
+
+[licenses.private]
+# Workspace crates are all MIT OR Apache-2.0 and are not published from here,
+# so they need no separate evaluation.
+ignore = true
