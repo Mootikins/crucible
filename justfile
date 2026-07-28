@@ -189,6 +189,12 @@ web-debug port="3001" host="0.0.0.0": web-build-debug
     cargo build -p crucible-cli --bin cru
     cargo run -p crucible-cli -- --standalone web --host {{host}} --port {{port}} --static-dir crates/crucible-web/web/dist
 
+# Regenerate THIRD-PARTY-NOTICES.md from the dependency graph that ships.
+# Needs the web tree's node_modules present, since the font and icon notices
+# are read from the packages themselves rather than transcribed.
+notices:
+    python3 scripts/gen-third-party-notices.py
+
 # Same build, minus the service worker. See the `selfDestroying` note in
 # vite.config.ts: with the production SW a rebuild keeps serving the PREVIOUS
 # bundle until the update toast is accepted, so changes look like they did not
