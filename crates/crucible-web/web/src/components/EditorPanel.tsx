@@ -1,10 +1,10 @@
-import { Component, For, Show } from 'solid-js';
+import { Component, For, Show, createSignal, onMount } from 'solid-js';
 import { FileText } from '@/lib/icons';
 import { useEditorSafe } from '@/contexts/EditorContext';
 import { EditorWithPreview } from './editor/EditorWithPreview';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
-import { getConfig, getNote } from '@/lib/api';
-import { noteAbsolutePath } from '@/lib/note-actions';
+import { listKilns, resolveNotePath } from '@/lib/api';
+import { kilnForPath } from '@/lib/note-actions';
 import { notificationActions } from '@/stores/notificationStore';
 
 const getFilename = (path: string): string => {
@@ -57,17 +57,24 @@ export const EditorPanel: Component = () => {
     return openFiles().find((f) => f.path === path) ?? null;
   };
 
-  // Follow a [[wikilink]]: resolve the target note and open it as another
-  // editor tab (this panel owns its own tab strip, unlike FileViewerPanel
-  // which opens window tabs via openNoteInEditor).
+  // The kiln owning the file on screen, from the file's own path — not the
+  // configured default, which resolved a buffer's links in a kiln that had
+  // nothing to do with it.
+  const [kilns, setKilns] = createSignal<{ path: string }[]>([]);
+  onMount(() => void listKilns().then(setKilns).catch(() => undefined));
+  const owningKiln = (path?: string) => (path ? kilnForPath(path, kilns()) : undefined);
+
+  // Follow a [[wikilink]]: resolve the target and open it as another editor
+  // tab (this panel owns its own tab strip, unlike FileViewerPanel which opens
+  // window tabs).
   const followLink = async (target: string) => {
-    try {
-      const kiln = (await getConfig()).kiln_path;
-      const note = await getNote(target, kiln);
-      openFile(noteAbsolutePath(note.path, kiln));
-    } catch {
+    const kiln = owningKiln(activeFile() ?? undefined);
+    const hit = kiln ? await resolveNotePath(kiln, target).catch(() => null) : null;
+    if (!hit) {
       notificationActions.addNotification('warning', `Note not found: ${target}`);
+      return;
     }
+    openFile(hit.absolutePath);
   };
 
   return (
@@ -122,6 +129,10 @@ export const EditorPanel: Component = () => {
               <EditorWithPreview
                 content={file().content}
                 path={file().path}
+                // Declares the kiln for BOTH the click handler and the
+                // document-level hover controller. Without it this panel's
+                // wikilinks were inert: no popover, no Ctrl+Click.
+                kiln={owningKiln(file().path)}
                 onChange={(content) => updateFileContent(file().path, content)}
                 onSave={() => void saveFile(file().path)}
                 onFollowLink={(target) => void followLink(target)}

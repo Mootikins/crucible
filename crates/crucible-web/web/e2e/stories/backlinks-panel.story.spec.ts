@@ -47,6 +47,11 @@ async function setupBacklinksRoutes(page: Page) {
   await page.route('**/api/config', (r) =>
     r.fulfill({ json: { kiln_path: HARNESS_KILN } }),
   );
+  // The panel derives its kiln from the FOCUSED FILE's own path rather than
+  // from the session or the active kiln, so it needs the kiln roster to
+  // attribute that file to a kiln.
+  await page.route('**/api/kilns**', (r) => r.fulfill({ json: { kilns: [{ path: HARNESS_KILN }] } }));
+
   await page.route('**/api/backlinks**', (route) => {
     const note = new URL(route.request().url()).searchParams.get('note') ?? '';
     if (note !== 'notes/focused.md') {

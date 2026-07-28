@@ -44,9 +44,27 @@ const STREAM: Frame[] = [
 
 async function setupNoteRoutes(page: Page) {
   await page.route('**/api/notes/**', (route) => {
-    const name = decodeURIComponent(
-      new URL(route.request().url()).pathname.replace('/api/notes/', ''),
-    );
+    const url = new URL(route.request().url());
+
+    // Link resolution is a path lookup against the kiln, not an index query.
+    // Handled inside this catch-all rather than as its own route: Playwright
+    // matches the most recently registered handler first, so a separate
+    // `/api/notes/resolve` route would be shadowed by this one.
+    if (url.pathname.endsWith('/api/notes/resolve')) {
+      const target = url.searchParams.get('name') ?? '';
+      if (target.toLowerCase() !== 'kiln note') {
+        return route.fulfill({ status: 404, body: 'not found' });
+      }
+      return route.fulfill({
+        json: {
+          path: 'Kiln Note.md',
+          absolutePath: `${KILN}/Kiln Note.md`,
+          title: 'Kiln Note',
+        },
+      });
+    }
+
+    const name = decodeURIComponent(url.pathname.replace('/api/notes/', ''));
     if (name.toLowerCase() !== 'kiln note') {
       return route.fulfill({ status: 404, body: 'not found' });
     }

@@ -31,9 +31,28 @@ const OTHER = {
 
 async function setupNoteResolution(page: Page) {
   await page.route('**/api/config', (r) => r.fulfill({ json: { kiln_path: HARNESS_KILN } }));
+  // The editor harness derives its kiln from the focused file's own path.
+  await page.route('**/api/kilns**', (r) =>
+    r.fulfill({ json: { kilns: [{ path: HARNESS_KILN }] } }),
+  );
+
   // getNote: /api/notes/{name}?kiln= → metadata (path is what nav/preview use).
   await page.route('**/api/notes/**', (route) => {
     const url = new URL(route.request().url());
+
+    // Resolution is a path lookup against the kiln. Handled here rather than as
+    // its own route because Playwright matches the most recently registered
+    // handler first, so a separate route would be shadowed by this one.
+    if (url.pathname.endsWith('/api/notes/resolve')) {
+      const target = url.searchParams.get('name') ?? '';
+      if (target.toLowerCase() !== 'other note') {
+        return route.fulfill({ status: 404, body: 'not found' });
+      }
+      return route.fulfill({
+        json: { path: 'Other Note.md', absolutePath: OTHER.path, title: 'Other Note' },
+      });
+    }
+
     const name = decodeURIComponent(url.pathname.replace('/api/notes/', ''));
     if (name.toLowerCase() !== 'other note') {
       return route.fulfill({ status: 404, body: 'not found' });
