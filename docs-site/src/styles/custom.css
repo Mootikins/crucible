@@ -419,3 +419,136 @@ site-search button[data-open-modal]:hover {
 		scroll-behavior: auto !important;
 	}
 }
+
+/* ---------------------------------------------------------------------------
+   Read-only canvas boards (src/components/CanvasBoard.astro)
+
+   A board is authored at whatever size its author wanted, which is routinely
+   far wider than a docs column — so the frame is a fixed-height viewport the
+   board is scaled and panned inside, rather than something that reflows.
+   --------------------------------------------------------------------------- */
+.canvas-hint {
+	margin: 0 0 0.75rem;
+	font-size: 0.85rem;
+	color: var(--sl-color-gray-3);
+}
+.canvas-hint kbd {
+	padding: 0 0.3em;
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: 4px;
+	font-size: 0.85em;
+}
+
+.canvas-frame {
+	position: relative;
+	overflow: auto;
+	height: min(72vh, 720px);
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: 0.5rem;
+	background: var(--sl-color-black);
+	cursor: grab;
+	/* The board is transform-scaled, which does not change layout size; the
+	   scrolled area comes from these, set by the script after each zoom. */
+	scrollbar-width: thin;
+}
+.canvas-frame.is-dragging {
+	cursor: grabbing;
+	user-select: none;
+}
+.canvas-frame::after {
+	content: '';
+	display: block;
+	width: var(--scaled-w, 100%);
+	height: var(--scaled-h, 100%);
+}
+
+.canvas-board {
+	position: absolute;
+	inset: 0;
+	transform-origin: 0 0;
+}
+
+.canvas-group {
+	position: absolute;
+	border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+	border-radius: 0.5rem;
+	background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.canvas-group-label {
+	position: absolute;
+	top: -1.6rem;
+	left: 0;
+	font-size: 0.8rem;
+	font-weight: 600;
+	color: var(--sl-color-gray-2);
+}
+
+.canvas-edges {
+	position: absolute;
+	inset: 0;
+	overflow: visible;
+	pointer-events: none;
+}
+.canvas-edge-label {
+	fill: var(--sl-color-gray-2);
+	font-size: 11px;
+	paint-order: stroke;
+	stroke: var(--sl-color-black);
+	stroke-width: 3px;
+}
+
+.canvas-card {
+	position: absolute;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	border: 1px solid color-mix(in srgb, var(--accent, var(--sl-color-gray-5)) 70%, transparent);
+	border-radius: 0.5rem;
+	background: var(--sl-color-gray-6);
+	box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+}
+a.canvas-card {
+	text-decoration: none;
+	color: inherit;
+}
+a.canvas-card:hover {
+	border-color: var(--sl-color-accent);
+}
+.canvas-card.is-unlinked {
+	opacity: 0.75;
+}
+
+.canvas-card-kind {
+	padding: 0.35rem 0.7rem 0;
+	font-size: 0.7rem;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--sl-color-gray-3);
+}
+.canvas-card-title {
+	padding: 0.1rem 0.7rem 0.5rem;
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.canvas-card-body {
+	padding: 0.6rem 0.75rem;
+	overflow: hidden;
+	font-size: 0.8125rem;
+	line-height: 1.5;
+}
+/* Cards are small: the page's heading scale would fill one with a single H2. */
+.canvas-card-body :is(h1, h2, h3, h4) {
+	margin: 0 0 0.3rem;
+	font-size: 0.95rem;
+	line-height: 1.3;
+}
+.canvas-card-body > :first-child {
+	margin-top: 0;
+}
+.canvas-card-body > :last-child {
+	margin-bottom: 0;
+}
+.canvas-card-body p {
+	margin: 0 0 0.5rem;
+}

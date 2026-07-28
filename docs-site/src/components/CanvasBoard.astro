@@ -1,0 +1,260 @@
+---
+import {
+	anchorPoint,
+	boundsOf,
+	edgePath,
+	fromEndOf,
+	inferSide,
+	resolveCanvasColor,
+} from '../../../crates/crucible-web/web/src/lib/canvas-types.ts';
+import { toEndOf } from '../../../crates/crucible-web/web/src/lib/canvas-types.ts';
+import { referenceHref } from '../lib/canvas-pages.mjs';
+
+/**
+ * A JSON Canvas board, rendered read-only.
+ *
+ * Same shape the app uses — cards as DOM in a positioned layer, edges as one
+ * SVG overlay — and the same geometry functions, so a board looks the same in
+ * both places. What it deliberately does NOT do is embed link cards as live
+ * iframes: the app asks the reader to click into a card first, and a
+ * documentation page that silently contacts every third party a board mentions
+ * is a worse bargain than the app's, not a better one.
+ */
+
+interface Props {
+	doc: { nodes: any[]; edges: any[] };
+	base: string;
+	/** Text card markdown, pre-rendered to HTML by the page (build-time). */
+	textHtml: Record<string, string>;
+}
+
+const { doc, base, textHtml } = Astro.props;
+
+const PAD = 40;
+const bounds = boundsOf(doc.nodes) ?? { x: 0, y: 0, width: 0, height: 0 };
+// Boards are authored around an arbitrary origin and routinely have negative
+// coordinates; shift everything so the top-left of the content is (0,0).
+const ox = bounds.x - PAD;
+const oy = bounds.y - PAD;
+const boardWidth = Math.max(bounds.width + PAD * 2, 1);
+const boardHeight = Math.max(bounds.height + PAD * 2, 1);
+
+const shifted = doc.nodes.map((n: any) => ({ ...n, x: n.x - ox, y: n.y - oy }));
+const byId = new Map(shifted.map((n: any) => [n.id, n]));
+
+// Groups paint behind everything, then edges, then cards — the same banding the
+// app uses, because a group that gained a background otherwise hides the cards
+// inside it and every edge crossing it.
+const groups = shifted.filter((n: any) => n.type === 'group');
+const cards = shifted.filter((n: any) => n.type !== 'group');
+
+const edges = doc.edges.flatMap((edge: any) => {
+	const from = byId.get(edge.fromNode);
+	const to = byId.get(edge.toNode);
+	// A hand-edited file can name a node that is not there; draw nothing rather
+	// than throwing the whole build.
+	if (!from || !to) return [];
+	const fromSide = edge.fromSide ?? inferSide(from, to);
+	const toSide = edge.toSide ?? inferSide(to, from);
+	const a = anchorPoint(from, fromSide);
+	const b = anchorPoint(to, toSide);
+	return [
+		{
+			id: edge.id,
+			d: edgePath(from, fromSide, to, toSide),
+			colour: resolveCanvasColor(edge.color) ?? 'var(--canvas-edge)',
+			startsArrow: fromEndOf(edge) === 'arrow',
+			endsArrow: toEndOf(edge) === 'arrow',
+			label: edge.label,
+			mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+		},
+	];
+});
+---
+
+<div class="canvas-frame" data-canvas-frame>
+	<div
+		class="canvas-board"
+		style={`width:${boardWidth}px;height:${boardHeight}px`}
+		data-canvas-board
+	>
+		{
+			groups.map((g: any) => (
+				<div
+					class="canvas-group"
+					style={`left:${g.x}px;top:${g.y}px;width:${g.width}px;height:${g.height}px;--accent:${
+						resolveCanvasColor(g.color) ?? 'var(--canvas-edge)'
+					}`}
+				>
+					{g.label && <span class="canvas-group-label">{g.label}</span>}
+				</div>
+			))
+		}
+
+		<svg class="canvas-edges" width={boardWidth} height={boardHeight} aria-hidden="true">
+			<defs>
+				<marker
+					id="canvas-arrow"
+					viewBox="0 0 10 10"
+					refX="9"
+					refY="5"
+					markerWidth="6"
+					markerHeight="6"
+					orient="auto-start-reverse"
+				>
+					<path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
+				</marker>
+			</defs>
+			{
+				edges.map((e: any) => (
+					<g style={`color:${e.colour}`}>
+						<path
+							d={e.d}
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							marker-start={e.startsArrow ? 'url(#canvas-arrow)' : undefined}
+							marker-end={e.endsArrow ? 'url(#canvas-arrow)' : undefined}
+						/>
+						{e.label && (
+							<text
+								x={e.mid.x}
+								y={e.mid.y - 6}
+								text-anchor="middle"
+								class="canvas-edge-label"
+							>
+								{e.label}
+							</text>
+						)}
+					</g>
+				))
+			}
+		</svg>
+
+		{
+			cards.map((n: any) => {
+				const accent = resolveCanvasColor(n.color);
+				const style = `left:${n.x}px;top:${n.y}px;width:${n.width}px;height:${n.height}px${
+					accent ? `;--accent:${accent}` : ''
+				}`;
+				if (n.type === 'file') {
+					const href = referenceHref(n.file, base);
+					const name = n.file.split('/').pop();
+					const body = (
+						<>
+							<span class="canvas-card-kind">Note</span>
+							<span class="canvas-card-title">{name?.replace(/\.md$/i, '')}</span>
+						</>
+					);
+					return href ? (
+						<a class="canvas-card canvas-card-file" style={style} href={href}>
+							{body}
+						</a>
+					) : (
+						// Unpublished (Meta/, an image, a deleted note): a card with
+						// nothing to open, rather than a link that 404s.
+						<div class="canvas-card canvas-card-file is-unlinked" style={style}>
+							{body}
+						</div>
+					);
+				}
+				if (n.type === 'link') {
+					let host = n.url;
+					try {
+						host = new URL(n.url).host;
+					} catch {
+						/* not a URL we can parse; show it verbatim */
+					}
+					return (
+						<a
+							class="canvas-card canvas-card-link"
+							style={style}
+							href={n.url}
+							target="_blank"
+							rel="noopener noreferrer"
+						>
+							<span class="canvas-card-kind">{host}</span>
+							<span class="canvas-card-title">{n.url}</span>
+						</a>
+					);
+				}
+				return (
+					<div class="canvas-card canvas-card-text" style={style}>
+						<div class="canvas-card-body" set:html={textHtml[n.id] ?? ''} />
+					</div>
+				);
+			})
+		}
+	</div>
+</div>
+
+<script>
+	// Drag to pan, wheel to zoom. Boards are authored far larger than a docs
+	// column, so a fixed-scale rendering would be unreadable without it; a
+	// scrollbar alone cannot zoom out to see the shape of a board.
+	document.querySelectorAll<HTMLElement>('[data-canvas-frame]').forEach((frame) => {
+		const board = frame.querySelector<HTMLElement>('[data-canvas-board]');
+		if (!board) return;
+
+		const natural = { w: board.offsetWidth, h: board.offsetHeight };
+		let scale = 1;
+		const MIN = 0.1;
+		const MAX = 2;
+
+		const apply = () => {
+			board.style.transform = `scale(${scale})`;
+			// The frame scrolls the SCALED size; without this the scrollable area
+			// stays the natural size and half a zoomed-in board is unreachable.
+			board.style.width = `${natural.w}px`;
+			board.style.height = `${natural.h}px`;
+			frame.style.setProperty('--scaled-w', `${natural.w * scale}px`);
+			frame.style.setProperty('--scaled-h', `${natural.h * scale}px`);
+		};
+
+		// Start showing the whole board when it is wider than the column.
+		const fit = () => {
+			scale = Math.min(1, Math.max(MIN, frame.clientWidth / natural.w));
+			apply();
+		};
+		fit();
+		window.addEventListener('resize', fit);
+
+		frame.addEventListener(
+			'wheel',
+			(e) => {
+				// Only claim the wheel when zooming is asked for; a bare scroll
+				// belongs to the page, or the board becomes a scroll trap.
+				if (!e.ctrlKey && !e.metaKey) return;
+				e.preventDefault();
+				scale = Math.min(MAX, Math.max(MIN, scale * Math.exp(-e.deltaY / 400)));
+				apply();
+			},
+			{ passive: false },
+		);
+
+		let dragging = false;
+		let last = { x: 0, y: 0 };
+		frame.addEventListener('pointerdown', (e) => {
+			// Never swallow a click on a card's link.
+			if ((e.target as HTMLElement).closest('a')) return;
+			dragging = true;
+			last = { x: e.clientX, y: e.clientY };
+			frame.setPointerCapture(e.pointerId);
+			frame.classList.add('is-dragging');
+		});
+		frame.addEventListener('pointermove', (e) => {
+			if (!dragging) return;
+			frame.scrollLeft -= e.clientX - last.x;
+			frame.scrollTop -= e.clientY - last.y;
+			last = { x: e.clientX, y: e.clientY };
+		});
+		const end = (e: PointerEvent) => {
+			if (!dragging) return;
+			dragging = false;
+			frame.releasePointerCapture(e.pointerId);
+			frame.classList.remove('is-dragging');
+		};
+		frame.addEventListener('pointerup', end);
+		frame.addEventListener('pointercancel', end);
+	});
+</script>
