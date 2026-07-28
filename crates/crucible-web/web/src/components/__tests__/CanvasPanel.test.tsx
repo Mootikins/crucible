@@ -283,6 +283,74 @@ describe('CanvasPanel', () => {
     expect(after.style.left, 'but its position must have changed').not.toBe(beforeLeft);
   });
 
+  /**
+   * Both overlays snapshotted `drag()` inside a `Show` body. Solid instantiates
+   * those children once when the condition flips truthy, and a fresh drag
+   * object each pointermove never flips truthiness — so the marquee rendered
+   * 0x0 and the connect line stayed pinned at its origin for the whole gesture.
+   */
+  it('grows the marquee rectangle as the pointer moves', async () => {
+    getCanvasMock.mockResolvedValue(response());
+    const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
+    const surface = (await waitFor(() => {
+      const el = container.querySelector('[data-testid="canvas-surface"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+
+    surface.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: 10, clientY: 10 }),
+    );
+    surface.dispatchEvent(
+      new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientX: 210, clientY: 160 }),
+    );
+
+    const marquee = (await waitFor(() => {
+      const el = container.querySelector('[data-testid="canvas-marquee"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+
+    expect(parseFloat(marquee.style.width), 'marquee must follow the pointer').toBeGreaterThan(0);
+    expect(parseFloat(marquee.style.height)).toBeGreaterThan(0);
+  });
+
+  it('moves the pending connection line with the pointer', async () => {
+    getCanvasMock.mockResolvedValue(response());
+    const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
+    });
+
+    const card = container.querySelector('[data-node-id="text-1"]') as HTMLElement;
+    card.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+
+    const zone = (await waitFor(() => {
+      const el = container.querySelector('[data-testid="canvas-connect-zone"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+    zone.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 2 }));
+
+    const surface = container.querySelector('[data-testid="canvas-surface"]') as HTMLElement;
+    surface.dispatchEvent(
+      new PointerEvent('pointermove', { bubbles: true, pointerId: 2, clientX: 300, clientY: 300 }),
+    );
+    const first = (
+      container.querySelector('[data-testid="canvas-pending-edge"]') as SVGPathElement | null
+    )?.getAttribute('d');
+
+    surface.dispatchEvent(
+      new PointerEvent('pointermove', { bubbles: true, pointerId: 2, clientX: 600, clientY: 480 }),
+    );
+    const second = (
+      container.querySelector('[data-testid="canvas-pending-edge"]') as SVGPathElement | null
+    )?.getAttribute('d');
+
+    expect(first).toBeTruthy();
+    expect(second, 'the line must track the pointer, not freeze at its origin').not.toBe(first);
+  });
+
   it('shows the empty canvas without error', async () => {
     getCanvasMock.mockResolvedValue(response({ canvas: { nodes: [], edges: [] } }));
     const { container } = render(() => <CanvasPanel filePath="/kiln/Empty.canvas" />);

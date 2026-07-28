@@ -87,7 +87,18 @@ function sanitizeHtml(value: string): string {
   return runDOMPurify(value, {
     // `align` keeps `<p align="center">` (README demo blocks); `data-copy`
     // marks code-block copy buttons for the reading-view click delegate.
-    ADD_ATTR: ['data-note', 'data-copy', 'style', 'align'],
+    // `data-callout` carries the admonition kind through to the CSS.
+    ADD_ATTR: ['data-note', 'data-copy', 'data-callout', 'style', 'align'],
+    // DOMPurify allows every `data-*` attribute by default. The document
+    // renderer permits raw HTML, and link resolution reads the nearest
+    // `data-kiln` ancestor to decide WHICH KILN a link resolves in — so a note
+    // could carry its own marker and redirect its links into another kiln,
+    // driven purely by content, needing no script. Only the two attributes
+    // named above are actually used; everything else data-* is stripped.
+    // `data-kiln` is deliberately NOT in that list: no renderer emits it, and
+    // it is set only on trusted component wrappers that never pass through
+    // here.
+    ALLOW_DATA_ATTR: false,
   });
 }
 

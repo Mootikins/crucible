@@ -94,14 +94,30 @@ const QuarantinedNode: Component<{ reason: string }> = (props) => (
   </div>
 );
 
+/**
+ * Schemes a link node may navigate to.
+ *
+ * A `link` node's `url` is arbitrary text from the document, and containment
+ * deliberately does not police it — a URL is not a filesystem reference. But it
+ * lands in an `href`, so `javascript:` would execute on click and `data:` can
+ * carry a document with the app's origin in its opener chain. Anything not on
+ * this list renders as inert text.
+ */
+const SAFE_SCHEMES = ['http:', 'https:', 'mailto:'];
+
 const LinkCard: Component<{ url: string }> = (props) => {
-  const host = createMemo(() => {
+  const parsed = createMemo(() => {
     try {
-      return new URL(props.url).host;
+      return new URL(props.url);
     } catch {
-      return props.url;
+      return null;
     }
   });
+  const safe = createMemo(() => {
+    const u = parsed();
+    return u !== null && SAFE_SCHEMES.includes(u.protocol);
+  });
+  const host = createMemo(() => parsed()?.host ?? props.url);
 
   // A link card rather than an iframe by default: embedding silently contacts
   // a third party the moment a canvas is opened, which is a privacy decision
@@ -109,10 +125,12 @@ const LinkCard: Component<{ url: string }> = (props) => {
   return (
     <a
       class="flex h-full flex-col justify-center gap-1 px-3 no-underline"
-      href={props.url}
+      href={safe() ? props.url : undefined}
       target="_blank"
       rel="noopener noreferrer"
       data-testid="canvas-link-node"
+      data-unsafe-scheme={safe() ? undefined : 'true'}
+      title={safe() ? undefined : 'Blocked: unsupported URL scheme'}
     >
       <span class="flex items-center gap-1.5 text-xs text-muted">
         <ExternalLink class="h-3 w-3" />

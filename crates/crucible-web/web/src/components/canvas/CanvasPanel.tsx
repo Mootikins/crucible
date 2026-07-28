@@ -515,9 +515,21 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
     }
   };
 
-  const hitTest = (document: CanvasDoc, x: number, y: number): CanvasNode | undefined => {
+  /** The live marquee rectangle in canvas space, or null when not marqueeing. */
+  const marqueeRect = createMemo(() => {
+    const d = drag();
+    if (d?.kind !== 'marquee') return null;
+    return {
+      x: Math.min(d.startX, d.currentX),
+      y: Math.min(d.startY, d.currentY),
+      width: Math.abs(d.currentX - d.startX),
+      height: Math.abs(d.currentY - d.startY),
+    };
+  });
+
+  const hitTest = (scene: CanvasDoc, x: number, y: number): CanvasNode | undefined => {
     // Reverse order: the topmost node in z-order wins.
-    return [...document.nodes]
+    return [...scene.nodes]
       .reverse()
       .find((n) => x >= n.x && x <= n.x + n.width && y >= n.y && y <= n.y + n.height);
   };
@@ -1013,22 +1025,22 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
           }}
         </For>
 
+          {/* Every dimension is read INSIDE the style bindings. `Show`
+              instantiates its children once when the condition flips truthy,
+              so capturing `drag()` into a const froze the rectangle at
+              pointerdown — where start and current are equal — and it rendered
+              0x0 for the whole gesture. */}
           <Show when={drag()?.kind === 'marquee'}>
-            {(() => {
-              const d = drag() as Extract<Drag, { kind: 'marquee' }>;
-              return (
-                <div
-                  class="pointer-events-none absolute border border-primary bg-primary/10"
-                  style={{
-                    left: `${Math.min(d.startX, d.currentX)}px`,
-                    top: `${Math.min(d.startY, d.currentY)}px`,
-                    width: `${Math.abs(d.currentX - d.startX)}px`,
-                    height: `${Math.abs(d.currentY - d.startY)}px`,
-                  }}
-                  data-testid="canvas-marquee"
-                />
-              );
-            })()}
+            <div
+              class="pointer-events-none absolute border border-primary bg-primary/10"
+              style={{
+                left: `${marqueeRect()?.x ?? 0}px`,
+                top: `${marqueeRect()?.y ?? 0}px`,
+                width: `${marqueeRect()?.width ?? 0}px`,
+                height: `${marqueeRect()?.height ?? 0}px`,
+              }}
+              data-testid="canvas-marquee"
+            />
           </Show>
         </div>
       </div>
@@ -1042,9 +1054,19 @@ const EdgeLayer: Component<{
   doc: CanvasDoc;
   selectedEdge?: string | null;
   onSelectEdge?: (id: string) => void;
-  pending?: { from: string; currentX: number; currentY: number };
+  pending?: { from: string; fromSide: EdgeSide; currentX: number; currentY: number };
 }> = (props) => {
   const nodeById = createMemo(() => new Map(props.doc.nodes.map((n) => [n.id, n])));
+
+  /** The in-flight connection line, from the grabbed side to the pointer. */
+  const pendingPath = createMemo(() => {
+    const pending = props.pending;
+    if (!pending) return '';
+    const from = nodeById().get(pending.from);
+    if (!from) return '';
+    const a = anchorPoint(from, pending.fromSide);
+    return `M ${a.x} ${a.y} L ${pending.currentX} ${pending.currentY}`;
+  });
 
   const geometry = createMemo(() =>
     props.doc.edges.flatMap((edge: CanvasEdge) => {
@@ -1139,23 +1161,20 @@ const EdgeLayer: Component<{
         )}
       </For>
 
+      {/* `d` is computed inside the binding. Capturing the endpoints into
+          consts froze the line at its origin for the whole gesture: `Show`
+          creates its children once, and a fresh `pending` object each
+          pointermove never flips the condition's truthiness. Also honours the
+          side the drag started from rather than assuming the right edge. */}
       <Show when={props.pending}>
-        {(pending) => {
-          const from = nodeById().get(pending().from);
-          if (!from) return null;
-          const a = { x: from.x + from.width, y: from.y + from.height / 2 };
-          const b = { x: pending().currentX, y: pending().currentY };
-          return (
-            <path
-              d={`M ${a.x} ${a.y} L ${b.x} ${b.y}`}
-              stroke="var(--color-primary)"
-              stroke-width={1.5}
-              stroke-dasharray="4 3"
-              fill="none"
-              data-testid="canvas-pending-edge"
-            />
-          );
-        }}
+        <path
+          d={pendingPath()}
+          stroke="var(--color-primary)"
+          stroke-width={1.5}
+          stroke-dasharray="4 3"
+          fill="none"
+          data-testid="canvas-pending-edge"
+        />
       </Show>
     </svg>
   );

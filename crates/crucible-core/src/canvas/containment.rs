@@ -108,20 +108,45 @@ pub fn resolve_file_ref(reference: &str, kiln_root: &Path) -> Result<PathBuf, Re
 
     let joined = kiln_root.join(raw);
 
-    // A symlink inside the kiln can still point out of it, and that resolution
-    // is only visible once the target exists.
-    if joined.exists() {
-        let canonical_root = kiln_root
-            .canonicalize()
-            .map_err(|_| RefError::OutsideKiln)?;
-        let canonical = joined.canonicalize().map_err(|_| RefError::OutsideKiln)?;
-        if !canonical.starts_with(&canonical_root) {
-            return Err(RefError::OutsideKiln);
+    let canonical_root = kiln_root
+        .canonicalize()
+        .map_err(|_| RefError::OutsideKiln)?;
+
+    // Canonicalize the deepest ancestor that EXISTS, not the target itself.
+    //
+    // A canvas may legitimately point at a deleted note, so the target being
+    // absent cannot be an error. But checking only when the whole path exists
+    // meant a symlinked ancestor plus a missing leaf escaped entirely:
+    // `escape/Gone.md`, with `escape -> /outside`, passed every lexical check
+    // and resolved outside the kiln precisely BECAUSE the file was not there.
+    let mut cursor = joined.as_path();
+    let resolved_ancestor = loop {
+        match cursor.canonicalize() {
+            Ok(resolved) => break resolved,
+            Err(_) => match cursor.parent() {
+                // Ran out of ancestors without finding one that exists: the
+                // whole chain is missing, so nothing can have been redirected.
+                None => return Ok(joined),
+                Some(parent) => cursor = parent,
+            },
         }
-        return Ok(canonical);
+    };
+
+    if !resolved_ancestor.starts_with(&canonical_root) {
+        return Err(RefError::OutsideKiln);
     }
 
-    Ok(joined)
+    // The target itself exists: hand back its canonical form.
+    if cursor == joined.as_path() {
+        return Ok(resolved_ancestor);
+    }
+
+    // Otherwise rebuild the missing tail onto the verified ancestor, so callers
+    // get a path that cannot re-traverse the link they were just checked past.
+    let tail = joined
+        .strip_prefix(cursor)
+        .map_err(|_| RefError::OutsideKiln)?;
+    Ok(resolved_ancestor.join(tail))
 }
 
 /// Check every file reference a canvas makes, returning the rejections.
@@ -299,6 +324,29 @@ mod tests {
             resolve_file_ref("escape/secrets.rs", &kiln),
             Err(RefError::OutsideKiln),
             "a symlink out of the kiln must not be reachable from a canvas"
+        );
+    }
+
+    /// A reference to a MISSING file behind a symlinked ancestor.
+    ///
+    /// The lexical checks all pass, and the symlink check used to run only when
+    /// the full path existed — so naming a file that is not there was enough to
+    /// escape. The module doc claimed absence could never be used this way;
+    /// a symlinked ancestor is exactly that case.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_ancestor_cannot_be_escaped_through_by_naming_a_missing_file() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().join("kiln");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&kiln).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, kiln.join("escape")).unwrap();
+
+        assert_eq!(
+            resolve_file_ref("escape/Gone.md", &kiln),
+            Err(RefError::OutsideKiln),
+            "a missing leaf behind a symlinked ancestor must not resolve"
         );
     }
 
