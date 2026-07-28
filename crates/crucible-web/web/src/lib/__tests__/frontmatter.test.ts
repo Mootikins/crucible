@@ -78,4 +78,32 @@ describe('renderFrontmatterCardHtml', () => {
     expect(html).toContain('<span class="fm-pill">a&amp;b</span>');
     expect(html).not.toContain('<b>');
   });
+
+  /**
+   * Properties are reference material, not the note. On a canvas card a
+   * four-key block can outweigh the prose it belongs to.
+   */
+  it('is collapsed by default', () => {
+    const html = renderFrontmatterCardHtml([{ key: 'title', value: 'x' }]);
+    expect(html).toContain('<details');
+    // `open` is what a <details> renders expanded; its absence IS the collapse.
+    expect(html).not.toContain('open');
+  });
+
+  it('summarises how many properties are hidden, pluralised', () => {
+    expect(renderFrontmatterCardHtml([{ key: 'a', value: '1' }])).toContain('1 property');
+    expect(
+      renderFrontmatterCardHtml([
+        { key: 'a', value: '1' },
+        { key: 'b', value: '2' },
+      ]),
+    ).toContain('2 properties');
+  });
+
+  /** Escaped through the same path as the rows — the label is built, not user text, but the rows beside it are not. */
+  it('keeps the rows available inside the collapsed card', () => {
+    const html = renderFrontmatterCardHtml([{ key: 'tags', value: ['kiln'] }]);
+    expect(html).toContain('fm-rows');
+    expect(html).toContain('<span class="fm-pill">kiln</span>');
+  });
 });

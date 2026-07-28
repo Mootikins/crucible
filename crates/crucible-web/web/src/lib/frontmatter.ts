@@ -164,6 +164,14 @@ const escapeHtml = (s: string): string =>
  * The Properties card. Same HTML in the reading view and the live-preview
  * widget; styled by `.fm-card` in index.css. All text is escaped here — the
  * output is safe to assign via innerHTML.
+ *
+ * Collapsed by default, and built from native `<details>`/`<summary>` rather
+ * than a toggle with a click handler. Both surfaces inject this as a string
+ * of HTML, not as a component tree, so anything needing JS would have to be
+ * wired up twice — once in the reading view and again in the CodeMirror
+ * widget — and stay wired as they change. `<details>` toggles itself, keeps
+ * keyboard and screen-reader behaviour for free, and survives being
+ * re-rendered from scratch.
  */
 export function renderFrontmatterCardHtml(entries: FrontmatterEntry[]): string {
   const rows = entries
@@ -174,5 +182,15 @@ export function renderFrontmatterCardHtml(entries: FrontmatterEntry[]): string {
       return `<div class="fm-row"><span class="fm-key">${escapeHtml(key)}</span><span class="fm-val">${val}</span></div>`;
     })
     .join('');
-  return `<div class="fm-card" data-testid="fm-card">${rows}</div>`;
+  const count = entries.length;
+  const label = `${count} ${count === 1 ? 'property' : 'properties'}`;
+  return (
+    `<details class="fm-card" data-testid="fm-card">` +
+    `<summary class="fm-summary" data-testid="fm-summary">` +
+    `<span class="fm-summary-label">${escapeHtml(label)}</span>` +
+    `<span class="fm-caret" aria-hidden="true"></span>` +
+    `</summary>` +
+    `<div class="fm-rows">${rows}</div>` +
+    `</details>`
+  );
 }
