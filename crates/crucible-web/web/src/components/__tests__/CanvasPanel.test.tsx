@@ -31,6 +31,22 @@ const response = (over: Partial<CanvasResponse> = {}): CanvasResponse => ({
   ...over,
 });
 
+/**
+ * Canvas point → client point, read off the layer's own transform.
+ *
+ * A canvas opens centred on its content, so canvas coordinates are NOT client
+ * coordinates and hard-coding them silently aims a drag at empty space.
+ */
+const canvasToClient = (container: HTMLElement, x: number, y: number) => {
+  const layer = container.querySelector('[data-testid="canvas-layer"]') as HTMLElement;
+  const m = /scale\(([-\d.]+)\)\s*translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec(
+    layer.style.transform,
+  );
+  if (!m) throw new Error(`unreadable canvas transform: ${layer.style.transform}`);
+  const [zoom, tx, ty] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  return { x: (x + tx) * zoom, y: (y + ty) * zoom };
+};
+
 describe('CanvasPanel', () => {
   beforeEach(() => {
     getCanvasMock.mockReset();
@@ -199,6 +215,95 @@ describe('CanvasPanel', () => {
       const raw = container.querySelector('[data-testid="canvas-card-source"]');
       expect(raw?.textContent).toContain('Hello **world**');
     });
+  });
+
+  /**
+   * Dragging a connection gave no sign of where it would land — the only
+   * feedback was a dashed line following the cursor, so whether a release
+   * would connect anything was a guess until you let go.
+   */
+  it('highlights the node a connection would land on, and snaps the line to it', async () => {
+    getCanvasMock.mockResolvedValue(response());
+    const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
+    });
+
+    const card = container.querySelector('[data-node-id="text-1"]') as HTMLElement;
+    card.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+
+    const dot = (await waitFor(() => {
+      const el = container.querySelector('[data-testid="canvas-connect-dot"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+    dot.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 2 }));
+
+    const surface = container.querySelector('[data-testid="canvas-surface"]') as HTMLElement;
+    const move = (x: number, y: number) =>
+      surface.dispatchEvent(
+        new PointerEvent('pointermove', { bubbles: true, pointerId: 2, clientX: x, clientY: y }),
+      );
+
+    // Far from any node: in flight, nothing to land on.
+    const empty = canvasToClient(container, 5000, 5000);
+    move(empty.x, empty.y);
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="canvas-pending-edge"]')).toBeTruthy();
+    });
+    expect(container.querySelector('[data-testid="canvas-connect-target"]')).toBeNull();
+
+    // Over the middle of file-1 (canvas 300..500 x, 0..120 y).
+    const onFile = canvasToClient(container, 400, 60);
+    move(onFile.x, onFile.y);
+    await waitFor(() => {
+      const target = container.querySelector('[data-testid="canvas-connect-target"]');
+      expect(target?.getAttribute('data-node-id')).toBe('file-1');
+    });
+    expect(
+      container.querySelector('[data-testid="canvas-pending-edge"]')?.getAttribute('data-snapped'),
+    ).toBe('true');
+    expect(container.querySelector('[data-testid="canvas-connect-target-anchor"]')).toBeTruthy();
+  });
+
+  /**
+   * The highlight runs the same hit test the drop does, so it must refuse the
+   * source card too — otherwise it would advertise a self-connection that
+   * releasing declines to make.
+   */
+  it('does not offer the source card as its own destination', async () => {
+    getCanvasMock.mockResolvedValue(response());
+    const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
+    });
+
+    const card = container.querySelector('[data-node-id="text-1"]') as HTMLElement;
+    card.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+    const dot = (await waitFor(() => {
+      const el = container.querySelector('[data-testid="canvas-connect-dot"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+    dot.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 2 }));
+
+    const surface = container.querySelector('[data-testid="canvas-surface"]') as HTMLElement;
+    // Back over text-1 itself (canvas 0..200 x, 0..120 y).
+    const onSelf = canvasToClient(container, 100, 60);
+    surface.dispatchEvent(
+      new PointerEvent('pointermove', {
+        bubbles: true,
+        pointerId: 2,
+        clientX: onSelf.x,
+        clientY: onSelf.y,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="canvas-pending-edge"]')).toBeTruthy();
+    });
+    const target = container.querySelector('[data-testid="canvas-connect-target"]');
+    expect(target?.getAttribute('data-node-id') ?? null).not.toBe('text-1');
   });
 
   /** One click to work in the page, as in Obsidian — not a double-click. */

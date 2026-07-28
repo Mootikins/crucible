@@ -492,6 +492,48 @@ describe('live preview: styled everywhere except the construct at the cursor', (
     expect(view.dom.querySelector('.cm-lp-frontmatter .cm-lp-strong')).toBeNull();
   });
 
+  /**
+   * The widget turns a mousedown into a selection change so clicking rendered
+   * prose puts the cursor in the source behind it. A `<summary>` is the
+   * exception: it owns its own click. Only the callout title was exempt, so
+   * clicking the Properties disclosure dropped the editor into raw YAML instead
+   * of expanding it — the card was expandable in the reading view and nowhere
+   * else, and nothing covered it.
+   */
+  it('lets the Properties disclosure toggle instead of jumping into the source', () => {
+    const FM_DOC = ['---', 'tags: [kiln]', 'title: A **note**', '---', '', '# Title', ''].join('\n');
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    const view = track(
+      new EditorView({
+        state: EditorState.create({
+          doc: FM_DOC,
+          extensions: [
+            yamlFrontmatter({ content: markdown({ base: markdownLanguage }) }),
+            livePreview(),
+          ],
+        }),
+        parent,
+      }),
+    );
+    cursorAt(view, FM_DOC.length);
+
+    const summary = view.dom.querySelector(
+      '.cm-lp-fm [data-testid="fm-summary"]',
+    ) as HTMLElement | null;
+    expect(summary).not.toBeNull();
+
+    const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    summary!.dispatchEvent(event);
+
+    // Not swallowed: the browser's own <details> toggle must still run.
+    expect(event.defaultPrevented).toBe(false);
+    // And the widget survives — a selection change here would replace it with
+    // the raw yaml.
+    expect(view.dom.querySelector('[data-testid="fm-card"]')).not.toBeNull();
+    expect(text(view)).not.toContain('---');
+  });
+
   it('TOML (+++) frontmatter gets the Properties card too', () => {
     const DOC = ['+++', 'title = "T"', 'tags = ["a", "b"]', '+++', '', '# Body', ''].join('\n');
     const parent = document.createElement('div');

@@ -606,9 +606,12 @@ class RenderedBlockWidget extends WidgetType {
           ? sanitizeDocHtml(this.source, this.baseDir || undefined)
           : renderMarkdown(this.source);
     wrap.addEventListener('mousedown', (e) => {
-      // Foldable callout title: let the browser's <details> toggle run
-      // instead of jumping into the source.
-      if ((e.target as HTMLElement).closest?.('summary.callout-title')) return;
+      // A disclosure inside the widget: let the browser's <details> toggle run
+      // instead of jumping into the source. Both the foldable callout title and
+      // the frontmatter Properties card are summaries — matching only the
+      // callout meant clicking Properties dropped you into raw YAML, so the
+      // card was expandable in the reading view and nowhere else.
+      if ((e.target as HTMLElement).closest?.(TOGGLE_SUMMARY_SELECTOR)) return;
       e.preventDefault();
       const pos = view.posAtDOM(wrap);
       view.dispatch({ selection: { anchor: pos } });
@@ -620,9 +623,17 @@ class RenderedBlockWidget extends WidgetType {
   override ignoreEvent(e: Event): boolean {
     // Summary clicks are the widget's own business (fold toggle) — CM must
     // not turn them into selection changes that reveal the source.
-    return !!(e.target as HTMLElement).closest?.('summary.callout-title');
+    return !!(e.target as HTMLElement).closest?.(TOGGLE_SUMMARY_SELECTOR);
   }
 }
+
+/**
+ * Every `<summary>` inside a rendered widget that owns its own clicks.
+ *
+ * One list, used by BOTH the mousedown handler and `ignoreEvent` — they have to
+ * agree, and they previously did only because there was a single entry.
+ */
+const TOGGLE_SUMMARY_SELECTOR = 'summary.callout-title, summary.fm-summary';
 
 /** Table, an HTML block, YAML frontmatter, or a Blockquote whose first line
  * is a `> [!type]` callout head — each rendered as a block widget. */

@@ -582,6 +582,9 @@ details.callout[open] > summary.callout-title::after {
 }
 .fm-card[open] {
   float: none;
+  /* `flow-root` only when open, so the card contains its own floated summary.
+     The closed state keeps plain block display and the UA's content hiding. */
+  display: flow-root;
   margin: 0 0 1rem;
   padding: 8px 12px;
   border: 1px solid var(--color-hairline);
@@ -607,16 +610,22 @@ details.callout[open] > summary.callout-title::after {
   color: var(--color-shell-ink);
   border-color: var(--color-hairline-strong);
 }
-/* Open, the square becomes the card's own header ROW rather than a box
-   floating inside a box — and the row is the hit target. As a shrink-wrapped
-   box the only thing you could click to collapse it again was the caret
-   itself, which is 8px of arrow. */
+/* Open, the square stays exactly where it was — floated into the corner — and
+   the first property row flows BESIDE it. A full-width header row spent a whole
+   horizontal slice of the note on one small arrow. Float rather than absolute
+   so a long first value wraps under the square instead of running beneath it. */
 .fm-card[open] .fm-summary {
-  height: auto;
-  width: 100%;
-  justify-content: flex-end;
-  border: 0;
-  padding: 2px 0 8px;
+  position: relative;
+  float: right;
+  margin: 0 0 2px 8px;
+}
+/* The square is 18px; this makes the target ~66x30 without drawing anything.
+   Only when open — collapsed, the square sits in the prose and a wide pad
+   would steal clicks from the note's own first line. */
+.fm-card[open] .fm-summary::after {
+  content: '';
+  position: absolute;
+  inset: -6px -6px -6px -44px;
 }
 .fm-summary::-webkit-details-marker {
   display: none;
@@ -633,12 +642,16 @@ details.callout[open] > summary.callout-title::after {
 .fm-card[open] .fm-caret {
   transform: rotate(180deg);
 }
-/* Only the expanded body carries the row spacing; a collapsed card is one
-   line and must not reserve the grid gap. */
+/* Plain flow, deliberately NOT grid: a grid container is a block formatting
+   context and would clear the floated summary over its whole height, indenting
+   every row by the square's width. In normal flow only the first row — the one
+   actually beside the square — shortens. `.fm-row` is itself a grid and its own
+   BFC, so the columns still line up. */
 .fm-card[open] .fm-rows {
-  display: grid;
-  gap: 3px;
-  margin-top: 6px;
+  display: block;
+}
+.fm-row + .fm-row {
+  margin-top: 3px;
 }
 .fm-row {
   display: grid;
@@ -760,12 +773,64 @@ details.callout[open] > summary.callout-title::after {
 .canvas-card-body .cm-line {
   font-size: var(--canvas-card-font);
 }
-/* The properties square and the live/source toggle both want the card's top
-   right corner. The toggle is an overlay, so the floated square steps left by
-   its width and they read as one row of small controls rather than stacking on
-   top of each other. */
+/* The live/source switch, docked INTO the card's top-right corner rather than
+   floated over the note.
+
+   It draws no top or right border — those are the card's own edges — and
+   inherits the card's outer radius, so it reads as the border folding inward
+   instead of a chip resting on the text. Same idiom as the hostname tab on an
+   embedded web card. Opaque rather than translucent: it sits over arbitrary
+   markdown, and a see-through control over a code block is a smear. */
+.canvas-card-mode {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.25rem;
+  width: 1.25rem;
+  cursor: pointer;
+  border: 0;
+  border-left: 1px solid var(--color-hairline);
+  border-bottom: 1px solid var(--color-hairline);
+  border-top-right-radius: var(--radius-lg);
+  border-bottom-left-radius: var(--radius-md);
+  background: var(--color-surface-elevated);
+  color: var(--color-muted-dark);
+  opacity: 0.55;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+.canvas-card:hover .canvas-card-mode,
+.canvas-card-mode:hover,
+.canvas-card-mode[aria-pressed='true'] {
+  opacity: 1;
+}
+.canvas-card-mode:hover {
+  color: var(--color-shell-ink);
+  border-color: var(--color-hairline-strong);
+}
+.canvas-card-mode:focus-visible {
+  opacity: 1;
+  outline: 1px solid var(--color-primary);
+  outline-offset: -1px;
+}
+/* Hover does not exist on touch — never hide the only control there. */
+@media (hover: none) {
+  .canvas-card-mode {
+    opacity: 1;
+  }
+}
+
+/* The properties square and the toggle both want the top-right corner. The
+   toggle owns the corner itself, so the floated square steps left to clear it
+   and the two read as one row of small controls. */
 .canvas-card-body:has(.canvas-card-mode) .fm-card:not([open]) {
-  margin-right: 1.5rem;
+  margin-right: 1.6rem;
 }
 
 /* Raw source view of an unfocused card: the same text an editor would show,

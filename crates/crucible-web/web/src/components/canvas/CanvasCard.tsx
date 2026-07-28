@@ -54,7 +54,8 @@ const Markdown: Component<{
           two ways to say the same thing. */}
       <button
         type="button"
-        class="canvas-card-mode absolute right-1 top-1 z-10 flex h-[1.125rem] w-[1.125rem] items-center justify-center rounded-sm border border-hairline bg-surface-elevated/90 text-muted-dark hover:border-hairline-strong hover:text-shell-ink"
+        class="canvas-card-mode"
+        aria-pressed={sourceMode()}
         title={sourceMode() ? 'Live preview' : 'Source'}
         aria-label={sourceMode() ? 'Live preview' : 'Source'}
         data-testid="canvas-card-mode-toggle"

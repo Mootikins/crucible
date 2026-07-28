@@ -592,11 +592,35 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
     };
   });
 
+  /**
+   * The node a release would connect to right now.
+   *
+   * Deliberately the SAME `hitTest` + self-exclusion the drop performs, so the
+   * highlight cannot advertise a connection that releasing then declines.
+   */
+  const connectTarget = createMemo(() => {
+    const d = drag();
+    if (d?.kind !== 'connect') return null;
+    const hit = hitTest(doc(), d.currentX, d.currentY);
+    return hit && hit.id !== d.from ? hit.id : null;
+  });
+
   const hitTest = (scene: CanvasDoc, x: number, y: number): CanvasNode | undefined => {
-    // Reverse order: the topmost node in z-order wins.
-    return [...scene.nodes]
-      .reverse()
-      .find((n) => x >= n.x && x <= n.x + n.width && y >= n.y && y <= n.y + n.height);
+    const within = (n: CanvasNode) =>
+      x >= n.x && x <= n.x + n.width && y >= n.y && y <= n.y + n.height;
+
+    // Cards before groups, then reverse document order within each band.
+    //
+    // Document order IS z-order in the format, but rendering deliberately
+    // paints groups as a band BEHIND every card — a group that gained a
+    // background otherwise hid the cards inside it. Hit testing on raw
+    // document order therefore disagreed with what is on screen: a group
+    // listed after its members sits visually behind them but won the hit,
+    // so clicking a card inside it selected the group, and dragging a
+    // connection onto that card connected to the group instead. Hit testing
+    // has to match the painting.
+    const hits = [...scene.nodes].reverse().filter(within);
+    return hits.find((n) => n.type !== 'group') ?? hits[0];
   };
 
   // --- keyboard -------------------------------------------------------------
@@ -1262,6 +1286,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
               setEditingId(null);
             }}
             pending={drag()?.kind === 'connect' ? (drag() as Extract<Drag, { kind: 'connect' }>) : undefined}
+            pendingTarget={connectTarget()}
           />
 
         <For each={cardIds()}>
@@ -1298,17 +1323,45 @@ const EdgeLayer: Component<{
   selectedEdge?: string | null;
   onSelectEdge?: (id: string) => void;
   pending?: { from: string; fromSide: EdgeSide; currentX: number; currentY: number };
+  /**
+   * The node a release would land on, resolved by the SAME hit test the drop
+   * uses — passed in rather than recomputed here, so the highlight cannot
+   * promise a connection the drop then refuses.
+   */
+  pendingTarget?: string | null;
 }> = (props) => {
   const nodeById = createMemo(() => new Map(props.doc.nodes.map((n) => [n.id, n])));
+
+  /** Where the in-flight line ends: the target's anchor, else the pointer. */
+  const pendingEnd = createMemo(() => {
+    const pending = props.pending;
+    if (!pending) return null;
+    const from = nodeById().get(pending.from);
+    const target = props.pendingTarget ? nodeById().get(props.pendingTarget) : undefined;
+    // Snapping the line onto the anchor it would actually attach to is the
+    // feedback: the edge has no `toSide`, so the side is inferred at render
+    // time, and showing four candidate dots would imply a choice the drop does
+    // not offer.
+    if (!target || !from) return { x: pending.currentX, y: pending.currentY, snapped: false };
+    const a = anchorPoint(target, inferSide(target, from));
+    return { x: a.x, y: a.y, snapped: true };
+  });
 
   /** The in-flight connection line, from the grabbed side to the pointer. */
   const pendingPath = createMemo(() => {
     const pending = props.pending;
-    if (!pending) return '';
+    const end = pendingEnd();
+    if (!pending || !end) return '';
     const from = nodeById().get(pending.from);
     if (!from) return '';
     const a = anchorPoint(from, pending.fromSide);
-    return `M ${a.x} ${a.y} L ${pending.currentX} ${pending.currentY}`;
+    return `M ${a.x} ${a.y} L ${end.x} ${end.y}`;
+  });
+
+  /** The outline drawn around the node a release would connect to. */
+  const targetRect = createMemo(() => {
+    const target = props.pendingTarget ? nodeById().get(props.pendingTarget) : undefined;
+    return target ?? null;
   });
 
   const geometry = createMemo(() =>
@@ -1420,10 +1473,37 @@ const EdgeLayer: Component<{
           d={pendingPath()}
           stroke="var(--color-primary)"
           stroke-width={1.5}
-          stroke-dasharray="4 3"
+          // Solid once it has something to land on: the dashes say "in flight",
+          // and a line that stays dashed while snapped reads as still searching.
+          stroke-dasharray={pendingEnd()?.snapped ? undefined : '4 3'}
           fill="none"
           data-testid="canvas-pending-edge"
+          data-snapped={pendingEnd()?.snapped ? 'true' : 'false'}
         />
+
+        {/* The drop target, outlined, with the anchor the edge will attach to. */}
+        <Show when={targetRect()}>
+          <rect
+            x={targetRect()!.x}
+            y={targetRect()!.y}
+            width={targetRect()!.width}
+            height={targetRect()!.height}
+            rx={8}
+            fill="var(--color-primary)"
+            fill-opacity="0.06"
+            stroke="var(--color-primary)"
+            stroke-width={1.5}
+            data-testid="canvas-connect-target"
+            data-node-id={targetRect()!.id}
+          />
+          <circle
+            cx={pendingEnd()!.x}
+            cy={pendingEnd()!.y}
+            r={4}
+            fill="var(--color-primary)"
+            data-testid="canvas-connect-target-anchor"
+          />
+        </Show>
       </Show>
     </svg>
   );
