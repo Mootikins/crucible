@@ -772,6 +772,10 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
    * than being swallowed by the canvas.
    */
   const onDragOver = (e: DragEvent) => {
+    // A card open for editing owns its own drops, exactly as it owns its own
+    // pastes — dropping text into an editor should insert text, not build an
+    // unrelated card somewhere else on the board.
+    if (editingId() !== null) return;
     const types = e.dataTransfer?.types;
     if (!types) return;
     if (!types.includes('text/uri-list') && !types.includes('text/plain')) return;
@@ -781,11 +785,19 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
 
   const onDrop = (e: DragEvent) => {
     if (!surface) return;
+    if (editingId() !== null) return;
+    // Cancel the browser's own drop handling for anything we claimed in
+    // `onDragOver` — BEFORE deciding whether the payload is usable. Preventing
+    // the dragover only makes this a valid drop target; the default action is
+    // cancelled by preventing the DROP. Returning early without it meant a
+    // dragged link the parser rejected (an `ftp:` URL, say) fell through to
+    // the default action, which for a link is navigating the tab away —
+    // taking any canvas edit still inside the save debounce with it.
+    e.preventDefault();
     const raw =
       e.dataTransfer?.getData('text/uri-list') || e.dataTransfer?.getData('text/plain') || '';
     const url = firstUrlIn(raw);
     if (!url) return;
-    e.preventDefault();
     const rect = surface.getBoundingClientRect();
     createLinkNode(url, screenToCanvas(viewport(), e.clientX - rect.left, e.clientY - rect.top));
   };

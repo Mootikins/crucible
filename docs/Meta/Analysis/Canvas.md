@@ -153,7 +153,8 @@ rendered as a static card and could not be created here at all — a canvas
 authored in Obsidian showed its web cards, and Crucible could not add one.
 
 Both are now closed: the page is **embedded live**, matching Obsidian, and a
-card is created either from the toolbar or by pasting a URL onto the canvas.
+card is created from the toolbar, by pasting a URL onto the canvas, or by
+dragging a link out of the browser onto the spot you want it.
 
 Embedding does mean opening a canvas contacts every third party it references.
 That is a real change in posture from the static card, and the sandbox is what

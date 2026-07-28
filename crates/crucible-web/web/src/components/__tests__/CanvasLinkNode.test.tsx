@@ -75,6 +75,25 @@ describe('normaliseUrl', () => {
     expect(normaliseUrl(input)).toBe(expected);
   });
 
+  /**
+   * `word:` looks like a scheme, and a bare `host:port` is the most common way
+   * anyone writes a local dev server. Reading that port as a scheme rejected it
+   * outright.
+   */
+  it.each([
+    ['localhost:3000', 'https://localhost:3000/'],
+    ['localhost:3000/canvas', 'https://localhost:3000/canvas'],
+    ['example.com:8080', 'https://example.com:8080/'],
+  ])('reads %s as a host and port, not a scheme', (input, expected) => {
+    expect(normaliseUrl(input)).toBe(expected);
+  });
+
+  /** …without letting a real scheme through the same door. */
+  it('still refuses a genuine non-web scheme that has no port', () => {
+    expect(normaliseUrl('mailto:someone@example.com')).toBeNull();
+    expect(normaliseUrl('javascript:alert(1)')).toBeNull();
+  });
+
   it.each([
     'javascript:alert(1)',
     'data:text/html,<script>alert(1)</script>',
@@ -178,6 +197,32 @@ describe('authoring a web card', () => {
   it('ignores a drag that carries no URL', async () => {
     const container = await drop({ 'text/plain': 'some dragged prose' });
 
+    expect(container.querySelector('[data-testid="canvas-link-node"]')).toBeNull();
+  });
+
+  /**
+   * Preventing the DRAGOVER only makes the surface a valid drop target; the
+   * browser's own drop action is cancelled by preventing the DROP. Returning
+   * early without doing so let a dragged link the parser rejected fall through
+   * to the default action — for a link, navigating the tab away, taking any
+   * canvas edit still inside the save debounce with it.
+   */
+  it('cancels the browser drop even when the payload is unusable', async () => {
+    getCanvasMock.mockResolvedValue(empty());
+    const { container } = render(() => <CanvasPanel filePath="/kiln/B.canvas" />);
+    const surface = await waitFor(() => {
+      const el = container.querySelector('[data-testid="canvas-surface"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+
+    const event = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'dataTransfer', {
+      value: { types: ['text/uri-list'], getData: () => 'ftp://example.com/file' },
+    });
+    surface.dispatchEvent(event);
+
+    expect(event.defaultPrevented, 'an unusable drop must still be cancelled').toBe(true);
     expect(container.querySelector('[data-testid="canvas-link-node"]')).toBeNull();
   });
 });

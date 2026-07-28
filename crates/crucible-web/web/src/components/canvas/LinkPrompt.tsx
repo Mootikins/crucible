@@ -21,7 +21,13 @@ export function normaliseUrl(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
-  const candidate = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  // `word:` looks like a scheme — but so does `localhost:3000`, and reading
+  // that port as a scheme rejected the most common way anyone writes a local
+  // dev server. A colon followed by digits and nothing else is a port.
+  const schemed =
+    /^[a-z][a-z0-9+.-]*:/i.test(trimmed) &&
+    !/^[a-z][a-z0-9+.-]*:\d+(?:[/?#]|$)/i.test(trimmed);
+  const candidate = schemed ? trimmed : `https://${trimmed}`;
   let parsed: URL;
   try {
     parsed = new URL(candidate);
@@ -88,6 +94,12 @@ export const LinkPrompt: Component<{
             e.stopPropagation();
             if (e.key === 'Escape') props.onClose();
             if (e.key === 'Enter') submit();
+            // The dialog announces `aria-modal`, so focus must not leave it.
+            // The input is its only focusable control, which makes trapping a
+            // matter of refusing Tab — without this a keyboard user tabbed
+            // straight out onto the toolbar behind the backdrop and could fire
+            // Undo or Delete while the "modal" was still open.
+            if (e.key === 'Tab') e.preventDefault();
           }}
         />
         <Show when={invalid()}>
