@@ -4,6 +4,7 @@ import { MarkdownPreview } from '../editor/MarkdownPreview';
 import { getFileContent, saveFileContent } from '@/lib/api';
 import { openNoteInEditor } from '@/lib/note-actions';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
+import { Code, Eye } from '@/lib/icons';
 
 /**
  * The markdown surface of a canvas card.
@@ -32,6 +33,10 @@ const Markdown: Component<{
   // preference makes it the one place in the app where muscle memory fails.
   const { settings } = useSettingsSafe();
 
+  // Per-card and per-session: reaching for raw text is a momentary thing, and
+  // persisting it would mean a card silently opening as source days later.
+  const [sourceMode, setSourceMode] = createSignal(false);
+
   // A canvas belongs to ONE kiln and its cards' links resolve there. The
   // marker rides the card body rather than the preview alone, because the
   // hover popovers are wired at the document level and fire over the editor's
@@ -50,7 +55,26 @@ const Markdown: Component<{
       </div>
     }
   >
-    <div class="canvas-card-body h-full overflow-auto">
+    <div class="canvas-card-body relative h-full overflow-auto">
+      {/* The live/source switch every other markdown surface has. A card had
+          no way to reach raw text at all — live preview was hardcoded — so
+          fixing a link's syntax or a fence meant opening the note elsewhere.
+          Reading-vs-edit is deliberately NOT duplicated here: on a canvas that
+          is the click/double-click gate, and a second control for it would be
+          two ways to say the same thing. */}
+      <button
+        type="button"
+        class="canvas-card-mode absolute right-1 top-1 z-10 flex h-[1.125rem] w-[1.125rem] items-center justify-center rounded-sm border border-hairline bg-surface-elevated/90 text-muted-dark hover:border-hairline-strong hover:text-shell-ink"
+        title={sourceMode() ? 'Live preview' : 'Source'}
+        aria-label={sourceMode() ? 'Live preview' : 'Source'}
+        data-testid="canvas-card-mode-toggle"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={() => setSourceMode((v) => !v)}
+      >
+        <Show when={sourceMode()} fallback={<Code class="h-3 w-3" />}>
+          <Eye class="h-3 w-3" />
+        </Show>
+      </button>
       <CodeMirrorEditor
         content={props.content}
         path={props.path}
@@ -61,7 +85,7 @@ const Markdown: Component<{
         // (`CodeMirrorEditor` gates the whole bundle on it), so entering edit
         // mode silently stripped a card's links: no hover, no Ctrl+Click.
         onFollowLink={(target) => void openNoteInEditor(target, props.kiln)}
-        livePreview
+        livePreview={!sourceMode()}
       />
     </div>
     </Show>

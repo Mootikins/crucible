@@ -573,27 +573,47 @@ details.callout[open] > summary.callout-title::after {
 /* Frontmatter Properties card (lib/frontmatter.ts renderFrontmatterCardHtml)
    — the SAME card in the reading view and the live-preview widget. Quiet
    key/value rows; array values render as pill chips. */
+/* Collapsed, this is a single square floated out of the flow: the note's own
+   first heading or paragraph sits at the very top, with the toggle tucked into
+   the corner beside it. Opened, it becomes an ordinary block card. */
 .fm-card {
+  float: right;
+  margin: 0 0 4px 8px;
+}
+.fm-card[open] {
+  float: none;
   margin: 0 0 1rem;
   padding: 8px 12px;
   border: 1px solid var(--color-hairline);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--color-surface-elevated) 45%, transparent);
 }
-/* The whole summary row is the hit target, with the caret sitting top-right.
-   The default disclosure triangle is suppressed on both engines — WebKit
-   needs the vendor pseudo-element, everything else honours `list-style`. */
+/* The default disclosure triangle is suppressed on both engines — WebKit needs
+   the vendor pseudo-element, everything else honours `list-style`. */
 .fm-summary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: center;
+  height: 1.125rem;
+  width: 1.125rem;
   cursor: pointer;
   list-style: none;
-  font-family: var(--font-mono);
-  font-size: 11px;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-sm);
   color: var(--color-muted-dark);
   user-select: none;
+}
+.fm-summary:hover {
+  color: var(--color-shell-ink);
+  border-color: var(--color-hairline-strong);
+}
+/* Open, the square becomes the card's own header row rather than a box
+   floating inside a box. */
+.fm-card[open] .fm-summary {
+  height: auto;
+  width: auto;
+  justify-content: flex-end;
+  border: 0;
 }
 .fm-summary::-webkit-details-marker {
   display: none;
@@ -736,6 +756,13 @@ details.callout[open] > summary.callout-title::after {
 .canvas-card-body .cm-content,
 .canvas-card-body .cm-line {
   font-size: var(--canvas-card-font);
+}
+/* The properties square and the live/source toggle both want the card's top
+   right corner. The toggle is an overlay, so the floated square steps left by
+   its width and they read as one row of small controls rather than stacking on
+   top of each other. */
+.canvas-card-body:has(.canvas-card-mode) .fm-card:not([open]) {
+  margin-right: 1.5rem;
 }
 
 /* MarkdownPreview ships its own panel background and generous page padding,

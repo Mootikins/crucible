@@ -184,10 +184,13 @@ export function renderFrontmatterCardHtml(entries: FrontmatterEntry[]): string {
     .join('');
   const count = entries.length;
   const label = `${count} ${count === 1 ? 'property' : 'properties'}`;
+  // Collapsed, the summary is a single small square floated out of the flow, so
+  // the note's own first line sits at the top of the card rather than below a
+  // header-shaped bar. The label survives as the tooltip and for assistive
+  // tech; only its visible text goes away.
   return (
     `<details class="fm-card" data-testid="fm-card">` +
-    `<summary class="fm-summary" data-testid="fm-summary">` +
-    `<span class="fm-summary-label">${escapeHtml(label)}</span>` +
+    `<summary class="fm-summary" data-testid="fm-summary" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">` +
     `<span class="fm-caret" aria-hidden="true"></span>` +
     `</summary>` +
     `<div class="fm-rows">${rows}</div>` +

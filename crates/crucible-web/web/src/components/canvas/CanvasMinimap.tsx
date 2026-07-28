@@ -12,8 +12,8 @@ import { visibleRect, type Viewport } from '@/lib/canvas-viewport';
 export const CanvasMinimap: Component<{
   nodes: CanvasNode[];
   viewport: Viewport;
-  /** Recentre the view on a canvas-space point. */
-  onNavigate: (point: { x: number; y: number }) => void;
+  /** Drag the canvas by a delta in canvas units — grab, not jump-to. */
+  onPan: (delta: { x: number; y: number }) => void;
   width?: number;
   height?: number;
 }> = (props) => {
@@ -67,47 +67,48 @@ export const CanvasMinimap: Component<{
     };
   });
 
-  const pointTo = (clientX: number, clientY: number, el: SVGSVGElement) => {
-    const rect = el.getBoundingClientRect();
-    props.onNavigate({
-      x: extent().x + (clientX - rect.left) / scale(),
-      y: extent().y + (clientY - rect.top) / scale(),
-    });
-  };
-
   /**
-   * Drag to scrub the view around, not click-to-jump.
+   * Drag moves the CANVAS, not the viewport rectangle.
    *
-   * A single click can only guess where you meant; dragging lets the canvas
-   * follow continuously, which is the point of having an overview. Pointer
-   * capture means the gesture survives leaving the little map — releasing
-   * outside it is otherwise a stuck drag.
+   * Both readings are defensible — the map is showing you a viewport box, so
+   * dragging it is one obvious meaning — but the canvas is the thing being
+   * looked at, and grabbing it is the same gesture as dragging the surface
+   * itself. Dragging the box instead inverts every motion relative to the
+   * canvas underneath, which reads as backwards.
+   *
+   * Deltas rather than absolute positions: jumping the view so the grabbed
+   * point lands under the cursor would lurch on the first pixel of movement.
+   * Pointer capture keeps the gesture alive outside the little map — releasing
+   * out there is otherwise a stuck drag.
    */
-  let dragging = false;
+  let last: { x: number; y: number } | null = null;
 
   const onPointerDown = (e: PointerEvent & { currentTarget: SVGSVGElement }) => {
-    // Left button only: a right-click here should not fling the viewport.
+    // Left button only: a right-click here should not fling the canvas.
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    dragging = true;
+    last = { x: e.clientX, y: e.clientY };
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
       /* capture unavailable (jsdom); the move handler still tracks */
     }
-    pointTo(e.clientX, e.clientY, e.currentTarget);
   };
 
   const onPointerMove = (e: PointerEvent & { currentTarget: SVGSVGElement }) => {
-    if (!dragging) return;
+    if (!last) return;
     e.preventDefault();
-    pointTo(e.clientX, e.clientY, e.currentTarget);
+    props.onPan({
+      x: (e.clientX - last.x) / scale(),
+      y: (e.clientY - last.y) / scale(),
+    });
+    last = { x: e.clientX, y: e.clientY };
   };
 
   const endDrag = (e: PointerEvent & { currentTarget: SVGSVGElement }) => {
-    if (!dragging) return;
-    dragging = false;
+    if (!last) return;
+    last = null;
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {

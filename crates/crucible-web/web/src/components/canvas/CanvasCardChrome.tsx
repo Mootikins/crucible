@@ -17,7 +17,8 @@ import { resolveCanvasColor, type CanvasColor } from '@/lib/canvas-types';
  *   a single button, alongside edit and delete.
  */
 
-export type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
+/** Corners resize both axes; the four cardinals resize one. */
+export type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w';
 export type EdgeSide = 'top' | 'right' | 'bottom' | 'left';
 
 const CORNERS: { corner: ResizeCorner; class: string; cursor: string }[] = [
@@ -27,26 +28,49 @@ const CORNERS: { corner: ResizeCorner; class: string; cursor: string }[] = [
   { corner: 'se', class: '-right-1.5 -bottom-1.5', cursor: 'nwse-resize' },
 ];
 
-const SIDES: { side: EdgeSide; zone: string; dot: string }[] = [
+/**
+ * Each cardinal edge is ONE hover box carrying two gestures.
+ *
+ * The box resizes along its axis, and the connection dot it reveals — the
+ * line-creation hitbox, previously invisible and occupying the whole edge —
+ * sits inside it. Splitting them across separate invisible zones meant the
+ * edge midpoint could only ever do one of the two, and which one was
+ * unguessable because neither was drawn.
+ */
+const SIDES: {
+  side: EdgeSide;
+  handle: ResizeCorner;
+  zone: string;
+  dot: string;
+  cursor: string;
+}[] = [
   {
     side: 'top',
-    zone: 'left-1/2 -translate-x-1/2 -top-2 h-4 w-12',
-    dot: 'left-1/2 -translate-x-1/2 -top-1.5',
+    handle: 'n',
+    zone: 'left-1/2 -translate-x-1/2 -top-2 h-4 w-16',
+    dot: 'left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2',
+    cursor: 'ns-resize',
   },
   {
     side: 'bottom',
-    zone: 'left-1/2 -translate-x-1/2 -bottom-2 h-4 w-12',
-    dot: 'left-1/2 -translate-x-1/2 -bottom-1.5',
+    handle: 's',
+    zone: 'left-1/2 -translate-x-1/2 -bottom-2 h-4 w-16',
+    dot: 'left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2',
+    cursor: 'ns-resize',
   },
   {
     side: 'left',
-    zone: 'top-1/2 -translate-y-1/2 -left-2 w-4 h-12',
-    dot: 'top-1/2 -translate-y-1/2 -left-1.5',
+    handle: 'w',
+    zone: 'top-1/2 -translate-y-1/2 -left-2 w-4 h-16',
+    dot: 'top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2',
+    cursor: 'ew-resize',
   },
   {
     side: 'right',
-    zone: 'top-1/2 -translate-y-1/2 -right-2 w-4 h-12',
-    dot: 'top-1/2 -translate-y-1/2 -right-1.5',
+    handle: 'e',
+    zone: 'top-1/2 -translate-y-1/2 -right-2 w-4 h-16',
+    dot: 'top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2',
+    cursor: 'ew-resize',
   },
 ];
 
@@ -164,19 +188,28 @@ export const CanvasCardChrome: Component<{
         )}
       </For>
 
-      {/* Connect: a dot, but only while the pointer is near that edge. */}
+      {/* One box per edge: resize along the axis, connect from the dot. */}
       <For each={SIDES}>
         {(s) => (
           <div
             class={`group absolute ${s.zone}`}
-            style={{ 'pointer-events': 'auto', cursor: 'crosshair' }}
-            data-testid="canvas-connect-zone"
+            style={{ 'pointer-events': 'auto', cursor: s.cursor }}
+            data-testid="canvas-resize-handle"
+            data-corner={s.handle}
             data-side={s.side}
-            onPointerDown={(e) => props.onConnectStart(e, s.side)}
+            onPointerDown={(e) => props.onResizeStart(e, s.handle)}
           >
             <div
-              class={`absolute h-3 w-3 rounded-full border border-primary bg-surface-elevated opacity-0 transition-opacity group-hover:opacity-100 ${s.dot}`}
+              class={`absolute h-3.5 w-3.5 rounded-full border border-primary bg-surface-elevated opacity-0 transition-opacity group-hover:opacity-100 ${s.dot}`}
+              style={{ cursor: 'crosshair' }}
               data-testid="canvas-connect-dot"
+              data-side={s.side}
+              // The dot sits inside the resize box, so its pointerdown must not
+              // also reach the box — otherwise starting a line resizes the card.
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                props.onConnectStart(e, s.side);
+              }}
             />
           </div>
         )}

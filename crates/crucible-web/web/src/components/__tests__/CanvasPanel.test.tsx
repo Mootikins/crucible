@@ -270,7 +270,7 @@ describe('CanvasPanel', () => {
     await waitFor(() => {
       expect(container.querySelector('[data-testid="canvas-card-toolbar"]')).toBeTruthy();
     });
-    expect(container.querySelectorAll('[data-testid="canvas-resize-handle"]').length).toBe(4);
+    expect(container.querySelectorAll('[data-testid="canvas-resize-handle"]').length).toBe(8);
 
     // A real double click lands on the CONTENT inside the card, not on the
     // node box itself.
@@ -298,16 +298,68 @@ describe('CanvasPanel', () => {
     card.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
 
     await waitFor(() => {
-      const corners = [...container.querySelectorAll('[data-testid="canvas-resize-handle"]')].map(
+      const handles = [...container.querySelectorAll('[data-testid="canvas-resize-handle"]')].map(
         (el) => el.getAttribute('data-corner'),
       );
-      expect(corners.sort()).toEqual(['ne', 'nw', 'se', 'sw']);
+      // Four corners resize both axes; four cardinals resize one each.
+      expect(handles.sort()).toEqual(['e', 'n', 'ne', 'nw', 's', 'se', 'sw', 'w']);
     });
 
-    const sides = [...container.querySelectorAll('[data-testid="canvas-connect-zone"]')].map((el) =>
+    // The connector dot lives INSIDE the cardinal resize box — one hover area
+    // per edge carrying both gestures, rather than two invisible zones
+    // competing for the same pixels.
+    const dots = [...container.querySelectorAll('[data-testid="canvas-connect-dot"]')].map((el) =>
       el.getAttribute('data-side'),
     );
-    expect(sides.sort()).toEqual(['bottom', 'left', 'right', 'top']);
+    expect(dots.sort()).toEqual(['bottom', 'left', 'right', 'top']);
+
+    for (const dot of container.querySelectorAll('[data-testid="canvas-connect-dot"]')) {
+      expect(
+        dot.closest('[data-testid="canvas-resize-handle"]'),
+        'the dot must sit inside its edge resize box',
+      ).toBeTruthy();
+    }
+  });
+
+  /**
+   * A cardinal handle resizes ONE axis — that constraint is the entire reason
+   * to have edge handles as well as corners. Without it the north handle also
+   * dragged the width, making it an awkward corner handle.
+   */
+  it('constrains a cardinal handle to its own axis', async () => {
+    getCanvasMock.mockResolvedValue(response());
+    const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
+    });
+
+    const card = container.querySelector('[data-node-id="file-1"]') as HTMLElement;
+    card.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+
+    const north = (await waitFor(() => {
+      const el = container.querySelector('[data-testid="canvas-resize-handle"][data-corner="n"]');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
+
+    const box = () => {
+      const el = container.querySelector('[data-node-id="file-1"]') as HTMLElement;
+      return { width: el.style.width, height: el.style.height, left: el.style.left };
+    };
+    const before = box();
+
+    north.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 2 }));
+    const surface = container.querySelector('[data-testid="canvas-surface"]') as HTMLElement;
+    // Deliberately diagonal: the horizontal component must be ignored.
+    surface.dispatchEvent(
+      new PointerEvent('pointermove', { bubbles: true, pointerId: 2, clientX: 80, clientY: 40 }),
+    );
+
+    await waitFor(() => {
+      expect(box().height, 'the north handle must change height').not.toBe(before.height);
+    });
+    expect(box().width, 'the north handle must not change width').toBe(before.width);
+    expect(box().left, 'the north handle must not move the left edge').toBe(before.left);
   });
 
   /**
@@ -388,12 +440,12 @@ describe('CanvasPanel', () => {
     const card = container.querySelector('[data-node-id="text-1"]') as HTMLElement;
     card.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
 
-    const zone = (await waitFor(() => {
-      const el = container.querySelector('[data-testid="canvas-connect-zone"]');
+    const dot = (await waitFor(() => {
+      const el = container.querySelector('[data-testid="canvas-connect-dot"]');
       expect(el).toBeTruthy();
       return el;
     })) as HTMLElement;
-    zone.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 2 }));
+    dot.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 2 }));
 
     const surface = container.querySelector('[data-testid="canvas-surface"]') as HTMLElement;
     surface.dispatchEvent(

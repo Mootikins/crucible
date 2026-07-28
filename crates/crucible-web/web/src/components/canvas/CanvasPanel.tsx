@@ -491,20 +491,30 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
       const dx = (e.clientX - d.startX) / zoom;
       const dy = (e.clientY - d.startY) / zoom;
 
-      // The opposite corner is the anchor: dragging the north-west handle moves
+      // The opposite edge is the anchor: dragging the north-west handle moves
       // the origin and shrinks the box, rather than moving the whole card.
-      const west = d.corner === 'nw' || d.corner === 'sw';
-      const north = d.corner === 'nw' || d.corner === 'ne';
-      const x = snap(west ? node.x + dx : node.x, useSnap);
-      const y = snap(north ? node.y + dy : node.y, useSnap);
+      const west = d.corner === 'nw' || d.corner === 'sw' || d.corner === 'w';
+      const north = d.corner === 'nw' || d.corner === 'ne' || d.corner === 'n';
+      // A cardinal handle resizes ONE axis. Without this the north handle also
+      // dragged the width, which is the whole reason a card has edge handles
+      // as well as corners.
+      const horizontal = d.corner !== 'n' && d.corner !== 's';
+      const vertical = d.corner !== 'e' && d.corner !== 'w';
+
+      const x = horizontal ? snap(west ? node.x + dx : node.x, useSnap) : node.x;
+      const y = vertical ? snap(north ? node.y + dy : node.y, useSnap) : node.y;
 
       setHistory((h) => ({
         ...h,
         present: resizeNode(d.origin, d.id, {
           x,
           y,
-          width: snap(west ? node.x + node.width - x : node.width + dx, useSnap),
-          height: snap(north ? node.y + node.height - y : node.height + dy, useSnap),
+          width: horizontal
+            ? snap(west ? node.x + node.width - x : node.width + dx, useSnap)
+            : node.width,
+          height: vertical
+            ? snap(north ? node.y + node.height - y : node.height + dy, useSnap)
+            : node.height,
         }),
       }));
       return;
@@ -969,9 +979,15 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
       setViewport(to);
     }
   };
-  const centreOn = (point: { x: number; y: number }) => {
+  /**
+   * Drag the canvas by a canvas-space delta.
+   *
+   * Moving the content right means the viewport origin moves LEFT — this is a
+   * grab, not a scroll.
+   */
+  const panCanvasBy = (delta: { x: number; y: number }) => {
     cancelZoomTween();
-    setViewport((v) => centreViewportOn(v, point));
+    setViewport((v) => ({ ...v, x: v.x - delta.x, y: v.y - delta.y }));
   };
 
   const absPathFor = (relPath: string) => `${kiln()}/${relPath}`;
@@ -1092,7 +1108,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
                 <CanvasMinimap
                   nodes={doc().nodes}
                   viewport={viewport()}
-                  onNavigate={centreOn}
+                  onPan={panCanvasBy}
                 />
                 <div class="mt-2 flex items-center gap-1.5">
                   <button
