@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EditorView } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
@@ -532,6 +532,43 @@ describe('live preview: styled everywhere except the construct at the cursor', (
     // the raw yaml.
     expect(view.dom.querySelector('[data-testid="fm-card"]')).not.toBeNull();
     expect(text(view)).not.toContain('---');
+  });
+
+  /**
+   * A `<details>` inside a widget changes the widget's height AFTER the editor
+   * measured it, and the editor keeps positioning every following line from the
+   * stale figure — expanding Properties pushed the note it belongs to up out of
+   * the viewport.
+   */
+  it('re-measures the editor when the Properties card is expanded', () => {
+    const FM_DOC = ['---', 'tags: [kiln]', 'title: A **note**', '---', '', '# Title', ''].join('\n');
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    const view = track(
+      new EditorView({
+        state: EditorState.create({
+          doc: FM_DOC,
+          extensions: [
+            yamlFrontmatter({ content: markdown({ base: markdownLanguage }) }),
+            livePreview(),
+          ],
+        }),
+        parent,
+      }),
+    );
+    cursorAt(view, FM_DOC.length);
+
+    const details = view.dom.querySelector(
+      '.cm-lp-fm [data-testid="fm-card"]',
+    ) as HTMLDetailsElement | null;
+    expect(details).not.toBeNull();
+
+    const measured = vi.spyOn(view, 'requestMeasure');
+    details!.open = true;
+    // `toggle` does not bubble; the widget listens in the capture phase.
+    details!.dispatchEvent(new Event('toggle'));
+
+    expect(measured).toHaveBeenCalled();
   });
 
   it('TOML (+++) frontmatter gets the Properties card too', () => {

@@ -617,6 +617,32 @@ class RenderedBlockWidget extends WidgetType {
       view.dispatch({ selection: { anchor: pos } });
       view.focus();
     });
+
+    // A `<details>` inside the widget changes the widget's HEIGHT after it was
+    // measured, and the editor goes on positioning every following line from
+    // the stale figure — so expanding the Properties card pushed the text it
+    // belongs to up out of the viewport. Same re-measure the async mermaid
+    // render does when its SVG lands.
+    //
+    // Capture phase: `toggle` does not bubble, so a listener on the wrapper
+    // only ever sees it on the way down.
+    wrap.addEventListener(
+      'toggle',
+      (e) => {
+        view.requestMeasure();
+        const details = e.target as HTMLDetailsElement | null;
+        if (!details?.open) return;
+        // Re-measuring fixes the editor's arithmetic but not the scroll
+        // position: the browser's own scroll anchoring compensates for content
+        // growing above the anchor, which carries the card that just expanded
+        // off the top of the view. Put it back on screen once the new height
+        // has been laid out. `nearest` so an already-visible card does not
+        // jump.
+        requestAnimationFrame(() => details.scrollIntoView({ block: 'nearest' }));
+      },
+      true,
+    );
+
     return wrap;
   }
 
