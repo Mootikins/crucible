@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-07-28
+
+No user-visible changes. This release covers the build and test infrastructure
+behind 0.17.0.
+
+### Fixed
+- **A daemon test failed on CI for a real reason, not flakiness.** The daemon multiplexes replies and server-pushed notifications down one socket, so a single read routinely returns a reply followed by the head of the next message. Three test helpers each allocated their read buffer per call, so returning a reply discarded whatever else that read had captured; the next call began mid-message and parsed a fragment. `plugin.reload` pushes a notification twice the size of the read chunk, which is why one test failed and its siblings did not, and why a retry did not help — the second attempt re-runs the same sequence. The helpers are now one connection type that owns its buffer, covered by a regression test that forces the interleaving deterministically. Reproducing the original needed contention rather than repetition: 64 sequential runs on an idle machine were clean, while twelve copies pinned to two CPUs failed 54 times out of 72.
+- The shared daemon fixture waited for the socket *file* to appear and then slept a fixed 50ms. `bind()` creates that path before the daemon is listening, so the constant was doing the work; it now polls until a connection is actually accepted. This was the last copy of a pattern already replaced elsewhere after the same intermittent failures.
+
+### Changed
+- The dependency licence gate runs on CI. It shipped in 0.17.0 wired into `just ci` only, and the GitHub workflow does not invoke `just ci` — so the check that exists to catch a new dependency's unexpected licence ran only when someone happened to run the full local suite. Both sides now run the same command, over all features rather than only those the release binary enables, so a licence cannot enter through a feature that is off today and on in a later release.
+
 ## [0.17.0] - 2026-07-27
 
 ### Added
