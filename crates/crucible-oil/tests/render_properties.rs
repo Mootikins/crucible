@@ -1,11 +1,14 @@
 #![cfg(feature = "test-utils")]
 
+mod common;
+
+use common::default_cases;
 use crucible_oil::proptest_strategies::*;
 use crucible_oil::*;
 use proptest::prelude::*;
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(200))]
+    #![proptest_config(ProptestConfig::with_cases(default_cases().max(200)))]
 
     #[test]
     fn prop_render_fits_width(node in arb_node(), width in arb_width()) {
@@ -74,7 +77,7 @@ mod bordered_tests {
     use super::*;
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+        #![proptest_config(ProptestConfig::with_cases(default_cases().max(100)))]
 
         #[test]
         fn prop_bordered_box_fits_width(
@@ -108,7 +111,7 @@ mod column_tests {
     use super::*;
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+        #![proptest_config(ProptestConfig::with_cases(default_cases().max(100)))]
 
         #[test]
         fn prop_column_children_fit_width(
@@ -140,7 +143,7 @@ mod styled_tests {
     use super::*;
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(200))]
+        #![proptest_config(ProptestConfig::with_cases(default_cases().max(200)))]
 
         #[test]
         fn prop_styled_node_renders_within_width(

@@ -313,9 +313,13 @@ coverage-open: coverage
 ci: fmt-check clippy license-check file-size-check test-ci test-features test-doc web-test-unit web-test
     @echo "CI checks passed!"
 
-# Run tests with CI profile (matches GitHub Actions)
+# Run tests with CI profile (matches GitHub Actions).
+#
+# `CRUCIBLE_PROPTEST_CASES=256` overrides the local 64-case floor for
+# property tests (see `crucible-oil/tests/common/mod.rs`); per-file `.max(N)`
+# floors still apply. GitHub Actions sets the same value via workflow `env:`.
 test-ci: build-test-fixtures
-    cargo nextest run --profile ci --workspace
+    CRUCIBLE_PROPTEST_CASES=256 cargo nextest run --profile ci --workspace
 
 # Feature-gated suites the default build never compiles.
 #
@@ -324,8 +328,11 @@ test-ci: build-test-fixtures
 # a `Border::Custom(BorderChars)` variant reached CI inside a `Serialize`
 # derive without `BorderChars` implementing it: green locally, red on the one
 # step that turns the feature on. GitHub runs these; so must `just ci`.
+#
+# `CRUCIBLE_PROPTEST_CASES=256` matches `test-ci` so the local run exercises
+# the same high-budget path the oil property tests see in CI.
 test-features:
-    cargo nextest run --profile ci -p crucible-oil --features serde,test-utils
+    CRUCIBLE_PROPTEST_CASES=256 cargo nextest run --profile ci -p crucible-oil --features serde,test-utils
     cargo nextest run --profile ci -p crucible-lua -E 'test(stubs)' --no-capture
 
 # Run doctests. nextest cannot execute them, so `test-ci` alone leaves every

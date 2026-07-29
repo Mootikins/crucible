@@ -1,11 +1,14 @@
 #![cfg(feature = "test-utils")]
 
+mod common;
+
+use common::default_cases;
 use crucible_oil::proptest_strategies::*;
 use crucible_oil::*;
 use proptest::prelude::*;
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(200))]
+    #![proptest_config(ProptestConfig::with_cases(default_cases().max(200)))]
 
     #[test]
     fn prop_column_output_has_expected_line_structure(
@@ -97,7 +100,7 @@ mod padding_tests {
     use super::*;
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+        #![proptest_config(ProptestConfig::with_cases(default_cases().max(100)))]
 
         #[test]
         fn prop_padding_reduces_available_width(
@@ -130,7 +133,7 @@ mod size_combination_tests {
     use super::*;
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+        #![proptest_config(ProptestConfig::with_cases(default_cases().max(100)))]
 
         #[test]
         fn prop_mixed_sizes_in_row(

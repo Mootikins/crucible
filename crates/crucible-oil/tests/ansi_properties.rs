@@ -1,10 +1,13 @@
 #![cfg(feature = "test-utils")]
 
+mod common;
+
+use common::default_cases;
 use crucible_oil::utils::{strip_ansi, visible_width, visual_rows};
 use proptest::prelude::*;
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(300))]
+    #![proptest_config(ProptestConfig::with_cases(default_cases().max(300)))]
 
     #[test]
     fn prop_strip_ansi_idempotent(s in ".*") {
@@ -93,7 +96,7 @@ mod ansi_with_codes_tests {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+        #![proptest_config(ProptestConfig::with_cases(default_cases().max(100)))]
 
         #[test]
         fn prop_visible_width_ignores_color_codes(s in "[a-zA-Z0-9]{1,30}") {
@@ -150,7 +153,7 @@ mod styled_render_tests {
     use crucible_oil::{render_to_string, text};
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(200))]
+        #![proptest_config(ProptestConfig::with_cases(default_cases().max(200)))]
 
         /// `visible_width` strips ANSI escapes when measuring; given the same
         /// underlying character cells, plain and styled outputs report the

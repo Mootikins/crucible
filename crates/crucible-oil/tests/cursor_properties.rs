@@ -1,10 +1,13 @@
 #![cfg(feature = "test-utils")]
 
+mod common;
+
+use common::default_cases;
 use crucible_oil::*;
 use proptest::prelude::*;
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(200))]
+    #![proptest_config(ProptestConfig::with_cases(default_cases().max(200)))]
 
     #[test]
     fn prop_cursor_in_bounds(
@@ -114,7 +117,7 @@ mod input_in_container_tests {
     use super::*;
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+        #![proptest_config(ProptestConfig::with_cases(default_cases().max(100)))]
 
         #[test]
         fn prop_cursor_in_row_is_offset(

@@ -6,7 +6,11 @@
 //! - Rendering sequences through Terminal produce clean scrollback
 
 #[cfg(feature = "test-utils")]
+mod common;
+
+#[cfg(feature = "test-utils")]
 mod tests {
+    use crate::common::default_cases;
     use crucible_oil::node::*;
     use crucible_oil::planning::{FramePlanner, Graduation};
     use crucible_oil::proptest_strategies::*;
@@ -56,7 +60,7 @@ mod tests {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+        #![proptest_config(ProptestConfig::with_cases(default_cases().max(100)))]
 
         /// Graduated content rendered to string never contains spinner characters.
         /// This is a structural invariant: completed containers are rendered with

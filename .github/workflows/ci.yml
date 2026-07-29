@@ -90,12 +90,21 @@ jobs:
         run: cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent
       - name: Run tests with nextest
         run: cargo nextest run --profile ci --workspace
+        # Push the proptest case budget above the local 64-case floor so
+        # heavyweight proofs get more coverage in CI than on a dev box.
+        # Per-file `.max(N)` floors in crucible-oil/tests still apply.
+        env:
+          CRUCIBLE_PROPTEST_CASES: "256"
       # Oil's serde JSON contract (consumed by the web UI) and its proptests
       # are feature-gated off the default build — run them explicitly.
       - name: Run oil feature-gated tests (serde contract + proptests)
         run: cargo nextest run --profile ci -p crucible-oil --features serde,test-utils
+        env:
+          CRUCIBLE_PROPTEST_CASES: "256"
       - name: Verify Lua stubs are not stale
         run: cargo nextest run --profile ci -p crucible-lua -E 'test(stubs)' --no-capture
+        env:
+          CRUCIBLE_PROPTEST_CASES: "256"
       # nextest does not execute doctests, so every example in a doc comment
       # was unverified until this step existed — they had rotted to 62 failures.
       - name: Run doctests
@@ -118,7 +127,9 @@ jobs:
       - name: Build mock ACP agent for smoke tests
         run: cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent
       - name: Run SQLite-backed tests (merged into crucible-daemon)
-        run: cargo nextest run -p crucible-daemon -E 'test(sqlite)' 
+        run: cargo nextest run -p crucible-daemon -E 'test(sqlite)'
+        env:
+          CRUCIBLE_PROPTEST_CASES: "256"
 
   test-web-unit:
     name: Web Unit Tests

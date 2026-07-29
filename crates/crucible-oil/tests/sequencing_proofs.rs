@@ -15,6 +15,9 @@
 
 #![cfg(feature = "test-utils")]
 
+mod common;
+
+use common::default_cases;
 use crucible_oil::node::{overlay_from_bottom, Node};
 use crucible_oil::overlay::filter_overlays;
 use crucible_oil::planning::{FramePlan, FrameSnapshot, Graduation};
@@ -524,7 +527,7 @@ fn preview(s: &str) -> String {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 200,
+        cases: default_cases().max(200),
         ..ProptestConfig::default()
     })]
 
@@ -609,7 +612,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 200,
+        cases: default_cases().max(200),
         ..ProptestConfig::default()
     })]
 
@@ -644,7 +647,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 500,
+        cases: default_cases().max(500),
         ..ProptestConfig::default()
     })]
 

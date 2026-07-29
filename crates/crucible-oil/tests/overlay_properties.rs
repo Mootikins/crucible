@@ -1,11 +1,14 @@
 #![cfg(feature = "test-utils")]
 
+mod common;
+
+use common::default_cases;
 use crucible_oil::proptest_strategies::*;
 use crucible_oil::*;
 use proptest::prelude::*;
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(100))]
+    #![proptest_config(ProptestConfig::with_cases(default_cases().max(100)))]
 
     #[test]
     fn prop_overlay_renders_child(
@@ -57,7 +60,7 @@ mod composite_overlay_tests {
     use super::*;
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(50))]
+        #![proptest_config(ProptestConfig::with_cases(default_cases().max(50)))]
 
         #[test]
         fn prop_composite_overlays_fit_dimensions(
