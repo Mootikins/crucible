@@ -18,37 +18,73 @@ import type { EditorView } from '@codemirror/view';
 import { listKilnNotes } from '@/lib/api';
 import { inCodeContext } from './md-context';
 
-/** Note lists are stable for a buffer's lifetime; one fetch per kiln. */
-const noteCache = new Map<string, Promise<{ name: string; path: string }[]>>();
-
-function notesFor(kiln: string) {
-  let pending = noteCache.get(kiln);
-  if (!pending) {
-    // A rejected fetch must not be cached — a later keystroke retries.
-    pending = listKilnNotes(kiln).catch((err) => {
-      noteCache.delete(kiln);
-      throw err;
-    });
-    noteCache.set(kiln, pending);
-  }
-  return pending;
-}
-
-/** Test seam: drop memoised note lists. */
-export function resetWikilinkNoteCache(): void {
-  noteCache.clear();
+interface Note {
+  name: string;
+  path: string;
 }
 
 /**
- * Replace the typed query with the note name and close the link.
+ * How long a fetched note list is reused.
  *
- * Written as an `apply` rather than a plain label so the trailing `]]` is
- * added exactly once — the user may have typed it already.
+ * The cache exists to coalesce the burst of requests a user generates while
+ * typing a link, not to be a store — so it is deliberately short-lived. A
+ * long-lived cache goes stale the moment a note is created, renamed or moved,
+ * and the completion list then silently omits it until the page is reloaded.
  */
-function applyNote(name: string) {
+const NOTE_TTL_MS = 5_000;
+
+/** Per-source cache — not module-global, so one editor can't serve another stale notes. */
+function createNoteLoader(): (kiln: string) => Promise<Note[]> {
+  let cached: { kiln: string; at: number; notes: Promise<Note[]> } | null = null;
+
+  return (kiln: string) => {
+    if (cached && cached.kiln === kiln && Date.now() - cached.at < NOTE_TTL_MS) {
+      return cached.notes;
+    }
+    // A rejected fetch must not be cached — a later keystroke retries.
+    const notes = listKilnNotes(kiln).catch((err) => {
+      cached = null;
+      throw err;
+    });
+    cached = { kiln, at: Date.now(), notes };
+    return notes;
+  };
+}
+
+/** `Help/Index.md` → `Help/Index` — the link target, not the filename. */
+function linkTarget(path: string): string {
+  return path.replace(/\.md$/i, '');
+}
+
+/**
+ * The shortest target that unambiguously identifies each note.
+ *
+ * A bare title is what people write by hand, so it stays the default — but two
+ * notes can share a title across folders, and then a bare `[[Index]]` resolves
+ * to whichever the kiln picks first. Those get path-qualified; showing the
+ * path only in the `detail` line would distinguish them on screen and not in
+ * the document.
+ */
+function uniqueTargets(notes: Note[]): Map<Note, string> {
+  const counts = new Map<string, number>();
+  for (const note of notes) counts.set(note.name, (counts.get(note.name) ?? 0) + 1);
+  return new Map(
+    notes.map((note) => [note, counts.get(note.name)! > 1 ? linkTarget(note.path) : note.name]),
+  );
+}
+
+/**
+ * Replace the typed query with the link target and close the link.
+ *
+ * Written as an `apply` rather than a plain label for two reasons: the
+ * trailing `]]` is added exactly once (the user may have typed it already),
+ * and the inserted target is not always the option's label — see
+ * {@link uniqueTargets}.
+ */
+function applyNote(target: string) {
   return (view: EditorView, _completion: Completion, from: number, to: number) => {
     const alreadyClosed = view.state.sliceDoc(to, to + 2) === ']]';
-    const insert = alreadyClosed ? name : `${name}]]`;
+    const insert = alreadyClosed ? target : `${target}]]`;
     view.dispatch({
       changes: { from, to, insert },
       selection: { anchor: from + insert.length + (alreadyClosed ? 2 : 0) },
@@ -63,6 +99,8 @@ function applyNote(name: string) {
 export function wikilinkCompletionSource(
   kiln: () => string | undefined,
 ): CompletionSource {
+  const loadNotes = createNoteLoader();
+
   return async (context: CompletionContext): Promise<CompletionResult | null> => {
     // `[[` plus anything that isn't a closing bracket or a line break — so a
     // finished `[[Tags]]` stops matching and prose never triggers.
@@ -76,13 +114,14 @@ export function wikilinkCompletionSource(
     // — same rule the wikilink decorations follow.
     if (inCodeContext(context.state, token.from)) return null;
 
-    let notes: { name: string; path: string }[];
+    let notes: Note[];
     try {
-      notes = await notesFor(kilnPath);
+      notes = await loadNotes(kilnPath);
     } catch {
       return null;
     }
 
+    const targets = uniqueTargets(notes);
     return {
       // Past the `[[`, so accepting replaces only the query.
       from: token.from + 2,
@@ -90,7 +129,7 @@ export function wikilinkCompletionSource(
         label: note.name,
         // Two notes can share a title across folders; the path disambiguates.
         detail: note.path,
-        apply: applyNote(note.name),
+        apply: applyNote(targets.get(note)!),
       })),
       // Keep filtering as the user types instead of re-running the source,
       // and drop out the moment a `]` or newline arrives.

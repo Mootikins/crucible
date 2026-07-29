@@ -1,7 +1,7 @@
 import { Component, For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import type { AutocompleteItem } from '@/hooks/useAutocomplete';
-import { placePopup, POPUP_MAX_HEIGHT, type PopupPlacement } from '@/lib/popup-placement';
+import { placePopup, type PopupPlacement } from '@/lib/popup-placement';
 
 interface AutocompletePopupProps {
   items: AutocompleteItem[];
@@ -67,7 +67,10 @@ export const AutocompletePopup: Component<AutocompletePopupProps> = (props) => {
       left: `${p.left}px`,
       width: `${p.width}px`,
       ...(p.direction === 'up' ? { bottom: `${p.bottom}px` } : { top: `${p.top}px` }),
-      'max-height': `${p.maxHeight || POPUP_MAX_HEIGHT}px`,
+      // No fallback: placement always sets a height, and a legitimate 0
+      // (nothing fits either side) must render as 0 rather than be treated as
+      // "unset" and replaced by a full-height panel back off the viewport.
+      'max-height': `${p.maxHeight}px`,
       'z-index': '50',
     };
   };

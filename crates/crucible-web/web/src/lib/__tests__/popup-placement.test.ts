@@ -54,6 +54,16 @@ describe('placePopup', () => {
   it('matches the anchor width so the list lines up with the input', () => {
     expect(placePopup(topAnchored, viewport).width).toBe(topAnchored.width);
   });
+
+  it('reports zero height when neither side has room', () => {
+    // A viewport squeezed to nothing (mobile keyboard over a short window).
+    // Zero is a real answer, and consumers must render it as zero rather than
+    // treat it as "unset" and substitute a full-height panel — that puts the
+    // popup straight back off-screen.
+    const squeezed = { left: 0, right: 300, top: 4, bottom: 20, width: 300, height: 16 };
+    const p = placePopup(squeezed, { width: 320, height: 24 });
+    expect(p.maxHeight).toBe(0);
+  });
 });
 
 // Chip popouts (model / kiln / agent pickers) are content-sized rather than

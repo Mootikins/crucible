@@ -295,8 +295,10 @@ export const ChipSelect: Component<{
                 ? { top: `${panelPos().top}px` }
                 : { bottom: `${panelPos().bottom}px` }),
               // Long lists (many kilns/models) scroll inside the panel rather
-              // than running past the viewport edge.
-              'max-height': `${panelPos().maxHeight || CHIP_PANEL_MAX_HEIGHT}px`,
+              // than running past the viewport edge. `??`, not `||`: only the
+              // pre-open default omits maxHeight, and a measured 0 (nothing
+              // fits either side) must survive as 0.
+              'max-height': `${panelPos().maxHeight ?? CHIP_PANEL_MAX_HEIGHT}px`,
             }}
           >
             <Show when={searchable()}>
