@@ -82,6 +82,7 @@ tokio = { workspace = true, features = ["test-util", "full"] }
 tracing-subscriber = { workspace = true }
 tempfile = "3.27"
 serial_test = "3.3"
+test-case = { workspace = true }
 
 # Dev-kiln validation tests
 walkdir = "2.5"
