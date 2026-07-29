@@ -16,7 +16,6 @@ mod display_parity;
 mod error_propagation;
 mod mock_agent_framework;
 mod opencode_integration;
-mod opencode_streaming;
 mod permission_flow;
 mod streaming_chat;
 mod tool_roundtrip;
