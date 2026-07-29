@@ -1,5 +1,5 @@
 import { Accessor, Setter, createSignal } from 'solid-js';
-import { listFiles, listKilnNotes } from '@/lib/api';
+import { listFiles, listKilnNotes, listSlashCommands } from '@/lib/api';
 import { fuzzyScore } from '@/lib/fuzzy';
 import type { FileEntry } from '@/lib/types';
 
@@ -9,6 +9,8 @@ export interface AutocompleteItem {
   id: string;
   label: string;
   insertText: string;
+  /** Secondary line in the popup — a command's description, say. */
+  detail?: string;
 }
 
 interface TriggerMatch {
@@ -24,13 +26,33 @@ interface UseAutocompleteOptions {
   textareaRef: Accessor<HTMLTextAreaElement | undefined>;
 }
 
-const COMMAND_ITEMS: AutocompleteItem[] = [
-  { id: 'command-search', label: '/search', insertText: 'search ' },
-  { id: 'command-model', label: '/model', insertText: 'model ' },
-  { id: 'command-help', label: '/help', insertText: 'help ' },
-  { id: 'command-clear', label: '/clear', insertText: 'clear' },
-  { id: 'command-export', label: '/export', insertText: 'export ' },
-];
+/** Commands are static for the server's lifetime — fetch once, share process-wide. */
+let commandItemsPromise: Promise<AutocompleteItem[]> | null = null;
+
+function loadCommandItems(): Promise<AutocompleteItem[]> {
+  commandItemsPromise ??= listSlashCommands()
+    .then((commands) =>
+      commands.map((c) => ({
+        id: `command:${c.name}`,
+        label: `/${c.name}`,
+        // Commands taking an argument keep the trailing space so the user can
+        // type straight into it; nullary ones don't (nothing follows).
+        insertText: c.args ? `${c.name} ` : c.name,
+        detail: c.description,
+      })),
+    )
+    // A failed fetch must not poison the cache — a later keystroke retries.
+    .catch((err) => {
+      commandItemsPromise = null;
+      throw err;
+    });
+  return commandItemsPromise;
+}
+
+/** Test seam: drop the memoised command list. */
+export function resetCommandCache(): void {
+  commandItemsPromise = null;
+}
 
 function toAutocompleteItems(entries: FileEntry[], prefix: string): AutocompleteItem[] {
   return entries.map((entry) => ({
@@ -113,6 +135,7 @@ export function useAutocomplete(options: UseAutocompleteOptions) {
   const [fileItems, setFileItems] = createSignal<AutocompleteItem[]>([]);
   const [noteItems, setNoteItems] = createSignal<AutocompleteItem[]>([]);
   const [tagItems, setTagItems] = createSignal<AutocompleteItem[]>([]);
+  const [commandItems, setCommandItems] = createSignal<AutocompleteItem[]>([]);
   const [loadedKiln, setLoadedKiln] = createSignal<string | null>(null);
 
   const close = () => {
@@ -145,7 +168,7 @@ export function useAutocomplete(options: UseAutocompleteOptions) {
   const sourceItemsFor = (kind: TriggerType): AutocompleteItem[] => {
     if (kind === '@') return fileItems();
     if (kind === '#') return [...tagItems(), ...noteItems()];
-    if (kind === '/') return COMMAND_ITEMS;
+    if (kind === '/') return commandItems();
     return noteItems();
   };
 
@@ -160,13 +183,15 @@ export function useAutocomplete(options: UseAutocompleteOptions) {
     setTriggerStart(match.start);
     setCursorPosition(cursor);
 
-    if (match.trigger === '@' || match.trigger === '#' || match.trigger === '[[') {
-      try {
+    try {
+      if (match.trigger === '/') {
+        setCommandItems(await loadCommandItems());
+      } else {
         await ensureKilnData();
-      } catch {
-        close();
-        return;
       }
+    } catch {
+      close();
+      return;
     }
 
     const filtered = fuzzyFilter(sourceItemsFor(match.trigger), match.query);

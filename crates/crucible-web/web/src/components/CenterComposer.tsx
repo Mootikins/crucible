@@ -19,8 +19,7 @@ import { notificationActions } from '@/stores/notificationStore';
 import { closeDraftTab } from '@/lib/draft-session';
 import type { AgentProfileEntry, KilnListEntry, Project } from '@/lib/types';
 import { WorkingDots } from '@/components/AssistantTurn';
-import { MicButton } from '@/components/MicButton';
-import { useMediaRecorder } from '@/hooks/useMediaRecorder';
+import { ComposerCard } from '@/components/composer/ComposerCard';
 import { pathBasename } from '@/stores/statusBarStore';
 import { syncRecentsFromServer } from '@/lib/recent-files';
 import { kilnLabel } from '@/lib/kiln-label';
@@ -74,24 +73,7 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
   const [repoBranches, setRepoBranches] = createSignal<ScmBranchesResponse | null>(null);
   const [branchBusy, setBranchBusy] = createSignal(false);
 
-  let messageRef: HTMLTextAreaElement | undefined;
   const isAcp = () => agentName() !== '';
-
-  // Voice input — same recorder + level-fill treatment as the chat input.
-  const { isRecording, audioLevel, startRecording, stopRecording } = useMediaRecorder();
-  const handleTranscription = (text: string) =>
-    setMessage((prev) => (prev.trim() ? prev + ' ' + text : text));
-  const cardStyle = () => {
-    if (!isRecording()) return {};
-    const fill = Math.round(audioLevel() * 100);
-    return {
-      background: `linear-gradient(to top,
-        color-mix(in srgb, var(--color-primary) 40%, transparent) 0%,
-        color-mix(in srgb, var(--color-primary) 20%, transparent) ${fill}%,
-        transparent ${fill}%)`,
-      'border-color': 'color-mix(in srgb, var(--color-primary) 60%, transparent)',
-    };
-  };
 
   onMount(() => {
     // No barrier, no blank chips: every source paints its LAST-KNOWN value
@@ -483,28 +465,20 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
             />
           </div>
 
-          {/* The composer card. */}
-          <div
-            class="bg-surface-base border border-hairline-strong rounded-xl px-3 pt-2 pb-2 focus-within:border-primary transition-colors shadow-lg"
-            style={cardStyle()}
-          >
-            <textarea
-              ref={messageRef}
-              value={message()}
-              onInput={(e) => setMessage(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  void submit();
-                }
-              }}
-              placeholder="Plan, build, ask — a session starts with your first message"
-              aria-label="First message"
-              rows={3}
-              class="w-full bg-transparent text-sm text-shell-ink placeholder-muted-dark resize-none outline-none px-1 py-1 min-h-[3.5rem]"
-              data-testid="composer-input"
-            />
-            <div class="flex items-center gap-1">
+          {/* The composer card — shared with the in-session chat input, so
+              `/command` and `[[note]]` completion work here too. */}
+          <ComposerCard
+            value={message}
+            setValue={setMessage}
+            // The draft's selected kiln (or the daemon default once resolved)
+            // backs `[[note]]` completion before the session exists.
+            kilnPath={() => kiln() || defaultKiln()}
+            placeholder="Plan, build, ask — a session starts with your first message"
+            ariaLabel="First message"
+            rows={3}
+            testid="composer-input"
+            onSubmit={() => void submit()}
+            chips={
               <Show when={!isAcp()}>
                 <ChipSelect
                   name="model"
@@ -515,35 +489,25 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
                   testid="composer-model"
                 />
               </Show>
-              <div class="ml-auto" />
-              {/* Mic and send share one pill, split by a hairline. */}
-              <div class="flex items-stretch rounded-full border border-hairline overflow-hidden">
-                <MicButton
-                  onTranscription={handleTranscription}
-                  disabled={busy()}
-                  startRecording={startRecording}
-                  stopRecording={stopRecording}
-                  isRecording={isRecording}
-                />
-                <div class="w-px bg-hairline" />
-                <button
-                  type="button"
-                  onClick={() => void submit()}
-                  disabled={!message().trim()}
-                  aria-label="Start session"
-                  title="Start session (Enter)"
-                  classList={{
-                    'px-2.5 flex items-center justify-center transition-colors': true,
-                    'bg-primary text-white hover:bg-primary-hover': !!message().trim(),
-                    'bg-transparent text-muted-dark cursor-not-allowed': !message().trim(),
-                  }}
-                  data-testid="composer-send"
-                >
-                  <ArrowUp class="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
+            }
+            action={
+              <button
+                type="button"
+                onClick={() => void submit()}
+                disabled={!message().trim()}
+                aria-label="Start session"
+                title="Start session (Enter)"
+                classList={{
+                  'px-2.5 flex items-center justify-center transition-colors': true,
+                  'bg-primary text-white hover:bg-primary-hover': !!message().trim(),
+                  'bg-transparent text-muted-dark cursor-not-allowed': !message().trim(),
+                }}
+                data-testid="composer-send"
+              >
+                <ArrowUp class="w-4 h-4" />
+              </button>
+            }
+          />
 
         </div>
       </Show>
