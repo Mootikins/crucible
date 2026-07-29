@@ -301,6 +301,30 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
                 : typeof raw === 'string' ? raw : JSON.stringify(raw),
             };
           }
+        } else if (evt.event === 'precognition_complete') {
+          // Metadata, not a bubble: reattach it to the user message that
+          // triggered the retrieval — the same target the live reducer picks.
+          // Field mapping mirrors the SSE path (which normalises in Rust):
+          // the persisted payload is a PrecognitionNoteInfo, so `title`/`score`
+          // become `name`/`relevance` here.
+          const data = (evt.data ?? {}) as Record<string, unknown>;
+          const lastUser = [...loadedMessages].reverse().find((m) => m.role === 'user');
+          if (lastUser) {
+            const notes = (Array.isArray(data.notes) ? data.notes : [])
+              .map((raw) => {
+                const note = (raw ?? {}) as Record<string, unknown>;
+                const name = note.title ?? note.name;
+                return typeof name === 'string'
+                  ? { name, relevance: typeof note.score === 'number' ? note.score : 0 }
+                  : null;
+              })
+              .filter((n): n is { name: string; relevance: number } => n !== null);
+            lastUser.precognition = {
+              notesCount:
+                typeof data.notes_count === 'number' ? data.notes_count : notes.length,
+              notes,
+            };
+          }
         } else if (evt.event === 'message_complete' && evt.data?.full_response) {
           // The persisted full_response is the WHOLE turn; strip the prefix
           // already rendered as segment bubbles (same helper the live reducer

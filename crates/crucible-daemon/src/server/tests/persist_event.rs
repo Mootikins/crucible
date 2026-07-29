@@ -124,6 +124,100 @@ async fn test_persist_event_skips_non_persistent_events() {
     );
 }
 
+/// Recording that precognition *ran* is useless without what it injected —
+/// the badge lists the notes by name. Pins the whole payload through the
+/// storage round-trip.
+#[tokio::test]
+async fn test_persist_event_keeps_precognition_notes() {
+    use std::sync::Mutex;
+
+    struct CapturingStorage(Mutex<Vec<String>>);
+
+    #[async_trait]
+    impl SessionStorage for CapturingStorage {
+        async fn save(&self, _s: &crucible_core::session::Session) -> Result<(), SessionError> {
+            Ok(())
+        }
+        async fn load(
+            &self,
+            _id: &str,
+            _k: &Path,
+        ) -> Result<crucible_core::session::Session, SessionError> {
+            Err(SessionError::NotFound("mock".to_string()))
+        }
+        async fn list(&self, _k: &Path) -> Result<Vec<SessionSummary>, SessionError> {
+            Ok(vec![])
+        }
+        async fn append_event(
+            &self,
+            _s: &crucible_core::session::Session,
+            e: &str,
+        ) -> Result<(), SessionError> {
+            self.0.lock().unwrap().push(e.to_string());
+            Ok(())
+        }
+        async fn append_markdown(
+            &self,
+            _s: &crucible_core::session::Session,
+            _r: &str,
+            _c: &str,
+        ) -> Result<(), SessionError> {
+            Ok(())
+        }
+        async fn load_events(
+            &self,
+            _id: &str,
+            _k: &Path,
+            _limit: Option<usize>,
+            _offset: Option<usize>,
+        ) -> Result<Vec<serde_json::Value>, SessionError> {
+            Ok(vec![])
+        }
+        async fn count_events(&self, _id: &str, _k: &Path) -> Result<usize, SessionError> {
+            Ok(0)
+        }
+    }
+
+    let tmp = TempDir::new().unwrap();
+    let sm = Arc::new(SessionManager::new());
+    let session = sm
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let event = SessionEventMessage::new(
+        session.id.clone(),
+        "precognition_complete",
+        serde_json::json!({
+            "notes_count": 2,
+            "query_summary": "tell me about the kiln",
+            "notes": [
+                {"title": "Kilns", "kiln_label": "docs", "score": 0.91},
+                {"title": "Wikilinks", "kiln_label": "docs", "score": 0.72},
+            ],
+        }),
+    );
+
+    let storage = CapturingStorage(Mutex::new(Vec::new()));
+    persist_event(&event, &sm, &storage).await.unwrap();
+
+    let written = storage.0.lock().unwrap();
+    assert_eq!(written.len(), 1, "precognition_complete must be written");
+    let parsed: serde_json::Value = serde_json::from_str(&written[0]).unwrap();
+    assert_eq!(parsed["event"], "precognition_complete");
+    assert_eq!(parsed["data"]["notes_count"], 2);
+    let notes = parsed["data"]["notes"].as_array().expect("notes survive");
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0]["title"], "Kilns");
+    assert_eq!(notes[0]["kiln_label"], "docs");
+}
+
 #[tokio::test]
 async fn test_should_persist_filters_correctly() {
     let persistent = [
@@ -135,6 +229,10 @@ async fn test_should_persist_filters_correctly() {
         "tool_result",
         "model_switched",
         "ended",
+        // Without this the precognition badge cannot survive a reload: the
+        // event is broadcast live and then lost, so a resumed transcript has
+        // no record of what context was injected.
+        "precognition_complete",
     ];
     for event_name in &persistent {
         let event = SessionEventMessage::new("test", *event_name, serde_json::json!({}));

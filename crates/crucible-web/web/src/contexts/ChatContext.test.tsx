@@ -393,6 +393,17 @@ describe('isLoadingHistory', () => {
       <div>
         <span data-testid="history-loading">{isLoadingHistory() ? 'loading' : 'idle'}</span>
         <span data-testid="msg-count">{messages().length}</span>
+        <span data-testid="precog">
+          {messages()
+            .filter((m) => m.precognition)
+            .map(
+              (m) =>
+                `${m.id}:${m.precognition!.notesCount}:${m.precognition!.notes
+                  .map((n) => n.name)
+                  .join('|')}`,
+            )
+            .join(',')}
+        </span>
         <ul>
           {messages().map((m) => (
             <li data-testid={`hist-msg-${m.id}`} data-role={m.role}>
@@ -483,6 +494,119 @@ describe('isLoadingHistory', () => {
     expect(items[0].textContent?.trim()).toBe('hello');
     expect(items[1].getAttribute('data-role')).toBe('assistant');
     expect(items[1].textContent?.trim()).toBe('hi there');
+  });
+
+  it('restores the precognition badge from history', async () => {
+    // The badge used to vanish on reload because precognition was a live-only
+    // event. Now that the daemon persists it, replay must reattach it to the
+    // user message that triggered it — same target the live reducer picks.
+    mockGetSessionHistory.mockResolvedValue({
+      history: [
+        {
+          type: 'event',
+          session_id: 'test-session-1',
+          event: 'user_message',
+          data: { content: 'tell me about the kiln', message_id: 'msg1' },
+        },
+        {
+          type: 'event',
+          session_id: 'test-session-1',
+          event: 'precognition_complete',
+          data: {
+            notes_count: 2,
+            notes: [
+              { title: 'Kilns', kiln_label: 'docs', score: 0.91 },
+              { title: 'Wikilinks', kiln_label: 'docs', score: 0.72 },
+            ],
+          },
+        },
+        {
+          type: 'event',
+          session_id: 'test-session-1',
+          event: 'message_complete',
+          data: { full_response: 'A kiln is…', message_id: 'msg1' },
+        },
+      ],
+      total_events: 3,
+    });
+
+    render(() => (
+      <TestWrapper>
+        <HistoryTestConsumer />
+      </TestWrapper>
+    ));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('precog').textContent).toBe('msg1:2:Kilns|Wikilinks');
+    });
+    // The event itself is metadata, not a transcript bubble.
+    expect(screen.getByTestId('msg-count').textContent).toBe('2');
+  });
+
+  it('ignores a precognition event with no preceding user message', async () => {
+    // Truncated/paginated history can start mid-turn; attaching to nothing
+    // must not throw or invent a message.
+    mockGetSessionHistory.mockResolvedValue({
+      history: [
+        {
+          type: 'event',
+          session_id: 'test-session-1',
+          event: 'precognition_complete',
+          data: { notes_count: 1, notes: [{ title: 'Orphan', score: 0.5 }] },
+        },
+        {
+          type: 'event',
+          session_id: 'test-session-1',
+          event: 'message_complete',
+          data: { full_response: 'hi', message_id: 'msg9' },
+        },
+      ],
+      total_events: 2,
+    });
+
+    render(() => (
+      <TestWrapper>
+        <HistoryTestConsumer />
+      </TestWrapper>
+    ));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('msg-count').textContent).toBe('1');
+    });
+    expect(screen.getByTestId('precog').textContent).toBe('');
+  });
+
+  it('attaches precognition to its own turn when the history holds several', async () => {
+    mockGetSessionHistory.mockResolvedValue({
+      history: [
+        { type: 'event', session_id: 'test-session-1', event: 'user_message', data: { content: 'first', message_id: 'u1' } },
+        {
+          type: 'event',
+          session_id: 'test-session-1',
+          event: 'precognition_complete',
+          data: { notes_count: 1, notes: [{ title: 'Alpha', score: 0.9 }] },
+        },
+        { type: 'event', session_id: 'test-session-1', event: 'message_complete', data: { full_response: 'a', message_id: 'u1' } },
+        { type: 'event', session_id: 'test-session-1', event: 'user_message', data: { content: 'second', message_id: 'u2' } },
+        {
+          type: 'event',
+          session_id: 'test-session-1',
+          event: 'precognition_complete',
+          data: { notes_count: 1, notes: [{ title: 'Beta', score: 0.8 }] },
+        },
+      ],
+      total_events: 5,
+    });
+
+    render(() => (
+      <TestWrapper>
+        <HistoryTestConsumer />
+      </TestWrapper>
+    ));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('precog').textContent).toBe('u1:1:Alpha,u2:1:Beta');
+    });
   });
 
   it('reconstructs a segmented turn into canonical segment + final bubbles matching the live reducer', async () => {

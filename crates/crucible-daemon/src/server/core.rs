@@ -165,6 +165,12 @@ pub(super) fn should_persist(event: &SessionEventMessage) -> bool {
             | "tool_result"
             | "model_switched"
             | "ended"
+            // What context was injected is part of the turn's record, not just
+            // a live notification: without it a resumed transcript cannot say
+            // which notes the answer was grounded in, and re-deriving it later
+            // would report today's search results as though they were the
+            // ones actually used.
+            | "precognition_complete"
     )
 }
 
