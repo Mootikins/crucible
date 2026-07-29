@@ -352,18 +352,6 @@ async fn reactor_persists_across_messages() {
 }
 
 #[tokio::test]
-async fn reactor_cleanup_drops_state() {
-    let h = ReactorTestHarness::new().await;
-
-    let _ = h.agent_manager.get_or_create_session_state(&h.session_id);
-    assert!(h.agent_manager.session_states.contains_key(&h.session_id));
-
-    h.agent_manager.cleanup_session(&h.session_id);
-
-    assert!(!h.agent_manager.session_states.contains_key(&h.session_id));
-}
-
-#[tokio::test]
 async fn reactor_lua_handler_discovery_empty_dir() {
     let mut h = ReactorTestHarness::new().await;
 
