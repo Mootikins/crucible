@@ -304,6 +304,7 @@ const SCOPE_METHODS: &[ScopeMethod] = &[
     },
 ];
 
+// UNIQUE: JSON field-name string literals live inside `require_param!(req, "..")` macros and serde JSON — clippy sees them as opaque strings, not wire contract. The historical bug (thinking_budget vs budget) is invisible to the type system.
 #[test]
 fn rpc_scope_mutation_field_names_match_across_the_wire() {
     let root = workspace_root();
@@ -364,6 +365,7 @@ fn rpc_scope_mutation_field_names_match_across_the_wire() {
     );
 }
 
+// UNIQUE: client/server field-name parity crosses two files in JSON literals; the type system doesn't track serde_json field names across an RPC boundary (the original bug: thinking_budget vs budget silently dropped values).
 #[test]
 fn rpc_config_field_names_match_across_the_wire() {
     let root = workspace_root();
@@ -451,6 +453,7 @@ fn rpc_config_field_names_match_across_the_wire() {
 /// on the client and every `handle_session_{set,get}_*` handler on the server
 /// and require each to have a CONFIG_METHODS row (and vice versa — a row
 /// whose knob was deleted must be removed).
+// UNIQUE: guards the parity-gate table above against silent drift — clippy has no rule that diff-checks a hand-maintained CONFIG_METHODS array against the actual `session_set_*`/`handle_session_set_*` accessor functions discovered in source. Without this, a new knob bypasses the wire-parity test silently.
 #[test]
 fn config_methods_table_covers_every_knob() {
     let root = workspace_root();
@@ -543,6 +546,7 @@ fn is_provider_seam(rel_path: &str) -> bool {
         || rel_path == "crates/crucible-daemon/src/agent_factory.rs"
 }
 
+// UNIQUE: no clippy.toml exists at the workspace root; clippy's disallowed_types would require workspace-level deny + per-file allow attributes scattered across every non-provider source file. The source-scan is the only enforceable seam keeping the wire-level LLM mock viable.
 #[test]
 fn genai_stays_behind_the_provider_seam() {
     let genai_use = Regex::new(r"\bgenai::").unwrap();
@@ -565,6 +569,7 @@ fn genai_stays_behind_the_provider_seam() {
     );
 }
 
+// UNIQUE: clippy disallowed-types/disallowed-methods would require per-file allows in every non-provider source file (brittle, no workspace glob support). The source-scan is the only enforcement blocking direct vendor SDK imports that would break the wire-mock seam.
 #[test]
 fn vendor_llm_sdks_are_not_imported_directly() {
     let alt = BANNED_LLM_SDK_CRATES.join("|");
@@ -645,6 +650,7 @@ const SIZE_LEDGER: &[&str] = &[
     "crates/crucible-oil/src/template/node_spec.rs",
 ];
 
+// UNIQUE: clippy has no file-LOC lint (cognitive_complexity is per-function); the size ratchet with a shrinking-only ledger cannot be expressed as a compiler/linter rule. Source-scan is the only enforcement of the 1000-line module budget.
 #[test]
 fn no_new_oversized_modules() {
     let ledger: BTreeSet<&str> = SIZE_LEDGER.iter().copied().collect();

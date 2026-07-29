@@ -120,6 +120,7 @@ fn handler_sources(root: &Path) -> Vec<String> {
     out
 }
 
+// UNIQUE: clippy's dead_code only fires on never-constructed variants; ChatAppMsg variants are typically constructed in serialization but the gate verifies they're *handled* in chat_runner/chat_app. No clippy rule cross-references enum variants against handler-site regex matches.
 #[test]
 fn every_chat_app_msg_variant_is_handled() {
     let root = workspace_root();
@@ -170,6 +171,7 @@ fn every_chat_app_msg_variant_is_handled() {
 const CANONICAL_PARSER_TYPES: &[&str] = &["ParsedNote", "Wikilink", "Tag", "BlockHash"];
 const CANONICAL_HOME: &str = "crates/crucible-core/src/parser/";
 
+// UNIQUE: Rust permits identically-named structs/enums in different modules; no clippy rule bans redefining ParsedNote/Wikilink/Tag/BlockHash outside their canonical home. The cross-tree regex scan is the only enforcement.
 #[test]
 fn canonical_parser_types_are_not_redefined() {
     let root = workspace_root();
@@ -275,6 +277,7 @@ fn backend_api_paths(root: &Path) -> BTreeSet<String> {
     absolute
 }
 
+// UNIQUE: TS types don't see /api paths constructed at runtime; clippy/types cannot cross the Rust↔SolidJS boundary. The source-scan compares frontend string literals to backend route declarations structurally.
 #[test]
 fn every_frontend_api_path_has_a_backend_route() {
     let root = workspace_root();

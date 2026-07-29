@@ -52,6 +52,7 @@ describe('e2e architecture discipline', () => {
     'windowing-comprehensive.spec.ts',
   ]);
 
+  // UNIQUE: no eslint config exists in web/ (no eslint dep in package.json); eslint-plugin-playwright's no-wait-for-timeout would be the alternative but is not wired in. The vitest source-scan is the only enforcement of the shrinking allowlist invariant.
   it('no new page.waitForTimeout sleeps in e2e/', () => {
     const offenders = ALL_E2E_FILES.filter(
       (f) => !WAIT_FOR_TIMEOUT_ALLOWLIST.has(f) && /\bwaitForTimeout\b/.test(read(f)),
@@ -64,6 +65,7 @@ describe('e2e architecture discipline', () => {
     ).toEqual([]);
   });
 
+  // UNIQUE: tier-specific ban (stories/ and live/) needs file-path globs; without eslint wired in, the vitest source-scan is the only mechanism keeping the story/live tiers sleep-free.
   it('story and live tiers never sleep', () => {
     const offenders = ALL_E2E_FILES.filter(
       (f) => (f.startsWith('stories/') || f.startsWith('live/')) && /\bwaitForTimeout\b/.test(read(f)),
@@ -83,6 +85,7 @@ describe('e2e architecture discipline', () => {
   // Any `locator('.foo')` or `locator('[class...]')`.
   const RAW_CLASS_LOCATOR = /locator\((['"])(?:\.[A-Za-z_-]|\[class)/g;
 
+  // UNIQUE: no off-the-shelf eslint rule bans raw CSS class locators in Playwright specs (the CodeMirror/xterm carve-out requires a custom predicate). The vitest source-scan is the only enforcement of the semantic-locator invariant.
   it('story specs locate by role/label/text/testid, not raw CSS class', () => {
     const storyFiles = ALL_E2E_FILES.filter((f) => f.startsWith('stories/'));
     expect(storyFiles.length, 'expected to find story specs to scan').toBeGreaterThan(0);
