@@ -19,5 +19,9 @@ mod permission_flow;
 mod streaming_chat;
 mod tool_roundtrip;
 
+// Consolidated from former tests/acp_mcp_integration.rs +
+// tests/acp_in_process_mcp.rs (T12: MCP integration test consolidation)
+mod mcp_integration;
+
 // Re-export support for use in test modules
 pub use support::*;
