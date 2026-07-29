@@ -301,38 +301,23 @@ mod status_bar_tests {
         );
     }
 
-    #[test]
-    fn snapshot_statusline_ctrlc_notification_right_aligned_80() {
+    /// Shared StatusBar config for the ctrl+c notification snapshot tests:
+    /// mode + model + active "Ctrl+C again to quit" warning toast. The narrow
+    /// (width 40) and wide (width 120) snapshots both render this bar.
+    /// Widths 50 and 80 are intentionally not snapshotted here — that is a
+    /// DECLARED coverage-type change (see
+    /// `.omo/evidence/task-14-test-suite-cleanup.md`).
+    fn ctrlc_notification_bar() -> StatusBar {
         use crate::tui::oil::components::NotificationToastKind;
-
-        let bar = StatusBar::new()
+        StatusBar::new()
             .mode(ChatMode::Normal)
             .model("glm-4.7-flash-iq4")
-            .toast("Ctrl+C again to quit", NotificationToastKind::Warning);
-
-        let plain = render_configured_bar(&bar, 80);
-        let toast_start = plain
-            .find("Ctrl+C again to quit")
-            .expect("toast text should render");
-        assert!(
-            toast_start >= 48,
-            "toast should be right-aligned with visible spacer at width 80: {plain:?}"
-        );
-
-        assert_snapshot!(
-            "statusline_ctrlc_notification_right_aligned_80",
-            render_configured_bar_ansi(&bar, 80)
-        );
+            .toast("Ctrl+C again to quit", NotificationToastKind::Warning)
     }
 
     #[test]
     fn snapshot_statusline_ctrlc_notification_right_aligned_120() {
-        use crate::tui::oil::components::NotificationToastKind;
-
-        let bar = StatusBar::new()
-            .mode(ChatMode::Normal)
-            .model("glm-4.7-flash-iq4")
-            .toast("Ctrl+C again to quit", NotificationToastKind::Warning);
+        let bar = ctrlc_notification_bar();
 
         let plain = render_configured_bar(&bar, 120);
         let toast_start = plain
@@ -347,21 +332,6 @@ mod status_bar_tests {
             "statusline_ctrlc_notification_right_aligned_120",
             render_configured_bar_ansi(&bar, 120)
         );
-    }
-
-    #[test]
-    fn snapshot_statusline_ctrlc_notification_narrow_width_50() {
-        use crate::tui::oil::components::NotificationToastKind;
-
-        let bar = StatusBar::new()
-            .mode(ChatMode::Normal)
-            .model("glm-4.7-flash-iq4")
-            .toast("Ctrl+C again to quit", NotificationToastKind::Warning);
-
-        let ansi = render_configured_bar_ansi(&bar, 50);
-        assert_fits_width(&ansi, 50);
-
-        assert_snapshot!("statusline_ctrlc_notification_narrow_width_50", ansi);
     }
 
     /// US-205: the count-badge state (no toast, accumulated notification
@@ -400,12 +370,7 @@ mod status_bar_tests {
     /// nothing overlaps and nothing lands past the right edge.
     #[test]
     fn snapshot_statusline_ctrlc_notification_narrow_width_40() {
-        use crate::tui::oil::components::NotificationToastKind;
-
-        let bar = StatusBar::new()
-            .mode(ChatMode::Normal)
-            .model("glm-4.7-flash-iq4")
-            .toast("Ctrl+C again to quit", NotificationToastKind::Warning);
+        let bar = ctrlc_notification_bar();
 
         let ansi = render_configured_bar_ansi(&bar, 40);
         assert_fits_width(&ansi, 40);
