@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 import { MOCK_SESSION, MOCK_SESSION_2 } from './helpers/fixtures';
 import { openSessionsList } from './helpers/nav';
+import { stableCenter } from './helpers/geometry';
 
 type LayoutNode = {
   type: 'pane' | 'split';
@@ -260,18 +261,19 @@ test.describe('Comprehensive windowing behavior', () => {
     });
 
     const splitter = page.locator('[data-split-id]').first();
-    await splitter.waitFor({ state: 'visible', timeout: 3000 });
-    const box = await splitter.boundingBox();
-    expect(box).toBeTruthy();
+
+    // Settle first: the split has just been created and the right edge panel
+    // is still expanding, so an early box gives an `x` the splitter has
+    // already moved away from — and the drag destination is computed from it.
+    const { x: cx, y: cy } = await stableCenter(splitter);
 
     // The separator is a 1px element widened only by an ::after pseudo, so a
     // raw mouse.move at box.x + width/2 lands on a sub-pixel coordinate that
     // can round onto the neighbouring pane and never reach pointerdown.
     // hover() uses Playwright's actionability hit-point instead.
     await splitter.hover();
-    const startY = box!.y + box!.height / 2;
     await page.mouse.down();
-    await page.mouse.move(box!.x + 110, startY, { steps: 8 });
+    await page.mouse.move(cx + 110, cy, { steps: 8 });
     await page.mouse.up();
 
     // Poll the store until the drag-updated split ratio settles past the default.

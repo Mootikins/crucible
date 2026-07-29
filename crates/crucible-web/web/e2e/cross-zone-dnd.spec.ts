@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 import { openSessionsList, seedLeftTabs } from './helpers/nav';
+import { getCenter, getCenterOf } from './helpers/geometry';
 
 
 async function waitForApp(page: Page) {
@@ -42,21 +43,6 @@ async function pointerDrag(
   await page.mouse.down();
   await page.mouse.move(to.x, to.y, { steps });
   await page.mouse.up();
-}
-
-async function getCenter(page: Page, selector: string) {
-  const loc = page.locator(selector);
-  await loc.waitFor({ state: 'visible', timeout: 3000 });
-  const box = await loc.boundingBox();
-  expect(box).toBeTruthy();
-  return { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
-}
-
-async function getCenterOf(page: Page, locator: ReturnType<Page['locator']>) {
-  await locator.waitFor({ state: 'visible', timeout: 3000 });
-  const box = await locator.boundingBox();
-  expect(box).toBeTruthy();
-  return { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
 }
 
 async function getCenterPaneDropPoint(page: Page): Promise<{ x: number; y: number }> {

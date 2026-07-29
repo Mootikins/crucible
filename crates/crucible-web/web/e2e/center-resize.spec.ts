@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 import { openSessionsList } from './helpers/nav';
+import { stableCenter } from './helpers/geometry';
 
 
 /**
@@ -32,12 +33,14 @@ test('center splitter resize updates pane width', async ({ page }) => {
   const container = splitter.locator('..');
   const firstPane = container.locator('> div').first();
 
-  const widthBefore = await firstPane.evaluate((el) => el.getBoundingClientRect().width);
+  // Settle BEFORE measuring. Opening the session docks a chat in the right
+  // edge panel, which expands and squeezes the center container (687px→397px
+  // here). A `widthBefore` captured mid-expansion is compared against a
+  // post-expansion `widthAfter`, so both panes have shrunk and the assertion
+  // fails however the drag went.
+  const { x: cx, y: cy } = await stableCenter(splitter);
 
-  const box = await splitter.boundingBox();
-  expect(box).toBeTruthy();
-  const cx = box!.x + box!.width / 2;
-  const cy = box!.y + box!.height / 2;
+  const widthBefore = await firstPane.evaluate((el) => el.getBoundingClientRect().width);
 
   await page.mouse.move(cx, cy);
   await page.mouse.down();
