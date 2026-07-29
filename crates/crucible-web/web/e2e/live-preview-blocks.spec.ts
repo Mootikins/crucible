@@ -74,7 +74,7 @@ test.describe('live preview blocks', () => {
     // …and the one quoted inside the fence is still its own two `$$` lines,
     // with the fence intact rather than split around a rendered formula.
     await expect(page.locator('.cm-line', { hasText: '\\int_0^1 x^2 dx' })).toHaveCount(1);
-    await expect(page.locator('.cm-content')).toContainText('````markdown');
+    await expect(page.locator('.cm-lp-codeblock').first()).toBeVisible();
   });
 
   test('arrow motion stops inside a rendered block instead of leaping over it', async ({

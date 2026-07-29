@@ -391,9 +391,20 @@ function buildDecorations(view: EditorView): DecorationSet {
           const first = doc.lineAt(nodeRef.from).number;
           const last = doc.lineAt(nodeRef.to).number;
           for (let n = first; n <= last; n++) {
-            decorations.push(
-              Decoration.line({ class: 'cm-lp-codeblock' }).range(doc.line(n).from),
-            );
+            const cls =
+              n === first && n === last
+                ? 'cm-lp-codeblock cm-lp-codeblock-top cm-lp-codeblock-bottom'
+                : n === first
+                  ? 'cm-lp-codeblock cm-lp-codeblock-top'
+                  : n === last
+                    ? 'cm-lp-codeblock cm-lp-codeblock-bottom'
+                    : 'cm-lp-codeblock';
+            decorations.push(Decoration.line({ class: cls }).range(doc.line(n).from));
+          }
+          // Hide the ``` delimiters and language tag when the cursor is
+          // outside the block; entering the code reveals them for editing.
+          if (!selectionTouches(state, nodeRef.from, nodeRef.to)) {
+            hideChildMarks(nodeRef.node, ['CodeMark', 'CodeInfo'], decorations);
           }
           return;
         }
@@ -1013,9 +1024,24 @@ const livePreviewTheme = EditorView.baseTheme({
     fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
     fontSize: '12px',
     lineHeight: '1.5',
-    // surface-elevated like the reading view's pre: surface-base would be
-    // invisible on the editor's shell-panel background.
+    position: 'relative',
+    padding: '0 12px',
+  },
+  '.cm-lp-codeblock::before': {
+    content: '""',
+    position: 'absolute',
+    inset: '0',
     background: 'var(--color-surface-elevated, #1c1b22)',
+    zIndex: '-3',
+  },
+  '.cm-lp-codeblock-top': {
+    borderRadius: '6px 6px 0 0',
+  },
+  '.cm-lp-codeblock-bottom': {
+    borderRadius: '0 0 6px 6px',
+  },
+  '.cm-lp-codeblock-top.cm-lp-codeblock-bottom': {
+    borderRadius: '6px',
   },
   '.cm-lp-quote': {
     borderLeft: '2px solid var(--color-hairline, #211f26)',
@@ -1051,7 +1077,7 @@ const livePreviewTheme = EditorView.baseTheme({
     width: 'max-content',
     minWidth: '100%',
   },
-  '.cm-lp-table': { cursor: 'text', padding: '2px 0' },
+  '.cm-lp-table': { cursor: 'text', padding: '2px 0 0' },
   // Rendered callout widget: the fancy .callout markup (icon, colored title,
   // tinted body) comes from index.css; this spaces the block like the
   // surrounding prose lines. whiteSpace reset: .cm-content is pre-wrap, which
