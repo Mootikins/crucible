@@ -186,31 +186,15 @@ describe('listSessions', () => {
     expect(url).toBe('/api/session/list');
   });
 
-  it('appends filter query params when provided', async () => {
-    const mockFetch = createMockFetch({
-      'GET /api/session/list': { body: { sessions: [], total: 0 } },
-    });
+  it.each([
+    { name: 'appends filter query params when provided', args: { kiln: 'my-kiln', state: 'active' }, expectedParams: ['kiln=my-kiln', 'state=active'] },
+    { name: 'appends workspace, type, includeArchived filters', args: { workspace: '/w', type: 'agent', includeArchived: true }, expectedParams: ['workspace=%2Fw', 'type=agent', 'include_archived=true'] },
+  ])('$name', async ({ args, expectedParams }: { args: Parameters<typeof listSessions>[0]; expectedParams: string[] }) => {
+    const mockFetch = createMockFetch({ 'GET /api/session/list': { body: { sessions: [], total: 0 } } });
     global.fetch = mockFetch;
-
-    await listSessions({ kiln: 'my-kiln', state: 'active' });
-
+    await listSessions(args);
     const [url] = mockFetch.mock.calls[0];
-    expect(url).toContain('kiln=my-kiln');
-    expect(url).toContain('state=active');
-  });
-
-  it('appends workspace, type, includeArchived filters', async () => {
-    const mockFetch = createMockFetch({
-      'GET /api/session/list': { body: { sessions: [], total: 0 } },
-    });
-    global.fetch = mockFetch;
-
-    await listSessions({ workspace: '/w', type: 'agent', includeArchived: true });
-
-    const [url] = mockFetch.mock.calls[0];
-    expect(url).toContain('workspace=%2Fw');
-    expect(url).toContain('type=agent');
-    expect(url).toContain('include_archived=true');
+    for (const param of expectedParams) expect(url).toContain(param);
   });
 
   it('throws on non-ok response', async () => {
@@ -519,52 +503,20 @@ describe('getConfig', () => {
 // =============================================================================
 
 describe('session lifecycle endpoints', () => {
-  it('pauseSession POSTs to /pause', async () => {
-    const mockFetch = createMockFetch({
-      'POST /api/session/ses-1/pause': { body: {} },
-    });
+  it.each([
+    { name: 'pauseSession POSTs to /pause', fn: pauseSession as (id: string) => Promise<unknown>, route: 'POST /api/session/ses-1/pause', method: 'POST' },
+    { name: 'resumeSession POSTs to /resume', fn: resumeSession as (id: string) => Promise<unknown>, route: 'POST /api/session/ses-1/resume', method: 'POST' },
+    { name: 'endSession POSTs to /end', fn: endSession as (id: string) => Promise<unknown>, route: 'POST /api/session/ses-1/end', method: 'POST' },
+    { name: 'deleteSession DELETEs the session', fn: deleteSession as (id: string) => Promise<unknown>, route: 'DELETE /api/session/ses-1', method: 'DELETE' },
+    { name: 'archiveSession POSTs to /archive', fn: archiveSession as (id: string) => Promise<unknown>, route: 'POST /api/session/ses-1/archive', method: 'POST' },
+    { name: 'unarchiveSession POSTs to /unarchive', fn: unarchiveSession as (id: string) => Promise<unknown>, route: 'POST /api/session/ses-1/unarchive', method: 'POST' },
+  ])('$name', async ({ fn, route, method }) => {
+    const mockFetch = createMockFetch({ [route]: { body: {} } });
     global.fetch = mockFetch;
-    await pauseSession('ses-1');
-    expect(mockFetch.mock.calls[0][1]!.method).toBe('POST');
-  });
-
-  it('resumeSession POSTs to /resume', async () => {
-    const mockFetch = createMockFetch({
-      'POST /api/session/ses-1/resume': { body: {} },
-    });
-    global.fetch = mockFetch;
-    await resumeSession('ses-1');
+    await expect(fn('ses-1')).resolves.toBeUndefined();
     expect(mockFetch).toHaveBeenCalledOnce();
-  });
-
-  it('endSession POSTs to /end', async () => {
-    global.fetch = createMockFetch({
-      'POST /api/session/ses-1/end': { body: {} },
-    });
-    await expect(endSession('ses-1')).resolves.toBeUndefined();
-  });
-
-  it('deleteSession DELETEs the session', async () => {
-    const mockFetch = createMockFetch({
-      'DELETE /api/session/ses-1': { body: {} },
-    });
-    global.fetch = mockFetch;
-    await deleteSession('ses-1');
-    expect(mockFetch.mock.calls[0][1]!.method).toBe('DELETE');
-  });
-
-  it('archiveSession POSTs to /archive', async () => {
-    global.fetch = createMockFetch({
-      'POST /api/session/ses-1/archive': { body: {} },
-    });
-    await expect(archiveSession('ses-1')).resolves.toBeUndefined();
-  });
-
-  it('unarchiveSession POSTs to /unarchive', async () => {
-    global.fetch = createMockFetch({
-      'POST /api/session/ses-1/unarchive': { body: {} },
-    });
-    await expect(unarchiveSession('ses-1')).resolves.toBeUndefined();
+    expect(mockFetch.mock.calls[0][0]).toBe(route.split(' ')[1]);
+    expect(mockFetch.mock.calls[0][1]!.method).toBe(method);
   });
 
   it('cancelSession returns the cancelled bool', async () => {
@@ -619,31 +571,16 @@ describe('session title endpoints', () => {
 // =============================================================================
 
 describe('getSessionHistory', () => {
-  it('passes kiln + limit/offset and returns parsed response', async () => {
-    const mockFetch = createMockFetch({
-      'GET /api/session/ses-1/history': {
-        body: { session_id: 'ses-1', history: [], total_events: 0 },
-      },
-    });
+  it.each([
+    { name: 'passes kiln + limit/offset and returns parsed response', kiln: '/path/to/kiln', limit: 50, offset: 100, expectPresent: ['kiln=%2Fpath%2Fto%2Fkiln', 'limit=50', 'offset=100'], expectAbsent: [] as string[] },
+    { name: 'omits limit/offset when undefined', kiln: '/k', expectPresent: [] as string[], expectAbsent: ['limit', 'offset'] },
+  ])('$name', async ({ kiln, limit, offset, expectPresent, expectAbsent }: { kiln: string; limit?: number; offset?: number; expectPresent: string[]; expectAbsent: string[] }) => {
+    const mockFetch = createMockFetch({ 'GET /api/session/ses-1/history': { body: { session_id: 'ses-1', history: [], total_events: 0 } } });
     global.fetch = mockFetch;
-    await getSessionHistory('ses-1', '/path/to/kiln', 50, 100);
+    await getSessionHistory('ses-1', kiln, limit, offset);
     const [url] = mockFetch.mock.calls[0];
-    expect(url).toContain('kiln=%2Fpath%2Fto%2Fkiln');
-    expect(url).toContain('limit=50');
-    expect(url).toContain('offset=100');
-  });
-
-  it('omits limit/offset when undefined', async () => {
-    const mockFetch = createMockFetch({
-      'GET /api/session/ses-1/history': {
-        body: { session_id: 'ses-1', history: [], total_events: 0 },
-      },
-    });
-    global.fetch = mockFetch;
-    await getSessionHistory('ses-1', '/k');
-    const [url] = mockFetch.mock.calls[0];
-    expect(url).not.toContain('limit');
-    expect(url).not.toContain('offset');
+    for (const p of expectPresent) expect(url).toContain(p);
+    for (const p of expectAbsent) expect(url).not.toContain(p);
   });
 
   it('forwards AbortSignal to fetch', async () => {
@@ -848,26 +785,16 @@ describe('plugin endpoints', () => {
     await expect(installPlugin({ url: 'user/repo' })).rejects.toThrow('Failed to install plugin');
   });
 
-  it('removePlugin DELETEs without purge query when purge=false', async () => {
-    const mockFetch = createMockFetch({
-      'DELETE /api/plugins/my-plugin': {
-        body: { name: 'my-plugin', plugins_toml: '/tmp/plugins.toml', purged_dir: null },
-      },
-    });
+  it.each([
+    { name: 'removePlugin DELETEs without purge query when purge=false', expectPresent: [] as string[], expectAbsent: ['purge='] },
+    { name: 'removePlugin appends ?purge=true when purge=true', purge: true, expectPresent: ['purge=true'], expectAbsent: [] as string[] },
+  ])('$name', async ({ purge, expectPresent, expectAbsent }: { purge?: boolean; expectPresent: string[]; expectAbsent: string[] }) => {
+    const mockFetch = createMockFetch({ 'DELETE /api/plugins/my-plugin': { body: { name: 'my-plugin', plugins_toml: '/tmp/plugins.toml', purged_dir: null } } });
     global.fetch = mockFetch;
-    await removePlugin('my-plugin');
-    expect(mockFetch.mock.calls[0][0]).not.toContain('purge=');
-  });
-
-  it('removePlugin appends ?purge=true when purge=true', async () => {
-    const mockFetch = createMockFetch({
-      'DELETE /api/plugins/my-plugin': {
-        body: { name: 'my-plugin', plugins_toml: '/tmp/plugins.toml', purged_dir: '/tmp/p' },
-      },
-    });
-    global.fetch = mockFetch;
-    await removePlugin('my-plugin', true);
-    expect(mockFetch.mock.calls[0][0]).toContain('purge=true');
+    await removePlugin('my-plugin', purge);
+    const url = String(mockFetch.mock.calls[0][0]);
+    for (const p of expectPresent) expect(url).toContain(p);
+    for (const p of expectAbsent) expect(url).not.toContain(p);
   });
 });
 
@@ -920,24 +847,16 @@ describe('skills endpoints', () => {
     expect(mockFetch.mock.calls[0][0]).toContain('/api/skills/my%20skill');
   });
 
-  it('searchSkills passes q + limit', async () => {
-    const mockFetch = createMockFetch({
-      'GET /api/skills/search': { body: { skills: [] } },
-    });
+  it.each([
+    { name: 'searchSkills passes q + limit', query: 'foo', kiln: '/tmp/k', limit: 5, expectPresent: ['q=foo', 'limit=5'], expectAbsent: [] as string[] },
+    { name: 'searchSkills omits limit when not provided', query: 'foo', kiln: '/tmp/k', expectPresent: [] as string[], expectAbsent: ['limit='] },
+  ])('$name', async ({ query, kiln, limit, expectPresent, expectAbsent }: { query: string; kiln: string; limit?: number; expectPresent: string[]; expectAbsent: string[] }) => {
+    const mockFetch = createMockFetch({ 'GET /api/skills/search': { body: { skills: [] } } });
     global.fetch = mockFetch;
-    await searchSkills('foo', '/tmp/k', 5);
-    const [url] = mockFetch.mock.calls[0];
-    expect(url).toContain('q=foo');
-    expect(url).toContain('limit=5');
-  });
-
-  it('searchSkills omits limit when not provided', async () => {
-    const mockFetch = createMockFetch({
-      'GET /api/skills/search': { body: { skills: [] } },
-    });
-    global.fetch = mockFetch;
-    await searchSkills('foo', '/tmp/k');
-    expect(mockFetch.mock.calls[0][0]).not.toContain('limit=');
+    await searchSkills(query, kiln, limit);
+    const url = String(mockFetch.mock.calls[0][0]);
+    for (const p of expectPresent) expect(url).toContain(p);
+    for (const p of expectAbsent) expect(url).not.toContain(p);
   });
 
   it('listSkills throws on 5xx', async () => {
@@ -998,24 +917,16 @@ describe('MCP / kilns / notes / search', () => {
     await expect(listDir('/proj')).rejects.toThrow(/listDir failed: 400/);
   });
 
-  it('listNotes passes kiln + optional pathFilter', async () => {
-    const mockFetch = createMockFetch({
-      'GET /api/notes': { body: { notes: [] } },
-    });
+  it.each([
+    { name: 'listNotes passes kiln + optional pathFilter', kiln: 'default', pathFilter: 'docs/', expectPresent: ['kiln=default', 'path_filter=docs%2F'], expectAbsent: [] as string[] },
+    { name: 'listNotes omits pathFilter when missing', kiln: 'default', expectPresent: [] as string[], expectAbsent: ['path_filter'] },
+  ])('$name', async ({ kiln, pathFilter, expectPresent, expectAbsent }: { kiln: string; pathFilter?: string; expectPresent: string[]; expectAbsent: string[] }) => {
+    const mockFetch = createMockFetch({ 'GET /api/notes': { body: { notes: [] } } });
     global.fetch = mockFetch;
-    await listNotes('default', 'docs/');
-    const [url] = mockFetch.mock.calls[0];
-    expect(url).toContain('kiln=default');
-    expect(url).toContain('path_filter=docs%2F');
-  });
-
-  it('listNotes omits pathFilter when missing', async () => {
-    const mockFetch = createMockFetch({
-      'GET /api/notes': { body: { notes: [] } },
-    });
-    global.fetch = mockFetch;
-    await listNotes('default');
-    expect(mockFetch.mock.calls[0][0]).not.toContain('path_filter');
+    await listNotes(kiln, pathFilter);
+    const url = String(mockFetch.mock.calls[0][0]);
+    for (const p of expectPresent) expect(url).toContain(p);
+    for (const p of expectAbsent) expect(url).not.toContain(p);
   });
 
   it('listNotes includes error text on failure', async () => {

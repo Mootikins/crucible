@@ -199,6 +199,160 @@ beforeEach(() => {
 // ============================================================================
 
 describe('event matrix — covers every ChatEvent variant', () => {
+  // ---- Parameterized clusters (homogeneous shape across many variants) ----
+
+  // tool_call / tool_call_start: dispatch one tool-call event, assert the
+  // ToolCallDisplay shape that lands in the transcript.
+  it.each([
+    {
+      name: 'tool_call: adds a running ToolCallDisplay with title and arguments',
+      event: { type: 'tool_call', id: 'tc-1', title: 'list_files', arguments: { path: '/tmp' } },
+      expected: {
+        id: 'tc-1', name: 'list_files',
+        args: JSON.stringify({ path: '/tmp' }), status: 'running', callId: 'tc-1',
+      },
+    },
+    {
+      name: 'tool_call_start: same as tool_call but uses `name`',
+      event: { type: 'tool_call_start', id: 'tc-2', name: 'bash', arguments: { cmd: 'ls' } },
+      expected: { name: 'bash', status: 'running' },
+    },
+    {
+      name: 'tool_call: handles missing arguments gracefully',
+      event: { type: 'tool_call', id: 'tc-3', title: 'noop' },
+      expected: { args: '' },
+    },
+    {
+      name: 'tool_call: arguments present but undefined stringifies to ""',
+      event: { type: 'tool_call', id: 'tc-4', title: 'noop', arguments: undefined },
+      expected: { args: '""' },
+    },
+  ])('$name', ({ event, expected }) => {
+    const h = createHarness();
+    h.reducer(event as ChatEvent);
+    expect(h.tools()[0]).toMatchObject(expected);
+  });
+
+  // tool_result* lifecycle: each row sets up a tool_call then dispatches the
+  // listed result events and asserts the resulting ToolCallDisplay state.
+  it.each([
+    {
+      name: 'tool_result: marks tool complete and stores result',
+      events: [{ type: 'tool_result', id: 'tc-1', result: 'done' }],
+      expected: { result: 'done', status: 'complete' },
+    },
+    {
+      name: 'tool_result: defaults empty string when result is missing',
+      events: [{ type: 'tool_result', id: 'tc-1' }],
+      expected: { result: '', status: 'complete' },
+    },
+    {
+      name: 'tool_result: stores terminate=true when the daemon signaled early-stop',
+      events: [{ type: 'tool_result', id: 'tc-1', result: 'final', terminate: true }],
+      expected: { result: 'final', status: 'complete', terminate: true },
+    },
+    {
+      name: 'tool_result: terminate defaults to false when omitted (backward compat)',
+      events: [{ type: 'tool_result', id: 'tc-1', result: 'done' }],
+      expected: { terminate: false },
+    },
+    {
+      name: 'tool_result_delta: appends to existing result',
+      events: [
+        { type: 'tool_result_delta', id: 'tc-1', delta: 'partial-' },
+        { type: 'tool_result_delta', id: 'tc-1', delta: 'output' },
+      ],
+      expected: { result: 'partial-output' },
+    },
+    {
+      name: 'tool_result_delta: tools without a result accumulate from empty',
+      events: [{ type: 'tool_result_delta', id: 'tc-1', delta: 'x' }],
+      expected: { result: 'x' },
+    },
+    {
+      name: 'tool_result_complete: marks tool complete without changing result',
+      events: [
+        { type: 'tool_result_delta', id: 'tc-1', delta: 'stream' },
+        { type: 'tool_result_complete', id: 'tc-1' },
+      ],
+      expected: { result: 'stream', status: 'complete' },
+    },
+    {
+      name: 'tool_result_error: marks tool error and stores message',
+      events: [{ type: 'tool_result_error', id: 'tc-1', error: 'boom' }],
+      expected: { result: 'boom', status: 'error' },
+    },
+  ])('$name', ({ events, expected }) => {
+    const h = createHarness();
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
+    for (const e of events) h.reducer(e as ChatEvent);
+    expect(h.tools()[0]).toMatchObject(expected);
+  });
+
+  // subagent_* / delegation_*: every variant mutates h.state.subagentEvents
+  // via the same upsert path. Each row lists the events to dispatch and the
+  // expected final array (strict equality preserves the array-length check).
+  it.each([
+    {
+      name: 'subagent_spawned: adds spawned event',
+      events: [{ type: 'subagent_spawned', id: 'sa-1', prompt: 'go' }],
+      expected: [{ id: 'sa-1', prompt: 'go', status: 'spawned' }],
+    },
+    {
+      name: 'subagent_completed: upserts into existing spawned event',
+      events: [
+        { type: 'subagent_spawned', id: 'sa-1', prompt: 'go' },
+        { type: 'subagent_completed', id: 'sa-1', summary: 'done' },
+      ],
+      expected: [{ id: 'sa-1', prompt: 'go', status: 'completed', summary: 'done' }],
+    },
+    {
+      name: 'subagent_completed: creates a new entry when no matching spawn',
+      events: [{ type: 'subagent_completed', id: 'sa-orphan', summary: 'done' }],
+      expected: [{ id: 'sa-orphan', prompt: '', status: 'completed', summary: 'done' }],
+    },
+    {
+      name: 'subagent_failed: upserts with error',
+      events: [
+        { type: 'subagent_spawned', id: 'sa-1', prompt: 'go' },
+        { type: 'subagent_failed', id: 'sa-1', error: 'oom' },
+      ],
+      expected: [{ id: 'sa-1', prompt: 'go', status: 'failed', error: 'oom' }],
+    },
+    {
+      name: 'subagent_failed: creates new entry when no matching spawn',
+      events: [{ type: 'subagent_failed', id: 'sa-orphan', error: 'oom' }],
+      expected: [{ id: 'sa-orphan', prompt: '', status: 'failed', error: 'oom' }],
+    },
+    {
+      name: 'delegation_spawned: adds spawned event with targetAgent',
+      events: [{ type: 'delegation_spawned', id: 'd-1', prompt: 'analyze', target_agent: 'claude' }],
+      expected: [{ id: 'd-1', prompt: 'analyze', status: 'spawned', targetAgent: 'claude' }],
+    },
+    {
+      name: 'delegation_completed: upserts summary',
+      events: [
+        { type: 'delegation_spawned', id: 'd-1', prompt: 'analyze' },
+        { type: 'delegation_completed', id: 'd-1', summary: 'finished' },
+      ],
+      expected: [{ id: 'd-1', prompt: 'analyze', status: 'completed', summary: 'finished' }],
+    },
+    {
+      name: 'delegation_failed: upserts error',
+      events: [
+        { type: 'delegation_spawned', id: 'd-1', prompt: 'x' },
+        { type: 'delegation_failed', id: 'd-1', error: 'agent unreachable' },
+      ],
+      expected: [{ id: 'd-1', prompt: 'x', status: 'failed', error: 'agent unreachable' }],
+    },
+  ])('$name', ({ events, expected }) => {
+    const h = createHarness();
+    for (const e of events) h.reducer(e as ChatEvent);
+    expect(h.state.subagentEvents).toEqual(expected);
+  });
+
+  // ---- Individual tests (heterogeneous setup/assertion shapes) ----
+
   it('token: appends content to current streaming message', () => {
     const h = createHarness();
     h.setUp.streamingMessage('asst-1');
@@ -215,121 +369,6 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.state.messages).toHaveLength(1);
     expect(h.state.messages[0]).toMatchObject({ role: 'assistant', content: 'late viewer' });
     expect(h.state.currentStreamingMessageId).toBe(h.state.messages[0].id);
-  });
-
-  it('tool_call: adds a running ToolCallDisplay with title and arguments', () => {
-    const h = createHarness();
-    h.reducer({
-      type: 'tool_call',
-      id: 'tc-1',
-      title: 'list_files',
-      arguments: { path: '/tmp' },
-    });
-    expect(h.tools()).toEqual([
-      {
-        id: 'tc-1',
-        name: 'list_files',
-        args: JSON.stringify({ path: '/tmp' }),
-        status: 'running',
-        callId: 'tc-1',
-      },
-    ]);
-  });
-
-  it('tool_call_start: same as tool_call but uses `name`', () => {
-    const h = createHarness();
-    h.reducer({
-      type: 'tool_call_start',
-      id: 'tc-2',
-      name: 'bash',
-      arguments: { cmd: 'ls' },
-    });
-    expect(h.tools()[0].name).toBe('bash');
-    expect(h.tools()[0].status).toBe('running');
-  });
-
-  it('tool_call: handles missing arguments gracefully', () => {
-    const h = createHarness();
-    // No 'arguments' key at all → reducer skips JSON.stringify and uses empty string.
-    h.reducer({ type: 'tool_call', id: 'tc-3', title: 'noop' });
-    expect(h.tools()[0].args).toBe('');
-  });
-
-  it('tool_call: arguments present but undefined stringifies to ""', () => {
-    const h = createHarness();
-    h.reducer({ type: 'tool_call', id: 'tc-4', title: 'noop', arguments: undefined });
-    expect(h.tools()[0].args).toBe('""');
-  });
-
-  it('tool_result: marks tool complete and stores result', () => {
-    const h = createHarness();
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
-    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'done' });
-    expect(h.tools()[0]).toMatchObject({
-      result: 'done',
-      status: 'complete',
-    });
-  });
-
-  it('tool_result: defaults empty string when result is missing', () => {
-    const h = createHarness();
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
-    h.reducer({ type: 'tool_result', id: 'tc-1' });
-    expect(h.tools()[0].result).toBe('');
-  });
-
-  it('tool_result: stores terminate=true when the daemon signaled early-stop', () => {
-    const h = createHarness();
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'submit_answer' });
-    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'final', terminate: true });
-    expect(h.tools()[0]).toMatchObject({
-      result: 'final',
-      status: 'complete',
-      terminate: true,
-    });
-  });
-
-  it('tool_result: terminate defaults to false when omitted (backward compat)', () => {
-    const h = createHarness();
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
-    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'done' });
-    expect(h.tools()[0].terminate).toBe(false);
-  });
-
-  it('tool_result_delta: appends to existing result', () => {
-    const h = createHarness();
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
-    h.reducer({ type: 'tool_result_delta', id: 'tc-1', delta: 'partial-' });
-    h.reducer({ type: 'tool_result_delta', id: 'tc-1', delta: 'output' });
-    expect(h.tools()[0].result).toBe('partial-output');
-  });
-
-  it('tool_result_delta: tools without a result accumulate from empty', () => {
-    const h = createHarness();
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
-    h.reducer({ type: 'tool_result_delta', id: 'tc-1', delta: 'x' });
-    expect(h.tools()[0].result).toBe('x');
-  });
-
-  it('tool_result_complete: marks tool complete without changing result', () => {
-    const h = createHarness();
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
-    h.reducer({ type: 'tool_result_delta', id: 'tc-1', delta: 'stream' });
-    h.reducer({ type: 'tool_result_complete', id: 'tc-1' });
-    expect(h.tools()[0]).toMatchObject({
-      result: 'stream',
-      status: 'complete',
-    });
-  });
-
-  it('tool_result_error: marks tool error and stores message', () => {
-    const h = createHarness();
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
-    h.reducer({ type: 'tool_result_error', id: 'tc-1', error: 'boom' });
-    expect(h.tools()[0]).toMatchObject({
-      result: 'boom',
-      status: 'error',
-    });
   });
 
   it('tool_call: inserts before the empty streaming assistant placeholder so transcript order is user → tools → answer', () => {
@@ -530,29 +569,27 @@ describe('event matrix — covers every ChatEvent variant', () => {
     });
   });
 
-  it('message_complete finalizes a still-running tool with no result as an error', () => {
+  // message_complete dangling-tool finalization: a still-running tool at turn
+  // end is finalized based on whether it has any partial result.
+  it.each([
+    {
+      name: 'message_complete finalizes a still-running tool with no result as an error',
+      preEvents: [],
+      expected: { status: 'error', result: 'tool did not complete' },
+    },
+    {
+      name: 'message_complete finalizes a still-running tool that has a partial result as complete',
+      preEvents: [{ type: 'tool_result_delta', id: 'tc-1', delta: 'partial output' }],
+      expected: { status: 'complete', result: 'partial output' },
+    },
+  ])('$name', ({ preEvents, expected }) => {
     const h = createHarness();
     h.setUp.streamingMessage('asst-1');
     h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
-    // No tool_result arrives before the turn completes.
+    for (const e of preEvents) h.reducer(e as ChatEvent);
+    // No tool_result_complete arrives; the turn ends with status still running.
     h.reducer({ type: 'message_complete', id: 'srv', content: 'done' });
-    expect(h.tools()[0]).toMatchObject({
-      status: 'error',
-      result: 'tool did not complete',
-    });
-  });
-
-  it('message_complete finalizes a still-running tool that has a partial result as complete', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
-    h.reducer({ type: 'tool_result_delta', id: 'tc-1', delta: 'partial output' });
-    // tool_result_complete never arrives; the turn ends with status still running.
-    h.reducer({ type: 'message_complete', id: 'srv', content: 'done' });
-    expect(h.tools()[0]).toMatchObject({
-      status: 'complete',
-      result: 'partial output',
-    });
+    expect(h.tools()[0]).toMatchObject(expected);
   });
 
   it('tool entries persist in the transcript after message_complete', () => {
@@ -624,7 +661,6 @@ describe('event matrix — covers every ChatEvent variant', () => {
       type: 'message_complete',
       id: 'msg-server-1',
       content: 'final',
-
     });
     expect(h.state.messages[0].usage).toBeUndefined();
   });
@@ -635,7 +671,6 @@ describe('event matrix — covers every ChatEvent variant', () => {
       type: 'message_complete',
       id: 'srv',
       content: 'full text',
-
     });
     expect(h.state.messages).toHaveLength(1);
     expect(h.state.messages[0]).toMatchObject({
@@ -718,90 +753,6 @@ describe('event matrix — covers every ChatEvent variant', () => {
     });
   });
 
-  it('subagent_spawned: adds spawned event', () => {
-    const h = createHarness();
-    h.reducer({ type: 'subagent_spawned', id: 'sa-1', prompt: 'go' });
-    expect(h.state.subagentEvents).toEqual([
-      { id: 'sa-1', prompt: 'go', status: 'spawned' },
-    ]);
-  });
-
-  it('subagent_completed: upserts into existing spawned event', () => {
-    const h = createHarness();
-    h.reducer({ type: 'subagent_spawned', id: 'sa-1', prompt: 'go' });
-    h.reducer({ type: 'subagent_completed', id: 'sa-1', summary: 'done' });
-    expect(h.state.subagentEvents).toEqual([
-      { id: 'sa-1', prompt: 'go', status: 'completed', summary: 'done' },
-    ]);
-  });
-
-  it('subagent_completed: creates a new entry when no matching spawn', () => {
-    const h = createHarness();
-    h.reducer({ type: 'subagent_completed', id: 'sa-orphan', summary: 'done' });
-    expect(h.state.subagentEvents).toEqual([
-      { id: 'sa-orphan', prompt: '', status: 'completed', summary: 'done' },
-    ]);
-  });
-
-  it('subagent_failed: upserts with error', () => {
-    const h = createHarness();
-    h.reducer({ type: 'subagent_spawned', id: 'sa-1', prompt: 'go' });
-    h.reducer({ type: 'subagent_failed', id: 'sa-1', error: 'oom' });
-    expect(h.state.subagentEvents[0]).toMatchObject({
-      status: 'failed',
-      error: 'oom',
-    });
-  });
-
-  it('subagent_failed: creates new entry when no matching spawn', () => {
-    const h = createHarness();
-    h.reducer({ type: 'subagent_failed', id: 'sa-orphan', error: 'oom' });
-    expect(h.state.subagentEvents).toEqual([
-      { id: 'sa-orphan', prompt: '', status: 'failed', error: 'oom' },
-    ]);
-  });
-
-  it('delegation_spawned: adds spawned event with targetAgent', () => {
-    const h = createHarness();
-    h.reducer({
-      type: 'delegation_spawned',
-      id: 'd-1',
-      prompt: 'analyze',
-      target_agent: 'claude',
-    });
-    expect(h.state.subagentEvents).toEqual([
-      { id: 'd-1', prompt: 'analyze', status: 'spawned', targetAgent: 'claude' },
-    ]);
-  });
-
-  it('delegation_completed: upserts summary', () => {
-    const h = createHarness();
-    h.reducer({
-      type: 'delegation_spawned',
-      id: 'd-1',
-      prompt: 'analyze',
-    });
-    h.reducer({
-      type: 'delegation_completed',
-      id: 'd-1',
-      summary: 'finished',
-    });
-    expect(h.state.subagentEvents[0]).toMatchObject({
-      status: 'completed',
-      summary: 'finished',
-    });
-  });
-
-  it('delegation_failed: upserts error', () => {
-    const h = createHarness();
-    h.reducer({ type: 'delegation_spawned', id: 'd-1', prompt: 'x' });
-    h.reducer({ type: 'delegation_failed', id: 'd-1', error: 'agent unreachable' });
-    expect(h.state.subagentEvents[0]).toMatchObject({
-      status: 'failed',
-      error: 'agent unreachable',
-    });
-  });
-
   it('context_usage: updates local state AND statusBar', () => {
     const h = createHarness();
     h.reducer({ type: 'context_usage', used: 1234, total: 8000 });
@@ -875,27 +826,28 @@ describe('event matrix — covers every ChatEvent variant', () => {
 // Property tests — invariants over random event sequences
 // ============================================================================
 
+// Compact arbitrary builder: every ChatEvent variant is `fc.constant(type)`
+// plus a handful of fields — the helper removes the per-variant boilerplate.
+const evt = <T extends string>(type: T, fields: Record<string, fc.Arbitrary<unknown>> = {}) =>
+  fc.record({ type: fc.constant(type), ...fields });
+
+const strId = fc.string({ minLength: 1, maxLength: 10 });
+
 // Hoisted interaction arbitraries — used both inside arbChatEvent and by the
 // "interaction_requested has kind" property test below.
-const interactionAsk = fc.record({
-  type: fc.constant('interaction_requested' as const),
-  id: fc.string({ minLength: 1, maxLength: 10 }),
+const interactionAsk = evt('interaction_requested', {
+  id: strId,
   kind: fc.constant('ask' as const),
   question: fc.string({ maxLength: 100 }),
 });
-const interactionPopup = fc.record({
-  type: fc.constant('interaction_requested' as const),
-  id: fc.string({ minLength: 1, maxLength: 10 }),
+const interactionPopup = evt('interaction_requested', {
+  id: strId,
   kind: fc.constant('popup' as const),
   title: fc.string({ maxLength: 50 }),
-  entries: fc.array(
-    fc.record({ label: fc.string({ maxLength: 20 }) }),
-    { maxLength: 5 },
-  ),
+  entries: fc.array(fc.record({ label: fc.string({ maxLength: 20 }) }), { maxLength: 5 }),
 });
-const interactionPerm = fc.record({
-  type: fc.constant('interaction_requested' as const),
-  id: fc.string({ minLength: 1, maxLength: 10 }),
+const interactionPerm = evt('interaction_requested', {
+  id: strId,
   kind: fc.constant('permission' as const),
   action_type: fc.constantFrom('bash' as const, 'read' as const, 'write' as const, 'tool' as const),
   tokens: fc.array(fc.string({ maxLength: 20 }), { maxLength: 5 }),
@@ -903,141 +855,40 @@ const interactionPerm = fc.record({
 
 // Generator for any ChatEvent. Kept small but covers every variant so totality
 // holds across the union.
-const arbChatEvent = (): fc.Arbitrary<ChatEvent> => {
-  const tokens = fc.record({
-    type: fc.constant('token' as const),
-    content: fc.string(),
-  });
-  const toolCall = fc.record({
-    type: fc.constant('tool_call' as const),
-    id: fc.string({ minLength: 1, maxLength: 10 }),
-    title: fc.string(),
-  });
-  const toolCallStart = fc.record({
-    type: fc.constant('tool_call_start' as const),
-    id: fc.string({ minLength: 1, maxLength: 10 }),
-    name: fc.string(),
-  });
-  const toolResult = fc.record({
-    type: fc.constant('tool_result' as const),
-    id: fc.string({ minLength: 1, maxLength: 10 }),
-    result: fc.string(),
-  });
-  const toolResultDelta = fc.record({
-    type: fc.constant('tool_result_delta' as const),
-    id: fc.string({ minLength: 1, maxLength: 10 }),
-    delta: fc.string(),
-  });
-  const toolResultComplete = fc.record({
-    type: fc.constant('tool_result_complete' as const),
-    id: fc.string({ minLength: 1, maxLength: 10 }),
-  });
-  const toolResultError = fc.record({
-    type: fc.constant('tool_result_error' as const),
-    id: fc.string({ minLength: 1, maxLength: 10 }),
-    error: fc.string(),
-  });
-  const thinking = fc.record({
-    type: fc.constant('thinking' as const),
-    content: fc.string(),
-  });
-  const msgComplete = fc.record({
-    type: fc.constant('message_complete' as const),
-    id: fc.string({ minLength: 1, maxLength: 10 }),
-    content: fc.string(),
-
-  });
-  const segmentComplete = fc.record({
-    type: fc.constant('segment_complete' as const),
-    message_id: fc.string({ minLength: 1, maxLength: 10 }),
+const arbChatEvent = (): fc.Arbitrary<ChatEvent> => fc.oneof(
+  evt('token', { content: fc.string() }),
+  evt('tool_call', { id: strId, title: fc.string() }),
+  evt('tool_call_start', { id: strId, name: fc.string() }),
+  evt('tool_result', { id: strId, result: fc.string() }),
+  evt('tool_result_delta', { id: strId, delta: fc.string() }),
+  evt('tool_result_complete', { id: strId }),
+  evt('tool_result_error', { id: strId, error: fc.string() }),
+  evt('thinking', { content: fc.string() }),
+  evt('message_complete', { id: strId, content: fc.string() }),
+  evt('segment_complete', {
+    message_id: strId,
     index: fc.nat({ max: 5 }),
     content: fc.string(),
-  });
-  const err = fc.record({
-    type: fc.constant('error' as const),
-    code: fc.string({ minLength: 1, maxLength: 20 }),
-    message: fc.string(),
-  });
-  // Interaction arbitraries hoisted to module scope above.
-  const interaction = fc.oneof(interactionAsk, interactionPopup, interactionPerm);
-  const subSpawned = fc.record({
-    type: fc.constant('subagent_spawned' as const),
-    id: fc.string({ minLength: 1, maxLength: 10 }),
-    prompt: fc.string(),
-  });
-  const subCompleted = fc.record({
-    type: fc.constant('subagent_completed' as const),
-    id: fc.string({ minLength: 1, maxLength: 10 }),
-    summary: fc.string(),
-  });
-  const subFailed = fc.record({
-    type: fc.constant('subagent_failed' as const),
-    id: fc.string({ minLength: 1, maxLength: 10 }),
-    error: fc.string(),
-  });
-  const delSpawned = fc.record({
-    type: fc.constant('delegation_spawned' as const),
-    id: fc.string({ minLength: 1, maxLength: 10 }),
-    prompt: fc.string(),
-  });
-  const delCompleted = fc.record({
-    type: fc.constant('delegation_completed' as const),
-    id: fc.string({ minLength: 1, maxLength: 10 }),
-    summary: fc.string(),
-  });
-  const delFailed = fc.record({
-    type: fc.constant('delegation_failed' as const),
-    id: fc.string({ minLength: 1, maxLength: 10 }),
-    error: fc.string(),
-  });
-  const ctxUsage = fc.record({
-    type: fc.constant('context_usage' as const),
-    used: fc.nat({ max: 1_000_000 }),
-    total: fc.nat({ max: 1_000_000 }),
-  });
-  const precog = fc.record({
-    type: fc.constant('precognition_result' as const),
+  }),
+  evt('error', { code: fc.string({ minLength: 1, maxLength: 20 }), message: fc.string() }),
+  fc.oneof(interactionAsk, interactionPopup, interactionPerm),
+  evt('subagent_spawned', { id: strId, prompt: fc.string() }),
+  evt('subagent_completed', { id: strId, summary: fc.string() }),
+  evt('subagent_failed', { id: strId, error: fc.string() }),
+  evt('delegation_spawned', { id: strId, prompt: fc.string() }),
+  evt('delegation_completed', { id: strId, summary: fc.string() }),
+  evt('delegation_failed', { id: strId, error: fc.string() }),
+  evt('context_usage', { used: fc.nat({ max: 1_000_000 }), total: fc.nat({ max: 1_000_000 }) }),
+  evt('precognition_result', {
     notes_count: fc.nat({ max: 20 }),
     notes: fc.array(
       fc.record({ name: fc.string(), relevance: fc.float({ min: 0, max: 1 }) }),
       { maxLength: 10 },
     ),
-  });
-  const mode = fc.record({
-    type: fc.constant('mode_changed' as const),
-    mode: fc.constantFrom('normal' as const, 'plan' as const, 'auto' as const),
-  });
-  const sessEvent = fc.record({
-    type: fc.constant('session_event' as const),
-    event_type: fc.string(),
-    data: fc.anything(),
-  });
-
-  return fc.oneof(
-    tokens,
-    toolCall,
-    toolCallStart,
-    toolResult,
-    toolResultDelta,
-    toolResultComplete,
-    toolResultError,
-    thinking,
-    msgComplete,
-    segmentComplete,
-    err,
-    interaction,
-    subSpawned,
-    subCompleted,
-    subFailed,
-    delSpawned,
-    delCompleted,
-    delFailed,
-    ctxUsage,
-    precog,
-    mode,
-    sessEvent,
-  ) as fc.Arbitrary<ChatEvent>;
-};
+  }),
+  evt('mode_changed', { mode: fc.constantFrom('normal' as const, 'plan' as const, 'auto' as const) }),
+  evt('session_event', { event_type: fc.string(), data: fc.anything() }),
+) as fc.Arbitrary<ChatEvent>;
 
 describe('property: totality', () => {
   it('any sequence of events runs to completion without throwing (pre-seeded state)', () => {
@@ -1105,7 +956,6 @@ describe('property: message_complete second call is a safe no-op', () => {
             type: 'message_complete',
             id: msgId,
             content,
-
           };
           h.reducer(event);
           const firstSnapshot = JSON.stringify(h.state.messages);
@@ -1236,13 +1086,12 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
   });
 
   it('every reducer-handled type has a matrix test above', () => {
-    // Extract the actual `it(...)` names from the "event matrix" describe block
-    // by reading this test file's source. Each matrix test name is prefixed
-    // with its variant and a colon (e.g. "token: appends..."). Asserting that
-    // every REDUCER_HANDLED_TYPES entry appears as a matrix-test prefix means a
-    // newly-handled variant added without a matrix test FAILS here — the old
-    // version only checked "reducer doesn't throw", which a missing matrix
-    // entry passed silently.
+    // Each reducer-handled variant must appear as a quoted literal somewhere
+    // in the matrix block — covering `it('variant: ...')` names, `describe`
+    // blocks, and parameterized `it.each` tables where the variant is a
+    // `type:` field or row value. A newly-handled variant added without any
+    // matrix coverage FAILS here — the old version only matched `it('prefix:`,
+    // which silently passed when an `it.each` row was the only mention.
     const source = fs.readFileSync(path.join(__dirname, 'chatEventReducer.test.ts'), 'utf-8');
     const matrixStart = source.indexOf("describe('event matrix");
     const matrixEnd = source.indexOf("describe('property: totality'");
@@ -1250,18 +1099,7 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
     expect(matrixEnd).toBeGreaterThan(matrixStart);
     const matrixBlock = source.slice(matrixStart, matrixEnd);
 
-    const matrixPrefixes = new Set<string>();
-    const itNameRe = /\bit\(\s*'([^:']+):/g;
-    let m: RegExpExecArray | null;
-    while ((m = itNameRe.exec(matrixBlock)) !== null) {
-      matrixPrefixes.add(m[1].trim());
-    }
-
-    // Containment (not strict equality): the matrix may legitimately carry
-    // extra tests for reducer-handled variants that are intentionally absent
-    // from the SSE parity list (e.g. the client-only 'connection' event). What
-    // must hold is that no REDUCER_HANDLED_TYPES entry is missing a matrix test.
-    const missing = REDUCER_HANDLED_TYPES.filter((t) => !matrixPrefixes.has(t));
+    const missing = REDUCER_HANDLED_TYPES.filter((t) => !matrixBlock.includes(`'${t}'`));
     expect(missing).toEqual([]);
 
     // Belt-and-suspenders: each handled type also survives a minimal example
