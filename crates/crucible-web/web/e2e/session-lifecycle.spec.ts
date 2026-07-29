@@ -1,175 +1,26 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
-import { createSSEStream } from './helpers/mock-sse';
 import { MOCK_SESSION, MOCK_SESSION_2 } from './helpers/fixtures';
 import { openSessionsList } from './helpers/nav';
 
 /**
- * E2E: Session Lifecycle
+ * E2E: Session Lifecycle — browser-boundary coverage only.
  *
- * Covers the 8 core session flows:
- * 1. Create session — new session appears in list + chat tab opens
- * 2. Send & stream — type message, streamed response appears
- * 3. Resume session — click session in list, history loads
- * 4. End session — state changes to ended, input disabled
- * 5. Archive session — hover row, click archive, session disappears
- * 6. Delete session — hover row, click delete, confirm, session gone
- * 7. Cross-client visibility — session from "another client" appears
- * 8. Persistence — refresh page, sessions still in list
+ * Each surviving test verifies a behavior that depends on the real
+ * browser-to-application boundary (DOM rendering, hover-revealed controls,
+ * native dialog handling, page refresh, SSE-driven history hydration) and
+ * cannot be replaced by `SessionContext.test.tsx` or another playwright spec.
+ *
+ * Trimmed coverage (moved / already covered elsewhere):
+ *   - Create-on-first-message → session-management.spec.ts:30 + new-session-chat-tab.spec.ts:69
+ *   - Send-and-stream        → chat-happy-path.spec.ts:39 (identical)
+ *   - End-state absence #1   → Flow 10 below + SessionContext.test.tsx:155 (resume logic)
+ *   - Cross-client listing   → session-management.spec.ts:13 (multi-session list + titles)
  */
 
-const ENDED_SESSION = {
-  ...MOCK_SESSION,
-  state: 'ended' as const,
-};
-
-const NEW_SESSION = {
-  ...MOCK_SESSION,
-  session_id: 'test-session-new',
-  title: 'Newly Created Session',
-};
-
 test.describe('Session Lifecycle', () => {
-  // ── Flow 1: Create Session ──────────────────────────────────────────
-  test('creates a new session on first draft message and opens chat tab', async ({ page }) => {
-    await setupBasicMocks(page, { sessionCreate: NEW_SESSION });
-    await page.goto('/');
-    await openSessionsList(page);
-
-    // Wait for the new session button
-    const newSessionBtn = page.getByTestId('new-session-button');
-    await expect(newSessionBtn).toBeVisible({ timeout: 10000 });
-
-    // Lazy creation: clicking opens the draft surface, no POST yet.
-    await newSessionBtn.click();
-    await expect(page.getByTestId('composer-input')).toBeVisible();
-
-    // The first message triggers session creation…
-    const createPromise = page.waitForRequest(
-      (req) => req.url().includes('/api/session') && req.method() === 'POST',
-    );
-    await page.getByTestId('composer-input').fill('Hello');
-    await page.getByTestId('composer-send').click();
-    const createRequest = await createPromise;
-    expect(createRequest).toBeTruthy();
-
-    // …and the chat tab for the new session opens.
-    await expect(
-      page.locator('[data-tab-id="tab-chat-test-session-new"]'),
-    ).toBeVisible();
-  });
-
-  // ── Flow 2: Send & Stream ──────────────────────────────────────────
-  test('sends a message and displays streamed response', async ({ page }) => {
-    const responseText = 'Hello! How can I help you today?';
-
-    // Build SSE events with type discriminator in data (matches real Axum backend)
-    function buildChatEvents(
-      content: string,
-      messageId = 'msg-001',
-    ): Array<{ type: string; data: object }> {
-      const chunks: string[] = [];
-      for (let i = 0; i < content.length; i += 10) {
-        chunks.push(content.slice(i, i + 10));
-      }
-      return [
-        ...chunks.map((chunk) => ({
-          type: 'token',
-          data: { type: 'token', content: chunk },
-        })),
-        {
-          type: 'message_complete',
-          data: { type: 'message_complete', id: messageId, content, tool_calls: [] },
-        },
-      ];
-    }
-
-    const sseBody = createSSEStream(buildChatEvents(responseText));
-
-    // Set up mocks with empty SSE (we control delivery separately)
-    await setupBasicMocks(page, { sseEvents: [] });
-
-    // Mock the title endpoint (auto-title fires after first response)
-    await page.route('**/api/session/*/title', (route) =>
-      route.fulfill({ status: 200, body: '{}' }),
-    );
-
-    // Controlled SSE: hold connection pending until after send, then deliver events once
-    let resolveSSE: (() => void) | null = null;
-    const sseReady = new Promise<void>((resolve) => {
-      resolveSSE = resolve;
-    });
-    let delivered = false;
-
-    await page.route(/\/api\/chat\/events\/.*/, async (route) => {
-      if (!delivered) {
-        delivered = true;
-        await sseReady;
-        await route.fulfill({
-          status: 200,
-          headers: {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            Connection: 'keep-alive',
-          },
-          body: sseBody,
-        });
-      } else {
-        // Reconnects after delivery: empty stream
-        await route.fulfill({
-          status: 200,
-          headers: {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            Connection: 'keep-alive',
-          },
-          body: '',
-        });
-      }
-    });
-
-    await page.goto('/');
-    await openSessionsList(page);
-
-    // Click session in sidebar to open chat
-    await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
-    await page.getByTestId('session-item-test-session-001').click();
-
-    // Wait for chat input to be ready
-    const chatInput = page.getByTestId('chat-input');
-    await expect(chatInput).toBeVisible({ timeout: 5000 });
-    await expect(chatInput).not.toBeDisabled({ timeout: 5000 });
-
-    // Type a message
-    await chatInput.fill('Hello from lifecycle test');
-
-    // Intercept the POST
-    const sendPromise = page.waitForRequest(
-      (req) => req.url().includes('/api/chat/send') && req.method() === 'POST',
-    );
-
-    // Click send
-    await page.getByTestId('send-button').click();
-
-    // Wait for POST to complete (ensures currentStreamingMessageId is set)
-    await sendPromise;
-
-    // Now release SSE events — streaming message placeholder exists
-    resolveSSE!();
-
-    // Assert: user message appears
-    const userMessage = page.getByTestId('message-user');
-    await expect(userMessage.first()).toBeVisible({ timeout: 5000 });
-    await expect(userMessage.first()).toContainText('Hello from lifecycle test');
-
-    // Assert: assistant response appears with streamed content
-    const assistantMessage = page.getByTestId('message-assistant');
-    await expect(assistantMessage.first()).toContainText(responseText, {
-      timeout: 10000,
-    });
-  });
-
-  // ── Flow 3: Resume Session ─────────────────────────────────────────
+  // ── Resume Session: history events hydrate the DOM ─────────────────
+  // E2E: verifies session history payload (events from another time) renders into the chat DOM when a session is selected — not coverable by the isolated SessionContext unit test, which only asserts the API call dispatch.
   test('resumes a session and loads history', async ({ page }) => {
     const historyEvents = {
       session_id: MOCK_SESSION.session_id,
@@ -221,40 +72,8 @@ test.describe('Session Lifecycle', () => {
     });
   });
 
-  // ── Flow 4: End Session ────────────────────────────────────────────
-  test('ends a session and disables input', async ({ page }) => {
-    await setupBasicMocks(page, { sessions: [ENDED_SESSION] });
-
-    // Override specific session GET to return ended state (LIFO priority)
-    await page.route('**/api/session/test-session-001', (route) => {
-      if (route.request().method() === 'GET') {
-        route.fulfill({ json: ENDED_SESSION });
-      } else {
-        route.continue();
-      }
-    });
-
-    await page.goto('/');
-    await openSessionsList(page);
-
-    // Wait for session list and click the ended session
-    await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
-    // Switch to 'all' filter so ended sessions are visible
-    await page.getByTestId('session-item-test-session-001').click();
-
-
-    // Positive load signal FIRST: the session panel actually rendered its
-    // chat input. Without this, the absence checks below would pass vacuously
-    // on an empty/unmounted panel.
-    await expect(page.getByTestId('chat-input')).toBeVisible({ timeout: 5000 });
-
-    // Now that the ended session is loaded: no ended-state affordances remain.
-    await expect(page.getByText('This session has ended')).toHaveCount(0);
-    const continueButton = page.getByRole('button', { name: /Continue as new session/ });
-    await expect(continueButton).toHaveCount(0);
-  });
-
-  // ── Flow 5: Archive Session ────────────────────────────────────────
+  // ── Archive Session: hover-revealed action → POST /archive ─────────
+  // E2E: verifies the CSS-hover-revealed archive button is reachable via real pointer hover and fires POST /api/session/<id>/archive — the hover transition + button targeting is purely browser-boundary.
   test('archives a session via hover action button', async ({ page }) => {
     await setupBasicMocks(page, { sessions: [MOCK_SESSION, MOCK_SESSION_2] });
 
@@ -297,7 +116,8 @@ test.describe('Session Lifecycle', () => {
     expect(archiveRequest.url()).toContain('test-session-001/archive');
   });
 
-  // ── Flow 6: Delete Session ─────────────────────────────────────────
+  // ── Delete Session: native confirm() dialog + DELETE request ───────
+  // E2E: verifies the browser-native window.confirm() dialog is accepted by the page's dialog handler and the DELETE method actually fires — the confirm() round-trip only exists at the browser boundary.
   test('deletes a session via hover action button with confirmation', async ({ page }) => {
     await setupBasicMocks(page, { sessions: [MOCK_SESSION, MOCK_SESSION_2] });
 
@@ -344,40 +164,8 @@ test.describe('Session Lifecycle', () => {
     expect(deleteRequest.url()).toContain('test-session-001');
   });
 
-  // ── Flow 7: Cross-client Visibility ────────────────────────────────
-  test('sessions from another client appear in the list', async ({ page }) => {
-    // Simulate a session created by another client (not created in this browser)
-    const externalSession = {
-      session_id: 'external-session-999',
-      type: 'chat' as const,
-      kiln: '/home/user/notes',
-      workspace: '/home/user/project',
-      state: 'active' as const,
-      title: 'External Client Session',
-      agent_model: 'mistral',
-      started_at: '2026-01-01T02:00:00Z',
-      event_count: 3,
-    };
-
-    await setupBasicMocks(page, {
-      sessions: [MOCK_SESSION, externalSession],
-    });
-
-    await page.goto('/');
-    await openSessionsList(page);
-
-    // Wait for session list
-    await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
-
-    // Assert: both the local and external sessions are visible
-    await expect(page.getByTestId('session-item-test-session-001')).toBeVisible();
-    await expect(page.getByTestId('session-item-external-session-999')).toBeVisible();
-
-    // Assert: external session shows its title
-    await expect(page.getByTestId('session-list').getByText('External Client Session')).toBeVisible();
-  });
-
-  // ── Flow 8: Persistence (Refresh) ─────────────────────────────────
+  // ── Persistence: page refresh re-fetches and re-renders ───────────
+  // E2E: verifies that after a real page.reload(), the app re-bootstraps, re-fetches the session list, and re-renders both items with their titles — the reload + re-fetch lifecycle is browser-boundary only.
   test('sessions persist across page refresh', async ({ page }) => {
     // Set up initial sessions
     await setupBasicMocks(page, {
@@ -411,7 +199,8 @@ test.describe('Session Lifecycle', () => {
     await expect(page.getByTestId('session-list').getByText('Second Session')).toBeVisible();
   });
 
-  // ── Flow 9: No End Button ──────────────────────────────────────────
+  // ── Active session: no End button rendered ─────────────────────────
+  // E2E: verifies a positive load signal (chat-input visible) precedes the DOM absence assertion for the End button on an active session — guards against false-pass on an unmounted panel.
   test('no End button visible for active session', async ({ page }) => {
     await setupBasicMocks(page, { sessions: [MOCK_SESSION] });
     await page.goto('/');
@@ -432,7 +221,8 @@ test.describe('Session Lifecycle', () => {
     await expect(endButton).toHaveCount(0);
   });
 
-  // ── Flow 10: No Continue as New Session Button ─────────────────────
+  // ── Ended session: no Continue / no ended banner rendered ──────────
+  // E2E: verifies a positive load signal (chat-input visible) precedes the DOM absence assertions for ended-state affordances — locks the current "ended sessions are transparently resumable, no dead-end UI" contract at the rendered-DOM level (logic counterpart: SessionContext.test.tsx:155).
   test('no Continue as new session button in ended session', async ({ page }) => {
     const endedSession = { ...MOCK_SESSION, state: 'ended' as const };
     await setupBasicMocks(page, { sessions: [endedSession] });
