@@ -120,8 +120,8 @@ jobs:
       - name: Run SQLite-backed tests (merged into crucible-daemon)
         run: cargo nextest run -p crucible-daemon -E 'test(sqlite)' 
 
-  test-web:
-    name: Web E2E Tests
+  test-web-unit:
+    name: Web Unit Tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -135,16 +135,79 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Run Vitest unit tests
         run: bunx vitest run
+
+  test-web:
+    # Sharded across jobs rather than parallelised inside one: every worker
+    # shares a single Vite dev server, so raising the worker count contends on
+    # that one process. Separate jobs get a server each. Requires
+    # `fullyParallel: true` (set in playwright.config.ts) — without it
+    # Playwright shards whole FILES, and one shard lands 20 tests while another
+    # gets 1.
+    name: Web E2E Tests (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    defaults:
+      run:
+        working-directory: crates/crucible-web/web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
       - name: Run Playwright E2E tests (default + stories projects)
-        run: bunx playwright test --reporter=line
-      - name: Upload test artifacts on failure
+        run: bunx playwright test --shard=${{ matrix.shard }}/4 --reporter=blob
+      - name: Upload blob report
+        # Needed on failure too — merge-reports builds the combined HTML that
+        # says WHICH shard failed and why.
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: blob-report-${{ matrix.shard }}
+          path: crates/crucible-web/web/blob-report/
+          retention-days: 7
+      - name: Upload failure traces
         if: failure()
         uses: actions/upload-artifact@v7
         with:
+          name: playwright-traces-${{ matrix.shard }}
+          path: crates/crucible-web/web/test-results/
+          retention-days: 7
+
+  test-web-report:
+    name: Web E2E Report
+    # Runs even when a shard fails — a merged report of a red run is the
+    # point.
+    if: ${{ !cancelled() }}
+    needs: [test-web]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/crucible-web/web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Download blob reports
+        uses: actions/download-artifact@v7
+        with:
+          path: crates/crucible-web/web/all-blob-reports
+          pattern: blob-report-*
+          merge-multiple: true
+      - name: Merge into one HTML report
+        run: bunx playwright merge-reports --reporter html ./all-blob-reports
+      - name: Upload merged report
+        uses: actions/upload-artifact@v7
+        with:
           name: playwright-report
-          path: |
-            crates/crucible-web/web/playwright-report/
-            crates/crucible-web/web/test-results/
+          path: crates/crucible-web/web/playwright-report/
           retention-days: 7

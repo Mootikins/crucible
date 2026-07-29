@@ -1,6 +1,9 @@
 # Test artifacts
 test-results/
 playwright-report/
+# Sharded CI runs: each shard emits a blob, merged into playwright-report/
+blob-report/
+all-blob-reports/
 
 # Build output
 dist/
