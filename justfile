@@ -99,6 +99,27 @@ fmt:
 fmt-check:
     cargo fmt --all -- --check
 
+# Validate the `docs/` documentation kiln against parser, frontmatter,
+# wikilink, and code-reference invariants. Runs the 5 `#[ignore]`d tests in
+# `crates/crucible-core/tests/dev_kiln.rs`.
+#
+# Run this BEFORE EVERY RELEASE and whenever `docs/` structure changes. The
+# tests are slow (they walk and parse every markdown/script file under the
+# repo's `docs/`) and `dev_kiln_root()` is `env!("CARGO_MANIFEST_DIR")`-anchored
+# to that exact directory, so the suite cannot be pointed at a `/tmp` copy —
+# failures must be reproduced by a trapped edit/rename INSIDE `docs/`.
+#
+# NOT part of `just ci`: `docs/` rarely changes shape, re-parsing ~150 notes
+# on every local CI run is pure noise, and these invariants are user-facing
+# docs quality rather than compile/runtime correctness.
+#
+# Syntax: `--test dev_kiln` selects the binary, then `-- --ignored` is passed
+# through to the libtest harness to bypass the `#[ignore]` gate.
+# `cargo test --ignored dev_kiln` is INVALID Cargo syntax — `dev_kiln` after
+# `--ignored` parses as a positional test-name filter, not a binary selector.
+lint-docs:
+    cargo test -p crucible-core --test dev_kiln -- --ignored
+
 # === Documentation ===
 
 # Build docs
