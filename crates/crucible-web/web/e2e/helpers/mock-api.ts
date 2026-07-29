@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { disableAnimations } from './geometry';
 import { MOCK_SESSION, MOCK_SESSION_DETAIL, MOCK_PROVIDERS, MOCK_KILNS, MOCK_CONFIG, MOCK_PROJECT } from './fixtures';
 import { mockSSERoute } from './mock-sse';
 
@@ -15,6 +16,9 @@ export interface MockOverrides {
 }
 
 export async function setupBasicMocks(page: Page, overrides: MockOverrides = {}): Promise<void> {
+  // Animations off before anything renders — see disableAnimations().
+  await disableAnimations(page);
+
   await page.route('**/api/project/list', (route) =>
     route.fulfill({ json: overrides.projects ?? [MOCK_PROJECT] }),
   );

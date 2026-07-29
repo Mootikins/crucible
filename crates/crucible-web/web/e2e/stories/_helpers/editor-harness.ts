@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import { disableAnimations } from '../../helpers/geometry';
 import { waitForFonts } from './fonts';
 
 declare global {
@@ -54,6 +55,9 @@ export async function setupEditorHarness(
   files: HarnessFile[],
   options: HarnessOptions = {},
 ): Promise<EditorHarness> {
+  // Animations off before anything renders — see disableAnimations().
+  await disableAnimations(page);
+
   const project = {
     path: '/home/user/project',
     name: 'project',
