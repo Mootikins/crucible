@@ -49,7 +49,11 @@ async fn initialization_succeeds(make_config: fn() -> MockStdioAgentConfig) {
     let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
 
     let result = client.connect_with_best_mcp(None).await;
-    assert!(result.is_ok(), "Initialization should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Initialization should succeed: {:?}",
+        result.err()
+    );
 }
 
 /// After a successful handshake, the session id carries the mock prefix.
@@ -61,7 +65,11 @@ async fn session_id_has_mock_prefix(make_config: fn() -> MockStdioAgentConfig) {
     let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
 
     let result = client.connect_with_best_mcp(None).await;
-    assert!(result.is_ok(), "Should complete handshake: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Should complete handshake: {:?}",
+        result.err()
+    );
 
     let session = result.unwrap();
     assert!(

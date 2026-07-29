@@ -59,7 +59,10 @@ fn assistant_text_creates_response_container() {
     match &nodes[1] {
         ChatNode::AssistantResponse { text, complete, .. } => {
             assert_eq!(text, "The answer is 42.");
-            assert!(*complete, "StreamComplete should mark AssistantResponse complete");
+            assert!(
+                *complete,
+                "StreamComplete should mark AssistantResponse complete"
+            );
         }
         other => panic!("expected AssistantResponse, got {other:?}"),
     }
@@ -143,8 +146,16 @@ fn multi_turn_creates_containers_in_order() {
     );
     assert!(matches!(nodes[0], ChatNode::UserMessage { .. }));
     match &nodes[1] {
-        ChatNode::AssistantResponse { thinking, text, complete, .. } => {
-            assert!(!thinking.is_empty(), "AR1 should hold the streamed thinking");
+        ChatNode::AssistantResponse {
+            thinking,
+            text,
+            complete,
+            ..
+        } => {
+            assert!(
+                !thinking.is_empty(),
+                "AR1 should hold the streamed thinking"
+            );
             assert!(!text.is_empty(), "AR1 should hold the streamed text");
             assert!(*complete, "AR1 should be marked complete before the tool");
         }

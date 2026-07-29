@@ -175,13 +175,19 @@ mod pattern_matching_tests {
         let args = serde_json::json!({"name": "notes/my-note.md"});
 
         assert!(AgentManager::check_pattern_match(
-            "create_note", &args, &store
+            "create_note",
+            &args,
+            &store
         ));
         assert!(AgentManager::check_pattern_match(
-            "update_note", &args, &store
+            "update_note",
+            &args,
+            &store
         ));
         assert!(AgentManager::check_pattern_match(
-            "delete_note", &args, &store
+            "delete_note",
+            &args,
+            &store
         ));
     }
 
@@ -190,14 +196,20 @@ mod pattern_matching_tests {
         let store = PatternStore::new();
 
         let bash_args = serde_json::json!({"command": "npm install"});
-        assert!(!AgentManager::check_pattern_match("bash", &bash_args, &store));
+        assert!(!AgentManager::check_pattern_match(
+            "bash", &bash_args, &store
+        ));
 
         let file_args = serde_json::json!({"path": "src/lib.rs"});
-        assert!(!AgentManager::check_pattern_match("write", &file_args, &store));
+        assert!(!AgentManager::check_pattern_match(
+            "write", &file_args, &store
+        ));
 
         let tool_args = serde_json::json!({});
         assert!(!AgentManager::check_pattern_match(
-            "custom_tool", &tool_args, &store
+            "custom_tool",
+            &tool_args,
+            &store
         ));
     }
 
@@ -205,12 +217,7 @@ mod pattern_matching_tests {
     #[test_case("write_file", "src/", "src/main.rs", true; "store_pattern_adds_file_pattern")]
     #[test_case("custom_tool", "custom_tool", "custom_tool", true; "store_pattern_adds_tool_pattern")]
     #[test_case("bash", "*", "", false; "store_pattern_rejects_star_pattern")]
-    fn store_pattern_outcomes(
-        kind: &str,
-        pattern: &str,
-        sample: &str,
-        should_succeed: bool,
-    ) {
+    fn store_pattern_outcomes(kind: &str, pattern: &str, sample: &str, should_succeed: bool) {
         let tmp = TempDir::new().unwrap();
         let project_path = tmp.path().to_string_lossy().to_string();
 
@@ -257,10 +264,12 @@ mod permission_channel_tests {
         let awaited = match scenario {
             RespondScenario::NonexistentSession => None,
             RespondScenario::Allow | RespondScenario::WrongPermissionId => Some(
-                agent_manager.await_permission("test-session", PermRequest::bash(["npm", "install"])),
+                agent_manager
+                    .await_permission("test-session", PermRequest::bash(["npm", "install"])),
             ),
             RespondScenario::Deny => Some(
-                agent_manager.await_permission("test-session", PermRequest::bash(["rm", "-rf", "/"])),
+                agent_manager
+                    .await_permission("test-session", PermRequest::bash(["rm", "-rf", "/"])),
             ),
         };
 
@@ -275,9 +284,11 @@ mod permission_channel_tests {
                 awaited.as_ref().unwrap().0.as_str(),
                 PermResponse::deny(),
             ),
-            RespondScenario::NonexistentSession => {
-                ("nonexistent-session", "nonexistent-perm", PermResponse::allow())
-            }
+            RespondScenario::NonexistentSession => (
+                "nonexistent-session",
+                "nonexistent-perm",
+                PermResponse::allow(),
+            ),
             RespondScenario::WrongPermissionId => {
                 ("test-session", "wrong-permission-id", PermResponse::allow())
             }
@@ -476,7 +487,10 @@ mod permission_channel_tests {
         );
         for expected in &expected_ids {
             let ids: Vec<_> = pending.iter().map(|(id, _)| id.clone()).collect();
-            assert!(ids.contains(expected), "Should contain permission {expected}");
+            assert!(
+                ids.contains(expected),
+                "Should contain permission {expected}"
+            );
         }
         if matches!(scenario, ListPendingScenario::UnknownSession) {
             assert!(
@@ -494,8 +508,7 @@ mod permission_channel_tests {
 
         let (id1, _rx1) =
             agent_manager.await_permission("session-a", PermRequest::bash(["cargo", "test"]));
-        let (id2, _rx2) =
-            agent_manager.await_permission("session-b", PermRequest::bash(["ls"]));
+        let (id2, _rx2) = agent_manager.await_permission("session-b", PermRequest::bash(["ls"]));
 
         let all = agent_manager.list_all_pending_permissions();
         assert_eq!(all.len(), 2, "Should aggregate both sessions");
