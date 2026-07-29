@@ -117,6 +117,7 @@ export const EditorWithPreview: Component<{
           onChange={props.onChange}
           onSave={props.onSave}
           onFollowLink={props.onFollowLink}
+          kiln={props.kiln}
           vimMode={props.vimMode}
           livePreview={isMarkdown() && mode() === 'live'}
           lineWidth={props.lineWidth}

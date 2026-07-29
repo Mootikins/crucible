@@ -21,6 +21,7 @@ import { javascript } from '@codemirror/lang-javascript';
 import { rust } from '@codemirror/lang-rust';
 import { vim, Vim } from '@replit/codemirror-vim';
 import { wikilinkNavigation } from './wikilink-extension';
+import { wikilinkCompletion } from './wikilink-completion';
 import { attachFileDropTarget, insertTextFor } from '@/lib/file-dnd';
 import { crucibleEditorChrome } from './editor-theme';
 import { livePreview } from './live-preview';
@@ -89,6 +90,8 @@ export const CodeMirrorEditor: Component<{
   onSave?: () => void;
   /** Follow a [[wikilink]] (Ctrl/Cmd+Click or Mod-Enter); markdown files only. */
   onFollowLink?: (target: string) => void;
+  /** Kiln backing `[[` completion; absent for files that belong to no kiln. */
+  kiln?: string;
   /** Modal vim editing (@replit/codemirror-vim). */
   vimMode?: boolean;
   /** Obsidian-style live preview (markdown files only). */
@@ -239,8 +242,14 @@ export const CodeMirrorEditor: Component<{
     extensions.push(langCompartment.of(getLanguageExtension(props.path) ?? []));
 
     const ext = props.path.split('.').pop()?.toLowerCase() ?? '';
-    if (props.onFollowLink && (ext === 'md' || ext === 'markdown')) {
+    const isMarkdown = ext === 'md' || ext === 'markdown';
+    if (props.onFollowLink && isMarkdown) {
       extensions.push(wikilinkNavigation((target) => props.onFollowLink?.(target)));
+    }
+    // Reads `props.kiln` lazily so a buffer that gains a kiln (or moves between
+    // them) completes against the right note list without rebuilding the view.
+    if (isMarkdown) {
+      extensions.push(wikilinkCompletion(() => props.kiln));
     }
     if (liveMode) {
       extensions.push(
