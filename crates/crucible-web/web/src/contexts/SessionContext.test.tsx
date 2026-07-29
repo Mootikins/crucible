@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useSessionSafe, useSession, SessionProvider } from './SessionContext';
 import * as api from '@/lib/api';
+import { statusBarActions } from '@/stores/statusBarStore';
 import type { Session } from '@/lib/types';
 
 vi.mock('@/lib/api', () => ({
@@ -437,5 +438,101 @@ describe('refreshModels ordering', () => {
     // A later refresh with no session legitimately clears it...
     await ctx!.refreshModels(undefined);
     expect(screen.getByTestId('models').textContent).toBe('');
+  });
+});
+
+/**
+ * On reload, a chat pane is restored straight from the persisted layout and
+ * bootstraps itself — it announces the session through
+ * `statusBarStore.activeSessionId` but nothing calls `selectSession`. Without
+ * adoption, `currentSession()` stays null and the composer sits disabled on
+ * "Select a session first…" over a perfectly live session.
+ */
+describe('adopting the focused pane’s session', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    statusBarActions.setActiveSessionId(null);
+    vi.mocked(api.listSessions).mockResolvedValue([]);
+    vi.mocked(api.listModels).mockResolvedValue([]);
+    vi.mocked(api.listProviders).mockResolvedValue([]);
+  });
+
+  afterEach(() => statusBarActions.setActiveSessionId(null));
+
+  function Probe(props: { onCtx: (c: ReturnType<typeof useSession>) => void }) {
+    const ctx = useSession();
+    props.onCtx(ctx);
+    return <span data-testid="current">{ctx.currentSession()?.id ?? 'none'}</span>;
+  }
+
+  it('adopts a session announced by a restored pane', async () => {
+    vi.mocked(api.getSession).mockResolvedValue({ id: 's-restored', kiln: '/k' } as Session);
+
+    render(() => (
+      <SessionProvider>
+        <Probe onCtx={() => {}} />
+      </SessionProvider>
+    ));
+    expect(screen.getByTestId('current').textContent).toBe('none');
+
+    // What ChatContext's bootstrap does on reload.
+    statusBarActions.setActiveSessionId('s-restored');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current').textContent).toBe('s-restored');
+    });
+  });
+
+  it('follows a switch to another pane', async () => {
+    vi.mocked(api.getSession).mockImplementation((id: string) =>
+      Promise.resolve({ id, kiln: '/k' } as Session),
+    );
+
+    render(() => (
+      <SessionProvider>
+        <Probe onCtx={() => {}} />
+      </SessionProvider>
+    ));
+
+    statusBarActions.setActiveSessionId('s-one');
+    await waitFor(() => expect(screen.getByTestId('current').textContent).toBe('s-one'));
+
+    statusBarActions.setActiveSessionId('s-two');
+    await waitFor(() => expect(screen.getByTestId('current').textContent).toBe('s-two'));
+  });
+
+  it('does not refetch a session that is already current', async () => {
+    vi.mocked(api.getSession).mockResolvedValue({ id: 's-same', kiln: '/k' } as Session);
+
+    render(() => (
+      <SessionProvider>
+        <Probe onCtx={() => {}} />
+      </SessionProvider>
+    ));
+
+    statusBarActions.setActiveSessionId('s-same');
+    await waitFor(() => expect(screen.getByTestId('current').textContent).toBe('s-same'));
+    const calls = vi.mocked(api.getSession).mock.calls.length;
+
+    // A re-announce of the same id (pane refocus) must not thrash the network.
+    statusBarActions.setActiveSessionId('s-same');
+    await Promise.resolve();
+    expect(vi.mocked(api.getSession).mock.calls.length).toBe(calls);
+  });
+
+  it('leaves the current session alone when the fetch fails', async () => {
+    vi.mocked(api.getSession).mockRejectedValue(new Error('502 Bad Gateway'));
+
+    render(() => (
+      <SessionProvider>
+        <Probe onCtx={() => {}} />
+      </SessionProvider>
+    ));
+
+    statusBarActions.setActiveSessionId('s-broken');
+    await Promise.resolve();
+    await Promise.resolve();
+    // No throw, no bogus session — the pane surfaces its own load error.
+    expect(screen.getByTestId('current').textContent).toBe('none');
   });
 });

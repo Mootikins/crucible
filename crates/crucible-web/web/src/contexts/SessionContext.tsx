@@ -31,6 +31,7 @@ import { notificationActions } from '@/stores/notificationStore';
 import { findTabBySessionId } from '@/lib/session-actions';
 import { setPendingFirstMessage } from '@/lib/draft-session';
 import { windowActions } from '@/stores/windowStore';
+import { statusBarStore } from '@/stores/statusBarStore';
 
 
 interface SessionProviderProps {
@@ -223,6 +224,38 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       setIsLoading(false);
     }
   };
+
+  /**
+   * Make `id` the current session without opening a tab for it.
+   *
+   * `selectSession` is the *user-initiated* path: it dispatches
+   * `crucible:open-session`, which mounts a tab. Adoption is the reverse
+   * direction — a pane that already exists telling the context to catch up —
+   * so it must not re-dispatch, or a restored tab would try to open itself.
+   */
+  const adoptSession = async (id: string) => {
+    if (currentSession()?.id === id) return;
+    try {
+      const session = await apiGetSession(id);
+      // Focus can move again while the fetch is in flight; the last pane to be
+      // focused wins, not the last response to land.
+      if (statusBarStore.activeSessionId() !== id) return;
+      setCurrentSession(session);
+      await refreshModels(session);
+    } catch {
+      // The pane renders its own load failure; leaving the previous session in
+      // place beats blanking the composer on a transient error.
+    }
+  };
+
+  // A pane restored from the persisted layout (page reload) or brought into
+  // focus by a tab switch announces itself through `activeSessionId` — it
+  // never calls selectSession. Without this the pane renders a live session
+  // while the composer stays disabled on "Select a session first…".
+  createEffect(() => {
+    const id = statusBarStore.activeSessionId();
+    if (id) void adoptSession(id);
+  });
 
   const selectSession = async (id: string) => {
     const existing = sessions.find((s) => s.id === id);

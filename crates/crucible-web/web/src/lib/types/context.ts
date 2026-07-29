@@ -73,7 +73,9 @@ export interface SessionContextValue {
   endSession: () => Promise<void>;
   cancelCurrentOperation: () => Promise<boolean>;
   switchModel: (modelId: string) => Promise<void>;
-  refreshModels: () => Promise<void>;
+  /** Omit the override to use the current session; pass one to refresh for a
+   * session that is still being adopted (it isn't `currentSession` yet). */
+  refreshModels: (sessionOverride?: Session) => Promise<void>;
   setSessionTitle: (title: string) => Promise<void>;
   refreshProviders: () => Promise<void>;
   selectProvider: (providerType: string) => void;
