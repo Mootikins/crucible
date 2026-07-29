@@ -1,7 +1,11 @@
 import { Component, For, JSX, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { ChevronDown, Check } from '@/lib/icons';
+import { placePopup } from '@/lib/popup-placement';
 import { treeSectionHeader } from '@/components/tree/tree-style';
+
+/** Tallest a chip popout gets before its list scrolls internally. */
+const CHIP_PANEL_MAX_HEIGHT = 340;
 
 export interface ChipOption {
   value: string;
@@ -80,10 +84,13 @@ export const ChipSelect: Component<{
   const [open, setOpen] = createSignal(false);
   const [filter, setFilter] = createSignal('');
   const [hover, setHover] = createSignal(-1);
-  const [panelPos, setPanelPos] = createSignal<{ left: number; top?: number; bottom?: number }>({
-    left: 0,
-    top: 0,
-  });
+  const [panelPos, setPanelPos] = createSignal<{
+    left: number;
+    top?: number;
+    bottom?: number;
+    width?: number;
+    maxHeight?: number;
+  }>({ left: 0, top: 0 });
   const [actionMode, setActionMode] = createSignal(false);
   const [actionText, setActionText] = createSignal('');
   let rootRef: HTMLDivElement | undefined;
@@ -141,21 +148,45 @@ export const ChipSelect: Component<{
     if (!props.multi) close();
   };
 
+  /**
+   * Position the panel against the trigger.
+   *
+   * `panelWidth`/`panelHeight` come from the rendered panel when available —
+   * the first pass has nothing to measure, so it falls back to the CSS
+   * min-width and lets the follow-up pass correct it. Measuring matters
+   * because the panel is content-sized and wider than its chip: without the
+   * clamp, a chip near the right edge (narrow window, docked panel) pushed
+   * the popout off-screen.
+   */
+  const positionPanel = () => {
+    if (!triggerRef) return;
+    const rect = triggerRef.getBoundingClientRect();
+    const panel = panelRef?.getBoundingClientRect();
+    setPanelPos(
+      placePopup(rect, { width: window.innerWidth, height: window.innerHeight }, {
+        // ceil, not round: a 221.25px panel rounded down spills a quarter
+        // pixel past the clamp.
+        width: Math.ceil(panel?.width || 220),
+        preferredHeight: Math.ceil(panel?.height || CHIP_PANEL_MAX_HEIGHT),
+        gap: 4,
+      }),
+    );
+  };
+
   const openPopout = () => {
-    if (triggerRef) {
-      const rect = triggerRef.getBoundingClientRect();
-      // Anchor upward when the trigger sits near the viewport bottom (the
-      // chat input) — a downward panel would fall off-screen.
-      const spaceBelow = window.innerHeight - rect.bottom;
-      setPanelPos(
-        spaceBelow < 340
-          ? { left: Math.round(rect.left), bottom: Math.round(window.innerHeight - rect.top + 4) }
-          : { left: Math.round(rect.left), top: Math.round(rect.bottom + 4) },
-      );
-    }
+    positionPanel();
     setOpen(true);
     props.onOpen?.();
   };
+
+  // Re-place once the panel exists and its real size is known. rAF, not a
+  // microtask: the correction needs the panel's laid-out width, and a
+  // microtask runs before layout — leaving the first pass's 220px estimate in
+  // place for panels that render wider.
+  createEffect(() => {
+    if (!open()) return;
+    requestAnimationFrame(positionPanel);
+  });
 
   // The "create '<text>'" row appears once the filter text stops matching any
   // option exactly — picking it hands the raw text to the caller.
@@ -257,12 +288,15 @@ export const ChipSelect: Component<{
           <div
             ref={panelRef}
             data-testid={props.testid ? `${props.testid}-popout` : undefined}
-            class="fixed z-50 min-w-[220px] max-w-[320px] bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1 cru-anim-rise"
+            class="fixed z-50 min-w-[220px] max-w-[320px] overflow-y-auto bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1 cru-anim-rise"
             style={{
               left: `${panelPos().left}px`,
               ...(panelPos().top !== undefined
                 ? { top: `${panelPos().top}px` }
                 : { bottom: `${panelPos().bottom}px` }),
+              // Long lists (many kilns/models) scroll inside the panel rather
+              // than running past the viewport edge.
+              'max-height': `${panelPos().maxHeight || CHIP_PANEL_MAX_HEIGHT}px`,
             }}
           >
             <Show when={searchable()}>
