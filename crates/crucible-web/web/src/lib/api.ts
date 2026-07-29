@@ -887,6 +887,28 @@ export async function executeCommand(sessionId: string, command: string): Promis
   });
 }
 
+export interface SlashCommand {
+  name: string;
+  /** Argument placeholder, empty for nullary commands. */
+  args: string;
+  description: string;
+}
+
+/**
+ * The slash commands the composer can complete.
+ *
+ * Served by the server from the same constant `execute_command` dispatches on,
+ * so the completion list can't drift from what actually runs — the previously
+ * hand-maintained frontend copy had already lost `/models`.
+ */
+export async function listSlashCommands(): Promise<SlashCommand[]> {
+  return (
+    await request<{ commands: SlashCommand[] }>('GET', '/api/commands', {
+      errorMessage: 'Failed to list commands',
+    })
+  ).commands;
+}
+
 // =============================================================================
 // Shell Execution Endpoints
 // =============================================================================

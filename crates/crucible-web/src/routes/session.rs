@@ -1,4 +1,4 @@
-use super::session_commands::execute_command;
+use super::session_commands::{execute_command, list_commands};
 use super::session_config::{
     get_max_tokens, get_precognition, get_precognition_results, get_temperature,
     get_thinking_budget, set_max_tokens, set_precognition, set_precognition_results,
@@ -114,6 +114,9 @@ pub fn session_routes() -> Router<AppState> {
         )
         .route("/api/session/{id}/export", post(export_session))
         .route("/api/session/{id}/command", post(execute_command))
+        // Session-independent: the command set is static, so the composer can
+        // fetch it once instead of per session.
+        .route("/api/commands", get(list_commands))
 }
 #[derive(Debug, Deserialize)]
 struct CreateSessionRequest {

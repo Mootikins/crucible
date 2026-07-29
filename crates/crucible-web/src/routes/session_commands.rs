@@ -22,6 +22,78 @@ pub(super) struct CommandResponse {
     response_type: String,
 }
 
+/// One slash command, as both the `/help` text and the web autocomplete see it.
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct SlashCommand {
+    /// Bare name, no leading slash.
+    pub name: &'static str,
+    /// Argument placeholder shown in help/completion, empty when nullary.
+    pub args: &'static str,
+    pub description: &'static str,
+}
+
+/// The command set, declared once.
+///
+/// `/help` renders from this and `GET /api/commands` serves it, so the web
+/// autocomplete can't drift from what `execute_command` actually accepts —
+/// it previously hardcoded its own list and silently omitted `/models`.
+pub(super) const SLASH_COMMANDS: &[SlashCommand] = &[
+    SlashCommand {
+        name: "help",
+        args: "",
+        description: "Show available commands",
+    },
+    SlashCommand {
+        name: "search",
+        args: "<query>",
+        description: "Search sessions by title",
+    },
+    SlashCommand {
+        name: "models",
+        args: "",
+        description: "List available models",
+    },
+    SlashCommand {
+        name: "model",
+        args: "<name>",
+        description: "Switch to a different model",
+    },
+    SlashCommand {
+        name: "clear",
+        args: "",
+        description: "Clear the chat view (server history preserved)",
+    },
+    SlashCommand {
+        name: "export",
+        args: "",
+        description: "Export session to markdown",
+    },
+];
+
+impl SlashCommand {
+    /// `/search <query> — Search sessions by title`
+    fn help_line(&self) -> String {
+        let head = if self.args.is_empty() {
+            format!("/{}", self.name)
+        } else {
+            format!("/{} {}", self.name, self.args)
+        };
+        format!("{} — {}", head, self.description)
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct CommandsResponse {
+    commands: &'static [SlashCommand],
+}
+
+/// `GET /api/commands` — the slash commands the web composer can complete.
+pub(super) async fn list_commands() -> Json<CommandsResponse> {
+    Json(CommandsResponse {
+        commands: SLASH_COMMANDS,
+    })
+}
+
 pub(super) async fn execute_command(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -36,15 +108,11 @@ pub(super) async fn execute_command(
 
     match cmd {
         "help" => {
-            let help_text = [
-                "/help — Show available commands",
-                "/search <query> — Search sessions by title",
-                "/models — List available models",
-                "/clear — Clear the chat view (server history preserved)",
-                "/export — Export session to markdown",
-                "/model <name> — Switch to a different model",
-            ]
-            .join("\n");
+            let help_text = SLASH_COMMANDS
+                .iter()
+                .map(SlashCommand::help_line)
+                .collect::<Vec<_>>()
+                .join("\n");
             Ok(Json(CommandResponse {
                 result: help_text,
                 response_type: "success".to_string(),

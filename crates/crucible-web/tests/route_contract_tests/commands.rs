@@ -50,6 +50,115 @@ async fn command_help_returns_help_text() {
 }
 
 #[tokio::test]
+async fn commands_endpoint_lists_the_command_set() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/commands")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    let commands = json["commands"].as_array().unwrap();
+
+    let names: Vec<&str> = commands
+        .iter()
+        .map(|c| c["name"].as_str().unwrap())
+        .collect();
+    // `/models` is the one the hand-maintained frontend list used to omit.
+    assert!(names.contains(&"models"), "got {names:?}");
+    for expected in ["help", "search", "models", "model", "clear", "export"] {
+        assert!(
+            names.contains(&expected),
+            "missing /{expected} in {names:?}"
+        );
+    }
+
+    // Descriptions drive the completion popup's second line — an empty one
+    // would render a blank row.
+    for cmd in commands {
+        assert!(
+            !cmd["description"].as_str().unwrap().is_empty(),
+            "/{} has no description",
+            cmd["name"].as_str().unwrap()
+        );
+    }
+}
+
+/// Every command the endpoint advertises must actually dispatch.
+///
+/// This is the anti-drift guard in the direction a list can't catch: it runs
+/// each *declared* command through the real handler and fails if any falls to
+/// the unknown-command arm.
+#[tokio::test]
+async fn every_advertised_command_is_dispatchable() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state.clone());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/commands")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+
+    for cmd in json["commands"].as_array().unwrap() {
+        let name = cmd["name"].as_str().unwrap();
+        // Supply a dummy argument for commands that require one, so a "Usage:"
+        // reply doesn't masquerade as a dispatch failure.
+        let args = if cmd["args"].as_str().unwrap().is_empty() {
+            String::new()
+        } else {
+            " placeholder".to_string()
+        };
+        let app = build_test_app(state.clone());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/session/test-session-001/command")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(r#"{{"command":"/{name}{args}"}}"#)))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK, "/{name}");
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        let result = json["result"].as_str().unwrap();
+        assert!(
+            !result.contains("Unknown command"),
+            "/{name} is advertised by /api/commands but not handled by execute_command"
+        );
+    }
+}
+
+#[tokio::test]
 async fn command_search_no_args_returns_error() {
     let (_mock, client) = start_mock_daemon().await;
     let state = build_mock_state(client);
