@@ -18,8 +18,17 @@ export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // No retries anywhere. A retry turns a broken test green: the drag specs
+  // below were failing ~95% of runs locally and CI still reported pass,
+  // because three attempts were enough for one to slip through. A flake is a
+  // defect in the test or the product — surface it, don't average it out.
+  retries: 0,
+  // `undefined` means 50% of logical cores — 16 on a 32-core box, all hammering
+  // the single shared Vite dev server. This box is disk-bound, not CPU-bound,
+  // so that oversubscribes the bottleneck and produces failures that look like
+  // flakes but are contention. Pin it low enough that a local run is
+  // reproducible; CI stays serial.
+  workers: process.env.CI ? 1 : 4,
   reporter: 'html',
   snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}{ext}',
 

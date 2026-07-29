@@ -218,6 +218,21 @@ release-web: web-build
 web-test *args:
     cd crates/crucible-web/web && bunx playwright test --reporter=line {{args}}
 
+# Playwright run isolated from any other in-flight run. Two concurrent
+# `playwright test` invocations share `test-results/`, and one wipes the
+# other's trace files mid-run — which surfaces as ENOENT on
+# `.playwright-artifacts-N/traces/*.network` and reads exactly like a flake.
+# Use this whenever measuring flakiness (`--repeat-each=N`) alongside anything
+# else, or when running two suites at once.
+web-test-isolated *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out="$(mktemp -d /tmp/crucible-pw-XXXXXX)"
+    trap 'rm -rf "$out"' EXIT
+    cd crates/crucible-web/web && \
+      PLAYWRIGHT_HTML_OUTPUT_DIR="$out/html" \
+      bunx playwright test --reporter=line --output "$out/results" {{args}}
+
 # Run web unit tests (Vitest). Args pass through for scoped runs:
 # `just web-test-unit src/stores/__tests__`
 web-test-unit *args:
