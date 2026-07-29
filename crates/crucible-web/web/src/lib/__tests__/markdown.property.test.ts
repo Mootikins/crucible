@@ -8,7 +8,10 @@ describe('markdown property tests', () => {
       fc.property(fc.string(), (input) => {
         const withScript = `<script>alert(1)</script>${input}<script>alert(2)</script>`;
         const output = renderMarkdown(withScript);
-        expect(output).not.toContain('<script>');
+        // Parse rather than substring-match, for the reason spelled out on the
+        // event-handler case below.
+        const doc = new DOMParser().parseFromString(output, 'text/html');
+        expect(doc.querySelectorAll('script')).toHaveLength(0);
       }),
       { numRuns: 100 }
     );
@@ -19,12 +22,44 @@ describe('markdown property tests', () => {
       fc.property(fc.string(), (input) => {
         const withEventHandlers = `${input}<img onerror="alert(1)" /><div onload="alert(2)">test</div>`;
         const output = renderMarkdown(withEventHandlers);
-        // The output should escape these as HTML entities, not contain raw attributes
-        expect(output).not.toContain('<img onerror');
-        expect(output).not.toContain('<div onload');
+        // Assert on the parsed DOM, not the serialised string. A substring
+        // check reports the markup a browser would *build*, which is the
+        // security question, only when nothing inert happens to contain the
+        // same characters — and things legitimately do. Unparseable math puts
+        // KaTeX's ParseError (which quotes the source) into a `title`
+        // attribute, so `$$#<img onerror=…` leaves that exact substring in an
+        // attribute value where it can never become an element. `fc.string()`
+        // produces a `$$` now and then, which is why the substring form failed
+        // roughly one run in a few hundred and looked like a flake.
+        const doc = new DOMParser().parseFromString(output, 'text/html');
+        expect(doc.querySelectorAll('img')).toHaveLength(0);
+        expect(doc.querySelectorAll('[onerror], [onload]')).toHaveLength(0);
+        // Any handler attribute at all, whatever the element or casing.
+        const withHandlers = Array.from(doc.querySelectorAll('*')).filter((el) =>
+          Array.from(el.attributes).some((a) => a.name.toLowerCase().startsWith('on')),
+        );
+        expect(withHandlers).toEqual([]);
       }),
       { numRuns: 100 }
     );
+  });
+
+  /**
+   * The counterexample that used to fail this file intermittently (fast-check
+   * seed -341303685, shrunk to `"$$#"`), pinned deterministically so the
+   * property tests can never quietly stop covering it.
+   */
+  it('treats an event handler swallowed into a KaTeX error as inert', () => {
+    const output = renderMarkdown('$$#<img onerror="alert(1)" /><div onload="alert(2)">test</div>');
+    const doc = new DOMParser().parseFromString(output, 'text/html');
+    expect(doc.querySelectorAll('img, div, [onerror], [onload]')).toHaveLength(0);
+
+    // The raw substring IS present, in the katex-error title, and that is not
+    // a defect: escaping it at the source would not survive DOMPurify's
+    // parse/re-serialise (HTML never escapes `<` in an attribute value). This
+    // asserts the distinction the old substring check got wrong.
+    expect(output).toContain('<img onerror');
+    expect(doc.querySelector('.katex-error')?.getAttribute('title')).toContain('<img onerror');
   });
 
   it('never outputs unescaped javascript: protocol in attributes', () => {

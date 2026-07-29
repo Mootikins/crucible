@@ -144,7 +144,18 @@ function mathBlock(state: StateBlock, start: number, end: number, silent: boolea
   return true;
 }
 
-/** Render a math string to KaTeX HTML; never throws (renders errors in place). */
+/**
+ * Render a math string to KaTeX HTML; never throws (renders errors in place).
+ *
+ * On a parse failure KaTeX emits `<span class="katex-error" title="{message}">`
+ * and that message quotes the surrounding *source*, so unparseable math like
+ * `$$#<img onerror="…">` parks a literal `<img onerror=` inside the title. That
+ * is inert — an attribute value can never become an element — and escaping it
+ * here would achieve nothing anyway: HTML's attribute-serialisation algorithm
+ * only escapes `&`, `"` and nbsp, so any parse/re-serialise round-trip (which
+ * is exactly what DOMPurify does downstream) puts the raw `<` straight back.
+ * Assert on the parsed DOM, never on this string — see markdown.property.test.ts.
+ */
 export function renderMath(src: string, displayMode: boolean): string {
   return katex.renderToString(src, {
     displayMode,
