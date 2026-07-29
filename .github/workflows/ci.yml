@@ -222,3 +222,85 @@ jobs:
           name: playwright-report
           path: crates/crucible-web/web/playwright-report/
           retention-days: 7
+
+  test-count-gate:
+    # Regression gate for the runnable-case count of each suite. GitHub CI
+    # invokes cargo/vitest/playwright DIRECTLY (not `just ci`), so this job
+    # mirrors the `just test-count` recipe — both must stay in step or the
+    # gate only ever runs on whichever side you remembered (same trap as the
+    # `deny` job above). Fails if any suite grows beyond +2% (rounded down)
+    # of the baseline in crates/test-count-baseline.json.
+    name: Test Count Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+      - name: Install web dependencies
+        run: bun install --frozen-lockfile
+        working-directory: crates/crucible-web/web
+      # crucible-web embeds dist/index.html via rust-embed at compile time,
+      # so `cargo nextest list --workspace` (which compiles every crate)
+      # needs the placeholder or the build breaks.
+      - name: Create web asset placeholder
+        run: mkdir -p crates/crucible-web/web/dist && echo "<html></html>" > crates/crucible-web/web/dist/index.html
+      - name: Compare test counts to baseline (+2% cap)
+        run: |
+          set -euo pipefail
+          baseline="crates/test-count-baseline.json"
+
+          # nextest JSON has a top-level ."test-count" field. --all-features
+          # pulls in the feature-gated property tests the default build skips.
+          rust=$(cargo nextest list --message-format json --workspace --all-features 2>/dev/null \
+              | jq -er '."test-count"')
+
+          # vitest 4.x `list --json` emits a JSON array of runnable cases.
+          # NEVER pass a filename: `vitest list --json <file>` OVERWRITES that
+          # file with a reporter blob and clobbers source.
+          web_unit=$(cd crates/crucible-web/web && bunx vitest list --json 2>/dev/null \
+              | jq -er 'length')
+
+          # Playwright `--list` prints one line per case as
+          #   "  [chromium|stories] › <file>:<line>:<col> › <title>"
+          # Scoped to the two project names declared in playwright.config.ts
+          # so the "Listing tests:" header and "Total:" footer don't inflate it.
+          playwright=$(cd crates/crucible-web/web \
+              && bunx playwright test --list 2>&1 \
+              | grep -cE '^\s+\[(chromium|stories)\] ›')
+
+          fail=0
+          check() {
+              local name="$1" got="$2" base="$3"
+              # +2% rounded down: floor(baseline*0.02) + baseline.
+              local cap=$(( base + base * 2 / 100 ))
+              printf '%-12s got=%-6s baseline=%-6s cap=%-6s' "$name" "$got" "$base" "$cap"
+              if [ "$got" -gt "$cap" ]; then
+                  printf '  FAIL (+%d over baseline, cap +%d)\n' \
+                      "$(( got - base ))" "$(( cap - base ))"
+                  fail=1
+              else
+                  printf '  ok\n'
+              fi
+          }
+
+          check rust       "$rust"       "$(jq -er .rust       < "$baseline")"
+          check web_unit   "$web_unit"   "$(jq -er .web_unit   < "$baseline")"
+          check playwright "$playwright" "$(jq -er .playwright < "$baseline")"
+
+          if [ "$fail" -ne 0 ]; then
+              echo
+              echo "test-count gate FAILED: a suite grew beyond its +2% cap."
+              echo "If this is a deliberate baseline bump, edit $baseline and put"
+              echo "a >=1-sentence justification in the bumping commit body."
+              exit 1
+          fi
+          echo "test-count gate passed."
