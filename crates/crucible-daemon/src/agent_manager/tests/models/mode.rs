@@ -11,6 +11,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub(super) struct ModeRecordingAgent {
     pub last_mode: Arc<std::sync::Mutex<Option<String>>>,
     pub reject: Arc<AtomicBool>,
+    /// The handle's own mode mirror, so `get_mode_id` reports what was
+    /// actually applied. `last_mode` cannot serve: `get_mode_id` returns a
+    /// `&str`, which cannot escape a Mutex.
+    pub current_mode: String,
 }
 
 crucible_core::impl_noop_agent!(ModeRecordingAgent);
@@ -20,6 +24,9 @@ impl AgentHandle for ModeRecordingAgent {
     async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
         Ok(())
     }
+    fn get_mode_id(&self) -> &str {
+        &self.current_mode
+    }
     async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
         if self.reject.load(Ordering::SeqCst) {
             return Err(crucible_core::traits::chat::ChatError::ModeChange(
@@ -27,6 +34,7 @@ impl AgentHandle for ModeRecordingAgent {
             ));
         }
         *self.last_mode.lock().unwrap() = Some(mode_id.to_string());
+        self.current_mode = mode_id.to_string();
         Ok(())
     }
 }
@@ -73,6 +81,7 @@ async fn set_mode_applies_to_cached_live_handle() {
         Arc::new(Mutex::new(Box::new(ModeRecordingAgent {
             last_mode: last_mode.clone(),
             reject: Arc::new(AtomicBool::new(false)),
+            current_mode: "normal".to_string(),
         }))),
     );
 
@@ -97,6 +106,7 @@ async fn set_mode_rejected_by_handle_persists_nothing() {
         Arc::new(Mutex::new(Box::new(ModeRecordingAgent {
             last_mode: Arc::new(std::sync::Mutex::new(None)),
             reject: Arc::new(AtomicBool::new(true)),
+            current_mode: "normal".to_string(),
         }))),
     );
 

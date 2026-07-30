@@ -69,6 +69,9 @@ impl AgentHandle for NoopAgentHandle {
         Ok(())
     }
 
+    fn get_mode_id(&self) -> &str {
+        "normal"
+    }
     async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
         Ok(())
     }

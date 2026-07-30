@@ -248,6 +248,9 @@ impl AgentHandle for MultiTurnScriptedAgent {
     async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
         Ok(())
     }
+    fn get_mode_id(&self) -> &str {
+        "normal"
+    }
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
     }
@@ -288,6 +291,9 @@ impl AgentHandle for PromptCapturingAgent {
     async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
         Ok(())
     }
+    fn get_mode_id(&self) -> &str {
+        "normal"
+    }
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
     }
@@ -317,6 +323,9 @@ impl AgentHandle for MockAgent {
     async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
         Ok(())
     }
+    fn get_mode_id(&self) -> &str {
+        "normal"
+    }
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
     }
@@ -326,6 +335,9 @@ impl AgentHandle for MockAgent {
 impl AgentHandle for StreamingMockAgent {
     async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
         Ok(())
+    }
+    fn get_mode_id(&self) -> &str {
+        "normal"
     }
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
@@ -377,6 +389,9 @@ impl crucible_core::turn::Agent for OwnsToolsMockAgent {
 impl AgentHandle for OwnsToolsMockAgent {
     async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
         Ok(())
+    }
+    fn get_mode_id(&self) -> &str {
+        "normal"
     }
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
@@ -917,6 +932,9 @@ impl crucible_core::turn::Agent for InboundRecordingAgent {
 impl AgentHandle for InboundRecordingAgent {
     async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
         Ok(())
+    }
+    fn get_mode_id(&self) -> &str {
+        "normal"
     }
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())

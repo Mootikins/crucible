@@ -1,12 +1,17 @@
-//! Tool mode definitions for Crucible MCP tools.
+//! The plan-mode tool set — a FALLBACK, not the definition.
 //!
-//! This module defines which tools are available in different operational modes,
-//! independent of any LLM provider implementation.
+//! Modes are declared in Lua (`cru.modes.plan = { tools = { … } }`), and
+//! `runtime/defaults/init.lua` declares plan like any user would. This list is
+//! what the daemon falls back to when the Lua registry declares nothing at all
+//! — a broken defaults file must not leave plan mode wide open. See
+//! `agent_factory::mode_exposes_tool`, which consults the registry first.
+//!
+//! It deliberately does not match `agent_manager::is_safe`: that answers "may
+//! this tool skip the permission prompt" and includes the workspace read tools
+//! (`read_file`, `glob`, `grep`); this answers "may plan mode see this tool at
+//! all" and includes `skill_view`. Two questions, two lists.
 
-/// Read-only tools available in "plan" mode.
-///
-/// These tools provide safe, non-mutating access to the knowledge base
-/// and are suitable for planning and analysis workflows.
+/// Read-only tools available in "plan" mode when Lua declares no modes.
 pub const PLAN_TOOL_NAMES: &[&str] = &[
     "semantic_search",
     "text_search",

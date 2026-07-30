@@ -42,6 +42,9 @@ impl AgentHandle for RpcCountingAgent {
         Ok(())
     }
 
+    fn get_mode_id(&self) -> &str {
+        "normal"
+    }
     async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
         Ok(())
     }

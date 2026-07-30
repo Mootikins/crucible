@@ -44,6 +44,9 @@ impl AgentHandle for DaemonLikeRecursingAgent {
     async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
         Ok(())
     }
+    fn get_mode_id(&self) -> &str {
+        "normal"
+    }
     async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
         *self.set_mode_str_calls.lock().unwrap() += 1;
         let already = std::mem::replace(&mut *self.entered.lock().unwrap(), true);
@@ -133,6 +136,7 @@ async fn set_mode_does_not_block_when_cached_handle_is_busy_with_a_turn() {
     let handle = Arc::new(tokio::sync::Mutex::new(Box::new(ModeRecordingAgent {
         last_mode: Arc::new(std::sync::Mutex::new(None)),
         reject: Arc::new(AtomicBool::new(false)),
+        current_mode: "normal".to_string(),
     }) as BoxedAgentHandle));
     agent_manager
         .agent_cache
@@ -187,6 +191,7 @@ async fn direct_mode_change_clears_an_earlier_deferred_mode() {
     let handle = Arc::new(tokio::sync::Mutex::new(Box::new(ModeRecordingAgent {
         last_mode: last_mode.clone(),
         reject: Arc::new(AtomicBool::new(false)),
+        current_mode: "normal".to_string(),
     }) as BoxedAgentHandle));
     agent_manager
         .agent_cache
@@ -234,6 +239,7 @@ async fn mode_change_after_eviction_clears_an_earlier_deferred_mode() {
     let handle = Arc::new(tokio::sync::Mutex::new(Box::new(ModeRecordingAgent {
         last_mode: Arc::new(std::sync::Mutex::new(None)),
         reject: Arc::new(AtomicBool::new(false)),
+        current_mode: "normal".to_string(),
     }) as BoxedAgentHandle));
     agent_manager
         .agent_cache
@@ -270,6 +276,7 @@ async fn pending_mode_is_drained_into_handle_on_next_lock_acquisition() {
     let handle = Arc::new(tokio::sync::Mutex::new(Box::new(ModeRecordingAgent {
         last_mode: Arc::new(std::sync::Mutex::new(None)),
         reject: Arc::new(AtomicBool::new(false)),
+        current_mode: "normal".to_string(),
     }) as BoxedAgentHandle));
     agent_manager
         .agent_cache

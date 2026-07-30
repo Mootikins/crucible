@@ -132,9 +132,14 @@ pub trait AgentHandle: crate::turn::Agent + Send + Sync {
         None
     }
 
-    fn get_mode_id(&self) -> &str {
-        "plan"
-    }
+    /// The mode this handle is currently in.
+    ///
+    /// Deliberately has no default. It defaulted to `"plan"`, which was
+    /// harmless while plan only filtered the tool set — but once plan carried
+    /// a deny rule, any handle that tracks no mode denied everything. A mock
+    /// that forgets to answer should fail to compile, not fail closed at
+    /// runtime in one test rig.
+    fn get_mode_id(&self) -> &str;
 
     async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()>;
 

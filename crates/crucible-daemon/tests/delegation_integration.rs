@@ -715,6 +715,9 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
         ) -> crucible_core::traits::chat::ChatResult<()> {
             Ok(())
         }
+        fn get_mode_id(&self) -> &str {
+            "normal"
+        }
         async fn set_mode_str(&mut self, _: &str) -> crucible_core::traits::chat::ChatResult<()> {
             Ok(())
         }
@@ -920,6 +923,9 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
             _: String,
         ) -> crucible_core::traits::chat::ChatResult<()> {
             Ok(())
+        }
+        fn get_mode_id(&self) -> &str {
+            "normal"
         }
         async fn set_mode_str(&mut self, _: &str) -> crucible_core::traits::chat::ChatResult<()> {
             Ok(())
