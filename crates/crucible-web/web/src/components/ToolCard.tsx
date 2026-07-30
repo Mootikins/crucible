@@ -6,6 +6,8 @@ import { MultiEditDiff } from './MultiEditDiff';
 import { extractDiffFromToolCall, applyToolDiff } from '@/lib/tool-diffs';
 import { openFileWithDiff } from '@/lib/file-actions';
 import { getFileContent } from '@/lib/api';
+import { deepPrettyPrintJson } from '@/lib/pretty-print';
+import { unwrapMcpEnvelope } from '@/lib/mcp-envelope';
 import { notificationActions } from '@/stores/notificationStore';
 import {
   ChevronRight,
@@ -79,7 +81,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
     if (!args || args === '' || args === '""') return null;
     try {
       const parsed = JSON.parse(args);
-      return JSON.stringify(parsed, null, 2);
+      return JSON.stringify(deepPrettyPrintJson(parsed), null, 2);
     } catch {
       return args;
     }
@@ -146,45 +148,23 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   };
 
   // Results are often serialized JSON — pretty-print them instead of showing
-  // one raw line of bytes. Nested JSON-in-strings (MCP text payloads) gets
-  // one unwrap pass; anything unparseable renders verbatim.
-  // MCP tool results arrive as an envelope — {content:[{type:'text',text}]}
-  // — whose payload is itself often JSON, so a naive pretty-print renders the
-  // WRAPPER nicely while the actual result stays one escaped line ("\" soup,
-  // no newlines). Unwrap the envelope first, then pretty-print what's inside.
-  const unwrapEnvelope = (parsed: unknown): unknown => {
-    if (parsed && typeof parsed === 'object' && 'content' in parsed) {
-      const content = (parsed as { content?: unknown }).content;
-      if (Array.isArray(content)) {
-        const texts = content
-          .filter(
-            (c): c is { type?: string; text: string } =>
-              !!c && typeof c === 'object' && typeof (c as { text?: unknown }).text === 'string',
-          )
-          .map((c) => c.text);
-        if (texts.length > 0 && texts.length === content.length) {
-          return texts.join('\n');
-        }
-      }
-    }
-    return parsed;
-  };
-
+  // one raw line of bytes. The unwrapping is intentionally aggressive:
+  //   1. MCP tool results arrive wrapped in `{content:[{type:'text',text}]}`
+  //      envelopes whose `text` payload is itself JSON. Unwrap envelopes
+  //      recursively at any depth.
+  //   2. Many providers stringify JSON inside JSON (string-valued fields
+  //      carrying escaped JSON). Re-parse those strings until parsing stops
+  //      making progress — single-pass leaves double-encoded MCP payloads as
+  //      "wrapper pretty + inner one-line blob".
+  //   3. Walk the final tree and replace every JSON-bearing string with its
+  //      pretty-printed form so nested objects/arrays breathe.
+  // Anything unparseable renders verbatim.
   const formattedResult = createMemo(() => {
     const raw = props.toolCall.result;
     if (!raw) return raw;
     try {
-      let parsed: unknown = JSON.parse(raw);
-      parsed = unwrapEnvelope(parsed);
-      // A string at this point (envelope text or double-encoded JSON): if it
-      // parses as JSON, pretty-print that; otherwise show it verbatim.
-      if (typeof parsed === 'string') {
-        try {
-          parsed = JSON.parse(parsed) as unknown;
-        } catch {
-          return parsed as string;
-        }
-      }
+      const parsed = deepPrettyPrintJson(JSON.parse(raw), unwrapMcpEnvelope);
+      if (typeof parsed === 'string') return parsed;
       return JSON.stringify(parsed, null, 2);
     } catch {
       return raw;
@@ -236,14 +216,16 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
           </Show>
 
           {/* Error result section — rendered BEFORE the diff so users see why a
-              tool failed before scrolling past the failed-attempt diff. */}
+              tool failed before scrolling past the failed-attempt diff. Uses
+              formattedResult() so JSON-bearing error payloads get the same
+              pretty-printing as successful results. */}
           <Show when={props.toolCall.result && props.toolCall.status === 'error'}>
             <div class={`px-3 py-2 ${formattedArgs() && !diff() ? 'border-t border-hairline' : ''} bg-surface-base`}>
               <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">
                 Error
               </div>
               <pre class="text-xs font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-64 overflow-y-auto text-error">
-                {props.toolCall.result}
+                {formattedResult()}
               </pre>
             </div>
           </Show>
