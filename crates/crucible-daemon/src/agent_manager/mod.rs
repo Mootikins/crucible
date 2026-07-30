@@ -88,11 +88,22 @@ pub(crate) const MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 /// - `edit` — Edit file content
 /// - `bash` — Execute shell commands
 ///
+/// # External MCP Tools
+///
+/// A hardcoded list cannot classify a tool the operator installed, so
+/// `mcp_read_only` carries the prefixed names of tools whose server declared
+/// `readOnlyHint: true` (see [`crate::tools::mcp_gateway::McpGatewayManager::read_only_tool_names`]).
+/// A server saying nothing is not a server saying "writes": the annotation is
+/// optional, so silence keeps the default-deny below.
+///
 /// # Default-Deny Policy
 ///
 /// Only explicitly safe tools skip the permission prompt.
-/// Everything unknown (including all external MCP tools) requires permission.
-pub fn is_safe(tool_name: &str) -> bool {
+/// Everything unknown requires permission.
+pub fn is_safe(tool_name: &str, mcp_read_only: &std::collections::HashSet<String>) -> bool {
+    if mcp_read_only.contains(tool_name) {
+        return true;
+    }
     matches!(
         tool_name,
         "read_file"
@@ -440,97 +451,6 @@ struct StreamContext {
 }
 
 #[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration
-#[derive(Clone)]
-struct AgentStreamConfig {
-    model: String,
-    temperature: Option<f64>,
-    max_tokens: Option<u32>,
-    thinking_budget: Option<i64>,
-    system_prompt: String,
-    max_iterations: Option<u32>,
-    execution_timeout_secs: Option<u64>,
-    /// Snapshot of the session's `context_budget` for auto-compaction.
-    /// `None` disables auto-compaction (no budget to compare against).
-    context_budget: Option<usize>,
-    /// Fraction of `context_budget` that triggers auto-compaction.
-    /// `None` falls back to `DEFAULT_AUTOCOMPACT_THRESHOLD`. See
-    /// [`crate::agent_manager::autocompact`].
-    autocompact_threshold: Option<f32>,
-    /// Validation mode for assistant text responses. Drives the
-    /// validate-retry loop in `execute_agent_stream`.
-    output_validation: OutputValidation,
-    /// Maximum retry count when output validation fails.
-    validation_retries: u32,
-    /// From the session's `delegation_config.timeout_secs`; sizes the
-    /// tool-dispatch timeout for `delegate_session` (a blocking delegation
-    /// legitimately outlives the standard 30 s tool timeout).
-    delegation_timeout_secs: Option<u64>,
-    /// Per-tool policy from the session's agent card: Deny blocks execution,
-    /// Ask forces a prompt (even for safe tools), Allow skips the gate.
-    tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
-    /// Registry of Lua-defined validators, populated when the daemon
-    /// has a plugin loader. The agent stream loop dispatches
-    /// `OutputValidation::Lua { name }` against this registry.
-    /// `None` outside daemon contexts (tests, isolated managers) — the
-    /// stream loop treats that as a validation failure with a clear reason.
-    lua_validators: Option<Arc<LuaValidatorRegistry>>,
-    /// Plugin runtime `Lua` handle used to call into validator functions.
-    /// Paired with `lua_validators`; both are `Some` together or both `None`.
-    plugin_lua: Option<Arc<Lua>>,
-    /// Hooks registered by plugins via `crucible.on`, with the `Lua` state
-    /// their bodies live in. Separate from the per-session registry: plugins
-    /// load once into the loader's VM, and a `RegistryKey` is only valid
-    /// against the state that created it.
-    plugin_handlers: Option<(Arc<LuaScriptHandlerRegistry>, Arc<Lua>)>,
-    /// Sessions a plugin claimed isolation for. When set and the session is
-    /// claimed, a host-touching tool that no handler took over is refused.
-    isolation: Option<crucible_lua::IsolationRegistry>,
-    /// Plugin-declared tool names, for the plan-mode dispatch guard: the
-    /// dispatcher always contains plugin tools and the mode can change
-    /// mid-run, so plan must deny them at dispatch, not only at creation.
-    plugin_tool_names: std::collections::HashSet<String>,
-    /// Modes declared in Lua, snapshotted for this turn so a mid-turn
-    /// redefinition cannot reshape a turn already in progress.
-    modes: crucible_lua::ModeRegistry,
-}
-
-impl AgentStreamConfig {
-    fn from_session_agent(
-        session_agent: &SessionAgent,
-        lua_validators: Option<Arc<LuaValidatorRegistry>>,
-        plugin_lua: Option<Arc<Lua>>,
-        plugin_handlers: Option<(Arc<LuaScriptHandlerRegistry>, Arc<Lua>)>,
-        isolation: Option<crucible_lua::IsolationRegistry>,
-        plugin_tool_names: std::collections::HashSet<String>,
-        modes: crucible_lua::ModeRegistry,
-    ) -> Self {
-        Self {
-            model: session_agent.model.clone(),
-            temperature: session_agent.temperature,
-            max_tokens: session_agent.max_tokens,
-            thinking_budget: session_agent.thinking_budget,
-            system_prompt: session_agent.system_prompt.clone(),
-            max_iterations: session_agent.max_iterations,
-            execution_timeout_secs: session_agent.execution_timeout_secs,
-            context_budget: session_agent.context_budget,
-            autocompact_threshold: session_agent.autocompact_threshold,
-            output_validation: session_agent.output_validation.clone(),
-            validation_retries: session_agent.validation_retries,
-            delegation_timeout_secs: session_agent
-                .delegation_config
-                .as_ref()
-                .map(|c| c.timeout_secs),
-            tool_policy: session_agent.tool_policy.clone(),
-            lua_validators,
-            plugin_lua,
-            plugin_handlers,
-            isolation,
-            plugin_tool_names,
-            modes,
-        }
-    }
-}
-
 #[derive(Clone)]
 struct AgentCache {
     inner: Arc<DashMap<String, Arc<Mutex<BoxedAgentHandle>>>>,
@@ -1493,6 +1413,8 @@ pub(crate) mod precognition_gate;
 pub mod providers;
 mod scope;
 pub(crate) mod session_vm;
+pub(crate) mod stream_config;
+pub(crate) use stream_config::{AgentStreamConfig, TurnEnvironment};
 pub(crate) mod title;
 pub mod tool_tracking;
 

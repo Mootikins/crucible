@@ -752,6 +752,7 @@ impl AgentManager {
             args,
             &stream_ctx.session_id,
             &stream_ctx.session_mode,
+            &stream_ctx.agent_stream_config.mcp_read_only_tools,
         )
         .await;
 
@@ -1117,6 +1118,7 @@ impl AgentManager {
         args: &serde_json::Value,
         session_id: &str,
         session_mode: &str,
+        mcp_read_only: &std::collections::HashSet<String>,
     ) -> PermissionHookResult {
         let file_path = args
             .get("path")
@@ -1129,7 +1131,7 @@ impl AgentManager {
             args: args.clone(),
             file_path,
             mode: Some(session_mode.to_string()),
-            is_safe: crate::agent_manager::is_safe(tool_name),
+            is_safe: crate::agent_manager::is_safe(tool_name, mcp_read_only),
         };
 
         let state = session_state.lock().await;

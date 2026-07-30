@@ -210,6 +210,10 @@ fn convert_tool(tool: RmcpTool, upstream: &str) -> McpToolInfo {
         description: tool.description.map(|d| d.to_string()),
         input_schema: serde_json::to_value(&tool.input_schema).unwrap_or_default(),
         upstream: upstream.to_string(),
+        // Dropped here until now, which made every external MCP tool "unsafe"
+        // — including read-only ones — so a policy hook keying off `is_safe`
+        // was wrong for exactly the tools users write policy about.
+        read_only: tool.annotations.and_then(|a| a.read_only_hint),
     }
 }
 
@@ -275,5 +279,35 @@ mod tests {
         assert_eq!(converted.name, "test_tool");
         assert_eq!(converted.description, Some("A test tool".to_string()));
         assert_eq!(converted.upstream, "test_upstream");
+        assert_eq!(
+            converted.read_only, None,
+            "a server that declares no annotations says nothing about writes"
+        );
+    }
+
+    fn empty_schema() -> Arc<JsonObject> {
+        Arc::new(serde_json::from_value(serde_json::json!({"type": "object"})).unwrap())
+    }
+
+    /// `readOnlyHint` is the only thing that can tell us an external tool
+    /// reads. Dropping it here made every MCP tool "unsafe" — including
+    /// read-only ones — so a policy hook keying off `is_safe` was wrong for
+    /// exactly the tools users write policy about.
+    #[test]
+    fn a_read_only_annotation_survives_conversion() {
+        let tool = RmcpTool::new("search", "Search", empty_schema())
+            .annotate(rmcp::model::ToolAnnotations::new().read_only(true));
+
+        assert_eq!(convert_tool(tool, "gh").read_only, Some(true));
+    }
+
+    /// An explicit `readOnlyHint: false` is not the same as saying nothing,
+    /// and both must be distinguishable from `Some(true)`.
+    #[test]
+    fn a_write_annotation_is_not_read_only() {
+        let tool = RmcpTool::new("create_pr", "Open a PR", empty_schema())
+            .annotate(rmcp::model::ToolAnnotations::new().read_only(false));
+
+        assert_eq!(convert_tool(tool, "gh").read_only, Some(false));
     }
 }

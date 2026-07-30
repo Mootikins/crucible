@@ -231,6 +231,12 @@ impl AgentManager {
             Some(registry) => registry.tool_names(),
             None => Default::default(),
         };
+        // Same snapshot rule for what external MCP servers declared read-only:
+        // resolved per turn, so a server connected mid-session is covered.
+        let mcp_read_only_tools = match &self.mcp_gateway {
+            Some(gw) => gw.read().await.read_only_tool_names(),
+            None => Default::default(),
+        };
         let stream_ctx = StreamContext {
             session_id: session_id_owned.clone(),
             message_id: message_id.clone(),
@@ -246,12 +252,15 @@ impl AgentManager {
                 };
                 AgentStreamConfig::from_session_agent(
                     &agent_config,
-                    lua_validators,
-                    plugin_lua,
-                    self.plugin_handlers(),
-                    self.isolation(),
-                    plugin_tool_names,
-                    self.modes.clone(),
+                    TurnEnvironment {
+                        lua_validators,
+                        plugin_lua,
+                        plugin_handlers: self.plugin_handlers(),
+                        isolation: self.isolation(),
+                        plugin_tool_names,
+                        modes: self.modes.clone(),
+                        mcp_read_only_tools,
+                    },
                 )
             },
             tool_dispatcher: self.get_or_create_session_dispatcher(&session).await,

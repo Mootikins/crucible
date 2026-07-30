@@ -124,6 +124,13 @@ pub struct McpToolInfo {
     pub input_schema: JsonValue,
     /// Source upstream/server name
     pub upstream: String,
+    /// The server's `readOnlyHint` annotation, when it declared one.
+    ///
+    /// The permission path treats `Some(true)` as read-only. Absent means the
+    /// server said nothing — NOT "writes": the annotation is optional in MCP,
+    /// so absence keeps the default-deny behaviour rather than guessing.
+    #[serde(default)]
+    pub read_only: Option<bool>,
 }
 
 /// Server information from upstream MCP server

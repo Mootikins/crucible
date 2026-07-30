@@ -29,7 +29,7 @@ mod is_safe_tests {
     fn is_safe_classifies_tools(tools: &[&str], expected_safe: bool) {
         for tool in tools {
             assert_eq!(
-                is_safe(tool),
+                is_safe(tool, &Default::default()),
                 expected_safe,
                 "is_safe({tool:?}) should be {expected_safe}",
             );

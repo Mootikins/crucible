@@ -858,6 +858,7 @@ mod tests {
                     "properties": {"q": {"type": "string", "description": "a query"}}
                 }),
                 upstream: "gh".to_string(),
+                read_only: None,
             })
             .collect()
     }
@@ -945,6 +946,7 @@ mod tests {
             description: Some("Search repos".to_string()),
             input_schema: serde_json::json!({"type": "object"}),
             upstream: "gh".to_string(),
+            read_only: None,
         }];
 
         let names = build_internal_tool_names_for_tests(
@@ -1349,19 +1351,28 @@ mod tests {
         // These assertions test the current state of is_safe()
         // Some may FAIL if is_safe() doesn't have these tool names yet
         assert!(
-            !is_safe("bash"),
+            !is_safe("bash", &Default::default()),
             "bash should be unsafe (runs arbitrary commands)"
         );
-        assert!(is_safe("read_file"), "read_file should be safe (read-only)");
         assert!(
-            !is_safe("write_file"),
+            is_safe("read_file", &Default::default()),
+            "read_file should be safe (read-only)"
+        );
+        assert!(
+            !is_safe("write_file", &Default::default()),
             "write_file should be unsafe (modifies files)"
         );
         assert!(
-            !is_safe("edit_file"),
+            !is_safe("edit_file", &Default::default()),
             "edit_file should be unsafe (modifies files)"
         );
-        assert!(is_safe("glob"), "glob should be safe (read-only)");
-        assert!(is_safe("grep"), "grep should be safe (read-only)");
+        assert!(
+            is_safe("glob", &Default::default()),
+            "glob should be safe (read-only)"
+        );
+        assert!(
+            is_safe("grep", &Default::default()),
+            "grep should be safe (read-only)"
+        );
     }
 }

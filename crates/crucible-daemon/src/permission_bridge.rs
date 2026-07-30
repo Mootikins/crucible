@@ -20,6 +20,10 @@ pub struct DaemonPermissionGate {
     engine: PermissionEngine,
     is_interactive: bool,
     prompt_callback: Option<PermissionPromptCallback>,
+    /// Prefixed names of MCP tools whose server declared `readOnlyHint: true`.
+    /// Empty when the gate is built outside a turn (ACP handles, tests), where
+    /// no gateway snapshot exists — that only costs an extra prompt.
+    mcp_read_only: std::collections::HashSet<String>,
 }
 
 impl DaemonPermissionGate {
@@ -28,7 +32,14 @@ impl DaemonPermissionGate {
             engine: PermissionEngine::new(permission_config.as_ref()),
             is_interactive,
             prompt_callback: None,
+            mcp_read_only: Default::default(),
         }
+    }
+
+    #[must_use]
+    pub fn with_mcp_read_only(mut self, tools: std::collections::HashSet<String>) -> Self {
+        self.mcp_read_only = tools;
+        self
     }
 
     pub fn with_prompt_callback(mut self, callback: PermissionPromptCallback) -> Self {
@@ -57,7 +68,7 @@ impl PermissionGate for DaemonPermissionGate {
     async fn request_permission(&self, request: PermRequest) -> PermResponse {
         let (tool_name, input) = Self::to_engine_input(&request);
 
-        if is_safe(tool_name) {
+        if is_safe(tool_name, &self.mcp_read_only) {
             return PermResponse::allow();
         }
 

@@ -447,7 +447,10 @@ impl AgentManager {
             Some(ToolPolicy::Allow) => false,
             Some(ToolPolicy::Ask) => true,
             Some(ToolPolicy::Deny) => unreachable!("denied above"),
-            None => !is_safe(&tool_call.name),
+            None => !is_safe(
+                &tool_call.name,
+                &stream_ctx.agent_stream_config.mcp_read_only_tools,
+            ),
         };
 
         // A card's `allow` skips the PROMPT, never the operator's config:

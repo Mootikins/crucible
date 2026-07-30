@@ -314,6 +314,21 @@ impl McpGatewayManager {
             .collect()
     }
 
+    /// Prefixed names of every tool whose server declared `readOnlyHint: true`.
+    ///
+    /// Prefixed because that is the name the agent calls and the permission
+    /// path sees; the bare `name` is the upstream's, and two servers can use
+    /// the same one.
+    #[must_use]
+    pub fn read_only_tool_names(&self) -> std::collections::HashSet<String> {
+        self.upstreams
+            .values()
+            .flat_map(|c| c.tools().iter())
+            .filter(|t| t.read_only == Some(true))
+            .map(|t| t.prefixed_name.clone())
+            .collect()
+    }
+
     /// Find which upstream owns a tool by its prefixed name.
     #[must_use]
     pub fn find_upstream(&self, prefixed_tool_name: &str) -> Option<&str> {
@@ -673,5 +688,58 @@ mod tests {
         assert_eq!(status[0].0, "test_upstream");
         assert_eq!(status[0].1, ConnectionState::Connected);
         assert_eq!(status[0].2, 0);
+    }
+
+    fn tool(prefixed: &str, read_only: Option<bool>) -> McpToolInfo {
+        McpToolInfo {
+            name: prefixed.to_string(),
+            prefixed_name: prefixed.to_string(),
+            description: None,
+            input_schema: serde_json::json!({"type": "object"}),
+            upstream: "gh".to_string(),
+            read_only,
+        }
+    }
+
+    fn manager_with(tools: Vec<McpToolInfo>) -> McpGatewayManager {
+        let mut client = UpstreamClient::new(test_config("gh", "gh_"));
+        client.tools = tools;
+        let mut manager = McpGatewayManager::new();
+        manager.upstreams.insert("gh".to_string(), client);
+        manager
+    }
+
+    /// The whole point of item 3: a server's `readOnlyHint` reaches `is_safe`,
+    /// so a read-only external tool stops being classified alongside the ones
+    /// that write. Only `Some(true)` counts — silence is not a claim, and an
+    /// explicit `false` is a claim the other way.
+    #[test]
+    fn only_an_explicit_read_only_hint_makes_an_mcp_tool_safe() {
+        let manager = manager_with(vec![
+            tool("gh_search_repos", Some(true)),
+            tool("gh_create_pr", Some(false)),
+            tool("gh_unannotated", None),
+        ]);
+
+        let read_only = manager.read_only_tool_names();
+        assert_eq!(
+            read_only,
+            std::collections::HashSet::from(["gh_search_repos".to_string()])
+        );
+
+        use crate::agent_manager::is_safe;
+        assert!(
+            is_safe("gh_search_repos", &read_only),
+            "a tool the server declared read-only must not require permission"
+        );
+        assert!(!is_safe("gh_create_pr", &read_only));
+        assert!(
+            !is_safe("gh_unannotated", &read_only),
+            "a server that said nothing must not be assumed read-only"
+        );
+        assert!(
+            is_safe("read_file", &read_only),
+            "the built-in list still applies"
+        );
     }
 }
