@@ -286,6 +286,14 @@ fn mode_exposes_tool(modes: Option<&crucible_lua::ModeRegistry>, mode: &str, nam
     if mode == "plan" {
         return crate::tools::tool_modes::PLAN_TOOL_NAMES.contains(&name);
     }
+    // A registry is attached but does not know this mode — the session is in
+    // a mode whose declaration has gone away. Fail CLOSED to the read-only
+    // set rather than advertising everything: an unknown mode used to be the
+    // most permissive one, which turned deleting a restrictive declaration
+    // into a privilege escalation.
+    if modes.is_some() {
+        return crate::tools::tool_modes::PLAN_TOOL_NAMES.contains(&name);
+    }
     true
 }
 

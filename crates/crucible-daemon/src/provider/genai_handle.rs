@@ -832,11 +832,18 @@ impl GenaiAgentHandle {
         // narrow: plan's write-name blocklist and the plugin-tool exclusion
         // below still apply on top, so a mode cannot widen its way past the
         // floor.
-        let mode_selector = self
+        let declared = self
             .modes
             .as_ref()
-            .and_then(|m| m.get(&self.current_mode_id))
-            .map(|m| m.tools);
+            .and_then(|m| m.get(&self.current_mode_id));
+        // A registry is attached but does not know this mode: the session is
+        // running a mode whose declaration has gone away (edited init.lua,
+        // different machine, shadowed defaults). We cannot know what it
+        // permitted, so fail CLOSED — apply the same write-tool floor plan
+        // mode uses. Returning "no selector" here let the most restrictive
+        // mode silently become the most permissive.
+        let mode_unknown = self.modes.is_some() && declared.is_none();
+        let mode_selector = declared.map(|m| m.tools);
 
         // Native attach candidates after the plan-mode filter: the write-name
         // blocklist for built-ins, plus every plugin tool (unknown side
@@ -852,7 +859,7 @@ impl GenaiAgentHandle {
                 .collect(),
             None => self.tools.clone(),
         };
-        let write_filtered: Vec<LlmToolDefinition> = if in_plan {
+        let write_filtered: Vec<LlmToolDefinition> = if in_plan || mode_unknown {
             selected
                 .iter()
                 .filter(|t| {
@@ -2033,6 +2040,45 @@ mod tests {
             .map(|t| t.function.name.clone())
             .collect();
         assert_eq!(names, vec!["read_file"], "review must not advertise writes");
+    }
+
+    /// A mode whose declaration has gone away must not become the most
+    /// PERMISSIVE one.
+    ///
+    /// `SessionAgent.mode` is a persisted string and `set_mode`'s validation
+    /// runs only on an explicit set, never on resume. So: select `review`
+    /// (`tools = read_*`, deny by default), delete the declaration, resume.
+    /// The registry misses — and the unknown-mode branch used to return
+    /// `true` for every tool, so the most restrictive mode silently became
+    /// the most permissive. Fail closed instead.
+    #[tokio::test]
+    async fn a_mode_whose_declaration_vanished_does_not_widen_the_tool_set() {
+        let registry = crucible_lua::ModeRegistry::new();
+        registry.set(crucible_lua::ModeDefinition {
+            name: "review".to_string(),
+            description: None,
+            tools: crucible_lua::ToolSelector::Patterns(vec!["read_*".to_string()]),
+            permissions: crucible_lua::ModePermissions::default(),
+        });
+
+        let mut handle =
+            test_handle_with_tools(vec![tool_def("read_file"), tool_def("write_file")])
+                .with_modes(registry.clone());
+        handle.set_mode_str("review").await.unwrap();
+
+        // The declaration goes away underneath the live session.
+        registry.remove("review");
+
+        let names: Vec<String> = handle
+            .visible_tools()
+            .tools
+            .iter()
+            .map(|t| t.function.name.clone())
+            .collect();
+        assert!(
+            !names.contains(&"write_file".to_string()),
+            "a vanished mode must not advertise MORE than it did while declared; got {names:?}"
+        );
     }
 
     fn tool_def(name: &str) -> LlmToolDefinition {
