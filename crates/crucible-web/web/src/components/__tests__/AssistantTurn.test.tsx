@@ -182,6 +182,29 @@ describe('AssistantTurn — in-flight indicators', () => {
     expect(getByTestId('working-indicator')).toBeInTheDocument();
   });
 
+  it('shows no dots for a settled thinking-only segment', () => {
+    // The reducer closes a thinking-only segment at a tool boundary (model
+    // reasoned, then called a tool without narrating). That segment is
+    // finished; dots on it would spin for the rest of the transcript.
+    messagesAccessor = () => [
+      textMsg('a1', '', { thinking: { content: 'reasoning', isStreaming: false, tokenCount: 9 } }),
+      toolMsg('t1'),
+    ];
+    render(() => <AssistantTurn parts={[textPart('a1'), toolsPart('t1')]} isLast={true} />);
+    expect(screen.queryByTestId('working-indicator')).not.toBeInTheDocument();
+  });
+
+  it('still shows dots while thinking is streaming and no text has arrived', () => {
+    // Guard the narrow fix: only a SETTLED thinking block suppresses dots.
+    streamingAccessor = () => true;
+    messagesAccessor = () => [
+      textMsg('a1', '', { thinking: { content: 'reasoning', isStreaming: true } }),
+    ];
+    render(() => <AssistantTurn parts={[textPart('a1')]} isLast={true} />);
+    // Thinking is live, so the ThinkingBlock carries the activity, not dots.
+    expect(screen.queryByTestId('working-indicator')).not.toBeInTheDocument();
+  });
+
   it('shows working dots when in flight with a trailing tools part', () => {
     streamingAccessor = () => true;
     messagesAccessor = () => [textMsg('a1', 'thinking aloud'), toolMsg('t1')];

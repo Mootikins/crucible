@@ -74,6 +74,18 @@ const TextSegment: Component<{
 
   const thinking = () => message()?.thinking;
 
+  // A textless segment normally means "text is on its way" — hence the dots.
+  // A SETTLED thinking-only segment is the exception: the model reasoned and
+  // then went straight to a tool, so the reducer closed this segment at the
+  // boundary. It is finished, not pending, and dots here would spin for the
+  // rest of the transcript. (Mid-turn the thinking block is still marked
+  // streaming, so the gap between "thinking ended" and "first token" is
+  // unaffected.)
+  const settledThinkingOnly = () => {
+    const t = thinking();
+    return !!t && !t.isStreaming && t.content.length > 0;
+  };
+
   return (
     <div data-testid="message-assistant" data-role="assistant">
       <Show when={thinking() && thinking()!.content.length > 0 && statusBarStore.showThinking()}>
@@ -83,7 +95,14 @@ const TextSegment: Component<{
           tokenCount={thinking()!.tokenCount}
         />
       </Show>
-      <Show when={content() !== ''} fallback={<Show when={!thinking()?.isStreaming}><WorkingDots /></Show>}>
+      <Show
+        when={content() !== ''}
+        fallback={
+          <Show when={!thinking()?.isStreaming && !settledThinkingOnly()}>
+            <WorkingDots />
+          </Show>
+        }
+      >
         <div class={PROSE_CLASS} onClick={props.onMarkdownClick} innerHTML={renderedContent()} />
       </Show>
       <Show when={props.showCaret && content() !== ''}>

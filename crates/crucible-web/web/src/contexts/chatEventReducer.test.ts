@@ -613,6 +613,57 @@ describe('event matrix — covers every ChatEvent variant', () => {
     });
   });
 
+  it('thinking interleaved with tools keeps transcript order and starts a new block per segment', () => {
+    // Reasoning models emit think → tool → think → tool with no narration
+    // between. The tool boundary only closed the open segment when it had
+    // TEXT, so a thinking-only segment stayed open: every later thinking
+    // delta appended to the first block, and one accumulated block rendered
+    // beside a single collapsed run of tool cards. The real interleaving —
+    // which reasoning led to which call — was lost.
+    const h = createHarness();
+    h.reducer({ type: 'thinking', content: 'first I should list the files' });
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'list_files', arguments: { path: '/' } });
+    h.reducer({ type: 'thinking', content: 'now I should read one' });
+    h.reducer({ type: 'tool_call', id: 'tc-2', title: 'read_file', arguments: { path: '/a' } });
+
+    const order = h.state.messages.map((m) =>
+      m.role === 'tool' ? `tool:${m.toolCall?.name}` : `think:${m.thinking?.content ?? ''}`,
+    );
+    expect(order).toEqual([
+      'think:first I should list the files',
+      'tool:list_files',
+      'think:now I should read one',
+      'tool:read_file',
+    ]);
+  });
+
+  it('a thinking-only segment is frozen (not left streaming) at a tool boundary', () => {
+    // Left marked isStreaming, the closed block would render a live spinner
+    // for reasoning that finished before the tool even ran.
+    const h = createHarness();
+    h.reducer({ type: 'thinking', content: 'pondering' });
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
+
+    const segment = h.state.messages.find((m) => m.role === 'assistant');
+    expect(segment?.thinking).toMatchObject({ content: 'pondering', isStreaming: false });
+  });
+
+  it('a thinking-only segment does not consume the final bubble of the turn', () => {
+    // The closed segment carries no text, so message_complete's trailing text
+    // must still land somewhere rather than being swallowed as "already
+    // frozen".
+    const h = createHarness();
+    h.reducer({ type: 'thinking', content: 'reasoning' });
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
+    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'ok' });
+    h.reducer({ type: 'message_complete', id: 'srv', content: 'Here is the answer.' });
+
+    const texts = h.state.messages
+      .filter((m) => m.role === 'assistant' && m.content !== '')
+      .map((m) => m.content);
+    expect(texts).toEqual(['Here is the answer.']);
+  });
+
   it('thinking: materializes a streaming assistant message when none is active', () => {
     const h = createHarness();
     h.reducer({ type: 'thinking', content: 'pondering' });

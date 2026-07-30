@@ -134,6 +134,22 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
             // the turn's accumulated text and not re-render this narration.
             frozenSegments.push(current.content);
             deps.setCurrentStreamingMessageId(null);
+          } else if (current?.thinking && current.thinking.content !== '') {
+            // Thinking-only segment: the model reasoned and went straight to a
+            // tool without narrating. Nothing to freeze (no text for
+            // stripFrozenPrefix to strip, and pushing '' would misalign the
+            // index text_segment matches on), but the segment must still
+            // CLOSE. Left open, every later thinking delta appended to this
+            // same block and the tool cards collapsed into one run beside it,
+            // losing which reasoning led to which call.
+            deps.updateMessage(streamingId, {
+              thinking: {
+                content: current.thinking.content,
+                isStreaming: false,
+                tokenCount: current.thinking.content.length,
+              },
+            });
+            deps.setCurrentStreamingMessageId(null);
           }
         }
         const toolName = 'title' in event ? event.title : ('name' in event ? event.name : '');
