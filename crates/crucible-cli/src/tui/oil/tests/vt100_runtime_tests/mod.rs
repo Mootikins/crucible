@@ -52,6 +52,7 @@ fn tool(app: &mut OilChatApp, name: &str, call_id: &str) {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: name.into(),

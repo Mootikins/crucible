@@ -49,6 +49,7 @@ fn no_spinners_in_scrollback_after_tool_use() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     vt.render_frame(&mut app);
 
@@ -83,6 +84,7 @@ fn no_spinners_after_multi_tool_graduation() {
             source: None,
             lua_primary_arg: None,
             diffs: Vec::new(),
+            auto_approved: None,
         });
         vt.render_frame(&mut app); // spinner visible during pending
 
@@ -187,6 +189,7 @@ fn graduation_preserves_tool_results() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".into(),

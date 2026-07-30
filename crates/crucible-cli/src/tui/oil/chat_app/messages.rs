@@ -80,6 +80,10 @@ pub enum ChatAppMsg {
         /// when the tool does not produce diffs or the daemon hasn't
         /// computed them yet.
         diffs: Vec<FileDiff>,
+        /// Which layer granted permission without asking, if any. Carried on
+        /// this event rather than a follow-up so the marker renders with the
+        /// row instead of appearing after it.
+        auto_approved: Option<String>,
     },
     /// **Event** (daemon → TUI): Late file-diff content for an
     /// already-announced tool call (e.g. ACP agents like Claude Code
@@ -90,9 +94,6 @@ pub enum ChatAppMsg {
         call_id: String,
         diffs: Vec<FileDiff>,
     },
-    /// **Event** (daemon → TUI): this call's permission was granted without
-    /// asking. Carries the deciding layer so the marker can say why.
-    ToolAutoApproved { call_id: String, reason: String },
     /// **Event** (daemon → TUI): Streaming delta of tool result output.
     ToolResultDelta {
         name: String,
@@ -279,7 +280,6 @@ impl ChatAppMsg {
             | Self::ThinkingDelta(_)
             | Self::ToolCall { .. }
             | Self::ToolCallDiffUpdate { .. }
-            | Self::ToolAutoApproved { .. }
             | Self::ToolResultDelta { .. }
             | Self::ToolResultComplete { .. }
             | Self::ToolResultError { .. }

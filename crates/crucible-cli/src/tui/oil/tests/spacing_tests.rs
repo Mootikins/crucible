@@ -41,6 +41,7 @@ fn adjacent_tools_no_gap() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "read_file".into(),
@@ -56,6 +57,7 @@ fn adjacent_tools_no_gap() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "write_file".into(),
@@ -111,6 +113,7 @@ fn tool_then_text_one_blank_line() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "read_file".into(),
@@ -193,6 +196,7 @@ fn thinking_then_tools_one_blank_line() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "bash".into(),
@@ -297,6 +301,7 @@ fn permission_modal_does_not_cause_double_blanks() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     vt.render_frame(&mut app);
 
@@ -354,6 +359,7 @@ fn tools_across_graduation_batches_no_gap() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "bash".into(),
@@ -390,6 +396,7 @@ fn tools_across_graduation_batches_no_gap() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     vt2.render_frame(&mut app2);
 
@@ -411,6 +418,7 @@ fn tools_across_graduation_batches_no_gap() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     vt2.render_frame(&mut app2);
 
@@ -457,6 +465,7 @@ fn tools_across_graduation_batches_no_gap() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "glob".into(),

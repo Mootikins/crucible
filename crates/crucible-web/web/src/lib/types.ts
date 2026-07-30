@@ -370,6 +370,10 @@ export interface ToolCallEvent {
   id: string;
   title: string;
   arguments?: unknown;
+  /** Daemon's projection of which argument matters. Absent on replayed events. */
+  display?: ToolDisplay;
+  /** Which layer granted permission without asking, if any. */
+  auto_approved?: string;
 }
 
 /** Tool call result streaming delta */
@@ -377,15 +381,6 @@ export interface ToolResultDeltaEvent {
   type: 'tool_result_delta';
   id: string;
   delta: string;
-}
-
-/** A permission granted without asking the user. */
-export interface ToolAutoApprovedEvent {
-  type: 'tool_auto_approved';
-  call_id: string;
-  tool: string;
-  /** Which layer decided — "auto mode", "policy". */
-  reason: string;
 }
 
 /** Tool call result streaming complete */
@@ -570,7 +565,6 @@ export type ChatEvent =
   | ContextUsageEvent
   | PrecognitionResultEvent
   | ModeChangedEvent
-  | ToolAutoApprovedEvent
   | TitleChangedEvent;
 
 /** SSE event type discriminator */

@@ -168,6 +168,7 @@ fn tool_call_creates_tool_group() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
 
     assert_eq!(app.container_list.len(), 1);
@@ -189,6 +190,7 @@ fn tool_call_diff_update_replaces_empty_diffs_with_late_content() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
 
     let diffs = vec![FileDiff::from_contents(
@@ -245,6 +247,7 @@ fn tool_result_error_sets_error_on_tool() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultError {
         name: "bash".into(),

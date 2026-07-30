@@ -163,16 +163,12 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
           // Computed daemon-side; absent on replayed/older events, in which
           // case ToolCard falls back to deriving it locally.
           display: 'display' in event ? (event.display as ToolCallDisplay['display']) : undefined,
+          // Decided before this event was emitted, so the marker renders with
+          // the card instead of appearing a beat later.
+          autoApproved: 'auto_approved' in event ? (event.auto_approved as string) : undefined,
         });
         break;
       }
-
-      case 'tool_auto_approved':
-        deps.updateToolMessage(event.call_id, (tool) => ({
-          ...tool,
-          autoApproved: event.reason,
-        }));
-        break;
 
       case 'tool_result':
         deps.updateToolMessage(event.id, (tool) => ({

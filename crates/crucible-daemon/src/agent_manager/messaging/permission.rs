@@ -588,12 +588,19 @@ impl AgentManager {
         }
     }
 
+    /// Run the permission gate.
+    ///
+    /// `Ok(Some(reason))` means the call was approved WITHOUT asking, and by
+    /// which layer; `Ok(None)` means the user was asked and said yes. The
+    /// caller carries the reason on the `tool_call` event — the decision is
+    /// made before that event is emitted, so an auto-approval marker can ride
+    /// along with the card rather than arriving after it and popping in.
     pub(super) async fn handle_permission_request(
         stream_ctx: &StreamContext,
         tool_call: &crucible_core::traits::chat::ChatToolCall,
         call_id: &str,
         args: &serde_json::Value,
-    ) -> Result<(), String> {
+    ) -> Result<Option<String>, String> {
         // Honor explicit --permissions override before running any hooks or prompt.
         // `Allow` auto-approves; `Deny` auto-rejects with an error tool_result;
         // `Ask` and `None` fall through to the standard hook/prompt flow.
@@ -604,7 +611,7 @@ impl AgentManager {
                     tool = %tool_call.name,
                     "permission override Allow: auto-approving tool call"
                 );
-                return Ok(());
+                return Ok(Some("permission override".to_string()));
             }
             Some(PermissionMode::Deny) => {
                 let error_msg = "Tool call denied by permission override".to_string();
@@ -651,7 +658,7 @@ impl AgentManager {
                         tool = %tool_call.name,
                         "Permissions config allows tool, skipping prompt"
                     );
-                    return Ok(());
+                    return Ok(Some("permissions config".to_string()));
                 }
                 PermissionDecision::Deny { reason } => {
                     let error_msg = format!(
@@ -689,8 +696,17 @@ impl AgentManager {
                 tool = %tool_call.name,
                 "Tool call matches whitelisted pattern, skipping permission prompt"
             );
-            return Ok(());
+            return Ok(Some("saved pattern".to_string()));
         }
+
+        // The mode's declared stance. Consulted AFTER the hooks below, because
+        // a stance is static and a hook is a decision — `cru.modes.auto` says
+        // "allow by default", and a user hook that denies bash must still win.
+        let mode_stance = stream_ctx
+            .agent_stream_config
+            .modes
+            .get(&stream_ctx.session_mode)
+            .map(|m| m.permissions);
 
         let hook_result = Self::execute_permission_hooks_with_timeout(
             &stream_ctx.session_state,
@@ -708,24 +724,11 @@ impl AgentManager {
                     tool = %tool_call.name,
                     "Lua hook allowed tool, skipping permission prompt"
                 );
-                // Say so in the transcript. A silently auto-approved call is
-                // indistinguishable from one that never needed permission,
-                // which in auto mode means no record of anything granted on
-                // the user's behalf.
-                emit_event(
-                    &stream_ctx.event_tx,
-                    SessionEventMessage::tool_auto_approved(
-                        &stream_ctx.session_id,
-                        call_id,
-                        &tool_call.name,
-                        if stream_ctx.session_mode == "auto" {
-                            "auto mode"
-                        } else {
-                            "policy"
-                        },
-                    ),
-                );
-                Ok(())
+                Ok(Some(if stream_ctx.session_mode == "auto" {
+                    "auto mode".to_string()
+                } else {
+                    "Lua permission hook".to_string()
+                }))
             }
             PermissionHookResult::Deny => {
                 debug!(
@@ -757,6 +760,42 @@ impl AgentManager {
                 Err(error_msg)
             }
             PermissionHookResult::Prompt => {
+                // No hook had an opinion: fall back to the mode's stance.
+                match mode_stance {
+                    Some(crucible_lua::ModeStance::Allow) => {
+                        debug!(
+                            session_id = %stream_ctx.session_id,
+                            tool = %tool_call.name,
+                            mode = %stream_ctx.session_mode,
+                            "mode stance allows tool, skipping permission prompt"
+                        );
+                        return Ok(Some(format!("{} mode", stream_ctx.session_mode)));
+                    }
+                    Some(crucible_lua::ModeStance::Deny) => {
+                        let error_msg = format!(
+                            "Tool '{}' is not permitted in {} mode",
+                            tool_call.name, stream_ctx.session_mode
+                        );
+                        if !emit_event(
+                            &stream_ctx.event_tx,
+                            SessionEventMessage::tool_result(
+                                &stream_ctx.session_id,
+                                call_id,
+                                &tool_call.name,
+                                serde_json::json!({ "error": &error_msg }),
+                            ),
+                        ) {
+                            warn!(
+                                session_id = %stream_ctx.session_id,
+                                tool = %tool_call.name,
+                                "No subscribers for mode-denied tool_result event"
+                            );
+                        }
+                        return Err(error_msg);
+                    }
+                    Some(crucible_lua::ModeStance::Ask) | None => {}
+                }
+
                 // Non-interactive turns (delegated child sessions, headless
                 // sends) have nobody to answer a prompt — deny immediately
                 // with an actionable message instead of hanging.
@@ -910,7 +949,9 @@ impl AgentManager {
                 };
 
                 if permission_granted {
-                    return Ok(());
+                    // The user was asked and said yes: nothing was granted on
+                    // their behalf, so there is nothing to mark.
+                    return Ok(None);
                 }
 
                 let resource_desc = Self::brief_resource_description(&tool_call.name, args);

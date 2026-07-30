@@ -111,6 +111,10 @@ impl AgentManager {
             error!(session_id = %session_id, error = %e, "Failed to register cru.defaults API");
         }
 
+        if let Err(e) = crucible_lua::register_modes(&lua, self.modes.clone()) {
+            error!(session_id = %session_id, error = %e, "Failed to register cru.modes API");
+        }
+
         // `on_session_start` / `on_session_end`. Registered only by
         // `LuaExecutor` until now, which is why the API was nil here — the
         // shipped defaults AND `cru setup`'s user template both advertised it

@@ -82,6 +82,7 @@ fn tool_complete_creates_tool_group() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "read_file".into(),
@@ -125,6 +126,7 @@ fn multi_turn_creates_containers_in_order() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "read_file".into(),
@@ -220,6 +222,7 @@ fn snapshot_tool_pending() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     // Tool is still pending (no ToolResultComplete)
 
@@ -292,6 +295,7 @@ fn show_diffs_off_omits_diff_body() {
             Some("fn old() {}\n".to_string()),
             "fn new() {}\n",
         )],
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "edit_file".into(),
@@ -327,6 +331,7 @@ fn show_diffs_on_includes_diff_body() {
             Some("fn old() {}\n".to_string()),
             "fn new() {}\n",
         )],
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "edit_file".into(),

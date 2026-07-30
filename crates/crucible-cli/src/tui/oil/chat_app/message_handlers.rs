@@ -50,6 +50,7 @@ impl OilChatApp {
                 source,
                 lua_primary_arg,
                 diffs,
+                auto_approved,
             } => {
                 let tool = CachedToolCall {
                     id: call_id.as_deref().map_or_else(
@@ -70,17 +71,13 @@ impl OilChatApp {
                     source: source.as_deref().and_then(parse_tool_source),
                     lua_primary_arg: lua_primary_arg.map(|a| Arc::from(a.as_str())),
                     diffs,
-                    auto_approved: None,
+                    auto_approved,
                 };
                 self.container_list.add_tool_call(tool);
             }
             ChatAppMsg::ToolCallDiffUpdate { call_id, diffs } => {
                 self.container_list
                     .update_tool_by_call_id(&call_id, |t| t.set_diffs(diffs));
-            }
-            ChatAppMsg::ToolAutoApproved { call_id, reason } => {
-                self.container_list
-                    .update_tool_by_call_id(&call_id, |t| t.set_auto_approved(reason));
             }
             ChatAppMsg::ToolResultDelta {
                 name,

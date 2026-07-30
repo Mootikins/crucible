@@ -67,6 +67,7 @@ mod lua_stdlib;
 pub mod lua_util;
 pub mod manifest;
 mod mcp;
+mod modes;
 pub mod notify;
 mod oil;
 mod paths;
@@ -195,6 +196,7 @@ pub use manifest::{
 pub use mcp::{
     register_mcp_module, register_mcp_module_stub, LuaMcpClient, McpToolInfo, McpToolResult,
 };
+pub use modes::{register_modes, ModeDefinition, ModeRegistry, ModeStance, ToolSelector};
 pub use session::{
     LuaSession, LuaSessionBuilder, LuaSessionConfig, LuaSessionHandle, SessionState,
 };

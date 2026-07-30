@@ -251,6 +251,7 @@ impl AgentManager {
                     self.plugin_handlers(),
                     self.isolation(),
                     plugin_tool_names,
+                    self.modes.clone(),
                 )
             },
             tool_dispatcher: self.get_or_create_session_dispatcher(&session).await,
@@ -595,6 +596,7 @@ impl AgentManager {
         };
 
         let agent = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+            modes: Some(self.modes.clone()),
             agent_config: &resolved_config,
             lua: lua_handle.as_ref(),
             workspace,

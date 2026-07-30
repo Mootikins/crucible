@@ -1122,7 +1122,9 @@ impl AgentManager {
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<(), AgentError> {
         let mode_id = mode_id.trim();
-        let modes = crucible_core::types::mode::default_internal_modes();
+        // Consult the registry, not the built-in list: a Lua-declared mode
+        // that `set_mode` rejects would be a mode you can define and never use.
+        let modes = self.session_modes(session_id);
         if !modes
             .available_modes
             .iter()

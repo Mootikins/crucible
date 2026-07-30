@@ -482,21 +482,33 @@ impl AgentManager {
             });
         }
 
-        if requires_gate {
-            if let Err(deny_reason) =
-                Self::handle_permission_request(stream_ctx, tool_call, &call_id, &args).await
-            {
-                // Feed the SPECIFIC denial reason back to the model so it can
-                // adapt (config rule vs shell policy vs non-interactive).
-                return Some(crucible_core::traits::chat::ChatToolResult {
-                    name: tool_call.name.clone(),
-                    result: String::new(),
-                    error: Some(deny_reason),
-                    call_id: Some(call_id.clone()),
-                    terminate: false,
-                });
+        // `Some(reason)` = approved without asking. Captured here, before the
+        // `tool_call` event is emitted below, so the marker ships with the card
+        // instead of arriving as a follow-up and popping in.
+        let auto_approved = if requires_gate {
+            match Self::handle_permission_request(stream_ctx, tool_call, &call_id, &args).await {
+                Ok(reason) => reason,
+                Err(deny_reason) => {
+                    // Feed the SPECIFIC denial reason back to the model so it
+                    // can adapt (config rule vs shell policy vs non-interactive).
+                    return Some(crucible_core::traits::chat::ChatToolResult {
+                        name: tool_call.name.clone(),
+                        result: String::new(),
+                        error: Some(deny_reason),
+                        call_id: Some(call_id.clone()),
+                        terminate: false,
+                    });
+                }
             }
-        }
+        } else {
+            // An agent card's `allow` is also a grant the user never saw, and
+            // deserves the same marker. A genuinely safe (read-only) tool is
+            // not — nothing was granted, because nothing was needed.
+            match card_policy {
+                Some(ToolPolicy::Allow) => Some("agent card policy".to_string()),
+                _ => None,
+            }
+        };
 
         let args_str = serde_json::to_string(&args).unwrap_or_else(|_| "null".to_string());
         let (mut description, mut source) = stream_ctx
@@ -542,6 +554,7 @@ impl AgentManager {
                 source,
                 lua_primary_arg,
                 diffs,
+                auto_approved.clone(),
             ),
         ) {
             warn!(

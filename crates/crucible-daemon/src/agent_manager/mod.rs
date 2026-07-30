@@ -489,6 +489,9 @@ struct AgentStreamConfig {
     /// dispatcher always contains plugin tools and the mode can change
     /// mid-run, so plan must deny them at dispatch, not only at creation.
     plugin_tool_names: std::collections::HashSet<String>,
+    /// Modes declared in Lua, snapshotted for this turn so a mid-turn
+    /// redefinition cannot reshape a turn already in progress.
+    modes: crucible_lua::ModeRegistry,
 }
 
 impl AgentStreamConfig {
@@ -499,6 +502,7 @@ impl AgentStreamConfig {
         plugin_handlers: Option<(Arc<LuaScriptHandlerRegistry>, Arc<Lua>)>,
         isolation: Option<crucible_lua::IsolationRegistry>,
         plugin_tool_names: std::collections::HashSet<String>,
+        modes: crucible_lua::ModeRegistry,
     ) -> Self {
         Self {
             model: session_agent.model.clone(),
@@ -522,6 +526,7 @@ impl AgentStreamConfig {
             plugin_handlers,
             isolation,
             plugin_tool_names,
+            modes,
         }
     }
 }
@@ -620,6 +625,11 @@ pub struct AgentManager {
     /// `session.x`; see `crucible_lua::session_defaults` for why this tier is
     /// not called `cru.o`.
     session_defaults: crucible_lua::SessionDefaults,
+    /// Modes declared from Lua (`cru.modes.<name> = {…}`). Empty until a
+    /// session VM has run its files; every read falls back to
+    /// `default_internal_modes()` in that case, so a daemon whose Lua failed
+    /// to load still has working modes rather than none.
+    modes: crucible_lua::ModeRegistry,
     /// Per-session starting values, captured when the session VM ran its
     /// `on_session_start` hooks. Already seeded from `session_defaults`, so
     /// this is the whole inherited-then-overridden picture for one session —
@@ -743,6 +753,7 @@ impl AgentManager {
             agent_cache: AgentCache::new(),
             runtimepath: Vec::new(),
             session_defaults: crucible_lua::SessionDefaults::new(),
+            modes: crucible_lua::ModeRegistry::new(),
             session_overrides: Arc::new(DashMap::new()),
             pending_modes: Arc::new(DashMap::new()),
             model_cache: Arc::new(DashMap::new()),
@@ -961,6 +972,57 @@ impl AgentManager {
     pub fn with_runtimepath(mut self, runtimepath: Vec<PathBuf>) -> Self {
         self.runtimepath = runtimepath;
         self
+    }
+
+    /// Modes available to `session_id`, as the ACP-facing state.
+    ///
+    /// Built from the Lua registry; falls back to the shipped Rust definitions
+    /// when nothing declared any — a broken defaults file must not leave a
+    /// session with zero modes, which would make `set_mode` reject everything.
+    pub fn session_modes(
+        &self,
+        session_id: &str,
+    ) -> crucible_core::types::acp::schema::SessionModeState {
+        use crucible_core::types::acp::schema::{SessionMode, SessionModeId, SessionModeState};
+        use crucible_core::types::mode::default_internal_modes;
+        let _vm = self.get_or_create_session_state(session_id);
+        let declared = self.modes.all();
+        if declared.is_empty() {
+            return default_internal_modes();
+        }
+        let current = declared
+            .first()
+            .map(|m| m.name.clone())
+            .unwrap_or_else(|| "normal".to_string());
+        let available = declared
+            .into_iter()
+            .map(|m| {
+                let title = {
+                    let mut c = m.name.chars();
+                    match c.next() {
+                        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                        None => m.name.clone(),
+                    }
+                };
+                let mode = SessionMode::new(SessionModeId::new(m.name.as_str()), title);
+                match m.description {
+                    Some(d) => mode.description(d),
+                    None => mode,
+                }
+            })
+            .collect();
+        SessionModeState::new(SessionModeId::new(current.as_str()), available)
+    }
+
+    /// The permission stance a mode declares, if any.
+    ///
+    /// Test-only accessor. The gate deliberately reads the stance from the
+    /// TURN's snapshotted registry (`AgentStreamConfig::modes`), not from the
+    /// live one, so a mid-turn redefinition cannot reshape a turn already in
+    /// progress — routing it through here would defeat that.
+    #[cfg(test)]
+    pub(crate) fn mode_stance(&self, mode_id: &str) -> Option<crucible_lua::ModeStance> {
+        self.modes.get(mode_id).map(|m| m.permissions)
     }
 
     pub fn invalidate_model_cache(&self) {

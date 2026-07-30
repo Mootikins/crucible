@@ -362,6 +362,7 @@ fn vt100_spinner_no_leak_tick_per_event() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     vt.render_frame(&mut app); // thinking + tool in viewport, spinner may show
 
@@ -380,6 +381,7 @@ fn vt100_spinner_no_leak_tick_per_event() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     vt.render_frame(&mut app);
 
@@ -464,6 +466,7 @@ fn vt100_scrollback_no_spinner_after_permission_graduation() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     vt.render_frame(&mut app);
 
@@ -684,6 +687,7 @@ fn reproduce_permission_modal_spinner_leak() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     vt.render_frame(&mut app);
 
@@ -721,6 +725,7 @@ fn reproduce_permission_modal_spinner_leak() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     vt.render_frame(&mut app);
 
@@ -752,6 +757,7 @@ fn reproduce_permission_modal_spinner_leak() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     vt.render_frame(&mut app);
 

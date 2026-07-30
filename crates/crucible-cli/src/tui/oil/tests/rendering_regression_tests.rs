@@ -26,6 +26,7 @@ fn cancelled_stream_graduates_all_containers() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
 
     // Cancel mid-stream
@@ -209,6 +210,7 @@ fn no_triple_blanks_tool_heavy_conversation() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "read_file".into(),
@@ -229,6 +231,7 @@ fn no_triple_blanks_tool_heavy_conversation() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "bash".into(),
@@ -272,6 +275,7 @@ fn no_triple_blanks_thinking_then_tools_then_text() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "read_file".into(),
@@ -389,6 +393,7 @@ fn multiple_thinking_blocks_render_without_duplication() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "bash".into(),
@@ -443,6 +448,7 @@ fn continuation_after_tool_has_no_bullet() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "read_file".into(),

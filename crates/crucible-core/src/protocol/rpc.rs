@@ -152,6 +152,7 @@ impl SessionEventMessage {
             None,
             None,
             Vec::new(),
+            None,
         )
     }
 
@@ -165,6 +166,7 @@ impl SessionEventMessage {
         source: Option<String>,
         lua_primary_arg: Option<String>,
         diffs: Vec<crate::types::acp::FileDiff>,
+        auto_approved: Option<String>,
     ) -> Self {
         let tool_name = tool.into();
         let mut data = serde_json::json!({
@@ -188,6 +190,12 @@ impl SessionEventMessage {
             display.primary = Some(pa);
         }
         data["display"] = serde_json::to_value(&display).unwrap_or(Value::Null);
+        // Which layer granted permission without asking, if any. Rides on this
+        // event rather than a follow-up: the gate decides BEFORE the card is
+        // emitted, so a separate event would only make the marker pop in late.
+        if let Some(reason) = auto_approved {
+            data["auto_approved"] = serde_json::json!(reason);
+        }
         if !diffs.is_empty() {
             data["diffs"] = serde_json::to_value(&diffs).unwrap_or(Value::Null);
         }
@@ -211,32 +219,6 @@ impl SessionEventMessage {
             serde_json::json!({
                 "call_id": call_id.into(),
                 "diffs": diffs,
-            }),
-        )
-    }
-
-    /// A permission that was granted without asking the user.
-    ///
-    /// Auto-approval is invisible otherwise: the tool runs and its card looks
-    /// exactly like one that never needed permission at all. In auto mode
-    /// that means no record that anything was granted on the user's behalf,
-    /// which is the wrong default for a security-relevant decision.
-    ///
-    /// `reason` names the layer that decided (`"auto mode"`, `"pattern"`,
-    /// `"config"`), so the UI can say *why* rather than just *that*.
-    pub fn tool_auto_approved(
-        session_id: impl Into<String>,
-        call_id: impl Into<String>,
-        tool: impl Into<String>,
-        reason: impl Into<String>,
-    ) -> Self {
-        Self::new(
-            session_id,
-            "tool_auto_approved",
-            serde_json::json!({
-                "call_id": call_id.into(),
-                "tool": tool.into(),
-                "reason": reason.into(),
             }),
         )
     }
@@ -778,6 +760,7 @@ mod tests {
             None,
             None,
             diffs.clone(),
+            None,
         );
 
         // Round-trip the JSON line as the daemon emits and TUI parses.

@@ -234,6 +234,10 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                 },
                 None => Vec::new(),
             };
+            let auto_approved = data
+                .get("auto_approved")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             vec![ChatAppMsg::ToolCall {
                 name,
                 args,
@@ -242,6 +246,7 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                 source,
                 lua_primary_arg,
                 diffs,
+                auto_approved,
             }]
         }
         "tool_call_diff_update" => {
@@ -273,21 +278,6 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                 return Vec::new();
             }
             vec![ChatAppMsg::ToolCallDiffUpdate { call_id, diffs }]
-        }
-        "tool_auto_approved" => {
-            let Some(call_id) = data
-                .get("call_id")
-                .and_then(|v| v.as_str())
-                .map(String::from)
-            else {
-                return Vec::new();
-            };
-            let reason = data
-                .get("reason")
-                .and_then(|v| v.as_str())
-                .unwrap_or("policy")
-                .to_string();
-            vec![ChatAppMsg::ToolAutoApproved { call_id, reason }]
         }
         "tool_result" => {
             let name = data

@@ -60,6 +60,7 @@ fn deny_emits_deny_and_turn_continues_with_error() {
         source: Some("Core".into()),
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     let _ = open_permission(&mut story, "req-1", &["rm", "-rf", "/"]);
 

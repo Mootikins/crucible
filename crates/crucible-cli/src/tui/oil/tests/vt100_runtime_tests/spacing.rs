@@ -130,6 +130,7 @@ fn vt100_runtime_consecutive_tools_no_phantom_blank() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "read_file".into(),
@@ -146,6 +147,7 @@ fn vt100_runtime_consecutive_tools_no_phantom_blank() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "read_file".into(),

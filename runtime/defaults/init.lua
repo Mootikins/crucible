@@ -44,49 +44,69 @@ cru.on("precognition_format", function(ctx, event)
   return table.concat(lines, "\n")
 end)
 
--- Auto mode approves every permission request
+-- The built-in modes
 --
--- "auto" is documented as "Auto-approve all operations", and this hook is
--- what makes that true. It lives in Lua, not the daemon, so the meaning of a
--- mode stays configurable: the daemon supplies `request.mode` and the policy
--- is written here.
+-- A mode is two things: which tools it exposes, and what it does when one of
+-- them needs permission. Both live here, so adding a mode is adding a line
+-- rather than editing the daemon.
 --
--- Runs after the `[permissions]` config and the stored pattern allowlist, so
--- an operator `deny` rule still wins — auto mode skips the *prompt*, it does
--- not override an explicit denial.
+--   tools       "*" or a list of glob patterns ("read_*", "*_search")
+--   permissions "ask" | "allow" | "deny"
 --
--- Override example in your .crucible/lua/init.lua (auto-allow reads always,
--- and keep prompting in auto mode):
+-- These are declarations, not enforcement. The daemon independently filters
+-- plan mode's advertised tool set and refuses plugin tools at dispatch, and
+-- the things that must not be widenable — [permissions] deny rules, workspace
+-- containment, the shell policy — are outside modes entirely and stay
+-- unconditional. Widening a mode here cannot widen those.
+--
+-- Override or extend from your own init.lua, which runs after this file:
+--
+--   cru.modes.review = { tools = { "read_*", "*_search" }, permissions = "ask" }
+--   cru.modes.auto   = nil    -- remove it entirely
+--
+-- For anything CONDITIONAL, a stance is not enough — use a hook, which runs
+-- before the stance and wins:
+--
 --   cru.permissions.on_request(function(request)
---     if request.tool_name == "read_file" then return { allow = true } end
+--     if request.tool_name == "bash" then return { deny = true } end
 --     return nil
 --   end)
---
--- Your hook wins: the gate is first-match-wins ordered by `priority` (lower
--- first), and this one registers at 1000 while the default for anything you
--- write is 100. Registering later in load order is therefore NOT a
--- disadvantage — before priority existed, it made overriding impossible.
-cru.permissions.on_request(function(request)
-  if request.mode == "auto" then
-    return { allow = true }
-  end
-  return nil
-end, { priority = 1000 })
+cru.modes.normal = {
+  description = "Full read/write access",
+  tools = "*",
+  permissions = "ask",
+}
+
+-- Plan's stance is "ask", not "deny", because its real rule is CONDITIONAL
+-- and a stance can only be static: plan forbids mutation, not reading, and an
+-- agent card's `ask` policy can push a read-only tool through the gate. The
+-- hook below expresses that. This is the split the two tiers exist for.
+cru.modes.plan = {
+  description = "Read-only exploration",
+  tools = {
+    "read_*", "list_*", "get_*", "*_search", "glob", "grep", "skill_view",
+  },
+  permissions = "ask",
+}
+
+cru.modes.auto = {
+  description = "Auto-approve all operations",
+  tools = "*",
+  permissions = "allow",
+}
 
 -- Plan mode denies anything that could mutate
 --
--- The daemon enforces this too and does NOT depend on this hook: plan mode
--- filters the advertised tool set, and refuses plugin tools at dispatch. That
--- is the fail-closed floor — if this file fails to load, plan mode is still
--- safe. The rule is stated here as well so mode policy is legible and
--- extensible in ONE place, next to auto mode, instead of half-visible in Lua
--- and half-buried in Rust.
---
--- Widening it here cannot widen the floor. Narrowing it works.
---
 -- `request.is_safe` is the daemon's own read-only classification. Read-only
 -- tools normally never reach the gate, but an agent card's `ask` policy can
--- force one through, and denying a read in plan mode would be wrong.
+-- force one through, and denying a read in plan mode would be wrong — which
+-- is exactly why this is a hook and not `permissions = "deny"`.
+--
+-- The daemon enforces plan mode independently (it filters the advertised tool
+-- set and refuses plugin tools at dispatch), so this is the legible statement
+-- of the rule, not the thing holding it up.
+--
+-- Registered at priority 1000 so your own hooks are asked first.
 cru.permissions.on_request(function(request)
   if request.mode == "plan" and not request.is_safe then
     return { deny = true }

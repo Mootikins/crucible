@@ -49,6 +49,7 @@ fn e2e_full_conversation_render() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     vt.render_frame(&mut app);
     let out = strip_ansi(&vt.full_history());
@@ -79,6 +80,7 @@ fn e2e_full_conversation_render() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "Glob".into(),
@@ -146,6 +148,7 @@ fn debug_continuation_flag() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "Bash".into(),
@@ -194,6 +197,7 @@ fn debug_continuation_rendering() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "Bash".into(),
@@ -250,6 +254,7 @@ fn debug_full_view_rendering() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "Bash".into(),
@@ -419,6 +424,7 @@ fn e2e_multi_turn_graduation() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     vt.render_frame(&mut app);
 
@@ -548,6 +554,7 @@ fn e2e_tool_multiline_output() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultDelta {
         name: "Bash".into(),
@@ -596,6 +603,7 @@ fn e2e_tool_error_rendering() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultError {
         name: "Bash".into(),
@@ -719,6 +727,7 @@ fn e2e_rapid_tool_calls_group() {
             source: None,
             lua_primary_arg: None,
             diffs: Vec::new(),
+            auto_approved: None,
         });
         app.on_message(ChatAppMsg::ToolResultComplete {
             name,
@@ -880,6 +889,7 @@ fn e2e_cancel_during_tool_execution() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     vt.render_frame(&mut app);
 
@@ -1270,6 +1280,7 @@ fn all_container_types_render_at_all_widths() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(ChatAppMsg::ToolResultComplete {
         name: "Bash".into(),

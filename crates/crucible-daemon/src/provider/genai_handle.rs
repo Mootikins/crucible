@@ -348,6 +348,9 @@ pub struct GenaiAgentHandle {
     tools: Vec<LlmToolDefinition>,
     mode_state: SessionModeState,
     current_mode_id: String,
+    /// Lua-declared modes, for the per-request tool filter. `None` (tests,
+    /// direct constructions) keeps the shipped plan-mode behaviour.
+    modes: Option<crucible_lua::ModeRegistry>,
     mode_context_sent: bool,
     max_tool_depth: usize,
     thinking_budget: Option<i64>,
@@ -708,6 +711,15 @@ impl GenaiAgentHandle {
         )
     }
 
+    /// Attach the Lua mode registry, so a declared mode's `tools` selector
+    /// becomes the per-request filter. Without it the handle keeps the shipped
+    /// plan-mode behaviour — a missing registry must restrict, not open up.
+    #[must_use]
+    pub fn with_modes(mut self, modes: crucible_lua::ModeRegistry) -> Self {
+        self.modes = Some(modes);
+        self
+    }
+
     /// Construct a handle with an explicit workspace root used for
     /// resolving relative file paths in synthesized diffs. The
     /// daemon's `agent_factory` calls this with the session's
@@ -734,6 +746,7 @@ impl GenaiAgentHandle {
             tools,
             mode_state,
             current_mode_id,
+            modes: None,
             mode_context_sent: false,
             max_tool_depth: usize::MAX,
             thinking_budget,
@@ -775,14 +788,32 @@ impl GenaiAgentHandle {
     /// request so runtime `context_budget` changes are respected.
     fn visible_tools(&self) -> VisibleToolSet {
         let in_plan = self.current_mode_id == "plan";
+        // A declared mode's `tools` selector narrows the set first. It can only
+        // narrow: plan's write-name blocklist and the plugin-tool exclusion
+        // below still apply on top, so a mode cannot widen its way past the
+        // floor.
+        let mode_selector = self
+            .modes
+            .as_ref()
+            .and_then(|m| m.get(&self.current_mode_id))
+            .map(|m| m.tools);
 
         // Native attach candidates after the plan-mode filter: the write-name
         // blocklist for built-ins, plus every plugin tool (unknown side
         // effects — plan mode fails closed on them). This set still contains
         // gateway tools; the budget trigger is computed over it so a large
         // upstream tool set forces deferral even in plan mode.
+        let selected: Vec<LlmToolDefinition> = match &mode_selector {
+            Some(selector) => self
+                .tools
+                .iter()
+                .filter(|t| selector.matches(&t.function.name))
+                .cloned()
+                .collect(),
+            None => self.tools.clone(),
+        };
         let write_filtered: Vec<LlmToolDefinition> = if in_plan {
-            self.tools
+            selected
                 .iter()
                 .filter(|t| {
                     !is_write_tool_name(&t.function.name)
@@ -791,7 +822,7 @@ impl GenaiAgentHandle {
                 .cloned()
                 .collect()
         } else {
-            self.tools.clone()
+            selected
         };
 
         if self.deferrable_tool_names.is_empty() {

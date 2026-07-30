@@ -29,6 +29,8 @@ fn init_lua_builtin_loads_against_the_session_vm_surface() {
     .expect("register_permission_hook_api failed");
     crucible_lua::register_session_defaults(&lua, crucible_lua::SessionDefaults::new())
         .expect("register_session_defaults failed");
+    crucible_lua::register_modes(&lua, crucible_lua::ModeRegistry::new())
+        .expect("register_modes failed");
 
     lua.load(crucible_lua::BUILTIN_INIT_LUA)
         .exec()

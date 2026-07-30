@@ -38,6 +38,10 @@ pub struct CreateInternalMcpToolDefsParams<'a> {
     pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
     pub delegation_context: Option<DelegationContext>,
     pub mode: &'a str,
+    /// Lua-declared modes. `None` (tests, callers with no daemon registry)
+    /// falls back to the shipped definitions, so a missing registry restricts
+    /// plan mode rather than opening it.
+    pub modes: Option<&'a crucible_lua::ModeRegistry>,
     pub gateway_all_tools_override: Option<&'a [McpToolInfo]>,
     /// Agent-card tool policy: tools marked Deny are never advertised.
     pub tool_policy: Option<&'a crucible_core::agent::ToolPolicyMap>,
@@ -47,6 +51,9 @@ pub struct CreateInternalMcpToolDefsParams<'a> {
 
 /// Parameters for creating an agent from session configuration.
 pub struct CreateAgentFromSessionConfigParams<'a> {
+    /// Lua-declared modes, so a declared mode's `tools` selector filters the
+    /// live tool set. `None` keeps the shipped plan-mode behaviour.
+    pub modes: Option<crucible_lua::ModeRegistry>,
     pub agent_config: &'a SessionAgent,
     pub lua: Option<&'a Lua>,
     pub workspace: &'a Path,
@@ -118,6 +125,7 @@ async fn create_internal_mcp_tool_defs(
     std::collections::HashSet<String>,
 ) {
     let CreateInternalMcpToolDefsParams {
+        modes,
         workspace,
         kiln_path,
         mcp_gateway,
@@ -150,7 +158,7 @@ async fn create_internal_mcp_tool_defs(
         );
         for tool in server.list_tools() {
             let tool_name = tool.name.to_string();
-            if mode == "plan" && !is_plan_mode_tool(&tool_name) {
+            if !mode_exposes_tool(modes, mode, &tool_name) {
                 continue;
             }
             if denied(&tool_name) {
@@ -179,7 +187,7 @@ async fn create_internal_mcp_tool_defs(
     // Add workspace tools (bash, read_file, edit_file, write_file, glob, grep)
     for tool in crate::tools::workspace::WorkspaceTools::tool_definitions() {
         let tool_name = tool.name.to_string();
-        if mode == "plan" && !is_plan_mode_tool(&tool_name) {
+        if !mode_exposes_tool(modes, mode, &tool_name) {
             continue;
         }
         if denied(&tool_name) {
@@ -264,8 +272,21 @@ async fn create_internal_mcp_tool_defs(
     (tool_defs, deferrable_names, plugin_tool_names)
 }
 
-fn is_plan_mode_tool(name: &str) -> bool {
-    crate::tools::tool_modes::PLAN_TOOL_NAMES.contains(&name)
+/// Whether `mode` exposes `name`.
+///
+/// Consults the Lua registry when the mode is declared there, so a
+/// user-defined mode filters tools without any Rust change. Falls back to the
+/// shipped read-only list for plan, and to "everything" otherwise — the
+/// fallback matters: a daemon whose Lua failed to load must still restrict
+/// plan mode rather than silently opening it up.
+fn mode_exposes_tool(modes: Option<&crucible_lua::ModeRegistry>, mode: &str, name: &str) -> bool {
+    if let Some(definition) = modes.and_then(|m| m.get(mode)) {
+        return definition.tools.matches(name);
+    }
+    if mode == "plan" {
+        return crate::tools::tool_modes::PLAN_TOOL_NAMES.contains(&name);
+    }
+    true
 }
 
 #[cfg(test)]
@@ -283,6 +304,7 @@ async fn create_internal_mcp_tool_names_for_tests(
 ) -> Vec<String> {
     let (tools, _deferrable, _plugin_names) =
         create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+            modes: None,
             workspace,
             kiln_path,
             mcp_gateway,
@@ -507,6 +529,7 @@ pub async fn create_agent_from_session_config(
     params: CreateAgentFromSessionConfigParams<'_>,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>, AgentFactoryError> {
     let CreateAgentFromSessionConfigParams {
+        modes,
         agent_config,
         lua,
         workspace,
@@ -559,6 +582,7 @@ pub async fn create_agent_from_session_config(
     );
     let (tool_defs, deferrable_tool_names, plugin_tool_names) =
         create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+            modes: modes.as_ref(),
             workspace,
             kiln_path,
             mcp_gateway: mcp_gateway.clone(),
@@ -610,6 +634,10 @@ pub async fn create_agent_from_session_config(
     )
     .with_deferrable_tools(deferrable_tool_names)
     .with_plugin_tools(plugin_tool_names);
+    let handle = match modes.clone() {
+        Some(registry) => handle.with_modes(registry),
+        None => handle,
+    };
 
     info!(
         provider = %agent_config.provider,
@@ -763,6 +791,7 @@ mod tests {
 
         let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
             create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+                modes: None,
                 agent_config: &config,
                 lua: None,
                 workspace: Path::new("/tmp"),
@@ -838,6 +867,7 @@ mod tests {
         ));
         let (defs, deferrable, _plugin_names) =
             create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+                modes: None,
                 workspace: Path::new("/tmp"),
                 kiln_path: Some(Path::new("/tmp")),
                 mcp_gateway: Some(gateway),
@@ -937,6 +967,7 @@ mod tests {
     async fn test_create_ollama_agent() {
         let config = test_agent_config();
         let result = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+            modes: None,
             agent_config: &config,
             lua: None,
             workspace: Path::new("/tmp"),
@@ -965,6 +996,7 @@ mod tests {
         assert_eq!(config.agent_type, "internal");
 
         let result = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+            modes: None,
             agent_config: &config,
             lua: None,
             workspace: Path::new("/tmp"),
@@ -995,6 +1027,7 @@ mod tests {
         config.agent_type = "acp".to_string();
 
         let result = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+            modes: None,
             agent_config: &config,
             lua: None,
             workspace: Path::new("/tmp"),
@@ -1114,6 +1147,7 @@ mod tests {
 
         let (tools, _deferrable, _plugin_names) =
             create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+                modes: None,
                 workspace: Path::new("/tmp"),
                 kiln_path: Some(kiln_path),
                 mcp_gateway: None,
@@ -1173,6 +1207,7 @@ mod tests {
 
         let (tools, deferrable, _plugin_names) =
             create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+                modes: None,
                 workspace: Path::new("/tmp"),
                 kiln_path: Some(temp_dir.path()),
                 mcp_gateway: None,
@@ -1220,6 +1255,7 @@ mod tests {
 
         let (tools, _deferrable, plugin_names) =
             create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+                modes: None,
                 workspace: Path::new("/tmp"),
                 kiln_path: Some(temp_dir.path()),
                 mcp_gateway: None,
@@ -1254,6 +1290,7 @@ mod tests {
 
         let (tools, _deferrable, _plugin_names) =
             create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
+                modes: None,
                 workspace: Path::new("/tmp"),
                 kiln_path: Some(kiln_path),
                 mcp_gateway: None,

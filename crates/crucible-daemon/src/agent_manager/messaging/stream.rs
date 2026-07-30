@@ -476,6 +476,9 @@ impl AgentManager {
                                 Some("acp".to_string()),
                                 None,
                                 diffs,
+                                // The ACP agent ran its own gate in its own
+                                // process; we granted nothing here.
+                                None,
                             ),
                         ) {
                             warn!(

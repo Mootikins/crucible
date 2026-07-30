@@ -246,6 +246,7 @@ fn styled_snapshot_tool_call() {
         source: None,
         lua_primary_arg: None,
         diffs: Vec::new(),
+        auto_approved: None,
     });
     app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ToolResultDelta {
         name: "Read File".into(),

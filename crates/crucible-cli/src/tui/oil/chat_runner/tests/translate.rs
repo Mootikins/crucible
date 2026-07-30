@@ -360,3 +360,37 @@ async fn consumer_promotes_ended_error_in_both_modes() {
         consumer.abort();
     }
 }
+
+/// The auto-approval marker rides on `tool_call` rather than arriving as a
+/// follow-up event. The gate decides before this event is emitted, so a
+/// separate event would only make the badge appear a beat after the row.
+#[test]
+fn tool_call_carries_the_auto_approval_reason() {
+    let data = serde_json::json!({
+        "call_id": "c1",
+        "tool": "bash",
+        "args": {"command": "ls"},
+        "auto_approved": "auto mode",
+    });
+    let msgs = session_event_to_chat_msgs("tool_call", &data);
+    match msgs.as_slice() {
+        [ChatAppMsg::ToolCall { auto_approved, .. }] => {
+            assert_eq!(auto_approved.as_deref(), Some("auto mode"));
+        }
+        other => panic!("expected single ToolCall, got {other:?}"),
+    }
+}
+
+#[test]
+fn tool_call_without_auto_approval_carries_none() {
+    let data = serde_json::json!({
+        "call_id": "c1",
+        "tool": "bash",
+        "args": {"command": "ls"},
+    });
+    let msgs = session_event_to_chat_msgs("tool_call", &data);
+    match msgs.as_slice() {
+        [ChatAppMsg::ToolCall { auto_approved, .. }] => assert_eq!(*auto_approved, None),
+        other => panic!("expected single ToolCall, got {other:?}"),
+    }
+}

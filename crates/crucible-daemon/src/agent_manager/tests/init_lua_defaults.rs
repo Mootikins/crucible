@@ -61,17 +61,16 @@ fn tool_request(mode: &str) -> PermissionRequest {
     }
 }
 
+/// Auto's approval is a mode STANCE now, not a hook, so no hook answers for
+/// it — the gate applies the stance after the hooks decline. The stance itself
+/// is asserted in `the_auto_mode_stance_is_allow_and_plan_is_deny`.
 #[tokio::test]
-async fn auto_mode_approves_a_permission_request_without_prompting() {
+async fn auto_mode_registers_no_permission_hook() {
     let (_tmp, agent_manager, session_id) = session_with_defaults().await;
 
     let result = run_permission_hooks(&agent_manager, &session_id, tool_request("auto")).await;
 
-    assert_eq!(
-        result,
-        PermissionHookResult::Allow,
-        "auto mode is documented as 'Auto-approve all operations'"
-    );
+    assert_eq!(result, PermissionHookResult::Prompt);
 }
 
 #[tokio::test]
@@ -469,4 +468,163 @@ async fn the_shipped_permission_hook_registers_behind_user_hooks() {
             hook.name
         );
     }
+}
+
+// ── Modes declared in Lua ────────────────────────────────────────────────
+
+#[tokio::test]
+async fn the_shipped_modes_are_declared_in_lua() {
+    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+
+    let modes = agent_manager.session_modes(&session_id);
+    let ids: Vec<String> = modes
+        .available_modes
+        .iter()
+        .map(|m| m.id.0.to_string())
+        .collect();
+
+    assert_eq!(
+        ids,
+        vec!["normal", "plan", "auto"],
+        "the built-ins now come from runtime/defaults/init.lua, in declaration order"
+    );
+}
+
+/// A mode a user invents must be selectable. Before the registry, `set_mode`
+/// validated against a hardcoded list, so a mode you could define was a mode
+/// you could never enter.
+#[tokio::test]
+async fn a_user_defined_mode_can_be_selected() {
+    let tmp = TempDir::new().unwrap();
+    let lua_dir = tmp.path().join(".crucible/lua");
+    std::fs::create_dir_all(&lua_dir).unwrap();
+    std::fs::write(
+        lua_dir.join("init.lua"),
+        r#"cru.modes.review = {
+             description = "Read-only review",
+             tools = { "read_*", "*_search" },
+             permissions = "ask",
+           }"#,
+    )
+    .unwrap();
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+    agent_manager
+        .configure_agent(&session.id, test_agent())
+        .await
+        .unwrap();
+
+    agent_manager
+        .set_mode(&session.id, "review", None)
+        .await
+        .expect("a Lua-declared mode must be selectable");
+
+    assert_eq!(
+        session_manager
+            .get_session(&session.id)
+            .unwrap()
+            .agent
+            .unwrap()
+            .mode
+            .as_deref(),
+        Some("review")
+    );
+}
+
+#[tokio::test]
+async fn an_undeclared_mode_is_still_rejected() {
+    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+
+    let err = agent_manager
+        .set_mode(&session_id, "nonsense", None)
+        .await
+        .expect_err("an undeclared mode must be rejected");
+
+    assert!(err.to_string().contains("unknown mode"), "got: {err}");
+}
+
+/// A mode can be deleted outright, which is the point of shadowing the
+/// defaults file rather than merely layering on top of it.
+#[tokio::test]
+async fn a_shipped_mode_can_be_removed() {
+    let tmp = TempDir::new().unwrap();
+    let lua_dir = tmp.path().join(".crucible/lua");
+    std::fs::create_dir_all(&lua_dir).unwrap();
+    std::fs::write(lua_dir.join("init.lua"), "cru.modes.auto = nil").unwrap();
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    let agent_manager = Arc::new(create_test_agent_manager(session_manager));
+
+    let ids: Vec<String> = agent_manager
+        .session_modes(&session.id)
+        .available_modes
+        .iter()
+        .map(|m| m.id.0.to_string())
+        .collect();
+    assert_eq!(ids, vec!["normal", "plan"]);
+}
+
+/// The stance replaces the hand-written auto/plan permission hooks.
+#[test_case::test_case("auto", PermissionHookResult::Prompt; "auto defers to the stance, not a hook")]
+#[test_case::test_case("normal", PermissionHookResult::Prompt; "normal prompts")]
+#[tokio::test]
+async fn shipped_modes_register_no_permission_hooks(mode: &str, expected: PermissionHookResult) {
+    // With modes carrying the stance, the defaults file registers NO permission
+    // hooks at all — the auto/plan behaviour is data now. Hooks stay available
+    // for conditional policy, which is why "Prompt" (no hook had an opinion) is
+    // the right answer here; the stance is applied later, in the gate.
+    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let state = agent_manager.get_or_create_session_state(&session_id);
+    let guard = state.lock().await;
+    let hooks = guard.permission_hooks.lock().unwrap();
+    let functions = guard.permission_functions.lock().unwrap();
+
+    let result =
+        crucible_lua::execute_permission_hooks(&guard.lua, &hooks, &functions, &tool_request(mode))
+            .unwrap();
+    assert_eq!(result, expected);
+}
+
+#[tokio::test]
+async fn the_auto_mode_stance_is_allow_and_plan_is_deny() {
+    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let _vm = agent_manager.get_or_create_session_state(&session_id);
+
+    assert_eq!(
+        agent_manager.mode_stance("auto"),
+        Some(crucible_lua::ModeStance::Allow)
+    );
+    assert_eq!(
+        agent_manager.mode_stance("plan"),
+        Some(crucible_lua::ModeStance::Ask),
+        "plan's real rule is conditional on is_safe, so it lives in a hook; a \
+         blunt deny stance would refuse reads an agent card pushed through"
+    );
+    assert_eq!(
+        agent_manager.mode_stance("normal"),
+        Some(crucible_lua::ModeStance::Ask)
+    );
 }
