@@ -46,24 +46,85 @@ if crucible and type(crucible.on) == "function" then
   end)
 end
 
--- Session start hook
+-- Auto mode approves every permission request
 --
--- Fires when a new session begins. Useful for setting per-session defaults.
+-- "auto" is documented as "Auto-approve all operations", and this hook is
+-- what makes that true. It lives in Lua, not the daemon, so the meaning of a
+-- mode stays configurable: the daemon supplies `request.mode` and the policy
+-- is written here.
 --
--- Override example in your .crucible/lua/init.lua:
---   crucible.on_session_start(function(session)
---     session.temperature = 0.3
+-- Runs after the `[permissions]` config and the stored pattern allowlist, so
+-- an operator `deny` rule still wins — auto mode skips the *prompt*, it does
+-- not override an explicit denial.
+--
+-- Override example in your .crucible/lua/init.lua (auto-allow reads always,
+-- and keep prompting in auto mode):
+--   crucible.permissions.on_request(function(request)
+--     if request.tool_name == "read_file" then return { allow = true } end
+--     return nil
 --   end)
-if crucible and type(crucible.on_session_start) == "function" then
-  crucible.on_session_start(function(session)
-    session.system_prompt = table.concat({
-      "Answer from the notes and context provided to you.",
-      "If information isn't in your context, say so — do not fabricate.",
-      "Reference notes by their title.",
+if crucible and crucible.permissions and type(crucible.permissions.on_request) == "function" then
+  crucible.permissions.on_request(function(request)
+    if request.mode == "auto" then
+      return { allow = true }
+    end
+    return nil
+  end)
+end
+
+-- Default system prompt
+--
+-- Injected as a system message at the front of the conversation when the
+-- session's agent has none of its own. An agent card's `system_prompt` takes
+-- precedence — `event.system_prompt` is non-empty in that case and this
+-- handler stands down rather than sending two competing sets of instructions.
+--
+-- Override in your .crucible/lua/init.lua by registering your own
+-- transform_context handler (yours runs after this one, so it can replace the
+-- injected message), or by giving the session an agent card with a
+-- system_prompt.
+if crucible and type(crucible.on) == "function" then
+  crucible.on("transform_context", function(ctx, event)
+    local payload = event.payload or event
+    local messages = payload and payload.messages
+    if type(messages) ~= "table" then
+      return nil
+    end
+
+    -- An agent card's prompt is passed to the provider separately, so it is
+    -- NOT visible in `messages` — check the payload field, not the array.
+    local card_prompt = payload.system_prompt
+    if type(card_prompt) == "string" and card_prompt ~= "" then
+      return nil
+    end
+
+    for _, message in ipairs(messages) do
+      if message.role == "system" then
+        return nil
+      end
+    end
+
+    local prompt = table.concat({
+      "You are Crucible, a knowledge-grounded agent working alongside the user.",
       "",
-      "Be brief. Answer in plain prose — 3-5 sentences unless asked for detail.",
-      "No headers, no numbered lists, no code blocks.",
+      "Ground your answers in the notes and context you are given. When context",
+      "is missing, say so and offer to look — never invent a note, a path, or a",
+      "quotation. Reference notes by title, and link them with [[wikilinks]] when",
+      "you write to the kiln.",
+      "",
+      "Use your tools rather than guessing: read a file before describing it, and",
+      "verify a change before reporting it done. Prefer one decisive action over a",
+      "list of options.",
+      "",
+      "Be concise. Match the depth of the question — a short question gets a short",
+      "answer, and code or structure only when it earns its place.",
     }, "\n")
+
+    local out = { { role = "system", content = prompt } }
+    for _, message in ipairs(messages) do
+      table.insert(out, message)
+    end
+    return { messages = out }
   end)
 end
 

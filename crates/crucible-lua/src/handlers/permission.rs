@@ -29,6 +29,12 @@ pub struct PermissionRequest {
     pub args: JsonValue,
     /// File path if applicable
     pub file_path: Option<String>,
+    /// Session mode for the turn making this request ("normal" | "plan" |
+    /// "auto"). Carried so the *policy* for a mode can live in Lua rather
+    /// than being hard-coded in the daemon — the built-in `auto` auto-approve
+    /// is itself just a default hook in `defaults/init.lua`. `None` where no
+    /// mode is in scope (direct API callers, tests).
+    pub mode: Option<String>,
 }
 
 /// Stored permission hook callback
@@ -43,7 +49,10 @@ pub struct PermissionHook {
 ///
 /// ```lua
 /// crucible.permissions.on_request(function(request)
-///     -- request.tool_name, request.args, request.file_path
+///     -- request.tool_name, request.args, request.file_path, request.mode
+///     if request.mode == "auto" then
+///         return {allow=true}  -- Auto mode approves everything
+///     end
 ///     if request.tool_name == "bash" and string.match(request.args.command, "^npm ") then
 ///         return {allow=true}  -- Auto-allow npm commands
 ///     end
@@ -130,6 +139,9 @@ pub fn execute_permission_hooks(
     request_table.set("args", lua.to_value(&request.args)?)?;
     if let Some(ref path) = request.file_path {
         request_table.set("file_path", path.as_str())?;
+    }
+    if let Some(ref mode) = request.mode {
+        request_table.set("mode", mode.as_str())?;
     }
 
     for hook in hooks {
