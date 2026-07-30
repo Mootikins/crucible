@@ -443,15 +443,8 @@ impl AgentManager {
                 terminate: false,
             });
         }
-        let requires_gate = match card_policy {
-            Some(ToolPolicy::Allow) => false,
-            Some(ToolPolicy::Ask) => true,
-            Some(ToolPolicy::Deny) => unreachable!("denied above"),
-            None => !is_safe(
-                &tool_call.name,
-                &stream_ctx.agent_stream_config.mcp_read_only_tools,
-            ),
-        };
+        let requires_gate =
+            super::gate_decision::requires_permission_gate(card_policy, &tool_call.name);
 
         // A card's `allow` skips the PROMPT, never the operator's config:
         // the global `[permissions]` deny rules are absolute even for

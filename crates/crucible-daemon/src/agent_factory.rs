@@ -286,11 +286,19 @@ fn mode_exposes_tool(modes: Option<&crucible_lua::ModeRegistry>, mode: &str, nam
     if mode == "plan" {
         return crate::tools::tool_modes::PLAN_TOOL_NAMES.contains(&name);
     }
-    // A registry is attached but does not know this mode — the session is in
-    // a mode whose declaration has gone away. Fail CLOSED to the read-only
-    // set rather than advertising everything: an unknown mode used to be the
-    // most permissive one, which turned deleting a restrictive declaration
-    // into a privilege escalation.
+    // A mode the daemon ships needs no declaration to be legitimate. This is
+    // the ordinary un-configured state: defaults not yet loaded, failed to
+    // parse, or shadowed by a runtimepath entry. Keying the branch below on
+    // `is_some()` alone caught it and crippled every agent — `PLAN_TOOL_NAMES`
+    // has no workspace tools at all, so `read_file`, `grep` and `bash` all
+    // silently vanished.
+    if crate::tools::tool_modes::is_builtin_mode(mode) {
+        return true;
+    }
+    // A mode that is neither declared nor built in has gone away. Fail CLOSED
+    // to the read-only set rather than advertising everything: an unknown mode
+    // used to be the most permissive one, which turned deleting a restrictive
+    // declaration into a privilege escalation.
     if modes.is_some() {
         return crate::tools::tool_modes::PLAN_TOOL_NAMES.contains(&name);
     }
@@ -1351,28 +1359,19 @@ mod tests {
         // These assertions test the current state of is_safe()
         // Some may FAIL if is_safe() doesn't have these tool names yet
         assert!(
-            !is_safe("bash", &Default::default()),
+            !is_safe("bash"),
             "bash should be unsafe (runs arbitrary commands)"
         );
+        assert!(is_safe("read_file"), "read_file should be safe (read-only)");
         assert!(
-            is_safe("read_file", &Default::default()),
-            "read_file should be safe (read-only)"
-        );
-        assert!(
-            !is_safe("write_file", &Default::default()),
+            !is_safe("write_file"),
             "write_file should be unsafe (modifies files)"
         );
         assert!(
-            !is_safe("edit_file", &Default::default()),
+            !is_safe("edit_file"),
             "edit_file should be unsafe (modifies files)"
         );
-        assert!(
-            is_safe("glob", &Default::default()),
-            "glob should be safe (read-only)"
-        );
-        assert!(
-            is_safe("grep", &Default::default()),
-            "grep should be safe (read-only)"
-        );
+        assert!(is_safe("glob"), "glob should be safe (read-only)");
+        assert!(is_safe("grep"), "grep should be safe (read-only)");
     }
 }

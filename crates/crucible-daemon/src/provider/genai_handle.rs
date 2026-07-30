@@ -842,7 +842,14 @@ impl GenaiAgentHandle {
         // permitted, so fail CLOSED — apply the same write-tool floor plan
         // mode uses. Returning "no selector" here let the most restrictive
         // mode silently become the most permissive.
-        let mode_unknown = self.modes.is_some() && declared.is_none();
+        // Built-in modes need no declaration: an un-configured daemon (defaults
+        // not yet loaded, failed to parse, shadowed) is in `normal`, and
+        // treating that as "unknown" stripped every agent's tools. Emptiness
+        // cannot be the discriminator — removing the last declaration empties
+        // the registry too.
+        let mode_unknown = self.modes.is_some()
+            && declared.is_none()
+            && !crate::tools::tool_modes::is_builtin_mode(&self.current_mode_id);
         let mode_selector = declared.map(|m| m.tools);
 
         // Native attach candidates after the plan-mode filter: the write-name
@@ -886,12 +893,16 @@ impl GenaiAgentHandle {
         let threshold = (TOOL_SCHEMA_BUDGET_SHARE * effective_budget as f64) as usize;
         let over_budget = tool_schema_tokens(&write_filtered) > threshold;
 
-        // Drop deferrable (gateway/user MCP) tools when either the schemas
-        // exceed the budget share (both modes) or we're in plan mode. Plan mode
-        // excludes upstream tools categorically — fail-closed, because we can't
-        // tell which upstream tools mutate state and plan mode must stay
-        // read-only. The bridge's invoke_tool enforces the same ban.
-        if !over_budget && !in_plan {
+        // Drop deferrable (gateway/user MCP) tools when the schemas exceed the
+        // budget share, in plan mode, or in a mode whose declaration vanished.
+        // Plan mode excludes upstream tools categorically — fail-closed,
+        // because we can't tell which upstream tools mutate state and plan mode
+        // must stay read-only. An unknown mode needs the same treatment for the
+        // same reason: the write-name blocklist above is built from OUR tool
+        // names and matches none of `gh_create_pr`, `jira_delete_issue`,
+        // `linear_update_issue`. The bridge's invoke_tool enforces the ban for
+        // plan; this is the advertisement half.
+        if !over_budget && !in_plan && !mode_unknown {
             return VisibleToolSet {
                 tools: write_filtered,
                 deferred_count: 0,
@@ -2042,6 +2053,40 @@ mod tests {
         assert_eq!(names, vec!["read_file"], "review must not advertise writes");
     }
 
+    /// An EMPTY registry means nothing was declared — not that this session's
+    /// mode vanished — and must leave the tool set alone.
+    ///
+    /// The fail-closed branch for a vanished mode was first keyed on
+    /// "a registry is attached", but one always is on the daemon path. Before a
+    /// session VM has run the Lua defaults — or if that file fails to parse, or
+    /// a runtimepath entry shadows it — the registry is attached and empty, and
+    /// every agent silently lost `read_file`, `grep` and `bash`.
+    #[tokio::test]
+    async fn an_empty_mode_registry_does_not_strip_the_tool_set() {
+        let registry = crucible_lua::ModeRegistry::new();
+        assert!(registry.is_empty());
+
+        let handle = test_handle_with_tools(vec![
+            tool_def("read_file"),
+            tool_def("write_file"),
+            tool_def("bash"),
+        ])
+        .with_modes(registry);
+
+        let names: Vec<String> = handle
+            .visible_tools()
+            .tools
+            .iter()
+            .map(|t| t.function.name.clone())
+            .collect();
+        assert!(
+            names.contains(&"read_file".to_string())
+                && names.contains(&"bash".to_string())
+                && names.contains(&"write_file".to_string()),
+            "nothing was declared, so nothing should be filtered; got {names:?}"
+        );
+    }
+
     /// A mode whose declaration has gone away must not become the most
     /// PERMISSIVE one.
     ///
@@ -2061,9 +2106,19 @@ mod tests {
             permissions: crucible_lua::ModePermissions::default(),
         });
 
-        let mut handle =
-            test_handle_with_tools(vec![tool_def("read_file"), tool_def("write_file")])
-                .with_modes(registry.clone());
+        // `gh_create_pr` is the case the first version of this test missed:
+        // `write_file` is a literal in `is_write_tool_name`, so the assertion
+        // below passed on the name blocklist alone and proved nothing about
+        // upstream tools, whose names we do not control.
+        let mut handle = test_handle_with_tools(vec![
+            tool_def("read_file"),
+            tool_def("write_file"),
+            tool_def("gh_create_pr"),
+        ])
+        .with_deferrable_tools(std::collections::HashSet::from(
+            ["gh_create_pr".to_string()],
+        ))
+        .with_modes(registry.clone());
         handle.set_mode_str("review").await.unwrap();
 
         // The declaration goes away underneath the live session.
@@ -2075,6 +2130,11 @@ mod tests {
             .iter()
             .map(|t| t.function.name.clone())
             .collect();
+        assert!(
+            !names.contains(&"gh_create_pr".to_string()),
+            "an unknown mode must drop upstream tools the way plan does — our \
+             write-name blocklist matches none of their names; got {names:?}"
+        );
         assert!(
             !names.contains(&"write_file".to_string()),
             "a vanished mode must not advertise MORE than it did while declared; got {names:?}"

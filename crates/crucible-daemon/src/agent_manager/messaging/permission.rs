@@ -1131,7 +1131,7 @@ impl AgentManager {
             args: args.clone(),
             file_path,
             mode: Some(session_mode.to_string()),
-            is_safe: crate::agent_manager::is_safe(tool_name, mcp_read_only),
+            is_safe: crate::agent_manager::believed_read_only(tool_name, mcp_read_only),
         };
 
         let state = session_state.lock().await;

@@ -23,3 +23,19 @@ pub const PLAN_TOOL_NAMES: &[&str] = &[
     "list_jobs",
     "skill_view",
 ];
+
+/// The modes the daemon ships and can reason about with no Lua at all.
+///
+/// The discriminator for "is this mode unknown". An empty registry is
+/// ambiguous on its own — it means both "the defaults never loaded" and "the
+/// user removed the last declaration" — so neither emptiness nor
+/// `Option::is_some` can decide it. Membership here can: a session in `normal`
+/// with no Lua is the ordinary un-configured state, while a session in
+/// `review` with no declaration is a mode that went away.
+pub const BUILTIN_MODE_NAMES: &[&str] = &["normal", "plan", "auto"];
+
+/// Whether `name` is a mode the daemon ships.
+#[must_use]
+pub fn is_builtin_mode(name: &str) -> bool {
+    BUILTIN_MODE_NAMES.contains(&name)
+}

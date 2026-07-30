@@ -709,37 +709,46 @@ mod tests {
         manager
     }
 
-    /// The whole point of item 3: a server's `readOnlyHint` reaches `is_safe`,
-    /// so a read-only external tool stops being classified alongside the ones
-    /// that write. Only `Some(true)` counts — silence is not a claim, and an
-    /// explicit `false` is a claim the other way.
+    /// A server's `readOnlyHint` reaches Lua policy — and stops there.
+    ///
+    /// `believed_read_only` is what a hook sees as `request.is_safe`, so a
+    /// policy can tell a read-only upstream tool from one that writes. `is_safe`
+    /// decides whether the permission gate runs at all, and a third party must
+    /// not be able to annotate its way past a mode's `default = "deny"`.
     #[test]
-    fn only_an_explicit_read_only_hint_makes_an_mcp_tool_safe() {
+    fn a_read_only_hint_informs_policy_but_never_skips_the_gate() {
+        use crate::agent_manager::{believed_read_only, is_safe};
+
         let manager = manager_with(vec![
             tool("gh_search_repos", Some(true)),
             tool("gh_create_pr", Some(false)),
             tool("gh_unannotated", None),
         ]);
-
         let read_only = manager.read_only_tool_names();
         assert_eq!(
             read_only,
-            std::collections::HashSet::from(["gh_search_repos".to_string()])
+            std::collections::HashSet::from(["gh_search_repos".to_string()]),
+            "only an explicit readOnlyHint counts — silence is not a claim"
         );
 
-        use crate::agent_manager::is_safe;
         assert!(
-            is_safe("gh_search_repos", &read_only),
-            "a tool the server declared read-only must not require permission"
+            believed_read_only("gh_search_repos", &read_only),
+            "a hook must be able to see what the server declared"
         );
-        assert!(!is_safe("gh_create_pr", &read_only));
+        assert!(!believed_read_only("gh_create_pr", &read_only));
         assert!(
-            !is_safe("gh_unannotated", &read_only),
+            !believed_read_only("gh_unannotated", &read_only),
             "a server that said nothing must not be assumed read-only"
         );
+
+        // The security property. `is_safe` drives `requires_gate`, and a
+        // false here is what keeps the mode stance, the mode rules and every
+        // Lua hook in the path.
         assert!(
-            is_safe("read_file", &read_only),
-            "the built-in list still applies"
+            !is_safe("gh_search_repos"),
+            "an upstream annotation must not skip the permission gate"
         );
+        assert!(!is_safe("gh_create_pr"));
+        assert!(is_safe("read_file"), "the built-in list still applies");
     }
 }

@@ -88,22 +88,22 @@ pub(crate) const MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 /// - `edit` — Edit file content
 /// - `bash` — Execute shell commands
 ///
-/// # External MCP Tools
-///
-/// A hardcoded list cannot classify a tool the operator installed, so
-/// `mcp_read_only` carries the prefixed names of tools whose server declared
-/// `readOnlyHint: true` (see [`crate::tools::mcp_gateway::McpGatewayManager::read_only_tool_names`]).
-/// A server saying nothing is not a server saying "writes": the annotation is
-/// optional, so silence keeps the default-deny below.
-///
 /// # Default-Deny Policy
 ///
 /// Only explicitly safe tools skip the permission prompt.
 /// Everything unknown requires permission.
-pub fn is_safe(tool_name: &str, mcp_read_only: &std::collections::HashSet<String>) -> bool {
-    if mcp_read_only.contains(tool_name) {
-        return true;
-    }
+///
+/// # Why this takes no MCP annotations
+///
+/// This answer decides whether the permission gate runs at all
+/// (`messaging::tool_call`), and skipping the gate skips the session's mode
+/// stance, its mode rules, every Lua `on_request` hook, the saved patterns and
+/// the prompt. So it may only ever widen on something the daemon itself knows.
+/// A tool name and a `readOnlyHint` both come from a third-party MCP server;
+/// letting them widen this would let any upstream annotate its way past a
+/// mode's `default = "deny"`. For what a server *claims*, see
+/// [`believed_read_only`].
+pub fn is_safe(tool_name: &str) -> bool {
     matches!(
         tool_name,
         "read_file"
@@ -121,6 +121,25 @@ pub fn is_safe(tool_name: &str, mcp_read_only: &std::collections::HashSet<String
             | "discover_tools"
             | "get_tool_schema"
     )
+}
+
+/// What we *believe* about a tool, including what its MCP server claims via
+/// `readOnlyHint` (see
+/// [`crate::tools::mcp_gateway::McpGatewayManager::read_only_tool_names`]).
+///
+/// Advisory, and deliberately separate from [`is_safe`]: this is surfaced to
+/// Lua as `request.is_safe` so a policy hook can distinguish a read-only
+/// upstream tool from one that writes — which is the whole point of reading
+/// the annotation. It must never be used to skip the gate; a hook that trusts
+/// it is making that call knowingly, on one tool, in its own policy.
+///
+/// A server that annotates nothing is not a server saying "writes": the
+/// annotation is optional in MCP, so silence falls through to [`is_safe`].
+pub fn believed_read_only(
+    tool_name: &str,
+    mcp_read_only: &std::collections::HashSet<String>,
+) -> bool {
+    is_safe(tool_name) || mcp_read_only.contains(tool_name)
 }
 
 pub(crate) fn resolve_agent_profile(
