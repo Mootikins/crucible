@@ -72,6 +72,16 @@ export const PermissionInteraction: Component<Props> = (props) => {
   const [showDiff, setShowDiff] = createSignal(true);
 
   const actionInfo = () => ACTION_LABELS[props.request.action_type] || ACTION_LABELS.tool;
+
+  // A tool request used to render a generic "Tool" chip AND a "Tool: <name>"
+  // line beneath it — the word twice, the name once, and two lines spent on
+  // one fact. The chip carries the tool's own name instead: it is the thing
+  // that identifies the request, and "Permission Required" beside it already
+  // says what kind of card this is. Non-tool actions keep their verb chip
+  // ("Execute", "Read", "Write"), which is their identifying label.
+  const isNamedTool = () =>
+    props.request.action_type === 'tool' && !!props.request.tool_name;
+  const chipLabel = () => (isNamedTool() ? props.request.tool_name! : actionInfo().label);
   // Two values, deliberately separate: the daemon's permission engine
   // pattern-matches against the EXACT token shape (`tokens.join(' ')`), so
   // the response payload must carry the raw pattern. The display can still
@@ -126,19 +136,16 @@ export const PermissionInteraction: Component<Props> = (props) => {
   return (
     <div class="bg-surface-elevated rounded-lg p-4 mb-4 border border-hairline">
       <div class="flex items-center gap-2 mb-3">
-        <span class={`px-2 py-0.5 text-[11px] font-medium rounded-md ${actionInfo().chip}`}>
-          {actionInfo().label}
+        <span
+          class={`px-2 py-0.5 text-[11px] font-medium rounded-md ${actionInfo().chip} ${isNamedTool() ? 'font-mono' : ''}`}
+          data-testid="perm-action-chip"
+        >
+          {chipLabel()}
         </span>
         <span class="text-[11px] uppercase tracking-wider text-muted-dark font-semibold">
           Permission Required
         </span>
       </div>
-
-      <Show when={props.request.action_type === 'tool' && props.request.tool_name}>
-        <p class="text-shell-body mb-2 text-sm">
-          Tool: <span class="text-shell-ink font-mono">{props.request.tool_name}</span>
-        </p>
-      </Show>
 
       {/* Full tool arguments — everything being approved must be visible */}
       <Show when={toolArgPairs(props.request).length > 0}>

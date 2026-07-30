@@ -177,6 +177,39 @@ describe('PermissionInteraction', () => {
     expect(screen.getByText('Deny')).toBeInTheDocument();
   });
 
+  it('names a tool exactly once, in the action chip', () => {
+    // The card used to carry a generic "Tool" chip plus a "Tool: <name>"
+    // line: the word twice, two lines for one fact.
+    const request: PermRequest = {
+      kind: 'permission',
+      id: 'perm-tool-dup',
+      action_type: 'tool',
+      tokens: [],
+      tool_name: 'write_file',
+      tool_args: { path: 'notes/a.md' },
+    };
+
+    render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
+
+    expect(screen.getByTestId('perm-action-chip')).toHaveTextContent('write_file');
+    expect(screen.queryByText(/^Tool:/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Tool', { exact: true })).not.toBeInTheDocument();
+  });
+
+  it('keeps the verb chip for non-tool permissions', () => {
+    const request: PermRequest = {
+      kind: 'permission',
+      id: 'perm-bash-chip',
+      action_type: 'bash',
+      tokens: ['rm', '-rf', 'build'],
+    };
+
+    render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
+
+    // "Execute" identifies a bash request; there is no tool name to show.
+    expect(screen.getByTestId('perm-action-chip')).toHaveTextContent('Execute');
+  });
+
   it('shows every tool argument in full for tool permissions', () => {
     const longQuery = 'find all callers of parse_provider_model across the workspace ' + 'x'.repeat(80);
     const request: PermRequest = {

@@ -91,9 +91,9 @@ test('agent writes a file: TUI leg then web leg, both via a real permission appr
   // in the chat (crucible-web/src/events.rs normalize_interaction flattens
   // the wire shape so tool_name renders here).
   await expect(page.getByText('Permission Required')).toBeVisible({ timeout: 30_000 });
-  // Tool activity indicator: the permission card names the real tool (shown
-  // twice — the "Tool:" label and the raw-args fallback block).
-  await expect(page.getByText('write_file').first()).toBeVisible();
+  // Tool activity indicator: the permission card names the real tool in its
+  // action chip.
+  await expect(page.getByTestId('perm-action-chip')).toHaveText('write_file');
 
   await page.getByRole('button', { name: 'Allow' }).click();
   await expect(page.getByText('Permission Required')).toHaveCount(0);
