@@ -1,14 +1,16 @@
 //! `AgentManager::set_mode` — persistence, live-handle application, and
 //! validation. Mirrors the switch_model test structure in `switch.rs`.
+//! Concurrency regression tests (deadlock, busy-handle, deferred drain)
+//! live in `mode_regression.rs`.
 
 use super::super::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Records the last mode set on it, so tests can assert the live handle was
 /// updated (not just the persisted config).
-struct ModeRecordingAgent {
-    last_mode: Arc<std::sync::Mutex<Option<String>>>,
-    reject: Arc<AtomicBool>,
+pub(super) struct ModeRecordingAgent {
+    pub last_mode: Arc<std::sync::Mutex<Option<String>>>,
+    pub reject: Arc<AtomicBool>,
 }
 
 crucible_core::impl_noop_agent!(ModeRecordingAgent);
@@ -29,7 +31,7 @@ impl AgentHandle for ModeRecordingAgent {
     }
 }
 
-async fn setup_with_agent() -> (
+pub(super) async fn setup_with_agent() -> (
     tempfile::TempDir,
     Arc<SessionManager>,
     crucible_core::session::Session,

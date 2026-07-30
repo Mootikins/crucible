@@ -1,5 +1,6 @@
 mod list;
 mod mode;
+mod mode_regression;
 mod openai_compatible;
 mod parse;
 mod resolve_provider;

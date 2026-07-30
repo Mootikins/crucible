@@ -1150,17 +1150,51 @@ impl AgentManager {
             .clone()
             .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?;
 
-        // Apply to the live handle first: if the agent rejects the mode
-        // (e.g. an ACP agent without that mode), nothing is persisted.
+        // Apply to the live handle when it's NOT busy serving a turn. A turn
+        // in flight holds the cached handle's mutex for the whole agent loop
+        // (LLM calls, tool exec); awaiting it from a synchronous `set_mode`
+        // would block the caller until the turn ends — the web's mid-session
+        // mode switch hung here for the full RPC timeout. try_lock keeps the
+        // switch snappy:
+        //   - Uncontended (no turn, or between turns): apply_mode updates the
+        //     mirror in place. apply_mode is the daemon-internal mirror sync
+        //     that skips any RPC round-trip (a DaemonAgentHandle's set_mode_str
+        //     would otherwise re-enter this dispatch path).
+        //   - Contended: defer — store the new mode in pending_modes so the
+        //     NEXT turn drains it into apply_mode right after acquiring the
+        //     lock. We do NOT invalidate the cache: an AcpAgentHandle owns its
+        //     spawned process's conversation history, and dropping the last
+        //     Arc would terminate that process and lose the transcript.
+        //     The in-flight turn keeps running on the old handle (mode changes
+        //     must not reshape a turn already in progress); the next turn
+        //     picks up the new mode without losing state.
+        //
+        // `set_mode` is the single writer of `pending_modes`, so it clears any
+        // earlier deferral up front and re-stages only on contention. Without
+        // that clear, a deferral superseded by a later applied-directly change
+        // (or by a change made after the handle was evicted) survives and gets
+        // drained onto the next turn, silently reverting the live mode while
+        // the persisted config and every UI still show the newer one.
+        self.pending_modes.remove(session_id);
         if let Some(handle) = self.agent_cache.get(session_id).map(|r| r.value().clone()) {
-            handle
-                .lock()
-                .await
-                .set_mode_str(mode_id)
-                .await
-                .map_err(|e| AgentError::NotSupported(e.to_string()))?;
+            match handle.try_lock() {
+                Ok(mut guard) => {
+                    guard
+                        .apply_mode(mode_id)
+                        .await
+                        .map_err(|e| AgentError::NotSupported(e.to_string()))?;
+                }
+                Err(_) => {
+                    tracing::info!(
+                        session_id = %session_id,
+                        mode = %mode_id,
+                        "cached agent handle busy with a turn; deferring mode change to next turn"
+                    );
+                    self.pending_modes
+                        .insert(session_id.to_string(), mode_id.to_string());
+                }
+            }
         }
-
         agent_config.mode = Some(mode_id.to_string());
         session.agent = Some(agent_config);
         self.session_manager

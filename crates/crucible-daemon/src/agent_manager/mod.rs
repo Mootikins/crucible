@@ -609,6 +609,13 @@ pub struct AgentManager {
     request_state: Arc<DashMap<String, RequestState>>,
     agent_cache: AgentCache,
     session_dispatchers: Arc<DashMap<String, Arc<dyn ToolDispatcher>>>,
+    /// Mode changes that arrived while the cached handle was busy serving a
+    /// turn. `set_mode` stores here when `try_lock` fails; the dispatch path
+    /// drains the entry into `apply_mode` at the start of the NEXT turn
+    /// (right after acquiring the lock). This keeps the cached handle alive
+    /// (no ACP history loss) and ensures the mode change takes effect on the
+    /// next turn without invalidating stateful handles.
+    pending_modes: Arc<DashMap<String, String>>,
     /// Scheduler-owned conversation tree per session. Populated as a
     /// shadow of the agent's conversation state — the source of truth
     /// remains the agent's internal history today, but this tree is
@@ -718,6 +725,7 @@ impl AgentManager {
         Self {
             request_state: Arc::new(DashMap::new()),
             agent_cache: AgentCache::new(),
+            pending_modes: Arc::new(DashMap::new()),
             model_cache: Arc::new(DashMap::new()),
             kiln_manager: params.kiln_manager,
             session_manager: params.session_manager,
@@ -1214,6 +1222,9 @@ impl AgentManager {
 
         self.agent_cache.remove(session_id);
         self.session_dispatchers.remove(session_id);
+        // A deferral only ever drains on this session's next turn, so an
+        // ended session's entry would sit in the map forever.
+        self.pending_modes.remove(session_id);
         // Drop the in-memory conversation tree so a re-attach to this
         // session rebuilds from on-disk JSONL rather than reusing stale
         // pointers (and frees memory for ended sessions).

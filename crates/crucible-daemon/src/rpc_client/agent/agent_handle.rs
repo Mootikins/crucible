@@ -55,6 +55,18 @@ impl AgentHandle for DaemonAgentHandle {
         Ok(())
     }
 
+    async fn apply_mode(&mut self, mode_id: &str) -> ChatResult<()> {
+        // Daemon-internal mirror sync only. `set_mode_str` would RPC back
+        // into the daemon (this handle's DaemonClient targets the same
+        // daemon); when this handle type is cached inside the daemon's own
+        // agent_cache (test setups, possible future in-process callers),
+        // that round-trip re-enters `AgentManager::set_mode` while the
+        // cached handle's mutex is still held. Just update the local mirror
+        // — the authoritative caller already persisted and emitted.
+        self.mode_id = mode_id.to_string();
+        Ok(())
+    }
+
     async fn clear_history(&mut self) -> ChatResult<()> {
         // ACP sessions own their conversation state inside the spawned
         // agent process. The session_end+session_create dance below would

@@ -197,7 +197,33 @@ impl AgentManager {
         // Snapshot the agent's mode for this request so the tool-dispatch
         // path can enforce plan-mode restrictions on unwrapped invoke_tool
         // calls without reaching back into the agent handle.
-        let session_mode = agent.lock().await.get_mode_id().to_string();
+        //
+        // Drain any pending mode change first: a `set_mode` RPC that arrived
+        // while the cached handle was busy serving the PREVIOUS turn stored
+        // its new mode in `pending_modes` rather than block (or evict — which
+        // would lose ACP conversation history). Applying it here, on the
+        // handle we've just locked for THIS turn, is the earliest safe point:
+        // the previous turn has released the lock, and we haven't yet snapshotted
+        // the mode for tool-dispatch enforcement.
+        let session_mode = {
+            let mut guard = agent.lock().await;
+            if let Some((_, pending)) = self.pending_modes.remove(session_id) {
+                match guard.apply_mode(&pending).await {
+                    Ok(()) => tracing::info!(
+                        session_id = %session_id,
+                        mode = %pending,
+                        "applied deferred mode change at turn start"
+                    ),
+                    Err(e) => tracing::warn!(
+                        session_id = %session_id,
+                        mode = %pending,
+                        error = %e,
+                        "deferred mode change rejected by handle; using existing mode"
+                    ),
+                }
+            }
+            guard.get_mode_id().to_string()
+        };
         // Snapshot the plugin tool names for the plan-mode dispatch guard —
         // resolved per turn, so tools from a plugin loaded mid-session are
         // still covered.

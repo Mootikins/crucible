@@ -138,6 +138,25 @@ pub trait AgentHandle: crate::turn::Agent + Send + Sync {
 
     async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()>;
 
+    /// Daemon-internal mirror sync. The authoritative `AgentManager::set_mode`
+    /// persists the mode on the session's agent_config and emits the
+    /// `mode_changed` event itself; what's left is to update the cached
+    /// handle's local mode mirror. `apply_mode` is that mirror-only update.
+    ///
+    /// This is distinct from `set_mode_str`, which is the *external* entry
+    /// point — a client (TUI, web) calls `set_mode_str` to ask the daemon to
+    /// change the mode AND propagate to whatever backing store the handle
+    /// fronts. Calling `set_mode_str` from inside `AgentManager::set_mode`
+    /// would, for handle types whose backing store IS the daemon itself
+    /// (e.g. a `DaemonAgentHandle` in test setups), re-enter the dispatch
+    /// path holding the cached handle's mutex.
+    ///
+    /// Default: delegate to `set_mode_str`. Handle types whose backing
+    /// store is the daemon itself override to update only the local mirror.
+    async fn apply_mode(&mut self, mode_id: &str) -> ChatResult<()> {
+        self.set_mode_str(mode_id).await
+    }
+
     /// Clear conversation history
     ///
     /// Resets the agent's conversation context, removing all previous messages.
@@ -431,6 +450,10 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
 
     async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
         (**self).set_mode_str(mode_id).await
+    }
+
+    async fn apply_mode(&mut self, mode_id: &str) -> ChatResult<()> {
+        (**self).apply_mode(mode_id).await
     }
 
     async fn clear_history(&mut self) -> ChatResult<()> {
