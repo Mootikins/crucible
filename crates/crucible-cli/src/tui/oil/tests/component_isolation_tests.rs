@@ -233,16 +233,19 @@ mod status_bar_tests {
 
     #[test]
     fn different_modes_have_different_colors() {
-        let normal = StatusBar::new().mode("normal");
-        let plan = StatusBar::new().mode("plan");
-
-        let normal_ansi = render_bar_ansi(&normal, 80);
-        let plan_ansi = render_bar_ansi(&plan, 80);
+        // Compare the STYLE, not the rendered frame: the frames already differ
+        // in plain text (" NORMAL " vs " PLAN "), so a frame comparison passes
+        // even if every mode resolves to the same colour. `mode_style` now has
+        // a `_ =>` catch-all, so deleting the "plan" arm no longer fails to
+        // compile either.
+        use crate::tui::oil::chat_app::mode_style;
 
         assert_ne!(
-            normal_ansi, plan_ansi,
-            "Different modes should have different ANSI codes"
+            mode_style("normal").bg,
+            mode_style("plan").bg,
+            "normal and plan must be visually distinguishable"
         );
+        assert_ne!(mode_style("plan").bg, mode_style("auto").bg);
     }
 
     #[test]

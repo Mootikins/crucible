@@ -58,7 +58,9 @@ pub fn mode_style(mode: &str) -> crucible_oil::style::Style {
 /// current mode the daemon no longer offers, cycles nowhere: advancing into a
 /// mode `set_mode` would reject is worse than leaving the mode alone.
 pub fn next_mode(current: &str, available: &[String]) -> Option<std::sync::Arc<str>> {
-    let idx = available.iter().position(|m| m == current)?;
+    let idx = available
+        .iter()
+        .position(|m| m.eq_ignore_ascii_case(current))?;
     available
         .get((idx + 1) % available.len())
         .map(|m| m.as_str().into())

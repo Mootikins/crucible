@@ -71,7 +71,11 @@ export const ChatInput: Component = () => {
     if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault();
       e.stopPropagation();
-      switchMode(nextChatMode(chatMode(), availableModes().map((m) => m.id)));
+      // `nextChatMode` returns the current mode unchanged when it cannot
+      // advance (the daemon no longer offers it). POSTing that re-sends a mode
+      // `set_mode` rejects and toasts an error on every keypress.
+      const next = nextChatMode(chatMode(), availableModes().map((m) => m.id));
+      if (next !== chatMode()) switchMode(next);
     }
   };
 

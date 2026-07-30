@@ -631,3 +631,41 @@ fn a_mode_the_daemon_no_longer_offers_cycles_nowhere() {
         "an undeclared mode stays put rather than jumping to the first declared one"
     );
 }
+
+/// A mode may not shadow a built-in slash command. Arms are tried in order,
+/// so a mode declared as `undo` used to make `/undo` switch modes and leave
+/// no way to reach the real command.
+#[test]
+fn a_mode_named_after_a_builtin_does_not_shadow_it() {
+    let mut app = app();
+    app.on_message(ChatAppMsg::ModesLoaded(vec![
+        "normal".to_string(),
+        "undo".to_string(),
+        "help".to_string(),
+    ]));
+
+    let action = app.handle_slash_command("/undo 2");
+    assert!(
+        matches!(action, Action::Send(ChatAppMsg::Undo(2))),
+        "/undo must still undo, got {action:?}"
+    );
+    assert_eq!(app.mode(), "normal", "and must not have changed the mode");
+}
+
+/// A mode declared as `cru.modes.Review` is reachable as `/review`, and
+/// switching to it reports the id the daemon actually declared.
+#[test]
+fn a_mode_id_matches_case_insensitively() {
+    let mut app = app();
+    app.on_message(ChatAppMsg::ModesLoaded(vec![
+        "normal".to_string(),
+        "Review".to_string(),
+    ]));
+
+    app.handle_slash_command("/review");
+    assert_eq!(
+        app.mode(),
+        "Review",
+        "the daemon's own spelling wins — it is what set_mode validates against"
+    );
+}

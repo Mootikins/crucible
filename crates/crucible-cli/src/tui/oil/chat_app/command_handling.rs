@@ -153,12 +153,6 @@ impl OilChatApp {
         match command.as_str() {
             "mode" => self.cycle_mode(),
             "default" => self.set_mode_with_status(DEFAULT_MODE),
-            // Every declared mode is its own slash command, so a Lua-declared
-            // `review` gets `/review` for free. Placed above the plugin arm so
-            // a plugin still cannot shadow `/plan`.
-            _ if self.available_modes.contains(&command) => {
-                self.set_mode_with_status(&command.clone())
-            }
             "undo" => {
                 let count = parts
                     .get(1)
@@ -170,6 +164,29 @@ impl OilChatApp {
             // Alias for :help — the command palette advertises "/help".
             "help" => {
                 self.handle_help_repl(parts.get(1).map(|s| s.trim()).filter(|s| !s.is_empty()))
+            }
+            // Every declared mode is its own slash command, so a Lua-declared
+            // `review` gets `/review` for free.
+            //
+            // Below the built-in arms, not above them: match arms are tried in
+            // order, so a mode named `undo` or `help` would otherwise shadow
+            // the real command and there would be no way to reach it. Above the
+            // plugin arm, so a plugin still cannot shadow `/plan`.
+            // `command` is already lowercased; compare case-insensitively so a
+            // mode declared as `cru.modes.Review` is still reachable as
+            // `/review`, and switch to the id the daemon actually knows.
+            _ if self
+                .available_modes
+                .iter()
+                .any(|m| m.eq_ignore_ascii_case(&command)) =>
+            {
+                let declared = self
+                    .available_modes
+                    .iter()
+                    .find(|m| m.eq_ignore_ascii_case(&command))
+                    .cloned()
+                    .unwrap_or_else(|| command.clone());
+                self.set_mode_with_status(&declared)
             }
             // Plugin-declared commands run via the daemon's plugin registry —
             // an invocation, not a chat message. Checked after the built-ins

@@ -347,4 +347,36 @@ impl OilChatRunner {
         })
         .await
     }
+
+    /// Like `process_action_for_test`, but returns the messages the runner
+    /// queued back onto the loop. Corrections that must land *after* the
+    /// trailing `on_message` dispatch go through the channel, so applying them
+    /// is the only way a test can observe them.
+    #[cfg(test)]
+    pub(crate) async fn process_action_collecting_msgs<A: AgentHandle>(
+        &mut self,
+        action: Action<ChatAppMsg>,
+        app: &mut OilChatApp,
+        agent: &mut A,
+        bridge: &AgentEventBridge,
+    ) -> Vec<ChatAppMsg> {
+        let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
+        let mut background_tasks: Vec<JoinHandle<()>> = Vec::new();
+        self.process_action(ProcessActionParams {
+            action,
+            app,
+            agent,
+            bridge,
+            msg_tx: &msg_tx,
+            background_tasks: &mut background_tasks,
+        })
+        .await
+        .expect("process_action should not fail");
+        drop(msg_tx);
+        let mut queued = Vec::new();
+        while let Ok(msg) = msg_rx.try_recv() {
+            queued.push(msg);
+        }
+        queued
+    }
 }

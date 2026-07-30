@@ -820,4 +820,32 @@ describe('mode hydration', () => {
 
     await waitFor(() => expect(modes().map((m) => m.id)).toEqual(['normal', 'review']));
   });
+
+  it("takes the daemon's current_mode_id over the persisted string", async () => {
+    // `session.get` returns whatever was last written; `session.list_modes`
+    // clamps to a mode that still exists. When they disagree — a `review`
+    // session whose declaration was removed — the daemon's answer is the one
+    // that describes what will actually run.
+    mockGetSession.mockResolvedValue({ ...mockSession, agent_mode: 'review' });
+    (api.listModes as ReturnType<typeof vi.fn>).mockResolvedValue({
+      current_mode_id: 'normal',
+      modes: [
+        { id: 'normal', name: 'Normal', description: null, icon: null, color: null },
+        { id: 'plan', name: 'Plan', description: null, icon: null, color: null },
+      ],
+    });
+
+    let mode: () => string = () => '';
+    const Probe = () => {
+      mode = useChat().chatMode;
+      return null;
+    };
+    render(() => (
+      <ChatProvider sessionId="test-session-1">
+        <Probe />
+      </ChatProvider>
+    ));
+
+    await waitFor(() => expect(mode()).toBe('normal'));
+  });
 });

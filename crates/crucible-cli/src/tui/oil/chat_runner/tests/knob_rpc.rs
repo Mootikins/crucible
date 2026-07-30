@@ -163,3 +163,65 @@ async fn interactive_set_knob_reaches_matching_rpc(body: &str, expected_rpc: &st
         ":set {body} must invoke exactly the {expected_rpc} RPC once"
     );
 }
+
+/// A handle that refuses every mode change, reporting the one it is really in.
+struct ModeRejectingAgent;
+
+crucible_core::impl_noop_agent!(ModeRejectingAgent);
+
+#[async_trait::async_trait]
+impl AgentHandle for ModeRejectingAgent {
+    async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
+        Ok(())
+    }
+    fn get_mode_id(&self) -> &str {
+        "normal"
+    }
+    async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
+        Err(crucible_core::traits::chat::ChatError::ModeChange(format!(
+            "unknown mode '{mode_id}'"
+        )))
+    }
+}
+
+/// A mode the daemon refuses must not leave the badge claiming it.
+///
+/// The badge is set optimistically by `set_mode_with_status` before the RPC is
+/// made. The failure path used to be a `tracing::warn!` and nothing else, so
+/// the statusline read PLAN while the agent stayed in normal — the same
+/// "the UI says one thing, the agent does another" defect this area exists to
+/// prevent.
+#[tokio::test]
+async fn a_rejected_mode_change_reverts_the_badge_and_surfaces_the_error() {
+    let mut app = OilChatApp::init();
+    let mut agent = ModeRejectingAgent;
+    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
+
+    app.on_message(ChatAppMsg::ModeChanged("plan".into()));
+    assert_eq!(app.mode(), "plan", "optimistic update happens first");
+
+    let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
+    let queued = runner
+        .process_action_collecting_msgs(
+            Action::Send(ChatAppMsg::ModeChanged("plan".into())),
+            &mut app,
+            &mut agent,
+            &bridge,
+        )
+        .await;
+    // The event loop drains the queue; do the same so the assertions below
+    // describe what the user actually ends up looking at.
+    for msg in queued {
+        app.on_message(msg);
+    }
+
+    assert_eq!(
+        app.mode(),
+        "normal",
+        "a refused mode must revert to what the handle reports"
+    );
+    assert!(
+        app.has_notifications(),
+        "and the user must be told why, not just the log"
+    );
+}

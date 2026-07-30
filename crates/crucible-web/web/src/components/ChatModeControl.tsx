@@ -43,6 +43,9 @@ export const ChatModeControl: Component = () => {
     <Show when={options().length > 0}>
       <ChipSelect
         name="mode"
+        // Without this the trigger falls back to the literal string "mode"
+        // whenever the current mode is absent from the options.
+        placeholder={chatMode()}
         options={options()}
         value={chatMode()}
         onSelect={(v) => switchMode(v as ChatMode)}

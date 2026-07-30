@@ -499,8 +499,20 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::ModeChanged(ref mode_id) => {
                         tracing::info!(mode = %mode_id, "Mode change requested");
+                        // The badge was set optimistically before we got here.
+                        // A warn-only failure left it claiming a mode the
+                        // daemon refused — the exact "the UI says one thing,
+                        // the agent does another" state this whole area is
+                        // about. Revert to what the daemon reports and say so.
                         if let Err(e) = params.agent.set_mode_str(mode_id).await {
                             tracing::warn!(mode = %mode_id, error = %e, "Failed to set mode on agent");
+                            // Queued, not applied here: `process_action` calls
+                            // `on_message(msg)` after this match, which would
+                            // re-apply the optimistic `ModeChanged` over the
+                            // top of a direct revert.
+                            let actual = params.agent.get_mode_id().to_string();
+                            let _ = params.msg_tx.send(ChatAppMsg::ModeSynced(actual));
+                            let _ = params.msg_tx.send(ChatAppMsg::Error(format!("mode: {e}")));
                         }
                     }
                     ChatAppMsg::UserMessage(ref content) => {

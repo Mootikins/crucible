@@ -67,7 +67,14 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     if (!props.sessionId) return;
     try {
       const listed = await listModes(props.sessionId);
-      if (listed.modes.length > 0) setAvailableModes(listed.modes);
+      if (listed.modes.length === 0) return;
+      setAvailableModes(listed.modes);
+      // The daemon's `current_mode_id` is authoritative and the persisted
+      // string is not: `session.get` returns whatever was last written, while
+      // the daemon clamps to a mode that still exists. Taking the persisted
+      // one left the chip showing a mode nobody would run — or, when it
+      // matched no option, showing its own placeholder.
+      setChatMode(listed.current_mode_id);
     } catch {
       // Keep the built-ins: an empty chip offers no way to change mode at all.
     }

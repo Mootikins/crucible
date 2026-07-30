@@ -394,6 +394,18 @@ mod chat_mode_properties {
                 "After {} complete cycles, should return to start",
                 cycles
             );
+            // Returning to start is true of any fixed stride, including a
+            // `next_mode` that never advances. Assert it visits every mode.
+            let mut seen: Vec<String> = Vec::new();
+            let mut walk: std::sync::Arc<str> = start.into();
+            for _ in 0..modes.len() {
+                seen.push(walk.to_string());
+                walk = next_mode(&walk, &modes).expect("declared mode has a successor");
+            }
+            seen.sort();
+            let mut expected = modes.clone();
+            expected.sort();
+            prop_assert_eq!(seen, expected, "cycling must reach every declared mode");
         }
 
         /// A mode the daemon no longer offers must not silently jump to some
@@ -928,8 +940,17 @@ mod cli_invariants {
             let rendered_twice = render_app(&mut app);
 
             prop_assert_eq!(
-                rendered_once, rendered_twice,
+                &rendered_once, &rendered_twice,
                 "Setting the same mode twice should produce identical renders"
+            );
+            // Without this the property holds for a no-op `set_mode`, an empty
+            // `mode_label`, or a statusline with no mode item at all — the
+            // generator emits `review` precisely so an id the TUI does not
+            // hardcode has to reach the frame.
+            prop_assert!(
+                rendered_once.contains(&mode.to_uppercase()),
+                "the mode must reach the rendered frame; got:\n{}",
+                rendered_once
             );
         }
     }
