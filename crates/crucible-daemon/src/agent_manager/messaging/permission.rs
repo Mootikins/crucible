@@ -1,5 +1,7 @@
 use super::super::*;
-use crucible_core::config::components::permissions::{PermissionConfig, PermissionMode};
+use crucible_core::config::components::permissions::{
+    PermissionConfig, PermissionDecision, PermissionEngine, PermissionMode,
+};
 use crucible_core::events::InternalSessionEvent;
 use std::future::Future;
 
@@ -595,6 +597,42 @@ impl AgentManager {
     /// caller carries the reason on the `tool_call` event — the decision is
     /// made before that event is emitted, so an auto-approval marker can ride
     /// along with the card rather than arriving after it and popping in.
+    /// Evaluate a mode's own rule lists with the shared permission engine.
+    ///
+    /// Built per call rather than cached: a mode is redefinable at any time,
+    /// and the rule lists are a handful of strings. If that ever shows up in a
+    /// profile, cache on the mode's identity, not on the session.
+    pub(in crate::agent_manager) fn evaluate_mode_rules(
+        permissions: &crucible_lua::ModePermissions,
+        tool_name: &str,
+        args: &serde_json::Value,
+    ) -> PermissionDecision {
+        use crucible_core::config::components::permissions::PermissionConfig;
+        let config = PermissionConfig {
+            default: match permissions.default {
+                crucible_lua::ModeStance::Allow => PermissionMode::Allow,
+                crucible_lua::ModeStance::Deny => PermissionMode::Deny,
+                crucible_lua::ModeStance::Ask => PermissionMode::Ask,
+            },
+            allow: permissions.allow.clone(),
+            deny: permissions.deny.clone(),
+            ask: permissions.ask.clone(),
+        };
+        let engine = PermissionEngine::new(Some(&config));
+        let input = if tool_name == "bash" {
+            args.get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string()
+        } else {
+            args.to_string()
+        };
+        // `is_interactive: true` deliberately: the non-interactive ask→deny
+        // conversion is the caller's job below, and doing it here would skip
+        // the prompt path entirely.
+        engine.evaluate(tool_name, &input, true)
+    }
+
     pub(super) async fn handle_permission_request(
         stream_ctx: &StreamContext,
         tool_call: &crucible_core::traits::chat::ChatToolCall,
@@ -702,7 +740,7 @@ impl AgentManager {
         // The mode's declared stance. Consulted AFTER the hooks below, because
         // a stance is static and a hook is a decision — `cru.modes.auto` says
         // "allow by default", and a user hook that denies bash must still win.
-        let mode_stance = stream_ctx
+        let mode_permissions = stream_ctx
             .agent_stream_config
             .modes
             .get(&stream_ctx.session_mode)
@@ -760,7 +798,26 @@ impl AgentManager {
                 Err(error_msg)
             }
             PermissionHookResult::Prompt => {
-                // No hook had an opinion: fall back to the mode's stance.
+                // No hook had an opinion: fall back to the mode's own rules,
+                // then its default stance.
+                //
+                // The rules use the `[permissions]` grammar and the SAME
+                // engine, so `bash:rg *` inherits its chained-command handling
+                // — a mode that permits `rg` does not thereby permit
+                // `rg foo && rm -rf /`. Writing a second matcher here would
+                // have been the easy way to lose that.
+                let mode_stance = match &mode_permissions {
+                    Some(p) if p.has_rules() => {
+                        match Self::evaluate_mode_rules(p, &tool_call.name, args) {
+                            PermissionDecision::Allow => Some(crucible_lua::ModeStance::Allow),
+                            PermissionDecision::Deny { .. } => Some(crucible_lua::ModeStance::Deny),
+                            PermissionDecision::Ask => Some(crucible_lua::ModeStance::Ask),
+                        }
+                    }
+                    Some(p) => Some(p.default),
+                    None => None,
+                };
+
                 match mode_stance {
                     Some(crucible_lua::ModeStance::Allow) => {
                         debug!(

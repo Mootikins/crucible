@@ -144,8 +144,15 @@ const TEMPLATE_INIT_LUA: &str = r#"-- Crucible user configuration
 --   end
 -- end)
 
--- Permissions. Your hooks run BEFORE the shipped ones, so this wins over the
--- built-in "auto mode approves everything".
+-- Modes. `tools` gates visibility; `permissions` gates what may be done with
+-- a visible tool, in the same `tool:pattern` grammar as [permissions].
+-- cru.modes.review = {
+--   tools = { "read_*", "*_search", "bash" },
+--   permissions = { default = "deny", allow = { "bash:rg *", "bash:grep *" } },
+-- }
+
+-- Permission hooks, for anything conditional. Yours run BEFORE the shipped
+-- ones, so this wins over the built-ins.
 -- cru.permissions.on_request(function(request)
 --   if request.tool_name == "bash" then return { deny = true } end
 --   return nil

@@ -1022,7 +1022,7 @@ impl AgentManager {
     /// progress — routing it through here would defeat that.
     #[cfg(test)]
     pub(crate) fn mode_stance(&self, mode_id: &str) -> Option<crucible_lua::ModeStance> {
-        self.modes.get(mode_id).map(|m| m.permissions)
+        self.modes.get(mode_id).map(|m| m.permissions.default)
     }
 
     pub fn invalidate_model_cache(&self) {

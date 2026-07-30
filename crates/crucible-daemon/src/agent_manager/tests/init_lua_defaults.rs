@@ -11,6 +11,7 @@
 //! effect, so a default that registers against a missing API fails loudly.
 
 use super::*;
+use crucible_core::config::components::permissions::PermissionDecision;
 use crucible_lua::{execute_permission_hooks, PermissionHookResult, PermissionRequest};
 
 async fn session_with_defaults() -> (TempDir, Arc<AgentManager>, String) {
@@ -626,5 +627,42 @@ async fn the_auto_mode_stance_is_allow_and_plan_is_deny() {
     assert_eq!(
         agent_manager.mode_stance("normal"),
         Some(crucible_lua::ModeStance::Ask)
+    );
+}
+
+/// The gap a tool-name glob cannot close: a mode that may run bash, but only
+/// to search. Evaluated with the shared permission engine, so the rules mean
+/// exactly what they mean in `[permissions]`.
+#[test_case::test_case("rg pattern src/", PermissionDecision::Allow; "an allowed search command")]
+#[test_case::test_case("grep -r foo .", PermissionDecision::Allow; "the other allowed one")]
+#[test_case::test_case(
+    "rm -rf build",
+    PermissionDecision::Deny { reason: String::new() };
+    "anything else falls to the mode default"
+)]
+#[test_case::test_case(
+    "rg foo && rm -rf /",
+    PermissionDecision::Deny { reason: String::new() };
+    "a chained command cannot ride in on the allowed prefix"
+)]
+fn a_mode_can_permit_bash_for_specific_commands_only(command: &str, expected: PermissionDecision) {
+    let permissions = crucible_lua::ModePermissions {
+        default: crucible_lua::ModeStance::Deny,
+        allow: vec!["bash:rg *".to_string(), "bash:grep *".to_string()],
+        deny: Vec::new(),
+        ask: Vec::new(),
+    };
+
+    let decision = AgentManager::evaluate_mode_rules(
+        &permissions,
+        "bash",
+        &serde_json::json!({ "command": command }),
+    );
+
+    // Deny carries a reason string that varies by rule; compare the variant.
+    assert_eq!(
+        std::mem::discriminant(&decision),
+        std::mem::discriminant(&expected),
+        "command {command:?} produced {decision:?}"
     );
 }

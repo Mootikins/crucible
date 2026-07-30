@@ -196,7 +196,9 @@ pub use manifest::{
 pub use mcp::{
     register_mcp_module, register_mcp_module_stub, LuaMcpClient, McpToolInfo, McpToolResult,
 };
-pub use modes::{register_modes, ModeDefinition, ModeRegistry, ModeStance, ToolSelector};
+pub use modes::{
+    register_modes, ModeDefinition, ModePermissions, ModeRegistry, ModeStance, ToolSelector,
+};
 pub use session::{
     LuaSession, LuaSessionBuilder, LuaSessionConfig, LuaSessionHandle, SessionState,
 };

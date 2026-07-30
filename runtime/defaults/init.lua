@@ -51,7 +51,23 @@ end)
 -- rather than editing the daemon.
 --
 --   tools       "*" or a list of glob patterns ("read_*", "*_search")
---   permissions "ask" | "allow" | "deny"
+--   permissions "ask" | "allow" | "deny", or a rules table
+--
+-- Tool patterns gate VISIBILITY — whether the model is offered the tool at
+-- all. What may be done WITH a visible tool is a permission rule, in the same
+-- `tool:pattern` grammar as the [permissions] config, evaluated by the same
+-- engine. That is how you say "this mode may use bash, but only to search":
+--
+--   cru.modes.review = {
+--     tools = { "read_*", "*_search", "bash" },
+--     permissions = {
+--       default = "deny",
+--       allow = { "bash:rg *", "bash:grep *", "bash:fd *" },
+--     },
+--   }
+--
+-- Chained commands are handled by the engine, so `bash:rg *` does NOT admit
+-- `rg foo && rm -rf /`.
 --
 -- These are declarations, not enforcement. The daemon independently filters
 -- plan mode's advertised tool set and refuses plugin tools at dispatch, and

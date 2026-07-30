@@ -1,14 +1,17 @@
 //! Modes, defined in Lua.
 //!
 //! ```lua
-//! cru.modes.auto   = { tools = "*",       permissions = "allow" }
-//! cru.modes.plan   = { tools = READ_ONLY, permissions = "deny"  }
-//! cru.modes.review = { tools = { "read_*", "*_search" }, permissions = "ask" }
-//! cru.modes.plan   = nil   -- and it's gone
+//! cru.modes.auto   = { tools = "*", permissions = "allow" }
+//! cru.modes.review = {
+//!   tools = { "read_*", "*_search", "bash" },
+//!   permissions = { default = "deny", allow = { "bash:rg *", "bash:grep *" } },
+//! }
+//! cru.modes.review = nil   -- and it's gone
 //! ```
 //!
 //! ```fennel
-//! (set cru.modes.review {:tools ["read_*" "*_search"] :permissions :ask})
+//! (set cru.modes.review {:tools ["read_*" "bash"]
+//!                        :permissions {:default :deny :allow ["bash:rg *"]}})
 //! ```
 //!
 //! A mode is two things: which tools it exposes, and what it does when one of
@@ -35,9 +38,10 @@ use mlua::{Lua, MetaMethod, Result as LuaResult, Table, UserData, UserDataMethod
 use std::sync::{Arc, RwLock};
 
 /// What a mode does when a tool needs permission.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ModeStance {
     /// Prompt the user. The interactive default.
+    #[default]
     Ask,
     /// Approve without asking.
     Allow,
@@ -82,13 +86,38 @@ impl ToolSelector {
     }
 }
 
+/// What a mode permits, once its tools are visible.
+///
+/// The rule lists use the SAME `tool:pattern` vocabulary as the `[permissions]`
+/// config (`"bash:rg *"`), and the daemon evaluates them with the same engine
+/// — including its chained-command handling, so `bash:rg *` does not quietly
+/// admit `rg foo && rm -rf /`. Reusing that grammar is the point: a mode
+/// should not invent a second, subtly-different way to say the same thing.
+///
+/// `permissions = "allow"` is shorthand for `{ default = "allow" }`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ModePermissions {
+    pub default: ModeStance,
+    pub allow: Vec<String>,
+    pub deny: Vec<String>,
+    pub ask: Vec<String>,
+}
+
+impl ModePermissions {
+    /// True when only the default stance is set, so callers can skip building
+    /// an engine for the common case.
+    pub fn has_rules(&self) -> bool {
+        !self.allow.is_empty() || !self.deny.is_empty() || !self.ask.is_empty()
+    }
+}
+
 /// One mode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModeDefinition {
     pub name: String,
     pub description: Option<String>,
     pub tools: ToolSelector,
-    pub permissions: ModeStance,
+    pub permissions: ModePermissions,
 }
 
 /// `*` matches any run of characters, including none. Everything else is
@@ -189,6 +218,30 @@ impl ModeRegistry {
     }
 }
 
+fn parse_stance(mode: &str, s: &str) -> LuaResult<ModeStance> {
+    ModeStance::parse(s).ok_or_else(|| {
+        mlua::Error::runtime(format!(
+            "cru.modes.{mode}.permissions must be \"ask\", \"allow\" or \"deny\", got {s:?}"
+        ))
+    })
+}
+
+fn string_list(table: &Table, key: &str) -> LuaResult<Vec<String>> {
+    match table.get::<Value>(key) {
+        Ok(Value::Nil) => Ok(Vec::new()),
+        Ok(Value::Table(t)) => {
+            let mut out = Vec::new();
+            for v in t.sequence_values::<String>() {
+                out.push(v?);
+            }
+            Ok(out)
+        }
+        _ => Err(mlua::Error::runtime(format!(
+            "permissions.{key} must be a list of \"tool:pattern\" strings"
+        ))),
+    }
+}
+
 fn definition_from_lua(name: &str, table: &Table) -> LuaResult<ModeDefinition> {
     let tools = match table.get::<Value>("tools") {
         Ok(Value::Nil) => ToolSelector::All,
@@ -214,13 +267,29 @@ fn definition_from_lua(name: &str, table: &Table) -> LuaResult<ModeDefinition> {
         }
     };
 
-    let permissions = match table.get::<Option<String>>("permissions")? {
-        None => ModeStance::Ask,
-        Some(s) => ModeStance::parse(&s).ok_or_else(|| {
-            mlua::Error::runtime(format!(
-                "cru.modes.{name}.permissions must be \"ask\", \"allow\" or \"deny\", got {s:?}"
-            ))
-        })?,
+    let permissions = match table.get::<Value>("permissions") {
+        Ok(Value::Nil) => ModePermissions::default(),
+        Ok(Value::String(s)) => ModePermissions {
+            default: parse_stance(name, &s.to_str()?)?,
+            ..Default::default()
+        },
+        Ok(Value::Table(t)) => {
+            let default = match t.get::<Option<String>>("default")? {
+                Some(s) => parse_stance(name, &s)?,
+                None => ModeStance::Ask,
+            };
+            ModePermissions {
+                default,
+                allow: string_list(&t, "allow")?,
+                deny: string_list(&t, "deny")?,
+                ask: string_list(&t, "ask")?,
+            }
+        }
+        _ => {
+            return Err(mlua::Error::runtime(format!(
+                "cru.modes.{name}.permissions must be a stance string or a rules table"
+            )))
+        }
     };
 
     Ok(ModeDefinition {
@@ -248,7 +317,16 @@ impl UserData for ModeRegistry {
                     t.set("tools", lua.create_sequence_from(patterns)?)?
                 }
             }
-            t.set("permissions", mode.permissions.as_str())?;
+            if mode.permissions.has_rules() {
+                let p = lua.create_table()?;
+                p.set("default", mode.permissions.default.as_str())?;
+                p.set("allow", lua.create_sequence_from(mode.permissions.allow)?)?;
+                p.set("deny", lua.create_sequence_from(mode.permissions.deny)?)?;
+                p.set("ask", lua.create_sequence_from(mode.permissions.ask)?)?;
+                t.set("permissions", p)?;
+            } else {
+                t.set("permissions", mode.permissions.default.as_str())?;
+            }
             Ok(Value::Table(t))
         });
 
@@ -302,7 +380,7 @@ mod tests {
 
         let mode = registry.get("auto").expect("auto must be registered");
         assert_eq!(mode.tools, ToolSelector::All);
-        assert_eq!(mode.permissions, ModeStance::Allow);
+        assert_eq!(mode.permissions.default, ModeStance::Allow);
     }
 
     #[test]
@@ -313,7 +391,7 @@ mod tests {
         let mode = registry.get("normal").unwrap();
         assert_eq!(mode.tools, ToolSelector::All);
         assert_eq!(
-            mode.permissions,
+            mode.permissions.default,
             ModeStance::Ask,
             "an unspecified stance must prompt, never silently allow"
         );
@@ -345,7 +423,10 @@ mod tests {
 
         let names: Vec<String> = registry.all().into_iter().map(|m| m.name).collect();
         assert_eq!(names, vec!["a", "b"], "a redefinition must not reorder");
-        assert_eq!(registry.get("a").unwrap().permissions, ModeStance::Allow);
+        assert_eq!(
+            registry.get("a").unwrap().permissions.default,
+            ModeStance::Allow
+        );
     }
 
     #[test]
@@ -408,7 +489,82 @@ mod tests {
 
         let mode = registry.get("review").expect("registered from fennel");
         assert!(mode.tools.matches("read_note"));
-        assert_eq!(mode.permissions, ModeStance::Ask);
+        assert_eq!(mode.permissions.default, ModeStance::Ask);
+    }
+
+    /// The gap a name-glob cannot close: "review may use bash, but only for
+    /// rg and grep". Tool selectors gate VISIBILITY; what may be done with a
+    /// visible tool is a permission rule, in the same `tool:pattern` grammar
+    /// the `[permissions]` config already uses.
+    #[test]
+    fn a_mode_can_carry_permission_rules() {
+        let (lua, registry) = lua_with_modes();
+        lua.load(
+            r#"cru.modes.review = {
+                 tools = { "read_*", "bash" },
+                 permissions = {
+                   default = "deny",
+                   allow = { "bash:rg *", "bash:grep *" },
+                 },
+               }"#,
+        )
+        .exec()
+        .unwrap();
+
+        let mode = registry.get("review").unwrap();
+        assert!(mode.tools.matches("bash"), "bash must be visible");
+        assert_eq!(mode.permissions.default, ModeStance::Deny);
+        assert_eq!(mode.permissions.allow, vec!["bash:rg *", "bash:grep *"]);
+        assert!(mode.permissions.has_rules());
+    }
+
+    /// The string form stays, because most modes have nothing to say beyond
+    /// their stance and a rules table would be ceremony.
+    #[test]
+    fn a_stance_string_is_shorthand_for_a_rules_table() {
+        let (lua, registry) = lua_with_modes();
+        lua.load(r#"cru.modes.auto = { permissions = "allow" }"#)
+            .exec()
+            .unwrap();
+
+        let mode = registry.get("auto").unwrap();
+        assert_eq!(mode.permissions.default, ModeStance::Allow);
+        assert!(
+            !mode.permissions.has_rules(),
+            "no rules means callers can skip building an engine"
+        );
+    }
+
+    #[test]
+    fn rules_read_back_as_a_table_and_a_bare_stance_as_a_string() {
+        let (lua, _) = lua_with_modes();
+        let rule: String = lua
+            .load(
+                r#"cru.modes.a = { permissions = { default = "deny", allow = { "bash:rg *" } } }
+                   return cru.modes.a.permissions.allow[1]"#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(rule, "bash:rg *");
+
+        let stance: String = lua
+            .load(
+                r#"cru.modes.b = { permissions = "allow" }
+                   return cru.modes.b.permissions"#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(stance, "allow");
+    }
+
+    #[test]
+    fn a_malformed_rule_list_is_an_error() {
+        let (lua, _) = lua_with_modes();
+        let err = lua
+            .load(r#"cru.modes.a = { permissions = { allow = "bash:rg *" } }"#)
+            .exec()
+            .unwrap_err();
+        assert!(err.to_string().contains("list of"), "got: {err}");
     }
 
     #[test]
