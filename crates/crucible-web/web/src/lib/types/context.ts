@@ -10,6 +10,7 @@ import type {
   SubagentEvent,
   ContextUsage,
   ChatMode,
+  ModeDescriptor,
   Session,
   CreateSessionParams,
   ProviderInfo,
@@ -34,6 +35,8 @@ export interface ChatContextValue {
   subagentEvents: Accessor<SubagentEvent[]>;
   contextUsage: Accessor<ContextUsage | null>;
   chatMode: Accessor<ChatMode>;
+  /** Modes this session may enter, from `session.list_modes`. */
+  availableModes: Accessor<ModeDescriptor[]>;
   isLoadingHistory: Accessor<boolean>;
   setChatMode: (mode: ChatMode) => void;
   /** Set the mode UI-side AND persist it daemon-side (POST /mode). */

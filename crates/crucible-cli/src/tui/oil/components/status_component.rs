@@ -1,4 +1,3 @@
-use crate::tui::oil::chat_app::ChatMode;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::status_bar::{NotificationToastKind, StatusBar};
 use crate::tui::oil::ViewContext;
@@ -10,7 +9,10 @@ use crucible_oil::node::{col, Node};
 /// All state is owned by `OilChatApp`; this struct borrows snapshots of it.
 #[derive(Default)]
 pub struct StatusComponent<'a> {
-    pub mode: ChatMode,
+    /// Mode id, not an enum: see `chat_app::state::DEFAULT_MODE`. Defaults to
+    /// the empty string, which `mode_label` renders as a blank badge — every
+    /// live construction goes through `.mode(...)`.
+    pub mode: &'a str,
     pub model: &'a str,
     pub context_used: usize,
     pub context_total: usize,
@@ -28,7 +30,7 @@ impl<'a> StatusComponent<'a> {
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn mode(mut self, mode: ChatMode) -> Self {
+    pub fn mode(mut self, mode: &'a str) -> Self {
         self.mode = mode;
         self
     }
@@ -116,7 +118,7 @@ mod tests {
     fn status_no_error_shows_bar_only() {
         let mut harness = ComponentHarness::new(80, 4);
         let comp = StatusComponent::new()
-            .mode(ChatMode::Normal)
+            .mode("normal")
             .model("gpt-4")
             .context(4000, 8000);
         harness.render_component(&comp);
@@ -131,7 +133,7 @@ mod tests {
     fn status_with_toast_renders_toast() {
         let harness = ComponentHarness::new(80, 4);
         let comp = StatusComponent::new()
-            .mode(ChatMode::Auto)
+            .mode("auto")
             .model("claude")
             .toast("Processing", NotificationToastKind::Info);
         let plain = render_to_plain_text(&comp.view(&ViewContext::new(harness.focus())), 80);
@@ -144,7 +146,7 @@ mod tests {
     fn status_with_notification_counts() {
         let harness = ComponentHarness::new(80, 4);
         let comp = StatusComponent::new()
-            .mode(ChatMode::Plan)
+            .mode("plan")
             .model("gpt-4")
             .counts(vec![
                 (NotificationToastKind::Warning, 3),

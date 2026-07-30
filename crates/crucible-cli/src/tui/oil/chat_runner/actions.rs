@@ -259,6 +259,20 @@ impl OilChatRunner {
                         // to switch will surface a NotSupported error at that point.
                         Self::spawn_model_fetch(params.msg_tx, params.background_tasks);
                     }
+                    ChatAppMsg::FetchModes if !self.is_replay => {
+                        // Goes through the agent handle rather than a fresh
+                        // DaemonClient (the model prefetch's pattern) because
+                        // the mode list is per-session: it is resolved from
+                        // the session's Lua registry, and two sessions in
+                        // different projects can offer different modes.
+                        let modes = params.agent.fetch_available_modes().await;
+                        if !modes.is_empty() {
+                            params.app.on_message(ChatAppMsg::ModesLoaded(modes));
+                        }
+                    }
+                    ChatAppMsg::ModesLoaded(_) | ChatAppMsg::ModeSynced(_) => {
+                        params.app.on_message(msg.clone());
+                    }
                     ChatAppMsg::McpStatusLoaded(_) | ChatAppMsg::PluginStatusLoaded(_) => {
                         params.app.on_message(msg.clone());
                     }

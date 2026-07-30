@@ -6,8 +6,8 @@ use crate::tui::oil::containers::ContainerList;
 use crate::tui::oil::event::InputBuffer;
 
 use super::{
-    ChatMode, MessageQueueState, ModelListState, OilChatApp, PermissionState, PopupState,
-    PrecognitionState, ShellHistoryState,
+    MessageQueueState, ModelListState, OilChatApp, PermissionState, PopupState, PrecognitionState,
+    ShellHistoryState, DEFAULT_MODE, DEFAULT_MODES,
 };
 
 impl Default for OilChatApp {
@@ -15,7 +15,8 @@ impl Default for OilChatApp {
         Self {
             // Viewport Projection
             container_list: ContainerList::new(),
-            mode: ChatMode::Normal,
+            mode: DEFAULT_MODE.into(),
+            available_modes: DEFAULT_MODES.iter().map(|m| m.to_string()).collect(),
             session_variables: std::collections::HashMap::new(),
             model: String::new(),
             status: String::new(),

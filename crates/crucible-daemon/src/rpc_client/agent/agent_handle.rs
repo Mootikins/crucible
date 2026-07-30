@@ -171,6 +171,16 @@ impl AgentHandle for DaemonAgentHandle {
         }
     }
 
+    async fn fetch_available_modes(&mut self) -> Vec<String> {
+        match self.client.session_list_modes(&self.session_id).await {
+            Ok(state) => state.modes.into_iter().map(|m| m.id).collect(),
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to fetch modes from daemon");
+                Vec::new()
+            }
+        }
+    }
+
     async fn cancel(&self) -> ChatResult<()> {
         tracing::info!(session_id = %self.session_id, "Cancelling agent via daemon");
         self.client

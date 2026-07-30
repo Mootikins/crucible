@@ -14,6 +14,13 @@ vi.mock('@/lib/api', () => ({
   getSessionHistory: vi.fn(async () => ({ history: [], total_events: 0 })),
   getConfig: vi.fn(async () => ({ kiln_path: '/tmp/test-kiln' })),
   listSessions: vi.fn(async () => []),
+  listModes: vi.fn(async () => ({
+    current_mode_id: 'normal',
+    modes: [
+      { id: 'normal', name: 'Normal', description: null, icon: null, color: null },
+      { id: 'review', name: 'Review', description: null, icon: null, color: null },
+    ],
+  })),
   setSessionTitle: vi.fn(),
   // Monotonic — sendMessage mints two temp ids back-to-back, and a
   // Date.now()-based id would collide within one millisecond.
@@ -773,5 +780,44 @@ describe('isLoadingHistory', () => {
     // setMessages merge), then assert the prompt did not render twice.
     await waitFor(() => expect(screen.getByTestId('history-loading').textContent).toBe('idle'));
     expect(screen.getByTestId('msg-count').textContent).toBe('1');
+  });
+});
+
+describe('mode hydration', () => {
+  it('restores a Lua-declared mode the frontend has no constant for', async () => {
+    // The old hydrateMode checked the id against 'normal' | 'plan' | 'auto'
+    // and dropped anything else, so a session persisted in `review` came back
+    // showing Normal while the agent kept running review.
+    mockGetSession.mockResolvedValue({ ...mockSession, agent_mode: 'review' });
+
+    let mode: () => string = () => '';
+    const Probe = () => {
+      mode = useChat().chatMode;
+      return null;
+    };
+    render(() => (
+      <ChatProvider sessionId="test-session-1">
+        <Probe />
+      </ChatProvider>
+    ));
+
+    await waitFor(() => expect(mode()).toBe('review'));
+  });
+
+  it('offers the daemon modes, not a hardcoded three', async () => {
+    mockGetSession.mockResolvedValue(mockSession);
+
+    let modes: () => { id: string }[] = () => [];
+    const Probe = () => {
+      modes = useChat().availableModes;
+      return null;
+    };
+    render(() => (
+      <ChatProvider sessionId="test-session-1">
+        <Probe />
+      </ChatProvider>
+    ));
+
+    await waitFor(() => expect(modes().map((m) => m.id)).toEqual(['normal', 'review']));
   });
 });

@@ -363,37 +363,56 @@ mod input_buffer_properties {
 }
 
 mod chat_mode_properties {
-    use crate::tui::oil::chat_app::ChatMode;
+    use crate::tui::oil::chat_app::{mode_label, next_mode};
     use proptest::prelude::*;
+
+    /// A list including a Lua-declared mode, so cycling is exercised over more
+    /// than the three the TUI used to hardcode.
+    fn available() -> Vec<String> {
+        ["normal", "plan", "auto", "review"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    }
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 
         #[test]
-        fn chat_mode_cycle_returns_to_start(cycles in 1usize..10) {
-            let start = ChatMode::Normal;
-            let mut mode = start;
+        fn cycling_the_whole_list_returns_to_start(cycles in 1usize..10) {
+            let modes = available();
+            let start = "normal";
+            let mut mode: std::sync::Arc<str> = start.into();
 
-            for _ in 0..(cycles * 3) {
-                mode = mode.cycle();
+            for _ in 0..(cycles * modes.len()) {
+                mode = next_mode(&mode, &modes)
+                    .expect("a declared mode always has a successor");
             }
 
             prop_assert_eq!(
-                mode, start,
+                &*mode, start,
                 "After {} complete cycles, should return to start",
                 cycles
             );
         }
 
+        /// A mode the daemon no longer offers must not silently jump to some
+        /// other mode — cycling into one `set_mode` would reject is worse than
+        /// staying put.
         #[test]
-        fn chat_mode_parse_roundtrip(mode_str in "(normal|plan|auto)") {
-            let parsed = ChatMode::parse(&mode_str);
-            let back_to_str = parsed.as_str();
+        fn a_mode_the_daemon_does_not_offer_cycles_nowhere(unknown in "[a-z]{3,10}") {
+            let modes = available();
+            prop_assume!(!modes.contains(&unknown));
 
-            prop_assert_eq!(
-                mode_str, back_to_str,
-                "Parse and as_str should roundtrip"
-            );
+            prop_assert!(next_mode(&unknown, &modes).is_none());
+        }
+
+        /// Every mode gets a badge, including one the TUI has never heard of.
+        #[test]
+        fn every_mode_id_renders_a_badge(id in "[a-z][a-z_]{2,10}") {
+            let label = mode_label(&id);
+
+            prop_assert_eq!(label, format!(" {} ", id.to_uppercase()));
         }
     }
 }
@@ -869,15 +888,18 @@ mod ordered_list_rendering_properties {
 
 mod cli_invariants {
     use super::super::generators::arb_short_text;
-    use crate::tui::oil::chat_app::{ChatMode, OilChatApp};
+    use crate::tui::oil::chat_app::OilChatApp;
     use crate::tui::oil::tests::helpers::vt_render;
     use proptest::prelude::*;
 
-    fn arb_chat_mode() -> impl Strategy<Value = ChatMode> {
+    /// Mode ids rather than enum variants — `review` stands in for anything a
+    /// user declared in Lua, which the TUI must handle identically.
+    fn arb_chat_mode() -> impl Strategy<Value = String> {
         prop_oneof![
-            Just(ChatMode::Normal),
-            Just(ChatMode::Plan),
-            Just(ChatMode::Auto),
+            Just("normal".to_string()),
+            Just("plan".to_string()),
+            Just("auto".to_string()),
+            Just("review".to_string()),
         ]
     }
 
@@ -898,11 +920,11 @@ mod cli_invariants {
             app.set_input_content(&text);
 
             // Switch to mode M
-            app.set_mode(mode);
+            app.set_mode(mode.as_str());
             let rendered_once = render_app(&mut app);
 
             // Switch to mode M again
-            app.set_mode(mode);
+            app.set_mode(mode.as_str());
             let rendered_twice = render_app(&mut app);
 
             prop_assert_eq!(
@@ -929,7 +951,7 @@ mod cli_invariants {
                 prop_assert_eq!(&before, &text, "Input should match before mode switch");
 
                 // Switch mode
-                app.set_mode(mode);
+                app.set_mode(mode.as_str());
 
                 // Verify text preserved
                 let after = app.input_content().to_string();

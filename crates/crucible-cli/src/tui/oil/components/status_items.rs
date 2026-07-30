@@ -17,7 +17,8 @@ use crate::tui::oil::utils::truncate_to_chars;
 /// The frame's worth of TUI-local state a bar can read.
 #[derive(Debug, Clone)]
 pub struct StatusBarData {
-    pub mode: crate::tui::oil::chat_app::ChatMode,
+    /// Mode id, not an enum: see `chat_app::state::DEFAULT_MODE`.
+    pub mode: String,
     pub model: String,
     pub context_used: usize,
     pub context_total: usize,
@@ -305,37 +306,17 @@ fn cond_holds(cond: &StatusCond, ctx: &ItemContext<'_>) -> bool {
     }
 }
 
-fn mode_name(ctx: &ItemContext<'_>) -> &'static str {
-    use crate::tui::oil::chat_app::ChatMode;
-    match ctx.data.mode {
-        ChatMode::Normal => "normal",
-        ChatMode::Plan => "plan",
-        ChatMode::Auto => "auto",
-    }
+fn mode_name<'a>(ctx: &'a ItemContext<'_>) -> &'a str {
+    &ctx.data.mode
 }
 
 /// The per-mode badge styling, matching what the pre-item statusline drew.
 fn mode_style(ctx: &ItemContext<'_>) -> Style {
-    use crate::tui::oil::chat_app::ChatMode;
-    use crucible_oil::style::{AdaptiveColor, Color};
-
-    let t = theme::active();
-    let bg = |c: AdaptiveColor| if t.is_dark { c.dark } else { c.light };
-    let color = match ctx.data.mode {
-        ChatMode::Normal => t.colors.mode_normal,
-        ChatMode::Plan => t.colors.mode_plan,
-        ChatMode::Auto => t.colors.mode_auto,
-    };
-    Style::new().bg(bg(color)).fg(Color::Black).bold()
+    crate::tui::oil::chat_app::mode_style(&ctx.data.mode)
 }
 
-fn mode_label(ctx: &ItemContext<'_>) -> &'static str {
-    use crate::tui::oil::chat_app::ChatMode;
-    match ctx.data.mode {
-        ChatMode::Normal => " NORMAL ",
-        ChatMode::Plan => " PLAN ",
-        ChatMode::Auto => " AUTO ",
-    }
+fn mode_label(ctx: &ItemContext<'_>) -> String {
+    crate::tui::oil::chat_app::mode_label(&ctx.data.mode)
 }
 
 fn context_label(ctx: &ItemContext<'_>) -> String {
@@ -357,13 +338,12 @@ fn context_label(ctx: &ItemContext<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::chat_app::ChatMode;
     use crucible_oil::render::render_to_plain_text;
     use std::collections::BTreeMap;
 
     fn data() -> StatusBarData {
         StatusBarData {
-            mode: ChatMode::Normal,
+            mode: "normal".into(),
             model: "claude-opus-5".to_string(),
             context_used: 5_000,
             context_total: 10_000,
@@ -467,7 +447,7 @@ mod tests {
     #[test]
     fn mode_conditions_compare_against_the_active_mode() {
         let mut d = data();
-        d.mode = ChatMode::Plan;
+        d.mode = "plan".into();
 
         let items = [StatusItem::When {
             cond: StatusCond::ModeIs("plan".into()),
@@ -475,7 +455,7 @@ mod tests {
         }];
         assert!(render(&items, &d, false).contains("planning"));
 
-        d.mode = ChatMode::Normal;
+        d.mode = "normal".into();
         assert!(!render(&items, &d, false).contains("planning"));
     }
 

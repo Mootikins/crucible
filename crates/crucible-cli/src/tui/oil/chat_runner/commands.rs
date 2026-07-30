@@ -494,6 +494,15 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
             }
         }
         "replay_complete" => vec![],
+        // A mode change made anywhere else — the web UI, another client, a Lua
+        // handler — reaches the statusline only through this arm. Without it
+        // the daemon emitted `mode_changed` to nobody on the TUI side, and the
+        // badge kept showing the mode this client last set itself.
+        "mode_changed" => data
+            .get("mode")
+            .and_then(|v| v.as_str())
+            .map(|m| vec![ChatAppMsg::ModeSynced(m.to_string())])
+            .unwrap_or_default(),
         "session_initialized" => {
             match serde_json::from_value::<
                 crucible_core::protocol::session_events::SessionInitializedPayload,

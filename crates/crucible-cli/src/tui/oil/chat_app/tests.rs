@@ -1,31 +1,57 @@
 //! Unit tests for OilChatApp.
 //!
-//! Framework-level tests (mode cycling, parsing). Additional tests live in
+//! Framework-level tests (mode cycling, labelling). Additional tests live in
 //! `tui/oil/tests/` as snapshot and interaction tests.
 
 use super::*;
 
 #[test]
-fn test_mode_cycle() {
-    assert_eq!(ChatMode::Normal.cycle(), ChatMode::Plan);
-    assert_eq!(ChatMode::Plan.cycle(), ChatMode::Auto);
-    assert_eq!(ChatMode::Auto.cycle(), ChatMode::Normal);
+fn mode_cycles_through_the_daemon_s_list_including_a_lua_declared_one() {
+    let modes: Vec<String> = ["normal", "plan", "auto", "review"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+    assert_eq!(next_mode("normal", &modes).as_deref(), Some("plan"));
+    assert_eq!(next_mode("auto", &modes).as_deref(), Some("review"));
+    assert_eq!(
+        next_mode("review", &modes).as_deref(),
+        Some("normal"),
+        "the last declared mode wraps to the first"
+    );
 }
 
 #[test]
-fn test_mode_from_str() {
-    assert_eq!(ChatMode::parse("normal"), ChatMode::Normal);
-    assert_eq!(ChatMode::parse("default"), ChatMode::Normal);
-    assert_eq!(ChatMode::parse("plan"), ChatMode::Plan);
-    assert_eq!(ChatMode::parse("auto"), ChatMode::Auto);
-    assert_eq!(ChatMode::parse("unknown"), ChatMode::Normal);
+fn a_mode_absent_from_the_daemon_s_list_cycles_nowhere() {
+    let modes = vec!["normal".to_string(), "plan".to_string()];
+
+    assert_eq!(
+        next_mode("review", &modes),
+        None,
+        "a mode whose declaration is gone must not advance into another one"
+    );
+    assert_eq!(
+        next_mode("normal", &[]),
+        None,
+        "an empty list cycles nowhere"
+    );
+}
+
+#[test]
+fn mode_label_badges_a_mode_the_tui_has_never_heard_of() {
+    // The built-ins keep their exact labels — this is what holds the
+    // statusline snapshots still.
+    assert_eq!(mode_label("normal"), " NORMAL ");
+    assert_eq!(mode_label("plan"), " PLAN ");
+    assert_eq!(mode_label("auto"), " AUTO ");
+    assert_eq!(mode_label("review"), " REVIEW ");
 }
 
 #[test]
 fn test_app_init() {
     let app = OilChatApp::init();
     assert!(!app.is_streaming());
-    assert_eq!(app.mode, ChatMode::Normal);
+    assert_eq!(&*app.mode, "normal");
 }
 
 // ─── Task 1.3: setup events populate OilChatApp ─────────────────────
@@ -49,7 +75,7 @@ fn setup_events_populate_app_progressively() {
         workspace_path: PathBuf::from("/w"),
     }));
     assert_eq!(app.current_model(), "glm-5");
-    assert_eq!(app.mode, ChatMode::Plan);
+    assert_eq!(&*app.mode, "plan");
 
     // workspace_indexed / kiln_notes_indexed: Loading... stays.
     app.on_message(ChatAppMsg::WorkspaceIndexed(vec!["src/lib.rs".into()]));

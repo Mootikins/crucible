@@ -9,7 +9,7 @@ import { executeCommand } from '@/lib/api';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { ArrowUp, X } from '@/lib/icons';
 export const ChatInput: Component = () => {
-  const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, switchMode, addSystemMessage, clearMessages } = useChatSafe();
+  const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, availableModes, switchMode, addSystemMessage, clearMessages } = useChatSafe();
   const { currentSession, cancelCurrentOperation, availableModels, switchModel } = useSessionSafe();
   const [input, setInput] = createSignal('');
   let formRef: HTMLFormElement | undefined;
@@ -71,7 +71,7 @@ export const ChatInput: Component = () => {
     if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault();
       e.stopPropagation();
-      switchMode(nextChatMode(chatMode()));
+      switchMode(nextChatMode(chatMode(), availableModes().map((m) => m.id)));
     }
   };
 

@@ -54,7 +54,7 @@ impl OilChatApp {
         }
 
         if key.code == KeyCode::BackTab {
-            return self.set_mode_with_status(self.mode.cycle());
+            return self.cycle_mode();
         }
 
         let action = InputAction::from(key);
@@ -125,7 +125,7 @@ impl OilChatApp {
                 self.toggle_thinking_with_toast();
                 Action::Continue
             }
-            KeyCode::BackTab => self.set_mode_with_status(self.mode.cycle()),
+            KeyCode::BackTab => self.cycle_mode(),
             KeyCode::Enter if ctrl => {
                 // Cancel the stream but keep the draft in the input so it
                 // can be sent once the turn stops. Clearing here silently

@@ -204,7 +204,7 @@ async fn run_replay(
     config: &CliConfig,
 ) -> Result<()> {
     use crate::chat::bridge::AgentEventBridge;
-    use crate::tui::oil::{ChatMode, OilChatRunner};
+    use crate::tui::oil::OilChatRunner;
     use crucible_core::events::EventRing;
 
     // The replay entry short-circuits inside `run_with_factory` before the
@@ -215,7 +215,7 @@ async fn run_replay(
     let bridge = AgentEventBridge::new(ring);
 
     let mut runner = OilChatRunner::new()?
-        .with_mode(ChatMode::Normal)
+        .with_mode(crate::tui::oil::DEFAULT_MODE)
         .with_model("replay")
         .with_context_limit(0)
         .with_show_thinking(config.chat.show_thinking)
@@ -341,7 +341,7 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
         replay_auto_exit,
     } = params;
     use crate::chat::bridge::AgentEventBridge;
-    use crate::tui::oil::{ChatMode, OilChatRunner};
+    use crate::tui::oil::OilChatRunner;
     use crucible_core::events::EventRing;
 
     let parsed_set_overrides = {
@@ -365,7 +365,7 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
     let ring = std::sync::Arc::new(EventRing::new(4096));
     let bridge = AgentEventBridge::new(ring);
 
-    let mode = ChatMode::parse(&initial_mode);
+    let mode: std::sync::Arc<str> = initial_mode.as_str().into();
     let effective_llm = config.effective_llm_provider().ok();
     let model_name = effective_llm
         .as_ref()

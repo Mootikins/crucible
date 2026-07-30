@@ -15,9 +15,11 @@ import type {
   SubagentEvent,
   ContextUsage,
   ChatMode,
+  ModeDescriptor,
 } from '@/lib/types';
 import type { ChatContextValue } from '@/lib/types/context';
 import {
+  listModes,
   setSessionMode,
   sendChatMessage,
   subscribeToEvents,
@@ -37,6 +39,7 @@ import { notificationActions } from '@/stores/notificationStore';
 import { attentionActions } from '@/stores/attentionStore';
 import { createChatEventReducer } from './chatEventReducer';
 import { bootstrapSessionWithFallback } from './sessionBootstrap';
+import { FALLBACK_MODES } from '@/components/ChatModeControl';
 
 
 interface ChatProviderProps {
@@ -55,6 +58,20 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   const [subagentEvents, setSubagentEvents] = createStore<SubagentEvent[]>([]);
   const [contextUsage, setContextUsage] = createSignal<ContextUsage | null>(null);
   const [chatMode, setChatMode] = createSignal<ChatMode>('normal');
+  // Modes are declared in Lua, so the list is per-session and comes from the
+  // daemon. Held here rather than in ChatModeControl because Shift+Tab cycles
+  // from ChatInput — two fetches would be two lists, and they would disagree
+  // the moment one failed.
+  const [availableModes, setAvailableModes] = createSignal<ModeDescriptor[]>(FALLBACK_MODES);
+  void (async () => {
+    if (!props.sessionId) return;
+    try {
+      const listed = await listModes(props.sessionId);
+      if (listed.modes.length > 0) setAvailableModes(listed.modes);
+    } catch {
+      // Keep the built-ins: an empty chip offers no way to change mode at all.
+    }
+  })();
   const [isLoadingHistory, setIsLoadingHistory] = createSignal(false);
   
   // Mirror interaction/streaming state into the global attention store so
@@ -620,6 +637,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     subagentEvents: () => subagentEvents,
     contextUsage,
     chatMode,
+    availableModes,
     isLoadingHistory,
     setChatMode,
     switchMode,
@@ -657,6 +675,7 @@ const fallbackChatContext: ChatContextValue = {
   subagentEvents: () => [],
   contextUsage: () => null,
   chatMode: () => 'normal',
+  availableModes: () => FALLBACK_MODES,
   isLoadingHistory: () => false,
   setChatMode: () => {},
   switchMode: () => {},

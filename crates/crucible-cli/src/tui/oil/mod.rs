@@ -36,7 +36,9 @@ mod viewport_cache;
 
 pub use agent_selection::AgentSelection;
 pub use app::{Action, App, ViewContext};
-pub use chat_app::{ChatAppMsg, ChatMode, McpServerDisplay, OilChatApp, PluginStatusEntry, Role};
+pub use chat_app::{
+    ChatAppMsg, McpServerDisplay, OilChatApp, PluginStatusEntry, Role, DEFAULT_MODE,
+};
 pub use chat_runner::OilChatRunner;
 pub use component::{Component, ComponentHarness};
 pub use components::{InputArea, InputMode, StatusBar, INPUT_MAX_CONTENT_LINES};

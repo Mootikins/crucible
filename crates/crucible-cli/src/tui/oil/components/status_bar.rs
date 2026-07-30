@@ -1,7 +1,6 @@
-use crate::tui::oil::chat_app::ChatMode;
 use crucible_lua::statusline_items::{Element, Region};
 use crucible_oil::node::{row, spacer, styled, Node};
-use crucible_oil::style::{AdaptiveColor, Color, Style};
+use crucible_oil::style::{Color, Style};
 
 use crate::tui::oil::utils::truncate_to_chars;
 
@@ -35,7 +34,8 @@ impl NotificationToastKind {
 
 #[derive(Debug, Clone, Default)]
 pub struct StatusBar {
-    pub mode: ChatMode,
+    /// Mode id, not an enum: see `chat_app::state::DEFAULT_MODE`.
+    pub mode: String,
     pub model: String,
     pub context_used: usize,
     pub context_total: usize,
@@ -52,8 +52,8 @@ impl StatusBar {
         Self::default()
     }
 
-    pub fn mode(mut self, mode: ChatMode) -> Self {
-        self.mode = mode;
+    pub fn mode(mut self, mode: impl Into<String>) -> Self {
+        self.mode = mode.into();
         self
     }
 
@@ -84,30 +84,11 @@ impl StatusBar {
     }
 
     fn mode_style(&self) -> Style {
-        let t = crate::tui::oil::theme::active();
-        let mode_bg = |color: AdaptiveColor| if t.is_dark { color.dark } else { color.light };
-        match self.mode {
-            ChatMode::Normal => Style::new()
-                .bg(mode_bg(t.colors.mode_normal))
-                .fg(Color::Black)
-                .bold(),
-            ChatMode::Plan => Style::new()
-                .bg(mode_bg(t.colors.mode_plan))
-                .fg(Color::Black)
-                .bold(),
-            ChatMode::Auto => Style::new()
-                .bg(mode_bg(t.colors.mode_auto))
-                .fg(Color::Black)
-                .bold(),
-        }
+        crate::tui::oil::chat_app::mode_style(&self.mode)
     }
 
-    fn mode_label(&self) -> &'static str {
-        match self.mode {
-            ChatMode::Normal => " NORMAL ",
-            ChatMode::Plan => " PLAN ",
-            ChatMode::Auto => " AUTO ",
-        }
+    fn mode_label(&self) -> String {
+        crate::tui::oil::chat_app::mode_label(&self.mode)
     }
 
     fn context_display(&self) -> String {
@@ -173,7 +154,7 @@ impl StatusBar {
     /// The frame's live values, as the item vocabulary sees them.
     fn item_data(&self) -> crate::tui::oil::components::status_items::StatusBarData {
         crate::tui::oil::components::status_items::StatusBarData {
-            mode: self.mode,
+            mode: self.mode.clone(),
             model: self.model.clone(),
             context_used: self.context_used,
             context_total: self.context_total,
@@ -212,7 +193,7 @@ mod tests {
 
     #[test]
     fn emergency_view_shows_mode() {
-        let bar = StatusBar::new().mode(ChatMode::Normal);
+        let bar = StatusBar::new().mode("normal");
         let plain = render_to_plain_text(&bar.emergency_view(), 80);
         assert!(plain.contains("NORMAL"));
     }
@@ -248,9 +229,9 @@ mod tests {
 
     #[test]
     fn status_bar_modes_have_different_colors() {
-        let normal = StatusBar::new().mode(ChatMode::Normal);
-        let plan = StatusBar::new().mode(ChatMode::Plan);
-        let auto = StatusBar::new().mode(ChatMode::Auto);
+        let normal = StatusBar::new().mode("normal");
+        let plan = StatusBar::new().mode("plan");
+        let auto = StatusBar::new().mode("auto");
 
         assert_ne!(normal.mode_style().bg, plan.mode_style().bg);
         assert_ne!(plan.mode_style().bg, auto.mode_style().bg);
@@ -260,7 +241,7 @@ mod tests {
     fn emergency_view_spacer_fills_width() {
         // Test that spacer() in row layout expands to fill remaining width
         let bar = StatusBar::new()
-            .mode(ChatMode::Normal)
+            .mode("normal")
             .model("gpt-4o")
             .context(4000, 8000);
         let plain = render_to_plain_text(&bar.emergency_view(), 80);
@@ -277,7 +258,7 @@ mod tests {
     fn emergency_view_spacer_fills_width_at_120() {
         // Test that spacer() expands correctly at different widths
         let bar = StatusBar::new()
-            .mode(ChatMode::Normal)
+            .mode("normal")
             .model("gpt-4o")
             .context(4000, 8000);
         let plain = render_to_plain_text(&bar.emergency_view(), 120);

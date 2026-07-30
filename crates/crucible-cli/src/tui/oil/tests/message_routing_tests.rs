@@ -89,7 +89,7 @@ fn mode_changed_updates_mode() {
     let mut app = OilChatApp::init();
     app.on_message(ChatAppMsg::ModeChanged("plan".into()));
 
-    assert_eq!(app.mode(), crate::tui::oil::chat_app::state::ChatMode::Plan);
+    assert_eq!(app.mode(), "plan");
 }
 
 // ─── Stream lifecycle routing ──────────────────────────────────────────────
@@ -307,7 +307,7 @@ fn no_message_silently_dropped() {
         (
             "ModeChanged",
             ChatAppMsg::ModeChanged("plan".into()),
-            Box::new(|app| app.mode() == crate::tui::oil::chat_app::state::ChatMode::Plan),
+            Box::new(|app| app.mode() == "plan"),
         ),
         (
             "ContextUsage",
@@ -341,4 +341,53 @@ fn no_message_silently_dropped() {
             name
         );
     }
+}
+
+/// End to end through the TUI: a mode the TUI has never heard of arrives from
+/// the daemon and the statusline renders it.
+///
+/// Before modes became Lua-declared this could not work at any layer —
+/// `ChatMode::parse` mapped every unknown id to `Normal`, so the badge read
+/// NORMAL while the daemon ran review.
+#[test]
+fn a_lua_declared_mode_reaches_the_statusline() {
+    use crate::tui::oil::tests::helpers::vt_render;
+
+    let mut app = OilChatApp::init();
+    app.on_message(ChatAppMsg::ModesLoaded(vec![
+        "normal".to_string(),
+        "review".to_string(),
+    ]));
+    app.on_message(ChatAppMsg::ModeSynced("review".into()));
+
+    let frame = vt_render(&mut app);
+    assert!(
+        frame.contains("REVIEW"),
+        "the statusline must render the mode the session is actually in; got:\n{frame}"
+    );
+}
+
+/// A mode change made by another client reaches this one. The daemon emits
+/// `mode_changed`; the TUI had no arm for it, so the badge kept showing
+/// whatever this client last set itself.
+#[test]
+fn a_mode_change_from_another_client_updates_the_mode() {
+    use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
+
+    let msgs = session_event_to_chat_msgs("mode_changed", &serde_json::json!({ "mode": "review" }));
+    assert!(
+        !msgs.is_empty(),
+        "the daemon's mode_changed event must translate to a TUI message"
+    );
+    assert!(
+        !msgs.iter().any(|m| matches!(m, ChatAppMsg::ModeChanged(_))),
+        "an inbound event must not produce the outbound command — that RPCs \
+         the daemon, which re-emits the event, which never terminates"
+    );
+
+    let mut app = OilChatApp::init();
+    for msg in msgs {
+        app.on_message(msg);
+    }
+    assert_eq!(app.mode(), "review");
 }

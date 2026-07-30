@@ -1,23 +1,26 @@
 import { getConfig, getSession, listSessions } from '@/lib/api';
+import type { ChatMode } from '@/lib/types';
 import { statusBarActions } from '@/stores/statusBarStore';
 
 interface BootstrapSessionParams {
   sessionId: string;
   signal: AbortSignal;
   setSessionTitle: (title: string | null) => void;
-  /** Hydrate the persisted session mode (normal/plan/auto) into the chat UI. */
-  setChatMode?: (mode: 'normal' | 'plan' | 'auto') => void;
+  /** Hydrate the persisted session mode into the chat UI. */
+  setChatMode?: (mode: ChatMode) => void;
   loadHistory: (sessionId: string, kiln: string, signal?: AbortSignal) => Promise<void>;
 }
 
-function hydrateMode(
-  mode: string | null,
-  setChatMode?: (mode: 'normal' | 'plan' | 'auto') => void
-): void {
-  if (!setChatMode) return;
-  if (mode === 'normal' || mode === 'plan' || mode === 'auto') {
-    setChatMode(mode);
-  }
+/** Restore the mode the daemon persisted for this session.
+ *
+ * Deliberately does not check the id against a known set: modes are declared
+ * in Lua, so a restored `review` session was being silently dropped here and
+ * shown as Normal while the agent ran review. The daemon is the authority on
+ * whether the mode is valid — it validates on `set_mode` and falls back if the
+ * declaration is gone. */
+function hydrateMode(mode: string | null, setChatMode?: (mode: ChatMode) => void): void {
+  if (!setChatMode || !mode) return;
+  setChatMode(mode);
 }
 
 function syncPrimaryStatus(sessionId: string, title: string | null, model: string | null) {

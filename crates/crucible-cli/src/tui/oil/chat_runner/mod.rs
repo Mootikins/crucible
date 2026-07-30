@@ -1,8 +1,6 @@
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::app::Action;
-use crate::tui::oil::chat_app::{
-    ChatAppMsg, ChatMode, McpServerDisplay, OilChatApp, PluginStatusEntry,
-};
+use crate::tui::oil::chat_app::{ChatAppMsg, McpServerDisplay, OilChatApp, PluginStatusEntry};
 use crate::tui::oil::event::Event;
 #[allow(unused_imports)] // WIP: KeyCode, KeyModifiers not yet used
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -79,7 +77,7 @@ pub(super) struct ProcessActionParams<'a, A: AgentHandle> {
 pub struct OilChatRunner {
     pub(super) terminal: Terminal,
     pub(super) tick_rate: Duration,
-    pub(super) mode: ChatMode,
+    pub(super) mode: std::sync::Arc<str>,
     pub(super) model: String,
     pub(super) context_limit: Arc<AtomicUsize>,
     pub(super) focus: FocusContext,
@@ -136,7 +134,7 @@ impl OilChatRunner {
         Self {
             terminal,
             tick_rate: Duration::from_millis(50),
-            mode: ChatMode::Normal,
+            mode: crate::tui::oil::chat_app::DEFAULT_MODE.into(),
             model: String::new(),
             context_limit: Arc::new(AtomicUsize::new(0)),
             focus: FocusContext::new(),
@@ -184,8 +182,8 @@ impl OilChatRunner {
         Arc::clone(&self.context_limit)
     }
 
-    pub fn with_mode(mut self, mode: ChatMode) -> Self {
-        self.mode = mode;
+    pub fn with_mode(mut self, mode: impl Into<std::sync::Arc<str>>) -> Self {
+        self.mode = mode.into();
         self
     }
 
@@ -301,6 +299,12 @@ impl OilChatRunner {
             return;
         }
         Self::spawn_model_fetch(msg_tx, background_tasks);
+        // The mode list rides the same prefetch. It is resolved through the
+        // agent handle inside the event loop, so there is nothing to spawn
+        // here — only the message to queue.
+        if msg_tx.send(ChatAppMsg::FetchModes).is_err() {
+            tracing::warn!("UI channel closed, initial FetchModes dropped");
+        }
     }
 
     pub(crate) fn abort_background_tasks(background_tasks: &mut Vec<JoinHandle<()>>) {

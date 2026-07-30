@@ -195,6 +195,15 @@ pub trait AgentHandle: crate::turn::Agent + Send + Sync {
         Vec::new()
     }
 
+    /// The mode ids this session may enter, in declaration order.
+    ///
+    /// Modes are declared in Lua, so a client cannot know them at compile
+    /// time. Empty means "ask nobody" — the caller keeps whatever list it
+    /// already had rather than dropping to zero modes.
+    async fn fetch_available_modes(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Set the thinking budget for reasoning models.
     ///
     /// Values: -1 = unlimited, 0 = disabled, >0 = max tokens
@@ -470,6 +479,10 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
 
     async fn fetch_available_models(&mut self) -> Vec<String> {
         (**self).fetch_available_models().await
+    }
+
+    async fn fetch_available_modes(&mut self) -> Vec<String> {
+        (**self).fetch_available_modes().await
     }
 
     async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {

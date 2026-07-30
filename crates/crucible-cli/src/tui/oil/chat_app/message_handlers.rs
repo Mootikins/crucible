@@ -140,6 +140,16 @@ impl OilChatApp {
                 self.available_models = models.clone();
                 self.model_list_state = ModelListState::Loaded;
             }
+            // Nothing to do TUI-side: the fetch is spawned by the runner.
+            ChatAppMsg::FetchModes => {}
+            ChatAppMsg::ModesLoaded(ref modes) => {
+                // An empty list means the daemon could not be asked; keeping
+                // the built-ins beats leaving the session with no mode to
+                // cycle to.
+                if !modes.is_empty() {
+                    self.available_modes = modes.clone();
+                }
+            }
             ChatAppMsg::ModelsFetchFailed(ref err) => {
                 tracing::debug!(
                     target: "crucible_cli::tui::oil::model_flow",
@@ -240,8 +250,8 @@ impl OilChatApp {
                     self.add_system_message(output);
                 }
             }
-            ChatAppMsg::ModeChanged(mode) => {
-                self.mode = super::state::ChatMode::parse(&mode);
+            ChatAppMsg::ModeChanged(mode) | ChatAppMsg::ModeSynced(mode) => {
+                self.mode = mode.as_str().into();
             }
             ChatAppMsg::ContextUsage { used, total } => {
                 self.context_used = used;
@@ -283,7 +293,7 @@ impl OilChatApp {
                     self.set_model(payload.model);
                 }
                 if !payload.mode.is_empty() {
-                    self.mode = super::state::ChatMode::parse(&payload.mode);
+                    self.mode = payload.mode.as_str().into();
                 }
                 // agent_name doesn't have a dedicated field on OilChatApp;
                 // display_model already captured it at runner construction.

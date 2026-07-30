@@ -4,7 +4,6 @@
 //! checking both structural output (plain text) and styled output (ANSI codes).
 
 use crate::tui::oil::app::ViewContext;
-use crate::tui::oil::chat_app::ChatMode;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
     popup_item, popup_item_with_desc, InputArea, PopupOverlay, StatusBar, INPUT_MAX_CONTENT_LINES,
@@ -149,7 +148,7 @@ mod status_bar_tests {
 
     #[test]
     fn renders_mode_label_at_start() {
-        let bar = StatusBar::new().mode(ChatMode::Normal);
+        let bar = StatusBar::new().mode("normal");
         let plain = render_bar(&bar, 80);
 
         assert!(
@@ -161,9 +160,9 @@ mod status_bar_tests {
 
     #[test]
     fn mode_labels_have_consistent_padding() {
-        let normal = StatusBar::new().mode(ChatMode::Normal);
-        let plan = StatusBar::new().mode(ChatMode::Plan);
-        let auto = StatusBar::new().mode(ChatMode::Auto);
+        let normal = StatusBar::new().mode("normal");
+        let plan = StatusBar::new().mode("plan");
+        let auto = StatusBar::new().mode("auto");
 
         assert!(render_bar(&normal, 80).contains(" NORMAL "));
         assert!(render_bar(&plan, 80).contains(" PLAN "));
@@ -172,7 +171,7 @@ mod status_bar_tests {
 
     #[test]
     fn ansi_output_has_color_codes() {
-        let bar = StatusBar::new().mode(ChatMode::Normal).model("gpt-4o");
+        let bar = StatusBar::new().mode("normal").model("gpt-4o");
         let ansi = render_bar_ansi(&bar, 80);
 
         assert!(
@@ -183,9 +182,9 @@ mod status_bar_tests {
 
     #[test]
     fn mode_badge_colors_include_bg_fg_and_bold() {
-        let normal = render_bar_ansi(&StatusBar::new().mode(ChatMode::Normal), 80);
-        let plan = render_bar_ansi(&StatusBar::new().mode(ChatMode::Plan), 80);
-        let auto = render_bar_ansi(&StatusBar::new().mode(ChatMode::Auto), 80);
+        let normal = render_bar_ansi(&StatusBar::new().mode("normal"), 80);
+        let plan = render_bar_ansi(&StatusBar::new().mode("plan"), 80);
+        let auto = render_bar_ansi(&StatusBar::new().mode("auto"), 80);
 
         let has_green_bg = normal.contains("42") || normal.contains("48;5;10");
         let has_blue_bg = plan.contains("44") || plan.contains("48;5;12");
@@ -234,8 +233,8 @@ mod status_bar_tests {
 
     #[test]
     fn different_modes_have_different_colors() {
-        let normal = StatusBar::new().mode(ChatMode::Normal);
-        let plan = StatusBar::new().mode(ChatMode::Plan);
+        let normal = StatusBar::new().mode("normal");
+        let plan = StatusBar::new().mode("plan");
 
         let normal_ansi = render_bar_ansi(&normal, 80);
         let plan_ansi = render_bar_ansi(&plan, 80);
@@ -248,9 +247,7 @@ mod status_bar_tests {
 
     #[test]
     fn model_name_appears_after_mode() {
-        let bar = StatusBar::new()
-            .mode(ChatMode::Normal)
-            .model("claude-3-opus");
+        let bar = StatusBar::new().mode("normal").model("claude-3-opus");
         let plain = render_bar(&bar, 80);
 
         let mode_pos = plain.find("NORMAL").expect("mode should exist");
@@ -287,7 +284,7 @@ mod status_bar_tests {
     fn notification_badge_appears_on_right() {
         use crate::tui::oil::components::NotificationToastKind;
         let bar = StatusBar::new()
-            .mode(ChatMode::Normal)
+            .mode("normal")
             .toast("Processing", NotificationToastKind::Info);
         let node = configured_bar_node(&bar);
         let plain = render_to_plain_text(&node, 80);
@@ -310,7 +307,7 @@ mod status_bar_tests {
     fn ctrlc_notification_bar() -> StatusBar {
         use crate::tui::oil::components::NotificationToastKind;
         StatusBar::new()
-            .mode(ChatMode::Normal)
+            .mode("normal")
             .model("glm-4.7-flash-iq4")
             .toast("Ctrl+C again to quit", NotificationToastKind::Warning)
     }
@@ -342,7 +339,7 @@ mod status_bar_tests {
         use crate::tui::oil::components::NotificationToastKind;
 
         let bar = StatusBar::new()
-            .mode(ChatMode::Normal)
+            .mode("normal")
             .model("glm-4.7-flash-iq4")
             .counts(vec![
                 (NotificationToastKind::Warning, 2),
@@ -387,7 +384,7 @@ mod status_bar_tests {
     #[test]
     fn snapshot_statusline_idle_context_fallback_right_aligned() {
         let bar = StatusBar::new()
-            .mode(ChatMode::Normal)
+            .mode("normal")
             .model("glm-4.7-flash-iq4")
             .context(4096, 32768);
 
@@ -410,7 +407,7 @@ mod status_bar_tests {
     fn fits_width_80() {
         use crate::tui::oil::components::NotificationToastKind;
         let bar = StatusBar::new()
-            .mode(ChatMode::Normal)
+            .mode("normal")
             .model("claude-3-opus-very-long-name")
             .context(64000, 128000)
             .status("Streaming...")
@@ -427,7 +424,7 @@ mod status_bar_tests {
     #[test]
     fn snapshot_normal_mode() {
         let bar = StatusBar::new()
-            .mode(ChatMode::Normal)
+            .mode("normal")
             .model("gpt-4o-mini")
             .context(10000, 128000);
         assert_snapshot!("status_bar_normal", render_bar(&bar, 80));
@@ -436,7 +433,7 @@ mod status_bar_tests {
     #[test]
     fn snapshot_plan_mode_with_status() {
         let bar = StatusBar::new()
-            .mode(ChatMode::Plan)
+            .mode("plan")
             .model("claude-3-opus")
             .context(50000, 200000)
             .status("Thinking...");
@@ -1005,7 +1002,7 @@ mod layout_tests {
 
     #[test]
     fn nested_components_render_correctly() {
-        let status = StatusBar::new().mode(ChatMode::Normal).model("test-model");
+        let status = StatusBar::new().mode("normal").model("test-model");
         let input = InputArea::new("Hello", 5, 80);
 
         let focus = FocusContext::new();

@@ -40,7 +40,7 @@ impl OilChatRunner {
         self.terminal.enter()?;
 
         let mut app = OilChatApp::default();
-        app.set_mode(self.mode);
+        app.set_mode(self.mode.clone());
         if !self.model.is_empty() {
             app.set_model(std::mem::take(&mut self.model));
         }

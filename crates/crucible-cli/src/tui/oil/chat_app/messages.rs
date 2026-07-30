@@ -122,8 +122,14 @@ pub enum ChatAppMsg {
     Error(String),
     /// **Dual-duty**: Status message (from daemon or user action).
     Status(String),
-    /// **Event** (daemon → TUI): User switched TUI mode (Normal/Plan/Auto).
+    /// **Command** (TUI → daemon): this client asked for a mode change.
+    /// Reaches `set_mode_str`, so it must never be produced from an inbound
+    /// daemon event — that is `ModeSynced`, and confusing the two makes the
+    /// event round-trip forever.
     ModeChanged(String),
+    /// **Event** (daemon → TUI): the mode changed somewhere else — the web UI,
+    /// another client, a Lua handler. Display-only.
+    ModeSynced(String),
     /// **Event** (daemon → TUI): Context window usage updated.
     ContextUsage { used: usize, total: usize },
     /// **Command** (TUI → daemon): Clear chat history.
@@ -136,6 +142,12 @@ pub enum ChatAppMsg {
     ModelsLoaded(Vec<String>),
     /// **Event** (daemon → TUI): Model fetch failed with error.
     ModelsFetchFailed(String),
+    /// **Command** (TUI → daemon): Fetch the session's declared modes.
+    FetchModes,
+    /// **Event** (daemon → TUI): Mode ids the session may enter. Replaces the
+    /// built-in three the TUI starts with, which is how a Lua-declared mode
+    /// becomes cyclable and gets its own slash command.
+    ModesLoaded(Vec<String>),
     /// **Event** (daemon → TUI): MCP server status loaded.
     McpStatusLoaded(Vec<McpServerDisplay>),
     /// **Event** (daemon → TUI): Plugin status loaded.
@@ -290,6 +302,8 @@ impl ChatAppMsg {
             | Self::FetchModels
             | Self::ModelsLoaded(_)
             | Self::ModelsFetchFailed(_)
+            | Self::FetchModes
+            | Self::ModesLoaded(_)
             | Self::SetThinkingBudget(_)
             | Self::SetMaxIterations(_)
             | Self::SetExecutionTimeout(_)
@@ -313,6 +327,7 @@ impl ChatAppMsg {
             Self::Error(_)
             | Self::Status(_)
             | Self::ModeChanged(_)
+            | Self::ModeSynced(_)
             | Self::ContextUsage { .. }
             | Self::CacheHitRate(_)
             | Self::ClearHistory

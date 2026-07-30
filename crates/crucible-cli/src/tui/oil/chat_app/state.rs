@@ -8,38 +8,60 @@ pub enum Role {
     System,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ChatMode {
-    #[default]
-    Normal,
-    Plan,
-    Auto,
+// Modes are declared in Lua (`cru.modes.review = { … }`), so the TUI cannot
+// know their names at compile time. It holds the id the daemon gave it and
+// derives presentation from that; the alternative — an enum with a `Custom`
+// arm — makes `Custom("plan") != Plan` a live hazard at every construction
+// site that skips the parse function.
+
+/// The mode a session shows before the daemon has said otherwise.
+pub const DEFAULT_MODE: &str = "normal";
+
+/// The modes to offer before `session.list_modes` answers.
+///
+/// Not a claim about what exists — the daemon's list replaces this wholesale
+/// the moment it arrives. It exists so `/mode` and Shift+Tab work during the
+/// first frames, and so a TUI driven by a mock agent (every unit test) still
+/// cycles.
+pub const DEFAULT_MODES: [&str; 3] = ["normal", "plan", "auto"];
+
+/// The statusline badge for a mode: ` NORMAL `, ` PLAN `, ` REVIEW `.
+///
+/// Derived rather than matched so a mode the TUI has never heard of still gets
+/// its own badge. The built-ins reproduce their previous labels byte-for-byte,
+/// which is what keeps the statusline snapshots from moving.
+pub fn mode_label(mode: &str) -> String {
+    format!(" {} ", mode.to_uppercase())
 }
 
-impl ChatMode {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            ChatMode::Normal => "normal",
-            ChatMode::Plan => "plan",
-            ChatMode::Auto => "auto",
-        }
-    }
+/// The badge's colours.
+///
+/// Only the built-in ids are themed. A Lua-declared mode borrows the normal
+/// colour rather than going unstyled — until `cru.modes.review = { color = … }`
+/// is wired through, a neutral badge beats no badge.
+pub fn mode_style(mode: &str) -> crucible_oil::style::Style {
+    use crucible_oil::style::{AdaptiveColor, Style};
 
-    pub fn parse(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "plan" => ChatMode::Plan,
-            "auto" => ChatMode::Auto,
-            _ => ChatMode::Normal,
-        }
-    }
+    let t = theme::active();
+    let bg = |c: AdaptiveColor| if t.is_dark { c.dark } else { c.light };
+    let color = match mode {
+        "plan" => t.colors.mode_plan,
+        "auto" => t.colors.mode_auto,
+        _ => t.colors.mode_normal,
+    };
+    Style::new().bg(bg(color)).fg(Color::Black).bold()
+}
 
-    pub fn cycle(&self) -> Self {
-        match self {
-            ChatMode::Normal => ChatMode::Plan,
-            ChatMode::Plan => ChatMode::Auto,
-            ChatMode::Auto => ChatMode::Normal,
-        }
-    }
+/// The next mode in `available`, wrapping.
+///
+/// `available` is what `session.list_modes` returned. An empty list, or a
+/// current mode the daemon no longer offers, cycles nowhere: advancing into a
+/// mode `set_mode` would reject is worse than leaving the mode alone.
+pub fn next_mode(current: &str, available: &[String]) -> Option<std::sync::Arc<str>> {
+    let idx = available.iter().position(|m| m == current)?;
+    available
+        .get((idx + 1) % available.len())
+        .map(|m| m.as_str().into())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

@@ -284,8 +284,9 @@ export interface SubagentEvent {
   targetAgent?: string;
 }
 
-/** Chat mode type */
-export type ChatMode = 'normal' | 'plan' | 'auto';
+/** A mode id. Modes are declared in Lua, so this cannot be a closed union —
+ * see `session.list_modes` for what a given session actually offers. */
+export type ChatMode = string;
 
 /** One mode a session may enter, as the daemon describes it. */
 export interface ModeDescriptor {
@@ -490,7 +491,7 @@ export interface PrecognitionResultEvent {
 /** Mode changed event */
 export interface ModeChangedEvent {
   type: 'mode_changed';
-  mode: 'normal' | 'plan' | 'auto';
+  mode: ChatMode;
 }
 
 /** Session title changed (daemon-side topic auto-title or manual rename) */

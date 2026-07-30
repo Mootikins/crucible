@@ -37,7 +37,7 @@ pub use messages::ChatAppMsg;
 pub use model_state::{McpServerDisplay, ModelListState, PluginStatusEntry};
 use popup_state::{PermissionState, PopupState, PrecognitionState, ShellHistoryState};
 use state::MessageQueueState;
-pub use state::{ChatMode, InputMode, Role};
+pub use state::{mode_label, mode_style, next_mode, InputMode, Role, DEFAULT_MODE, DEFAULT_MODES};
 
 // ─── Main Struct ─────────────────────────────────────────────────────────────
 
@@ -47,8 +47,13 @@ pub struct OilChatApp {
     // represent the authoritative view of the current session.
     /// Container list: ordered chat content with graduation support
     pub(crate) container_list: crate::tui::oil::containers::ContainerList,
-    /// Current chat mode (Normal / Plan / Auto)
-    mode: ChatMode,
+    /// The session's mode id, as the daemon named it. Held as a string
+    /// because modes are declared in Lua — see `state::DEFAULT_MODE`.
+    mode: std::sync::Arc<str>,
+    /// Mode ids the daemon offers, in declaration order. Populated by
+    /// `session.list_modes`; empty until that lands, which is why `/mode`
+    /// cycling falls back to leaving the mode alone.
+    pub(crate) available_modes: Vec<String>,
     /// Scratch key/value store for `session:set_variable`/`get_variable`.
     ///
     /// TUI-local and deliberately not persisted: these are for a plugin
@@ -274,8 +279,8 @@ impl OilChatApp {
         self.session_variables.get(key).cloned()
     }
 
-    pub(crate) fn set_mode(&mut self, mode: ChatMode) {
-        self.mode = mode;
+    pub(crate) fn set_mode(&mut self, mode: impl Into<std::sync::Arc<str>>) {
+        self.mode = mode.into();
     }
 
     pub(crate) fn set_model(&mut self, model: impl Into<String>) {
@@ -395,7 +400,7 @@ impl OilChatApp {
     /// rather than each rebuilding from `self`.
     fn build_status_component(&self) -> StatusComponent<'_> {
         let mut status = StatusComponent::new()
-            .mode(self.mode)
+            .mode(&self.mode)
             .model(&self.model)
             .context(self.context_used, self.context_total)
             .cache_hit_rate(self.cache_hit_rate)
@@ -632,8 +637,8 @@ impl OilChatApp {
     }
 
     #[cfg(test)]
-    pub(crate) fn mode(&self) -> ChatMode {
-        self.mode
+    pub(crate) fn mode(&self) -> &str {
+        &self.mode
     }
 
     #[cfg(test)]
