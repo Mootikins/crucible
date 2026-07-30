@@ -609,6 +609,12 @@ pub struct AgentManager {
     request_state: Arc<DashMap<String, RequestState>>,
     agent_cache: AgentCache,
     session_dispatchers: Arc<DashMap<String, Arc<dyn ToolDispatcher>>>,
+    /// Global session defaults set from Lua (`crucible.defaults.x = …`) — the
+    /// values a NEW session starts from, applied in `configure_agent` to any
+    /// field the agent card left unset. The per-session override is
+    /// `session.x`; see `crucible_lua::session_defaults` for why this tier is
+    /// not called `crucible.o`.
+    session_defaults: crucible_lua::SessionDefaults,
     /// Mode changes that arrived while the cached handle was busy serving a
     /// turn. `set_mode` stores here when `try_lock` fails; the dispatch path
     /// drains the entry into `apply_mode` at the start of the NEXT turn
@@ -725,6 +731,7 @@ impl AgentManager {
         Self {
             request_state: Arc::new(DashMap::new()),
             agent_cache: AgentCache::new(),
+            session_defaults: crucible_lua::SessionDefaults::new(),
             pending_modes: Arc::new(DashMap::new()),
             model_cache: Arc::new(DashMap::new()),
             kiln_manager: params.kiln_manager,
@@ -1342,94 +1349,6 @@ impl AgentManager {
             .collect()
     }
 
-    fn get_or_create_session_state(&self, session_id: &str) -> Arc<Mutex<SessionEventState>> {
-        if let Some(state) = self.session_states.get(session_id) {
-            return state.clone();
-        }
-
-        let lua = Lua::new();
-        let registry = LuaScriptHandlerRegistry::new();
-        let permission_hooks = Arc::new(StdMutex::new(Vec::new()));
-        let permission_functions = Arc::new(StdMutex::new(HashMap::new()));
-
-        if let Err(e) = register_crucible_on_api(
-            &lua,
-            registry.runtime_handlers(),
-            registry.handler_functions(),
-        ) {
-            error!(session_id = %session_id, error = %e, "Failed to register crucible.on API");
-        }
-
-        if let Err(e) = register_permission_hook_api(
-            &lua,
-            permission_hooks.clone(),
-            permission_functions.clone(),
-        ) {
-            error!(session_id = %session_id, error = %e, "Failed to register crucible.permissions API");
-        }
-
-        // Session handlers get the same attachment surface plugin handlers
-        // have; a handler shouldn't behave differently depending on which VM
-        // it was registered in. Unconditional — the registry exists from
-        // `AgentManager::new`, so there is no ordering to get wrong.
-        if let Err(e) = crucible_lua::register_context_attach(&lua, self.context_attach()) {
-            error!(session_id = %session_id, error = %e, "Failed to register cru.context.attach");
-        }
-
-        if let Ok(cru) = lua.globals().get::<mlua::Table>("cru") {
-            if let Err(e) =
-                crucible_lua::register_statusline_exprs(&lua, &cru, self.statusline_exprs())
-            {
-                error!(session_id = %session_id, error = %e, "Failed to register cru.statusline");
-            }
-        }
-
-        if let Err(e) = lua.load(crucible_lua::BUILTIN_INIT_LUA).exec() {
-            warn!(session_id = %session_id, error = %e, "Failed to load built-in init.lua (fail-open)");
-        }
-
-        let mut reactor = Reactor::new();
-        if let Some(session) = self.session_manager.get_session(session_id) {
-            let user_init = session.workspace.join(".crucible/lua/init.lua");
-            if user_init.exists() {
-                match std::fs::read_to_string(&user_init) {
-                    Ok(source) => {
-                        if let Err(e) = lua.load(&source).set_name("user init.lua").exec() {
-                            warn!(
-                                session_id = %session_id,
-                                path = %user_init.display(),
-                                error = %e,
-                                "Failed to load user init.lua (fail-open)"
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        warn!(
-                            session_id = %session_id,
-                            path = %user_init.display(),
-                            error = %e,
-                            "Failed to read user init.lua (fail-open)"
-                        );
-                    }
-                }
-            }
-
-            discover_and_register_lua_handlers(&mut reactor, &session.kiln, session_id);
-        }
-
-        let state = Arc::new(Mutex::new(SessionEventState {
-            lua,
-            registry,
-            permission_hooks,
-            permission_functions,
-            reactor,
-            spill_counter: std::sync::atomic::AtomicU32::new(1),
-        }));
-        self.session_states
-            .insert(session_id.to_string(), state.clone());
-        state
-    }
-
     fn get_session(&self, session_id: &str) -> Result<crucible_core::session::Session, AgentError> {
         self.session_manager
             .get_session(session_id)
@@ -1447,33 +1366,6 @@ impl AgentManager {
         }
         available
     }
-
-    pub async fn configure_agent(
-        &self,
-        session_id: &str,
-        agent: SessionAgent,
-    ) -> Result<(), AgentError> {
-        let mut session = self
-            .session_manager
-            .get_session(session_id)
-            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
-
-        session.agent = Some(agent.clone());
-
-        self.session_manager
-            .update_session(&session)
-            .await
-            .map_err(AgentError::Session)?;
-
-        info!(
-            session_id = %session_id,
-            model = %agent.model,
-            provider = %agent.provider,
-            "Agent configured for session"
-        );
-
-        Ok(())
-    }
 }
 
 pub mod autocompact;
@@ -1486,6 +1378,7 @@ pub(crate) mod precognition;
 pub(crate) mod precognition_gate;
 pub mod providers;
 mod scope;
+pub(crate) mod session_vm;
 pub(crate) mod title;
 pub mod tool_tracking;
 

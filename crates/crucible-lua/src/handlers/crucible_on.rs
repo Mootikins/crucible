@@ -114,6 +114,9 @@ pub fn register_crucible_on_api(
         Ok(())
     })?;
 
-    crucible.set("on", on_fn)?;
+    // Both namespaces, per `lua_util::register_in_namespaces`. Shipped scripts
+    // are written against `cru.*`; `crucible.*` stays for existing configs.
+    crucible.set("on", on_fn.clone())?;
+    crate::lua_util::get_or_create_namespace(lua, "cru")?.set("on", on_fn)?;
     Ok(())
 }

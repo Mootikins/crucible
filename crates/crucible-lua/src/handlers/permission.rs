@@ -103,6 +103,10 @@ pub fn register_permission_hook_api(
     })?;
 
     permissions.set("on_request", on_request_fn)?;
+    // Shipped scripts are written against `cru.*`; `crucible.*` stays for
+    // existing configs. Same table, so a hook registered through either name
+    // lands in the same list.
+    crate::lua_util::get_or_create_namespace(lua, "cru")?.set("permissions", permissions)?;
     Ok(())
 }
 

@@ -396,7 +396,6 @@ impl AgentManager {
         registry: &crucible_lua::LuaScriptHandlerRegistry,
         lua: &mlua::Lua,
         model: &str,
-        system_prompt: &str,
         mut current: Vec<crucible_core::traits::ContextMessage>,
     ) -> Result<Vec<crucible_core::traits::ContextMessage>, ()> {
         for handler in registry.runtime_handlers_for("transform_context", None) {
@@ -405,13 +404,6 @@ impl AgentManager {
                 payload: serde_json::json!({
                     "messages": &current,
                     "model": model,
-                    // The agent card's prompt reaches the provider through a
-                    // separate field, never as a message, so a handler cannot
-                    // detect it by scanning `messages`. Surfaced here so one
-                    // can tell "this agent has no instructions" from "this
-                    // agent's instructions live elsewhere" — the built-in
-                    // default-system-prompt handler stands down on the latter.
-                    "system_prompt": system_prompt,
                 }),
             };
             match registry
@@ -508,7 +500,6 @@ impl AgentManager {
             &state.registry,
             &state.lua,
             &stream_config.model,
-            &stream_config.system_prompt,
             current,
         )
         .await
@@ -526,7 +517,6 @@ impl AgentManager {
                 plugin_registry,
                 plugin_lua,
                 &stream_config.model,
-                &stream_config.system_prompt,
                 current,
             )
             .await

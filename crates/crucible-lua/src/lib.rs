@@ -77,6 +77,7 @@ pub mod schedule;
 pub mod schema;
 pub mod session;
 mod session_api;
+mod session_defaults;
 mod sessions;
 mod shell;
 mod storage_api;
@@ -191,6 +192,7 @@ pub use session_api::{
     register_session_module, ChannelSessionRpc, Session, SessionCommand, SessionConfigRpc,
     SessionManager,
 };
+pub use session_defaults::{register_session_defaults, SessionDefaultValues, SessionDefaults};
 pub use sessions::{
     register_sessions_module, register_sessions_module_with_api, DaemonSessionApi, ResponsePart,
 };

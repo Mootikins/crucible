@@ -10,41 +10,39 @@
 -- context block, or nil to fall back.
 --
 -- Override example in your .crucible/lua/init.lua:
---   crucible.on("precognition_format", function(ctx, event)
+--   cru.on("precognition_format", function(ctx, event)
 --     return "## Notes\n" .. event.user_message
 --   end)
-if crucible and type(crucible.on) == "function" then
-  crucible.on("precognition_format", function(ctx, event)
-    -- `event.payload` guard kept for sessions replaying pre-flattening
-    -- recordings; live events are flat.
-    local payload = event.payload or event
-    local results = payload and payload.results
+cru.on("precognition_format", function(ctx, event)
+  -- `event.payload` guard kept for sessions replaying pre-flattening
+  -- recordings; live events are flat.
+  local payload = event.payload or event
+  local results = payload and payload.results
 
-    if not results or #results == 0 then
-      return nil
+  if not results or #results == 0 then
+    return nil
+  end
+
+  local lines = {}
+  table.insert(lines, string.format("## Relevant Notes (%d)", #results))
+  table.insert(lines, "")
+
+  for _, note in ipairs(results) do
+    local title = note.title or "Untitled"
+    local score = tonumber(note.score) or 0
+    local score_pct = math.floor(score * 100)
+
+    table.insert(lines, string.format("### %s (%d%% match)", title, score_pct))
+
+    if note.snippet and note.snippet ~= "" then
+      table.insert(lines, note.snippet)
     end
 
-    local lines = {}
-    table.insert(lines, string.format("## Relevant Notes (%d)", #results))
     table.insert(lines, "")
+  end
 
-    for _, note in ipairs(results) do
-      local title = note.title or "Untitled"
-      local score = tonumber(note.score) or 0
-      local score_pct = math.floor(score * 100)
-
-      table.insert(lines, string.format("### %s (%d%% match)", title, score_pct))
-
-      if note.snippet and note.snippet ~= "" then
-        table.insert(lines, note.snippet)
-      end
-
-      table.insert(lines, "")
-    end
-
-    return table.concat(lines, "\n")
-  end)
-end
+  return table.concat(lines, "\n")
+end)
 
 -- Auto mode approves every permission request
 --
@@ -59,74 +57,56 @@ end
 --
 -- Override example in your .crucible/lua/init.lua (auto-allow reads always,
 -- and keep prompting in auto mode):
---   crucible.permissions.on_request(function(request)
+--   cru.permissions.on_request(function(request)
 --     if request.tool_name == "read_file" then return { allow = true } end
 --     return nil
 --   end)
-if crucible and crucible.permissions and type(crucible.permissions.on_request) == "function" then
-  crucible.permissions.on_request(function(request)
-    if request.mode == "auto" then
-      return { allow = true }
-    end
-    return nil
-  end)
-end
+cru.permissions.on_request(function(request)
+  if request.mode == "auto" then
+    return { allow = true }
+  end
+  return nil
+end)
 
 -- Default system prompt
 --
--- Injected as a system message at the front of the conversation when the
--- session's agent has none of its own. An agent card's `system_prompt` takes
--- precedence — `event.system_prompt` is non-empty in that case and this
--- handler stands down rather than sending two competing sets of instructions.
+-- `cru.defaults.x` is the value a NEW session starts from; `session.x` is
+-- that session's own value. (The pair Neovim spells `vim.o` / `vim.bo`. It is
+-- not called `crucible.o` because `vim.o` doubles as an alias for the current
+-- buffer, and the daemon multiplexes sessions — there is no current one.)
 --
--- Override in your .crucible/lua/init.lua by registering your own
--- transform_context handler (yours runs after this one, so it can replace the
--- injected message), or by giving the session an agent card with a
--- system_prompt.
-if crucible and type(crucible.on) == "function" then
-  crucible.on("transform_context", function(ctx, event)
-    local payload = event.payload or event
-    local messages = payload and payload.messages
-    if type(messages) ~= "table" then
-      return nil
-    end
-
-    -- An agent card's prompt is passed to the provider separately, so it is
-    -- NOT visible in `messages` — check the payload field, not the array.
-    local card_prompt = payload.system_prompt
-    if type(card_prompt) == "string" and card_prompt ~= "" then
-      return nil
-    end
-
-    for _, message in ipairs(messages) do
-      if message.role == "system" then
-        return nil
-      end
-    end
-
-    local prompt = table.concat({
-      "You are Crucible, a knowledge-grounded agent working alongside the user.",
-      "",
-      "Ground your answers in the notes and context you are given. When context",
-      "is missing, say so and offer to look — never invent a note, a path, or a",
-      "quotation. Reference notes by title, and link them with [[wikilinks]] when",
-      "you write to the kiln.",
-      "",
-      "Use your tools rather than guessing: read a file before describing it, and",
-      "verify a change before reporting it done. Prefer one decisive action over a",
-      "list of options.",
-      "",
-      "Be concise. Match the depth of the question — a short question gets a short",
-      "answer, and code or structure only when it earns its place.",
-    }, "\n")
-
-    local out = { { role = "system", content = prompt } }
-    for _, message in ipairs(messages) do
-      table.insert(out, message)
-    end
-    return { messages = out }
-  end)
-end
+-- An agent card's own system_prompt wins: defaults only fill fields that were
+-- left unset.
+--
+-- This is an ordinary assignment, so overriding it is ordinary Lua. In your
+-- ~/.config/crucible/init.lua, which runs after this file:
+--
+--   cru.defaults.system_prompt = "…"                        -- replace
+--   cru.defaults.system_prompt =                            -- append
+--     cru.defaults.system_prompt .. "\n\nAnswer in British English."
+--
+-- and per session, for anything conditional:
+--
+--   cru.on_session_start(function(session)
+--     if session.workspace:match("/work/") then
+--       session.system_prompt = session.system_prompt .. "\n\nCite ticket IDs."
+--     end
+--   end)
+cru.defaults.system_prompt = table.concat({
+  "You are Crucible, a knowledge-grounded agent working alongside the user.",
+  "",
+  "Ground your answers in the notes and context you are given. When context",
+  "is missing, say so and offer to look — never invent a note, a path, or a",
+  "quotation. Reference notes by title, and link them with [[wikilinks]] when",
+  "you write to the kiln.",
+  "",
+  "Use your tools rather than guessing: read a file before describing it, and",
+  "verify a change before reporting it done. Prefer one decisive action over a",
+  "list of options.",
+  "",
+  "Be concise. Match the depth of the question — a short question gets a short",
+  "answer, and code or structure only when it earns its place.",
+}, "\n")
 
 -- Bundled plugin defaults
 --

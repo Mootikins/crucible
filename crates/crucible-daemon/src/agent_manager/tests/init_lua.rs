@@ -1,16 +1,34 @@
 use super::*;
 
+/// Fast syntax + API gate: the shipped defaults must load against exactly the
+/// surface the daemon session VM registers, and no more.
+///
+/// The old version of this test registered ONLY `crucible.on` and passed for
+/// the entire life of a default that was guarded behind
+/// `type(crucible.on_session_start) == "function"` and therefore never ran.
+/// Those guards are gone — a shipped default that reaches for a missing API is
+/// now a load error, which is what makes this test meaningful. Keep the
+/// registrations here in sync with `get_or_create_session_state`; behavioural
+/// coverage lives in `init_lua_defaults.rs`.
 #[test]
-fn init_lua_builtin_loads_without_error() {
+fn init_lua_builtin_loads_against_the_session_vm_surface() {
     let lua = Lua::new();
+    let registry = LuaScriptHandlerRegistry::new();
 
-    if let Err(e) = register_crucible_on_api(
+    register_crucible_on_api(
         &lua,
-        LuaScriptHandlerRegistry::new().runtime_handlers(),
-        LuaScriptHandlerRegistry::new().handler_functions(),
-    ) {
-        panic!("register_crucible_on_api failed: {e}");
-    }
+        registry.runtime_handlers(),
+        registry.handler_functions(),
+    )
+    .expect("register_crucible_on_api failed");
+    register_permission_hook_api(
+        &lua,
+        Arc::new(StdMutex::new(Vec::new())),
+        Arc::new(StdMutex::new(HashMap::new())),
+    )
+    .expect("register_permission_hook_api failed");
+    crucible_lua::register_session_defaults(&lua, crucible_lua::SessionDefaults::new())
+        .expect("register_session_defaults failed");
 
     lua.load(crucible_lua::BUILTIN_INIT_LUA)
         .exec()

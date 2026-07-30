@@ -46,7 +46,7 @@ async fn run_permission_hooks(
     assert!(
         !hooks.is_empty(),
         "defaults/init.lua must register a permission hook on the session VM; \
-         an empty list means crucible.permissions.on_request was missing there"
+         an empty list means cru.permissions.on_request was missing there"
     );
     execute_permission_hooks(&guard.lua, &hooks, &functions, &request).unwrap()
 }
@@ -103,112 +103,160 @@ async fn request_without_a_mode_falls_through_to_the_prompt() {
     assert_eq!(result, PermissionHookResult::Prompt);
 }
 
-/// Drive the real `transform_context` dispatch so the assertion covers the
-/// payload the daemon actually sends, not a hand-rolled event.
-async fn run_transform_context(
+/// `configure_agent` is where a default becomes real, so the assertions run
+/// through it rather than through the Lua store — a value that reaches
+/// `cru.defaults` but never reaches `AgentConfig` is exactly the failure
+/// the previous `transform_context` approach had.
+async fn configured_agent(
     agent_manager: &AgentManager,
+    session_manager: &SessionManager,
     session_id: &str,
-    system_prompt: &str,
-    messages: Vec<crucible_core::traits::ContextMessage>,
-) -> Vec<crucible_core::traits::ContextMessage> {
-    let state = agent_manager.get_or_create_session_state(session_id);
-    let guard = state.lock().await;
-    let mut current = messages;
+    agent: SessionAgent,
+) -> SessionAgent {
+    agent_manager
+        .configure_agent(session_id, agent)
+        .await
+        .expect("configure_agent must succeed");
+    session_manager
+        .get_session(session_id)
+        .unwrap()
+        .agent
+        .expect("session must have an agent")
+}
 
-    for handler in guard
-        .registry
-        .runtime_handlers_for("transform_context", None)
-    {
-        let event = SessionEvent::Custom {
-            name: "transform_context".to_string(),
-            payload: serde_json::json!({
-                "messages": &current,
-                "model": "test-model",
-                "system_prompt": system_prompt,
-            }),
-        };
-        if let Ok(crucible_lua::ScriptHandlerResult::Transform(val)) = guard
-            .registry
-            .execute_runtime_handler(&guard.lua, &handler.name, &event, Some(session_id))
-            .await
-        {
-            if let Some(msgs) = val.get("messages") {
-                current = serde_json::from_value(msgs.clone()).expect("handler returned messages");
-            }
-        }
-    }
-    current
+fn bare_agent() -> SessionAgent {
+    let mut agent = test_agent();
+    agent.system_prompt = String::new();
+    agent.temperature = None;
+    agent
 }
 
 #[tokio::test]
-async fn a_session_without_an_agent_prompt_gets_the_default_system_prompt() {
+async fn an_agent_with_no_prompt_of_its_own_gets_the_default() {
     let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let session_manager = agent_manager.session_manager.clone();
 
-    let out = run_transform_context(
-        &agent_manager,
-        &session_id,
-        "",
-        vec![crucible_core::traits::ContextMessage::user("hello")],
+    let agent = configured_agent(&agent_manager, &session_manager, &session_id, bare_agent()).await;
+
+    assert!(
+        agent.system_prompt.contains("Crucible"),
+        "expected the built-in default prompt, got: {:?}",
+        agent.system_prompt
+    );
+}
+
+/// The point of routing through `AgentConfig` rather than injecting a message
+/// per turn: the value is session state, so every surface that reports a
+/// system prompt (TUI `GetSystemPrompt`, Lua `session.system_prompt`, web)
+/// sees it. Reading it back through the Lua session API is the closest
+/// in-process proxy for "the UIs can see it".
+#[tokio::test]
+async fn the_default_is_visible_as_session_state_not_just_at_send_time() {
+    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let session_manager = agent_manager.session_manager.clone();
+
+    configured_agent(&agent_manager, &session_manager, &session_id, bare_agent()).await;
+
+    let persisted = session_manager
+        .get_session(&session_id)
+        .unwrap()
+        .agent
+        .unwrap()
+        .system_prompt;
+    assert!(
+        !persisted.is_empty(),
+        "the default must be persisted on the session's agent config, not applied per turn"
+    );
+}
+
+/// Defaults fill, they never override — that is what makes them defaults.
+#[tokio::test]
+async fn an_agent_card_prompt_wins_over_the_default() {
+    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let session_manager = agent_manager.session_manager.clone();
+
+    let mut agent = bare_agent();
+    agent.system_prompt = "You are a haiku bot.".to_string();
+
+    let configured = configured_agent(&agent_manager, &session_manager, &session_id, agent).await;
+
+    assert_eq!(configured.system_prompt, "You are a haiku bot.");
+}
+
+/// `cru.defaults.x = …` is ordinary assignment on an ordinary VM, so a
+/// later file overrides an earlier one with no special mechanism. This is the
+/// whole extensibility story for defaults — if it fails, users cannot change
+/// a shipped default without editing the shipped file.
+#[tokio::test]
+async fn a_user_init_lua_can_replace_a_shipped_default() {
+    let tmp = TempDir::new().unwrap();
+    let lua_dir = tmp.path().join(".crucible/lua");
+    std::fs::create_dir_all(&lua_dir).unwrap();
+    std::fs::write(
+        lua_dir.join("init.lua"),
+        r#"cru.defaults.system_prompt = "Only haiku.""#,
     )
-    .await;
+    .unwrap();
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+
+    let agent = configured_agent(&agent_manager, &session_manager, &session.id, bare_agent()).await;
 
     assert_eq!(
-        out.first().map(|m| m.role),
-        Some(crucible_core::traits::llm::MessageRole::System),
-        "the default prompt must be prepended, not appended"
+        agent.system_prompt, "Only haiku.",
+        "user init.lua runs after the built-in defaults, so its assignment must win"
+    );
+}
+
+/// The append idiom, end to end: a user file extends the shipped prompt
+/// instead of replacing it, using plain string concatenation.
+#[tokio::test]
+async fn a_user_init_lua_can_append_to_a_shipped_default() {
+    let tmp = TempDir::new().unwrap();
+    let lua_dir = tmp.path().join(".crucible/lua");
+    std::fs::create_dir_all(&lua_dir).unwrap();
+    std::fs::write(
+        lua_dir.join("init.lua"),
+        r#"cru.defaults.system_prompt =
+             cru.defaults.system_prompt .. "\n\nAnswer in British English.""#,
+    )
+    .unwrap();
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+
+    let agent = configured_agent(&agent_manager, &session_manager, &session.id, bare_agent()).await;
+
+    assert!(
+        agent.system_prompt.contains("Crucible"),
+        "the shipped prompt must survive the append"
     );
     assert!(
-        out[0].content.contains("Crucible"),
-        "expected the built-in default prompt, got: {}",
-        out[0].content
+        agent.system_prompt.ends_with("Answer in British English."),
+        "the user's addition must be appended, got: {:?}",
+        agent.system_prompt
     );
-    assert_eq!(
-        out.len(),
-        2,
-        "the original conversation must be preserved beneath the injected prompt"
-    );
-    assert_eq!(out[1].content, "hello");
-}
-
-/// An agent card's prompt reaches the provider through a separate field, so
-/// it is invisible in `messages`. Without the `system_prompt` payload field
-/// the default would stack a second, conflicting instruction set on top of
-/// every card-configured agent.
-#[tokio::test]
-async fn an_agent_card_prompt_suppresses_the_default() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
-
-    let out = run_transform_context(
-        &agent_manager,
-        &session_id,
-        "You are a haiku bot.",
-        vec![crucible_core::traits::ContextMessage::user("hello")],
-    )
-    .await;
-
-    assert_eq!(
-        out.len(),
-        1,
-        "an agent with its own system prompt must not also get the default"
-    );
-    assert_eq!(out[0].content, "hello");
-}
-
-#[tokio::test]
-async fn an_existing_system_message_suppresses_the_default() {
-    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
-
-    let out = run_transform_context(
-        &agent_manager,
-        &session_id,
-        "",
-        vec![
-            crucible_core::traits::ContextMessage::system("Pre-existing instructions."),
-            crucible_core::traits::ContextMessage::user("hello"),
-        ],
-    )
-    .await;
-
-    assert_eq!(out.len(), 2, "must not prepend a second system message");
-    assert_eq!(out[0].content, "Pre-existing instructions.");
 }
