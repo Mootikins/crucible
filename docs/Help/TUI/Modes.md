@@ -119,8 +119,10 @@ Rules use the same engine as the global `[permissions]` config, so
 not thereby permit `rg foo && rm -rf /`.
 
 Declare a mode in `~/.config/crucible/init.lua` for every session, or in
-`<kiln>/.crucible/lua/init.lua` for one kiln. Setting `cru.modes.plan = nil`
-removes a built-in.
+`<workspace>/.crucible/lua/init.lua` for one project. That path is the
+session's **workspace** — the directory work happens in — not its kiln; see
+`crates/crucible-daemon/src/agent_manager/session_vm.rs`. Setting
+`cru.modes.plan = nil` removes a built-in.
 
 For decisions that depend on the arguments rather than the tool, use a
 permission hook instead — see [[Help/Concepts/Permission Precedence]].

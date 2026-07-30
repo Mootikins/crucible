@@ -42,9 +42,11 @@ sl.setup({
 |----------|---------|------------|
 | Built-in defaults | Precognition format, session defaults, bundled plugins | First (embedded) |
 | `~/.config/crucible/init.lua` | Your config — overrides defaults | Second |
-| `<kiln>/.crucible/lua/init.lua` | Kiln-specific config | Third |
+| `<workspace>/.crucible/lua/init.lua` | Per-project config | Third |
 
-Your init.lua runs after the built-in defaults, so you can override anything. Kiln config runs last and can override both.
+Your init.lua runs after the built-in defaults, so you can override anything. The per-project file runs last and can override both.
+
+That third path is the session's **workspace** — where work happens — not its kiln. The two are often the same directory, which is why this is easy to get wrong; the daemon reads `session.workspace`.
 
 ## Configuring Plugins
 
