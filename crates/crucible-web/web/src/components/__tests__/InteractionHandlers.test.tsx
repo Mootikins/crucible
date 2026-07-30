@@ -195,10 +195,14 @@ describe('PermissionInteraction', () => {
     render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
 
     const args = screen.getByTestId('perm-tool-args');
-    // Every key visible, string values verbatim (no truncation), non-strings JSON-encoded.
+    // Every key visible, string values verbatim (no truncation), non-strings
+    // pretty-printed JSON (multi-line for readability — see prettyPrintMaybeJson
+    // in PermissionInteraction).
     expect(args.textContent).toContain(`query=${longQuery}`);
     expect(args.textContent).toContain('limit=20');
-    expect(args.textContent).toContain('filters={"kiln":"docs","tags":["api"]}');
+    expect(args.textContent).toContain('"kiln": "docs"');
+    expect(args.textContent).toContain('"tags": [');
+    expect(args.textContent).toContain('"api"');
     // The empty-tokens fallback box must not add a misleading "(no arguments)".
     expect(screen.queryByText('(no arguments)')).not.toBeInTheDocument();
   });

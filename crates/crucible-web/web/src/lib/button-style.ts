@@ -16,3 +16,11 @@ export const btnPrimary =
 export const btnNeutral =
   'px-3 py-1.5 rounded-md text-xs bg-surface-elevated text-shell-body border border-hairline ' +
   'hover:bg-hover-wash transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+
+/** Tinted destructive action (deny, reject, delete…). Symmetric to btnPrimary
+ *  in shape so the pair reads as one design vocabulary, not primary slab vs.
+ *  bespoke red button. */
+export const btnDanger =
+  'px-3 py-1.5 rounded-md text-xs font-medium bg-error/15 text-error border border-error/40 ' +
+  'hover:bg-error/25 hover:border-error/60 transition-colors ' +
+  'disabled:opacity-50 disabled:cursor-not-allowed';

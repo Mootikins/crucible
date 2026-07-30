@@ -2,17 +2,23 @@ import { Component, Show, createSignal, createResource } from 'solid-js';
 import type { PermRequest, PermResponse, PermissionScope } from '@/lib/types';
 import { getFileContent } from '@/lib/api';
 import { DiffViewer } from '@/components/DiffViewer';
+import { btnPrimary, btnDanger, btnNeutral } from '@/lib/button-style';
+import { deepPrettyPrintJson } from '@/lib/pretty-print';
 
 interface Props {
   request: PermRequest;
   onRespond: (response: PermResponse) => void;
 }
 
-const ACTION_LABELS: Record<string, { label: string; color: string }> = {
-  bash: { label: 'Execute', color: 'bg-attention' },
-  read: { label: 'Read', color: 'bg-primary' },
-  write: { label: 'Write', color: 'bg-attention' },
-  tool: { label: 'Tool', color: 'bg-precog' },
+// Tinted chip per action kind — the loud full-saturation bar (bg-attention
+// slab) clashed with the UI's tinted vocabulary. A 15% fill + 50% border
+// reads as the same family as btnPrimary/btnDanger while still flagging the
+// action type at a glance.
+const ACTION_LABELS: Record<string, { label: string; chip: string }> = {
+  bash: { label: 'Execute', chip: 'bg-attention/15 text-attention border border-attention/50' },
+  read: { label: 'Read', chip: 'bg-primary/15 text-primary border border-primary/50' },
+  write: { label: 'Write', chip: 'bg-attention/15 text-attention border border-attention/50' },
+  tool: { label: 'Tool', chip: 'bg-precog/15 text-precog border border-precog/50' },
 };
 
 /** Extract file path from a write permission request's tokens */
@@ -33,8 +39,20 @@ function toolArgPairs(request: PermRequest): [string, string][] {
   if (!request.tool_args || typeof request.tool_args !== 'object') return [];
   return Object.entries(request.tool_args as Record<string, unknown>).map(([k, v]) => [
     k,
-    typeof v === 'string' ? v : JSON.stringify(v),
+    prettyPrintMaybeJson(v),
   ]);
+}
+
+/**
+ * Render one value for the approval dialog. Delegates the decoding to the
+ * shared `deepPrettyPrintJson` — same unwrapping as tool results, and
+ * depth-capped, unlike a local re-parse loop. Expanding JSON nested inside
+ * string fields matters most here: the user is approving whatever this box
+ * shows, so an escaped one-line blob hides part of the request.
+ */
+function prettyPrintMaybeJson(raw: unknown): string {
+  const decoded = deepPrettyPrintJson(raw);
+  return typeof decoded === 'string' ? decoded : JSON.stringify(decoded, null, 2);
 }
 
 /** Extract new content from tool_args if available */
@@ -54,7 +72,15 @@ export const PermissionInteraction: Component<Props> = (props) => {
   const [showDiff, setShowDiff] = createSignal(true);
 
   const actionInfo = () => ACTION_LABELS[props.request.action_type] || ACTION_LABELS.tool;
-  const commandText = () => props.request.tokens.join(' ');
+  // Two values, deliberately separate: the daemon's permission engine
+  // pattern-matches against the EXACT token shape (`tokens.join(' ')`), so
+  // the response payload must carry the raw pattern. The display can still
+  // pretty-print the same string for human legibility — but the formatted
+  // version must never reach `PermResponse.pattern`, or "Allow for session"
+  // silently fails to grant (the persisted pattern won't match future
+  // requests).
+  const commandPattern = () => props.request.tokens.join(' ');
+  const commandDisplay = () => prettyPrintMaybeJson(commandPattern());
 
   const filePath = () => extractFilePath(props.request);
   const newContent = () => extractNewContent(props.request);
@@ -85,7 +111,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
   const handleAllow = () => {
     props.onRespond({
       allowed: true,
-      pattern: commandText(),
+      pattern: commandPattern(),
       scope: scope(),
     });
   };
@@ -98,16 +124,18 @@ export const PermissionInteraction: Component<Props> = (props) => {
   };
 
   return (
-    <div class="bg-surface-elevated rounded-lg p-4 mb-4 border border-attention/50">
+    <div class="bg-surface-elevated rounded-lg p-4 mb-4 border border-hairline">
       <div class="flex items-center gap-2 mb-3">
-        <span class={`px-2 py-1 text-xs font-medium text-white rounded ${actionInfo().color}`}>
+        <span class={`px-2 py-0.5 text-[11px] font-medium rounded-md ${actionInfo().chip}`}>
           {actionInfo().label}
         </span>
-        <span class="text-muted text-sm">Permission Required</span>
+        <span class="text-[11px] uppercase tracking-wider text-muted-dark font-semibold">
+          Permission Required
+        </span>
       </div>
 
       <Show when={props.request.action_type === 'tool' && props.request.tool_name}>
-        <p class="text-shell-body mb-2">
+        <p class="text-shell-body mb-2 text-sm">
           Tool: <span class="text-shell-ink font-mono">{props.request.tool_name}</span>
         </p>
       </Show>
@@ -115,7 +143,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
       {/* Full tool arguments — everything being approved must be visible */}
       <Show when={toolArgPairs(props.request).length > 0}>
         <div
-          class="bg-surface-base rounded-md p-3 mb-4 font-mono text-sm text-shell-ink"
+          class="bg-surface-base rounded-md p-3 mb-4 font-mono text-xs text-shell-ink"
           data-testid="perm-tool-args"
         >
           {toolArgPairs(props.request).map(([key, value]) => (
@@ -169,29 +197,23 @@ export const PermissionInteraction: Component<Props> = (props) => {
 
       {/* Fallback: show raw command text when neither a diff nor the
           tool-args block already covers the request */}
-      <Show when={!hasDiff() && (commandText() !== '' || toolArgPairs(props.request).length === 0)}>
-        <div class="bg-surface-base rounded-md p-3 mb-4 font-mono text-sm text-shell-ink overflow-x-auto">
-          {commandText() || '(no arguments)'}
+      <Show when={!hasDiff() && (commandDisplay() !== '' || toolArgPairs(props.request).length === 0)}>
+        <div class="bg-surface-base rounded-md p-3 mb-4 font-mono text-xs text-shell-ink overflow-x-auto">
+          {commandDisplay() || '(no arguments)'}
         </div>
       </Show>
 
       <div class="flex items-center gap-2 flex-wrap">
-        <button
-          onClick={handleAllow}
-          class="px-4 py-2 bg-ok text-white rounded-md hover:bg-ok transition-colors font-medium"
-        >
+        <button onClick={handleAllow} class={btnPrimary}>
           Allow
         </button>
-        <button
-          onClick={handleDeny}
-          class="px-4 py-2 bg-error text-white rounded-md hover:bg-error-dark transition-colors font-medium"
-        >
+        <button onClick={handleDeny} class={btnDanger}>
           Deny
         </button>
 
         <button
           onClick={() => setShowScopes(!showScopes())}
-          class="px-3 py-2 text-muted hover:text-shell-ink text-sm transition-colors"
+          class={btnNeutral}
         >
           {showScopes() ? 'Hide options' : 'More options...'}
         </button>
@@ -199,16 +221,16 @@ export const PermissionInteraction: Component<Props> = (props) => {
 
       <Show when={showScopes()}>
         <div class="mt-3 pt-3 border-t border-hairline">
-          <p class="text-muted text-sm mb-2">Allow for:</p>
-          <div class="flex gap-2 flex-wrap">
+          <p class="text-muted text-xs mb-2">Allow for:</p>
+          <div class="flex gap-1.5 flex-wrap">
             {(['once', 'session', 'project', 'user'] as PermissionScope[]).map((s) => (
               <button
                 onClick={() => setScope(s)}
-                class={`px-3 py-1 text-sm rounded-md border transition-colors ${
-                  scope() === s
-                    ? 'bg-primary/20 text-primary border-primary/60'
-                    : 'bg-control text-shell-body border-transparent hover:bg-hover-wash'
-                }`}
+                classList={{
+                  'px-2.5 py-1 text-[11px] rounded-md border transition-colors font-medium': true,
+                  'bg-primary/15 text-primary border-primary/40': scope() === s,
+                  'bg-surface-elevated text-shell-body border-hairline hover:bg-hover-wash': scope() !== s,
+                }}
               >
                 {s.charAt(0).toUpperCase() + s.slice(1)}
               </button>
