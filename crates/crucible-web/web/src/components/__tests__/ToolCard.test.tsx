@@ -228,6 +228,59 @@ describe('ToolCard — args formatting', () => {
   });
 });
 
+describe('ToolCard — bash command rendering', () => {
+  const bash = (command: string, extra: Record<string, unknown> = {}) =>
+    makeTool({ name: 'bash', args: JSON.stringify({ command, ...extra }) });
+
+  it('renders a bash command as a shell line, not JSON', () => {
+    render(() => <ToolCard toolCall={bash('ls -la /tmp')} />);
+    fireEvent.click(screen.getByText('bash'));
+
+    const cmd = screen.getByTestId('bash-command');
+    expect(cmd.textContent).toContain('ls -la /tmp');
+    // The JSON envelope is noise around the one thing that matters.
+    expect(cmd.textContent).not.toContain('"command"');
+    expect(cmd.textContent).not.toContain('{');
+  });
+
+  it('keeps real newlines in a multi-line command', () => {
+    // As JSON this rendered as one line containing a literal \n escape.
+    render(() => <ToolCard toolCall={bash('cd /tmp\ngrep -r foo .')} />);
+    fireEvent.click(screen.getByText('bash'));
+
+    const cmd = screen.getByTestId('bash-command');
+    expect(cmd.textContent).toContain('cd /tmp\ngrep -r foo .');
+    expect(cmd.textContent).not.toContain('\\n');
+  });
+
+  it('still shows any non-command bash arguments', () => {
+    render(() => <ToolCard toolCall={bash('ls', { timeout: 30 })} />);
+    fireEvent.click(screen.getByText('bash'));
+
+    expect(screen.getByTestId('bash-command').textContent).toContain('ls');
+    const args = screen.getByTestId('tool-args');
+    expect(args.textContent).toContain('timeout');
+    expect(args.textContent).toContain('30');
+    // …but not a second copy of the command.
+    expect(args.textContent).not.toContain('"command"');
+  });
+
+  it('falls back to the JSON args block when bash has no command string', () => {
+    render(() => <ToolCard toolCall={makeTool({ name: 'bash', args: '{"script":"x"}' })} />);
+    fireEvent.click(screen.getByText('bash'));
+
+    expect(screen.queryByTestId('bash-command')).not.toBeInTheDocument();
+    expect(screen.getByTestId('tool-args').textContent).toContain('script');
+  });
+
+  it('does not treat a non-shell tool with a command arg as bash', () => {
+    render(() => <ToolCard toolCall={makeTool({ name: 'run_task', args: '{"command":"build"}' })} />);
+    fireEvent.click(screen.getByText('run_task'));
+
+    expect(screen.queryByTestId('bash-command')).not.toBeInTheDocument();
+  });
+});
+
 describe('ToolCard — result rendering', () => {
   it('shows the Result heading when result is present and status is not error', () => {
     render(() => <ToolCard toolCall={makeTool({ status: 'complete', result: 'final output' })} />);
@@ -398,7 +451,10 @@ describe('ToolCard — diff rendering', () => {
     expect(container.textContent).not.toContain('"new_string"');
   });
 
-  it('still renders the Arguments JSON section for non-diff tools (e.g. Bash)', () => {
+  it('still shows the input for non-diff tools (e.g. Bash)', () => {
+    // Bash renders no diff and its input is a command line, so it gets the
+    // Command block rather than the JSON Arguments block. What matters here
+    // is that a non-diff tool's input is visible at all.
     const { container } = render(() => (
       <ToolCard
         toolCall={call({
@@ -410,8 +466,7 @@ describe('ToolCard — diff rendering', () => {
     ));
     expandCard(container);
     expect(screen.queryByTestId('diff-viewer')).toBeNull();
-    expect(screen.getByText('Arguments')).toBeInTheDocument();
-    expect(container.textContent).toContain('"command"');
+    expect(screen.getByTestId('bash-command').textContent).toContain('ls');
   });
 
   it('falls back to plain <pre> when args JSON is malformed', () => {

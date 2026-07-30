@@ -136,7 +136,7 @@ describe('ToolCard integration — real DiffViewer + Shiki', () => {
     expect(styledSpans.length).toBeGreaterThan(0);
   });
 
-  it('Bash falls back to plain <pre> result and keeps the Arguments JSON section', () => {
+  it('Bash falls back to plain <pre> result and renders its Command block', () => {
     const { container } = render(() => (
       <ToolCard
         toolCall={makeTool({
@@ -154,9 +154,9 @@ describe('ToolCard integration — real DiffViewer + Shiki', () => {
     expect(container.textContent).toContain('foo');
     expect(container.textContent).toContain('bar');
 
-    // Arguments JSON IS rendered for non-diff tools (no suppression path).
-    expect(screen.getByText('Arguments')).toBeInTheDocument();
-    expect(container.textContent).toContain('"command"');
+    // A shell call's input renders as a command line, not a JSON envelope.
+    expect(screen.getByTestId('bash-command').textContent).toContain('ls');
+    expect(container.textContent).not.toContain('"command"');
 
     // No DiffViewer file-name header (shell-body mono span) means no diff is
     // present — Bash doesn't map to a diff and should not render one.

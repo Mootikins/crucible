@@ -76,11 +76,40 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
     }
   };
 
+  // A shell call's payload is a command line, and JSON is the wrong costume
+  // for it: `{ "command": "cd /tmp\ngrep -r foo ." }` buries the one thing
+  // that matters behind an envelope and turns every newline into a literal
+  // `\n`. Detected by tool NAME (not merely "has a command arg") so an
+  // ordinary tool that happens to take `command` keeps its JSON rendering.
+  const SHELL_TOOLS = ['bash', 'shell', 'sh', 'zsh', 'exec', 'run_command', 'terminal'];
+  const bashCommand = createMemo(() => {
+    const name = props.toolCall.name.toLowerCase();
+    if (!SHELL_TOOLS.some((t) => name === t || name.endsWith(`__${t}`))) return null;
+    const args = props.toolCall.args;
+    if (!args) return null;
+    try {
+      const parsed: unknown = JSON.parse(args);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+      const command = (parsed as Record<string, unknown>).command;
+      return typeof command === 'string' && command !== '' ? command : null;
+    } catch {
+      return null;
+    }
+  });
+
   const formattedArgs = createMemo(() => {
     const args = props.toolCall.args;
     if (!args || args === '' || args === '""') return null;
     try {
       const parsed = JSON.parse(args);
+      // The command renders in its own block above; showing it again here
+      // would just be the escaped copy we were trying to get rid of. Any
+      // other argument (timeout, cwd, …) still deserves display.
+      if (bashCommand() !== null && parsed && typeof parsed === 'object') {
+        const { command: _command, ...rest } = parsed as Record<string, unknown>;
+        if (Object.keys(rest).length === 0) return null;
+        return JSON.stringify(deepPrettyPrintJson(rest), null, 2);
+      }
       return JSON.stringify(deepPrettyPrintJson(parsed), null, 2);
     } catch {
       return args;
@@ -204,12 +233,36 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
 
       <Show when={expanded()}>
         <div class="border-t border-hairline">
+          {/* A shell call reads as a command, so render it as one: prompt
+              marker, real newlines, no JSON envelope. */}
+          <Show when={bashCommand()}>
+            <div class="px-3 py-2 bg-surface-base">
+              <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">
+                Command
+              </div>
+              <div class="flex gap-2">
+                <span class="select-none text-primary text-xs font-mono leading-5" aria-hidden="true">
+                  $
+                </span>
+                <pre
+                  data-testid="bash-command"
+                  class="flex-1 min-w-0 text-xs text-shell-ink font-mono leading-5 whitespace-pre-wrap break-words overflow-x-auto max-h-48 overflow-y-auto"
+                >
+                  {bashCommand()}
+                </pre>
+              </div>
+            </div>
+          </Show>
+
           {/* Args section — suppressed when a diff renders, since the diff header
               shows the file path and the diff body shows the old/new content. */}
           <Show when={formattedArgs() && !diff()}>
-            <div class="px-3 py-2 bg-surface-base">
+            <div class={`px-3 py-2 bg-surface-base ${bashCommand() ? 'border-t border-hairline' : ''}`}>
               <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">Arguments</div>
-              <pre class="text-xs text-shell-body font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-48 overflow-y-auto">
+              <pre
+                data-testid="tool-args"
+                class="text-xs text-shell-body font-mono whitespace-pre-wrap break-words overflow-x-auto max-h-48 overflow-y-auto"
+              >
                 {formattedArgs()}
               </pre>
             </div>
@@ -224,7 +277,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
               <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">
                 Error
               </div>
-              <pre class="text-xs font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-64 overflow-y-auto text-error">
+              <pre class="text-xs font-mono whitespace-pre-wrap break-words overflow-x-auto max-h-64 overflow-y-auto text-error">
                 {formattedResult()}
               </pre>
             </div>
@@ -272,7 +325,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
               <div class="text-[10px] uppercase tracking-wider text-muted-dark mb-1 font-semibold">
                 Result
               </div>
-              <pre class="text-xs font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-64 overflow-y-auto text-shell-body">
+              <pre class="text-xs font-mono whitespace-pre-wrap break-words overflow-x-auto max-h-64 overflow-y-auto text-shell-body">
                 {formattedResult()}
               </pre>
             </div>
