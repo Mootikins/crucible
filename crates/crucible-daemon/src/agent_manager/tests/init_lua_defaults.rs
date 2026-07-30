@@ -666,3 +666,80 @@ fn a_mode_can_permit_bash_for_specific_commands_only(command: &str, expected: Pe
         "command {command:?} produced {decision:?}"
     );
 }
+
+/// `session_modes().current_mode_id` must be the SESSION's mode.
+///
+/// It was `declared.first()` — registration order — which nothing caught
+/// because both callers read only `available_modes`. Putting that struct on
+/// the wire would have shown every UI whichever mode the defaults file
+/// declares first, which is the same "reports a state it does not have"
+/// defect this whole arc is about.
+#[tokio::test]
+async fn session_modes_reports_the_sessions_own_current_mode() {
+    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    agent_manager
+        .configure_agent(&session_id, test_agent())
+        .await
+        .unwrap();
+
+    // "normal" is declared FIRST in runtime/defaults/init.lua, so selecting
+    // anything else is what distinguishes the session's mode from the
+    // registration order.
+    agent_manager
+        .set_mode(&session_id, "plan", None)
+        .await
+        .unwrap();
+
+    let modes = agent_manager.session_modes(&session_id);
+    assert_eq!(
+        modes.current_mode_id.0.as_ref(),
+        "plan",
+        "must be the session's mode, not the first declared one"
+    );
+}
+
+/// A persisted mode that is no longer declared must not be reported as
+/// current — that would put a mode nobody can enforce on the wire.
+#[tokio::test]
+async fn session_modes_ignores_a_persisted_mode_that_no_longer_exists() {
+    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let session_manager = agent_manager.session_manager.clone();
+    agent_manager
+        .configure_agent(&session_id, test_agent())
+        .await
+        .unwrap();
+
+    agent_manager
+        .set_mode(&session_id, "plan", None)
+        .await
+        .unwrap();
+
+    // Simulate the declaration going away underneath a persisted session.
+    let _vm = agent_manager.get_or_create_session_state(&session_id);
+    agent_manager.modes.remove("plan");
+
+    let modes = agent_manager.session_modes(&session_id);
+    assert_ne!(
+        modes.current_mode_id.0.as_ref(),
+        "plan",
+        "an undeclared mode must not be reported as current"
+    );
+    assert!(
+        modes
+            .available_modes
+            .iter()
+            .any(|m| m.id.0.as_ref() == modes.current_mode_id.0.as_ref()),
+        "current_mode_id must always be one of available_modes"
+    );
+    // The persisted value is untouched; this is a reporting fix, not a writer.
+    assert_eq!(
+        session_manager
+            .get_session(&session_id)
+            .unwrap()
+            .agent
+            .unwrap()
+            .mode
+            .as_deref(),
+        Some("plan")
+    );
+}

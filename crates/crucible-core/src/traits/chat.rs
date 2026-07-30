@@ -611,29 +611,3 @@ pub struct ChatToolCall {
     pub arguments: Option<serde_json::Value>,
     pub id: Option<String>,
 }
-
-// Mode ID Helper Functions
-
-pub fn is_read_only(mode_id: &str) -> bool {
-    mode_id == "plan"
-}
-
-pub fn mode_display_name(mode_id: &str) -> &'static str {
-    match mode_id {
-        "normal" => "Normal",
-        "plan" => "Plan",
-        "auto" => "Auto",
-        _ => "Unknown",
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_is_read_only() {
-        assert!(is_read_only("plan"));
-        assert!(!is_read_only("normal"));
-    }
-}

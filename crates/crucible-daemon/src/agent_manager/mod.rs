@@ -990,9 +990,20 @@ impl AgentManager {
         if declared.is_empty() {
             return default_internal_modes();
         }
-        let current = declared
-            .first()
-            .map(|m| m.name.clone())
+        // The SESSION's mode, not registration order. This field was
+        // previously `declared.first()`, which nothing noticed because both
+        // callers read only `available_modes` — but the moment this struct
+        // goes on the wire, a UI hydrating `current_mode_id` would show
+        // whichever mode the defaults file happens to declare first.
+        // Fall back to the first declared only when the session has none, and
+        // ignore a persisted mode that is no longer declared.
+        let session_mode = self
+            .session_manager
+            .get_session(session_id)
+            .and_then(|s| s.agent.and_then(|a| a.mode))
+            .filter(|m| declared.iter().any(|d| &d.name == m));
+        let current = session_mode
+            .or_else(|| declared.first().map(|m| m.name.clone()))
             .unwrap_or_else(|| "normal".to_string());
         let available = declared
             .into_iter()

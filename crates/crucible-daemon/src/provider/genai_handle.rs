@@ -6,7 +6,7 @@ use crucible_core::traits::chat::{
 use crucible_core::traits::llm::LlmToolDefinition;
 use crucible_core::traits::TokenUsage;
 use crucible_core::turn::{StopReason, TurnError, TurnEvent};
-use crucible_core::types::acp::schema::{SessionModeId, SessionModeState};
+use crucible_core::types::acp::schema::{SessionMode, SessionModeId, SessionModeState};
 use crucible_core::types::mode::default_internal_modes;
 use futures::stream::BoxStream;
 use futures::StreamExt;
@@ -711,11 +711,51 @@ impl GenaiAgentHandle {
         )
     }
 
-    /// Attach the Lua mode registry, so a declared mode's `tools` selector
-    /// becomes the per-request filter. Without it the handle keeps the shipped
-    /// plan-mode behaviour — a missing registry must restrict, not open up.
+    /// Attach the Lua mode registry.
+    ///
+    /// Two jobs, and the second was missing: a declared mode's `tools`
+    /// selector becomes the per-request filter, AND `mode_state` is rebuilt
+    /// so `set_mode_str` will actually *accept* a declared mode. Without the
+    /// rebuild the handle validated against `default_internal_modes()`, so a
+    /// user-defined mode was rejected on every handle re-creation — the
+    /// session reported one mode and enforced another, with only a `warn!`
+    /// on the resume path to show for it.
+    ///
+    /// An empty registry keeps the shipped built-ins: a missing registry must
+    /// restrict, not open up.
     #[must_use]
     pub fn with_modes(mut self, modes: crucible_lua::ModeRegistry) -> Self {
+        let declared = modes.all();
+        if !declared.is_empty() {
+            let available = declared
+                .iter()
+                .map(|m| {
+                    let title = {
+                        let mut c = m.name.chars();
+                        match c.next() {
+                            Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                            None => m.name.clone(),
+                        }
+                    };
+                    let mode = SessionMode::new(SessionModeId::new(m.name.as_str()), title);
+                    match &m.description {
+                        Some(d) => mode.description(d.clone()),
+                        None => mode,
+                    }
+                })
+                .collect();
+            // Keep the handle's current mode if it is still declared;
+            // otherwise fall back to the first declared one rather than
+            // leaving a `current_mode_id` no longer in `available_modes`.
+            let current = if declared.iter().any(|m| m.name == self.current_mode_id) {
+                self.current_mode_id.clone()
+            } else {
+                declared[0].name.clone()
+            };
+            self.current_mode_id = current.clone();
+            self.mode_state =
+                SessionModeState::new(SessionModeId::new(current.as_str()), available);
+        }
         self.modes = Some(modes);
         self
     }
@@ -1928,6 +1968,71 @@ mod tests {
             .model_iden("gpt-4o-mini")
             .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, "gpt-4o-mini"));
         GenaiAgentHandle::new(client, model, "system", tools, None)
+    }
+
+    /// Regression: a handle must accept a mode the Lua registry declares.
+    ///
+    /// `with_workspace` built `mode_state` from `default_internal_modes()`
+    /// unconditionally, so `set_mode_str` rejected anything outside
+    /// normal/plan/auto with `InvalidMode`. The resume path applies the
+    /// persisted mode best-effort and only `warn!`s, so after a handle
+    /// eviction the session silently ran the handle's default while
+    /// `session.get_mode` kept reporting the user's mode — reported one mode,
+    /// enforced another.
+    #[tokio::test]
+    async fn set_mode_str_accepts_a_lua_declared_mode() {
+        let registry = crucible_lua::ModeRegistry::new();
+        registry.set(crucible_lua::ModeDefinition {
+            name: "review".to_string(),
+            description: Some("Read-only review".to_string()),
+            tools: crucible_lua::ToolSelector::Patterns(vec!["read_*".to_string()]),
+            permissions: crucible_lua::ModePermissions::default(),
+        });
+
+        let mut handle = test_handle_with_tools(Vec::new()).with_modes(registry);
+
+        handle
+            .set_mode_str("review")
+            .await
+            .expect("a declared mode must be accepted by the handle");
+        assert_eq!(handle.get_mode_id(), "review");
+    }
+
+    /// The fallback still restricts: with no registry, only the built-ins.
+    #[tokio::test]
+    async fn set_mode_str_still_rejects_an_undeclared_mode() {
+        let mut handle = test_handle_with_tools(Vec::new());
+        assert!(
+            handle.set_mode_str("nonsense").await.is_err(),
+            "an undeclared mode must still be rejected"
+        );
+    }
+
+    /// A declared mode's `tools` selector must filter the advertised set.
+    /// Before the fix `visible_tools()` resolved against the handle's default
+    /// mode, so `review` advertised everything.
+    #[tokio::test]
+    async fn a_declared_modes_tool_selector_filters_the_advertised_set() {
+        let registry = crucible_lua::ModeRegistry::new();
+        registry.set(crucible_lua::ModeDefinition {
+            name: "review".to_string(),
+            description: None,
+            tools: crucible_lua::ToolSelector::Patterns(vec!["read_*".to_string()]),
+            permissions: crucible_lua::ModePermissions::default(),
+        });
+
+        let mut handle =
+            test_handle_with_tools(vec![tool_def("read_file"), tool_def("write_file")])
+                .with_modes(registry);
+        handle.set_mode_str("review").await.unwrap();
+
+        let names: Vec<String> = handle
+            .visible_tools()
+            .tools
+            .iter()
+            .map(|t| t.function.name.clone())
+            .collect();
+        assert_eq!(names, vec!["read_file"], "review must not advertise writes");
     }
 
     fn tool_def(name: &str) -> LlmToolDefinition {

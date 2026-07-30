@@ -18,7 +18,6 @@ use crate::factories;
 use crate::output;
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
 use crate::tui::AgentSelection;
-use crucible_core::traits::chat::{is_read_only, mode_display_name};
 
 /// Parameters for the execute function
 pub struct ExecuteParams {
@@ -43,6 +42,13 @@ pub struct ExecuteParams {
 pub struct RunInteractiveChatParams {
     pub config: CliConfig,
     pub initial_mode: String,
+    /// The user's `--plan` intent, threaded rather than re-derived.
+    ///
+    /// Read-only-ness is a property of a mode's tools and permissions, which
+    /// the daemon owns — the CLI cannot compute it for a user-defined mode.
+    /// Recovering it from the mode NAME (`mode_id == "plan"`) was a lie that
+    /// only happened to hold while the mode set was fixed.
+    pub read_only: bool,
     pub agent_name: Option<String>,
     pub provider_key: Option<String>,
     pub max_context_tokens: usize,
@@ -60,6 +66,13 @@ pub struct RunInteractiveChatParams {
 pub struct RunOneshotChatParams {
     pub config: CliConfig,
     pub initial_mode: String,
+    /// The user's `--plan` intent, threaded rather than re-derived.
+    ///
+    /// Read-only-ness is a property of a mode's tools and permissions, which
+    /// the daemon owns — the CLI cannot compute it for a user-defined mode.
+    /// Recovering it from the mode NAME (`mode_id == "plan"`) was a lie that
+    /// only happened to hold while the mode set was fixed.
+    pub read_only: bool,
     pub agent_name: Option<String>,
     pub provider_key: Option<String>,
     pub max_context_tokens: usize,
@@ -122,7 +135,7 @@ pub async fn execute(params: ExecuteParams) -> Result<()> {
     let initial_mode = if read_only { "plan" } else { "normal" };
 
     info!("Starting chat command");
-    info!("Initial mode: {}", mode_display_name(initial_mode));
+    info!("Initial mode: {}", initial_mode);
 
     let parsed_env = parse_env_overrides(&env_overrides);
     let working_dir = std::env::current_dir().ok();
@@ -146,6 +159,7 @@ pub async fn execute(params: ExecuteParams) -> Result<()> {
     match query {
         None => {
             run_interactive_chat(RunInteractiveChatParams {
+                read_only,
                 config,
                 initial_mode: initial_mode.to_string(),
                 agent_name,
@@ -164,6 +178,7 @@ pub async fn execute(params: ExecuteParams) -> Result<()> {
         }
         Some(query_text) => {
             run_oneshot_chat(RunOneshotChatParams {
+                read_only,
                 config,
                 initial_mode: initial_mode.to_string(),
                 agent_name,
@@ -310,6 +325,7 @@ async fn open_project_kilns_if_matched(
 
 async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
     let RunInteractiveChatParams {
+        read_only,
         config,
         initial_mode,
         agent_name,
@@ -327,7 +343,6 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
     use crate::chat::bridge::AgentEventBridge;
     use crate::tui::oil::{ChatMode, OilChatRunner};
     use crucible_core::events::EventRing;
-    use crucible_core::traits::chat::is_read_only;
 
     let parsed_set_overrides = {
         use crate::tui::oil::commands::validate_set_for_cli;
@@ -512,7 +527,6 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
     runner = runner.with_session_dir(session_dir);
 
     let config_for_factory = config;
-    let initial_mode_str = initial_mode.to_string();
     let resume_id_for_factory = resume_session_id;
     let recording_mode_for_factory = recording_mode.clone();
     let recording_path_for_factory = recording_path.clone();
@@ -522,7 +536,6 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
         let provider_key = provider_key.clone();
         let parsed_env = parsed_env.clone();
         let working_dir = working_dir.clone();
-        let initial_mode = initial_mode_str.clone();
         let resume_session_id = resume_id_for_factory.clone();
         let recording_mode = recording_mode_for_factory.clone();
         let recording_path = recording_path_for_factory.clone();
@@ -531,7 +544,7 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
             // Build common params once
             let mut params = factories::AgentInitParams::new()
                 .with_provider_opt(provider_key)
-                .with_read_only(is_read_only(&initial_mode))
+                .with_read_only(read_only)
                 .with_max_context_tokens(max_context_tokens)
                 .with_env_overrides(parsed_env)
                 .with_resume_session_id(resume_session_id)
@@ -585,8 +598,13 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
 
 async fn run_oneshot_chat(params: RunOneshotChatParams) -> Result<()> {
     let RunOneshotChatParams {
+        read_only,
         config,
-        initial_mode,
+        // NOTE: never applied. `cru chat -q` runs whatever mode the session
+        // already has; this field only ever fed the name-based `is_read_only`
+        // that has just been removed. Applying it needs `--mode <name>`
+        // plumbing (see the mode transport work), not a rename.
+        initial_mode: _initial_mode,
         agent_name,
         provider_key,
         max_context_tokens,
@@ -604,7 +622,7 @@ async fn run_oneshot_chat(params: RunOneshotChatParams) -> Result<()> {
     let mut agent_params = factories::AgentInitParams::new()
         .with_agent_name_opt(agent_name.clone().or(default_agent.clone()))
         .with_provider_opt(provider_key)
-        .with_read_only(is_read_only(&initial_mode))
+        .with_read_only(read_only)
         .with_max_context_tokens(max_context_tokens)
         .with_env_overrides(parsed_env)
         .with_resume_session_id(resume_session_id);
