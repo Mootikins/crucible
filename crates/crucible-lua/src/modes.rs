@@ -69,6 +69,10 @@ impl ModeStance {
 }
 
 /// Which tools a mode exposes.
+///
+/// Patterns use the shared glob syntax from `crucible_core::utils::glob_match`
+/// — `*`, `?`, `[a-z]`, `{a,b}` — the same one `crucible.on`'s `pattern`
+/// accepts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolSelector {
     /// Everything the agent has.
@@ -81,7 +85,15 @@ impl ToolSelector {
     pub fn matches(&self, tool_name: &str) -> bool {
         match self {
             Self::All => true,
-            Self::Patterns(patterns) => patterns.iter().any(|p| glob_matches(p, tool_name)),
+            // The canonical matcher, shared with `crucible.on`'s `pattern`
+            // (`handlers/registry.rs`) and the MCP gateway. A mode's `tools`
+            // globs and a hook's `pattern` globs must be the same language;
+            // this file previously hand-rolled a reduced `*`-only variant,
+            // so `{read,write}_*` worked in one and silently matched nothing
+            // in the other.
+            Self::Patterns(patterns) => patterns
+                .iter()
+                .any(|p| crucible_core::utils::glob_match(p, tool_name)),
         }
     }
 }
@@ -118,52 +130,6 @@ pub struct ModeDefinition {
     pub description: Option<String>,
     pub tools: ToolSelector,
     pub permissions: ModePermissions,
-}
-
-/// `*` matches any run of characters, including none. Everything else is
-/// literal — deliberately not a full glob: tool names are flat identifiers,
-/// and `?`/`[...]` would invite patterns nobody can read at a glance.
-fn glob_matches(pattern: &str, name: &str) -> bool {
-    let mut segments = pattern.split('*');
-    let Some(first) = segments.next() else {
-        return pattern == name;
-    };
-    if !name.starts_with(first) {
-        return false;
-    }
-    // No `*` at all: the whole pattern had to match exactly.
-    let rest_patterns: Vec<&str> = segments.collect();
-    if rest_patterns.is_empty() {
-        return pattern == name;
-    }
-
-    let mut cursor = &name[first.len()..];
-    for (i, segment) in rest_patterns.iter().enumerate() {
-        let is_last = i == rest_patterns.len() - 1;
-        if segment.is_empty() {
-            // Trailing `*` swallows the remainder.
-            if is_last {
-                return true;
-            }
-            continue;
-        }
-        match cursor.find(segment) {
-            Some(pos) => {
-                if is_last && pos + segment.len() != cursor.len() {
-                    // The last literal must land at the END unless the pattern
-                    // ended with `*`.
-                    let tail = &cursor[pos + segment.len()..];
-                    if !tail.is_empty() {
-                        // Try to find a later occurrence that does reach the end.
-                        return cursor.ends_with(segment);
-                    }
-                }
-                cursor = &cursor[pos + segment.len()..];
-            }
-            None => return false,
-        }
-    }
-    true
 }
 
 /// Shared, ordered registry of modes.
@@ -567,23 +533,36 @@ mod tests {
         assert!(err.to_string().contains("list of"), "got: {err}");
     }
 
+    /// The behaviour the deleted hand-rolled matcher had, re-asserted against
+    /// the shared one so the swap is a behaviour check rather than a rename.
     #[test]
-    fn glob_star_matches_prefix_suffix_and_middle() {
-        assert!(glob_matches("read_*", "read_file"));
-        assert!(glob_matches("*_search", "semantic_search"));
-        assert!(glob_matches("*", "anything"));
-        assert!(glob_matches("a*c", "abc"));
-        assert!(glob_matches("a*c", "ac"));
-        assert!(!glob_matches("read_*", "write_file"));
-        assert!(!glob_matches("*_search", "search_notes"));
-        assert!(!glob_matches("exact", "exactly"));
-        assert!(glob_matches("exact", "exact"));
+    fn tool_selectors_use_the_shared_glob_syntax() {
+        let sel = |p: &str| ToolSelector::Patterns(vec![p.to_string()]);
+
+        assert!(sel("read_*").matches("read_file"));
+        assert!(sel("*_search").matches("semantic_search"));
+        assert!(sel("*").matches("anything"));
+        assert!(sel("a*c").matches("abc"));
+        assert!(sel("a*c").matches("ac"));
+        assert!(!sel("read_*").matches("write_file"));
+        assert!(!sel("*_search").matches("search_notes"));
+        assert!(!sel("exact").matches("exactly"));
+        assert!(sel("exact").matches("exact"));
+        // A trailing literal still has to reach the end.
+        assert!(!sel("*_search").matches("text_search_v2"));
+        assert!(sel("*_search*").matches("text_search_v2"));
     }
 
-    /// `*_search` must not match a name that merely CONTAINS the suffix.
+    /// The syntax the hand-rolled matcher silently could NOT do. These are
+    /// the assertions that would have caught the divergence: each works in
+    /// `crucible.on`'s `pattern` and matched nothing in a mode's `tools`.
     #[test]
-    fn a_trailing_literal_must_reach_the_end() {
-        assert!(!glob_matches("*_search", "text_search_v2"));
-        assert!(glob_matches("*_search*", "text_search_v2"));
+    fn tool_selectors_accept_the_full_glob_syntax_hooks_accept() {
+        let sel = |p: &str| ToolSelector::Patterns(vec![p.to_string()]);
+
+        assert!(sel("{read,write}_file").matches("write_file"));
+        assert!(sel("read_?").matches("read_a"));
+        assert!(!sel("read_?").matches("read_ab"));
+        assert!(sel("tool:[a-z]*").matches("tool:grep"));
     }
 }

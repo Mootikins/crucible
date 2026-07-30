@@ -48,6 +48,12 @@ pub struct PermissionRequest {
 pub struct PermissionHook {
     /// Handler name for debugging
     pub name: String,
+    /// Only consult this hook for tool names matching this glob.
+    ///
+    /// Same option name and same matcher as `crucible.on`
+    /// (`crucible_core::utils::glob_match`), so `pattern` means one thing
+    /// across both hooks. `None` means every tool.
+    pub pattern: Option<String>,
     /// Lower runs first, matching `crucible.on`'s `priority` option.
     ///
     /// This exists because the gate is first-match-wins: without it, ordering
@@ -67,6 +73,9 @@ pub const SHIPPED_DEFAULT_PRIORITY: i64 = 1000;
 /// This allows Lua scripts to register callbacks that fire before permission prompts:
 ///
 /// ```lua
+/// -- Filter at registration instead of `if request.tool_name == "bash"`:
+/// crucible.permissions.on_request(function(request) ... end, { pattern = "bash" })
+///
 /// crucible.permissions.on_request(function(request)
 ///     -- request.tool_name, request.args, request.file_path, request.mode
 ///     if request.mode == "auto" then
@@ -105,9 +114,16 @@ pub fn register_permission_hook_api(
     let functions = permission_functions.clone();
     let on_request_fn =
         lua.create_function(move |lua, (handler, opts): (Function, Option<Table>)| {
-            let priority: i64 = opts
-                .and_then(|o| o.get::<Option<i64>>("priority").ok().flatten())
-                .unwrap_or(100);
+            let (pattern, priority) = match &opts {
+                Some(o) => (
+                    o.get::<Option<String>>("pattern").ok().flatten(),
+                    o.get::<Option<i64>>("priority")
+                        .ok()
+                        .flatten()
+                        .unwrap_or(100),
+                ),
+                None => (None, 100),
+            };
 
             let mut guard = hooks
                 .lock()
@@ -116,6 +132,7 @@ pub fn register_permission_hook_api(
             let name = format!("permission_hook_{}", guard.len());
             guard.push(PermissionHook {
                 name: name.clone(),
+                pattern,
                 priority,
             });
 
@@ -183,7 +200,13 @@ pub fn execute_permission_hooks(
     // stable). First non-nil answer wins, so this ordering is what decides
     // whether a user hook can override a shipped default — it registers later
     // but at a lower priority, so it is asked first.
-    let mut ordered: Vec<&PermissionHook> = hooks.iter().collect();
+    let mut ordered: Vec<&PermissionHook> = hooks
+        .iter()
+        .filter(|h| match &h.pattern {
+            Some(p) => crucible_core::utils::glob_match(p, &request.tool_name),
+            None => true,
+        })
+        .collect();
     ordered.sort_by_key(|h| h.priority);
 
     for hook in ordered {

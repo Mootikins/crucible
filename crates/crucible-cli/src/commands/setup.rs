@@ -154,7 +154,6 @@ const TEMPLATE_INIT_LUA: &str = r#"-- Crucible user configuration
 -- Permission hooks, for anything conditional. Yours run BEFORE the shipped
 -- ones, so this wins over the built-ins.
 -- cru.permissions.on_request(function(request)
---   if request.tool_name == "bash" then return { deny = true } end
---   return nil
--- end)
+--   return { deny = true }
+-- end, { pattern = "bash" })
 "#;

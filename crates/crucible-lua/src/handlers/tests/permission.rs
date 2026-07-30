@@ -270,3 +270,85 @@ fn test_permission_hook_first_decision_wins() {
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), PermissionHookResult::Allow);
 }
+
+/// Registration-time filtering, the option `crucible.on` already had.
+/// Without it every policy hook opens with `if request.tool_name == "bash"`.
+#[test]
+fn a_pattern_scopes_a_hook_to_matching_tools() {
+    let lua = Lua::new();
+    let hooks = Arc::new(Mutex::new(Vec::new()));
+    let functions = Arc::new(Mutex::new(HashMap::new()));
+    register_permission_hook_api(&lua, hooks.clone(), functions.clone()).unwrap();
+
+    lua.load(
+        r#"crucible.permissions.on_request(function(request)
+             return { deny = true }
+           end, { pattern = "bash" })"#,
+    )
+    .exec()
+    .unwrap();
+
+    let hooks_guard = hooks.lock().unwrap();
+    let functions_guard = functions.lock().unwrap();
+
+    let req = |tool: &str| PermissionRequest {
+        tool_name: tool.to_string(),
+        args: serde_json::json!({}),
+        file_path: None,
+        mode: None,
+        is_safe: false,
+    };
+
+    assert_eq!(
+        execute_permission_hooks(&lua, &hooks_guard, &functions_guard, &req("bash")).unwrap(),
+        PermissionHookResult::Deny,
+        "the hook must fire for a matching tool"
+    );
+    assert_eq!(
+        execute_permission_hooks(&lua, &hooks_guard, &functions_guard, &req("read_file")).unwrap(),
+        PermissionHookResult::Prompt,
+        "and must not be consulted for a non-matching one"
+    );
+}
+
+/// The assertion that distinguishes the shared matcher from the `*`-only one
+/// this crate used to hand-roll: `{bash,edit}` matches `edit` under
+/// `crucible_core::utils::glob_match` and matches nothing under a `*`-only
+/// implementation. Without this, the test above passes under either.
+#[test]
+fn a_pattern_uses_the_same_glob_syntax_as_crucible_on() {
+    let lua = Lua::new();
+    let hooks = Arc::new(Mutex::new(Vec::new()));
+    let functions = Arc::new(Mutex::new(HashMap::new()));
+    register_permission_hook_api(&lua, hooks.clone(), functions.clone()).unwrap();
+
+    lua.load(
+        r#"crucible.permissions.on_request(function(request)
+             return { deny = true }
+           end, { pattern = "{bash,edit}" })"#,
+    )
+    .exec()
+    .unwrap();
+
+    let hooks_guard = hooks.lock().unwrap();
+    let functions_guard = functions.lock().unwrap();
+    let req = |tool: &str| PermissionRequest {
+        tool_name: tool.to_string(),
+        args: serde_json::json!({}),
+        file_path: None,
+        mode: None,
+        is_safe: false,
+    };
+
+    for tool in ["bash", "edit"] {
+        assert_eq!(
+            execute_permission_hooks(&lua, &hooks_guard, &functions_guard, &req(tool)).unwrap(),
+            PermissionHookResult::Deny,
+            "{tool} must match the alternation"
+        );
+    }
+    assert_eq!(
+        execute_permission_hooks(&lua, &hooks_guard, &functions_guard, &req("read_file")).unwrap(),
+        PermissionHookResult::Prompt
+    );
+}
