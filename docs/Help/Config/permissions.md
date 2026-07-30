@@ -14,6 +14,10 @@ tags:
 
 Crucible lets you control which tools an AI agent can use — and at what level of scrutiny. You can set a global default for all agents, or give each agent its own permission profile.
 
+This page covers the config file. It is one of several layers that can allow or
+deny a call; [[Help/Concepts/Permission Precedence]] states the order they run
+in and which one wins.
+
 ## Global Permissions
 
 Set in `~/.config/crucible/config.toml` or your kiln's `Config.toml`. Applies to all agent sessions unless overridden per-agent.

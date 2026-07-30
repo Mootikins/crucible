@@ -375,6 +375,8 @@ The `CRUCIBLE_KILN_PATH` environment variable continues to work as an override f
 
 ## See Also
 
+- [[Help/Config/permissions|Permission Configuration]] - Tool allow/deny rules
+- [[Help/Concepts/Permission Precedence]] - Which layer wins when they disagree
 - [[Help/Config/mcp|MCP Configuration]] - Upstream MCP server setup
 - [[Help/Config/llm|LLM Configuration]] - Language model providers
 - [[Help/Config/embedding|Embedding Configuration]] - Text embeddings

@@ -1,4 +1,6 @@
 ---
+title: Canvas
+description: How Crucible reads and writes the JSON Canvas format
 tags: [architecture, canvas, knowledge-graph]
 ---
 

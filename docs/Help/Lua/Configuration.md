@@ -65,6 +65,36 @@ Bundled plugins (in `runtime/plugins/`) load with defaults automatically. Your `
 
 See [[Help/Extending/Creating Plugins]] for writing your own plugins.
 
+## Session Defaults and Modes
+
+`cru.defaults` sets the value every new session starts with — the Neovim
+`vim.o` tier. `session.x` inside a handler changes one session, the `vim.bo`
+tier.
+
+```lua
+cru.defaults.system_prompt = "Answer in British English."
+cru.defaults.temperature = 0.3
+```
+
+Modes are declared, not built in. `cru.modes.<name>` takes a tool set and a
+permission stance; the three shipped modes are declared this same way in
+`runtime/defaults/init.lua`, so yours are not second-class.
+
+```lua
+cru.modes.review = {
+  tools = { "read_*", "grep", "glob", "bash" },
+  permissions = {
+    default = "deny",
+    allow = { "bash:rg *", "bash:git log *" },
+  },
+}
+```
+
+Declared modes appear in the TUI's `Shift+Tab` cycle and the web mode picker,
+and each gets its own slash command (`/review`). Use a declaration for a static
+rule and a hook for one that depends on the arguments — see
+[[Help/TUI/Modes]] and [[Help/Concepts/Permission Precedence]].
+
 ## Built-in Modules
 
 Runtime APIs live under `cru`; configuration lives under `crucible`. The two are
@@ -150,7 +180,7 @@ more than one key gives you more than one bar.
 
 | Item | Renders |
 |---|---|
-| `sl.mode` | the chat mode badge (Normal/Plan/Auto) |
+| `sl.mode` | the chat mode badge — whatever mode the session is in |
 | `sl.model{ max = 25, fallback = "…" }` | the active model, truncated |
 | `sl.context` | context-window usage |
 | `sl.cache` | prompt-cache hit rate, once one is known |
@@ -175,7 +205,7 @@ sl.when("streaming", sl.cache)        -- only while a turn is streaming
 ```
 
 Conditions are facts only the TUI knows: `"streaming"`, `"has_notification"`,
-`"mode:plan"`.
+and `"mode:<name>"` for any declared mode.
 
 ### Values the daemon computes
 

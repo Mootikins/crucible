@@ -42,6 +42,11 @@ fn find_markdown_files() -> Vec<PathBuf> {
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
         .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
+        // `.crucible/` holds session notes the daemon writes when someone
+        // chats in this kiln. They are generated, not authored, so holding
+        // them to the authoring conventions failed the suite for any developer
+        // who had used `docs/` as a kiln.
+        .filter(|e| !e.path().components().any(|c| c.as_os_str() == ".crucible"))
         .map(|e| e.path().to_path_buf())
         .collect()
 }
@@ -108,7 +113,11 @@ fn extract_wikilinks(content: &str) -> Vec<String> {
 ///
 /// Finds paths like `crates/crucible-core/src/...` in the content
 fn extract_code_references(content: &str) -> Vec<String> {
-    let re = regex::Regex::new(r"crates/[a-zA-Z0-9_-]+/[^\s)`]+").unwrap();
+    // `"` and `]` terminate a path as surely as `)` does: a mermaid node label
+    // (`D["Path: crates/…/lib.rs"]`) is a legitimate citation, and without
+    // these the trailing `"]` became part of the path and the file "did not
+    // exist".
+    let re = regex::Regex::new(r#"crates/[a-zA-Z0-9_-]+/[^\s)`"\]]+"#).unwrap();
 
     re.find_iter(content)
         .map(|m| m.as_str().to_string())
