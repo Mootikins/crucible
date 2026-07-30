@@ -43,7 +43,7 @@ impl CachedToolCall {
         }
 
         let display_name = self.display_name();
-        let auto_primary = format_primary_arg(&self.args);
+        let auto_primary = format_primary_arg_for(&self.name, &self.args);
         let primary_arg: &str = self
             .lua_primary_arg
             .as_deref()
@@ -89,11 +89,19 @@ impl CachedToolCall {
     /// Raw badge text (with leading space and brackets) for width math.
     /// Empty string when no badge should be shown.
     fn source_badge_text(&self) -> String {
-        self.source
+        let source = self
+            .source
             .as_ref()
             .and_then(|s| s.badge_label())
             .map(|label| format!(" [{}]", label))
-            .unwrap_or_default()
+            .unwrap_or_default();
+        // A permission granted without asking must leave a trace: otherwise
+        // an auto-approved call looks exactly like one that never needed
+        // permission, and auto mode has no audit trail at all.
+        match self.auto_approved {
+            Some(_) => format!("{source} [auto]"),
+            None => source,
+        }
     }
 
     fn render_source_badge(&self) -> Node {
@@ -391,50 +399,26 @@ pub fn format_tool_args(args: &str) -> String {
     }
 }
 
-const PRIMARY_ARG_KEYS: &[&str] = &[
-    "path",
-    "file_path",
-    "filePath",
-    "query",
-    "command",
-    "url",
-    "pattern",
-    "code",
-    "content",
-    "text",
-    "prompt",
-];
-
 /// Extracts the primary argument from a JSON arg blob and normalizes it to a
 /// single line. Does NOT truncate — callers fit it to available width via
 /// [`fit_arg_to_width`].
-pub fn format_primary_arg(args: &str) -> String {
+/// The argument worth showing on a tool's status row.
+///
+/// Delegates to the shared projection so the TUI, the web and the daemon's
+/// deny messages all name the same argument. Newlines collapse because this
+/// is one row: `ToolDisplay::summary` keeps the first line, and the full text
+/// is in the expanded view.
+pub fn format_primary_arg_for(tool_name: &str, args: &str) -> String {
     if args.is_empty() || args == "{}" {
         return String::new();
     }
-
-    let obj = serde_json::from_str::<serde_json::Value>(args)
-        .ok()
-        .and_then(|v| v.as_object().cloned());
-    let obj = match obj {
-        Some(o) => o,
-        None => return String::new(),
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(args) else {
+        return String::new();
     };
-
-    let value = PRIMARY_ARG_KEYS
-        .iter()
-        .find_map(|key| obj.get(*key))
-        .or_else(|| obj.values().next());
-
-    let value = match value {
-        Some(v) => v,
-        None => return String::new(),
-    };
-
-    match value {
-        serde_json::Value::String(s) => s.replace('\n', " ").replace('\r', ""),
-        other => other.to_string(),
-    }
+    crucible_core::types::ToolDisplay::of(tool_name, &parsed)
+        .primary
+        .map(|p| p.replace('\n', " ").replace('\r', ""))
+        .unwrap_or_default()
 }
 
 /// Truncates `arg` to fit within `available` visible columns, appending "…"
@@ -1138,17 +1122,17 @@ mod tests {
         );
     }
 
-    #[test_case("", "" ; "empty string")]
-    #[test_case("{}", "" ; "empty object")]
-    #[test_case(r#"{"path": "src/lib.rs"}"#, "src/lib.rs" ; "path key")]
-    #[test_case(r#"{"filePath": "/home/user/test.rs"}"#, "/home/user/test.rs" ; "camelCase file path")]
-    #[test_case(r#"{"command": "ls -la", "timeout": 5000}"#, "ls -la" ; "command key")]
-    #[test_case(r#"{"query": "auth patterns", "limit": 10}"#, "auth patterns" ; "query key")]
-    #[test_case(r#"{"limit": 10, "path": "src/main.rs"}"#, "src/main.rs" ; "priority key over first key")]
-    #[test_case(r#"{"repo": "crucible"}"#, "crucible" ; "fallback to first value")]
-    #[test_case(r#"{"count": 42}"#, "42" ; "non-string value")]
-    fn format_primary_arg_extracts_expected(args: &str, expected: &str) {
-        assert_eq!(format_primary_arg(args), expected);
+    #[test_case("read_file", "", "" ; "empty string")]
+    #[test_case("read_file", "{}", "" ; "empty object")]
+    #[test_case("read_file", r#"{"path": "src/lib.rs"}"#, "src/lib.rs" ; "path key")]
+    #[test_case("Read", r#"{"filePath": "/home/user/test.rs"}"#, "/home/user/test.rs" ; "camelCase file path")]
+    #[test_case("bash", r#"{"command": "ls -la", "timeout": 5000}"#, "ls -la" ; "command key")]
+    #[test_case("semantic_search", r#"{"query": "auth patterns", "limit": 10}"#, "auth patterns" ; "query key")]
+    #[test_case("read_file", r#"{"limit": 10, "path": "src/main.rs"}"#, "src/main.rs" ; "priority key over first key")]
+    #[test_case("clone", r#"{"repo": "crucible"}"#, "crucible" ; "fallback to first value")]
+    #[test_case("counter", r#"{"count": 42}"#, "42" ; "non-string value")]
+    fn format_primary_arg_extracts_expected(tool: &str, args: &str, expected: &str) {
+        assert_eq!(format_primary_arg_for(tool, args), expected);
     }
 
     #[test]
@@ -1157,7 +1141,7 @@ mod tests {
         // just normalizes to a single line.
         let long_path = "a".repeat(60);
         let args = format!(r#"{{"path": "{}"}}"#, long_path);
-        let result = format_primary_arg(&args);
+        let result = format_primary_arg_for("read_file", &args);
         assert_eq!(result, long_path);
         assert!(!result.contains("…"));
     }

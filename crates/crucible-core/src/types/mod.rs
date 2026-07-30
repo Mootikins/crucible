@@ -24,6 +24,7 @@ pub mod notification;
 pub mod plugin_status;
 pub mod popup;
 pub mod provider_info;
+pub mod tool_display;
 pub mod tool_ref;
 pub mod undo;
 pub mod undo_tree;
@@ -70,6 +71,7 @@ pub use crate::traits::tools::{ExecutionContext, ToolDefinition, ToolExample};
 pub use crate::types::database::{Record as StorageRecord, RecordId as StorageRecordId};
 
 // Re-export tool reference types
+pub use crate::types::tool_display::{ToolDisplay, ToolDisplayKind};
 pub use crate::types::tool_ref::{ToolRef, ToolSource};
 
 // Re-export popup types

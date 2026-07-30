@@ -253,6 +253,25 @@ export interface ToolCallDisplay {
    * its batch (daemon's conjunctive terminate check). UI renders a badge.
    */
   terminate?: boolean;
+  /**
+   * The daemon's projection of what this call is about. One answer shared with
+   * the TUI and with the daemon's own deny messages, rather than each UI
+   * keeping its own key-priority list. Optional: replayed transcripts and
+   * older daemons predate the field, so every consumer needs a fallback.
+   */
+  display?: ToolDisplay;
+  /**
+   * Set when the permission gate granted this call without asking. Rendered
+   * so an auto-approved call is distinguishable from one that never needed
+   * permission — in auto mode, that difference is the whole audit trail.
+   */
+  autoApproved?: string;
+}
+
+/** What a tool call is about, for display. Mirrors `crucible_core::types::ToolDisplay`. */
+export interface ToolDisplay {
+  kind: 'command' | 'path' | 'query' | 'other';
+  primary?: string;
 }
 
 /** Subagent event (background task) */
@@ -358,6 +377,15 @@ export interface ToolResultDeltaEvent {
   type: 'tool_result_delta';
   id: string;
   delta: string;
+}
+
+/** A permission granted without asking the user. */
+export interface ToolAutoApprovedEvent {
+  type: 'tool_auto_approved';
+  call_id: string;
+  tool: string;
+  /** Which layer decided — "auto mode", "policy". */
+  reason: string;
 }
 
 /** Tool call result streaming complete */
@@ -542,6 +570,7 @@ export type ChatEvent =
   | ContextUsageEvent
   | PrecognitionResultEvent
   | ModeChangedEvent
+  | ToolAutoApprovedEvent
   | TitleChangedEvent;
 
 /** SSE event type discriminator */

@@ -16,6 +16,65 @@
 use super::*;
 
 impl AgentManager {
+    /// Run `cru.on_session_start` hooks against a defaults scope.
+    ///
+    /// Sync, like the permission hooks and for the same reason: this runs
+    /// inside session-VM construction, which is not async, and a start hook
+    /// deciding a session's opening configuration has no business awaiting.
+    ///
+    /// Fails open per hook — one plugin's broken hook must not stop another's
+    /// from running, nor block the session. (The `required = true` escalation
+    /// that `LuaExecutor` honours is about isolation boundaries owning session
+    /// refusal; that path stays with the plugin loader, which is where
+    /// isolation claims live.)
+    fn fire_session_start_hooks(
+        &self,
+        lua: &Lua,
+        session_id: &str,
+        scope: &crucible_lua::SessionDefaults,
+    ) {
+        let hooks = match crucible_lua::get_session_start_hooks(lua) {
+            Ok(hooks) => hooks,
+            Err(e) => {
+                warn!(session_id = %session_id, error = %e, "Could not read on_session_start hooks");
+                return;
+            }
+        };
+        if hooks.is_empty() {
+            return;
+        }
+
+        let workspace = self
+            .session_manager
+            .get_session(session_id)
+            .map(|s| s.workspace.to_string_lossy().into_owned());
+        let mut lua_session = crucible_lua::Session::new(session_id.to_string());
+        if let Some(workspace) = workspace {
+            lua_session = lua_session.with_workspace(workspace);
+        }
+        lua_session.bind(Box::new(crucible_lua::SessionDefaultsRpc::new(
+            scope.clone(),
+        )));
+
+        for key in &hooks {
+            match lua.registry_value::<mlua::Function>(key) {
+                Ok(func) => {
+                    if let Err(e) = func.call::<()>(lua_session.clone()) {
+                        warn!(
+                            session_id = %session_id,
+                            error = %e,
+                            "on_session_start hook failed (fail-open)"
+                        );
+                    }
+                }
+                Err(e) => {
+                    warn!(session_id = %session_id, error = %e, "on_session_start hook missing from registry");
+                }
+            }
+        }
+        debug!(session_id = %session_id, hooks = hooks.len(), "Fired on_session_start hooks");
+    }
+
     pub(in crate::agent_manager) fn get_or_create_session_state(
         &self,
         session_id: &str,
@@ -49,7 +108,24 @@ impl AgentManager {
         // file on any VM is what `configure_agent` reads.
         if let Err(e) = crucible_lua::register_session_defaults(&lua, self.session_defaults.clone())
         {
-            error!(session_id = %session_id, error = %e, "Failed to register crucible.defaults API");
+            error!(session_id = %session_id, error = %e, "Failed to register cru.defaults API");
+        }
+
+        // `on_session_start` / `on_session_end`. Registered only by
+        // `LuaExecutor` until now, which is why the API was nil here — the
+        // shipped defaults AND `cru setup`'s user template both advertised it
+        // while it silently did nothing on this VM.
+        for namespace in ["cru", "crucible"] {
+            match crucible_lua::lua_util::get_or_create_namespace(&lua, namespace) {
+                Ok(table) => {
+                    if let Err(e) = crucible_lua::register_hooks_module(&lua, &table) {
+                        error!(session_id = %session_id, namespace, error = %e, "Failed to register lifecycle hooks API");
+                    }
+                }
+                Err(e) => {
+                    error!(session_id = %session_id, namespace, error = %e, "Failed to create Lua namespace");
+                }
+            }
         }
 
         // Session handlers get the same attachment surface plugin handlers
@@ -68,8 +144,24 @@ impl AgentManager {
             }
         }
 
-        if let Err(e) = lua.load(crucible_lua::BUILTIN_INIT_LUA).exec() {
-            warn!(session_id = %session_id, error = %e, "Failed to load built-in init.lua (fail-open)");
+        // Resolved off the runtimepath, so a copied-out `runtime/defaults/`
+        // shadows what shipped. The origin is logged because "I edited the
+        // defaults and nothing changed" is otherwise near-undiagnosable — it
+        // usually means a higher-priority candidate won.
+        let (defaults_src, defaults_origin) =
+            crate::runtime_defaults::load_defaults(&self.runtimepath);
+        debug!(session_id = %session_id, source = %defaults_origin, "Loading Lua defaults");
+        if let Err(e) = lua
+            .load(&defaults_src)
+            .set_name(defaults_origin.to_string())
+            .exec()
+        {
+            warn!(
+                session_id = %session_id,
+                source = %defaults_origin,
+                error = %e,
+                "Failed to load Lua defaults (fail-open)"
+            );
         }
 
         let mut reactor = Reactor::new();
@@ -101,6 +193,22 @@ impl AgentManager {
             discover_and_register_lua_handlers(&mut reactor, &session.kiln, session_id);
         }
 
+        // Every file has now run, so the hooks list is complete. Fire it here
+        // rather than at session.create: this is the only point where the
+        // session's OWN Lua (workspace `.crucible/lua/init.lua`) has been
+        // loaded, and a project-local hook that never fires is the bug this
+        // whole arc is about.
+        //
+        // Seeded from the global defaults so `session.x` reads the inherited
+        // value — `session.system_prompt = session.system_prompt .. "…"`
+        // extends the default instead of clobbering it. The result is this
+        // session's starting values; `apply_session_defaults` reads it.
+        let scope = crucible_lua::SessionDefaults::new();
+        scope.set(self.session_defaults.get());
+        self.fire_session_start_hooks(&lua, session_id, &scope);
+        self.session_overrides
+            .insert(session_id.to_string(), scope.get());
+
         let state = Arc::new(Mutex::new(SessionEventState {
             lua,
             registry,
@@ -116,7 +224,16 @@ impl AgentManager {
 
     fn apply_session_defaults(&self, session_id: &str, mut agent: SessionAgent) -> SessionAgent {
         let _vm = self.get_or_create_session_state(session_id);
-        let defaults = self.session_defaults.get();
+        // Creating the VM ran `on_session_start`, which captured this
+        // session's values into `session_overrides` — already seeded from the
+        // globals, so it is the complete picture. Fall back to the raw globals
+        // only if no VM state was recorded (a manager whose VM construction
+        // failed outright).
+        let defaults = self
+            .session_overrides
+            .get(session_id)
+            .map(|entry| entry.value().clone())
+            .unwrap_or_else(|| self.session_defaults.get());
 
         if agent.system_prompt.is_empty() {
             if let Some(prompt) = defaults.system_prompt {

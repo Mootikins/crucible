@@ -64,7 +64,7 @@ pub mod isolation;
 mod json_query;
 pub mod lifecycle;
 mod lua_stdlib;
-mod lua_util;
+pub mod lua_util;
 pub mod manifest;
 mod mcp;
 pub mod notify;
@@ -162,7 +162,16 @@ pub use vault::{
 };
 pub use ws::register_ws_module;
 
-pub const BUILTIN_INIT_LUA: &str = include_str!("defaults/init.lua");
+/// The shipped defaults, compiled in as a last-resort baseline.
+///
+/// The file lives in `runtime/defaults/` alongside `runtime/themes/` and
+/// `runtime/plugins/` — it is an ordinary runtime file with no privileged API,
+/// and `cru setup` copies it out for editing like any other. Prefer
+/// `crucible_daemon::runtime_defaults::load_defaults`, which resolves it from
+/// the runtimepath first; this constant is what a bare binary with no runtime
+/// directory falls back to, matching how themes and the statusline embed
+/// theirs.
+pub const BUILTIN_INIT_LUA: &str = include_str!("../../../runtime/defaults/init.lua");
 // Handler system
 pub use handlers::{
     execute_handler, execute_permission_hooks, execute_tool_before_execute_hooks,
@@ -172,7 +181,8 @@ pub use handlers::{
     PermissionHook, PermissionHookResult, PermissionRequest, RuntimeHandler, ScriptHandlerResult,
     ToolBeforeExecuteEvent, ToolBeforeExecuteResult, ToolDisplayCompleteEvent,
     ToolDisplayCompleteHints, ToolDisplayStartEvent, ToolDisplayStartHints,
-    TOOL_BEFORE_EXECUTE_EVENT, TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
+    SHIPPED_DEFAULT_PRIORITY, TOOL_BEFORE_EXECUTE_EVENT, TOOL_DISPLAY_COMPLETE_EVENT,
+    TOOL_DISPLAY_START_EVENT,
 };
 pub use lifecycle::{
     load_plugin_spec, load_plugin_spec_from_source, CommandBuilder, HandlerBuilder, LifecycleError,
@@ -192,7 +202,9 @@ pub use session_api::{
     register_session_module, ChannelSessionRpc, Session, SessionCommand, SessionConfigRpc,
     SessionManager,
 };
-pub use session_defaults::{register_session_defaults, SessionDefaultValues, SessionDefaults};
+pub use session_defaults::{
+    register_session_defaults, SessionDefaultValues, SessionDefaults, SessionDefaultsRpc,
+};
 pub use sessions::{
     register_sessions_module, register_sessions_module_with_api, DaemonSessionApi, ResponsePart,
 };

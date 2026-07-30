@@ -16,6 +16,7 @@ impl Default for OilChatApp {
             // Viewport Projection
             container_list: ContainerList::new(),
             mode: ChatMode::Normal,
+            session_variables: std::collections::HashMap::new(),
             model: String::new(),
             status: String::new(),
             context_used: 0,

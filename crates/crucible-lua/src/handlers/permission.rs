@@ -29,6 +29,13 @@ pub struct PermissionRequest {
     pub args: JsonValue,
     /// File path if applicable
     pub file_path: Option<String>,
+    /// Whether the daemon classifies this tool as read-only.
+    ///
+    /// Safe tools normally short-circuit before the gate, so a hook would not
+    /// see them — but an agent card's `ask` policy forces one through. A
+    /// policy that keys off "is this mutating?" needs to know the difference
+    /// rather than assume everything reaching it mutates.
+    pub is_safe: bool,
     /// Session mode for the turn making this request ("normal" | "plan" |
     /// "auto"). Carried so the *policy* for a mode can live in Lua rather
     /// than being hard-coded in the daemon — the built-in `auto` auto-approve
@@ -41,7 +48,19 @@ pub struct PermissionRequest {
 pub struct PermissionHook {
     /// Handler name for debugging
     pub name: String,
+    /// Lower runs first, matching `crucible.on`'s `priority` option.
+    ///
+    /// This exists because the gate is first-match-wins: without it, ordering
+    /// is registration order, the shipped defaults load before any user file,
+    /// and a user hook could never override a built-in decision. Shipped
+    /// defaults register at [`SHIPPED_DEFAULT_PRIORITY`] so user hooks — which
+    /// take the same default as `crucible.on`, 100 — precede them.
+    pub priority: i64,
 }
+
+/// Priority the shipped defaults register at: deliberately far behind the
+/// default of 100, so anything a user or plugin registers is consulted first.
+pub const SHIPPED_DEFAULT_PRIORITY: i64 = 1000;
 
 /// Register the crucible.permissions.on_request() API for permission hooks
 ///
@@ -84,23 +103,34 @@ pub fn register_permission_hook_api(
 
     let hooks = permission_hooks.clone();
     let functions = permission_functions.clone();
-    let on_request_fn = lua.create_function(move |lua, handler: Function| {
-        let mut guard = hooks
-            .lock()
-            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock hooks: {}", e)))?;
+    let on_request_fn =
+        lua.create_function(move |lua, (handler, opts): (Function, Option<Table>)| {
+            let priority: i64 = opts
+                .and_then(|o| o.get::<Option<i64>>("priority").ok().flatten())
+                .unwrap_or(100);
 
-        let name = format!("permission_hook_{}", guard.len());
-        guard.push(PermissionHook { name: name.clone() });
+            let mut guard = hooks
+                .lock()
+                .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock hooks: {}", e)))?;
 
-        let key = lua.create_registry_value(handler)?;
-        let mut func_guard = functions
-            .lock()
-            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock functions: {}", e)))?;
-        func_guard.insert(name.clone(), key);
+            let name = format!("permission_hook_{}", guard.len());
+            guard.push(PermissionHook {
+                name: name.clone(),
+                priority,
+            });
 
-        debug!("Registered permission hook '{}'", name);
-        Ok(())
-    })?;
+            let key = lua.create_registry_value(handler)?;
+            let mut func_guard = functions.lock().map_err(|e| {
+                mlua::Error::RuntimeError(format!("Failed to lock functions: {}", e))
+            })?;
+            func_guard.insert(name.clone(), key);
+
+            debug!(
+                "Registered permission hook '{}' (priority {})",
+                name, priority
+            );
+            Ok(())
+        })?;
 
     permissions.set("on_request", on_request_fn)?;
     // Shipped scripts are written against `cru.*`; `crucible.*` stays for
@@ -147,8 +177,16 @@ pub fn execute_permission_hooks(
     if let Some(ref mode) = request.mode {
         request_table.set("mode", mode.as_str())?;
     }
+    request_table.set("is_safe", request.is_safe)?;
 
-    for hook in hooks {
+    // Lower priority first, registration order breaking ties (`sort_by_key` is
+    // stable). First non-nil answer wins, so this ordering is what decides
+    // whether a user hook can override a shipped default — it registers later
+    // but at a lower priority, so it is asked first.
+    let mut ordered: Vec<&PermissionHook> = hooks.iter().collect();
+    ordered.sort_by_key(|h| h.priority);
+
+    for hook in ordered {
         let key = match functions.get(&hook.name) {
             Some(k) => k,
             None => {

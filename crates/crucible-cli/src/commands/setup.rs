@@ -131,8 +131,23 @@ const TEMPLATE_INIT_LUA: &str = r#"-- Crucible user configuration
 --   },
 -- })
 
--- Session defaults
--- crucible.on_session_start(function(session)
---   session.temperature = 0.7
+-- Session defaults: the values a NEW session starts from.
+-- (`cru.defaults.x` is Neovim's `vim.o`; `session.x` is `vim.bo`.)
+-- cru.defaults.temperature = 0.7
+-- cru.defaults.system_prompt = cru.defaults.system_prompt
+--   .. "\n\nAnswer in British English."
+
+-- Per session, for anything conditional
+-- cru.on_session_start(function(session)
+--   if session.workspace:match("/work/") then
+--     session.system_prompt = session.system_prompt .. "\n\nCite ticket IDs."
+--   end
+-- end)
+
+-- Permissions. Your hooks run BEFORE the shipped ones, so this wins over the
+-- built-in "auto mode approves everything".
+-- cru.permissions.on_request(function(request)
+--   if request.tool_name == "bash" then return { deny = true } end
+--   return nil
 -- end)
 "#;

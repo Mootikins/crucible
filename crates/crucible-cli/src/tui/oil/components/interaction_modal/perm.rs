@@ -175,12 +175,29 @@ impl InteractionModal {
             PermAction::Read { segments } => ("READ", format!("/{}", segments.join("/")), false),
             PermAction::Write { segments } => ("WRITE", format!("/{}", segments.join("/")), true),
             PermAction::Tool { name, args } => {
-                let args_str = if self.full_commands {
-                    prettify_tool_args_full(args)
-                } else {
-                    prettify_tool_args(args)
+                // A shell call reads as a command, not as `(command="…")` with
+                // escaped newlines. Same projection the web renders from and
+                // the daemon words its deny messages with, so all three agree
+                // on what a call is about.
+                use crucible_core::types::{ToolDisplay, ToolDisplayKind};
+                let display = ToolDisplay::of(name, args);
+                let detail = match (display.kind, self.full_commands) {
+                    (ToolDisplayKind::Command, true) => display
+                        .primary
+                        .clone()
+                        .unwrap_or_else(|| prettify_tool_args_full(args)),
+                    (ToolDisplayKind::Command, false) => display
+                        .summary(60)
+                        .unwrap_or_else(|| prettify_tool_args(args)),
+                    (_, true) => format!("{} {}", name, prettify_tool_args_full(args)),
+                    (_, false) => format!("{} {}", name, prettify_tool_args(args)),
                 };
-                ("TOOL", format!("{} {}", name, args_str), false)
+                let label = if display.kind == ToolDisplayKind::Command {
+                    "BASH"
+                } else {
+                    "TOOL"
+                };
+                (label, detail, false)
             }
         };
 

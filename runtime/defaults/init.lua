@@ -61,12 +61,38 @@ end)
 --     if request.tool_name == "read_file" then return { allow = true } end
 --     return nil
 --   end)
+--
+-- Your hook wins: the gate is first-match-wins ordered by `priority` (lower
+-- first), and this one registers at 1000 while the default for anything you
+-- write is 100. Registering later in load order is therefore NOT a
+-- disadvantage — before priority existed, it made overriding impossible.
 cru.permissions.on_request(function(request)
   if request.mode == "auto" then
     return { allow = true }
   end
   return nil
-end)
+end, { priority = 1000 })
+
+-- Plan mode denies anything that could mutate
+--
+-- The daemon enforces this too and does NOT depend on this hook: plan mode
+-- filters the advertised tool set, and refuses plugin tools at dispatch. That
+-- is the fail-closed floor — if this file fails to load, plan mode is still
+-- safe. The rule is stated here as well so mode policy is legible and
+-- extensible in ONE place, next to auto mode, instead of half-visible in Lua
+-- and half-buried in Rust.
+--
+-- Widening it here cannot widen the floor. Narrowing it works.
+--
+-- `request.is_safe` is the daemon's own read-only classification. Read-only
+-- tools normally never reach the gate, but an agent card's `ask` policy can
+-- force one through, and denying a read in plan mode would be wrong.
+cru.permissions.on_request(function(request)
+  if request.mode == "plan" and not request.is_safe then
+    return { deny = true }
+  end
+  return nil
+end, { priority = 1000 })
 
 -- Default system prompt
 --

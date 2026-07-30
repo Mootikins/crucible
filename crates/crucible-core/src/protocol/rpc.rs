@@ -166,9 +166,10 @@ impl SessionEventMessage {
         lua_primary_arg: Option<String>,
         diffs: Vec<crate::types::acp::FileDiff>,
     ) -> Self {
+        let tool_name = tool.into();
         let mut data = serde_json::json!({
             "call_id": call_id.into(),
-            "tool": tool.into(),
+            "tool": tool_name.clone(),
             "args": args,
         });
         if let Some(description) = description {
@@ -177,9 +178,16 @@ impl SessionEventMessage {
         if let Some(source) = source {
             data["source"] = serde_json::json!(source);
         }
+        // One projection of "which argument matters", computed here so the
+        // TUI and the web render the same answer instead of each keeping its
+        // own key-priority list. A Lua display hook's `lua_primary_arg`
+        // overrides it — a plugin knows its own tool better than a heuristic.
+        let mut display = crate::types::ToolDisplay::of(&tool_name, &data["args"]);
         if let Some(pa) = lua_primary_arg {
-            data["lua_primary_arg"] = serde_json::json!(pa);
+            data["lua_primary_arg"] = serde_json::json!(pa.clone());
+            display.primary = Some(pa);
         }
+        data["display"] = serde_json::to_value(&display).unwrap_or(Value::Null);
         if !diffs.is_empty() {
             data["diffs"] = serde_json::to_value(&diffs).unwrap_or(Value::Null);
         }
@@ -203,6 +211,32 @@ impl SessionEventMessage {
             serde_json::json!({
                 "call_id": call_id.into(),
                 "diffs": diffs,
+            }),
+        )
+    }
+
+    /// A permission that was granted without asking the user.
+    ///
+    /// Auto-approval is invisible otherwise: the tool runs and its card looks
+    /// exactly like one that never needed permission at all. In auto mode
+    /// that means no record that anything was granted on the user's behalf,
+    /// which is the wrong default for a security-relevant decision.
+    ///
+    /// `reason` names the layer that decided (`"auto mode"`, `"pattern"`,
+    /// `"config"`), so the UI can say *why* rather than just *that*.
+    pub fn tool_auto_approved(
+        session_id: impl Into<String>,
+        call_id: impl Into<String>,
+        tool: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            session_id,
+            "tool_auto_approved",
+            serde_json::json!({
+                "call_id": call_id.into(),
+                "tool": tool.into(),
+                "reason": reason.into(),
             }),
         )
     }

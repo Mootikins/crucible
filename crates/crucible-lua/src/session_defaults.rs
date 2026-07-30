@@ -177,7 +177,71 @@ impl UserData for SessionDefaults {
     }
 }
 
-/// Register `cru.defaults` (and the `cru.defaults` alias) on `lua`.
+/// A [`crate::SessionConfigRpc`] whose reads and writes land in a
+/// [`SessionDefaults`] rather than a live session.
+///
+/// This is what `session.x` means inside an `on_session_start` hook: the
+/// session has no agent yet, so there is nothing to reconfigure — the hook is
+/// choosing the values the agent will be *built* with. Seeded from the global
+/// defaults, so a hook reads the inherited value before overriding it, exactly
+/// like a Neovim `FileType` autocmd seeing the global option before setting
+/// the buffer-local one:
+///
+/// ```lua
+/// cru.on_session_start(function(session)
+///   session.system_prompt = session.system_prompt .. "\n\nCite ticket IDs."
+/// end)
+/// ```
+pub struct SessionDefaultsRpc {
+    store: SessionDefaults,
+}
+
+impl SessionDefaultsRpc {
+    pub fn new(store: SessionDefaults) -> Self {
+        Self { store }
+    }
+}
+
+impl crate::session_api::SessionConfigRpc for SessionDefaultsRpc {
+    fn get_system_prompt(&self) -> Option<String> {
+        self.store.get().system_prompt
+    }
+
+    fn set_system_prompt(&self, prompt: &str) -> Result<(), String> {
+        self.store
+            .update(|v| v.system_prompt = Some(prompt.to_string()));
+        Ok(())
+    }
+
+    fn get_temperature(&self) -> Option<f64> {
+        self.store.get().temperature
+    }
+
+    fn set_temperature(&self, temp: f64) -> Result<(), String> {
+        self.store.update(|v| v.temperature = Some(temp));
+        Ok(())
+    }
+
+    fn get_max_tokens(&self) -> Option<u32> {
+        self.store.get().max_tokens
+    }
+
+    fn set_max_tokens(&self, tokens: Option<u32>) -> Result<(), String> {
+        self.store.update(|v| v.max_tokens = tokens);
+        Ok(())
+    }
+
+    fn get_thinking_budget(&self) -> Option<i64> {
+        self.store.get().thinking_budget
+    }
+
+    fn set_thinking_budget(&self, budget: i64) -> Result<(), String> {
+        self.store.update(|v| v.thinking_budget = Some(budget));
+        Ok(())
+    }
+}
+
+/// Register `cru.defaults` (and the `crucible.defaults` alias) on `lua`.
 ///
 /// Both namespaces, per [`crate::lua_util::register_in_namespaces`]. Shipped
 /// scripts are written against `cru.*`; `crucible.*` stays for existing

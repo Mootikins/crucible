@@ -25,6 +25,10 @@ interface ToolCardProps {
   toolCall: ToolCallDisplay;
 }
 
+/** Mirrors `SHELL_TOOLS` in `crucible_core::types::tool_display`. Only used by
+ *  the fallback path, for events that predate the daemon-side projection. */
+const SHELL_TOOLS = ['bash', 'shell', 'sh', 'zsh', 'exec', 'run_command', 'terminal'];
+
 export const ToolCard: Component<ToolCardProps> = (props) => {
   // Error state auto-expands so users can see what went wrong
   const [expanded, setExpanded] = createSignal(props.toolCall.status === 'error');
@@ -76,26 +80,48 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
     }
   };
 
-  // A shell call's payload is a command line, and JSON is the wrong costume
-  // for it: `{ "command": "cd /tmp\ngrep -r foo ." }` buries the one thing
-  // that matters behind an envelope and turns every newline into a literal
-  // `\n`. Detected by tool NAME (not merely "has a command arg") so an
-  // ordinary tool that happens to take `command` keeps its JSON rendering.
-  const SHELL_TOOLS = ['bash', 'shell', 'sh', 'zsh', 'exec', 'run_command', 'terminal'];
-  const bashCommand = createMemo(() => {
+  // What this call is about comes from the daemon (`toolCall.display`) — one
+  // projection shared with the TUI and with the daemon's own deny messages,
+  // instead of this component keeping its own key-priority list.
+  //
+  // The local fallback is not redundancy for its own sake: replayed
+  // transcripts and older daemons carry no `display`, and a card that renders
+  // nothing for them would be a regression. It mirrors the Rust rule and is
+  // the ONLY place this heuristic still lives in the web.
+  const display = createMemo(() => {
+    if (props.toolCall.display) return props.toolCall.display;
+
     const name = props.toolCall.name.toLowerCase();
-    if (!SHELL_TOOLS.some((t) => name === t || name.endsWith(`__${t}`))) return null;
+    const isShell = SHELL_TOOLS.some((t) => name === t || name.endsWith(`__${t}`));
     const args = props.toolCall.args;
-    if (!args) return null;
+    if (!args) return undefined;
     try {
       const parsed: unknown = JSON.parse(args);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-      const command = (parsed as Record<string, unknown>).command;
-      return typeof command === 'string' && command !== '' ? command : null;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+      const record = parsed as Record<string, unknown>;
+      if (isShell && typeof record.command === 'string' && record.command) {
+        return { kind: 'command' as const, primary: record.command };
+      }
+      for (const key of ['file_path', 'path', 'file', 'note', 'name']) {
+        if (typeof record[key] === 'string' && record[key]) {
+          return { kind: 'path' as const, primary: record[key] as string };
+        }
+      }
+      for (const key of ['pattern', 'query', 'url']) {
+        if (typeof record[key] === 'string' && record[key]) {
+          return { kind: 'query' as const, primary: record[key] as string };
+        }
+      }
+      const first = Object.values(record).find((v) => typeof v === 'string' && v);
+      return first ? { kind: 'other' as const, primary: first as string } : undefined;
     } catch {
-      return null;
+      return undefined;
     }
   });
+
+  const bashCommand = createMemo(() =>
+    display()?.kind === 'command' ? (display()!.primary ?? null) : null,
+  );
 
   const formattedArgs = createMemo(() => {
     const args = props.toolCall.args;
@@ -116,27 +142,10 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
     }
   });
 
-  // One-line header summary (the bash command, file path, query, …) so a
-  // collapsed row still says what the tool did — like other agent UIs.
-  const argSummary = createMemo(() => {
-    const args = props.toolCall.args;
-    if (!args || args === '' || args === '""') return null;
-    try {
-      const parsed: unknown = JSON.parse(args);
-      if (typeof parsed === 'string') return parsed || null;
-      if (parsed && typeof parsed === 'object') {
-        const record = parsed as Record<string, unknown>;
-        for (const key of ['command', 'file_path', 'path', 'pattern', 'query', 'url', 'name', 'note']) {
-          if (typeof record[key] === 'string' && record[key]) return record[key] as string;
-        }
-        const first = Object.values(record).find((v) => typeof v === 'string' && v);
-        return (first as string | undefined) ?? null;
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  });
+  // One-line header summary so a collapsed row still says what the tool did.
+  // Same source as the Command block below, so the two can no longer disagree
+  // about which argument matters.
+  const argSummary = createMemo(() => display()?.primary?.split('\n')[0] ?? null);
 
   const diff = createMemo(() => extractDiffFromToolCall(props.toolCall));
 
@@ -217,6 +226,15 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
         <span class="flex-1 min-w-0 text-[11px] text-muted-dark truncate font-mono">
           {argSummary() ?? ''}
         </span>
+        <Show when={props.toolCall.autoApproved}>
+          <span
+            class="flex-shrink-0 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-precog/15 text-precog border border-precog/50 font-semibold"
+            data-testid="tool-auto-approved"
+            title={`Permission granted without asking (${props.toolCall.autoApproved}).`}
+          >
+            Auto
+          </span>
+        </Show>
         <Show when={props.toolCall.terminate}>
           <span
             class="flex-shrink-0 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-attention/15 text-attention border border-attention/50 font-semibold"

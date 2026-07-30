@@ -58,6 +58,7 @@ fn test_permission_hook_returns_allow() {
         args: serde_json::json!({"command": "npm install"}),
         file_path: None,
         mode: None,
+        is_safe: false,
     };
 
     let hooks_guard = hooks.lock().unwrap();
@@ -94,6 +95,7 @@ fn test_permission_hook_returns_deny() {
         args: serde_json::json!({"path": "/important/file"}),
         file_path: Some("/important/file".to_string()),
         mode: None,
+        is_safe: false,
     };
 
     let hooks_guard = hooks.lock().unwrap();
@@ -127,6 +129,7 @@ fn test_permission_hook_returns_nil_for_prompt() {
         args: serde_json::json!({"path": "test.txt"}),
         file_path: Some("test.txt".to_string()),
         mode: None,
+        is_safe: false,
     };
 
     let hooks_guard = hooks.lock().unwrap();
@@ -148,6 +151,7 @@ fn test_permission_hook_no_hooks_returns_prompt() {
         args: serde_json::json!({}),
         file_path: None,
         mode: None,
+        is_safe: false,
     };
 
     let result = execute_permission_hooks(&lua, &hooks, &functions, &request);
@@ -182,6 +186,7 @@ fn test_permission_hook_receives_args() {
         args: serde_json::json!({"command": "npm install express"}),
         file_path: None,
         mode: None,
+        is_safe: false,
     };
 
     let hooks_guard = hooks.lock().unwrap();
@@ -218,6 +223,7 @@ fn test_permission_hook_receives_file_path() {
         args: serde_json::json!({"path": "src/foo.test.ts"}),
         file_path: Some("src/foo.test.ts".to_string()),
         mode: None,
+        is_safe: false,
     };
 
     let hooks_guard = hooks.lock().unwrap();
@@ -254,6 +260,7 @@ fn test_permission_hook_first_decision_wins() {
         args: serde_json::json!({}),
         file_path: None,
         mode: None,
+        is_safe: false,
     };
 
     let hooks_guard = hooks.lock().unwrap();

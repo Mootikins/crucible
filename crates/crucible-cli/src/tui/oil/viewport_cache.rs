@@ -55,6 +55,8 @@ pub struct CachedToolCall {
     /// Empty for tools that don't produce diffs or for backends that don't
     /// surface them yet. Rendered between header and result on completion.
     pub diffs: Vec<FileDiff>,
+    /// Which layer granted permission without asking, if any.
+    pub auto_approved: Option<String>,
 }
 
 impl CachedToolCall {
@@ -75,6 +77,7 @@ impl CachedToolCall {
             source: None,
             lua_primary_arg: None,
             diffs: Vec::new(),
+            auto_approved: None,
         }
     }
 
@@ -103,6 +106,13 @@ impl CachedToolCall {
     /// `tool_call_diff_update` event.
     pub fn set_diffs(&mut self, diffs: Vec<FileDiff>) {
         self.diffs = diffs;
+    }
+
+    /// Record that this call's permission was granted without asking, and by
+    /// which layer. Rendered as a marker: an auto-approved call is otherwise
+    /// indistinguishable from one that never needed permission.
+    pub fn set_auto_approved(&mut self, reason: String) {
+        self.auto_approved = Some(reason);
     }
 
     pub fn set_output_path(&mut self, path: PathBuf) {

@@ -609,12 +609,22 @@ pub struct AgentManager {
     request_state: Arc<DashMap<String, RequestState>>,
     agent_cache: AgentCache,
     session_dispatchers: Arc<DashMap<String, Arc<dyn ToolDispatcher>>>,
-    /// Global session defaults set from Lua (`crucible.defaults.x = …`) — the
+    /// Config `runtimepath`, for resolving `runtime/defaults/init.lua`.
+    /// Empty is the correct default, not a missing value: resolution falls
+    /// through to `CRUCIBLE_RUNTIME`, then exe-relative, then the compiled-in
+    /// copy. See [`crate::runtime_defaults`].
+    runtimepath: Vec<PathBuf>,
+    /// Global session defaults set from Lua (`cru.defaults.x = …`) — the
     /// values a NEW session starts from, applied in `configure_agent` to any
     /// field the agent card left unset. The per-session override is
     /// `session.x`; see `crucible_lua::session_defaults` for why this tier is
-    /// not called `crucible.o`.
+    /// not called `cru.o`.
     session_defaults: crucible_lua::SessionDefaults,
+    /// Per-session starting values, captured when the session VM ran its
+    /// `on_session_start` hooks. Already seeded from `session_defaults`, so
+    /// this is the whole inherited-then-overridden picture for one session —
+    /// `vim.bo` after the `FileType` autocmd, to `session_defaults`' `vim.o`.
+    session_overrides: Arc<DashMap<String, crucible_lua::SessionDefaultValues>>,
     /// Mode changes that arrived while the cached handle was busy serving a
     /// turn. `set_mode` stores here when `try_lock` fails; the dispatch path
     /// drains the entry into `apply_mode` at the start of the NEXT turn
@@ -731,7 +741,9 @@ impl AgentManager {
         Self {
             request_state: Arc::new(DashMap::new()),
             agent_cache: AgentCache::new(),
+            runtimepath: Vec::new(),
             session_defaults: crucible_lua::SessionDefaults::new(),
+            session_overrides: Arc::new(DashMap::new()),
             pending_modes: Arc::new(DashMap::new()),
             model_cache: Arc::new(DashMap::new()),
             kiln_manager: params.kiln_manager,
@@ -936,6 +948,19 @@ impl AgentManager {
 
     pub fn invalidate_agent_cache(&self, session_id: &str) {
         self.agent_cache.remove(session_id);
+    }
+
+    /// Set the config `runtimepath` used to resolve `runtime/defaults/init.lua`.
+    ///
+    /// A setter rather than a `AgentManagerParams` field: every test
+    /// constructing a manager wants the fall-through behaviour (empty →
+    /// exe-relative → built-in), and only the daemon has a configured path to
+    /// pass. Call before the first session VM is created; later calls do not
+    /// re-run defaults for VMs that already exist.
+    #[must_use]
+    pub fn with_runtimepath(mut self, runtimepath: Vec<PathBuf>) -> Self {
+        self.runtimepath = runtimepath;
+        self
     }
 
     pub fn invalidate_model_cache(&self) {
@@ -1232,6 +1257,7 @@ impl AgentManager {
         // A deferral only ever drains on this session's next turn, so an
         // ended session's entry would sit in the map forever.
         self.pending_modes.remove(session_id);
+        self.session_overrides.remove(session_id);
         // Drop the in-memory conversation tree so a re-attach to this
         // session rebuilds from on-disk JSONL rather than reusing stale
         // pointers (and frees memory for ended sessions).

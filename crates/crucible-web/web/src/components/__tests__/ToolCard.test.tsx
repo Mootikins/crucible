@@ -584,3 +584,78 @@ describe('ToolCard — Open in editor', () => {
     expect(getFileContentMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('ToolCard — daemon-provided display projection', () => {
+  it('prefers the daemon projection over its own heuristic', () => {
+    // The daemon knows things a key-priority list cannot — a plugin's Lua
+    // display hint, for one. Its answer must win.
+    render(() => (
+      <ToolCard
+        toolCall={makeTool({
+          name: 'run_task',
+          args: JSON.stringify({ command: 'build', path: '/repo' }),
+          display: { kind: 'command', primary: 'make build' },
+        })}
+      />
+    ));
+    fireEvent.click(screen.getByText('run_task'));
+    expect(screen.getByTestId('bash-command').textContent).toContain('make build');
+  });
+
+  it('falls back to the local heuristic when the event carries no projection', () => {
+    // Replayed transcripts and older daemons predate the field; a card that
+    // rendered nothing for them would be a regression.
+    render(() => (
+      <ToolCard toolCall={makeTool({ name: 'bash', args: JSON.stringify({ command: 'ls -la' }) })} />
+    ));
+    fireEvent.click(screen.getByText('bash'));
+    expect(screen.getByTestId('bash-command').textContent).toContain('ls -la');
+  });
+
+  it('uses the projection for the collapsed one-line summary too', () => {
+    // Header summary and Command block now read the same field, so they
+    // cannot disagree about which argument matters.
+    const { container } = render(() => (
+      <ToolCard
+        toolCall={makeTool({
+          name: 'semantic_search',
+          args: JSON.stringify({ query: 'wikilinks' }),
+          display: { kind: 'query', primary: 'wikilinks' },
+        })}
+      />
+    ));
+    expect(container.textContent).toContain('wikilinks');
+  });
+
+  it('shows only the first line of a multi-line command in the summary', () => {
+    const { container } = render(() => (
+      <ToolCard
+        toolCall={makeTool({
+          name: 'bash',
+          args: JSON.stringify({ command: 'cd /tmp\ngrep -r foo .' }),
+          display: { kind: 'command', primary: 'cd /tmp\ngrep -r foo .' },
+        })}
+      />
+    ));
+    // Collapsed: the header row must not carry the second line.
+    const header = container.querySelector('button');
+    expect(header?.textContent).toContain('cd /tmp');
+    expect(header?.textContent).not.toContain('grep -r foo');
+  });
+});
+
+describe('ToolCard — auto-approval marker', () => {
+  it('marks a call whose permission was granted without asking', () => {
+    // Without this, an auto-approved call is visually identical to one that
+    // never needed permission — no record of what was granted on your behalf.
+    render(() => <ToolCard toolCall={makeTool({ name: 'bash', autoApproved: 'auto mode' })} />);
+    const badge = screen.getByTestId('tool-auto-approved');
+    expect(badge).toBeInTheDocument();
+    expect(badge.getAttribute('title')).toContain('auto mode');
+  });
+
+  it('shows no marker for an ordinary call', () => {
+    render(() => <ToolCard toolCall={makeTool()} />);
+    expect(screen.queryByTestId('tool-auto-approved')).not.toBeInTheDocument();
+  });
+});

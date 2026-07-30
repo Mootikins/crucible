@@ -90,6 +90,9 @@ pub enum ChatAppMsg {
         call_id: String,
         diffs: Vec<FileDiff>,
     },
+    /// **Event** (daemon → TUI): this call's permission was granted without
+    /// asking. Carries the deciding layer so the marker can say why.
+    ToolAutoApproved { call_id: String, reason: String },
     /// **Event** (daemon → TUI): Streaming delta of tool result output.
     ToolResultDelta {
         name: String,
@@ -276,6 +279,7 @@ impl ChatAppMsg {
             | Self::ThinkingDelta(_)
             | Self::ToolCall { .. }
             | Self::ToolCallDiffUpdate { .. }
+            | Self::ToolAutoApproved { .. }
             | Self::ToolResultDelta { .. }
             | Self::ToolResultComplete { .. }
             | Self::ToolResultError { .. }

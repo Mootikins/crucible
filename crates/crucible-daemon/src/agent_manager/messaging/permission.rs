@@ -708,6 +708,23 @@ impl AgentManager {
                     tool = %tool_call.name,
                     "Lua hook allowed tool, skipping permission prompt"
                 );
+                // Say so in the transcript. A silently auto-approved call is
+                // indistinguishable from one that never needed permission,
+                // which in auto mode means no record of anything granted on
+                // the user's behalf.
+                emit_event(
+                    &stream_ctx.event_tx,
+                    SessionEventMessage::tool_auto_approved(
+                        &stream_ctx.session_id,
+                        call_id,
+                        &tool_call.name,
+                        if stream_ctx.session_mode == "auto" {
+                            "auto mode"
+                        } else {
+                            "policy"
+                        },
+                    ),
+                );
                 Ok(())
             }
             PermissionHookResult::Deny => {
@@ -716,7 +733,7 @@ impl AgentManager {
                     tool = %tool_call.name,
                     "Lua hook denied tool"
                 );
-                let resource_desc = Self::brief_resource_description(args);
+                let resource_desc = Self::brief_resource_description(&tool_call.name, args);
                 let error_msg = format!(
                     "Lua hook denied permission to {} {}",
                     tool_call.name, resource_desc
@@ -896,7 +913,7 @@ impl AgentManager {
                     return Ok(());
                 }
 
-                let resource_desc = Self::brief_resource_description(args);
+                let resource_desc = Self::brief_resource_description(&tool_call.name, args);
                 let error_msg = if let Some(reason) = &deny_reason {
                     format!(
                         "User denied permission to {} {}. Feedback: {}",
@@ -936,24 +953,16 @@ impl AgentManager {
         }
     }
 
-    pub(in crate::agent_manager) fn brief_resource_description(args: &serde_json::Value) -> String {
-        if let Some(path) = args.get("path").and_then(|v| v.as_str()) {
-            return path.to_string();
-        }
-        if let Some(file) = args.get("file").and_then(|v| v.as_str()) {
-            return file.to_string();
-        }
-        if let Some(command) = args.get("command").and_then(|v| v.as_str()) {
-            let truncated: String = command.chars().take(50).collect();
-            if command.len() > 50 {
-                return format!("{}...", truncated);
-            }
-            return truncated;
-        }
-        if let Some(name) = args.get("name").and_then(|v| v.as_str()) {
-            return name.to_string();
-        }
-        String::new()
+    /// A short description of what a tool call is acting on, for deny
+    /// messages. Delegates to the shared projection so the phrase in an error
+    /// matches what the UIs show for the same call.
+    pub(in crate::agent_manager) fn brief_resource_description(
+        tool_name: &str,
+        args: &serde_json::Value,
+    ) -> String {
+        crucible_core::types::ToolDisplay::of(tool_name, args)
+            .summary(50)
+            .unwrap_or_default()
     }
 
     pub(in crate::agent_manager) fn check_pattern_match(
@@ -1022,6 +1031,7 @@ impl AgentManager {
             args: args.clone(),
             file_path,
             mode: Some(session_mode.to_string()),
+            is_safe: crate::agent_manager::is_safe(tool_name),
         };
 
         let state = session_state.lock().await;

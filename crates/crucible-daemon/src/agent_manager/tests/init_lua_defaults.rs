@@ -57,6 +57,7 @@ fn tool_request(mode: &str) -> PermissionRequest {
         args: serde_json::json!({ "command": "rm -rf build" }),
         file_path: None,
         mode: Some(mode.to_string()),
+        is_safe: false,
     }
 }
 
@@ -73,18 +74,50 @@ async fn auto_mode_approves_a_permission_request_without_prompting() {
     );
 }
 
-#[test_case::test_case("normal"; "normal mode still prompts")]
-#[test_case::test_case("plan"; "plan mode still prompts")]
 #[tokio::test]
-async fn non_auto_modes_still_reach_the_prompt(mode: &str) {
+async fn normal_mode_still_reaches_the_prompt() {
     let (_tmp, agent_manager, session_id) = session_with_defaults().await;
 
-    let result = run_permission_hooks(&agent_manager, &session_id, tool_request(mode)).await;
+    let result = run_permission_hooks(&agent_manager, &session_id, tool_request("normal")).await;
 
     assert_eq!(
         result,
         PermissionHookResult::Prompt,
-        "only auto mode may skip the prompt"
+        "normal mode decides nothing on the user's behalf"
+    );
+}
+
+/// Plan mode's rule is now STATED in Lua next to auto mode's, rather than
+/// being implicit in which tools the daemon happens to advertise. The Rust
+/// floor (tool-set filtering, plugin-tool dispatch ban) still enforces it
+/// independently — this makes it legible and extensible, not load-bearing.
+#[tokio::test]
+async fn plan_mode_denies_a_mutating_tool() {
+    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+
+    let result = run_permission_hooks(&agent_manager, &session_id, tool_request("plan")).await;
+
+    assert_eq!(result, PermissionHookResult::Deny);
+}
+
+/// An agent card's `ask` policy can push a read-only tool through the gate.
+/// Denying it in plan mode would be wrong — plan mode forbids mutation, not
+/// reading — which is why the request carries the daemon's own `is_safe`
+/// classification instead of the hook assuming.
+#[tokio::test]
+async fn plan_mode_does_not_deny_a_read_only_tool() {
+    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+
+    let mut request = tool_request("plan");
+    request.tool_name = "read_file".to_string();
+    request.is_safe = true;
+
+    let result = run_permission_hooks(&agent_manager, &session_id, request).await;
+
+    assert_eq!(
+        result,
+        PermissionHookResult::Prompt,
+        "plan mode forbids mutation, not reading"
     );
 }
 
@@ -259,4 +292,181 @@ async fn a_user_init_lua_can_append_to_a_shipped_default() {
         "the user's addition must be appended, got: {:?}",
         agent.system_prompt
     );
+}
+
+/// `cru.on_session_start` was advertised by the shipped defaults, by
+/// `cru setup`'s user template, and by the plugin docs — while being nil on
+/// this VM, so every hook registered against it silently never ran.
+#[tokio::test]
+async fn on_session_start_fires_and_can_set_this_sessions_values() {
+    let tmp = TempDir::new().unwrap();
+    let lua_dir = tmp.path().join(".crucible/lua");
+    std::fs::create_dir_all(&lua_dir).unwrap();
+    std::fs::write(
+        lua_dir.join("init.lua"),
+        r#"cru.on_session_start(function(session)
+             session.system_prompt = "per-session prompt"
+             session.temperature = 0.25
+           end)"#,
+    )
+    .unwrap();
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+
+    let agent = configured_agent(&agent_manager, &session_manager, &session.id, bare_agent()).await;
+
+    assert_eq!(agent.system_prompt, "per-session prompt");
+    assert_eq!(agent.temperature, Some(0.25));
+}
+
+/// The hook reads the INHERITED value before overriding it — the Neovim
+/// pattern where a `FileType` autocmd sees the global option and sets the
+/// buffer-local one. Without seeding, `session.system_prompt` would be nil
+/// inside the hook and appending would error.
+#[tokio::test]
+async fn on_session_start_sees_the_global_default_and_can_extend_it() {
+    let tmp = TempDir::new().unwrap();
+    let lua_dir = tmp.path().join(".crucible/lua");
+    std::fs::create_dir_all(&lua_dir).unwrap();
+    std::fs::write(
+        lua_dir.join("init.lua"),
+        r#"cru.on_session_start(function(session)
+             session.system_prompt = session.system_prompt .. "\n\nCite ticket IDs."
+           end)"#,
+    )
+    .unwrap();
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+
+    let agent = configured_agent(&agent_manager, &session_manager, &session.id, bare_agent()).await;
+
+    assert!(
+        agent.system_prompt.contains("Crucible"),
+        "the inherited default must be visible to the hook"
+    );
+    assert!(agent.system_prompt.ends_with("Cite ticket IDs."));
+}
+
+/// A hook that throws must not take the session down, nor stop later hooks.
+#[tokio::test]
+async fn a_failing_start_hook_does_not_break_the_session() {
+    let tmp = TempDir::new().unwrap();
+    let lua_dir = tmp.path().join(".crucible/lua");
+    std::fs::create_dir_all(&lua_dir).unwrap();
+    std::fs::write(
+        lua_dir.join("init.lua"),
+        r#"cru.on_session_start(function(session) error("boom") end)
+           cru.on_session_start(function(session)
+             session.system_prompt = "second hook ran"
+           end)"#,
+    )
+    .unwrap();
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+
+    let agent = configured_agent(&agent_manager, &session_manager, &session.id, bare_agent()).await;
+
+    assert_eq!(
+        agent.system_prompt, "second hook ran",
+        "one hook's failure must not skip another's setup"
+    );
+}
+
+/// The shipped auto-approve must be OVERRIDABLE. Before priority existed the
+/// gate was first-match-wins in registration order, the defaults always loaded
+/// first, and a user hook could never win — while the defaults file's own
+/// comment offered exactly this override as an example.
+#[tokio::test]
+async fn a_user_hook_overrides_the_shipped_auto_approve() {
+    let tmp = TempDir::new().unwrap();
+    let lua_dir = tmp.path().join(".crucible/lua");
+    std::fs::create_dir_all(&lua_dir).unwrap();
+    std::fs::write(
+        lua_dir.join("init.lua"),
+        r#"cru.permissions.on_request(function(request)
+             if request.tool_name == "bash" then return { deny = true } end
+             return nil
+           end)"#,
+    )
+    .unwrap();
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    let agent_manager = Arc::new(create_test_agent_manager(session_manager));
+
+    let result = run_permission_hooks(&agent_manager, &session.id, tool_request("auto")).await;
+
+    assert_eq!(
+        result,
+        PermissionHookResult::Deny,
+        "a user hook registers later but at a lower priority, so it is asked first"
+    );
+}
+
+/// The shipped hook must stay behind user hooks. Registering it at the default
+/// priority would silently restore the un-overridable behaviour, and the test
+/// above would then be the only thing standing between us and that regression.
+#[tokio::test]
+async fn the_shipped_permission_hook_registers_behind_user_hooks() {
+    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let state = agent_manager.get_or_create_session_state(&session_id);
+    let guard = state.lock().await;
+    let hooks = guard.permission_hooks.lock().unwrap();
+
+    assert!(!hooks.is_empty(), "the shipped defaults register hooks");
+    for hook in hooks.iter() {
+        assert_eq!(
+            hook.priority,
+            crucible_lua::SHIPPED_DEFAULT_PRIORITY,
+            "EVERY shipped hook must register behind the priority users get by \
+             default ({}); one at 100 would be un-overridable again",
+            hook.name
+        );
+    }
 }

@@ -121,6 +121,14 @@ impl AgentHandle for OneToolAgent {
     async fn set_mode_str(&mut self, _: &str) -> crucible_core::traits::chat::ChatResult<()> {
         Ok(())
     }
+    /// `AgentHandle::get_mode_id` defaults to "plan" — a fail-safe for handles
+    /// that don't track a mode. Inheriting it here made this rig report plan
+    /// mode, so plan's deny policy answered before the paths these tests are
+    /// actually about (non-interactive denial, `[permissions]` config, shell
+    /// policy). These sessions are ordinary ones; say so.
+    fn get_mode_id(&self) -> &str {
+        "normal"
+    }
 }
 
 struct Rig {

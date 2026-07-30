@@ -42,53 +42,68 @@ mod brief_resource_description_tests {
     use test_case::test_case;
 
     #[test_case(
-        serde_json::json!({"path": "/home/user/file.txt"}),
-        "/home/user/file.txt";
+        "write_file", serde_json::json!({"path": "/tmp/a.md"}), "/tmp/a.md";
         "extracts_path_field"
     )]
     #[test_case(
-        serde_json::json!({"file": "config.toml"}),
-        "config.toml";
+        "write_file", serde_json::json!({"file": "/tmp/b.md"}), "/tmp/b.md";
         "extracts_file_field"
     )]
     #[test_case(
-        serde_json::json!({"command": "echo hello"}),
-        "echo hello";
+        "bash", serde_json::json!({"command": "echo hello"}), "echo hello";
         "extracts_command_field"
     )]
     #[test_case(
-        serde_json::json!({"name": "my-note"}),
-        "my-note";
+        "create_note", serde_json::json!({"name": "my-note"}), "my-note";
         "extracts_name_field"
     )]
+    // Previously "": the old key list gave up on an unrecognised shape and
+    // showed the user nothing. Any string beats a bare tool name.
     #[test_case(
-        serde_json::json!({"other": "value"}),
-        "";
-        "returns_empty_for_no_matching_fields"
+        "mystery", serde_json::json!({"other": "value"}), "value";
+        "falls_back_to_any_string"
     )]
-    fn brief_extracts_known_field(args: serde_json::Value, expected: &str) {
-        assert_eq!(AgentManager::brief_resource_description(&args), expected);
+    #[test_case(
+        "noop", serde_json::json!({}), "";
+        "returns_empty_when_there_is_nothing_to_show"
+    )]
+    fn brief_extracts_known_field(tool: &str, args: serde_json::Value, expected: &str) {
+        assert_eq!(
+            AgentManager::brief_resource_description(tool, &args),
+            expected
+        );
     }
 
     #[test]
     fn truncates_long_commands() {
         let long_cmd = "a".repeat(100);
         let args = serde_json::json!({"command": long_cmd});
-        let result = AgentManager::brief_resource_description(&args);
-        assert!(result.ends_with("..."));
-        assert!(result.len() <= 53); // 50 chars + "..."
+        let result = AgentManager::brief_resource_description("bash", &args);
+        assert!(result.ends_with('…'), "got: {result}");
+        assert_eq!(result.chars().count(), 51, "50 chars plus the ellipsis");
     }
 
     #[test]
     fn path_takes_precedence_over_other_fields() {
         let args = serde_json::json!({
             "path": "/path/to/file",
-            "command": "some command",
             "name": "some name"
         });
         assert_eq!(
-            AgentManager::brief_resource_description(&args),
+            AgentManager::brief_resource_description("write_file", &args),
             "/path/to/file"
+        );
+    }
+
+    /// A shell call's command outranks a path argument — the command IS the
+    /// thing being approved, and `cd /tmp` is not usefully described as
+    /// "/tmp".
+    #[test]
+    fn a_shell_call_is_described_by_its_command() {
+        let args = serde_json::json!({"command": "rm -rf build", "path": "/repo"});
+        assert_eq!(
+            AgentManager::brief_resource_description("bash", &args),
+            "rm -rf build"
         );
     }
 }

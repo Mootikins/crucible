@@ -97,7 +97,15 @@ impl OilChatRunner {
                 let _ = reply.send(result);
             }
             SessionCommand::MarkFirstMessageSent => {}
-            SessionCommand::SetVariable { .. } | SessionCommand::GetVariable { .. } => {}
+            // Previously a no-op arm: `session:set_variable` silently
+            // discarded and `get_variable` always returned nil, so a plugin
+            // stashing state across handlers got documented silence.
+            SessionCommand::SetVariable { key, value } => {
+                app.set_session_variable(key, value);
+            }
+            SessionCommand::GetVariable { key, response } => {
+                let _ = response.send(app.session_variable(&key));
+            }
         }
     }
 
@@ -265,6 +273,21 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
                 return Vec::new();
             }
             vec![ChatAppMsg::ToolCallDiffUpdate { call_id, diffs }]
+        }
+        "tool_auto_approved" => {
+            let Some(call_id) = data
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+            else {
+                return Vec::new();
+            };
+            let reason = data
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("policy")
+                .to_string();
+            vec![ChatAppMsg::ToolAutoApproved { call_id, reason }]
         }
         "tool_result" => {
             let name = data

@@ -49,6 +49,14 @@ pub struct OilChatApp {
     pub(crate) container_list: crate::tui::oil::containers::ContainerList,
     /// Current chat mode (Normal / Plan / Auto)
     mode: ChatMode,
+    /// Scratch key/value store for `session:set_variable`/`get_variable`.
+    ///
+    /// TUI-local and deliberately not persisted: these are for a plugin
+    /// carrying state across handlers within one session, and a Lua script
+    /// that stashes a value must be able to read it back. The handler arm was
+    /// previously a literal no-op, so every write vanished and every read
+    /// returned nil.
+    session_variables: std::collections::HashMap<String, serde_json::Value>,
     /// Display name of the active LLM model
     model: String,
     /// Status text from the daemon (e.g. "Thinking…")
@@ -256,6 +264,16 @@ impl App for OilChatApp {
 // ─── Accessors & Lifecycle ───────────────────────────────────────────────────
 
 impl OilChatApp {
+    /// Store a Lua session variable (`session:set_variable`).
+    pub(crate) fn set_session_variable(&mut self, key: String, value: serde_json::Value) {
+        self.session_variables.insert(key, value);
+    }
+
+    /// Read a Lua session variable back (`session:get_variable`).
+    pub(crate) fn session_variable(&self, key: &str) -> Option<serde_json::Value> {
+        self.session_variables.get(key).cloned()
+    }
+
     pub(crate) fn set_mode(&mut self, mode: ChatMode) {
         self.mode = mode;
     }

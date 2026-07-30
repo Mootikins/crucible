@@ -71,7 +71,7 @@ pub use display_hooks::{
 pub use execution::{execute_handler, run_handler_chain, HandlerExecutionResult};
 pub use permission::{
     execute_permission_hooks, register_permission_hook_api, PermissionHook, PermissionHookResult,
-    PermissionRequest,
+    PermissionRequest, SHIPPED_DEFAULT_PRIORITY,
 };
 pub use registry::{LuaScriptHandlerRegistry, RuntimeHandler};
 pub use script_handler::{interpret_handler_result, LuaScriptHandler, ScriptHandlerResult};

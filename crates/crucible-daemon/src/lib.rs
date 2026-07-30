@@ -62,6 +62,7 @@ pub mod replay;
 pub mod rpc;
 pub mod rpc_client;
 pub mod rpc_helpers;
+pub mod runtime_defaults;
 pub mod scm;
 pub mod server;
 pub mod session_bridge;
