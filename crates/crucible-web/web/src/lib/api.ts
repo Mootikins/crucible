@@ -13,6 +13,7 @@ import type {
   KilnListEntry,
   FsEntry,
   FsEvent,
+  SessionModes,
 } from './types';
 
 export interface Config {
@@ -613,6 +614,13 @@ export async function listModels(sessionId: string): Promise<string[]> {
       errorMessage: 'Failed to list models',
     })
   ).models;
+}
+
+/** List the modes a session may enter, and the one it is in. */
+export async function listModes(sessionId: string): Promise<SessionModes> {
+  return request<SessionModes>('GET', `/api/session/${encodeURIComponent(sessionId)}/modes`, {
+    errorMessage: 'Failed to list modes',
+  });
 }
 
 /** Switch the model for a session. */

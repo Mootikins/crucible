@@ -986,23 +986,38 @@ impl AgentManager {
         use crucible_core::types::acp::schema::{SessionMode, SessionModeId, SessionModeState};
         use crucible_core::types::mode::default_internal_modes;
         let _vm = self.get_or_create_session_state(session_id);
-        let declared = self.modes.all();
-        if declared.is_empty() {
-            return default_internal_modes();
-        }
-        // The SESSION's mode, not registration order. This field was
+        // The SESSION's mode, not registration order. `current_mode_id` was
         // previously `declared.first()`, which nothing noticed because both
         // callers read only `available_modes` — but the moment this struct
         // goes on the wire, a UI hydrating `current_mode_id` would show
-        // whichever mode the defaults file happens to declare first.
-        // Fall back to the first declared only when the session has none, and
-        // ignore a persisted mode that is no longer declared.
-        let session_mode = self
+        // whichever mode the defaults file happens to declare first. A
+        // persisted mode that is no longer declared is ignored: reporting it
+        // would advertise a mode `set_mode` now rejects.
+        let persisted = self
             .session_manager
             .get_session(session_id)
-            .and_then(|s| s.agent.and_then(|a| a.mode))
-            .filter(|m| declared.iter().any(|d| &d.name == m));
-        let current = session_mode
+            .and_then(|s| s.agent.and_then(|a| a.mode));
+
+        let declared = self.modes.all();
+        if declared.is_empty() {
+            let fallback = default_internal_modes();
+            // Same rule for the fallback set: the built-ins hardcode "normal"
+            // as current, which would silently disagree with `get_mode`.
+            let current = persisted
+                .filter(|m| {
+                    fallback
+                        .available_modes
+                        .iter()
+                        .any(|d| d.id.0.as_ref() == m)
+                })
+                .unwrap_or_else(|| fallback.current_mode_id.0.to_string());
+            return SessionModeState::new(
+                SessionModeId::new(current.as_str()),
+                fallback.available_modes,
+            );
+        }
+        let current = persisted
+            .filter(|m| declared.iter().any(|d| &d.name == m))
             .or_else(|| declared.first().map(|m| m.name.clone()))
             .unwrap_or_else(|| "normal".to_string());
         let available = declared

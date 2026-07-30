@@ -54,6 +54,7 @@ pub const METHODS: &[&str] = &[
     "session.set_mode",
     "session.get_mode",
     "session.list_models",
+    "session.list_modes",
     "session.set_thinking_budget",
     "session.get_thinking_budget",
     "session.cache_stats",
@@ -357,6 +358,7 @@ impl RpcDispatcher {
             }
             "session.set_mode" => to_response(id, self.handle_session_set_mode(&req).await),
             "session.list_models" => to_response(id, self.handle_session_list_models(&req).await),
+            "session.list_modes" => to_response(id, self.handle_session_list_modes(&req).await),
             "session.add_notification" => {
                 to_response(id, self.handle_session_add_notification(&req).await)
             }
@@ -1332,6 +1334,12 @@ impl RpcDispatcher {
     async fn handle_session_list_models(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_list_models(req.clone(), &self.ctx.agents).await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_session_list_modes(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp =
+            crate::server::session::handle_session_list_modes(req.clone(), &self.ctx.agents).await;
         map_server_resp(resp)
     }
 

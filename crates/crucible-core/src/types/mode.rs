@@ -79,6 +79,21 @@ impl ModeDescriptor {
     }
 }
 
+/// The wire shape of `session.list_modes`: which modes a session may enter,
+/// and which one it is in now.
+///
+/// Both fields come from the same daemon call on purpose. A client that
+/// fetched the list and the current mode separately can render a mode that is
+/// not in its own list — exactly the state a restored session lands in when
+/// its mode was declared in Lua the client has never seen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionModes {
+    /// The mode the session is in. Always present in `modes`.
+    pub current_mode_id: String,
+    /// Every mode the session may switch to, in declaration order.
+    pub modes: Vec<ModeDescriptor>,
+}
+
 impl From<SessionMode> for ModeDescriptor {
     fn from(mode: SessionMode) -> Self {
         Self::from(&mode)

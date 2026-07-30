@@ -271,6 +271,23 @@ impl DaemonClient {
         Ok(extract_string_array(&result, "models"))
     }
 
+    /// The modes this session may enter, and the one it is in.
+    ///
+    /// The list is per-session because it is resolved from the session's Lua
+    /// registry — two sessions in different projects can offer different modes.
+    pub async fn session_list_modes(
+        &self,
+        session_id: &str,
+    ) -> Result<crucible_core::types::mode::SessionModes> {
+        self.typed_call_with_retry(
+            "session.list_modes",
+            SessionIdRequest {
+                session_id: session_id.to_string(),
+            },
+        )
+        .await
+    }
+
     /// List all available models without requiring an active session.
     ///
     /// If `kiln_path` is provided, the daemon resolves the kiln's data classification

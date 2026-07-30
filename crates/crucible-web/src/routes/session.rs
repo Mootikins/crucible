@@ -85,6 +85,7 @@ pub fn session_routes() -> Router<AppState> {
         .route("/api/session/{id}/cancel", post(cancel_session))
         .route("/api/session/{id}/models", get(list_models))
         .route("/api/session/{id}/model", post(switch_model))
+        .route("/api/session/{id}/modes", get(list_modes))
         .route("/api/session/{id}/kilns/connect", post(connect_kiln))
         .route("/api/session/{id}/kilns/disconnect", post(disconnect_kiln))
         .route("/api/session/{id}/workspace", put(set_workspace))
@@ -505,6 +506,19 @@ async fn list_models(
 ) -> Result<Json<ModelsResponse>, WebError> {
     let models = state.daemon.session_list_models(&id).await.daemon_err()?;
     Ok(Json(ModelsResponse { models }))
+}
+
+/// The session's modes, forwarded from the daemon unchanged.
+///
+/// The web layer deliberately adds nothing here: mode labels and ordering are
+/// the daemon's, so the TUI and the browser cannot drift into showing
+/// different names for the same mode.
+async fn list_modes(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<crucible_core::types::mode::SessionModes>, WebError> {
+    let modes = state.daemon.session_list_modes(&id).await.daemon_err()?;
+    Ok(Json(modes))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1314,5 +1328,42 @@ mod tests {
             json["providers"].is_array(),
             "Response must have 'providers' array when kiln query param is provided"
         );
+    }
+
+    /// The modes route forwards the daemon's list verbatim. Asserting the
+    /// field names here is the point: the browser reads `current_mode_id` and
+    /// `modes[].id`, and a rename on either side would otherwise surface as a
+    /// mode chip that silently falls back to its placeholder.
+    #[tokio::test]
+    async fn list_modes_returns_the_daemon_s_modes_and_current_mode() {
+        let (_mock, client) = crate::test_support::start_mock_daemon().await;
+        let state = crate::test_support::build_mock_state(client);
+        let app = crate::test_support::build_test_app(state);
+
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("GET")
+                    .uri("/api/session/test-session-001/modes")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["current_mode_id"], "normal");
+        let ids: Vec<&str> = json["modes"]
+            .as_array()
+            .expect("modes must be an array")
+            .iter()
+            .map(|m| m["id"].as_str().expect("mode id"))
+            .collect();
+        assert_eq!(ids, vec!["normal", "plan"]);
     }
 }

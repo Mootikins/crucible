@@ -183,3 +183,106 @@ async fn test_session_set_thinking_budget_rpc_success_and_missing_session_id_err
 
     server.shutdown().await;
 }
+
+/// `session.list_modes` must agree with `session.get_mode`. The two are
+/// separate RPCs, so nothing structurally forces it: `session_modes()` used to
+/// derive `current_mode_id` from declaration order, which meant a session in
+/// `plan` was reported as being in whichever mode the defaults file declared
+/// first. Both UIs would have hydrated the wrong chip from it.
+#[tokio::test]
+async fn session_list_modes_reports_the_session_s_own_current_mode() {
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
+    let session_id = create_chat_session(&mut client, &server.kiln_path, 110).await;
+    configure_internal_mock_agent(&mut client, &session_id, 111, "mock-initial").await;
+
+    let before = rpc_call(
+        &mut client,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 112,
+            "method": "session.list_modes",
+            "params": { "session_id": session_id }
+        }),
+    )
+    .await;
+    assert!(
+        before["error"].is_null(),
+        "session.list_modes failed: {before:?}"
+    );
+    let ids: Vec<String> = before["result"]["modes"]
+        .as_array()
+        .expect("modes must be an array")
+        .iter()
+        .map(|m| m["id"].as_str().expect("mode id").to_string())
+        .collect();
+    assert!(
+        ids.contains(&"normal".to_string()) && ids.contains(&"plan".to_string()),
+        "the built-in modes must be listed, got {ids:?}"
+    );
+    assert!(
+        ids.contains(
+            &before["result"]["current_mode_id"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        ),
+        "current_mode_id must be one of the listed modes: {before:?}"
+    );
+
+    let set = rpc_call(
+        &mut client,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 113,
+            "method": "session.set_mode",
+            "params": { "session_id": session_id, "mode_id": "plan" }
+        }),
+    )
+    .await;
+    assert!(set["error"].is_null(), "session.set_mode failed: {set:?}");
+
+    let after = rpc_call(
+        &mut client,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 114,
+            "method": "session.list_modes",
+            "params": { "session_id": session_id }
+        }),
+    )
+    .await;
+    assert_eq!(
+        after["result"]["current_mode_id"], "plan",
+        "list_modes must follow the session's mode, not declaration order"
+    );
+
+    let get = rpc_call(
+        &mut client,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 115,
+            "method": "session.get_mode",
+            "params": { "session_id": session_id }
+        }),
+    )
+    .await;
+    assert_eq!(
+        get["result"]["mode"], after["result"]["current_mode_id"],
+        "session.get_mode and session.list_modes must not disagree"
+    );
+
+    let err = rpc_call(
+        &mut client,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 116,
+            "method": "session.list_modes",
+            "params": {}
+        }),
+    )
+    .await;
+    assert_eq!(err["error"]["code"], INVALID_PARAMS);
+
+    server.shutdown().await;
+}

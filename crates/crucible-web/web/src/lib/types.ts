@@ -287,6 +287,21 @@ export interface SubagentEvent {
 /** Chat mode type */
 export type ChatMode = 'normal' | 'plan' | 'auto';
 
+/** One mode a session may enter, as the daemon describes it. */
+export interface ModeDescriptor {
+  id: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  color: string | null;
+}
+
+/** Response of `GET /api/session/{id}/modes`. */
+export interface SessionModes {
+  current_mode_id: string;
+  modes: ModeDescriptor[];
+}
+
 /** Context window usage */
 export interface ContextUsage {
   used: number;

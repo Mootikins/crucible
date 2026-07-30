@@ -349,6 +349,16 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         "session.list_models" => json!({"models": ["llama3.2", "mistral"]}),
         "session.switch_model" => json!(null),
         "session.set_mode" => json!(null),
+        "session.list_modes" => json!({
+            "session_id": "test-session-001",
+            "current_mode_id": "normal",
+            "modes": [
+                {"id": "normal", "name": "Normal", "description": "Full read/write access",
+                 "icon": null, "color": null},
+                {"id": "plan", "name": "Plan", "description": "Read-only exploration mode",
+                 "icon": null, "color": null},
+            ],
+        }),
         "session.set_title" => json!(null),
         "session.generate_title" => json!({
             "session_id": "test-session-001",

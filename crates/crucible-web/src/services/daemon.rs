@@ -875,6 +875,18 @@ impl ReconnectingDaemon {
         .await
     }
 
+    pub async fn session_list_modes(
+        &self,
+        session_id: &str,
+    ) -> anyhow::Result<crucible_core::types::mode::SessionModes> {
+        let session_id = session_id.to_string();
+        self.call_with_reconnect("session.list_modes", move |daemon| {
+            let session_id = session_id.clone();
+            Box::pin(async move { daemon.session_list_modes(&session_id).await })
+        })
+        .await
+    }
+
     pub async fn list_providers(
         &self,
         kiln_path: Option<&std::path::Path>,

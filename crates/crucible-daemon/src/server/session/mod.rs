@@ -12,6 +12,7 @@ mod lifecycle;
 mod list;
 mod messaging;
 mod models;
+mod modes;
 mod notifications;
 mod params;
 mod scope;
@@ -38,6 +39,7 @@ pub(crate) use models::{
     handle_models_list, handle_providers_list, handle_session_fork, handle_session_list_models,
     handle_session_switch_model,
 };
+pub(crate) use modes::handle_session_list_modes;
 pub(crate) use notifications::{
     handle_session_add_notification, handle_session_dismiss_notification,
     handle_session_list_notifications,
