@@ -57,22 +57,28 @@ impl PermissionGate for DaemonPermissionGate {
     async fn request_permission(&self, request: PermRequest) -> PermResponse {
         let (tool_name, input) = Self::to_engine_input(&request);
 
-        if is_safe(tool_name) {
-            return PermResponse::allow();
-        }
-
-        match self.engine.evaluate(tool_name, &input, self.is_interactive) {
+        // The engine first, so a `deny` the operator wrote by hand is
+        // absolute. The read-only exemption used to be checked ahead of it,
+        // which meant `deny = ["read_file:*"]` lost to a hardcoded name list
+        // and was ignored without a word. Only an *undecided* tool — one no
+        // rule matched — falls through to the exemption.
+        //
+        // Always evaluated as interactive, and the interactivity decided here
+        // instead: the engine folds `ask` into `deny` when non-interactive,
+        // which is a statement about there being nobody to prompt, not about
+        // what the rules say. Letting it answer for both collapses "the
+        // operator denied this" into "we could not ask", and a read-only tool
+        // in a non-interactive session would be refused for the wrong reason.
+        match self.engine.evaluate(tool_name, &input, true) {
             PermissionDecision::Allow => PermResponse::allow(),
             PermissionDecision::Deny { reason } => PermResponse::deny_with_reason(reason),
-            PermissionDecision::Ask => {
-                if let Some(callback) = &self.prompt_callback {
-                    callback(request).await
-                } else {
-                    PermResponse::deny_with_reason(
-                        "Permission requires user confirmation but no interactive bridge is configured",
-                    )
-                }
-            }
+            PermissionDecision::Ask if is_safe(tool_name) => PermResponse::allow(),
+            PermissionDecision::Ask => match &self.prompt_callback {
+                Some(callback) if self.is_interactive => callback(request).await,
+                _ => PermResponse::deny_with_reason(
+                    "Permission requires user confirmation but no interactive bridge is configured",
+                ),
+            },
         }
     }
 }
@@ -81,6 +87,56 @@ impl PermissionGate for DaemonPermissionGate {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// An operator's explicit `deny` outranks the read-only exemption.
+    ///
+    /// The exemption was checked *first*, so `deny = ["read_file:*"]` was
+    /// silently ignored on this path — the one gate where a rule the operator
+    /// wrote by hand lost to a hardcoded name list. The two sibling gates
+    /// (`tools_bridge::refusal`, `agent_manager::messaging::permission`) both
+    /// treat deny as absolute; this one now agrees.
+    #[tokio::test]
+    async fn an_operator_deny_outranks_the_read_only_exemption() {
+        let config = PermissionConfig {
+            deny: vec!["read_file:*".to_string()],
+            ..Default::default()
+        };
+        let gate = DaemonPermissionGate::new(Some(config), true);
+        let request = PermRequest::tool("read_file", json!({"path": "/etc/passwd"}));
+        let response = gate.request_permission(request).await;
+        assert!(
+            !response.allowed,
+            "an explicit deny must hold even for a read-only tool"
+        );
+    }
+
+    /// `default = "deny"` means deny, read-only or not.
+    ///
+    /// Also a behaviour change from the old ordering, and the same one: a
+    /// blanket deny is something the operator asked for.
+    #[tokio::test]
+    async fn a_deny_default_covers_read_only_tools_too() {
+        use crucible_core::config::components::permissions::PermissionMode;
+        let config = PermissionConfig {
+            default: PermissionMode::Deny,
+            ..Default::default()
+        };
+        let gate = DaemonPermissionGate::new(Some(config), true);
+        let response = gate
+            .request_permission(PermRequest::tool("read_file", json!({"path": "x"})))
+            .await;
+        assert!(!response.allowed, "default deny is not a suggestion");
+    }
+
+    /// …and a hardcoded deny does too. `is_safe("bash")` is false, but the
+    /// ordering bug was general, so pin the other absolute source as well.
+    #[tokio::test]
+    async fn a_hardcoded_deny_outranks_everything() {
+        let gate = DaemonPermissionGate::new(None, true);
+        let request = PermRequest::bash(["rm", "-rf", "/"]);
+        let response = gate.request_permission(request).await;
+        assert!(!response.allowed, "rm -rf / is denied unconditionally");
+    }
 
     #[tokio::test]
     async fn safe_tool_is_allowed() {
