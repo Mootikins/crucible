@@ -671,7 +671,21 @@ pub async fn create_agent_from_session_config(
         workspace.to_path_buf(),
     )
     .with_deferrable_tools(deferrable_tool_names)
-    .with_plugin_tools(plugin_tool_names);
+    .with_plugin_tools(plugin_tool_names)
+    // Everything the session decided about generation and context. This is
+    // the only hop where it can arrive: every setter that writes these to
+    // `SessionAgent` — RPC, `cru.defaults`, an agent card, `[llm]` config —
+    // invalidates the agent cache, so the handle is always rebuilt here.
+    // Omitting them left `context_budget` permanently `None` (so every
+    // context strategy was dead and tool-schema deferral guessed at the
+    // window) and dropped `temperature`/`max_tokens` before they ever
+    // reached a request.
+    .with_generation_settings(agent_config.temperature, agent_config.max_tokens)
+    .with_context_settings(
+        agent_config.context_budget,
+        agent_config.context_strategy.clone(),
+        agent_config.context_window,
+    );
     let handle = match modes.clone() {
         Some(registry) => handle.with_modes(registry),
         None => handle,
@@ -1067,6 +1081,63 @@ mod tests {
                 < prompt.find("SENTINEL-RULES").unwrap(),
             "the agent card's prompt comes first, project rules refine it: {prompt}"
         );
+    }
+
+    /// Everything the session decided about generation and context must reach
+    /// the handle that talks to the model.
+    ///
+    /// Asserted on the factory rather than on the setters, because the setters
+    /// were never the broken part: `session.set_temperature`, `cru.defaults`,
+    /// `[llm] temperature` and an agent card's `temperature:` all write to
+    /// `SessionAgent` correctly, and every one of those writes invalidates the
+    /// agent cache so the handle is rebuilt *here*. This is the single hop
+    /// where they were dropped.
+    #[tokio::test]
+    async fn session_generation_and_context_settings_reach_the_agent_handle() {
+        let ws = tempfile::tempdir().unwrap();
+
+        let config = SessionAgent {
+            temperature: Some(0.2),
+            max_tokens: Some(512),
+            context_budget: Some(64_000),
+            // Deliberately not `Truncate`: that is the default, so a handle
+            // built with a default strategy would satisfy the assertion
+            // without ever having read the session's choice.
+            context_strategy: crucible_core::session::ContextStrategy::SlidingWindow,
+            context_window: Some(128_000),
+            ..test_agent_config()
+        };
+
+        let handle = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+            modes: None,
+            agent_config: &config,
+            lua: None,
+            workspace: ws.path(),
+            kiln_path: None,
+            connected_kilns: &[],
+            parent_session_id: None,
+            background_spawner: None,
+            delegation_spawner: None,
+            mcp_gateway: None,
+            acp_permission_handler: None,
+            acp_config: None,
+            context_config: None,
+            knowledge_repo: None,
+            embedding_provider: None,
+            plugin_tools: None,
+        })
+        .await
+        .expect("agent creation should succeed");
+
+        assert_eq!(handle.get_temperature(), Some(0.2), "temperature");
+        assert_eq!(handle.get_max_tokens(), Some(512), "max_tokens");
+        assert_eq!(handle.get_context_budget(), Some(64_000), "context_budget");
+        assert_eq!(
+            handle.get_context_strategy(),
+            crucible_core::session::ContextStrategy::SlidingWindow,
+            "context_strategy"
+        );
+        assert_eq!(handle.get_context_window(), Some(128_000), "context_window");
     }
 
     #[tokio::test]

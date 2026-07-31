@@ -354,6 +354,12 @@ pub struct GenaiAgentHandle {
     mode_context_sent: bool,
     max_tool_depth: usize,
     thinking_budget: Option<i64>,
+    /// Sampling temperature for every request this handle issues. `None`
+    /// leaves it to the provider's own default rather than picking one here —
+    /// providers disagree on what neutral means.
+    temperature: Option<f64>,
+    /// Cap on generated tokens per response. `None` leaves it to the provider.
+    max_tokens: Option<u32>,
     context_budget: Option<usize>,
     context_strategy: ContextStrategy,
     context_window: Option<usize>,
@@ -790,6 +796,8 @@ impl GenaiAgentHandle {
             mode_context_sent: false,
             max_tool_depth: usize::MAX,
             thinking_budget,
+            temperature: None,
+            max_tokens: None,
             context_budget: None,
             context_strategy: ContextStrategy::default(),
             context_window: None,
@@ -809,6 +817,60 @@ impl GenaiAgentHandle {
     pub fn with_deferrable_tools(mut self, names: std::collections::HashSet<String>) -> Self {
         self.deferrable_tool_names = names;
         self
+    }
+
+    /// Sampling settings the session chose. `None` for either leaves that one
+    /// to the provider's default.
+    #[must_use]
+    pub fn with_generation_settings(
+        mut self,
+        temperature: Option<f64>,
+        max_tokens: Option<u32>,
+    ) -> Self {
+        self.temperature = temperature;
+        self.max_tokens = max_tokens;
+        self
+    }
+
+    /// Context-window settings the session chose: the budget to keep under,
+    /// what to do when it is exceeded, and the model's window when the
+    /// provider does not report one.
+    #[must_use]
+    pub fn with_context_settings(
+        mut self,
+        budget: Option<usize>,
+        strategy: ContextStrategy,
+        window: Option<usize>,
+    ) -> Self {
+        self.context_budget = budget;
+        self.context_strategy = strategy;
+        self.context_window = window;
+        self
+    }
+
+    /// The per-request generation settings, as one place instead of inline in
+    /// the stream body — the only way to assert them without a live provider.
+    ///
+    /// Each `Option` is applied only when set, so an unset value means "the
+    /// provider decides" rather than a value chosen here.
+    fn build_chat_options(&self) -> ChatOptions {
+        let mut options = ChatOptions::default()
+            .with_capture_tool_calls(true)
+            .with_capture_content(true)
+            .with_capture_usage(true)
+            .with_capture_reasoning_content(true);
+        if let Some(budget) = self.thinking_budget {
+            options = options.with_reasoning_effort(ReasoningEffort::Budget(
+                budget.clamp(0, u32::MAX as i64) as u32,
+            ));
+        }
+        if let Some(temperature) = self.temperature {
+            options = options.with_temperature(temperature);
+        }
+        if let Some(max_tokens) = self.max_tokens {
+            options = options.with_max_tokens(max_tokens);
+        }
+        options
     }
 
     /// Declare which attached tools are plugin-declared. Plan mode excludes
@@ -985,18 +1047,7 @@ impl GenaiAgentHandle {
             .map(super::tool_bridge::llm_tool_to_genai)
             .collect();
 
-        let options = ChatOptions::default()
-            .with_capture_tool_calls(true)
-            .with_capture_content(true)
-            .with_capture_usage(true)
-            .with_capture_reasoning_content(true);
-        let options = if let Some(budget) = self.thinking_budget {
-            options.with_reasoning_effort(ReasoningEffort::Budget(
-                budget.clamp(0, u32::MAX as i64) as u32
-            ))
-        } else {
-            options
-        };
+        let options = self.build_chat_options();
 
         let client = self.client.clone();
         let model_name = self.explicit_model_name();
@@ -1384,6 +1435,24 @@ impl AgentHandle for GenaiAgentHandle {
 
     fn current_model(&self) -> Option<&str> {
         Some(&self.model.model_name)
+    }
+
+    async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
+        self.temperature = Some(temperature);
+        Ok(())
+    }
+
+    fn get_temperature(&self) -> Option<f64> {
+        self.temperature
+    }
+
+    async fn set_max_tokens(&mut self, max_tokens: Option<u32>) -> ChatResult<()> {
+        self.max_tokens = max_tokens;
+        Ok(())
+    }
+
+    fn get_max_tokens(&self) -> Option<u32> {
+        self.max_tokens
     }
 
     async fn set_context_budget(&mut self, budget: Option<usize>) -> ChatResult<()> {
@@ -1979,6 +2048,33 @@ mod tests {
 
         assert_eq!(clamped_negative, 0);
         assert_eq!(clamped_overflow, u32::MAX);
+    }
+
+    /// The settings must reach the outgoing request, not merely the handle.
+    ///
+    /// A getter returning what a setter stored proves nothing here: that is
+    /// exactly what `SessionAgent.temperature` did for months while no request
+    /// ever carried it. `ChatOptions` is what genai puts on the wire.
+    #[test]
+    fn generation_settings_reach_the_outgoing_chat_options() {
+        let mut handle = test_handle_with_tools(Vec::new());
+
+        let untouched = handle.build_chat_options();
+        assert_eq!(
+            (untouched.temperature, untouched.max_tokens),
+            (None, None),
+            "unset means the provider's default, not a value chosen here"
+        );
+
+        handle.temperature = Some(0.15);
+        handle.max_tokens = Some(1_024);
+
+        let options = handle.build_chat_options();
+        assert_eq!(options.temperature, Some(0.15));
+        assert_eq!(options.max_tokens, Some(1_024));
+        // The capture flags the stream loop depends on must survive.
+        assert_eq!(options.capture_tool_calls, Some(true));
+        assert_eq!(options.capture_usage, Some(true));
     }
 
     // ─── Progressive tool disclosure: visible_tools() deferral ──────────

@@ -14,6 +14,12 @@ pub(crate) struct AgentStreamConfig {
     // `SessionAgent` — the copies that used to sit in this struct were never
     // read, and a second place to look for the authoritative value is worse
     // than none. Surfaced by rustc once the struct moved out of `mod.rs`.
+    //
+    // That was true of thinking_budget and system_prompt and *not* of
+    // temperature/max_tokens: the factory dropped those two, so deleting the
+    // copies here left them reaching nothing at all. Fixed in the factory
+    // (`with_generation_settings`); the invariant this comment asserts is now
+    // pinned by `generation_settings_reach_the_outgoing_chat_options`.
     pub(crate) max_iterations: Option<u32>,
     pub(crate) execution_timeout_secs: Option<u64>,
     /// Snapshot of the session's `context_budget` for auto-compaction.
