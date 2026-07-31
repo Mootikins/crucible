@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-07-31
+
+Mostly one thing: `docs/Meta/Product.md` was audited against the code, a third
+of its `[x]` claims did not survive, and this release builds the ones worth
+building. Twelve features that the product map said shipped were reaching
+nobody. The recurring cause is a test that asserts a value round-trips rather
+than that it arrives — `test_temperature_round_trip` passed for months while no
+LLM request carried a temperature.
+
+### Added
+- **`cru search --type text` looks inside notes.** It matched titles and
+  filenames only; the FTS5 index it was credited with was never written to or
+  read from. Kilns processed before this are backfilled once, on open, so an
+  existing kiln does not search as empty.
+- **Project rules files reach the agent's system prompt.** `AGENTS.md` and
+  friends, walked from the repo root down to the workspace. The loader was
+  deleted with `crucible-context` in February and the config key kept parsing.
+- **`@file` in the composer attaches the file's contents.** It used to insert
+  the literal string `@src/main.rs` and push it onto a field nothing read; the
+  agent could only get the content by choosing to call `read_file`.
+
+### Fixed
+- **Notes created while the daemon runs are indexed.** The watcher's handler
+  registry was built empty behind a feature flag that exists in no
+  `Cargo.toml`, so the reprocess task downstream — complete and correct — had
+  never received an event.
+- **Every named colour rendered as the wrong palette slot.** `Color::Red` came
+  out as bright red and `bright_red` as red, across all six chromatic pairs,
+  because crossterm's variant names sit one slot up from these. Set `blue` in
+  your colorscheme and you now get the slot 4 your terminal is configured with.
+- **The session's temperature, max tokens, context budget, context strategy and
+  context window reach the model.** The agent factory built the handle with the
+  thinking budget and nothing else. No context strategy had ever run against a
+  real session, and tool-schema deferral was always guessing at the window.
+- **`:set precognition` reaches the daemon** instead of setting a TUI-local
+  string the `:set` readout reads back to you.
+- **Shell output reaches the composer and the transcript.** `i` closed the
+  modal and inserted nothing; a finished `!command` left no trace in the
+  conversation. Both halves of the same key press, both landing nowhere.
+- **Type stubs describe the VM plugins actually run on.** The generator
+  fabricated six `cru.*` namespaces out of bare globals — measured against a
+  real plugin VM, 6 stubbed namespaces did not exist and 12 that did had no
+  stubs at all. `cru plugin new` now writes the stub directory into the
+  scaffolded `.luarc.json`, which is what "zero-config IDE setup" meant.
+- **`cru.tools.call` respects the operator's `[permissions]` rules**, which its
+  own documentation already claimed. It went straight to the executor with no
+  permission check of any kind, so any loaded plugin could run `bash`
+  unprompted, in any mode, including plan.
+- **An explicit `deny` outranks the read-only exemption** on the ACP permission
+  path. `deny = ["read_file:*"]` was ignored, because a hardcoded name list was
+  consulted first.
+- **Bundled skills no longer shadow skills you wrote.** They shared a scope with
+  `<kiln>/skills`, so a name collision was settled by search-path order — and
+  the shipped one won.
+- **The runtime tree `cru setup` writes is read.** It copied to
+  `~/.config/crucible/runtime` and printed instructions to set an env var,
+  because no resolver looked there.
+- **Bundled help skills load from an installed binary.** Skills discovery tried
+  only the dev layout, so `~/.local/bin/cru` looked in `~/runtime`. _Release
+  tarballs still ship no `runtime/` directory, so this is not yet enough on its
+  own._
+- Setters on `SessionConfigRpc` no longer report success for work not done. A
+  plugin writing `session.thinking_budget = 4096` on the daemon VM was told it
+  worked; it now says what happened.
+
+### Changed
+- **BREAKING — the MCP server serves the kiln, not a second copy of `bash`.**
+  `read_file`, `edit_file`, `write_file`, `bash`, `glob` and `grep` are gone
+  from `cru mcp`; the surface is 15 tools, kiln and delegation. Any harness
+  speaking MCP already has its own file and shell tools, Crucible enforced no
+  permissions on the copies it served, and the agent factory added the same six
+  separately — so every kiln session was advertising each of them to the model
+  twice. Configure the client's own equivalents instead.
+- A config with `default = "deny"` now denies read-only tools too, on both the
+  ACP path and `cru.tools.call`. A blanket deny is taken at its word.
+
 ## [0.17.1] - 2026-07-28
 
 No user-visible changes. This release covers the build and test infrastructure
