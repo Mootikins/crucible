@@ -55,9 +55,18 @@ LLM request carried a temperature.
   own documentation already claimed. It went straight to the executor with no
   permission check of any kind, so any loaded plugin could run `bash`
   unprompted, in any mode, including plan.
-- **An explicit `deny` outranks the read-only exemption** on the ACP permission
-  path. `deny = ["read_file:*"]` was ignored, because a hardcoded name list was
-  consulted first.
+- **The permission config applies to ACP-hosted agents at all.** The gate took
+  its tool name from ACP's `title` — `"Read src/main.rs"`, prose meant for a
+  human — so no `[permissions]` rule naming a tool could ever match it and the
+  whole config was inert on that path. Rules now match against the tool `kind`,
+  the only tool identity ACP puts on the wire.
+- **An explicit `deny` or `ask` outranks the read-only exemption.**
+  `deny = ["read_file:*"]` was ignored because a hardcoded name list was
+  consulted first; `ask = ["read_file:*"]` was ignored because the engine
+  reported "a rule said ask" and "nothing matched, the default is ask" as the
+  same answer.
+- **An interrupted text-index backfill is finished on the next open**, instead
+  of being abandoned because the index was no longer empty.
 - **Bundled skills no longer shadow skills you wrote.** They shared a scope with
   `<kiln>/skills`, so a name collision was settled by search-path order — and
   the shipped one won.
