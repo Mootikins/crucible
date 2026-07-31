@@ -33,19 +33,52 @@ pub fn exe_relative(exe_dir: &Path) -> [PathBuf; 2] {
     ]
 }
 
-/// [`exe_relative`] for the currently running binary, or empty if the OS will
-/// not say where it is.
+/// Where `cru setup` copies the runtime tree: `~/.config/crucible/runtime`.
+///
+/// A user-owned root, tried before anything shipped alongside the binary, so
+/// `cru setup` is a way to *override* the bundled tree and not merely to
+/// duplicate it.
+pub fn user_runtime() -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join("crucible").join("runtime"))
+}
+
+/// Every root to try for the running binary, highest priority first.
+///
+/// `cru setup` copied the runtime into `~/.config/crucible/runtime` and then
+/// printed instructions to set `CRUCIBLE_RUNTIME` by hand, because no resolver
+/// looked there — a path written by one component and read by none, which is
+/// the same defect this module exists to prevent. It is a root now, so `cru
+/// setup` needs no follow-up.
 pub fn for_current_exe() -> Vec<PathBuf> {
-    std::env::current_exe()
+    let exe_relative = std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(exe_relative))
         .map(Vec::from)
-        .unwrap_or_default()
+        .unwrap_or_default();
+
+    user_runtime().into_iter().chain(exe_relative).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `cru setup`'s target outranks anything shipped with the binary.
+    ///
+    /// It is the user saying "use this tree", so it has to be able to shadow
+    /// the bundled one rather than merely sit behind it.
+    #[test]
+    fn the_user_runtime_is_tried_before_anything_shipped() {
+        let Some(user) = user_runtime() else {
+            return; // no config dir on this box; nothing to order
+        };
+        let roots = for_current_exe();
+        assert_eq!(
+            roots.first(),
+            Some(&user),
+            "cru setup's target is the highest-priority root"
+        );
+    }
 
     #[test]
     fn the_installed_layout_is_tried_before_the_dev_tree() {

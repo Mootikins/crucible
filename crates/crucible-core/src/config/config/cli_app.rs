@@ -146,8 +146,17 @@ pub struct CliAppConfig {
     /// Directories are searched in order (first match wins). Each directory
     /// can contain `plugins/`, `themes/`, and `skills/` subdirectories.
     ///
-    /// Defaults to: `[~/.config/crucible, $CRUCIBLE_RUNTIME, <exe-relative>]`
-    /// Set `CRUCIBLE_PLUGIN_PATH` to prepend additional paths.
+    /// **Empty by default** — this is the list of *extra* directories you
+    /// configure, not the full search path. The well-known roots are resolved
+    /// separately and always apply: `~/.config/crucible/runtime` (where
+    /// `cru setup` copies to), `$CRUCIBLE_RUNTIME`, and the layout next to the
+    /// binary. See `crucible_core::runtime_roots`.
+    ///
+    /// Set `CRUCIBLE_PLUGIN_PATH` to prepend additional plugin paths.
+    ///
+    /// Honoured by plugin discovery and `defaults/init.lua`. **Not yet by
+    /// skills discovery**, which reads only the well-known roots — so a
+    /// `skills/` subdirectory here is currently ignored.
     ///
     /// ```toml
     /// runtimepath = ["~/.config/crucible", "/opt/crucible/runtime"]

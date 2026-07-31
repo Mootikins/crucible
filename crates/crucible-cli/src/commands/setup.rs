@@ -38,10 +38,18 @@ pub fn execute(runtime_dir: Option<PathBuf>, force: bool) -> Result<()> {
         println!("Created {}", init_lua.display());
     }
 
-    println!("\nSetup complete. Add to your shell profile:");
-    println!("  export CRUCIBLE_RUNTIME=\"{}\"", target.display());
-    println!("\nOr add to ~/.config/crucible/config.toml:");
-    println!("  runtimepath = [\"{}\"]", target.display());
+    // The default target is a well-known root (`crucible_core::runtime_roots`),
+    // so it needs no follow-up. Only a custom `--runtime-dir` does — this used
+    // to print the env-var instruction unconditionally, for a directory
+    // nothing read.
+    if crucible_core::runtime_roots::user_runtime().as_deref() == Some(target.as_path()) {
+        println!("\nSetup complete. Crucible reads this directory automatically.");
+    } else {
+        println!("\nSetup complete. Point Crucible at it — shell profile:");
+        println!("  export CRUCIBLE_RUNTIME=\"{}\"", target.display());
+        println!("\nor ~/.config/crucible/config.toml:");
+        println!("  runtimepath = [\"{}\"]", target.display());
+    }
 
     Ok(())
 }
