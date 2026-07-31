@@ -66,9 +66,11 @@ impl Server {
             self.agent_manager
                 .set_plugin_tool_registry(loader.plugin_registry());
 
-            let tools_api: Arc<dyn crucible_lua::DaemonToolsApi> = Arc::new(
-                crate::tools_bridge::DaemonToolsBridge::new(Arc::clone(&self.workspace_tools)),
-            );
+            let tools_api: Arc<dyn crucible_lua::DaemonToolsApi> =
+                Arc::new(crate::tools_bridge::DaemonToolsBridge::new(
+                    Arc::clone(&self.workspace_tools),
+                    self.agent_manager.permission_config(),
+                ));
             if let Err(e) = loader.upgrade_with_tools(tools_api) {
                 warn!("Failed to upgrade Lua tools module: {}", e);
             }

@@ -455,7 +455,7 @@ async fn test_mcp_host_initializes_with_delegation_context() {
 async fn test_tools_bridge_list_tools() {
     let temp = TempDir::new().expect("temp dir");
     let workspace_tools = Arc::new(WorkspaceTools::new(temp.path()));
-    let bridge = DaemonToolsBridge::new(workspace_tools);
+    let bridge = DaemonToolsBridge::new(workspace_tools, None);
 
     // DaemonToolsApi::list_tools should return tool definitions as JSON
     let tools = bridge
@@ -485,7 +485,7 @@ async fn test_tools_bridge_call_tool_routes_correctly() {
     std::fs::write(&test_file, "bridge content").expect("write test file");
 
     let workspace_tools = Arc::new(WorkspaceTools::new(temp.path()));
-    let bridge = DaemonToolsBridge::new(workspace_tools);
+    let bridge = DaemonToolsBridge::new(workspace_tools, None);
 
     // Call read_file through the bridge
     let result = bridge

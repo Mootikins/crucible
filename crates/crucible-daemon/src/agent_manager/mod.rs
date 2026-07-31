@@ -793,6 +793,12 @@ impl AgentManager {
         self.statusline_exprs.clone()
     }
 
+    /// The operator's `[permissions]` rules, for gates outside the agent
+    /// dispatch path (`cru.tools.call`, via `DaemonToolsBridge`).
+    pub(crate) fn permission_config(&self) -> Option<PermissionConfig> {
+        self.permission_config.clone()
+    }
+
     pub(crate) fn isolation(&self) -> Option<crucible_lua::IsolationRegistry> {
         self.isolation.get().cloned()
     }
