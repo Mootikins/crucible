@@ -74,9 +74,12 @@ impl WatchManager {
             emitter,
         };
 
-        // Initialize default handlers if enabled
+        // Initialize default handlers if enabled. They get the manager's own
+        // emitter — a handler holding the default `NoOpEmitter` swallows every
+        // event it handles, which is indistinguishable from not being
+        // registered at all.
         if config.enable_default_handlers {
-            let default_handlers = create_default_handlers()?;
+            let default_handlers = create_default_handlers(Arc::clone(&manager.emitter))?;
             let mut handlers = manager.handlers.write().await;
             for handler in default_handlers.handlers() {
                 handlers.register(handler.clone());

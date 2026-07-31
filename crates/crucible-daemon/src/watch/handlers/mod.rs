@@ -1,6 +1,5 @@
 //! Event handlers for integrating with existing Crucible systems.
 
-// TODO: Re-enable indexing handler when feature flag is ready
 pub mod composite;
 mod indexing;
 mod parser_handler;
@@ -10,6 +9,7 @@ pub use indexing::IndexingHandler;
 pub use parser_handler::ParserHandler;
 
 use crate::watch::{error::Result, events::FileEvent, traits::EventHandler};
+use crucible_core::events::{EventEmitter, SessionEvent};
 use std::sync::Arc;
 
 /// Registry for managing event handlers.
@@ -82,15 +82,21 @@ impl Default for HandlerRegistry {
 }
 
 /// Create a default set of handlers for a typical Crucible installation.
-pub fn create_default_handlers() -> Result<HandlerRegistry> {
-    let registry = HandlerRegistry::new();
+///
+/// `emitter` is where the handlers publish what they saw; it must be the same
+/// emitter the manager was built with, or the events go to a bus nobody reads.
+/// Registration here is unconditional. It used to sit behind
+/// `#[cfg(feature = "indexing")]`, which named a feature that exists in no
+/// `Cargo.toml` in the workspace — so it was not a switched-off option, it was
+/// dead code, and the watcher shipped for months delivering events to an empty
+/// registry. Indexing an open kiln is the daemon's job, not a build-time
+/// choice.
+pub fn create_default_handlers(
+    emitter: Arc<dyn EventEmitter<Event = SessionEvent>>,
+) -> Result<HandlerRegistry> {
+    let mut registry = HandlerRegistry::new();
 
-    // Register default handlers
-    // TODO: Re-enable indexing handler when feature flag is ready
-    // #[cfg(feature = "indexing")]
-    // {
-    //     registry.register(Arc::new(IndexingHandler::new()?));
-    // }
+    registry.register(Arc::new(IndexingHandler::with_emitter(emitter)?));
 
     Ok(registry)
 }
