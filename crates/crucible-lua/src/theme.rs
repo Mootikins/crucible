@@ -1049,6 +1049,23 @@ mod tests {
             parse_color_string("blue").and_then(Color::palette_index),
             "term4 and blue address the same slot; only the promise differs"
         );
+        // …and the same slot *on the frame*. Asserting only `palette_index`
+        // is what let `blue` render as slot 12 for years: the frame goes
+        // through `to_crossterm`, which the index function does not touch.
+        // Compared as emitted escapes, not as `CtColor` variants — the two
+        // spellings legitimately reach different variants that write the
+        // same SGR.
+        let painted = |name: &str| {
+            crucible_oil::ansi::apply_style(
+                "x",
+                &crucible_oil::Style::new().fg(parse_color_string(name).expect("known colour")),
+            )
+        };
+        assert_eq!(
+            painted("term4"),
+            painted("blue"),
+            "term4 and blue must reach the frame as the same slot"
+        );
     }
 
     /// Slots stop at 15 — above that there is no terminal palette, so a `term`

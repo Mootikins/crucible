@@ -180,55 +180,38 @@ mod status_bar_tests {
         );
     }
 
+    /// Each mode badge paints the palette slot its colour names.
+    ///
+    /// This used to read `normal.contains("42") || normal.contains("48;5;10")`
+    /// — slot 2 or slot 10, green or *bright* green — and the frame emitted
+    /// slot 10 for years because `Color::Green` mapped to crossterm's `Green`,
+    /// which is the bright one. An either/or over the right answer and the
+    /// wrong one cannot fail, so it never did. Exact slots only, `m`-anchored
+    /// so `48;5;2` cannot be satisfied by `48;5;20`.
     #[test]
     fn mode_badge_colors_include_bg_fg_and_bold() {
         let normal = render_bar_ansi(&StatusBar::new().mode("normal"), 80);
         let plan = render_bar_ansi(&StatusBar::new().mode("plan"), 80);
         let auto = render_bar_ansi(&StatusBar::new().mode("auto"), 80);
 
-        let has_green_bg = normal.contains("42") || normal.contains("48;5;10");
-        let has_blue_bg = plan.contains("44") || plan.contains("48;5;12");
-        let has_yellow_bg = auto.contains("43") || auto.contains("48;5;11");
-        let has_normal_black_fg = normal.contains("30") || normal.contains("38;5;0");
-        let has_plan_black_fg = plan.contains("30") || plan.contains("38;5;0");
-        let has_auto_black_fg = auto.contains("30") || auto.contains("38;5;0");
-
-        assert!(
-            has_green_bg,
-            "NORMAL mode should include green bg code: {normal:?}"
-        );
-        assert!(
-            has_blue_bg,
-            "PLAN mode should include blue bg code: {plan:?}"
-        );
-        assert!(
-            has_yellow_bg,
-            "AUTO mode should include yellow bg code: {auto:?}"
-        );
-        assert!(
-            has_normal_black_fg,
-            "NORMAL mode should include black fg code: {normal:?}"
-        );
-        assert!(
-            has_plan_black_fg,
-            "PLAN mode should include black fg code: {plan:?}"
-        );
-        assert!(
-            has_auto_black_fg,
-            "AUTO mode should include black fg code: {auto:?}"
-        );
-        assert!(
-            normal.contains("1"),
-            "NORMAL mode should include bold code: {normal:?}"
-        );
-        assert!(
-            plan.contains("1"),
-            "PLAN mode should include bold code: {plan:?}"
-        );
-        assert!(
-            auto.contains("1"),
-            "AUTO mode should include bold code: {auto:?}"
-        );
+        for (mode, ansi, bg_slot, colour) in [
+            ("NORMAL", &normal, 2, "green"),
+            ("PLAN", &plan, 4, "blue"),
+            ("AUTO", &auto, 3, "yellow"),
+        ] {
+            assert!(
+                ansi.contains(&format!("48;5;{bg_slot}m")),
+                "{mode} badge should paint {colour} (palette {bg_slot}): {ansi:?}"
+            );
+            assert!(
+                ansi.contains("38;5;0m"),
+                "{mode} badge should use black text: {ansi:?}"
+            );
+            assert!(
+                ansi.contains("\u{1b}[1m"),
+                "{mode} badge should be bold: {ansi:?}"
+            );
+        }
     }
 
     #[test]

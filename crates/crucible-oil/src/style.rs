@@ -192,24 +192,32 @@ impl Color {
         }
     }
 
+    /// Crossterm equivalent, matched by **palette slot, not by variant name**.
+    ///
+    /// crossterm's names are shifted from these: its `Color::Red` is the
+    /// bright slot (9) and its `DarkRed` is the normal one (1). Mapping
+    /// name-to-name — which is what this did — sent every chromatic colour to
+    /// the bright slot and every `bright_*` colour to the normal one, so a
+    /// theme asking for red got bright red on every frame. `palette_index` is
+    /// the authority; see `named_colors_render_to_the_palette_slot_they_name`.
     pub fn to_crossterm(self) -> CtColor {
         match self {
             Color::Black => CtColor::Black,
-            Color::Red => CtColor::Red,
-            Color::Green => CtColor::Green,
-            Color::Yellow => CtColor::Yellow,
-            Color::Blue => CtColor::Blue,
-            Color::Magenta => CtColor::Magenta,
-            Color::Cyan => CtColor::Cyan,
-            Color::White => CtColor::White,
-            Color::Gray => CtColor::Grey,
+            Color::Red => CtColor::DarkRed,
+            Color::Green => CtColor::DarkGreen,
+            Color::Yellow => CtColor::DarkYellow,
+            Color::Blue => CtColor::DarkBlue,
+            Color::Magenta => CtColor::DarkMagenta,
+            Color::Cyan => CtColor::DarkCyan,
+            // Slot 7 under both names; see the `Gray` variant's own doc.
+            Color::White | Color::Gray => CtColor::Grey,
             Color::DarkGray => CtColor::DarkGrey,
-            Color::BrightRed => CtColor::DarkRed,
-            Color::BrightGreen => CtColor::DarkGreen,
-            Color::BrightYellow => CtColor::DarkYellow,
-            Color::BrightBlue => CtColor::DarkBlue,
-            Color::BrightMagenta => CtColor::DarkMagenta,
-            Color::BrightCyan => CtColor::DarkCyan,
+            Color::BrightRed => CtColor::Red,
+            Color::BrightGreen => CtColor::Green,
+            Color::BrightYellow => CtColor::Yellow,
+            Color::BrightBlue => CtColor::Blue,
+            Color::BrightMagenta => CtColor::Magenta,
+            Color::BrightCyan => CtColor::Cyan,
             Color::BrightWhite => CtColor::White,
             Color::Indexed(i) => CtColor::AnsiValue(i),
             Color::Rgb(r, g, b) => CtColor::Rgb { r, g, b },
@@ -249,8 +257,13 @@ impl Color {
     /// `38;5;n`, so they resolve against the terminal's own configured colours.
     /// `Gray` and `DarkGray` used to emit `38;5;250` / `38;5;240`, which pinned
     /// them to fixed greys the user's terminal theme could not influence — and
-    /// disagreed with `to_crossterm`, which mapped them to the palette. The two
-    /// render paths now agree.
+    /// disagreed with `to_crossterm`, which mapped them to the palette.
+    ///
+    /// The two render paths agree on the *slot* (not the encoding: this emits
+    /// `30-37`/`90-97`, `to_crossterm` emits `38;5;n`). That agreement was
+    /// asserted here in prose and nowhere in code, and was false for every
+    /// chromatic colour until `to_crossterm` was corrected; it is now pinned
+    /// by `named_colors_render_to_the_palette_slot_they_name`.
     pub fn to_ansi_fg(self) -> Vec<u8> {
         match self {
             Color::Rgb(r, g, b) => vec![38, 2, r, g, b],
@@ -576,6 +589,56 @@ impl Gap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The frame's colour path and the markdown path must name the same
+    /// palette slot.
+    ///
+    /// `to_crossterm` is what every rendered node goes through
+    /// (`tree_render` → `ansi::apply_style`); `to_ansi_fg`/`palette_index` is
+    /// what the markdown code-block path uses. crossterm's `Color::Red` is
+    /// *bright* red (slot 9) and its `DarkRed` is normal red (slot 1) — the
+    /// opposite of these names — so mapping name-to-name sent every chromatic
+    /// colour to the wrong slot, and `bright_*` to the normal one. Asserted
+    /// against the SGR crossterm actually emits, not against the variant
+    /// names, because the names are exactly what misled.
+    #[test]
+    fn named_colors_render_to_the_palette_slot_they_name() {
+        use crossterm::style::Colored;
+
+        let named = [
+            Color::Black,
+            Color::Red,
+            Color::Green,
+            Color::Yellow,
+            Color::Blue,
+            Color::Magenta,
+            Color::Cyan,
+            Color::White,
+            Color::Gray,
+            Color::DarkGray,
+            Color::BrightRed,
+            Color::BrightGreen,
+            Color::BrightYellow,
+            Color::BrightBlue,
+            Color::BrightMagenta,
+            Color::BrightCyan,
+            Color::BrightWhite,
+            Color::Indexed(2),
+            Color::Indexed(200),
+        ];
+
+        for color in named {
+            let expected = color
+                .palette_index()
+                .expect("every colour under test is a palette entry");
+            let emitted = format!("{}", Colored::ForegroundColor(color.to_crossterm()));
+            assert_eq!(
+                emitted,
+                format!("38;5;{expected}"),
+                "{color:?} must render as palette slot {expected}"
+            );
+        }
+    }
 
     #[test]
     fn test_style_builder_chain() {
