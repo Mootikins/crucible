@@ -98,3 +98,6 @@ crates/crucible-cli/proptest-regressions/
 .playwright-mcp/
 reproduce.jsonl
 reproduce.cast
+
+# Wayfinder maps / scratch tickets (not committed)
+.scratch/
