@@ -831,6 +831,67 @@ async fn a_deleted_canvas_is_reconciled_out_of_the_index() {
 /// on every such kiln until each note happened to change — a search that is
 /// silently blank on all existing data, which is the exact failure shape this
 /// index was added to fix.
+/// A backfill interrupted part-way must be finished on the next open.
+///
+/// The gate was `is_empty()`, which makes the walk strictly one-shot: a
+/// daemon killed mid-backfill, or one note that was transiently unreadable,
+/// left a non-empty index that would never be completed. `cru search` then
+/// silently missed those notes until each happened to change — the same gap
+/// the backfill exists to close, just smaller.
+#[tokio::test]
+async fn a_partially_filled_text_index_is_completed_on_the_next_open() {
+    use crucible_core::parser::BlockHash;
+    use crucible_core::storage::note_store::NoteRecord;
+
+    let kiln = TempDir::new().unwrap();
+    let root = kiln.path().to_path_buf();
+    std::fs::create_dir_all(root.join(".crucible")).unwrap();
+    std::fs::write(root.join("first.md"), "# First\n\nalpha body.\n").unwrap();
+    std::fs::write(root.join("second.md"), "# Second\n\nzqxjvbn body.\n").unwrap();
+
+    let handle = create_storage_handle(
+        &root.join(".crucible").join("crucible-sqlite.db"),
+        &root,
+        None,
+    )
+    .await
+    .unwrap();
+
+    for (path, title) in [("first.md", "First"), ("second.md", "Second")] {
+        handle
+            .as_note_store()
+            .upsert(NoteRecord::new(path, BlockHash::zero()).with_title(title))
+            .await
+            .unwrap();
+    }
+
+    // Stand in for a backfill that died after one note: the index is
+    // non-empty, so an emptiness check would call it done.
+    handle
+        .text
+        .index("first.md", "First", "alpha body.")
+        .await
+        .unwrap();
+    assert!(!handle.text.is_empty().await.unwrap());
+
+    assert!(
+        backfill_needed(&handle, &root).await.unwrap(),
+        "one of two notes indexed is not done"
+    );
+
+    backfill_text_index(&root, handle.as_note_store().as_ref(), &handle.text).await;
+
+    assert_eq!(
+        handle.text.search("\"zqxjvbn\"", 10).await.unwrap().len(),
+        1,
+        "the note the interrupted run never reached must be indexed"
+    );
+    assert!(
+        !backfill_needed(&handle, &root).await.unwrap(),
+        "and a complete index asks for no further walk"
+    );
+}
+
 #[tokio::test]
 async fn opening_a_kiln_backfills_a_text_index_that_was_never_written() {
     use crucible_core::parser::BlockHash;

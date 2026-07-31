@@ -120,6 +120,28 @@ impl FtsIndex {
         .map_err(|e: tokio::task::JoinError| StorageError::Backend(e.to_string()))?
     }
 
+    /// How many notes the index holds.
+    ///
+    /// The backfill decision is a comparison against the note count, not an
+    /// emptiness check: a daemon killed part-way through the first backfill,
+    /// or one note that was transiently unreadable, left a non-empty index
+    /// that would never be completed — `cru search` silently missing those
+    /// notes until each happened to change, which is the bug the backfill
+    /// exists to prevent.
+    pub async fn count(&self) -> StorageResult<i64> {
+        let pool = self.pool.clone();
+        tokio::task::spawn_blocking(move || {
+            pool.with_connection(|conn| {
+                let count: i64 = conn
+                    .query_row("SELECT count(*) FROM notes_fts", [], |row| row.get(0))
+                    .sql()?;
+                Ok(count)
+            })
+        })
+        .await
+        .map_err(|e: tokio::task::JoinError| StorageError::Backend(e.to_string()))?
+    }
+
     /// Whether the index holds no rows.
     ///
     /// Used to decide whether a kiln needs the one-time backfill: a kiln

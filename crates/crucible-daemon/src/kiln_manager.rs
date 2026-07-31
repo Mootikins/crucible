@@ -277,6 +277,27 @@ impl StorageHandle {
 /// Fill the FTS5 index from the notes already in SQLite, reading each body
 /// from disk. Best-effort: a note that cannot be read is skipped rather than
 /// failing the kiln open.
+/// Whether the text index is missing any note the store knows about.
+///
+/// A count comparison, not an emptiness check — see the call site. Counting
+/// rather than diffing keys because the two are equal in the healthy case and
+/// a mismatch only needs to trigger a re-walk, which is idempotent.
+async fn backfill_needed(
+    handle: &StorageHandle,
+    root: &Path,
+) -> crucible_core::storage::StorageResult<bool> {
+    use crucible_core::storage::Scope;
+
+    let indexed = handle.text.count().await?;
+    let known = handle
+        .as_note_store()
+        .list(&Scope::workspace_unchecked(root))
+        .await?
+        .len() as i64;
+
+    Ok(indexed < known)
+}
+
 async fn backfill_text_index(
     root: &Path,
     store: &dyn crucible_core::storage::NoteStore,
@@ -441,12 +462,19 @@ impl KilnManager {
             }
         }
 
-        // One-time backfill: a kiln processed before the text index existed
-        // has notes in SQLite and an empty `notes_fts`, so `cru search` would
-        // find nothing in it until every note happened to change. Shipping a
-        // search that is silently blank on existing kilns is the failure this
-        // whole change is correcting, so pay the walk once on open.
-        match handle.text.is_empty().await {
+        // Backfill on open: a kiln processed before the text index existed
+        // has notes in SQLite and nothing in `notes_fts`, so `cru search`
+        // would find nothing in it until every note happened to change.
+        // Shipping a search that is silently blank on existing kilns is the
+        // failure this whole change is correcting, so pay the walk.
+        //
+        // Gated on a count comparison rather than on emptiness. Emptiness
+        // makes the backfill strictly one-shot: a daemon killed part-way
+        // through, or a single note that was unreadable that morning, leaves
+        // a non-empty index that is never completed — the same silent gap in
+        // a smaller size. `index()` deletes before inserting, so re-running
+        // is idempotent.
+        match backfill_needed(&handle, &canonical).await {
             Ok(true) => {
                 backfill_text_index(&canonical, handle.as_note_store().as_ref(), &handle.text).await
             }
