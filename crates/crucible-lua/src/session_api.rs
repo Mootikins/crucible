@@ -43,35 +43,51 @@ impl<T, E> SendExt<T> for Result<T, tokio::sync::mpsc::error::SendError<E>> {
     }
 }
 
+/// The message a setter with no backing gives back, naming the field so a
+/// plugin author can see which assignment reached nothing.
+fn unsupported(field: &str) -> String {
+    format!("{field}: not supported on this session")
+}
+
 /// Thin RPC interface for session configuration.
 /// Does NOT expose message sending or other sensitive operations.
 ///
-/// All methods have no-op defaults so that stub implementations (e.g. daemon-side
-/// NoopSessionRpc, test mocks) don't need 16 boilerplate methods.
+/// Every method has a default so a stub implementation (daemon-side
+/// `NoopSessionRpc`, test mocks) needs no boilerplate.
+///
+/// **Setters default to an error, not to `Ok(())`.** They used to default to
+/// success, which made this trait a machine for producing the repeat bug of
+/// this codebase: `NoopSessionRpc` is `impl SessionConfigRpc for
+/// NoopSessionRpc {}` and is bound at every daemon site, so a plugin writing
+/// `session.thinking_budget = 4096` was told it worked and nothing happened.
+/// A default that costs an implementor nothing is good; one that reports
+/// success for work not done is not. Getters still default to `None` — an
+/// absent value is honestly `nil` in Lua, and erroring on a read would break
+/// `session.x or fallback`.
 pub trait SessionConfigRpc: Send + Sync {
     fn get_temperature(&self) -> Option<f64> {
         None
     }
     fn set_temperature(&self, _temp: f64) -> Result<(), String> {
-        Ok(())
+        Err(unsupported("temperature"))
     }
     fn get_max_tokens(&self) -> Option<u32> {
         None
     }
     fn set_max_tokens(&self, _tokens: Option<u32>) -> Result<(), String> {
-        Ok(())
+        Err(unsupported("max_tokens"))
     }
     fn get_thinking_budget(&self) -> Option<i64> {
         None
     }
     fn set_thinking_budget(&self, _budget: i64) -> Result<(), String> {
-        Ok(())
+        Err(unsupported("thinking_budget"))
     }
     fn get_model(&self) -> Option<String> {
         None
     }
     fn switch_model(&self, _model: &str) -> Result<(), String> {
-        Ok(())
+        Err(unsupported("model"))
     }
     fn list_models(&self) -> Vec<String> {
         Vec::new()
@@ -80,13 +96,13 @@ pub trait SessionConfigRpc: Send + Sync {
         "chat".to_string()
     }
     fn set_mode(&self, _mode: &str) -> Result<(), String> {
-        Ok(())
+        Err(unsupported("mode"))
     }
     fn get_system_prompt(&self) -> Option<String> {
         None
     }
     fn set_system_prompt(&self, _prompt: &str) -> Result<(), String> {
-        Err("system_prompt: not supported".to_string())
+        Err(unsupported("system_prompt"))
     }
     fn mark_first_message_sent(&self) {}
     fn set_variable(&self, _key: &str, _value: serde_json::Value) {}
@@ -784,5 +800,55 @@ pub mod tests {
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("locked"));
+    }
+}
+
+#[cfg(test)]
+mod default_impl_tests {
+    use super::*;
+
+    /// A backing that implements nothing — the shape every stub takes.
+    struct BareRpc;
+    impl SessionConfigRpc for BareRpc {}
+
+    /// An unimplemented setter must fail, not succeed silently.
+    ///
+    /// This trait's defaults used to be `Ok(())`, and its own doc explained
+    /// that as sparing stubs "16 boilerplate methods". The convenience is
+    /// real; the return value was not. `NoopSessionRpc` — bound at every
+    /// daemon site — inherited all of them, so a plugin writing
+    /// `session.thinking_budget = 4096` was told it worked and nothing
+    /// happened, which is the single most expensive bug shape in this
+    /// codebase. Defaults still cost an implementor nothing; they just no
+    /// longer lie.
+    #[test]
+    fn an_unimplemented_setter_reports_that_it_is_unsupported() {
+        let rpc = BareRpc;
+
+        for (name, result) in [
+            ("temperature", rpc.set_temperature(0.5)),
+            ("max_tokens", rpc.set_max_tokens(Some(128))),
+            ("thinking_budget", rpc.set_thinking_budget(4096)),
+            ("model", rpc.switch_model("gpt-4o")),
+            ("mode", rpc.set_mode("plan")),
+            ("system_prompt", rpc.set_system_prompt("hi")),
+        ] {
+            let err = result.expect_err("{name}: a no-op setter must not report success");
+            assert!(
+                err.contains("not supported"),
+                "{name}: the error should say why, got: {err}"
+            );
+        }
+    }
+
+    /// Getters keep returning defaults — absence of a value is honestly `nil`
+    /// in Lua, and erroring on a read would break `session.x or fallback`.
+    #[test]
+    fn unimplemented_getters_stay_silent() {
+        let rpc = BareRpc;
+        assert_eq!(rpc.get_temperature(), None);
+        assert_eq!(rpc.get_max_tokens(), None);
+        assert_eq!(rpc.get_model(), None);
+        assert_eq!(rpc.get_thinking_budget(), None);
     }
 }
