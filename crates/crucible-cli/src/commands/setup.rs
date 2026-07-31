@@ -15,6 +15,18 @@ pub fn execute(runtime_dir: Option<PathBuf>, force: bool) -> Result<()> {
     println!("Source:  {}", source.display());
     println!("Target:  {}", target.display());
 
+    // Copying a tree onto itself truncates every file to zero bytes, because
+    // `fs::copy` opens the destination for writing before reading the source.
+    // `find_source_runtime` already excludes the destination; this refuses
+    // rather than trusting that, because the failure destroys user data and
+    // says nothing while it does it.
+    if same_dir(&source, &target) {
+        anyhow::bail!(
+            "source and target are the same directory ({}); nothing to copy",
+            target.display()
+        );
+    }
+
     if target.exists() && !force {
         println!("\nRuntime directory already exists. Use --force to overwrite.");
         return Ok(());
@@ -63,19 +75,35 @@ fn default_runtime_dir() -> PathBuf {
 /// Find the source runtime directory — check alongside the binary, then
 /// repo-relative, then the CWD.
 ///
-/// The exe-relative pair comes from `crucible_core::runtime_roots` so this
-/// agrees with the three resolvers the daemon uses; a `cru setup` that copied
-/// from a directory the daemon then declines to read would be worse than not
-/// finding one at all.
+/// **Exe-relative roots only**, deliberately not the full
+/// `runtime_roots::for_current_exe()`. That list leads with
+/// `~/.config/crucible/runtime`, which is this command's *destination*: a
+/// second `cru setup --force` would find its own output, set source == target,
+/// and `fs::copy` every file onto itself — truncating each one to zero bytes.
+/// Read locations and copy sources are not the same list.
 fn find_source_runtime() -> Option<PathBuf> {
     let looks_like_runtime =
         |dir: &Path| dir.join("plugins").exists() || dir.join("themes").exists();
 
-    crucible_core::runtime_roots::for_current_exe()
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(crucible_core::runtime_roots::exe_relative))
+        .map(Vec::from)
+        .unwrap_or_default()
         .into_iter()
         // Running from the repo root, with no usable exe-relative tree.
         .chain(std::iter::once(PathBuf::from("runtime")))
         .find(|dir| looks_like_runtime(dir))
+}
+
+/// Whether two paths resolve to the same directory, `..` and symlinks and all.
+fn same_dir(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        // An uncreated target cannot be the source; a source that will not
+        // canonicalize would have failed the existence check above.
+        _ => false,
+    }
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
@@ -153,3 +181,32 @@ const TEMPLATE_INIT_LUA: &str = r#"-- Crucible user configuration
 --   return { deny = true }
 -- end, { pattern = "bash" })
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `cru setup` must never take its own destination as its source.
+    ///
+    /// `~/.config/crucible/runtime` became a read root so the daemon would
+    /// find what `cru setup` writes. Reusing that list to pick the *source*
+    /// made a second `cru setup --force` copy the tree onto itself, and
+    /// `fs::copy` truncates the destination before reading — every file in a
+    /// user's customised runtime went to zero bytes, silently.
+    #[test]
+    fn a_directory_is_the_same_as_itself_through_any_spelling() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("runtime");
+        std::fs::create_dir_all(dir.join("plugins")).unwrap();
+
+        assert!(same_dir(&dir, &dir));
+        assert!(
+            same_dir(&dir, &dir.join("plugins").join("..")),
+            "`..` must not disguise the same directory"
+        );
+        assert!(
+            !same_dir(&dir, tmp.path()),
+            "a parent is not the same directory"
+        );
+    }
+}
