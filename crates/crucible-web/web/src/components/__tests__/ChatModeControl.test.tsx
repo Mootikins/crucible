@@ -56,12 +56,15 @@ describe('ChatModeControl', () => {
 });
 
 describe('nextChatMode', () => {
-  const builtins = ['normal', 'plan', 'auto'];
-
-  it('cycles normal → plan → auto → normal', () => {
-    expect(nextChatMode('normal', builtins)).toBe('plan');
-    expect(nextChatMode('plan', builtins)).toBe('auto');
-    expect(nextChatMode('auto', builtins)).toBe('normal');
+  it('follows the order of the list it is given, not a fixed ring', () => {
+    // Must not be a ROTATION of normal → plan → auto: a rotation has the same
+    // successor for every element, so it passes against the old hardcoded ring
+    // too. (My first attempt at this test used ['auto','normal','plan'] and was
+    // exactly that.) Swapping two entries is what discriminates.
+    const swapped = ['normal', 'auto', 'plan'];
+    expect(nextChatMode('normal', swapped)).toBe('auto');
+    expect(nextChatMode('auto', swapped)).toBe('plan');
+    expect(nextChatMode('plan', swapped)).toBe('normal');
   });
 
   it('walks the daemon list, so a Lua-declared mode is reachable', () => {

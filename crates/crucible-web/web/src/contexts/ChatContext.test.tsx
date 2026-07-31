@@ -22,6 +22,7 @@ vi.mock('@/lib/api', () => ({
     ],
   })),
   setSessionTitle: vi.fn(),
+  setSessionMode: vi.fn(async () => {}),
   // Monotonic — sendMessage mints two temp ids back-to-back, and a
   // Date.now()-based id would collide within one millisecond.
   generateMessageId: (() => {
@@ -847,5 +848,43 @@ describe('mode hydration', () => {
     ));
 
     await waitFor(() => expect(mode()).toBe('normal'));
+  });
+
+  it('re-fetches the mode list when the daemon rejects a switch', async () => {
+    // The mount-time fetch fails, so the chip falls back to the built-in three
+    // and offers `plan` in a session that may not declare it. Clicking it
+    // POSTs a mode the daemon rejects; the list it came from must not survive.
+    const listModes = api.listModes as ReturnType<typeof vi.fn>;
+    listModes.mockRejectedValueOnce(new Error('daemon down'));
+    listModes.mockResolvedValue({
+      current_mode_id: 'normal',
+      modes: [
+        { id: 'normal', name: 'Normal', description: null, icon: null, color: null },
+        { id: 'review', name: 'Review', description: null, icon: null, color: null },
+      ],
+    });
+    (api.setSessionMode as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("unknown mode 'plan'")
+    );
+
+    let ctx: { switchMode: (m: string) => void; availableModes: () => { id: string }[] } | null =
+      null;
+    const Probe = () => {
+      const c = useChat();
+      ctx = { switchMode: c.switchMode, availableModes: c.availableModes };
+      return null;
+    };
+    render(() => (
+      <ChatProvider sessionId="test-session-1">
+        <Probe />
+      </ChatProvider>
+    ));
+
+    await waitFor(() => expect(ctx).not.toBeNull());
+    ctx!.switchMode('plan');
+
+    await waitFor(() =>
+      expect(ctx!.availableModes().map((m) => m.id)).toEqual(['normal', 'review'])
+    );
   });
 });

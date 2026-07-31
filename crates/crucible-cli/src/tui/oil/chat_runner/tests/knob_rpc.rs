@@ -225,3 +225,107 @@ async fn a_rejected_mode_change_reverts_the_badge_and_surfaces_the_error() {
         "and the user must be told why, not just the log"
     );
 }
+
+/// A handle whose declared mode list can change between fetches.
+struct ModeListingAgent {
+    modes: Vec<String>,
+    fetches: std::sync::Arc<std::sync::Mutex<u32>>,
+    mode: String,
+}
+
+crucible_core::impl_noop_agent!(ModeListingAgent);
+
+#[async_trait::async_trait]
+impl AgentHandle for ModeListingAgent {
+    async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
+        Ok(())
+    }
+    fn get_mode_id(&self) -> &str {
+        &self.mode
+    }
+    async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
+        if !self.modes.iter().any(|m| m == mode_id) {
+            return Err(crucible_core::traits::chat::ChatError::ModeChange(format!(
+                "unknown mode '{mode_id}'"
+            )));
+        }
+        self.mode = mode_id.to_string();
+        Ok(())
+    }
+    async fn fetch_available_modes(&mut self) -> Vec<String> {
+        *self.fetches.lock().unwrap() += 1;
+        self.modes.clone()
+    }
+}
+
+/// The startup chain, end to end: `FetchModes` → `fetch_available_modes` →
+/// `ModesLoaded` → the app's list.
+///
+/// Nothing covered this. Every other mode test hand-feeds `ModesLoaded`, so
+/// deleting the `FetchModes` send or inverting the non-empty guard left the
+/// whole suite green while the TUI silently ran on its built-in fallback.
+#[tokio::test]
+async fn fetch_modes_reaches_the_app_through_the_agent() {
+    let mut app = OilChatApp::init();
+    let fetches = std::sync::Arc::new(std::sync::Mutex::new(0));
+    let mut agent = ModeListingAgent {
+        modes: vec!["normal".to_string(), "review".to_string()],
+        fetches: fetches.clone(),
+        mode: "normal".to_string(),
+    };
+    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
+    let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
+
+    runner
+        .process_action_for_test(
+            Action::Send(ChatAppMsg::FetchModes),
+            &mut app,
+            &mut agent,
+            &bridge,
+        )
+        .await
+        .expect("process_action should not fail");
+
+    assert_eq!(*fetches.lock().unwrap(), 1, "the agent must be asked");
+    assert!(
+        app.knows_mode("review"),
+        "a mode only the daemon knew about must have reached the app's list"
+    );
+    assert!(
+        !app.knows_mode("plan"),
+        "and the daemon's list must REPLACE the built-in fallback, not extend it"
+    );
+}
+
+/// A mode declared after startup is picked up. `FetchModes` fires once, so the
+/// only way the list can catch up is a drift signal — here, the daemon naming
+/// a mode we do not have.
+#[tokio::test]
+async fn a_mode_declared_after_startup_is_picked_up() {
+    let mut app = OilChatApp::init();
+    let fetches = std::sync::Arc::new(std::sync::Mutex::new(0));
+    let mut agent = ModeListingAgent {
+        modes: vec!["normal".to_string(), "review".to_string()],
+        fetches: fetches.clone(),
+        mode: "normal".to_string(),
+    };
+    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
+    let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
+
+    // The app still has only its built-in fallback list.
+    assert!(!app.knows_mode("review"));
+
+    let queued = runner
+        .process_action_collecting_msgs(
+            Action::Send(ChatAppMsg::ModeSynced("review".into())),
+            &mut app,
+            &mut agent,
+            &bridge,
+        )
+        .await;
+
+    assert!(
+        queued.iter().any(|m| matches!(m, ChatAppMsg::FetchModes)),
+        "a mode we have never heard of must trigger a refresh, got {queued:?}"
+    );
+}

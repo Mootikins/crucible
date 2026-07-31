@@ -63,7 +63,13 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   // from ChatInput — two fetches would be two lists, and they would disagree
   // the moment one failed.
   const [availableModes, setAvailableModes] = createSignal<ModeDescriptor[]>(FALLBACK_MODES);
-  void (async () => {
+  /// Pull the session's modes from the daemon.
+  ///
+  /// Called at mount and again whenever the list proves stale — a rejected
+  /// switch, or a `mode_changed` naming a mode we do not have. Without the
+  /// re-fetch the list is whatever it was at mount, so a mode declared later
+  /// never appears and one removed later stays clickable.
+  const refreshModes = async () => {
     if (!props.sessionId) return;
     try {
       const listed = await listModes(props.sessionId);
@@ -78,7 +84,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     } catch {
       // Keep the built-ins: an empty chip offers no way to change mode at all.
     }
-  })();
+  };
+  void refreshModes();
   const [isLoadingHistory, setIsLoadingHistory] = createSignal(false);
   
   // Mirror interaction/streaming state into the global attention store so
@@ -196,6 +203,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
          'error',
          err instanceof Error ? err.message : 'Failed to set session mode'
        );
+       // We offered a mode the daemon rejects, so the list it came from is
+       // stale — most often the built-in fallback after the mount-time fetch
+       // failed. Refresh so the options stop lying.
+       void refreshModes();
      });
    };
 
@@ -209,6 +220,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
    };
 
   const handleEvent = createChatEventReducer({
+    onUnknownMode: (mode) => {
+      if (!availableModes().some((m) => m.id === mode)) void refreshModes();
+    },
     messages: () => messages,
     currentStreamingMessageId: () => currentStreamingMessageId,
     setCurrentStreamingMessageId: (id) => {

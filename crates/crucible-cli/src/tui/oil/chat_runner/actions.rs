@@ -270,8 +270,12 @@ impl OilChatRunner {
                             params.app.on_message(ChatAppMsg::ModesLoaded(modes));
                         }
                     }
-                    ChatAppMsg::ModesLoaded(_) | ChatAppMsg::ModeSynced(_) => {
-                        params.app.on_message(msg.clone());
+                    // The daemon just named a mode our list does not have — it
+                    // was declared after our one startup fetch. Refresh rather
+                    // than leave it uncyclable. Applying the message itself is
+                    // the trailing `on_message` dispatch's job.
+                    ChatAppMsg::ModeSynced(ref mode_id) if !params.app.knows_mode(mode_id) => {
+                        let _ = params.msg_tx.send(ChatAppMsg::FetchModes);
                     }
                     ChatAppMsg::McpStatusLoaded(_) | ChatAppMsg::PluginStatusLoaded(_) => {
                         params.app.on_message(msg.clone());
@@ -513,6 +517,12 @@ impl OilChatRunner {
                             let actual = params.agent.get_mode_id().to_string();
                             let _ = params.msg_tx.send(ChatAppMsg::ModeSynced(actual));
                             let _ = params.msg_tx.send(ChatAppMsg::Error(format!("mode: {e}")));
+                            // We offered a mode the daemon rejects, so the list
+                            // we offered it from is stale. `FetchModes` fires
+                            // once at startup, which is why a mode declared
+                            // later never appeared — and one removed later
+                            // stayed on offer.
+                            let _ = params.msg_tx.send(ChatAppMsg::FetchModes);
                         }
                     }
                     ChatAppMsg::UserMessage(ref content) => {

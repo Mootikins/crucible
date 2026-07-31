@@ -279,6 +279,16 @@ impl OilChatApp {
         self.session_variables.get(key).cloned()
     }
 
+    /// Whether the daemon's last-known mode list contains `id`.
+    ///
+    /// A `false` means our list is stale, not that the mode is invalid — the
+    /// daemon is the authority, and it just told us about this one.
+    pub(crate) fn knows_mode(&self, id: &str) -> bool {
+        self.available_modes
+            .iter()
+            .any(|m| m.eq_ignore_ascii_case(id))
+    }
+
     pub(crate) fn set_mode(&mut self, mode: impl Into<std::sync::Arc<str>>) {
         self.mode = mode.into();
     }

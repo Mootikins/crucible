@@ -27,6 +27,9 @@ interface ChatEventReducerDeps {
   setSubagentEvents: ArraySetter<SubagentEvent>;
   setContextUsage: (usage: ContextUsage | null) => void;
   setChatMode: (mode: ChatMode) => void;
+  /** Called when the daemon names a mode absent from our list — it was
+   * declared after the mount-time fetch, so the list needs refreshing. */
+  onUnknownMode?: (mode: ChatMode) => void;
   onTitleChanged: (title: string) => void;
   setPendingInteraction: (request: InteractionRequest | null) => void;
   setError: (value: string | null) => void;
@@ -466,6 +469,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
       case 'mode_changed':
         deps.setChatMode(event.mode);
         statusBarActions.setChatMode(event.mode);
+        deps.onUnknownMode?.(event.mode);
         break;
 
       case 'title_changed':
