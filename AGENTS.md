@@ -1,525 +1,138 @@
 # AI Agent Guide for Crucible
 
-> Instructions for AI agents (Claude, Codex, etc.) working on the Crucible codebase
+> Instructions for AI agents working on Crucible. `CLAUDE.md` symlinks here.
 
-## Project Overview
-
-**Crucible** is a knowledge-grounded agent runtime. Agents that draw from a knowledge graph make better decisions — memory and knowledge are too fundamental to be an afterthought. Your notes, sessions, and wikilinks form that graph. Everything beyond the knowledge core is extensible.
-
-**Core Pillars:**
-- **Knowledge + Agents** — agents draw from and contribute to a knowledge graph; Precognition injects relevant context before every turn
-- **PKM as input** — notes, wikilinks, tags, and sessions-as-notes are how knowledge enters the system
-- **Neovim-like architecture** — Lua extensibility, TUI-first, headless daemon with RPC, plugin-driven
-- **Plaintext-first** — markdown files are source of truth; swap LLM backends freely
+**Crucible** is a knowledge-grounded agent runtime: notes, sessions, and wikilinks form a
+knowledge graph that agents draw from and contribute to. Plaintext-first (markdown is the
+source of truth), Neovim-like architecture (headless daemon + RPC, Lua/Fennel extensibility,
+TUI-first, plugin-driven).
 
 ## Architecture
 
-### Crate Organization
-
-| Crate | Purpose | Key Types |
-|-------|---------|-----------|
-| `crucible-core` | Domain logic, traits, parser types, config (absorbed from crucible-config) | `Provider`, `CanEmbed`, `CanChat`, `ParsedNote`, `AppConfig` |
-| `crucible-cli` | Terminal UI, REPL, commands (`cru web` gated behind the default-on `web` feature) | `OilChatApp`, `ChatAppMsg` |
-| `crucible-web` | Web UI server (Axum routes over daemon RPC, `web/` SolidJS frontend embedded via rust-embed) | `start_server`, `AppState` |
-| `crucible-oil` | Terminal rendering primitives | `Node`, `render_to_string` |
-| `crucible-lua` | Lua/Luau with Fennel support | `LuaExecutor`, `FennelCompiler` |
-| `crucible-daemon` | Daemon server: enrichment, note pipeline, RPC, observability, file watching, skills, tools, ACP host (`acp/`), embedding backends (`llm/`), SQLite storage (`storage/sqlite/`), LanceDB vector storage (`storage/lance/`) | `Server`, `SessionManager`, `AgentManager`, `SqliteStorage`, `LanceVectorIndex`, `EmbeddingProvider` |
-
-### Terminology: Kiln vs Workspace vs Project
-
-These three terms have precise meanings in Crucible — do not use them interchangeably:
-
-| Term | Definition | Config File |
-|------|------------|-------------|
-| **Project** | Where work output is done/put. A registered directory in the daemon (git repo root or invocation directory). Contains code, configs, build artifacts. | `.crucible/project.toml` |
-| **Kiln** | Where accrued knowledge goes. A content directory for notes, sessions, and linked knowledge. | `.crucible/kiln.toml` |
-| **Workspace** | A specific instance of a project directory. Often the same dir as project root, could be a worktree. **Runtime concept — no config file.** | — |
-
-**Correct uses of "workspace"** (do NOT rename these):
-- `session.workspace` — the working directory for a session
-- `WorkspaceTools` — tools scoped to the working directory
-- `workspace: &Path` parameters in agent code
-- Lua `paths.workspace()` — returns the working directory
-
-**Config files** (`.crucible/` directory inside a kiln or project root):
-- `kiln.toml` — kiln identity: name, data classification
-- `project.toml` — project config: attached kilns, security policies
-- Old `workspace.toml` is still read for backward compatibility (read-only fallback)
-
-### Daemon Architecture
-
-Crucible uses a **single `cru` binary** with a built-in daemon for multi-session support:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  CLI (cru)                    Daemon (cru daemon serve)     │
-│  ┌─────────────┐              ┌──────────────────────────┐  │
-│  │ cru chat    │◄────────────►│ Unix Socket Server       │  │
-│  │ cru search  │   JSON-RPC   │ ($XDG_RUNTIME_DIR/       │  │
-│  │ cru process │              │  crucible.sock)          │  │
-│  └─────────────┘              │                          │  │
-│                               │ Managers:                │  │
-│  All storage via daemon RPC   │ • KilnManager            │  │
-│  → DaemonClient.connect()     │ • SessionManager         │  │
-│                               │ • AgentManager           │  │
-│  Auto-spawn: cru daemon serve │ • SubscriptionManager    │  │
-│  (forks self as daemon)       └──────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-```
-- **Socket path**: `$CRUCIBLE_SOCKET` env var, or `$XDG_RUNTIME_DIR/crucible.sock`, or `/tmp/crucible.sock`
-- **Storage**: Daemon-only (SQLite + LanceDB). CLI has zero direct storage access.
-- **Auto-spawn**: `DaemonClient::connect_or_start()` forks `cru daemon serve` if not running
-- **Protocol**: JSON-RPC 2.0 over Unix socket with async event streaming
-
-**RPC methods:**
-- Kiln: `kiln.open`, `kiln.close`, `kiln.list`, `kiln.graph`, `search_vectors`, `list_notes`, `get_note_by_name`, `get_backlinks`
-- Files: `fs.list_dir`, `fs.move` (kiln `.md` moves rewrite inbound wikilinks), `fs.mkdir`, `fs.trash`, `note.rename`/`note.move`
-- Sessions: `session.create`, `session.list`, `session.get`, `session.load`, `session.pause`, `session.resume`, `session.end`
-- Agents: `session.configure_agent`, `session.send_message`, `session.cancel`, `session.switch_model`, `session.list_models`
-- Config: `session.set_thinking_budget`, `session.get_thinking_budget`
-- Events: `session.subscribe`, `session.unsubscribe`
-
-### Tool Interception via Hooks
-
-Plugins can fully handle tool calls via `crucible.on("pre_tool_call", opts, handler)`:
-- Return `{ handled = true, result = ... }` to provide the tool result (skips default executor)
-- Return `{ cancel = true, reason = "..." }` to block with error
-- Return `nil` to observe without interfering
-- Use `pattern` option to filter by tool name: `{ pattern = "bash" }`
-- Use `priority` option to control execution order: `{ priority = 10 }` (lower = first, default 100)
-- Handlers CAN call async APIs (`cru.shell.exec`, `cru.http`, `cru.timer.sleep`, etc.)
-- Reference implementation: `runtime/plugins/oci/` — container tool execution via generic hooks
-
-### Cross-Layer Feature Checklist
-
-When implementing features that affect agent/session behavior (not just UI display):
-
-**Scope Classification:**
-| Scope | Examples | Where State Lives |
-|-------|----------|-------------------|
-| Session-scoped | model, thinking_budget, temperature | Daemon `SessionAgent`, synced via RPC |
-| TUI-local | theme, show_thinking, verbose | `OilChatApp` fields, no RPC needed |
-
-**Before Implementing:**
-- [ ] Check if daemon already has RPC for this (`crucible-daemon/src/rpc_client/`)
-- [ ] Check if `SessionAgent` has a field for this (`crucible-core/src/session/types.rs`)
-- [ ] Determine scope: Does this need multi-client consistency? If yes → session-scoped
-
-**Implementation (session-scoped features):**
-- [ ] Add method to `AgentHandle` trait (`crucible-core/src/traits/chat.rs`)
-- [ ] Implement in `DaemonAgentHandle` (`crucible-daemon/src/rpc_client/agent.rs`)
-- [ ] Add `ChatAppMsg` variant (`crucible-cli/src/tui/oil/chat_app.rs`)
-- [ ] Handle in `chat_runner` (`crucible-cli/src/tui/oil/chat_runner.rs`)
-- [ ] Wire TUI command (`:set`, etc.) to emit the `ChatAppMsg`
-
-**Validation:**
-- [ ] RPC field names match between client and server (common bug: `"budget"` vs `"thinking_budget"`)
-- [ ] Test with daemon running (`cru daemon serve`)
-- [ ] `session.get_*` returns what `session.set_*` stored
-- [ ] State persists across TUI restart (resume session)
-
-**Common Mistakes:**
-- Implementing in TUI only without daemon RPC → breaks multi-client
-- Different JSON field names in client vs server → silent failures
-- Soft-prompt injection in TUI instead of daemon-side → inconsistent behavior
-
-### Type Ownership
-
-**Parser Types** are canonically defined in `crucible-core/src/parser/types/` (split into submodules).
-Core re-exports via `crucible_core::parser::*`.
-
-**Hash Types**: `BlockHash` in `crucible-core/src/parser/types/block_hash.rs`.
-Other hash infrastructure in `crucible-core/src/types/hashing.rs`.
-
-**LLM Types** (unified contracts):
-- `ContextMessage` — canonical message type for all conversation contexts
-
-**Event Types**: `SessionEvent` includes pre-events (`PreToolCall`, `PreParse`, `PreLlmCall`) for handler interception.
-
-**DO NOT duplicate types between crates.** Each type has exactly one canonical location. Use re-exports.
-
-**Result Type Aliases** follow `<Domain>Result<T>`: `StorageResult`, `ChatResult`, `ToolResult`, `ParserResult`, `AcpResult`. The crate-level `crucible_core::Result<T>` is for general operations.
-
-**Import patterns:**
-```rust
-use crucible_core::parser::{ParsedNote, Wikilink, Tag, BlockHash};
-use crucible_core::types::hashing::{FileHash, HashAlgorithm};
-use crucible_core::traits::provider::{Provider, CanEmbed, CanChat};
-use crucible_core::traits::ContextMessage;
-use crucible_core::traits::{StorageResult, ChatResult, ToolResult};
-use crucible_core::protocol::{Request, Response, RpcError, SessionEventMessage};
-use crucible_daemon::enrichment::Enricher;
-use crucible_daemon::pipeline::{NotePipeline, NotePipelineConfig};
-use crucible_daemon::rpc_client::{DaemonClient, DaemonStorageClient};
-use crucible_daemon::observe::{SessionWriter, SessionMetadata};
-use crucible_daemon::skills::{Skill, SkillSource, SkillScope};
-use crucible_daemon::storage::sqlite::query::syntax::{SqlSugarSyntax, JaqSyntax};
-use crucible_core::config::AppConfig;
-```
-
-### LLM Provider System
-
-```
-Provider (base trait)
-   ├── CanEmbed (embedding generation)
-   └── CanChat (chat completions)
-```
-
-| Backend | Embeddings | Chat | Feature Flag |
-|---------|------------|------|--------------|
-| Ollama | Yes | Yes | default |
-| OpenAI | Yes | Yes | default |
-| Anthropic | No | Yes | default |
-| Cohere | No | Yes | default |
-| VertexAI | No | Yes | default |
-| OpenRouter | No | Yes | default |
-| GitHubCopilot | No | Yes | default |
-| ZAI | No | Yes | default |
-| FastEmbed | Yes | No | `fastembed` |
-
-### Systems
-
-See **[docs/Meta/Analysis/Systems.md](./docs/Meta/Analysis/Systems.md)** for full details.
-
-| System | Scope |
-|--------|-------|
-| **chat** | TUI/Web interfaces, session persistence |
-| **agents** | Agent cards, LLM providers, tools |
-| **parser** | Markdown → structured data |
-| **storage** | SQLite (default), Merkle trees |
-| **scripting** | Lua/Fennel runtimes |
-| **workflows** | Definitions + sessions |
-| **apis** | HTTP, WebSocket, MCP, events |
-| **cli** | Commands, REPL, configuration |
-
-### ACP Delegation Workflow
-
-Crucible can delegate tasks to external AI agents (Claude Code, Cursor, OpenCode, Gemini CLI) through the [Agent Context Protocol](https://agentcontextprotocol.org/). The daemon spawns the external agent process, provides it with Crucible's tools and knowledge graph, and streams results back.
-
-**Interactive ACP sessions:**
-```bash
-cru chat -a claude          # Start interactive chat with Claude Code as the agent
-cru chat -a opencode        # Use OpenCode
-cru chat -a gemini          # Use Gemini CLI
-```
-
-**Programmatic session management:**
-```bash
-cru session create --agent claude --title "Refactor auth module"
-cru session send <id> "Analyze the auth module and suggest improvements"
-cru session show <id>
-```
-
-**Cross-agent delegation:** An internal Crucible agent can delegate subtasks to an ACP agent using the `delegate_session` tool. The daemon enforces delegation depth limits and trust boundaries.
-
-**Trust model:** The `delegation_config` in `crucible.toml` controls which agents can be delegated to, maximum delegation depth, and allowed tool sets. Custom agent profiles extend built-in ones:
-
-```toml
-[acp.agents.my-claude]
-extends = "claude"
-env = { ANTHROPIC_BASE_URL = "http://localhost:4000" }
-```
-
-**Key files:**
-- Agent profiles and ACP types: `crucible-daemon/src/acp/`
-- Agent spawning and lifecycle: `crucible-daemon/src/agent_manager/`
-- Delegation tool: `crucible-daemon/src/tools/mcp_server.rs` (`delegate_session`)
-- CLI agent flag: `crucible-cli/src/commands/chat.rs` (`-a` / `--agent`)
-
-## Project Structure
-
-```
-crucible/
-├── crates/                      # Rust workspace crates
-│   ├── crucible-core/           # Core domain types, traits, parser, config
-│   ├── crucible-cli/            # Terminal UI, REPL, commands (web behind `web` feature)
-│   ├── crucible-oil/             # Terminal rendering primitives
-│   ├── crucible-daemon/          # Daemon: RPC, sessions, ACP host, embeddings, SQLite + LanceDB storage, skills
-│   ├── crucible-lua/             # Lua/Fennel scripting
-│   └── crucible-web/             # Web UI server (Axum routes + web/ SolidJS frontend)
-├── vendor/                       # Patched upstream dependencies
-├── docs/                         # Documentation kiln (user guides + test fixture)
-├── justfile                      # Development recipes
-├── AGENTS.md                     # This file (CLAUDE.md symlinks here)
-└── README.md                     # Project overview
-```
-
-### Where to Put Things
-
-**Keep the repo root clean.** Only build config, metadata, and top-level docs belong here.
-
-| Location | Content |
-|----------|---------|
-| `docs/Help/` | User-facing reference |
-| `docs/Meta/` | Architecture docs, analysis |
-| `docs/Guides/` | Usage guides |
-| `vendor/` | Patched upstream crates |
-| `examples/` | Examples |
-| `scripts/` | Scripts |
-| `tests/` or `crates/*/tests/` | Tests |
-
-Do NOT create documentation files, temp files, or conversation logs in the root.
-
-### Documentation Kiln
-
-The `docs/` directory is a **reference kiln** — a valid Crucible vault serving as both documentation and test fixture. Integration tests validate it parses and indexes correctly.
-
-Conventions: use wikilinks (`[[Help/Wikilinks]]`), add frontmatter with tags, keep notes focused and well-linked.
-
-## Development Guidelines
-
-### Workflow
-
-**Use `just`** — reach for a recipe BEFORE invoking cargo/bunx/vitest/playwright
-directly. Recipes encode this box's constraints (thread caps, build prereqs like
-the web dist clippy needs); bypassing them re-derives that knowledge badly.
-Scoped runs pass through args, so scoping is not a reason to go direct:
-- `just ci` — **Run before committing**: fmt, clippy, size gate, nextest, web unit + e2e
-- `just build` / `just test` / `just check` — build, test, check
-- `just test-crate <crate>` / `just web-test-unit [paths…]` / `just web-test [specs…]` — scoped tests
-- `just web-typecheck` — frontend tsc, no emit
-- `just web` (build + serve on 3000) / `just web-debug [port]` — debug server on a
-  side port (default 3001), safe next to the installed instance
-- `just mcp` — MCP server
-
-If a flow has no recipe and you need it twice, add a recipe instead of going direct again.
-
-**Don't build release unless installing.** Release builds use LTO and take 5-10 minutes. Use debug builds for iteration.
-
-**Web frontend uses `bun`** (not npm/yarn). See `crates/crucible-web/web/AGENTS.md`.
-
-### Code Principles
-
-**Crate boundaries are for compilation, not organization.** If related types need `pub` wrappers
-to see each other across crates, question the boundary. Prefer fewer, larger crates.
-
-**Co-locate related state.** If understanding a concept requires reading 5 structs across 4 modules,
-consolidate. A session's agent, context, and config should be discoverable from one place.
-
-**anyhow by default, thiserror at boundaries.** Internal code uses `anyhow::Result` + `.context()`.
-Structured error enums only at API/RPC boundaries where callers match on variants. Every error
-variant needs a caller that handles it differently — otherwise use anyhow.
-
-**No type without a use site.** No speculative variants, fields, or abstractions. Every `Option<T>`
-needs a code path checking `None`. Every error variant needs a `match` arm. YAGNI.
-
-**Enums over traits** unless 2+ implementations exist in different crates. Single-impl traits are
-just indirection. Trait objects (`dyn`) only when you need runtime polymorphism — prefer enum dispatch.
-
-**Use the type system to compress.** `From`/`Into` over `.map_err()` chains. `?` over `match Result`.
-Iterator combinators over manual loops. `#[derive]` over manual impls. If a pattern repeats 5+ times,
-it's missing an impl or a helper.
-
-**Consistent patterns everywhere.** If there's a "right way" to do something (error conversion,
-RPC calls, tool results), do it the same way in every file. One helper, one pattern, used uniformly.
-
-**Comments explain why, not what.** No `/// Create a cancelled error` above `fn cancelled()`.
-Comment tradeoffs, workarounds, and non-obvious design decisions.
-
-**Daemon owns business logic, views are thin.** CLI/TUI/Web are rendering + input. Embedding
-generation, context enrichment, provider detection, agent lifecycle — all daemon-side. If a web
-frontend would need to duplicate it, it's in the wrong place.
-
-**Lua sees the same domain model.** Don't create parallel type hierarchies for Lua exposure.
-The Rust types are the source of truth; Lua bindings project them, not duplicate them.
-
-### Code Style
-
-- `snake_case` for functions/variables, `PascalCase` for types
-- TDD — write tests for new functionality
-- Fix clippy warnings properly — no module-level `#![allow(...)]`
-
-### Feature Flags
-
-Features are declared per-crate. The notable ones:
-
-| Feature | Crate(s) | Default | Purpose |
-|---------|----------|---------|---------|
-| `fastembed` | daemon, cli | Yes | Local ONNX embeddings (pulls `fastembed` + `ort`) |
-| `fennel` | lua | Yes | Fennel → Lua compilation |
-| `keyring` | core | No | Optional OS keyring backend for secrets |
-| `web` | cli | Yes | Web UI server (`cru web`, pulls crucible-web) |
-| `web` | daemon | No | Daemon-side web support hooks |
-| `serde` | oil | No | Serialize/deserialize render nodes |
-| `test-utils` | core, daemon, oil, web | No | Mock providers / test helpers |
-
-Slow/external tests are gated with `#[ignore]` (run via `just test ignored`
-or `just test full`), not cargo features.
-
-### Vendored Dependencies
-
-Patched upstream crates live in `vendor/`. `Cargo.toml` has `[patch.crates-io]` entries.
-
-| Crate | Reason | Patches |
-|-------|--------|---------|
-| `markdown-it` | Semi-abandoned, panic bugs | Underflow fixes in `emph_pair.rs` |
-
-When patching: add `NOTE(crucible):` comments, update `vendor/README.md`, add regression tests.
-
-### Testing
-
-Tests use **cargo-nextest**. Profiles select retry/timeout behavior only —
-none of them filter the test set. To scope a run, filter by package
-(`-p crucible-daemon`) or nextest expression (`-E 'test(sqlite)'`).
-
-| Profile | Behavior | Command |
-|---------|----------|---------|
-| **unit** | Tight timeouts, bail on first failure | `cargo nextest run --profile unit` |
-| **integration** | Long timeouts for real I/O, no bail | `cargo nextest run --profile integration` |
-| **contract** | Strict: no retries | `cargo nextest run --profile contract` |
-| **ci** | 1 retry, no bail | `cargo nextest run --profile ci` |
-
-Tests needing external prerequisites (daemon, Ollama, agent binaries) are
-`#[ignore]`d with the prerequisite in the reason string; run them with
-`just test ignored` / `just test full`.
-
-Guidelines:
-- Mock external dependencies in unit tests
-- Use `#[cfg(feature = "test-utils")]` for mock providers
-- Mark slow tests with `#[ignore = "reason"]`
-- Use `test-case` for parameterized tests
-- Use `tempfile::TempDir` for filesystem tests (never hardcode `/tmp`)
-- Descriptive test names that explain the scenario
-- **NEVER dismiss test failures as "pre-existing" or "unrelated"** — investigate every failure. If tests fail after your changes, the default assumption is your change broke them. Verify causality before moving on.
-
-#### Test hermeticity (env / config)
-
-Never mutate the test process's environment with raw `std::env::set_var` — it is
-process-global and races under parallel runs (see `tests/tui_e2e_harness.rs`).
-
-The daemon's data root (registry `projects.json`, default sessions, home kiln) is
-resolved **once at bind** from `BindWithPluginConfigParams.data_home` and stored on
-`Server`/`RpcContext`; every construction and runtime site (`server/session/list.rs`,
-`server/core.rs` sweep, `ProjectManager`) reads that value, not the `crucible_home()`
-global. `None` defaults to `crucible_home()`, so production is unchanged.
-
-- **In-process** (a test that constructs `Server`/managers directly): inject an
-  isolated data root as a **value**, no env — `Server::bind_with_data_home(&sock, tempdir.path().to_path_buf())`.
-  A test that doesn't isolate loads the developer's real `~/.crucible` registry →
-  non-empty kiln/session lists that pass on clean CI but fail locally. Fixtures that
-  list providers must also call the rustls `install_default()` helper or they panic
-  under parallelism. (For the archive sweep / session-list handlers, pass the
-  tempdir directly as the `data_home` argument.)
-- **Out-of-process** (a test that spawns `cru daemon serve`): pass the isolation as
-  child-scoped process env — `Command::env("CRUCIBLE_HOME", tempdir)` — never a
-  global mutation. This is `TestDaemon` in `tests/common/mod.rs`. (Env is the
-  correct injection channel for a subprocess.)
-
-`EnvVarGuard` (`crucible_core::test_support`) remains only for tests that genuinely
-exercise env-reading behavior (e.g. `OPENAI_API_KEY`, plugin paths, `GLM_AUTH_TOKEN`)
-— not as a hermeticity band-aid for the data root.
-
-### Snapshot and Golden File Policy
-
-**⚠️ NEVER update snapshots or golden files until the output is verified correct.**
-
-This applies to `insta` snapshots (`.snap` files), golden test outputs, and any file that captures "expected" program output.
-
-**Rules:**
-1. **Do not run `cargo insta accept`** or manually update `.snap` files to make tests pass. A passing snapshot test only means output is stable, not correct.
-2. **When snapshots change**, read the actual snapshot content and verify it matches the intended visual/textual output before accepting.
-3. **When snapshots fail after your changes**, the default assumption is your code is wrong, not the snapshot. Investigate the implementation first.
-4. **New snapshots** require reading the generated `.snap.new` file and confirming correctness before accepting.
-5. **Bulk snapshot updates** (`cargo insta accept --all`) are forbidden without per-file review.
-
-**Verification steps when snapshots change:**
-```bash
-# See which snapshots changed
-git diff --name-only | grep '\.snap$'
-
-# Read each changed snapshot
-cat crates/crucible-cli/src/tui/oil/tests/snapshots/<test_name>.snap
-
-# If a reference script exists, compare
-python3 scripts/notif_styling_demo.py > /tmp/reference.txt
-diff /tmp/reference.txt <snapshot_content>
-```
-
-**What to check:**
-- Visual correctness (layout, alignment, spacing)
-- Unicode glyphs are the right characters (not just visually similar)
-- ANSI escape codes produce correct colors
-- No content duplication, missing sections, or ordering issues
-
-**If snapshot doesn't match expectations:** fix the implementation, not the snapshot.
-
-### TUI Testing Workflow
-
-**Test type selection:**
-
-| Scenario | Test Type | Why |
-|----------|-----------|-----|
-| State changes (popup open/close, mode switch) | Unit test with `OilChatApp` | Fast, isolated |
-| Visual output (layout, colors, content) | Snapshot test with `insta` | Catches regressions |
-| Keyboard interactions | Unit test with `Event::Key` | Deterministic |
-| Multi-turn flows (chat, streaming) | Integration test | Component interaction |
-| Real terminal behavior (escape sequences) | PTY test with `expectrl` | E2E verification |
-
-Start with unit tests. Escalate to PTY tests only when unit tests can't verify the behavior.
-
-The chat app type is `OilChatApp` (`src/tui/oil/chat_app/mod.rs`) — drive it via
-`Vt100TestRuntime` (`src/tui/oil/tests/vt100_runtime.rs`) for real rendered-frame
-capture, or `AppHarness` (`src/tui/oil/test_harness.rs`) for string-based frames.
-
-**Fixture reuse:** JSONL session recordings live in `assets/fixtures/*.jsonl`
-(replayed via `session_event_to_chat_msgs`; see `tests/fixture_replay_tests.rs`).
-Mock agents for scripted flows use the `impl_noop_agent!` / `CountingAgent`
-pattern in `tests/replay_mode_tests.rs`.
-
-**New TUI features require a story in `docs/Meta/TUI User Stories.md` plus at least
-T1 + T2 coverage.** Full-flow tests live in `src/tui/oil/tests/user_story_tests/`
-(one file per story group, driven through the `StoryRuntime` frame-sequence
-helper); popup rendering is covered in `tests/popup_tests.rs` and
-`tests/container_snapshot_tests.rs`. Dispatch-logic matrices (`:set`, slash,
-autocomplete) live inline in the relevant `chat_app` submodule where the
-`pub(super)` handlers are reachable.
-
-**PTY E2E tests** live in `crates/crucible-cli/tests/tui_e2e_harness.rs`. They're slow and flaky — reserve for behaviors that can't be verified any other way:
-
-```bash
-cargo test -p crucible-cli streaming_completion -- --ignored --nocapture
-```
-
-### Bugfix Workflow (Test-First)
-
-```
-1. Write failing test that reproduces the bug
-2. Confirm it fails
-3. Minimal code change to pass
-4. Confirm it passes
-5. Commit fix + test together
-```
-
-Test naming: describe the correct behavior, not the bug.
-- Good: `ctrl_c_closes_popup_instead_of_inserting_c`
-- Bad: `test_ctrl_c_bug`
-
-| Validation | Confidence |
-|------------|------------|
-| Code review only | Low (50%) |
-| Existing tests pass | Medium (70%) |
-| New regression tests pass | High (90%) |
-| Manual verification + tests | Very High (95%) |
-
-### Quality Checklist
-
-Before submitting changes:
-- [ ] Code follows project style
-- [ ] Tests pass (`cargo nextest run --profile ci`)
-- [ ] Error handling is comprehensive
-- [ ] Docs updated if needed (architecture → `docs/Meta/`)
-- [ ] No debug code left in
-- [ ] Conventional commit messages
-- [ ] Bugfixes include regression tests
-- [ ] **Snapshot changes verified correct** (see Snapshot Policy above)
+| Crate | Purpose |
+|-------|---------|
+| `crucible-core` | Domain types, traits, parser, config (`Provider`, `CanChat`, `ParsedNote`, `AppConfig`) |
+| `crucible-cli` | TUI (`OilChatApp`), REPL, commands; `cru web` behind default-on `web` feature |
+| `crucible-daemon` | RPC server, sessions, enrichment, ACP host (`acp/`), embeddings (`llm/`), SQLite (`storage/sqlite/`) + LanceDB (`storage/lance/`), skills, tools |
+| `crucible-web` | Axum server + SolidJS frontend (`web/`, embedded via rust-embed) |
+| `crucible-oil` | Terminal rendering primitives |
+| `crucible-lua` | Lua/Luau scripting with Fennel support |
+
+Single `cru` binary. The daemon (`cru daemon serve`) is auto-spawned by
+`DaemonClient::connect_or_start()`; JSON-RPC 2.0 over Unix socket
+(`$CRUCIBLE_SOCKET`, else `$XDG_RUNTIME_DIR/crucible.sock`, else `/tmp/crucible.sock`).
+**All storage is daemon-side** — the CLI has zero direct storage access.
+**Daemon owns business logic** (enrichment, providers, agent lifecycle); CLI/TUI/Web are
+thin rendering/input layers. If a web frontend would need to duplicate it, it's in the wrong place.
+
+### Terminology — do not use interchangeably
+
+- **Project** — where work output goes. A registered directory (git root or invocation dir). `.crucible/project.toml`.
+- **Kiln** — where accrued knowledge goes: notes, sessions, linked content. `.crucible/kiln.toml`.
+- **Workspace** — a specific instance of a project directory (often the root, could be a worktree). Runtime concept, **no config file**. Do NOT rename existing correct uses: `session.workspace`, `WorkspaceTools`, `workspace: &Path`, Lua `paths.workspace()`. Old `workspace.toml` is still read as a backward-compat fallback.
+
+### Type ownership
+
+- Parser types live canonically in `crucible-core/src/parser/types/` (`BlockHash` included); other hashing in `crucible-core/src/types/hashing.rs`. `ContextMessage` is the canonical conversation message type.
+- **Never duplicate types between crates.** One canonical location per type; use re-exports.
+- Result aliases follow `<Domain>Result<T>` (`StorageResult`, `ChatResult`, `ToolResult`, `ParserResult`, `AcpResult`); `crucible_core::Result<T>` for general operations.
+
+### Session-scoped vs TUI-local features
+
+State needing multi-client consistency (model, thinking budget, temperature) lives in the
+daemon's `SessionAgent` and syncs via RPC. Pure display state (theme, show_thinking) stays in
+`OilChatApp`. For session-scoped features, wire the full chain:
+`AgentHandle` trait (`crucible-core/src/traits/chat.rs`) → `DaemonAgentHandle`
+(`crucible-daemon/src/rpc_client/agent.rs`) → `ChatAppMsg` variant → `chat_runner` handler →
+TUI command. Pitfalls: implementing TUI-only (breaks multi-client), mismatched JSON field
+names between client and server (silent failure — verify `session.get_*` returns what
+`session.set_*` stored, and that state survives session resume).
+
+### Hooks and ACP delegation
+
+- Plugins can fully handle tool calls: `crucible.on("pre_tool_call", opts, handler)` returns `{ handled = true, result = ... }` to replace execution, `{ cancel = true, reason = ... }` to block, or `nil` to observe. Supports `pattern` and `priority` opts; handlers may call async APIs. Reference implementation: `runtime/plugins/oci/`.
+- Crucible delegates to external agents (Claude Code, OpenCode, Gemini CLI) via ACP: `cru chat -a claude`, `cru session create --agent claude`, or the `delegate_session` tool. Trust/depth limits in `crucible.toml` (`[acp.agents.*]` profiles can `extends` built-ins). Code: `crucible-daemon/src/acp/`, `agent_manager/`, `tools/mcp_server.rs`.
+
+## Workflow
+
+**Use `just` recipes before invoking cargo/bunx/vitest/playwright directly** — they encode
+this box's constraints (thread caps, build prereqs). Scoped runs pass through args. If a flow
+has no recipe and you need it twice, add a recipe.
+
+- `just ci` — **run before committing**: fmt, clippy, size gate, nextest, web unit + e2e
+- `just build` / `just test` / `just check`; `just test-crate <crate>`; `just test ignored` / `just test full` for `#[ignore]`d tests
+- `just web-test-unit [paths…]` / `just web-test [specs…]` / `just web-typecheck`
+- `just web` (build + serve on 3000) / `just web-debug [port]` (side port, safe next to installed instance); `just mcp`
+
+**Don't build release unless installing** — LTO takes 5–10 minutes; iterate on debug builds.
+Web frontend uses **bun** (not npm/yarn); see `crates/crucible-web/web/AGENTS.md`.
+
+**Keep the repo root clean.** Docs go in `docs/Help|Meta|Guides/`, scripts in `scripts/`,
+examples in `examples/`. Never create documentation, temp files, or conversation logs in the
+root. `docs/` is a reference kiln — a valid Crucible vault that integration tests parse and
+index; use wikilinks and frontmatter tags. Patched upstream crates live in `vendor/` (via
+`[patch.crates-io]`): add `NOTE(crucible):` comments, update `vendor/README.md`, add
+regression tests.
+
+## Code Principles
+
+- **Crate boundaries are for compilation, not organization.** If related types need `pub` wrappers to see each other, question the boundary. Prefer fewer, larger crates. Co-locate related state.
+- **anyhow by default, thiserror at boundaries.** `anyhow::Result` + `.context()` internally; structured error enums only at API/RPC boundaries where callers match on variants.
+- **YAGNI.** No speculative variants, fields, or abstractions. Every `Option<T>` needs a `None` path; every error variant needs a distinct handler.
+- **Enums over traits** unless 2+ implementations exist in different crates; `dyn` only for genuine runtime polymorphism.
+- **Compress via the type system**: `From`/`Into` over `.map_err()` chains, `?`, iterator combinators, `#[derive]`. A pattern repeated 5+ times is a missing helper. One pattern, used uniformly.
+- **Comments explain why, not what** — tradeoffs, workarounds, non-obvious decisions.
+- **Lua sees the same domain model.** Rust types are source of truth; Lua bindings project them, never duplicate them.
+- `snake_case` functions, `PascalCase` types. Fix clippy warnings properly — no module-level `#![allow(...)]`.
+
+## Testing
+
+Tests use **cargo-nextest**. Profiles (`unit`, `integration`, `contract`, `ci`) select
+retry/timeout behavior only — none filter the test set; scope with `-p <crate>` or
+`-E 'test(...)'`. Tests needing external prerequisites (daemon, Ollama, agent binaries) are
+`#[ignore]`d with the prerequisite in the reason string — that, not cargo features, is how
+slow/external tests are gated.
+
+- TDD: bugfixes start with a failing test that reproduces the bug; commit fix + test together. Name tests for the correct behavior (`ctrl_c_closes_popup_instead_of_inserting_c`), not the bug.
+- Mock external deps in unit tests (`#[cfg(feature = "test-utils")]` mock providers); `tempfile::TempDir` for filesystem tests — never hardcode `/tmp`.
+- **Never dismiss test failures as "pre-existing" or "unrelated."** If tests fail after your changes, assume your change broke them until proven otherwise.
+
+### Hermeticity (env / data root)
+
+Never mutate process env with raw `std::env::set_var` — it races under parallel runs.
+
+- **In-process** tests (constructing `Server`/managers directly): inject an isolated data root as a value — `Server::bind_with_data_home(&sock, tempdir.path().to_path_buf())` (or pass the tempdir as the `data_home` argument to session-list/sweep handlers). Skipping this loads the developer's real `~/.crucible` registry: passes on CI, fails locally. Fixtures that list providers must also call the rustls `install_default()` helper.
+- **Out-of-process** tests (spawning `cru daemon serve`): child-scoped env only — `Command::env("CRUCIBLE_HOME", tempdir)` (see `TestDaemon` in `tests/common/mod.rs`).
+- `EnvVarGuard` (`crucible_core::test_support`) is only for tests that genuinely exercise env-reading behavior — not a hermeticity band-aid.
+
+### Snapshots / golden files
+
+**Never accept a snapshot until you've verified the output is correct.** A passing snapshot
+test proves stability, not correctness. No `cargo insta accept --all` without per-file
+review; read every changed `.snap`/`.snap.new` and check layout, exact Unicode glyphs, ANSI
+colors, and no duplicated/missing content. When a snapshot fails after your changes, the
+default assumption is the implementation is wrong — fix the code, not the snapshot.
+
+### TUI tests
+
+Start with unit tests on `OilChatApp` (state, keyboard via `Event::Key`); snapshot tests
+(`insta`) for visual output; PTY tests (`expectrl`, `tests/tui_e2e_harness.rs`) only for
+behavior nothing else can verify — they're slow and flaky. Drive the app via
+`Vt100TestRuntime` (rendered frames) or `AppHarness` (string frames). JSONL session fixtures
+live in `assets/fixtures/*.jsonl`; mock agents use the `impl_noop_agent!` / `CountingAgent`
+pattern. **New TUI features require a story in `docs/Meta/TUI User Stories.md` plus T1 + T2
+coverage** — full-flow tests in `src/tui/oil/tests/user_story_tests/` via `StoryRuntime`.
+
+## Before Submitting
+
+Style followed · tests pass (`just ci`) · docs updated (architecture → `docs/Meta/`) · no
+debug code · conventional commits · bugfixes include regression tests · snapshot changes
+verified correct.
 
 ## Key Resources
 
-- **[README.md](./README.md)** — Project overview and quick start
-- **[docs/Meta/Analysis/Systems.md](./docs/Meta/Analysis/Systems.md)** — System boundaries
-- **[docs/](./docs/)** — Reference kiln (user guides + test fixture)
-- **[justfile](./justfile)** — Development recipes
-- **[vendor/README.md](./vendor/README.md)** — Patched upstream dependencies
-- **[docs/Help/Concepts/Agent%20Client%20Protocol.md](./docs/Help/Concepts/Agent%20Client%20Protocol.md)** — ACP specification reference
-- **[docs/Help/Concepts/Model%20Context%20Protocol.md](./docs/Help/Concepts/Model%20Context%20Protocol.md)** — MCP specification reference
-- **[docs/Help/Concepts/Agent%20Skills.md](./docs/Help/Concepts/Agent%20Skills.md)** — Skills specification reference
+- [README.md](./README.md) — overview and quick start
+- [docs/Meta/Analysis/Systems.md](./docs/Meta/Analysis/Systems.md) — system boundaries
+- [justfile](./justfile) — development recipes
+- [vendor/README.md](./vendor/README.md) — patched dependencies
+- `docs/Help/Concepts/` — ACP, MCP, and Agent Skills specification references
