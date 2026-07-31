@@ -5,6 +5,52 @@ use crucible_core::config::components::permissions::{
 use crucible_core::events::InternalSessionEvent;
 use std::future::Future;
 
+/// The name the permission engine matches an ACP tool call against.
+///
+/// **ACP carries no tool name.** `ToolCallUpdateFields` has `title` — prose
+/// for a human, `"Read src/main.rs"` — and `kind`, a category. This used to
+/// key on `title`, so `is_safe` was never true and no `[permissions]` rule
+/// naming a tool could ever match: the whole gate was unreachable on the ACP
+/// path, and its unit tests passed because they build `PermRequest::tool`
+/// shapes that production never produces.
+///
+/// `kind` is the only tool identity on the wire, so rules match against it.
+/// The names chosen are the engine's own file-operation grammar (`read`,
+/// `edit`, `write`, `delete` — see `is_file_tool`) plus `bash`, so an
+/// operator writes the same patterns they already write elsewhere.
+///
+/// A `kind` the agent supplies is **not** grounds for the read-only
+/// exemption: see [`crate::agent_manager::is_safe`], which may only widen on
+/// something the daemon itself knows. An ACP tool matches rules and is
+/// otherwise asked about.
+///
+/// Schema 1.6.0 adds an `unstable_tool_call_name` field that would replace
+/// this outright. Reaching it means upgrading `agent-client-protocol` 0.10 →
+/// 2.0 and opting into a field its own docs call removable, so this is the
+/// one place to change when that lands.
+fn acp_tool_name(fields: &agent_client_protocol::ToolCallUpdateFields) -> String {
+    use agent_client_protocol::ToolKind;
+    match fields.kind {
+        Some(ToolKind::Read) => "read",
+        Some(ToolKind::Edit) => "edit",
+        Some(ToolKind::Delete) => "delete",
+        // No `move` in the engine's grammar, and a move is a write.
+        Some(ToolKind::Move) => "write",
+        Some(ToolKind::Search) => "search",
+        Some(ToolKind::Execute) => "bash",
+        Some(ToolKind::Fetch) => "fetch",
+        Some(ToolKind::Think) => "think",
+        Some(ToolKind::SwitchMode) => "switch_mode",
+        // `Other` is ACP's default, so an agent that sets no kind lands here
+        // too — as does any variant a later schema adds, since `ToolKind` is
+        // `#[non_exhaustive]` and a kind we cannot classify must not be
+        // guessed at. Deliberately not a file-operation name: an unidentified
+        // call must not inherit a rule written for one that is identified.
+        Some(ToolKind::Other) | Some(_) | None => "acp_tool",
+    }
+    .to_string()
+}
+
 /// Serializer that ensures only one permission prompt is in-flight at a time
 /// per ACP session.
 ///
@@ -162,13 +208,7 @@ impl AgentManager {
                         PermissionOptionKind, RequestPermissionOutcome, SelectedPermissionOutcome,
                     };
 
-                    let tool_name = request
-                        .tool_call
-                        .fields
-                        .title
-                        .as_deref()
-                        .unwrap_or("acp_tool")
-                        .to_string();
+                    let tool_name = acp_tool_name(&request.tool_call.fields);
                     let args = request
                         .tool_call
                         .fields
@@ -596,7 +636,7 @@ impl AgentManager {
         };
         match engine.evaluate(tool_name, &input, true) {
             PermissionDecision::Deny { reason } => Some(reason),
-            PermissionDecision::Allow | PermissionDecision::Ask => None,
+            PermissionDecision::Allow | PermissionDecision::Ask { .. } => None,
         }
     }
 
@@ -730,7 +770,7 @@ impl AgentManager {
                     }
                     return Err(error_msg);
                 }
-                PermissionDecision::Ask => {}
+                PermissionDecision::Ask { .. } => {}
             }
         }
 
@@ -822,7 +862,7 @@ impl AgentManager {
                         match Self::evaluate_mode_rules(p, &tool_call.name, args) {
                             PermissionDecision::Allow => Some(crucible_lua::ModeStance::Allow),
                             PermissionDecision::Deny { .. } => Some(crucible_lua::ModeStance::Deny),
-                            PermissionDecision::Ask => Some(crucible_lua::ModeStance::Ask),
+                            PermissionDecision::Ask { .. } => Some(crucible_lua::ModeStance::Ask),
                         }
                     }
                     Some(p) => Some(p.default),
@@ -1324,6 +1364,100 @@ mod permission_serializer_tests {
             max_seen.load(Ordering::SeqCst),
             2,
             "different serializers must not block each other; both should run concurrently"
+        );
+    }
+}
+
+#[cfg(test)]
+mod acp_tool_name_tests {
+    use super::*;
+    use agent_client_protocol::{ToolCallUpdateFields, ToolKind};
+    use crucible_core::interaction::PermRequest;
+    use crucible_core::traits::PermissionGate;
+
+    fn fields(kind: Option<ToolKind>, title: &str) -> ToolCallUpdateFields {
+        // `ToolCallUpdateFields` is `#[non_exhaustive]`, so it is built by
+        // mutation rather than a struct literal.
+        let mut f = ToolCallUpdateFields::default();
+        f.kind = kind;
+        f.title = Some(title.to_string());
+        f
+    }
+
+    /// The gate must key on something an operator can write a rule against.
+    ///
+    /// It keyed on `title` — `"Read src/main.rs"` — which is prose. No
+    /// `[permissions]` entry naming a tool could ever match it, so the entire
+    /// permission config was inert for ACP-hosted agents.
+    #[test]
+    fn the_tool_name_comes_from_the_kind_not_the_prose_title() {
+        assert_eq!(
+            acp_tool_name(&fields(Some(ToolKind::Edit), "Edit src/main.rs")),
+            "edit"
+        );
+        assert_eq!(
+            acp_tool_name(&fields(Some(ToolKind::Execute), "Run cargo test")),
+            "bash"
+        );
+        assert_eq!(
+            acp_tool_name(&fields(Some(ToolKind::Read), "Read README")),
+            "read"
+        );
+    }
+
+    /// An unclassified call gets a name no file rule matches, rather than
+    /// being guessed into one.
+    #[test]
+    fn an_unidentified_call_does_not_inherit_a_file_rule() {
+        assert_eq!(acp_tool_name(&fields(None, "Something")), "acp_tool");
+        assert_eq!(
+            acp_tool_name(&fields(Some(ToolKind::Other), "Something")),
+            "acp_tool"
+        );
+    }
+
+    /// The point of all of it: an operator's rule now blocks an ACP call.
+    ///
+    /// Asserted through the gate rather than on the mapping alone, because a
+    /// name that is correct and that no rule is evaluated against is the
+    /// failure this fixes.
+    #[tokio::test]
+    async fn an_operator_rule_blocks_an_acp_tool_call() {
+        let config = PermissionConfig {
+            default: PermissionMode::Allow,
+            deny: vec!["edit:*".to_string()],
+            ..Default::default()
+        };
+        let gate = DaemonPermissionGate::new(Some(config), true);
+
+        let name = acp_tool_name(&fields(Some(ToolKind::Edit), "Edit src/main.rs"));
+        let response = gate
+            .request_permission(PermRequest::tool(
+                name,
+                serde_json::json!({"path": "src/main.rs"}),
+            ))
+            .await;
+
+        assert!(
+            !response.allowed,
+            "deny = [\"edit:*\"] must reach an ACP edit"
+        );
+    }
+
+    /// …and an ACP `kind` never buys the read-only exemption, because the
+    /// agent supplies it. Same reasoning `is_safe` gives for `readOnlyHint`.
+    #[tokio::test]
+    async fn a_read_kind_does_not_skip_the_prompt() {
+        let gate = DaemonPermissionGate::new(None, true);
+        let name = acp_tool_name(&fields(Some(ToolKind::Read), "Read /etc/passwd"));
+
+        let response = gate
+            .request_permission(PermRequest::tool(name, serde_json::json!({})))
+            .await;
+
+        assert!(
+            !response.allowed,
+            "an agent-supplied kind must not widen the gate"
         );
     }
 }
