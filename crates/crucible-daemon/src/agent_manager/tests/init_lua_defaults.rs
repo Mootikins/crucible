@@ -743,3 +743,49 @@ async fn session_modes_ignores_a_persisted_mode_that_no_longer_exists() {
         Some("plan")
     );
 }
+
+/// A mode chosen in an `on_session_start` hook reaches the agent.
+///
+/// `session.mode = "plan"` had no backing on `SessionDefaultsRpc`, so it hit
+/// the trait default. That default used to be `Ok(())` — silently inert — and
+/// then became an error, which aborts the hook body and takes every line after
+/// it down too. Neither is a session that starts in plan mode. Asserted
+/// through `configure_agent` for the reason the helper above gives: a value
+/// that reaches `cru.defaults` and not `SessionAgent` is the failure mode.
+#[tokio::test]
+async fn a_mode_set_in_a_session_start_hook_reaches_the_agent() {
+    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let session_manager = agent_manager.session_manager.clone();
+
+    let defaults = agent_manager.session_defaults();
+    let mut values = defaults.get();
+    values.mode = Some("plan".to_string());
+    defaults.set(values);
+
+    let agent = configured_agent(&agent_manager, &session_manager, &session_id, bare_agent()).await;
+
+    assert_eq!(
+        agent.mode.as_deref(),
+        Some("plan"),
+        "the hook's mode must be what the agent starts as"
+    );
+}
+
+/// …and an agent that named its own mode keeps it. Defaults fill gaps; they
+/// do not overrule a choice already made.
+#[tokio::test]
+async fn an_agents_own_mode_outranks_the_default() {
+    let (_tmp, agent_manager, session_id) = session_with_defaults().await;
+    let session_manager = agent_manager.session_manager.clone();
+
+    let defaults = agent_manager.session_defaults();
+    let mut values = defaults.get();
+    values.mode = Some("plan".to_string());
+    defaults.set(values);
+
+    let mut agent = bare_agent();
+    agent.mode = Some("normal".to_string());
+    let agent = configured_agent(&agent_manager, &session_manager, &session_id, agent).await;
+
+    assert_eq!(agent.mode.as_deref(), Some("normal"));
+}

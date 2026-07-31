@@ -247,6 +247,7 @@ impl AgentManager {
         agent.temperature = agent.temperature.or(defaults.temperature);
         agent.max_tokens = agent.max_tokens.or(defaults.max_tokens);
         agent.thinking_budget = agent.thinking_budget.or(defaults.thinking_budget);
+        agent.mode = agent.mode.or(defaults.mode);
         agent
     }
 

@@ -793,6 +793,12 @@ impl AgentManager {
         self.statusline_exprs.clone()
     }
 
+    /// The global session defaults store (`cru.defaults`).
+    #[cfg(test)]
+    pub(crate) fn session_defaults(&self) -> &crucible_lua::SessionDefaults {
+        &self.session_defaults
+    }
+
     /// The operator's `[permissions]` rules, for gates outside the agent
     /// dispatch path (`cru.tools.call`, via `DaemonToolsBridge`).
     pub(crate) fn permission_config(&self) -> Option<PermissionConfig> {

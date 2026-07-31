@@ -54,6 +54,10 @@ pub struct SessionDefaultValues {
     pub temperature: Option<f64>,
     pub max_tokens: Option<u32>,
     pub thinking_budget: Option<i64>,
+    /// Starting mode. Settable from an `on_session_start` hook, which is why
+    /// it lives here rather than only on `SessionAgent`: the hook runs before
+    /// the agent is built, so it is choosing what the agent starts as.
+    pub mode: Option<String>,
 }
 
 /// Shared handle to the daemon's session defaults.
@@ -235,6 +239,15 @@ impl crate::session_api::SessionConfigRpc for SessionDefaultsRpc {
         self.store.get().thinking_budget
     }
 
+    fn get_mode(&self) -> String {
+        self.store.get().mode.unwrap_or_else(|| "chat".to_string())
+    }
+
+    fn set_mode(&self, mode: &str) -> Result<(), String> {
+        self.store.update(|v| v.mode = Some(mode.to_string()));
+        Ok(())
+    }
+
     fn set_thinking_budget(&self, budget: i64) -> Result<(), String> {
         self.store.update(|v| v.thinking_budget = Some(budget));
         Ok(())
@@ -410,5 +423,37 @@ mod tests {
             .eval()
             .unwrap();
         assert_eq!(seen, "from A");
+    }
+}
+
+#[cfg(test)]
+mod session_start_hook_tests {
+    use super::*;
+    use crate::session_api::SessionConfigRpc;
+
+    /// Setting the mode in an `on_session_start` hook must work, and must not
+    /// take the rest of the hook down with it.
+    ///
+    /// `SessionConfigRpc`'s setters used to default to `Ok(())`, so
+    /// `session.mode = "plan"` was silently inert. Defaulting them to an error
+    /// made the assignment *raise*, which aborts the whole hook body — so the
+    /// `system_prompt` line after it, which had always worked, stopped
+    /// running. Silence was wrong; taking the rest of the hook with it is
+    /// worse. `mode` is a real session default now.
+    #[test]
+    fn setting_mode_does_not_abort_the_rest_of_the_hook() {
+        let store = SessionDefaults::new();
+        let rpc = SessionDefaultsRpc::new(store.clone());
+
+        rpc.set_mode("plan").expect("mode is a session default");
+        rpc.set_system_prompt("after the mode line")
+            .expect("the line after must still run");
+
+        assert_eq!(store.get().mode.as_deref(), Some("plan"));
+        assert_eq!(
+            store.get().system_prompt.as_deref(),
+            Some("after the mode line")
+        );
+        assert_eq!(rpc.get_mode(), "plan", "and reads back");
     }
 }
