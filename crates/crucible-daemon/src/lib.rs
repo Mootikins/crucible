@@ -62,6 +62,7 @@ pub mod replay;
 pub mod rpc;
 pub mod rpc_client;
 pub mod rpc_helpers;
+pub(crate) mod rules_files;
 pub mod runtime_defaults;
 pub mod scm;
 pub mod server;
