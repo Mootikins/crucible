@@ -53,9 +53,12 @@ fn resolve_output_dir(explicit: Option<PathBuf>) -> Result<PathBuf> {
     }
 }
 
-/// Where stubs land with no `--output`. Shared with the `cru plugin new`
-/// scaffold, which writes this path into the generated `.luarc.json`.
+/// Where stubs land with no `--output`.
+///
+/// The daemon auto-generates here on every start, and `cru plugin new` writes
+/// this path into the scaffolded `.luarc.json`. It used to default to a
+/// sibling `stubs/` that nothing else wrote to, so following the command's own
+/// printed advice pointed an editor at an empty directory.
 pub(super) fn default_stub_dir() -> Result<PathBuf> {
-    let config_dir = dirs::config_dir().context("Could not determine config directory")?;
-    Ok(config_dir.join("crucible").join("stubs"))
+    crucible_core::config::lua_stubs_dir().context("Could not determine config directory")
 }

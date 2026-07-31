@@ -168,8 +168,7 @@ impl Server {
             }
 
             // Auto-generate LuaCATS stubs for IDE support
-            if let Some(config_dir) = dirs::config_dir() {
-                let stubs_dir = config_dir.join("crucible").join("luals");
+            if let Some(stubs_dir) = crucible_core::config::lua_stubs_dir() {
                 match loader.generate_stubs(&stubs_dir) {
                     Ok(()) => debug!("Generated LuaCATS stubs at {}", stubs_dir.display()),
                     Err(e) => debug!("LuaCATS stub generation skipped: {}", e),

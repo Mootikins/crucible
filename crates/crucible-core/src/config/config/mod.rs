@@ -38,6 +38,17 @@ pub fn crucible_home() -> std::path::PathBuf {
         .join(".crucible")
 }
 
+/// Where LuaCATS type stubs live: `~/.config/crucible/luals/`.
+///
+/// One answer for three callers that used to disagree — the daemon
+/// auto-generates here on every start, `cru plugin stubs` defaulted to a
+/// sibling `stubs/`, and `cru plugin new` writes the path into a scaffolded
+/// `.luarc.json`. A scaffold pointing at a directory nothing writes is the
+/// same as pointing nowhere.
+pub fn lua_stubs_dir() -> Option<std::path::PathBuf> {
+    dirs::config_dir().map(|d| d.join("crucible").join("luals"))
+}
+
 /// Check if a path is the crucible home directory.
 ///
 /// Used by storage code to avoid double `.crucible/` nesting when the

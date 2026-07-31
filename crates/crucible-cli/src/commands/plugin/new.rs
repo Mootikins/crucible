@@ -57,14 +57,11 @@ pub async fn execute(_config: CliConfig, args: NewArgs) -> Result<()> {
     Ok(())
 }
 
-/// Where `cru plugin stubs` writes by default. Kept in step with
-/// `plugin::stubs::resolve_output_dir` — a scaffold pointing somewhere else is
-/// the same as not pointing anywhere.
+/// Where the stubs live. One shared answer, because a scaffold pointing
+/// somewhere nothing writes is the same as not pointing anywhere.
 fn stub_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.config"))
-        .join("crucible")
-        .join("stubs")
+    crucible_core::config::lua_stubs_dir()
+        .unwrap_or_else(|| PathBuf::from("~/.config/crucible/luals"))
 }
 
 /// The scaffolded `.luarc.json`, with the stub directory substituted in.
