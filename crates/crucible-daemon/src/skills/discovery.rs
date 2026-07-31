@@ -296,7 +296,12 @@ pub fn default_discovery_paths(
 /// installed `cru` found no bundled skills and said nothing about it.
 fn runtime_skill_paths(roots: &[PathBuf]) -> Vec<SearchPath> {
     let mut paths = Vec::new();
-    for root in roots {
+    // Lowest-priority root first. Every runtime path shares `Builtin` scope,
+    // and `discover` replaces on `>=`, so among equal scopes the **last** one
+    // seen wins. Walking `roots` in its own order — highest priority first —
+    // therefore inverted it: the shipped tree beat `~/.config/crucible/runtime`,
+    // which is the opposite of what making that a root was for.
+    for root in roots.iter().rev() {
         for entry in std::fs::read_dir(root).ok().into_iter().flatten().flatten() {
             let skills_path = entry.path().join("skills");
             if entry.path().is_dir() && skills_path.exists() {
@@ -574,6 +579,33 @@ mod tests {
         assert_eq!(
             resolved["review"].skill.description, "Kiln review",
             "the kiln's own skill must win"
+        );
+    }
+
+    /// A higher-priority runtime root wins against a lower one.
+    ///
+    /// All runtime paths share `Builtin` scope and `discover` replaces on
+    /// `>=`, so among equal scopes the *last* path seen wins — which made
+    /// walking the roots in priority order do the opposite of what it looked
+    /// like, and let the shipped tree beat `~/.config/crucible/runtime`.
+    #[test]
+    fn the_highest_priority_runtime_root_wins() {
+        let tmp = TempDir::new().unwrap();
+        for (root, desc) in [("user", "User copy"), ("shipped", "Shipped copy")] {
+            let dir = tmp.path().join(root).join("crucible-help").join("skills");
+            std::fs::create_dir_all(&dir).unwrap();
+            write_skill(&dir, "cru-help", desc);
+        }
+
+        // `runtime_roots` order: user runtime first, shipped after.
+        let roots = vec![tmp.path().join("user"), tmp.path().join("shipped")];
+        let resolved = FolderDiscovery::new(runtime_skill_paths(&roots))
+            .discover()
+            .unwrap();
+
+        assert_eq!(
+            resolved["cru-help"].skill.description, "User copy",
+            "the first root listed is the one that wins"
         );
     }
 
