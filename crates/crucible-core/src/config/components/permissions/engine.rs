@@ -25,7 +25,7 @@ impl PermissionEngine {
             self.evaluate_single(tool, input)
         };
 
-        if !is_interactive && decision == PermissionDecision::Ask {
+        if !is_interactive && matches!(decision, PermissionDecision::Ask { .. }) {
             return PermissionDecision::Deny {
                 reason: "Non-interactive mode: ask rules become deny".to_string(),
             };
@@ -67,7 +67,7 @@ impl PermissionEngine {
         }
 
         if has_ask_match {
-            return PermissionDecision::Ask;
+            return PermissionDecision::Ask { rule_matched: true };
         }
 
         if all_allow_match {
@@ -91,7 +91,7 @@ impl PermissionEngine {
         }
 
         if self.any_match(&self.compiled.ask, tool, input) {
-            return PermissionDecision::Ask;
+            return PermissionDecision::Ask { rule_matched: true };
         }
 
         if self.any_match(&self.compiled.allow, tool, input) {
@@ -119,7 +119,9 @@ impl PermissionEngine {
             PermissionMode::Deny => PermissionDecision::Deny {
                 reason: "Default mode is deny".to_string(),
             },
-            PermissionMode::Ask => PermissionDecision::Ask,
+            PermissionMode::Ask => PermissionDecision::Ask {
+                rule_matched: false,
+            },
         }
     }
 }

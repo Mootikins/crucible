@@ -57,7 +57,16 @@ impl DaemonToolsBridge {
         match self.permissions.evaluate(name, &input, true) {
             PermissionDecision::Deny { reason } => return Some(reason),
             PermissionDecision::Allow => return None,
-            PermissionDecision::Ask => {}
+            // An `ask` rule names this tool on purpose. There is nobody to
+            // prompt on a Lua call, so being asked about it means refuse —
+            // the read-only exemption below is for tools no rule decided.
+            PermissionDecision::Ask { rule_matched: true } => {
+                return Some(format!(
+                    "{name} is covered by an `ask` rule and a Lua tool call has no prompt to \
+                     answer it"
+                ))
+            }
+            PermissionDecision::Ask { .. } => {}
         }
         if crate::agent_manager::is_safe(name) {
             return None;
@@ -161,6 +170,29 @@ mod tests {
             err.contains("Permission denied"),
             "the refusal should say why, got: {err}"
         );
+    }
+
+    /// An `ask` rule the operator wrote is not the same as "no rule matched".
+    ///
+    /// The read-only exemption ran on any undecided tool, and the engine
+    /// reports both "default is ask" and "an `ask` rule matched" as the same
+    /// `Ask` — so `ask = ["read_file:*"]` was discarded exactly the way
+    /// `deny` used to be. There is nobody to prompt on this path, so an
+    /// operator asking to be asked means refuse.
+    #[tokio::test]
+    async fn an_ask_rule_is_not_discarded_by_the_read_only_exemption() {
+        let bridge = bridge_with(PermissionConfig {
+            default: PermissionMode::Allow,
+            ask: vec!["read_file:*".to_string()],
+            ..Default::default()
+        });
+
+        let err = bridge
+            .call_tool("read_file".to_string(), json!({"path": "x"}))
+            .await
+            .expect_err("an explicit ask must not be silently allowed");
+
+        assert!(err.contains("Permission denied"), "got: {err}");
     }
 
     /// Fails closed: a tool that can mutate needs an explicit allow.

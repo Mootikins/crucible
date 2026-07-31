@@ -31,7 +31,13 @@ fn pipeline_unconfigured_tool_returns_ask() {
     let engine = PermissionEngine::new(Some(&config));
 
     let decision = engine.evaluate("read", "docs/guide.md", true);
-    assert_eq!(decision, PermissionDecision::Ask);
+    assert_eq!(
+        decision,
+        PermissionDecision::Ask {
+            rule_matched: false
+        },
+        "an unconfigured tool is the default, not a rule"
+    );
 }
 
 #[test]

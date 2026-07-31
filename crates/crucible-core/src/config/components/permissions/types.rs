@@ -97,6 +97,18 @@ impl PermissionConfig {
 #[allow(missing_docs)]
 pub enum PermissionDecision {
     Allow,
-    Deny { reason: String },
-    Ask,
+    Deny {
+        reason: String,
+    },
+    /// Prompt the user.
+    ///
+    /// `rule_matched` distinguishes "an `ask` rule named this" from "no rule
+    /// matched and the default is ask". Callers that can auto-approve — the
+    /// read-only exemption in `DaemonPermissionGate` and `DaemonToolsBridge`
+    /// — must not skip the first: an operator writing `ask = ["read_file:*"]`
+    /// is asking about that tool specifically, and silently allowing it is
+    /// the same defect as ignoring a `deny`.
+    Ask {
+        rule_matched: bool,
+    },
 }

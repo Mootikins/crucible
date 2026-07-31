@@ -23,7 +23,7 @@ fn engine_ask_rule_returns_ask() {
     let engine = PermissionEngine::new(Some(&config));
 
     let decision = engine.evaluate("bash", "git push origin main", true);
-    assert_eq!(decision, PermissionDecision::Ask);
+    assert_eq!(decision, PermissionDecision::Ask { rule_matched: true });
 }
 
 #[test]
@@ -73,7 +73,14 @@ fn engine_chained_command_partial_allow_falls_back_to_ask() {
     let engine = PermissionEngine::new(Some(&config));
 
     let decision = engine.evaluate("bash", "cargo test && npm run build", true);
-    assert_eq!(decision, PermissionDecision::Ask);
+    // No *ask* rule here — one sub-command matched `allow` and the other
+    // matched nothing, so this is the default speaking, not a rule.
+    assert_eq!(
+        decision,
+        PermissionDecision::Ask {
+            rule_matched: false
+        }
+    );
 }
 
 #[test]
@@ -112,7 +119,12 @@ fn engine_non_interactive_allow_still_allows() {
 fn engine_with_no_config_defaults_to_ask() {
     let engine = PermissionEngine::new(None);
     let decision = engine.evaluate("bash", "ls", true);
-    assert_eq!(decision, PermissionDecision::Ask);
+    assert_eq!(
+        decision,
+        PermissionDecision::Ask {
+            rule_matched: false
+        }
+    );
 }
 
 #[test]
@@ -218,5 +230,10 @@ fn interactive_ask_default_returns_ask() {
     let config = PermissionConfig::default();
     let engine = PermissionEngine::new(Some(&config));
     let decision = engine.evaluate("dangerous_tool", "{}", true);
-    assert_eq!(decision, PermissionDecision::Ask);
+    assert_eq!(
+        decision,
+        PermissionDecision::Ask {
+            rule_matched: false
+        }
+    );
 }

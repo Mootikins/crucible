@@ -72,8 +72,13 @@ impl PermissionGate for DaemonPermissionGate {
         match self.engine.evaluate(tool_name, &input, true) {
             PermissionDecision::Allow => PermResponse::allow(),
             PermissionDecision::Deny { reason } => PermResponse::deny_with_reason(reason),
-            PermissionDecision::Ask if is_safe(tool_name) => PermResponse::allow(),
-            PermissionDecision::Ask => match &self.prompt_callback {
+            // Only an *undecided* tool takes the exemption. An `ask` rule the
+            // operator wrote names this tool on purpose, and skipping it is
+            // the same defect as ignoring a `deny`.
+            PermissionDecision::Ask {
+                rule_matched: false,
+            } if is_safe(tool_name) => PermResponse::allow(),
+            PermissionDecision::Ask { .. } => match &self.prompt_callback {
                 Some(callback) if self.is_interactive => callback(request).await,
                 _ => PermResponse::deny_with_reason(
                     "Permission requires user confirmation but no interactive bridge is configured",
