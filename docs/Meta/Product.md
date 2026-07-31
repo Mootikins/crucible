@@ -808,7 +808,7 @@ Crucible acts as an **ACP host**, spawning and controlling external AI agents (C
 ### MCP Server (External Agents → Crucible Tools)
 
 - [x] **MCP Server** `P0` — expose the kiln as MCP tools for external AI agents · [[Help/Concepts/Agents & Protocols]] · `crucible-daemon` (tools)
-  - **Gets you:** an external agent connected to `cru mcp` lists Crucible's tools and gets real results back.
+  - **Gets you:** an external agent connected to `cru mcp` lists Crucible's kiln and delegation tools — 15 of them — and gets real results back. The surface is what Crucible uniquely has; it does not re-serve `bash` or file editing that the connecting harness already provides.
   - **Proof:** `crates/crucible-daemon/tests/mcp_server_tools_test.rs`::test_mcp_server_has_all_expected_tools (asserts the `list_tools` response) and `::test_all_tools_have_descriptions`; `tests/acp_integration/tool_roundtrip.rs::test_acp_tool_roundtrip_with_mcp_server`, `::test_acp_tool_roundtrip_read_file`
 - [x] **Note Tools** `P0` — `create_note`, `read_note`, `read_metadata`, `update_note`, `delete_note`, `list_notes` · `crucible-daemon` (tools)
   - **Gets you:** an external agent creates, reads, updates and deletes real `.md` files in the kiln with frontmatter, and gets structured results — and these tools *are* path-sandboxed, unlike the ACP filesystem seam.
@@ -819,12 +819,12 @@ Crucible acts as an **ACP host**, spawning and controlling external AI agents (C
 - [x] **Kiln Tools** `P0` — `get_kiln_info` · `crucible-daemon` (tools)
   - **Gets you:** an external agent asks what kiln it is attached to and gets a real note count and path back.
   - **Proof:** `crates/crucible-daemon/src/tools/kiln.rs`::test_get_kiln_info_with_files, `::test_get_kiln_info_recursive`, `::test_get_kiln_info_uses_note_store`, `::test_get_kiln_info_empty`
-- [x] **Workspace Tools** `P0` — `read_file`, `edit_file`, `write_file`, `bash`, `glob`, `grep` · `crucible-daemon` (tools)
-  - **Gets you:** an external agent reads/edits/writes real files, runs shell commands with real exit codes and timeouts, and globs/greps the workspace.
+- [x] **Workspace Tools** `P0` — `read_file`, `edit_file`, `write_file`, `bash`, `glob`, `grep` — **Crucible's own agent, not the MCP surface** · `crucible-daemon` (tools)
+  - **Gets you:** Crucible's internal agent reads/edits/writes real files, runs shell commands with real exit codes and timeouts, and globs/greps the workspace. They are deliberately **not** served over MCP: a harness that speaks MCP already has its own, Crucible enforced no permission checks on the copies it served, and `agent_factory` added the same six separately so every kiln session advertised each of them to the model twice. Removed from `CrucibleMcpServer`; the surface there is kiln + delegation.
   - **Proof:** `crates/crucible-daemon/src/tools/workspace.rs`:634-920 — `test_write_file_creates_file`, `::_creates_parent_dirs`, `test_edit_file_replaces_text`, `test_read_file_returns_content_with_line_numbers`, `test_bash_executes_command`, `::_returns_exit_code_on_failure`, `::_timeout`, `test_glob_finds_files`, `test_grep_finds_matches`; plus `tests/acp_integration_e2e.rs::test_tool_dispatch_executes_read_file`
 - [-] **TOON Formatting** `P0` — token-efficient response formatting · `crucible-daemon` (tools)
   - **Gets you:** TOON for **Lua plugin tool results only**. Every built-in Crucible MCP tool still returns JSON, so this entry — filed under the server that exposes those tools — promises a token saving nobody using them gets.
-  - **Proof:** _none for the built-in tools — `json_ok` is the sole formatter for all 21 of them and emits `ContentBlock::json`; `rg 'toon_success'` across `mcp_server.rs`, `notes/`, `search.rs`, `workspace.rs` and `kiln.rs` returns nothing. The formatter itself is well-tested (30 tests in `tools/toon_response.rs`) and has exactly one production call site, on the Lua-plugin-tool branch of `extended_mcp_server.rs`. Two clean fixes: move the bullet under MCP Gateway and reword to "Lua plugin tool results", or route `json_ok` through `toon_success_smart`._
+  - **Proof:** _none for the built-in tools — `json_ok` is the sole formatter for all 15 of them and emits `ContentBlock::json`; `rg 'toon_success'` across `mcp_server.rs`, `notes/`, `search.rs`, `workspace.rs` and `kiln.rs` returns nothing. The formatter itself is well-tested (30 tests in `tools/toon_response.rs`) and has exactly one production call site, on the Lua-plugin-tool branch of `extended_mcp_server.rs`. Two clean fixes: move the bullet under MCP Gateway and reword to "Lua plugin tool results", or route `json_ok` through `toon_success_smart`._
 
 ### MCP Gateway (Crucible → Upstream MCP Servers)
 

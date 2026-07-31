@@ -1,7 +1,11 @@
 //! Integration tests for CrucibleMcpServer tool exposure
 //!
-//! These tests verify that the MCP server correctly exposes all 13 Crucible tools
-//! and that they can be listed and called via the MCP protocol.
+//! The MCP surface is **kiln tools plus delegation** — what Crucible uniquely
+//! offers a client that connects to it. Workspace tools (`read_file`,
+//! `edit_file`, `write_file`, `bash`, `glob`, `grep`) are deliberately absent:
+//! any harness speaking MCP already has its own, Crucible enforced no
+//! permissions on the copies it served, and `agent_factory` added the same six
+//! from `WorkspaceTools` so every kiln session advertised each one twice.
 
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
@@ -30,13 +34,6 @@ const EXPECTED_TOOLS: &[&str] = &[
     "list_jobs",
     "get_job_result",
     "cancel_job",
-    // Workspace tools (6)
-    "read_file",
-    "edit_file",
-    "write_file",
-    "bash",
-    "glob",
-    "grep",
     // Skills tools (1)
     "skill_view",
 ];
@@ -53,24 +50,44 @@ fn create_test_server() -> CrucibleMcpServer {
     )
 }
 
-/// Test that CrucibleMcpServer exposes exactly 21 tools (including filtered ones)
+/// The surface is exactly `EXPECTED_TOOLS`, and `delegate_session` is hidden
+/// without a delegation context.
+///
+/// Named for the invariant rather than a number: this was
+/// `test_mcp_server_exposes_13_tools` while asserting 21, because the count in
+/// the name stopped being maintained the first time the surface changed.
 #[tokio::test]
-async fn test_mcp_server_exposes_13_tools() {
+async fn test_mcp_server_exposes_exactly_the_expected_tools() {
     let server = create_test_server();
 
-    let tool_count = server.tool_count();
+    // `EXPECTED_TOOLS` is the *listed* surface; `delegate_session` is
+    // registered but filtered out without a delegation context.
     assert_eq!(
-        tool_count, 21,
-        "Should expose exactly 21 tools (all tools including delegate_session), got {}",
-        tool_count
+        server.tool_count(),
+        EXPECTED_TOOLS.len() + 1,
+        "every registered tool is EXPECTED_TOOLS plus delegate_session"
     );
 
     let listed_tools = server.list_tools();
     assert_eq!(
-        listed_tools.len(), 20,
-        "Should list exactly 20 tools (delegate_session filtered when no delegation context), got {}",
-        listed_tools.len()
+        listed_tools.len(),
+        EXPECTED_TOOLS.len(),
+        "delegate_session is filtered out when there is no delegation context"
     );
+
+    for name in [
+        "bash",
+        "write_file",
+        "edit_file",
+        "read_file",
+        "glob",
+        "grep",
+    ] {
+        assert!(
+            !EXPECTED_TOOLS.contains(&name),
+            "{name} is a workspace tool; the MCP surface serves the kiln"
+        );
+    }
 }
 
 /// Test that all expected tools are present
@@ -145,12 +162,14 @@ async fn test_server_info_metadata() {
     assert!(info.server_info.title.is_some());
     assert_eq!(info.server_info.title.unwrap(), "Crucible MCP Server");
 
-    // Verify instructions mention tool count (dynamic based on tool_count())
+    // Verify instructions mention the tool count, derived rather than
+    // hardcoded — a literal here is one more number to forget.
     assert!(info.instructions.is_some());
     let instructions = info.instructions.unwrap();
+    let expected = format!("{} tools", EXPECTED_TOOLS.len() + 1);
     assert!(
-        instructions.contains("21 tools"),
-        "Instructions should mention 21 tools (tool_count includes all tools)"
+        instructions.contains(&expected),
+        "instructions should mention '{expected}', got: {instructions}"
     );
 
     // Verify tools capability is advertised
@@ -239,20 +258,14 @@ async fn test_tool_descriptions_are_meaningful() {
     }
 }
 
-/// Test that tool_count includes all tools (including filtered ones)
+/// `tool_count` counts registrations; `list_tools` counts what a client sees.
 #[tokio::test]
 async fn test_tool_count_matches_list_length() {
     let server = create_test_server();
 
-    let count = server.tool_count();
-    let tools = server.list_tools();
-
     assert_eq!(
-        count, 21,
-        "tool_count() should return all 21 tools (including delegate_session)"
-    );
-    assert_eq!(
-        tools.len(), 20,
-        "list_tools() should return 20 tools (delegate_session filtered when no delegation context)"
+        server.tool_count(),
+        server.list_tools().len() + 1,
+        "the only registered-but-unlisted tool is delegate_session"
     );
 }

@@ -27,7 +27,7 @@
 #![allow(missing_docs)]
 
 use super::helpers::{make_server_info, McpResultExt};
-use super::{KilnTools, NoteTools, SearchTools, WorkspaceTools};
+use super::{KilnTools, NoteTools, SearchTools};
 use crucible_core::background::{BackgroundSpawner, JobStatus};
 use crucible_core::config::DataClassification;
 use crucible_core::enrichment::EmbeddingProvider;
@@ -338,10 +338,6 @@ impl CrucibleMcpServer {
         self.tool_router.list_all().len()
     }
 
-    fn workspace_tools(&self) -> WorkspaceTools {
-        WorkspaceTools::new(&self.workspace_path)
-    }
-
     /// Borrow the delegation context or fail with a uniform error naming the
     /// tool that required it.
     fn require_delegation(&self, tool: &str) -> Result<&DelegationContext, rmcp::ErrorData> {
@@ -441,77 +437,17 @@ impl CrucibleMcpServer {
         self.search_tools.property_search(params).await
     }
 
-    #[tool(description = "Read file contents. Returns content with line numbers.")]
-    pub async fn read_file(
-        &self,
-        params: Parameters<ReadFileToolParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let params = params.0;
-        self.workspace_tools()
-            .read_file(params.path, params.offset, params.limit)
-            .await
-    }
-
-    #[tool(description = "Edit file by replacing text. old_string must match exactly.")]
-    pub async fn edit_file(
-        &self,
-        params: Parameters<EditFileToolParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let params = params.0;
-        self.workspace_tools()
-            .edit_file(
-                params.path,
-                params.old_string,
-                params.new_string,
-                params.replace_all,
-            )
-            .await
-    }
-
-    #[tool(description = "Write content to file. Creates parent directories if needed.")]
-    pub async fn write_file(
-        &self,
-        params: Parameters<WriteFileToolParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let params = params.0;
-        self.workspace_tools()
-            .write_file(params.path, params.content)
-            .await
-    }
-
-    #[tool(description = "Execute bash command in the workspace root.")]
-    pub async fn bash(
-        &self,
-        params: Parameters<BashToolParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let params = params.0;
-        self.workspace_tools()
-            .bash(params.command, params.timeout_ms)
-            .await
-    }
-
-    #[tool(description = "Find files matching glob pattern (e.g., '**/*.rs').")]
-    pub async fn glob(
-        &self,
-        params: Parameters<GlobToolParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let params = params.0;
-        self.workspace_tools()
-            .glob(params.pattern, params.path, params.limit)
-    }
-
-    #[tool(description = "Search file contents with regex. Uses ripgrep.")]
-    pub async fn grep(
-        &self,
-        params: Parameters<GrepToolParams>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let params = params.0;
-        self.workspace_tools()
-            .grep(params.pattern, params.path, params.glob, params.limit)
-            .await
-    }
-
-    // ===== Kiln Tools (3) =====
+    // No workspace tools here. `read_file`/`edit_file`/`write_file`/`bash`/
+    // `glob`/`grep` used to hang off this server, which meant two wrong things
+    // at once. Externally, an MCP client got an ungated `bash` from Crucible
+    // while already having its own — the connecting harness owns permissions
+    // for a server it connects to, and this one enforced none. Internally,
+    // `agent_factory` adds the same six from `WorkspaceTools::tool_definitions`
+    // and nothing deduplicated, so every kiln session advertised each of them
+    // to the model twice.
+    //
+    // What Crucible uniquely offers over MCP is the kiln, so that is what this
+    // serves. Pinned by `no_tool_is_advertised_to_the_model_twice`.
 
     #[tool(description = "Get comprehensive kiln information including root path and statistics")]
     pub async fn get_kiln_info(&self) -> Result<CallToolResult, rmcp::ErrorData> {

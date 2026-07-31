@@ -14,10 +14,6 @@ use std::sync::RwLock;
 
 use crate::tools::mcp_server::CrucibleMcpServer;
 use crate::tools::mcp_server::{
-    BashToolParams, EditFileToolParams, GlobToolParams, GrepToolParams, ReadFileToolParams,
-    WriteFileToolParams,
-};
-use crate::tools::mcp_server::{
     CancelJobParams, DelegateSessionParams, GetJobResultParams, ListJobsParams, SkillViewParams,
 };
 use crate::tools::notes::{
@@ -397,36 +393,10 @@ impl ToolExecutor for McpToolExecutor {
                     .cancel_job(Self::parse_params::<CancelJobParams>(params)?)
                     .await
             }
-            "read_file" => {
-                self.server
-                    .read_file(Self::parse_params::<ReadFileToolParams>(params)?)
-                    .await
-            }
-            "edit_file" => {
-                self.server
-                    .edit_file(Self::parse_params::<EditFileToolParams>(params)?)
-                    .await
-            }
-            "write_file" => {
-                self.server
-                    .write_file(Self::parse_params::<WriteFileToolParams>(params)?)
-                    .await
-            }
-            "bash" => {
-                self.server
-                    .bash(Self::parse_params::<BashToolParams>(params)?)
-                    .await
-            }
-            "glob" => {
-                self.server
-                    .glob(Self::parse_params::<GlobToolParams>(params)?)
-                    .await
-            }
-            "grep" => {
-                self.server
-                    .grep(Self::parse_params::<GrepToolParams>(params)?)
-                    .await
-            }
+            // Workspace tools are not on this server; `WorkspaceTools` is its
+            // own `ToolExecutor` and is the one the daemon registers. Routing
+            // them here too gave the model duplicate definitions and put an
+            // ungated `bash` on the external MCP surface.
             _ => return Err(ToolError::NotFound(name.to_string())),
         };
 

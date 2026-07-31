@@ -7,16 +7,16 @@ use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeReposito
 use crucible_daemon::InProcessMcpHost;
 use tempfile::TempDir;
 
+/// The kiln-and-delegation surface Crucible serves over MCP.
+///
+/// Workspace tools are deliberately absent — any harness speaking MCP already
+/// has `bash`/`read_file`/`edit_file`, Crucible enforced no permissions on the
+/// copies it served, and `agent_factory` added the same six separately so a
+/// kiln session advertised each of them to the model twice.
 const EXPECTED_TOOL_NAMES: &[&str] = &[
     "semantic_search",
     "text_search",
     "property_search",
-    "read_file",
-    "edit_file",
-    "write_file",
-    "bash",
-    "glob",
-    "grep",
     "list_notes",
     "read_note",
     "read_metadata",

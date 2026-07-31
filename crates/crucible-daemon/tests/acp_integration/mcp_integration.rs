@@ -590,10 +590,11 @@ async fn test_tools_list_over_http_returns_delegate_session() {
     let tool_names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     eprintln!("Tool names: {:?}", tool_names);
 
+    // Kiln + delegation only; workspace tools are not on the MCP surface.
     assert_eq!(
         tools.len(),
-        21,
-        "Should have 21 tools, got: {:?}",
+        15,
+        "Should have 15 tools, got: {:?}",
         tool_names
     );
     assert!(

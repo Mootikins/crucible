@@ -832,3 +832,36 @@ fn is_safe_classifies_workspace_tools() {
     assert!(is_safe("glob"), "glob should be safe (read-only)");
     assert!(is_safe("grep"), "grep should be safe (read-only)");
 }
+
+/// No tool may be advertised to the model twice.
+///
+/// A kiln-backed session took its tool definitions from two sources that
+/// overlap: `CrucibleMcpServer::list_tools()` and
+/// `WorkspaceTools::tool_definitions()`. Both carry `read_file`, `edit_file`,
+/// `write_file`, `bash`, `glob` and `grep`, and nothing deduplicates, so every
+/// kiln session paid for six duplicate schemas and handed the provider a
+/// function list with repeated names.
+#[tokio::test]
+async fn no_tool_is_advertised_to_the_model_twice() {
+    let tmp = tempfile::tempdir().unwrap();
+    let names = create_internal_mcp_tool_names_for_tests(
+        tmp.path(),
+        Some(tmp.path()),
+        None,
+        &[],
+        None,
+        None,
+        None,
+        "normal",
+        None,
+    )
+    .await;
+
+    let mut seen = std::collections::HashSet::new();
+    let dupes: Vec<&String> = names.iter().filter(|n| !seen.insert(*n)).collect();
+
+    assert!(
+        dupes.is_empty(),
+        "these tools are advertised more than once: {dupes:?} (full list: {names:?})"
+    );
+}

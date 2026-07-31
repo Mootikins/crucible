@@ -755,9 +755,10 @@ mod tests {
         );
 
         let tools = server.list_all_tools().await;
-        // 11 kiln tools (delegate_session filtered without context; incl. skill_view)
-        // + 3 job tools + 2 discovery tools + 6 workspace tools
-        assert_eq!(tools.len(), 22);
+        // 11 kiln tools (delegate_session filtered without context; incl.
+        // skill_view) + 3 job tools + 2 discovery tools. No workspace tools:
+        // the MCP surface serves the kiln.
+        assert_eq!(tools.len(), 16);
     }
 
     #[test]
