@@ -279,51 +279,32 @@ pub fn default_discovery_paths(
         paths.push(SearchPath::new(k.join("skills"), SkillScope::Kiln).with_agent("crucible"));
     }
 
-    if let Ok(runtime_base) = std::env::var("CRUCIBLE_RUNTIME") {
-        let runtime_path = PathBuf::from(runtime_base);
-        for entry in std::fs::read_dir(&runtime_path)
-            .ok()
-            .into_iter()
-            .flatten()
-            .flatten()
-        {
-            let path = entry.path();
-            if path.is_dir() {
-                let skills_path = path.join("skills");
-                if skills_path.exists() {
-                    debug!("Adding runtime skills path: {:?}", skills_path);
-                    paths.push(
-                        SearchPath::new(skills_path, SkillScope::Kiln).with_agent("crucible"),
-                    );
-                }
-            }
-        }
-    } else if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            let runtime_path = exe_dir.join("..").join("..").join("runtime");
-            if runtime_path.exists() {
-                for entry in std::fs::read_dir(&runtime_path)
-                    .ok()
-                    .into_iter()
-                    .flatten()
-                    .flatten()
-                {
-                    let path = entry.path();
-                    if path.is_dir() {
-                        let skills_path = path.join("skills");
-                        if skills_path.exists() {
-                            debug!("Adding exe-relative runtime skills path: {:?}", skills_path);
-                            paths.push(
-                                SearchPath::new(skills_path, SkillScope::Kiln)
-                                    .with_agent("crucible"),
-                            );
-                        }
-                    }
-                }
+    let runtime_roots = match std::env::var("CRUCIBLE_RUNTIME") {
+        Ok(base) => vec![PathBuf::from(base)],
+        Err(_) => crucible_core::runtime_roots::for_current_exe(),
+    };
+    paths.extend(runtime_skill_paths(&runtime_roots));
+
+    paths
+}
+
+/// The `<root>/<bundle>/skills` directories under any of `roots`.
+///
+/// Separate from [`default_discovery_paths`] so the layout question — which
+/// roots exist, in what order — is testable without `current_exe()`. That is
+/// the half that was wrong: only the dev tree was ever scanned, so an
+/// installed `cru` found no bundled skills and said nothing about it.
+fn runtime_skill_paths(roots: &[PathBuf]) -> Vec<SearchPath> {
+    let mut paths = Vec::new();
+    for root in roots {
+        for entry in std::fs::read_dir(root).ok().into_iter().flatten().flatten() {
+            let skills_path = entry.path().join("skills");
+            if entry.path().is_dir() && skills_path.exists() {
+                debug!("Adding runtime skills path: {:?}", skills_path);
+                paths.push(SearchPath::new(skills_path, SkillScope::Kiln).with_agent("crucible"));
             }
         }
     }
-
     paths
 }
 
@@ -339,6 +320,66 @@ mod tests {
             "---\nname: {skill_name}\ndescription: {description}\n---\n\nInstructions for {skill_name}.\n"
         );
         std::fs::write(skill_dir.join("SKILL.md"), content).unwrap();
+    }
+
+    /// Candidate roots carry `..` components by construction, so compare
+    /// what they resolve to rather than how they are spelled.
+    fn same_dir(a: &Path, b: &Path) -> bool {
+        match (a.canonicalize(), b.canonicalize()) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => false,
+        }
+    }
+
+    /// An installed `cru` must find the skills shipped alongside it.
+    ///
+    /// The resolver tried `$CRUCIBLE_RUNTIME` else `<exe>/../../runtime` — the
+    /// dev layout only. For `~/.local/bin/cru` that is `~/runtime`, so the
+    /// bundled `crucible-help` skills never loaded for anyone who installed
+    /// Crucible rather than building it, with no error to show for it. The
+    /// two sibling resolvers (`runtime_defaults`, `daemon_plugins`) both
+    /// already tried the installed layout first.
+    #[test]
+    fn an_installed_binary_finds_the_bundled_runtime_skills() {
+        let tmp = TempDir::new().unwrap();
+        let prefix = tmp.path();
+        let bin = prefix.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+
+        let bundle = prefix.join("share/crucible/runtime/crucible-help/skills");
+        std::fs::create_dir_all(&bundle).unwrap();
+        write_skill(&bundle, "cru-help", "Explains Crucible commands");
+
+        let roots = crucible_core::runtime_roots::exe_relative(&bin);
+        let found = runtime_skill_paths(&roots);
+
+        assert!(
+            found.iter().any(|p| same_dir(&p.path, &bundle)),
+            "installed-layout skills must be discovered, got: {:?}",
+            found.iter().map(|p| &p.path).collect::<Vec<_>>()
+        );
+    }
+
+    /// The dev tree still resolves — the installed layout is an addition, not
+    /// a replacement, and this is the layout every contributor runs.
+    #[test]
+    fn a_dev_tree_binary_still_finds_the_bundled_runtime_skills() {
+        let tmp = TempDir::new().unwrap();
+        let repo = tmp.path();
+        let exe_dir = repo.join("target/debug");
+        std::fs::create_dir_all(&exe_dir).unwrap();
+
+        let bundle = repo.join("runtime/crucible-help/skills");
+        std::fs::create_dir_all(&bundle).unwrap();
+        write_skill(&bundle, "cru-help", "Explains Crucible commands");
+
+        let found = runtime_skill_paths(&crucible_core::runtime_roots::exe_relative(&exe_dir));
+
+        assert!(
+            found.iter().any(|p| same_dir(&p.path, &bundle)),
+            "dev-layout skills must still be discovered, got: {:?}",
+            found.iter().map(|p| &p.path).collect::<Vec<_>>()
+        );
     }
 
     #[test]

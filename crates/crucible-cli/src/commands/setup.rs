@@ -52,34 +52,22 @@ fn default_runtime_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("~/.config/crucible/runtime"))
 }
 
-/// Find the source runtime directory — check alongside the binary, then repo-relative.
+/// Find the source runtime directory — check alongside the binary, then
+/// repo-relative, then the CWD.
+///
+/// The exe-relative pair comes from `crucible_core::runtime_roots` so this
+/// agrees with the three resolvers the daemon uses; a `cru setup` that copied
+/// from a directory the daemon then declines to read would be worse than not
+/// finding one at all.
 fn find_source_runtime() -> Option<PathBuf> {
-    // 1. Exe-relative: <exe>/../share/crucible/runtime (installed)
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe_dir) = exe.parent() {
-            let installed = exe_dir
-                .join("..")
-                .join("share")
-                .join("crucible")
-                .join("runtime");
-            if installed.join("plugins").exists() || installed.join("themes").exists() {
-                return Some(installed);
-            }
-            // 2. Dev: <exe>/../../runtime (cargo build in repo)
-            let dev = exe_dir.join("..").join("..").join("runtime");
-            if dev.join("plugins").exists() || dev.join("themes").exists() {
-                return Some(dev);
-            }
-        }
-    }
+    let looks_like_runtime =
+        |dir: &Path| dir.join("plugins").exists() || dir.join("themes").exists();
 
-    // 3. CWD/runtime (running from repo root)
-    let cwd_runtime = PathBuf::from("runtime");
-    if cwd_runtime.join("plugins").exists() || cwd_runtime.join("themes").exists() {
-        return Some(cwd_runtime);
-    }
-
-    None
+    crucible_core::runtime_roots::for_current_exe()
+        .into_iter()
+        // Running from the repo root, with no usable exe-relative tree.
+        .chain(std::iter::once(PathBuf::from("runtime")))
+        .find(|dir| looks_like_runtime(dir))
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {

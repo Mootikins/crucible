@@ -53,26 +53,9 @@ pub fn defaults_candidates(runtimepath: &[PathBuf], env_runtime: Option<&str>) -
         candidates.push(PathBuf::from(base).join("defaults").join("init.lua"));
     }
 
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe_dir) = exe.parent() {
-            candidates.push(
-                exe_dir
-                    .join("..")
-                    .join("share")
-                    .join("crucible")
-                    .join("runtime")
-                    .join("defaults")
-                    .join("init.lua"),
-            );
-            candidates.push(
-                exe_dir
-                    .join("..")
-                    .join("..")
-                    .join("runtime")
-                    .join("defaults")
-                    .join("init.lua"),
-            );
-        }
+    // Installed layout first, then the dev tree; see `runtime_roots`.
+    for root in crucible_core::runtime_roots::for_current_exe() {
+        candidates.push(root.join("defaults").join("init.lua"));
     }
 
     candidates
