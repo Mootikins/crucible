@@ -264,6 +264,47 @@ pub(crate) async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -
     }
 }
 
+/// Full-text search over note titles AND bodies (FTS5, BM25-ranked).
+///
+/// The `search_vectors` sibling answers "what is this about"; this one
+/// answers "which note says this word", which is what `cru search` needs and
+/// what listing notes and matching their filenames never could.
+pub(crate) async fn handle_search_text(req: Request, km: &Arc<KilnManager>) -> Response {
+    let kiln_path = require_param!(req, "kiln", as_str);
+    let query = require_param!(req, "query", as_str);
+    let limit = optional_param!(req, "limit", as_u64).unwrap_or(20) as usize;
+
+    let handle = match km.get_or_open(Path::new(kiln_path)).await {
+        Ok(c) => c,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    // FTS5 MATCH takes a query *syntax*, not a literal: a bare `foo-bar` or a
+    // stray quote is a syntax error, which would surface to the user as
+    // "search failed" for input that is obviously just words. Quote it as a
+    // phrase so anything a user types is searched literally.
+    let escaped = query.replace('"', "\"\"");
+    let fts_query = format!("\"{escaped}\"");
+
+    match handle.text.search(&fts_query, limit).await {
+        Ok(results) => {
+            let json_results: Vec<_> = results
+                .into_iter()
+                .map(|r| {
+                    serde_json::json!({
+                        "path": r.path,
+                        "title": r.title,
+                        "snippet": r.snippet,
+                        "rank": r.rank,
+                    })
+                })
+                .collect();
+            Response::success(req.id, json_results)
+        }
+        Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
+    }
+}
+
 pub(crate) async fn handle_embed_query(req: Request, km: &Arc<KilnManager>) -> Response {
     let kiln_path = require_param!(req, "kiln", as_str);
     let text = require_param!(req, "text", as_str);

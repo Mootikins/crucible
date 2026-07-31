@@ -120,6 +120,25 @@ impl FtsIndex {
         .map_err(|e: tokio::task::JoinError| StorageError::Backend(e.to_string()))?
     }
 
+    /// Whether the index holds no rows.
+    ///
+    /// Used to decide whether a kiln needs the one-time backfill: a kiln
+    /// processed before this index existed has notes in SQLite and nothing
+    /// here, and would search as though it were empty.
+    pub async fn is_empty(&self) -> StorageResult<bool> {
+        let pool = self.pool.clone();
+        tokio::task::spawn_blocking(move || {
+            pool.with_connection(|conn| {
+                let count: i64 = conn
+                    .query_row("SELECT count(*) FROM notes_fts", [], |row| row.get(0))
+                    .sql()?;
+                Ok(count == 0)
+            })
+        })
+        .await
+        .map_err(|e: tokio::task::JoinError| StorageError::Backend(e.to_string()))?
+    }
+
     /// Search for notes matching a query
     ///
     /// Uses FTS5's default ranking (BM25). The query supports FTS5 syntax:

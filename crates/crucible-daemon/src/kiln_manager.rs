@@ -68,6 +68,9 @@ use crate::storage::sqlite::{adapters as sqlite_adapters, SqliteClientHandle, Sq
 pub struct StorageHandle {
     pub sqlite: SqliteClientHandle,
     pub vectors: Arc<LanceVectorIndex>,
+    /// FTS5 full-text index over note titles and bodies. Backs
+    /// `search_text` — the thing `cru search` needs to see inside a note.
+    pub text: Arc<crate::storage::sqlite::FtsIndex>,
 }
 
 impl StorageHandle {
@@ -271,6 +274,43 @@ impl StorageHandle {
 /// the files on disk. Runs once after the note_links v1→v2 migration (the
 /// old rows carried raw text without spans and were unrecoverable in place).
 /// Best-effort: unreadable/unparseable files are skipped with a warning.
+/// Fill the FTS5 index from the notes already in SQLite, reading each body
+/// from disk. Best-effort: a note that cannot be read is skipped rather than
+/// failing the kiln open.
+async fn backfill_text_index(
+    root: &Path,
+    store: &dyn crucible_core::storage::NoteStore,
+    text: &crate::storage::sqlite::FtsIndex,
+) {
+    use crucible_core::storage::Scope;
+
+    let authority = Scope::workspace_unchecked(root);
+    let records = match store.list(&authority).await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!(error = %e, "text index backfill: listing notes failed");
+            return;
+        }
+    };
+    if records.is_empty() {
+        return;
+    }
+
+    let mut indexed = 0usize;
+    for rec in &records {
+        let file = root.join(&rec.path);
+        let Ok(body) = tokio::fs::read_to_string(&file).await else {
+            continue;
+        };
+        if let Err(e) = text.index(&rec.path, &rec.title, &body).await {
+            tracing::warn!(path = %rec.path, error = %e, "text index backfill: write failed");
+            continue;
+        }
+        indexed += 1;
+    }
+    info!(notes = indexed, "Text index backfilled");
+}
+
 async fn relink_kiln(root: &Path, store: &dyn crucible_core::storage::NoteStore) {
     use crucible_core::parser::{traits::MarkdownParser, CrucibleParser};
     use crucible_core::storage::{LinkOccurrence, Scope};
@@ -398,6 +438,21 @@ impl KilnManager {
             let store = handle.as_note_store();
             if store.needs_link_reindex() {
                 relink_kiln(&canonical, store.as_ref()).await;
+            }
+        }
+
+        // One-time backfill: a kiln processed before the text index existed
+        // has notes in SQLite and an empty `notes_fts`, so `cru search` would
+        // find nothing in it until every note happened to change. Shipping a
+        // search that is silently blank on existing kilns is the failure this
+        // whole change is correcting, so pay the walk once on open.
+        match handle.text.is_empty().await {
+            Ok(true) => {
+                backfill_text_index(&canonical, handle.as_note_store().as_ref(), &handle.text).await
+            }
+            Ok(false) => {}
+            Err(e) => {
+                tracing::warn!(error = %e, "could not check the text index; skipping backfill")
             }
         }
 
@@ -693,6 +748,13 @@ impl KilnManager {
             tracing::warn!(path = %relative_path, ?e, "failed to remove deleted note from vector index");
         }
 
+        // Same for the text index: a stale row there is worse than a stale
+        // vector, because it returns a hit the user can click on and open
+        // nothing.
+        if let Err(e) = conn.handle.text.remove(&relative_path).await {
+            tracing::warn!(path = %relative_path, ?e, "failed to remove deleted note from text index");
+        }
+
         match event {
             SessionEvent::Internal(inner) => {
                 if let InternalSessionEvent::NoteDeleted { existed, .. } = inner.as_ref() {
@@ -930,7 +992,8 @@ async fn create_pipeline(
     let config = pipeline_config(enrichment_config);
 
     let pipeline = NotePipeline::with_config(change_detector, enricher, note_store, config)
-        .with_vector_store(handle.vectors.clone());
+        .with_vector_store(handle.vectors.clone())
+        .with_text_index(handle.text.clone());
 
     Ok(pipeline)
 }
@@ -971,7 +1034,14 @@ async fn create_storage_handle(
             .await?,
     );
 
-    Ok(StorageHandle { sqlite, vectors })
+    let text = Arc::new(crate::storage::sqlite::FtsIndex::new(sqlite.pool().clone()));
+    text.setup().await?;
+
+    Ok(StorageHandle {
+        sqlite,
+        vectors,
+        text,
+    })
 }
 
 // ===========================================================================

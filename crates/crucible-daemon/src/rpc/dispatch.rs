@@ -19,6 +19,7 @@ pub const METHODS: &[&str] = &[
     "kiln.list",
     "kiln.set_classification",
     "search_vectors",
+    "search_text",
     "search_grep",
     "embed.query",
     "list_notes",
@@ -280,6 +281,7 @@ impl RpcDispatcher {
 
             // Note search and retrieval handlers
             "search_vectors" => to_response(id, self.handle_search_vectors(&req).await),
+            "search_text" => to_response(id, self.handle_search_text(&req).await),
             "search_grep" => to_response(id, self.handle_search_grep(&req).await),
             "embed.query" => to_response(id, self.handle_embed_query(&req).await),
             "list_notes" => to_response(id, self.handle_list_notes(&req).await),
@@ -695,6 +697,11 @@ impl RpcDispatcher {
 
     async fn handle_search_vectors(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::kiln::handle_search_vectors(req.clone(), &self.ctx.kiln).await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_search_text(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::kiln::handle_search_text(req.clone(), &self.ctx.kiln).await;
         map_server_resp(resp)
     }
 

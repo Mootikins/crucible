@@ -1,7 +1,7 @@
 //! Top-level `cru search` command for searching kiln notes.
 //!
-//! Supports semantic search (via embeddings + vector search), text search
-//! (title/name matching), or both combined.
+//! Supports semantic search (via embeddings + vector search), full-text
+//! search (FTS5 over titles and bodies), or both combined.
 
 use std::path::{Path, PathBuf};
 
@@ -66,37 +66,40 @@ pub async fn execute(
     let mode = SearchMode::parse(search_type);
     let mut results: Vec<SearchResultWithScore> = Vec::new();
 
-    // --- Text search: match query against note names/titles/paths ---
+    // --- Text search: FTS5 over note titles AND bodies ---
+    //
+    // This used to list notes and match the query against their names, titles
+    // and paths — so searching for a word that appeared only in a note's body
+    // returned nothing, while the same word in its filename worked. That reads
+    // as "search is bad" rather than "search does not look inside notes".
     if mode.includes_text() {
-        let query_lower = query.to_lowercase();
-
         for kiln in &all_kilns {
-            let notes = match client.list_notes(kiln, None, None).await {
-                Ok(n) => n,
+            let hits = match client.search_text(kiln, query, limit).await {
+                Ok(h) => h,
                 Err(e) => {
-                    output::warning(&format!(
-                        "Failed to list notes from {}: {e:#}",
-                        kiln.display()
-                    ));
+                    output::warning(&format!("Text search failed for {}: {e:#}", kiln.display()));
                     continue;
                 }
             };
 
-            for (name, path, title, _tags, _updated) in notes {
-                let display_title = title.as_deref().unwrap_or(&name);
-                if (display_title.to_lowercase().contains(&query_lower)
-                    || name.to_lowercase().contains(&query_lower)
-                    || path.to_lowercase().contains(&query_lower))
-                    && !results.iter().any(|r| r.id == path)
-                {
-                    let content = extract_snippet(kiln, &path, 200);
-                    results.push(SearchResultWithScore {
-                        id: path,
-                        title: display_title.to_string(),
-                        content,
-                        score: 1.0,
-                    });
+            for hit in hits {
+                if results.iter().any(|r| r.id == hit.path) {
+                    continue;
                 }
+                // BM25 ranks lower-is-better and is unbounded negative;
+                // the shared result type sorts higher-is-better.
+                let score = -hit.rank;
+                let content = if hit.snippet.is_empty() {
+                    extract_snippet(kiln, &hit.path, 200)
+                } else {
+                    hit.snippet.replace("<mark>", "").replace("</mark>", "")
+                };
+                results.push(SearchResultWithScore {
+                    id: hit.path,
+                    title: hit.title,
+                    content,
+                    score,
+                });
             }
         }
     }

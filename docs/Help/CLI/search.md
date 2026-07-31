@@ -10,11 +10,26 @@ tags:
 
 # Search Tools
 
-Crucible provides three complementary search methods through MCP (Model Context Protocol) tools.
+Crucible searches from two places: the `cru search` command, for you, and MCP tools, for agents and external programs.
 
-## Overview
+## The `cru search` command
 
-Search functionality is provided through MCP tools rather than a dedicated CLI command. This allows agents and external tools to search your knowledge base programmatically.
+```bash
+cru search "wikilinks"                  # full-text + semantic (default)
+cru search "wikilink" --type text       # full-text only
+cru search "how do links work" --type semantic
+cru search "architecture" --limit 5 -f json
+```
+
+Full-text search runs over an FTS5 index of every note's **title and body**, ranked by BM25, so a word that appears only inside a note is found. Semantic search embeds the query and searches the vector index; it needs an embedding provider configured (see `:h config.embedding`) and notes that have been processed.
+
+Notes are indexed as they are processed — by `cru process`, and automatically by the file watcher while the daemon is running. A kiln first opened by a build that predates the text index is backfilled once, on open.
+
+Your query is treated as literal words, not FTS5 query syntax: punctuation and operators like `AND` search for themselves.
+
+## MCP search tools
+
+The same knowledge base is searchable programmatically by agents, through three MCP tools.
 
 ### Available Search Tools
 

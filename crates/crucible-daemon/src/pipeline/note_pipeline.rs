@@ -71,6 +71,11 @@ pub struct NotePipeline {
     /// `None` in tests that don't exercise vector search.
     vector_store: Option<Arc<dyn VectorStore>>,
 
+    /// FTS5 full-text index (Phase 4). When set, the pipeline writes each
+    /// note's title and full body here so `search_text` can find words that
+    /// appear only inside a note. `None` in tests that don't exercise it.
+    text_index: Option<Arc<crate::storage::sqlite::FtsIndex>>,
+
     /// Configuration
     config: NotePipelineConfig,
 
@@ -94,6 +99,7 @@ impl NotePipeline {
             enricher,
             note_store,
             vector_store: None,
+            text_index: None,
             config,
             kiln_root: None,
         }
@@ -114,6 +120,7 @@ impl NotePipeline {
             enricher,
             note_store,
             vector_store: None,
+            text_index: None,
             config,
             kiln_root: None,
         }
@@ -123,6 +130,13 @@ impl NotePipeline {
     /// embedding to this index after the SQLite metadata upsert succeeds.
     pub fn with_vector_store(mut self, vectors: Arc<dyn VectorStore>) -> Self {
         self.vector_store = Some(vectors);
+        self
+    }
+
+    /// Attach the FTS5 text index. The pipeline writes each note's title and
+    /// body here after the SQLite metadata upsert succeeds.
+    pub fn with_text_index(mut self, text: Arc<crate::storage::sqlite::FtsIndex>) -> Self {
+        self.text_index = Some(text);
         self
     }
 
@@ -247,6 +261,32 @@ impl NotePipeline {
             .await
             .map_err(|e| anyhow::anyhow!("Storage error: {}", e))
             .with_context(|| format!("Phase 4: Failed to store note for '{}'", path.display()))?;
+
+        // Mirror the note into the FTS5 index. The full file body goes in,
+        // not `content.plain_text` — that is capped at 1000 characters for
+        // previews, so indexing it would make search silently blind past the
+        // first page of every note.
+        if let Some(text_index) = self.text_index.as_ref() {
+            match tokio::fs::read_to_string(path).await {
+                Ok(body) => {
+                    if let Err(e) = text_index
+                        .index(&path_str, &enriched.parsed.title(), &body)
+                        .await
+                    {
+                        tracing::error!(
+                            path = %path_str,
+                            ?e,
+                            "text index write failed; metadata persisted but `cru search` will miss this note"
+                        );
+                    }
+                }
+                Err(e) => tracing::warn!(
+                    path = %path_str,
+                    ?e,
+                    "could not re-read note for the text index"
+                ),
+            }
+        }
 
         // Mirror the embedding into the Lance vector index keyed by note
         // path. Lance is the source of truth for similarity search; the

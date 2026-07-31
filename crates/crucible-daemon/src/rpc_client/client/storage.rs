@@ -150,6 +150,24 @@ pub struct SearchVectorsRequest {
     pub scope: Option<crucible_core::storage::Scope>,
 }
 
+/// Request for `search_text`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SearchTextRequest {
+    pub kiln: String,
+    pub query: String,
+    pub limit: usize,
+}
+
+/// One full-text hit: note path, title, a highlighted snippet, and the BM25
+/// rank (lower is better).
+#[derive(Debug, Clone)]
+pub struct TextSearchHit {
+    pub path: String,
+    pub title: String,
+    pub snippet: String,
+    pub rank: f64,
+}
+
 /// Request for `embed.query`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EmbedQueryRequest {
@@ -280,6 +298,47 @@ impl DaemonClient {
             .filter_map(|v| v.as_f64().map(|f| f as f32))
             .collect();
         Ok(vector)
+    }
+
+    /// Full-text search over note titles and bodies.
+    ///
+    /// The counterpart to [`Self::search_vectors`]: this one finds notes that
+    /// literally contain the words, which is what a user typing `cru search`
+    /// usually means.
+    pub async fn search_text(
+        &self,
+        kiln_path: &Path,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<TextSearchHit>> {
+        let result: serde_json::Value = self
+            .typed_call(
+                "search_text",
+                SearchTextRequest {
+                    kiln: kiln_path.to_string_lossy().to_string(),
+                    query: query.to_string(),
+                    limit,
+                },
+            )
+            .await?;
+
+        Ok(result
+            .as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .filter_map(|item| {
+                Some(TextSearchHit {
+                    path: item.get("path")?.as_str()?.to_string(),
+                    title: item.get("title")?.as_str()?.to_string(),
+                    snippet: item
+                        .get("snippet")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    rank: item.get("rank").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                })
+            })
+            .collect())
     }
 
     /// Semantic vector search.

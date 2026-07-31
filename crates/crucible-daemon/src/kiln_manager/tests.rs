@@ -825,3 +825,62 @@ async fn a_deleted_canvas_is_reconciled_out_of_the_index() {
 
     assert_eq!(indexed_paths(&km, kiln).await, vec!["keep.md".to_string()]);
 }
+
+/// A kiln processed before the text index existed has notes in SQLite and an
+/// empty `notes_fts`. Without the backfill, `cru search` would return nothing
+/// on every such kiln until each note happened to change — a search that is
+/// silently blank on all existing data, which is the exact failure shape this
+/// index was added to fix.
+#[tokio::test]
+async fn opening_a_kiln_backfills_a_text_index_that_was_never_written() {
+    use crucible_core::parser::BlockHash;
+    use crucible_core::storage::note_store::NoteRecord;
+    use crucible_core::storage::Scope;
+
+    let kiln = TempDir::new().unwrap();
+    let root = kiln.path().to_path_buf();
+    std::fs::create_dir_all(root.join(".crucible")).unwrap();
+    std::fs::write(
+        root.join("legacy.md"),
+        "# Legacy\n\nzqxjvbn only appears in the body.\n",
+    )
+    .unwrap();
+
+    let handle = create_storage_handle(
+        &root.join(".crucible").join("crucible-sqlite.db"),
+        &root,
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Stand in for a note indexed by an older build: metadata present, no
+    // text-index row.
+    handle
+        .as_note_store()
+        .upsert(NoteRecord::new("legacy.md", BlockHash::zero()).with_title("Legacy"))
+        .await
+        .unwrap();
+    assert!(
+        handle.text.is_empty().await.unwrap(),
+        "precondition: the text index starts empty"
+    );
+
+    backfill_text_index(&root, handle.as_note_store().as_ref(), &handle.text).await;
+
+    let hits = handle.text.search("\"zqxjvbn\"", 10).await.unwrap();
+    assert_eq!(
+        hits.len(),
+        1,
+        "the backfill must index the body of an already-known note, got {hits:?}"
+    );
+    assert_eq!(hits[0].path, "legacy.md");
+
+    // And the scope authority used by the backfill must actually see the note.
+    let listed = handle
+        .as_note_store()
+        .list(&Scope::workspace_unchecked(&root))
+        .await
+        .unwrap();
+    assert_eq!(listed.len(), 1, "sanity: the note is visible to the walk");
+}
