@@ -596,6 +596,18 @@ impl OilChatApp {
                 self.runtime_config.set_str(key, value, ModSource::Command);
                 self.send_setting_ack("validation_retries", n);
             }
+            SetRpcAction::SetPrecognition(enabled) => {
+                // Keep the local copy in step: it is what `:set` and the
+                // replay banner read back. The daemon owns the setting; this
+                // is the display of it, not the setting itself.
+                self.precognition.precognition = *enabled;
+                // Stored as a bool, not the raw `value` string, so
+                // `:set precognition!` toggles it afterwards instead of
+                // choking on "off".
+                self.runtime_config
+                    .set(key, ConfigValue::Bool(*enabled), ModSource::Command);
+                self.send_setting_ack("precognition", enabled);
+            }
             SetRpcAction::SetPrecognitionResults(n) => {
                 self.runtime_config.set_str(key, value, ModSource::Command);
                 self.send_setting_ack("precognition.results", n);
@@ -616,6 +628,18 @@ impl OilChatApp {
         }
     }
 
+    /// A boolean `:set` key whose value the daemon owns needs the same RPC
+    /// from the value-less spellings (`:set precognition`, `:set nofoo`,
+    /// `:set foo!`) as from `foo=on`. Without this these three paths write a
+    /// local bool and stop — which is precisely how `:set precognition`
+    /// reported a new value while the daemon kept injecting.
+    fn daemon_sync_for_bool(key: &str, enabled: bool) -> Action<ChatAppMsg> {
+        match key {
+            "precognition" => Action::Send(ChatAppMsg::SetPrecognition(enabled)),
+            _ => Action::Continue,
+        }
+    }
+
     fn handle_set_enable(&mut self, key: &str) -> Action<ChatAppMsg> {
         if let Some(current) = self.runtime_config.get(key) {
             if current.as_bool().is_some() {
@@ -626,6 +650,7 @@ impl OilChatApp {
             } else {
                 let output = self.runtime_config.format_query(key);
                 self.add_system_message(output);
+                return Action::Continue;
             }
         } else {
             self.runtime_config
@@ -633,7 +658,7 @@ impl OilChatApp {
             self.sync_runtime_to_fields(key);
             self.send_setting_ack(key, true);
         }
-        Action::Continue
+        Self::daemon_sync_for_bool(key, true)
     }
 
     fn handle_set_disable(&mut self, key: &str) -> Action<ChatAppMsg> {
@@ -641,12 +666,13 @@ impl OilChatApp {
             Ok(()) => {
                 self.sync_runtime_to_fields(key);
                 self.send_setting_ack(key, false);
+                Self::daemon_sync_for_bool(key, false)
             }
             Err(e) => {
                 self.warn_invalid(e.to_string());
+                Action::Continue
             }
         }
-        Action::Continue
     }
 
     fn handle_set_toggle(&mut self, key: &str) -> Action<ChatAppMsg> {
@@ -654,6 +680,7 @@ impl OilChatApp {
             Ok(new_val) => {
                 self.sync_runtime_to_fields(key);
                 self.send_setting_ack(key, new_val);
+                return Self::daemon_sync_for_bool(key, new_val);
             }
             Err(e) => {
                 self.warn_invalid(e.to_string());

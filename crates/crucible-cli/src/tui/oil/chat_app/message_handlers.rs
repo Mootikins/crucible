@@ -175,6 +175,7 @@ impl OilChatApp {
             | ChatAppMsg::SetContextWindow(_)
             | ChatAppMsg::SetOutputValidation(_)
             | ChatAppMsg::SetValidationRetries(_)
+            | ChatAppMsg::SetPrecognition(_)
             | ChatAppMsg::SetPrecognitionResults(_)
             | ChatAppMsg::SetAutocompactThreshold(_) => {}
             _ => {

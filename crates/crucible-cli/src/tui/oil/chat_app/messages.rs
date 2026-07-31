@@ -168,6 +168,8 @@ pub enum ChatAppMsg {
     SetOutputValidation(String),
     /// **Command** (TUI → daemon): Set validation retry count.
     SetValidationRetries(u32),
+    /// **Command** (TUI → daemon): Turn precognition (auto-RAG) on or off.
+    SetPrecognition(bool),
     /// **Command** (TUI → daemon): Set precognition search results count.
     SetPrecognitionResults(usize),
     /// **Command** (TUI → daemon): Set auto-compaction threshold (fraction of `context_budget`).
@@ -312,6 +314,7 @@ impl ChatAppMsg {
             | Self::SetContextWindow(_)
             | Self::SetOutputValidation(_)
             | Self::SetValidationRetries(_)
+            | Self::SetPrecognition(_)
             | Self::SetPrecognitionResults(_)
             | Self::SetAutocompactThreshold(_)
             | Self::McpStatusLoaded(_)

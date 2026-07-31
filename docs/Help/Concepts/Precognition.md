@@ -74,12 +74,24 @@ This shows all current values, including `precognition` and `precognition.result
 
 ## When It Activates
 
-Precognition runs on every user message, with two exceptions:
+Precognition runs on the **first user message of a session** — not on every
+turn. Re-injecting on each turn bloats the context, costs prompt-cache hits, and
+mostly surfaces notes the opening injection already covered. Follow-ups in the
+same conversation are usually about the same topic.
 
+Three things stop it running even on a first message:
+
+- **Turned off**: `:set noprecognition` (see [Toggle On/Off](#toggle-onoff))
 - **Search commands**: Messages starting with `/search` skip enrichment (you're already searching manually)
 - **No knowledge base**: If you're running in lightweight mode without a processed vault, there's nothing to search
 
 It doesn't run on system messages, tool outputs, or agent responses. Only your typed messages trigger it.
+
+Because of the first-message rule, `:set noprecognition` part-way through a
+conversation has nothing left to prevent in *that* conversation — injection
+already happened on your opening message. The setting sticks to the session, so
+it takes effect on the next conversation, on a session you rewind with `:undo`,
+and for any other client attached to the same session.
 
 ## Requirements
 

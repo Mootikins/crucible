@@ -53,6 +53,7 @@ pub struct DaemonAgentHandle {
     pub(super) cached_output_validation: Option<String>,
     pub(super) cached_validation_retries: Option<u32>,
     pub(super) cached_autocompact_threshold: Option<f32>,
+    pub(super) cached_precognition: Option<bool>,
     pub(super) cached_precognition_results: Option<usize>,
     pub(super) kiln_path: Option<PathBuf>,
     pub(super) workspace: Option<PathBuf>,
@@ -93,6 +94,7 @@ impl DaemonAgentHandle {
             cached_output_validation: None,
             cached_validation_retries: None,
             cached_autocompact_threshold: None,
+            cached_precognition: None,
             cached_precognition_results: None,
             kiln_path: None,
             workspace: None,
@@ -267,6 +269,7 @@ impl DaemonAgentHandle {
             .await
             .ok()
             .flatten();
+        self.cached_precognition = client.session_get_precognition(session_id).await.ok();
     }
 
     pub fn session_id(&self) -> &str {

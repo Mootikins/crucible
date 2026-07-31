@@ -445,6 +445,31 @@ impl OilChatRunner {
                             }
                         }
                     }
+                    ChatAppMsg::SetPrecognition(enabled) => {
+                        tracing::info!(precognition = enabled, "Setting precognition");
+                        match params.agent.set_precognition(*enabled).await {
+                            Ok(()) => {
+                                tracing::info!(
+                                    precognition = enabled,
+                                    "Precognition set successfully"
+                                );
+                                params.app.set_precognition(*enabled);
+                            }
+                            Err(e) => {
+                                // Revert the optimistic local flag: the `:set`
+                                // readout must not claim a state the daemon
+                                // refused.
+                                tracing::warn!(precognition = enabled, error = %e, "set_precognition failed");
+                                params.app.set_precognition(!*enabled);
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Set precognition failed: {}",
+                                        e
+                                    )),
+                                );
+                            }
+                        }
+                    }
                     ChatAppMsg::SetPrecognitionResults(count) => {
                         tracing::info!(
                             precognition_results = count,

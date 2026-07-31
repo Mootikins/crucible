@@ -819,3 +819,164 @@ async fn test_precognition_select_handler_reaches_the_agent() {
         messages.iter().map(|m| &m.content).collect::<Vec<_>>()
     );
 }
+
+/// Turning Precognition off through the daemon's own API stops injection —
+/// and the control turn proves the harness can produce the positive.
+///
+/// **The undo is load-bearing.** `should_run_precognition` only fires on the
+/// first user message of a session, so the obvious shape of this test —
+/// enrich on turn 1, disable, assert nothing on turn 2 — asserts an absence
+/// that was going to happen anyway and passes with the toggle ripped out.
+/// Rewinding the conversation tree puts the cursor back where turn 2 is again
+/// the first message on the path, so the only thing standing between it and
+/// an injection is the flag under test.
+#[tokio::test]
+async fn precognition_disabled_mid_session_stops_enriching() {
+    crate::embedding::clear_embedding_provider_cache();
+
+    let tmp = TempDir::new().unwrap();
+    let kiln_path = tmp.path().to_path_buf();
+    std::fs::write(
+        kiln_path.join("Rust Ownership.md"),
+        "---\ntitle: Rust Ownership\ntags:\n  - rust\n---\n\n\
+         Rust uses ownership with borrowing and lifetimes to guarantee memory safety.\n",
+    )
+    .unwrap();
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            kiln_path.clone(),
+            Some(kiln_path.clone()),
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = create_test_agent_manager_with_enrichment(
+        session_manager.clone(),
+        crucible_core::config::EmbeddingProviderConfig::mock(Some(384)),
+    );
+
+    let handle = agent_manager
+        .kiln_manager
+        .get_or_open(&kiln_path)
+        .await
+        .unwrap();
+    handle
+        .as_note_store()
+        .upsert(
+            crucible_core::storage::note_store::NoteRecord::new(
+                "Rust Ownership.md",
+                crucible_core::parser::BlockHash::zero(),
+            )
+            .with_title("Rust Ownership")
+            .with_embedding(vec![0.1; 384])
+            .with_embedding_metadata("mock-model".to_string(), 384),
+        )
+        .await
+        .unwrap();
+
+    let mut agent = test_agent();
+    agent.precognition_enabled = true;
+    agent_manager
+        .configure_agent(&session.id, agent)
+        .await
+        .unwrap();
+
+    let turn1_messages = Arc::new(StdMutex::new(None));
+    agent_manager.agent_cache.insert(
+        session.id.clone(),
+        Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
+            received_prompt: Arc::new(StdMutex::new(None)),
+            received_messages: turn1_messages.clone(),
+            events: vec![script::text("ok"), script::done()],
+        }) as BoxedAgentHandle)),
+    );
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(128);
+
+    // Control turn: enrichment happens. Without seeing this pass, the
+    // negative assertion below would be worthless.
+    agent_manager
+        .send_message(
+            &session.id,
+            "Tell me about Rust ownership".to_string(),
+            &event_tx,
+            true,
+            None,
+        )
+        .await
+        .unwrap();
+    let event = next_event_or_skip(&mut event_rx, "precognition_complete").await;
+    assert!(
+        event.data["notes_count"].as_u64().unwrap() > 0,
+        "control turn must inject a note, got: {:?}",
+        event.data
+    );
+    let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+    assert!(
+        turn1_messages
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("control turn should have reached the agent")
+            .iter()
+            .any(|m| m.content.contains("Rust Ownership")),
+        "control turn: the kiln note should be in the agent's messages"
+    );
+
+    // Rewind, so the next message is once again the first on the path.
+    agent_manager
+        .undo(&session.id, 1, Some(&event_tx))
+        .await
+        .expect("undo should rewind the control turn");
+
+    agent_manager
+        .set_precognition(&session.id, false, Some(&event_tx))
+        .await
+        .expect("set_precognition should succeed");
+
+    // The toggle invalidates the agent cache — as it must, the handle is
+    // rebuilt from the new config — so re-seed the mock, with fresh capture
+    // state so nothing from the control turn can be mistaken for turn 2's.
+    let turn2_messages = Arc::new(StdMutex::new(None));
+    agent_manager.agent_cache.insert(
+        session.id.clone(),
+        Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
+            received_prompt: Arc::new(StdMutex::new(None)),
+            received_messages: turn2_messages.clone(),
+            events: vec![script::text("ok2"), script::done()],
+        }) as BoxedAgentHandle)),
+    );
+
+    agent_manager
+        .send_message(
+            &session.id,
+            "Tell me about Rust ownership".to_string(),
+            &event_tx,
+            true,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_no_event_until_message_complete(&mut event_rx, "precognition_complete").await;
+
+    let messages = turn2_messages
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("turn 2 should have reached the agent");
+    assert!(
+        !messages
+            .iter()
+            .any(|m| m.content.contains("Rust Ownership")),
+        "precognition is off: no kiln note should reach the agent, got: {:?}",
+        messages.iter().map(|m| &m.content).collect::<Vec<_>>()
+    );
+
+    crate::embedding::clear_embedding_provider_cache();
+}

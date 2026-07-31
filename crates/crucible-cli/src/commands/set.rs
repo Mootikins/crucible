@@ -173,6 +173,12 @@ pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyh
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to set validation retries: {}", e))?;
             }
+            SetRpcAction::SetPrecognition(enabled) => {
+                client
+                    .session_set_precognition(&session_id, *enabled)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to set precognition: {}", e))?;
+            }
             SetRpcAction::SetPrecognitionResults(count) => {
                 client
                     .session_set_precognition_results(&session_id, *count)

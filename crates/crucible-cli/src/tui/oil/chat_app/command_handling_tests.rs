@@ -669,3 +669,48 @@ fn a_mode_id_matches_case_insensitively() {
         "the daemon's own spelling wins — it is what set_mode validates against"
     );
 }
+
+/// `:set precognition` / `:set noprecognition` / `:set precognition!` are the
+/// spellings `:help` advertises, and they never reach `classify_set_value` —
+/// they go straight to the runtime-config enable/disable/toggle handlers.
+/// Those handlers wrote a local bool and returned `Continue`, which made the
+/// three documented spellings the *most* broken of the four: the readout
+/// changed, the daemon kept injecting.
+#[test]
+fn value_less_precognition_spellings_carry_the_value_to_the_daemon() {
+    let mut app = app();
+
+    let off = app.handle_set_command("set noprecognition");
+    assert!(
+        matches!(off, Action::Send(ChatAppMsg::SetPrecognition(false))),
+        "`:set noprecognition` must sync precognition=false, got {off:?}"
+    );
+
+    let on = app.handle_set_command("set precognition");
+    assert!(
+        matches!(on, Action::Send(ChatAppMsg::SetPrecognition(true))),
+        "`:set precognition` must sync precognition=true, got {on:?}"
+    );
+
+    // Toggle reads the value the previous line left behind, so this also
+    // pins that the enable path stored a real bool rather than a string.
+    let toggled = app.handle_set_command("set precognition!");
+    assert!(
+        matches!(toggled, Action::Send(ChatAppMsg::SetPrecognition(false))),
+        "`:set precognition!` must sync the flipped value, got {toggled:?}"
+    );
+}
+
+/// `thinking` shares the `:set` arm precognition used to sit in, and it is
+/// staying there: it hides or shows reasoning blocks in this client's
+/// transcript and changes nothing the daemon does. Pinning that so the next
+/// person to read the two side by side does not "fix" it into an RPC.
+#[test]
+fn thinking_stays_a_local_display_toggle() {
+    let mut app = app();
+    let action = run_set(&mut app, "thinking=false");
+    assert!(
+        matches!(action, Action::Continue),
+        "`:set thinking` is display state; it must not emit a daemon-sync message, got {action:?}"
+    );
+}

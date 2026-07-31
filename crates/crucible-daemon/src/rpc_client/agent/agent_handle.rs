@@ -132,6 +132,9 @@ impl AgentHandle for DaemonAgentHandle {
             if let Some(count) = self.cached_precognition_results {
                 config.precognition_results = count;
             }
+            if let Some(enabled) = self.cached_precognition {
+                config.precognition_enabled = enabled;
+            }
             if let Err(e) = self.client.session_configure_agent(&new_id, &config).await {
                 tracing::warn!(error = %e, "Failed to configure agent on new session");
             }
@@ -385,6 +388,20 @@ impl AgentHandle for DaemonAgentHandle {
 
     fn get_validation_retries(&self) -> u32 {
         self.cached_validation_retries.unwrap_or(3)
+    }
+
+    async fn set_precognition(&mut self, enabled: bool) -> ChatResult<()> {
+        tracing::info!(session_id = %self.session_id, precognition = enabled, "Setting precognition via daemon");
+        self.client
+            .session_set_precognition(&self.session_id, enabled)
+            .await
+            .chat_comm()?;
+        self.cached_precognition = Some(enabled);
+        Ok(())
+    }
+
+    fn get_precognition(&self) -> bool {
+        self.cached_precognition.unwrap_or(true)
     }
 
     async fn set_precognition_results(&mut self, count: usize) -> ChatResult<()> {

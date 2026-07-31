@@ -363,6 +363,19 @@ pub trait AgentHandle: crate::turn::Agent + Send + Sync {
         None
     }
 
+    /// Turn Precognition (auto-RAG context injection) on or off for this
+    /// session. Session-scoped, not display state: every client attached to
+    /// the session sees the change.
+    async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_precognition".into()))
+    }
+
+    /// Whether Precognition is currently enabled. Defaults to on, matching
+    /// `AgentConfig`.
+    fn get_precognition(&self) -> bool {
+        true
+    }
+
     /// Set the maximum number of Precognition search results.
     async fn set_precognition_results(&mut self, _count: usize) -> ChatResult<()> {
         Err(ChatError::NotSupported("set_precognition_results".into()))
@@ -594,6 +607,14 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
 
     fn get_validation_retries(&self) -> u32 {
         (**self).get_validation_retries()
+    }
+
+    async fn set_precognition(&mut self, enabled: bool) -> ChatResult<()> {
+        (**self).set_precognition(enabled).await
+    }
+
+    fn get_precognition(&self) -> bool {
+        (**self).get_precognition()
     }
 
     async fn set_precognition_results(&mut self, count: usize) -> ChatResult<()> {

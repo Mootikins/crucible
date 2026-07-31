@@ -98,6 +98,11 @@ impl AgentHandle for KnobRecordingAgent {
         Ok(())
     }
 
+    async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {
+        self.calls.push("set_precognition");
+        Ok(())
+    }
+
     async fn set_precognition_results(&mut self, _count: usize) -> ChatResult<()> {
         self.calls.push("set_precognition_results");
         Ok(())
@@ -146,6 +151,7 @@ async fn record_rpc_calls(app: &mut OilChatApp, action: Action<ChatAppMsg>) -> V
 #[test_case("contextwindow=20", "set_context_window" ; "context window")]
 #[test_case("outputvalidation=json", "set_output_validation" ; "output validation")]
 #[test_case("validationretries=2", "set_validation_retries" ; "validation retries")]
+#[test_case("precognition=off", "set_precognition" ; "precognition")]
 #[test_case("precognition.results=8", "set_precognition_results" ; "precognition results")]
 #[test_case("autocompact_threshold=0.8", "set_autocompact_threshold" ; "autocompact threshold")]
 #[tokio::test]

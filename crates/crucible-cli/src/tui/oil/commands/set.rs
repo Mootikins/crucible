@@ -38,6 +38,7 @@ pub enum SetRpcAction {
     SetContextWindow(Option<usize>),
     SetOutputValidation(String),
     SetValidationRetries(u32),
+    SetPrecognition(bool),
     SetPrecognitionResults(usize),
     /// Auto-compaction threshold as a fraction of `context_budget`.
     /// `None` clears the override (daemon falls back to its default).
@@ -290,10 +291,22 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                 value: CliValue::Set(value),
             })
         }
-        "thinking" | "precognition" => Ok(SetEffect::TuiLocal {
+        // `thinking` stays TUI-local on purpose: it hides or shows reasoning
+        // blocks in this client's transcript and changes nothing about the
+        // turn. `precognition` looked like its neighbour and was not — it
+        // decides whether the daemon injects kiln context, so a TUI-local
+        // toggle only ever changed the `:set` readout.
+        "thinking" => Ok(SetEffect::TuiLocal {
             key,
             value: CliValue::Set(value),
         }),
+        "precognition" => {
+            let enabled = parse_bool(&value).map_err(|message| SetError::InvalidValue {
+                key: key.clone(),
+                message,
+            })?;
+            Ok(SetEffect::DaemonRpc(SetRpcAction::SetPrecognition(enabled)))
+        }
         // Syntax-highlight theme (syntect). Was spelled `theme`, which collided
         // with the UI colorscheme — three different things were called "theme".
         // Validated against the loaded theme set so a typo fails loudly instead
@@ -370,6 +383,7 @@ impl SetRpcAction {
             SetRpcAction::SetContextWindow(n) => Some(ChatAppMsg::SetContextWindow(n)),
             SetRpcAction::SetOutputValidation(v) => Some(ChatAppMsg::SetOutputValidation(v)),
             SetRpcAction::SetValidationRetries(n) => Some(ChatAppMsg::SetValidationRetries(n)),
+            SetRpcAction::SetPrecognition(enabled) => Some(ChatAppMsg::SetPrecognition(enabled)),
             SetRpcAction::SetPrecognitionResults(n) => Some(ChatAppMsg::SetPrecognitionResults(n)),
             SetRpcAction::SetAutocompactThreshold(t) => {
                 Some(ChatAppMsg::SetAutocompactThreshold(t))
@@ -381,6 +395,20 @@ impl SetRpcAction {
 fn classify_key_without_value(key: String, effect: CliValue) -> Result<SetEffect, SetError> {
     if is_tui_local_key(&key) {
         Ok(SetEffect::TuiLocal { key, value: effect })
+    } else if key == "precognition" {
+        // `:set precognition` / `:set noprecognition` are the spellings the
+        // help text advertises, so they have to reach the daemon too. A bare
+        // toggle cannot be resolved here — this classifier has no session
+        // state — so the TUI resolves it against its own copy and the
+        // value-less CLI form asks for an explicit one.
+        match effect {
+            CliValue::Enable => Ok(SetEffect::DaemonRpc(SetRpcAction::SetPrecognition(true))),
+            CliValue::Disable => Ok(SetEffect::DaemonRpc(SetRpcAction::SetPrecognition(false))),
+            CliValue::Toggle | CliValue::Set(_) => Err(SetError::InvalidValue {
+                key,
+                message: "toggling needs the current value; use precognition=on|off".to_string(),
+            }),
+        }
     } else if is_daemon_rpc_key(&key) {
         Err(SetError::InvalidValue {
             key,
