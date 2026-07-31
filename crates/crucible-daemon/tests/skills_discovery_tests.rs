@@ -109,7 +109,7 @@ fn test_runtime_skill_discovered() {
     );
     assert_eq!(
         resolved.skill.source.scope,
-        SkillScope::Kiln,
-        "runtime skills should have Kiln scope"
+        SkillScope::Builtin,
+        "runtime skills are Builtin scope: below anything a user wrote"
     );
 }

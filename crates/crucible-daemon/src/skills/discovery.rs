@@ -301,7 +301,8 @@ fn runtime_skill_paths(roots: &[PathBuf]) -> Vec<SearchPath> {
             let skills_path = entry.path().join("skills");
             if entry.path().is_dir() && skills_path.exists() {
                 debug!("Adding runtime skills path: {:?}", skills_path);
-                paths.push(SearchPath::new(skills_path, SkillScope::Kiln).with_agent("crucible"));
+                paths
+                    .push(SearchPath::new(skills_path, SkillScope::Builtin).with_agent("crucible"));
             }
         }
     }
@@ -543,6 +544,51 @@ mod tests {
         let review = &resolved["review"];
         assert_eq!(review.skill.description, "Kiln review");
         assert_eq!(review.shadowed.len(), 2);
+    }
+
+    /// A skill you wrote beats one Crucible shipped.
+    ///
+    /// Bundled runtime skills were tagged `SkillScope::Kiln` — the same scope
+    /// as `<kiln>/skills` — so name collisions were decided by search-path
+    /// order rather than by precedence, and the bundled one won: `discover`
+    /// replaces on `>=`, and runtime paths are pushed after the kiln's. Your
+    /// own `review` skill lost to a shipped `review` and nothing said so.
+    #[test]
+    fn a_bundled_skill_never_shadows_one_you_wrote() {
+        let tmp = TempDir::new().unwrap();
+
+        let bundled = tmp.path().join("runtime");
+        std::fs::create_dir(&bundled).unwrap();
+        write_skill(&bundled, "review", "Bundled review");
+
+        let kiln = tmp.path().join("kiln");
+        std::fs::create_dir(&kiln).unwrap();
+        write_skill(&kiln, "review", "Kiln review");
+
+        let discovery = FolderDiscovery::new(vec![
+            SearchPath::new(kiln, SkillScope::Kiln),
+            SearchPath::new(bundled, SkillScope::Builtin),
+        ]);
+        let resolved = discovery.discover().unwrap();
+
+        assert_eq!(
+            resolved["review"].skill.description, "Kiln review",
+            "the kiln's own skill must win"
+        );
+    }
+
+    /// …and a bundled skill with no competition still loads.
+    #[test]
+    fn a_bundled_skill_loads_when_nothing_shadows_it() {
+        let tmp = TempDir::new().unwrap();
+        let bundled = tmp.path().join("runtime");
+        std::fs::create_dir(&bundled).unwrap();
+        write_skill(&bundled, "cru-help", "Explains Crucible");
+
+        let discovery = FolderDiscovery::new(vec![SearchPath::new(bundled, SkillScope::Builtin)]);
+        let resolved = discovery.discover().unwrap();
+
+        assert_eq!(resolved["cru-help"].skill.description, "Explains Crucible");
     }
 
     #[test]

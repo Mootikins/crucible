@@ -5,9 +5,19 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// Scope/priority level for a skill
+/// Scope/priority level for a skill.
+///
+/// **Declaration order is precedence order** — `Ord` is derived, and
+/// `FolderDiscovery::discover` keeps the highest scope on a name collision.
+/// Lowest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum SkillScope {
+    /// Skills Crucible ships (`<runtime>/*/skills/`).
+    ///
+    /// Below everything a user wrote. These used to be tagged `Kiln`, which
+    /// made a collision with the user's own `<kiln>/skills` a matter of
+    /// search-path order — and the bundled one won it.
+    Builtin,
     /// Personal skills (~/.config/crucible/skills/)
     Personal,
     /// Workspace skills (.<agent>/skills/ in project)
@@ -19,6 +29,7 @@ pub enum SkillScope {
 impl std::fmt::Display for SkillScope {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            SkillScope::Builtin => write!(f, "builtin"),
             SkillScope::Personal => write!(f, "personal"),
             SkillScope::Workspace => write!(f, "workspace"),
             SkillScope::Kiln => write!(f, "kiln"),
