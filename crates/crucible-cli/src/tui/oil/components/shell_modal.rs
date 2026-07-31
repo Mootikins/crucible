@@ -24,8 +24,26 @@ pub enum ShellModalMsg {
 #[derive(Debug, Clone)]
 pub enum ShellModalOutput {
     None,
-    Close(ShellHistoryItem),
-    InsertOutput { content: String, truncated: bool },
+    /// The modal is done. `insert` is `Some` when the user asked for the
+    /// output in the composer (`i` / `t`).
+    ///
+    /// One variant rather than two, because `i` does both things at once and
+    /// there is only ever one output per key. It used to stash a
+    /// `pending_insert` flag and return `Close`, expecting a later `Tick` to
+    /// emit the insert — but the app drops the modal the moment it sees
+    /// `Close`, so that `Tick` never arrived and `i` inserted nothing.
+    Close {
+        history_item: ShellHistoryItem,
+        insert: Option<InsertedOutput>,
+    },
+}
+
+/// Shell output the user chose to paste into the composer.
+#[derive(Debug, Clone)]
+pub struct InsertedOutput {
+    pub content: String,
+    /// Only the last 20 lines, because the full output was too long.
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -48,7 +66,6 @@ pub struct ShellModal {
     working_dir: PathBuf,
     output_receiver: Option<Receiver<String>>,
     child_pid: Option<u32>,
-    pending_insert: Option<bool>,
 }
 
 impl ShellModal {
@@ -67,7 +84,6 @@ impl ShellModal {
             working_dir: working_dir.clone(),
             output_receiver: Some(rx),
             child_pid: None,
-            pending_insert: None,
         };
 
         let shell = if cfg!(windows) { "cmd" } else { "sh" };
@@ -145,14 +161,6 @@ impl ShellModal {
         match msg {
             ShellModalMsg::Tick => {
                 self.poll_output(visible_lines);
-
-                if let Some(truncated) = self.pending_insert.take() {
-                    return ShellModalOutput::InsertOutput {
-                        content: self.format_output_for_insert(truncated),
-                        truncated,
-                    };
-                }
-
                 ShellModalOutput::None
             }
             ShellModalMsg::Key(key) => self.handle_key(key, visible_lines),
@@ -170,15 +178,9 @@ impl ShellModal {
                 }
                 ShellModalOutput::None
             }
-            KeyCode::Esc | KeyCode::Char('q') if !is_running => self.close(),
-            KeyCode::Char('i') if !is_running => {
-                self.pending_insert = Some(false);
-                self.close()
-            }
-            KeyCode::Char('t') if !is_running => {
-                self.pending_insert = Some(true);
-                self.close()
-            }
+            KeyCode::Esc | KeyCode::Char('q') if !is_running => self.close(None),
+            KeyCode::Char('i') if !is_running => self.close(Some(false)),
+            KeyCode::Char('t') if !is_running => self.close(Some(true)),
             KeyCode::Char('e') if !is_running => {
                 self.open_in_editor();
                 ShellModalOutput::None
@@ -244,7 +246,9 @@ impl ShellModal {
         }
     }
 
-    fn close(&self) -> ShellModalOutput {
+    /// Close the modal. `insert` carries the truncation choice when the user
+    /// asked for the output in the composer (`Some(true)` = tail only).
+    fn close(&self, insert: Option<bool>) -> ShellModalOutput {
         let exit_code = match self.status {
             ShellStatus::Completed { exit_code } => exit_code,
             ShellStatus::Cancelled => -1,
@@ -260,12 +264,18 @@ impl ShellModal {
             .cloned()
             .collect();
 
-        ShellModalOutput::Close(ShellHistoryItem {
-            command: self.command.clone(),
-            exit_code,
-            output_tail,
-            output_path: self.output_path.clone(),
-        })
+        ShellModalOutput::Close {
+            history_item: ShellHistoryItem {
+                command: self.command.clone(),
+                exit_code,
+                output_tail,
+                output_path: self.output_path.clone(),
+            },
+            insert: insert.map(|truncated| InsertedOutput {
+                content: self.format_output_for_insert(truncated),
+                truncated,
+            }),
+        }
     }
 
     fn open_in_editor(&self) {
@@ -640,8 +650,10 @@ mod tests {
         let mut modal = create_test_modal(ShellStatus::Completed { exit_code: 42 });
         modal.output_lines = vec!["a".into(), "b".into(), "c".into()];
 
-        match modal.close() {
-            ShellModalOutput::Close(item) => {
+        match modal.close(None) {
+            ShellModalOutput::Close {
+                history_item: item, ..
+            } => {
                 assert_eq!(item.command, "echo test");
                 assert_eq!(item.exit_code, 42);
                 assert_eq!(item.output_tail.len(), 3);
@@ -719,7 +731,6 @@ mod tests {
             working_dir: PathBuf::from("/tmp"),
             output_receiver: None,
             child_pid: None,
-            pending_insert: None,
         }
     }
 }

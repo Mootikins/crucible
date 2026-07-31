@@ -65,19 +65,27 @@ impl OilChatApp {
         Action::Continue
     }
 
-    pub(super) fn handle_shell_modal_output(&mut self, output: ShellModalOutput) {
+    pub(crate) fn handle_shell_modal_output(&mut self, output: ShellModalOutput) {
         match output {
             ShellModalOutput::None => {}
-            ShellModalOutput::Close(history_item) => {
+            ShellModalOutput::Close {
+                history_item,
+                insert,
+            } => {
                 self.save_shell_output();
+                // Before `finalize_shell_modal`, which drops the modal.
+                if let Some(inserted) = insert {
+                    let label = if inserted.truncated {
+                        " (truncated)"
+                    } else {
+                        ""
+                    };
+                    self.input.insert_str(&format!(
+                        "Here is the output of a shell command I ran{}:\n\n```\n{}\n```\n",
+                        label, inserted.content
+                    ));
+                }
                 self.finalize_shell_modal(history_item);
-            }
-            ShellModalOutput::InsertOutput { content, truncated } => {
-                let label = if truncated { " (truncated)" } else { "" };
-                self.input.insert_str(&format!(
-                    "Here is the output of a shell command I ran{}:\n\n```\n{}\n```\n",
-                    label, content
-                ));
             }
         }
     }
@@ -194,11 +202,25 @@ impl OilChatApp {
         self.needs_full_redraw = true;
     }
 
-    /// Update shell modal state after closing: increment counter, add execution.
-    /// TODO: wire shell execution results into container state
+    /// Record a finished shell command in the transcript.
+    ///
+    /// This used to take the `ShellHistoryItem` and drop it on the floor
+    /// (`let _ = &history_item;`), which left `ContainerList::add_shell_execution`
+    /// and the whole `ChatNode::ShellExecution` render path with no call site:
+    /// you ran `!cargo build`, closed the modal, and nothing about it appeared
+    /// in the conversation.
     fn update_shell_modal(&mut self, history_item: &ShellHistoryItem) {
         self.message_queue.message_counter += 1;
-        let _ = &history_item; // suppress unused warning
+        let id = format!("shell-{}", self.message_queue.message_counter);
+        self.container_list.add_shell_execution(
+            crate::tui::oil::viewport_cache::CachedShellExecution::new(
+                id,
+                &history_item.command,
+                history_item.exit_code,
+                history_item.output_tail.clone(),
+                history_item.output_path.clone(),
+            ),
+        );
     }
 
     /// Finalize shell modal: update state and leave alternate screen.

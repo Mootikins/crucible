@@ -6,14 +6,16 @@
 //! additionally unit-tested in `components/shell_modal.rs`; shell-history
 //! storage (US-602) is tested inline in `chat_app/tests.rs`.
 //!
-//! Bug found (see `insert_key_should_emit_output_but_closes_first`): the
-//! `i` handler returns `Close` before any `Tick` can consume the pending
-//! insert, so the app finalizes the modal and stdout is never inserted.
+//! Two bugs lived here and are now pinned: `i` returned `Close` before any
+//! `Tick` could consume its pending insert (so stdout never reached the
+//! composer), and the app discarded the closed modal's `ShellHistoryItem`
+//! (so the command never reached the transcript).
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_oil::render::render_to_plain_text;
 
-use crate::tui::oil::components::{ShellModal, ShellModalMsg, ShellModalOutput};
+use super::support::StoryRuntime;
+use crate::tui::oil::components::{ShellHistoryItem, ShellModal, ShellModalMsg, ShellModalOutput};
 
 fn key(c: char) -> KeyEvent {
     KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
@@ -61,44 +63,74 @@ fn failing_command_shows_nonzero_exit_code() {
     );
 }
 
+/// `i` must carry the output in the same step it closes.
+///
+/// This was `#[ignore]`d as a known bug: `i` stashed a `pending_insert` flag
+/// and returned `Close`, expecting a later `Tick` to emit the output — but the
+/// app drops the modal the moment it sees `Close`, so no further `Tick` ever
+/// reached it. One output per key is all the dispatcher ever sees, so the
+/// output has to say both things at once.
 #[test]
-fn quit_key_closes_completed_modal() {
-    let mut modal = run_to_completion("echo done");
-    let out = modal.update(ShellModalMsg::Key(key('q')), 20);
-    assert!(
-        matches!(out, ShellModalOutput::Close(_)),
-        "`q` should close a finished modal"
-    );
-}
-
-#[test]
-fn insert_output_content_includes_command_and_stdout() {
-    // Drives the insert-content generation directly at the component level
-    // (`i` sets pending_insert + returns Close; the following Tick emits the
-    // InsertOutput). Confirms the payload the chat input would receive.
+fn insert_key_inserts_output_in_one_step() {
     let mut modal = run_to_completion("printf 'alpha\\nbeta\\n'");
-    let _ = modal.update(ShellModalMsg::Key(key('i')), 20);
-    let out = modal.update(ShellModalMsg::Tick, 20);
+    let out = modal.update(ShellModalMsg::Key(key('i')), 20);
     match out {
-        ShellModalOutput::InsertOutput { content, .. } => {
+        ShellModalOutput::Close {
+            insert: Some(inserted),
+            ..
+        } => {
             assert!(
-                content.contains("alpha") && content.contains("beta"),
-                "insert payload should carry the command's stdout, got:\n{content}"
+                inserted.content.contains("alpha") && inserted.content.contains("beta"),
+                "insert payload should carry the command's stdout, got:\n{}",
+                inserted.content
             );
+            assert!(!inserted.truncated, "`i` inserts the whole output");
         }
-        other => panic!("expected InsertOutput after pending insert, got {other:?}"),
+        other => panic!("'i' should close AND insert in one step, got {other:?}"),
     }
 }
 
+/// …and `q` closes without inserting anything.
 #[test]
-#[ignore = "bug: 'i' returns Close before a Tick consumes pending_insert, so the \
-            app finalizes the modal and stdout is never inserted into chat input (US-601)"]
-fn insert_key_should_emit_output_but_closes_first() {
-    let mut modal = run_to_completion("printf 'alpha\\nbeta\\n'");
-    // In the real app loop this single output is all the dispatcher sees.
-    let out = modal.update(ShellModalMsg::Key(key('i')), 20);
+fn quit_key_closes_completed_modal_without_inserting() {
+    let mut modal = run_to_completion("echo done");
+    match modal.update(ShellModalMsg::Key(key('q')), 20) {
+        ShellModalOutput::Close { insert, .. } => {
+            assert!(insert.is_none(), "`q` discards the output, got {insert:?}");
+        }
+        other => panic!("`q` should close a finished modal, got {other:?}"),
+    }
+}
+
+/// T2 — the command has to be on screen, not merely in a container.
+///
+/// The state half is `chat_app::tests::a_closed_shell_command_is_recorded_in_the_transcript`.
+/// This one goes through the real render path, because a node in the list
+/// that never paints is the same bug one layer along — and every piece
+/// downstream of `add_shell_execution` had been unreachable long enough that
+/// none of it was proven either.
+#[test]
+fn a_closed_shell_command_appears_in_the_frame() {
+    let mut story = StoryRuntime::new(80, 24);
+    story
+        .app()
+        .handle_shell_modal_output(ShellModalOutput::Close {
+            history_item: ShellHistoryItem {
+                command: "cargo build --release".to_string(),
+                exit_code: 101,
+                output_tail: vec!["error: could not compile".to_string()],
+                output_path: None,
+            },
+            insert: None,
+        });
+
+    let screen = story.fresh_screen();
     assert!(
-        matches!(out, ShellModalOutput::InsertOutput { .. }),
-        "'i' should insert stdout in one step, but returned {out:?}"
+        screen.contains("cargo build --release"),
+        "the command should be on screen:\n{screen}"
+    );
+    assert!(
+        screen.contains("exit 101"),
+        "so should its exit code:\n{screen}"
     );
 }

@@ -202,3 +202,68 @@ fn shell_history_caps_at_max_and_evicts_oldest() {
         "the newest command is retained"
     );
 }
+
+/// T1 — a finished shell command must be recorded in the transcript.
+///
+/// `update_shell_modal` took the `ShellHistoryItem` and did
+/// `let _ = &history_item;`, so `ContainerList::add_shell_execution`,
+/// `ChatNode::ShellExecution` and `render_shell_execution` were all complete
+/// and all unreachable: you ran `!cargo build`, closed the modal, and the
+/// conversation showed no trace of it. The rendered half is
+/// `a_closed_shell_command_appears_in_the_frame`.
+#[test]
+fn a_closed_shell_command_is_recorded_in_the_transcript() {
+    use crate::tui::oil::components::{ShellHistoryItem, ShellModalOutput};
+
+    let mut app = OilChatApp::init();
+    assert_eq!(app.container_list().nodes().len(), 0);
+
+    app.handle_shell_modal_output(ShellModalOutput::Close {
+        history_item: ShellHistoryItem {
+            command: "cargo build --release".to_string(),
+            exit_code: 101,
+            output_tail: vec!["error: could not compile".to_string()],
+            output_path: None,
+        },
+        insert: None,
+    });
+
+    assert_eq!(
+        app.container_list().nodes().len(),
+        1,
+        "the command should be in the transcript"
+    );
+}
+
+/// `i` fills the composer *and* records the command — both halves of one key
+/// press, and it used to be zero for two: the insert was dropped by a `Tick`
+/// that never came, the transcript entry by the discarded history item.
+#[test]
+fn inserting_shell_output_fills_the_composer_and_the_transcript() {
+    use crate::tui::oil::components::{InsertedOutput, ShellHistoryItem, ShellModalOutput};
+
+    let mut app = OilChatApp::init();
+    app.handle_shell_modal_output(ShellModalOutput::Close {
+        history_item: ShellHistoryItem {
+            command: "echo hi".to_string(),
+            exit_code: 0,
+            output_tail: vec!["hi".to_string()],
+            output_path: None,
+        },
+        insert: Some(InsertedOutput {
+            content: "$ echo hi\nhi".to_string(),
+            truncated: false,
+        }),
+    });
+
+    assert!(
+        app.input_content().contains("hi"),
+        "the output should land in the composer, got: {:?}",
+        app.input_content()
+    );
+    assert_eq!(
+        app.container_list().nodes().len(),
+        1,
+        "and the command should still be recorded in the transcript"
+    );
+}

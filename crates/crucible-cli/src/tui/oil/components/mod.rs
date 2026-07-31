@@ -32,7 +32,9 @@ pub use popup_component::PopupComponent;
 pub use popup_overlay::{
     popup_item, popup_item_with_desc, PopupOverlay, FOCUS_POPUP, POPUP_MAX_VISIBLE,
 };
-pub use shell_modal::{ShellHistoryItem, ShellModal, ShellModalMsg, ShellModalOutput, ShellStatus};
+pub use shell_modal::{
+    InsertedOutput, ShellHistoryItem, ShellModal, ShellModalMsg, ShellModalOutput, ShellStatus,
+};
 pub use shell_render::render_shell_execution;
 pub use status_bar::{NotificationToastKind, StatusBar};
 pub use status_component::StatusComponent;
