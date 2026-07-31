@@ -44,7 +44,6 @@ impl Default for OilChatApp {
             terminal_size: Cell::new((80, 24)),
             permission: PermissionState::default(),
             message_queue: MessageQueueState::default(),
-            attached_context: Vec::new(),
             pending_delegate_supersessions: std::collections::HashSet::new(),
 
             // I/O / Lifecycle

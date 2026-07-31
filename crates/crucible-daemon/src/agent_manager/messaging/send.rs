@@ -183,6 +183,18 @@ impl AgentManager {
                 None
             };
         info!(target: "ttft", session_id = %session_id, stage = "precognition_done", elapsed_ms = ttft_start.elapsed().as_millis() as u64, "ttft");
+
+        // `@file` mentions resolve here, on every turn — not just the first,
+        // and regardless of Precognition: attaching a file is something the
+        // user did on purpose, so it is not subject to the auto-RAG gate.
+        let attachment_message = crate::agent_manager::attachments::build_attachment_message(
+            &session.workspace,
+            &original_content,
+        );
+        if attachment_message.is_some() {
+            debug!(session_id = %session_id, "Attached @-mentioned file contents to the turn");
+        }
+
         // Pass the user's content through to the stream loop unchanged;
         // the Precognition system block (if any) is staged on
         // StreamContext and prepended by apply_transform_context_handlers
@@ -269,6 +281,7 @@ impl AgentManager {
             cache_stats: self.cache_stats_handle(),
             session_manager: self.session_manager.clone(),
             precognition_message,
+            attachment_message,
             session_mode,
             is_interactive,
             // Compile the global [permissions] config once per turn. Unlike

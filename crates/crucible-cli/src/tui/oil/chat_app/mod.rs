@@ -115,8 +115,6 @@ pub struct OilChatApp {
     permission: PermissionState,
     /// Message queue state (deferred messages, counter, Ctrl-C tracking)
     message_queue: MessageQueueState,
-    /// Files attached as extra context for the next message
-    attached_context: Vec<String>,
     pending_delegate_supersessions: HashSet<String>,
 
     // ─── I/O / Lifecycle (tech debt — future extraction) ──────────────

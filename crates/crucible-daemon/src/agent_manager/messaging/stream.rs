@@ -985,6 +985,9 @@ impl AgentManager {
                 // Don't re-inject Precognition on a validation retry —
                 // the original turn already prepended it.
                 precognition_message: None,
+                // Same reasoning for attachments: the original turn already
+                // put the file contents in front of the agent.
+                attachment_message: None,
                 session_mode: stream_ctx.session_mode.clone(),
                 is_interactive: stream_ctx.is_interactive,
                 permission_engine: stream_ctx.permission_engine.clone(),

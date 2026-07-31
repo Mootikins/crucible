@@ -1151,3 +1151,83 @@ async fn context_attach_is_available_without_any_plugin_boot() {
         "cru.context.attach must be present on a session VM with no plugin runtime bound"
     );
 }
+
+/// `@file` in a user message must put the file's CONTENTS in front of the
+/// agent, not the path string.
+///
+/// Asserted on the messages the agent receives, deliberately. The TUI's
+/// `attached_context` field — where the accepted completion used to write —
+/// was read by nothing, so any assertion against it passes while the agent
+/// still gets `@notes/todo.md` and has to guess. This is also why the feature
+/// looked like it worked: a capable model answers by calling `read_file` on
+/// the path it was handed.
+#[tokio::test]
+async fn at_mention_attaches_the_file_contents_to_the_turn() {
+    let tmp = TempDir::new().unwrap();
+    std::fs::create_dir_all(tmp.path().join("notes")).unwrap();
+    std::fs::write(
+        tmp.path().join("notes/todo.md"),
+        "# Todo\n\nSENTINEL-FILE-BODY: ship the attachment path.\n",
+    )
+    .unwrap();
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            Some(tmp.path().to_path_buf()),
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+    let mut agent = test_agent();
+    agent.precognition_enabled = false; // isolate: only attachment may inject
+    agent_manager
+        .configure_agent(&session.id, agent)
+        .await
+        .unwrap();
+
+    let received_messages = Arc::new(StdMutex::new(None));
+    agent_manager.agent_cache.insert(
+        session.id.clone(),
+        Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
+            received_prompt: Arc::new(StdMutex::new(None)),
+            received_messages: received_messages.clone(),
+            events: vec![script::text("ok"), script::done()],
+        }) as BoxedAgentHandle)),
+    );
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    agent_manager
+        .send_message(
+            &session.id,
+            "summarize @notes/todo.md please".to_string(),
+            &event_tx,
+            true,
+            None,
+        )
+        .await
+        .unwrap();
+    let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+
+    let messages = received_messages
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("the agent should have received messages");
+    assert!(
+        messages
+            .iter()
+            .any(|m| m.content.contains("SENTINEL-FILE-BODY")),
+        "the attached file's contents must reach the agent, got: {:?}",
+        messages
+            .iter()
+            .map(|m| (&m.role, &m.content))
+            .collect::<Vec<_>>()
+    );
+}

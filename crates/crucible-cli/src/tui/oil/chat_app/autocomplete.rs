@@ -521,11 +521,9 @@ impl OilChatApp {
         match &self.popup.kind {
             AutocompleteKind::File => {
                 self.replace_at_trigger(format!("@{} ", label));
-                self.add_context_if_new(format!("@{}", label));
             }
             AutocompleteKind::Note => {
                 self.replace_at_trigger(format!("[[{}]] ", label));
-                self.add_context_if_new(format!("[[{}]]", label));
             }
             AutocompleteKind::Command => {
                 self.status = format!("Selected: {}", label);
@@ -551,11 +549,9 @@ impl OilChatApp {
                 match source {
                     PickSource::Files | PickSource::All => {
                         self.set_input(&format!("@{} ", label));
-                        self.add_context_if_new(format!("@{}", label));
                     }
                     PickSource::Notes => {
                         self.set_input(&format!("[[{}]] ", label));
-                        self.add_context_if_new(format!("[[{}]]", label));
                     }
                     PickSource::Commands => {
                         self.set_input(label);
@@ -591,12 +587,6 @@ impl OilChatApp {
         self.set_input(content);
         while self.input.cursor() > cursor {
             self.input.handle(InputAction::Left);
-        }
-    }
-
-    pub(super) fn add_context_if_new(&mut self, item: String) {
-        if !self.attached_context.contains(&item) {
-            self.attached_context.push(item);
         }
     }
 }

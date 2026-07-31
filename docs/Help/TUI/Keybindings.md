@@ -92,13 +92,15 @@ When a popup menu is open (commands, agents, files):
 | Prefix | Purpose | Example |
 |--------|---------|---------|
 | `/` | Slash commands | `/commit`, `/search` |
-| `@` | Context references | `@agent-name`, `@file.md` |
+| `@` | Attach a workspace file | `@src/main.rs`, `@notes/todo.md` |
 | `[[` | Note references | `[[My Note]]`, `[[Help/Config]]` |
 | `:` | REPL commands | `:set`, `:model`, `:quit`, `:help` |
 | `!` | Shell execution | `!ls -la`, `!git status` |
 
 - `/` triggers after whitespace or at line start
-- `@` opens a popup to autocomplete workspace files or agent names
+- `@` opens a popup to autocomplete workspace files. The file's contents are
+  attached to that message, so the agent reads them without a tool call — the
+  path must be inside the workspace, and a big file is truncated with a note
 - `[[` opens a popup to autocomplete notes from your kiln (wikilink syntax)
 - `:` triggers at line start for REPL commands
 - `!` opens a [[TUI/Shell Execution|shell modal]] with streaming output
