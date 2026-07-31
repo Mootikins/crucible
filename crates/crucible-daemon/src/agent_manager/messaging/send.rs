@@ -617,6 +617,7 @@ impl AgentManager {
             mcp_gateway: self.mcp_gateway.clone(),
             acp_permission_handler,
             acp_config: self.acp_config.as_ref(),
+            context_config: self.context_config.as_ref(),
             knowledge_repo,
             embedding_provider,
             plugin_tools,

@@ -82,6 +82,7 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
                 .map(|e| e.pipeline.max_precognition_chars)
                 .unwrap_or_else(crucible_core::config::default_max_precognition_chars),
             acp_config: Some(config.acp.clone()),
+            context_config: config.context.clone(),
             permission_config: config.permissions.clone(),
             web_config: None,
             schedules: config.schedules.clone(),

@@ -172,6 +172,7 @@ fn build_delegation_stack(
             mcp_gateway: None,
             llm_config: None,
             acp_config: None,
+            context_config: None,
             permission_config: None,
             plugin_loader: None,
             workspace_tools: Arc::new(WorkspaceTools::new(PathBuf::from("/tmp"))),

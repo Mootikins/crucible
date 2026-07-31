@@ -6,7 +6,9 @@ tags: [help, configuration, agents]
 
 # Rules Files
 
-Rules files provide project-specific instructions to AI agents working in your codebase. Crucible loads these files automatically and includes them in the system prompt.
+Rules files provide project-specific instructions to AI agents working in your codebase. Crucible loads these files automatically and includes them in the system prompt, under a `# Project rules` heading after the agent's own prompt.
+
+They are read when the session's agent is built — its first message, and again whenever a setting change rebuilds it — so an edit to a rules file reaches the agent from your next session, not mid-conversation.
 
 ## Supported Files
 
@@ -22,16 +24,25 @@ Other common files you can add to your config:
 
 ## Hierarchical Loading
 
-Crucible loads rules files **hierarchically** from the git root down to your workspace directory. Files closer to your workspace have higher priority and can override parent rules.
+Crucible loads rules files **hierarchically** from the repository root down to the session's workspace directory. Files closer to the workspace are read last, so their rules take precedence.
 
-**Example:** If you have:
+**Example:** if the session's workspace is `/repo/src/module` and you have:
 ```
-/repo/AGENTS.md           # Repo-wide rules
-/repo/src/AGENTS.md       # Source-specific rules
+/repo/AGENTS.md            # Repo-wide rules
+/repo/src/AGENTS.md        # Source-specific rules
 /repo/src/module/AGENTS.md # Module-specific rules
 ```
 
-All three files are loaded, with `/repo/src/module/AGENTS.md` having highest priority (its rules take precedence).
+All three are loaded, with `/repo/src/module/AGENTS.md` last and therefore highest priority.
+
+The walk goes **up** from the workspace to the repository root (the outermost
+ancestor containing a `.git`), never down into it. A session whose workspace is
+`/repo` loads `/repo/AGENTS.md` and stops — `/repo/src/AGENTS.md` is not read,
+because rules are chosen by where the session is rooted, not by which files the
+agent happens to touch. Outside a git repository, only the workspace directory
+itself is searched.
+
+Within one directory, the config order in `rules_files` decides.
 
 ## Configuration
 

@@ -107,6 +107,7 @@ async fn plugin_declared_tool_is_dispatchable_by_the_agent() {
         mcp_gateway: None,
         llm_config: None,
         acp_config: None,
+        context_config: None,
         permission_config: None,
         plugin_loader: Some(Arc::new(tokio::sync::Mutex::new(Some(loader)))),
         workspace_tools: Arc::new(WorkspaceTools::new(tmp.path().to_path_buf())),

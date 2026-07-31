@@ -1341,6 +1341,13 @@ impl AgentHandle for GenaiAgentHandle {
         Some(&self.mode_state)
     }
 
+    /// The prompt this handle will actually send, after the factory's
+    /// enrichment (workspace header, rules files, skills catalog) — not the
+    /// agent card's `system_prompt` the session config stores.
+    fn get_system_prompt(&self) -> Option<String> {
+        Some(self.system_prompt.clone())
+    }
+
     fn get_mode_id(&self) -> &str {
         &self.current_mode_id
     }

@@ -65,6 +65,9 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     pub mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     pub acp_permission_handler: Option<PermissionRequestHandler>,
     pub acp_config: Option<&'a crucible_core::config::components::acp::AcpConfig>,
+    /// `[context]` from the daemon's config, deciding which project rules
+    /// files are loaded into the prompt. `None` uses the defaults.
+    pub context_config: Option<&'a crucible_core::config::ContextConfig>,
     pub knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
     pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
     /// Spec-declared plugin tools, so the model can see what the dispatcher
@@ -364,11 +367,71 @@ fn discover_skills_catalog(workspace: &Path, kiln_path: Option<&Path>) -> String
     }
 }
 
+/// Read the project's rules files into a prompt section.
+///
+/// Hierarchical, as `docs/Help/Rules Files.md` promises: the walk starts at the
+/// repository root (the nearest ancestor holding a `.git`, else the workspace
+/// itself) and descends to the workspace, so a rule written closer to where the
+/// work happens is read last and therefore wins. Within one directory the
+/// configured order decides.
+///
+/// Best-effort by design — an unreadable or absent rules file must not stop an
+/// agent starting, so failures are skipped silently. That is also why the
+/// *absence* of every file yields an empty string rather than a header with
+/// nothing under it.
+fn load_rules_files(workspace: &Path, rules_files: &[String]) -> String {
+    if rules_files.is_empty() {
+        return String::new();
+    }
+
+    // The OUTERMOST ancestor holding a `.git`, so a worktree nested inside a
+    // parent repo still starts its walk at the parent's rules.
+    let repo_root = workspace
+        .ancestors()
+        .filter(|dir| dir.join(".git").exists())
+        .last()
+        .unwrap_or(workspace);
+
+    // `ancestors()` walks up; the prompt wants root-first, so collect and flip.
+    let mut dirs: Vec<&Path> = workspace
+        .ancestors()
+        .take_while(|dir| dir.starts_with(repo_root))
+        .collect();
+    dirs.reverse();
+
+    let mut sections = String::new();
+    let mut seen: std::collections::HashSet<std::path::PathBuf> = std::collections::HashSet::new();
+    for dir in dirs {
+        for name in rules_files {
+            let path = dir.join(name);
+            if !seen.insert(path.clone()) {
+                continue;
+            }
+            let Ok(contents) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if contents.trim().is_empty() {
+                continue;
+            }
+            sections.push_str(&format!("\n## {}\n\n{}\n", path.display(), contents.trim()));
+        }
+    }
+
+    if sections.is_empty() {
+        return String::new();
+    }
+    format!(
+        "\n# Project rules\n\nInstructions for this project, from its rules files. \
+         Later files are closer to the working directory and take precedence.\n{sections}"
+    )
+}
+
 fn build_enriched_prompt(
     workspace: &Path,
     kiln_path: Option<&Path>,
     connected_kilns: &[std::path::PathBuf],
     base_prompt: &str,
+    rules: &str,
     skills_catalog: &str,
 ) -> String {
     let mut enriched_prompt = String::new();
@@ -403,6 +466,13 @@ fn build_enriched_prompt(
     if !base_prompt.is_empty() {
         enriched_prompt.push('\n');
         enriched_prompt.push_str(base_prompt);
+    }
+
+    // After the agent card: project rules refine who the agent is, they do not
+    // define it. Before the skills catalog, which is a tool listing.
+    if !rules.is_empty() {
+        enriched_prompt.push('\n');
+        enriched_prompt.push_str(rules);
     }
 
     if !skills_catalog.is_empty() {
@@ -527,8 +597,7 @@ pub(crate) fn build_chat_client_for_agent(
 ///
 /// This takes the fully-resolved `SessionAgent` and creates a ready-to-use
 /// `Box<dyn AgentHandle>`. Unlike the CLI factory, this doesn't need to:
-/// - Discover skills (already in system_prompt)
-/// - Load rules files (already in system_prompt)
+/// - Discover skills (done here, from the workspace and kiln)
 ///
 /// # Arguments
 ///
@@ -557,6 +626,7 @@ pub async fn create_agent_from_session_config(
         mcp_gateway,
         acp_permission_handler,
         acp_config,
+        context_config,
         knowledge_repo,
         embedding_provider,
         plugin_tools,
@@ -632,11 +702,22 @@ pub async fn create_agent_from_session_config(
     } else {
         String::new()
     };
+    let default_context_config;
+    let context_config = match context_config {
+        Some(c) => c,
+        None => {
+            default_context_config = crucible_core::config::ContextConfig::default();
+            &default_context_config
+        }
+    };
+    let rules = load_rules_files(workspace, &context_config.rules_files);
+
     let enriched_prompt = build_enriched_prompt(
         workspace,
         kiln_path,
         connected_kilns,
         &agent_config.system_prompt,
+        &rules,
         &skills_catalog,
     );
 
@@ -737,20 +818,20 @@ mod tests {
         let kiln = Path::new("/repo/docs");
 
         // With kiln + base prompt: both paths present, workspace before base
-        let enriched = build_enriched_prompt(ws, Some(kiln), &[], "You are helpful.", "");
+        let enriched = build_enriched_prompt(ws, Some(kiln), &[], "You are helpful.", "", "");
         assert!(enriched.contains("Workspace: /repo"));
         assert!(enriched.contains("Kiln: /repo/docs"));
         assert!(enriched.contains("You are helpful."));
         assert!(enriched.find("Workspace:").unwrap() < enriched.find("You are helpful.").unwrap());
 
         // Without kiln: no Kiln line
-        let no_kiln = build_enriched_prompt(ws, None, &[], "Base.", "");
+        let no_kiln = build_enriched_prompt(ws, None, &[], "Base.", "", "");
         assert!(no_kiln.contains("Workspace: /repo"));
         assert!(!no_kiln.contains("Kiln:"));
         assert!(no_kiln.contains("Base."));
 
         // Empty base prompt: just context lines, no double blank
-        let empty_base = build_enriched_prompt(ws, None, &[], "", "");
+        let empty_base = build_enriched_prompt(ws, None, &[], "", "", "");
         assert!(empty_base.contains("Workspace: /repo"));
         assert!(!empty_base.ends_with("\n\n"));
 
@@ -760,6 +841,7 @@ mod tests {
             Some(kiln),
             &[],
             "Base.",
+            "",
             "# Available Skills\n\n## commit\n",
         );
         assert!(with_skills.contains("# Available Skills"));
@@ -779,8 +861,14 @@ mod tests {
         )
         .unwrap();
 
-        let result =
-            build_enriched_prompt(Path::new("/workspace"), Some(tmp.path()), &[], "base", "");
+        let result = build_enriched_prompt(
+            Path::new("/workspace"),
+            Some(tmp.path()),
+            &[],
+            "base",
+            "",
+            "",
+        );
         assert!(
             result.contains("Knowledge bases:"),
             "should have kb section"
@@ -793,7 +881,7 @@ mod tests {
 
     #[test]
     fn build_enriched_prompt_no_kiln_names_when_no_config() {
-        let result = build_enriched_prompt(Path::new("/workspace"), None, &[], "base", "");
+        let result = build_enriched_prompt(Path::new("/workspace"), None, &[], "base", "", "");
         assert!(
             !result.contains("Knowledge bases:"),
             "no kb section when no kiln"
@@ -819,6 +907,7 @@ mod tests {
                 mcp_gateway: None,
                 acp_permission_handler: None,
                 acp_config: None,
+                context_config: None,
                 knowledge_repo: None,
                 embedding_provider: None,
                 plugin_tools: None,
@@ -980,6 +1069,113 @@ mod tests {
         assert!(adapter_idx < user_idx);
     }
 
+    /// Root-first, workspace-last — the order `docs/Help/Rules Files.md`
+    /// promises, and the one that makes "closer files win" true when a model
+    /// reads the prompt top to bottom.
+    #[test]
+    fn rules_files_load_from_repo_root_down_to_the_workspace() {
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+        let nested = repo.path().join("src/module");
+        std::fs::create_dir_all(&nested).unwrap();
+
+        std::fs::write(repo.path().join("AGENTS.md"), "ROOT-RULE").unwrap();
+        std::fs::write(repo.path().join("src/AGENTS.md"), "MID-RULE").unwrap();
+        std::fs::write(nested.join("AGENTS.md"), "LEAF-RULE").unwrap();
+        // A second configured name in the same directory follows config order.
+        std::fs::write(nested.join(".rules"), "LEAF-DOT-RULE").unwrap();
+
+        let rules = load_rules_files(&nested, &["AGENTS.md".to_string(), ".rules".to_string()]);
+
+        let root = rules.find("ROOT-RULE").expect("root rules loaded");
+        let mid = rules.find("MID-RULE").expect("intermediate rules loaded");
+        let leaf = rules.find("LEAF-RULE").expect("workspace rules loaded");
+        let leaf_dot = rules.find("LEAF-DOT-RULE").expect(".rules loaded");
+        assert!(
+            root < mid && mid < leaf,
+            "closer directories come later: {rules}"
+        );
+        assert!(
+            leaf < leaf_dot,
+            "within a directory, configured order holds: {rules}"
+        );
+    }
+
+    /// An empty `rules_files` list is a user turning the feature off, not a
+    /// request for the defaults.
+    #[test]
+    fn no_rules_configured_means_no_rules_section() {
+        let ws = tempfile::tempdir().unwrap();
+        std::fs::write(ws.path().join("AGENTS.md"), "IGNORED").unwrap();
+        assert_eq!(load_rules_files(ws.path(), &[]), "");
+    }
+
+    /// No rules files present must not leave an empty heading in the prompt.
+    #[test]
+    fn missing_rules_files_add_nothing_to_the_prompt() {
+        let ws = tempfile::tempdir().unwrap();
+        assert_eq!(load_rules_files(ws.path(), &["AGENTS.md".to_string()]), "");
+    }
+
+    /// A project rules file must reach the prompt the agent is built with.
+    ///
+    /// Asserted through `create_agent_from_session_config` — the call
+    /// `send_message` makes — rather than on `build_enriched_prompt`, because
+    /// the way this feature died was the composition staying correct while
+    /// nothing ever called it with any rules. A test on the pure builder would
+    /// have passed throughout.
+    #[tokio::test]
+    async fn rules_file_contents_reach_the_system_prompt() {
+        let ws = tempfile::tempdir().unwrap();
+        std::fs::write(
+            ws.path().join("AGENTS.md"),
+            "# House rules\n\nSENTINEL-RULES: always run `just ci` before committing.\n",
+        )
+        .unwrap();
+
+        let config = test_agent_config();
+        let handle = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+            modes: None,
+            agent_config: &config,
+            lua: None,
+            workspace: ws.path(),
+            kiln_path: None,
+            connected_kilns: &[],
+            parent_session_id: None,
+            background_spawner: None,
+            delegation_spawner: None,
+            mcp_gateway: None,
+            acp_permission_handler: None,
+            acp_config: None,
+            context_config: None,
+            knowledge_repo: None,
+            embedding_provider: None,
+            plugin_tools: None,
+        })
+        .await
+        .expect("agent creation should succeed");
+
+        let prompt = handle
+            .get_system_prompt()
+            .expect("the genai handle knows the prompt it was built with");
+
+        assert!(
+            prompt.contains("SENTINEL-RULES"),
+            "AGENTS.md contents must reach the system prompt, got: {prompt}"
+        );
+        // Layering: rules compose with the agent card's prompt rather than
+        // replacing it, and the card speaks first.
+        assert!(
+            prompt.contains("You are a helpful assistant."),
+            "the agent card's own prompt must survive, got: {prompt}"
+        );
+        assert!(
+            prompt.find("You are a helpful assistant.").unwrap()
+                < prompt.find("SENTINEL-RULES").unwrap(),
+            "the agent card's prompt comes first, project rules refine it: {prompt}"
+        );
+    }
+
     #[tokio::test]
     #[ignore = "Requires Ollama to be running"]
     async fn test_create_ollama_agent() {
@@ -997,6 +1193,7 @@ mod tests {
             mcp_gateway: None,
             acp_permission_handler: None,
             acp_config: None,
+            context_config: None,
             knowledge_repo: None,
             embedding_provider: None,
             plugin_tools: None,
@@ -1026,6 +1223,7 @@ mod tests {
             mcp_gateway: None,
             acp_permission_handler: None,
             acp_config: None,
+            context_config: None,
             knowledge_repo: None,
             embedding_provider: None,
             plugin_tools: None,
@@ -1057,6 +1255,7 @@ mod tests {
             mcp_gateway: None,
             acp_permission_handler: None,
             acp_config: None,
+            context_config: None,
             knowledge_repo: None,
             embedding_provider: None,
             plugin_tools: None,

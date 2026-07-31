@@ -602,6 +602,9 @@ pub struct AgentManager {
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     llm_config: Option<crucible_core::config::LlmConfig>,
     acp_config: Option<AcpConfig>,
+    /// `[context]` from the daemon config — which project rules files get
+    /// loaded into an agent's system prompt. `None` uses the defaults.
+    context_config: Option<crucible_core::config::ContextConfig>,
     permission_config: Option<PermissionConfig>,
     plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
     tool_dispatcher: Arc<dyn ToolDispatcher>,
@@ -661,6 +664,7 @@ pub struct AgentManagerParams {
     pub mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     pub llm_config: Option<crucible_core::config::LlmConfig>,
     pub acp_config: Option<AcpConfig>,
+    pub context_config: Option<crucible_core::config::ContextConfig>,
     pub permission_config: Option<PermissionConfig>,
     pub plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
     pub workspace_tools: Arc<WorkspaceTools>,
@@ -706,6 +710,7 @@ impl AgentManager {
             mcp_gateway: params.mcp_gateway,
             llm_config: params.llm_config,
             acp_config: params.acp_config,
+            context_config: params.context_config,
             permission_config: params.permission_config,
             plugin_loader: params.plugin_loader,
             tool_dispatcher,

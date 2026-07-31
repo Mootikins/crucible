@@ -86,6 +86,7 @@ pub(super) fn test_agent_manager(
             mcp_gateway: None,
             llm_config,
             acp_config: None,
+            context_config: None,
             permission_config: None,
             plugin_loader: None,
             workspace_tools,

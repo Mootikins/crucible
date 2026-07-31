@@ -113,6 +113,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                     .map(|e| e.pipeline.max_precognition_chars)
                     .unwrap_or_else(crucible_core::config::default_max_precognition_chars),
                 acp_config: Some(config.acp.clone()),
+                context_config: config.context.clone(),
                 permission_config: None,
                 web_config: None,
                 schedules: config.schedules.clone(),

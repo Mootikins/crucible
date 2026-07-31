@@ -218,6 +218,7 @@ mod tests {
             mcp_gateway: None,
             llm_config: config,
             acp_config: None,
+            context_config: None,
             permission_config: None,
             plugin_loader: None,
             workspace_tools: Arc::new(WorkspaceTools::new(PathBuf::from("/tmp"))),
