@@ -11,25 +11,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-const UNIVERSAL_MODULES: &[&str] = &[
-    "kiln",
-    "graph",
-    "http",
-    "fs",
-    "session",
-    "sessions",
-    "context",
-    "tools",
-    "oq",
-    "paths",
-    "timer",
-    "ratelimit",
-    "mcp",
-    "hooks",
-    "notify",
-    "ask",
-];
-
 /// Modules that exist only in the UI process, so daemon-side stubs would be
 /// misleading. `popup`, `panel` and `statusline` used to be listed here and
 /// stubbed — but they were registered nowhere in production, so autocomplete
@@ -53,9 +34,32 @@ struct DocEntry {
 pub struct StubGenerator;
 
 impl StubGenerator {
-    pub fn generate(output_dir: &Path) -> Result<(), LuaError> {
+    /// Write stubs describing `lua`.
+    ///
+    /// Callers that own the VM plugins run on should pass **that** VM — the
+    /// point of the stubs is to describe what a plugin author can call, and a
+    /// stand-in cannot know what the daemon registered. See
+    /// `crucible-daemon/tests/plugin_stubs_contract.rs`, which is what holds
+    /// the two together.
+    pub fn generate_from(lua: &Lua, output_dir: &Path) -> Result<(), LuaError> {
         fs::create_dir_all(output_dir)?;
 
+        let (emmylua, docs) = render_stubs(lua)?;
+
+        fs::write(output_dir.join("cru.lua"), emmylua)?;
+        let docs_json = serde_json::to_string_pretty(&docs)
+            .map_err(|e| LuaError::Serialization(e.to_string()))?;
+        fs::write(output_dir.join("cru-docs.json"), docs_json)?;
+
+        Ok(())
+    }
+
+    /// Stubs for the modules this crate can register on its own.
+    ///
+    /// Necessarily a subset — the daemon registers a dozen more — so this is
+    /// for this crate's own tests and for `verify`. Production goes through
+    /// [`Self::generate_from`] with the plugin VM.
+    pub fn generate(output_dir: &Path) -> Result<(), LuaError> {
         let executor = LuaExecutor::new()?;
         let lua = executor.lua();
 
@@ -68,16 +72,7 @@ impl StubGenerator {
         register_tools_module(lua)?;
         register_mcp_module_stub(lua)?;
 
-        mirror_modules_into_cru(lua)?;
-
-        let (emmylua, docs) = render_stubs(lua)?;
-
-        fs::write(output_dir.join("cru.lua"), emmylua)?;
-        let docs_json = serde_json::to_string_pretty(&docs)
-            .map_err(|e| LuaError::Serialization(e.to_string()))?;
-        fs::write(output_dir.join("cru-docs.json"), docs_json)?;
-
-        Ok(())
+        Self::generate_from(lua, output_dir)
     }
 
     pub fn verify(committed_path: &Path) -> Result<bool, LuaError> {
@@ -106,101 +101,34 @@ impl StubGenerator {
     }
 }
 
-fn mirror_modules_into_cru(lua: &Lua) -> Result<(), LuaError> {
-    let globals = lua.globals();
-    let cru: Table = globals.get("cru")?;
-    let crucible: Table = globals.get("crucible")?;
-
-    copy_global_table(&globals, &cru, "ask", "ask")?;
-    copy_global_table(&globals, &cru, "graph", "graph")?;
-    copy_global_table(&globals, &cru, "oq", "oq")?;
-    copy_global_table(&globals, &cru, "paths", "paths")?;
-    copy_global_table(&globals, &cru, "mcp", "mcp")?;
-    copy_global_table(&globals, &cru, "ui", "panel")?;
-
-    if let Ok(get_session) = cru.get::<Value>("get_session") {
-        if matches!(get_session, Value::Function(_)) {
-            let session = lua.create_table()?;
-            session.set("get", get_session)?;
-            cru.set("session", session)?;
-        }
-    }
-
-    let hooks = lua.create_table()?;
-    if let Ok(f) = crucible.get::<Value>("on_session_start") {
-        if matches!(f, Value::Function(_)) {
-            hooks.set("on_session_start", f)?;
-        }
-    }
-    if hooks.pairs::<Value, Value>().next().is_some() {
-        cru.set("hooks", hooks)?;
-    }
-
-    let notify = lua.create_table()?;
-    if let Ok(f) = crucible.get::<Value>("notify") {
-        if matches!(f, Value::Function(_)) {
-            notify.set("notify", f)?;
-        }
-    }
-    if let Ok(f) = crucible.get::<Value>("notify_once") {
-        if matches!(f, Value::Function(_)) {
-            notify.set("notify_once", f)?;
-        }
-    }
-    if let Ok(messages) = crucible.get::<Value>("messages") {
-        if matches!(messages, Value::Table(_)) {
-            notify.set("messages", messages)?;
-        }
-    }
-    if notify.pairs::<Value, Value>().next().is_some() {
-        cru.set("notify", notify)?;
-    }
-
-    Ok(())
-}
-
-fn copy_global_table(
-    globals: &Table,
-    cru: &Table,
-    source: &str,
-    target: &str,
-) -> Result<(), LuaError> {
-    if let Ok(value) = globals.get::<Value>(source) {
-        if matches!(value, Value::Table(_)) {
-            cru.set(target, value)?;
-        }
-    }
-    Ok(())
-}
-
 fn render_stubs(lua: &Lua) -> Result<(String, BTreeMap<String, DocEntry>), LuaError> {
     let cru: Table = lua.globals().get("cru")?;
 
     let mut class_paths = BTreeSet::new();
     class_paths.insert("cru".to_string());
 
-    let mut functions = Vec::new();
-    for module in UNIVERSAL_MODULES {
-        if let Ok(Value::Table(table)) = cru.get::<Value>(*module) {
-            collect_function_stubs(
-                &table,
-                &format!("cru.{}", module),
-                false,
-                &mut functions,
-                &mut class_paths,
-            )?;
+    // Whatever is on `cru`, rather than a hardcoded list. The list was the
+    // problem: it named six modules the VM does not have and missed twelve it
+    // does, and every module registered after it was written was invisible.
+    let mut modules: Vec<(String, Table)> = Vec::new();
+    for pair in cru.pairs::<String, Value>() {
+        let (name, value) = pair?;
+        if let Value::Table(table) = value {
+            modules.push((name, table));
         }
     }
-    for module in UI_ONLY_MODULES {
-        if let Ok(Value::Table(table)) = cru.get::<Value>(*module) {
-            collect_function_stubs(
-                &table,
-                &format!("cru.{}", module),
-                true,
-                &mut functions,
-                &mut class_paths,
-            )?;
-        }
+    modules.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut functions = Vec::new();
+    for (name, table) in modules {
+        let ui_only = UI_ONLY_MODULES.contains(&name.as_str());
+        collect_function_stubs(
+            &table,
+            &format!("cru.{name}"),
+            ui_only,
+            &mut functions,
+            &mut class_paths,
+        )?;
     }
 
     functions.sort_by(|a, b| a.path.cmp(&b.path));

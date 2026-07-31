@@ -4,7 +4,7 @@
     "version": "Lua 5.4"
   },
   "workspace": {
-    "library": ["${3rd}/luv/library"],
+    "library": ["${3rd}/luv/library", "{{stub_dir}}"],
     "checkThirdParty": false
   },
   "diagnostics": {

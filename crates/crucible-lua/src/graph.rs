@@ -115,8 +115,12 @@ pub fn register_graph_module(lua: &Lua) -> Result<(), LuaError> {
     })?;
     graph.set("inlinks", inlinks_fn)?;
 
-    // Register graph module globally
-    lua.globals().set("graph", graph)?;
+    // Bare global *and* `cru.graph` / `crucible.graph`, like every other
+    // module. It used to be the bare global only, which is why the generated
+    // stubs advertised a `cru.graph` that was nil at runtime — the stub named
+    // the API this should always have had.
+    lua.globals().set("graph", graph.clone())?;
+    crate::lua_util::register_in_namespaces(lua, "graph", graph)?;
 
     Ok(())
 }

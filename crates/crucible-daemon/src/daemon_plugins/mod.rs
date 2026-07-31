@@ -966,11 +966,13 @@ end
 
     /// Generate LuaCATS type stubs for IDE support.
     ///
-    /// Creates `cru.lua` and `cru-docs.json` in `output_dir` by introspecting
-    /// registered modules via a temporary executor (does not touch the daemon's
-    /// live Lua state).
+    /// Introspects **this loader's own VM** — the one plugins run on. It used
+    /// to build a temporary executor instead, which registered a different set
+    /// of modules and then fabricated six `cru.*` namespaces that the real VM
+    /// does not have, so autocomplete advertised an API that was nil at
+    /// runtime. Read-only: `render_stubs` only walks tables.
     pub fn generate_stubs(&self, output_dir: &std::path::Path) -> anyhow::Result<()> {
-        crucible_lua::stubs::StubGenerator::generate(output_dir)
+        crucible_lua::stubs::StubGenerator::generate_from(self.executor.lua(), output_dir)
             .map_err(|e| anyhow::anyhow!("stub generation: {e}"))
     }
 

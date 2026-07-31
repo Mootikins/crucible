@@ -35,9 +35,11 @@ pub async fn execute(_config: CliConfig, args: StubsArgs) -> Result<()> {
         }
     } else {
         println!("✓ Stubs generated at: {}", output_dir.display());
+        // `cru plugin new` writes this path into the scaffolded `.luarc.json`,
+        // so only a hand-written or relocated one needs the instruction.
         println!();
-        println!("Configure your editor:");
-        println!("  Add to .luarc.json workspace.library:");
+        println!("Plugins scaffolded with `cru plugin new` already point here.");
+        println!("For an existing .luarc.json, add to workspace.library:");
         println!("    \"{}\"", output_dir.display());
     }
 
@@ -45,10 +47,15 @@ pub async fn execute(_config: CliConfig, args: StubsArgs) -> Result<()> {
 }
 
 fn resolve_output_dir(explicit: Option<PathBuf>) -> Result<PathBuf> {
-    if let Some(path) = explicit {
-        return Ok(path);
+    match explicit {
+        Some(path) => Ok(path),
+        None => default_stub_dir(),
     }
+}
 
+/// Where stubs land with no `--output`. Shared with the `cru plugin new`
+/// scaffold, which writes this path into the generated `.luarc.json`.
+pub(super) fn default_stub_dir() -> Result<PathBuf> {
     let config_dir = dirs::config_dir().context("Could not determine config directory")?;
     Ok(config_dir.join("crucible").join("stubs"))
 }

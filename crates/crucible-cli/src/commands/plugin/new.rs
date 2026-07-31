@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use super::NewArgs;
 use crate::config::CliConfig;
@@ -39,7 +40,7 @@ pub async fn execute(_config: CliConfig, args: NewArgs) -> Result<()> {
     fs::write(plugin_dir.join("plugin.yaml"), plugin_yaml)?;
     fs::write(plugin_dir.join("init.lua"), init_lua)?;
     fs::write(plugin_dir.join("health.lua"), health_lua)?;
-    fs::write(plugin_dir.join(".luarc.json"), TEMPLATE_LUARC_JSON)?;
+    fs::write(plugin_dir.join(".luarc.json"), luarc_json(&stub_dir()))?;
     fs::write(plugin_dir.join("tests/init_test.lua"), tests_init)?;
 
     println!(
@@ -50,7 +51,73 @@ pub async fn execute(_config: CliConfig, args: NewArgs) -> Result<()> {
     println!();
     println!("Next steps:");
     println!("  cd {}", args.name);
+    println!("  cru plugin stubs   # if you have not generated them yet");
     println!("  cru plugin test .");
 
     Ok(())
+}
+
+/// Where `cru plugin stubs` writes by default. Kept in step with
+/// `plugin::stubs::resolve_output_dir` — a scaffold pointing somewhere else is
+/// the same as not pointing anywhere.
+fn stub_dir() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("~/.config"))
+        .join("crucible")
+        .join("stubs")
+}
+
+/// The scaffolded `.luarc.json`, with the stub directory substituted in.
+///
+/// The template was written verbatim, so a fresh plugin got a `.luarc.json`
+/// whose `workspace.library` never mentioned the stubs — "zero-config IDE
+/// setup" that required the author to paste the path in by hand, which is
+/// exactly what `cru plugin stubs` told them to do.
+fn luarc_json(stub_dir: &Path) -> String {
+    TEMPLATE_LUARC_JSON.replace("{{stub_dir}}", &stub_dir.to_string_lossy())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A scaffolded plugin's `.luarc.json` must point at the type stubs.
+    ///
+    /// The template was written out verbatim, so `workspace.library` never
+    /// mentioned them and the advertised "zero-config IDE setup" required the
+    /// author to paste a path in by hand — which is precisely what
+    /// `cru plugin stubs` printed instructions to do.
+    #[test]
+    fn the_scaffolded_luarc_json_points_at_the_generated_stub_directory() {
+        let stubs = Path::new("/home/dev/.config/crucible/stubs");
+        let rendered = luarc_json(stubs);
+
+        assert!(
+            !rendered.contains("{{stub_dir}}"),
+            "the placeholder must be substituted, got:\n{rendered}"
+        );
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&rendered).expect("scaffolded .luarc.json must be valid JSON");
+        let library = parsed["workspace"]["library"]
+            .as_array()
+            .expect("workspace.library");
+
+        assert!(
+            library
+                .iter()
+                .any(|entry| entry.as_str() == Some("/home/dev/.config/crucible/stubs")),
+            "workspace.library must contain the stub dir, got: {library:?}"
+        );
+    }
+
+    /// …and it must be the directory `cru plugin stubs` actually writes to.
+    /// Two independent spellings of one path is how this breaks next.
+    #[test]
+    fn the_scaffold_and_the_stubs_command_agree_on_the_directory() {
+        assert_eq!(
+            stub_dir(),
+            super::super::stubs::default_stub_dir().expect("default stub dir"),
+        );
+    }
 }

@@ -305,8 +305,9 @@ pub fn register_mcp_module<C: LuaMcpClient + 'static>(lua: &Lua, client: Arc<C>)
         })?,
     )?;
 
-    // Register globally
-    lua.globals().set("mcp", mcp)?;
+    // Bare global *and* the `cru`/`crucible` namespaces; see `graph`.
+    lua.globals().set("mcp", mcp.clone())?;
+    crate::lua_util::register_in_namespaces(lua, "mcp", mcp)?;
 
     Ok(())
 }
@@ -358,7 +359,8 @@ pub fn register_mcp_module_stub(lua: &Lua) -> Result<(), LuaError> {
         lua.create_function(|_, (_server, _tool): (String, String)| Ok(false))?,
     )?;
 
-    lua.globals().set("mcp", mcp)?;
+    lua.globals().set("mcp", mcp.clone())?;
+    crate::lua_util::register_in_namespaces(lua, "mcp", mcp)?;
 
     Ok(())
 }

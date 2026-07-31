@@ -62,10 +62,6 @@ fn ci_stubs_verification_generates_fresh_and_validates_content() {
         "Missing cru.fs class annotation"
     );
     assert!(
-        stubs.contains("---@class cru.session"),
-        "Missing cru.session class annotation"
-    );
-    assert!(
         stubs.contains("---@class cru.sessions"),
         "Missing cru.sessions class annotation"
     );
@@ -117,18 +113,29 @@ fn ci_stubs_verification_generates_fresh_and_validates_content() {
         stubs.contains("---@class cru.mcp"),
         "Missing cru.mcp class annotation"
     );
-    assert!(
-        stubs.contains("---@class cru.hooks"),
-        "Missing cru.hooks class annotation"
-    );
-    assert!(
-        stubs.contains("---@class cru.notify"),
-        "Missing cru.notify class annotation"
-    );
-    assert!(
-        stubs.contains("---@class cru.ask"),
-        "Missing cru.ask class annotation"
-    );
+
+    // `cru.session`, `cru.hooks`, `cru.notify` and `cru.ask` are deliberately
+    // absent. They were never registered anywhere: the generator synthesized
+    // them from bare globals and `crucible.*` functions, so autocomplete
+    // offered four namespaces that were nil on every VM. The assertions that
+    // used to be here pinned that. `cru.graph` and `cru.mcp` were in the same
+    // list and were handled the other way — those modules now register into
+    // the `cru` namespace like every sibling, so the stub became true instead
+    // of being deleted.
+    // Whole lines, not `contains`: "---@class cru.sessions" contains
+    // "---@class cru.session" as a substring, so a prefix check would pass on
+    // the wrong evidence.
+    let declared: Vec<&str> = stubs
+        .lines()
+        .filter_map(|l| l.strip_prefix("---@class "))
+        .map(str::trim)
+        .collect();
+    for fabricated in ["cru.session", "cru.hooks", "cru.notify", "cru.ask"] {
+        assert!(
+            !declared.contains(&fabricated),
+            "{fabricated} does not exist on any VM and must not be stubbed; got {declared:?}"
+        );
+    }
 
     // Verify UI-only modules are marked with UI note
     assert!(
