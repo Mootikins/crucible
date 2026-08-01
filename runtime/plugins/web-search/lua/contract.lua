@@ -16,14 +16,21 @@
 ---       degraded = { "brave", "startpage" },
 ---     }
 ---
---- `score` and `engines` are SearXNG-only and optional — cross-engine agreement
---- is real relevance signal that single-provider APIs cannot give you, so it is
---- worth carrying rather than flattening away.
----
 --- `degraded` is ALWAYS present, empty when the provider has no way to report
 --- partial failure. Only SearXNG has an equivalent (`unresponsive_engines`);
 --- if the key were absent for DDG and Exa a model would read meaning into the
---- difference. Absence must never be a signal.
+--- difference. **The absence of `degraded` must never be a signal.**
+---
+--- `score` and `engines` are the deliberate exception, and the rule above was
+--- once written broadly enough to forbid them. They are SearXNG-only and
+--- absent elsewhere, so their presence does identify the provider — but
+--- `provider` is already in the payload, so nothing is leaked that the model
+--- could not already read. Carrying them is worth it: cross-engine agreement
+--- is real relevance signal no single-provider API can give. The rule they
+--- must obey is different — a *comparable* one. Exa returns a 0–1 neural
+--- relevance and SearXNG a cross-engine agreement sum; publishing both under
+--- `score` would invite comparison across incompatible scales, so the Exa
+--- adapter drops its own.
 ---
 --- This module is pure: no network, no config, no globals beyond `cru.json` for
 --- measuring the encoded size. Provider transport and parsing live elsewhere.
@@ -33,6 +40,17 @@ local M = {}
 -- Per-result snippet cap. Titles and URLs are short and load-bearing; the
 -- snippet is the only field that can run away.
 M.MAX_SNIPPET = 300
+
+--- A title is a label, not content. Left unbounded, one pathological hit could
+--- push the payload past MAX_PAYLOAD_BYTES on its own — and the tail-trim below
+--- keeps one result unconditionally, so there was no backstop.
+M.MAX_TITLE = 200
+
+--- URLs are NOT truncated: a cut URL is unfollowable, which is worse than no
+--- result. One longer than this is dropped instead. The bound is generous —
+--- real URLs sit far below it, and the shapes that exceed it are `data:` blobs
+--- and tracking redirects carrying an entire payload in a query parameter.
+M.MAX_URL = 2048
 
 -- Total serialised budget. Tool output over ~10KB is spilled to a file and
 -- replaced by a path reference, and the threshold is measured on the
@@ -216,6 +234,7 @@ function M.normalise(input)
         results = {},
         degraded = degraded_names(input.degraded),
     }
+    local dropped_oversize = 0
 
     for _, row in ipairs(input.results or {}) do
         if #payload.results >= limit then break end
@@ -224,9 +243,17 @@ function M.normalise(input)
             local url = type(row.url) == "string" and squeeze(row.url) or ""
             -- A hit with no URL is not a search result; a hit with no title is
             -- unciteable. Dropping beats emitting a row the model must guess at.
-            if title ~= "" and url ~= "" then
+            -- An over-long URL is dropped rather than cut, for the same reason:
+            -- a truncated URL looks usable and is not.
+            if title ~= "" and url ~= "" and #url > M.MAX_URL then
+                -- Dropped, not truncated — but silence would read as "no
+                -- matches", which is a different and wrong answer. `degraded`
+                -- is the channel for "the answer is partial and here is what
+                -- was lost", so the loss is stated rather than inferred.
+                dropped_oversize = dropped_oversize + 1
+            elseif title ~= "" and url ~= "" then
                 payload.results[#payload.results + 1] = {
-                    title = title,
+                    title = truncate(title, M.MAX_TITLE),
                     url = url,
                     snippet = truncate(squeeze(snippet_of(row)), M.MAX_SNIPPET),
                     score = type(row.score) == "number" and row.score or nil,
@@ -242,6 +269,14 @@ function M.normalise(input)
     -- which is a different and wrong answer.
     while #payload.results > 1 and encoded_size(payload) > M.MAX_PAYLOAD_BYTES do
         table.remove(payload.results)
+    end
+
+    if dropped_oversize > 0 then
+        payload.degraded[#payload.degraded + 1] = string.format(
+            "%d result(s) dropped: url over %d bytes",
+            dropped_oversize,
+            M.MAX_URL
+        )
     end
 
     -- Last, so trimming is done and the marking survives to the encoder.

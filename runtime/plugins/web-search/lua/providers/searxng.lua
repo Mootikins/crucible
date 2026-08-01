@@ -117,10 +117,7 @@ end
 --- Search a SearXNG instance.
 ---
 --- `opts.url` is the instance base URL (required — there is no default).
---- `opts.timeout` seconds, `opts.max_results` forwarded to the contract, and
---- `opts.headers` merged in for instances behind an auth proxy. Nothing from
---- `opts.headers` is ever echoed back: a bearer token in an error message is a
---- credential leak into model context.
+--- `opts.timeout` seconds and `opts.max_results` forwarded to the contract.
 return function(query, opts)
     opts = opts or {}
 
@@ -140,9 +137,6 @@ return function(query, opts)
     local instance = redact(base)
 
     local headers = { ["User-Agent"] = USER_AGENT, Accept = "application/json" }
-    for k, v in pairs(opts.headers or {}) do
-        headers[k] = v
-    end
 
     local timeout = math.floor(tonumber(opts.timeout) or DEFAULT_TIMEOUT)
     if timeout < 1 then timeout = DEFAULT_TIMEOUT end

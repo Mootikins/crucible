@@ -292,8 +292,14 @@ describe("web-search contract", function()
                     { title = "t", url = "https://x.test/" .. string.rep("a", 9000), snippet = "s" },
                 },
             })
-            assert.equal(1, #payload.results)
-            assert.truthy(contract.encoded_size(payload) > contract.MAX_PAYLOAD_BYTES)
+            -- Dropped rather than kept: a 9KB URL is unfollowable whether it
+            -- is truncated or not, and keeping it spilled the whole payload to
+            -- a file. The loss is stated in `degraded` so an empty result list
+            -- cannot be misread as "no matches".
+            assert.equal(0, #payload.results)
+            assert.equal(1, #payload.degraded)
+            assert.truthy(payload.degraded[1]:find("url over", 1, true))
+            assert.truthy(contract.encoded_size(payload) <= contract.MAX_PAYLOAD_BYTES)
         end)
 
         it("defaults to 8 results and clamps a caller's request", function()

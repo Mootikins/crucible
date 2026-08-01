@@ -93,12 +93,27 @@ local ENTITIES = {
 --- entity — `&amp;lt;` must end as the literal text `&lt;`, not as `<`.
 --- An unrecognised name is left alone: a stray `&thorn;` in a snippet is a
 --- visible artefact, which is better than dropping the text.
+--- `utf8.char` RAISES on a codepoint above 0x7FFFFFFF, and remote HTML is free
+--- to contain `&#99999999999;`. This function documents that it never raises
+--- and is reached from `M.parse` and `unwrap_redirect`, both of which say the
+--- same — so an out-of-range numeric entity is left as literal text rather
+--- than decoded. A visible `&#99999999999;` in a snippet is a far better
+--- outcome than an error escaping the adapter.
+local MAX_CODEPOINT = 0x10FFFF
+
+local function safe_char(n)
+    if type(n) ~= "number" or n < 0 or n > MAX_CODEPOINT then return nil end
+    local ok, ch = pcall(utf8.char, n)
+    if ok then return ch end
+    return nil
+end
+
 local function decode_entities(s)
     return (s:gsub("&(#?%w+);", function(name)
         local hex = name:match("^#[xX](%x+)$")
-        if hex then return utf8.char(tonumber(hex, 16)) end
+        if hex then return safe_char(tonumber(hex, 16)) end
         local dec = name:match("^#(%d+)$")
-        if dec then return utf8.char(tonumber(dec, 10)) end
+        if dec then return safe_char(tonumber(dec, 10)) end
         return ENTITIES[name]
     end))
 end
@@ -197,15 +212,35 @@ function M.parse(html)
         end
     end
 
-    if #rows == 0 then
+    -- Zero rows is ambiguous: DuckDuckGo genuinely had nothing, or the markup
+    -- this scraper depends on changed. The two need different answers, and
+    -- collapsing them was a real contract break — searxng and exa both return
+    -- an empty result set for "nothing found", while this returned an error, so
+    -- the chain fell through and the model was told every provider failed when
+    -- the honest answer was "the web has nothing on this".
+    --
+    -- A page with result table rows in it parsed fine and found nothing. A page
+    -- with none at all is the shape having changed, and that is a failure worth
+    -- reporting loudly.
+    if #rows == 0 and tr_count == 0 then
         return nil, string.format(
-            "found no result links in the lite page (%d bytes, %d table rows, %d sponsored): "
-                .. "either DuckDuckGo returned nothing for this query, or the "
-                .. "`<a class=\"result-link\">` markup this scraper depends on has changed",
+            "found no result table rows in the lite page (%d bytes, %d sponsored): "
+                .. "the `<a class=\"result-link\">` markup this scraper depends on "
+                .. "has almost certainly changed",
             #html,
-            tr_count,
             sponsored
         )
+    end
+
+    -- Rows but no anchors is genuinely ambiguous: DuckDuckGo had nothing, or
+    -- the anchor markup moved. Nothing in the page distinguishes them
+    -- reliably, and guessing either way is worse than saying so — collapsing
+    -- it to an error made "the web has nothing on this" inexpressible, while
+    -- collapsing it to a clean empty would let a stale scraper report "no
+    -- results" forever, silently. So: an empty answer, plus a note that this
+    -- is what it looked like.
+    if #rows == 0 then
+        return rows, nil, "ddg: rows present but no result anchors (no matches, or markup moved)"
     end
 
     return rows
@@ -254,7 +289,7 @@ function M.search(query, opts)
         )
     end
 
-    local rows, why = M.parse(response.body or "")
+    local rows, why, degraded_note = M.parse(response.body or "")
     if not rows then
         return fail("%s", why)
     end
@@ -263,6 +298,7 @@ function M.search(query, opts)
         query = query,
         provider = M.NAME,
         results = rows,
+        degraded = degraded_note and { degraded_note } or nil,
         max_results = opts.max_results,
     })
     if not payload then
@@ -272,7 +308,11 @@ function M.search(query, opts)
     -- The second half of "never silently empty": the parse found anchors, yet
     -- nothing survived normalisation. That is a markup change too — lite grew a
     -- link shape whose title or href is somewhere else.
-    if #payload.results == 0 then
+    --
+    -- Guarded on `#rows > 0`: with no anchors at all the emptiness is the
+    -- ambiguous case handled in `M.parse`, and it already carries its note.
+    -- Failing here as well would put back the defect that guard removed.
+    if #rows > 0 and #payload.results == 0 then
         return fail(
             "parsed %d result links but none had both a title and a url, "
                 .. "so the lite page's anchor markup has changed",

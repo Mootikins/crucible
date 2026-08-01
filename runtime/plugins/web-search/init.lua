@@ -138,6 +138,28 @@ local CHAIN_BUDGET_SECONDS = 25
 --- spending the remainder on it buys nothing and costs the failure message.
 local MIN_PROVIDER_SECONDS = 3
 
+--- Escape a literal string for use as a Lua pattern.
+local function escape_pattern(literal)
+    return (literal:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%1"))
+end
+
+--- Remove configured secrets from text on its way to model context.
+---
+--- Providers scrub the messages they construct, but a raise escaping an adapter
+--- after it has built an `Authorization` header is stringified generically, and
+--- that path had no scrubbing at all.
+local function scrub_secrets(text, cfg)
+    if type(text) ~= "string" then return tostring(text) end
+    for _, key in ipairs({ "exa_api_key", "brave_api_key", "tavily_api_key" }) do
+        local secret = cfg and cfg[key]
+        -- A short value would match half the string; a real key is long.
+        if type(secret) == "string" and #secret >= 8 then
+            text = text:gsub(escape_pattern(secret), "<redacted>")
+        end
+    end
+    return text
+end
+
 local function attempt(name, entry, query, cfg, limit, seconds)
     local loaded, mod = pcall(require, entry.module)
     if not loaded then
@@ -155,7 +177,11 @@ local function attempt(name, entry, query, cfg, limit, seconds)
     if seconds then opts.timeout = seconds end
     local ok, payload, err = pcall(search, query, opts)
     if not ok then
-        return nil, "raised an error: " .. tostring(payload)
+        -- Scrubbed: this is the one place an arbitrary raise is stringified
+        -- into text that reaches model context. Adapters scrub the messages
+        -- they build themselves, but a raise escaping after a provider has
+        -- assembled an `Authorization` header lands here carrying it.
+        return nil, "raised an error: " .. scrub_secrets(tostring(payload), cfg)
     end
     if type(payload) ~= "table" then
         return nil, reason_of(err)
@@ -169,6 +195,17 @@ local function attempt(name, entry, query, cfg, limit, seconds)
             "returned a payload labelled `%s`, so it did not go through the contract",
             tostring(payload.provider)
         )
+    end
+
+    -- `contract.validate` describes itself as the check that catches an adapter
+    -- silently widening the shape — and nothing called it outside the test
+    -- suite, so the allowlist was enforced only by construction inside
+    -- `normalise`. An adapter that builds its own table, or mutates one after
+    -- normalising, walked straight through. Checking here covers all three
+    -- providers at the single point they funnel into.
+    local valid, why = contract.validate(payload)
+    if not valid then
+        return nil, "returned a payload the contract rejects: " .. tostring(why)
     end
 
     return payload

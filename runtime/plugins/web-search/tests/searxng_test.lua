@@ -252,16 +252,9 @@ describe("searxng provider", function()
         it("never echoes a configured auth header back", function()
             respond({ status = 0, ok = false, body = "", error = "connection refused" })
             local _, err = searxng(QUERY, {
-                url = INSTANCE,
-                headers = { Authorization = "Bearer super-secret-token" },
+                url = "http://user:super-secret-token@localhost:8888",
             })
             assert.falsy(encode_json(err):find("super%-secret%-token"))
-        end)
-
-        it("sends the configured header even so", function()
-            respond(json_ok('{"results":[]}'))
-            searxng(QUERY, { url = INSTANCE, headers = { Authorization = "Bearer tok" } })
-            assert.equal("Bearer tok", last_get()[2].headers.Authorization)
         end)
 
         it("redacts basic-auth credentials embedded in the instance URL", function()
