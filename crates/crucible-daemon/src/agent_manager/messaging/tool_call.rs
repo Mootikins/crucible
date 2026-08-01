@@ -203,26 +203,31 @@ impl AgentManager {
             .clone()
             .unwrap_or(serde_json::Value::Null);
 
-        // Plan mode excludes plugin tools categorically — their side effects
-        // are unknown, so the write-name blocklist cannot classify them.
+        // Plan mode refuses plugin tools unless the operator named one — their
+        // side effects are unknown, so the write-name blocklist cannot classify
+        // them, and a plugin's own claim is not evidence. See
+        // `tool_modes::plugin_tool_barred` for the two-key rule.
+        //
         // Enforced here (not only in the advertised tool set) because the
         // dispatcher always contains them and the mode can change mid-run:
         // before this guard, a session switched to plan kept every plugin
         // tool dispatchable. Before the hook loop, so a plugin cannot
         // "handle" its own tool around the ban.
-        if stream_ctx.session_mode == "plan"
-            && stream_ctx
-                .agent_stream_config
-                .plugin_tool_names
-                .contains(&tool_call.name)
-        {
+        if crate::tools::tool_modes::plugin_tool_barred(
+            &stream_ctx.session_mode,
+            &tool_call.name,
+            &stream_ctx.agent_stream_config.plugin_tool_names,
+            &stream_ctx.agent_stream_config.modes,
+        ) {
             return deny_tool_call(
                 stream_ctx,
                 &call_id,
                 &tool_call.name,
                 format!(
-                    "Tool '{}' is a plugin tool and not available in plan mode",
-                    tool_call.name
+                    "Tool '{}' is a plugin tool and not available in plan mode. \
+                     To allow it, name it exactly in the mode's tool list: \
+                     cru.modes.plan.tools = {{ ..., \"{}\" }}",
+                    tool_call.name, tool_call.name
                 ),
             );
         }
