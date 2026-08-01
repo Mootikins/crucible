@@ -29,7 +29,7 @@ fn read_file_definition() -> Tool {
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Path to file (absolute or relative to workspace)"
+                        "description": "Path to file (absolute, relative to workspace, or using $CRU_SESSION_DIR)"
                     },
                     "offset": {
                         "type": "integer",

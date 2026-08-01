@@ -274,6 +274,17 @@ end
         let json_table = lua.create_table()?;
         json_table.set("encode", crucible.get::<mlua::Value>("json_encode")?)?;
         json_table.set("decode", crucible.get::<mlua::Value>("json_decode")?)?;
+        // `cru.json.array(t)` — mark a table as a JSON list. Lua cannot tell an
+        // empty list from an empty map, and the encoder resolves that as a map,
+        // so an unmarked empty list reaches a consumer as `{}` while a
+        // populated one is `[…]`. Tools returning result lists need the type to
+        // be stable across "found nothing".
+        json_table.set(
+            "array",
+            lua.create_function(|lua, table: mlua::Table| {
+                crate::json_query::mark_json_array(lua, table)
+            })?,
+        )?;
         cru_ns.set("json", json_table)?;
 
         // Register ask module for user interaction

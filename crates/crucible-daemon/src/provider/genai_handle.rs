@@ -43,7 +43,11 @@ const DEFAULT_ASSUMED_CONTEXT: usize = 128_000;
 /// Returns the system prompt separately (as a cached system ChatMessage) so it can
 /// be included in the messages vec rather than via `with_system()`, which doesn't
 /// support cache control.
-fn apply_prompt_caching(system_prompt: &str, messages: &mut Vec<ChatMessage>) {
+fn apply_prompt_caching(
+    system_prompt: &str,
+    session_context: &str,
+    messages: &mut Vec<ChatMessage>,
+) {
     // Mark second-to-last message with cache control (the last msg before current user turn).
     // This creates a cache breakpoint at the end of the prior conversation, so the entire
     // prefix up to this point is cached on subsequent turns.
@@ -53,12 +57,46 @@ fn apply_prompt_caching(system_prompt: &str, messages: &mut Vec<ChatMessage>) {
         messages[idx] = msg;
     }
 
-    // Prepend system prompt as a system-role message with cache control.
+    // Two system messages, each with its own breakpoint, stable one first.
+    // genai collects every system-role message into Anthropic's `system` array
+    // keeping per-message cache control (`adapter_shared.rs`), so this is two
+    // real breakpoints rather than one — and nothing is dropped.
+    //
+    // The split is the point. A cache entry is keyed on the whole prefix up to
+    // its breakpoint, so with a single breakpoint covering both halves, a
+    // different workspace missed on the persona and the project rules too.
+    // Providers that cache prefixes automatically (OpenAI) benefit from the
+    // ordering alone.
+    if !session_context.is_empty() {
+        let ctx_msg = ChatMessage::system(session_context).with_options(CacheControl::Ephemeral);
+        messages.insert(0, ctx_msg);
+    }
     // genai's with_system() doesn't support MessageOptions, but system-role
-    // ChatMessages do — the Anthropic adapter handles them identically.
+    // ChatMessages do.
     if !system_prompt.is_empty() {
         let system_msg = ChatMessage::system(system_prompt).with_options(CacheControl::Ephemeral);
         messages.insert(0, system_msg);
+    }
+}
+
+/// What the model is shown for one finished tool call.
+///
+/// Every failure path sets `result` empty and puts the text in `error` —
+/// permission denials, dispatch timeouts, containment refusals, unknown tools,
+/// plugin cancels. This function used to be the line `result.result`, so the
+/// model received `""` for all of them and either repeated the identical call
+/// or invented an outcome, while the TUI was shown the real message through a
+/// separate event channel. Every carefully-worded refusal in this codebase was
+/// addressed to a reader that never saw it.
+fn tool_response_payload(result: &ChatToolResult) -> String {
+    match &result.error {
+        None => result.result.clone(),
+        // Content AND an error: a non-zero exit with output on the way is
+        // still output. Keep both rather than choosing.
+        Some(err) if !result.result.is_empty() => {
+            format!("{}\n\nError: {err}", result.result)
+        }
+        Some(err) => format!("Error: {err}"),
     }
 }
 
@@ -345,6 +383,10 @@ pub struct GenaiAgentHandle {
     client: genai::Client,
     model: ModelIden,
     system_prompt: String,
+    /// This session's workspace/kiln header. Held apart from `system_prompt`
+    /// so the stable half can be cached across sessions; see
+    /// `apply_prompt_caching`.
+    session_context: String,
     tools: Vec<LlmToolDefinition>,
     mode_state: SessionModeState,
     current_mode_id: String,
@@ -717,6 +759,15 @@ impl GenaiAgentHandle {
         )
     }
 
+    /// Attach this session's workspace/kiln header.
+    ///
+    /// Kept out of `system_prompt` so the stable half can be cached across
+    /// sessions and projects rather than invalidated by a path.
+    pub fn with_session_context(mut self, session_context: String) -> Self {
+        self.session_context = session_context;
+        self
+    }
+
     /// Attach the Lua mode registry.
     ///
     /// Two jobs, and the second was missing: a declared mode's `tools`
@@ -789,6 +840,7 @@ impl GenaiAgentHandle {
             client,
             model,
             system_prompt: system_prompt.to_string(),
+            session_context: String::new(),
             tools,
             mode_state,
             current_mode_id,
@@ -915,10 +967,16 @@ impl GenaiAgentHandle {
         let mode_selector = declared.map(|m| m.tools);
 
         // Native attach candidates after the plan-mode filter: the write-name
-        // blocklist for built-ins, plus every plugin tool (unknown side
-        // effects — plan mode fails closed on them). This set still contains
-        // gateway tools; the budget trigger is computed over it so a large
-        // upstream tool set forces deferral even in plan mode.
+        // blocklist for built-ins, plus plugin tools the mode has not named
+        // (unknown side effects — plan mode fails closed on them). This set
+        // still contains gateway tools; the budget trigger is computed over it
+        // so a large upstream tool set forces deferral even in plan mode.
+        //
+        // The admission rule has to be applied HERE as well as at dispatch.
+        // Lifting only the dispatch ban left a tool the operator had named
+        // absent from the advertised set, so the model never saw it and the
+        // grant did nothing — a half-landed permission is worse than none,
+        // because the config says it worked.
         let selected: Vec<LlmToolDefinition> = match &mode_selector {
             Some(selector) => self
                 .tools
@@ -932,8 +990,25 @@ impl GenaiAgentHandle {
             selected
                 .iter()
                 .filter(|t| {
-                    !is_write_tool_name(&t.function.name)
-                        && !self.plugin_tool_names.contains(&t.function.name)
+                    let is_plugin = self.plugin_tool_names.contains(&t.function.name);
+                    // An UNKNOWN mode has no declaration, so nothing can have
+                    // granted anything and every plugin tool is stripped —
+                    // `plugin_tool_barred` alone would not do it, because it
+                    // answers only for `plan` and returns false for any other
+                    // mode id. Wiring it in without this arm quietly reopened
+                    // plugin tools for a mode that had gone away, which is the
+                    // most permissive possible reading of a missing config.
+                    let barred = if mode_unknown {
+                        is_plugin
+                    } else {
+                        crate::tools::tool_modes::plugin_tool_barred(
+                            &self.current_mode_id,
+                            &t.function.name,
+                            &self.plugin_tool_names,
+                            self.modes.as_ref(),
+                        )
+                    };
+                    !is_write_tool_name(&t.function.name) && !barred
                 })
                 .cloned()
                 .collect()
@@ -1039,7 +1114,7 @@ impl GenaiAgentHandle {
         } else {
             self.system_prompt.clone()
         };
-        apply_prompt_caching(&system_prompt, &mut messages);
+        apply_prompt_caching(&system_prompt, &self.session_context, &mut messages);
 
         let req_tools: Vec<Tool> = visible
             .tools
@@ -1355,13 +1430,14 @@ impl GenaiAgentHandle {
                     messages.push(ChatMessage::from(genai_tool_calls));
                 }
                 for (idx, result) in collected.into_iter().enumerate() {
+                    let payload = tool_response_payload(&result);
                     let call_id = result.call_id.unwrap_or_else(|| {
                         pending_calls
                             .get(idx)
                             .and_then(|call| call.id.clone())
                             .unwrap_or_else(|| format!("tool_call_{idx}"))
                     });
-                    messages.push(ChatMessage::from(ToolResponse::new(call_id, result.result)));
+                    messages.push(ChatMessage::from(ToolResponse::new(call_id, payload)));
                 }
 
                 // Attached knowledge goes last, after the tool responses:
@@ -1396,7 +1472,11 @@ impl AgentHandle for GenaiAgentHandle {
     /// enrichment (workspace header, rules files, skills catalog) — not the
     /// agent card's `system_prompt` the session config stores.
     fn get_system_prompt(&self) -> Option<String> {
-        Some(self.system_prompt.clone())
+        Some(if self.session_context.is_empty() {
+            self.system_prompt.clone()
+        } else {
+            format!("{}\n\n{}", self.system_prompt, self.session_context)
+        })
     }
 
     fn get_mode_id(&self) -> &str {
@@ -1557,6 +1637,116 @@ impl crucible_core::turn::Agent for GenaiAgentHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::traits::chat::ChatToolResult;
+
+    fn failed(name: &str, error: &str) -> ChatToolResult {
+        ChatToolResult {
+            name: name.to_string(),
+            result: String::new(),
+            error: Some(error.to_string()),
+            call_id: Some("c1".to_string()),
+            terminate: false,
+        }
+    }
+
+    /// A tool that failed must tell the model why.
+    ///
+    /// Every failure path — permission denial, timeout, containment refusal,
+    /// unknown tool — sets `result` empty and puts the text in `error`, and
+    /// `error` was never read when the message list was built. The model saw
+    /// `""`, so it either repeated the identical call or invented a result,
+    /// while the TUI showed the real message through a separate channel.
+    #[test]
+    fn a_failed_tool_call_reaches_the_model_with_its_error() {
+        let denied = failed(
+            "read_file",
+            "Path '/etc/passwd' is outside this session's allowed roots",
+        );
+        let payload = tool_response_payload(&denied);
+
+        assert!(
+            payload.contains("outside this session's allowed roots"),
+            "the model must see why the call failed, got {payload:?}"
+        );
+        assert!(!payload.is_empty());
+    }
+
+    /// A successful result is passed through untouched.
+    #[test]
+    fn a_successful_tool_result_is_unchanged() {
+        let ok = ChatToolResult {
+            name: "read_file".to_string(),
+            result: "{\"result\":\"hello\"}".to_string(),
+            error: None,
+            call_id: Some("c1".to_string()),
+            terminate: false,
+        };
+        assert_eq!(tool_response_payload(&ok), "{\"result\":\"hello\"}");
+    }
+
+    /// Both present: the content is the answer, the error is context on top of
+    /// it — a partial failure must not silently drop what did come back.
+    #[test]
+    fn a_result_carrying_both_content_and_an_error_keeps_both() {
+        let both = ChatToolResult {
+            name: "bash".to_string(),
+            result: "partial output".to_string(),
+            error: Some("exit code 1".to_string()),
+            call_id: Some("c1".to_string()),
+            terminate: false,
+        };
+        let payload = tool_response_payload(&both);
+        assert!(payload.contains("partial output"));
+        assert!(payload.contains("exit code 1"));
+    }
+
+    /// The session's paths must not sit inside the cached prefix.
+    ///
+    /// One breakpoint covering both halves means a cache entry keyed on the
+    /// whole system prompt, so a different workspace missed on the persona and
+    /// the project rules too. Two breakpoints let the stable half survive a
+    /// change of project.
+    #[test]
+    fn the_stable_prompt_and_the_session_context_get_separate_breakpoints() {
+        let mut messages = vec![ChatMessage::user("hello")];
+
+        apply_prompt_caching("PERSONA", "Workspace: /repo", &mut messages);
+
+        assert_eq!(messages.len(), 3, "two system messages plus the user turn");
+        let texts: Vec<String> = messages
+            .iter()
+            .map(|m| m.content.joined_texts().unwrap_or_default())
+            .collect();
+        assert_eq!(texts[0], "PERSONA", "the cacheable half leads");
+        assert_eq!(texts[1], "Workspace: /repo", "session context follows it");
+
+        for (idx, label) in [(0usize, "stable"), (1, "session context")] {
+            assert!(
+                messages[idx]
+                    .options
+                    .as_ref()
+                    .and_then(|o| o.cache_control.as_ref())
+                    .is_some(),
+                "the {label} half needs its own cache breakpoint"
+            );
+        }
+    }
+
+    /// A session with no kiln and no workspace header still gets exactly one
+    /// system message — an empty second block would be a wasted breakpoint.
+    #[test]
+    fn an_empty_session_context_adds_no_second_system_message() {
+        let mut messages = vec![ChatMessage::user("hello")];
+
+        apply_prompt_caching("PERSONA", "", &mut messages);
+
+        assert_eq!(messages.len(), 2);
+        assert_eq!(
+            messages[0].content.joined_texts().unwrap_or_default(),
+            "PERSONA"
+        );
+    }
+
     use crate::provider::ChatClient;
     use crucible_core::config::{BackendType, LlmProviderConfig};
 
@@ -2708,5 +2898,131 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("")
+    }
+
+    // ─── ROUND-3 THROWAWAY: plan-mode plugin admission matrix ───────────
+    /// Advertisement and dispatch must agree on plugin-tool admission for
+    /// every combination of mode and declaration, not just the common ones.
+    ///
+    /// Two rounds of review found this pair disagreeing. First the grant was
+    /// honoured at dispatch but not in the advertised set, so a tool the
+    /// operator had named was never offered to the model — a permission that
+    /// reports success while changing nothing. Then wiring the shared rule into
+    /// advertisement dropped the unknown-mode case, reopening every plugin tool
+    /// for a mode that had gone away.
+    ///
+    /// Both were combinations nobody had enumerated, so this enumerates them.
+    mod admission_matrix {
+        use super::*;
+        use crucible_lua::{ModeDefinition, ModePermissions, ModeRegistry, ToolSelector};
+
+        fn reg(entries: &[(&str, ToolSelector)]) -> ModeRegistry {
+            let r = ModeRegistry::new();
+            for (name, sel) in [("normal", ToolSelector::All), ("auto", ToolSelector::All)]
+                .iter()
+                .cloned()
+                .chain(entries.iter().map(|(n, s)| (*n, s.clone())))
+            {
+                r.set(ModeDefinition {
+                    name: name.to_string(),
+                    description: None,
+                    tools: sel,
+                    permissions: ModePermissions::default(),
+                });
+            }
+            r
+        }
+
+        fn plugins() -> std::collections::HashSet<String> {
+            ["web_search".to_string()].into()
+        }
+
+        /// Names advertised to the model in `mode`. `vanish` removes the mode
+        /// after selecting it, which is how a mode "goes away" mid-session.
+        async fn advertised(modes: ModeRegistry, mode: &str, vanish: bool) -> Vec<String> {
+            let mut h = test_handle_with_tools(vec![
+                tool_def("read_file"),
+                tool_def("write_file"),
+                tool_def("web_search"),
+            ])
+            .with_plugin_tools(plugins())
+            .with_modes(modes.clone());
+            h.set_mode_str(mode).await.unwrap();
+            if vanish {
+                modes.remove(mode);
+            }
+            h.visible_tool_names_for_test().0
+        }
+
+        fn barred(modes: &ModeRegistry, mode: &str) -> bool {
+            crate::tools::tool_modes::plugin_tool_barred(
+                mode,
+                "web_search",
+                &plugins(),
+                Some(modes),
+            )
+        }
+
+        /// The operator's grant reaches BOTH paths, which is the whole point.
+        #[tokio::test]
+        async fn a_named_plugin_tool_is_advertised_and_dispatchable_in_plan() {
+            let modes = reg(&[(
+                "plan",
+                ToolSelector::Patterns(vec!["read_*".into(), "web_search".into()]),
+            )]);
+            assert!(advertised(modes.clone(), "plan", false)
+                .await
+                .contains(&"web_search".to_string()));
+            assert!(!barred(&modes, "plan"));
+        }
+
+        /// Neither a glob nor `*` is a grant — a plugin could otherwise pick a
+        /// name that walks through a selector written before it existed.
+        #[tokio::test]
+        async fn a_glob_or_wildcard_admits_nothing_on_either_path() {
+            for selector in [
+                ToolSelector::Patterns(vec!["*_search".into()]),
+                ToolSelector::All,
+            ] {
+                let modes = reg(&[("plan", selector)]);
+                assert!(!advertised(modes.clone(), "plan", false)
+                    .await
+                    .contains(&"web_search".to_string()));
+                assert!(barred(&modes, "plan"));
+            }
+        }
+
+        /// A mode that vanished mid-session has no declaration, so it has
+        /// granted nothing — the most permissive reading of a missing config is
+        /// the wrong one.
+        #[tokio::test]
+        async fn a_vanished_mode_advertises_no_plugin_tool() {
+            for mode in ["plan", "review"] {
+                let modes = reg(&[(
+                    mode,
+                    ToolSelector::Patterns(vec!["read_*".into(), "web_search".into()]),
+                )]);
+                assert!(
+                    !advertised(modes, mode, true)
+                        .await
+                        .contains(&"web_search".to_string()),
+                    "{mode} went away, so nothing it once granted still stands"
+                );
+            }
+        }
+
+        /// Outside plan the rule does not apply, and a declared custom mode
+        /// that names the tool simply gets it.
+        #[tokio::test]
+        async fn an_unrestricted_declared_mode_is_unaffected() {
+            let modes = reg(&[(
+                "review",
+                ToolSelector::Patterns(vec!["read_*".into(), "web_search".into()]),
+            )]);
+            assert!(advertised(modes.clone(), "review", false)
+                .await
+                .contains(&"web_search".to_string()));
+            assert!(!barred(&modes, "review"));
+        }
     }
 }

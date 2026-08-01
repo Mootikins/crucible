@@ -111,6 +111,53 @@ impl WorkspaceTools {
         self
     }
 
+    /// Expand `$NAME` / `${NAME}` from this tool set's OWN env map.
+    ///
+    /// Deliberately not the process environment: `$HOME` and `$PATH` must stay
+    /// literal, or path expansion would become a way around containment. The
+    /// map holds exactly what `with_env` was given — `CRU_SESSION`,
+    /// `CRU_SESSION_DIR` — so this expands the references Crucible itself
+    /// hands the model and nothing else.
+    ///
+    /// `bash` got this for free from the shell, which is why spilled output was
+    /// reachable there and nowhere else.
+    fn expand_env_vars(&self, path: &str) -> String {
+        if !path.contains('$') {
+            return path.to_string();
+        }
+        let mut out = String::with_capacity(path.len());
+        let mut rest = path;
+        while let Some(idx) = rest.find('$') {
+            out.push_str(&rest[..idx]);
+            let after = &rest[idx + 1..];
+            let (name, consumed) = if let Some(stripped) = after.strip_prefix('{') {
+                match stripped.find('}') {
+                    Some(end) => (&stripped[..end], end + 2),
+                    None => ("", 0),
+                }
+            } else {
+                let end = after
+                    .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                    .unwrap_or(after.len());
+                (&after[..end], end)
+            };
+            match self.env_vars.get(name) {
+                Some(value) => {
+                    out.push_str(value);
+                    rest = &after[consumed..];
+                }
+                // Unknown name: leave it exactly as written, so containment
+                // judges the literal string rather than a half-expansion.
+                None => {
+                    out.push('$');
+                    rest = after;
+                }
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+
     /// Resolve a path (absolute or relative to workspace) and enforce
     /// containment when configured.
     ///
@@ -118,7 +165,7 @@ impl WorkspaceTools {
     /// `..` and symlink escapes for reads AND writes of not-yet-existing
     /// files) and requires the result to sit under an allowed root.
     fn resolve_path(&self, path: &str) -> Result<PathBuf, rmcp::ErrorData> {
-        let p = PathBuf::from(path);
+        let p = PathBuf::from(self.expand_env_vars(path));
         let resolved = if p.is_absolute() {
             p
         } else {
@@ -612,338 +659,4 @@ impl ToolExecutor for WorkspaceTools {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    // =========================================================================
-    // Test fixtures
-    // =========================================================================
-
-    fn create_workspace() -> (TempDir, WorkspaceTools) {
-        let temp = TempDir::new().unwrap();
-        let tools = WorkspaceTools::new(temp.path());
-        (temp, tools)
-    }
-
-    // =========================================================================
-    // read_file tests
-    // =========================================================================
-
-    #[tokio::test]
-    async fn test_read_file_returns_content_with_line_numbers() {
-        let (temp, tools) = create_workspace();
-        let file = temp.path().join("test.txt");
-        tokio::fs::write(&file, "line1\nline2\nline3")
-            .await
-            .unwrap();
-
-        let result = tools.read_file("test.txt".to_string(), None, None).await;
-
-        assert!(result.is_ok());
-        let result = result.unwrap();
-        assert!(!result
-            .is_error
-            .expect("is_error field should be present in tool result"));
-
-        // Check content contains line numbers
-        let content = format!("{:?}", result.content);
-        assert!(content.contains("line1"));
-        assert!(content.contains("line2"));
-        assert!(content.contains("line3"));
-    }
-
-    #[tokio::test]
-    async fn test_read_file_with_offset_and_limit() {
-        let (temp, tools) = create_workspace();
-        let file = temp.path().join("test.txt");
-        tokio::fs::write(&file, "line1\nline2\nline3\nline4\nline5")
-            .await
-            .unwrap();
-
-        // Read lines 2-3 only
-        let result = tools
-            .read_file("test.txt".to_string(), Some(2), Some(2))
-            .await;
-
-        assert!(result.is_ok());
-        let content = format!("{:?}", result.unwrap().content);
-        assert!(content.contains("line2"));
-        assert!(content.contains("line3"));
-        assert!(!content.contains("line1")); // Should be skipped
-        assert!(!content.contains("line4")); // Should be limited
-    }
-
-    #[tokio::test]
-    async fn test_read_file_nonexistent_returns_error() {
-        let (_temp, tools) = create_workspace();
-
-        let result = tools
-            .read_file("nonexistent.txt".to_string(), None, None)
-            .await;
-
-        assert!(result.is_err());
-    }
-
-    // =========================================================================
-    // edit_file tests
-    // =========================================================================
-
-    #[tokio::test]
-    async fn test_edit_file_replaces_text() {
-        let (temp, tools) = create_workspace();
-        let file = temp.path().join("test.txt");
-        tokio::fs::write(&file, "hello world").await.unwrap();
-
-        let result = tools
-            .edit_file(
-                "test.txt".to_string(),
-                "world".to_string(),
-                "rust".to_string(),
-                None,
-            )
-            .await;
-
-        assert!(result.is_ok());
-
-        let content = tokio::fs::read_to_string(&file).await.unwrap();
-        assert_eq!(content, "hello rust");
-    }
-
-    #[tokio::test]
-    async fn test_edit_file_replace_all() {
-        let (temp, tools) = create_workspace();
-        let file = temp.path().join("test.txt");
-        tokio::fs::write(&file, "foo bar foo baz foo")
-            .await
-            .unwrap();
-
-        let result = tools
-            .edit_file(
-                "test.txt".to_string(),
-                "foo".to_string(),
-                "qux".to_string(),
-                Some(true),
-            )
-            .await;
-
-        assert!(result.is_ok());
-
-        let content = tokio::fs::read_to_string(&file).await.unwrap();
-        assert_eq!(content, "qux bar qux baz qux");
-    }
-
-    #[tokio::test]
-    async fn test_edit_file_not_found_returns_message() {
-        let (temp, tools) = create_workspace();
-        let file = temp.path().join("test.txt");
-        tokio::fs::write(&file, "hello world").await.unwrap();
-
-        let result = tools
-            .edit_file(
-                "test.txt".to_string(),
-                "notfound".to_string(),
-                "replacement".to_string(),
-                None,
-            )
-            .await;
-
-        assert!(result.is_ok());
-        let content = format!("{:?}", result.unwrap().content);
-        assert!(content.contains("not found"));
-    }
-
-    // =========================================================================
-    // write_file tests
-    // =========================================================================
-
-    #[tokio::test]
-    async fn test_write_file_creates_file() {
-        let (temp, tools) = create_workspace();
-
-        let result = tools
-            .write_file("new.txt".to_string(), "hello".to_string())
-            .await;
-
-        assert!(result.is_ok());
-
-        let content = tokio::fs::read_to_string(temp.path().join("new.txt"))
-            .await
-            .unwrap();
-        assert_eq!(content, "hello");
-    }
-
-    #[tokio::test]
-    async fn test_write_file_creates_parent_dirs() {
-        let (temp, tools) = create_workspace();
-
-        let result = tools
-            .write_file("a/b/c/new.txt".to_string(), "nested".to_string())
-            .await;
-
-        assert!(result.is_ok());
-
-        let content = tokio::fs::read_to_string(temp.path().join("a/b/c/new.txt"))
-            .await
-            .unwrap();
-        assert_eq!(content, "nested");
-    }
-
-    // =========================================================================
-    // bash tests
-    // =========================================================================
-
-    #[tokio::test]
-    async fn test_bash_executes_command() {
-        let (_temp, tools) = create_workspace();
-
-        let result = tools.bash("echo hello".to_string(), None).await;
-
-        assert!(result.is_ok());
-        let content = format!("{:?}", result.unwrap().content);
-        assert!(content.contains("hello"));
-    }
-
-    #[tokio::test]
-    async fn test_bash_returns_exit_code_on_failure() {
-        let (_temp, tools) = create_workspace();
-
-        let result = tools.bash("exit 42".to_string(), None).await;
-
-        assert!(result.is_ok());
-        let content = format!("{:?}", result.unwrap().content);
-        assert!(content.contains("42"));
-    }
-
-    #[tokio::test]
-    async fn test_bash_timeout() {
-        let (_temp, tools) = create_workspace();
-
-        let result = tools.bash("sleep 10".to_string(), Some(100)).await;
-
-        assert!(result.is_err());
-    }
-
-    // =========================================================================
-    // glob tests
-    // =========================================================================
-
-    #[tokio::test]
-    async fn test_glob_finds_files() {
-        let (temp, tools) = create_workspace();
-        tokio::fs::write(temp.path().join("a.rs"), "")
-            .await
-            .unwrap();
-        tokio::fs::write(temp.path().join("b.rs"), "")
-            .await
-            .unwrap();
-        tokio::fs::write(temp.path().join("c.txt"), "")
-            .await
-            .unwrap();
-
-        let result = tools.glob("*.rs".to_string(), None, None);
-
-        assert!(result.is_ok());
-        let content = format!("{:?}", result.unwrap().content);
-        assert!(content.contains("a.rs"));
-        assert!(content.contains("b.rs"));
-        assert!(!content.contains("c.txt"));
-    }
-
-    #[tokio::test]
-    async fn test_glob_respects_limit() {
-        let (temp, tools) = create_workspace();
-        for i in 0..10 {
-            tokio::fs::write(temp.path().join(format!("{i}.rs")), "")
-                .await
-                .unwrap();
-        }
-
-        let result = tools.glob("*.rs".to_string(), None, Some(3));
-
-        assert!(result.is_ok());
-        let content = format!("{:?}", result.unwrap().content);
-        assert!(content.contains("3 files"));
-        assert!(content.contains("truncated"));
-    }
-
-    // =========================================================================
-    // grep tests
-    // =========================================================================
-
-    #[tokio::test]
-    #[ignore = "requires ripgrep"]
-    async fn test_grep_finds_matches() {
-        let (temp, tools) = create_workspace();
-        tokio::fs::write(temp.path().join("test.txt"), "hello\nworld\nhello again")
-            .await
-            .unwrap();
-
-        let result = tools
-            .grep(
-                "hello".to_string(),
-                Some("test.txt".to_string()),
-                None,
-                None,
-            )
-            .await;
-
-        assert!(result.is_ok());
-        let content = format!("{:?}", result.unwrap().content);
-        assert!(content.contains("hello"));
-        assert!(content.contains("2 matches")); // Two lines with "hello"
-    }
-
-    #[tokio::test]
-    #[ignore = "requires ripgrep"]
-    async fn test_grep_with_glob_filter() {
-        let (temp, tools) = create_workspace();
-        tokio::fs::write(temp.path().join("test.rs"), "fn main() {}")
-            .await
-            .unwrap();
-        tokio::fs::write(temp.path().join("test.txt"), "fn in txt")
-            .await
-            .unwrap();
-
-        let result = tools
-            .grep("fn".to_string(), None, Some("*.rs".to_string()), None)
-            .await;
-
-        assert!(result.is_ok());
-        let content = format!("{:?}", result.unwrap().content);
-        assert!(content.contains("test.rs"));
-        assert!(!content.contains("test.txt"));
-    }
-
-    // =========================================================================
-    // tool_definitions tests
-    // =========================================================================
-
-    #[test]
-    fn test_tool_definitions_returns_all_tools() {
-        let defs = WorkspaceTools::tool_definitions();
-
-        assert_eq!(defs.len(), 6);
-
-        let names: Vec<&str> = defs.iter().map(|t| t.name.as_ref()).collect();
-        assert!(names.contains(&"read_file"));
-        assert!(names.contains(&"edit_file"));
-        assert!(names.contains(&"write_file"));
-        assert!(names.contains(&"bash"));
-        assert!(names.contains(&"glob"));
-        assert!(names.contains(&"grep"));
-    }
-
-    #[test]
-    fn test_tool_definitions_have_descriptions() {
-        let defs = WorkspaceTools::tool_definitions();
-
-        for def in defs {
-            assert!(
-                def.description.is_some(),
-                "Tool {} should have description",
-                def.name
-            );
-        }
-    }
-}
+mod tests;

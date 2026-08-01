@@ -82,6 +82,27 @@ pub enum ToolSelector {
 }
 
 impl ToolSelector {
+    /// Whether this selector names `tool_name` **outright**, not by glob.
+    ///
+    /// The operator's half of admitting a plugin tool to a restricted mode.
+    /// Plan mode refuses plugin tools by default because their side effects
+    /// are unknown, and a plugin declaring itself safe is self-attestation by
+    /// third-party code — precisely what [`crate`]'s sibling `is_safe` refuses
+    /// to trust. So the plugin's declaration stays advisory and admission
+    /// requires the operator to write the name.
+    ///
+    /// A glob is deliberately not enough: `*_search` already appears in
+    /// sensible plan-mode selectors, and honouring it here would let a plugin
+    /// choose a name that slips through a rule the operator wrote before the
+    /// plugin existed. `All` names nothing for the same reason — `tools = "*"`
+    /// was written about the tools that existed then.
+    pub fn names_exactly(&self, tool_name: &str) -> bool {
+        match self {
+            Self::All => false,
+            Self::Patterns(patterns) => patterns.iter().any(|p| p == tool_name),
+        }
+    }
+
     pub fn matches(&self, tool_name: &str) -> bool {
         match self {
             Self::All => true,
@@ -329,6 +350,40 @@ pub fn register_modes(lua: &Lua, registry: ModeRegistry) -> LuaResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A plugin tool enters a restricted mode only when the operator names it
+    /// outright.
+    ///
+    /// Plan mode used to refuse plugin tools categorically, because their side
+    /// effects are unknown. Letting a plugin declare itself safe would be
+    /// self-attestation by third-party code — the thing `is_safe`'s doc
+    /// refuses to trust. So the plugin's declaration is advisory and this is
+    /// the operator's half: an exact name in the mode's `tools` list.
+    #[test]
+    fn a_glob_never_admits_a_plugin_tool_to_a_restricted_mode() {
+        let globbed = ToolSelector::Patterns(vec!["read_*".into(), "*_search".into()]);
+
+        // `*_search` matches it for ordinary visibility...
+        assert!(globbed.matches("web_search"));
+        // ...but must not be enough to admit a plugin tool, or a plugin could
+        // pick a name that slips through a selector the operator already wrote.
+        assert!(!globbed.names_exactly("web_search"));
+    }
+
+    #[test]
+    fn an_exact_name_admits_a_plugin_tool() {
+        let named = ToolSelector::Patterns(vec!["read_*".into(), "web_search".into()]);
+        assert!(named.names_exactly("web_search"));
+        assert!(!named.names_exactly("web_fetch"));
+    }
+
+    /// `tools = "*"` is "everything the agent has", written before this plugin
+    /// existed. It must not silently acquire new plugin tools.
+    #[test]
+    fn the_all_selector_does_not_name_anything_exactly() {
+        assert!(ToolSelector::All.matches("web_search"));
+        assert!(!ToolSelector::All.names_exactly("web_search"));
+    }
 
     fn lua_with_modes() -> (Lua, ModeRegistry) {
         let lua = Lua::new();

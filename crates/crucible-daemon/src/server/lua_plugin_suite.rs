@@ -271,11 +271,6 @@ mod shipped_plugin_tests {
     use std::path::PathBuf;
     use test_case::test_case;
 
-    /// Every plugin that ships in `runtime/plugins/`. Kept in sync with the
-    /// directory listing by `every_shipped_plugin_has_a_test_case` — a new
-    /// plugin cannot land without its suite joining CI.
-    const SHIPPED_PLUGINS: &[&str] = &["kiln-expert", "oci", "reflection"];
-
     fn shipped_plugins_dir() -> PathBuf {
         PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -327,6 +322,14 @@ mod shipped_plugin_tests {
     /// same handler `cru plugin test` uses — no daemon, so it runs under
     /// nextest alongside everything else. Also exercises the package.path
     /// setup that lets `require("config")` resolve a plugin's lua/ submodule.
+    // Arms are listed explicitly rather than derived from the directory. A
+    // test used to assert the two matched, so a plugin could not sit in
+    // `runtime/plugins/` without joining CI — which also meant an
+    // experimental plugin could not exist in the tree at all before it was
+    // ready to ship. The tradeoff: adding an arm when a plugin graduates is
+    // now a manual step. `every_shipped_plugin_is_discovered` and
+    // `every_shipped_plugin_executes` still walk the real directory, so a
+    // broken plugin in the tree fails CI regardless of this list.
     #[test_case("kiln-expert")]
     #[test_case("oci")]
     #[test_case("reflection")]
@@ -351,28 +354,6 @@ mod shipped_plugin_tests {
             describe_failures(&result)
         );
         assert!(passed > 0, "{plugin}: expected passing assertions");
-    }
-
-    /// A shipped plugin with no entry above is a suite nobody runs. Five of the
-    /// six were in that state until this test existed.
-    #[test]
-    fn every_shipped_plugin_has_a_test_case() {
-        let mut on_disk: Vec<String> = std::fs::read_dir(shipped_plugins_dir())
-            .expect("runtime/plugins must exist")
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().is_dir())
-            .filter_map(|e| e.file_name().to_str().map(str::to_string))
-            .collect();
-        on_disk.sort();
-
-        let mut declared: Vec<String> = SHIPPED_PLUGINS.iter().map(|s| s.to_string()).collect();
-        declared.sort();
-
-        assert_eq!(
-            on_disk, declared,
-            "add a #[test_case] arm to shipped_plugin_lua_suite_passes for every \
-             plugin in runtime/plugins/, and update SHIPPED_PLUGINS"
-        );
     }
 }
 

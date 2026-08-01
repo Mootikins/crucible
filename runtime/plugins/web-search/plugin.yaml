@@ -1,0 +1,57 @@
+name: web-search
+version: "0.1.0"
+description: Web search over a configurable provider chain (SearXNG, DuckDuckGo, Exa)
+author: Crucible Team
+license: MIT
+
+main: init.lua
+
+capabilities:
+  - network
+  - config
+
+# `PluginManifest` has no `config` field, so nothing parses this block — it is
+# the declaration of record for what the plugin reads, and `lua/config.lua` is
+# what implements it. Keep the two in step; the defaults below are duplicated
+# there because that is where resolution actually happens.
+config:
+  properties:
+    providers:
+      type: array
+      items:
+        type: string
+      description: >-
+        Provider chain in preference order. The first provider that answers
+        wins; one whose config is absent is skipped. An empty list disables
+        search entirely.
+      default: ["searxng", "ddg"]
+
+    searxng_url:
+      type: string
+      description: >-
+        Base URL of a SearXNG instance, e.g. http://localhost:8888. No default
+        and no shipped instance list: every public instance tested rate-limits
+        or challenges automated queries, so a default pool would be a feature
+        that fails intermittently. Unset means searxng is skipped. The instance
+        also needs `search.formats: [html, json]` in its settings.yml — the
+        JSON API is off by default.
+
+    timeout:
+      type: number
+      description: Per-provider HTTP timeout in seconds; the chain moves on rather than hanging.
+      default: 15
+
+    exa_api_key:
+      type: string
+      secret: true
+      description: >-
+        Optional. Exa answers anonymously, so this only buys rate limit. Read
+        from $CRUCIBLE_WEB_SEARCH_EXA_API_KEY first — put the key there, never
+        in init.lua or a committed config.toml.
+
+# Deliberately off. `load_plugin_spec` returns early with the spec table
+# init.lua returns, so discovery never needs this; leaving it on would mean a
+# plugin that failed to return a spec falls back to scanning lua/, where every
+# provider adapter is a bare exported function and would register as a tool.
+exports:
+  auto_discover: false
