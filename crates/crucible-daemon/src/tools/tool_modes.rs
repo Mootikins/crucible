@@ -63,13 +63,15 @@ pub fn plugin_tool_barred(
     mode_id: &str,
     tool_name: &str,
     plugin_tool_names: &std::collections::HashSet<String>,
-    modes: &crucible_lua::ModeRegistry,
+    modes: Option<&crucible_lua::ModeRegistry>,
 ) -> bool {
     if mode_id != "plan" || !plugin_tool_names.contains(tool_name) {
         return false;
     }
+    // No registry is the un-configured state, and it fails CLOSED: with no
+    // declaration there is no grant, so the categorical refusal stands.
     !modes
-        .get(mode_id)
+        .and_then(|m| m.get(mode_id))
         .is_some_and(|m| m.tools.names_exactly(tool_name))
 }
 
@@ -102,7 +104,7 @@ mod plugin_admission_tests {
             "plan",
             "web_search",
             &plugin_tools(),
-            &modes
+            Some(&modes)
         ));
     }
 
@@ -117,7 +119,7 @@ mod plugin_admission_tests {
             "plan",
             "web_search",
             &plugin_tools(),
-            &modes
+            Some(&modes)
         ));
     }
 
@@ -131,7 +133,7 @@ mod plugin_admission_tests {
             "plan",
             "web_search",
             &plugin_tools(),
-            &modes
+            Some(&modes)
         ));
     }
 
@@ -143,7 +145,7 @@ mod plugin_admission_tests {
             "plan",
             "web_search",
             &plugin_tools(),
-            &modes
+            Some(&modes)
         ));
     }
 
@@ -155,7 +157,18 @@ mod plugin_admission_tests {
             "normal",
             "web_search",
             &plugin_tools(),
-            &modes
+            Some(&modes)
+        ));
+    }
+
+    /// No mode registry at all: nothing granted, so the refusal stands.
+    #[test]
+    fn an_absent_registry_bars_a_plugin_tool() {
+        assert!(plugin_tool_barred(
+            "plan",
+            "web_search",
+            &plugin_tools(),
+            None
         ));
     }
 
@@ -167,7 +180,7 @@ mod plugin_admission_tests {
             "plan",
             "semantic_search",
             &plugin_tools(),
-            &modes
+            Some(&modes)
         ));
     }
 }

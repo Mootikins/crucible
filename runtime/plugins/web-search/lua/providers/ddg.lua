@@ -132,8 +132,21 @@ local function unwrap_redirect(href)
     -- `&amp;`. Left alone they would be handed to the model, and to any later
     -- fetch, as part of the URL.
     href = decode_entities(href)
-    local target = href:match("[?&]uddg=([^&\"]+)")
-    if target then href = percent_decode(target) end
+    -- Only unwrap DuckDuckGo's OWN redirector. `uddg=` was matched on any href
+    -- from any host, so an indexed page carrying that parameter could rewrite
+    -- its own result URL to a domain it does not control — the model then cites
+    -- attacker-authored title and snippet under, say, a docs domain. It also
+    -- silently mangled benign URLs that happen to use `uddg` as a query
+    -- parameter, which is a plain correctness bug with no attacker at all.
+    local hostless = href:gsub("^https?:", ""):gsub("^//", "")
+    local host = hostless:match("^([^/]+)")
+    local is_ddg_redirector = host
+        and (host == "duckduckgo.com" or host:sub(-14) == ".duckduckgo.com")
+        and hostless:match("^[^/]+/l/")
+    if is_ddg_redirector then
+        local target = href:match("[?&]uddg=([^&\"]+)")
+        if target then href = percent_decode(target) end
+    end
     -- lite emits protocol-relative hrefs; a bare `//host/path` is not fetchable
     -- once it leaves the page it came from.
     if href:sub(1, 2) == "//" then href = "https:" .. href end
@@ -163,6 +176,52 @@ end
 ---
 --- Returns `rows` or `nil, why` — `why` is a bare string; `M.search` is what
 --- wraps it into the structured provider error.
+--- Bytes of response body this parser will look at.
+---
+--- The HTTP layer buffers a whole response with no cap
+--- (`crucible-core/src/http.rs` builds a bare client and reads `.text()`), so
+--- without a bound here the only limit on what gets parsed is what the far end
+--- chooses to send. A lite page is a few tens of KB; anything past this is not
+--- a page we can read anyway.
+local MAX_BODY = 512 * 1024
+
+--- Rows a single page may contribute. A lite page carries tens.
+local MAX_ROWS = 500
+
+--- Iterate `<tr>…</tr>` chunks in linear time.
+---
+--- This replaced `html:gmatch("<tr.-</tr>")`, which is accidentally QUADRATIC:
+--- the lazy `.-` rescans to end-of-string from every `<tr` position when no
+--- `</tr>` follows, and Lua's iterative min_expand raises no "pattern too
+--- complex" guard, so it runs to completion. Measured on this machine with a
+--- body of `<tr>` repeated and no closing tag: 16KB 0.17s, 32KB 0.68s, 64KB
+--- 2.68s, 128KB 11.03s — 4x per doubling, so ~11 minutes at 1MB.
+---
+--- That is not merely slow. The parse is synchronous Lua inside one
+--- `Thread::resume`, so the daemon's 30s dispatch timeout cannot preempt it —
+--- `tokio::time::timeout` only fires at an await point — and mlua holds the
+--- Lua lock for the whole poll, and every session shares one VM. A single
+--- hostile response would stall plugin tools and hooks in every session.
+---
+--- `find(..., plain)` advances a cursor instead of backtracking, so the whole
+--- scan is O(n) regardless of what the body contains.
+local function rows_of(html)
+    local pos, count = 1, 0
+    return function()
+        while count < MAX_ROWS do
+            local open = html:find("<tr", pos, true)
+            if not open then return nil end
+            local _, close_end = html:find("</tr>", open, true)
+            if not close_end then return nil end
+            count = count + 1
+            local chunk = html:sub(open, close_end)
+            pos = close_end + 1
+            return chunk
+        end
+        return nil
+    end
+end
+
 function M.parse(html)
     if type(html) ~= "string" or html == "" then
         return nil, "empty response body"
@@ -181,8 +240,16 @@ function M.parse(html)
         )
     end
 
+    if #html > MAX_BODY then
+        return nil, string.format(
+            "response body is %d bytes, over the %d-byte parse limit: refusing to scan it",
+            #html,
+            MAX_BODY
+        )
+    end
+
     local rows, pending, tr_count, sponsored = {}, nil, 0, 0
-    for chunk in html:gmatch("<tr.-</tr>") do
+    for chunk in rows_of(html) do
         tr_count = tr_count + 1
         if chunk:find("result%-sponsored") then
             sponsored = sponsored + 1
@@ -240,7 +307,7 @@ function M.parse(html)
     -- results" forever, silently. So: an empty answer, plus a note that this
     -- is what it looked like.
     if #rows == 0 then
-        return rows, nil, "ddg: rows present but no result anchors (no matches, or markup moved)"
+        return rows, nil, "no-anchors"
     end
 
     return rows

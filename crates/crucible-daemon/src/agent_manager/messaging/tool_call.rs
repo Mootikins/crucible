@@ -217,7 +217,7 @@ impl AgentManager {
             &stream_ctx.session_mode,
             &tool_call.name,
             &stream_ctx.agent_stream_config.plugin_tool_names,
-            &stream_ctx.agent_stream_config.modes,
+            Some(&stream_ctx.agent_stream_config.modes),
         ) {
             return deny_tool_call(
                 stream_ctx,

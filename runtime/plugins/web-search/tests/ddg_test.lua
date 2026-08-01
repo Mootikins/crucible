@@ -112,7 +112,7 @@ describe("ddg provider", function()
             local parsed, why, note = ddg.parse(moved)
             assert.deep_equal({}, parsed)
             assert.is_nil(why)
-            assert.truthy(note:find("markup moved", 1, true))
+            assert.equal("no-anchors", note)
         end)
 
         it("reports a page with no rows at all as a markup change", function()

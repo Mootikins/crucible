@@ -447,20 +447,16 @@ end
 -- the TOML section and again from the user's init.lua, and a hook registered
 -- there would be installed twice.
 --
--- The guard is not belt-and-braces. `execute_plugin` evaluates this file
--- without populating `package.loaded`, so the documented
--- `require("web-search").setup{...}` from a user's init.lua re-executes the
--- whole module. That registered a SECOND handler, and registered it outside
--- any plugin's ownership, so `clear_plugin_handlers` could never reap it — it
--- survived every reload. A module-scope flag cannot see that, because module
--- scope is what re-runs; a global can.
-local HOOK_SENTINEL = "__crucible_web_search_display_hook__"
-if rawget(_G, HOOK_SENTINEL) then
-    M.display_hook_registered = true
-else
-    M.display_hook_registered = register_display_hook()
-    rawset(_G, HOOK_SENTINEL, M.display_hook_registered or nil)
-end
+-- `package.loaded` below is what stops a second registration: without it, the
+-- documented `require("web-search").setup{}` from a user's init.lua re-ran the
+-- whole module and installed a second, unowned handler.
+--
+-- A _G sentinel was tried here and was WORSE than the problem. `clear_plugin_handlers`
+-- drops this plugin's handlers on reload and then re-executes the module — but a
+-- global outlives the clearing, so the guard skipped re-registration and the display
+-- summary was gone until the daemon restarted. State that has to be reset in step with
+-- the handler registry does not belong in a namespace nothing resets.
+M.display_hook_registered = register_display_hook()
 
 -- ============================================================================
 -- Plugin spec

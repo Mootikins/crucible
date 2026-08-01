@@ -300,6 +300,83 @@ describe("web-search plugin", function()
         end)
     end)
 
+    describe("the chain's time budget", function()
+        -- The daemon gives every tool call a hard 30s dispatch timeout, and on
+        -- expiry the model receives "timed out after 30 seconds" rather than
+        -- this plugin's failure text. Two providers at the default 15s land
+        -- exactly on 30, so the message naming what was tried was unreachable
+        -- in the slow-failure case it exists for.
+        local function with_clock(step, fn)
+            local real = os.time
+            local now = real()
+            os.time = function()
+                now = now + step
+                return now
+            end
+            local ok, err = pcall(fn)
+            os.time = real
+            if not ok then error(err, 0) end
+        end
+
+        it("skips a provider once the budget is spent, rather than running it", function()
+            configure({ providers = { "searxng", "ddg" }, searxng_url = INSTANCE })
+            local result
+            -- 24s per tick: the first provider consumes almost the whole
+            -- budget, leaving the second below the floor.
+            with_clock(24, function()
+                result = search({ query = QUERY })
+            end)
+
+            assert.truthy(result.error, "the chain must report, not hang")
+            assert.truthy(
+                result.error:find("budget", 1, true),
+                "the failure must say the budget ran out: " .. tostring(result.error)
+            )
+        end)
+
+        it("still names every provider it tried when the budget runs out", function()
+            configure({ providers = { "searxng", "ddg" }, searxng_url = INSTANCE })
+            local result
+            with_clock(24, function()
+                result = search({ query = QUERY })
+            end)
+
+            -- The whole point: this text is what the model reads instead of a
+            -- bare "timed out", so it has to survive the case that produced it.
+            assert.truthy(result.error:find("searxng", 1, true))
+            assert.truthy(result.error:find("ddg", 1, true))
+        end)
+
+        it("leaves a fast chain untouched", function()
+            configure_with({ providers = { "searxng" }, searxng_url = INSTANCE },
+                SEARXNG_URL, searxng_ok())
+            -- One tick per call, so nothing approaches the budget.
+            local result
+            with_clock(1, function()
+                result = search({ query = QUERY })
+            end)
+            assert.is_nil(result.error)
+            assert.equal("searxng", result.provider)
+        end)
+    end)
+
+    describe("re-execution", function()
+        -- `execute_plugin` evaluates init.lua without populating
+        -- `package.loaded`, so the documented `require("web-search").setup{}`
+        -- from a user's init.lua used to re-run the whole module — registering
+        -- a SECOND display hook, outside any plugin's ownership, which
+        -- `clear_plugin_handlers` could never reap.
+        it("returns the same module rather than re-running the file", function()
+            local again = require("web-search")
+            assert.equal(plugin, again, "require must hit package.loaded, not re-execute")
+        end)
+
+        -- There is no global sentinel guarding the hook: one was tried and it
+        -- outlived `clear_plugin_handlers`, so a plugin reload dropped the
+        -- handler and then skipped re-registering it, losing the summary until
+        -- the daemon restarted. `package.loaded` above is the whole fix.
+    end)
+
     describe("the display summary", function()
         it("names the provider, the count and the degraded engines", function()
             local summary = plugin.summarise({

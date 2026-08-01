@@ -967,10 +967,16 @@ impl GenaiAgentHandle {
         let mode_selector = declared.map(|m| m.tools);
 
         // Native attach candidates after the plan-mode filter: the write-name
-        // blocklist for built-ins, plus every plugin tool (unknown side
-        // effects — plan mode fails closed on them). This set still contains
-        // gateway tools; the budget trigger is computed over it so a large
-        // upstream tool set forces deferral even in plan mode.
+        // blocklist for built-ins, plus plugin tools the mode has not named
+        // (unknown side effects — plan mode fails closed on them). This set
+        // still contains gateway tools; the budget trigger is computed over it
+        // so a large upstream tool set forces deferral even in plan mode.
+        //
+        // The admission rule has to be applied HERE as well as at dispatch.
+        // Lifting only the dispatch ban left a tool the operator had named
+        // absent from the advertised set, so the model never saw it and the
+        // grant did nothing — a half-landed permission is worse than none,
+        // because the config says it worked.
         let selected: Vec<LlmToolDefinition> = match &mode_selector {
             Some(selector) => self
                 .tools
@@ -985,7 +991,12 @@ impl GenaiAgentHandle {
                 .iter()
                 .filter(|t| {
                     !is_write_tool_name(&t.function.name)
-                        && !self.plugin_tool_names.contains(&t.function.name)
+                        && !crate::tools::tool_modes::plugin_tool_barred(
+                            &self.current_mode_id,
+                            &t.function.name,
+                            &self.plugin_tool_names,
+                            self.modes.as_ref(),
+                        )
                 })
                 .cloned()
                 .collect()

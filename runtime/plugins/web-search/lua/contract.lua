@@ -235,6 +235,7 @@ function M.normalise(input)
         degraded = degraded_names(input.degraded),
     }
     local dropped_oversize = 0
+    local dropped_scheme = 0
 
     for _, row in ipairs(input.results or {}) do
         if #payload.results >= limit then break end
@@ -245,7 +246,15 @@ function M.normalise(input)
             -- unciteable. Dropping beats emitting a row the model must guess at.
             -- An over-long URL is dropped rather than cut, for the same reason:
             -- a truncated URL looks usable and is not.
-            if title ~= "" and url ~= "" and #url > M.MAX_URL then
+            -- Scheme allowlist. Nothing in the pipeline dereferences a result
+            -- URL today, but the model reads them as citations and a future
+            -- fetch tool would follow them, so `file://`, `data:` and
+            -- `javascript:` must never survive normalisation. Anchored to the
+            -- start so `https://x/?u=file:///etc` is unaffected.
+            local scheme_ok = url:match("^https?://") ~= nil
+            if title ~= "" and url ~= "" and not scheme_ok then
+                dropped_scheme = dropped_scheme + 1
+            elseif title ~= "" and url ~= "" and #url > M.MAX_URL then
                 -- Dropped, not truncated — but silence would read as "no
                 -- matches", which is a different and wrong answer. `degraded`
                 -- is the channel for "the answer is partial and here is what
@@ -271,12 +280,15 @@ function M.normalise(input)
         table.remove(payload.results)
     end
 
+    -- Short labels, not sentences. `degraded` is rendered into the one-line
+    -- display summary as a comma-joined list beside engine names like "brave",
+    -- so a full sentence here garbled it and put two different kinds of value
+    -- in one array. A label reads correctly in both places.
     if dropped_oversize > 0 then
-        payload.degraded[#payload.degraded + 1] = string.format(
-            "%d result(s) dropped: url over %d bytes",
-            dropped_oversize,
-            M.MAX_URL
-        )
+        payload.degraded[#payload.degraded + 1] = "url-too-long:" .. dropped_oversize
+    end
+    if dropped_scheme > 0 then
+        payload.degraded[#payload.degraded + 1] = "non-http-url:" .. dropped_scheme
     end
 
     -- Last, so trimming is done and the marking survives to the encoder.

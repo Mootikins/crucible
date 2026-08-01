@@ -298,7 +298,9 @@ describe("web-search contract", function()
             -- cannot be misread as "no matches".
             assert.equal(0, #payload.results)
             assert.equal(1, #payload.degraded)
-            assert.truthy(payload.degraded[1]:find("url over", 1, true))
+            -- A short label, not a sentence: `degraded` is comma-joined into
+            -- the one-line display summary beside engine names like "brave".
+            assert.truthy(payload.degraded[1]:find("url-too-long", 1, true))
             assert.truthy(contract.encoded_size(payload) <= contract.MAX_PAYLOAD_BYTES)
         end)
 
