@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-08-01
+
+### Fixed
+- **`cru setup` no longer freezes your defaults.** It copied the whole runtime
+  tree, `defaults/init.lua` included, into a directory that outranks every
+  shipped root — and defaults are read first-hit-wins, so the copy shadowed the
+  real file permanently. Any default added in a later release reached nobody who
+  had run setup. Plugins and themes are still copied: those layer per name, so
+  your copy shadows only what it names and a newly shipped plugin still loads.
+  Override defaults in `~/.config/crucible/init.lua`, which already runs after
+  them.
+
 ## [0.20.0] - 2026-08-01
 
 Two themes. The first is packaging: everything under `runtime/` — plugins,
