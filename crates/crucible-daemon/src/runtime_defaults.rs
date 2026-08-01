@@ -10,7 +10,12 @@
 //! 1. `CRUCIBLE_RUNTIME` (dev/CI, and what `cru setup` tells you to export)
 //! 2. exe-relative — installed `<prefix>/share/crucible/runtime/`, then the
 //!    dev `<repo>/runtime/`
-//! 3. the compiled-in copy ([`crucible_lua::BUILTIN_INIT_LUA`])
+//! 3. the tree extracted from the binary, for an install that put none on disk
+//! 4. the compiled-in copy ([`crucible_lua::BUILTIN_INIT_LUA`])
+//!
+//! 3 and 4 are the same bytes by different routes: the constant covers this one
+//! file, the extracted tree covers the other twenty-one, which have no such
+//! fallback. The constant stays because it needs no successful write.
 //!
 //! First hit wins, so a copied-out tree fully replaces the shipped defaults —
 //! the same shadowing plugins already have. Editing your copy is how you
@@ -110,13 +115,36 @@ mod tests {
     #[test]
     fn exe_relative_candidates_are_the_last_resort_before_builtin() {
         let candidates = defaults_candidates(&[], None);
-        // Exe-relative only; nothing higher-priority was configured.
-        assert!(
-            candidates
-                .iter()
-                .all(|c| c.ends_with("runtime/defaults/init.lua")),
-            "expected only exe-relative candidates, got {candidates:?}"
-        );
+        let (last, rest) = candidates
+            .split_last()
+            .expect("the exe-relative pair is always offered");
+
+        // The tree extracted from the binary is the one candidate that does not
+        // sit under a plain `runtime/` — its directory is version-stamped, so
+        // two installed Crucibles do not fight over one copy. It must come
+        // last: anything a packaging route actually put on disk outranks a copy
+        // Crucible wrote for itself.
+        match crucible_core::runtime_roots::bundled_runtime_dir() {
+            Some(bundled) => {
+                assert_eq!(
+                    last,
+                    &bundled.join("defaults").join("init.lua"),
+                    "the extracted copy is the last file candidate, ahead of only the built-in"
+                );
+                assert!(
+                    rest.iter()
+                        .all(|c| c.ends_with("runtime/defaults/init.lua")),
+                    "expected only exe-relative candidates ahead of it, got {rest:?}"
+                );
+            }
+            // No data directory on this box, so nothing to extract to.
+            None => assert!(
+                candidates
+                    .iter()
+                    .all(|c| c.ends_with("runtime/defaults/init.lua")),
+                "expected only exe-relative candidates, got {candidates:?}"
+            ),
+        }
     }
 
     /// A copied-out tree REPLACES the shipped defaults rather than layering,

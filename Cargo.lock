@@ -1863,6 +1863,7 @@ dependencies = [
  "regex",
  "reqwest 0.12.28",
  "rmcp",
+ "rust-embed",
  "schemars 1.2.1",
  "serde",
  "serde_json",
