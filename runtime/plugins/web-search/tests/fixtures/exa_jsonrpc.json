@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"requestId\":\"9f2c1b47e0a54d8fa1c3ee0b7d5142aa\",\"autopromptString\":\"Here is a link about Rust prompt caching:\",\"autoDate\":\"2024-01-01T00:00:00.000Z\",\"resolvedSearchType\":\"neural\",\"searchType\":\"auto\",\"costDollars\":{\"total\":0.005,\"search\":{\"neural\":0.005}},\"results\":[{\"id\":\"https://docs.rs/anthropic-sdk/latest/anthropic_sdk/caching/index.html\",\"title\":\"anthropic_sdk::caching - Rust\",\"url\":\"https://docs.rs/anthropic-sdk/latest/anthropic_sdk/caching/index.html\",\"publishedDate\":\"2024-11-02T00:00:00.000Z\",\"author\":null,\"score\":0.2214,\"favicon\":\"https://docs.rs/favicon.ico\",\"image\":null,\"text\":\"Prompt caching lets you reuse a previously processed prefix of a prompt across requests. In this crate the cache is controlled per content block via CacheControl::Ephemeral.\"},{\"id\":\"https://www.anthropic.com/news/prompt-caching\",\"title\":\"Prompt caching with Claude\",\"url\":\"https://www.anthropic.com/news/prompt-caching\",\"publishedDate\":\"2024-08-14T00:00:00.000Z\",\"author\":\"Anthropic\",\"score\":0.2077,\"favicon\":\"https://www.anthropic.com/favicon.ico\",\"image\":\"https://www.anthropic.com/images/prompt-caching.png\",\"text\":\"Prompt caching, now available on the Anthropic API, enables developers to cache frequently used context between API calls. Customers can provide Claude with more background knowledge and example outputs while reducing costs by up to 90% and latency by up to 85% for long prompts. Cache entries have a five minute lifetime, refreshed each time the cached content is used, and the cache is scoped to the organization so that no content is shared across accounts. Cache writes cost more than base input tokens and cache reads cost substantially less, which is what makes the technique pay for itself after roughly two reads of the same prefix.\"},{\"id\":\"https://github.com/64bit/async-openai/discussions/412\",\"title\":\"Support for prompt caching · Discussion #412\",\"url\":\"https://github.com/64bit/async-openai/discussions/412\",\"publishedDate\":\"2024-10-08T00:00:00.000Z\",\"author\":null,\"score\":0.1903,\"favicon\":\"https://github.com/favicon.ico\",\"image\":null,\"text\":\"Opening a discussion on how we should surface cached_tokens from the usage object.\"}]}"
+      }
+    ],
+    "isError": false
+  }
+}
