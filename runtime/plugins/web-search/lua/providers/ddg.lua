@@ -127,6 +127,12 @@ end
 --- lite wraps some hits in `//duckduckgo.com/l/?uddg=<percent-encoded target>`.
 --- The wrapper is a tracking hop; the model should be given the real URL, since
 --- that is what it will cite and what `web_fetch` would later dereference.
+--- Computed rather than written as a literal length: the subdomain arm was
+--- `host:sub(-14)` against a 15-character suffix, so it never matched and the
+--- arm was dead. It failed closed, so nothing was let through — but a dead
+--- security check reads as a live one.
+local DDG_SUFFIX = ".duckduckgo.com"
+
 local function unwrap_redirect(href)
     -- The href is read out of raw markup, so its query separators arrive as
     -- `&amp;`. Left alone they would be handed to the model, and to any later
@@ -141,7 +147,7 @@ local function unwrap_redirect(href)
     local hostless = href:gsub("^https?:", ""):gsub("^//", "")
     local host = hostless:match("^([^/]+)")
     local is_ddg_redirector = host
-        and (host == "duckduckgo.com" or host:sub(-14) == ".duckduckgo.com")
+        and (host == "duckduckgo.com" or host:sub(-#DDG_SUFFIX) == DDG_SUFFIX)
         and hostless:match("^[^/]+/l/")
     if is_ddg_redirector then
         local target = href:match("[?&]uddg=([^&\"]+)")
@@ -188,6 +194,21 @@ local MAX_BODY = 512 * 1024
 --- Rows a single page may contribute. A lite page carries tens.
 local MAX_ROWS = 500
 
+--- Bytes a single row may occupy.
+---
+--- This is the bound that matters, and its absence is why the round-1 fix was
+--- incomplete. Making the row SCAN linear did not help, because the scan yields
+--- `html:sub(open, close_end)` and one `<tr>…</tr>` may be the whole body — so
+--- the quadratic simply moved one call frame downstream into the patterns that
+--- consume a chunk. `clean`'s greedy `[^>]*` is the worst: measured 0.62s at
+--- 16KB, 2.49s at 32KB, 9.78s at 64KB, 39.35s at 128KB — 4x per doubling,
+--- extrapolating to roughly ten minutes at the 512KB body cap.
+---
+--- Capping the chunk bounds every downstream consumer at once, whatever its
+--- pattern shape, which is the property a per-pattern fix cannot give. A real
+--- lite row is a few hundred bytes; anything past this is not a result row.
+local MAX_ROW_BYTES = 16 * 1024
+
 --- Iterate `<tr>…</tr>` chunks in linear time.
 ---
 --- This replaced `html:gmatch("<tr.-</tr>")`, which is accidentally QUADRATIC:
@@ -208,15 +229,21 @@ local MAX_ROWS = 500
 local function rows_of(html)
     local pos, count = 1, 0
     return function()
+        -- `while`, so an oversize row is skipped and the scan continues to the
+        -- next one instead of ending the page early.
         while count < MAX_ROWS do
             local open = html:find("<tr", pos, true)
             if not open then return nil end
             local _, close_end = html:find("</tr>", open, true)
             if not close_end then return nil end
             count = count + 1
-            local chunk = html:sub(open, close_end)
             pos = close_end + 1
-            return chunk
+            -- Skipped, not truncated: cutting mid-markup would hand the
+            -- downstream patterns a half tag and invite exactly the ambiguity
+            -- this is bounding. An oversize row is not a result row.
+            if close_end - open + 1 <= MAX_ROW_BYTES then
+                return html:sub(open, close_end)
+            end
         end
         return nil
     end

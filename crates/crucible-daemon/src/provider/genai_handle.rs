@@ -990,13 +990,25 @@ impl GenaiAgentHandle {
             selected
                 .iter()
                 .filter(|t| {
-                    !is_write_tool_name(&t.function.name)
-                        && !crate::tools::tool_modes::plugin_tool_barred(
+                    let is_plugin = self.plugin_tool_names.contains(&t.function.name);
+                    // An UNKNOWN mode has no declaration, so nothing can have
+                    // granted anything and every plugin tool is stripped —
+                    // `plugin_tool_barred` alone would not do it, because it
+                    // answers only for `plan` and returns false for any other
+                    // mode id. Wiring it in without this arm quietly reopened
+                    // plugin tools for a mode that had gone away, which is the
+                    // most permissive possible reading of a missing config.
+                    let barred = if mode_unknown {
+                        is_plugin
+                    } else {
+                        crate::tools::tool_modes::plugin_tool_barred(
                             &self.current_mode_id,
                             &t.function.name,
                             &self.plugin_tool_names,
                             self.modes.as_ref(),
                         )
+                    };
+                    !is_write_tool_name(&t.function.name) && !barred
                 })
                 .cloned()
                 .collect()
@@ -2886,5 +2898,112 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("")
+    }
+
+    // ─── ROUND-3 THROWAWAY: plan-mode plugin admission matrix ───────────
+    mod r3_matrix {
+        use super::*;
+        use crucible_lua::{ModeDefinition, ModePermissions, ModeRegistry, ToolSelector};
+
+        fn reg(entries: &[(&str, ToolSelector)]) -> ModeRegistry {
+            let r = ModeRegistry::new();
+            for (name, sel) in entries {
+                r.set(ModeDefinition {
+                    name: (*name).to_string(),
+                    description: None,
+                    tools: sel.clone(),
+                    permissions: ModePermissions::default(),
+                });
+            }
+            r
+        }
+
+        fn tools() -> Vec<LlmToolDefinition> {
+            vec![
+                tool_def("read_file"),
+                tool_def("write_file"),
+                tool_def("web_search"),
+                tool_def("gh_create_pr"),
+            ]
+        }
+
+        fn plugins() -> std::collections::HashSet<String> {
+            ["web_search".to_string()].into()
+        }
+
+        async fn advertised(
+            modes: Option<ModeRegistry>,
+            mode: &str,
+            remove_after: bool,
+        ) -> Vec<String> {
+            let mut h = test_handle_with_tools(tools())
+                .with_plugin_tools(plugins())
+                .with_deferrable_tools(std::collections::HashSet::from([
+                    "gh_create_pr".to_string()
+                ]));
+            if let Some(r) = modes.clone() {
+                h = h.with_modes(r);
+            }
+            h.set_mode_str(mode).await.unwrap();
+            if remove_after {
+                modes.unwrap().remove(mode);
+            }
+            h.visible_tool_names_for_test().0
+        }
+
+        #[tokio::test]
+        async fn r3_enumerate() {
+            let mut out: Vec<String> = Vec::new();
+
+            let base = |extra: &[(&str, ToolSelector)]| {
+                let mut v: Vec<(&str, ToolSelector)> = vec![
+                    ("normal", ToolSelector::All),
+                    ("auto", ToolSelector::All),
+                ];
+                v.extend(extra.iter().cloned());
+                reg(&v)
+            };
+
+            // 1. normal declared
+            out.push(format!("normal/declared-all: {:?}", advertised(Some(base(&[])), "normal", false).await));
+            // 2. plan declared read_*
+            out.push(format!("plan/declared read_*: {:?}", advertised(Some(base(&[("plan", ToolSelector::Patterns(vec!["read_*".into()]))])), "plan", false).await));
+            // 3. plan declared read_* + web_search  (the operator grant)
+            out.push(format!("plan/declared read_*+web_search: {:?}", advertised(Some(base(&[("plan", ToolSelector::Patterns(vec!["read_*".into(), "web_search".into()]))])), "plan", false).await));
+            // 4. plan declared glob *_search
+            out.push(format!("plan/declared *_search: {:?}", advertised(Some(base(&[("plan", ToolSelector::Patterns(vec!["*_search".into()]))])), "plan", false).await));
+            // 5. plan declared "*"
+            out.push(format!("plan/declared All: {:?}", advertised(Some(base(&[("plan", ToolSelector::All)])), "plan", false).await));
+            // 6. plan undeclared but builtin (declare, set, remove)
+            out.push(format!("plan/undeclared: {:?}", advertised(Some(base(&[("plan", ToolSelector::Patterns(vec!["read_*".into(), "web_search".into()]))])), "plan", true).await));
+            // 7. custom declared review naming web_search
+            out.push(format!("review/declared read_*+web_search: {:?}", advertised(Some(base(&[("review", ToolSelector::Patterns(vec!["read_*".into(), "web_search".into()]))])), "review", false).await));
+            // 8. custom declared review with All
+            out.push(format!("review/declared All: {:?}", advertised(Some(base(&[("review", ToolSelector::All)])), "review", false).await));
+            // 9. custom undeclared (vanished)
+            out.push(format!("review/vanished: {:?}", advertised(Some(base(&[("review", ToolSelector::All)])), "review", true).await));
+            // 10. no registry, normal
+            out.push(format!("no-registry/normal: {:?}", advertised(None, "normal", false).await));
+            // 11. no registry, plan
+            out.push(format!("no-registry/plan: {:?}", advertised(None, "plan", false).await));
+
+            // dispatch-side answer for the same combos
+            let p = plugins();
+            for (mode, r) in [
+                ("plan", base(&[("plan", ToolSelector::Patterns(vec!["read_*".into()]))])),
+                ("plan", base(&[("plan", ToolSelector::Patterns(vec!["read_*".into(), "web_search".into()]))])),
+                ("review", base(&[("review", ToolSelector::All)])),
+                ("review", base(&[])),
+                ("normal", base(&[])),
+            ] {
+                out.push(format!(
+                    "DISPATCH barred(mode={mode}, declared={:?}) = {}",
+                    r.get(mode).map(|m| m.tools),
+                    crate::tools::tool_modes::plugin_tool_barred(mode, "web_search", &p, Some(&r))
+                ));
+            }
+
+            panic!("R3 MATRIX:\n{}", out.join("\n"));
+        }
     }
 }

@@ -225,8 +225,8 @@ impl AgentManager {
                 &tool_call.name,
                 format!(
                     "Tool '{}' is a plugin tool and not available in plan mode. \
-                     To allow it, name it exactly in the mode's tool list: \
-                     cru.modes.plan.tools = {{ ..., \"{}\" }}",
+                     To allow it, redeclare the mode naming it exactly: \
+                     cru.modes.plan = {{ tools = {{ \"read_*\", \"{}\" }} }}",
                     tool_call.name, tool_call.name
                 ),
             );

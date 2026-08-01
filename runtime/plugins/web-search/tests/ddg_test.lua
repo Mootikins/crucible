@@ -127,6 +127,45 @@ describe("ddg provider", function()
         -- failure made the chain fall through and tell the model that every
         -- provider had failed — when the honest answer was "the web has
         -- nothing on this".
+        -- REGRESSION. Round 1 replaced a quadratic `gmatch("<tr.-</tr>")` with a
+        -- linear scan and shipped no test, so when the same quadratic turned out
+        -- to survive one call frame downstream — `rows_of` yields a chunk that
+        -- may be the whole body, and `clean`'s greedy `[^>]*` backtracks over it
+        -- — nothing caught it. Measured then: 0.62s at 16KB, 39.35s at 128KB,
+        -- ~10 minutes at the 512KB body cap, on a synchronous Lua call that the
+        -- daemon's 30s dispatch timeout cannot preempt and that holds the Lua
+        -- lock every session shares.
+        --
+        -- The ceiling is deliberately loose. A correct parse is milliseconds, so
+        -- anything approaching a second means the bound is gone again; that gap
+        -- keeps this from being a flaky timing test.
+        it("parses an adversarial body in bounded time", function()
+            local hostile = 'action="/lite/"' .. ("<"):rep(128 * 1024)
+            local started = os.clock()
+            ddg.parse(hostile)
+            local elapsed = os.clock() - started
+            assert.truthy(
+                elapsed < 1.0,
+                string.format(
+                    "parse took %.2fs on a 128KB adversarial body — the per-row "
+                        .. "byte bound is gone and one response can stall every "
+                        .. "session's plugin VM",
+                    elapsed
+                )
+            )
+        end)
+
+        it("skips an oversize row without ending the page early", function()
+            -- A row past the byte bound is dropped, and the rows after it must
+            -- still be found — returning nil there would let one bloated row
+            -- hide every result behind it.
+            local giant = "<tr>" .. ("x"):rep(20 * 1024) .. "</tr>"
+            local good = '<tr><td><a href="https://example.test/a" class="result-link">A title</a></td></tr>'
+            local rows = ddg.parse(lite_page(giant .. good))
+            assert.truthy(rows and #rows > 0, "rows after an oversize one must survive")
+            assert.equal("https://example.test/a", rows[1].url)
+        end)
+
         it("returns no rows, not a failure, when the page parsed but matched nothing", function()
             local parsed, why, note = ddg.parse(lite_page("<tr><td>No results found.</td></tr>"))
             assert.is_nil(why)

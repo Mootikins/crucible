@@ -172,6 +172,22 @@ mod plugin_admission_tests {
         ));
     }
 
+    /// A mode that is neither `plan` nor declared has no grant to give.
+    ///
+    /// `plugin_tool_barred` answers only for `plan` and returns false for any
+    /// other mode id, so a caller that also strips on "mode unknown" must keep
+    /// doing so itself. Wiring this function into the advertisement filter
+    /// without that arm reopened every plugin tool for a mode that had gone
+    /// away — the most permissive possible reading of a missing config.
+    #[test]
+    fn this_rule_answers_only_for_plan_and_callers_must_handle_unknown_modes() {
+        let modes = registry(ToolSelector::Patterns(vec!["read_*".into()]));
+        assert!(
+            !plugin_tool_barred("review", "web_search", &plugin_tools(), Some(&modes)),
+            "an undeclared mode is not this function's question to answer"
+        );
+    }
+
     /// A built-in tool is never subject to this rule.
     #[test]
     fn a_builtin_tool_is_not_a_plugin_tool() {
