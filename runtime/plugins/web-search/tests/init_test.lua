@@ -262,10 +262,17 @@ describe("web-search plugin", function()
         it("accepts an empty table, which is what an absent TOML section is", function()
             config.reset()
             plugin.setup({})
-            respond(ddg.ENDPOINT, ddg_ok())
 
-            -- The shipped default chain still applies.
-            assert.equal("ddg", search({ query = QUERY }).provider)
+            -- The shipped default chain is `searxng` alone, and it needs a URL
+            -- nobody has configured — so search reports that rather than
+            -- falling back. `ddg` parses adversary-influenced HTML with
+            -- backtracking patterns on the Lua VM every session shares, and
+            -- three review rounds each found the previous bound on that
+            -- insufficient. It stays one word away in config, not on by
+            -- default.
+            local result = search({ query = QUERY })
+            assert.truthy(result.error, "no configured provider can answer")
+            assert.truthy(result.error:find("searxng", 1, true))
         end)
     end)
 

@@ -2901,109 +2901,128 @@ mod tests {
     }
 
     // ─── ROUND-3 THROWAWAY: plan-mode plugin admission matrix ───────────
-    mod r3_matrix {
+    /// Advertisement and dispatch must agree on plugin-tool admission for
+    /// every combination of mode and declaration, not just the common ones.
+    ///
+    /// Two rounds of review found this pair disagreeing. First the grant was
+    /// honoured at dispatch but not in the advertised set, so a tool the
+    /// operator had named was never offered to the model — a permission that
+    /// reports success while changing nothing. Then wiring the shared rule into
+    /// advertisement dropped the unknown-mode case, reopening every plugin tool
+    /// for a mode that had gone away.
+    ///
+    /// Both were combinations nobody had enumerated, so this enumerates them.
+    mod admission_matrix {
         use super::*;
         use crucible_lua::{ModeDefinition, ModePermissions, ModeRegistry, ToolSelector};
 
         fn reg(entries: &[(&str, ToolSelector)]) -> ModeRegistry {
             let r = ModeRegistry::new();
-            for (name, sel) in entries {
+            for (name, sel) in [("normal", ToolSelector::All), ("auto", ToolSelector::All)]
+                .iter()
+                .cloned()
+                .chain(entries.iter().map(|(n, s)| (*n, s.clone())))
+            {
                 r.set(ModeDefinition {
-                    name: (*name).to_string(),
+                    name: name.to_string(),
                     description: None,
-                    tools: sel.clone(),
+                    tools: sel,
                     permissions: ModePermissions::default(),
                 });
             }
             r
         }
 
-        fn tools() -> Vec<LlmToolDefinition> {
-            vec![
-                tool_def("read_file"),
-                tool_def("write_file"),
-                tool_def("web_search"),
-                tool_def("gh_create_pr"),
-            ]
-        }
-
         fn plugins() -> std::collections::HashSet<String> {
             ["web_search".to_string()].into()
         }
 
-        async fn advertised(
-            modes: Option<ModeRegistry>,
-            mode: &str,
-            remove_after: bool,
-        ) -> Vec<String> {
-            let mut h = test_handle_with_tools(tools())
-                .with_plugin_tools(plugins())
-                .with_deferrable_tools(std::collections::HashSet::from([
-                    "gh_create_pr".to_string()
-                ]));
-            if let Some(r) = modes.clone() {
-                h = h.with_modes(r);
-            }
+        /// Names advertised to the model in `mode`. `vanish` removes the mode
+        /// after selecting it, which is how a mode "goes away" mid-session.
+        async fn advertised(modes: ModeRegistry, mode: &str, vanish: bool) -> Vec<String> {
+            let mut h = test_handle_with_tools(vec![
+                tool_def("read_file"),
+                tool_def("write_file"),
+                tool_def("web_search"),
+            ])
+            .with_plugin_tools(plugins())
+            .with_modes(modes.clone());
             h.set_mode_str(mode).await.unwrap();
-            if remove_after {
-                modes.unwrap().remove(mode);
+            if vanish {
+                modes.remove(mode);
             }
             h.visible_tool_names_for_test().0
         }
 
+        fn barred(modes: &ModeRegistry, mode: &str) -> bool {
+            crate::tools::tool_modes::plugin_tool_barred(
+                mode,
+                "web_search",
+                &plugins(),
+                Some(modes),
+            )
+        }
+
+        /// The operator's grant reaches BOTH paths, which is the whole point.
         #[tokio::test]
-        async fn r3_enumerate() {
-            let mut out: Vec<String> = Vec::new();
+        async fn a_named_plugin_tool_is_advertised_and_dispatchable_in_plan() {
+            let modes = reg(&[(
+                "plan",
+                ToolSelector::Patterns(vec!["read_*".into(), "web_search".into()]),
+            )]);
+            assert!(advertised(modes.clone(), "plan", false)
+                .await
+                .contains(&"web_search".to_string()));
+            assert!(!barred(&modes, "plan"));
+        }
 
-            let base = |extra: &[(&str, ToolSelector)]| {
-                let mut v: Vec<(&str, ToolSelector)> = vec![
-                    ("normal", ToolSelector::All),
-                    ("auto", ToolSelector::All),
-                ];
-                v.extend(extra.iter().cloned());
-                reg(&v)
-            };
-
-            // 1. normal declared
-            out.push(format!("normal/declared-all: {:?}", advertised(Some(base(&[])), "normal", false).await));
-            // 2. plan declared read_*
-            out.push(format!("plan/declared read_*: {:?}", advertised(Some(base(&[("plan", ToolSelector::Patterns(vec!["read_*".into()]))])), "plan", false).await));
-            // 3. plan declared read_* + web_search  (the operator grant)
-            out.push(format!("plan/declared read_*+web_search: {:?}", advertised(Some(base(&[("plan", ToolSelector::Patterns(vec!["read_*".into(), "web_search".into()]))])), "plan", false).await));
-            // 4. plan declared glob *_search
-            out.push(format!("plan/declared *_search: {:?}", advertised(Some(base(&[("plan", ToolSelector::Patterns(vec!["*_search".into()]))])), "plan", false).await));
-            // 5. plan declared "*"
-            out.push(format!("plan/declared All: {:?}", advertised(Some(base(&[("plan", ToolSelector::All)])), "plan", false).await));
-            // 6. plan undeclared but builtin (declare, set, remove)
-            out.push(format!("plan/undeclared: {:?}", advertised(Some(base(&[("plan", ToolSelector::Patterns(vec!["read_*".into(), "web_search".into()]))])), "plan", true).await));
-            // 7. custom declared review naming web_search
-            out.push(format!("review/declared read_*+web_search: {:?}", advertised(Some(base(&[("review", ToolSelector::Patterns(vec!["read_*".into(), "web_search".into()]))])), "review", false).await));
-            // 8. custom declared review with All
-            out.push(format!("review/declared All: {:?}", advertised(Some(base(&[("review", ToolSelector::All)])), "review", false).await));
-            // 9. custom undeclared (vanished)
-            out.push(format!("review/vanished: {:?}", advertised(Some(base(&[("review", ToolSelector::All)])), "review", true).await));
-            // 10. no registry, normal
-            out.push(format!("no-registry/normal: {:?}", advertised(None, "normal", false).await));
-            // 11. no registry, plan
-            out.push(format!("no-registry/plan: {:?}", advertised(None, "plan", false).await));
-
-            // dispatch-side answer for the same combos
-            let p = plugins();
-            for (mode, r) in [
-                ("plan", base(&[("plan", ToolSelector::Patterns(vec!["read_*".into()]))])),
-                ("plan", base(&[("plan", ToolSelector::Patterns(vec!["read_*".into(), "web_search".into()]))])),
-                ("review", base(&[("review", ToolSelector::All)])),
-                ("review", base(&[])),
-                ("normal", base(&[])),
+        /// Neither a glob nor `*` is a grant — a plugin could otherwise pick a
+        /// name that walks through a selector written before it existed.
+        #[tokio::test]
+        async fn a_glob_or_wildcard_admits_nothing_on_either_path() {
+            for selector in [
+                ToolSelector::Patterns(vec!["*_search".into()]),
+                ToolSelector::All,
             ] {
-                out.push(format!(
-                    "DISPATCH barred(mode={mode}, declared={:?}) = {}",
-                    r.get(mode).map(|m| m.tools),
-                    crate::tools::tool_modes::plugin_tool_barred(mode, "web_search", &p, Some(&r))
-                ));
+                let modes = reg(&[("plan", selector)]);
+                assert!(!advertised(modes.clone(), "plan", false)
+                    .await
+                    .contains(&"web_search".to_string()));
+                assert!(barred(&modes, "plan"));
             }
+        }
 
-            panic!("R3 MATRIX:\n{}", out.join("\n"));
+        /// A mode that vanished mid-session has no declaration, so it has
+        /// granted nothing — the most permissive reading of a missing config is
+        /// the wrong one.
+        #[tokio::test]
+        async fn a_vanished_mode_advertises_no_plugin_tool() {
+            for mode in ["plan", "review"] {
+                let modes = reg(&[(
+                    mode,
+                    ToolSelector::Patterns(vec!["read_*".into(), "web_search".into()]),
+                )]);
+                assert!(
+                    !advertised(modes, mode, true)
+                        .await
+                        .contains(&"web_search".to_string()),
+                    "{mode} went away, so nothing it once granted still stands"
+                );
+            }
+        }
+
+        /// Outside plan the rule does not apply, and a declared custom mode
+        /// that names the tool simply gets it.
+        #[tokio::test]
+        async fn an_unrestricted_declared_mode_is_unaffected() {
+            let modes = reg(&[(
+                "review",
+                ToolSelector::Patterns(vec!["read_*".into(), "web_search".into()]),
+            )]);
+            assert!(advertised(modes.clone(), "review", false)
+                .await
+                .contains(&"web_search".to_string()));
+            assert!(!barred(&modes, "review"));
         }
     }
 }

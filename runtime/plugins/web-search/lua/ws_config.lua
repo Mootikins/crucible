@@ -36,7 +36,7 @@ local defaults = {
     -- gets better results and keeps their queries in-house, ddg second because
     -- it is the only keyless provider that needs no setup at all. Note ddg is
     -- a third party — see README; consent for it is the tool permission gate.
-    providers = { "searxng", "ddg" },
+    providers = { "searxng" },
 
     -- Seconds, per provider. The chain moves on rather than hanging.
     timeout = 15,

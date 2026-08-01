@@ -127,43 +127,84 @@ describe("ddg provider", function()
         -- failure made the chain fall through and tell the model that every
         -- provider had failed — when the honest answer was "the web has
         -- nothing on this".
-        -- REGRESSION. Round 1 replaced a quadratic `gmatch("<tr.-</tr>")` with a
-        -- linear scan and shipped no test, so when the same quadratic turned out
-        -- to survive one call frame downstream — `rows_of` yields a chunk that
-        -- may be the whole body, and `clean`'s greedy `[^>]*` backtracks over it
-        -- — nothing caught it. Measured then: 0.62s at 16KB, 39.35s at 128KB,
-        -- ~10 minutes at the 512KB body cap, on a synchronous Lua call that the
-        -- daemon's 30s dispatch timeout cannot preempt and that holds the Lua
-        -- lock every session shares.
+        -- REGRESSION, and the third attempt at one.
         --
-        -- The ceiling is deliberately loose. A correct parse is milliseconds, so
-        -- anything approaching a second means the bound is gone again; that gap
-        -- keeps this from being a flaky timing test.
-        it("parses an adversarial body in bounded time", function()
-            local hostile = 'action="/lite/"' .. ("<"):rep(128 * 1024)
+        -- The first version of this test built its "hostile" body from `<`
+        -- repeated, which contains no `<tr` at all — so the row scan returned
+        -- on its first call, the parse loop never ran, and the test measured
+        -- nothing. The byte bound it was supposed to guard could be deleted
+        -- outright with the suite still green. Its 0.002s was then cited as
+        -- proof the fix worked; that number was the *skip* side of the cliff.
+        --
+        -- This version builds rows that are actually parsed, sized just under
+        -- the bound so every one is accepted, filling the body. That is the
+        -- shape that measured 20.4s before the bounds were tightened. Verified
+        -- by mutation: raising MAX_ROW_BYTES or MAX_BODY makes it fail.
+        local function hostile_body(row_bytes, total_bytes)
+            local head = '<tr><td><a href="https://x.test/" class="result-link">'
+            local tail = "</a></td></tr>"
+            local filler = ("<"):rep(math.max(0, row_bytes - #head - #tail))
+            local row = head .. filler .. tail
+            local rows = {}
+            for _ = 1, math.floor(total_bytes / #row) do
+                rows[#rows + 1] = row
+            end
+            return 'action="/lite/"' .. table.concat(rows)
+        end
+
+        it("parses a body packed with maximum-size rows in bounded time", function()
+            -- 4000 is just under MAX_ROW_BYTES, 60KB just under MAX_BODY, so
+            -- nothing is skipped and the parse does the most work it can.
+            local body = hostile_body(4000, 60 * 1024)
+            assert.truthy(body:find("<tr", 1, true), "the body must reach the row loop")
+
             local started = os.clock()
-            ddg.parse(hostile)
+            local rows = ddg.parse(body)
             local elapsed = os.clock() - started
+
+            assert.truthy(rows, "a page of well-formed rows must parse")
             assert.truthy(
-                elapsed < 1.0,
+                elapsed < 2.0,
                 string.format(
-                    "parse took %.2fs on a 128KB adversarial body — the per-row "
-                        .. "byte bound is gone and one response can stall every "
-                        .. "session's plugin VM",
-                    elapsed
+                    "parse took %.2fs on a %d-byte body of maximum-size rows. The cost "
+                        .. "is O(body x row), so raising either bound reopens a stall of "
+                        .. "the Lua VM every session shares — one that the daemon's 30s "
+                        .. "dispatch timeout cannot preempt.",
+                    elapsed,
+                    #body
                 )
             )
         end)
 
-        it("skips an oversize row without ending the page early", function()
-            -- A row past the byte bound is dropped, and the rows after it must
-            -- still be found — returning nil there would let one bloated row
-            -- hide every result behind it.
-            local giant = "<tr>" .. ("x"):rep(20 * 1024) .. "</tr>"
-            local good = '<tr><td><a href="https://example.test/a" class="result-link">A title</a></td></tr>'
-            local rows = ddg.parse(lite_page(giant .. good))
-            assert.truthy(rows and #rows > 0, "rows after an oversize one must survive")
-            assert.equal("https://example.test/a", rows[1].url)
+        it("refuses a body over the parse limit", function()
+            -- Pins MAX_BODY. The bounded-time test above uses a 60KB body, so
+            -- it cannot see MAX_BODY being raised — and the cost of the parse
+            -- is O(body x row), so raising either factor reopens the stall.
+            -- This is the half that watches the other factor.
+            local over = 'action="/lite/"' .. ("<tr></tr>"):rep(8 * 1024)
+            local rows, why = ddg.parse(over)
+            assert.is_nil(rows)
+            assert.truthy(why:find("parse limit", 1, true), why)
+        end)
+
+        it("does not give a skipped row's snippet to the previous result", function()
+            -- A dropped row may be an ANCHOR row, and the pairing loop clears
+            -- `pending` only when an anchor replaces it — so a silent skip left
+            -- the previous result holding the skipped row's snippet, attaching
+            -- one result's text to another's URL.
+            local a = '<tr><td><a href="https://a.test/" class="result-link">A</a></td></tr>'
+            local giant = '<tr><td><a href="https://b.test/' .. ("x"):rep(5 * 1024)
+                .. '" class="result-link">B</a></td></tr>'
+            local b_snippet = '<tr><td class="result-snippet">TEXT ABOUT B</td></tr>'
+
+            local rows = ddg.parse(lite_page(a .. giant .. b_snippet))
+
+            assert.equal(1, #rows, "the oversize row is dropped")
+            assert.equal("https://a.test/", rows[1].url)
+            assert.falsy(
+                (rows[1].snippet or ""):find("TEXT ABOUT B", 1, true),
+                "B's snippet must not be attached to A's URL"
+            )
         end)
 
         it("returns no rows, not a failure, when the page parsed but matched nothing", function()

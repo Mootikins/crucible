@@ -189,25 +189,29 @@ end
 --- without a bound here the only limit on what gets parsed is what the far end
 --- chooses to send. A lite page is a few tens of KB; anything past this is not
 --- a page we can read anyway.
-local MAX_BODY = 512 * 1024
+local MAX_BODY = 64 * 1024
 
 --- Rows a single page may contribute. A lite page carries tens.
 local MAX_ROWS = 500
 
 --- Bytes a single row may occupy.
 ---
---- This is the bound that matters, and its absence is why the round-1 fix was
---- incomplete. Making the row SCAN linear did not help, because the scan yields
---- `html:sub(open, close_end)` and one `<tr>…</tr>` may be the whole body — so
---- the quadratic simply moved one call frame downstream into the patterns that
---- consume a chunk. `clean`'s greedy `[^>]*` is the worst: measured 0.62s at
---- 16KB, 2.49s at 32KB, 9.78s at 64KB, 39.35s at 128KB — 4x per doubling,
---- extrapolating to roughly ten minutes at the 512KB body cap.
+--- Three rounds of review each found the previous bound insufficient, because
+--- each bounded one layer and left the next unbounded: first the row scan, then
+--- the row chunk. The cost of the whole parse is O(body x row), so bounding
+--- either factor alone leaves the product free — 31 rows of 16KB inside a 512KB
+--- body measured 20.4s and returned success with no error.
 ---
---- Capping the chunk bounds every downstream consumer at once, whatever its
---- pattern shape, which is the property a per-pattern fix cannot give. A real
---- lite row is a few hundred bytes; anything past this is not a result row.
-local MAX_ROW_BYTES = 16 * 1024
+--- So both factors are bounded, and small enough that the product is safe by
+--- arithmetic rather than by a judgement about which pattern is the expensive
+--- one. Measured scaling at a constant ~508KB body: 1KB rows 1.26s, 4KB 5.14s,
+--- 8KB 10.43s, 16KB 20.42s. At 64KB x 4KB the same curve gives well under a
+--- second, against a 30s dispatch timeout that cannot preempt synchronous Lua
+--- on the VM every session shares.
+---
+--- A real lite page is a few tens of KB and its rows are a few hundred bytes,
+--- so both bounds sit far above anything legitimate.
+local MAX_ROW_BYTES = 4 * 1024
 
 --- Iterate `<tr>…</tr>` chunks in linear time.
 ---
@@ -226,9 +230,18 @@ local MAX_ROW_BYTES = 16 * 1024
 ---
 --- `find(..., plain)` advances a cursor instead of backtracking, so the whole
 --- scan is O(n) regardless of what the body contains.
+--- Returns an iterator plus a `was_skipped` probe: the caller has to know a row
+--- vanished, because a dropped anchor row invalidates the pending pairing.
 local function rows_of(html)
     local pos, count = 1, 0
-    return function()
+    local skipped = false
+    local function skipped_since_last_row()
+        local was = skipped
+        skipped = false
+        return was
+    end
+    local iter
+    iter = function()
         -- `while`, so an oversize row is skipped and the scan continues to the
         -- next one instead of ending the page early.
         while count < MAX_ROWS do
@@ -244,9 +257,17 @@ local function rows_of(html)
             if close_end - open + 1 <= MAX_ROW_BYTES then
                 return html:sub(open, close_end)
             end
+            -- Signal the skip. A skipped row may have been an ANCHOR row, and
+            -- the pairing loop clears `pending` only when an anchor replaces it
+            -- — so dropping one silently left the previous result holding a
+            -- snippet that belongs to the row that was skipped, attaching one
+            -- result's text to another's URL. Same hazard the sponsored branch
+            -- already guards against.
+            skipped = true
         end
         return nil
     end
+    return iter, skipped_since_last_row
 end
 
 function M.parse(html)
@@ -276,8 +297,15 @@ function M.parse(html)
     end
 
     local rows, pending, tr_count, sponsored = {}, nil, 0, 0
-    for chunk in rows_of(html) do
+    local next_row, skipped_since_last_row = rows_of(html)
+    for chunk in next_row do
         tr_count = tr_count + 1
+        -- A row was dropped for length before this one. It may have been the
+        -- anchor row that would have replaced `pending`, so anything still
+        -- pending can no longer be trusted to own the snippet that follows.
+        if skipped_since_last_row() then
+            pending = nil
+        end
         if chunk:find("result%-sponsored") then
             sponsored = sponsored + 1
             -- Clearing `pending` matters: if DuckDuckGo ever tags only an ad's

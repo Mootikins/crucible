@@ -385,8 +385,6 @@ mod tests {
         assert!(!ToolSelector::All.names_exactly("web_search"));
     }
 
-    use super::*;
-
     fn lua_with_modes() -> (Lua, ModeRegistry) {
         let lua = Lua::new();
         let registry = ModeRegistry::new();
