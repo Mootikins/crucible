@@ -69,29 +69,32 @@ fn test_agent_config() -> SessionAgent {
 }
 
 #[test]
-fn enriched_prompt_prepends_workspace_and_kiln_context() {
+fn enriched_prompt_carries_workspace_and_kiln_context() {
     let ws = Path::new("/repo");
     let kiln = Path::new("/repo/docs");
 
-    // With kiln + base prompt: both paths present, workspace before base
+    // With kiln + base prompt: both paths present, base prompt before them.
+    // The ordering is the reverse of what it once was — see
+    // `the_cacheable_half_carries_nothing_session_specific` for why.
     let enriched = build_enriched_prompt(ws, Some(kiln), &[], "You are helpful.", "", "");
-    assert!(enriched.contains("Workspace: /repo"));
-    assert!(enriched.contains("Kiln: /repo/docs"));
-    assert!(enriched.contains("You are helpful."));
-    assert!(enriched.find("Workspace:").unwrap() < enriched.find("You are helpful.").unwrap());
+    let combined = enriched.combined();
+    assert!(combined.contains("Workspace: /repo"));
+    assert!(combined.contains("Kiln: /repo/docs"));
+    assert!(combined.contains("You are helpful."));
+    assert!(combined.find("You are helpful.").unwrap() < combined.find("Workspace:").unwrap());
 
     // Without kiln: no Kiln line
-    let no_kiln = build_enriched_prompt(ws, None, &[], "Base.", "", "");
+    let no_kiln = build_enriched_prompt(ws, None, &[], "Base.", "", "").combined();
     assert!(no_kiln.contains("Workspace: /repo"));
     assert!(!no_kiln.contains("Kiln:"));
     assert!(no_kiln.contains("Base."));
 
     // Empty base prompt: just context lines, no double blank
-    let empty_base = build_enriched_prompt(ws, None, &[], "", "", "");
+    let empty_base = build_enriched_prompt(ws, None, &[], "", "", "").combined();
     assert!(empty_base.contains("Workspace: /repo"));
     assert!(!empty_base.ends_with("\n\n"));
 
-    // Skills catalog is appended after the base prompt when present
+    // Skills catalog still follows the base prompt
     let with_skills = build_enriched_prompt(
         ws,
         Some(kiln),
@@ -99,9 +102,67 @@ fn enriched_prompt_prepends_workspace_and_kiln_context() {
         "Base.",
         "",
         "# Available Skills\n\n## commit\n",
-    );
+    )
+    .combined();
     assert!(with_skills.contains("# Available Skills"));
     assert!(with_skills.find("Base.").unwrap() < with_skills.find("# Available Skills").unwrap());
+}
+
+/// The cached prefix must contain nothing that varies between sessions.
+///
+/// Prompt caching matches a token prefix. The workspace path was the first
+/// line of the prompt, so two sessions in different projects diverged at byte
+/// zero: the persona, `AGENTS.md` and the skills catalog were all re-ingested
+/// for every project even though they were byte-identical.
+#[test]
+fn the_cacheable_half_carries_nothing_session_specific() {
+    let prompt = build_enriched_prompt(
+        Path::new("/repo"),
+        Some(Path::new("/repo/docs")),
+        &[],
+        "You are helpful.",
+        "# Project rules\n\nbe kind\n",
+        "# Available Skills\n\n## commit\n",
+    );
+
+    assert!(prompt.stable.contains("You are helpful."));
+    assert!(prompt.stable.contains("# Project rules"));
+    assert!(prompt.stable.contains("# Available Skills"));
+    assert!(
+        !prompt.stable.contains("/repo"),
+        "a session path in the cached prefix defeats reuse across projects:\n{}",
+        prompt.stable
+    );
+
+    assert!(prompt.volatile.contains("Workspace: /repo"));
+    assert!(prompt.volatile.contains("Kiln: /repo/docs"));
+}
+
+/// Least-stable last: the knowledge-base list names kilns, so it moves with
+/// the session and belongs with the paths rather than with the persona.
+#[test]
+fn the_knowledge_base_list_is_session_context_not_cached_prefix() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let crucible_dir = tmp.path().join(".crucible");
+    std::fs::create_dir_all(&crucible_dir).unwrap();
+    std::fs::write(
+        crucible_dir.join("kiln.toml"),
+        "[kiln]\nname = \"My Kiln\"\n",
+    )
+    .unwrap();
+
+    let prompt = build_enriched_prompt(
+        Path::new("/workspace"),
+        Some(tmp.path()),
+        &[],
+        "base",
+        "",
+        "",
+    );
+
+    assert!(prompt.volatile.contains("Knowledge bases:"));
+    assert!(prompt.volatile.contains("My Kiln (primary)"));
+    assert!(!prompt.stable.contains("Knowledge bases:"));
 }
 
 #[test]
@@ -122,7 +183,8 @@ fn build_enriched_prompt_includes_kiln_names() {
         "base",
         "",
         "",
-    );
+    )
+    .combined();
     assert!(
         result.contains("Knowledge bases:"),
         "should have kb section"
@@ -135,7 +197,8 @@ fn build_enriched_prompt_includes_kiln_names() {
 
 #[test]
 fn build_enriched_prompt_no_kiln_names_when_no_config() {
-    let result = build_enriched_prompt(Path::new("/workspace"), None, &[], "base", "", "");
+    let result =
+        build_enriched_prompt(Path::new("/workspace"), None, &[], "base", "", "").combined();
     assert!(
         !result.contains("Knowledge bases:"),
         "no kb section when no kiln"

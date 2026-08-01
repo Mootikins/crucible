@@ -43,7 +43,11 @@ const DEFAULT_ASSUMED_CONTEXT: usize = 128_000;
 /// Returns the system prompt separately (as a cached system ChatMessage) so it can
 /// be included in the messages vec rather than via `with_system()`, which doesn't
 /// support cache control.
-fn apply_prompt_caching(system_prompt: &str, messages: &mut Vec<ChatMessage>) {
+fn apply_prompt_caching(
+    system_prompt: &str,
+    session_context: &str,
+    messages: &mut Vec<ChatMessage>,
+) {
     // Mark second-to-last message with cache control (the last msg before current user turn).
     // This creates a cache breakpoint at the end of the prior conversation, so the entire
     // prefix up to this point is cached on subsequent turns.
@@ -53,9 +57,22 @@ fn apply_prompt_caching(system_prompt: &str, messages: &mut Vec<ChatMessage>) {
         messages[idx] = msg;
     }
 
-    // Prepend system prompt as a system-role message with cache control.
+    // Two system messages, each with its own breakpoint, stable one first.
+    // genai collects every system-role message into Anthropic's `system` array
+    // keeping per-message cache control (`adapter_shared.rs`), so this is two
+    // real breakpoints rather than one — and nothing is dropped.
+    //
+    // The split is the point. A cache entry is keyed on the whole prefix up to
+    // its breakpoint, so with a single breakpoint covering both halves, a
+    // different workspace missed on the persona and the project rules too.
+    // Providers that cache prefixes automatically (OpenAI) benefit from the
+    // ordering alone.
+    if !session_context.is_empty() {
+        let ctx_msg = ChatMessage::system(session_context).with_options(CacheControl::Ephemeral);
+        messages.insert(0, ctx_msg);
+    }
     // genai's with_system() doesn't support MessageOptions, but system-role
-    // ChatMessages do — the Anthropic adapter handles them identically.
+    // ChatMessages do.
     if !system_prompt.is_empty() {
         let system_msg = ChatMessage::system(system_prompt).with_options(CacheControl::Ephemeral);
         messages.insert(0, system_msg);
@@ -345,6 +362,10 @@ pub struct GenaiAgentHandle {
     client: genai::Client,
     model: ModelIden,
     system_prompt: String,
+    /// This session's workspace/kiln header. Held apart from `system_prompt`
+    /// so the stable half can be cached across sessions; see
+    /// `apply_prompt_caching`.
+    session_context: String,
     tools: Vec<LlmToolDefinition>,
     mode_state: SessionModeState,
     current_mode_id: String,
@@ -717,6 +738,15 @@ impl GenaiAgentHandle {
         )
     }
 
+    /// Attach this session's workspace/kiln header.
+    ///
+    /// Kept out of `system_prompt` so the stable half can be cached across
+    /// sessions and projects rather than invalidated by a path.
+    pub fn with_session_context(mut self, session_context: String) -> Self {
+        self.session_context = session_context;
+        self
+    }
+
     /// Attach the Lua mode registry.
     ///
     /// Two jobs, and the second was missing: a declared mode's `tools`
@@ -789,6 +819,7 @@ impl GenaiAgentHandle {
             client,
             model,
             system_prompt: system_prompt.to_string(),
+            session_context: String::new(),
             tools,
             mode_state,
             current_mode_id,
@@ -1039,7 +1070,7 @@ impl GenaiAgentHandle {
         } else {
             self.system_prompt.clone()
         };
-        apply_prompt_caching(&system_prompt, &mut messages);
+        apply_prompt_caching(&system_prompt, &self.session_context, &mut messages);
 
         let req_tools: Vec<Tool> = visible
             .tools
@@ -1396,7 +1427,11 @@ impl AgentHandle for GenaiAgentHandle {
     /// enrichment (workspace header, rules files, skills catalog) — not the
     /// agent card's `system_prompt` the session config stores.
     fn get_system_prompt(&self) -> Option<String> {
-        Some(self.system_prompt.clone())
+        Some(if self.session_context.is_empty() {
+            self.system_prompt.clone()
+        } else {
+            format!("{}\n\n{}", self.system_prompt, self.session_context)
+        })
     }
 
     fn get_mode_id(&self) -> &str {
@@ -1557,6 +1592,54 @@ impl crucible_core::turn::Agent for GenaiAgentHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The session's paths must not sit inside the cached prefix.
+    ///
+    /// One breakpoint covering both halves means a cache entry keyed on the
+    /// whole system prompt, so a different workspace missed on the persona and
+    /// the project rules too. Two breakpoints let the stable half survive a
+    /// change of project.
+    #[test]
+    fn the_stable_prompt_and_the_session_context_get_separate_breakpoints() {
+        let mut messages = vec![ChatMessage::user("hello")];
+
+        apply_prompt_caching("PERSONA", "Workspace: /repo", &mut messages);
+
+        assert_eq!(messages.len(), 3, "two system messages plus the user turn");
+        let texts: Vec<String> = messages
+            .iter()
+            .map(|m| m.content.joined_texts().unwrap_or_default())
+            .collect();
+        assert_eq!(texts[0], "PERSONA", "the cacheable half leads");
+        assert_eq!(texts[1], "Workspace: /repo", "session context follows it");
+
+        for (idx, label) in [(0usize, "stable"), (1, "session context")] {
+            assert!(
+                messages[idx]
+                    .options
+                    .as_ref()
+                    .and_then(|o| o.cache_control.as_ref())
+                    .is_some(),
+                "the {label} half needs its own cache breakpoint"
+            );
+        }
+    }
+
+    /// A session with no kiln and no workspace header still gets exactly one
+    /// system message — an empty second block would be a wasted breakpoint.
+    #[test]
+    fn an_empty_session_context_adds_no_second_system_message() {
+        let mut messages = vec![ChatMessage::user("hello")];
+
+        apply_prompt_caching("PERSONA", "", &mut messages);
+
+        assert_eq!(messages.len(), 2);
+        assert_eq!(
+            messages[0].content.joined_texts().unwrap_or_default(),
+            "PERSONA"
+        );
+    }
+
     use crate::provider::ChatClient;
     use crucible_core::config::{BackendType, LlmProviderConfig};
 

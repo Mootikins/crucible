@@ -367,6 +367,37 @@ fn discover_skills_catalog(workspace: &Path, kiln_path: Option<&Path>) -> String
     }
 }
 
+/// The system prompt, split at its caching boundary.
+///
+/// Prompt caching matches on a token *prefix*, so anything that varies per
+/// session poisons everything behind it. The workspace path used to be the very
+/// first line of the prompt, which meant two sessions in different projects
+/// diverged at byte zero and shared nothing — not the persona, not `AGENTS.md`,
+/// not the skills catalog. Splitting the two halves lets the stable one carry
+/// its own cache breakpoint.
+pub struct EnrichedPrompt {
+    /// Identical across every session that shares this agent configuration:
+    /// persona, project rules, skills catalog. Cacheable across projects.
+    pub stable: String,
+    /// This session's surroundings: workspace, kiln, knowledge-base names.
+    /// Changes per session, so it goes last and gets its own breakpoint.
+    pub volatile: String,
+}
+
+impl EnrichedPrompt {
+    /// The whole prompt as one string, in the order the model reads it.
+    ///
+    /// For callers that need the text rather than the cache structure —
+    /// `session.get_system_prompt`, tests, anything logging it.
+    pub fn combined(&self) -> String {
+        match (self.stable.is_empty(), self.volatile.is_empty()) {
+            (_, true) => self.stable.clone(),
+            (true, _) => self.volatile.clone(),
+            _ => format!("{}\n\n{}", self.stable, self.volatile),
+        }
+    }
+}
+
 fn build_enriched_prompt(
     workspace: &Path,
     kiln_path: Option<&Path>,
@@ -374,11 +405,33 @@ fn build_enriched_prompt(
     base_prompt: &str,
     rules: &str,
     skills_catalog: &str,
-) -> String {
-    let mut enriched_prompt = String::new();
-    enriched_prompt.push_str(&format!("Workspace: {}\n", workspace.display()));
+) -> EnrichedPrompt {
+    // Most stable first. The persona is identical for every session on this
+    // config; project rules change per project; the skills catalog per kiln.
+    let mut stable = String::new();
+    if !base_prompt.is_empty() {
+        stable.push_str(base_prompt);
+    }
+    // After the agent card: project rules refine who the agent is, they do not
+    // define it. Before the skills catalog, which is a tool listing.
+    if !rules.is_empty() {
+        if !stable.is_empty() {
+            stable.push('\n');
+        }
+        stable.push_str(rules);
+    }
+    if !skills_catalog.is_empty() {
+        if !stable.is_empty() {
+            stable.push('\n');
+        }
+        stable.push_str(skills_catalog);
+    }
+
+    // Least stable last, so it never sits inside the cached prefix.
+    let mut volatile = String::new();
+    volatile.push_str(&format!("Workspace: {}\n", workspace.display()));
     if let Some(kiln) = kiln_path {
-        enriched_prompt.push_str(&format!("Kiln: {}\n", kiln.display()));
+        volatile.push_str(&format!("Kiln: {}\n", kiln.display()));
     }
 
     // List knowledge bases by name
@@ -398,29 +451,16 @@ fn build_enriched_prompt(
         }
     }
     if !kb_names.is_empty() {
-        enriched_prompt.push_str("\nKnowledge bases:\n");
+        volatile.push_str("\nKnowledge bases:\n");
         for name in &kb_names {
-            enriched_prompt.push_str(&format!("- {}\n", name));
+            volatile.push_str(&format!("- {}\n", name));
         }
     }
 
-    if !base_prompt.is_empty() {
-        enriched_prompt.push('\n');
-        enriched_prompt.push_str(base_prompt);
+    EnrichedPrompt {
+        stable,
+        volatile: volatile.trim_end().to_string(),
     }
-
-    // After the agent card: project rules refine who the agent is, they do not
-    // define it. Before the skills catalog, which is a tool listing.
-    if !rules.is_empty() {
-        enriched_prompt.push('\n');
-        enriched_prompt.push_str(rules);
-    }
-
-    if !skills_catalog.is_empty() {
-        enriched_prompt.push('\n');
-        enriched_prompt.push_str(skills_catalog);
-    }
-    enriched_prompt
 }
 
 /// Build a bare genai chat client + model identity from a session's agent
@@ -665,11 +705,14 @@ pub async fn create_agent_from_session_config(
     let handle = GenaiAgentHandle::with_workspace(
         genai_client,
         model_iden,
-        &enriched_prompt,
+        &enriched_prompt.stable,
         tool_defs,
         agent_config.thinking_budget,
         workspace.to_path_buf(),
     )
+    // Separate from the prompt above so it can carry its own cache breakpoint;
+    // it is the half that changes per session.
+    .with_session_context(enriched_prompt.volatile)
     .with_deferrable_tools(deferrable_tool_names)
     .with_plugin_tools(plugin_tool_names)
     // Everything the session decided about generation and context. This is
