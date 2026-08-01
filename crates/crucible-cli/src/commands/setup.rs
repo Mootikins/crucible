@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 
 /// Bootstrap the Crucible runtime directory.
 ///
-/// Copies bundled runtime files (plugins, themes) to the target directory
-/// and creates a template init.lua if one doesn't exist.
+/// Copies the runtime files that layer per name — plugins and themes — to the
+/// target directory, and creates a template `init.lua` if one doesn't exist.
+/// `defaults/` is deliberately excluded; see `NOT_COPIED`.
 pub fn execute(runtime_dir: Option<PathBuf>, force: bool) -> Result<()> {
     let target = runtime_dir.unwrap_or_else(default_runtime_dir);
 
@@ -73,13 +74,36 @@ pub fn execute(runtime_dir: Option<PathBuf>, force: bool) -> Result<()> {
 ///
 /// `None` is the installed case rather than an error: the binary carries the
 /// tree, so "no runtime files found" is only ever true of the filesystem.
+/// Directories `cru setup` deliberately does NOT hand the user a copy of.
+///
+/// This command's target outranks every shipped root, so a copy here shadows
+/// the shipped version permanently. For things that layer per name — plugins,
+/// themes — that is exactly right: your `oci` wins, and a plugin added next
+/// release still loads beside it. `defaults/init.lua` does not layer. It is one
+/// file read first-hit-wins, so a copy of it silently freezes the defaults at
+/// the version you ran setup on, and every default added afterwards ships to
+/// nobody who ran this command.
+///
+/// The override point for defaults is `~/.config/crucible/init.lua`, which
+/// already runs after them and wins per assignment — Vim's `after/` in
+/// everything but name, and it exists precisely so nobody forks a runtime file.
+const NOT_COPIED: &[&str] = &["defaults"];
+
 fn populate_runtime(source: Option<&Path>, target: &Path) -> Result<()> {
     match source {
         Some(source) => copy_dir_recursive(source, target)
             .with_context(|| format!("Failed to copy runtime to {}", target.display())),
         None => crucible_core::runtime_roots::write_bundled_runtime(target)
             .with_context(|| format!("Failed to write runtime to {}", target.display())),
+    }?;
+    for name in NOT_COPIED {
+        let path = target.join(name);
+        if path.exists() {
+            std::fs::remove_dir_all(&path)
+                .with_context(|| format!("Failed to remove {}", path.display()))?;
+        }
     }
+    Ok(())
 }
 
 fn default_runtime_dir() -> PathBuf {
@@ -212,6 +236,43 @@ mod tests {
     /// never carried one and the shell installer would have discarded it
     /// anyway — so `cru setup` bailed with "Could not find Crucible runtime
     /// files" for precisely the users the command exists to serve.
+    /// `cru setup` must not hand the user a copy of the shipped defaults.
+    ///
+    /// Its target outranks every shipped root, so a copied `defaults/init.lua`
+    /// shadows the real one permanently: a default added in a later release
+    /// ships and reaches nobody who ran setup — the users engaged enough to run
+    /// it. Splunk states the general form outright, that a full copy of
+    /// defaults in a user directory "will make your app insensitive to updates
+    /// supplied by the app vendor", and Zellij has it as an open bug
+    /// (zellij-org/zellij#4360) where a generated config silently hid a new
+    /// release's feature.
+    ///
+    /// Plugins and themes are different and are still copied: those merge per
+    /// name across roots, so a user's copy shadows only the item it names and a
+    /// newly shipped plugin still loads. Helix moved its runtime lookup to that
+    /// same per-file layering for this reason (helix-editor/helix#5411).
+    ///
+    /// The override point for defaults is `~/.config/crucible/init.lua`, which
+    /// already runs after them — Vim's `after/` directory in everything but
+    /// name, and it exists so nobody has to fork a runtime file.
+    #[test]
+    fn setup_does_not_copy_the_shipped_defaults() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("runtime");
+
+        populate_runtime(None, &target).unwrap();
+
+        assert!(
+            !target.join("defaults").exists(),
+            "a copied defaults/ shadows the shipped one for good"
+        );
+        assert!(
+            target.join("plugins").join("kiln-expert").is_dir(),
+            "plugins still come across — they layer per name"
+        );
+        assert!(target.join("themes").is_dir(), "so do themes");
+    }
+
     #[test]
     fn setup_writes_the_compiled_in_tree_when_nothing_is_installed() {
         let tmp = tempfile::tempdir().unwrap();
