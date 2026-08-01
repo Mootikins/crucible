@@ -8,11 +8,16 @@ use std::path::{Path, PathBuf};
 pub fn execute(runtime_dir: Option<PathBuf>, force: bool) -> Result<()> {
     let target = runtime_dir.unwrap_or_else(default_runtime_dir);
 
-    // Find source runtime directory
-    let source = find_source_runtime()
-        .context("Could not find Crucible runtime files. If you installed via cargo install, clone the repo and point to it:\n  cru setup --runtime-dir /path/to/crucible/runtime")?;
+    // A tree on disk if there is one, the compiled-in copy otherwise. This used
+    // to be a hard error — "Could not find Crucible runtime files" — which is
+    // what every installed user saw, because no release ever put a tree on
+    // disk for it to find.
+    let source = find_source_runtime();
 
-    println!("Source:  {}", source.display());
+    match &source {
+        Some(source) => println!("Source:  {}", source.display()),
+        None => println!("Source:  bundled with cru"),
+    }
     println!("Target:  {}", target.display());
 
     // Copying a tree onto itself truncates every file to zero bytes, because
@@ -20,7 +25,7 @@ pub fn execute(runtime_dir: Option<PathBuf>, force: bool) -> Result<()> {
     // `find_source_runtime` already excludes the destination; this refuses
     // rather than trusting that, because the failure destroys user data and
     // says nothing while it does it.
-    if same_dir(&source, &target) {
+    if source.as_deref().is_some_and(|s| same_dir(s, &target)) {
         anyhow::bail!(
             "source and target are the same directory ({}); nothing to copy",
             target.display()
@@ -32,9 +37,7 @@ pub fn execute(runtime_dir: Option<PathBuf>, force: bool) -> Result<()> {
         return Ok(());
     }
 
-    // Copy runtime directory
-    copy_dir_recursive(&source, &target)
-        .with_context(|| format!("Failed to copy runtime to {}", target.display()))?;
+    populate_runtime(source.as_deref(), &target)?;
 
     println!("Copied runtime files.");
 
@@ -66,6 +69,19 @@ pub fn execute(runtime_dir: Option<PathBuf>, force: bool) -> Result<()> {
     Ok(())
 }
 
+/// Fill `target` with a runtime tree, from `source` if there is one.
+///
+/// `None` is the installed case rather than an error: the binary carries the
+/// tree, so "no runtime files found" is only ever true of the filesystem.
+fn populate_runtime(source: Option<&Path>, target: &Path) -> Result<()> {
+    match source {
+        Some(source) => copy_dir_recursive(source, target)
+            .with_context(|| format!("Failed to copy runtime to {}", target.display())),
+        None => crucible_core::runtime_roots::write_bundled_runtime(target)
+            .with_context(|| format!("Failed to write runtime to {}", target.display())),
+    }
+}
+
 fn default_runtime_dir() -> PathBuf {
     dirs::config_dir()
         .map(|d| d.join("crucible").join("runtime"))
@@ -82,8 +98,7 @@ fn default_runtime_dir() -> PathBuf {
 /// and `fs::copy` every file onto itself — truncating each one to zero bytes.
 /// Read locations and copy sources are not the same list.
 fn find_source_runtime() -> Option<PathBuf> {
-    let looks_like_runtime =
-        |dir: &Path| dir.join("plugins").exists() || dir.join("themes").exists();
+    use crucible_core::runtime_roots::looks_like_runtime;
 
     std::env::current_exe()
         .ok()
@@ -193,6 +208,80 @@ mod tests {
     /// made a second `cru setup --force` copy the tree onto itself, and
     /// `fs::copy` truncates the destination before reading — every file in a
     /// user's customised runtime went to zero bytes, silently.
+    /// An installed `cru` has no runtime tree to copy — the release archive
+    /// never carried one and the shell installer would have discarded it
+    /// anyway — so `cru setup` bailed with "Could not find Crucible runtime
+    /// files" for precisely the users the command exists to serve.
+    #[test]
+    fn setup_writes_the_compiled_in_tree_when_nothing_is_installed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("runtime");
+
+        populate_runtime(None, &target).unwrap();
+
+        assert!(target
+            .join("plugins")
+            .join("kiln-expert")
+            .join("plugin.yaml")
+            .is_file());
+        assert!(target
+            .join("crucible-help")
+            .join("skills")
+            .join("crucible-help")
+            .join("SKILL.md")
+            .is_file());
+    }
+
+    /// `cru setup --force` means "give me the shipped files back".
+    ///
+    /// The bundled tree skips writing when its stamp says the target already
+    /// holds this build — right for the daemon's automatic extraction, wrong
+    /// here, where the user has explicitly asked to overwrite whatever they
+    /// did to it.
+    #[test]
+    fn setup_restores_a_hand_edited_tree_rather_than_trusting_its_stamp() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("runtime");
+        populate_runtime(None, &target).unwrap();
+
+        let plugin = target
+            .join("plugins")
+            .join("kiln-expert")
+            .join("plugin.yaml");
+        std::fs::write(&plugin, "# edited").unwrap();
+
+        populate_runtime(None, &target).unwrap();
+
+        assert_ne!(
+            std::fs::read_to_string(&plugin).unwrap(),
+            "# edited",
+            "setup must restore the shipped file, not skip on a matching stamp"
+        );
+    }
+
+    /// The compiled-in tree is the fallback, not the answer: a tree found next
+    /// to the binary is what the user installed, and may have been patched by
+    /// a distro packager.
+    #[test]
+    fn an_installed_tree_is_copied_in_preference_to_the_compiled_in_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source");
+        let target = tmp.path().join("target");
+        std::fs::create_dir_all(source.join("plugins")).unwrap();
+        std::fs::write(source.join("plugins").join("marker.lua"), "-- packaged").unwrap();
+
+        populate_runtime(Some(&source), &target).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(target.join("plugins").join("marker.lua")).unwrap(),
+            "-- packaged"
+        );
+        assert!(
+            !target.join("plugins").join("kiln-expert").is_dir(),
+            "the compiled-in tree must not be merged over the installed one"
+        );
+    }
+
     #[test]
     fn a_directory_is_the_same_as_itself_through_any_spelling() {
         let tmp = tempfile::tempdir().unwrap();
