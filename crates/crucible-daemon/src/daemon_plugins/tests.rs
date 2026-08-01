@@ -379,6 +379,46 @@ async fn reloading_a_plugin_replaces_its_handlers() {
     );
 }
 
+/// An installed `cru` has no `runtime/plugins` next to it — the release
+/// archive never carried one and the installer would have deleted it — so
+/// `kiln-expert`, `oci` and `reflection` reached nobody who did not clone the
+/// repo. The tree now comes out of the binary; this asserts the plugins in it
+/// are found by the same resolver that serves the dev tree.
+#[test]
+fn plugins_extracted_from_the_binary_are_discovered() {
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    let extracted = tmp.path().join("runtime-x.y.z");
+    crucible_core::runtime_roots::write_bundled_runtime(&extracted).unwrap();
+
+    let paths = runtime_plugin_paths(&[extracted.clone()]);
+
+    assert!(
+        paths
+            .iter()
+            .any(|(p, src)| *p == extracted.join("plugins") && *src == PluginSource::Runtime),
+        "extracted plugins must be discovered, got {paths:?}"
+    );
+    for bundled in ["kiln-expert", "oci", "reflection"] {
+        assert!(
+            extracted.join("plugins").join(bundled).is_dir(),
+            "{bundled} must be in the extracted tree"
+        );
+    }
+}
+
+/// A root with no `plugins/` is skipped rather than offered and then failing
+/// to load — the extracted tree is named as a root unconditionally, so this is
+/// the common case on any box that never extracted one.
+#[test]
+fn a_root_without_plugins_is_not_offered() {
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    assert!(runtime_plugin_paths(&[tmp.path().to_path_buf()]).is_empty());
+}
+
 #[test]
 fn default_paths_includes_config_dir() {
     let paths = default_daemon_plugin_paths();

@@ -1071,18 +1071,32 @@ pub fn daemon_plugin_paths(runtimepath: &[std::path::PathBuf]) -> Vec<(PathBuf, 
                 paths.push((runtime_plugins, PluginSource::Runtime));
             }
         } else {
-            // Installed layout first, then the dev tree; see `runtime_roots`.
-            for root in crucible_core::runtime_roots::for_current_exe() {
-                let runtime_plugins = root.join("plugins");
-                if runtime_plugins.exists() {
-                    tracing::debug!("Adding runtime plugin path: {:?}", runtime_plugins);
-                    paths.push((runtime_plugins, PluginSource::Runtime));
-                }
-            }
+            // Installed layout, then the dev tree, then the copy extracted from
+            // the binary; see `runtime_roots`.
+            paths.extend(runtime_plugin_paths(
+                &crucible_core::runtime_roots::for_current_exe(),
+            ));
         }
     }
 
     paths
+}
+
+/// The `plugins/` directories among `roots`, in the order given.
+///
+/// Split out so the auto-detect branch is reachable from a test without
+/// controlling the running binary's location — the sibling resolver in
+/// `skills::discovery` has had `runtime_skill_paths` for the same reason, and
+/// this branch had no equivalent, which is why nothing caught that the bundled
+/// plugins reached no installed user.
+fn runtime_plugin_paths(roots: &[PathBuf]) -> Vec<(PathBuf, PluginSource)> {
+    roots
+        .iter()
+        .map(|root| root.join("plugins"))
+        .filter(|dir| dir.exists())
+        .inspect(|dir| tracing::debug!("Adding runtime plugin path: {:?}", dir))
+        .map(|dir| (dir, PluginSource::Runtime))
+        .collect()
 }
 
 /// Expand `~` at the start of a path to the user's home directory.

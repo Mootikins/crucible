@@ -366,6 +366,30 @@ mod tests {
         );
     }
 
+    /// The case no packaging route covers: nothing on disk at all.
+    ///
+    /// The two tests either side of this one stage a runtime tree by hand,
+    /// which is what a release tarball never does — `cargo-dist`'s installer
+    /// unpacks the archive, moves the binary out, and deletes the rest. So the
+    /// bundled help skills reached nobody who installed Crucible. This asserts
+    /// the whole path an installed user actually takes: bytes compiled into
+    /// `cru`, extracted to a directory, and found by the real discovery code.
+    #[test]
+    fn skills_extracted_from_the_binary_are_discovered() {
+        let tmp = TempDir::new().unwrap();
+        let extracted = tmp.path().join("runtime-x.y.z");
+        crucible_core::runtime_roots::write_bundled_runtime(&extracted).unwrap();
+
+        let found = runtime_skill_paths(&[extracted.clone()]);
+
+        let skills = extracted.join("crucible-help").join("skills");
+        assert!(
+            found.iter().any(|p| same_dir(&p.path, &skills)),
+            "extracted help skills must be discovered, got: {:?}",
+            found.iter().map(|p| &p.path).collect::<Vec<_>>()
+        );
+    }
+
     /// The dev tree still resolves — the installed layout is an addition, not
     /// a replacement, and this is the layout every contributor runs.
     #[test]

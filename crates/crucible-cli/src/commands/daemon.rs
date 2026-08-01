@@ -64,6 +64,16 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
     if foreground {
         // Run server directly in this process
         info!("Starting daemon in foreground");
+
+        // Before anything reads the runtimepath. An installed `cru` has no
+        // runtime tree next to it — no packaging route puts one there — so
+        // plugins, themes and the bundled help skills would all resolve to
+        // nothing. This is the one place that writes the compiled-in copy out;
+        // it no-ops when a real tree already answers.
+        if let Some(root) = crucible_core::runtime_roots::ensure_bundled_runtime() {
+            info!(root = %root.display(), "extracted the bundled runtime tree");
+        }
+
         let config = CliConfig::load(config_path.clone(), None, None)?;
         let (plugin_sections, plugin_watch) =
             crucible_daemon::daemon_plugins::split_plugins_config(&config.plugins);
