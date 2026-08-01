@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Two themes. The first is packaging: everything under `runtime/` — plugins,
+themes, the bundled help skills — reached nobody who installed Crucible rather
+than cloning it, because no release ever put that directory on disk. The second
+is the mirror of the last release's: 0.19.0 asked whether features reached the
+*user*, and this one found two places where a tool's answer never reached the
+*model*.
+
+### Added
+- **The `runtime/` tree ships inside the `cru` binary.** Release archives
+  carried no `runtime/` directory, so bundled plugins (`kiln-expert`, `oci`,
+  `reflection`), the help skills and the themes were dead for every installed
+  user. `cargo-dist`'s `include` key does put the tree in the archive, but the
+  shell installer it generates moves only binaries and libraries out of the
+  unpacked directory and deletes the rest — and `cargo install` never had a
+  data path at all. So the tree travels in the binary (144K) and is extracted
+  on first daemon start when nothing on disk answers. Covers the tarball, the
+  installer, `cargo install` and distro packages at once.
+- **`cru setup` works on an installed binary.** It resolved its source the same
+  exe-relative way the daemon does, found nothing, and exited with "Could not
+  find Crucible runtime files" — for exactly the users it exists to serve. With
+  no source on disk it now writes the copy compiled into the binary.
+- **An operator can admit a plugin tool to plan mode.** Plan mode refused
+  plugin tools categorically, which made it unusable for the one class that
+  belongs there: research. Naming a tool exactly in the mode's `tools` list
+  admits it — a glob or `*` does not, so a plugin cannot pick a name that walks
+  through a rule written before it existed.
+- **An experimental `web-search` plugin**, off by default, with a provider
+  chain and a normalised result shape. Its DuckDuckGo scraper is not in the
+  default chain.
+
+### Fixed
+- **Tool failures reach the model.** Every failure path — permission denial,
+  dispatch timeout, containment refusal, unknown tool, plugin cancel — set the
+  result empty and put the text in an `error` field that the message-list
+  builder never read. The model received `""` and either repeated the identical
+  call or invented an outcome, while the TUI was shown the real message through
+  a separate channel.
+- **Large tool output is readable again.** Results over 10KB are replaced by a
+  reference to `$CRU_SESSION_DIR/tools/…`, but `read_file` did no environment
+  expansion, so it could not follow the reference it was handed — and the
+  failure then arrived as an empty string. Only `bash` could reach spilled
+  output, which is why agents learned to reach for `bash` instead of the tool
+  that would have worked.
+- **A new project no longer pays for the whole prompt.** The system prompt
+  opened with the workspace path, so prompt caching diverged at the first byte
+  and two sessions in different projects shared nothing — not the persona, not
+  `AGENTS.md`, not the skills catalog. Stable content leads now, with its own
+  cache breakpoint.
+- **An empty list no longer reaches the model as an object.** Lua cannot tell
+  an empty list from an empty map and the encoder resolved it as a map, so a
+  tool returning results emitted `[…]` when it found some and `{}` when it did
+  not — the JSON type of the field tracking the data.
+- **Bundled skills load from an installed layout.** Skills discovery tried only
+  the dev tree; all four runtime-root resolvers now share one list.
+
 ## [0.19.0] - 2026-07-31
 
 Mostly one thing: `docs/Meta/Product.md` was audited against the code, a third
