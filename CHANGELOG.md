@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-08-01
+
 Two themes. The first is packaging: everything under `runtime/` — plugins,
 themes, the bundled help skills — reached nobody who installed Crucible rather
 than cloning it, because no release ever put that directory on disk. The second
