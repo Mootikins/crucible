@@ -209,7 +209,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Download blob reports
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: crates/crucible-web/web/all-blob-reports
           pattern: blob-report-*
@@ -242,7 +242,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 'lts/*'
       - name: Install web dependencies
