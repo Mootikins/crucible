@@ -79,6 +79,27 @@ fn apply_prompt_caching(
     }
 }
 
+/// What the model is shown for one finished tool call.
+///
+/// Every failure path sets `result` empty and puts the text in `error` —
+/// permission denials, dispatch timeouts, containment refusals, unknown tools,
+/// plugin cancels. This function used to be the line `result.result`, so the
+/// model received `""` for all of them and either repeated the identical call
+/// or invented an outcome, while the TUI was shown the real message through a
+/// separate event channel. Every carefully-worded refusal in this codebase was
+/// addressed to a reader that never saw it.
+fn tool_response_payload(result: &ChatToolResult) -> String {
+    match &result.error {
+        None => result.result.clone(),
+        // Content AND an error: a non-zero exit with output on the way is
+        // still output. Keep both rather than choosing.
+        Some(err) if !result.result.is_empty() => {
+            format!("{}\n\nError: {err}", result.result)
+        }
+        Some(err) => format!("Error: {err}"),
+    }
+}
+
 fn is_write_tool_name(tool_name: &str) -> bool {
     matches!(tool_name, "write_file" | "edit_file" | "bash")
         || tool_name.starts_with("create_")
@@ -1386,13 +1407,14 @@ impl GenaiAgentHandle {
                     messages.push(ChatMessage::from(genai_tool_calls));
                 }
                 for (idx, result) in collected.into_iter().enumerate() {
+                    let payload = tool_response_payload(&result);
                     let call_id = result.call_id.unwrap_or_else(|| {
                         pending_calls
                             .get(idx)
                             .and_then(|call| call.id.clone())
                             .unwrap_or_else(|| format!("tool_call_{idx}"))
                     });
-                    messages.push(ChatMessage::from(ToolResponse::new(call_id, result.result)));
+                    messages.push(ChatMessage::from(ToolResponse::new(call_id, payload)));
                 }
 
                 // Attached knowledge goes last, after the tool responses:
@@ -1592,6 +1614,68 @@ impl crucible_core::turn::Agent for GenaiAgentHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::traits::chat::ChatToolResult;
+
+    fn failed(name: &str, error: &str) -> ChatToolResult {
+        ChatToolResult {
+            name: name.to_string(),
+            result: String::new(),
+            error: Some(error.to_string()),
+            call_id: Some("c1".to_string()),
+            terminate: false,
+        }
+    }
+
+    /// A tool that failed must tell the model why.
+    ///
+    /// Every failure path — permission denial, timeout, containment refusal,
+    /// unknown tool — sets `result` empty and puts the text in `error`, and
+    /// `error` was never read when the message list was built. The model saw
+    /// `""`, so it either repeated the identical call or invented a result,
+    /// while the TUI showed the real message through a separate channel.
+    #[test]
+    fn a_failed_tool_call_reaches_the_model_with_its_error() {
+        let denied = failed(
+            "read_file",
+            "Path '/etc/passwd' is outside this session's allowed roots",
+        );
+        let payload = tool_response_payload(&denied);
+
+        assert!(
+            payload.contains("outside this session's allowed roots"),
+            "the model must see why the call failed, got {payload:?}"
+        );
+        assert!(!payload.is_empty());
+    }
+
+    /// A successful result is passed through untouched.
+    #[test]
+    fn a_successful_tool_result_is_unchanged() {
+        let ok = ChatToolResult {
+            name: "read_file".to_string(),
+            result: "{\"result\":\"hello\"}".to_string(),
+            error: None,
+            call_id: Some("c1".to_string()),
+            terminate: false,
+        };
+        assert_eq!(tool_response_payload(&ok), "{\"result\":\"hello\"}");
+    }
+
+    /// Both present: the content is the answer, the error is context on top of
+    /// it — a partial failure must not silently drop what did come back.
+    #[test]
+    fn a_result_carrying_both_content_and_an_error_keeps_both() {
+        let both = ChatToolResult {
+            name: "bash".to_string(),
+            result: "partial output".to_string(),
+            error: Some("exit code 1".to_string()),
+            call_id: Some("c1".to_string()),
+            terminate: false,
+        };
+        let payload = tool_response_payload(&both);
+        assert!(payload.contains("partial output"));
+        assert!(payload.contains("exit code 1"));
+    }
 
     /// The session's paths must not sit inside the cached prefix.
     ///
