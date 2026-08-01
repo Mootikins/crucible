@@ -426,11 +426,62 @@ pub fn lua_to_json(_lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
     Ok(serde_json::to_value(&value)?)
 }
 
+/// Mark `table` as a JSON array, and return it.
+///
+/// Lua cannot tell an empty list from an empty map — both are `{}` — and
+/// mlua resolves the ambiguity as a *map* (`encode_empty_tables_as_array`
+/// defaults to false). So a tool that returns a list of results emits
+/// `"results":[…]` when it found something and `"results":{}` when it did
+/// not: the JSON *type* of the field changes with the data, which is the
+/// worst thing a tool result can do to a model reading it.
+///
+/// Marking is the only fix that survives an empty list, because it is
+/// carried on the table rather than inferred from its contents.
+pub fn mark_json_array(lua: &Lua, table: mlua::Table) -> mlua::Result<mlua::Table> {
+    use mlua::LuaSerdeExt;
+    table.set_metatable(Some(lua.array_metatable()))?;
+    Ok(table)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support::TestLuaBuilder;
     use mlua::Table;
+
+    /// An empty list must stay a list on the wire.
+    ///
+    /// A plugin tool returning `{ results = {}, degraded = {} }` handed the
+    /// model `"results":{}` — an object — while a populated one gave an
+    /// array. The field's type tracked the data.
+    #[test]
+    fn an_empty_marked_table_encodes_as_an_array_not_an_object() {
+        let lua = TestLuaBuilder::new().build();
+
+        let empty = mark_json_array(&lua, lua.create_table().unwrap()).unwrap();
+        let json = lua_to_json(&lua, mlua::Value::Table(empty)).unwrap();
+        assert_eq!(json.to_string(), "[]", "an empty marked table must be []");
+
+        let unmarked = lua.create_table().unwrap();
+        let json = lua_to_json(&lua, mlua::Value::Table(unmarked)).unwrap();
+        assert_eq!(
+            json.to_string(),
+            "{}",
+            "unmarked stays an object; this is the trap"
+        );
+    }
+
+    /// Marking must not disturb a populated list.
+    #[test]
+    fn a_populated_marked_table_still_encodes_as_an_array() {
+        let lua = TestLuaBuilder::new().build();
+        let t = lua.create_table().unwrap();
+        t.push("brave").unwrap();
+        t.push("startpage").unwrap();
+        let marked = mark_json_array(&lua, t).unwrap();
+        let json = lua_to_json(&lua, mlua::Value::Table(marked)).unwrap();
+        assert_eq!(json.to_string(), r#"["brave","startpage"]"#);
+    }
 
     // =========================================================================
     // oq module tests
