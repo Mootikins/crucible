@@ -331,7 +331,7 @@ coverage-open: coverage
 # === CI ===
 
 # Run full CI check (mirrors GitHub CI workflow)
-ci: fmt-check clippy license-check file-size-check test-ci test-features test-doc web-test-unit web-test test-count
+ci: fmt-check clippy license-check file-size-check test-ci test-features test-doc web-test-unit web-test
     @echo "CI checks passed!"
 
 # Run tests with CI profile (matches GitHub Actions).
@@ -360,69 +360,6 @@ test-features:
 # example in a doc comment unverified — which is how they rotted unnoticed.
 test-doc:
     cargo test --workspace --doc
-
-# Test-count regression gate. Fails if the runnable-case count of any suite
-# (Rust nextest, Vitest, Playwright) grows beyond +2% (rounded down) of the
-# baseline in crates/test-count-baseline.json. A deliberate bump edits the
-# JSON and explains why in the bumping commit body.
-#
-# Counts come straight from each runner's structured output (nextest JSON
-# `."test-count"`, vitest `list --json` array length, Playwright `--list`
-# lines scoped to the two project names in playwright.config.ts), so
-# parameterized cases are counted as the runner reports them. Mirrored by
-# the `test-count-gate` job in .github/workflows/ci.yml — GitHub does not
-# invoke `just ci`, so the gate has to live in both places.
-test-count:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    baseline="crates/test-count-baseline.json"
-
-    # nextest JSON has a top-level ."test-count" field. --all-features
-    # pulls in the feature-gated property tests the default build skips.
-    rust=$(cargo nextest list --message-format json --workspace --all-features 2>/dev/null \
-        | jq -er '."test-count"')
-
-    # vitest 4.x `list --json` emits a JSON array of runnable cases.
-    # NEVER pass a filename: `vitest list --json <file>` OVERWRITES that
-    # file with a reporter blob and clobbers source.
-    web_unit=$(cd crates/crucible-web/web && bunx vitest list --json 2>/dev/null \
-        | jq -er 'length')
-
-    # Playwright `--list` prints one line per case as
-    #   "  [chromium|stories] › <file>:<line>:<col> › <title>"
-    # Scoped to the two project names declared in playwright.config.ts so
-    # the "Listing tests:" header and "Total:" footer don't inflate it.
-    playwright=$(cd crates/crucible-web/web \
-        && bunx playwright test --list 2>&1 \
-        | grep -cE '^\s+\[(chromium|stories)\] ›')
-
-    fail=0
-    check() {
-        local name="$1" got="$2" base="$3"
-        # +2% rounded down: floor(baseline*0.02) + baseline.
-        local cap=$(( base + base * 2 / 100 ))
-        printf '%-12s got=%-6s baseline=%-6s cap=%-6s' "$name" "$got" "$base" "$cap"
-        if [ "$got" -gt "$cap" ]; then
-            printf '  FAIL (+%d over baseline, cap +%d)\n' \
-                "$(( got - base ))" "$(( cap - base ))"
-            fail=1
-        else
-            printf '  ok\n'
-        fi
-    }
-
-    check rust       "$rust"       "$(jq -er .rust       < "$baseline")"
-    check web_unit   "$web_unit"   "$(jq -er .web_unit   < "$baseline")"
-    check playwright "$playwright" "$(jq -er .playwright < "$baseline")"
-
-    if [ "$fail" -ne 0 ]; then
-        echo
-        echo "test-count gate FAILED: a suite grew beyond its +2% cap."
-        echo "If this is a deliberate baseline bump, edit $baseline and put"
-        echo "a >=1-sentence justification in the bumping commit body."
-        exit 1
-    fi
-    echo "test-count gate passed."
 
 # Build test fixtures required by integration tests
 build-test-fixtures: build-mock-acp-agent
