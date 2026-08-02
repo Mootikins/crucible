@@ -73,6 +73,15 @@ test-full:
 test-crate crate:
     cargo test -p {{crate}}
 
+# Run a filtered subset of one crate's tests (nextest substring match)
+test-crate-filter crate filter:
+    cargo nextest run -p {{crate}} -E 'test(/{{filter}}/)'
+
+# Run a Lua plugin's own test suite, e.g. `just test-plugin runtime/plugins/oci`
+test-plugin dir:
+    cargo build -q -p crucible-cli --bin cru
+    ./target/debug/cru plugin test {{dir}}
+
 # Run tests with output
 test-verbose:
     cargo test -- --nocapture
@@ -331,8 +340,24 @@ coverage-open: coverage
 # === CI ===
 
 # Run full CI check (mirrors GitHub CI workflow)
-ci: fmt-check clippy license-check file-size-check test-ci test-features test-doc web-test-unit web-test
+ci: fmt-check clippy license-check file-size-check test-ci test-features test-doc web-test-unit web-test test-plugins
     @echo "CI checks passed!"
+
+# Every shipped plugin's own Lua suite.
+#
+# In `ci` because these guard behaviour nothing in the Rust suites covers —
+# `oci` decides which environment to build and whether config is trustworthy,
+# and a regression there is a sandbox regression.
+test-plugins:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo build -q -p crucible-cli --bin cru
+    for dir in runtime/plugins/*/; do
+        if compgen -G "${dir}tests/*.lua" > /dev/null; then
+            echo "== ${dir}"
+            ./target/debug/cru plugin test "${dir%/}"
+        fi
+    done
 
 # Run tests with CI profile (matches GitHub Actions).
 #
