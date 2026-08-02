@@ -49,6 +49,39 @@ export interface IsolationOffer {
 }
 
 /**
+ * One node of a plugin's settings tree.
+ *
+ * A projection of the plugin's Lua declaration, and deliberately shallow: the
+ * renderer switches on `type` and reads `name`/`desc`, and knows nothing about
+ * any particular option. `type` stays a plain string for the same reason
+ * `level` does on a status slot — the moment this becomes a union, a plugin
+ * declaring a widget kind added later renders as nothing instead of
+ * degrading to a sensible default.
+ *
+ * `args` is present on groups. `values` on a select, already ordered by the
+ * daemon. `writable` is false when no `set` is inherited, so a read-only
+ * option renders as one rather than offering an edit that will be refused.
+ */
+export interface PluginOptionNode {
+  key?: string;
+  type: string;
+  name?: string;
+  desc?: string;
+  order?: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  values?: { value: unknown; label: string }[];
+  disabled?: boolean;
+  hidden?: boolean;
+  writable?: boolean;
+  args?: PluginOptionNode[];
+}
+
+/** Settings trees, keyed by the plugin that declared them. */
+export type PluginOptions = Record<string, PluginOptionNode>;
+
+/**
  * One keyed status slot a plugin published for a session.
  *
  * Rendered generically — `key`, `plugin` and `level` stay plain strings rather
@@ -398,6 +431,50 @@ export async function getPluginPublications(): Promise<PluginPublications> {
     { errorMessage: 'Failed to get plugin publications' },
   );
   return body.publications ?? {};
+}
+
+/**
+ * Settings trees every plugin declared, rendered for this frontend.
+ *
+ * Re-read rather than cached: a tree's function-valued fields (`values`,
+ * `disabled`) describe the box as it is *now* — which runtimes are installed,
+ * what another setting was just changed to — so a stale tree is a wrong one.
+ */
+export async function getPluginOptions(): Promise<PluginOptions> {
+  const body = await request<{ options?: PluginOptions }>('GET', '/api/plugins/options', {
+    errorMessage: 'Failed to get plugin settings',
+  });
+  return body.options ?? {};
+}
+
+/** Read one option's current value. */
+export async function getPluginOption(plugin: string, path: string[]): Promise<unknown> {
+  const body = await request<{ value?: unknown }>(
+    'POST',
+    `/api/plugins/${encodeURIComponent(plugin)}/option`,
+    { ...jsonRequest({ action: 'get', path }), errorMessage: 'Failed to read plugin setting' },
+  );
+  return body.value;
+}
+
+/** Write one option. The plugin's own setter decides what that means. */
+export async function setPluginOption(
+  plugin: string,
+  path: string[],
+  value: unknown,
+): Promise<void> {
+  await request('POST', `/api/plugins/${encodeURIComponent(plugin)}/option`, {
+    ...jsonRequest({ action: 'set', path, value }),
+    errorMessage: 'Failed to change plugin setting',
+  });
+}
+
+/** Press a `type = "execute"` node. */
+export async function executePluginOption(plugin: string, path: string[]): Promise<void> {
+  await request('POST', `/api/plugins/${encodeURIComponent(plugin)}/option`, {
+    ...jsonRequest({ action: 'execute', path }),
+    errorMessage: 'Plugin action failed',
+  });
 }
 
 /**

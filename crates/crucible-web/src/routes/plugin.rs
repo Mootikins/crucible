@@ -13,6 +13,29 @@ pub fn plugin_routes() -> Router<AppState> {
         .route("/api/plugins/{name}", delete(remove_plugin))
         .route("/api/plugins/{name}/reload", post(reload_plugin))
         .route("/api/plugins/publications", get(list_publications))
+        .route("/api/plugins/options", get(list_options))
+        .route("/api/plugins/{name}/option", post(option_call))
+}
+
+/// One read, write, or button press against a plugin's settings tree.
+///
+/// A single endpoint because the three differ only in which Lua callback they
+/// reach — the same reason the daemon handler is one function. `value` is
+/// present for a set and ignored otherwise.
+#[derive(Debug, Deserialize)]
+struct OptionRequest {
+    action: OptionAction,
+    path: Vec<String>,
+    #[serde(default)]
+    value: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum OptionAction {
+    Get,
+    Set,
+    Execute,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +71,57 @@ async fn list_publications(
 ) -> Result<Json<serde_json::Value>, WebError> {
     let publications = state.daemon.plugin_publications().await.daemon_err()?;
     Ok(Json(serde_json::json!({ "publications": publications })))
+}
+
+/// `GET /api/plugins/options` — the settings trees plugins declared.
+///
+/// Passed through verbatim, keyed by plugin. Nothing here knows what any
+/// option means: a node is `{type, name, desc, order, …}` and the renderer
+/// draws it from that, so a plugin shipped tomorrow gets a settings pane with
+/// no change on this side. Re-read rather than cached — a tree's
+/// function-valued fields describe the box as it is now.
+async fn list_options(State(state): State<AppState>) -> Result<Json<serde_json::Value>, WebError> {
+    let options = state.daemon.plugin_options().await.daemon_err()?;
+    Ok(Json(serde_json::json!({ "options": options })))
+}
+
+/// `POST /api/plugins/:name/option` — read, write, or press one option.
+async fn option_call(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    Json(req): Json<OptionRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    if req.path.is_empty() {
+        return Err(WebError::Validation(
+            "`path` must name an option".to_string(),
+        ));
+    }
+    match req.action {
+        OptionAction::Get => {
+            let value = state
+                .daemon
+                .plugin_option_get(&name, req.path)
+                .await
+                .daemon_err()?;
+            Ok(Json(serde_json::json!({ "value": value })))
+        }
+        OptionAction::Set => {
+            state
+                .daemon
+                .plugin_option_set(&name, req.path, req.value)
+                .await
+                .daemon_err()?;
+            Ok(Json(serde_json::json!({ "ok": true })))
+        }
+        OptionAction::Execute => {
+            state
+                .daemon
+                .plugin_option_execute(&name, req.path)
+                .await
+                .daemon_err()?;
+            Ok(Json(serde_json::json!({ "ok": true })))
+        }
+    }
 }
 
 /// `POST /api/plugins/:name/reload` — reload a plugin by name.

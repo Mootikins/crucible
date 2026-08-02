@@ -103,7 +103,9 @@ impl ReconnectingDaemon {
         self.session_subscribe(&[session_id]).await.map(|_| ())
     }
 
-    async fn call_with_reconnect<T>(
+    /// `pub(crate)` rather than private only so the `plugin.*` forwarders can
+    /// live in their own module — see `services::daemon_plugins`.
+    pub(crate) async fn call_with_reconnect<T>(
         &self,
         method: &'static str,
         call: impl for<'a> Fn(&'a DaemonClient) -> BoxFuture<'a, anyhow::Result<T>>,
@@ -391,62 +393,6 @@ impl ReconnectingDaemon {
     ) -> anyhow::Result<LuaPluginHealthResponse> {
         self.call_with_reconnect("lua.plugin_health", |daemon| {
             Box::pin(daemon.lua_plugin_health(params.clone()))
-        })
-        .await
-    }
-
-    pub async fn plugin_list_info(&self) -> anyhow::Result<Vec<serde_json::Value>> {
-        self.call_with_reconnect("plugin.list", |daemon| Box::pin(daemon.plugin_list_info()))
-            .await
-    }
-
-    pub async fn plugin_publications(&self) -> anyhow::Result<serde_json::Value> {
-        self.call_with_reconnect("plugin.publications", |daemon| {
-            Box::pin(daemon.plugin_publications())
-        })
-        .await
-    }
-
-    pub async fn plugin_reload(&self, name: &str) -> anyhow::Result<serde_json::Value> {
-        let name = name.to_string();
-        self.call_with_reconnect("plugin.reload", move |daemon| {
-            let name = name.clone();
-            Box::pin(async move { daemon.plugin_reload(&name).await })
-        })
-        .await
-    }
-
-    pub async fn plugin_install(
-        &self,
-        url: &str,
-        branch: Option<&str>,
-        pin: Option<&str>,
-    ) -> anyhow::Result<serde_json::Value> {
-        let url = url.to_string();
-        let branch = branch.map(str::to_string);
-        let pin = pin.map(str::to_string);
-        self.call_with_reconnect("plugin.install", move |daemon| {
-            let url = url.clone();
-            let branch = branch.clone();
-            let pin = pin.clone();
-            Box::pin(async move {
-                daemon
-                    .plugin_install(&url, branch.as_deref(), pin.as_deref())
-                    .await
-            })
-        })
-        .await
-    }
-
-    pub async fn plugin_remove(
-        &self,
-        name: &str,
-        purge: bool,
-    ) -> anyhow::Result<serde_json::Value> {
-        let name = name.to_string();
-        self.call_with_reconnect("plugin.remove", move |daemon| {
-            let name = name.clone();
-            Box::pin(async move { daemon.plugin_remove(&name, purge).await })
         })
         .await
     }

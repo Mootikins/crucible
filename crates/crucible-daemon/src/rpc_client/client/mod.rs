@@ -725,6 +725,74 @@ impl DaemonClient {
             .unwrap_or_else(|| serde_json::json!({})))
     }
 
+    /// Settings trees plugins declared, as `plugin -> tree`.
+    ///
+    /// `ui` is the frontend asking ("tui" or "web"); it drives the per-frontend
+    /// hide flags and reaches Lua callbacks as `info.uiType`. Every
+    /// function-valued field is evaluated per call, so this is a snapshot of
+    /// what is true of this box now — not something to cache across a change.
+    pub async fn plugin_options(&self, ui: &str) -> Result<serde_json::Value> {
+        let result: serde_json::Value = self
+            .typed_call("plugin.options", serde_json::json!({ "ui": ui }))
+            .await?;
+        Ok(result
+            .get("options")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})))
+    }
+
+    /// Read one option, by its path through the settings tree.
+    pub async fn plugin_option_get(
+        &self,
+        plugin: &str,
+        path: &[String],
+        ui: &str,
+    ) -> Result<serde_json::Value> {
+        let result: serde_json::Value = self
+            .typed_call(
+                "plugin.option_get",
+                serde_json::json!({ "plugin": plugin, "path": path, "ui": ui }),
+            )
+            .await?;
+        Ok(result
+            .get("value")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null))
+    }
+
+    /// Write one option. The plugin's own setter decides what that means.
+    pub async fn plugin_option_set(
+        &self,
+        plugin: &str,
+        path: &[String],
+        value: serde_json::Value,
+        ui: &str,
+    ) -> Result<()> {
+        let _: serde_json::Value = self
+            .typed_call(
+                "plugin.option_set",
+                serde_json::json!({ "plugin": plugin, "path": path, "value": value, "ui": ui }),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Press a `type = "execute"` node.
+    pub async fn plugin_option_execute(
+        &self,
+        plugin: &str,
+        path: &[String],
+        ui: &str,
+    ) -> Result<()> {
+        let _: serde_json::Value = self
+            .typed_call(
+                "plugin.option_execute",
+                serde_json::json!({ "plugin": plugin, "path": path, "ui": ui }),
+            )
+            .await?;
+        Ok(())
+    }
+
     /// Commands declared by loaded plugins: `plugin`, `name`, `description`,
     /// `hint`, `parameters`. Served from the daemon so TUI and web show the
     /// same slash-command set.

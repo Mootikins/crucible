@@ -1,6 +1,13 @@
 import { Component, Show, For, createResource, createSignal } from 'solid-js';
-import { getPlugins, reloadPlugin, installPlugin, removePlugin } from '@/lib/api';
-import type { PluginInfo } from '@/lib/api';
+import {
+  getPlugins,
+  reloadPlugin,
+  installPlugin,
+  removePlugin,
+  getPluginOptions,
+} from '@/lib/api';
+import type { PluginInfo, PluginOptions } from '@/lib/api';
+import { PluginSettings } from './PluginSettings';
 import { notificationActions } from '@/stores/notificationStore';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
@@ -59,6 +66,18 @@ export const PluginPanel: Component = () => {
       return [];
     }
   });
+
+  // Fetched once for every plugin rather than per row: it is one round trip
+  // either way, and a row that has no settings must not pay for finding out.
+  // A failure is silence — a plugin list is still useful without settings.
+  const [optionTrees, { refetch: refetchOptions }] = createResource<PluginOptions>(async () => {
+    try {
+      return await getPluginOptions();
+    } catch {
+      return {};
+    }
+  });
+  const [expanded, setExpanded] = createSignal<string | null>(null);
 
   const [reloading, setReloading] = createSignal<string | null>(null);
   const [removing, setRemoving] = createSignal<string | null>(null);
@@ -119,7 +138,10 @@ export const PluginPanel: Component = () => {
         'success',
         `Reloaded ${name}: ${result.tools}T ${result.commands}C ${result.handlers}H ${result.services}S`,
       );
-      await refetch();
+      // A reload drops the plugin's options tree and re-registers it, so the
+      // cached one describes a version that no longer exists — its accessors
+      // close over the previous load's state.
+      await Promise.all([refetch(), refetchOptions()]);
     } catch (err) {
       notificationActions.addNotification('error', `Failed to reload ${name}: ${err}`);
     } finally {
@@ -141,7 +163,10 @@ export const PluginPanel: Component = () => {
           </button>
           <button
             type="button"
-            onClick={() => refetch()}
+            onClick={() => {
+              void refetch();
+              void refetchOptions();
+            }}
             class="text-[11px] text-muted hover:text-shell-ink"
             data-testid="plugins-refresh"
           >
@@ -217,6 +242,38 @@ export const PluginPanel: Component = () => {
                     >
                       {plugin.last_error}
                     </div>
+                  </Show>
+
+                  {/* Settings live with the plugin that declared them rather
+                      than in a separate pane: this is already the list of what
+                      is installed, and a plugin's options are meaningless
+                      apart from it. Collapsed by default — most plugins
+                      declare none, and the row is a list entry first. */}
+                  <Show when={optionTrees()?.[plugin.name]}>
+                    {(tree) => (
+                      <div class="mt-1">
+                        <button
+                          type="button"
+                          class="text-[11px] text-muted hover:text-shell-ink"
+                          onClick={() =>
+                            setExpanded(expanded() === plugin.name ? null : plugin.name)
+                          }
+                          data-testid={`plugin-settings-toggle-${plugin.name}`}
+                        >
+                          {expanded() === plugin.name ? '▾' : '▸'} Settings
+                        </button>
+                        <Show when={expanded() === plugin.name}>
+                          <PluginSettings
+                            plugin={plugin.name}
+                            tree={tree()}
+                            // A `values` or `disabled` function can read another
+                            // option, so a write invalidates the whole tree, not
+                            // just the row that changed.
+                            onChanged={() => void refetchOptions()}
+                          />
+                        </Show>
+                      </div>
+                    )}
                   </Show>
                 </div>
               )}

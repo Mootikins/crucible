@@ -540,6 +540,30 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 "services": 0,
             }],
         }),
+        // Shaped like a real tree so the contract test exercises pass-through
+        // rather than a hand-built stub: a group, a leaf, and a button.
+        "plugin.options" => json!({
+            "options": {
+                "mock-plugin": {
+                    "type": "group",
+                    "name": "Mock",
+                    "order": 100,
+                    "args": [
+                        {
+                            "key": "image", "type": "input", "name": "Image",
+                            "order": 1, "writable": true,
+                        },
+                        {
+                            "key": "cleanup", "type": "execute", "name": "Clean up",
+                            "order": -1,
+                        },
+                    ],
+                },
+            },
+        }),
+        "plugin.option_get" => json!({ "value": "alpine" }),
+        "plugin.option_set" => json!({ "ok": true }),
+        "plugin.option_execute" => json!({ "ok": true }),
         "plugin.reload" => json!({
             "name": "mock-plugin",
             "reloaded": true,
