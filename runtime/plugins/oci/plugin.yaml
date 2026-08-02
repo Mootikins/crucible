@@ -4,3 +4,5 @@ description: Run agent workspace tools inside OCI containers
 capabilities:
   - shell
   - config
+  # Reads .devcontainer/devcontainer.json out of the session's workspace.
+  - filesystem

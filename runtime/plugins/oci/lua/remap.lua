@@ -5,18 +5,32 @@
 -- passed no matter how broken the plugin was.
 local M = {}
 
---- Map a host path into the container's /workspace mount.
-function M.remap_path(workspace_host, path)
-  if not path then return "/workspace" end
+--- Where the workspace is mounted when nothing resolves a target.
+---
+--- Defined once and shared with `container.run_args`: the bind target, the
+--- container's working directory and the paths tools are handed all have to
+--- name the same directory, and two copies of this string are two chances for
+--- them not to.
+M.DEFAULT_TARGET = "/workspace"
+
+--- Map a host path into the container's workspace mount.
+---
+--- `target` is where that mount lives inside the container — /workspace by
+--- default, but a devcontainer's `workspaceFolder` is typically
+--- /workspaces/<name>, and a path remapped against the wrong root names a file
+--- the container does not have.
+function M.remap_path(workspace_host, path, target)
+  target = target or M.DEFAULT_TARGET
+  if not path then return target end
   if path:sub(1, #workspace_host) == workspace_host then
     local suffix = path:sub(#workspace_host + 1)
-    if suffix == "" or suffix == "/" then return "/workspace" end
+    if suffix == "" or suffix == "/" then return target end
     if suffix:sub(1, 1) == "/" then suffix = suffix:sub(2) end
-    return "/workspace/" .. suffix
+    return target .. "/" .. suffix
   elseif path:sub(1, 1) == "/" then
     return path -- outside workspace, pass through
   else
-    return "/workspace/" .. path -- relative
+    return target .. "/" .. path -- relative
   end
 end
 

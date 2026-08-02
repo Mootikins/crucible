@@ -1,6 +1,17 @@
 --- OCI container lifecycle operations
 -- Thin wrappers around docker/podman CLI commands.
+local remap = require("remap")
+
 local M = {}
+
+--- Documented defaults for the two long operations.
+---
+--- An image pull on a cold host and a multi-stage build are the only calls here
+--- that routinely outlast a default timeout, and both are configurable
+--- (`start_timeout` / `build_timeout`). Note that `cru.shell.exec` buffers
+--- output until the process exits, so a raised limit buys time, not progress.
+M.DEFAULT_START_TIMEOUT = 300
+M.DEFAULT_BUILD_TIMEOUT = 900
 
 --- Runtimes probed in order when none is configured.
 ---
@@ -80,13 +91,17 @@ end
 --- The argv for `run`, as a pure function so tests can assert on it without
 --- a runtime present. `run` is exactly `exec(runtime, run_args(opts))`.
 function M.run_args(opts)
+  -- The bind target and the working directory are the same value on purpose:
+  -- mounting the workspace at one path and starting in another puts every
+  -- relative tool call in an empty directory.
+  local target = opts.target or remap.DEFAULT_TARGET
   local args = {
     "run", "-d",
     "--name", opts.name,
     "--label", "crucible=true",
     "--label", "crucible.session=" .. opts.session_id,
     "--security-opt", "no-new-privileges",
-    "-w", "/workspace",
+    "-w", target,
   }
 
   -- Uid mapping, before the bind-mount so it applies to it.
@@ -94,15 +109,27 @@ function M.run_args(opts)
   -- Both halves are required for a non-root image: `keep-id` alone leaves the
   -- process running as the image's own uid, which is not the mapped one, and
   -- writes still fail. See `image_runs_as_non_root` for the measurements.
+  local pinned_uid
   if opts.userns and opts.userns ~= "" and opts.userns ~= false then
     table.insert(args, "--userns=" .. opts.userns)
     if opts.run_as_uid then
-      table.insert(args, "--user")
-      table.insert(args, opts.run_as_uid .. ":" .. (opts.run_as_gid or opts.run_as_uid))
+      pinned_uid = opts.run_as_uid .. ":" .. (opts.run_as_gid or opts.run_as_uid)
     end
   end
+
+  -- `user` is a devcontainer's `remoteUser` — a user *in the image*. The pin is
+  -- a numeric *host* id. When both apply the pin wins, because keep-id maps the
+  -- host uid into the container and running as any other id fails every
+  -- workspace write; the devcontainer CLI reaches the same place from the other
+  -- side by renumbering remoteUser to the host uid (`updateRemoteUserUID`).
+  local user = pinned_uid or opts.user
+  if user then
+    table.insert(args, "--user")
+    table.insert(args, user)
+  end
+
   table.insert(args, "-v")
-  table.insert(args, opts.workspace .. ":/workspace:rw,z")
+  table.insert(args, opts.workspace .. ":" .. target .. ":rw,z")
 
   for _, m in ipairs(opts.mounts or {}) do
     table.insert(args, "-v")
@@ -113,6 +140,12 @@ function M.run_args(opts)
     table.insert(args, k .. "=" .. v)
   end
 
+  -- A devcontainer's `runArgs` is raw runtime argv. It goes here, before the
+  -- image: after it these would be arguments to the sidecar command instead.
+  for _, arg in ipairs(opts.run_args or {}) do
+    table.insert(args, arg)
+  end
+
   table.insert(args, opts.image)
   table.insert(args, "sleep")
   table.insert(args, "infinity")
@@ -120,15 +153,34 @@ function M.run_args(opts)
 end
 
 --- Create and start a container with the sleep infinity sidecar pattern.
+--- Covers the image pull, which is the part that can take minutes.
 function M.run(runtime, opts)
-  return cru.shell.exec(runtime, M.run_args(opts), { timeout = 300 })
+  return cru.shell.exec(runtime, M.run_args(opts), {
+    timeout = opts.start_timeout or M.DEFAULT_START_TIMEOUT,
+  })
 end
 
 --- Build an image from a Dockerfile.
+---
+--- `build_args` is a devcontainer's `build.args`. Dropping it would build with
+--- the Dockerfile's own ARG defaults — a different image than the editor's,
+--- with nothing to show for it.
 function M.build(runtime, opts)
-  return cru.shell.exec(runtime, {
-    "build", "-t", opts.image, "-f", opts.dockerfile, opts.context,
-  }, { timeout = 900 })
+  local args = { "build", "-t", opts.image, "-f", opts.dockerfile }
+
+  -- Sorted, so a rebuild of the same config produces the same argv.
+  local names = {}
+  for name in pairs(opts.build_args or {}) do names[#names + 1] = name end
+  table.sort(names)
+  for _, name in ipairs(names) do
+    table.insert(args, "--build-arg")
+    table.insert(args, name .. "=" .. tostring(opts.build_args[name]))
+  end
+
+  table.insert(args, opts.context)
+  return cru.shell.exec(runtime, args, {
+    timeout = opts.build_timeout or M.DEFAULT_BUILD_TIMEOUT,
+  })
 end
 
 --- Stop a container (5 second grace period).

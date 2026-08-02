@@ -74,8 +74,22 @@ async fn try_start_session(
     id: &str,
     workspace: &Path,
 ) -> anyhow::Result<()> {
-    let session =
+    try_start_isolated_session(loader, id, workspace, None).await
+}
+
+/// `try_start_session` plus the per-session `isolation` param, carried on the
+/// `Session` exactly as `SessionLifecycle::fire_session_start` carries it.
+async fn try_start_isolated_session(
+    loader: &mut DaemonPluginLoader,
+    id: &str,
+    workspace: &Path,
+    isolation: Option<serde_json::Value>,
+) -> anyhow::Result<()> {
+    let mut session =
         Session::new(id.to_string()).with_workspace(workspace.to_string_lossy().to_string());
+    if let Some(isolation) = isolation {
+        session = session.with_isolation(isolation);
+    }
     session.bind(Box::new(StubRpc));
     loader.fire_session_start(&session).await
 }
@@ -213,6 +227,403 @@ async fn oci_reads_its_config_from_the_plugins_section() {
         err.to_string()
             .contains("crucible-no-such-container-runtime"),
         "refusal must name the cause; got: {err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Per-session opt-in
+// ---------------------------------------------------------------------------
+//
+// The three shapes of `session.create`'s `isolation` param, driven through the
+// real plugin. A bogus runtime name stands in for "a container would be
+// started here": the plugin refuses the session naming that runtime whenever it
+// resolves a configuration, and does nothing at all when it resolves none — so
+// which config won is observable without a container runtime installed.
+
+const UNUSABLE: &str = "crucible-no-such-container-runtime";
+
+/// The case the opt-in exists for: a project that containerizes every session,
+/// and one session that says no.
+///
+/// Anything less than the whole resolution short-circuiting here is a session
+/// that gets a container it declined.
+#[tokio::test]
+async fn isolation_false_suppresses_a_container_the_project_config_would_produce() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = serde_json::json!({ "image": "alpine:latest", "runtime": UNUSABLE });
+
+    // Same config, same workspace, no param: refused, because oci tries to
+    // containerize and cannot. This is the control — without it the test below
+    // proves nothing.
+    let mut loader = load_oci(tmp.path(), config.clone()).await;
+    try_start_session(&mut loader, "would-containerize", tmp.path())
+        .await
+        .expect_err("the project config must containerize by default");
+
+    try_start_isolated_session(
+        &mut loader,
+        "opted-out",
+        tmp.path(),
+        Some(serde_json::json!(false)),
+    )
+    .await
+    .expect("isolation = false must suppress the project's container entirely");
+
+    // And "no container" has to mean the tools actually run on the host: a
+    // session that opted out but still routes through interception would be
+    // executing against a container that does not exist.
+    let result = pre_tool_call(
+        &loader,
+        "opted-out",
+        "bash",
+        serde_json::json!({ "command": "echo hi" }),
+    )
+    .await;
+    assert!(
+        matches!(result, ScriptHandlerResult::PassThrough),
+        "an opted-out session must not be intercepted, got {result:?}"
+    );
+}
+
+/// A profile name selects a named `[plugins.oci.profiles]` entry over the
+/// project's default image.
+#[tokio::test]
+async fn an_isolation_profile_name_overrides_the_project_default() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut loader = load_oci(
+        tmp.path(),
+        serde_json::json!({
+            "image": "alpine:latest",
+            "runtime": UNUSABLE,
+            "profiles": {
+                "heavy": { "image": "example.invalid/heavy:latest", "runtime": "crucible-heavy-runtime" }
+            }
+        }),
+    )
+    .await;
+
+    let err = try_start_isolated_session(
+        &mut loader,
+        "profiled",
+        tmp.path(),
+        Some(serde_json::json!("heavy")),
+    )
+    .await
+    .expect_err("a configured profile with an unusable runtime must refuse the session");
+    assert!(
+        err.to_string().contains("crucible-heavy-runtime"),
+        "the named profile must win over the default image; got: {err}"
+    );
+}
+
+/// An inline object is the same override without a config entry to name.
+#[tokio::test]
+async fn an_inline_isolation_object_overrides_the_project_default() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut loader = load_oci(
+        tmp.path(),
+        serde_json::json!({ "image": "alpine:latest", "runtime": UNUSABLE }),
+    )
+    .await;
+
+    let err = try_start_isolated_session(
+        &mut loader,
+        "inline",
+        tmp.path(),
+        Some(serde_json::json!({
+            "image": "example.invalid/inline:latest",
+            "runtime": "crucible-inline-runtime",
+        })),
+    )
+    .await
+    .expect_err("an inline isolation object with an unusable runtime must refuse the session");
+    assert!(
+        err.to_string().contains("crucible-inline-runtime"),
+        "the inline object must win over the default image; got: {err}"
+    );
+}
+
+/// Isolation asked for and not delivered is never a silently unsandboxed
+/// session — the same rule the required start hook exists to enforce.
+#[tokio::test]
+async fn an_unknown_isolation_profile_refuses_the_session() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut loader = load_oci(
+        tmp.path(),
+        serde_json::json!({ "image": "alpine:latest", "runtime": UNUSABLE }),
+    )
+    .await;
+
+    let err = try_start_isolated_session(
+        &mut loader,
+        "no-such-profile",
+        tmp.path(),
+        Some(serde_json::json!("nonexistent")),
+    )
+    .await
+    .expect_err("an unknown profile must refuse rather than fall back to the default");
+    assert!(
+        err.to_string().contains("nonexistent"),
+        "the refusal must name the profile that could not be resolved; got: {err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Devcontainer resolution
+// ---------------------------------------------------------------------------
+//
+// The devcontainer sits between the session param and the profiles in the
+// resolution order. Which leg won is observable without a container runtime:
+// a devcontainer key the plugin cannot honour refuses the session naming that
+// key, while every other leg refuses naming its unusable runtime — so the two
+// outcomes say unambiguously which config was read.
+//
+// This is also the only coverage that runs the parse against the *real*
+// `cru.fs` and `cru.json.decode`; the plugin's own Lua suite stubs both.
+
+/// Run git in `workspace`, asserting it succeeded.
+///
+/// `-c` overrides rather than `git config` so the run does not depend on (or
+/// touch) the developer's global identity, and `--no-gpg-sign` so a globally
+/// enabled `commit.gpgsign` cannot fail the commit.
+fn git(workspace: &Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(workspace)
+        .args(["-c", "user.name=crucible-test"])
+        .args(["-c", "user.email=test@crucible.invalid"])
+        .args(args)
+        .output()
+        .expect("git is required to exercise committed-only devcontainer resolution");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// A workspace whose `.devcontainer/devcontainer.json` is **committed**.
+///
+/// Committed, because resolution reads HEAD and not the working tree — an
+/// uncommitted devcontainer is refused. See
+/// `an_uncommitted_devcontainer_is_refused_rather_than_honoured` for why.
+fn workspace_with_devcontainer(tmp: &Path, body: &str) -> PathBuf {
+    let workspace = workspace_with_uncommitted_devcontainer(tmp, body);
+    git(&workspace, &["add", ".devcontainer/devcontainer.json"]);
+    git(
+        &workspace,
+        &["commit", "--no-gpg-sign", "-m", "add devcontainer"],
+    );
+    workspace
+}
+
+/// The same workspace, with the devcontainer left uncommitted in a git repo.
+fn workspace_with_uncommitted_devcontainer(tmp: &Path, body: &str) -> PathBuf {
+    let workspace = tmp.join("workspace");
+    std::fs::create_dir_all(workspace.join(".devcontainer")).unwrap();
+    std::fs::write(workspace.join(".devcontainer/devcontainer.json"), body).unwrap();
+    git(&workspace, &["init", "-q", "-b", "main"]);
+    workspace
+}
+
+/// `remoteEnv` has no native equivalent and no `@devcontainers/cli` fallback,
+/// so this refusal is the same on any box.
+const UNSUPPORTED_DEVCONTAINER: &str = r#"{
+    // JSONC: comments and trailing commas are legal here and common in the wild.
+    "name": "sample",
+    "image": "example.invalid/dc:latest",
+    "remoteEnv": { "TOKEN": "hunter2" },
+}"#;
+
+/// A devcontainer is container configuration, and the sandboxed agent can
+/// write it.
+///
+/// `/workspace` is the host workspace through a rw bind mount, so a
+/// `write_file` to `.devcontainer/devcontainer.json` lands on the host. If
+/// resolution read the working tree, the *next* session in that workspace
+/// would be configured by the previous one — and `runArgs` becomes raw runtime
+/// argv, so `--privileged -v /:/host` would make session two "sandboxed" with
+/// the host root inside it.
+///
+/// Resolution therefore reads HEAD. An agent's write is unstaged and changes
+/// nothing until a human commits it.
+#[tokio::test]
+async fn an_uncommitted_devcontainer_is_refused_rather_than_honoured() {
+    let tmp = tempfile::tempdir().unwrap();
+    let escape = r#"{
+        "image": "example.invalid/dc:latest",
+        "runArgs": ["--privileged", "-v", "/:/host"]
+    }"#;
+    let workspace = workspace_with_uncommitted_devcontainer(tmp.path(), escape);
+    let mut loader = load_oci(
+        tmp.path(),
+        serde_json::json!({ "image": "alpine:latest", "runtime": UNUSABLE }),
+    )
+    .await;
+
+    let err = try_start_session(&mut loader, "dc-uncommitted", &workspace)
+        .await
+        .expect_err("an uncommitted devcontainer must never configure a container");
+    let err = err.to_string();
+    assert!(
+        err.contains("commit"),
+        "the refusal must point at the commit boundary; got: {err}"
+    );
+    assert!(
+        !err.contains("privileged"),
+        "the uncommitted runArgs must not have been parsed, let alone applied; got: {err}"
+    );
+}
+
+/// The devcontainer is the project's own statement of its environment, so it
+/// outranks a `[plugins.oci]` profile describing the same project.
+///
+/// Refusing rather than falling back is the load-bearing half: an environment
+/// asked for and not delivered is the same failure as a sandbox that silently
+/// did not start.
+#[tokio::test]
+async fn a_devcontainer_key_that_cannot_be_honoured_refuses_the_session_naming_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER);
+    let mut loader = load_oci(
+        tmp.path(),
+        serde_json::json!({ "image": "alpine:latest", "runtime": UNUSABLE }),
+    )
+    .await;
+
+    let err = try_start_session(&mut loader, "dc-unsupported", &workspace)
+        .await
+        .expect_err("a devcontainer key that cannot be honoured must refuse the session");
+    assert!(
+        err.to_string().contains("remoteEnv"),
+        "the refusal must name the key that could not be honoured; got: {err}"
+    );
+    assert!(
+        !err.to_string().contains(UNUSABLE),
+        "the devcontainer must outrank the configured image, not fall back to it; got: {err}"
+    );
+}
+
+/// `devcontainer = false` puts the project back on its profile.
+#[tokio::test]
+async fn a_project_can_opt_out_of_its_devcontainer() {
+    let tmp = tempfile::tempdir().unwrap();
+    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER);
+    let mut loader = load_oci(
+        tmp.path(),
+        serde_json::json!({
+            "image": "alpine:latest",
+            "runtime": UNUSABLE,
+            "devcontainer": false,
+        }),
+    )
+    .await;
+
+    let err = try_start_session(&mut loader, "dc-opted-out", &workspace)
+        .await
+        .expect_err("the profile must still containerize");
+    assert!(
+        err.to_string().contains(UNUSABLE),
+        "with the devcontainer switched off the profile must win; got: {err}"
+    );
+}
+
+/// An explicit session param is first in the order, ahead of the devcontainer.
+#[tokio::test]
+async fn an_inline_isolation_object_outranks_the_devcontainer() {
+    let tmp = tempfile::tempdir().unwrap();
+    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER);
+    let mut loader = load_oci(
+        tmp.path(),
+        serde_json::json!({ "image": "alpine:latest", "runtime": UNUSABLE }),
+    )
+    .await;
+
+    let err = try_start_isolated_session(
+        &mut loader,
+        "dc-overridden",
+        &workspace,
+        Some(serde_json::json!({
+            "image": "example.invalid/inline:latest",
+            "runtime": "crucible-inline-runtime",
+        })),
+    )
+    .await
+    .expect_err("the inline object's unusable runtime must refuse the session");
+    assert!(
+        err.to_string().contains("crucible-inline-runtime"),
+        "an explicit session param must be resolved before the devcontainer; got: {err}"
+    );
+}
+
+/// `isolation = false` short-circuits the whole resolution, devcontainer
+/// included — a session that declined a container does not get one from a file
+/// it never asked to be read.
+#[tokio::test]
+async fn isolation_false_suppresses_a_devcontainer_too() {
+    let tmp = tempfile::tempdir().unwrap();
+    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER);
+    let mut loader = load_oci(
+        tmp.path(),
+        serde_json::json!({ "image": "alpine:latest", "runtime": UNUSABLE }),
+    )
+    .await;
+
+    try_start_isolated_session(
+        &mut loader,
+        "dc-declined",
+        &workspace,
+        Some(serde_json::json!(false)),
+    )
+    .await
+    .expect("an opted-out session must not be refused by a devcontainer it never read");
+}
+
+/// The plugin ships enabled in every install, so a repo that merely *contains*
+/// a devcontainer must not become a containerized one.
+///
+/// Without this gate, checking out any repo with a `.devcontainer/` would
+/// containerize every session in it — and on a box with no container runtime,
+/// refuse every one of them.
+#[tokio::test]
+async fn a_devcontainer_alone_does_not_containerize_a_project_that_never_asked() {
+    let tmp = tempfile::tempdir().unwrap();
+    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER);
+    let mut loader = load_oci(tmp.path(), serde_json::Value::Null).await;
+
+    start_session(&mut loader, "dc-unasked", &workspace).await;
+    let result = pre_tool_call(
+        &loader,
+        "dc-unasked",
+        "bash",
+        serde_json::json!({ "command": "echo hi" }),
+    )
+    .await;
+    assert!(
+        matches!(result, ScriptHandlerResult::PassThrough),
+        "a project that configured no isolation must not be containerized by a \
+         devcontainer.json alone, got {result:?}"
+    );
+}
+
+/// The opt-in for a project whose environment is entirely its devcontainer:
+/// no image to name in `crucible.toml`, just `devcontainer = true`.
+#[tokio::test]
+async fn devcontainer_true_opts_a_project_in_with_no_image_configured() {
+    let tmp = tempfile::tempdir().unwrap();
+    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER);
+    let mut loader = load_oci(
+        tmp.path(),
+        serde_json::json!({ "devcontainer": true, "runtime": UNUSABLE }),
+    )
+    .await;
+
+    let err = try_start_session(&mut loader, "dc-true", &workspace)
+        .await
+        .expect_err("devcontainer = true must resolve the project's devcontainer");
+    assert!(
+        err.to_string().contains("remoteEnv"),
+        "the devcontainer must have been read; got: {err}"
     );
 }
 
