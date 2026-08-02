@@ -189,6 +189,18 @@ describe("oci session lifecycle", function()
     assert.equals("oci", isolation_calls[1].plugin)
     assert.equals("read_note", isolation_calls[1].exempt[1])
 
+    -- The argv that launches a process INTO the sandbox. Without it the
+    -- daemon refuses to pair this claim with an external (ACP) agent, because
+    -- that agent would run its own tools on the host.
+    local prefix = isolation_calls[1].exec_prefix
+    assert.is_not_nil(prefix, "the claim must offer a way into the container")
+    assert.equals("podman", prefix[1])
+    assert.equals("exec", prefix[2])
+    assert.equals("-i", prefix[3], "the agent speaks JSON-RPC over stdin")
+    assert.equals("-w", prefix[4])
+    assert.equals("/workspace", prefix[5])
+    assert.equals("crucible-s1", prefix[6])
+
     local last = status_calls[#status_calls]
     assert.is_not_nil(last)
     assert.equals("oci", last.key)

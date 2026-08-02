@@ -228,6 +228,7 @@ fn test_unsupported_agent_type() {
             knowledge_repo: None,
             embedding_provider: None,
             plugin_tools: None,
+            sandbox_exec: None,
         })
         .await
     });
@@ -420,6 +421,7 @@ async fn rules_file_contents_reach_the_system_prompt() {
         knowledge_repo: None,
         embedding_provider: None,
         plugin_tools: None,
+        sandbox_exec: None,
     })
     .await
     .expect("agent creation should succeed");
@@ -487,6 +489,7 @@ async fn session_generation_and_context_settings_reach_the_agent_handle() {
         knowledge_repo: None,
         embedding_provider: None,
         plugin_tools: None,
+        sandbox_exec: None,
     })
     .await
     .expect("agent creation should succeed");
@@ -523,6 +526,7 @@ async fn test_create_ollama_agent() {
         knowledge_repo: None,
         embedding_provider: None,
         plugin_tools: None,
+        sandbox_exec: None,
     })
     .await;
     assert!(result.is_ok());
@@ -553,6 +557,7 @@ async fn internal_agent_type_dispatches_to_internal_branch() {
         knowledge_repo: None,
         embedding_provider: None,
         plugin_tools: None,
+        sandbox_exec: None,
     })
     .await;
 
@@ -585,6 +590,7 @@ async fn acp_agent_type_dispatches_to_acp_branch() {
         knowledge_repo: None,
         embedding_provider: None,
         plugin_tools: None,
+        sandbox_exec: None,
     })
     .await;
 

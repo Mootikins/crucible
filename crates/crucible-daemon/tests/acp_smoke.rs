@@ -136,6 +136,7 @@ fn make_acp_agent_factory() -> AgentFactoryOverride {
                 delegation_config: None,
                 acp_config: None,
                 permission_handler: None,
+                sandbox_exec: None,
             })
             .await
             .map(|handle| Box::new(handle) as Box<dyn AgentHandle + Send + Sync>)
@@ -264,6 +265,7 @@ async fn mock_acp_handshake_succeeds() {
             delegation_config: None,
             acp_config: None,
             permission_handler: None,
+            sandbox_exec: None,
         }),
     )
     .await
@@ -296,6 +298,7 @@ async fn mock_acp_agent_returns_message_response() {
             delegation_config: None,
             acp_config: None,
             permission_handler: None,
+            sandbox_exec: None,
         }),
     )
     .await
@@ -353,6 +356,7 @@ async fn injected_system_context_reaches_acp_prompt() {
             delegation_config: None,
             acp_config: None,
             permission_handler: None,
+            sandbox_exec: None,
         }),
     )
     .await
@@ -422,6 +426,7 @@ async fn acp_model_switching_round_trips() {
             delegation_config: None,
             acp_config: None,
             permission_handler: None,
+            sandbox_exec: None,
         }),
     )
     .await
@@ -487,6 +492,7 @@ async fn missing_binary_returns_connection_error() {
             delegation_config: None,
             acp_config: None,
             permission_handler: None,
+            sandbox_exec: None,
         }),
     )
     .await
@@ -525,6 +531,7 @@ async fn inject_errors_causes_handshake_failure() {
             delegation_config: None,
             acp_config: Some(&acp_config),
             permission_handler: None,
+            sandbox_exec: None,
         }),
     )
     .await

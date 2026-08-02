@@ -334,17 +334,36 @@ The flip side: a session asking for a *different* environment on a workspace
 that is already sandboxed is refused rather than joined, since joining would
 hand it an image it did not ask for.
 
-## Internal agents only
+## External (ACP) agents
 
-Isolation is enforceable only for **internal** agents, whose tools the daemon
-dispatches — interception and the default-deny gate sit *before* execution.
+An **internal** agent's tools are dispatched by the daemon, so interception and
+the default-deny gate sit *before* execution and a claim is enforceable by
+construction.
+
 An external ACP agent (`cru chat -a claude` and friends) executes tools in its
-own process and reports them to the daemon as notifications; nothing the
-daemon does can stop a call it learns about after the fact. Rather than let a
-session look sandboxed while every tool runs on the host, the daemon
-**refuses** to pair an isolation claim with an external agent: creating such
-a session fails, switching an isolated session to an ACP agent is rejected,
-and delegating to one from a sandboxed session is refused for the same reason.
+own process and reports them as notifications — nothing the daemon does can
+stop a call it learns about after the fact. So interception cannot be the
+answer, and the plugin supplies a different one: an **exec prefix**, the argv
+that runs a command inside the sandbox.
+
+```lua
+crucible.require_isolation{
+  session = session.id,
+  plugin  = "oci",
+  exec_prefix = { "podman", "exec", "-i", "-w", "/workspace", "crucible-" .. session.id },
+}
+```
+
+Given one, the daemon launches the agent *through* it — `podman exec -i …
+npx @zed-industries/claude-agent-acp` rather than `npx …` on the host. The
+agent's tools are then confined by where its process runs, and there is nothing
+left to intercept. The prefix is argv, not a shell string, so the agent's own
+arguments are never re-split.
+
+Without one, the session is still **refused**: creating it fails, switching an
+isolated session to an ACP agent is rejected, and delegating to one from a
+sandboxed session is refused for the same reason. A session that merely *looks*
+sandboxed is worse than one that admits it is not.
 
 ## See Also
 

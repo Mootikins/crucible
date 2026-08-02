@@ -37,6 +37,25 @@ pub struct IsolationClaim {
     /// unhandled, which is the safe default, and every exemption is then a
     /// visible decision rather than an omission.
     pub exempt: HashSet<String>,
+    /// Argv prefix that runs a command *inside* the sandbox, e.g.
+    /// `["podman", "exec", "-i", "-w", "/workspace", "crucible-abc"]`.
+    ///
+    /// Empty when the plugin cannot offer one, which is the safe default: a
+    /// claim says a session is sandboxed, not that anything can be launched
+    /// into it.
+    ///
+    /// It exists for external (ACP) agents. The daemon dispatches an internal
+    /// agent's tools, so a `pre_tool_call` handler sits before execution; an
+    /// ACP agent executes tools in its own process and only *reports* them, so
+    /// interception arrives too late and the session is refused outright. But
+    /// an ACP agent launched THROUGH this prefix runs inside the container to
+    /// begin with — its tools are sandboxed by where the process is, not by
+    /// anything the daemon has to intercept — which is what makes that refusal
+    /// liftable.
+    ///
+    /// Argv, deliberately, not a shell string: the container name and the
+    /// agent's own arguments go in unquoted and unsplit.
+    pub exec_prefix: Vec<String>,
 }
 
 /// Isolation claims by session id.
@@ -99,6 +118,14 @@ impl IsolationRegistry {
         }
     }
 
+    /// The argv prefix that runs a command inside this session's sandbox, when
+    /// the claiming plugin offered one.
+    pub fn exec_prefix(&self, session_id: &str) -> Option<Vec<String>> {
+        self.get(session_id)
+            .map(|c| c.exec_prefix)
+            .filter(|p| !p.is_empty())
+    }
+
     /// Whether any session currently claims isolation.
     ///
     /// For callers that execute host-touching tools without knowing which
@@ -142,13 +169,27 @@ pub fn register_isolation_module(
             .into_iter()
             .collect();
 
+        let exec_prefix: Vec<String> = opts
+            .get::<Option<Vec<String>>>("exec_prefix")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+
         tracing::info!(
             session_id = %session,
             plugin = %plugin,
             exempt = exempt.len(),
+            can_exec = !exec_prefix.is_empty(),
             "plugin claimed session isolation; unhandled host tools will be refused"
         );
-        registry.claim(&session, IsolationClaim { plugin, exempt });
+        registry.claim(
+            &session,
+            IsolationClaim {
+                plugin,
+                exempt,
+                exec_prefix,
+            },
+        );
         Ok(())
     })?;
     crucible.set("require_isolation", require_isolation)?;
@@ -163,6 +204,7 @@ mod tests {
         IsolationClaim {
             plugin: "oci".to_string(),
             exempt: exempt.iter().map(|s| s.to_string()).collect(),
+            exec_prefix: Vec::new(),
         }
     }
 

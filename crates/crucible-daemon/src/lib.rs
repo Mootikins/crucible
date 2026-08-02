@@ -30,6 +30,7 @@
 
 pub mod acp;
 pub mod acp_handle;
+pub mod acp_launch;
 pub mod agent_cards;
 pub mod agent_factory;
 pub mod agent_manager;

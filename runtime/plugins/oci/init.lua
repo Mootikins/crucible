@@ -54,6 +54,20 @@ local function register(session_id, workspace)
   sessions[session_id] = workspace
 end
 
+--- Argv that runs a command inside `active`'s container.
+---
+--- Handed to the daemon with the isolation claim so an ACP agent can be
+--- launched *into* the sandbox instead of beside it. The daemon cannot
+--- intercept tools an external agent runs in its own process — so a claimed
+--- session with an external agent is refused — but it does not have to when
+--- that process is already in the container. This is what lifts the refusal.
+---
+--- `-i` because the agent speaks JSON-RPC over stdin/stdout, and `-w` so it
+--- starts where its own tools expect the workspace to be.
+local function exec_prefix(runtime, name, target)
+  return { runtime, "exec", "-i", "-w", target, name }
+end
+
 --- The container serving this tool call, or nil if the session has none.
 local function active_for(ctx)
   local id = ctx and ctx.session_id
@@ -502,6 +516,7 @@ crucible.on_session_start(function(session)
     register(session.id, workspace)
     crucible.require_isolation{
       session = session.id, plugin = "oci", exempt = cfg.exempt,
+      exec_prefix = exec_prefix(shared.runtime, shared.name, shared.target),
     }
     crucible.set_status{
       session = session.id, key = "oci", plugin = "oci",
@@ -607,6 +622,7 @@ crucible.on_session_start(function(session)
   -- coincidence; a seventh would have escaped silently.
   crucible.require_isolation{
     session = session.id, plugin = "oci", exempt = cfg.exempt,
+    exec_prefix = exec_prefix(runtime, name, cfg.target),
   }
 
   -- A devcontainer is resolved from HEAD, so an edit sitting in the working

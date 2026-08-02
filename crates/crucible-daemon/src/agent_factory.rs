@@ -73,6 +73,10 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     /// Spec-declared plugin tools, so the model can see what the dispatcher
     /// can already run. `None` when no plugin loader is attached.
     pub plugin_tools: Option<Arc<crate::plugin_tools::PluginRegistry>>,
+    /// Argv prefix that runs a process inside this session's sandbox, from the
+    /// isolation claim. Only ACP agents use it — an internal agent's tools are
+    /// intercepted before they execute, so there is no process to relocate.
+    pub sandbox_exec: Option<Vec<String>>,
 }
 
 /// Build a `DelegationContext` for a session's MCP server.
@@ -611,6 +615,7 @@ pub async fn create_agent_from_session_config(
         knowledge_repo,
         embedding_provider,
         plugin_tools,
+        sandbox_exec,
     } = params;
     if agent_config.agent_type == "acp" {
         let handle = AcpAgentHandle::new(AcpAgentHandleParams {
@@ -625,6 +630,7 @@ pub async fn create_agent_from_session_config(
             delegation_config: agent_config.delegation_config.as_ref(),
             acp_config,
             permission_handler: acp_permission_handler,
+            sandbox_exec,
         })
         .await
         .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;

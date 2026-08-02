@@ -139,27 +139,28 @@ impl SessionLifecycle {
 
     /// The reason a session's isolation claim cannot be enforced, or `None`.
     ///
-    /// Isolation is enforceable only for internal agents: the daemon
-    /// dispatches their tools, so `pre_tool_call` handlers and the
-    /// default-deny gate sit *before* execution. An ACP agent executes tools
-    /// in its own process and reports them as notifications — a handler's
-    /// Cancel/Handled arrives after the fact and stops nothing. Refusing is
-    /// the fail-closed answer; the ACP permission channel
-    /// (`session/request_permission`) is the seam a future enforcement could
-    /// use, but it only fires when the external agent chooses to ask.
+    /// For an internal agent the daemon dispatches every tool, so
+    /// `pre_tool_call` handlers and the default-deny gate sit *before*
+    /// execution and the claim is enforceable by construction.
+    ///
+    /// An ACP agent executes tools in its own process and only reports them,
+    /// so interception arrives after the fact and stops nothing. That leaves
+    /// two cases, and they are not the same:
+    ///
+    /// * The plugin offered an [`exec_prefix`](crucible_lua::IsolationClaim),
+    ///   so the agent process is launched *inside* the sandbox. Its tools are
+    ///   confined by where the process runs — there is nothing left to
+    ///   intercept, and refusing would be refusing a session that is in fact
+    ///   sandboxed.
+    /// * It did not, so the agent would run on the host while the session
+    ///   claims to be isolated. That is the case this refuses, and it is
+    ///   refused rather than downgraded because a session that merely *looks*
+    ///   sandboxed is worse than one that admits it is not.
     pub(crate) async fn unenforceable_isolation(&self, session_id: &str) -> Option<String> {
         let claim = self.isolation_claim(session_id).await?;
         let session = self.sessions.get_session(session_id)?;
         let agent_type = session.agent.as_ref().map(|a| a.agent_type.clone())?;
-        if agent_type == "internal" {
-            return None;
-        }
-        Some(format!(
-            "plugin '{}' claims isolation for this session, but its agent is external \
-             (agent_type '{agent_type}'): external agents execute tools in their own \
-             process, so the sandbox cannot be enforced",
-            claim.plugin
-        ))
+        unenforceable_reason(&claim, &agent_type)
     }
 
     /// Fire plugin `on_session_end` hooks, best-effort and exactly once.
@@ -228,5 +229,64 @@ impl SessionLifecycle {
         }
         session.bind(Box::new(crate::server::NoopSessionRpc));
         loader.fire_session_start(&session).await
+    }
+}
+
+/// Whether a claim can actually be enforced for an agent of this type.
+///
+/// Pure, and separate from the lookup around it, because this is the rule —
+/// the plumbing that finds the claim and the session is not what can be
+/// subtly wrong. See [`SessionLifecycle::unenforceable_isolation`].
+fn unenforceable_reason(claim: &crucible_lua::IsolationClaim, agent_type: &str) -> Option<String> {
+    if agent_type == "internal" || !claim.exec_prefix.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "plugin '{}' claims isolation for this session, but its agent is external \
+         (agent_type '{agent_type}') and the plugin offered no way to launch a process \
+         inside the sandbox: the agent would execute its own tools on the host, so the \
+         sandbox cannot be enforced",
+        claim.plugin
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crucible_lua::IsolationClaim;
+
+    fn claim(exec_prefix: &[&str]) -> IsolationClaim {
+        IsolationClaim {
+            plugin: "oci".to_string(),
+            exempt: Default::default(),
+            exec_prefix: exec_prefix.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    /// The daemon dispatches an internal agent's tools, so the gate sits
+    /// before execution and nothing has to be relocated.
+    #[test]
+    fn an_internal_agent_needs_no_way_into_the_sandbox() {
+        assert!(unenforceable_reason(&claim(&[]), "internal").is_none());
+    }
+
+    /// An ACP agent runs its own tools in its own process, so a claim the
+    /// plugin cannot launch into is a session that only LOOKS sandboxed.
+    #[test]
+    fn an_external_agent_with_no_way_in_is_refused() {
+        let reason = unenforceable_reason(&claim(&[]), "acp")
+            .expect("an unreachable sandbox must refuse the session");
+        assert!(reason.contains("oci"), "{reason}");
+        assert!(reason.contains("on the host"), "{reason}");
+    }
+
+    /// ...but with a prefix the agent process starts inside the container, so
+    /// its tools are confined by where it runs. Refusing here would refuse a
+    /// session that is genuinely sandboxed — the whole point of the prefix.
+    #[test]
+    fn an_external_agent_launched_into_the_sandbox_is_allowed() {
+        assert!(
+            unenforceable_reason(&claim(&["podman", "exec", "-i", "crucible-s1"]), "acp").is_none()
+        );
     }
 }

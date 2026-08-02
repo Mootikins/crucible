@@ -634,6 +634,11 @@ impl AgentManager {
             knowledge_repo,
             embedding_provider,
             plugin_tools,
+            // Read at agent-construction time rather than session start: the
+            // claim is made by a `required` start hook, which has already run
+            // by now, and reading it here means the agent is relocated by
+            // whatever plugin actually claimed the session.
+            sandbox_exec: self.isolation().and_then(|reg| reg.exec_prefix(session_id)),
         })
         .await?;
 

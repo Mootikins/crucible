@@ -756,6 +756,7 @@ async fn an_isolated_session_refuses_a_tool_no_handler_took_over() {
         crucible_lua::IsolationClaim {
             plugin: "oci".to_string(),
             exempt: Default::default(),
+            exec_prefix: Vec::new(),
         },
     );
     h.set_isolation(isolation);
@@ -805,6 +806,7 @@ async fn an_isolated_session_allows_a_daemon_surface_tool() {
             // Deliberately empty: the point is that a kiln tool needs no
             // exemption, not that this test remembered to add one.
             exempt: Default::default(),
+            exec_prefix: Vec::new(),
         },
     );
     h.set_isolation(isolation);

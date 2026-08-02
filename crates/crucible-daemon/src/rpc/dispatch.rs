@@ -1948,6 +1948,7 @@ mod tests {
                 crucible_lua::IsolationClaim {
                     plugin: "oci".to_string(),
                     exempt: Default::default(),
+                    exec_prefix: Vec::new(),
                 },
             );
         }
@@ -1992,6 +1993,7 @@ mod tests {
                 crucible_lua::IsolationClaim {
                     plugin: "oci".to_string(),
                     exempt: Default::default(),
+                    exec_prefix: Vec::new(),
                 },
             );
         }
@@ -2074,6 +2076,7 @@ mod tests {
                 crucible_lua::IsolationClaim {
                     plugin: "oci".to_string(),
                     exempt: Default::default(),
+                    exec_prefix: Vec::new(),
                 },
             );
         }
