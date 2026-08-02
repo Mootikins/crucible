@@ -414,7 +414,13 @@ export async function getIsolationOffer(): Promise<IsolationOffer> {
   for (const value of Object.values(answers)) {
     const offer = value as Partial<IsolationOffer> | null;
     if (offer?.available) available = true;
-    for (const name of offer?.profiles ?? []) profiles.add(name);
+    // Publications are opaque JSON from a plugin, so `profiles` is whatever it
+    // sent. A non-array must not take the whole offer down with it: a throw
+    // here is swallowed by swrLocal, and the isolation control silently never
+    // appears — the exact failure this channel replaced.
+    if (Array.isArray(offer?.profiles)) {
+      for (const name of offer.profiles) profiles.add(name);
+    }
   }
   return { available, profiles: [...profiles].sort() };
 }

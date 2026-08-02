@@ -547,6 +547,19 @@ describe('getIsolationOffer', () => {
     expect(await getIsolationOffer()).toEqual({ available: true, profiles: [] });
   });
 
+  // Publications are opaque plugin JSON, and an empty Lua table encodes as `{}`
+  // rather than `[]`. Iterating that throws, swrLocal swallows the rejection,
+  // and the isolation control silently never renders — so a shape this reader
+  // did not expect must cost the profile names, not the whole offer.
+  it('survives a profiles value that is not an array', async () => {
+    global.fetch = createMockFetch({
+      'GET /api/plugins/publications': {
+        body: { publications: { isolation: { oci: { available: true, profiles: {} } } } },
+      },
+    });
+    expect(await getIsolationOffer()).toEqual({ available: true, profiles: [] });
+  });
+
   // Two isolating plugins both answer; neither may erase the other.
   it('merges answers from every plugin that offers isolation', async () => {
     global.fetch = createMockFetch({
