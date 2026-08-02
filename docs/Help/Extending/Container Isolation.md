@@ -49,6 +49,7 @@ below), and removes it when the last session using it ends.
 | `userns` | auto | `--userns` value. See below. `false` disables it. |
 | `workspace_folder` | `/workspace` | Where the workspace is mounted inside the container. See below. |
 | `devcontainer` | auto | `false` ignores this project's `devcontainer.json`; `true` opts in with no `image`. See below. |
+| `devcontainer_host_access` | `false` | Honour `runArgs`, `mounts` and `initializeCommand` from a devcontainer. See below. |
 | `build_timeout` | `900` | Seconds allowed for an image build. |
 | `start_timeout` | `300` | Seconds allowed for the image pull and for `run`. |
 | `exempt` | `[]` | Host-touching tool names allowed to run on the host anyway. See below. |
@@ -157,6 +158,46 @@ per-session `isolation` param, which outranks the file.
 Editor-only keys (`name`, `customizations`, `forwardPorts` and friends) are
 ignored rather than refused — nothing they configure can change what a headless
 agent's container is.
+
+### What a devcontainer is not allowed to ask for
+
+Three keys can reach *outside* the container, and are refused by default even
+when the file is otherwise honoured:
+
+| Key | Why |
+|-----|-----|
+| `runArgs` | Becomes raw runtime argv — `--privileged`, `-v /:/host` |
+| `mounts` | Names arbitrary host paths |
+| `initializeCommand` | `@devcontainers/cli` runs it **on the host**, not in the container |
+
+The reason is that the file is inside the sandbox. A session's workspace is
+bind-mounted `rw`, `.git` included, so the agent can edit *and commit* its own
+project's `devcontainer.json` — and the next session in that workspace would
+resolve from it. Reading only the committed file (see below) raises the cost of
+that by one command and no more, so the boundary is on what the file may ask
+for rather than on who wrote it. Without these keys a devcontainer still chooses
+its image and its build, which decides what the sandbox *contains* but not
+whether it is one.
+
+Allow them with operator config, which lives outside the workspace where the
+agent cannot write it:
+
+```toml
+[plugins.oci]
+devcontainer_host_access = true
+```
+
+### The file is read from `HEAD`
+
+Resolution reads the **committed** `devcontainer.json`, never the working tree.
+An uncommitted edit changes nothing until it is committed, and the session's
+status slot says so rather than leaving you wondering why your change had no
+effect. In a project that is not a git repository at all, a devcontainer is
+refused rather than honoured — there is no committed form to read.
+
+This is hygiene, not a security boundary: it keeps an in-flight edit from
+silently changing the next session, and keeps `git diff` an honest record of
+what the environment is. The security boundary is the key list above.
 
 `remoteUser` sets `--user`, except where uid mapping applies: `keep-id` maps the
 *host* uid into the container, and running as any other id fails every workspace

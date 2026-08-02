@@ -168,9 +168,18 @@ local function handle_edit_file(ctx, event)
   end
 
   local write_script = string.format("cat > '%s'", sq(path))
-  cru.shell.exec(active.runtime, {
+  local w = cru.shell.exec(active.runtime, {
     "exec", "-i", active.name, "sh", "-c", write_script,
   }, { stdin = new_content })
+
+  -- Checked, like the read above it. Reporting a replacement that a read-only
+  -- mount or a full disk rejected tells the model its edit landed, and the next
+  -- thing it does is built on a file that never changed.
+  if not w.success then
+    return { handled = true, result = cru.json.encode({
+      result = "Error: " .. (w.stderr or "write failed")
+    }) }
+  end
 
   return { handled = true, result = cru.json.encode({
     result = string.format("Replaced %d occurrence(s)", count)
@@ -318,7 +327,10 @@ local function project_devcontainer(session, requested)
     or config.image ~= nil
     or config.profiles ~= nil
   if not asked then return nil end
-  return devcontainer.resolve(session and session.workspace)
+  -- Operator config, deliberately: it lives outside the workspace, so it is the
+  -- one input the sandboxed agent cannot write. See devcontainer.HOST_KEYS.
+  return devcontainer.resolve(session and session.workspace,
+    config.devcontainer_host_access == true)
 end
 
 --- Resolve the environment for a session, first hit wins:
@@ -653,9 +665,16 @@ return {
     --
     -- `available` and the profile *names* are the whole contract. What a
     -- profile resolves to is server-side detail and stays here.
-    local names = {}
-    for name in pairs(config.profiles or {}) do names[#names + 1] = name end
-    table.sort(names)
+    -- Encoded as a JSON array, always. An empty Lua table is ambiguous and
+    -- serialises as `{}`, which is not iterable to a client walking the list —
+    -- so `image = "alpine"` with no profiles published `profiles = {}` and made
+    -- the whole offer unreadable. `nil` says "none" unambiguously.
+    local names = nil
+    for name in pairs(config.profiles or {}) do
+      names = names or {}
+      names[#names + 1] = name
+    end
+    if names then table.sort(names) end
 
     -- Declared once; the TUI and the web settings pane render it in their own
     -- idiom. `values` and `desc` are functions where the answer depends on
@@ -689,12 +708,18 @@ return {
           desc = "Read .devcontainer/devcontainer.json when the project has one. "
             .. "Only the committed file is honoured.",
         },
+        devcontainer_host_access = {
+          type = "toggle", order = 4, name = "Let a devcontainer reach the host",
+          desc = "Honour runArgs, mounts and initializeCommand from the project's "
+            .. "devcontainer.json. Off by default: a sandboxed session can write and "
+            .. "commit that file, and those keys can escape the container.",
+        },
         build_timeout = {
-          type = "range", order = 4, name = "Build timeout (seconds)",
+          type = "range", order = 5, name = "Build timeout (seconds)",
           min = 60, max = 3600, step = 60,
         },
         start_timeout = {
-          type = "range", order = 5, name = "Start timeout (seconds)",
+          type = "range", order = 6, name = "Start timeout (seconds)",
           min = 30, max = 1800, step = 30,
         },
         cleanup = {

