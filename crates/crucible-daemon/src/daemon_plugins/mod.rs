@@ -7,6 +7,8 @@
 //! UI modules (oil, popup, panel, statusline) are intentionally excluded —
 //! the daemon is headless.
 
+pub mod option_store;
+
 use crate::plugin_tools::PluginRegistry;
 use anyhow::Context;
 use crucible_core::storage::NoteStore;

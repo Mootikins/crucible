@@ -134,6 +134,15 @@ impl Server {
                     .await;
             }
 
+            // ...and settings changed through the options pane beat both, for
+            // the same reason init.lua beats TOML: it is the most recent thing
+            // the user actually did. Last in the chain, and replayed through
+            // each plugin's own setter — see `option_store`.
+            crate::daemon_plugins::option_store::restore(
+                &crucible_core::config::crucible_home(),
+                &loader.options(),
+            );
+
             // Give Lua a trigger on the workspace changing. Until now every
             // hookable event was on the agent turn loop, so a handler could not
             // react to files at all — which is why a value like git status had

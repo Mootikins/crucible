@@ -250,9 +250,18 @@ pub(crate) async fn handle_plugin_option_call(
                 .get("value")
                 .cloned()
                 .unwrap_or(serde_json::Value::Null);
-            registry
-                .set(&plugin, &path, value, ui)
-                .map(|()| serde_json::json!({ "ok": true }))
+            registry.set(&plugin, &path, value.clone(), ui).map(|()| {
+                // Only after the plugin accepted it. Recording first would
+                // persist a value the plugin rejected, and replay it into a
+                // refusal on every subsequent boot.
+                crate::daemon_plugins::option_store::record(
+                    &crucible_core::config::crucible_home(),
+                    &plugin,
+                    &path,
+                    value,
+                );
+                serde_json::json!({ "ok": true })
+            })
         }
         OptionAction::Execute => registry
             .execute(&plugin, &path, ui)
