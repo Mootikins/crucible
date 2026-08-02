@@ -1025,6 +1025,15 @@ impl RpcDispatcher {
         map_server_resp(resp)
     }
 
+    /// A fork is a live session on the parent's workspace with the parent's
+    /// agent, so it owes the same invariant create and resume do: a live
+    /// session is sandboxed, or it does not exist.
+    ///
+    /// It cannot use `enforce_plugin_session_start`. That helper reads the id
+    /// from `session_id` — in the response, then the params — and for a fork
+    /// `params.session_id` is the *parent's*, so it would re-fire hooks on the
+    /// parent and leave the fork unclaimed while looking like it enforced.
+    /// Fork reports its new id as `id`, so the extraction is its own.
     async fn handle_session_fork(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::session::handle_session_fork(
             req.clone(),
@@ -1032,7 +1041,26 @@ impl RpcDispatcher {
             &self.ctx.agents,
         )
         .await;
-        map_server_resp(resp)
+        let mapped = map_server_resp(resp)?;
+
+        let Some(fork_id) = mapped.get("id").and_then(|v| v.as_str()) else {
+            return Ok(mapped);
+        };
+        let fork_id = fork_id.to_string();
+
+        match self
+            .ctx
+            .session_lifecycle
+            .enforce_session_start(&fork_id)
+            .await
+        {
+            Ok(()) => Ok(mapped),
+            Err(e) => Err(RpcError {
+                code: INTERNAL_ERROR,
+                message: format!("session refused: {e}"),
+                data: None,
+            }),
+        }
     }
 
     // ── Session utility wrappers ─────────────────────────────────────────────
@@ -2026,6 +2054,115 @@ mod tests {
                 .await
                 .is_none(),
             "sessions without a claim must be unaffected"
+        );
+    }
+
+    /// A context whose loader holds a plugin that claims isolation on start.
+    ///
+    /// Lets a test observe whether a code path fired plugin start hooks at all:
+    /// a session that went through them has a claim, one that skipped them does
+    /// not — which is exactly the difference between sandboxed and not.
+    async fn test_context_claiming_isolation(dir: &std::path::Path) -> RpcContext {
+        const CLAIMS_ISOLATION: &str = r#"
+crucible.on_session_start(function(session)
+  crucible.require_isolation{ session = session.id, plugin = "sandbox" }
+end, { required = true })
+return { name = "sandbox", version = "0.1.0", description = "test isolation claimer" }
+"#;
+        let root = dir.join("plugins");
+        let plugin = root.join("sandbox");
+        std::fs::create_dir_all(&plugin).expect("plugin dir");
+        std::fs::write(
+            plugin.join("plugin.yaml"),
+            "name: sandbox\nversion: \"0.1.0\"\ndescription: test isolation claimer\n",
+        )
+        .expect("plugin.yaml");
+        std::fs::write(plugin.join("init.lua"), CLAIMS_ISOLATION).expect("init.lua");
+
+        let ctx = test_context();
+        let mut loader =
+            crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
+                .expect("loader");
+        loader
+            .load_plugins(&[(root, crucible_lua::PluginSource::EnvPath)])
+            .await
+            .expect("load plugins");
+        *ctx.plugin_loader.try_lock().expect("fresh mutex") = Some(loader);
+        ctx
+    }
+
+    /// `session.fork` produces a live session on the parent's workspace, so it
+    /// owes the same invariant `create` and `resume` do: a live session is
+    /// sandboxed, or it does not exist.
+    ///
+    /// It did not. `handle_session_fork` returned the handler's response
+    /// directly, never calling `enforce_session_start`, and it does not go
+    /// through `create_child_session` either — so neither the RPC path's
+    /// enforcement nor `DelegationService`'s applied. Forking a sandboxed
+    /// session yielded a fully unclaimed one running every tool on the host,
+    /// which is the same escape delegated children had.
+    #[tokio::test]
+    async fn forking_a_session_fires_plugin_start_hooks_for_the_fork() {
+        use crucible_core::session::SessionType;
+
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let ctx = test_context_claiming_isolation(tempdir.path()).await;
+        let kiln = tempdir.path().join("kiln");
+        std::fs::create_dir_all(&kiln).expect("kiln");
+
+        let parent = ctx
+            .sessions
+            .create_session(SessionType::Chat, kiln.clone(), None, vec![], None)
+            .await
+            .expect("create parent");
+
+        let dispatcher = RpcDispatcher::new(ctx);
+        dispatcher
+            .ctx
+            .session_lifecycle
+            .enforce_session_start(&parent.id)
+            .await
+            .expect("parent session start");
+
+        let registry = dispatcher
+            .ctx
+            .session_lifecycle
+            .isolation_registry()
+            .await
+            .expect("plugin isolation registry");
+        assert!(
+            registry.get(&parent.id).is_some(),
+            "the parent must be sandboxed or this test asserts nothing"
+        );
+
+        let resp = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "session.fork",
+                    serde_json::json!({ "session_id": parent.id }),
+                ),
+            )
+            .await;
+
+        // Either outcome is safe; a live unclaimed fork is not.
+        let Some(result) = resp.result else {
+            return; // refused outright
+        };
+        // `id`, not `session_id` — and `params.session_id` is the PARENT's, so
+        // the shared wrapper would enforce on the parent and leave the fork
+        // unclaimed. That trap is why this path needs its own id extraction.
+        let fork_id = result
+            .get("id")
+            .and_then(|v| v.as_str())
+            .expect("a successful fork must report its session id");
+
+        assert!(
+            registry.get(fork_id).is_some(),
+            "fork {fork_id} of sandboxed session {} has no isolation claim: it \
+             runs on the parent's workspace with the parent's agent, so an \
+             unclaimed fork is an unsandboxed one",
+            parent.id
         );
     }
 
