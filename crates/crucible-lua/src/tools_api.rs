@@ -60,11 +60,19 @@ use std::sync::Arc;
 pub trait DaemonToolsApi: Send + Sync + 'static {
     /// Call a single tool by name with the given arguments.
     ///
+    /// `session` is the session the call is being made *for*, when the caller
+    /// knows it — a plugin inside a hook has it as `ctx.session_id`. It exists
+    /// because this path executes workspace tools with no agent and no session
+    /// of its own, so without it an implementation cannot tell whether the
+    /// session it is acting for is sandboxed. `None` means "not stated", which
+    /// an isolating implementation must treat as unproven rather than safe.
+    ///
     /// Returns the tool's result as a JSON value.
     fn call_tool(
         &self,
         name: String,
         args: serde_json::Value,
+        session: Option<String>,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>>;
 
     /// List available tools.
@@ -95,7 +103,7 @@ pub fn register_tools_module(lua: &Lua) -> Result<(), LuaError> {
         };
     }
 
-    stub_async!("call", lua, tools, (String, mlua::Value));
+    stub_async!("call", lua, tools, (String, mlua::Value, mlua::Value));
     stub_async!("list", lua, tools, ());
     stub_async!("batch", lua, tools, mlua::Value);
 
@@ -120,31 +128,42 @@ pub fn register_tools_module_with_api(
     let cru: Table = globals.get("cru")?;
     let tools: Table = cru.get("tools")?;
 
-    // call(tool_name, args_table) -> (result, nil) or (nil, err)
+    // call(tool_name, args_table[, opts]) -> (result, nil) or (nil, err)
+    //
+    // `opts.session` states which session the call is for. A plugin calling
+    // from inside a hook has it as `ctx.session_id`; passing it is what lets
+    // the daemon side decide whether that session is sandboxed.
     let a = Arc::clone(&api);
-    let call_fn = lua.create_async_function(move |lua, (name, args): (String, Value)| {
-        let a = Arc::clone(&a);
-        async move {
-            let json_args: serde_json::Value = match args {
-                Value::Table(_) => serde_json::to_value(&args).map_err(mlua::Error::external)?,
-                Value::Nil => serde_json::Value::Object(serde_json::Map::new()),
-                _ => {
-                    let err = lua.create_string("call() args must be a table or nil")?;
-                    return Ok((Value::Nil, Value::String(err)));
-                }
-            };
-            match a.call_tool(name, json_args).await {
-                Ok(val) => {
-                    let lua_val = lua.to_value(&val)?;
-                    Ok((lua_val, Value::Nil))
-                }
-                Err(e) => {
-                    let err = lua.create_string(&e)?;
-                    Ok((Value::Nil, Value::String(err)))
+    let call_fn =
+        lua.create_async_function(move |lua, (name, args, opts): (String, Value, Value)| {
+            let a = Arc::clone(&a);
+            async move {
+                let session = match &opts {
+                    Value::Table(t) => t.get::<Option<String>>("session").ok().flatten(),
+                    _ => None,
+                };
+                let json_args: serde_json::Value = match args {
+                    Value::Table(_) => {
+                        serde_json::to_value(&args).map_err(mlua::Error::external)?
+                    }
+                    Value::Nil => serde_json::Value::Object(serde_json::Map::new()),
+                    _ => {
+                        let err = lua.create_string("call() args must be a table or nil")?;
+                        return Ok((Value::Nil, Value::String(err)));
+                    }
+                };
+                match a.call_tool(name, json_args, session).await {
+                    Ok(val) => {
+                        let lua_val = lua.to_value(&val)?;
+                        Ok((lua_val, Value::Nil))
+                    }
+                    Err(e) => {
+                        let err = lua.create_string(&e)?;
+                        Ok((Value::Nil, Value::String(err)))
+                    }
                 }
             }
-        }
-    })?;
+        })?;
     tools.set("call", call_fn)?;
 
     // list() -> (tools_array, nil) or (nil, err)
@@ -234,7 +253,7 @@ pub fn register_tools_module_with_api(
                 .map(|(name, args)| {
                     let a = Arc::clone(&a);
                     async move {
-                        let result = a.call_tool(name.clone(), args).await;
+                        let result = a.call_tool(name.clone(), args, None).await;
                         (name, result)
                     }
                 })
@@ -364,6 +383,7 @@ mod api_tests {
             &self,
             name: String,
             args: serde_json::Value,
+            _session: Option<String>,
         ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
             self.call_count.fetch_add(1, Ordering::SeqCst);
             Box::pin(async move {

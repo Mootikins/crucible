@@ -66,11 +66,17 @@ impl Server {
             self.agent_manager
                 .set_plugin_tool_registry(loader.plugin_registry());
 
-            let tools_api: Arc<dyn crucible_lua::DaemonToolsApi> =
-                Arc::new(crate::tools_bridge::DaemonToolsBridge::new(
+            // Bound to the same isolation registry the tool dispatcher reads.
+            // Without it `cru.tools.call` runs workspace tools with no agent
+            // and no session, so a sandboxed session's plugins could reach the
+            // host beside an agent that could not.
+            let tools_api: Arc<dyn crucible_lua::DaemonToolsApi> = Arc::new(
+                crate::tools_bridge::DaemonToolsBridge::new(
                     Arc::clone(&self.workspace_tools),
                     self.agent_manager.permission_config(),
-                ));
+                )
+                .with_isolation(loader.isolation()),
+            );
             if let Err(e) = loader.upgrade_with_tools(tools_api) {
                 warn!("Failed to upgrade Lua tools module: {}", e);
             }

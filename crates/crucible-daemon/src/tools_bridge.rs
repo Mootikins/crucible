@@ -12,6 +12,14 @@ type BoxFut<T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send>>;
 
 pub struct DaemonToolsBridge {
     workspace_tools: Arc<WorkspaceTools>,
+    /// Sessions a plugin claimed isolation over.
+    ///
+    /// This path executes workspace tools — `bash` included — with no agent
+    /// and no session of its own, so the dispatcher's default-deny gate never
+    /// sees it. Without this, plugin Lua could run `bash` on the host inside a
+    /// session the user believed was containerized: the sandbox held for the
+    /// agent and not for the plugins beside it.
+    isolation: Option<crucible_lua::IsolationRegistry>,
     /// The operator's rules, applied to `cru.tools.call` before execution.
     ///
     /// This path has no agent and no prompt, so it cannot reuse the gate in
@@ -29,6 +37,53 @@ impl DaemonToolsBridge {
         Self {
             workspace_tools,
             permissions: PermissionEngine::new(permission_config.as_ref()),
+            isolation: None,
+        }
+    }
+
+    /// Bind the isolation registry so sandboxed sessions are honoured here too.
+    pub fn with_isolation(mut self, isolation: crucible_lua::IsolationRegistry) -> Self {
+        self.isolation = Some(isolation);
+        self
+    }
+
+    /// `Some(reason)` if isolation forbids running `name` on the host.
+    ///
+    /// `session` is what the caller stated. Stated and sandboxed refuses;
+    /// stated and unsandboxed proceeds. **Not stated refuses whenever any
+    /// session is currently sandboxed** — the bridge cannot prove which
+    /// session it is acting for, and "unproven" has to mean "no" here for the
+    /// same reason a failed container start refuses the session rather than
+    /// falling back to the host.
+    ///
+    /// Kiln tools never reach this path; `WorkspaceTools` is the only executor
+    /// behind it, and every tool it serves is host-touching by definition.
+    fn isolation_refusal(&self, name: &str, session: Option<&str>) -> Option<String> {
+        let isolation = self.isolation.as_ref()?;
+        match session {
+            Some(id) => {
+                // Everything behind this bridge is `WorkspaceTools`, so the
+                // surface is `Host` by construction — there is no kiln tool
+                // here that a `Daemon` surface would wave through.
+                if isolation.host_execution_allowed(
+                    id,
+                    name,
+                    crucible_core::traits::tools::ToolSurface::Host,
+                ) {
+                    return None;
+                }
+                let plugin = isolation
+                    .get(id)
+                    .map(|c| c.plugin)
+                    .unwrap_or_else(|| "a plugin".into());
+                Some(format!(
+                    "session {id} is isolated by '{plugin}', so '{name}' may not run on the host                      through cru.tools.call"
+                ))
+            }
+            None if isolation.any_claim() => Some(format!(
+                "'{name}' would run on the host, and this call named no session while at least                  one session is isolated. Pass the session it is for —                  `cru.tools.call(name, args, {{ session = ctx.session_id }})` — so the sandbox                  can be checked"
+            )),
+            None => None,
         }
     }
 
@@ -79,7 +134,16 @@ impl DaemonToolsBridge {
 }
 
 impl DaemonToolsApi for DaemonToolsBridge {
-    fn call_tool(&self, name: String, args: serde_json::Value) -> BoxFut<serde_json::Value> {
+    fn call_tool(
+        &self,
+        name: String,
+        args: serde_json::Value,
+        session: Option<String>,
+    ) -> BoxFut<serde_json::Value> {
+        if let Some(reason) = self.isolation_refusal(&name, session.as_deref()) {
+            tracing::warn!(tool = %name, %reason, "refused cru.tools.call: isolated session");
+            return Box::pin(async move { Err(format!("Permission denied: {reason}")) });
+        }
         if let Some(reason) = self.refusal(&name, &args) {
             tracing::warn!(tool = %name, %reason, "refused cru.tools.call");
             return Box::pin(async move { Err(format!("Permission denied: {reason}")) });
@@ -137,6 +201,103 @@ mod tests {
         assert_eq!(Arc::strong_count(&workspace_tools), strong_count + 1);
     }
 
+    fn isolated_bridge(
+        session: Option<&str>,
+    ) -> (DaemonToolsBridge, crucible_lua::IsolationRegistry) {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let isolation = crucible_lua::IsolationRegistry::new();
+        if let Some(id) = session {
+            isolation.claim(
+                id,
+                crucible_lua::IsolationClaim {
+                    plugin: "oci".to_string(),
+                    exempt: Default::default(),
+                },
+            );
+        }
+        // Permissions wide open, so any refusal below is the isolation one.
+        let config = PermissionConfig {
+            default: PermissionMode::Allow,
+            ..Default::default()
+        };
+        let bridge = DaemonToolsBridge::new(
+            Arc::new(crate::tools::workspace::WorkspaceTools::new(
+                tmp.path().to_path_buf(),
+            )),
+            Some(config),
+        )
+        .with_isolation(isolation.clone());
+        (bridge, isolation)
+    }
+
+    /// `cru.tools.call` runs workspace tools with no agent and no session, so
+    /// the dispatcher's default-deny gate never sees it. A sandboxed session's
+    /// plugins could therefore run `bash` on the host beside an agent that
+    /// could not — the sandbox held for the agent and not for the plugins.
+    #[tokio::test]
+    async fn a_sandboxed_session_cannot_reach_the_host_through_cru_tools_call() {
+        let (bridge, _iso) = isolated_bridge(Some("s-sandboxed"));
+        let err = bridge
+            .call_tool(
+                "bash".to_string(),
+                json!({"command": "echo hi"}),
+                Some("s-sandboxed".to_string()),
+            )
+            .await
+            .expect_err("an isolated session's plugin must not run bash on the host");
+        assert!(err.contains("isolated") && err.contains("oci"), "{err}");
+    }
+
+    /// Isolation is per session, so an unsandboxed one is unaffected.
+    #[tokio::test]
+    async fn an_unsandboxed_session_still_reaches_the_host() {
+        let (bridge, _iso) = isolated_bridge(Some("s-other"));
+        // Asserted on the gate, not on the run: whether `bash` succeeds in a
+        // bare tempdir is not what this covers.
+        let result = bridge
+            .call_tool(
+                "bash".to_string(),
+                json!({"command": "echo hi"}),
+                Some("s-free".to_string()),
+            )
+            .await;
+        if let Err(e) = result {
+            assert!(
+                !e.contains("Permission denied"),
+                "a session nobody claimed must not be refused: {e}"
+            );
+        }
+    }
+
+    /// The bridge cannot prove which session it acts for, so silence has to
+    /// mean "no" while anything is sandboxed — the same fail-closed stance as
+    /// refusing a session whose container would not start.
+    #[tokio::test]
+    async fn a_call_naming_no_session_is_refused_while_any_session_is_sandboxed() {
+        let (bridge, _iso) = isolated_bridge(Some("s-sandboxed"));
+        let err = bridge
+            .call_tool("bash".to_string(), json!({"command": "echo hi"}), None)
+            .await
+            .expect_err("unproven must not mean safe while a sandbox is live");
+        assert!(err.contains("named no session"), "{err}");
+    }
+
+    /// ...but with nothing sandboxed, an unstated session is the ordinary case
+    /// and must not be penalised.
+    #[tokio::test]
+    async fn a_call_naming_no_session_runs_when_nothing_is_sandboxed() {
+        let (bridge, _iso) = isolated_bridge(None);
+        let result = bridge
+            .call_tool("bash".to_string(), json!({"command": "echo hi"}), None)
+            .await;
+        if let Err(e) = result {
+            assert!(
+                !e.contains("Permission denied"),
+                "with nothing sandboxed, an unstated session must not be refused: {e}"
+            );
+        }
+    }
+
     fn bridge_with(config: PermissionConfig) -> DaemonToolsBridge {
         let tmp = tempfile::tempdir().expect("tempdir");
         DaemonToolsBridge::new(
@@ -162,7 +323,7 @@ mod tests {
         });
 
         let result = bridge
-            .call_tool("bash".to_string(), json!({"command": "echo hi"}))
+            .call_tool("bash".to_string(), json!({"command": "echo hi"}), None)
             .await;
 
         let err = result.expect_err("a denied tool must not execute");
@@ -188,7 +349,7 @@ mod tests {
         });
 
         let err = bridge
-            .call_tool("read_file".to_string(), json!({"path": "x"}))
+            .call_tool("read_file".to_string(), json!({"path": "x"}), None)
             .await
             .expect_err("an explicit ask must not be silently allowed");
 
@@ -208,6 +369,7 @@ mod tests {
             .call_tool(
                 "write_file".to_string(),
                 json!({"path": "x.txt", "content": "hi"}),
+                None,
             )
             .await
             .expect_err("there is no prompt path from a plugin call");
@@ -230,7 +392,7 @@ mod tests {
         );
 
         let result = bridge
-            .call_tool("read_file".to_string(), json!({"path": "note.txt"}))
+            .call_tool("read_file".to_string(), json!({"path": "note.txt"}), None)
             .await;
 
         assert!(
@@ -248,7 +410,7 @@ mod tests {
         });
 
         let err = bridge
-            .call_tool("read_file".to_string(), json!({"path": "note.txt"}))
+            .call_tool("read_file".to_string(), json!({"path": "note.txt"}), None)
             .await
             .expect_err("an explicit deny is absolute");
 

@@ -98,6 +98,16 @@ impl IsolationRegistry {
             Some(claim) => claim.exempt.contains(tool),
         }
     }
+
+    /// Whether any session currently claims isolation.
+    ///
+    /// For callers that execute host-touching tools without knowing which
+    /// session they act for — `cru.tools.call` is the case — where "some
+    /// session is sandboxed" has to be enough to refuse, because the caller
+    /// cannot prove it is not that one.
+    pub fn any_claim(&self) -> bool {
+        self.claims.lock().map(|g| !g.is_empty()).unwrap_or(false)
+    }
 }
 
 /// Register `crucible.require_isolation` on the plugin runtime.

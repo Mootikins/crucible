@@ -492,6 +492,7 @@ async fn test_tools_bridge_call_tool_routes_correctly() {
         .call_tool(
             "read_file".to_string(),
             serde_json::json!({ "path": test_file.to_string_lossy() }),
+            None,
         )
         .await;
 
