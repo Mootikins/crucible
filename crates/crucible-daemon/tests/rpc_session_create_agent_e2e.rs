@@ -94,6 +94,7 @@ fn base_params(agent_type: &str) -> SessionCreateParams {
         recording_mode: None,
         recording_path: None,
         agent_type: Some(agent_type.to_string()),
+        isolation: None,
     }
 }
 

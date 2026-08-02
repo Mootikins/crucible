@@ -106,6 +106,7 @@ async fn create_kilnless_session(client: &DaemonClient) -> serde_json::Value {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("kiln-less session_create failed")

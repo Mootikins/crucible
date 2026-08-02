@@ -1067,6 +1067,7 @@ mod tests {
                 recording_mode: None,
                 recording_path: None,
                 agent_type: None,
+                isolation: None,
             })
             .await
             .unwrap();
@@ -1103,6 +1104,7 @@ mod tests {
                 recording_mode: None,
                 recording_path: None,
                 agent_type: None,
+                isolation: None,
             })
             .await
             .unwrap();
@@ -1133,6 +1135,7 @@ mod tests {
                 recording_mode: None,
                 recording_path: None,
                 agent_type: None,
+                isolation: None,
             })
             .await
             .unwrap();
@@ -1162,6 +1165,7 @@ mod tests {
                 recording_mode: None,
                 recording_path: None,
                 agent_type: None,
+                isolation: None,
             })
             .await
             .unwrap();
@@ -1190,6 +1194,7 @@ mod tests {
                 recording_mode: None,
                 recording_path: None,
                 agent_type: None,
+                isolation: None,
             })
             .await
             .unwrap();

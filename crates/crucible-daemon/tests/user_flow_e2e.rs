@@ -176,6 +176,7 @@ async fn test_complete_user_flow() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session.create failed");
@@ -388,6 +389,7 @@ async fn test_user_flow_session_list_reflects_state() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session.create failed");

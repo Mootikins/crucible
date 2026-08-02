@@ -38,6 +38,16 @@ pub(crate) async fn handle_session_create(
 
     let workspace = optional_param!(req, "workspace", as_str).map(PathBuf::from);
 
+    // Forwarded untouched: `false`, a profile name and an environment object
+    // are the isolating plugin's vocabulary, not the daemon's. Cloned rather
+    // than parsed so a shape the daemon has never heard of still reaches the
+    // plugin that defined it. Absent stays absent — see `Session::isolation`.
+    let isolation = req
+        .params
+        .get("isolation")
+        .filter(|v| !v.is_null())
+        .cloned();
+
     let provider_trust_level = resolve_provider_trust_level_for_create(&req, llm_config);
     let classification = resolve_kiln_classification_for_create(&kiln, workspace.as_ref());
     if let Some(classification) = classification {
@@ -113,6 +123,19 @@ pub(crate) async fn handle_session_create(
         .await
     {
         Ok(mut session) => {
+            // Persisted before anything else can observe the session: the
+            // plugin start hooks that read it fire once this handler returns
+            // (`SessionLifecycle::enforce_session_start`), and a resume reads
+            // it back off disk. A second write rather than a `create_session`
+            // argument keeps the isolation opt-in out of ~90 unrelated call
+            // sites, and only happens when the caller asked for it.
+            if let Some(isolation) = isolation {
+                session.isolation = Some(isolation);
+                if let Err(e) = sm.update_session(&session).await {
+                    return internal_error(req.id, e);
+                }
+            }
+
             // Configure the resolved agent as part of create so the session is
             // usable immediately (no follow-up `session.configure_agent`
             // round-trip) and the setup task's `session_initialized` event can

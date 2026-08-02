@@ -139,6 +139,12 @@ struct CreateSessionRequest {
     agent_type: Option<String>,
     /// ACP agent profile name (e.g. "claude", "opencode"); required when agent_type == "acp"
     agent_name: Option<String>,
+    /// Isolation override: absent → resolve normally; `false` → no container
+    /// even if the project has one; `true`, a profile name or an environment
+    /// object → override. Forwarded to the daemon untouched — the vocabulary
+    /// belongs to the plugin that resolves it, and an unknown profile comes
+    /// back as `-32602`, which `map_create_error` already turns into a 422.
+    isolation: Option<serde_json::Value>,
 }
 
 fn default_session_type() -> String {
@@ -252,6 +258,7 @@ async fn create_session(
         recording_mode: None,
         recording_path: None,
         agent_type: req.agent_type.clone(),
+        isolation: req.isolation.clone(),
     };
 
     let result = state

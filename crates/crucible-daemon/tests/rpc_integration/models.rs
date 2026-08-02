@@ -25,6 +25,7 @@ async fn test_session_switch_model() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");
@@ -114,6 +115,7 @@ async fn test_daemon_agent_handle_switch_model() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");
@@ -212,6 +214,7 @@ async fn test_session_set_mode_round_trip() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");
@@ -324,6 +327,7 @@ async fn test_daemon_agent_handle_set_mode_reaches_daemon() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");

@@ -104,6 +104,7 @@ impl AgentHandle for DaemonAgentHandle {
                 recording_mode: None,
                 recording_path: None,
                 agent_type: None,
+                isolation: None,
             })
             .await
             .chat_comm()?;

@@ -34,6 +34,15 @@ pub struct SessionCreateRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_type: Option<String>,
 
+    /// Isolation override, forwarded untouched to the plugin that resolves it:
+    /// `false` (no container even if the project has one), `true` (the default
+    /// profile), a profile name, or an environment object. Untyped on purpose
+    /// — the vocabulary belongs to the isolating plugin, not to this client.
+    /// Absent must stay absent: it means "resolve normally", which is a
+    /// different instruction from `false`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub isolation: Option<serde_json::Value>,
+
     /// When true, the daemon resolves and configures the session's agent as
     /// part of create (ACP profile for `agent_type == "acp"`, otherwise
     /// config-derived internal defaults), and returns the resolved model in
@@ -72,6 +81,9 @@ pub struct SessionCreateParams {
     pub recording_path: Option<PathBuf>,
     /// "acp" | "internal"; None treated as "internal" for back-compat.
     pub agent_type: Option<String>,
+    /// Isolation override; see [`SessionCreateRequest::isolation`]. `None`
+    /// (the overwhelmingly common case) omits the field entirely.
+    pub isolation: Option<serde_json::Value>,
 }
 
 /// Optional agent spec for `session.create` that asks the daemon to resolve and
@@ -118,6 +130,7 @@ fn build_create_request(
             .recording_path
             .map(|p| p.to_string_lossy().to_string()),
         agent_type: params.agent_type,
+        isolation: params.isolation,
         configure_agent,
         agent_name: agent.agent_name,
         provider: agent.provider,
@@ -370,6 +383,16 @@ impl DaemonClient {
 
     pub async fn session_get(&self, session_id: &str) -> Result<serde_json::Value> {
         self.session_id_call("session.get", session_id).await
+    }
+
+    /// `session.status` — the status slots plugins published for a session.
+    ///
+    /// Returned as raw JSON (`{"status": [{key, plugin, text, level}, …]}`):
+    /// the slots are keyed so any client renders any plugin's state without
+    /// knowing which plugins exist, and typing them here would be the first
+    /// step toward this client interpreting them.
+    pub async fn session_status(&self, session_id: &str) -> Result<serde_json::Value> {
+        self.session_id_call("session.status", session_id).await
     }
 
     pub async fn session_pause(&self, session_id: &str) -> Result<serde_json::Value> {

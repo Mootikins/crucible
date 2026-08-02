@@ -258,6 +258,7 @@ impl Agent for CrucibleAcpAgent {
                 recording_mode: None,
                 recording_path: None,
                 agent_type: Some("internal".to_string()),
+                isolation: None,
             })
             .await
             .map_err(|e| {

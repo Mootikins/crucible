@@ -86,6 +86,7 @@ async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient)
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");
@@ -320,6 +321,7 @@ async fn test_configure_agent_sets_agent() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");

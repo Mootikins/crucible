@@ -404,6 +404,7 @@ async fn create_new_daemon_session(
             recording_mode: recording_mode.map(|m| m.to_string()),
             recording_path: recording_path.map(|p| p.to_path_buf()),
             agent_type: Some(agent_type.to_string()),
+            isolation: None,
         })
         .await?;
 

@@ -23,6 +23,7 @@ async fn test_session_create_and_list() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");
@@ -72,6 +73,7 @@ async fn test_session_subscribe_and_unsubscribe() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");
@@ -117,6 +119,7 @@ async fn test_daemon_agent_handle_creation() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");
@@ -155,6 +158,7 @@ async fn test_session_configure_agent() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");
@@ -224,6 +228,7 @@ async fn test_session_send_message_returns_message_id() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");
@@ -277,6 +282,7 @@ async fn test_send_message_with_is_interactive_false_accepted() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");
@@ -325,6 +331,7 @@ async fn test_send_message_with_permission_override_accepted() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");
@@ -378,6 +385,7 @@ async fn test_session_cancel() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");

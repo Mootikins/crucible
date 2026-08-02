@@ -48,6 +48,7 @@ async fn test_event_streaming_with_background_reader() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");

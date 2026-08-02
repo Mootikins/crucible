@@ -395,6 +395,7 @@ async fn run_start(config: CliConfig, target: &str, _session: Option<&str>) -> R
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .context("failed to create workflow session")?;

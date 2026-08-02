@@ -129,6 +129,8 @@ pub(super) mod rpc {
                     recording_mode: recording_mode_parsed,
                     recording_path: None,
                     agent_type: Some(agent_type.to_string()),
+
+                    isolation: None,
                 },
                 agent_spec,
             )

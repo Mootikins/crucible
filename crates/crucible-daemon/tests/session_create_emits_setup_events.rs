@@ -167,6 +167,7 @@ async fn session_create_emits_setup_events_for_internal_agent() {
             recording_mode: None,
             recording_path: None,
             agent_type: Some("internal".to_string()),
+            isolation: None,
         })
         .await
         .expect("session_create failed");
@@ -264,6 +265,7 @@ async fn session_create_omits_llm_events_for_acp_agent() {
             recording_mode: None,
             recording_path: None,
             agent_type: Some("acp".to_string()),
+            isolation: None,
         })
         .await
         .expect("session_create failed");

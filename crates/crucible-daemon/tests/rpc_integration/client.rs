@@ -45,6 +45,7 @@ async fn test_interaction_event_flows_to_receiver() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");

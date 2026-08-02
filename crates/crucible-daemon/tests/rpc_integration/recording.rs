@@ -24,6 +24,7 @@ async fn test_session_create_with_granular_recording_mode() {
             recording_mode: Some("granular".to_string()),
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create with recording_mode failed");
@@ -61,6 +62,7 @@ async fn test_session_create_with_no_recording_mode() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create without recording_mode failed");
@@ -126,6 +128,7 @@ async fn test_recording_footer_regression_drop_ends_session() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");

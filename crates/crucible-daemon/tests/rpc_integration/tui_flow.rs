@@ -24,6 +24,7 @@ async fn test_tui_sessions_command_flow() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create 1 failed");
@@ -38,6 +39,7 @@ async fn test_tui_sessions_command_flow() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create 2 failed");
@@ -87,6 +89,7 @@ async fn test_tui_resume_command_flow() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");
@@ -135,6 +138,7 @@ async fn test_tui_daemon_agent_full_flow() {
             recording_mode: None,
             recording_path: None,
             agent_type: None,
+            isolation: None,
         })
         .await
         .expect("session_create failed");
