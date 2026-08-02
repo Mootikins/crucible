@@ -711,6 +711,20 @@ impl DaemonClient {
             .unwrap_or_default())
     }
 
+    /// What plugins published about themselves, as `key -> plugin -> value`.
+    ///
+    /// Values are opaque: the client passes them through so a contribution kind
+    /// added later needs no change here.
+    pub async fn plugin_publications(&self) -> Result<serde_json::Value> {
+        let result: serde_json::Value = self
+            .typed_call("plugin.publications", EmptyParams {})
+            .await?;
+        Ok(result
+            .get("publications")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})))
+    }
+
     /// Commands declared by loaded plugins: `plugin`, `name`, `description`,
     /// `hint`, `parameters`. Served from the daemon so TUI and web show the
     /// same slash-command set.

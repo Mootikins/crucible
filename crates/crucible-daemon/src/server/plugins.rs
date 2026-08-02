@@ -107,6 +107,38 @@ pub(crate) async fn handle_session_status(
     Response::success(req.id, serde_json::json!({ "status": status }))
 }
 
+/// `plugin.publications` — what plugins published about themselves.
+///
+/// Generic by construction: values are whatever the plugin published, and this
+/// handler never inspects them. `key` filters to one contribution kind; without
+/// it, everything is returned.
+///
+/// This is the seam that keeps plugin config out of clients. The web learned
+/// which isolation profiles a box offered by matching on the shape of raw
+/// `[plugins.*]` TOML, which put one plugin's config schema in the rendering
+/// layer and made a second plugin answering the same question invisible.
+pub(crate) async fn handle_plugin_publications(
+    req: Request,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+) -> Response {
+    let key = req.params.get("key").and_then(|v| v.as_str());
+    let loader_guard = plugin_loader.lock().await;
+    let Some(loader) = loader_guard.as_ref() else {
+        return Response::success(req.id, serde_json::json!({ "publications": {} }));
+    };
+    let registry = loader.publications();
+
+    let publications = match key {
+        Some(key) => {
+            let by_plugin: serde_json::Map<String, serde_json::Value> =
+                registry.get(key).into_iter().collect();
+            serde_json::json!({ key: by_plugin })
+        }
+        None => serde_json::to_value(registry.all()).unwrap_or_else(|_| serde_json::json!({})),
+    };
+    Response::success(req.id, serde_json::json!({ "publications": publications }))
+}
+
 pub(crate) async fn handle_plugin_commands(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,

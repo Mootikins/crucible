@@ -72,6 +72,7 @@ pub mod notify;
 mod oil;
 mod paths;
 pub mod plugin_status;
+pub mod publications;
 mod ratelimit;
 mod registry;
 pub mod schedule;
@@ -216,3 +217,4 @@ pub use tools_api::{register_tools_module, register_tools_module_with_api, Daemo
 
 pub use isolation::{register_isolation_module, IsolationClaim, IsolationRegistry};
 pub use plugin_status::{register_status_module, StatusEntry, StatusRegistry};
+pub use publications::{register_publish_module, PublicationRegistry};

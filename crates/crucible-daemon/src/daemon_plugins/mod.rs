@@ -14,13 +14,13 @@ use crucible_core::storage::PropertyStore;
 use crucible_lua::{
     register_context_attach, register_context_module, register_context_validators,
     register_crucible_on_api, register_graph_module, register_isolation_module, register_oq_module,
-    register_paths_module, register_schedule_module, register_sessions_module,
-    register_sessions_module_with_api, register_shell_module, register_status_module,
-    register_storage_module, register_storage_module_with_store, register_tools_module,
-    register_tools_module_with_api, register_vault_module, register_ws_module,
-    ContextAttachRegistry, DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor,
-    LuaScriptHandlerRegistry, LuaValidatorRegistry, PathsContext, PluginManager, PluginSource,
-    PluginSpec, ShellPolicy, StatusRegistry,
+    register_paths_module, register_publish_module, register_schedule_module,
+    register_sessions_module, register_sessions_module_with_api, register_shell_module,
+    register_status_module, register_storage_module, register_storage_module_with_store,
+    register_tools_module, register_tools_module_with_api, register_vault_module,
+    register_ws_module, ContextAttachRegistry, DaemonSessionApi, DaemonToolsApi, IsolationRegistry,
+    LuaExecutor, LuaScriptHandlerRegistry, LuaValidatorRegistry, PathsContext, PluginManager,
+    PluginSource, PluginSpec, PublicationRegistry, ShellPolicy, StatusRegistry,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -95,6 +95,14 @@ pub struct DaemonPluginLoader {
     isolation: IsolationRegistry,
     /// Per-session status slots published by plugins, read by TUI and web.
     status: StatusRegistry,
+    /// Data plugins published about themselves, read by TUI and web.
+    ///
+    /// The generic contribution channel. Without it a client wanting to know
+    /// what a plugin offers had to read the plugin's own config section and
+    /// match on its shape — which put one plugin's config schema in the
+    /// rendering layer and left a second plugin answering the same question
+    /// invisible.
+    publications: PublicationRegistry,
 }
 
 impl DaemonPluginLoader {
@@ -182,6 +190,11 @@ impl DaemonPluginLoader {
             ),
         )?;
 
+        // `crucible.publish` — what a plugin states about itself, for clients
+        // to render. Rebound per plugin at execute time so the publishing
+        // plugin is recorded by the loader rather than claimed by the caller.
+        let publications = PublicationRegistry::new();
+
         let handler_registry = Arc::new(LuaScriptHandlerRegistry::new());
         reg(
             "crucible.on",
@@ -203,6 +216,7 @@ impl DaemonPluginLoader {
             plugin_registry: Arc::new(PluginRegistry::new()),
             isolation,
             status,
+            publications,
         })
     }
 
@@ -227,6 +241,11 @@ impl DaemonPluginLoader {
     /// Per-session status slots published by plugins, for the RPC layer.
     pub fn status(&self) -> StatusRegistry {
         self.status.clone()
+    }
+
+    /// What plugins published about themselves, for the RPC layer.
+    pub fn publications(&self) -> PublicationRegistry {
+        self.publications.clone()
     }
 
     /// Register `cru.context.attach` on the plugin VM against the daemon's
@@ -687,6 +706,21 @@ end
             .to_string_lossy()
             .replace('\\', "\\\\")
             .replace('"', "\\\"");
+        // Rebind `crucible.publish` to THIS plugin before its body runs.
+        //
+        // One Lua VM serves every plugin, so a single global binding would
+        // attribute whatever it stored to whichever plugin the closure happened
+        // to be built for. Taking the name from an argument instead would let a
+        // plugin publish under another's name — attribution nothing could
+        // trust. The loader knows who it is about to execute; it says so.
+        self.publications.release_plugin(name);
+        register_publish_module(
+            lua,
+            &lua.globals().get::<mlua::Table>("crucible")?,
+            self.publications.clone(),
+            name.to_string(),
+        )?;
+
         let setup_code = format!(
             r#"
 local entry = "{}/?.lua"
