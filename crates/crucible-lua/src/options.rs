@@ -268,19 +268,27 @@ fn describe_node(
     // `values` is the reason fields may be functions at all: the choices are a
     // property of this box, not of the plugin's source.
     if let Some(Value::Table(values)) = evaluate(node, "values", &info) {
-        let mut choices = Vec::new();
-        for pair in values.pairs::<Value, Value>().flatten() {
-            let (k, v) = pair;
-            let key = lua_to_json(&k).unwrap_or(serde_json::Value::Null);
-            let label = lua_to_json(&v).unwrap_or(serde_json::Value::Null);
-            // Array form (`{"podman", "docker"}`) means value == label.
-            let (value, label) = match key {
-                serde_json::Value::Number(_) => (label.clone(), label),
-                other => (other, label),
-            };
-            choices.push(serde_json::json!({ "value": value, "label": label }));
+        // Array form (`{"podman", "docker"}`) means value == label, and its
+        // order is the plugin's own — oci lists runtimes in the order it will
+        // actually try them, which sorting alphabetically would misreport as a
+        // preference it does not have. Only the hash form needs sorting, and
+        // only because Lua's `pairs` order is unspecified.
+        let mut choices: Vec<serde_json::Value> = Vec::new();
+        let mut sequence: Vec<serde_json::Value> = Vec::new();
+        for value in values.sequence_values::<Value>().flatten() {
+            let label = lua_to_json(&value).unwrap_or(serde_json::Value::Null);
+            sequence.push(serde_json::json!({ "value": label, "label": label }));
         }
-        choices.sort_by(|a, b| a["label"].to_string().cmp(&b["label"].to_string()));
+        if sequence.is_empty() {
+            for (k, v) in values.pairs::<Value, Value>().flatten() {
+                let key = lua_to_json(&k).unwrap_or(serde_json::Value::Null);
+                let label = lua_to_json(&v).unwrap_or(serde_json::Value::Null);
+                choices.push(serde_json::json!({ "value": key, "label": label }));
+            }
+            choices.sort_by(|a, b| a["label"].to_string().cmp(&b["label"].to_string()));
+        } else {
+            choices = sequence;
+        }
         out.insert("values".into(), serde_json::json!(choices));
     }
 
@@ -376,7 +384,10 @@ pub fn register_options_module(
     plugin: String,
 ) -> LuaResult<()> {
     let options = lua.create_function(move |lua, tree: Table| {
-        if tree.get::<Value>("args").is_err() {
+        // `matches!`, not `is_err()`: mlua answers a MISSING key with
+        // `Ok(Value::Nil)`, so the error below could never fire and a root with
+        // no `args` at all was accepted and registered.
+        if !matches!(tree.get::<Value>("args"), Ok(Value::Table(_))) {
             return Err(mlua::Error::runtime(
                 "crucible.options: the root must be a group with an `args` table",
             ));
@@ -561,6 +572,59 @@ mod tests {
             )
             .expect_err("an option declaring `set = false` is read-only");
         assert!(err.contains("read-only"), "{err}");
+    }
+
+    /// Array-form choices keep the plugin's order; hash-form ones are sorted,
+    /// because Lua's `pairs` order is unspecified and a settings pane must not
+    /// reshuffle between reads.
+    #[test]
+    fn array_choices_keep_their_declared_order_and_hash_choices_are_sorted() {
+        let (_lua, reg) = registry_with(
+            r#"
+            crucible.options{
+              type = "group",
+              args = {
+                runtime = { type = "select", name = "Runtime", order = 1,
+                            values = function() return { "podman", "docker", "nerdctl" } end },
+                level   = { type = "select", name = "Level", order = 2,
+                            values = { warn = "Warn", debug = "Debug" } },
+              },
+            }
+            "#,
+        );
+        let described = reg.describe("oci", "web").unwrap();
+        let labels = |node: &serde_json::Value| -> Vec<String> {
+            node["values"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| c["label"].as_str().unwrap().to_string())
+                .collect()
+        };
+        assert_eq!(
+            labels(&described["args"][0]),
+            vec!["podman", "docker", "nerdctl"],
+            "detection order is the plugin's statement, not something to alphabetise"
+        );
+        assert_eq!(labels(&described["args"][1]), vec!["Debug", "Warn"]);
+    }
+
+    /// The root check used `is_err()`, but mlua answers a missing key with
+    /// `Ok(Nil)` — so the error it promised could never fire.
+    #[test]
+    fn a_root_without_an_args_table_is_refused() {
+        let lua = Lua::new();
+        let crucible = lua.create_table().unwrap();
+        let reg = OptionsRegistry::new();
+        register_options_module(&lua, &crucible, reg.clone(), "oci".to_string()).unwrap();
+        lua.globals().set("crucible", crucible).unwrap();
+
+        let err = lua
+            .load(r#"crucible.options{ type = "group", name = "X" }"#)
+            .exec()
+            .expect_err("a root with no args table must be refused");
+        assert!(err.to_string().contains("args"), "{err}");
+        assert!(reg.plugins().is_empty(), "and nothing may be registered");
     }
 
     #[test]

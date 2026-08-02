@@ -31,11 +31,13 @@
 //!     print(t.name, t.description)
 //! end
 //!
-//! -- Call multiple tools in parallel
+//! -- Call multiple tools in parallel. `opts.session` states which session the
+//! -- calls are for, exactly as `call` does — an isolating daemon needs it to
+//! -- decide whether that session is sandboxed.
 //! local results, err = cru.tools.batch({
 //!     { tool = "read_file", args = { path = "Cargo.toml" } },
 //!     { tool = "glob", args = { pattern = "**/*.rs" } },
-//! })
+//! }, { session = ctx.session_id })
 //! -- results[1] = { result = "...", err = nil }
 //! -- results[2] = { result = "...", err = nil }
 //! ```
@@ -105,7 +107,7 @@ pub fn register_tools_module(lua: &Lua) -> Result<(), LuaError> {
 
     stub_async!("call", lua, tools, (String, mlua::Value, mlua::Value));
     stub_async!("list", lua, tools, ());
-    stub_async!("batch", lua, tools, mlua::Value);
+    stub_async!("batch", lua, tools, (mlua::Value, mlua::Value));
 
     register_in_namespaces(lua, "tools", tools)?;
 
@@ -189,16 +191,24 @@ pub fn register_tools_module_with_api(
     })?;
     tools.set("list", list_fn)?;
 
-    // batch(calls_array) -> (results_array, nil) or (nil, err)
+    // batch(calls_array[, opts]) -> (results_array, nil) or (nil, err)
     //
     // calls_array = { { tool = "read_file", args = { path = "..." } }, ... }
     // results_array = { { result = ..., err = nil }, { result = nil, err = "..." }, ... }
     //
     // Calls are executed concurrently via futures::join_all.
     let a = Arc::clone(&api);
-    let batch_fn = lua.create_async_function(move |lua, calls: Value| {
+    let batch_fn = lua.create_async_function(move |lua, (calls, opts): (Value, Value)| {
         let a = Arc::clone(&a);
         async move {
+            // Same `opts.session` as `call`. Without it every batch was
+            // "session not stated", which an isolating implementation must
+            // refuse — leaving a sandboxed plugin an error telling it to pass
+            // a session through a parameter that did not exist.
+            let session = match &opts {
+                Value::Table(t) => t.get::<Option<String>>("session").ok().flatten(),
+                _ => None,
+            };
             let calls_table = match calls {
                 Value::Table(t) => t,
                 _ => {
@@ -252,8 +262,9 @@ pub fn register_tools_module_with_api(
                 .into_iter()
                 .map(|(name, args)| {
                     let a = Arc::clone(&a);
+                    let session = session.clone();
                     async move {
-                        let result = a.call_tool(name.clone(), args, None).await;
+                        let result = a.call_tool(name.clone(), args, session).await;
                         (name, result)
                     }
                 })
@@ -368,12 +379,15 @@ mod api_tests {
     /// Mock implementation of DaemonToolsApi for testing.
     struct MockToolsApi {
         call_count: AtomicUsize,
+        /// What each call stated as its session, in call order.
+        sessions: std::sync::Mutex<Vec<Option<String>>>,
     }
 
     impl MockToolsApi {
         fn new() -> Self {
             Self {
                 call_count: AtomicUsize::new(0),
+                sessions: std::sync::Mutex::new(Vec::new()),
             }
         }
     }
@@ -383,9 +397,10 @@ mod api_tests {
             &self,
             name: String,
             args: serde_json::Value,
-            _session: Option<String>,
+            session: Option<String>,
         ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
             self.call_count.fetch_add(1, Ordering::SeqCst);
+            self.sessions.lock().unwrap().push(session);
             Box::pin(async move {
                 match name.as_str() {
                     "read_file" => {
@@ -582,6 +597,52 @@ mod api_tests {
         let second: Table = result.get(2).unwrap();
         let err_str: String = second.get("err").unwrap();
         assert!(err_str.contains("Unknown tool"));
+    }
+
+    /// `batch` hardcoded `None`, so every batched call read as "session not
+    /// stated" — which an isolating daemon must refuse. A sandboxed plugin got
+    /// an error telling it to pass a session through a parameter `batch` did
+    /// not have, and no way to comply.
+    #[tokio::test]
+    async fn tools_batch_forwards_the_session_to_every_call() {
+        let mock = Arc::new(MockToolsApi::new());
+        let api: Arc<dyn DaemonToolsApi> = mock.clone();
+        let lua = TestLuaBuilder::new().with_tools_api(api).build();
+
+        lua.load(
+            r#"
+            local _, err = cru.tools.batch({
+                { tool = "read_file", args = { path = "a" } },
+                { tool = "glob" },
+            }, { session = "s-sandboxed" })
+            assert(err == nil, "unexpected error: " .. tostring(err))
+            "#,
+        )
+        .exec_async()
+        .await
+        .unwrap();
+
+        let seen = mock.sessions.lock().unwrap().clone();
+        assert_eq!(seen.len(), 2);
+        assert!(
+            seen.iter().all(|s| s.as_deref() == Some("s-sandboxed")),
+            "every call in the batch must carry the stated session, got {seen:?}"
+        );
+    }
+
+    /// ...and omitting it still means "not stated", rather than inventing one.
+    #[tokio::test]
+    async fn tools_batch_without_opts_states_no_session() {
+        let mock = Arc::new(MockToolsApi::new());
+        let api: Arc<dyn DaemonToolsApi> = mock.clone();
+        let lua = TestLuaBuilder::new().with_tools_api(api).build();
+
+        lua.load(r#"cru.tools.batch({ { tool = "glob" } })"#)
+            .exec_async()
+            .await
+            .unwrap();
+
+        assert_eq!(mock.sessions.lock().unwrap().clone(), vec![None]);
     }
 
     #[tokio::test]

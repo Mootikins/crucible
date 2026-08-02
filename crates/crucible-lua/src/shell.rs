@@ -164,6 +164,11 @@ pub async fn spawn_command(
     }
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
+    // The timeout below drops the pump future while the child is still running.
+    // Without this the process outlives the call — a `podman build` that
+    // overran its timeout would keep building for the daemon's lifetime, with
+    // nothing left holding a handle to stop it.
+    command.kill_on_drop(true);
 
     let mut child = command
         .spawn()
@@ -221,12 +226,18 @@ pub async fn spawn_command(
         }
     };
 
-    tokio::time::timeout(timeout, pump).await.map_err(|_| {
-        LuaError::Runtime(format!(
+    let outcome = tokio::time::timeout(timeout, pump).await;
+    if outcome.is_err() {
+        // `kill_on_drop` alone reaps only when the handle drops, which is at the
+        // end of this scope; killing here stops the work at the deadline the
+        // caller asked for rather than whenever the error finishes unwinding.
+        let _ = child.start_kill();
+        return Err(LuaError::Runtime(format!(
             "Command '{}' timed out after {} seconds",
             cmd, policy.timeout_secs
-        ))
-    })??;
+        )));
+    }
+    outcome.expect("checked above")?;
 
     let status = child
         .wait()
