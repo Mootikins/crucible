@@ -13,8 +13,26 @@ use mlua::{Lua, Result as LuaResult, Table};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+/// How far along a slot's work is, when it is work rather than a state.
+///
+/// Modelled on LSP `$/progress`, where the server reports and the *client*
+/// decides how to render — a spinner, a bar, a toast. The slot key is already
+/// the token there, so `set_status` is begin-and-report and `clear_status` is
+/// end; no new lifecycle is needed.
+///
+/// Both cases are real and neither substitutes for the other: an image pull
+/// knows its fraction, an image build does not, and reporting a fake fraction
+/// for the second is worse than admitting it is unknown.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Progress {
+    /// Work is underway with no meaningful fraction — render a spinner.
+    Indeterminate,
+    /// Fraction complete, clamped to 0.0..=1.0.
+    Fraction(f64),
+}
+
 /// One status slot.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct StatusEntry {
     /// Plugin that set it, so a stale slot can be attributed and cleared.
     pub plugin: String,
@@ -22,6 +40,10 @@ pub struct StatusEntry {
     pub text: String,
     /// Severity, for the renderer to style. `info` unless stated.
     pub level: String,
+    /// Progress of the work this slot describes, if it is work at all.
+    ///
+    /// `None` is a state ("sandboxed: alpine"), not a stalled bar.
+    pub progress: Option<Progress>,
 }
 
 /// Status slots per session, keyed within a session.
@@ -111,6 +133,15 @@ pub fn register_status_module(
             .map_err(|_| mlua::Error::runtime("crucible.set_status: `text` is required"))?;
         let plugin: String = opts.get("plugin").unwrap_or_else(|_| "unknown".to_string());
         let level: String = opts.get("level").unwrap_or_else(|_| "info".to_string());
+        // `progress = true` is indeterminate; a number is a fraction. Out of
+        // range is clamped rather than refused: a plugin miscounting steps
+        // should show a full bar, not fail the operation it is reporting on.
+        let progress = match opts.get::<mlua::Value>("progress") {
+            Ok(mlua::Value::Boolean(true)) => Some(Progress::Indeterminate),
+            Ok(mlua::Value::Number(n)) => Some(Progress::Fraction(n.clamp(0.0, 1.0))),
+            Ok(mlua::Value::Integer(n)) => Some(Progress::Fraction((n as f64).clamp(0.0, 1.0))),
+            _ => None,
+        };
 
         set_registry.set(
             &session,
@@ -119,6 +150,7 @@ pub fn register_status_module(
                 plugin,
                 text,
                 level,
+                progress,
             },
         );
         Ok(())
@@ -149,7 +181,67 @@ mod tests {
             plugin: "oci".to_string(),
             text: text.to_string(),
             level: "info".to_string(),
+            progress: None,
         }
+    }
+
+    fn lua_with_status(reg: StatusRegistry) -> Lua {
+        let lua = Lua::new();
+        let crucible = lua.create_table().unwrap();
+        register_status_module(&lua, &crucible, reg).unwrap();
+        lua.globals().set("crucible", crucible).unwrap();
+        lua
+    }
+
+    /// A slot describing work that takes minutes — an image build — is the
+    /// case the status API could not express: it could say "building" and then
+    /// nothing until it finished.
+    #[test]
+    fn a_slot_can_report_an_indeterminate_or_fractional_progress() {
+        let reg = StatusRegistry::new();
+        let lua = lua_with_status(reg.clone());
+
+        lua.load(
+            r#"crucible.set_status{ session="s1", key="build", text="building", progress=true }"#,
+        )
+        .exec()
+        .unwrap();
+        assert_eq!(reg.get("s1")[0].1.progress, Some(Progress::Indeterminate));
+
+        lua.load(
+            r#"crucible.set_status{ session="s1", key="build", text="pulling", progress=0.25 }"#,
+        )
+        .exec()
+        .unwrap();
+        assert_eq!(reg.get("s1")[0].1.progress, Some(Progress::Fraction(0.25)));
+    }
+
+    /// A state is not stalled work; omitting progress must not render a bar.
+    #[test]
+    fn a_slot_without_progress_reports_none() {
+        let reg = StatusRegistry::new();
+        let lua = lua_with_status(reg.clone());
+        lua.load(r#"crucible.set_status{ session="s1", key="oci", text="sandboxed: alpine" }"#)
+            .exec()
+            .unwrap();
+        assert_eq!(reg.get("s1")[0].1.progress, None);
+    }
+
+    /// A plugin miscounting its steps should show a full bar, not fail the
+    /// operation it is reporting on.
+    #[test]
+    fn an_out_of_range_fraction_is_clamped_rather_than_refused() {
+        let reg = StatusRegistry::new();
+        let lua = lua_with_status(reg.clone());
+        lua.load(r#"crucible.set_status{ session="s1", key="k", text="t", progress=4.2 }"#)
+            .exec()
+            .unwrap();
+        assert_eq!(reg.get("s1")[0].1.progress, Some(Progress::Fraction(1.0)));
+
+        lua.load(r#"crucible.set_status{ session="s1", key="k", text="t", progress=-1 }"#)
+            .exec()
+            .unwrap();
+        assert_eq!(reg.get("s1")[0].1.progress, Some(Progress::Fraction(0.0)));
     }
 
     #[test]

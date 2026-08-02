@@ -216,5 +216,5 @@ pub use sessions::{
 pub use tools_api::{register_tools_module, register_tools_module_with_api, DaemonToolsApi};
 
 pub use isolation::{register_isolation_module, IsolationClaim, IsolationRegistry};
-pub use plugin_status::{register_status_module, StatusEntry, StatusRegistry};
+pub use plugin_status::{register_status_module, Progress, StatusEntry, StatusRegistry};
 pub use publications::{register_publish_module, PublicationRegistry};

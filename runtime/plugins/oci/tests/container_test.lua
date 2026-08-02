@@ -31,6 +31,12 @@ local function with_exec(fn)
       table.insert(calls, { cmd = cmd, args = args, opts = opts })
       return { success = true, exit_code = 0, stdout = "", stderr = "" }
     end,
+    -- Recorded the same way, so a test can assert which of the two a caller
+    -- chose — `build` streams only when given an `on_progress`.
+    spawn = function(cmd, args, opts)
+      table.insert(calls, { cmd = cmd, args = args, opts = opts, streamed = true })
+      return { success = true, exit_code = 0, stdout = "", stderr = "" }
+    end,
     which = saved and saved.which,
   }
   local ok, err = pcall(fn, calls)

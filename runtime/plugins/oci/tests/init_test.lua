@@ -68,8 +68,20 @@ local function stub_which(name)
   return available[name] and ("/usr/bin/" .. name) or nil
 end
 
+--- `spawn` is `exec` plus line delivery, so scripted responders drive both and
+--- a test can assert on what a streaming caller reported.
+local function stub_spawn(cmd, args, opts)
+  local r = stub_exec(cmd, args, opts)
+  if opts and opts.on_line then
+    for line in (r.stdout or ""):gmatch("[^\n]+") do
+      opts.on_line("stdout", line)
+    end
+  end
+  return r
+end
+
 local function install_shell()
-  cru.shell = { exec = stub_exec, which = stub_which }
+  cru.shell = { exec = stub_exec, spawn = stub_spawn, which = stub_which }
   cru.json = { encode = function(t) return t end }
   cru.log = function() end
 end
@@ -873,6 +885,43 @@ describe("oci devcontainer resolution", function()
       assert.equals("git", call.cmd,
         "a config that could not be honoured reached the container runtime")
     end
+  end)
+
+  -- A build takes minutes. `exec` returns nothing until it is over, so the
+  -- slot said "building <image>" and then went silent — indistinguishable from
+  -- a hang. Streaming is the only thing that fixes that; no status API can
+  -- report what it was never told.
+  it("reports build output as it arrives instead of going silent", function()
+    spec.setup({ image = "built:latest" })
+    local ws = fresh_ws()
+    with_devcontainer(ws, '{ "build": { "dockerfile": "Dockerfile" } }')
+    responders["podman build"] = {
+      success = true, exit_code = 0,
+      stdout = "STEP 1/3: FROM alpine\nSTEP 2/3: RUN apk add git\nSTEP 3/3: COMMIT\n",
+      stderr = "",
+    }
+
+    start_session("dc-build-progress", ws)
+
+    local progressed = {}
+    for _, c in ipairs(status_calls) do
+      if c.progress then progressed[#progressed + 1] = c.text end
+    end
+    assert.truthy(#progressed >= 3,
+      "each build step must reach the status slot; got " .. #progressed)
+    assert.truthy(progressed[1]:find("STEP 1/3", 1, true), progressed[1])
+    assert.truthy(progressed[#progressed]:find("STEP 3/3", 1, true), progressed[#progressed])
+
+    -- A build has no total to count against, so it spins rather than showing
+    -- an invented fraction.
+    for _, c in ipairs(status_calls) do
+      if c.progress then assert.equals(true, c.progress) end
+    end
+
+    -- ...and the terminal slot is the sandbox state, with no progress on it.
+    local final = status_calls[#status_calls]
+    assert.truthy(final.text:find("sandboxed", 1, true), final.text)
+    assert.is_nil(final.progress, "a finished build must not leave a live bar")
   end)
 
   -- HEAD is what runs, but a human who just edited the file and saw nothing

@@ -178,6 +178,17 @@ function M.build(runtime, opts)
   end
 
   table.insert(args, opts.context)
+
+  -- Streamed, not buffered. A build takes minutes and `exec` returns nothing
+  -- until it is over, so the status slot said "building alpine" and then went
+  -- silent — indistinguishable from a hang. `on_progress` receives each line
+  -- so the caller can report what the builder is actually doing.
+  if opts.on_progress then
+    return cru.shell.spawn(runtime, args, {
+      timeout = opts.build_timeout or M.DEFAULT_BUILD_TIMEOUT,
+      on_line = function(_, line) opts.on_progress(line) end,
+    })
+  end
   return cru.shell.exec(runtime, args, {
     timeout = opts.build_timeout or M.DEFAULT_BUILD_TIMEOUT,
   })

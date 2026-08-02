@@ -530,6 +530,16 @@ crucible.on_session_start(function(session)
         text = "building " .. cfg.image, level = "info",
       }
       local b = container.build(runtime, {
+        -- The builder's own output is the only honest progress signal here:
+        -- there is no total to count against, so the slot reports what step it
+        -- is on and spins rather than inventing a fraction.
+        on_progress = function(line)
+          crucible.set_status{
+            session = session.id, key = "oci", plugin = "oci",
+            text = "building " .. cfg.image .. ": " .. line,
+            level = "info", progress = true,
+          }
+        end,
         image = cfg.image, dockerfile = cfg.dockerfile,
         -- A devcontainer's build context is the .devcontainer directory, not
         -- the workspace root; a profile's Dockerfile has always built from the

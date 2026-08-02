@@ -96,11 +96,23 @@ pub(crate) async fn handle_session_status(
     let status: Vec<_> = slots
         .into_iter()
         .map(|(key, e)| {
+            // Progress goes out as a fraction or the string "indeterminate",
+            // and is absent when the slot describes a state rather than work.
+            // Absent must stay distinguishable from 0.0: a bar pinned at zero
+            // reads as stalled, which "sandboxed: alpine" is not.
+            let progress = match e.progress {
+                Some(crucible_lua::Progress::Indeterminate) => {
+                    serde_json::json!("indeterminate")
+                }
+                Some(crucible_lua::Progress::Fraction(f)) => serde_json::json!(f),
+                None => serde_json::Value::Null,
+            };
             serde_json::json!({
                 "key": key,
                 "plugin": e.plugin,
                 "text": e.text,
                 "level": e.level,
+                "progress": progress,
             })
         })
         .collect();
