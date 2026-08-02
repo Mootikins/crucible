@@ -178,3 +178,31 @@ async fn a_delegated_child_inherits_its_parents_isolation() {
          different door"
     );
 }
+
+/// The wiring that makes a delegated child go through the shared lifecycle.
+///
+/// `Server::bind` is the only place `bind_session_lifecycle` is called, and
+/// nothing observes it: unbound, `enforce_child_isolation` stops firing plugin
+/// start hooks and silently reopens the delegation escape — a sandboxed
+/// parent's subagent gets no container and runs every tool on the host, with no
+/// error anywhere. Asserted against a real `Server`, because the value of the
+/// check is entirely that it covers *production* construction.
+#[tokio::test]
+async fn binding_a_server_wires_delegation_to_the_shared_session_lifecycle() {
+    let tmp = TempDir::new().unwrap();
+    let sock = tmp.path().join("lifecycle.sock");
+    // Isolated data home: without it this loads the developer's real
+    // ~/.crucible registry.
+    let server = Server::bind_with_data_home(&sock, tmp.path().to_path_buf())
+        .await
+        .expect("bind");
+
+    assert!(
+        server
+            .agent_manager
+            .delegation_service()
+            .session_lifecycle_bound(),
+        "Server::bind must bind the delegation service to the session lifecycle, \
+         or delegated children fire no plugin start hooks and run unsandboxed"
+    );
+}

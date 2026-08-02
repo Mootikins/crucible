@@ -89,19 +89,30 @@ describe('SessionStatusChips', () => {
     expect(screen.queryByTestId('session-status')).toBeNull();
   });
 
-  it('refetches when the session changes and drops the previous session slots', async () => {
-    setCurrentSession(baseSession('s1'));
-    getSessionStatusMock.mockImplementation(async (id: string) =>
-      id === 's1' ? [{ key: 'a', plugin: 'p', text: 'first', level: 'info' }] : [],
-    );
+  it('drops the previous session slots BEFORE the new fetch resolves', async () => {
+    // The second session's fetch is held open on purpose. Letting it resolve
+    // with `[]` clears the chips on its own, so the assertion passed with the
+    // clear-on-change deleted — it has to be made during the gap, which is the
+    // entire window in which a stale "sandboxed" chip could sit over a session
+    // that is not sandboxed.
+    let releaseSecond: (slots: unknown[]) => void = () => {};
+    getSessionStatusMock.mockImplementation(async (id: string) => {
+      if (id === 's1') return [{ key: 'a', plugin: 'p', text: 'first', level: 'info' }];
+      return new Promise((resolve) => {
+        releaseSecond = resolve as (slots: unknown[]) => void;
+      });
+    });
 
+    setCurrentSession(baseSession('s1'));
     render(() => <SessionStatusChips />);
     await waitFor(() => expect(screen.getByTestId('session-status-a')).toBeInTheDocument());
 
-    // Switching sessions must not leave the old session's chips on screen —
-    // a stale "sandboxed" chip on an unsandboxed session is a lie.
     setCurrentSession(baseSession('s2'));
     await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith('s2'));
-    await waitFor(() => expect(screen.queryByTestId('session-status-a')).toBeNull());
+    expect(screen.queryByTestId('session-status-a')).toBeNull();
+
+    // ...and the in-flight answer still lands when it finally arrives.
+    releaseSecond([{ key: 'b', plugin: 'p', text: 'second', level: 'info' }]);
+    await waitFor(() => expect(screen.getByTestId('session-status-b')).toBeInTheDocument());
   });
 });

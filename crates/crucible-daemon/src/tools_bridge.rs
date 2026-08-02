@@ -77,11 +77,15 @@ impl DaemonToolsBridge {
                     .map(|c| c.plugin)
                     .unwrap_or_else(|| "a plugin".into());
                 Some(format!(
-                    "session {id} is isolated by '{plugin}', so '{name}' may not run on the host                      through cru.tools.call"
+                    "session {id} is isolated by '{plugin}', so '{name}' may not run on the \
+                     host through cru.tools.call"
                 ))
             }
             None if isolation.any_claim() => Some(format!(
-                "'{name}' would run on the host, and this call named no session while at least                  one session is isolated. Pass the session it is for —                  `cru.tools.call(name, args, {{ session = ctx.session_id }})` — so the sandbox                  can be checked"
+                "'{name}' would run on the host, and this call named no session while at \
+                 least one session is isolated. Pass the session it is for — \
+                 `cru.tools.call(name, args, {{ session = ctx.session_id }})` — so the \
+                 sandbox can be checked"
             )),
             None => None,
         }

@@ -134,6 +134,16 @@ impl DelegationService {
         let _ = self.session_lifecycle.set(lifecycle);
     }
 
+    /// Whether [`Self::bind_session_lifecycle`] was called.
+    ///
+    /// Exists for one test: unbound, `enforce_child_isolation` silently stops
+    /// firing plugin start hooks for delegated children, which is the exact
+    /// escape this arc closed — and it degrades quietly, so nothing else fails.
+    #[cfg(test)]
+    pub(crate) fn session_lifecycle_bound(&self) -> bool {
+        self.session_lifecycle.get().is_some()
+    }
+
     fn manager(&self) -> Result<Arc<AgentManager>, JobError> {
         self.agent_manager
             .get()

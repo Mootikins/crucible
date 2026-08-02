@@ -71,3 +71,58 @@ async fn init_lua_user_override_loads_in_session() {
         "user init.lua should have set test_override_loaded = true"
     );
 }
+
+/// `session.isolation` must read the same in a user's `cru.on_session_start`
+/// as in a plugin's `crucible.on_session_start`.
+///
+/// The forwarding into the per-session VM was written but never exercised, so
+/// the field could have silently read `nil` here while working for plugins —
+/// one documented field with two surfaces that disagree, which is worse than
+/// it existing on only one of them.
+#[tokio::test]
+async fn a_session_start_hook_sees_the_sessions_isolation_param() {
+    let tmp = TempDir::new().unwrap();
+    let lua_dir = tmp.path().join(".crucible/lua");
+    std::fs::create_dir_all(&lua_dir).unwrap();
+    std::fs::write(
+        lua_dir.join("init.lua"),
+        r#"
+        cru.on_session_start(function(session)
+          seen_isolation = session.isolation
+          seen_workspace = session.workspace
+        end)
+        "#,
+    )
+    .unwrap();
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let mut session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    // The same second write `session.create` does for the isolation opt-in.
+    session.isolation = Some(serde_json::json!("rust"));
+    session_manager.update_session(&session).await.unwrap();
+
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+    let state = agent_manager.get_or_create_session_state(&session.id);
+    let guard = state.lock().await;
+
+    assert_eq!(
+        guard.lua.globals().get::<String>("seen_isolation").ok(),
+        Some("rust".to_string()),
+        "the isolation param must reach a session's own start hook"
+    );
+    assert_eq!(
+        guard.lua.globals().get::<String>("seen_workspace").ok(),
+        Some(tmp.path().to_string_lossy().into_owned()),
+        "and so must the workspace it is paired with"
+    );
+}
