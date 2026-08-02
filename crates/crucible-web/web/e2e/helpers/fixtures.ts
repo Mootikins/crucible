@@ -62,6 +62,15 @@ export const MOCK_CONFIG = {
   kiln_path: '/home/user/notes',
 };
 
+// What plugins published about themselves, keyed by contribution kind then
+// plugin. The composer reads its isolation offer from here rather than from
+// plugin config, so a second isolating plugin needs no frontend change.
+export const MOCK_PUBLICATIONS = {
+  publications: {
+    isolation: { oci: { available: true, profiles: ['rust', 'throwaway'] } },
+  },
+};
+
 export const MOCK_PROJECT = {
   path: '/home/user/project',
   name: 'project',

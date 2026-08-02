@@ -400,6 +400,13 @@ impl ReconnectingDaemon {
             .await
     }
 
+    pub async fn plugin_publications(&self) -> anyhow::Result<serde_json::Value> {
+        self.call_with_reconnect("plugin.publications", |daemon| {
+            Box::pin(daemon.plugin_publications())
+        })
+        .await
+    }
+
     pub async fn plugin_reload(&self, name: &str) -> anyhow::Result<serde_json::Value> {
         let name = name.to_string();
         self.call_with_reconnect("plugin.reload", move |daemon| {
@@ -871,6 +878,17 @@ impl ReconnectingDaemon {
         self.call_with_reconnect("session.list_models", move |daemon| {
             let session_id = session_id.clone();
             Box::pin(async move { daemon.session_list_models(&session_id).await })
+        })
+        .await
+    }
+
+    /// Plugin status slots for a session, forwarded as the daemon shaped them
+    /// (`{"status": [{key, plugin, text, level}, …]}`).
+    pub async fn session_status(&self, session_id: &str) -> anyhow::Result<serde_json::Value> {
+        let session_id = session_id.to_string();
+        self.call_with_reconnect("session.status", move |daemon| {
+            let session_id = session_id.clone();
+            Box::pin(async move { daemon.session_status(&session_id).await })
         })
         .await
     }

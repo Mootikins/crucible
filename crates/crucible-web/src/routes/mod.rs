@@ -16,6 +16,7 @@ mod search;
 mod session;
 mod session_commands;
 mod session_config;
+mod session_status;
 mod shell;
 mod skills;
 mod terminal;

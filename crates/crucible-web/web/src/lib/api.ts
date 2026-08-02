@@ -22,6 +22,47 @@ export interface Config {
   remote_shell?: boolean;
 }
 
+/**
+ * What plugins published about themselves, as `key -> plugin -> value`.
+ *
+ * The generic contribution channel. Values are opaque here so a contribution
+ * kind added later needs no change in this file — a plugin states what it
+ * offers and clients render it.
+ */
+export type PluginPublications = Record<string, Record<string, unknown>>;
+
+/**
+ * What a box offers for isolating a new session.
+ *
+ * `available` and the profile *names* are the whole contract. Profiles are
+ * opaque strings: the composer lists them and hands the chosen one back on
+ * create, and nothing here knows what a profile selects.
+ *
+ * `available` is deliberately separate from a non-empty `profiles`. Named
+ * profiles are optional — the documented config is a bare image with no
+ * profiles table — so gating the control on profile names hid it exactly
+ * there, leaving no way to opt a session *out* of a project's isolation.
+ */
+export interface IsolationOffer {
+  available: boolean;
+  profiles: string[];
+}
+
+/**
+ * One keyed status slot a plugin published for a session.
+ *
+ * Rendered generically — `key`, `plugin` and `level` stay plain strings rather
+ * than unions on purpose. The moment the frontend enumerates them, a new
+ * plugin needs a frontend change to be visible at all, which is the thing this
+ * channel exists to avoid.
+ */
+export interface SessionStatusSlot {
+  key: string;
+  plugin: string;
+  text: string;
+  level: string;
+}
+
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
 // =============================================================================
@@ -349,6 +390,35 @@ export async function getConfig(): Promise<Config> {
   return request<Config>('GET', '/api/config', { errorMessage: 'Failed to get config' });
 }
 
+/** Everything plugins published, keyed by contribution kind then plugin. */
+export async function getPluginPublications(): Promise<PluginPublications> {
+  const body = await request<{ publications?: PluginPublications }>(
+    'GET',
+    '/api/plugins/publications',
+    { errorMessage: 'Failed to get plugin publications' },
+  );
+  return body.publications ?? {};
+}
+
+/**
+ * The box's isolation offer, merged across every plugin that answered.
+ *
+ * More than one plugin may isolate sessions, so this ORs availability and
+ * unions profile names rather than picking a winner — a second isolating
+ * plugin appears without a change here.
+ */
+export async function getIsolationOffer(): Promise<IsolationOffer> {
+  const answers = (await getPluginPublications()).isolation ?? {};
+  const profiles = new Set<string>();
+  let available = false;
+  for (const value of Object.values(answers)) {
+    const offer = value as Partial<IsolationOffer> | null;
+    if (offer?.available) available = true;
+    for (const name of offer?.profiles ?? []) profiles.add(name);
+  }
+  return { available, profiles: [...profiles].sort() };
+}
+
 // =============================================================================
 // Session Endpoints
 // =============================================================================
@@ -614,6 +684,22 @@ export async function listModels(sessionId: string): Promise<string[]> {
       errorMessage: 'Failed to list models',
     })
   ).models;
+}
+
+/**
+ * The status slots plugins published for a session.
+ *
+ * There is no SSE event for plugin status, so callers fetch on session change
+ * rather than subscribing.
+ */
+export async function getSessionStatus(sessionId: string): Promise<SessionStatusSlot[]> {
+  return (
+    await request<{ status: SessionStatusSlot[] }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionId)}/status`,
+      { errorMessage: 'Failed to load session status' },
+    )
+  ).status;
 }
 
 /** List the modes a session may enter, and the one it is in. */

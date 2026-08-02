@@ -2,6 +2,7 @@ import { Component, Show, createEffect, createSignal, on, onMount } from 'solid-
 import { useSessionSafe } from '@/contexts/SessionContext';
 import {
   getConfig,
+  getIsolationOffer,
   isBranchNameish,
   isGitRepoUrl,
   listAgents,
@@ -13,6 +14,7 @@ import {
   scmBranches,
   scmClone,
   scmWorktreeAdd,
+  type IsolationOffer,
   type ScmBranchesResponse,
 } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
@@ -35,6 +37,7 @@ import {
   GitBranch,
   Monitor,
   Network,
+  Shield,
 } from '@/lib/icons';
 
 /**
@@ -58,12 +61,25 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
   const [defaultKiln, setDefaultKiln] = createSignal('');
   const [defaultModel, setDefaultModel] = createSignal('');
   const [remoteShell, setRemoteShell] = createSignal(false);
+  // What the box offers for isolating a session, published by whichever
+  // plugin(s) provide it. Opaque to this component: it renders the offer and
+  // hands the pick back on create, and never reads plugin config to infer it.
+  const [isolationOffer, setIsolationOffer] = createSignal<IsolationOffer>({
+    available: false,
+    profiles: [],
+  });
+  const profiles = () => isolationOffer().profiles;
 
   // '' = internal agent / default kiln / default model / no project.
   const [agentName, setAgentName] = createSignal('');
   const [kiln, setKiln] = createSignal('');
   const [model, setModel] = createSignal('');
   const [workspace, setWorkspace] = createSignal('');
+  // undefined = untouched (the server resolves normally), false = explicitly
+  // no isolation, true = isolate with the server's default, string = a named
+  // profile. `undefined` and `false` are DIFFERENT instructions, so this is a
+  // three-state control, not a boolean.
+  const [isolation, setIsolation] = createSignal<string | boolean | undefined>(undefined);
 
   const [message, setMessage] = createSignal('');
   const [busy, setBusy] = createSignal(false);
@@ -82,6 +98,9 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
     swrLocal('config', getConfig, (cfg) => {
       if (cfg?.kiln_path) setDefaultKiln(cfg.kiln_path);
       setRemoteShell(cfg?.remote_shell === true);
+    });
+    swrLocal('isolation-offer', getIsolationOffer, (offer) => {
+      if (offer) setIsolationOffer(offer);
     });
     swrLocal('agents', listAgents, setAgents);
     swrLocal('models', () => listAllModels(), (mo) =>
@@ -108,6 +127,9 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
           kiln: kiln() === 'none' ? undefined : kiln() || defaultKiln() || undefined,
           workspace: workspace() || undefined,
           ...(isAcp() ? { agent_type: 'acp', agent_name: agentName() } : {}),
+          // Spread on `!== undefined`, never on truthiness: `false` is an
+          // instruction the server acts on, not a value to drop.
+          ...(isolation() !== undefined ? { isolation: isolation()! } : {}),
         },
         {
           initialMessage: text,
@@ -311,6 +333,32 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
     })),
   ];
 
+  // ---- isolation (toggle + profile select) --------------------------------
+  //
+  // Generic by construction: `profiles` is a list of names from /api/config
+  // and the chosen name goes back on create untouched. Nothing here knows what
+  // a profile selects, or what kind of thing does the isolating — that is the
+  // resolving plugin's business, and keeping it there is what lets a plugin
+  // shipped tomorrow reuse this control unchanged.
+  const isolationOn = () => isolation() !== undefined && isolation() !== false;
+  const isolationProfile = () => (typeof isolation() === 'string' ? (isolation() as string) : '');
+  const toggleIsolation = () => setIsolation(isolationOn() ? false : true);
+
+  const isolationLabel = () => {
+    const value = isolation();
+    if (value === undefined) return 'Isolation';
+    if (value === false) return 'No isolation';
+    return value === true ? 'Isolated' : `Isolated · ${value}`;
+  };
+
+  const isolationOptions = (): ChipOption[] => [
+    { value: '', label: 'Default profile', hint: 'server default', group: 'Profile' },
+    ...profiles().map((p) => ({ value: p, label: p, group: 'Profile' })),
+  ];
+
+  // A profile pick implies "on" — nobody names a profile to then not use it.
+  const pickProfile = (name: string) => setIsolation(name || true);
+
   const modelOptions = (): ChipOption[] => [
     // '' = provider default. No placeholder on the chip, so an unset model
     // reads as the 'Auto' row that is actually selected rather than implying
@@ -452,6 +500,60 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
                 </div>
               }
             />
+            {/* Isolation — a toggle plus whatever profile names were
+                published. Gated on the box OFFERING isolation, not on there
+                being named profiles: the documented config is a bare image
+                with no profiles table, and gating on names hid the control
+                exactly there — leaving no way to opt a session *out*. A
+                control that can only fail is still worse than none, so a box
+                offering nothing shows nothing. */}
+            <Show when={isolationOffer().available}>
+              <ChipSelect
+                name="isolation"
+                icon={Shield}
+                options={isolationOptions()}
+                value={isolationProfile()}
+                triggerLabel={isolationLabel()}
+                onSelect={pickProfile}
+                disabled={busy()}
+                testid="composer-isolation"
+                footer={
+                  <div class="m-1.5 mt-1 rounded-md border border-hairline bg-surface-base p-2.5">
+                    <button
+                      type="button"
+                      onClick={toggleIsolation}
+                      aria-pressed={isolationOn()}
+                      class="w-full flex items-center justify-between gap-2"
+                      data-testid="isolation-toggle"
+                    >
+                      <span class="text-xs font-medium text-shell-ink">Isolate this session</span>
+                      <span
+                        classList={{
+                          'relative inline-block w-7 h-4 rounded-full transition-colors': true,
+                          'bg-primary/60': isolationOn(),
+                          'bg-surface-elevated border border-hairline': !isolationOn(),
+                        }}
+                      >
+                        <span
+                          classList={{
+                            'absolute top-0.5 w-3 h-3 rounded-full bg-shell-ink transition-all': true,
+                            'left-3.5': isolationOn(),
+                            'left-0.5 opacity-50': !isolationOn(),
+                          }}
+                        />
+                      </span>
+                    </button>
+                    <p class="mt-1 text-[11px] leading-snug text-muted-dark">
+                      {isolation() === undefined
+                        ? 'Untouched — this session follows the project’s own setting.'
+                        : isolationOn()
+                          ? 'This session runs in the selected environment.'
+                          : 'This session runs unisolated, even if the project asks otherwise.'}
+                    </p>
+                  </div>
+                }
+              />
+            </Show>
             <ChipSelect
               name="agent"
               // The trigger wears the SELECTED agent's mark, so the chosen

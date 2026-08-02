@@ -5,8 +5,8 @@
 // this replaced drifted (different resume_from_storage shapes).
 #[cfg(any(test, feature = "test-utils"))]
 use crate::routes::{
-    agents_routes, chat_routes, fs_routes, health_routes, project_routes, search_routes,
-    session_routes,
+    agents_routes, chat_routes, config_routes, fs_routes, health_routes, project_routes,
+    search_routes, session_routes,
 };
 #[cfg(any(test, feature = "test-utils"))]
 use crate::services::daemon::{AppState, EventBroker, ReconnectingDaemon};
@@ -127,17 +127,45 @@ pub fn arb_safe_path() -> impl Strategy<Value = String> {
 /// with canned responses. This allows testing HTTP routes without a real daemon.
 pub struct MockDaemon {
     _tmp: TempDir,
-    /// Every JSON-RPC method name the mock received, in order. Lets a test
-    /// assert a call was (or crucially, was NOT) made — e.g. that a validation
-    /// failure short-circuits before `session.create` leaves an orphan session.
-    calls: Arc<std::sync::Mutex<Vec<String>>>,
+    /// Every JSON-RPC request the mock received, in order. Lets a test assert a
+    /// call was (or crucially, was NOT) made — e.g. that a validation failure
+    /// short-circuits before `session.create` leaves an orphan session — and
+    /// what params rode along, for routes whose contract is "forward this
+    /// untouched".
+    calls: Arc<std::sync::Mutex<Vec<Value>>>,
 }
 
 #[cfg(any(test, feature = "test-utils"))]
 impl MockDaemon {
     /// Snapshot of the JSON-RPC method names received so far, in order.
     pub fn received_methods(&self) -> Vec<String> {
-        self.calls.lock().unwrap().clone()
+        self.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|req| {
+                req.get("method")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("")
+                    .to_string()
+            })
+            .collect()
+    }
+
+    /// The `params` object of the first request for `method`, exactly as it
+    /// arrived on the wire. `None` when the method was never called.
+    ///
+    /// Wire-level, deliberately: a passthrough route's whole contract is that
+    /// the value it was handed reaches the daemon unrewritten, and only the
+    /// serialized form can show that a field was omitted rather than sent as
+    /// `null`.
+    pub fn received_params(&self, method: &str) -> Option<Value> {
+        self.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|req| req.get("method").and_then(|m| m.as_str()) == Some(method))
+            .map(|req| req.get("params").cloned().unwrap_or(Value::Null))
     }
 }
 
@@ -165,7 +193,7 @@ pub async fn start_mock_daemon_with_errors(errors: MockErrors) -> (MockDaemon, D
 
     // Spawn mock daemon server
     let errors = Arc::new(errors);
-    let calls: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let calls: Arc<std::sync::Mutex<Vec<Value>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
     let calls_srv = calls.clone();
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
@@ -189,7 +217,7 @@ pub async fn start_mock_daemon_with_errors(errors: MockErrors) -> (MockDaemon, D
                             let id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
                             let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
 
-                            calls.lock().unwrap().push(method.to_string());
+                            calls.lock().unwrap().push(msg.clone());
 
                             let scripted_error = errors
                                 .get(method)
@@ -326,6 +354,26 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 json!({})
             } else {
                 json!({"session_id": "test-session-001"})
+            }
+        }
+        // Two slots from two different plugins — one the repo ships, one the
+        // web has never heard of — so a route test can prove the status
+        // channel is generic rather than oci-shaped. Session id
+        // "quiet-session" has published nothing (the daemon answers an empty
+        // array for an unknown session, never an error).
+        "session.status" => {
+            let session_id = msg
+                .get("params")
+                .and_then(|p| p.get("session_id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if session_id == "quiet-session" {
+                json!({"status": []})
+            } else {
+                json!({"status": [
+                    {"key": "oci", "plugin": "oci", "text": "sandboxed: alpine:latest", "level": "info"},
+                    {"key": "weather", "plugin": "weather", "text": "storm warning", "level": "warn"},
+                ]})
             }
         }
         "session.list" => json!([]),
@@ -546,13 +594,21 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
 #[cfg(any(test, feature = "test-utils"))]
 /// Build an AppState using a mock daemon client.
 pub fn build_mock_state(client: DaemonClient) -> AppState {
+    build_mock_state_with_config(client, CliAppConfig::default())
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// Build an AppState using a mock daemon client and a caller-supplied config.
+/// For routes that read `state.config` rather than the daemon (`/api/config`),
+/// where the default config can only ever produce empty answers.
+pub fn build_mock_state_with_config(client: DaemonClient, config: CliAppConfig) -> AppState {
     let broker = Arc::new(EventBroker::new());
     // Mock client has no live event stream; a dropped sender ends the router.
     let (_tx, event_rx) = tokio::sync::mpsc::unbounded_channel::<crucible_daemon::SessionEvent>();
     AppState {
         daemon: Arc::new(ReconnectingDaemon::new(client, event_rx, broker.clone())),
         events: broker,
-        config: Arc::new(CliAppConfig::default()),
+        config: Arc::new(config),
         http_client: reqwest::Client::new(),
         layout_path: Arc::new(unique_test_layout_path()),
         remote_shell: false,
@@ -580,6 +636,7 @@ pub fn build_test_app(state: AppState) -> Router {
     Router::new()
         .merge(agents_routes())
         .merge(chat_routes())
+        .merge(config_routes())
         .merge(session_routes())
         .merge(project_routes())
         .merge(search_routes())

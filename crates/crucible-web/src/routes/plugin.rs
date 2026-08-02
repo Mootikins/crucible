@@ -12,6 +12,7 @@ pub fn plugin_routes() -> Router<AppState> {
         .route("/api/plugins", get(list_plugins).post(install_plugin))
         .route("/api/plugins/{name}", delete(remove_plugin))
         .route("/api/plugins/{name}/reload", post(reload_plugin))
+        .route("/api/plugins/publications", get(list_publications))
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,6 +34,20 @@ struct RemoveQuery {
 async fn list_plugins(State(state): State<AppState>) -> Result<Json<serde_json::Value>, WebError> {
     let info = state.daemon.plugin_list_info().await.daemon_err()?;
     Ok(Json(serde_json::json!({ "plugins": info })))
+}
+
+/// `GET /api/plugins/publications` — what plugins published about themselves.
+///
+/// Passed through verbatim, keyed `key -> plugin -> value`. Nothing here
+/// interprets a value, which is the point: the frontend used to learn what
+/// isolation a box offered by having the server match on the shape of the `oci`
+/// plugin's config, so one plugin's schema lived in the rendering layer and a
+/// second isolating plugin would not have appeared at all.
+async fn list_publications(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    let publications = state.daemon.plugin_publications().await.daemon_err()?;
+    Ok(Json(serde_json::json!({ "publications": publications })))
 }
 
 /// `POST /api/plugins/:name/reload` — reload a plugin by name.

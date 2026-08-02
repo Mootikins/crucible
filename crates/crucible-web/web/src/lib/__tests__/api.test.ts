@@ -16,6 +16,8 @@ import {
   searchSessions,
   listModels,
   getConfig,
+  getIsolationOffer,
+  getSessionStatus,
   pauseSession,
   resumeSession,
   endSession,
@@ -162,6 +164,25 @@ describe('createSession', () => {
     global.fetch = mockFetch;
 
     await expect(createSession({ kiln: 'x' })).rejects.toThrow('Failed to create session: HTTP 422');
+  });
+
+  it('forwards isolation untouched, and omits it when unset', async () => {
+    const mockFetch = createMockFetch({ 'POST /api/session': { body: rawSession } });
+    global.fetch = mockFetch;
+
+    // A profile name rides through as-is — the client never interprets it.
+    await createSession({ kiln: 'default', isolation: 'throwaway' });
+    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string).isolation).toBe('throwaway');
+
+    // `false` ("no sandbox even if the project has one") must survive: it is
+    // an instruction, not a falsy value to drop.
+    await createSession({ kiln: 'default', isolation: false });
+    expect(JSON.parse(mockFetch.mock.calls[1][1]!.body as string).isolation).toBe(false);
+
+    // Unset stays absent — absent means "resolve normally", which is a
+    // different instruction from false.
+    await createSession({ kiln: 'default' });
+    expect(JSON.parse(mockFetch.mock.calls[2][1]!.body as string)).not.toHaveProperty('isolation');
   });
 });
 
@@ -495,6 +516,96 @@ describe('getConfig', () => {
   it('throws on non-ok', async () => {
     global.fetch = createMockFetch({ 'GET /api/config': { status: 500 } });
     await expect(getConfig()).rejects.toThrow('Failed to get config: HTTP 500');
+  });
+});
+
+describe('getIsolationOffer', () => {
+  it('reports what a plugin published', async () => {
+    global.fetch = createMockFetch({
+      'GET /api/plugins/publications': {
+        body: {
+          publications: {
+            isolation: { oci: { available: true, profiles: ['rust', 'throwaway'] } },
+          },
+        },
+      },
+    });
+    expect(await getIsolationOffer()).toEqual({
+      available: true,
+      profiles: ['rust', 'throwaway'],
+    });
+  });
+
+  // Availability is not "has named profiles": the documented config is a bare
+  // image with no profiles table, and gating on names left no way to opt out.
+  it('reports availability with no named profiles', async () => {
+    global.fetch = createMockFetch({
+      'GET /api/plugins/publications': {
+        body: { publications: { isolation: { oci: { available: true, profiles: [] } } } },
+      },
+    });
+    expect(await getIsolationOffer()).toEqual({ available: true, profiles: [] });
+  });
+
+  // Two isolating plugins both answer; neither may erase the other.
+  it('merges answers from every plugin that offers isolation', async () => {
+    global.fetch = createMockFetch({
+      'GET /api/plugins/publications': {
+        body: {
+          publications: {
+            isolation: {
+              jail: { available: false, profiles: ['sandbox'] },
+              oci: { available: true, profiles: ['rust'] },
+            },
+          },
+        },
+      },
+    });
+    expect(await getIsolationOffer()).toEqual({
+      available: true,
+      profiles: ['rust', 'sandbox'],
+    });
+  });
+
+  it('offers nothing when no plugin published an isolation key', async () => {
+    global.fetch = createMockFetch({
+      'GET /api/plugins/publications': { body: { publications: {} } },
+    });
+    expect(await getIsolationOffer()).toEqual({ available: false, profiles: [] });
+  });
+});
+
+// =============================================================================
+// Plugin status slots
+// =============================================================================
+
+describe('getSessionStatus', () => {
+  it('unwraps the status array and keeps every slot verbatim', async () => {
+    global.fetch = createMockFetch({
+      'GET /api/session/ses-1/status': {
+        body: {
+          status: [
+            { key: 'oci', plugin: 'oci', text: 'sandboxed: alpine:latest', level: 'info' },
+            // A plugin this client has never heard of, at a level it does not
+            // enumerate — both survive untouched.
+            { key: 'weather', plugin: 'weather', text: 'storm warning', level: 'nautical' },
+          ],
+        },
+      },
+    });
+    expect(await getSessionStatus('ses-1')).toEqual([
+      { key: 'oci', plugin: 'oci', text: 'sandboxed: alpine:latest', level: 'info' },
+      { key: 'weather', plugin: 'weather', text: 'storm warning', level: 'nautical' },
+    ]);
+  });
+
+  it('encodes the session id and throws on non-ok', async () => {
+    const mockFetch = createMockFetch({ 'GET /api/session/a%2Fb/status': { status: 502 } });
+    global.fetch = mockFetch;
+    await expect(getSessionStatus('a/b')).rejects.toThrow(
+      'Failed to load session status: HTTP 502',
+    );
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/session/a%2Fb/status');
   });
 });
 

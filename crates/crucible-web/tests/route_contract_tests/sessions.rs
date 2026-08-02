@@ -569,3 +569,128 @@ async fn set_workspace_null_detaches_to_kiln() {
     // Detach falls back to the kiln path (the mock echoes its default).
     assert_eq!(json["workspace"], "/tmp/test-kiln");
 }
+
+// =========================================================================
+// Plugin Status Route Contract Tests (with mock daemon)
+// =========================================================================
+
+/// Drive one GET through a fresh mock-daemon-backed app and decode JSON.
+async fn get_json(uri: &str) -> (StatusCode, Value) {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, json)
+}
+
+#[tokio::test]
+async fn status_route_forwards_every_plugin_slot_verbatim() {
+    let (status, json) = get_json("/api/session/test-session-001/status").await;
+
+    assert_eq!(status, StatusCode::OK, "body: {json}");
+    let slots = json["status"].as_array().expect("status array");
+    assert_eq!(slots.len(), 2, "both slots survive: {json}");
+
+    // The four keys ARE the contract: a rename on either side would surface
+    // downstream as blank chips rather than as a failure here.
+    assert_eq!(slots[0]["key"], "oci");
+    assert_eq!(slots[0]["plugin"], "oci");
+    assert_eq!(slots[0]["text"], "sandboxed: alpine:latest");
+    assert_eq!(slots[0]["level"], "info");
+
+    // A slot from a plugin this crate has never heard of rides through with
+    // the same shape — the route interprets no key.
+    assert_eq!(slots[1]["key"], "weather");
+    assert_eq!(slots[1]["plugin"], "weather");
+    assert_eq!(slots[1]["text"], "storm warning");
+    assert_eq!(slots[1]["level"], "warn");
+}
+
+#[tokio::test]
+async fn a_session_with_no_plugin_slots_returns_an_empty_status_array() {
+    // 200 + empty, never 404: most sessions publish nothing, and a chip strip
+    // that treated "quiet" as an error would light up on every one of them.
+    let (status, json) = get_json("/api/session/quiet-session/status").await;
+
+    assert_eq!(status, StatusCode::OK, "body: {json}");
+    assert_eq!(json["status"], json!([]));
+}
+
+// =========================================================================
+// Isolation Passthrough Contract Tests (with mock daemon)
+// =========================================================================
+
+/// POST a create body and return the params `session.create` saw on the wire.
+async fn create_session_wire_params(body: Value) -> Value {
+    let (mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/session")
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    mock.received_params("session.create")
+        .expect("session.create was called")
+}
+
+#[tokio::test]
+async fn create_session_forwards_the_isolation_value_untouched() {
+    // A profile name is the isolating plugin's vocabulary; the web neither
+    // validates it nor rewrites it.
+    let params = create_session_wire_params(json!({
+        "kiln": "/tmp/test-kiln",
+        "isolation": "throwaway"
+    }))
+    .await;
+    assert_eq!(params["isolation"], json!("throwaway"));
+
+    // `false` is a real instruction ("no container even if the project has
+    // one"), not a falsy value to drop.
+    let params = create_session_wire_params(json!({
+        "kiln": "/tmp/test-kiln",
+        "isolation": false
+    }))
+    .await;
+    assert_eq!(params["isolation"], json!(false));
+
+    // An object the web has no type for reaches the plugin that defined it.
+    let params = create_session_wire_params(json!({
+        "kiln": "/tmp/test-kiln",
+        "isolation": {"image": "docker.io/library/alpine:latest"}
+    }))
+    .await;
+    assert_eq!(
+        params["isolation"],
+        json!({"image": "docker.io/library/alpine:latest"})
+    );
+}
+
+#[tokio::test]
+async fn create_session_without_isolation_omits_the_field_from_the_wire() {
+    // Absent ("resolve normally") and `false` ("no container") are different
+    // instructions to the plugin; a `null` on the wire would collapse them.
+    let params = create_session_wire_params(json!({"kiln": "/tmp/test-kiln"})).await;
+    assert!(
+        params.get("isolation").is_none(),
+        "isolation must be absent, not null: {params}"
+    );
+}

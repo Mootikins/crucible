@@ -13,7 +13,15 @@ vi.mock('@/lib/file-actions', () => ({
 }));
 
 vi.mock('@/lib/api', () => ({
-  getConfig: vi.fn().mockResolvedValue({ kiln_path: '/home/user/kilns/helios' }),
+  getConfig: vi.fn().mockResolvedValue({
+    kiln_path: '/home/user/kilns/helios',
+  }),
+  // What the box offers for isolation, as a plugin published it. Not read out
+  // of plugin config: the composer renders the offer and nothing more.
+  getIsolationOffer: vi.fn().mockResolvedValue({
+    available: true,
+    profiles: ['rust', 'throwaway'],
+  }),
   listAgents: vi.fn().mockResolvedValue([
     { name: 'claude', description: 'Claude Code via ACP', command: 'npx', is_builtin: true, available: true },
   ]),
@@ -212,5 +220,91 @@ describe('CenterComposer', () => {
     );
   });
 
+  // -------------------------------------------------------------------------
+  // Isolation control
+  // -------------------------------------------------------------------------
 
+  const submitWith = async (getByTestId: (id: string) => HTMLElement, text: string) => {
+    const input = getByTestId('composer-input') as HTMLTextAreaElement;
+    fireEvent.input(input, { target: { value: text } });
+    fireEvent.click(getByTestId('composer-send'));
+    await waitFor(() => expect(createSessionMock).toHaveBeenCalled());
+    return createSessionMock.mock.calls[0][0];
+  };
+
+  it('leaves isolation unset until the control is touched', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() => expect(getByTestId('composer-isolation')).toBeInTheDocument());
+    const params = await submitWith(getByTestId, 'untouched');
+    // Absent, not false: "resolve normally" is a different instruction from
+    // "no sandbox even if the project has one".
+    expect(params).not.toHaveProperty('isolation');
+  });
+
+  it('the toggle asks for isolation, and asks to skip it when flipped off', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() => expect(getByTestId('composer-isolation')).toBeInTheDocument());
+    fireEvent.click(getByTestId('composer-isolation'));
+
+    const toggle = await waitFor(() => screen.getByTestId('isolation-toggle'));
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(toggle);
+    await waitFor(() => expect(toggle.getAttribute('aria-pressed')).toBe('true'));
+
+    // On with no profile named = `true`: the server picks its default.
+    expect(await submitWith(getByTestId, 'sandboxed')).toMatchObject({ isolation: true });
+  });
+
+  it('flipping the toggle off sends false', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() => expect(getByTestId('composer-isolation')).toBeInTheDocument());
+    fireEvent.click(getByTestId('composer-isolation'));
+    const toggle = await waitFor(() => screen.getByTestId('isolation-toggle'));
+    fireEvent.click(toggle); // on
+    fireEvent.click(toggle); // explicitly off
+    await waitFor(() => expect(toggle.getAttribute('aria-pressed')).toBe('false'));
+    expect(await submitWith(getByTestId, 'no sandbox')).toMatchObject({ isolation: false });
+  });
+
+  it('picking a profile forwards its name and turns isolation on', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() => expect(getByTestId('composer-isolation')).toBeInTheDocument());
+    fireEvent.click(getByTestId('composer-isolation'));
+    // Popouts render through a Portal — query via screen.
+    await waitFor(() => expect(screen.getByTestId('composer-isolation-popout')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('throwaway'));
+
+    expect(await submitWith(getByTestId, 'with profile')).toMatchObject({
+      isolation: 'throwaway',
+    });
+  });
+
+  it('offers no isolation control on a server that offers no isolation', async () => {
+    const { getIsolationOffer } = await import('@/lib/api');
+    vi.mocked(getIsolationOffer).mockResolvedValue({ available: false, profiles: [] });
+
+    const { queryByTestId, getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() => expect(getByTestId('composer-kiln').textContent).toContain('helios'));
+    // A dead control is worse than none: nothing here offers isolation.
+    expect(queryByTestId('composer-isolation')).toBeNull();
+  });
+
+  // The regression this whole channel exists for. `[plugins.oci] image = "…"`
+  // with no profiles table is the documented config, and gating the control on
+  // profile names hid it exactly there — so a browser user could not opt a
+  // session OUT of a project's isolation.
+  it('offers the control on a box with isolation but no named profiles', async () => {
+    const { getIsolationOffer } = await import('@/lib/api');
+    vi.mocked(getIsolationOffer).mockResolvedValue({ available: true, profiles: [] });
+
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() => expect(getByTestId('composer-isolation')).toBeInTheDocument());
+
+    fireEvent.click(getByTestId('composer-isolation'));
+    const toggle = await waitFor(() => screen.getByTestId('isolation-toggle'));
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+    await waitFor(() => expect(toggle.getAttribute('aria-pressed')).toBe('false'));
+    expect(await submitWith(getByTestId, 'no sandbox')).toMatchObject({ isolation: false });
+  });
 });

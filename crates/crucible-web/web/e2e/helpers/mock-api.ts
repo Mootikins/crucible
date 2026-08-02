@@ -1,15 +1,26 @@
 import type { Page } from '@playwright/test';
 import { disableAnimations } from './geometry';
-import { MOCK_SESSION, MOCK_SESSION_DETAIL, MOCK_PROVIDERS, MOCK_KILNS, MOCK_CONFIG, MOCK_PROJECT } from './fixtures';
+import {
+  MOCK_SESSION,
+  MOCK_SESSION_DETAIL,
+  MOCK_PROVIDERS,
+  MOCK_KILNS,
+  MOCK_CONFIG,
+  MOCK_PROJECT,
+  MOCK_PUBLICATIONS,
+} from './fixtures';
 import { mockSSERoute } from './mock-sse';
 
 export interface MockOverrides {
   sessions?: object[];
   providers?: object;
   config?: object;
+  publications?: object;
   kilns?: object;
   projects?: object[];
   sessionHistory?: object;
+  /** `{ status: [{key, plugin, text, level}, …] }` — the per-session plugin status route. */
+  sessionStatus?: object;
   sseEvents?: Array<{ type: string; data: object }>;
   sessionCreate?: object;
   chatMessage?: object | number;
@@ -41,6 +52,13 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     }
   });
 
+  // Registered AFTER the `**/api/session/test-session-*` GET catch-all above:
+  // Playwright matches most-recently-added first, and that glob would
+  // otherwise answer the status URL with a whole session object.
+  await page.route('**/api/session/*/status', (route) =>
+    route.fulfill({ json: overrides.sessionStatus ?? { status: [] } }),
+  );
+
   await page.route('**/api/session/*/history**', (route) =>
     route.fulfill({
       json: overrides.sessionHistory ?? {
@@ -59,6 +77,10 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
 
   await page.route('**/api/config', (route) =>
     route.fulfill({ json: overrides.config ?? MOCK_CONFIG }),
+  );
+
+  await page.route('**/api/plugins/publications', (route) =>
+    route.fulfill({ json: overrides.publications ?? MOCK_PUBLICATIONS }),
   );
 
   await page.route('**/api/kilns', (route) =>

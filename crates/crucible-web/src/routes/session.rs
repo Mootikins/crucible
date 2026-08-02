@@ -4,6 +4,7 @@ use super::session_config::{
     get_thinking_budget, set_max_tokens, set_precognition, set_precognition_results,
     set_temperature, set_thinking_budget,
 };
+use super::session_status::session_status;
 use crate::routes::helpers::ModelsResponse;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
@@ -86,6 +87,7 @@ pub fn session_routes() -> Router<AppState> {
         .route("/api/session/{id}/models", get(list_models))
         .route("/api/session/{id}/model", post(switch_model))
         .route("/api/session/{id}/modes", get(list_modes))
+        .route("/api/session/{id}/status", get(session_status))
         .route("/api/session/{id}/kilns/connect", post(connect_kiln))
         .route("/api/session/{id}/kilns/disconnect", post(disconnect_kiln))
         .route("/api/session/{id}/workspace", put(set_workspace))

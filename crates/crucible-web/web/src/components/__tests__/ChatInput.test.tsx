@@ -97,6 +97,8 @@ vi.mock('@/lib/api', () => ({
   connectSessionKiln: vi.fn(),
   disconnectSessionKiln: vi.fn(),
   setSessionWorkspace: vi.fn(),
+  // SessionStatusChips (also rendered inside ChatInput): no plugin slots.
+  getSessionStatus: vi.fn(async () => []),
 }));
 
 describe('ChatInput', () => {

@@ -3,6 +3,7 @@ import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { ChatModeControl, nextChatMode } from './ChatModeControl';
 import { SessionScopeChips } from './SessionScopeChips';
+import { SessionStatusChips } from './SessionStatusChips';
 import { ChipSelect } from '@/components/composer/ChipSelect';
 import { ComposerCard } from '@/components/composer/ComposerCard';
 import { executeCommand } from '@/lib/api';
@@ -180,6 +181,12 @@ export const ChatInput: Component = () => {
           session knows and the workspace it acts in — attach/detach
           mid-session (Crucible Shell design 4a/5a). */}
       <SessionScopeChips />
+
+      {/* Whatever the session's plugins have to say about it, rendered
+          generically from their keyed slots. */}
+      <div class="mt-1">
+        <SessionStatusChips />
+      </div>
     </form>
   );
 };

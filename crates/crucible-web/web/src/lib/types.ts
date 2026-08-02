@@ -77,6 +77,13 @@ export interface CreateSessionParams {
   agent_type?: string;
   /** ACP agent profile name; required when agent_type is "acp". */
   agent_name?: string;
+  /**
+   * Isolation override, forwarded untouched: `false` = unisolated even if the
+   * project asks otherwise, `true` = the server's default profile, a string =
+   * a named profile from `GET /api/config`. Omit to let the server resolve
+   * normally — omitted and `false` are different instructions.
+   */
+  isolation?: string | boolean;
 }
 
 /** ACP agent profile entry from GET /api/agents. */

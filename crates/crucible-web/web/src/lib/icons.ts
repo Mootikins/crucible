@@ -6,6 +6,7 @@ export {
   ArrowLeft,
   Type,
   ExternalLink,
+  Shield,
   ShieldAlert,
   Archive,
   ChartNetwork,
