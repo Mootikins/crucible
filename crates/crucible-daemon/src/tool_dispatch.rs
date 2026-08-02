@@ -477,87 +477,6 @@ impl ToolExecutor for McpToolExecutor {
     }
 }
 
-/// Dispatches gateway (user MCP) tools through the shared `McpGatewayManager`,
-/// scoped to the session agent's configured upstream servers. Registering this
-/// as a dispatcher provider makes deferred gateway tools reachable via the
-/// progressive-disclosure bridge (`discover_tools` → `invoke_tool`).
-pub struct GatewayToolExecutor {
-    gateway: Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>,
-    allowed_servers: HashSet<String>,
-}
-
-impl GatewayToolExecutor {
-    pub fn new(
-        gateway: Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>,
-        allowed_servers: Vec<String>,
-    ) -> Self {
-        Self {
-            gateway,
-            allowed_servers: allowed_servers.into_iter().collect(),
-        }
-    }
-}
-
-#[async_trait]
-impl ToolExecutor for GatewayToolExecutor {
-    async fn execute_tool(
-        &self,
-        name: &str,
-        params: serde_json::Value,
-        _context: &ExecutionContext,
-    ) -> ToolResult<serde_json::Value> {
-        let gateway = self.gateway.read().await;
-        // Only dispatch tools belonging to the agent's configured servers;
-        // anything else falls through the provider chain as NotFound.
-        match gateway.find_upstream(name) {
-            Some(upstream) if self.allowed_servers.contains(upstream) => {}
-            _ => return Err(ToolError::NotFound(name.to_string())),
-        }
-        match gateway.call_tool(name, params).await {
-            Ok(result) => {
-                let text = result
-                    .content
-                    .iter()
-                    .filter_map(|c| c.as_text().map(str::to_string))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                if result.is_error {
-                    Err(ToolError::ExecutionFailed(text))
-                } else {
-                    Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text)))
-                }
-            }
-            Err(err) => Err(ToolError::ExecutionFailed(err.to_string())),
-        }
-    }
-
-    async fn list_tools(&self) -> ToolResult<Vec<ToolDefinition>> {
-        let gateway = self.gateway.read().await;
-        Ok(gateway
-            .all_tools()
-            .into_iter()
-            .filter(|t| self.allowed_servers.contains(&t.upstream))
-            .map(|t| ToolDefinition {
-                name: t.prefixed_name,
-                description: t.description.unwrap_or_default(),
-                category: Some("mcp".to_string()),
-                parameters: Some(t.input_schema),
-                returns: None,
-                examples: vec![],
-                required_permissions: vec![],
-            })
-            .collect())
-    }
-
-    /// `Unknown`, not `Daemon`, deliberately. Gateway tools run in the daemon
-    /// process but are third-party code reached over a pipe: a filesystem MCP
-    /// server is host-touching in every way that matters, and the daemon has
-    /// no way to tell one from a calculator.
-    fn surface(&self) -> ToolSurface {
-        ToolSurface::Unknown
-    }
-}
-
 #[async_trait]
 impl ToolDispatcher for DaemonToolDispatcher {
     async fn dispatch_tool(
@@ -877,6 +796,27 @@ mod tests {
         assert_eq!(
             dispatcher.tool_surface("semantic_search").await,
             ToolSurface::Daemon
+        );
+    }
+
+    /// The other one-line edit that opens every sandbox.
+    ///
+    /// Gateway tools run in the daemon process, so `Daemon` looks right — but
+    /// they are third-party code reached over a pipe, and a filesystem MCP
+    /// server's `read_file`/`write_file` touch the host exactly as the native
+    /// ones do. The daemon cannot tell one from a calculator, so `Unknown` is
+    /// the only honest answer and the gate refuses it unless exempted.
+    #[tokio::test]
+    async fn gateway_tools_are_unknown_surface_so_a_claim_refuses_them() {
+        let gateway = Arc::new(tokio::sync::RwLock::new(
+            crate::tools::mcp_gateway::McpGatewayManager::default(),
+        ));
+        let executor = crate::tools::gateway_executor::GatewayToolExecutor::new(gateway, vec![]);
+        assert_eq!(
+            executor.surface(),
+            ToolSurface::Unknown,
+            "a third-party MCP server can touch the host; classifying it Daemon \
+             lets it do so inside a session the user believes is containerized"
         );
     }
 

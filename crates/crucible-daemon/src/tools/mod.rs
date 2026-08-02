@@ -16,6 +16,7 @@ pub mod autolink;
 pub mod diff_synth;
 pub mod error_utils;
 pub mod extended_mcp_server;
+pub mod gateway_executor;
 pub mod helpers;
 pub mod kiln;
 pub mod mcp_client;

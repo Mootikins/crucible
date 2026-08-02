@@ -1144,10 +1144,12 @@ impl AgentManager {
                     .map(|a| a.mcp_servers.clone())
                     .unwrap_or_default();
                 if !allowed.is_empty() {
-                    providers.push(Arc::new(crate::tool_dispatch::GatewayToolExecutor::new(
-                        gateway.clone(),
-                        allowed,
-                    )) as Arc<dyn ToolExecutor>);
+                    providers.push(Arc::new(
+                        crate::tools::gateway_executor::GatewayToolExecutor::new(
+                            gateway.clone(),
+                            allowed,
+                        ),
+                    ) as Arc<dyn ToolExecutor>);
                 }
             }
 

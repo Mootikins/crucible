@@ -361,6 +361,22 @@ mod tests {
     use super::*;
     use crucible_lua::DiscoveredParam;
 
+    /// Flipping this to `Daemon` is a one-line, superficially reasonable edit —
+    /// plugin tools genuinely do run daemon-side — and it opens every sandboxed
+    /// session: plugin Lua has `cru.shell.exec`, so a plugin tool can do
+    /// anything a `bash` call can. Nothing else in the suite notices, because
+    /// the gate only sees the surface this returns.
+    #[test]
+    fn plugin_tools_are_unknown_surface_so_a_claim_refuses_them() {
+        let executor = PluginToolExecutor::new(Arc::new(PluginRegistry::new()));
+        assert_eq!(
+            executor.surface(),
+            ToolSurface::Unknown,
+            "plugin Lua has cru.shell.exec; classifying it Daemon lets it run \
+             on the host inside a session the user believes is containerized"
+        );
+    }
+
     fn tool(name: &str) -> DiscoveredTool {
         DiscoveredTool {
             name: name.to_string(),
