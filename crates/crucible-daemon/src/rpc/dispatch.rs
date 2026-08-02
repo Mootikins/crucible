@@ -6,6 +6,7 @@
 
 use crate::protocol::{Request, RequestId, Response, RpcError, INTERNAL_ERROR, METHOD_NOT_FOUND};
 use crate::rpc::context::RpcContext;
+use crate::server::plugins::OptionAction;
 use crate::subscription::ClientId;
 
 pub type RpcResult<T> = Result<T, RpcError>;
@@ -110,6 +111,10 @@ pub const METHODS: &[&str] = &[
     "plugin.list",
     "plugin.commands",
     "plugin.publications",
+    "plugin.options",
+    "plugin.option_get",
+    "plugin.option_set",
+    "plugin.option_execute",
     "session.status",
     "plugin.run_command",
     "plugin.install",
@@ -418,6 +423,22 @@ impl RpcDispatcher {
             "plugin.list" => to_response(id, self.handle_plugin_list(&req).await),
             "plugin.commands" => to_response(id, self.handle_plugin_commands(&req).await),
             "plugin.publications" => to_response(id, self.handle_plugin_publications(&req).await),
+            "plugin.options" => to_response(id, self.handle_plugin_options(&req).await),
+            "plugin.option_get" => to_response(
+                id,
+                self.handle_plugin_option_call(&req, OptionAction::Get)
+                    .await,
+            ),
+            "plugin.option_set" => to_response(
+                id,
+                self.handle_plugin_option_call(&req, OptionAction::Set)
+                    .await,
+            ),
+            "plugin.option_execute" => to_response(
+                id,
+                self.handle_plugin_option_call(&req, OptionAction::Execute)
+                    .await,
+            ),
             "session.status" => to_response(id, self.handle_session_status(&req).await),
             "plugin.run_command" => to_response(id, self.handle_plugin_run_command(&req).await),
             "plugin.install" => to_response(id, self.handle_plugin_install(&req).await),
@@ -1513,6 +1534,27 @@ impl RpcDispatcher {
         let resp = crate::server::plugins::handle_plugin_publications(
             req.clone(),
             &self.ctx.plugin_loader,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_plugin_options(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp =
+            crate::server::plugins::handle_plugin_options(req.clone(), &self.ctx.plugin_loader)
+                .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_plugin_option_call(
+        &self,
+        req: &Request,
+        action: OptionAction,
+    ) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::plugins::handle_plugin_option_call(
+            req.clone(),
+            &self.ctx.plugin_loader,
+            action,
         )
         .await;
         map_server_resp(resp)

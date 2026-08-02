@@ -19,8 +19,8 @@ use crucible_lua::{
     register_status_module, register_storage_module, register_storage_module_with_store,
     register_tools_module, register_tools_module_with_api, register_vault_module,
     register_ws_module, ContextAttachRegistry, DaemonSessionApi, DaemonToolsApi, IsolationRegistry,
-    LuaExecutor, LuaScriptHandlerRegistry, LuaValidatorRegistry, PathsContext, PluginManager,
-    PluginSource, PluginSpec, PublicationRegistry, ShellPolicy, StatusRegistry,
+    LuaExecutor, LuaScriptHandlerRegistry, LuaValidatorRegistry, OptionsRegistry, PathsContext,
+    PluginManager, PluginSource, PluginSpec, PublicationRegistry, ShellPolicy, StatusRegistry,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -103,6 +103,8 @@ pub struct DaemonPluginLoader {
     /// rendering layer and left a second plugin answering the same question
     /// invisible.
     publications: PublicationRegistry,
+    /// Settings trees plugins declared, read by TUI and web.
+    options: OptionsRegistry,
 }
 
 impl DaemonPluginLoader {
@@ -195,6 +197,10 @@ impl DaemonPluginLoader {
         // plugin is recorded by the loader rather than claimed by the caller.
         let publications = PublicationRegistry::new();
 
+        // `crucible.options` — one declaration, rendered by every frontend.
+        // Bound per plugin at execute time for the same reason `publish` is.
+        let options = OptionsRegistry::new();
+
         let handler_registry = Arc::new(LuaScriptHandlerRegistry::new());
         reg(
             "crucible.on",
@@ -217,6 +223,7 @@ impl DaemonPluginLoader {
             isolation,
             status,
             publications,
+            options,
         })
     }
 
@@ -246,6 +253,11 @@ impl DaemonPluginLoader {
     /// What plugins published about themselves, for the RPC layer.
     pub fn publications(&self) -> PublicationRegistry {
         self.publications.clone()
+    }
+
+    /// Settings trees plugins declared, for the RPC layer.
+    pub fn options(&self) -> OptionsRegistry {
+        self.options.clone()
     }
 
     /// Register `cru.context.attach` on the plugin VM against the daemon's
@@ -718,6 +730,13 @@ end
             lua,
             &lua.globals().get::<mlua::Table>("crucible")?,
             self.publications.clone(),
+            name.to_string(),
+        )?;
+        self.options.release_plugin(name);
+        crucible_lua::register_options_module(
+            lua,
+            &lua.globals().get::<mlua::Table>("crucible")?,
+            self.options.clone(),
             name.to_string(),
         )?;
 

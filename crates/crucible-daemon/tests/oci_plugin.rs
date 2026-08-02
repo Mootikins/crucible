@@ -435,6 +435,76 @@ const UNSUPPORTED_DEVCONTAINER: &str = r#"{
     "remoteEnv": { "TOKEN": "hunter2" },
 }"#;
 
+/// The settings tree the plugin declares has to survive the trip to a client:
+/// declared in Lua, walked by the daemon, rendered by whichever frontend asks.
+///
+/// Before this there was no such trip — a client wanting to know what a plugin
+/// could be configured with read the plugin's raw TOML and matched on its
+/// shape, so every option meant editing Rust in the rendering layer.
+#[tokio::test]
+async fn oci_declares_settings_a_client_can_render() {
+    let tmp = tempfile::tempdir().unwrap();
+    let loader = load_oci(
+        tmp.path(),
+        serde_json::json!({ "image": "alpine:latest", "runtime": UNUSABLE }),
+    )
+    .await;
+
+    let tree = loader
+        .options()
+        .describe("oci", "web")
+        .expect("oci declared no options; nothing to render");
+
+    assert_eq!(tree["type"], "group");
+    let args = tree["args"].as_array().expect("args array");
+    let keys: Vec<&str> = args.iter().filter_map(|a| a["key"].as_str()).collect();
+    for expected in ["image", "runtime", "devcontainer"] {
+        assert!(keys.contains(&expected), "missing '{expected}' in {keys:?}");
+    }
+
+    // Ordered by `order`, not hash order — a settings pane that reshuffles on
+    // every read is worse than none.
+    assert_eq!(keys.first(), Some(&"image"));
+
+    // Every leaf carries what a renderer needs without knowing what oci is.
+    let image = args.iter().find(|a| a["key"] == "image").unwrap();
+    assert_eq!(image["type"], "input");
+    assert!(image["name"].is_string());
+    assert!(image["desc"].is_string());
+    assert_eq!(
+        image["writable"], true,
+        "the root `set` must reach the leaf"
+    );
+}
+
+/// Reading and writing go through the plugin's own accessors, so the daemon
+/// never learns what an option means.
+#[tokio::test]
+async fn oci_settings_round_trip_through_the_plugins_accessors() {
+    let tmp = tempfile::tempdir().unwrap();
+    let loader = load_oci(
+        tmp.path(),
+        serde_json::json!({ "image": "alpine:latest", "runtime": UNUSABLE }),
+    )
+    .await;
+    let options = loader.options();
+    let path = vec!["image".to_string()];
+
+    assert_eq!(
+        options.get("oci", &path, "web").expect("get"),
+        serde_json::json!("alpine:latest")
+    );
+
+    options
+        .set("oci", &path, serde_json::json!("debian:trixie"), "web")
+        .expect("set");
+    assert_eq!(
+        options.get("oci", &path, "web").expect("get after set"),
+        serde_json::json!("debian:trixie"),
+        "a write that does not read back is a settings pane that lies"
+    );
+}
+
 /// A devcontainer is container configuration, and the sandboxed agent can
 /// write it.
 ///

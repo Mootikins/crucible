@@ -657,6 +657,57 @@ return {
     for name in pairs(config.profiles or {}) do names[#names + 1] = name end
     table.sort(names)
 
+    -- Declared once; the TUI and the web settings pane render it in their own
+    -- idiom. `values` and `desc` are functions where the answer depends on
+    -- this box rather than on this file — the reason the tree is read live
+    -- instead of converted at load.
+    crucible.options{
+      type = "group",
+      name = "Container isolation",
+      get = function(info) return config[info.option] end,
+      set = function(info, value) config[info.option] = value end,
+      args = {
+        image = {
+          type = "input", order = 1, name = "Default image",
+          desc = "Image workspace tools run in when a project has no devcontainer.",
+        },
+        runtime = {
+          type = "select", order = 2, name = "Container runtime",
+          desc = "Left unset, the first of podman, docker, nerdctl on PATH is used.",
+          -- Only what is actually installed here, resolved when the settings
+          -- are opened rather than when this file loaded.
+          values = function()
+            local found = {}
+            for _, name in ipairs(container.CANDIDATES) do
+              if cru.shell.which(name) then found[#found + 1] = name end
+            end
+            return found
+          end,
+        },
+        devcontainer = {
+          type = "toggle", order = 3, name = "Use the project's devcontainer",
+          desc = "Read .devcontainer/devcontainer.json when the project has one. "
+            .. "Only the committed file is honoured.",
+        },
+        build_timeout = {
+          type = "range", order = 4, name = "Build timeout (seconds)",
+          min = 60, max = 3600, step = 60,
+        },
+        start_timeout = {
+          type = "range", order = 5, name = "Start timeout (seconds)",
+          min = 30, max = 1800, step = 30,
+        },
+        cleanup = {
+          type = "execute", order = -1, name = "Remove orphaned containers",
+          desc = "Remove crucible containers whose session is gone.",
+          func = function()
+            local runtime = container.detect(config.runtime)
+            if runtime then cleanup_orphans(runtime) end
+          end,
+        },
+      },
+    }
+
     crucible.publish("isolation", {
       available = config.image ~= nil
         or config.profiles ~= nil

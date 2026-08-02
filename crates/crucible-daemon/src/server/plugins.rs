@@ -151,6 +151,120 @@ pub(crate) async fn handle_plugin_publications(
     Response::success(req.id, serde_json::json!({ "publications": publications }))
 }
 
+/// `plugin.options` — the settings tree a plugin declared, rendered for `ui`.
+///
+/// Every function-valued field is evaluated per request, so `values` lists what
+/// is true of this box now rather than at plugin load. Without `plugin`, every
+/// plugin's tree is returned keyed by name.
+pub(crate) async fn handle_plugin_options(
+    req: Request,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+) -> Response {
+    let ui = req
+        .params
+        .get("ui")
+        .and_then(|v| v.as_str())
+        .unwrap_or("web");
+    let loader_guard = plugin_loader.lock().await;
+    let Some(loader) = loader_guard.as_ref() else {
+        return Response::success(req.id, serde_json::json!({ "options": {} }));
+    };
+    let registry = loader.options();
+
+    let mut out = serde_json::Map::new();
+    match req.params.get("plugin").and_then(|v| v.as_str()) {
+        Some(name) => {
+            if let Some(tree) = registry.describe(name, ui) {
+                out.insert(name.to_string(), tree);
+            }
+        }
+        None => {
+            for name in registry.plugins() {
+                if let Some(tree) = registry.describe(&name, ui) {
+                    out.insert(name, tree);
+                }
+            }
+        }
+    }
+    Response::success(req.id, serde_json::json!({ "options": out }))
+}
+
+/// Option path from `["a", "b"]` params.
+fn option_path(req: &Request) -> Vec<String> {
+    req.params
+        .get("path")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Which callback an option RPC reaches.
+///
+/// An enum rather than a `&str` because the dispatcher's METHODS-drift test
+/// reads string literals out of the dispatch arms, and bare `"get"`/`"set"`
+/// there read as method names that do not exist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OptionAction {
+    Get,
+    Set,
+    Execute,
+}
+
+/// `plugin.option_get` / `plugin.option_set` / `plugin.option_execute`.
+///
+/// One handler because the three differ only in which Lua callback they reach;
+/// splitting them would triple the parameter plumbing for no gain.
+pub(crate) async fn handle_plugin_option_call(
+    req: Request,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+    action: OptionAction,
+) -> Response {
+    let plugin = require_param!(req, "plugin", as_str).to_string();
+    let ui = req
+        .params
+        .get("ui")
+        .and_then(|v| v.as_str())
+        .unwrap_or("web");
+    let path = option_path(&req);
+    if path.is_empty() {
+        return Response::error(req.id, INVALID_PARAMS, "`path` is required".to_string());
+    }
+
+    let loader_guard = plugin_loader.lock().await;
+    let Some(loader) = loader_guard.as_ref() else {
+        return Response::error(req.id, INTERNAL_ERROR, "no plugins loaded".to_string());
+    };
+    let registry = loader.options();
+
+    let outcome = match action {
+        OptionAction::Get => registry
+            .get(&plugin, &path, ui)
+            .map(|v| serde_json::json!({ "value": v })),
+        OptionAction::Set => {
+            let value = req
+                .params
+                .get("value")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+            registry
+                .set(&plugin, &path, value, ui)
+                .map(|()| serde_json::json!({ "ok": true }))
+        }
+        OptionAction::Execute => registry
+            .execute(&plugin, &path, ui)
+            .map(|()| serde_json::json!({ "ok": true })),
+    };
+
+    match outcome {
+        Ok(value) => Response::success(req.id, value),
+        Err(e) => Response::error(req.id, INVALID_PARAMS, e),
+    }
+}
+
 pub(crate) async fn handle_plugin_commands(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,

@@ -17,6 +17,7 @@ local isolation_calls = {}
 local status_calls = {}
 local clear_status_calls = {}
 local publications = {}      -- key -> published value
+local declared_options       -- the settings tree the plugin declared
 
 crucible = crucible or {}
 crucible.on = function(event, opts, fn)
@@ -40,6 +41,9 @@ crucible.clear_status = function(opts)
 end
 crucible.publish = function(key, value)
   publications[key] = value
+end
+crucible.options = function(tree)
+  declared_options = tree
 end
 
 -- Scripted shell. Responders are keyed by "<cmd> <first-arg>" (then "<cmd>"),
@@ -1064,6 +1068,57 @@ end)
 --- names?" by reaching into raw `[plugins.oci]` TOML and matching on its shape,
 --- which put this plugin's config schema in `crucible-web`. The plugin is the
 --- only thing that knows what its own config means, so it says so directly.
+--- Declared once, rendered by the TUI and the web settings pane alike. The
+--- alternative was every frontend hand-building a container settings form and
+--- drifting from this plugin's actual config keys.
+describe("oci declares its settings", function()
+  before_each(function()
+    install_shell()
+    declared_options = nil
+  end)
+
+  it("declares a settings tree at setup", function()
+    spec.setup({ image = "alpine:latest" })
+    assert.is_not_nil(declared_options, "no options declared; nothing to render")
+    assert.equals("group", declared_options.type)
+    assert.is_not_nil(declared_options.args.image)
+    assert.is_not_nil(declared_options.args.runtime)
+  end)
+
+  -- One accessor at the root serves every leaf, routed by `info.option`.
+  it("reads and writes config through the inherited accessors", function()
+    spec.setup({ image = "alpine:latest" })
+    local info = { option = "image" }
+    assert.equals("alpine:latest", declared_options.get(info))
+
+    declared_options.set(info, "debian:trixie")
+    assert.equals("debian:trixie", declared_options.get(info))
+  end)
+
+  -- The reason `values` is a function: it describes this box, not this file.
+  it("offers only the runtimes actually installed here", function()
+    spec.setup({ image = "alpine:latest" })
+    available = { podman = true }
+    local only_podman = declared_options.args.runtime.values()
+    assert.equals(1, #only_podman)
+    assert.equals("podman", only_podman[1])
+
+    available = { podman = true, docker = true }
+    assert.equals(2, #declared_options.args.runtime.values(),
+      "a runtime installed after load must appear without a reload")
+  end)
+
+  -- A button is a settings node, not a separate contribution API.
+  it("offers orphan cleanup as a button that runs", function()
+    spec.setup({ image = "alpine:latest" })
+    local cleanup = declared_options.args.cleanup
+    assert.equals("execute", cleanup.type)
+    exec_log = {}
+    cleanup.func({})
+    assert.truthy(#exec_log > 0, "the button must actually do something")
+  end)
+end)
+
 describe("oci publishes what it offers", function()
   before_each(function()
     install_shell()
