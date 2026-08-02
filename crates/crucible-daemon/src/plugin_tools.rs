@@ -13,7 +13,7 @@
 
 use async_trait::async_trait;
 use crucible_core::traits::tools::{
-    ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult,
+    ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult, ToolSurface,
 };
 use crucible_lua::{
     discovered_params_to_json_schema, json_to_lua, lua_to_json, DiscoveredCommand, DiscoveredTool,
@@ -345,6 +345,14 @@ impl ToolExecutor for PluginToolExecutor {
 
     async fn list_tools(&self) -> ToolResult<Vec<ToolDefinition>> {
         Ok(self.registry.tool_definitions())
+    }
+
+    /// Arbitrary plugin Lua, which has `cru.shell.exec`. Daemon-side, but
+    /// "daemon-side" is not the question — a plugin tool can do anything a
+    /// `bash` call can, so it is classified with the things that touch the
+    /// host, not with the kiln.
+    fn surface(&self) -> ToolSurface {
+        ToolSurface::Unknown
     }
 }
 

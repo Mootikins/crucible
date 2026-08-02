@@ -512,6 +512,10 @@ impl crate::tool_dispatch::ToolDispatcher for HangingToolDispatcher {
     fn get_tool_ref(&self, _name: &str) -> Option<crucible_core::types::ToolRef> {
         None
     }
+
+    async fn tool_surface(&self, _name: &str) -> crucible_core::traits::tools::ToolSurface {
+        crucible_core::traits::tools::ToolSurface::Unknown
+    }
 }
 
 /// Mock handle that returns a scripted sequence of stream responses,

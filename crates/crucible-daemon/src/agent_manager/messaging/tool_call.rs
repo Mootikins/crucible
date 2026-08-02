@@ -385,34 +385,33 @@ impl AgentManager {
 
         // Default-deny for a session a plugin claimed isolation over.
         //
-        // Reaching here means no handler took the call over, so it would run on
-        // the host. Interception used to be an allowlist of six tool names —
-        // complete only by coincidence, and silently bypassed by any new
-        // workspace tool, plugin-contributed tool, or MCP gateway tool. Under a
-        // claim the plugin asserts a category instead: anything it did not
-        // handle is refused unless explicitly exempted.
-        if let Some(isolation) = stream_ctx.agent_stream_config.isolation.as_ref() {
-            if !isolation.host_execution_allowed(&stream_ctx.session_id, &tool_call.name) {
-                let claim = isolation.get(&stream_ctx.session_id);
-                let plugin = claim.map(|c| c.plugin).unwrap_or_else(|| "a plugin".into());
+        // Reaching here means no handler took the call over, so it would run
+        // wherever the daemon runs. The question asked is "what does this tool
+        // reach", answered by the executor that would run it — not "is this
+        // name on a list", which refused every kiln tool along with the shell.
+        // See `crucible_core::traits::tools::ToolSurface`.
+        //
+        // Guarded on the registry being present so the ordinary, unsandboxed
+        // session never pays for the surface lookup (which can hydrate every
+        // provider's tool list on first use).
+        if stream_ctx.agent_stream_config.isolation.is_some() {
+            let surface = stream_ctx
+                .tool_dispatcher
+                .tool_surface(&tool_call.name)
+                .await;
+            if let Some(refusal) = super::isolation_gate::isolation_refusal(
+                stream_ctx.agent_stream_config.isolation.as_ref(),
+                &stream_ctx.session_id,
+                &tool_call.name,
+                surface,
+            ) {
                 warn!(
                     session_id = %stream_ctx.session_id,
                     tool = %tool_call.name,
-                    plugin = %plugin,
+                    ?surface,
                     "refusing tool: session is isolated and no handler took the call"
                 );
-                return deny_tool_call(
-                    stream_ctx,
-                    &call_id,
-                    &tool_call.name,
-                    format!(
-                        "Tool '{}' refused: this session is isolated by '{}', which did not \
-                         handle it. Running it here would execute on the host, outside the \
-                         sandbox. Add it to that plugin's `exempt` list if host execution is \
-                         intended.",
-                        tool_call.name, plugin
-                    ),
-                );
+                return deny_tool_call(stream_ctx, &call_id, &tool_call.name, refusal);
             }
         }
 

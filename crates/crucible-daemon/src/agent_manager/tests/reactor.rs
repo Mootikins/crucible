@@ -784,3 +784,47 @@ async fn an_isolated_session_refuses_a_tool_no_handler_took_over() {
         tool_result.data["result"]
     );
 }
+
+/// A daemon-surface tool must survive isolation with no exemption at all.
+///
+/// The counterpart to the refusal above, and the property that makes the
+/// sandbox usable: `get_kiln_info` reaches daemon-side storage, not the
+/// workspace, so containerizing the session has nothing to do with it. Under
+/// the old per-name allowlist every kiln tool was refused unless hand-listed —
+/// turning on the sandbox turned off Crucible, and adding a kiln tool later
+/// silently broke every sandboxed session.
+#[tokio::test]
+async fn an_isolated_session_allows_a_daemon_surface_tool() {
+    let mut h = ReactorTestHarness::new().await;
+
+    let isolation = crucible_lua::IsolationRegistry::new();
+    isolation.claim(
+        &h.session_id,
+        crucible_lua::IsolationClaim {
+            plugin: "oci".to_string(),
+            // Deliberately empty: the point is that a kiln tool needs no
+            // exemption, not that this test remembered to add one.
+            exempt: Default::default(),
+        },
+    );
+    h.set_isolation(isolation);
+
+    h.inject_streaming_agent(vec![
+        script::tool_call("call-kiln", "get_kiln_info", serde_json::json!({})),
+        script::text("done"),
+        script::done(),
+    ]);
+
+    h.send("run tool").await;
+    let tool_result = h.wait_for("tool_result").await;
+    h.wait_for("message_complete").await;
+
+    let error = tool_result.data["result"]["error"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        !error.contains("isolated"),
+        "a daemon-surface tool must not be refused by an isolation claim, got: {:?}",
+        tool_result.data["result"]
+    );
+}

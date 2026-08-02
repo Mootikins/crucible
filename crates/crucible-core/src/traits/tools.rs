@@ -32,6 +32,31 @@ pub enum ToolError {
     Internal(String),
 }
 
+/// What a tool's execution can reach, from the point of view of a plugin that
+/// sandboxed the session.
+///
+/// Not provenance — [`crate::types::ToolSource`] already answers "who
+/// contributed this tool" for catalog UI, and it is derived by name. This
+/// answers the security question instead: if nothing intercepts the call, does
+/// running it touch the host?
+///
+/// Declared per *executor* rather than per tool name, so a tool added to an
+/// existing executor inherits the classification instead of silently defaulting
+/// to whatever an allowlist forgot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ToolSurface {
+    /// Touches the host filesystem or executes host processes. Refused in an
+    /// isolated session unless a handler took the call or it is exempt.
+    Host,
+    /// Reaches daemon-side state only — notes, embeddings, the kiln, jobs.
+    /// Containerizing a session has nothing to say about these, so they pass.
+    Daemon,
+    /// Runs daemon-side but can reach anything: third-party MCP servers,
+    /// plugin Lua. Treated exactly like `Host`, because a filesystem MCP
+    /// server is host-touching in every way that matters.
+    Unknown,
+}
+
 /// Tool executor abstraction
 ///
 /// This trait defines the interface for executing tools in Crucible's agent system.
@@ -79,6 +104,14 @@ pub trait ToolExecutor: Send + Sync {
     ///
     /// Returns a vector of tool definitions, or a `ToolError`.
     async fn list_tools(&self) -> ToolResult<Vec<ToolDefinition>>;
+
+    /// What this executor's tools can reach. See [`ToolSurface`].
+    ///
+    /// Required rather than defaulted on purpose: a default of `Unknown` would
+    /// be safe but silently refuse a new knowledge executor's tools inside
+    /// every sandboxed session, and a default of `Daemon` would silently open
+    /// the sandbox. Every executor states its own answer.
+    fn surface(&self) -> ToolSurface;
 }
 
 /// Execution context for tool invocations
@@ -317,6 +350,10 @@ mod tests {
 
         async fn list_tools(&self) -> ToolResult<Vec<ToolDefinition>> {
             Ok(self.tools.clone())
+        }
+
+        fn surface(&self) -> ToolSurface {
+            ToolSurface::Unknown
         }
     }
 

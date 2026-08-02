@@ -621,6 +621,10 @@ mod tests {
         async fn list_tools(&self) -> std::result::Result<Vec<ToolDefinition>, ToolError> {
             Ok(self.tools.clone())
         }
+
+        fn surface(&self) -> crucible_core::traits::ToolSurface {
+            crucible_core::traits::ToolSurface::Unknown
+        }
     }
 
     struct PermissionedToolBridge {

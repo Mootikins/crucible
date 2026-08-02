@@ -44,13 +44,18 @@ impl AgentManager {
             return;
         }
 
-        let workspace = self
-            .session_manager
-            .get_session(session_id)
-            .map(|s| s.workspace.to_string_lossy().into_owned());
+        // The same object plugins get, so `session.isolation` reads the same
+        // from a user's `cru.on_session_start` as from a plugin's. Two surfaces
+        // for one documented field that disagreed would be worse than the field
+        // not existing on one of them.
+        let daemon_session = self.session_manager.get_session(session_id);
         let mut lua_session = crucible_lua::Session::new(session_id.to_string());
-        if let Some(workspace) = workspace {
-            lua_session = lua_session.with_workspace(workspace);
+        if let Some(daemon_session) = daemon_session {
+            lua_session =
+                lua_session.with_workspace(daemon_session.workspace.to_string_lossy().into_owned());
+            if let Some(isolation) = daemon_session.isolation {
+                lua_session = lua_session.with_isolation(isolation);
+            }
         }
         lua_session.bind(Box::new(crucible_lua::SessionDefaultsRpc::new(
             scope.clone(),

@@ -80,6 +80,22 @@ pub struct Session {
     /// Last time this session had activity
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity: Option<DateTime<Utc>>,
+
+    /// Per-session isolation override, forwarded to plugins untouched.
+    ///
+    /// Opaque on purpose: the daemon knows nothing about containers, and the
+    /// value's shape (`false`, a profile name, or an environment object) is the
+    /// isolating plugin's vocabulary. It reaches the plugin as a field on the
+    /// [`Session`](crucible_lua::Session) handed to `on_session_start`.
+    ///
+    /// `None` is *not* the same as `Some(false)`: `None` means the caller said
+    /// nothing and the plugin resolves normally, while `Some(false)` is an
+    /// explicit opt out of a container the project would otherwise produce.
+    /// Persisted, so a resumed session is isolated exactly as it was created —
+    /// a sandbox that silently disappears on resume is the ambiguity the
+    /// fail-closed design exists to remove.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub isolation: Option<serde_json::Value>,
 }
 
 impl Session {
@@ -106,12 +122,20 @@ impl Session {
             notifications: crate::types::NotificationQueue::new(),
             archived: false,
             last_activity: Some(Utc::now()),
+            isolation: None,
         }
     }
 
     /// Set the workspace (where agent operates).
     pub fn with_workspace(mut self, workspace: PathBuf) -> Self {
         self.workspace = workspace;
+        self
+    }
+
+    /// Set the per-session isolation override (see [`Session::isolation`]).
+    #[must_use]
+    pub fn with_isolation(mut self, isolation: Option<serde_json::Value>) -> Self {
+        self.isolation = isolation;
         self
     }
 

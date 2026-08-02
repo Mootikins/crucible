@@ -67,6 +67,7 @@ pub mod runtime_defaults;
 pub mod scm;
 pub mod server;
 pub mod session_bridge;
+pub mod session_lifecycle;
 pub mod session_manager;
 pub mod session_storage;
 pub mod skills;

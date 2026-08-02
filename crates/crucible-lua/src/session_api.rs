@@ -302,6 +302,16 @@ pub struct Session {
     /// to mount or scope the workspace (`oci`) must be able to read it during
     /// `on_session_start`, before any agent is configured.
     workspace: Option<String>,
+    /// The session's isolation override, as `session.create` received it.
+    ///
+    /// Identity like `workspace`, and for the same reason: the isolating
+    /// plugin has to read it during `on_session_start`, before any agent
+    /// exists. The daemon never interprets it — `false`, a profile name and an
+    /// environment table are the *plugin's* vocabulary, which is why this is a
+    /// field on the object the plugin already receives rather than a new Lua
+    /// API. Lua sees `nil` when the caller said nothing, which is distinct from
+    /// `false` ("no container even if the project has one").
+    isolation: Option<serde_json::Value>,
 }
 
 impl Session {
@@ -310,6 +320,7 @@ impl Session {
             rpc: Arc::new(Mutex::new(None)),
             id,
             workspace: None,
+            isolation: None,
         }
     }
 
@@ -319,6 +330,13 @@ impl Session {
     #[must_use]
     pub fn with_workspace(mut self, workspace: impl Into<String>) -> Self {
         self.workspace = Some(workspace.into());
+        self
+    }
+
+    /// Attach the session's isolation override (see [`Session::isolation`]).
+    #[must_use]
+    pub fn with_isolation(mut self, isolation: serde_json::Value) -> Self {
+        self.isolation = Some(isolation);
         self
     }
 
@@ -358,6 +376,10 @@ impl UserData for Session {
                     Some(w) => lua.create_string(w).map(Value::String),
                     None => Ok(Value::Nil),
                 },
+                "isolation" => match &this.isolation {
+                    Some(v) => lua.to_value(v),
+                    None => Ok(Value::Nil),
+                },
                 "temperature" => this
                     .with_rpc(|r| Ok(r.get_temperature()))
                     .map(|v| v.map(Value::Number).unwrap_or(Value::Nil)),
@@ -388,7 +410,7 @@ impl UserData for Session {
         methods.add_meta_method(
             MetaMethod::NewIndex,
             |lua, this, (key, val): (String, Value)| match key.as_str() {
-                "id" | "model" | "workspace" => {
+                "id" | "model" | "workspace" | "isolation" => {
                     Err(mlua::Error::runtime(format!("{} is read-only", key)))
                 }
                 "temperature" => {

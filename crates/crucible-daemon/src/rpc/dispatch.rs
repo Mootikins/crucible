@@ -815,24 +815,18 @@ impl RpcDispatcher {
         self.enforce_plugin_session_start(mapped, req).await
     }
 
-    /// Fire plugin start hooks for a session that just became live, and refuse
-    /// it if a `required` hook failed.
+    /// RPC-shaped wrapper over [`SessionLifecycle::enforce_session_start`].
     ///
-    /// Shared by create, resume and resume-from-storage. The invariant is
-    /// "a live session is sandboxed" — if only create enforced it, resuming a
-    /// session would silently run every tool on the host, which is exactly the
-    /// ambiguity the fail-closed design removes.
-    ///
-    /// On refusal the session is torn down (end hooks first, so an earlier
-    /// plugin's container is released) and ended, so a refused session leaves
-    /// nothing behind.
+    /// Only the id extraction is RPC-specific — create returns the id in the
+    /// response, resume is addressed by it. The enforcement itself is shared
+    /// with `DelegationService`, because `create_child_session` bypassing it
+    /// is exactly how a sandboxed parent's subagent escaped onto the host.
     async fn enforce_plugin_session_start(
         &self,
         mapped: RpcResult<serde_json::Value>,
         req: &Request,
     ) -> RpcResult<serde_json::Value> {
         let Ok(value) = &mapped else { return mapped };
-        // create returns the id in the response; resume is addressed by it.
         let session_id = value
             .get("session_id")
             .and_then(|v| v.as_str())
@@ -847,144 +841,32 @@ impl RpcDispatcher {
             return mapped;
         };
 
-        if let Err(e) = self.fire_plugin_session_start(&session_id).await {
-            tracing::error!(
-                session_id = %session_id,
-                error = %e,
-                "required plugin session_start hook failed; refusing the session"
-            );
-            self.refuse_session(&session_id).await;
-            return Err(RpcError {
+        match self
+            .ctx
+            .session_lifecycle
+            .enforce_session_start(&session_id)
+            .await
+        {
+            Ok(()) => mapped,
+            Err(e) => Err(RpcError {
                 code: INTERNAL_ERROR,
-                message: format!("session refused: a plugin's session_start hook failed: {e}"),
+                message: format!("session refused: {e}"),
                 data: None,
-            });
-        }
-
-        // A claim the daemon cannot enforce is worse than no claim: the
-        // session would LOOK sandboxed while every tool runs on the host.
-        if let Some(reason) = self.unenforceable_isolation(&session_id).await {
-            tracing::error!(session_id = %session_id, %reason, "refusing session");
-            self.refuse_session(&session_id).await;
-            return Err(RpcError {
-                code: INTERNAL_ERROR,
-                message: format!("session refused: {reason}"),
-                data: None,
-            });
-        }
-        mapped
-    }
-
-    /// Tear down a session being refused: plugin end hooks first (so an
-    /// earlier plugin's container is released), then end the session.
-    async fn refuse_session(&self, session_id: &str) {
-        self.fire_plugin_session_end(session_id).await;
-        self.ctx.agents.context_attach().release(session_id);
-        if let Err(end_err) = self.ctx.sessions.end_session(session_id).await {
-            tracing::error!(
-                session_id = %session_id,
-                error = %end_err,
-                "refused session could not be ended; it may be orphaned"
-            );
+            }),
         }
     }
 
-    /// The isolation registry without waiting on the loader mutex — which is
-    /// held across session-start hook execution (container builds included).
-    /// Falls back to the loader for contexts the server didn't wire.
+    /// The isolation registry, without waiting on the loader mutex.
     async fn isolation_registry(&self) -> Option<crucible_lua::IsolationRegistry> {
-        if let Some(registry) = self.ctx.agents.isolation() {
-            return Some(registry);
-        }
-        let guard = self.ctx.plugin_loader.lock().await;
-        guard.as_ref().map(|l| l.isolation())
+        self.ctx.session_lifecycle.isolation_registry().await
     }
 
-    /// The reason a session's isolation claim cannot be enforced, or `None`.
-    ///
-    /// Isolation is enforceable only for internal agents: the daemon
-    /// dispatches their tools, so `pre_tool_call` handlers and the
-    /// default-deny gate sit *before* execution. An ACP agent executes tools
-    /// in its own process and reports them as notifications — a handler's
-    /// Cancel/Handled arrives after the fact and stops nothing. Refusing is
-    /// the fail-closed answer; the ACP permission channel
-    /// (`session/request_permission`) is the seam a future enforcement could
-    /// use, but it only fires when the external agent chooses to ask.
-    async fn unenforceable_isolation(&self, session_id: &str) -> Option<String> {
-        let claim = self.isolation_registry().await?.get(session_id)?;
-        let session = self.ctx.sessions.get_session(session_id)?;
-        let agent_type = session.agent.as_ref().map(|a| a.agent_type.clone())?;
-        if agent_type == "internal" {
-            return None;
-        }
-        Some(format!(
-            "plugin '{}' claims isolation for this session, but its agent is external \
-             (agent_type '{agent_type}'): external agents execute tools in their own \
-             process, so the sandbox cannot be enforced",
-            claim.plugin
-        ))
-    }
-
-    /// Fire plugin `on_session_end` hooks, best-effort.
-    ///
-    /// Unlike the start path this never propagates: refusing to *end* a session
-    /// strands the user with something they cannot clean up, which is the
-    /// opposite of the start-hook tradeoff. Shared by the normal end path and
-    /// the create-refusal path so a refused session tears down identically.
+    /// Fire plugin `on_session_end` hooks, best-effort and exactly once.
     async fn fire_plugin_session_end(&self, session_id: &str) {
-        // Only fire for a session the manager still knows — this rejects
-        // made-up ids and sessions already torn down and removed.
-        let Some(daemon_session) = self.ctx.sessions.get_session(session_id) else {
-            tracing::debug!(
-                session_id = %session_id,
-                "skipping plugin session_end hooks for unknown/already-ended session"
-            );
-            return;
-        };
-        // ...but existence is a CHECK, not a CLAIM. End hooks run before
-        // `end_session` removes the session, so two concurrent `session.end`
-        // requests both pass the guard above and both fire teardown — and
-        // plugins are promised they need not be idempotent (a double `oci`
-        // teardown removes an already-removed container). Claim atomically;
-        // the loser returns. Mirrors `end_hooks_fired` for per-session hooks.
-        if !self.ctx.plugin_end_claimed.insert(session_id.to_string()) {
-            tracing::debug!(
-                session_id = %session_id,
-                "plugin session_end hooks already claimed; skipping"
-            );
-            return;
-        }
-        let mut guard = self.ctx.plugin_loader.lock().await;
-        let Some(loader) = guard.as_mut() else { return };
-        // Drop the isolation claim with the session. A claim that outlives its
-        // container would keep denying tools for a session id that may be
-        // reused, and a stale claim is indistinguishable from a live one.
-        loader.isolation().release(session_id);
-        loader.status().release(session_id);
-        // Dedup keys and the spent attach budget are per session and
-        // deliberately survive a drain — so without this they would outlive the
-        // session itself and silently deny a reused id its first attachment.
-        let session = crucible_lua::Session::new(session_id.to_string())
-            .with_workspace(daemon_session.workspace.to_string_lossy());
-        session.bind(Box::new(crate::server::NoopSessionRpc));
-        if let Err(e) = loader.fire_session_end(&session).await {
-            tracing::warn!(session_id = %session_id, error = %e, "plugin session_end hooks failed");
-        }
-    }
-
-    async fn fire_plugin_session_start(&self, session_id: &str) -> anyhow::Result<()> {
-        let mut guard = self.ctx.plugin_loader.lock().await;
-        let Some(loader) = guard.as_mut() else {
-            return Ok(());
-        };
-        // The real workspace, not a placeholder: `oci` bind-mounts it, so a
-        // wrong or absent path means it isolates the wrong directory.
-        let mut session = crucible_lua::Session::new(session_id.to_string());
-        if let Some(daemon_session) = self.ctx.sessions.get_session(session_id) {
-            session = session.with_workspace(daemon_session.workspace.to_string_lossy());
-        }
-        session.bind(Box::new(crate::server::NoopSessionRpc));
-        loader.fire_session_start(&session).await
+        self.ctx
+            .session_lifecycle
+            .fire_session_end(session_id)
+            .await
     }
 
     async fn handle_session_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -2117,6 +1999,8 @@ mod tests {
         let dispatcher = RpcDispatcher::new(ctx);
 
         let reason = dispatcher
+            .ctx
+            .session_lifecycle
             .unenforceable_isolation(&session.id)
             .await
             .expect("an ACP-backed claimed session must be reported unenforceable");
@@ -2124,7 +2008,12 @@ mod tests {
 
         // No claim → enforceable regardless of agent type.
         assert!(
-            dispatcher.unenforceable_isolation("other").await.is_none(),
+            dispatcher
+                .ctx
+                .session_lifecycle
+                .unenforceable_isolation("other")
+                .await
+                .is_none(),
             "sessions without a claim must be unaffected"
         );
     }

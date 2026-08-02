@@ -134,11 +134,17 @@ impl SessionManager {
 
     /// Create a delegated child session of `parent`.
     ///
-    /// The child inherits the parent's kiln, workspace, and connected kilns,
-    /// carries `parent_session_id`, and is created with its agent config
-    /// already set (children never go through `configure_agent`). Children
-    /// are full sessions in behavior but are hidden from default listings
-    /// and lifecycle-subordinate to their parent.
+    /// The child inherits the parent's kiln, workspace, connected kilns and
+    /// isolation override, carries `parent_session_id`, and is created with its
+    /// agent config already set (children never go through `configure_agent`).
+    /// Children are full sessions in behavior but are hidden from default
+    /// listings and lifecycle-subordinate to their parent.
+    ///
+    /// Isolation is inherited for the same reason the workspace is: a child
+    /// runs the parent's tools against the parent's directory. Letting it
+    /// resolve isolation independently would put a sandboxed parent's subagent
+    /// on the host — the delegation escape, reopened through the resolution
+    /// order instead of through the lifecycle hooks.
     pub async fn create_child_session(
         &self,
         parent: &Session,
@@ -148,6 +154,7 @@ impl SessionManager {
         let mut session = Session::new(SessionType::Agent, parent.kiln.clone())
             .with_workspace(parent.workspace.clone())
             .with_connected_kilns(parent.connected_kilns.clone())
+            .with_isolation(parent.isolation.clone())
             .with_parent(parent.id.clone());
         session.agent = Some(agent);
         session.title = title;

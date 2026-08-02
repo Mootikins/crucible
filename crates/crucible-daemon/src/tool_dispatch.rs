@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use crucible_core::traits::tools::{
-    ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult,
+    ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult, ToolSurface,
 };
 use crucible_core::types::{ToolRef, ToolSource};
 use futures::FutureExt;
@@ -60,6 +60,13 @@ pub trait ToolDispatcher: Send + Sync {
     ) -> Result<serde_json::Value, String>;
     fn has_tool(&self, name: &str) -> bool;
     fn get_tool_ref(&self, name: &str) -> Option<ToolRef>;
+
+    /// What running `name` would reach if nothing intercepts it.
+    ///
+    /// A name no provider claims answers [`ToolSurface::Unknown`]: an isolation
+    /// gate asking this question must fail closed on a tool the daemon cannot
+    /// place, not wave it through.
+    async fn tool_surface(&self, name: &str) -> ToolSurface;
 }
 
 pub struct DaemonToolDispatcher {
@@ -68,17 +75,25 @@ pub struct DaemonToolDispatcher {
     tool_names_hydrated: AtomicBool,
     tool_refs: RwLock<HashMap<String, ToolRef>>,
     tool_refs_hydrated: AtomicBool,
+    /// `name -> surface` of the provider that `dispatch_tool` will actually
+    /// reach. Filled by the same provider walk as `tool_refs` and with the
+    /// same first-provider-wins rule, so the classification can never describe
+    /// a different executor than the one that runs.
+    tool_surfaces: RwLock<HashMap<String, ToolSurface>>,
 }
 
 impl DaemonToolDispatcher {
     pub fn new(providers: Vec<Arc<dyn ToolExecutor>>) -> Self {
         let mut tool_names = HashSet::new();
         let mut tool_refs = HashMap::new();
+        let mut tool_surfaces = HashMap::new();
         for provider in &providers {
             if let Some(Ok(defs)) = provider.list_tools().now_or_never() {
+                let surface = provider.surface();
                 for def in defs {
                     tool_names.insert(def.name.clone());
                     let tool_ref = Self::tool_ref_from_definition(&def);
+                    tool_surfaces.entry(def.name.clone()).or_insert(surface);
                     tool_refs.entry(def.name).or_insert(tool_ref);
                 }
             }
@@ -90,6 +105,7 @@ impl DaemonToolDispatcher {
             tool_names_hydrated: AtomicBool::new(false),
             tool_refs: RwLock::new(tool_refs),
             tool_refs_hydrated: AtomicBool::new(false),
+            tool_surfaces: RwLock::new(tool_surfaces),
         }
     }
 
@@ -134,11 +150,16 @@ impl DaemonToolDispatcher {
 
         let mut discovered_names = HashSet::new();
         let mut discovered_refs = HashMap::new();
+        let mut discovered_surfaces = HashMap::new();
         for provider in &self.providers {
             if let Ok(defs) = provider.list_tools().await {
+                let surface = provider.surface();
                 for def in defs {
                     discovered_names.insert(def.name.clone());
                     let tool_ref = Self::tool_ref_from_definition(&def);
+                    discovered_surfaces
+                        .entry(def.name.clone())
+                        .or_insert(surface);
                     discovered_refs.entry(def.name).or_insert(tool_ref);
                 }
             }
@@ -157,6 +178,10 @@ impl DaemonToolDispatcher {
             .write()
             .expect("tool_refs lock poisoned")
             .extend(discovered_refs);
+        self.tool_surfaces
+            .write()
+            .expect("tool_surfaces lock poisoned")
+            .extend(discovered_surfaces);
         self.tool_names_hydrated.store(true, Ordering::Release);
         self.tool_refs_hydrated.store(true, Ordering::Release);
     }
@@ -172,31 +197,36 @@ impl DaemonToolDispatcher {
         // dispatcher (guarded by tool_names_hydrated); the async hydrate path is
         // preferred wherever an await is available.
         let providers = self.providers.clone();
-        let (discovered_names, discovered_refs) = std::thread::spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build();
-            let mut names = HashSet::new();
-            let mut refs = HashMap::new();
+        let (discovered_names, discovered_refs, discovered_surfaces) =
+            std::thread::spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build();
+                let mut names = HashSet::new();
+                let mut refs = HashMap::new();
+                let mut surfaces = HashMap::new();
 
-            if let Ok(runtime) = runtime {
-                runtime.block_on(async {
-                    for provider in &providers {
-                        if let Ok(defs) = provider.list_tools().await {
-                            for def in defs {
-                                names.insert(def.name.clone());
-                                let tool_ref = DaemonToolDispatcher::tool_ref_from_definition(&def);
-                                refs.entry(def.name).or_insert(tool_ref);
+                if let Ok(runtime) = runtime {
+                    runtime.block_on(async {
+                        for provider in &providers {
+                            if let Ok(defs) = provider.list_tools().await {
+                                let surface = provider.surface();
+                                for def in defs {
+                                    names.insert(def.name.clone());
+                                    let tool_ref =
+                                        DaemonToolDispatcher::tool_ref_from_definition(&def);
+                                    surfaces.entry(def.name.clone()).or_insert(surface);
+                                    refs.entry(def.name).or_insert(tool_ref);
+                                }
                             }
                         }
-                    }
-                });
-            }
+                    });
+                }
 
-            (names, refs)
-        })
-        .join()
-        .unwrap_or_default();
+                (names, refs, surfaces)
+            })
+            .join()
+            .unwrap_or_default();
 
         if !discovered_names.is_empty() {
             self.tool_names
@@ -210,6 +240,13 @@ impl DaemonToolDispatcher {
                 .write()
                 .expect("tool_refs lock poisoned")
                 .extend(discovered_refs);
+        }
+
+        if !discovered_surfaces.is_empty() {
+            self.tool_surfaces
+                .write()
+                .expect("tool_surfaces lock poisoned")
+                .extend(discovered_surfaces);
         }
 
         self.tool_names_hydrated.store(true, Ordering::Release);
@@ -421,6 +458,23 @@ impl ToolExecutor for McpToolExecutor {
 
         Ok(tools)
     }
+
+    /// Notes, search, the kiln, jobs, skills and delegation — all of it lands
+    /// in daemon-side storage or the daemon's own managers. None of it is
+    /// affected by whether the session's *workspace* is containerized, which
+    /// is why these survive an isolation claim with no exemption.
+    ///
+    /// NOTE(crucible): `delegate_session` rides on this classification and so
+    /// stops being refused inside an isolated session. That is only safe once
+    /// `create_child_session` fires plugin `on_session_start` and the child
+    /// acquires its own claim — until then a sandboxed parent can delegate a
+    /// child that runs every tool on the host. The two changes belong to the
+    /// same phase and must land together; see
+    /// `thoughts/Container Isolation Usability.md` § "Closing the delegation
+    /// escape".
+    fn surface(&self) -> ToolSurface {
+        ToolSurface::Daemon
+    }
 }
 
 /// Dispatches gateway (user MCP) tools through the shared `McpGatewayManager`,
@@ -493,6 +547,14 @@ impl ToolExecutor for GatewayToolExecutor {
                 required_permissions: vec![],
             })
             .collect())
+    }
+
+    /// `Unknown`, not `Daemon`, deliberately. Gateway tools run in the daemon
+    /// process but are third-party code reached over a pipe: a filesystem MCP
+    /// server is host-touching in every way that matters, and the daemon has
+    /// no way to tell one from a calculator.
+    fn surface(&self) -> ToolSurface {
+        ToolSurface::Unknown
     }
 }
 
@@ -577,6 +639,26 @@ impl ToolDispatcher for DaemonToolDispatcher {
             .expect("tool_refs lock poisoned")
             .get(name)
             .cloned()
+    }
+
+    async fn tool_surface(&self, name: &str) -> ToolSurface {
+        // The progressive-disclosure bridge belongs to no provider: it is
+        // answered by this dispatcher out of its own catalog and touches
+        // nothing. Left unclassified it would fall to `Unknown` and be refused
+        // inside every sandboxed session — the agent could not even ask what
+        // tools exist.
+        if DISCOVERY_TOOL_NAMES.contains(&name) {
+            return ToolSurface::Daemon;
+        }
+
+        self.hydrate_tool_names().await;
+
+        self.tool_surfaces
+            .read()
+            .expect("tool_surfaces lock poisoned")
+            .get(name)
+            .copied()
+            .unwrap_or(ToolSurface::Unknown)
     }
 }
 
@@ -771,6 +853,99 @@ mod tests {
             .await;
 
         assert!(result.is_err(), "unknown tool schema lookup should error");
+    }
+
+    /// Surfaces come from the provider that would actually run the tool.
+    ///
+    /// Cheapest place to catch a misclassification: get this wrong and either
+    /// the sandbox has a hole (`bash` reported `Daemon`) or a sandboxed session
+    /// loses its knowledge tools (`get_kiln_info` reported `Host`), and both
+    /// only show up under a live isolation claim otherwise.
+    #[tokio::test]
+    async fn tool_surfaces_follow_the_dispatching_provider() {
+        let (_temp, dispatcher) = test_dispatcher_with_mcp();
+
+        assert_eq!(dispatcher.tool_surface("bash").await, ToolSurface::Host);
+        assert_eq!(
+            dispatcher.tool_surface("read_file").await,
+            ToolSurface::Host
+        );
+        assert_eq!(
+            dispatcher.tool_surface("get_kiln_info").await,
+            ToolSurface::Daemon
+        );
+        assert_eq!(
+            dispatcher.tool_surface("semantic_search").await,
+            ToolSurface::Daemon
+        );
+    }
+
+    /// A name no provider claims must fail closed, not sail through.
+    #[tokio::test]
+    async fn an_unrecognised_tool_has_an_unknown_surface() {
+        let (_temp, dispatcher) = test_dispatcher_with_mcp();
+        assert_eq!(
+            dispatcher.tool_surface("not_a_tool").await,
+            ToolSurface::Unknown
+        );
+    }
+
+    /// The discovery bridge belongs to no provider. Left to fall through it
+    /// would read `Unknown` and be refused inside every sandboxed session —
+    /// the agent could not ask what tools it has.
+    #[tokio::test]
+    async fn the_discovery_bridge_is_daemon_surface() {
+        let (_temp, dispatcher) = test_dispatcher_with_mcp();
+        assert_eq!(
+            dispatcher.tool_surface("discover_tools").await,
+            ToolSurface::Daemon
+        );
+        assert_eq!(
+            dispatcher.tool_surface("get_tool_schema").await,
+            ToolSurface::Daemon
+        );
+    }
+
+    /// A provider that declares `bash` as harmless, registered behind the real
+    /// one. Stands in for a plugin or gateway tool whose name collides with a
+    /// built-in.
+    struct MislabellingExecutor;
+
+    #[async_trait]
+    impl ToolExecutor for MislabellingExecutor {
+        async fn execute_tool(
+            &self,
+            _name: &str,
+            _params: serde_json::Value,
+            _context: &ExecutionContext,
+        ) -> ToolResult<serde_json::Value> {
+            Ok(serde_json::Value::Null)
+        }
+
+        async fn list_tools(&self) -> ToolResult<Vec<ToolDefinition>> {
+            Ok(vec![ToolDefinition::new("bash", "not really")])
+        }
+
+        fn surface(&self) -> ToolSurface {
+            ToolSurface::Daemon
+        }
+    }
+
+    /// Dispatch walks providers in order and the first to claim a name wins.
+    /// The surface must describe that same provider, or a later provider's
+    /// declaration silently relabels a tool it will never run — which is a
+    /// sandbox hole, not a cosmetic mismatch.
+    #[tokio::test]
+    async fn a_colliding_name_reports_the_first_providers_surface() {
+        let providers: Vec<Arc<dyn ToolExecutor>> =
+            vec![workspace_tools(), Arc::new(MislabellingExecutor)];
+        let dispatcher = DaemonToolDispatcher::new(providers);
+
+        assert_eq!(
+            dispatcher.tool_surface("bash").await,
+            ToolSurface::Host,
+            "the surface must describe the provider dispatch reaches first"
+        );
     }
 
     #[test]

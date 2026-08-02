@@ -16,6 +16,7 @@
 use crate::agent_manager::{AgentManager, TurnOutcome, TurnStatus};
 use crate::event_emitter::emit_event;
 use crate::protocol::SessionEventMessage;
+use crate::session_lifecycle::SessionLifecycle;
 use crate::session_manager::SessionManager;
 use async_trait::async_trait;
 use crucible_core::background::{truncate, JobError, JobInfo, JobKind, JobResult};
@@ -92,6 +93,10 @@ struct DelegationRecord {
 pub struct DelegationService {
     agent_manager: OnceLock<Weak<AgentManager>>,
     session_manager: Arc<SessionManager>,
+    /// Plugin session start/end enforcement, shared with the RPC path. Bound
+    /// at startup; unbound in tests that wire no plugin loader, where no claim
+    /// can exist to escape.
+    session_lifecycle: OnceLock<Arc<SessionLifecycle>>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     records: Arc<DashMap<String, DelegationRecord>>,
     /// Per-parent concurrency permits. Sized from the parent's
@@ -108,6 +113,7 @@ impl DelegationService {
         Arc::new(Self {
             agent_manager: OnceLock::new(),
             session_manager,
+            session_lifecycle: OnceLock::new(),
             event_tx,
             records: Arc::new(DashMap::new()),
             permits: Arc::new(DashMap::new()),
@@ -121,6 +127,13 @@ impl DelegationService {
         let _ = self.agent_manager.set(Arc::downgrade(manager));
     }
 
+    /// Bind the shared session lifecycle. The *same* instance the RPC path
+    /// uses, so the once-only teardown claim covers children ended by the
+    /// delegation watcher and parents ended by `session.end` alike.
+    pub fn bind_session_lifecycle(&self, lifecycle: Arc<SessionLifecycle>) {
+        let _ = self.session_lifecycle.set(lifecycle);
+    }
+
     fn manager(&self) -> Result<Arc<AgentManager>, JobError> {
         self.agent_manager
             .get()
@@ -128,6 +141,51 @@ impl DelegationService {
             .ok_or_else(|| {
                 JobError::SpawnFailed("delegation service not bound to an agent manager".into())
             })
+    }
+
+    /// The isolation registry the tool gate reads, or `None` when no plugin
+    /// runtime is wired (nothing can be claimed, so nothing can escape).
+    async fn isolation_registry(&self) -> Option<crucible_lua::IsolationRegistry> {
+        match self.session_lifecycle.get() {
+            Some(lifecycle) => lifecycle.isolation_registry().await,
+            None => self
+                .agent_manager
+                .get()
+                .and_then(Weak::upgrade)
+                .and_then(|m| m.isolation()),
+        }
+    }
+
+    /// Fire the child's plugin start hooks, then verify the sandbox actually
+    /// transferred to it.
+    ///
+    /// Two checks, because they fail for different reasons. The first is the
+    /// shared enforcement: a `required` start hook that raises refuses the
+    /// child and tears it down, exactly as it would at `session.create`.
+    ///
+    /// The second is the backstop this path specifically needs. A plugin
+    /// containers per *workspace* and a child inherits its parent's, so a
+    /// sandboxed parent whose child comes back unclaimed means the sandbox is
+    /// gone — the parent's container died, or the plugin declined the child.
+    /// Either way the child would run on the host, so it is refused instead.
+    async fn enforce_child_isolation(&self, parent_id: &str, child_id: &str) -> anyhow::Result<()> {
+        if let Some(lifecycle) = self.session_lifecycle.get() {
+            lifecycle.enforce_session_start(child_id).await?;
+        }
+        let Some(registry) = self.isolation_registry().await else {
+            return Ok(());
+        };
+        if registry.get(parent_id).is_some() && registry.get(child_id).is_none() {
+            if let Some(lifecycle) = self.session_lifecycle.get() {
+                lifecycle.fire_session_end(child_id).await;
+            }
+            anyhow::bail!(
+                "the parent session is sandboxed but no plugin claimed isolation for \
+                 the child: its sandbox is gone or was declined, and a child that \
+                 shares its parent's workspace would otherwise run on the host"
+            );
+        }
+        Ok(())
     }
 
     /// Delegation depth of a session: number of parent links above it.
@@ -390,6 +448,18 @@ impl DelegationSpawner for DelegationService {
             .await
             .map_err(|e| JobError::SpawnFailed(e.to_string()))?;
 
+        // A delegated child is a real session and must satisfy the same
+        // invariant as any other: plugin start hooks fire, or it does not
+        // exist. This was the escape — `create_child_session` never routed
+        // through the RPC dispatcher, the only place that fired them, so a
+        // sandboxed parent's subagent got no container, no claim, and ran
+        // every tool on the host.
+        if let Err(e) = self.enforce_child_isolation(&parent.id, &child.id).await {
+            drop(permit);
+            let _ = self.session_manager.end_session(&child.id).await;
+            return Err(JobError::SpawnFailed(format!("Delegation refused: {e}")));
+        }
+
         let mut info = JobInfo::new(
             parent.id.clone(),
             JobKind::Subagent {
@@ -463,6 +533,7 @@ impl DelegationSpawner for DelegationService {
         // and cancel explicitly).
         let records = self.records.clone();
         let session_manager = self.session_manager.clone();
+        let lifecycle = self.session_lifecycle.get().cloned();
         let event_tx = self.event_tx.clone();
         let manager_weak = self.agent_manager.get().cloned();
         let parent_id = parent.id.clone();
@@ -494,6 +565,17 @@ impl DelegationSpawner for DelegationService {
             // One-shot delegation semantics: the child ends when its turn
             // does. Finalize the child's lifecycle BEFORE publishing the
             // result so an awaiter observes a fully-ended child session.
+            //
+            // Plugin teardown first, and it has to happen here: this is the
+            // only place a delegated child is ended, and `fire_session_end`
+            // needs the session still in the manager. It is what releases the
+            // isolation claim and decrements the plugin's per-workspace
+            // container refcount — without it every delegated child leaks
+            // both, and a claim outliving its session denies tools for an id
+            // that may be reused.
+            if let Some(lifecycle) = lifecycle.as_ref() {
+                lifecycle.fire_session_end(&child_id).await;
+            }
             if let Err(e) = session_manager.end_session(&child_id).await {
                 debug!(child_id = %child_id, error = %e, "Child session already ended");
             }

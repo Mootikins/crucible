@@ -12,13 +12,16 @@ use crucible_core::config::{BackendType, DelegationConfig};
 use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::agent_manager::AgentFactoryOverride;
+use crucible_daemon::daemon_plugins::DaemonPluginLoader;
 use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
 use crucible_daemon::protocol::SessionEventMessage;
+use crucible_daemon::session_lifecycle::SessionLifecycle;
 use crucible_daemon::test_support::{MockSubagentBehavior, MockSubagentHandle};
 use crucible_daemon::tools::workspace::WorkspaceTools;
 use crucible_daemon::{
     AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
 };
+use crucible_lua::{IsolationRegistry, PluginSource};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -86,15 +89,34 @@ struct Harness {
     session_manager: Arc<SessionManager>,
     agent_manager: Arc<AgentManager>,
     service: Arc<DelegationService>,
+    lifecycle: Arc<SessionLifecycle>,
     event_rx: broadcast::Receiver<SessionEventMessage>,
     parent_id: String,
 }
 
 async fn setup(agent: SessionAgent, behavior: MockSubagentBehavior) -> Harness {
+    setup_with_plugin(agent, behavior, None).await
+}
+
+/// `plugin_init` is the body of a one-file Lua plugin loaded into a real
+/// `DaemonPluginLoader`, so session-lifecycle hooks fire through the same
+/// runtime production uses.
+async fn setup_with_plugin(
+    agent: SessionAgent,
+    behavior: MockSubagentBehavior,
+    plugin_init: Option<&str>,
+) -> Harness {
     let temp = TempDir::new().expect("temp dir");
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
     let (event_tx, event_rx) = broadcast::channel(64);
+
+    let loader = match plugin_init {
+        Some(init) => Some(load_test_plugin(temp.path(), init).await),
+        None => None,
+    };
+    let plugin_loader = Arc::new(tokio::sync::Mutex::new(loader));
+    let lifecycle = SessionLifecycle::new(session_manager.clone(), plugin_loader.clone());
 
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let agent_manager = Arc::new(AgentManager::new_with_delegation(
@@ -109,12 +131,17 @@ async fn setup(agent: SessionAgent, behavior: MockSubagentBehavior) -> Harness {
             acp_config: None,
             context_config: None,
             permission_config: None,
-            plugin_loader: None,
+            plugin_loader: Some(plugin_loader.clone()),
             workspace_tools: Arc::new(WorkspaceTools::new(temp.path().to_path_buf())),
         },
         service.clone(),
     ));
+    if let Some(registry) = isolation_registry(&plugin_loader).await {
+        agent_manager.set_isolation(registry);
+    }
     service.bind_agent_manager(&agent_manager);
+    lifecycle.bind_agent_manager(&agent_manager);
+    service.bind_session_lifecycle(lifecycle.clone());
     agent_manager.set_agent_factory_override(behavior_factory(behavior));
 
     let session = session_manager
@@ -137,10 +164,54 @@ async fn setup(agent: SessionAgent, behavior: MockSubagentBehavior) -> Harness {
         session_manager,
         agent_manager,
         service,
+        lifecycle,
         event_rx,
         parent_id: session.id,
     }
 }
+
+async fn load_test_plugin(temp: &Path, init: &str) -> DaemonPluginLoader {
+    let root = temp.join("plugins");
+    let dir = root.join("sandbox");
+    std::fs::create_dir_all(&dir).expect("plugin dir");
+    std::fs::write(
+        dir.join("plugin.yaml"),
+        "name: sandbox\nversion: \"0.1.0\"\ndescription: test isolation claimer\n",
+    )
+    .expect("plugin.yaml");
+    std::fs::write(dir.join("init.lua"), init).expect("init.lua");
+
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .load_plugins(&[(root, PluginSource::EnvPath)])
+        .await
+        .expect("load plugins");
+    loader
+}
+
+async fn isolation_registry(
+    loader: &Arc<tokio::sync::Mutex<Option<DaemonPluginLoader>>>,
+) -> Option<IsolationRegistry> {
+    loader.lock().await.as_ref().map(|l| l.isolation())
+}
+
+/// A plugin that sandboxes every session it is told about, like `oci` does
+/// once `[plugins.oci]` names an image.
+const CLAIMS_ISOLATION: &str = r#"
+crucible.on_session_start(function(session)
+  crucible.require_isolation{ session = session.id, plugin = "sandbox" }
+end, { required = true })
+return { name = "sandbox", version = "0.1.0", description = "test isolation claimer" }
+"#;
+
+/// A plugin whose sandbox cannot be established — `oci` when the image build
+/// fails or the runtime is missing.
+const FAILS_TO_SANDBOX: &str = r#"
+crucible.on_session_start(function(session)
+  error("sandbox: container start failed")
+end, { required = true })
+return { name = "sandbox", version = "0.1.0", description = "test isolation claimer" }
+"#;
 
 fn request(harness: &Harness, prompt: &str) -> DelegationRequest {
     DelegationRequest {
@@ -1261,4 +1332,133 @@ async fn card_specialty_resolves_through_llm_models_table() {
     // Unmapped specialty: full inherit.
     assert_eq!(resolved["mystic"].model, "llama3.2");
     assert_eq!(resolved["mystic"].provider, BackendType::Ollama);
+}
+
+// ---------------------------------------------------------------------------
+// Sandboxed delegation
+// ---------------------------------------------------------------------------
+
+/// A delegated child is a real session, but `create_child_session` was the one
+/// path that never fired plugin `on_session_start` — those hooks lived behind a
+/// private method on the RPC dispatch type. So a sandboxed parent's subagent
+/// got no container and no isolation claim, and every tool it called ran on the
+/// host. The hole was masked only because `delegate_session` was itself refused
+/// inside a claimed session; classifying tools by surface unmasks it.
+#[tokio::test]
+async fn delegated_child_inherits_the_parents_isolation_claim() {
+    // Pending: the child's turn never completes, so the claim under assertion
+    // cannot be released by the watcher mid-test.
+    let h = setup_with_plugin(
+        parent_agent(Some(delegation_config(true, 3))),
+        MockSubagentBehavior::Pending,
+        Some(CLAIMS_ISOLATION),
+    )
+    .await;
+
+    // The parent goes through exactly what `session.create` performs.
+    h.lifecycle
+        .enforce_session_start(&h.parent_id)
+        .await
+        .expect("parent session start");
+    let registry = h
+        .lifecycle
+        .isolation_registry()
+        .await
+        .expect("plugin isolation registry");
+    assert!(
+        registry.get(&h.parent_id).is_some(),
+        "the parent must be sandboxed or this test asserts nothing"
+    );
+
+    let spawned = h
+        .service
+        .spawn_delegation(request(&h, "task"))
+        .await
+        .expect("spawn");
+
+    let claim = registry.get(&spawned.child_session_id).unwrap_or_else(|| {
+        panic!(
+            "delegated child {} has no isolation claim: it shares its parent's \
+             workspace and runs the same tools, so an unclaimed child is an \
+             unsandboxed one",
+            spawned.child_session_id
+        )
+    });
+    assert_eq!(claim.plugin, "sandbox");
+
+    h.service.cancel_delegation(&spawned.delegation_id).await;
+}
+
+/// The other half of "a child fires start hooks": a `required` hook that fails
+/// must refuse the delegation, not produce a running child on the host. Same
+/// tradeoff `session.create` makes — "the child exists" has to imply "the child
+/// is sandboxed".
+#[tokio::test]
+async fn delegation_is_refused_when_the_childs_sandbox_cannot_be_established() {
+    let h = setup_with_plugin(
+        parent_agent(Some(delegation_config(true, 3))),
+        MockSubagentBehavior::ImmediateSuccess("ok".to_string()),
+        Some(FAILS_TO_SANDBOX),
+    )
+    .await;
+
+    let err = h
+        .service
+        .spawn_delegation(request(&h, "task"))
+        .await
+        .expect_err("a child whose sandbox did not start must be refused");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("container start failed"),
+        "the refusal must name what failed: {msg}"
+    );
+
+    // And it must leave nothing running.
+    assert!(
+        h.service.list_delegations(&h.parent_id).is_empty(),
+        "a refused delegation must not be recorded as a running job"
+    );
+}
+
+/// A claim that outlives its session keeps denying tools for an id that may be
+/// reused, and — once the plugin holds a container — leaks it. The child's end
+/// is driven by the delegation watcher, which is the only place that ends a
+/// delegated child, so teardown has to fire from there.
+#[tokio::test]
+async fn a_delegated_childs_isolation_claim_is_released_when_it_ends() {
+    let h = setup_with_plugin(
+        parent_agent(Some(delegation_config(true, 3))),
+        MockSubagentBehavior::ImmediateSuccess("ok".to_string()),
+        Some(CLAIMS_ISOLATION),
+    )
+    .await;
+    h.lifecycle
+        .enforce_session_start(&h.parent_id)
+        .await
+        .expect("parent session start");
+    let registry = h
+        .lifecycle
+        .isolation_registry()
+        .await
+        .expect("plugin isolation registry");
+
+    let spawned = h
+        .service
+        .spawn_delegation(request(&h, "task"))
+        .await
+        .expect("spawn");
+    let _ = h
+        .service
+        .await_delegation(&spawned.delegation_id, Duration::from_secs(5))
+        .await
+        .expect("await");
+
+    assert!(
+        registry.get(&spawned.child_session_id).is_none(),
+        "an ended child's isolation claim must be released with it"
+    );
+    assert!(
+        registry.get(&h.parent_id).is_some(),
+        "ending a child must not tear down its parent's sandbox"
+    );
 }

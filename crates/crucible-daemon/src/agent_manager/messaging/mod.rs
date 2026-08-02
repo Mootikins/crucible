@@ -4,6 +4,7 @@ use crucible_core::types::ToolSource;
 const DEFAULT_MAX_TOOL_DEPTH: usize = 10;
 
 mod gate_decision;
+mod isolation_gate;
 mod permission;
 mod send;
 mod stream;

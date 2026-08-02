@@ -5,11 +5,12 @@ use crate::daemon_plugins::DaemonPluginLoader;
 use crate::kiln_manager::KilnManager;
 use crate::mcp_server::McpServerManager;
 use crate::protocol::SessionEventMessage;
+use crate::session_lifecycle::SessionLifecycle;
 use crate::session_manager::SessionManager;
 use crate::subscription::SubscriptionManager;
 use crate::workflow_registry::WorkflowRegistry;
 use crucible_core::config::{LlmConfig, McpConfig, ScmConfig};
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
 
@@ -37,19 +38,13 @@ pub struct RpcContext {
     pub workflows: Arc<WorkflowRegistry>,
     /// SCM (git) config — `scm.worktree_add` reads `worktree_dir` from here.
     pub scm_config: Option<ScmConfig>,
-    /// Sessions whose plugin `on_session_end` hooks have already been claimed.
+    /// Plugin session start/end enforcement, shared with `DelegationService`.
     ///
-    /// `get_session` is a check, not a claim: the session is not removed until
-    /// `handle_session_end` runs, so two concurrent `session.end` requests both
-    /// see it and both fire teardown. Plugins are promised they need not be
-    /// idempotent, and a double `oci` teardown removes an already-removed
-    /// container. `insert` returns false for the loser. Mirrors the
-    /// `end_hooks_fired` flag the per-session Lua hooks already had.
-    ///
-    /// Grows by one session id per ended session for the daemon's lifetime —
-    /// bounded and tiny, and it must outlive the session entry itself, which is
-    /// exactly what makes it a valid duplicate guard.
-    pub plugin_end_claimed: Arc<DashSet<String>>,
+    /// Built here rather than passed in because every input it needs is
+    /// already a field, and `server::bind` hands this same `Arc` to the
+    /// delegation service — one instance, so the once-only teardown claim
+    /// covers RPC-ended and delegation-ended sessions alike.
+    pub session_lifecycle: Arc<SessionLifecycle>,
 }
 
 impl RpcContext {
@@ -70,6 +65,8 @@ impl RpcContext {
         data_home: std::path::PathBuf,
         scm_config: Option<ScmConfig>,
     ) -> Self {
+        let session_lifecycle = SessionLifecycle::new(sessions.clone(), plugin_loader.clone());
+        session_lifecycle.bind_agent_manager(&agents);
         Self {
             kiln,
             sessions,
@@ -86,7 +83,7 @@ impl RpcContext {
             data_home,
             workflows: Arc::new(WorkflowRegistry::new()),
             scm_config,
-            plugin_end_claimed: Arc::new(DashSet::new()),
+            session_lifecycle,
         }
     }
 }

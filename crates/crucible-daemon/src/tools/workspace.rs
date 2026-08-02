@@ -511,7 +511,7 @@ impl WorkspaceTools {
 
 use async_trait::async_trait;
 use crucible_core::traits::tools::{
-    ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult,
+    ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult, ToolSurface,
 };
 
 #[async_trait]
@@ -655,6 +655,13 @@ impl ToolExecutor for WorkspaceTools {
             })
             .collect();
         Ok(tools)
+    }
+
+    /// `bash`, `read_file`, `write_file`, `edit_file`, `glob`, `grep` — every
+    /// one of them reads, writes or executes on the host filesystem. This is
+    /// the executor an isolating plugin exists to intercept.
+    fn surface(&self) -> ToolSurface {
+        ToolSurface::Host
     }
 }
 

@@ -32,7 +32,9 @@ pub use llm::{
 pub use parser::MarkdownParser;
 pub use provider::EmbeddingResponse;
 pub use storage_client::StorageClient;
-pub use tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult};
+pub use tools::{
+    ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult, ToolSurface,
+};
 // Input abstractions for cross-platform UI
 pub use input::{ChatEvent, InputMode, KeyAction, KeyCode, KeyPattern, Modifiers, SessionAction};
 // MCP abstractions
