@@ -143,10 +143,16 @@ function M.build_branches(porcelain, head, locals, remotes)
   return M.sort_branches(branches), current
 end
 
---- One menu row per branch, in the shape the composer's chips read.
+--- One menu row per branch, in the shape every client reads.
 ---
 --- The hint is the whole affordance: it says whether picking this row jumps to
 --- a checkout that exists or creates one, before the user commits to it.
+---
+--- `path` is carried for branches that already have a checkout, because this
+--- is the ONLY place that mapping exists. The session tree labels each
+--- checkout with its branch, and the files-pane root picker jumps to one; both
+--- used to ask the daemon for their own copy of the branch list. One answer,
+--- one source.
 function M.to_targets(branches)
   local targets = {}
   for _, b in ipairs(branches) do
@@ -160,7 +166,13 @@ function M.to_targets(branches)
     else
       hint = "new worktree"
     end
-    targets[#targets + 1] = { value = b.name, label = b.name, hint = hint }
+    targets[#targets + 1] = {
+      value = b.name,
+      label = b.name,
+      hint = hint,
+      path = b.worktree_path,
+      current = b.is_current or nil,
+    }
   end
   return targets
 end

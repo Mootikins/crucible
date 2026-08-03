@@ -154,7 +154,9 @@ test('a second provider on an axis turns the menu into a drill-down', async ({ p
   // The hosts stay behind the door until it is opened.
   await expect(popout).not.toContainText('build-box');
 
-  await page.getByRole('option', { name: 'Remote Machines' }).click();
+  // Hover, not click: a submenu that needs a click to open is a submenu the
+  // pointer has already told you it wants.
+  await page.getByRole('option', { name: 'Remote Machines' }).hover();
   await expect(page.getByTestId('composer-target-flyout')).toContainText('build-box');
 
   await page.getByRole('option', { name: 'build-box' }).click();

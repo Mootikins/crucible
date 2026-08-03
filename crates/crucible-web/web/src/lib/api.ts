@@ -53,6 +53,12 @@ export interface TargetProvider {
   label: string;
   /** Plugin command that lists this provider's targets. */
   targets_command?: string;
+  /**
+   * Plugin command that materialises one target and answers with a path.
+   * Workspace-axis only — a runtime provider resolves nothing, it relocates
+   * the process.
+   */
+  resolve_command?: string;
 }
 
 /** One target a provider offered. */
@@ -61,6 +67,18 @@ export interface ProviderTarget {
   label: string;
   hint?: string;
   disabled?: boolean;
+  /** `provider:target` — what `session.create` takes, built once here. */
+  spec: string;
+  /**
+   * An existing path this target already resolves to, when the provider knows
+   * one. The worktree provider fills it for branches that have a checkout,
+   * which is what lets the session tree label a checkout with its branch and
+   * the files-pane picker jump to it — without either asking the daemon for
+   * its own copy of the branch list.
+   */
+  path?: string;
+  /** Set when this target is the one currently in effect. */
+  current?: boolean;
 }
 
 /**
@@ -523,6 +541,8 @@ export async function getTargetProviders(axis: TargetProvider['axis']): Promise<
       label: typeof decl.label === 'string' && decl.label ? decl.label : plugin,
       targets_command:
         typeof decl.targets_command === 'string' ? decl.targets_command : undefined,
+      resolve_command:
+        typeof decl.resolve_command === 'string' ? decl.resolve_command : undefined,
     });
   }
   return providers.sort((a, b) => a.label.localeCompare(b.label));
@@ -557,12 +577,58 @@ export async function getProviderTargets(
           label: typeof target.label === 'string' ? target.label : target.value,
           hint: typeof target.hint === 'string' ? target.hint : undefined,
           disabled: target.disabled === true,
+          spec: `${provider.plugin}:${target.value}`,
+          path: typeof target.path === 'string' ? target.path : undefined,
+          current: target.current === true ? true : undefined,
         },
       ];
     });
   } catch {
     return [];
   }
+}
+
+/**
+ * Every workspace target on the box, across providers, already flattened.
+ *
+ * For the consumers that want the *data* rather than a menu — the session tree
+ * labelling a checkout with its branch, the files-pane picker jumping to one.
+ * They used to call `scm.branches` and parse git's answer themselves, so the
+ * daemon and the plugin each held a copy of what a branch is.
+ */
+export async function listWorkspaceTargets(workspace?: string): Promise<ProviderTarget[]> {
+  const providers = await getTargetProviders('workspace');
+  const answers = await Promise.all(providers.map((p) => getProviderTargets(p, workspace)));
+  return answers.flat();
+}
+
+/**
+ * Materialise a workspace target now, outside session creation, and answer
+ * with its path.
+ *
+ * The same `resolve_command` the daemon calls before `session.create` — for
+ * the files-pane picker, which switches the browsable root without starting a
+ * session. Providers are idempotent, so asking for a checkout that already
+ * exists returns it rather than failing.
+ *
+ * Throws, unlike the enumerating calls: a target the user explicitly picked
+ * and which could not be resolved has to say so, not silently do nothing.
+ */
+export async function resolveWorkspaceTarget(spec: string, workspace?: string): Promise<string> {
+  const [plugin, ...rest] = spec.split(':');
+  const provider = (await getTargetProviders('workspace')).find((p) => p.plugin === plugin);
+  if (!provider?.resolve_command) {
+    throw new Error(`No plugin resolves workspace targets named '${plugin}'`);
+  }
+  const answer = await runPluginCommand(provider.resolve_command, {
+    target: rest.join(':'),
+    workspace,
+  });
+  const path = (answer as { path?: unknown } | null)?.path;
+  if (typeof path !== 'string' || !path) {
+    throw new Error(`Plugin '${plugin}' resolved '${spec}' to no path`);
+  }
+  return path;
 }
 
 // =============================================================================
@@ -1519,28 +1585,7 @@ export async function listProjects(): Promise<Project[]> {
 // SCM Endpoints (branch/worktree browsing)
 // =============================================================================
 
-export interface ScmBranch {
-  name: string;
-  /** Absolute checkout path when the branch has one (main checkout included). */
-  worktree_path: string | null;
-  is_current: boolean;
-  /** Present on a remote but not yet as a local branch. */
-  remote_only: boolean;
-}
 
-export interface ScmBranchesResponse {
-  repo_root: string;
-  current_branch: string | null;
-  branches: ScmBranch[];
-}
-
-/** Branches + worktree mapping for the repo containing `path`. */
-export async function scmBranches(path: string): Promise<ScmBranchesResponse> {
-  const params = new URLSearchParams({ path });
-  return request<ScmBranchesResponse>('GET', `/api/scm/branches?${params.toString()}`, {
-    errorMessage: 'Failed to list branches',
-  });
-}
 
 export interface ScmWorktreeAddResponse {
   path: string;
@@ -1548,18 +1593,6 @@ export interface ScmWorktreeAddResponse {
   warning: string | null;
 }
 
-/** Create a worktree for `branch` (new branch when `createBranch`) and
- * register it as a project. */
-export async function scmWorktreeAdd(
-  repoRoot: string,
-  branch: string,
-  createBranch: boolean,
-): Promise<ScmWorktreeAddResponse> {
-  return request<ScmWorktreeAddResponse>('POST', '/api/scm/worktree', {
-    errorMessage: 'Failed to create worktree',
-    ...jsonRequest({ repo_root: repoRoot, branch, create_branch: createBranch }),
-  });
-}
 
 export interface ScmCloneResponse {
   path: string;
@@ -1574,12 +1607,6 @@ export function isGitRepoUrl(input: string): boolean {
   return /^[\w.-]+\/[\w.-]+$/.test(s) && !s.startsWith('.');
 }
 
-/** Loose client-side gate for git branch names (the daemon runs
- * `git check-ref-format` for real). Slash-heavy conventions
- * (feature/x, release/1.2) are the COMMON case and must pass. */
-export function isBranchNameish(s: string): boolean {
-  return !!s && !/\s|\.\.|^[-/]|\\|:|@\{|\/$/.test(s);
-}
 
 /** Clone a remote repo into `[scm] projects_dir` and register it as a
  * project. Slow (network clone) — no client-side timeout beyond fetch's. */

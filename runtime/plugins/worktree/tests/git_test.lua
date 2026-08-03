@@ -200,4 +200,24 @@ describe("to_targets", function()
     assert.equals("feat/x", targets[1].value)
     assert.equals("feat/x", targets[1].label)
   end)
+
+  -- The session tree labels each checkout with its branch and the files-pane
+  -- picker jumps to one. Both used to ask the daemon for their own branch
+  -- list; this is now the only place that mapping exists.
+  it("carries the existing checkout path, and omits it when there is none", function()
+    local targets = git.to_targets({
+      { name = "feat/x", worktree_path = "/repo/tree/feat-x" },
+      { name = "zebra" },
+    })
+    assert.equals("/repo/tree/feat-x", targets[1].path)
+    assert.equals(nil, targets[2].path)
+  end)
+
+  -- `nil`, not `false`: an absent key survives the Lua→JSON crossing as absent,
+  -- while `false` would arrive as a value clients have to know to ignore.
+  it("marks the current branch and leaves the others unmarked", function()
+    local targets = git.to_targets({ { name = "master", is_current = true }, { name = "zebra" } })
+    assert.equals(true, targets[1].current)
+    assert.equals(nil, targets[2].current)
+  end)
 end)

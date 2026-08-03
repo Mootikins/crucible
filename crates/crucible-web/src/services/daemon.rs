@@ -1048,18 +1048,6 @@ impl ReconnectingDaemon {
             .await
     }
 
-    pub async fn scm_branches(
-        &self,
-        path: &Path,
-    ) -> anyhow::Result<crucible_daemon::ScmBranchesResponse> {
-        let path = path.to_path_buf();
-        self.call_with_reconnect("scm.branches", move |daemon| {
-            let path = path.clone();
-            Box::pin(async move { daemon.scm_branches(&path).await })
-        })
-        .await
-    }
-
     pub async fn scm_clone(
         &self,
         url: &str,
@@ -1071,26 +1059,6 @@ impl ReconnectingDaemon {
         // that into a confusing error over a partial dir). One attempt only.
         let daemon = self.daemon.read().await;
         daemon.scm_clone(url, dest, name).await
-    }
-
-    pub async fn scm_worktree_add(
-        &self,
-        repo_root: &Path,
-        branch: &str,
-        create_branch: bool,
-    ) -> anyhow::Result<crucible_daemon::ScmWorktreeAddResponse> {
-        let repo_root = repo_root.to_path_buf();
-        let branch = branch.to_string();
-        self.call_with_reconnect("scm.worktree_add", move |daemon| {
-            let repo_root = repo_root.clone();
-            let branch = branch.clone();
-            Box::pin(async move {
-                daemon
-                    .scm_worktree_add(&repo_root, &branch, create_branch)
-                    .await
-            })
-        })
-        .await
     }
 
     pub async fn fs_list_dir(

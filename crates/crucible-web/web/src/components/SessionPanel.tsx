@@ -5,7 +5,7 @@ import { useSessionSearch } from '@/hooks/useSessionSearch';
 import { SessionTree } from './SessionTree';
 import { PanelShell } from './PanelShell';
 import { ChipSelect, type ChipOption } from './composer/ChipSelect';
-import { isGitRepoUrl, listKilns, scmBranches, scmClone } from '@/lib/api';
+import { isGitRepoUrl, listKilns, listWorkspaceTargets, scmClone } from '@/lib/api';
 import type { KilnListEntry, Session } from '@/lib/types';
 import { FlaskConical, GitBranch, Plus, Search, X } from '@/lib/icons';
 import { kilnLabel } from '@/lib/kiln-label';
@@ -37,7 +37,7 @@ export const SessionPanel: Component = () => {
   const [selectedBranches, setSelectedBranches] = createSignal<string[]>([]);
   const [selectedKilns, setSelectedKilns] = createSignal<string[]>([]);
   const [kilns, setKilns] = createSignal<KilnListEntry[]>([]);
-  // checkout path -> live branch name, from scm.branches per unique repo.
+  // checkout path -> live branch name, from the workspace provider per repo.
   const [checkoutBranch, setCheckoutBranch] = createSignal<Map<string, string>>(new Map());
 
   const search = useSessionSearch({
@@ -57,9 +57,11 @@ export const SessionPanel: Component = () => {
     void listKilns().then(setKilns).catch(() => {});
   });
 
-  // Live branch mapping: one scm.branches call per unique repo root, refreshed
-  // when the project roster changes and on window focus (branch switches and
-  // new worktrees happen outside the app).
+  // Live branch mapping, from the workspace provider that owns the concept —
+  // one call per unique repo root, refreshed when the project roster changes
+  // and on window focus (branch switches and new worktrees happen outside the
+  // app). This used to parse `scm.branches` itself, so the daemon and the
+  // worktree plugin each held a copy of what a branch is.
   const loadBranches = async () => {
     const roots = [...new Set(
       projects()
@@ -69,13 +71,9 @@ export const SessionPanel: Component = () => {
     const map = new Map<string, string>();
     await Promise.all(
       roots.map(async (root) => {
-        try {
-          const res = await scmBranches(root);
-          for (const b of res.branches) {
-            if (b.worktree_path) map.set(b.worktree_path, b.name);
-          }
-        } catch {
-          /* older daemon / repo gone: no branch chips for this repo */
+        // Never throws — a repo-less root, or no provider at all, answers [].
+        for (const t of await listWorkspaceTargets(root)) {
+          if (t.path) map.set(t.path, t.label);
         }
       }),
     );

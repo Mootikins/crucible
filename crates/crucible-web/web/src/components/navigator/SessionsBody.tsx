@@ -1,7 +1,7 @@
 import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useProjectSafe } from '@/contexts/ProjectContext';
-import { listKilns, scmBranches } from '@/lib/api';
+import { listKilns, listWorkspaceTargets } from '@/lib/api';
 import type { KilnListEntry, Session } from '@/lib/types';
 import { kilnLabel } from '@/lib/kiln-label';
 import { SessionRow } from '../SessionTree';
@@ -28,16 +28,14 @@ export const SessionsBody: Component = () => {
     refreshSessions({ includeArchived: true });
   });
 
-  // Live branch per checkout path (one scm.branches call per repo root).
+  // Live branch per checkout path, from the workspace provider that owns the
+  // concept (one call per repo root).
   const loadBranches = async () => {
     const roots = [...new Set(projects().filter((p) => p.repository?.root).map((p) => p.repository!.root))];
     const map = new Map<string, string>();
     await Promise.all(
       roots.map(async (root) => {
-        try {
-          const res = await scmBranches(root);
-          for (const b of res.branches) if (b.worktree_path) map.set(b.worktree_path, b.name);
-        } catch { /* older daemon / repo gone */ }
+        for (const t of await listWorkspaceTargets(root)) if (t.path) map.set(t.path, t.label);
       }),
     );
     setCheckoutBranch(map);

@@ -72,12 +72,14 @@ question does not arise. For the runtime axis — where `oci` and `ssh` genuinel
 a channel — targets are addressed to their provider (below).
 
 `ssh` sits across both axes, because files being remote and the process being remote are
-the same fact. It is modelled as a runtime provider that additionally reinterprets the
-workspace path as remote. Cursor collapses them the same way: its folder picker groups
-repositories under `On This PC` / `Cloud` / `<machine>`.
+the same fact. It is a runtime provider naming a remote directory, and the workspace axis
+then resolves *in that context* — see [What an ssh target means](#what-an-ssh-target-means).
+Cursor collapses them the same way: its folder picker groups repositories under
+`On This PC` / `Cloud` / `<machine>`.
 
-**Container-on-remote (`ssh host podman exec …`) is out of scope.** It is the composition
-of two *runtime* providers, and one runtime provider wins. Revisit only if asked for.
+**Container-on-remote (`ssh host podman exec …`) is out of scope** — one runtime provider
+wins. The shape would express it as a list of prefixes rather than one; that is scope, not
+a wall, and the sketch is at the end.
 
 ## How a plugin contributes a target
 
@@ -216,33 +218,61 @@ now a three-state `SandboxEnv` — `Unsupported` (the safe default), `Flag(Strin
 `Inline` — declared from Lua as `exec_env_flag = "-e"` or `exec_env_inline = true`. Both
 forms put the variables in the same place in the argv, so only the flag differs.
 
-The other open question is whether the remote checkout is assumed to exist or is
-provisioned. Assumed, initially: the target names a machine and a path that is already
-there. Provisioning is a workspace-axis concern and belongs to a future clone provider.
+### What an ssh target means
 
-### The hazard the ssh plugin has to solve
+**A remote directory.** That is the whole model, and keeping it that small is what makes the
+rest fall out. `ssh:build-box` names a machine; the workspace it runs against is a path *on
+that machine*. There is no syncing, no mounting, no mirroring — the files are over there,
+the process is over there, and the daemon is the only thing that is not.
 
-**A locally-resolved workspace path is meaningless on a remote runtime.** `worktree.resolve`
-runs daemon-side and answers with a path on *this* machine. Compose that with an ssh
-runtime and the agent starts on a box where `/repo/tree/feat/x` may not exist, or — worse —
-exists and is something else.
+Two consequences follow directly:
 
-This is not hypothetical. Cursor ships the same shape and has the same bug: its
-`.cursor/worktrees.json` is not found when the agent runs over Remote SSH, because config
-discovery is path-based rather than target-aware.
+`build_client_config` sets `working_dir` on the **launcher** process. Irrelevant for
+`podman exec`, whose prefix carries `-w`, but for ssh it would set the *local* client's
+directory and leave the remote agent in its login shell's home. The prefix has to carry the
+remote directory itself: `ssh -T build-box cd <dir> && env … agent`.
 
-The daemon does not currently guard against it, and deliberately so — nothing can reach the
-combination until an ssh provider exists, and a guard written now would be guessing at the
-shape of the thing it guards. What the ssh plugin must do, whichever way it goes:
+And a locally-resolved workspace path is meaningless remotely. `worktree.resolve` runs
+daemon-side and answers with a path on *this* machine; the same string on `build-box` may
+not exist, or may exist and be something else. This is not hypothetical — Cursor ships the
+same shape and has the same bug, where `.cursor/worktrees.json` is not found under Remote
+SSH because discovery is path-based rather than target-aware.
 
-- **Refuse** a `workspace_target` resolved by a local provider, naming the conflict; or
-- **Reinterpret** the path remotely, which means the workspace axis needs to know the
-  runtime is remote — i.e. the axes stop being independent for this pair.
+### ssh × worktree: provision remotely
 
-Note also that `build_client_config` sets `working_dir` on the *launcher* process. For
-`podman exec` that is irrelevant (the `-w` flag in the prefix carries the real one), but for
-ssh it would set the directory of the local ssh client, and the remote agent would start in
-the login shell's home. The prefix has to carry the remote directory itself.
+The composition is not refused, it is *performed on the far side*. Asked for
+`worktree:feat/x` on `ssh:build-box`, the ssh provider:
+
+1. clones the repo on the remote host if it is not already there, under a configured base
+   directory (`~/crucible-workspaces/<repo>`, say);
+2. creates the worktree there, by the same rules the local worktree provider uses;
+3. answers with the **remote** path, which the runtime prefix then `cd`s into.
+
+Which means the workspace axis has to know that the runtime is remote — the axes stay
+orthogonal in *what they mean*, but resolution is ordered: runtime first, then workspace
+resolved in its context. That ordering is the one real coupling, and it is worth naming
+because everything else about the two axes is independent.
+
+Nothing implements this yet. The daemon does not guard the combination either, deliberately:
+it is unreachable until an ssh provider exists, and a guard written now would be guessing at
+the shape of the thing it guards.
+
+### And containers on top, theoretically
+
+Stacking `oci` over `ssh` is not planned and not designed. It is worth checking the shape
+*could* express it, because a design that structurally forbids it is a worse design:
+
+A container is a **post-resolution step on whichever host the workspace ended up on** —
+check the registry, pull or build, then wrap the command. In prefix terms that is
+composition: `ssh -T build-box` followed by `podman exec -i -w <remote dir>`, with each
+provider contributing its own segment rather than one provider knowing about the other. The
+`SandboxExec` shape already concatenates prefix, env, suffix; nesting is the same operation
+applied twice.
+
+What would have to change: the runtime axis currently takes exactly one provider, and
+`session.isolation` carries exactly one addressed target. Making it a list is the whole
+structural difference. **Not doing it** — one runtime provider wins — but the reason is
+scope, not a wall.
 
 ## Prior art
 
@@ -291,7 +321,11 @@ daemon since plugins did; the web has simply never called it.
 2. **Worktree plugin and the composer** — *done*. `runtime/plugins/worktree/`, `oci`
    republished on the runtime axis, and both chips rebuilt on `getTargetProviders`.
 3. **SSH plugin**.
-4. **Retire the `scm.*` worktree RPCs** once the plugin has carried a release.
+4. **Retire the `scm.*` worktree RPCs** — *done*, in the same pass. `scm.branches`,
+   `scm.worktree_add`, `/api/scm/branches`, `/api/scm/worktree`, `collect_branches`,
+   `add_worktree` and their pure helpers are gone; `scm.clone` stays, since cloning is a
+   separate concern with no plugin behind it yet. One source of truth for what a branch is,
+   and it is the plugin.
 
 ### What the composer looks like now
 
@@ -321,10 +355,12 @@ those.
 
 ## Known limits
 
-- One runtime provider per session. Container-on-remote is not expressible.
-- **A locally-resolved workspace target composed with a remote runtime is unsound** — the
-  path means nothing on the other machine. Unreachable until an ssh provider exists; see
-  the hazard above, which that plugin has to close.
+- One runtime provider per session, so container-on-remote is not expressible today. The
+  shape would take it as a list of prefixes; see above. Scope, not a wall.
+- **Resolution is ordered for a remote runtime**: the workspace axis has to resolve in the
+  runtime's context, or a local path is handed to a machine it means nothing on. The one
+  real coupling between two otherwise independent axes. Unreachable until an ssh provider
+  exists.
 - The workspace axis rewrites a path; it does not sync, copy, or clean up. A worktree
   created for a session outlives it, exactly as one created by hand does.
 - `session.isolation` keeps its untyped shape for backward compatibility, so a

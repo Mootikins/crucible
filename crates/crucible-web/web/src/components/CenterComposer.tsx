@@ -271,7 +271,7 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
   ): ChipOption[] => {
     const rows = (p: TargetProvider): ChipOption[] =>
       (targets[p.plugin] ?? []).map((t) => ({
-        value: `${p.plugin}:${t.value}`,
+        value: t.spec,
         label: t.label,
         hint: t.hint,
         disabled: t.disabled,

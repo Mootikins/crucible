@@ -6,15 +6,14 @@ import { buildRoster, rootKey, rosterIndex, type TreeRoot } from '@/lib/tree-roo
 import type { KilnListEntry, Project } from '@/lib/types';
 
 vi.mock('@/lib/api', () => ({
-  scmBranches: vi.fn(),
-  scmWorktreeAdd: vi.fn(),
+  listWorkspaceTargets: vi.fn(),
+  resolveWorkspaceTarget: vi.fn(),
   scmClone: vi.fn(),
   registerProject: vi.fn(),
   isGitRepoUrl: (s: string) => /^(https?:\/\/|git@)/.test(s) || /^[\w.-]+\/[\w.-]+$/.test(s),
-  isBranchNameish: (s: string) => !!s && !/\s|\.\.|^[-/]|\\|:|@\{|\/$/.test(s),
 }));
 
-import { scmBranches, scmWorktreeAdd, registerProject } from '@/lib/api';
+import { listWorkspaceTargets, resolveWorkspaceTarget, registerProject } from '@/lib/api';
 
 const project = (path: string, name: string, kilns: Project['kilns'] = []): Project => ({
   path,
@@ -28,8 +27,11 @@ const openPopout = (getByTestId: (id: string) => HTMLElement) => {
 };
 
 beforeEach(() => {
-  vi.mocked(scmBranches).mockRejectedValue(new Error('no repo'));
-  vi.mocked(scmWorktreeAdd).mockReset();
+  // A repo-less root answers with no targets rather than throwing — the
+  // enumerating calls swallow provider failure so one bad plugin cannot take
+  // the picker down.
+  vi.mocked(listWorkspaceTargets).mockResolvedValue([]);
+  vi.mocked(resolveWorkspaceTarget).mockReset();
   vi.mocked(registerProject).mockReset();
 });
 
@@ -101,20 +103,24 @@ describe('RootDropdown', () => {
     expect(container.textContent).toContain('No roots');
   });
 
-  it('lists repo branches for an active project root and jumps to a worktree', async () => {
-    vi.mocked(scmBranches).mockResolvedValue({
-      repo_root: '/repo',
-      current_branch: 'master',
-      branches: [
-        { name: 'master', worktree_path: '/repo', is_current: true, remote_only: false },
-        {
-          name: 'feat/x',
-          worktree_path: '/repo/tree/feat/x',
-          is_current: false,
-          remote_only: false,
-        },
-      ],
-    });
+  it('lists workspace targets for an active project root and jumps to an existing checkout', async () => {
+    vi.mocked(listWorkspaceTargets).mockResolvedValue([
+      {
+        value: 'master',
+        label: 'master',
+        hint: 'current',
+        spec: 'worktree:master',
+        path: '/repo',
+        current: true,
+      },
+      {
+        value: 'feat/x',
+        label: 'feat/x',
+        hint: 'feat-x',
+        spec: 'worktree:feat/x',
+        path: '/repo/tree/feat/x',
+      },
+    ]);
     vi.mocked(registerProject).mockResolvedValue(project('/repo/tree/feat/x', 'x'));
     const onSelect = vi.fn<(r: TreeRoot) => void>();
     const groups = buildRoster([project('/repo', 'repo')], []);
@@ -127,7 +133,9 @@ describe('RootDropdown', () => {
       />
     ));
     openPopout(getByTestId);
-    await waitFor(() => expect(screen.getByTestId('root-dropdown-popout').textContent).toContain('Branches — repo'));
+    await waitFor(() =>
+      expect(screen.getByTestId('root-dropdown-popout').textContent).toContain('Branches — repo'),
+    );
 
     fireEvent.click(screen.getByText('feat/x'));
     await waitFor(() =>
@@ -138,23 +146,18 @@ describe('RootDropdown', () => {
       }),
     );
     expect(registerProject).toHaveBeenCalledWith('/repo/tree/feat/x');
-    expect(scmWorktreeAdd).not.toHaveBeenCalled();
+    // A target the provider already resolved needs no round trip.
+    expect(resolveWorkspaceTarget).not.toHaveBeenCalled();
   });
 
-  it('offers to create a worktree for a branch without one', async () => {
-    vi.mocked(scmBranches).mockResolvedValue({
-      repo_root: '/repo',
-      current_branch: 'master',
-      branches: [
-        { name: 'fix/y', worktree_path: null, is_current: false, remote_only: false },
-      ],
-    });
-    vi.mocked(scmWorktreeAdd).mockResolvedValue({
-      path: '/repo/tree/fix/y',
-      project: project('/repo/tree/fix/y', 'y'),
-      warning: null,
-    });
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  // No confirmation prompt: picking a row labelled "new worktree" IS the
+  // confirmation, and the provider is idempotent if it turns out to exist.
+  it('asks the provider to materialise a target that has no checkout yet', async () => {
+    vi.mocked(listWorkspaceTargets).mockResolvedValue([
+      { value: 'fix/y', label: 'fix/y', hint: 'new worktree', spec: 'worktree:fix/y' },
+    ]);
+    vi.mocked(resolveWorkspaceTarget).mockResolvedValue('/repo/tree/fix/y');
+    vi.mocked(registerProject).mockResolvedValue(project('/repo/tree/fix/y', 'y'));
     const onSelect = vi.fn<(r: TreeRoot) => void>();
     const groups = buildRoster([project('/repo', 'repo')], []);
     const { getByTestId } = render(() => (
@@ -169,7 +172,9 @@ describe('RootDropdown', () => {
     await waitFor(() => expect(screen.getByText('fix/y')).toBeTruthy());
 
     fireEvent.click(screen.getByText('fix/y'));
-    await waitFor(() => expect(scmWorktreeAdd).toHaveBeenCalledWith('/repo', 'fix/y', false));
+    await waitFor(() =>
+      expect(resolveWorkspaceTarget).toHaveBeenCalledWith('worktree:fix/y', '/repo'),
+    );
     await waitFor(() =>
       expect(onSelect).toHaveBeenCalledWith({
         kind: 'project',
@@ -177,23 +182,48 @@ describe('RootDropdown', () => {
         name: 'y',
       }),
     );
-    confirmSpy.mockRestore();
+  });
+
+  // A target the provider refuses (a name git rejects, a busy destination)
+  // must say so — this is an explicit pick, not a background enumeration.
+  it('surfaces a provider refusal instead of silently doing nothing', async () => {
+    vi.mocked(listWorkspaceTargets).mockResolvedValue([
+      { value: 'fix/y', label: 'fix/y', hint: 'new worktree', spec: 'worktree:fix/y' },
+    ]);
+    vi.mocked(resolveWorkspaceTarget).mockRejectedValue(new Error('destination busy'));
+    const onNotice = vi.fn();
+    const groups = buildRoster([project('/repo', 'repo')], []);
+    const { getByTestId } = render(() => (
+      <RootDropdown
+        groups={groups}
+        selectedKey="project:/repo"
+        onSelect={() => {}}
+        activeRoot={{ kind: 'project', path: '/repo', name: 'repo' }}
+        onNotice={onNotice}
+      />
+    ));
+    openPopout(getByTestId);
+    await waitFor(() => expect(screen.getByText('fix/y')).toBeTruthy());
+
+    fireEvent.click(screen.getByText('fix/y'));
+    await waitFor(() => expect(onNotice).toHaveBeenCalledWith('destination busy'));
   });
 
   it('typing an unknown name offers branch-plus-worktree creation', async () => {
-    vi.mocked(scmBranches).mockResolvedValue({
-      repo_root: '/repo',
-      current_branch: 'master',
-      branches: [
-        { name: 'master', worktree_path: '/repo', is_current: true, remote_only: false },
-      ],
-    });
-    vi.mocked(scmWorktreeAdd).mockResolvedValue({
-      path: '/repo/tree/feat/new-thing',
-      project: project('/repo/tree/feat/new-thing', 'new-thing'),
-      warning: 'tree/ is not gitignored',
-    });
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(listWorkspaceTargets).mockResolvedValue([
+      {
+        value: 'master',
+        label: 'master',
+        hint: 'current',
+        spec: 'worktree:master',
+        path: '/repo',
+        current: true,
+      },
+    ]);
+    vi.mocked(resolveWorkspaceTarget).mockResolvedValue('/repo/tree/feat/new-thing');
+    vi.mocked(registerProject).mockResolvedValue(
+      project('/repo/tree/feat/new-thing', 'new-thing'),
+    );
     const onNotice = vi.fn();
     // Big roster so the filter input renders (searchThreshold).
     const groups = buildRoster(
@@ -210,7 +240,9 @@ describe('RootDropdown', () => {
       />
     ));
     openPopout(getByTestId);
-    await waitFor(() => expect(screen.getByTestId('root-dropdown-popout').textContent).toContain('master'));
+    await waitFor(() =>
+      expect(screen.getByTestId('root-dropdown-popout').textContent).toContain('master'),
+    );
 
     const filter = screen.getByLabelText('Search Browse root') as HTMLInputElement;
     fireEvent.input(filter, { target: { value: 'feat/new-thing' } });
@@ -218,8 +250,10 @@ describe('RootDropdown', () => {
     expect(createRow.textContent).toContain("Create branch + worktree 'feat/new-thing'");
 
     fireEvent.click(createRow);
-    await waitFor(() => expect(scmWorktreeAdd).toHaveBeenCalledWith('/repo', 'feat/new-thing', true));
-    await waitFor(() => expect(onNotice).toHaveBeenCalledWith('tree/ is not gitignored'));
-    confirmSpy.mockRestore();
+    // Addressed to the provider that offered the other rows, so a typed name
+    // goes to the same place a picked one does.
+    await waitFor(() =>
+      expect(resolveWorkspaceTarget).toHaveBeenCalledWith('worktree:feat/new-thing', '/p0'),
+    );
   });
 });

@@ -36,7 +36,7 @@ pub struct RpcContext {
     pub data_home: std::path::PathBuf,
     /// Active workflow executions keyed by session id (Phase 3a).
     pub workflows: Arc<WorkflowRegistry>,
-    /// SCM (git) config — `scm.worktree_add` reads `worktree_dir` from here.
+    /// SCM (git) config — `scm.clone` reads `projects_dir` from here.
     pub scm_config: Option<ScmConfig>,
     /// Plugin session start/end enforcement, shared with `DelegationService`.
     ///

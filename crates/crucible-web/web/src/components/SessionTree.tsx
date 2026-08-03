@@ -128,7 +128,7 @@ export const SessionTree: Component<{
   onSelectProject: (path: string) => void;
   onArchiveSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
-  /** Live branch of a checkout path (from scm.branches), null when unknown. */
+  /** Live branch of a checkout path (from the workspace provider), null when unknown. */
   branchOf: (workspace: string) => string | null;
   /** Display name for a kiln path (registered name or basename). */
   kilnName: (path: string) => string | null;

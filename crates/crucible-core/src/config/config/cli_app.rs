@@ -176,7 +176,7 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub server: Option<super::server::ServerConfig>,
 
-    /// SCM (git) configuration — worktree detection and `scm.worktree_add`
+    /// SCM (git) configuration — worktree detection and `scm.clone`
     /// destination template.
     #[serde(default)]
     pub scm: Option<ScmConfig>,

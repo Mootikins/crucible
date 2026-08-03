@@ -3,13 +3,12 @@ import type { RosterGroup, TreeRoot } from '@/lib/tree-root';
 import { rosterIndex, rootKey } from '@/lib/tree-root';
 import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
 import {
-  isBranchNameish,
   isGitRepoUrl,
+  listWorkspaceTargets,
   registerProject,
-  scmBranches,
+  resolveWorkspaceTarget,
   scmClone,
-  scmWorktreeAdd,
-  type ScmBranchesResponse,
+  type ProviderTarget,
 } from '@/lib/api';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 
@@ -22,10 +21,13 @@ function basename(p: string): string {
  * Popout picker for the browsable root — the composer's ChipSelect idiom
  * (searchable list, grouped sections) instead of a native `<select>`, because
  * the roster now goes beyond existing roots: when the active root is a git
- * project, a Branches section lists every branch of its repo. Picking a
- * branch jumps to its worktree (registering it as a project if needed),
- * offers to CREATE a worktree when the branch has none, and typing an
- * unknown name offers branch-plus-worktree creation.
+ * project, a Branches section lists every workspace target its providers
+ * offer. Picking one jumps to its checkout, creating it if there is none.
+ *
+ * The branch list and the creation both come from the workspace provider that
+ * owns them. This file used to call `scm.branches` and `scm.worktree_add`
+ * directly, which put git in the rendering layer and gave the daemon a second
+ * copy of what a branch is.
  */
 export const RootDropdown: Component<{
   groups: RosterGroup[];
@@ -40,21 +42,21 @@ export const RootDropdown: Component<{
   const index = () => rosterIndex(props.groups);
   const nonEmpty = () => props.groups.filter((g) => g.roots.length > 0);
 
-  const [scm, setScm] = createSignal<ScmBranchesResponse | null>(null);
+  const [targets, setTargets] = createSignal<ProviderTarget[]>([]);
 
   // Fetched on every popout open — cheap (one git shell-out) and always fresh.
   const loadBranches = () => {
     const root = props.activeRoot;
     if (!root || root.kind !== 'project') {
-      setScm(null);
+      setTargets([]);
       return;
     }
-    // Out-of-order guard: only apply the response if the active root hasn't
+    // Out-of-order guard: only apply the answer if the active root hasn't
     // changed since the fetch started.
     const forPath = root.path;
-    scmBranches(forPath)
-      .then((res) => props.activeRoot?.path === forPath && setScm(res))
-      .catch(() => props.activeRoot?.path === forPath && setScm(null)); // repo-less: no section
+    void listWorkspaceTargets(forPath).then(
+      (rows) => props.activeRoot?.path === forPath && setTargets(rows),
+    );
   };
 
   const options = (): ChipOption[] => {
@@ -65,18 +67,12 @@ export const RootDropdown: Component<{
         group: g.label as string,
       })),
     );
-    const s = scm();
-    const branchOptions = (s?.branches ?? []).map((b) => ({
-      value: `branch:${b.name}`,
-      label: b.name,
-      group: `Branches — ${basename(s!.repo_root)}`,
-      hint: b.is_current
-        ? 'current'
-        : b.worktree_path
-          ? basename(b.worktree_path)
-          : b.remote_only
-            ? 'remote · create worktree'
-            : 'create worktree',
+    const repo = props.activeRoot?.path;
+    const branchOptions = targets().map((t) => ({
+      value: `target:${t.spec}`,
+      label: t.label,
+      group: repo ? `Branches — ${basename(repo)}` : 'Branches',
+      hint: t.hint,
     }));
     return [...rosterOptions, ...branchOptions];
   };
@@ -104,33 +100,34 @@ export const RootDropdown: Component<{
     }
   };
 
-  const createWorktree = async (repoRoot: string, branch: string, createBranch: boolean) => {
-    try {
-      const res = await scmWorktreeAdd(repoRoot, branch, createBranch);
-      props.onNotice?.(res.warning ?? null);
-      await refreshProjects();
-      props.onSelect({ kind: 'project', path: res.path, name: basename(res.path) });
-    } catch (e) {
-      props.onNotice?.(e instanceof Error ? e.message : 'Failed to create worktree');
-    }
-  };
-
-  const pickBranch = (name: string) => {
-    const s = scm();
-    const branch = s?.branches.find((b) => b.name === name);
-    if (!s || !branch) return;
-    if (branch.worktree_path) {
-      void selectWorktreeRoot(branch.worktree_path);
+  /**
+   * Jump to a target's checkout, asking its provider to materialise one when
+   * it has none.
+   *
+   * No confirmation prompt. Picking a branch from a list headed "create
+   * worktree" IS the confirmation, and the provider is idempotent — asking
+   * twice for the same branch returns the same checkout rather than failing.
+   */
+  const pickTarget = (spec: string) => {
+    const known = targets().find((t) => t.spec === spec);
+    if (known?.path) {
+      void selectWorktreeRoot(known.path);
       return;
     }
-    if (window.confirm(`No worktree for '${name}' — create one?`)) {
-      void createWorktree(s.repo_root, name, false);
-    }
+    void (async () => {
+      try {
+        const path = await resolveWorkspaceTarget(spec, props.activeRoot?.path);
+        props.onNotice?.(null);
+        await selectWorktreeRoot(path);
+      } catch (e) {
+        props.onNotice?.(e instanceof Error ? e.message : 'Failed to resolve workspace target');
+      }
+    })();
   };
 
   const onPick = (value: string) => {
-    if (value.startsWith('branch:')) {
-      pickBranch(value.slice('branch:'.length));
+    if (value.startsWith('target:')) {
+      pickTarget(value.slice('target:'.length));
       return;
     }
     const r = index().get(value);
@@ -158,21 +155,18 @@ export const RootDropdown: Component<{
           run: (url) => void cloneRepo(url),
         }}
         create={
-          scm()
+          targets().length > 0
             ? {
                 // Branch names only — explicit URL forms (https://, git@…)
-                // contain ':' so isBranchNameish already excludes them; the
-                // clone action row owns those. owner/repo-shaped text stays
-                // valid as a branch name (feature/x is the common case).
-                when: isBranchNameish,
+                // contain ':' and are excluded here; the clone action row owns
+                // those. owner/repo-shaped text stays valid as a branch name
+                // (feature/x is the common case).
+                when: (text) => !!text && !/\s|\.\.|^[-/]|\\|:|@\{|\/$/.test(text),
                 label: (text) => `Create branch + worktree '${text}'`,
-                run: (text) => {
-                  const s = scm();
-                  if (!s) return;
-                  if (window.confirm(`Create branch '${text}' and a worktree for it?`)) {
-                    void createWorktree(s.repo_root, text, true);
-                  }
-                },
+                // The provider validates the name properly and refuses what it
+                // cannot honour; the guard above only keeps clone URLs out of
+                // this row.
+                run: (text) => pickTarget(`${targets()[0].spec.split(':')[0]}:${text}`),
               }
             : undefined
         }

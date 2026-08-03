@@ -5,7 +5,7 @@ import { SessionPanel } from '../SessionPanel';
 // The panel fetches kilns/branches on mount — keep it hermetic.
 vi.mock('@/lib/api', () => ({
   listKilns: vi.fn().mockResolvedValue([]),
-  scmBranches: vi.fn().mockRejectedValue(new Error('no repo')),
+  listWorkspaceTargets: vi.fn().mockResolvedValue([]),
   scmClone: vi.fn(),
   isGitRepoUrl: (s: string) => s.startsWith('https://'),
   searchSessions: vi.fn().mockResolvedValue([]),

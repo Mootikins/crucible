@@ -296,8 +296,8 @@ impl Server {
             params.max_precognition_chars,
         ));
 
-        // SCM (git) config rides in on the serialized app config; `scm.worktree_add`
-        // reads `worktree_dir` from it, and `session_workspace_dir` (below) seeds
+        // SCM (git) config rides in on the serialized app config; `scm.clone`
+        // reads `projects_dir` from it, and `session_workspace_dir` (below) seeds
         // the session manager's scratch-workspace base. Absent/unparseable → daemon
         // defaults.
         let scm_config = params

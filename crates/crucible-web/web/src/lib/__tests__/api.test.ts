@@ -603,8 +603,25 @@ describe('getProviderTargets', () => {
     });
 
     expect(await getProviderTargets(worktree, '/repo')).toEqual([
-      { value: 'feat/x', label: 'feat/x', hint: 'new worktree', disabled: false },
-      { value: 'main', label: 'main', hint: undefined, disabled: false },
+      {
+        value: 'feat/x',
+        label: 'feat/x',
+        hint: 'new worktree',
+        disabled: false,
+        // Built once, here — no caller reassembles `provider:target`.
+        spec: 'worktree:feat/x',
+        path: undefined,
+        current: undefined,
+      },
+      {
+        value: 'main',
+        label: 'main',
+        hint: undefined,
+        disabled: false,
+        spec: 'worktree:main',
+        path: undefined,
+        current: undefined,
+      },
     ]);
   });
 
@@ -613,8 +630,35 @@ describe('getProviderTargets', () => {
       'POST /api/plugins/command': { body: [{ value: 'main', label: 'main' }] },
     });
     expect(await getProviderTargets(worktree)).toEqual([
-      { value: 'main', label: 'main', hint: undefined, disabled: false },
+      {
+        value: 'main',
+        label: 'main',
+        hint: undefined,
+        disabled: false,
+        spec: 'worktree:main',
+        path: undefined,
+        current: undefined,
+      },
     ]);
+  });
+
+  // The only place this mapping exists now: the session tree labels a checkout
+  // with its branch from it, and the files-pane picker jumps to it.
+  it('carries an existing checkout path through', async () => {
+    global.fetch = createMockFetch({
+      'POST /api/plugins/command': {
+        body: {
+          targets: [
+            { value: 'master', label: 'master', path: '/repo', current: true },
+            { value: 'feat/x', label: 'feat/x' },
+          ],
+        },
+      },
+    });
+    const rows = await getProviderTargets(worktree, '/repo');
+    expect(rows[0]).toMatchObject({ path: '/repo', current: true });
+    expect(rows[1].path).toBeUndefined();
+    expect(rows[1].current).toBeUndefined();
   });
 
   it('drops entries with no value rather than offering unselectable rows', async () => {

@@ -37,12 +37,19 @@ vi.mock('@/lib/api', () => ({
     Promise.resolve(
       provider.plugin === 'oci'
         ? [
-            { value: '', label: 'Default', hint: 'alpine:latest' },
-            { value: 'throwaway', label: 'throwaway' },
+            { value: '', label: 'Default', hint: 'alpine:latest', spec: 'oci:' },
+            { value: 'throwaway', label: 'throwaway', spec: 'oci:throwaway' },
           ]
         : [
-            { value: 'master', label: 'master', hint: 'current' },
-            { value: 'feat/x', label: 'feat/x', hint: 'new worktree' },
+            {
+              value: 'master',
+              label: 'master',
+              hint: 'current',
+              spec: 'worktree:master',
+              path: '/repos/crucible',
+              current: true,
+            },
+            { value: 'feat/x', label: 'feat/x', hint: 'new worktree', spec: 'worktree:feat/x' },
           ],
     ),
   ),
@@ -94,12 +101,19 @@ beforeEach(async () => {
     Promise.resolve(
       provider.plugin === 'oci'
         ? [
-            { value: '', label: 'Default', hint: 'alpine:latest' },
-            { value: 'throwaway', label: 'throwaway' },
+            { value: '', label: 'Default', hint: 'alpine:latest', spec: 'oci:' },
+            { value: 'throwaway', label: 'throwaway', spec: 'oci:throwaway' },
           ]
         : [
-            { value: 'master', label: 'master', hint: 'current' },
-            { value: 'feat/x', label: 'feat/x', hint: 'new worktree' },
+            {
+              value: 'master',
+              label: 'master',
+              hint: 'current',
+              spec: 'worktree:master',
+              path: '/repos/crucible',
+              current: true,
+            },
+            { value: 'feat/x', label: 'feat/x', hint: 'new worktree', spec: 'worktree:feat/x' },
           ],
     ),
   );
