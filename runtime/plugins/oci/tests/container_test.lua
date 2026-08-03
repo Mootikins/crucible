@@ -385,3 +385,49 @@ describe("container.run_args with a worktree", function()
     assert.equals(1, mounts, "only the workspace is mounted when git needs nothing extra")
   end)
 end)
+
+-- `git rev-parse` failing inside the container has two causes with different
+-- fixes: the mount was lost, or the image simply ships no git. Reporting one
+-- for the other sends someone debugging a mount that is fine.
+describe("container.git_works", function()
+  --- Script the two in-container probes: `rev-parse --git-dir`, then, only on
+  --- failure, `git --version`.
+  local function with_probes(resolves, installed, fn)
+    local saved = cru.shell
+    local calls = {}
+    cru.shell = {
+      exec = function(cmd, args, opts)
+        table.insert(calls, { cmd = cmd, args = args, opts = opts })
+        local ok = index_of(args, "--version") and installed or resolves
+        return { success = ok, exit_code = ok and 0 or 128, stdout = "", stderr = "" }
+      end,
+      which = saved and saved.which,
+    }
+    local ok, err = pcall(fn, calls)
+    cru.shell = saved
+    if not ok then error(err, 0) end
+  end
+
+  it("reports success without a second probe when git resolves", function()
+    with_probes(true, true, function(calls)
+      assert.equals(true, container.git_works("podman", "c1", "/workspace"))
+      assert.equals(1, #calls, "the extra exec only runs on the failure path")
+    end)
+  end)
+
+  it("distinguishes an image with no git from a lost mount", function()
+    with_probes(false, false, function()
+      local ok, reason = container.git_works("podman", "c1", "/workspace")
+      assert.falsy(ok)
+      assert.equals("no-git", reason)
+    end)
+  end)
+
+  it("reports an unresolvable repository when git is installed", function()
+    with_probes(false, true, function()
+      local ok, reason = container.git_works("podman", "c1", "/workspace")
+      assert.falsy(ok)
+      assert.equals("unresolved", reason)
+    end)
+  end)
+end)

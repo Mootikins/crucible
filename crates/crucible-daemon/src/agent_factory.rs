@@ -73,10 +73,10 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     /// Spec-declared plugin tools, so the model can see what the dispatcher
     /// can already run. `None` when no plugin loader is attached.
     pub plugin_tools: Option<Arc<crate::plugin_tools::PluginRegistry>>,
-    /// Argv prefix that runs a process inside this session's sandbox, from the
-    /// isolation claim. Only ACP agents use it — an internal agent's tools are
+    /// How to run a process inside this session's sandbox, from the isolation
+    /// claim. Only ACP agents use it — an internal agent's tools are
     /// intercepted before they execute, so there is no process to relocate.
-    pub sandbox_exec: Option<Vec<String>>,
+    pub sandbox_exec: Option<crucible_lua::SandboxExec>,
 }
 
 /// Build a `DelegationContext` for a session's MCP server.

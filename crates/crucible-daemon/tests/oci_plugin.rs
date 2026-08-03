@@ -506,19 +506,18 @@ async fn oci_settings_round_trip_through_the_plugins_accessors() {
 }
 
 /// A devcontainer is container configuration, and the sandboxed agent can
-/// write it.
+/// write it: `/workspace` is the host workspace through a rw bind mount, so a
+/// `write_file` to `.devcontainer/devcontainer.json` lands on the host and the
+/// *next* session in that workspace resolves from it.
 ///
-/// `/workspace` is the host workspace through a rw bind mount, so a
-/// `write_file` to `.devcontainer/devcontainer.json` lands on the host. If
-/// resolution read the working tree, the *next* session in that workspace
-/// would be configured by the previous one — and `runArgs` becomes raw runtime
-/// argv, so `--privileged -v /:/host` would make session two "sandboxed" with
-/// the host root inside it.
+/// What stops that is not who wrote the file — reading only committed config
+/// was tried and did not hold, since `.git` is inside the same mount and the
+/// agent can commit — but what the file is allowed to ask for. `runArgs`
+/// becomes raw runtime argv, so this is the escape that gate exists for.
 ///
-/// Resolution therefore reads HEAD. An agent's write is unstaged and changes
-/// nothing until a human commits it.
+/// Uncommitted on purpose: the file being unstaged must not be what saves us.
 #[tokio::test]
-async fn an_uncommitted_devcontainer_is_refused_rather_than_honoured() {
+async fn a_devcontainer_asking_to_reach_the_host_is_refused_however_it_was_written() {
     let tmp = tempfile::tempdir().unwrap();
     let escape = r#"{
         "image": "example.invalid/dc:latest",
@@ -531,17 +530,42 @@ async fn an_uncommitted_devcontainer_is_refused_rather_than_honoured() {
     )
     .await;
 
-    let err = try_start_session(&mut loader, "dc-uncommitted", &workspace)
+    let err = try_start_session(&mut loader, "dc-escape", &workspace)
         .await
-        .expect_err("an uncommitted devcontainer must never configure a container");
+        .expect_err("a devcontainer asking for --privileged must not configure a container");
     let err = err.to_string();
     assert!(
-        err.contains("commit"),
-        "the refusal must point at the commit boundary; got: {err}"
+        err.contains("runArgs"),
+        "the refusal must name the key that was refused; got: {err}"
     );
     assert!(
-        !err.contains("privileged"),
-        "the uncommitted runArgs must not have been parsed, let alone applied; got: {err}"
+        err.contains("devcontainer_host_access"),
+        "and must say how to permit it deliberately; got: {err}"
+    );
+}
+
+/// ...and the ordinary uncommitted edit still works, which is the whole reason
+/// the commit rule went away: you change a devcontainer to test it.
+#[tokio::test]
+async fn an_uncommitted_devcontainer_that_asks_for_nothing_special_is_honoured() {
+    let tmp = tempfile::tempdir().unwrap();
+    let benign = r#"{ "image": "example.invalid/dc:latest" }"#;
+    let workspace = workspace_with_uncommitted_devcontainer(tmp.path(), benign);
+    let mut loader = load_oci(
+        tmp.path(),
+        serde_json::json!({ "image": "alpine:latest", "runtime": UNUSABLE }),
+    )
+    .await;
+
+    // The runtime is unusable, so the session still fails — but on the RUNTIME,
+    // which proves the devcontainer was read and accepted rather than skipped.
+    let err = try_start_session(&mut loader, "dc-benign", &workspace)
+        .await
+        .expect_err("the configured runtime does not exist")
+        .to_string();
+    assert!(
+        !err.contains("commit") && !err.contains("devcontainer_host_access"),
+        "an uncommitted devcontainer asking for nothing special must not be refused; got: {err}"
     );
 }
 

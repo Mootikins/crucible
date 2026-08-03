@@ -12,6 +12,7 @@ use crate::acp::client::ClientConfig;
 use crate::acp_handle::AcpHandleError;
 use crucible_core::config::components::acp::AcpConfig;
 use crucible_core::session::SessionAgent;
+use crucible_lua::SandboxExec;
 use std::path::{Path, PathBuf};
 
 /// Build a `ClientConfig` from `SessionAgent` fields.
@@ -22,11 +23,12 @@ pub(crate) fn build_client_config(
     agent_config: &SessionAgent,
     workspace: &Path,
     acp_config: Option<&AcpConfig>,
-    sandbox_exec: Option<&[String]>,
+    sandbox_exec: Option<&SandboxExec>,
 ) -> Result<ClientConfig, AcpHandleError> {
     let agent_name = agent_config.agent_name.as_deref().unwrap_or("acp");
 
-    let (command, args, env_vars) = resolve_agent_command(agent_name, agent_config, acp_config)?;
+    let (command, args, mut env_vars) =
+        resolve_agent_command(agent_name, agent_config, acp_config)?;
 
     // A sandboxed session runs the agent INSIDE its container rather than
     // beside it. That is what makes an external agent's isolation enforceable
@@ -37,11 +39,21 @@ pub(crate) fn build_client_config(
     // arguments unquoted and unsplit — `npx @zed-industries/claude-agent-acp`
     // survives as two argv entries, not as something a shell re-parses.
     let (command, args) = match sandbox_exec {
-        Some(prefix) if !prefix.is_empty() => {
-            let mut argv: Vec<String> = prefix[1..].to_vec();
+        Some(exec) if !exec.is_empty() => {
+            let mut argv: Vec<String> = exec.prefix[1..].to_vec();
+            // Environment is delivered on the launcher's own argv, because the
+            // spawner's `cmd.env` would set it on the launcher process and the
+            // container boundary drops it there — an API key configured for the
+            // agent would never reach the agent. The flags go between prefix and
+            // suffix because a launcher's flags must precede its operand.
+            argv.extend(sandbox_env_argv(exec, &env_vars, agent_name)?);
+            // Delivered inside; leaving a copy on the launcher process would be
+            // a second, meaningless delivery of the same secret.
+            env_vars.clear();
+            argv.extend(exec.suffix.iter().cloned());
             argv.push(command);
             argv.extend(args);
-            (prefix[0].clone(), argv)
+            (exec.prefix[0].clone(), argv)
         }
         _ => (command, args),
     };
@@ -63,6 +75,40 @@ pub(crate) fn build_client_config(
         timeout_ms: Some(timeout_ms),
         max_retries: None,
     })
+}
+
+/// The argv that carries `env_vars` across the sandbox boundary.
+///
+/// `NAME=VALUE` after the plugin's flag: the one form podman, docker and
+/// nerdctl all accept for `exec`. It does put the value on the launcher's
+/// command line, where `ps` can read it — the alternative, a bare `-e NAME`
+/// inherited from the launcher's own environment, hides it but is only
+/// reliably supported by podman.
+///
+/// A plugin that named no flag cannot deliver environment at all, and the
+/// launch is refused naming the variables: an agent started without its API
+/// key fails later, somewhere else, with nothing pointing back to the sandbox.
+fn sandbox_env_argv(
+    exec: &SandboxExec,
+    env_vars: &[(String, String)],
+    agent_name: &str,
+) -> Result<Vec<String>, AcpHandleError> {
+    if env_vars.is_empty() {
+        return Ok(Vec::new());
+    }
+    let Some(flag) = exec.env_flag.as_ref() else {
+        let names: Vec<&str> = env_vars.iter().map(|(k, _)| k.as_str()).collect();
+        return Err(AcpHandleError::Config(format!(
+            "agent '{agent_name}' is configured with environment ({}) but this session's \
+             sandbox offers no way to pass it into the container, so the agent would start \
+             without it; the claiming plugin must supply `exec_env_flag`",
+            names.join(", ")
+        )));
+    };
+    Ok(env_vars
+        .iter()
+        .flat_map(|(k, v)| [flag.clone(), format!("{k}={v}")])
+        .collect())
 }
 
 /// Resolved command, arguments, and environment variables for an ACP agent.
@@ -126,6 +172,19 @@ mod tests {
     use super::*;
     use crucible_core::config::BackendType;
     use std::collections::HashMap;
+
+    /// A sandbox the way `oci` describes one: launcher flags, the hole the env
+    /// flags fill, then the container name.
+    fn sandbox(env_flag: Option<&str>) -> SandboxExec {
+        SandboxExec {
+            prefix: ["podman", "exec", "-i", "-w", "/workspace"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            env_flag: env_flag.map(|s| s.to_string()),
+            suffix: vec!["crucible-s1".to_string()],
+        }
+    }
 
     fn test_session_agent(agent_name: &str) -> SessionAgent {
         SessionAgent {
@@ -241,13 +300,14 @@ mod tests {
     #[test]
     fn a_sandbox_prefix_relocates_the_agent_into_the_container() {
         let agent = test_session_agent("opencode");
-        let prefix: Vec<String> = ["podman", "exec", "-i", "-w", "/workspace", "crucible-s1"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
 
-        let config =
-            build_client_config(&agent, Path::new("/tmp/workspace"), None, Some(&prefix)).unwrap();
+        let config = build_client_config(
+            &agent,
+            Path::new("/tmp/workspace"),
+            None,
+            Some(&sandbox(Some("-e"))),
+        )
+        .unwrap();
 
         assert_eq!(config.agent_path, PathBuf::from("podman"));
         assert_eq!(
@@ -272,24 +332,131 @@ mod tests {
     #[test]
     fn a_relocated_multi_word_agent_keeps_its_arguments_separate() {
         let agent = test_session_agent("claude");
-        let prefix: Vec<String> = ["podman", "exec", "-i", "crucible-s1"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
 
-        let config = build_client_config(&agent, Path::new("/tmp"), None, Some(&prefix)).unwrap();
+        let config =
+            build_client_config(&agent, Path::new("/tmp"), None, Some(&sandbox(Some("-e"))))
+                .unwrap();
 
         assert_eq!(config.agent_path, PathBuf::from("podman"));
         let args = config.agent_args.unwrap();
         assert_eq!(args[args.len() - 2], "npx");
         assert_eq!(args[args.len() - 1], "@zed-industries/claude-agent-acp");
     }
+    /// Configured environment must arrive INSIDE the container.
+    ///
+    /// `env_vars` is applied by the spawner to the process the daemon starts —
+    /// which, once the agent is relocated, is the container runtime and not
+    /// the agent. An API key configured for `claude` would then be read by
+    /// podman and dropped at the container boundary.
+    #[test]
+    fn a_relocated_agents_environment_reaches_the_container_side() {
+        let mut agent = test_session_agent("opencode");
+        agent
+            .env_overrides
+            .insert("ANTHROPIC_API_KEY".to_string(), "sk-test".to_string());
+
+        let config = build_client_config(
+            &agent,
+            Path::new("/tmp/workspace"),
+            None,
+            Some(&sandbox(Some("-e"))),
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.agent_args.unwrap(),
+            vec![
+                "exec",
+                "-i",
+                "-w",
+                "/workspace",
+                "-e",
+                "ANTHROPIC_API_KEY=sk-test",
+                "crucible-s1",
+                "opencode",
+                "acp"
+            ],
+            "the variable must cross the boundary, and its flag must precede the container"
+        );
+        assert!(
+            config.env_vars.is_none(),
+            "it is delivered inside; a copy on the launcher process would mean nothing"
+        );
+    }
+
+    /// A sandbox that cannot carry environment must say so at launch.
+    ///
+    /// Starting the agent anyway strips its credentials, and the failure then
+    /// surfaces as an unauthenticated API call with nothing pointing back at
+    /// the container.
+    #[test]
+    fn a_sandbox_that_cannot_pass_env_refuses_the_launch_by_name() {
+        let mut agent = test_session_agent("opencode");
+        agent
+            .env_overrides
+            .insert("ANTHROPIC_API_KEY".to_string(), "sk-test".to_string());
+
+        let err = build_client_config(&agent, Path::new("/tmp"), None, Some(&sandbox(None)))
+            .expect_err("a launch that would silently drop configured env must be refused");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("ANTHROPIC_API_KEY"),
+            "the refusal must name the variable that could not be delivered, got: {msg}"
+        );
+    }
+
+    /// ...and a sandbox with nothing to carry is unaffected by that rule.
+    #[test]
+    fn a_sandbox_without_configured_env_launches_unchanged() {
+        let agent = test_session_agent("opencode");
+        let config =
+            build_client_config(&agent, Path::new("/tmp"), None, Some(&sandbox(None))).unwrap();
+        let args = config.agent_args.unwrap();
+        assert_eq!(args[args.len() - 3], "crucible-s1");
+        assert!(!args.iter().any(|a| a == "-e"));
+    }
+
+    /// The profile's `[acp.agents.*] env` is the other half of the same
+    /// configuration, and reaches the container by the same route.
+    #[test]
+    fn profile_env_reaches_the_container_too() {
+        let agent = test_session_agent("opencode");
+        let mut acp_config = AcpConfig::default();
+        let mut profile = crucible_core::config::AgentProfile::default();
+        profile
+            .env
+            .insert("OPENCODE_MODEL".to_string(), "ollama/llama3.2".to_string());
+        acp_config.agents.insert("opencode".to_string(), profile);
+
+        let config = build_client_config(
+            &agent,
+            Path::new("/tmp"),
+            Some(&acp_config),
+            Some(&sandbox(Some("-e"))),
+        )
+        .unwrap();
+
+        let args = config.agent_args.unwrap();
+        assert!(
+            args.windows(2)
+                .any(|w| w[0] == "-e" && w[1] == "OPENCODE_MODEL=ollama/llama3.2"),
+            "got argv {args:?}"
+        );
+    }
+
     /// An empty prefix is not a prefix — it must not turn the agent's own
     /// command into an argument of nothing.
     #[test]
     fn an_empty_sandbox_prefix_leaves_the_launch_alone() {
         let agent = test_session_agent("opencode");
-        let config = build_client_config(&agent, Path::new("/tmp"), None, Some(&[])).unwrap();
+        let config = build_client_config(
+            &agent,
+            Path::new("/tmp"),
+            None,
+            Some(&SandboxExec::default()),
+        )
+        .unwrap();
         assert_eq!(config.agent_path, PathBuf::from("opencode"));
         assert_eq!(config.agent_args, Some(vec!["acp".to_string()]));
     }

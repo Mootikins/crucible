@@ -54,18 +54,31 @@ local function register(session_id, workspace)
   sessions[session_id] = workspace
 end
 
---- Argv that runs a command inside `active`'s container.
+--- Claim isolation for a session, including how to run a command inside its
+--- container.
 ---
---- Handed to the daemon with the isolation claim so an ACP agent can be
---- launched *into* the sandbox instead of beside it. The daemon cannot
---- intercept tools an external agent runs in its own process — so a claimed
---- session with an external agent is refused — but it does not have to when
---- that process is already in the container. This is what lifts the refusal.
+--- The exec argv is handed over so an ACP agent can be launched *into* the
+--- sandbox instead of beside it. The daemon cannot intercept tools an external
+--- agent runs in its own process — so a claimed session with an external agent
+--- is refused — but it does not have to when that process is already in the
+--- container. This is what lifts the refusal.
 ---
 --- `-i` because the agent speaks JSON-RPC over stdin/stdout, and `-w` so it
 --- starts where its own tools expect the workspace to be.
-local function exec_prefix(runtime, name, target)
-  return { runtime, "exec", "-i", "-w", target, name }
+---
+--- Given in two halves because the daemon inserts the agent's configured
+--- environment between them: every runtime takes a command's flags *before*
+--- its container operand, so `exec crucible-x -e KEY=v agent` would pass the
+--- flag to the agent instead. Naming the flag here keeps that knowledge on
+--- this side — the daemon only fills the hole, and never learns that the
+--- operand is a container.
+local function claim_isolation(session_id, exempt, runtime, name, target)
+  crucible.require_isolation{
+    session = session_id, plugin = "oci", exempt = exempt,
+    exec_prefix = { runtime, "exec", "-i", "-w", target },
+    exec_env_flag = "-e",
+    exec_suffix = { name },
+  }
 end
 
 --- The container serving this tool call, or nil if the session has none.
@@ -317,10 +330,6 @@ local function environment(p)
     build_timeout = p.build_timeout or config.build_timeout,
     start_timeout = p.start_timeout or config.start_timeout,
     exempt = p.exempt or config.exempt or {},
-    -- Devcontainer-only: set when the committed file that was honoured differs
-    -- from the one in the working tree. Nil for profiles, which have no
-    -- committed form to diverge from.
-    uncommitted_drift = p.uncommitted_drift,
   }
 end
 
@@ -514,10 +523,7 @@ crucible.on_session_start(function(session)
         "; one container per workspace, so the environments must match")
     end
     register(session.id, workspace)
-    crucible.require_isolation{
-      session = session.id, plugin = "oci", exempt = cfg.exempt,
-      exec_prefix = exec_prefix(shared.runtime, shared.name, shared.target),
-    }
+    claim_isolation(session.id, cfg.exempt, shared.runtime, shared.name, shared.target)
     crucible.set_status{
       session = session.id, key = "oci", plugin = "oci",
       text = string.format("sandboxed: %s (%s)", cfg.image, shared.runtime), level = "info",
@@ -526,8 +532,14 @@ crucible.on_session_start(function(session)
     return
   end
 
-  -- Set only when the workspace's git dir lives outside it; see below.
-  local git_dir
+  -- Set only when the workspace's git dir lives outside it — a linked worktree,
+  -- where git's own pointer into the main repo is an absolute host path.
+  --
+  -- Resolved before the branch because both paths need it: the plugin's own run
+  -- mounts it, the CLI has to be told about it, and the check at the end has to
+  -- run either way. It used to be resolved inside the else branch only, so a
+  -- devcontainer built by the CLI on a worktree got no mount and no warning.
+  local git_dir = container.git_common_dir(workspace)
 
   if cfg.cli then
     -- The devcontainer named something only @devcontainers/cli can build, and
@@ -539,9 +551,18 @@ crucible.on_session_start(function(session)
       session = session.id, key = "oci", plugin = "oci",
       text = "devcontainer up", level = "info",
     }
-    local up = cru.shell.exec(devcontainer.CLI, {
-      "up", "--workspace-folder", workspace,
-    }, { timeout = cfg.build_timeout or container.DEFAULT_BUILD_TIMEOUT })
+    local up_args = { "up", "--workspace-folder", workspace }
+    -- The CLI owns the container's mounts, so a worktree's main repo can only
+    -- reach it as an argument. Its `--mount` spells the destination `target=`
+    -- (podman's own is `destination=`) and takes no relabel key, so under
+    -- SELinux the mount can land and still be denied — which is exactly what
+    -- the git check at the end of this hook reports.
+    if git_dir then
+      table.insert(up_args, "--mount")
+      table.insert(up_args, "type=bind,source=" .. git_dir .. ",target=" .. git_dir)
+    end
+    local up = cru.shell.exec(devcontainer.CLI, up_args,
+      { timeout = cfg.build_timeout or container.DEFAULT_BUILD_TIMEOUT })
 
     local outcome = devcontainer.up_result(up.stdout)
     if not up.success or not outcome or outcome.outcome ~= "success" then
@@ -588,8 +609,6 @@ crucible.on_session_start(function(session)
       text = "starting " .. cfg.image, level = "info",
     }
 
-    git_dir = container.git_common_dir(workspace)
-
     -- Uid mapping only when the image runs as non-root; see container.lua for
     -- the measurements. Both keep-id and an explicit --user are required.
     local userns, run_as_uid, run_as_gid = cfg.userns, nil, nil
@@ -628,28 +647,26 @@ crucible.on_session_start(function(session)
   -- Default-deny: anything these handlers do not take over is refused rather
   -- than run on the host. The six intercepted tools were complete only by
   -- coincidence; a seventh would have escaped silently.
-  crucible.require_isolation{
-    session = session.id, plugin = "oci", exempt = cfg.exempt,
-    exec_prefix = exec_prefix(runtime, name, cfg.target),
-  }
+  claim_isolation(session.id, cfg.exempt, runtime, name, cfg.target)
 
-  -- A devcontainer is resolved from HEAD, so an edit sitting in the working
-  -- tree changed nothing. Saying so beats letting someone conclude the plugin
-  -- ignored their config.
   local text = string.format("sandboxed: %s (%s)", cfg.image, runtime)
   local level = "info"
-  if cfg.uncommitted_drift then
-    text = text .. " — uncommitted devcontainer edits are not applied"
-    level = "warn"
-  end
 
   -- Said out loud rather than left to be discovered mid-turn. A worktree whose
   -- main repo did not mount gives a container where every git command fails
   -- with "not a git repository", and the agent has no way to tell that from a
   -- project that simply is not version controlled.
-  if git_dir and not container.git_works(runtime, name, cfg.target) then
-    text = text .. " — git is not resolvable in the container (worktree mount failed)"
-    level = "warn"
+  --
+  -- Which of the two failures it is decides where to look, so the message says:
+  -- a base image with no git is an image choice, a lost mount is a mount.
+  if git_dir then
+    local git_ok, why = container.git_works(runtime, name, cfg.target)
+    if not git_ok then
+      text = text .. (why == "no-git"
+        and " — the image has no git, so this worktree's repository is unusable"
+        or " — git cannot resolve the repository in the container (worktree mount failed)")
+      level = "warn"
+    end
   end
 
   crucible.set_status{
@@ -743,9 +760,10 @@ return {
         },
         devcontainer_host_access = {
           type = "toggle", order = 4, name = "Let a devcontainer reach the host",
-          desc = "Honour runArgs, mounts and initializeCommand from the project's "
-            .. "devcontainer.json. Off by default: a sandboxed session can write and "
-            .. "commit that file, and those keys can escape the container.",
+          desc = "Honour the keys a devcontainer may not otherwise ask for — runArgs, "
+            .. "mounts, initializeCommand, features and compose. Off by default: this "
+            .. "session's agent can write that file, and those keys configure the "
+            .. "container from outside it. Applies to every project, not just this one.",
         },
         build_timeout = {
           type = "range", order = 5, name = "Build timeout (seconds)",

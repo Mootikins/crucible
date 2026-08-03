@@ -49,7 +49,7 @@ below), and removes it when the last session using it ends.
 | `userns` | auto | `--userns` value. See below. `false` disables it. |
 | `workspace_folder` | `/workspace` | Where the workspace is mounted inside the container. See below. |
 | `devcontainer` | auto | `false` ignores this project's `devcontainer.json`; `true` opts in with no `image`. See below. |
-| `devcontainer_host_access` | `false` | Honour `runArgs`, `mounts` and `initializeCommand` from a devcontainer. See below. |
+| `devcontainer_host_access` | `false` | Honour the keys a devcontainer may not otherwise ask for (`runArgs`, `mounts`, `initializeCommand`, `features`, compose). See below. |
 | `build_timeout` | `900` | Seconds allowed for an image build. |
 | `start_timeout` | `300` | Seconds allowed for the image pull and for `run`. |
 | `exempt` | `[]` | Host-touching tool names allowed to run on the host anyway. See below. |
@@ -136,8 +136,10 @@ practice. `workspaceFolder` defaults to the devcontainer spec's
 `postStartCommand`, `postAttachCommand`) have no native equivalent. When
 [`@devcontainers/cli`](https://github.com/devcontainers/cli) is installed the
 plugin runs `devcontainer up` and adopts the container it produces, at the
-folder it reports. When it is not, **the session is refused naming the keys that
-could not be honoured**:
+folder it reports. (`dockerComposeFile` and `initializeCommand` must clear the
+host gate below first — an installed CLI does not bypass it.) When it is not
+installed, **the session is refused naming the keys that could not be
+honoured**:
 
 ```
 oci: /home/you/project/.devcontainer/devcontainer.json sets 'features',
@@ -161,23 +163,38 @@ agent's container is.
 
 ### What a devcontainer is not allowed to ask for
 
-Three keys can reach *outside* the container, and are refused by default even
-when the file is otherwise honoured:
+**This is a speed bump, not a security boundary.** Say that first, because the
+devcontainer spec's own maintainers do: *"dev containers are not designed as a
+security boundary."* They declined to gate `initializeCommand` on the grounds
+that stopping one key is theatre while the rest remain, and every comparable
+tool — VS Code, Zed, the reference CLI — simply trusts the file. What the list
+below buys is that a devcontainer cannot *casually* hand out the host. An agent
+with a shell has other routes.
+
+These keys configure the container from outside it, and are refused by default:
 
 | Key | Why |
 |-----|-----|
 | `runArgs` | Becomes raw runtime argv — `--privileged`, `-v /:/host` |
 | `mounts` | Names arbitrary host paths |
 | `initializeCommand` | `@devcontainers/cli` runs it **on the host**, not in the container |
+| `dockerComposeFile` | The compose file it names is in the repo, and a service there can ask for `privileged: true` and `volumes: ["/:/host"]` |
+| `service`, `runServices` | Only meaningful alongside a compose file, so gated with it |
+| `features` | The same escape one level further out — see below |
 
-The reason is that the file is inside the sandbox. A session's workspace is
-bind-mounted `rw`, `.git` included, so the agent can edit *and commit* its own
-project's `devcontainer.json` — and the next session in that workspace would
-resolve from it. Reading only the committed file (see below) raises the cost of
-that by one command and no more, so the boundary is on what the file may ask
-for rather than on who wrote it. Without these keys a devcontainer still chooses
-its image and its build, which decides what the sandbox *contains* but not
-whether it is one.
+`features` deserves its own note, because it is the one that looks innocent. A
+`devcontainer-feature.json` may legally declare `privileged`, `capAdd`,
+`securityOpt`, `mounts`, `init` and `entrypoint`, and the CLI merges them into
+the run arguments. A feature may be referenced by a path *inside the workspace*,
+so nothing vets it. Measured, not theorised: a config naming only `image` and
+`"./evilfeat"` produced `--privileged`, `seccomp=unconfined`, and a bind mount
+of `/` — the container could read the host's filesystem.
+
+The reason any of this matters is that the file is inside the sandbox. A
+session's workspace is bind-mounted `rw`, so the agent can edit its own
+project's `devcontainer.json`, and the next session in that workspace resolves
+from it. Without these keys a devcontainer still chooses its image and its
+build — which decides what the sandbox *contains*, but not whether it is one.
 
 Allow them with operator config, which lives outside the workspace where the
 agent cannot write it:
@@ -187,17 +204,24 @@ agent cannot write it:
 devcontainer_host_access = true
 ```
 
-### The file is read from `HEAD`
+Note the limit: this is one flag for every project, not per project. Turning it
+on for a repo that needs `runArgs` turns it on everywhere.
 
-Resolution reads the **committed** `devcontainer.json`, never the working tree.
-An uncommitted edit changes nothing until it is committed, and the session's
-status slot says so rather than leaving you wondering why your change had no
-effect. In a project that is not a git repository at all, a devcontainer is
-refused rather than honoured — there is no committed form to read.
+### The file is read from the working tree
 
-This is hygiene, not a security boundary: it keeps an in-flight edit from
-silently changing the next session, and keeps `git diff` an honest record of
-what the environment is. The security boundary is the key list above.
+Resolution reads `.devcontainer/devcontainer.json` as it is on disk, committed
+or not — so you can change a devcontainer and test it without committing first,
+which is how anyone actually edits one.
+
+An earlier version read only the committed file, on the theory that a commit is
+a human boundary. It is not one here: the workspace is bind-mounted `rw` with
+`.git` inside it, so a sandboxed agent can commit as easily as it can write. The
+rule cost the agent one extra command and cost everyone else the ability to
+iterate. The key list above is what holds the line instead.
+
+Reading the working tree also means this plugin and `@devcontainers/cli` read
+the *same* file — the CLI's default is the same path, in the same precedence
+order — so what is validated is what gets built.
 
 `remoteUser` sets `--user`, except where uid mapping applies: `keep-id` maps the
 *host* uid into the container, and running as any other id fails every workspace
@@ -359,8 +383,16 @@ Two details worth knowing if you are debugging a mount:
 - `relabel=shared` is added for podman only. Without it SELinux denies the read
   even though the mount landed. Docker and nerdctl reject the option.
 
+- When `@devcontainers/cli` builds the environment the plugin does not own the
+  mounts, so the same directory is passed to it as `devcontainer up --mount
+  type=bind,source=…,target=…`. That option has no relabel key, so on SELinux
+  the mount can land and the read still be denied.
+
 Both are easy to lose silently, so the plugin runs `git rev-parse` inside the
-container once at session start and says so in the status slot if it fails.
+container once at session start, on either path, and says so in the status slot
+if it fails. It distinguishes the two reasons it can fail: an image that ships
+no git at all (an image choice — pick a base with git, or add it in the build)
+from git being present but unable to resolve the repository (the mount).
 
 ## External (ACP) agents
 
@@ -378,7 +410,9 @@ that runs a command inside the sandbox.
 crucible.require_isolation{
   session = session.id,
   plugin  = "oci",
-  exec_prefix = { "podman", "exec", "-i", "-w", "/workspace", "crucible-" .. session.id },
+  exec_prefix   = { "podman", "exec", "-i", "-w", "/workspace" },
+  exec_env_flag = "-e",
+  exec_suffix   = { "crucible-" .. session.id },
 }
 ```
 
@@ -387,6 +421,20 @@ npx @zed-industries/claude-agent-acp` rather than `npx …` on the host. The
 agent's tools are then confined by where its process runs, and there is nothing
 left to intercept. The prefix is argv, not a shell string, so the agent's own
 arguments are never re-split.
+
+The prefix comes in two halves because the agent's configured environment —
+`env_overrides` on the session plus `[acp.agents.*] env` — has to go *inside*
+the container. Setting it on the process the daemon spawns would set it on
+podman, and the container boundary drops it there, so an agent configured with
+an API key would start without one. The daemon inserts `<exec_env_flag>
+NAME=VALUE` per variable between the halves, which is where a runtime wants a
+command's flags: `exec crucible-x -e KEY=v agent` passes the flag to the agent
+instead. Which flag that is stays here in the plugin — the daemon only fills
+the hole.
+
+Omit `exec_env_flag` and a session whose agent has configured environment is
+**refused**, naming the variables that could not be delivered. Starting it
+anyway would strip its credentials and fail later, somewhere unrelated.
 
 Without one, the session is still **refused**: creating it fails, switching an
 isolated session to an ACP agent is rejected, and delegating to one from a

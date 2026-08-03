@@ -138,10 +138,10 @@ impl Server {
             // the same reason init.lua beats TOML: it is the most recent thing
             // the user actually did. Last in the chain, and replayed through
             // each plugin's own setter — see `option_store`.
-            crate::daemon_plugins::option_store::restore(
-                &crucible_core::config::crucible_home(),
-                &loader.options(),
-            );
+            // Read from the daemon's resolved data root, not the global
+            // `crucible_home()`, so an injected root is honored (see
+            // `RpcContext::data_home`).
+            crate::daemon_plugins::option_store::restore(&self.data_home, &loader.options());
 
             // Give Lua a trigger on the workspace changing. Until now every
             // hookable event was on the agent turn loop, so a handler could not

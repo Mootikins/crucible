@@ -265,11 +265,23 @@ impl Server {
             crucible_lua::seed_app_config(app_config);
         }
 
+        // Resolve the daemon data root ONCE. Every crucible_home() read below and
+        // in the runtime handlers (session list, archive sweep) now goes through
+        // this value instead of calling the global; `None` keeps the
+        // crucible_home() default so production behavior is unchanged, while tests
+        // inject a TempDir (no env mutation).
+        let data_home = params
+            .data_home
+            .clone()
+            .unwrap_or_else(crucible_core::config::crucible_home);
+
         let plugin_loader = Arc::new(Mutex::new(
             match DaemonPluginLoader::new(params.plugin_config.clone()) {
                 Ok(loader) => {
                     info!("Daemon plugin loader initialized");
-                    Some(loader)
+                    // Persisted settings-pane values live under the same root,
+                    // read at boot and replayed after every plugin reload.
+                    Some(loader.with_option_store(data_home.clone()))
                 }
                 Err(e) => {
                     warn!("Failed to initialize daemon plugin loader: {}", e);
@@ -283,15 +295,6 @@ impl Server {
             params.enrichment_config.clone(),
             params.max_precognition_chars,
         ));
-        // Resolve the daemon data root ONCE. Every crucible_home() read below and
-        // in the runtime handlers (session list, archive sweep) now goes through
-        // this value instead of calling the global; `None` keeps the
-        // crucible_home() default so production behavior is unchanged, while tests
-        // inject a TempDir (no env mutation).
-        let data_home = params
-            .data_home
-            .clone()
-            .unwrap_or_else(crucible_core::config::crucible_home);
 
         // SCM (git) config rides in on the serialized app config; `scm.worktree_add`
         // reads `worktree_dir` from it, and `session_workspace_dir` (below) seeds

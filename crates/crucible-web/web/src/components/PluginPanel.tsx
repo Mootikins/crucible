@@ -268,8 +268,12 @@ export const PluginPanel: Component = () => {
                             tree={tree()}
                             // A `values` or `disabled` function can read another
                             // option, so a write invalidates the whole tree, not
-                            // just the row that changed.
-                            onChanged={() => void refetchOptions()}
+                            // just the row that changed. Awaited by the row: the
+                            // reloaded tree is also how it learns what the
+                            // plugin actually stored, so it does not read again.
+                            onChanged={async () => {
+                              await refetchOptions();
+                            }}
                           />
                         </Show>
                       </div>

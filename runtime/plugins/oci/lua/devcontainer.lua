@@ -25,6 +25,10 @@ M.CLI = "devcontainer"
 --- `features` and `dockerComposeFile` change what the image *is*;
 --- the lifecycle commands change what is *in* it. Approximating either is how
 --- an agent ends up in a container missing the toolchain the project assumes.
+---
+--- Being here means "the CLI honours this", not "this is safe": the compose
+--- keys and `initializeCommand` are also [`M.HOST_KEYS`] and must clear that
+--- gate first.
 M.CLI_KEYS = {
   features = true,
   dockerComposeFile = true,
@@ -40,25 +44,51 @@ M.CLI_KEYS = {
 
 --- Keys that can reach the HOST, refused unless the operator opted in.
 ---
---- Reading only committed config was justified on the grounds that a commit is
---- a human boundary. It is not one here: the workspace is bind-mounted `rw`
---- into the container, `.git` with it, so the sandboxed agent can commit — or
---- rewrite a ref by hand — as easily as it can write the file. "Committed"
---- costs it one extra command.
+--- **This is a speed bump, not a security boundary.** The devcontainer spec's
+--- own maintainers say so plainly — "dev containers are not designed as a
+--- security boundary" — and refused to gate `initializeCommand` on the grounds
+--- that stopping one key is theatre while the others remain. Every comparable
+--- tool (VS Code, Zed, the reference CLI) simply trusts the file. What this
+--- list buys is that a devcontainer cannot *casually* or *accidentally* hand
+--- out the host; a determined agent with a shell has other routes, and pretending
+--- otherwise would be worse than not trying.
 ---
---- So the boundary moves to what the file is allowed to *ask for*. `runArgs`
---- becomes raw runtime argv (`--privileged`, `-v /:/host`), `mounts` names
---- arbitrary host paths, and `initializeCommand` is run by
---- `@devcontainers/cli` **on the host**, not in the container. Without these a
---- devcontainer can still choose its image and its build — which decides what
---- the agent's sandbox contains, but not whether it is a sandbox.
+--- Each entry earns its place by reaching outside the container:
+---
+--- * `runArgs` is raw runtime argv — `--privileged`, `-v /:/host`.
+--- * `mounts` names arbitrary host paths.
+--- * `initializeCommand` is run by `@devcontainers/cli` **on the host**.
+--- * `dockerComposeFile` (with `service`/`runServices`) points at a compose
+---   file *inside the repo*, and a service there can declare `privileged: true`
+---   and `volumes: ["/:/host"]`. Naming the file is asking for whatever it says.
+--- * `features` is the same escape with one more level of indirection, and it
+---   is the one most likely to look innocent. A `devcontainer-feature.json` may
+---   legally declare `privileged`, `capAdd`, `securityOpt`, `mounts`, `init`
+---   and `entrypoint`, and the CLI merges them into the run arguments. A
+---   feature may be referenced by a path *inside the workspace*, so no registry
+---   vets it. Measured, not theorised: a three-key config naming only `image`
+---   and `./evilfeat` produced `--privileged`, `seccomp=unconfined` and a bind
+---   mount of `/`.
+---
+--- Without these a devcontainer still chooses its image and its build — which
+--- decides what the agent's sandbox *contains*, but not whether it is a sandbox.
+---
+--- Several of these are also [`M.CLI_KEYS`] — the gate decides *whether* they
+--- are honoured, not *who* honours them, so once permitted they still go to
+--- the CLI. That is why `M.parse` checks this list before the CLI branch.
 ---
 --- The opt-in is `[plugins.oci] devcontainer_host_access = true`: operator
 --- config, which lives outside the workspace and which the agent cannot write.
+--- It is all-or-nothing across projects, which is the honest limit of a single
+--- flag; per-project trust would need state outside the workspace too.
 M.HOST_KEYS = {
   runArgs = true,
   mounts = true,
   initializeCommand = true,
+  dockerComposeFile = true,
+  service = true,
+  runServices = true,
+  features = true,
 }
 
 --- Keys that describe the *editor*, not the container.
@@ -331,13 +361,16 @@ function M.parse(text, workspace, dir, allow_host)
 
   for _, key in ipairs(sorted_keys(decoded)) do
     local value = decoded[key]
-    -- Before every other branch, `CLI_KEYS` included: `initializeCommand` is
-    -- one of both, and handing it to the CLI runs it on the host.
+    -- Before every other branch, `CLI_KEYS` included: `features`,
+    -- `initializeCommand` and the compose keys are in both, and handing any of
+    -- them to the CLI is what runs the host command, brings up the privileged
+    -- compose service, or merges a feature's `privileged` into the run.
     if M.HOST_KEYS[key] and not allow_host then
-      error("oci: devcontainer.json sets '" .. key .. "', which can reach outside the "
-        .. "container (host paths, raw runtime arguments, or a host command). A sandboxed "
-        .. "session can write and commit this file through its own workspace mount, so it "
-        .. "is not honoured by default. Set devcontainer_host_access = true under "
+      error("oci: devcontainer.json sets '" .. key .. "', which can configure the "
+        .. "container from outside it — host paths, raw runtime arguments, a command "
+        .. "run on the host, a compose file, or a feature that declares any of those. "
+        .. "This session's agent can write this file through its own workspace mount, "
+        .. "so it is not honoured by default. Set devcontainer_host_access = true under "
         .. "[plugins.oci] to allow it, or move the setting into a [plugins.oci] profile.")
     end
     if M.CLI_KEYS[key] then
@@ -407,96 +440,40 @@ end
 -- Resolution
 -- ─────────────────────────────────────────────────────────────────────────────
 
---- Whether `workspace` sits inside a git working tree.
-function M.is_git_repo(workspace)
-  local r = cru.shell.exec("git", { "-C", workspace, "rev-parse", "--git-dir" })
-  return not not (r and r.success)
-end
-
---- The committed text of `relative` at HEAD, or nil when HEAD has no such path.
----
---- The `./` is load-bearing. `git show HEAD:<path>` resolves against the
---- *repository root*; only a `./`-prefixed path resolves against the cwd. A
---- workspace that is a subdirectory of a repo — which Crucible allows, since a
---- project registers at the git root *or* the invocation dir — would otherwise
---- be handed the root's devcontainer, `runArgs` included, while
---- `find_untracked` looked at its own.
-function M.committed_text(workspace, relative)
-  local r = cru.shell.exec("git", { "-C", workspace, "show", "HEAD:./" .. relative })
-  if r and r.success then return r.stdout end
-  return nil
-end
-
---- Any devcontainer candidate present in the working tree, or nil.
----
---- Used only to decide between "this project has none" and "this project has
---- one that is not committed" — never as a source of configuration.
-function M.find_untracked(workspace)
+--- The devcontainer file this project has, as `path, text, dir`, or nil.
+function M.find(workspace)
   for _, relative in ipairs(M.CANDIDATES) do
     local path = workspace .. "/" .. relative
-    if cru.fs.exists(path) then return path, relative end
+    if cru.fs.exists(path) then
+      return path, cru.fs.read(path), dirname(path)
+    end
   end
   return nil
 end
 
 --- The project's devcontainer environment, or nil when it has none.
 ---
---- Reads the **committed** file, never the working tree, so an edit sitting
---- unstaged in a session's own workspace does not take effect mid-flight and a
---- human reviewing `git diff` sees what changed. That is a hygiene property,
---- **not** a security boundary — see [`M.HOST_KEYS`] for why, and for what
---- actually holds the line: the agent can commit, so the limit is on what the
---- file may ask for rather than on who wrote it.
+--- Reads the working tree. An earlier version read only the committed file, on
+--- the theory that a commit is a human boundary — it is not one here, because
+--- the workspace is bind-mounted `rw` with `.git` inside it, so a sandboxed
+--- agent can commit as easily as it can write. It cost the agent one extra
+--- command and cost everyone else the ability to test a devcontainer edit
+--- without committing it first, which is the normal way anyone changes one.
+---
+--- What holds the line instead is [`M.HOST_KEYS`] — what the file may *ask
+--- for*, rather than who wrote it. Read that comment for how far that goes,
+--- which is not as far as "boundary".
 ---
 --- Raises when the file names something this plugin cannot honour and
 --- `@devcontainers/cli` is not installed to honour it instead.
 function M.resolve(workspace, allow_host)
   if not workspace or workspace == "" then return nil end
 
-  local untracked_path = M.find_untracked(workspace)
-
-  -- No commit boundary means nothing to trust. Refusing is loud where falling
-  -- through to a profile would silently build an environment the project did
-  -- not ask for — the same downgrade the plugin refuses everywhere else.
-  if not M.is_git_repo(workspace) then
-    if untracked_path then
-      error("oci: " .. untracked_path .. " exists, but " .. workspace .. " is not a git "
-        .. "repository, so there is no commit boundary that makes it trustworthy. "
-        .. "Container configuration is honoured only when committed, because a "
-        .. "sandboxed session can write this file through its own workspace mount. "
-        .. "Track the project with git and commit it, or pass an explicit isolation "
-        .. "profile for this session.")
-    end
-    return nil
-  end
-
-  local path, dir, text
-  for _, relative in ipairs(M.CANDIDATES) do
-    local committed = M.committed_text(workspace, relative)
-    if committed then
-      path, text = workspace .. "/" .. relative, committed
-      dir = dirname(path)
-      break
-    end
-  end
-
-  if not path then
-    if untracked_path then
-      error("oci: " .. untracked_path .. " is not committed, so it is not honoured. "
-        .. "Container configuration is read from HEAD, because a sandboxed session "
-        .. "can write this file through its own workspace mount and would otherwise "
-        .. "configure the container of the next session. Commit it to apply it, or "
-        .. "pass an explicit isolation profile for this session.")
-    end
-    return nil
-  end
+  local path, text, dir = M.find(workspace)
+  if not path then return nil end
 
   local env = M.parse(text, workspace, dir, allow_host)
 
-  -- HEAD wins, but a human who just edited the file should not be left
-  -- wondering why nothing changed. The status slot reports this.
-  local on_disk = cru.fs.exists(path) and cru.fs.read(path) or nil
-  if on_disk ~= text then env.uncommitted_drift = true end
   if env.cli_keys then
     if not cru.shell.which(M.CLI) then
       error("oci: " .. path .. " sets " .. quoted_list(env.cli_keys)

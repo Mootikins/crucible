@@ -254,12 +254,13 @@ pub(crate) async fn handle_plugin_option_call(
                 // Only after the plugin accepted it. Recording first would
                 // persist a value the plugin rejected, and replay it into a
                 // refusal on every subsequent boot.
-                crate::daemon_plugins::option_store::record(
-                    &crucible_core::config::crucible_home(),
-                    &plugin,
-                    &path,
-                    value,
-                );
+                //
+                // The store lives under the loader's bound data root — the
+                // daemon's resolved `data_home`, not `crucible_home()`, so an
+                // injected root is honored instead of the process's real one.
+                if let Some(dir) = loader.option_store_dir() {
+                    crate::daemon_plugins::option_store::record(dir, &plugin, &path, value);
+                }
                 serde_json::json!({ "ok": true })
             })
         }

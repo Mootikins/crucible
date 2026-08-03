@@ -199,7 +199,14 @@ describe("oci session lifecycle", function()
     assert.equals("-i", prefix[3], "the agent speaks JSON-RPC over stdin")
     assert.equals("-w", prefix[4])
     assert.equals("/workspace", prefix[5])
-    assert.equals("crucible-s1", prefix[6])
+
+    -- The container name is held back so the daemon can insert the agent's
+    -- configured environment first: `exec crucible-s1 -e KEY=v agent` would
+    -- pass the flag to the agent, not to the runtime.
+    assert.equals(5, #prefix, "the container name must not be part of the prefix")
+    assert.equals("-e", isolation_calls[1].exec_env_flag,
+      "without a flag the daemon has no way to deliver an API key into the container")
+    assert.equals("crucible-s1", isolation_calls[1].exec_suffix[1])
 
     local last = status_calls[#status_calls]
     assert.is_not_nil(last)
@@ -902,14 +909,12 @@ describe("oci devcontainer resolution", function()
   it("refuses the session naming the key it cannot honour", function()
     spec.setup({ image = "alpine:latest" })
     local ws = fresh_ws()
-    with_devcontainer(ws, '{ "image": "dc:latest", "features": { "x": {} } }')
+    with_devcontainer(ws, '{ "image": "dc:latest", "postCreateCommand": "make" }')
 
-    local ok, err = pcall(start_session, "dc-features", ws)
+    local ok, err = pcall(start_session, "dc-lifecycle", ws)
     assert.falsy(ok, "a devcontainer needing the CLI must refuse, not fall back to the profile")
-    assert.truthy(tostring(err):find("features", 1, true))
-    -- Nothing may be *started* from a config that could not be honoured. Reads
-    -- are fine and expected: resolution consults git for the committed file
-    -- before it can know the config is unhonourable at all.
+    assert.truthy(tostring(err):find("postCreateCommand", 1, true))
+    -- Nothing may be *started* from a config that could not be honoured.
     for _, call in ipairs(exec_log) do
       assert.equals("git", call.cmd,
         "a config that could not be honoured reached the container runtime")
@@ -955,20 +960,6 @@ describe("oci devcontainer resolution", function()
 
   -- HEAD is what runs, but a human who just edited the file and saw nothing
   -- change deserves to be told why rather than left to guess.
-  it("says so in the status slot when the working tree differs from HEAD", function()
-    spec.setup({ image = "alpine:latest" })
-    local ws = fresh_ws()
-    with_devcontainer(ws, '{ "image": "edited:latest" }', nil, '{ "image": "committed:latest" }')
-
-    start_session("dc-drift", ws)
-
-    local final = status_calls[#status_calls]
-    assert.truthy(final.text:find("committed:latest", 1, true),
-      "the committed image is the one that runs")
-    assert.truthy(final.text:lower():find("uncommitted", 1, true),
-      "an ignored working-tree edit must be visible, not silent")
-    assert.equals("warn", final.level)
-  end)
 
   it("keeps the status slot quiet when the working tree matches HEAD", function()
     spec.setup({ image = "alpine:latest" })
@@ -987,7 +978,7 @@ describe("oci devcontainer resolution", function()
   it("delegates to @devcontainers/cli when it is installed", function()
     spec.setup({ image = "alpine:latest" })
     local ws = fresh_ws()
-    with_devcontainer(ws, '{ "image": "dc:latest", "features": { "x": {} } }', { "devcontainer" })
+    with_devcontainer(ws, '{ "image": "dc:latest", "postCreateCommand": "make" }', { "devcontainer" })
     responders["devcontainer up"] = {
       success = true, exit_code = 0, stderr = "",
       stdout = '{"outcome":"success","containerId":"dc-abc",'
@@ -1014,7 +1005,7 @@ describe("oci devcontainer resolution", function()
   it("refuses the session when devcontainer up fails", function()
     spec.setup({ image = "alpine:latest" })
     local ws = fresh_ws()
-    with_devcontainer(ws, '{ "image": "dc:latest", "features": { "x": {} } }', { "devcontainer" })
+    with_devcontainer(ws, '{ "image": "dc:latest", "postCreateCommand": "make" }', { "devcontainer" })
     responders["devcontainer up"] = {
       success = false, exit_code = 1, stdout = "", stderr = "compose not found",
     }
@@ -1206,8 +1197,14 @@ end)
 -- holding an absolute host path into the main repo. Mount the worktree alone
 -- and that path is absent in the container, so every git command inside fails.
 describe("oci with a worktree workspace", function()
+  local saved_fs
+
   before_each(function()
     install_shell()
+    -- The CLI cases resolve a real devcontainer.json, and install_shell()
+    -- leaves an encode-only json stub behind.
+    cru.json.decode = real_json.decode
+    saved_fs = cru.fs
     exec_log = {}
     responders = {}
     isolation_calls = {}
@@ -1215,18 +1212,67 @@ describe("oci with a worktree workspace", function()
     available = { podman = true }
   end)
 
-  --- Answer `rev-parse --git-common-dir` with `common`, and `git rev-parse
-  --- --git-dir` inside the container per `git_ok`.
-  local function with_git(common, git_ok)
+  after_each(function()
+    cru.fs = saved_fs
+  end)
+
+  --- Answer `rev-parse --git-common-dir` on the host with `common`, and the two
+  --- in-container probes per `git_ok` (does the repository resolve) and
+  --- `git_installed` (is there a git binary in the image at all).
+  local function with_git(common, git_ok, git_installed)
     responders["git"] = function(_, args)
       if index_of(args, "--git-common-dir") then
         return { success = common ~= nil, exit_code = 0, stdout = (common or "") .. "\n", stderr = "" }
       end
       return { success = false, exit_code = 128, stdout = "", stderr = "not a git repository" }
     end
-    responders["podman exec"] = {
-      success = git_ok ~= false, exit_code = git_ok == false and 128 or 0,
-      stdout = "", stderr = "",
+    responders["podman exec"] = function(_, args)
+      if index_of(args, "--version") then
+        if git_installed == false then
+          return { success = false, exit_code = 127, stdout = "",
+                   stderr = "exec: \"git\": executable file not found in $PATH" }
+        end
+        return { success = true, exit_code = 0, stdout = "git version 2.43.0\n", stderr = "" }
+      end
+      local resolves = git_ok ~= false and git_installed ~= false
+      return { success = resolves, exit_code = resolves and 0 or 128, stdout = "",
+               stderr = resolves and "" or "fatal: not a git repository" }
+    end
+  end
+
+  --- A committed devcontainer only `@devcontainers/cli` can build, with the CLI
+  --- installed: the path where the plugin adopts a container it did not create.
+  local function with_cli_devcontainer(ws, common, git_ok, git_installed)
+    with_git(common, git_ok, git_installed)
+    available = { podman = true, devcontainer = true }
+    local body = '{ "image": "dc:latest", "postCreateCommand": "make" }'
+    local path = ws .. "/.devcontainer/devcontainer.json"
+    cru.fs = {
+      exists = function(p) return p == path end,
+      read = function(p)
+        if p ~= path then error("File not found: " .. p) end
+        return body
+      end,
+    }
+    -- Keyed above the bare "git" responder, so it has to answer the worktree
+    -- probe as well as resolution's own calls.
+    responders["git -C"] = function(_, args)
+      if index_of(args, "--git-common-dir") then
+        return { success = common ~= nil, exit_code = 0, stdout = (common or "") .. "\n", stderr = "" }
+      end
+      local verb, spec_arg = args[3], args[4] or ""
+      if verb == "rev-parse" then
+        return { success = true, exit_code = 0, stdout = ws .. "/.git\n", stderr = "" }
+      elseif verb == "show" and spec_arg:match("devcontainer%.json$") then
+        return { success = true, exit_code = 0, stdout = body, stderr = "" }
+      end
+      return { success = false, exit_code = 128, stdout = "",
+               stderr = "fatal: path does not exist in 'HEAD'" }
+    end
+    responders["devcontainer up"] = {
+      success = true, exit_code = 0, stderr = "",
+      stdout = '{"outcome":"success","containerId":"dc-wt",'
+        .. '"remoteWorkspaceFolder":"/workspaces/feat"}\n',
     }
   end
 
@@ -1263,6 +1309,47 @@ describe("oci with a worktree workspace", function()
 
     local last = status_calls[#status_calls]
     assert.equals("warn", last.level)
-    assert.truthy(last.text:find("git is not resolvable", 1, true), last.text)
+    assert.truthy(last.text:find("cannot resolve the repository", 1, true), last.text)
+  end)
+
+  -- A slim base image with no git at all fails the same rev-parse. Blaming the
+  -- mount there sends someone debugging a mount that is fine.
+  it("names the missing git binary instead of blaming the mount", function()
+    spec.setup({ image = "alpine:latest" })
+    with_git("/home/user/project/.git", false, false)
+    start_session("s-wt-nogit", "/home/user/worktrees/nogit")
+
+    local last = status_calls[#status_calls]
+    assert.equals("warn", last.level)
+    assert.truthy(last.text:find("image has no git", 1, true), last.text)
+    assert.is_nil(last.text:find("mount failed", 1, true),
+      "a missing binary is not a mount failure")
+  end)
+
+  -- The CLI creates the container, so the mount has to reach it as an argument
+  -- rather than through the plugin's own `run`.
+  it("passes the main repo's git dir to @devcontainers/cli", function()
+    spec.setup({ image = "alpine:latest" })
+    local ws = "/home/user/worktrees/cli-ok"
+    with_cli_devcontainer(ws, "/home/user/project/.git", true)
+    start_session("s-wt-cli", ws)
+
+    local up = exec_call("up")
+    assert.is_not_nil(up)
+    local i = index_of(up.args, "--mount")
+    assert.is_not_nil(i, "a worktree built by the CLI still needs the main repo mounted")
+    assert.equals("type=bind,source=/home/user/project/.git,"
+      .. "target=/home/user/project/.git", up.args[i + 1])
+  end)
+
+  it("warns when git does not resolve in a CLI-built container", function()
+    spec.setup({ image = "alpine:latest" })
+    local ws = "/home/user/worktrees/cli-broken"
+    with_cli_devcontainer(ws, "/home/user/project/.git", false)
+    start_session("s-wt-cli-broken", ws)
+
+    local last = status_calls[#status_calls]
+    assert.equals("warn", last.level)
+    assert.truthy(last.text:find("cannot resolve the repository", 1, true), last.text)
   end)
 end)

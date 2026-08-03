@@ -26,7 +26,7 @@ use crucible_lua::{
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -107,6 +107,14 @@ pub struct DaemonPluginLoader {
     publications: PublicationRegistry,
     /// Settings trees plugins declared, read by TUI and web.
     options: OptionsRegistry,
+    /// Data root under which [`option_store`] keeps values changed through the
+    /// settings pane — the daemon's *resolved* `data_home`, never the global
+    /// `crucible_home()`, so an injected root is honored.
+    ///
+    /// `None` for a loader nobody bound one to (tests, embeddings): nothing is
+    /// persisted or replayed. Falling back to the global would make any test
+    /// that reloads a plugin read and write the developer's real `~/.crucible`.
+    option_store_dir: Option<PathBuf>,
 }
 
 impl DaemonPluginLoader {
@@ -226,7 +234,22 @@ impl DaemonPluginLoader {
             status,
             publications,
             options,
+            option_store_dir: None,
         })
+    }
+
+    /// Bind the data root persisted plugin options live under.
+    ///
+    /// Set once, by `Server::bind`, from the daemon's resolved `data_home`.
+    pub fn with_option_store(mut self, dir: PathBuf) -> Self {
+        self.option_store_dir = Some(dir);
+        self
+    }
+
+    /// Where persisted plugin options live, for the RPC layer that records
+    /// them. `None` when no data root was bound — nothing is persisted.
+    pub fn option_store_dir(&self) -> Option<&Path> {
+        self.option_store_dir.as_deref()
     }
 
     /// Handlers registered by plugins via `crucible.on`.
@@ -924,6 +947,14 @@ end
             *existing = spec.clone();
         } else {
             self.loaded_specs.push(spec.clone());
+        }
+
+        // Re-executing init.lua re-ran `setup(cfg)` against the ORIGINAL TOML,
+        // so every value the user changed in the settings pane just reverted.
+        // Replayed here, on the loader, because both reload paths — the RPC
+        // handler and the file watcher — go through this function.
+        if let Some(dir) = &self.option_store_dir {
+            option_store::restore_plugin(dir, &self.options, name);
         }
 
         info!("Reloaded plugin '{}' successfully", name);

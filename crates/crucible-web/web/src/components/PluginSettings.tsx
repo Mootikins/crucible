@@ -1,4 +1,4 @@
-import { Component, For, Show, createResource, createSignal } from 'solid-js';
+import { Component, For, Index, Show, createResource, createSignal } from 'solid-js';
 import {
   getPluginOption,
   setPluginOption,
@@ -26,15 +26,23 @@ const inputClass =
   'w-full px-2 py-1 rounded border border-hairline bg-surface text-shell-body ' +
   'text-xs focus:outline-none focus:border-primary disabled:opacity-50';
 
-/** A leaf's value, fetched on mount and re-fetched when the tree reloads. */
+/**
+ * A leaf's value, fetched on mount and re-fetched when the tree reloads.
+ *
+ * The resource is keyed on the declaration itself, so a reloaded tree — every
+ * node of which arrives as a fresh object off the wire — re-reads the value
+ * along with it. That is what lets a write cost one read instead of two: the
+ * reconciliation the row needs and the invalidation the pane needs are the
+ * same fetch.
+ */
 const OptionRow: Component<{
   plugin: string;
   path: string[];
   node: PluginOptionNode;
-  onChanged: () => void;
+  onChanged: () => void | Promise<unknown>;
 }> = (props) => {
   const [value, { mutate, refetch }] = createResource(
-    () => props.path.join('.'),
+    () => props.node,
     () => getPluginOption(props.plugin, props.path),
   );
   const [busy, setBusy] = createSignal(false);
@@ -46,14 +54,18 @@ const OptionRow: Component<{
     // setter is free to normalise, clamp, or reject, and the pane must end up
     // showing the stored value rather than what was typed at it.
     const previous = value();
+    const declared = props.node;
     mutate(() => next);
     setBusy(true);
     try {
       await setPluginOption(props.plugin, props.path, next);
-      await refetch();
       // Sibling options can depend on this one (a `values` or `disabled`
       // function reading it), so the tree is re-read, not just this row.
-      props.onChanged();
+      await props.onChanged();
+      // The reloaded tree replaced this row's declaration, and the value was
+      // re-read with it — reading again here would fetch what just arrived.
+      // Only a caller that does not reload leaves the row to reconcile itself.
+      if (props.node === declared) await refetch();
     } catch (err) {
       mutate(() => previous);
       notificationActions.addNotification('error', `${props.node.name ?? props.path.at(-1)}: ${err}`);
@@ -66,7 +78,7 @@ const OptionRow: Component<{
     setBusy(true);
     try {
       await executePluginOption(props.plugin, props.path);
-      props.onChanged();
+      await props.onChanged();
     } catch (err) {
       notificationActions.addNotification('error', `${props.node.name ?? 'Action'}: ${err}`);
     } finally {
@@ -164,29 +176,36 @@ const OptionRow: Component<{
   );
 };
 
-/** A group and its children, recursively. */
+/**
+ * A group and its children, recursively.
+ *
+ * `Index`, not `For`: a reloaded tree is a new object graph, so `For` would
+ * discard and rebuild every row — losing focus mid-edit, and re-reading each
+ * value on top of the read the row already did for itself. Keyed by position,
+ * the rows survive and the new declaration reaches them as a prop.
+ */
 const OptionGroup: Component<{
   plugin: string;
   path: string[];
   node: PluginOptionNode;
-  onChanged: () => void;
+  onChanged: () => void | Promise<unknown>;
 }> = (props) => (
   <div class={props.path.length > 0 ? 'mt-2 pl-2 border-l border-hairline' : ''}>
     <Show when={props.path.length > 0 && props.node.name}>
       <h4 class="text-xs font-medium text-shell-body">{props.node.name}</h4>
     </Show>
-    <For each={props.node.args ?? []}>
+    <Index each={props.node.args ?? []}>
       {(child) => {
-        const path = () => [...props.path, child.key ?? ''];
+        const path = () => [...props.path, child().key ?? ''];
         return (
-          <Show when={!child.hidden}>
+          <Show when={!child().hidden}>
             <Show
-              when={child.type === 'group'}
+              when={child().type === 'group'}
               fallback={
                 <OptionRow
                   plugin={props.plugin}
                   path={path()}
-                  node={child}
+                  node={child()}
                   onChanged={props.onChanged}
                 />
               }
@@ -194,21 +213,22 @@ const OptionGroup: Component<{
               <OptionGroup
                 plugin={props.plugin}
                 path={path()}
-                node={child}
+                node={child()}
                 onChanged={props.onChanged}
               />
             </Show>
           </Show>
         );
       }}
-    </For>
+    </Index>
   </div>
 );
 
 export const PluginSettings: Component<{
   plugin: string;
   tree: PluginOptionNode;
-  onChanged: () => void;
+  /** Re-read the whole tree; resolves once the reloaded one is in hand. */
+  onChanged: () => void | Promise<unknown>;
 }> = (props) => (
   <Show
     when={(props.tree.args ?? []).length > 0}

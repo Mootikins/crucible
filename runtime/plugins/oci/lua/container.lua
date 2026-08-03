@@ -215,17 +215,27 @@ end
 
 --- Whether git resolves inside the container.
 ---
+--- Returns `true`, or `false` plus a reason: `"no-git"` when the image ships no
+--- git at all, `"unresolved"` when git is there but cannot find the repository.
+---
 --- Only meaningful for a workspace whose git dir lives outside it (a linked
 --- worktree). The mount that makes it resolve is easy to lose silently — one
 --- runtime drops a bind spec whose source and destination match, and SELinux
 --- can deny the read even when the mount lands — and the symptom is a
 --- container where every git command says "not a git repository". Checking
 --- costs one exec at session start and turns that into a message.
+---
+--- The second exec is what separates the two. A slim base image with no git
+--- fails the same `rev-parse`, and reporting a mount failure there sends
+--- someone debugging a mount that is fine; it only runs when the first fails.
 function M.git_works(runtime, name, target)
   local r = cru.shell.exec(runtime, {
     "exec", "-w", target, name, "git", "rev-parse", "--git-dir",
   })
-  return not not (r and r.success)
+  if r and r.success then return true end
+  local v = cru.shell.exec(runtime, { "exec", name, "git", "--version" })
+  if not (v and v.success) then return false, "no-git" end
+  return false, "unresolved"
 end
 
 --- Build an image from a Dockerfile.

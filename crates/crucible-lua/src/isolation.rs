@@ -37,25 +37,49 @@ pub struct IsolationClaim {
     /// unhandled, which is the safe default, and every exemption is then a
     /// visible decision rather than an omission.
     pub exempt: HashSet<String>,
-    /// Argv prefix that runs a command *inside* the sandbox, e.g.
-    /// `["podman", "exec", "-i", "-w", "/workspace", "crucible-abc"]`.
+    /// How to run a command *inside* the sandbox, when the plugin can say.
+    pub exec: SandboxExec,
+}
+
+/// The argv that relocates a command into a plugin's sandbox.
+///
+/// Empty when the plugin cannot offer one, which is the safe default: a claim
+/// says a session is sandboxed, not that anything can be launched into it.
+///
+/// It exists for external (ACP) agents. The daemon dispatches an internal
+/// agent's tools, so a `pre_tool_call` handler sits before execution; an ACP
+/// agent executes tools in its own process and only *reports* them, so
+/// interception arrives too late and the session is refused outright. But an
+/// ACP agent launched THROUGH this runs inside the container to begin with —
+/// its tools are sandboxed by where the process is, not by anything the daemon
+/// has to intercept — which is what makes that refusal liftable.
+///
+/// Argv, deliberately, not a shell string: the container name and the agent's
+/// own arguments go in unquoted and unsplit.
+#[derive(Debug, Clone, Default)]
+pub struct SandboxExec {
+    /// Argv up to the point where per-variable environment flags belong, e.g.
+    /// `["podman", "exec", "-i", "-w", "/workspace"]`.
+    pub prefix: Vec<String>,
+    /// Flag the launcher repeats once per variable, e.g. `-e`. `None` when the
+    /// plugin offers no way to deliver environment, and then a launch that
+    /// needs one is refused rather than run without it.
+    pub env_flag: Option<String>,
+    /// Argv between the environment flags and the relocated command, e.g. the
+    /// container name.
     ///
-    /// Empty when the plugin cannot offer one, which is the safe default: a
-    /// claim says a session is sandboxed, not that anything can be launched
-    /// into it.
-    ///
-    /// It exists for external (ACP) agents. The daemon dispatches an internal
-    /// agent's tools, so a `pre_tool_call` handler sits before execution; an
-    /// ACP agent executes tools in its own process and only *reports* them, so
-    /// interception arrives too late and the session is refused outright. But
-    /// an ACP agent launched THROUGH this prefix runs inside the container to
-    /// begin with — its tools are sandboxed by where the process is, not by
-    /// anything the daemon has to intercept — which is what makes that refusal
-    /// liftable.
-    ///
-    /// Argv, deliberately, not a shell string: the container name and the
-    /// agent's own arguments go in unquoted and unsplit.
-    pub exec_prefix: Vec<String>,
+    /// The split exists because a launcher's own flags must precede its
+    /// positional operand — `podman exec crucible-abc -e K=V agent` passes
+    /// `-e K=V` to the *agent*. Which flag, and what has to follow it, is the
+    /// plugin's knowledge; all this side does is fill the hole.
+    pub suffix: Vec<String>,
+}
+
+impl SandboxExec {
+    /// Whether this can actually relocate anything.
+    pub fn is_empty(&self) -> bool {
+        self.prefix.is_empty()
+    }
 }
 
 /// Isolation claims by session id.
@@ -118,12 +142,12 @@ impl IsolationRegistry {
         }
     }
 
-    /// The argv prefix that runs a command inside this session's sandbox, when
-    /// the claiming plugin offered one.
-    pub fn exec_prefix(&self, session_id: &str) -> Option<Vec<String>> {
+    /// The argv that runs a command inside this session's sandbox, when the
+    /// claiming plugin offered one.
+    pub fn sandbox_exec(&self, session_id: &str) -> Option<SandboxExec> {
         self.get(session_id)
-            .map(|c| c.exec_prefix)
-            .filter(|p| !p.is_empty())
+            .map(|c| c.exec)
+            .filter(|e| !e.is_empty())
     }
 
     /// Whether any session currently claims isolation.
@@ -169,17 +193,26 @@ pub fn register_isolation_module(
             .into_iter()
             .collect();
 
-        let exec_prefix: Vec<String> = opts
-            .get::<Option<Vec<String>>>("exec_prefix")
-            .ok()
-            .flatten()
-            .unwrap_or_default();
+        let exec = SandboxExec {
+            prefix: opts
+                .get::<Option<Vec<String>>>("exec_prefix")
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
+            env_flag: opts.get::<Option<String>>("exec_env_flag").ok().flatten(),
+            suffix: opts
+                .get::<Option<Vec<String>>>("exec_suffix")
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
+        };
 
         tracing::info!(
             session_id = %session,
             plugin = %plugin,
             exempt = exempt.len(),
-            can_exec = !exec_prefix.is_empty(),
+            can_exec = !exec.is_empty(),
+            can_pass_env = exec.env_flag.is_some(),
             "plugin claimed session isolation; unhandled host tools will be refused"
         );
         registry.claim(
@@ -187,7 +220,7 @@ pub fn register_isolation_module(
             IsolationClaim {
                 plugin,
                 exempt,
-                exec_prefix,
+                exec,
             },
         );
         Ok(())
@@ -204,8 +237,38 @@ mod tests {
         IsolationClaim {
             plugin: "oci".to_string(),
             exempt: exempt.iter().map(|s| s.to_string()).collect(),
-            exec_prefix: Vec::new(),
+            exec: Default::default(),
         }
+    }
+
+    /// What the plugin writes is what the launcher reads.
+    ///
+    /// A field name that only one side knows fails silently: the claim is
+    /// still made, the agent is still relocated, and its environment is
+    /// quietly gone — which is the failure this shape exists to prevent.
+    #[test]
+    fn a_claims_exec_fields_survive_the_lua_boundary() {
+        let lua = Lua::new();
+        let crucible = lua.create_table().unwrap();
+        let reg = IsolationRegistry::new();
+        register_isolation_module(&lua, &crucible, reg.clone()).unwrap();
+        lua.globals().set("crucible", crucible).unwrap();
+
+        lua.load(
+            r#"crucible.require_isolation{
+                 session = "s1", plugin = "oci",
+                 exec_prefix = { "podman", "exec", "-i" },
+                 exec_env_flag = "-e",
+                 exec_suffix = { "crucible-s1" },
+               }"#,
+        )
+        .exec()
+        .unwrap();
+
+        let exec = reg.sandbox_exec("s1").expect("the claim offered a way in");
+        assert_eq!(exec.prefix, vec!["podman", "exec", "-i"]);
+        assert_eq!(exec.env_flag.as_deref(), Some("-e"));
+        assert_eq!(exec.suffix, vec!["crucible-s1"]);
     }
 
     #[test]

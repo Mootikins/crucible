@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, cleanup, waitFor, screen, fireEvent } from '@solidjs/testing-library';
+import { createSignal } from 'solid-js';
 import { PluginSettings } from '../PluginSettings';
 import type { PluginOptionNode } from '@/lib/api';
 
@@ -109,6 +110,33 @@ describe('PluginSettings', () => {
     // committed its old value would satisfy the invalidation check alone.
     await waitFor(() => expect(setMock).toHaveBeenCalledWith('oci', ['flag'], true));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  // Reconciling the row and invalidating the tree are the same read. A pane
+  // that did both separately paid two round trips per keystroke-commit for one
+  // value, and the second one could only ever return what the first did.
+  it('reads a written option exactly once', async () => {
+    const leaf: PluginOptionNode = { key: 'image', type: 'input', name: 'Image', writable: true };
+    const [tree_, setTree] = createSignal(tree([leaf]));
+    getMock.mockResolvedValueOnce('alpine').mockResolvedValue('docker.io/debian');
+    // What PluginPanel does on `onChanged`: re-read `plugin.options`, which
+    // comes back off the wire as a fresh object graph every time.
+    const onChanged = async () => setTree(tree([{ ...leaf }]));
+    render(() => <PluginSettings plugin="oci" tree={tree_()} onChanged={onChanged} />);
+
+    const input = await waitFor(() =>
+      screen.getByTestId('plugin-option-image').querySelector('input')!,
+    );
+    await waitFor(() => expect(input).toHaveValue('alpine'));
+    getMock.mockClear();
+
+    fireEvent.change(input, { target: { value: 'debian' } });
+
+    await waitFor(() => expect(input).toHaveValue('docker.io/debian'));
+    // Asserting an absence: give a redundant read the chance to be issued
+    // before counting, or this passes by arriving early.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(getMock).toHaveBeenCalledTimes(1);
   });
 
   it('offers a select only the choices the daemon evaluated', async () => {

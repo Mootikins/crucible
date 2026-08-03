@@ -1126,16 +1126,18 @@ impl RpcDispatcher {
     // ── Agent operation wrappers ─────────────────────────────────────────────
 
     async fn handle_session_configure_agent(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        // Refuse switching an isolation-claimed session to an external agent
-        // BEFORE applying the config — after would leave the session already
-        // reconfigured when the error returns. Mirror of the create-time
-        // check in `enforce_plugin_session_start`.
-        let requested_type = req
+        // Refuse switching to an agent the session's isolation claim cannot
+        // cover, BEFORE applying the config — after would leave the session
+        // already reconfigured when the error returns. The rule itself is
+        // `session_lifecycle::unenforceable_reason`, the same one the create
+        // path applies: a second copy here drifted once already, answering
+        // "no" to a switch that create answers "yes" to.
+        if let Some(requested_type) = req
             .params
             .get("agent")
             .and_then(|a| a.get("agent_type"))
-            .and_then(|t| t.as_str());
-        if requested_type.is_some_and(|t| t != "internal") {
+            .and_then(|t| t.as_str())
+        {
             let session_id = req
                 .params
                 .get("session_id")
@@ -1145,15 +1147,12 @@ impl RpcDispatcher {
                 Some(registry) => registry.get(session_id),
                 None => None,
             };
-            if let Some(claim) = claim {
+            if let Some(reason) = claim.as_ref().and_then(|claim| {
+                crate::session_lifecycle::unenforceable_reason(claim, requested_type)
+            }) {
                 return Err(RpcError {
                     code: INTERNAL_ERROR,
-                    message: format!(
-                        "cannot switch this session to an external agent: plugin '{}' \
-                         claims isolation for it, and external agents execute tools in \
-                         their own process where the sandbox cannot be enforced",
-                        claim.plugin
-                    ),
+                    message: format!("cannot switch this session to an external agent: {reason}"),
                     data: None,
                 });
             }
@@ -1948,7 +1947,7 @@ mod tests {
                 crucible_lua::IsolationClaim {
                     plugin: "oci".to_string(),
                     exempt: Default::default(),
-                    exec_prefix: Vec::new(),
+                    exec: Default::default(),
                 },
             );
         }
@@ -1993,7 +1992,7 @@ mod tests {
                 crucible_lua::IsolationClaim {
                     plugin: "oci".to_string(),
                     exempt: Default::default(),
-                    exec_prefix: Vec::new(),
+                    exec: Default::default(),
                 },
             );
         }
@@ -2038,6 +2037,51 @@ mod tests {
         }
     }
 
+    /// The third case, and the one that separates "external" from
+    /// "unenforceable": a claim carrying an exec prefix launches the agent
+    /// process inside the sandbox, so its tools are confined by where it runs.
+    /// Create allows such a session, so the switch must too — one rule, one
+    /// answer, whichever door the user comes through.
+    #[tokio::test]
+    async fn switching_to_an_external_agent_the_sandbox_can_launch_is_allowed() {
+        let ctx = test_context_with_loader();
+        {
+            let guard = ctx.plugin_loader.lock().await;
+            guard.as_ref().unwrap().isolation().claim(
+                "iso-launchable",
+                crucible_lua::IsolationClaim {
+                    plugin: "oci".to_string(),
+                    exempt: Default::default(),
+                    exec: crucible_lua::SandboxExec {
+                        prefix: ["podman", "exec", "-i"]
+                            .iter()
+                            .map(|s| s.to_string())
+                            .collect(),
+                        env_flag: Some("-e".to_string()),
+                        suffix: vec!["crucible-iso-launchable".to_string()],
+                    },
+                },
+            );
+        }
+        let dispatcher = RpcDispatcher::new(ctx);
+
+        let req = make_request(
+            "session.configure_agent",
+            serde_json::json!({
+                "session_id": "iso-launchable",
+                "agent": { "agent_type": "acp" },
+            }),
+        );
+        let resp = dispatcher.dispatch(ClientId::new(), req).await;
+        if let Some(err) = resp.error {
+            assert!(
+                !err.message.contains("cannot switch"),
+                "a claim that can launch into the sandbox must not be refused: {}",
+                err.message
+            );
+        }
+    }
+
     /// The create-time half of the same invariant, tested through the
     /// dispatcher's own check: a claimed session whose agent is external is
     /// reported unenforceable; internal or unclaimed sessions are not.
@@ -2076,7 +2120,7 @@ mod tests {
                 crucible_lua::IsolationClaim {
                     plugin: "oci".to_string(),
                     exempt: Default::default(),
-                    exec_prefix: Vec::new(),
+                    exec: Default::default(),
                 },
             );
         }

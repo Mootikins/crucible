@@ -89,9 +89,9 @@ pub struct AcpAgentHandleParams<'a> {
     pub delegation_config: Option<&'a DelegationConfig>,
     pub acp_config: Option<&'a AcpConfig>,
     pub permission_handler: Option<PermissionRequestHandler>,
-    /// Argv prefix that runs the agent inside a plugin's sandbox, from the
-    /// session's isolation claim. `None` when nothing claimed the session.
-    pub sandbox_exec: Option<Vec<String>>,
+    /// How to run the agent inside a plugin's sandbox, from the session's
+    /// isolation claim. `None` when nothing claimed the session.
+    pub sandbox_exec: Option<crucible_lua::SandboxExec>,
 }
 
 impl AcpAgentHandle {
@@ -138,7 +138,7 @@ impl AcpAgentHandle {
             agent_config,
             workspace,
             acp_config,
-            sandbox_exec.as_deref(),
+            sandbox_exec.as_ref(),
         )?;
         let mut client = CrucibleAcpClient::with_name(client_config.clone(), agent_name.clone());
         if let Some(ref handler) = permission_handler {

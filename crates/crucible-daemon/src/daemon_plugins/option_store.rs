@@ -84,15 +84,30 @@ pub fn record(dir: &Path, plugin: &str, path: &[String], value: serde_json::Valu
 /// boot because last month's setting no longer means anything.
 pub fn restore(dir: &Path, registry: &OptionsRegistry) {
     for (plugin, entries) in load(dir) {
-        for entry in entries {
-            if let Err(e) = registry.set(&plugin, &entry.path, entry.value.clone(), "restore") {
-                tracing::warn!(
-                    plugin = %plugin,
-                    path = %entry.path.join("."),
-                    error = %e,
-                    "stored plugin option could not be restored; skipping it"
-                );
-            }
+        replay(registry, &plugin, entries);
+    }
+}
+
+/// Replay one plugin's stored values, for a reload.
+///
+/// A reload re-runs the plugin's `setup(cfg)` against the config it was
+/// originally handed, so without this a value set in the settings pane survives
+/// a daemon restart but not the Reload button sitting beside it.
+pub fn restore_plugin(dir: &Path, registry: &OptionsRegistry, plugin: &str) {
+    if let Some(entries) = load(dir).remove(plugin) {
+        replay(registry, plugin, entries);
+    }
+}
+
+fn replay(registry: &OptionsRegistry, plugin: &str, entries: Vec<StoredOption>) {
+    for entry in entries {
+        if let Err(e) = registry.set(plugin, &entry.path, entry.value.clone(), "restore") {
+            tracing::warn!(
+                plugin = %plugin,
+                path = %entry.path.join("."),
+                error = %e,
+                "stored plugin option could not be restored; skipping it"
+            );
         }
     }
 }
@@ -208,5 +223,130 @@ mod tests {
             reg.get("oci", &["image".to_string()], "web").unwrap(),
             "alpine"
         );
+    }
+}
+
+/// The store is only as good as the paths it is reached through: a reload that
+/// skips the replay, or a write that lands outside the daemon's data root, both
+/// look like the feature works until the user reloads or a test pollutes a real
+/// home.
+#[cfg(test)]
+mod wiring_tests {
+    use super::*;
+    use crate::daemon_plugins::DaemonPluginLoader;
+    use crate::protocol::{Request, RequestId};
+    use crucible_lua::PluginSource;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    const PLUGIN: &str = "optplug";
+
+    /// A plugin whose `image` option is re-initialized every time its
+    /// `init.lua` runs — exactly what a reload does to a plugin that takes its
+    /// defaults from the TOML it was handed.
+    fn write_option_plugin(root: &Path) {
+        let dir = root.join(PLUGIN);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("plugin.yaml"),
+            format!("name: {PLUGIN}\nversion: \"0.1.0\"\nmain: init.lua\n"),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("init.lua"),
+            r#"
+            _G.optplug_state = { image = "alpine" }
+            crucible.options{
+              type = "group",
+              get = function(info) return _G.optplug_state[info.option] end,
+              set = function(info, v) _G.optplug_state[info.option] = v end,
+              args = { image = { type = "input", name = "Image" } },
+            }
+            return { name = "optplug" }
+            "#,
+        )
+        .unwrap();
+    }
+
+    async fn loader_with_store(plugins: &Path, store: &Path) -> DaemonPluginLoader {
+        let mut loader = DaemonPluginLoader::new(std::collections::HashMap::new())
+            .expect("loader")
+            .with_option_store(store.to_path_buf());
+        loader
+            .load_plugins(&[(plugins.to_path_buf(), PluginSource::Runtime)])
+            .await
+            .expect("load plugins");
+        loader
+    }
+
+    fn image() -> Vec<String> {
+        vec!["image".to_string()]
+    }
+
+    /// Reload sits beside the settings in the plugin panel: pressing it must
+    /// not undo the setting next to it.
+    #[tokio::test]
+    async fn a_reload_replays_stored_values_over_the_plugins_defaults() {
+        let plugins = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        write_option_plugin(plugins.path());
+
+        let mut loader = loader_with_store(plugins.path(), store.path()).await;
+
+        // What the settings pane does: set through the plugin, then persist.
+        loader
+            .options()
+            .set(PLUGIN, &image(), serde_json::json!("debian"), "web")
+            .expect("set");
+        record(store.path(), PLUGIN, &image(), serde_json::json!("debian"));
+
+        loader.reload_plugin(PLUGIN).await.expect("reload");
+
+        assert_eq!(
+            loader.options().get(PLUGIN, &image(), "web").unwrap(),
+            "debian",
+            "a reload re-ran the plugin's defaults and dropped the stored value"
+        );
+    }
+
+    /// The daemon's resolved data root, not `crucible_home()` — otherwise an
+    /// in-process test with an injected root writes into the developer's real
+    /// `~/.crucible`.
+    #[tokio::test]
+    async fn a_value_set_over_rpc_is_persisted_under_the_bound_data_root() {
+        let plugins = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        write_option_plugin(plugins.path());
+
+        let loader = Arc::new(Mutex::new(Some(
+            loader_with_store(plugins.path(), store.path()).await,
+        )));
+
+        let req = Request {
+            jsonrpc: "2.0".to_string(),
+            id: Some(RequestId::Number(1)),
+            method: "plugin.option_set".to_string(),
+            params: serde_json::json!({
+                "plugin": PLUGIN,
+                "path": ["image"],
+                "value": "debian",
+            }),
+        };
+        let resp = crate::server::plugins::handle_plugin_option_call(
+            req,
+            &loader,
+            crate::server::plugins::OptionAction::Set,
+        )
+        .await;
+        assert!(resp.error.is_none(), "option_set failed: {:?}", resp.error);
+
+        let stored = load(store.path());
+        let entries = stored.get(PLUGIN).unwrap_or_else(|| {
+            panic!(
+                "nothing persisted under the bound data root {:?}",
+                store.path()
+            )
+        });
+        assert_eq!(entries[0].value, serde_json::json!("debian"));
     }
 }

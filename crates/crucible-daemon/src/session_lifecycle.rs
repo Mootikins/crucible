@@ -147,7 +147,7 @@ impl SessionLifecycle {
     /// so interception arrives after the fact and stops nothing. That leaves
     /// two cases, and they are not the same:
     ///
-    /// * The plugin offered an [`exec_prefix`](crucible_lua::IsolationClaim),
+    /// * The plugin offered a [`SandboxExec`](crucible_lua::SandboxExec),
     ///   so the agent process is launched *inside* the sandbox. Its tools are
     ///   confined by where the process runs — there is nothing left to
     ///   intercept, and refusing would be refusing a session that is in fact
@@ -237,8 +237,11 @@ impl SessionLifecycle {
 /// Pure, and separate from the lookup around it, because this is the rule —
 /// the plumbing that finds the claim and the session is not what can be
 /// subtly wrong. See [`SessionLifecycle::unenforceable_isolation`].
-fn unenforceable_reason(claim: &crucible_lua::IsolationClaim, agent_type: &str) -> Option<String> {
-    if agent_type == "internal" || !claim.exec_prefix.is_empty() {
+pub(crate) fn unenforceable_reason(
+    claim: &crucible_lua::IsolationClaim,
+    agent_type: &str,
+) -> Option<String> {
+    if agent_type == "internal" || !claim.exec.is_empty() {
         return None;
     }
     Some(format!(
@@ -256,10 +259,14 @@ mod tests {
     use crucible_lua::IsolationClaim;
 
     fn claim(exec_prefix: &[&str]) -> IsolationClaim {
+        let exec = crucible_lua::SandboxExec {
+            prefix: exec_prefix.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        };
         IsolationClaim {
             plugin: "oci".to_string(),
             exempt: Default::default(),
-            exec_prefix: exec_prefix.iter().map(|s| s.to_string()).collect(),
+            exec,
         }
     }
 
