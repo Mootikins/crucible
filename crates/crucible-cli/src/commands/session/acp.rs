@@ -4,6 +4,19 @@ use crucible_core::config::BackendType;
 use crucible_core::session::OutputValidation;
 use crucible_daemon::DaemonClient;
 
+/// Whether `session create` should print only the session id.
+///
+/// Explicit beats implicit. Piped output defaults to the bare id, which is what
+/// a shell script wants — but `--format json` is a request for structured
+/// output, and a pipe is the only place anyone would make it. Letting the
+/// implicit default win meant `--format json` printed JSON on a terminal and
+/// silently degraded to a bare id exactly when something was parsing it.
+///
+/// `--quiet` is itself explicit, so it still wins over everything.
+fn wants_bare_id(quiet: bool, interactive: bool, format: &str) -> bool {
+    quiet || (!interactive && format != "json")
+}
+
 pub(super) mod rpc {
     use super::*;
 
@@ -142,7 +155,7 @@ pub(super) mod rpc {
             client.session_set_title(session_id, t).await?;
         }
 
-        let is_quiet = params.quiet || !crate::output::is_interactive();
+        let is_quiet = wants_bare_id(params.quiet, crate::output::is_interactive(), params.format);
 
         if is_quiet {
             println!("{}", session_id);
@@ -601,5 +614,34 @@ pub(super) mod rpc {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wants_bare_id;
+
+    /// The regression: a pipe is the only place `--format json` is useful, and
+    /// it was the one place the flag was ignored.
+    #[test]
+    fn format_json_survives_a_pipe() {
+        assert!(!wants_bare_id(false, false, "json"));
+        assert!(!wants_bare_id(false, true, "json"));
+    }
+
+    /// And the behaviour that must not change: no flags, piped, means the id
+    /// alone, because that is what `$(cru session create)` expects.
+    #[test]
+    fn a_pipe_still_defaults_to_the_bare_id() {
+        assert!(wants_bare_id(false, false, "text"));
+        assert!(!wants_bare_id(false, true, "text"));
+    }
+
+    /// `--quiet` is explicit too, and more specific: it asks for the id and
+    /// nothing else, whatever format was also named.
+    #[test]
+    fn quiet_wins_over_a_named_format() {
+        assert!(wants_bare_id(true, true, "json"));
+        assert!(wants_bare_id(true, false, "json"));
     }
 }

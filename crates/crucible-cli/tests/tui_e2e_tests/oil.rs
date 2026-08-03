@@ -150,7 +150,6 @@ fn oil_runner_stays_responsive_10s() {
 #[ignore = "requires built binary and Ollama"]
 fn oil_streaming_response_renders() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(60));
 
@@ -178,7 +177,6 @@ fn oil_streaming_response_renders() {
 #[ignore = "requires built binary and Ollama"]
 fn oil_streaming_with_markdown_table() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(90));
 
@@ -221,7 +219,6 @@ fn oil_streaming_with_markdown_table() {
 #[ignore = "requires built binary and Ollama"]
 fn oil_ctrl_c_during_streaming() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(30));
 
@@ -259,7 +256,6 @@ fn oil_ctrl_c_during_streaming() {
 #[ignore = "requires built binary and Ollama"]
 fn oil_double_ctrl_c_exits_during_streaming() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(30));
 

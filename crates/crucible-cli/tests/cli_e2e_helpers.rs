@@ -25,13 +25,40 @@ pub fn toml_escape(path: &Path) -> String {
     path.display().to_string().replace('\\', "\\\\")
 }
 
-/// Parse session ID from CLI stdout containing "Created session: <id>".
+/// Parse the session ID out of `cru session create`'s stdout.
+///
+/// Two output shapes, because the CLI has two. Interactively it prints
+/// `Created session: <id>` followed by usage hints; piped — which is what a
+/// test harness always is, since `is_interactive()` reads the tty — it prints
+/// the bare id so a script can consume it.
+///
+/// Matching only the interactive form made every one of these tests
+/// unpassable under `cargo test` and `cargo nextest`, which capture stdout by
+/// construction. They failed on the shape of the output, never reaching the
+/// behaviour they exist to check.
 pub fn extract_session_id(stdout: &[u8]) -> String {
     let text = String::from_utf8_lossy(stdout);
+
+    // `--format json` first — it is unambiguous, and the tests that need to
+    // assert on more than the id ask for it.
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(text.trim()) {
+        if let Some(id) = v["session_id"].as_str() {
+            return id.to_string();
+        }
+    }
+
     text.lines()
-        .find_map(|line| line.strip_prefix("Created session: "))
-        .map(|s| s.trim().to_string())
-        .expect("expected 'Created session: <id>' in output")
+        .find_map(|line| {
+            let line = line.trim();
+            line.strip_prefix("Created session: ")
+                .map(str::trim)
+                // The quiet form: the id alone on its own line. Session ids
+                // carry no spaces, which is what distinguishes it from the
+                // usage hints the interactive form prints after it.
+                .or_else(|| (!line.is_empty() && !line.contains(' ')).then_some(line))
+        })
+        .map(str::to_string)
+        .expect("expected a session id in `session create` output")
 }
 
 /// Write a minimal config.toml with correct `kiln_path` format.

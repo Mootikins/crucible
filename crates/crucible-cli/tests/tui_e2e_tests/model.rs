@@ -18,8 +18,7 @@ use super::tui_e2e_harness::{
 #[test]
 #[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
 fn model_popup_shows_with_ollama() {
-    let mut config = provider_test_config();
-    config.args.push("--internal".to_string());
+    let config = provider_test_config();
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
@@ -73,8 +72,7 @@ fn model_popup_lazy_fetch_on_demand() {
 #[test]
 #[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
 fn model_popup_filter_works() {
-    let mut config = provider_test_config();
-    config.args.push("--internal".to_string());
+    let config = provider_test_config();
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
@@ -102,7 +100,6 @@ fn model_popup_filter_works() {
 #[ignore = "requires built binary and Ollama"]
 fn model_selection_updates_status() {
     let config = TuiTestConfig::new("chat")
-        .with_args(&["--internal"])
         .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(15));
 
@@ -133,8 +130,7 @@ fn model_selection_updates_status() {
 #[test]
 #[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
 fn model_popup_navigation() {
-    let mut config = provider_test_config();
-    config.args.push("--internal".to_string());
+    let config = provider_test_config();
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
@@ -166,8 +162,7 @@ fn model_popup_navigation() {
 #[test]
 #[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
 fn model_direct_switch_command() {
-    let mut config = provider_test_config();
-    config.args.push("--internal".to_string());
+    let config = provider_test_config();
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 

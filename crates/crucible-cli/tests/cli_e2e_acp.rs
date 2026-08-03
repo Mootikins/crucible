@@ -54,7 +54,10 @@ fn session_create_rejects_empty_agent_profile() {
         .args(["session", "create", "--agent", ""])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("Unknown ACP agent profile"));
+        // An empty `--agent` is a missing name, not an unknown profile — the
+        // daemon now says so specifically, and the refusal has to name the
+        // parameter or there is nothing to act on.
+        .stderr(predicate::str::contains("agent_name is required"));
 }
 
 #[test]
@@ -65,13 +68,12 @@ fn session_create_accepts_builtin_acp_profiles() {
     for profile in ["claude", "opencode", "gemini", "codex", "cursor"] {
         daemon
             .command()
-            .args(["session", "create", "--agent", profile])
+            .args(["session", "create", "--agent", profile, "--format", "json"])
             .assert()
             .success()
-            .stdout(predicate::str::contains(format!(
-                "Configured agent: {} (acp)",
-                profile
-            )));
+            // The structured field, not the prose line: `Configured agent: …`
+            // is printed only on a terminal, and a test harness never is.
+            .stdout(predicate::str::contains(format!(r#""agent": "{profile}""#)));
     }
 }
 
@@ -92,10 +94,10 @@ fn session_acp_lifecycle_with_mock_agent_profile() {
 
     let create_output = daemon
         .command()
-        .args(["session", "create", "--agent", "mock"])
+        .args(["session", "create", "--agent", "mock", "--format", "json"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Configured agent: mock (acp)"))
+        .stdout(predicate::str::contains(r#""agent": "mock""#))
         .get_output()
         .stdout
         .clone();
@@ -145,12 +147,17 @@ fn session_acp_lifecycle_with_http_capable_mock() {
 
     let create_output = daemon
         .command()
-        .args(["session", "create", "--agent", "mock-http"])
+        .args([
+            "session",
+            "create",
+            "--agent",
+            "mock-http",
+            "--format",
+            "json",
+        ])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Configured agent: mock-http (acp)",
-        ))
+        .stdout(predicate::str::contains(r#""agent": "mock-http""#))
         .get_output()
         .stdout
         .clone();
@@ -201,12 +208,17 @@ fn session_acp_lifecycle_with_stdio_only_mock() {
 
     let create_output = daemon
         .command()
-        .args(["session", "create", "--agent", "mock-stdio"])
+        .args([
+            "session",
+            "create",
+            "--agent",
+            "mock-stdio",
+            "--format",
+            "json",
+        ])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Configured agent: mock-stdio (acp)",
-        ))
+        .stdout(predicate::str::contains(r#""agent": "mock-stdio""#))
         .get_output()
         .stdout
         .clone();
