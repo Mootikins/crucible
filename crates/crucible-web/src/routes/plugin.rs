@@ -15,6 +15,15 @@ pub fn plugin_routes() -> Router<AppState> {
         .route("/api/plugins/publications", get(list_publications))
         .route("/api/plugins/options", get(list_options))
         .route("/api/plugins/{name}/option", post(option_call))
+        .route("/api/plugins/command", post(run_command))
+}
+
+/// One plugin command invocation.
+#[derive(Debug, Deserialize)]
+struct CommandRequest {
+    name: String,
+    #[serde(default)]
+    args: serde_json::Value,
 }
 
 /// One read, write, or button press against a plugin's settings tree.
@@ -122,6 +131,31 @@ async fn option_call(
             Ok(Json(serde_json::json!({ "ok": true })))
         }
     }
+}
+
+/// `POST /api/plugins/command` — invoke a plugin command by name.
+///
+/// Not under `/{name}` because a command's name is already globally unique —
+/// the daemon refuses a second plugin claiming one — so routing by plugin would
+/// ask the caller for something it does not need to know. The result is passed
+/// through verbatim, like publications and options: what a command returns is
+/// the plugin's vocabulary, and a shape this layer validated would be a shape
+/// only today's plugins could send.
+async fn run_command(
+    State(state): State<AppState>,
+    Json(req): Json<CommandRequest>,
+) -> Result<Json<serde_json::Value>, WebError> {
+    if req.name.trim().is_empty() {
+        return Err(WebError::Validation(
+            "`name` must name a command".to_string(),
+        ));
+    }
+    let result = state
+        .daemon
+        .plugin_run_command(&req.name, req.args)
+        .await
+        .daemon_err()?;
+    Ok(Json(result))
 }
 
 /// `POST /api/plugins/:name/reload` — reload a plugin by name.

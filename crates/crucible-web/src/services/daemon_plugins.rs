@@ -69,6 +69,24 @@ impl ReconnectingDaemon {
         .await
     }
 
+    /// Invoke a plugin command and hand back whatever its Lua `fn` returned.
+    ///
+    /// The channel by which a target provider is asked to enumerate itself —
+    /// a branch list depends on which project is selected and on what happened
+    /// in the repo since, so it cannot be published once and cached.
+    pub async fn plugin_run_command(
+        &self,
+        name: &str,
+        args: serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        let name = name.to_string();
+        self.call_with_reconnect("plugin.run_command", move |daemon| {
+            let (name, args) = (name.clone(), args.clone());
+            Box::pin(async move { daemon.plugin_run_command(&name, args).await })
+        })
+        .await
+    }
+
     pub async fn plugin_reload(&self, name: &str) -> anyhow::Result<serde_json::Value> {
         let name = name.to_string();
         self.call_with_reconnect("plugin.reload", move |daemon| {

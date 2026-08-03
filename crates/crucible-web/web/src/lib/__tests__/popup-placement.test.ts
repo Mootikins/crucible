@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { placePopup, POPUP_MAX_HEIGHT, EDGE_MARGIN } from '@/lib/popup-placement';
+import { placeFlyout, placePopup, POPUP_MAX_HEIGHT, EDGE_MARGIN } from '@/lib/popup-placement';
 
 // A composer textarea pinned near the bottom of the window — the case that
 // clipped the chat autocomplete: `top-full` opened it downward into the
@@ -99,5 +99,53 @@ describe('placePopup for content-sized panels', () => {
     const p = placePopup(bottomAnchored, viewport, { gap: 4 });
     expect(p.direction).toBe('up');
     expect(p.bottom).toBe(viewport.height - bottomAnchored.top + 4);
+  });
+});
+
+// A row inside an open chip popout — what a `Remote Machines ▸` flyout hangs
+// off. The panel is already clamped to the viewport's right edge, so a row near
+// that edge is the ordinary case, not the corner one.
+describe('placeFlyout', () => {
+  const row = { left: 300, right: 520, top: 200, bottom: 224, width: 220, height: 24 };
+  const viewport = { width: 1000, height: 768 };
+
+  it('opens to the right of the row that owns it', () => {
+    const p = placeFlyout(row, viewport, { width: 220, gap: 2 });
+    expect(p.side).toBe('right');
+    expect(p.left).toBe(row.right + 2);
+    // Aligned with its row: a submenu that opened at the panel's top would
+    // point at the wrong entry in a long list.
+    expect(p.top).toBe(row.top);
+  });
+
+  it('flips to the left when the right edge cannot hold it', () => {
+    // The panel was clamped against the right edge, so its rows end there too.
+    const edgeRow = { ...row, left: 700, right: 920 };
+    const p = placeFlyout(edgeRow, viewport, { width: 220, gap: 2 });
+    expect(p.side).toBe('left');
+    expect(p.left).toBe(edgeRow.left - 220 - 2);
+    expect(p.left).toBeGreaterThanOrEqual(EDGE_MARGIN);
+  });
+
+  it('never places the flyout off the left edge, however narrow the window', () => {
+    const narrow = { width: 320, height: 768 };
+    const edgeRow = { ...row, left: 90, right: 310 };
+    const p = placeFlyout(edgeRow, narrow, { width: 220, gap: 2 });
+    expect(p.left).toBeGreaterThanOrEqual(EDGE_MARGIN);
+    expect(p.left + p.width).toBeLessThanOrEqual(narrow.width);
+  });
+
+  it('slides a tall flyout up so it stays on screen, rather than opening above the row', () => {
+    const lowRow = { ...row, top: 700, bottom: 724 };
+    const p = placeFlyout(lowRow, viewport, { width: 220, preferredHeight: 340 });
+    expect(p.top).toBeLessThan(lowRow.top);
+    expect(p.top).toBeGreaterThanOrEqual(EDGE_MARGIN);
+    expect(p.top + p.maxHeight).toBeLessThanOrEqual(viewport.height - EDGE_MARGIN);
+  });
+
+  it('caps its height to the viewport rather than asking for more than fits', () => {
+    const short = { width: 1000, height: 200 };
+    const p = placeFlyout(row, short, { width: 220, preferredHeight: 340 });
+    expect(p.maxHeight).toBeLessThanOrEqual(short.height - 2 * EDGE_MARGIN);
   });
 });

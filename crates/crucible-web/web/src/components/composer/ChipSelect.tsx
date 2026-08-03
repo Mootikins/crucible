@@ -1,7 +1,7 @@
 import { Component, For, JSX, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { ChevronDown, Check } from '@/lib/icons';
-import { placePopup } from '@/lib/popup-placement';
+import { ChevronDown, ChevronRight, Check } from '@/lib/icons';
+import { placeFlyout, placePopup, type FlyoutPlacement } from '@/lib/popup-placement';
 import { treeSectionHeader } from '@/components/tree/tree-style';
 
 /** Tallest a chip popout gets before its list scrolls internally. */
@@ -18,6 +18,17 @@ export interface ChipOption {
   group?: string;
   /** Leading icon on the row (Cursor's menus icon every row). */
   icon?: Component<{ class?: string }>;
+  /**
+   * Nested options, opened as a flyout beside this row (`Remote Machines ▸`).
+   *
+   * A row with children is a doorway, not a choice — clicking it opens the
+   * flyout instead of selecting, so such a row needs no meaningful `value`.
+   * Children are searched along with their parents, and a filter that matches
+   * one surfaces it flattened under the parent's name: a target hidden behind
+   * a closed flyout is otherwise unfindable by typing, which is the whole
+   * reason the filter box exists.
+   */
+  children?: ChipOption[];
 }
 
 /**
@@ -93,13 +104,22 @@ export const ChipSelect: Component<{
   }>({ left: 0, top: 0 });
   const [actionMode, setActionMode] = createSignal(false);
   const [actionText, setActionText] = createSignal('');
+  // Index into `visible()` of the row whose flyout is open, or -1.
+  const [flyoutFor, setFlyoutFor] = createSignal(-1);
+  const [flyoutHover, setFlyoutHover] = createSignal(-1);
+  const [flyoutPos, setFlyoutPos] = createSignal<FlyoutPlacement | null>(null);
   let rootRef: HTMLDivElement | undefined;
   let panelRef: HTMLDivElement | undefined;
+  let flyoutRef: HTMLDivElement | undefined;
   let triggerRef: HTMLButtonElement | undefined;
   let inputRef: HTMLInputElement | undefined;
   let actionInputRef: HTMLInputElement | undefined;
 
-  const current = () => props.options.find((o) => o.value === props.value);
+  /** Every selectable option, parents and children alike. */
+  const flattened = (): ChipOption[] =>
+    props.options.flatMap((o) => (o.children?.length ? o.children : [o]));
+
+  const current = () => flattened().find((o) => o.value === props.value);
   const display = () => {
     if (props.triggerLabel !== undefined) return props.triggerLabel;
     if (props.multi) {
@@ -114,13 +134,21 @@ export const ChipSelect: Component<{
   };
   const isPicked = (o: ChipOption) =>
     props.multi ? (props.selected ?? []).includes(o.value) : o.value === props.value;
-  const searchable = () => props.options.length >= (props.searchThreshold ?? 8);
-  const visible = () => {
+  const searchable = () => flattened().length >= (props.searchThreshold ?? 8);
+  const matches = (o: ChipOption, q: string) =>
+    o.label.toLowerCase().includes(q) || !!o.hint?.toLowerCase().includes(q);
+
+  const visible = (): ChipOption[] => {
     const q = filter().trim().toLowerCase();
     if (!q) return props.options;
-    return props.options.filter(
-      (o) => o.label.toLowerCase().includes(q) || o.hint?.toLowerCase().includes(q),
-    );
+    return props.options.flatMap((o) => {
+      if (!o.children?.length) return matches(o, q) ? [o] : [];
+      // A parent that matches offers all its children; otherwise only the
+      // children that match themselves. Either way they arrive flattened and
+      // grouped, because a flyout the filter cannot reach into hides them.
+      const kids = o.children.filter((c) => matches(o, q) || matches(c, q));
+      return kids.map((c) => ({ ...c, group: o.label }));
+    });
   };
 
   const close = () => {
@@ -129,6 +157,33 @@ export const ChipSelect: Component<{
     setHover(-1);
     setActionMode(false);
     setActionText('');
+    closeFlyout();
+  };
+
+  const closeFlyout = () => {
+    setFlyoutFor(-1);
+    setFlyoutHover(-1);
+  };
+
+  /** The open flyout's children, or `[]` when none is open. */
+  const flyoutOptions = (): ChipOption[] => visible()[flyoutFor()]?.children ?? [];
+
+  /**
+   * Open `row`'s flyout, anchored to the row element itself.
+   *
+   * Anchoring to the row rather than the panel is what keeps a long list's
+   * submenus beside the row that owns them instead of all at the panel's top.
+   */
+  const openFlyout = (index: number, row: HTMLElement) => {
+    const rect = row.getBoundingClientRect();
+    setFlyoutPos(
+      placeFlyout(rect, { width: window.innerWidth, height: window.innerHeight }, {
+        width: 220,
+        preferredHeight: CHIP_PANEL_MAX_HEIGHT,
+      }),
+    );
+    setFlyoutFor(index);
+    setFlyoutHover(-1);
   };
 
   const actionValid = () => {
@@ -146,6 +201,22 @@ export const ChipSelect: Component<{
     if (o.disabled) return;
     props.onSelect(o.value);
     if (!props.multi) close();
+  };
+
+  /**
+   * A row's click: open its flyout when it has one, otherwise select it.
+   *
+   * A parent row carries no selectable value of its own, so selecting it would
+   * hand the caller a value naming a category rather than a target.
+   */
+  const activate = (o: ChipOption, index: number, row: HTMLElement) => {
+    if (o.disabled) return;
+    if (o.children?.length) {
+      if (flyoutFor() === index) closeFlyout();
+      else openFlyout(index, row);
+      return;
+    }
+    pick(o);
   };
 
   /**
@@ -210,28 +281,69 @@ export const ChipSelect: Component<{
     queueMicrotask(() => inputRef?.focus());
     const onDocClick = (e: MouseEvent) => {
       const t = e.target as Node;
-      // The panel is portaled out of rootRef's subtree — check both.
-      if (rootRef && !rootRef.contains(t) && panelRef && !panelRef.contains(t)) close();
+      // The panel and its flyout are portaled out of rootRef's subtree — a
+      // click inside either is inside the control.
+      if (
+        rootRef &&
+        !rootRef.contains(t) &&
+        panelRef &&
+        !panelRef.contains(t) &&
+        !flyoutRef?.contains(t)
+      )
+        close();
     };
     const onKey = (e: KeyboardEvent) => {
       // The action-mode input owns its keys (Escape exits the mode, Enter
       // submits) — the list-navigation handler must not also close the
       // popout or pick an option on the same event.
       if (actionInputRef && e.target === actionInputRef) return;
+      const inFlyout = flyoutFor() >= 0;
       if (e.key === 'Escape') {
         e.stopPropagation();
-        close();
+        // Escape backs out one level: a submenu opened by mistake should not
+        // also discard the selection the user came here to make.
+        if (inFlyout) closeFlyout();
+        else close();
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
+        const delta = e.key === 'ArrowDown' ? 1 : -1;
+        if (inFlyout) {
+          const kids = flyoutOptions();
+          if (kids.length) setFlyoutHover((h) => (h + delta + kids.length) % kids.length);
+          return;
+        }
         const list = visible();
         if (!list.length) return;
-        const delta = e.key === 'ArrowDown' ? 1 : -1;
         setHover((h) => (h + delta + list.length) % list.length);
+      } else if (e.key === 'ArrowRight' && !inFlyout) {
+        const index = hover();
+        const row = visible()[index];
+        if (row?.children?.length && panelRef) {
+          e.preventDefault();
+          const el = panelRef.querySelectorAll('[role="option"]')[index];
+          if (el instanceof HTMLElement) openFlyout(index, el);
+        }
+      } else if (e.key === 'ArrowLeft' && inFlyout) {
+        e.preventDefault();
+        closeFlyout();
       } else if (e.key === 'Enter') {
+        if (inFlyout) {
+          const kid = flyoutOptions()[flyoutHover()];
+          if (kid) {
+            e.preventDefault();
+            pick(kid);
+          }
+          return;
+        }
         const o = visible()[hover()] ?? visible()[0];
         if (o) {
           e.preventDefault();
-          pick(o);
+          if (o.children?.length && panelRef) {
+            const el = panelRef.querySelectorAll('[role="option"]')[visible().indexOf(o)];
+            if (el instanceof HTMLElement) openFlyout(visible().indexOf(o), el);
+          } else {
+            pick(o);
+          }
         } else if (createText()) {
           e.preventDefault();
           runCreate();
@@ -328,8 +440,16 @@ export const ChipSelect: Component<{
                       role="option"
                       aria-selected={isPicked(o)}
                       disabled={o.disabled}
-                      onMouseEnter={() => setHover(i())}
-                      onClick={() => pick(o)}
+                      onMouseEnter={(e) => {
+                        setHover(i());
+                        // Hovering a plain row dismisses a flyout left open by
+                        // a sibling — two open submenus would both look live.
+                        if (o.children?.length) openFlyout(i(), e.currentTarget);
+                        else if (flyoutFor() !== -1) closeFlyout();
+                      }}
+                      onClick={(e) => activate(o, i(), e.currentTarget)}
+                      aria-haspopup={o.children?.length ? 'menu' : undefined}
+                      aria-expanded={o.children?.length ? flyoutFor() === i() : undefined}
                       data-testid={
                         props.optionTestidPrefix
                           ? `${props.optionTestidPrefix}-${o.value}`
@@ -353,6 +473,11 @@ export const ChipSelect: Component<{
                         <span class="ml-auto pl-3 text-muted-dark truncate max-w-[140px]">
                           {o.hint}
                         </span>
+                      </Show>
+                      <Show when={o.children?.length}>
+                        <ChevronRight
+                          class={`w-3.5 h-3.5 flex-shrink-0 text-muted-dark ${o.hint ? '' : 'ml-auto'}`}
+                        />
                       </Show>
                     </button>
                   </>
@@ -427,6 +552,69 @@ export const ChipSelect: Component<{
             <Show when={props.footer}>{props.footer}</Show>
           </div>
         </Portal>
+
+        {/* A second Portal, not a child of the panel: the panel scrolls and
+            clips its own overflow, so a flyout nested inside it would be cut
+            off at the panel edge — the same reason the panel itself is
+            portaled out of the composer. */}
+        <Show when={flyoutFor() >= 0 && flyoutPos()} keyed>
+          {(pos) => (
+            <Portal>
+              <div
+                ref={flyoutRef}
+                role="menu"
+                aria-label={visible()[flyoutFor()]?.label}
+                data-testid={props.testid ? `${props.testid}-flyout` : undefined}
+                class="fixed z-50 min-w-[220px] max-w-[320px] overflow-y-auto bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1 cru-anim-rise"
+                style={{
+                  left: `${pos.left}px`,
+                  top: `${pos.top}px`,
+                  'max-height': `${pos.maxHeight}px`,
+                }}
+              >
+                <For each={flyoutOptions()}>
+                  {(child, i) => (
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={isPicked(child)}
+                      disabled={child.disabled}
+                      onMouseEnter={() => setFlyoutHover(i())}
+                      onClick={() => pick(child)}
+                      data-testid={
+                        props.optionTestidPrefix
+                          ? `${props.optionTestidPrefix}-${child.value}`
+                          : undefined
+                      }
+                      classList={{
+                        'w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors': true,
+                        'bg-hover-wash': flyoutHover() === i(),
+                        'text-shell-ink': !child.disabled,
+                        'text-muted-dark cursor-not-allowed': !!child.disabled,
+                      }}
+                    >
+                      <Show when={child.icon} keyed>
+                        {(Icon) => <Icon class="w-3.5 h-3.5 flex-shrink-0 text-muted-dark" />}
+                      </Show>
+                      <span class="truncate">{child.label}</span>
+                      <Show when={isPicked(child)}>
+                        <Check class="w-3.5 h-3.5 flex-shrink-0 text-primary" />
+                      </Show>
+                      <Show when={child.hint}>
+                        <span class="ml-auto pl-3 text-muted-dark truncate max-w-[140px]">
+                          {child.hint}
+                        </span>
+                      </Show>
+                    </button>
+                  )}
+                </For>
+                <Show when={flyoutOptions().length === 0}>
+                  <div class="px-3 py-2 text-xs text-muted-dark">Nothing here yet</div>
+                </Show>
+              </div>
+            </Portal>
+          )}
+        </Show>
       </Show>
     </div>
   );

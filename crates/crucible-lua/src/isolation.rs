@@ -61,10 +61,8 @@ pub struct SandboxExec {
     /// Argv up to the point where per-variable environment flags belong, e.g.
     /// `["podman", "exec", "-i", "-w", "/workspace"]`.
     pub prefix: Vec<String>,
-    /// Flag the launcher repeats once per variable, e.g. `-e`. `None` when the
-    /// plugin offers no way to deliver environment, and then a launch that
-    /// needs one is refused rather than run without it.
-    pub env_flag: Option<String>,
+    /// How the launcher takes environment variables.
+    pub env: SandboxEnv,
     /// Argv between the environment flags and the relocated command, e.g. the
     /// container name.
     ///
@@ -79,6 +77,37 @@ impl SandboxExec {
     /// Whether this can actually relocate anything.
     pub fn is_empty(&self) -> bool {
         self.prefix.is_empty()
+    }
+}
+
+/// How a launcher accepts environment variables for the command it relocates.
+///
+/// Two launchers, two grammars. `podman exec` and `docker exec` repeat a flag —
+/// `-e K=V -e K2=V2` — before the container operand. `ssh` has no such flag; the
+/// idiom is a positional `env K=V K2=V2 -- cmd`, with `env` the last word of the
+/// prefix. Both put the variables in the same place in the argv, so only the
+/// presence of a flag differs.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum SandboxEnv {
+    /// The plugin offered no way in. A launch that needs environment is refused
+    /// rather than run without it — the safe default, because an agent started
+    /// without its API key fails later and somewhere else.
+    #[default]
+    Unsupported,
+    /// A flag repeated once per variable, e.g. `-e`.
+    Flag(String),
+    /// Bare `K=V` operands, as `env(1)` takes them.
+    Inline,
+}
+
+impl SandboxEnv {
+    /// The argv for one `NAME=VALUE` pair, or `None` when unsupported.
+    pub fn argv_for(&self, name: &str, value: &str) -> Option<Vec<String>> {
+        match self {
+            Self::Unsupported => None,
+            Self::Flag(flag) => Some(vec![flag.clone(), format!("{name}={value}")]),
+            Self::Inline => Some(vec![format!("{name}={value}")]),
+        }
     }
 }
 
@@ -193,13 +222,28 @@ pub fn register_isolation_module(
             .into_iter()
             .collect();
 
+        // `exec_env_flag` wins when both are given: naming a flag is the more
+        // specific statement, and silently preferring `inline` would drop it.
+        let env = match opts.get::<Option<String>>("exec_env_flag").ok().flatten() {
+            Some(flag) => SandboxEnv::Flag(flag),
+            None if opts
+                .get::<Option<bool>>("exec_env_inline")
+                .ok()
+                .flatten()
+                .unwrap_or(false) =>
+            {
+                SandboxEnv::Inline
+            }
+            None => SandboxEnv::Unsupported,
+        };
+
         let exec = SandboxExec {
             prefix: opts
                 .get::<Option<Vec<String>>>("exec_prefix")
                 .ok()
                 .flatten()
                 .unwrap_or_default(),
-            env_flag: opts.get::<Option<String>>("exec_env_flag").ok().flatten(),
+            env,
             suffix: opts
                 .get::<Option<Vec<String>>>("exec_suffix")
                 .ok()
@@ -212,7 +256,7 @@ pub fn register_isolation_module(
             plugin = %plugin,
             exempt = exempt.len(),
             can_exec = !exec.is_empty(),
-            can_pass_env = exec.env_flag.is_some(),
+            can_pass_env = exec.env != SandboxEnv::Unsupported,
             "plugin claimed session isolation; unhandled host tools will be refused"
         );
         registry.claim(
@@ -267,8 +311,54 @@ mod tests {
 
         let exec = reg.sandbox_exec("s1").expect("the claim offered a way in");
         assert_eq!(exec.prefix, vec!["podman", "exec", "-i"]);
-        assert_eq!(exec.env_flag.as_deref(), Some("-e"));
+        assert_eq!(exec.env, SandboxEnv::Flag("-e".to_string()));
         assert_eq!(exec.suffix, vec!["crucible-s1"]);
+    }
+
+    /// `ssh` has no per-variable flag; the idiom is a positional `env K=V cmd`.
+    /// Without this a plugin that can only pass environment that way reads as
+    /// one that cannot pass it at all, and every ACP launch is refused.
+    #[test]
+    fn a_launcher_with_no_env_flag_can_still_pass_variables_inline() {
+        let lua = Lua::new();
+        let crucible = lua.create_table().unwrap();
+        let reg = IsolationRegistry::new();
+        register_isolation_module(&lua, &crucible, reg.clone()).unwrap();
+        lua.globals().set("crucible", crucible).unwrap();
+
+        lua.load(
+            r#"crucible.require_isolation{
+                 session = "s1", plugin = "ssh",
+                 exec_prefix = { "ssh", "-T", "build-box", "env" },
+                 exec_env_inline = true,
+               }"#,
+        )
+        .exec()
+        .unwrap();
+
+        let exec = reg.sandbox_exec("s1").expect("the claim offered a way in");
+        assert_eq!(exec.env, SandboxEnv::Inline);
+        assert_eq!(
+            exec.env.argv_for("KEY", "v"),
+            Some(vec!["KEY=v".to_string()]),
+            "an inline launcher takes the pair as one bare operand"
+        );
+    }
+
+    #[test]
+    fn a_claim_that_says_nothing_about_env_cannot_pass_any() {
+        let exec = SandboxExec::default();
+        assert_eq!(exec.env, SandboxEnv::Unsupported);
+        assert_eq!(exec.env.argv_for("KEY", "v"), None);
+    }
+
+    #[test]
+    fn a_flag_launcher_repeats_its_flag_before_each_pair() {
+        let env = SandboxEnv::Flag("-e".to_string());
+        assert_eq!(
+            env.argv_for("KEY", "v"),
+            Some(vec!["-e".to_string(), "KEY=v".to_string()])
+        );
     }
 
     #[test]

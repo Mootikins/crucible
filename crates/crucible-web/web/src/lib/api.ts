@@ -49,6 +49,37 @@ export interface IsolationOffer {
 }
 
 /**
+ * A plugin that provides session targets on one of the two axes.
+ *
+ * **workspace** answers *where do the files live?* — a worktree, a checkout on
+ * another machine. **runtime** answers *where does the process run?* — a
+ * container, an ssh host. They are orthogonal and compose: a session can run in
+ * a container against a worktree, which is why one setting could never have
+ * carried both.
+ *
+ * The targets themselves are not here. They are enumerated on demand through
+ * `targets_command`, because the workspace axis is context-dependent — the
+ * branch list depends on which project is selected, and changes when someone
+ * creates a branch outside the app.
+ */
+export interface TargetProvider {
+  /** The publishing plugin, and the prefix in a `provider:target` spec. */
+  plugin: string;
+  axis: 'workspace' | 'runtime';
+  label: string;
+  /** Plugin command that lists this provider's targets. */
+  targets_command?: string;
+}
+
+/** One target a provider offered. */
+export interface ProviderTarget {
+  value: string;
+  label: string;
+  hint?: string;
+  disabled?: boolean;
+}
+
+/**
  * One node of a plugin's settings tree.
  *
  * A projection of the plugin's Lua declaration, and deliberately shallow: the
@@ -500,6 +531,78 @@ export async function getIsolationOffer(): Promise<IsolationOffer> {
     }
   }
   return { available, profiles: [...profiles].sort() };
+}
+
+/**
+ * Invoke a plugin command and hand back what it returned.
+ *
+ * Untyped by design — the caller knows the shape it asked for, and a schema
+ * here would be one only today's plugins could satisfy.
+ */
+export async function runPluginCommand(name: string, args: unknown = {}): Promise<unknown> {
+  return request<unknown>('POST', '/api/plugins/command', {
+    ...jsonRequest({ name, args }),
+    errorMessage: `Plugin command '${name}' failed`,
+  });
+}
+
+/** Providers on one axis, sorted by label so the menu is stable. */
+export async function getTargetProviders(axis: TargetProvider['axis']): Promise<TargetProvider[]> {
+  const answers = (await getPluginPublications()).targets ?? {};
+  const providers: TargetProvider[] = [];
+  for (const [plugin, value] of Object.entries(answers)) {
+    const decl = value as Partial<TargetProvider> | null;
+    // Publications are opaque JSON from a plugin. A malformed one is skipped
+    // rather than allowed to throw: a throw is swallowed by swrLocal and the
+    // whole control silently never appears, so one bad plugin would hide every
+    // good one's targets.
+    if (decl?.axis !== axis) continue;
+    providers.push({
+      plugin,
+      axis,
+      label: typeof decl.label === 'string' && decl.label ? decl.label : plugin,
+      targets_command:
+        typeof decl.targets_command === 'string' ? decl.targets_command : undefined,
+    });
+  }
+  return providers.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/**
+ * Ask one provider what it currently offers.
+ *
+ * `workspace` is the project the user has selected — the repo a worktree would
+ * be cut from. Answers `[]` rather than throwing for the same reason
+ * `getTargetProviders` skips a malformed declaration: one provider that is
+ * unreachable (its plugin unloaded, its command renamed) must not take the
+ * menu down with it.
+ */
+export async function getProviderTargets(
+  provider: TargetProvider,
+  workspace?: string,
+): Promise<ProviderTarget[]> {
+  if (!provider.targets_command) return [];
+  try {
+    const result = await runPluginCommand(provider.targets_command, { workspace });
+    const list = Array.isArray(result)
+      ? result
+      : (result as { targets?: unknown } | null)?.targets;
+    if (!Array.isArray(list)) return [];
+    return list.flatMap((item) => {
+      const target = item as Partial<ProviderTarget> | null;
+      if (!target || typeof target.value !== 'string') return [];
+      return [
+        {
+          value: target.value,
+          label: typeof target.label === 'string' ? target.label : target.value,
+          hint: typeof target.hint === 'string' ? target.hint : undefined,
+          disabled: target.disabled === true,
+        },
+      ];
+    });
+  } catch {
+    return [];
+  }
 }
 
 // =============================================================================

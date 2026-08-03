@@ -17,6 +17,8 @@ import {
   listModels,
   getConfig,
   getIsolationOffer,
+  getTargetProviders,
+  getProviderTargets,
   getSessionStatus,
   pauseSession,
   resumeSession,
@@ -585,6 +587,126 @@ describe('getIsolationOffer', () => {
       'GET /api/plugins/publications': { body: { publications: {} } },
     });
     expect(await getIsolationOffer()).toEqual({ available: false, profiles: [] });
+  });
+});
+
+// =============================================================================
+// Target providers — the workspace and runtime axes
+// =============================================================================
+
+const publications = (targets: unknown) => ({
+  'GET /api/plugins/publications': { body: { publications: { targets } } },
+});
+
+describe('getTargetProviders', () => {
+  // The whole reason the axes are separate: a worktree provider and a container
+  // provider both publish here, and asking for one must never surface the
+  // other. Selecting a workspace target on the runtime chip would send a branch
+  // name down the isolation channel, where `oci` raises on names it does not
+  // know.
+  it('returns only the providers on the axis asked for', async () => {
+    global.fetch = createMockFetch(
+      publications({
+        worktree: { axis: 'workspace', label: 'Worktree', targets_command: 'worktree.targets' },
+        oci: { axis: 'runtime', label: 'Container', targets_command: 'oci.targets' },
+        ssh: { axis: 'runtime', label: 'Remote Machines', targets_command: 'ssh.targets' },
+      }),
+    );
+
+    expect(await getTargetProviders('workspace')).toEqual([
+      { plugin: 'worktree', axis: 'workspace', label: 'Worktree', targets_command: 'worktree.targets' },
+    ]);
+
+    const runtime = await getTargetProviders('runtime');
+    // Sorted by label, so the menu does not reshuffle between loads.
+    expect(runtime.map((p) => p.plugin)).toEqual(['oci', 'ssh']);
+  });
+
+  it('falls back to the plugin name when a provider published no label', async () => {
+    global.fetch = createMockFetch(publications({ worktree: { axis: 'workspace' } }));
+    const [provider] = await getTargetProviders('workspace');
+    expect(provider.label).toBe('worktree');
+    expect(provider.targets_command).toBeUndefined();
+  });
+
+  // Publications are opaque plugin JSON. One malformed declaration must cost
+  // only itself: a throw here is swallowed by swrLocal and the whole chip
+  // silently never renders, so a bad plugin would hide every good one.
+  it('skips a malformed declaration without losing the others', async () => {
+    global.fetch = createMockFetch(
+      publications({
+        broken: null,
+        alsoBroken: { axis: 'nonsense' },
+        worktree: { axis: 'workspace', label: 'Worktree' },
+      }),
+    );
+    expect((await getTargetProviders('workspace')).map((p) => p.plugin)).toEqual(['worktree']);
+  });
+
+  it('offers nothing when no plugin published a targets key', async () => {
+    global.fetch = createMockFetch({
+      'GET /api/plugins/publications': { body: { publications: {} } },
+    });
+    expect(await getTargetProviders('runtime')).toEqual([]);
+  });
+});
+
+describe('getProviderTargets', () => {
+  const worktree = {
+    plugin: 'worktree',
+    axis: 'workspace' as const,
+    label: 'Worktree',
+    targets_command: 'worktree.targets',
+  };
+
+  it('reads a provider’s targets from its command', async () => {
+    global.fetch = createMockFetch({
+      'POST /api/plugins/command': {
+        body: {
+          targets: [
+            { value: 'feat/x', label: 'feat/x', hint: 'new worktree' },
+            { value: 'main', label: 'main' },
+          ],
+        },
+      },
+    });
+
+    expect(await getProviderTargets(worktree, '/repo')).toEqual([
+      { value: 'feat/x', label: 'feat/x', hint: 'new worktree', disabled: false },
+      { value: 'main', label: 'main', hint: undefined, disabled: false },
+    ]);
+  });
+
+  it('accepts a bare array as readily as a wrapped one', async () => {
+    global.fetch = createMockFetch({
+      'POST /api/plugins/command': { body: [{ value: 'main', label: 'main' }] },
+    });
+    expect(await getProviderTargets(worktree)).toEqual([
+      { value: 'main', label: 'main', hint: undefined, disabled: false },
+    ]);
+  });
+
+  it('drops entries with no value rather than offering unselectable rows', async () => {
+    global.fetch = createMockFetch({
+      'POST /api/plugins/command': {
+        body: { targets: [{ label: 'nameless' }, { value: 'main', label: 'main' }] },
+      },
+    });
+    expect((await getProviderTargets(worktree)).map((t) => t.value)).toEqual(['main']);
+  });
+
+  // A provider whose plugin was unloaded, or whose command was renamed, must
+  // not take the rest of the menu with it.
+  it('answers empty when the command fails', async () => {
+    global.fetch = createMockFetch({ 'POST /api/plugins/command': { status: 500 } });
+    expect(await getProviderTargets(worktree)).toEqual([]);
+  });
+
+  it('asks nothing of a provider that named no command', async () => {
+    const called = vi.fn();
+    global.fetch = called;
+    expect(await getProviderTargets({ ...worktree, targets_command: undefined })).toEqual([]);
+    expect(called).not.toHaveBeenCalled();
   });
 });
 

@@ -83,3 +83,46 @@ export function placePopup(
     ? { left, width, bottom: viewport.height - anchor.top + gap, maxHeight, direction }
     : { left, width, top: anchor.bottom + gap, maxHeight, direction };
 }
+
+export interface FlyoutPlacement {
+  left: number;
+  top: number;
+  width: number;
+  maxHeight: number;
+  side: 'right' | 'left';
+}
+
+/**
+ * Place a submenu BESIDE its row, rather than below it.
+ *
+ * The sideways sibling of [`placePopup`]: a `Remote Machines ▸` flyout opens to
+ * the right of the row that owns it, flipping to the left when the right has no
+ * room. Chip popouts are already clamped to the viewport's right edge, so a
+ * flyout hanging off one is exactly the case that flips — near the edge it is
+ * the common case, not the corner one.
+ *
+ * Vertically it aligns with its row and then slides up only as far as it must
+ * to stay on screen, so a submenu never opens above the row it came from.
+ */
+export function placeFlyout(
+  anchor: AnchorRect,
+  viewport: Viewport,
+  options: { width?: number; preferredHeight?: number; gap?: number } = {},
+): FlyoutPlacement {
+  const { width = 220, preferredHeight = POPUP_MAX_HEIGHT, gap = 2 } = options;
+
+  const spaceRight = viewport.width - anchor.right - gap - EDGE_MARGIN;
+  // Flip only when the right genuinely cannot hold it — preferring the right
+  // on a tie keeps the direction stable as the window resizes.
+  const side: 'right' | 'left' = spaceRight >= width ? 'right' : 'left';
+  const left =
+    side === 'right'
+      ? anchor.right + gap
+      : Math.max(EDGE_MARGIN, anchor.left - width - gap);
+
+  const maxHeight = Math.max(Math.min(preferredHeight, viewport.height - 2 * EDGE_MARGIN), 0);
+  // Aligned with the row, then pulled back up by whatever overflows the bottom.
+  const top = Math.max(EDGE_MARGIN, Math.min(anchor.top, viewport.height - maxHeight - EDGE_MARGIN));
+
+  return { left, top, width, maxHeight, side };
+}

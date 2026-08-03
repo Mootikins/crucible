@@ -4,7 +4,9 @@
 //! The actual handler implementations remain in server.rs for now,
 //! but this module provides the infrastructure for testable dispatch.
 
-use crate::protocol::{Request, RequestId, Response, RpcError, INTERNAL_ERROR, METHOD_NOT_FOUND};
+use crate::protocol::{
+    Request, RequestId, Response, RpcError, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND,
+};
 use crate::rpc::context::RpcContext;
 use crate::server::plugins::OptionAction;
 use crate::subscription::ClientId;
@@ -817,6 +819,17 @@ impl RpcDispatcher {
     // ── Session lifecycle wrappers ────────────────────────────────────────────
 
     async fn handle_session_create(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        // The workspace axis, resolved before create rather than inside a
+        // plugin hook: everything the path feeds — the ACP agent's working
+        // directory, project registration, the persisted workspace — is decided
+        // by `handle_session_create` below, and `on_session_start` fires after
+        // all three. See `crate::workspace_targets`.
+        let req = match self.resolve_workspace_target(req).await {
+            Ok(req) => req,
+            Err(e) => return Err(e),
+        };
+        let req = &req;
+
         let resp = crate::server::session::handle_session_create(
             req.clone(),
             &self.ctx.sessions,
@@ -836,6 +849,47 @@ impl RpcDispatcher {
         // plugin runtime — not just the per-call `lua.init_session` executor,
         // which was the only place firing them.
         self.enforce_plugin_session_start(mapped, req).await
+    }
+
+    /// Replace `workspace` with what the requested `workspace_target` resolves
+    /// to, leaving the request untouched when none was asked for.
+    ///
+    /// Fail-closed: a target that cannot be resolved refuses the create. A
+    /// session that quietly ran against the main checkout when a worktree was
+    /// asked for is the workspace-axis version of a session that quietly ran on
+    /// the host when a container was asked for.
+    async fn resolve_workspace_target(&self, req: &Request) -> RpcResult<Request> {
+        let Some(spec) = req
+            .params
+            .get("workspace_target")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+        else {
+            return Ok(req.clone());
+        };
+
+        let workspace = req.params.get("workspace").and_then(|v| v.as_str());
+        let targets = crate::workspace_targets::WorkspaceTargets::new(std::sync::Arc::clone(
+            &self.ctx.plugin_loader,
+        ));
+
+        match targets.resolve(spec, workspace).await {
+            Ok(path) => {
+                let mut req = req.clone();
+                if let Some(params) = req.params.as_object_mut() {
+                    params.insert(
+                        "workspace".to_string(),
+                        serde_json::Value::String(path.to_string_lossy().into_owned()),
+                    );
+                }
+                Ok(req)
+            }
+            Err(e) => Err(RpcError {
+                code: INVALID_PARAMS,
+                message: format!("workspace target '{spec}' could not be resolved: {e:#}"),
+                data: None,
+            }),
+        }
     }
 
     /// RPC-shaped wrapper over [`SessionLifecycle::enforce_session_start`].
@@ -2014,6 +2068,54 @@ mod tests {
         );
     }
 
+    /// The workspace axis is fail-closed at create.
+    ///
+    /// A session that quietly ran against the main checkout when a worktree was
+    /// asked for is the workspace-axis version of one that quietly ran on the
+    /// host when a container was asked for — and worse, because the agent then
+    /// commits to a branch nobody expected it on. The refusal has to name the
+    /// target, or the caller cannot tell this apart from an ordinary failure.
+    #[tokio::test]
+    async fn a_workspace_target_no_plugin_provides_refuses_the_session() {
+        let dispatcher = RpcDispatcher::new(test_context_with_loader());
+        let req = make_request(
+            "session.create",
+            serde_json::json!({
+                "type": "chat",
+                "workspace": "/repo",
+                "workspace_target": "worktree:feat/x",
+            }),
+        );
+        let resp = dispatcher.dispatch(ClientId::new(), req).await;
+        let err = resp
+            .error
+            .expect("an unresolvable target must refuse the create");
+        assert!(
+            err.message.contains("worktree:feat/x"),
+            "the refusal must name the target that could not be resolved: {}",
+            err.message
+        );
+    }
+
+    /// And the ordinary case is untouched: no `workspace_target`, no resolution
+    /// step, no new way for create to fail.
+    #[tokio::test]
+    async fn a_create_without_a_workspace_target_is_not_touched_by_resolution() {
+        let dispatcher = RpcDispatcher::new(test_context_with_loader());
+        let req = make_request(
+            "session.create",
+            serde_json::json!({ "type": "chat", "workspace": "/repo" }),
+        );
+        let resp = dispatcher.dispatch(ClientId::new(), req).await;
+        if let Some(err) = resp.error {
+            assert!(
+                !err.message.contains("workspace target"),
+                "a create that asked for no target must not meet the resolver: {}",
+                err.message
+            );
+        }
+    }
+
     /// The mirror case: with no isolation claim, the external-agent switch
     /// proceeds to the normal handler (which fails on the missing session —
     /// the point is it is NOT the isolation refusal).
@@ -2057,7 +2159,7 @@ mod tests {
                             .iter()
                             .map(|s| s.to_string())
                             .collect(),
-                        env_flag: Some("-e".to_string()),
+                        env: crucible_lua::SandboxEnv::Flag("-e".to_string()),
                         suffix: vec!["crucible-iso-launchable".to_string()],
                     },
                 },

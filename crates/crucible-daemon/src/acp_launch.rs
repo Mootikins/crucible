@@ -79,13 +79,14 @@ pub(crate) fn build_client_config(
 
 /// The argv that carries `env_vars` across the sandbox boundary.
 ///
-/// `NAME=VALUE` after the plugin's flag: the one form podman, docker and
-/// nerdctl all accept for `exec`. It does put the value on the launcher's
-/// command line, where `ps` can read it — the alternative, a bare `-e NAME`
-/// inherited from the launcher's own environment, hides it but is only
-/// reliably supported by podman.
+/// `NAME=VALUE`, with or without a preceding flag depending on what the
+/// launcher takes: the one form podman, docker and nerdctl all accept for
+/// `exec`, and the one `env(1)` takes for `ssh`. It does put the value on the
+/// launcher's command line, where `ps` can read it — the alternative, a bare
+/// `-e NAME` inherited from the launcher's own environment, hides it but is
+/// only reliably supported by podman.
 ///
-/// A plugin that named no flag cannot deliver environment at all, and the
+/// A plugin that described no way in cannot deliver environment at all, and the
 /// launch is refused naming the variables: an agent started without its API
 /// key fails later, somewhere else, with nothing pointing back to the sandbox.
 fn sandbox_env_argv(
@@ -96,19 +97,20 @@ fn sandbox_env_argv(
     if env_vars.is_empty() {
         return Ok(Vec::new());
     }
-    let Some(flag) = exec.env_flag.as_ref() else {
-        let names: Vec<&str> = env_vars.iter().map(|(k, _)| k.as_str()).collect();
-        return Err(AcpHandleError::Config(format!(
-            "agent '{agent_name}' is configured with environment ({}) but this session's \
-             sandbox offers no way to pass it into the container, so the agent would start \
-             without it; the claiming plugin must supply `exec_env_flag`",
-            names.join(", ")
-        )));
-    };
-    Ok(env_vars
-        .iter()
-        .flat_map(|(k, v)| [flag.clone(), format!("{k}={v}")])
-        .collect())
+    let mut argv = Vec::with_capacity(env_vars.len() * 2);
+    for (name, value) in env_vars {
+        let Some(pair) = exec.env.argv_for(name, value) else {
+            let names: Vec<&str> = env_vars.iter().map(|(k, _)| k.as_str()).collect();
+            return Err(AcpHandleError::Config(format!(
+                "agent '{agent_name}' is configured with environment ({}) but this session's \
+                 sandbox offers no way to pass it in, so the agent would start without it; \
+                 the claiming plugin must supply `exec_env_flag` or `exec_env_inline`",
+                names.join(", ")
+            )));
+        };
+        argv.extend(pair);
+    }
+    Ok(argv)
 }
 
 /// Resolved command, arguments, and environment variables for an ACP agent.
@@ -181,8 +183,24 @@ mod tests {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-            env_flag: env_flag.map(|s| s.to_string()),
+            env: match env_flag {
+                Some(flag) => crucible_lua::SandboxEnv::Flag(flag.to_string()),
+                None => crucible_lua::SandboxEnv::Unsupported,
+            },
             suffix: vec!["crucible-s1".to_string()],
+        }
+    }
+
+    /// A sandbox the way `ssh` describes one: no per-variable flag, `env(1)`
+    /// as the last word of the prefix, and no operand after the variables.
+    fn ssh_sandbox() -> SandboxExec {
+        SandboxExec {
+            prefix: ["ssh", "-T", "build-box", "env"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            env: crucible_lua::SandboxEnv::Inline,
+            suffix: vec![],
         }
     }
 
@@ -381,6 +399,46 @@ mod tests {
         assert!(
             config.env_vars.is_none(),
             "it is delivered inside; a copy on the launcher process would mean nothing"
+        );
+    }
+
+    /// The same delivery, for a launcher with no per-variable flag.
+    ///
+    /// `ssh` takes `env K=V … cmd`, so the pairs go in bare and the relocated
+    /// command follows immediately — there is no operand to keep them in front
+    /// of. Reading `Unsupported` for "no flag" would refuse every ACP launch
+    /// over ssh, since an agent essentially always carries a key.
+    #[test]
+    fn an_inline_env_launcher_passes_variables_with_no_flag() {
+        let mut agent = test_session_agent("opencode");
+        agent
+            .env_overrides
+            .insert("ANTHROPIC_API_KEY".to_string(), "sk-test".to_string());
+
+        let config = build_client_config(
+            &agent,
+            Path::new("/tmp/workspace"),
+            None,
+            Some(&ssh_sandbox()),
+        )
+        .unwrap();
+
+        assert_eq!(config.agent_path, PathBuf::from("ssh"));
+        assert_eq!(
+            config.agent_args.unwrap(),
+            vec![
+                "-T",
+                "build-box",
+                "env",
+                "ANTHROPIC_API_KEY=sk-test",
+                "opencode",
+                "acp"
+            ],
+            "no flag, and the agent's argv follows the variables directly"
+        );
+        assert!(
+            config.env_vars.is_none(),
+            "it is delivered on the remote side; a copy on the ssh process would mean nothing"
         );
     }
 
