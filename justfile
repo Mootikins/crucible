@@ -42,9 +42,13 @@ release-cli:
 # Run tests (quick|ignored|full). Slow/external tests are gated with
 # #[ignore], not cargo features — there is no feature-based tier system.
 # - quick: everything not #[ignore]d (default)
-# - ignored: only #[ignore]d tests (need daemon/Ollama/agent binaries; see
-#   each test's ignore reason for its prerequisites)
+# - ignored: only #[ignore]d tests (need agent binaries, podman, or an LLM
+#   endpoint; see each test's ignore reason for its prerequisites)
 # - full: quick + ignored
+#
+# The ones needing a live LLM endpoint read `.env.local` at the repo root —
+# `cp .env.local.example .env.local` and edit. Without it they print SKIPPED
+# and pass, so the tier is green on a machine with no endpoint configured.
 test tier="quick":
     #!/usr/bin/env bash
     set -euo pipefail

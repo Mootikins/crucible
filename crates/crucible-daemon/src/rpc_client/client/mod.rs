@@ -1135,9 +1135,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires running daemon with session support"]
     async fn test_session_create_and_get() {
-        let client = DaemonClient::connect().await.unwrap();
+        let (_srv, sock, _handle) = setup_test_server().await;
+        let client = DaemonClient::connect_to(&sock).await.unwrap();
         let tmp = TempDir::new().unwrap();
 
         let result = client
@@ -1161,9 +1161,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires running daemon with session support"]
     async fn test_session_list() {
-        let client = DaemonClient::connect().await.unwrap();
+        let (_srv, sock, _handle) = setup_test_server().await;
+        let client = DaemonClient::connect_to(&sock).await.unwrap();
         let result = client
             .session_list(None, None, None, None, None)
             .await
@@ -1172,9 +1172,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires running daemon with session support"]
     async fn test_session_lifecycle() {
-        let client = DaemonClient::connect().await.unwrap();
+        let (_srv, sock, _handle) = setup_test_server().await;
+        let client = DaemonClient::connect_to(&sock).await.unwrap();
         let tmp = TempDir::new().unwrap();
 
         let result = client
@@ -1203,9 +1203,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires running daemon with session support"]
     async fn test_session_subscribe_unsubscribe() {
-        let client = DaemonClient::connect().await.unwrap();
+        let (_srv, sock, _handle) = setup_test_server().await;
+        let client = DaemonClient::connect_to(&sock).await.unwrap();
         let tmp = TempDir::new().unwrap();
 
         let result = client
@@ -1232,52 +1232,35 @@ mod tests {
         let _ = client.session_end(session_id).await;
     }
 
+    /// The thinking budget is a property of a session's AGENT, so the session
+    /// has to have one — creating agent-less and asking for the budget answers
+    /// "No agent configured", which is what this test spent its life doing
+    /// against whatever daemon happened to be running.
     #[tokio::test]
-    #[ignore = "requires running daemon with session support"]
-    async fn test_event_stream() {
-        let (client, mut event_rx) = DaemonClient::connect_with_events().await.unwrap();
-        let tmp = TempDir::new().unwrap();
-
-        let result = client
-            .session_create(SessionCreateParams {
-                session_type: "chat".to_string(),
-                kiln: Some(tmp.path().to_path_buf()),
-                workspace: None,
-                connect_kilns: vec![],
-                recording_mode: None,
-                recording_path: None,
-                agent_type: None,
-                isolation: None,
-            })
-            .await
-            .unwrap();
-        let session_id = result["session_id"].as_str().unwrap();
-
-        client.session_subscribe(&[session_id]).await.unwrap();
-
-        let result = tokio::time::timeout(Duration::from_millis(100), event_rx.recv()).await;
-        assert!(result.is_err(), "Expected timeout, got event");
-
-        let _ = client.session_end(session_id).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "requires running daemon with session and agent support"]
     async fn test_session_thinking_budget() {
-        let client = DaemonClient::connect().await.unwrap();
+        let (_srv, sock, _handle) = setup_test_server().await;
+        let client = DaemonClient::connect_to(&sock).await.unwrap();
         let tmp = TempDir::new().unwrap();
 
         let result = client
-            .session_create(SessionCreateParams {
-                session_type: "chat".to_string(),
-                kiln: Some(tmp.path().to_path_buf()),
-                workspace: None,
-                connect_kilns: vec![],
-                recording_mode: None,
-                recording_path: None,
-                agent_type: None,
-                isolation: None,
-            })
+            .session_create_with_agent(
+                SessionCreateParams {
+                    session_type: "chat".to_string(),
+                    kiln: Some(tmp.path().to_path_buf()),
+                    workspace: None,
+                    connect_kilns: vec![],
+                    recording_mode: None,
+                    recording_path: None,
+                    agent_type: Some("internal".to_string()),
+                    isolation: None,
+                },
+                crate::rpc_client::SessionAgentSpec {
+                    provider: Some("ollama".to_string()),
+                    model: Some("llama3.2".to_string()),
+                    endpoint: Some("http://localhost:11434".to_string()),
+                    ..Default::default()
+                },
+            )
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();

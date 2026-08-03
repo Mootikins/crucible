@@ -53,11 +53,14 @@ pub(super) use require_binary;
 
 /// Build a TuiTestConfig that uses the dev's LLM provider config.
 ///
-/// If `CRUCIBLE_TEST_CONFIG` is set, passes `--config <path>` to `cru chat`.
-/// Otherwise falls back to default config (which auto-detects Ollama at localhost:11434).
+/// `CRUCIBLE_TEST_CONFIG` names a config whose default provider answers; it is
+/// read from the environment or from `.env.local` at the repo root (see
+/// `.env.local.example`). When neither has it, no `--config` is passed and the
+/// default config applies — which auto-detects Ollama at localhost:11434.
 ///
-/// Usage:
-///   CRUCIBLE_TEST_CONFIG=~/.config/crucible/config.toml cargo nextest run -- --ignored
+/// Reading the file matters because these tests are `#[ignore]`d: an
+/// export-it-yourself variable is one nobody notices is missing, so the tests
+/// quietly never run.
 pub(super) fn provider_test_config() -> TuiTestConfig {
     let mut config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -69,7 +72,7 @@ pub(super) fn provider_test_config() -> TuiTestConfig {
     // explicitly via CRUCIBLE_TEST_CONFIG=<config.toml>; the old implicit
     // fallback to the developer's real config was exactly the credential
     // leak the hermetic env removes.
-    if let Ok(cfg_path) = std::env::var("CRUCIBLE_TEST_CONFIG") {
+    if let Some(cfg_path) = crucible_core::test_support::test_env("CRUCIBLE_TEST_CONFIG") {
         config.args = vec!["--config".to_string(), cfg_path];
     }
 

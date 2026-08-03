@@ -144,16 +144,35 @@ mod ollama_tests {
     use super::*;
     use crucible_daemon::llm::embeddings::{create_provider, EmbeddingConfig};
 
-    const OLLAMA_ENDPOINT: &str = "https://llm.example.com";
-    const OLLAMA_MODEL: &str = "nomic-embed-text-v1.5-q8_0";
+    use crucible_core::test_support::{require_test_env, test_env};
+
+    /// The endpoint, model and dimension count come from `.env.local` — see
+    /// `.env.local.example`.
+    ///
+    /// They used to be constants, and the endpoint was `https://llm.example.com`:
+    /// a placeholder domain, so these three could not pass on any machine
+    /// anywhere, including the one they were written on. Being `#[ignore]`d is
+    /// what let that sit unnoticed.
+    ///
+    /// `None` means the developer has not configured an endpoint, which is not
+    /// a failure — the caller prints SKIPPED and returns.
+    fn ollama_config() -> Option<(EmbeddingConfig, usize)> {
+        let endpoint = require_test_env("CRUCIBLE_TEST_LLM_ENDPOINT")?;
+        let model = require_test_env("CRUCIBLE_TEST_EMBED_MODEL")?;
+        // Checked rather than assumed: a model swap that changes the dimension
+        // silently changes what every stored embedding means.
+        let dims = test_env("CRUCIBLE_TEST_EMBED_DIMS")
+            .and_then(|d| d.parse().ok())
+            .unwrap_or(768);
+        Some((EmbeddingConfig::ollama(Some(endpoint), Some(model)), dims))
+    }
 
     #[tokio::test]
-    #[ignore = "Requires Ollama server"]
+    #[ignore = "requires an embedding endpoint (see .env.local.example)"]
     async fn test_ollama_basic() {
-        let config = EmbeddingConfig::ollama(
-            Some(OLLAMA_ENDPOINT.to_string()),
-            Some(OLLAMA_MODEL.to_string()),
-        );
+        let Some((config, dims)) = ollama_config() else {
+            return;
+        };
         let provider = create_provider(config).await.unwrap();
 
         let embedding = provider.embed("Hello, world!").await.unwrap();
@@ -162,16 +181,15 @@ mod ollama_tests {
         println!("First 5 values: {:?}", &embedding[..5.min(embedding.len())]);
 
         assert!(!embedding.is_empty());
-        assert_eq!(embedding.len(), 768); // nomic-embed-text has 768 dims
+        assert_eq!(embedding.len(), dims);
     }
 
     #[tokio::test]
-    #[ignore = "Requires Ollama server"]
+    #[ignore = "requires an embedding endpoint (see .env.local.example)"]
     async fn test_ollama_semantic_similarity() {
-        let config = EmbeddingConfig::ollama(
-            Some(OLLAMA_ENDPOINT.to_string()),
-            Some(OLLAMA_MODEL.to_string()),
-        );
+        let Some((config, _dims)) = ollama_config() else {
+            return;
+        };
         let provider = create_provider(config).await.unwrap();
 
         // Get embeddings for all test texts
@@ -220,12 +238,11 @@ mod ollama_tests {
     }
 
     #[tokio::test]
-    #[ignore = "Requires Ollama server"]
+    #[ignore = "requires an embedding endpoint (see .env.local.example)"]
     async fn test_ollama_batch_throughput() {
-        let config = EmbeddingConfig::ollama(
-            Some(OLLAMA_ENDPOINT.to_string()),
-            Some(OLLAMA_MODEL.to_string()),
-        );
+        let Some((config, _dims)) = ollama_config() else {
+            return;
+        };
         let provider = create_provider(config).await.unwrap();
 
         let texts: Vec<String> = (0..50)

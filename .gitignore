@@ -101,3 +101,6 @@ reproduce.cast
 
 # Wayfinder maps / scratch tickets (not committed)
 .scratch/
+
+# Local test config referenced from .env.local (see .env.local.example)
+.crucible-test-config.toml

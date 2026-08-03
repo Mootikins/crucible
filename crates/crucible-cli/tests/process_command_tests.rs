@@ -23,7 +23,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::net::UnixStream;
 use tokio::task::JoinHandle;
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{Duration, Instant};
 
 const DAEMON_READY_TIMEOUT: Duration = Duration::from_secs(2);
 const DAEMON_READY_POLL: Duration = Duration::from_millis(10);
@@ -639,206 +639,20 @@ async fn test_dry_run_with_verbose() -> Result<()> {
 }
 
 // =============================================================================
-// WATCH MODE TESTS
-// =============================================================================
+// WATCH MODE TESTS — none here, deliberately.
 //
-// These tests verify file watching behavior using timeout patterns:
-// 1. Spawn watch mode in background task
-// 2. Make file changes after watcher initializes
-// 3. Use timeout to limit execution (watch runs indefinitely otherwise)
-// 4. Verify behavior via timeout completion (Err = timed out = watch was running)
-
-#[tokio::test]
-#[ignore = "slow watch integration test - run with just test ignored"]
-async fn test_watch_mode_starts_and_runs() -> Result<()> {
-    // GIVEN: A test kiln with initial processing complete
-    let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().to_path_buf();
-
-    let db_dir = TempDir::new()?;
-    let db_path = db_dir.path().join("test.db");
-
-    let config = create_process_test_config(kiln_path, db_path);
-
-    // WHEN: Running watch mode with a timeout
-    // Watch mode runs indefinitely, so timeout = success (it was running)
-    let watch_result = tokio::time::timeout(
-        Duration::from_secs(2),
-        process::execute(config, None, false, true, false, false, None, false),
-    )
-    .await;
-
-    // THEN: Should timeout (watch was actively running)
-    // Timeout error means watch started and was running correctly
-    assert!(
-        watch_result.is_err(),
-        "Watch mode should run until timeout (not return early)"
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-#[ignore = "slow watch integration test - run with just test ignored"]
-async fn test_watch_detects_file_modification() -> Result<()> {
-    // GIVEN: A test kiln with initial processing
-    let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().to_path_buf();
-
-    let db_dir = TempDir::new()?;
-    let db_path = db_dir.path().join("test.db");
-
-    let config = create_process_test_config(kiln_path.clone(), db_path.clone());
-
-    // Initial processing to populate database
-    process::execute(
-        config.clone(),
-        None,
-        false,
-        false,
-        false,
-        false,
-        None,
-        false,
-    )
-    .await?;
-
-    // WHEN: Start watch mode in background
-    let watch_config = create_process_test_config(kiln_path.clone(), db_path);
-    let watch_handle = tokio::spawn(async move {
-        process::execute(watch_config, None, false, true, true, false, None, false).await
-    });
-
-    // Wait for watcher to initialize
-    sleep(Duration::from_millis(500)).await;
-
-    // Modify a file while watch is active
-    std::fs::write(
-        kiln_path.join("note1.md"),
-        "# Note 1 Modified\n\nUpdated content detected by watcher.",
-    )?;
-
-    // Allow time for debounce (500ms) + processing
-    sleep(Duration::from_secs(2)).await;
-
-    // Cancel watch mode
-    watch_handle.abort();
-
-    // THEN: Watch should have been running (abort returns Err)
-    let result = watch_handle.await;
-    assert!(
-        result.is_err() || result.unwrap().is_ok(),
-        "Watch should either be aborted or complete successfully"
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-#[ignore = "slow watch integration test - run with just test ignored"]
-async fn test_watch_detects_new_file_creation() -> Result<()> {
-    // GIVEN: A test kiln with watch mode starting
-    let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().to_path_buf();
-
-    let db_dir = TempDir::new()?;
-    let db_path = db_dir.path().join("test.db");
-
-    let config = create_process_test_config(kiln_path.clone(), db_path);
-
-    // Start watch mode in background
-    let watch_handle = tokio::spawn(async move {
-        process::execute(config, None, false, true, true, false, None, false).await
-    });
-
-    // Wait for watcher to initialize
-    sleep(Duration::from_millis(500)).await;
-
-    // WHEN: Creating a new markdown file while watching
-    std::fs::write(
-        kiln_path.join("note_new.md"),
-        "# New Note\n\nCreated during watch mode.",
-    )?;
-
-    // Allow time for debounce + processing
-    sleep(Duration::from_secs(2)).await;
-
-    // Cancel watch mode
-    watch_handle.abort();
-
-    // THEN: Watch should have been running
-    let result = watch_handle.await;
-    assert!(
-        result.is_err() || result.unwrap().is_ok(),
-        "Watch should either be aborted or complete successfully"
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-#[ignore = "slow watch integration test - run with just test ignored"]
-async fn test_watch_detects_file_deletion() -> Result<()> {
-    // GIVEN: A test kiln with initial processing
-    let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().to_path_buf();
-
-    let db_dir = TempDir::new()?;
-    let db_path = db_dir.path().join("test.db");
-
-    let config = create_process_test_config(kiln_path.clone(), db_path.clone());
-
-    // Initial processing
-    process::execute(
-        config.clone(),
-        None,
-        false,
-        false,
-        false,
-        false,
-        None,
-        false,
-    )
-    .await?;
-
-    // Start watch mode in background
-    let watch_config = create_process_test_config(kiln_path.clone(), db_path);
-    let watch_handle = tokio::spawn(async move {
-        process::execute(watch_config, None, false, true, true, false, None, false).await
-    });
-
-    // Wait for watcher to initialize
-    sleep(Duration::from_millis(500)).await;
-
-    // WHEN: Deleting a file while watching
-    std::fs::remove_file(kiln_path.join("note1.md"))?;
-
-    // Allow time for event detection
-    sleep(Duration::from_secs(2)).await;
-
-    // Cancel watch mode
-    watch_handle.abort();
-
-    // THEN: Watch should have been running
-    let result = watch_handle.await;
-    assert!(
-        result.is_err() || result.unwrap().is_ok(),
-        "Watch should either be aborted or complete successfully"
-    );
-
-    Ok(())
-}
-
-// NOTE: The following stub tests were removed as they were broken:
-// - test_watch_ignores_non_markdown_files: Would hang (no timeout/spawn)
-// - test_watch_handles_rapid_changes_with_debounce: Would hang (no timeout/spawn)
-// - test_watch_handles_errors_gracefully: Would hang (no timeout/spawn)
-// - test_watch_can_be_cancelled: Would hang (no timeout/spawn)
-// - test_watch_respects_change_detection: Would hang (no timeout/spawn)
-// - test_watch_with_verbose: Would hang (no timeout/spawn)
+// Four lived here (test_watch_mode_starts_and_runs, test_watch_detects_*) and
+// were removed. Each aborted the watch task and then asserted
+// `result.is_err() || result.unwrap().is_ok()` — a tautology on an aborted
+// JoinHandle, so the "detects file modification" tests wrote a file and checked
+// nothing about whether it was detected. They had also stopped running at all:
+// `process::execute` reaches storage through the daemon, and these built a
+// CliConfig with no daemon behind it.
 //
-// The working watch tests (test_watch_mode_starts_and_runs, test_watch_detects_*)
-// properly use timeout/spawn patterns. Add new watch tests following that pattern.
+// Watch behaviour is tested where it happens, daemon-side and unignored:
+// tests/watch_indexing.rs, watch_note_parsed_emission_tests.rs,
+// watch_file_changed_emission_tests.rs, watch_file_deleted_emission_tests.rs
+// and watch_notify_filter_tests.rs in crucible-daemon.
 
 // =============================================================================
 // NOTE LIFECYCLE EVENT TESTS
