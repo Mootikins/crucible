@@ -16,12 +16,36 @@ vi.mock('@/lib/api', () => ({
   getConfig: vi.fn().mockResolvedValue({
     kiln_path: '/home/user/kilns/helios',
   }),
-  // What the box offers for isolation, as a plugin published it. Not read out
-  // of plugin config: the composer renders the offer and nothing more.
-  getIsolationOffer: vi.fn().mockResolvedValue({
-    available: true,
-    profiles: ['rust', 'throwaway'],
-  }),
+  // The two axes, as plugins published them. Not read out of plugin config:
+  // the composer renders what providers declared and nothing more.
+  getTargetProviders: vi.fn().mockImplementation((axis: string) =>
+    Promise.resolve(
+      axis === 'runtime'
+        ? [{ plugin: 'oci', axis, label: 'Container', targets_command: 'oci.targets' }]
+        : [
+            {
+              plugin: 'worktree',
+              axis,
+              label: 'Worktree',
+              targets_command: 'worktree.targets',
+              resolve_command: 'worktree.resolve',
+            },
+          ],
+    ),
+  ),
+  getProviderTargets: vi.fn().mockImplementation((provider: { plugin: string }) =>
+    Promise.resolve(
+      provider.plugin === 'oci'
+        ? [
+            { value: '', label: 'Default', hint: 'alpine:latest' },
+            { value: 'throwaway', label: 'throwaway' },
+          ]
+        : [
+            { value: 'master', label: 'master', hint: 'current' },
+            { value: 'feat/x', label: 'feat/x', hint: 'new worktree' },
+          ],
+    ),
+  ),
   listAgents: vi.fn().mockResolvedValue([
     { name: 'claude', description: 'Claude Code via ACP', command: 'npx', is_builtin: true, available: true },
   ]),
@@ -37,18 +61,48 @@ vi.mock('@/lib/api', () => ({
   recordRecent: vi.fn().mockResolvedValue(undefined),
   // Clone-from-popout flow.
   isGitRepoUrl: (s: string) => /^(https?:\/\/|git@)/.test(s) || /^[\w.-]+\/[\w.-]+$/.test(s),
-  isBranchNameish: (s: string) => !!s && !/\s|\.\.|^[-/]|\\|:|@\{|\/$/.test(s),
   scmClone: vi.fn(),
-  // Branch chip: no repo unless a test overrides.
-  scmBranches: vi.fn().mockRejectedValue(new Error('no repo')),
-  scmWorktreeAdd: vi.fn(),
   registerProject: vi.fn().mockResolvedValue({}),
 }));
 
-beforeEach(() => {
+// Re-established per test, not just cleared: a test that narrows a provider
+// (no targets, a second provider) would otherwise leave its implementation
+// installed for everything that follows — which is exactly how four of these
+// silently started asserting against an empty menu.
+beforeEach(async () => {
   localStorage.clear();
   createSessionMock.mockClear();
   openFileInEditorMock.mockClear();
+
+  const { getTargetProviders, getProviderTargets } = await import('@/lib/api');
+  vi.mocked(getTargetProviders).mockImplementation((axis) =>
+    Promise.resolve(
+      axis === 'runtime'
+        ? [{ plugin: 'oci', axis, label: 'Container', targets_command: 'oci.targets' }]
+        : [
+            {
+              plugin: 'worktree',
+              axis,
+              label: 'Worktree',
+              targets_command: 'worktree.targets',
+              resolve_command: 'worktree.resolve',
+            },
+          ],
+    ),
+  );
+  vi.mocked(getProviderTargets).mockImplementation((provider) =>
+    Promise.resolve(
+      provider.plugin === 'oci'
+        ? [
+            { value: '', label: 'Default', hint: 'alpine:latest' },
+            { value: 'throwaway', label: 'throwaway' },
+          ]
+        : [
+            { value: 'master', label: 'master', hint: 'current' },
+            { value: 'feat/x', label: 'feat/x', hint: 'new worktree' },
+          ],
+    ),
+  );
 });
 afterEach(cleanup);
 
@@ -147,83 +201,6 @@ describe('CenterComposer', () => {
     await waitFor(() => expect(scmClone).toHaveBeenCalledWith('octocat/Spoon-Knife'));
   });
 
-  it('selecting a repo project reveals a branch chip; picking a branch jumps to its worktree', async () => {
-    const { scmBranches, listProjects } = await import('@/lib/api');
-    vi.mocked(scmBranches).mockResolvedValue({
-      repo_root: '/repos/crucible',
-      current_branch: 'master',
-      branches: [
-        { name: 'master', worktree_path: '/repos/crucible', is_current: true, remote_only: false },
-        {
-          name: 'feat/x',
-          worktree_path: '/repos/crucible/tree/feat/x',
-          is_current: false,
-          remote_only: false,
-        },
-      ],
-    });
-
-    const { getByTestId, queryByTestId } = render(() => <CenterComposer />);
-    // No branch chip before a repo project is selected.
-    expect(queryByTestId('composer-branch')).toBeNull();
-
-    await waitFor(() => expect(getByTestId('composer-project')).toBeInTheDocument());
-    fireEvent.click(getByTestId('composer-project'));
-    await waitFor(() => expect(screen.getByText('crucible')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('crucible'));
-
-    // Branch chip appears showing the current branch.
-    await waitFor(() =>
-      expect(getByTestId('composer-branch').textContent).toContain('master'),
-    );
-
-    // Picking the other branch switches the workspace to its worktree
-    // (post-switch refresh returns the roster including the worktree).
-    vi.mocked(listProjects).mockResolvedValue([
-      { path: '/repos/crucible', name: 'crucible', kilns: [], last_accessed: '' },
-      {
-        path: '/repos/crucible/tree/feat/x',
-        name: 'x',
-        kilns: [],
-        last_accessed: '',
-        repository: {
-          root: '/repos/crucible',
-          is_worktree: true,
-          main_repo_git_dir: '/repos/crucible/.git',
-        },
-      },
-    ]);
-    fireEvent.click(getByTestId('composer-branch'));
-    await waitFor(() => expect(screen.getByText('feat/x')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('feat/x'));
-    await waitFor(() =>
-      expect(getByTestId('composer-project').textContent).toContain('feat/x'),
-    );
-  });
-
-  it('run-on chip shows the local machine with disabled cloud/remote seams', async () => {
-    const { getByTestId } = render(() => <CenterComposer />);
-    const chip = getByTestId('composer-target');
-    expect(chip.textContent).toContain('This machine');
-
-    fireEvent.click(chip);
-    const pop = await waitFor(() => screen.getByTestId('composer-target-popout'));
-    expect(pop.textContent).toContain('Run on');
-    const rows = [...pop.querySelectorAll('[role="option"]')] as HTMLButtonElement[];
-    expect(rows.map((r) => r.disabled)).toEqual([false, true, true]);
-    // Remote-control status card (state from /api/config remote_shell).
-    expect(pop.textContent).toContain('Remote control');
-    await waitFor(() =>
-      expect(screen.getByTestId('remote-control-state').getAttribute('aria-label')).toBe(
-        'Remote control off',
-      ),
-    );
-  });
-
-  // -------------------------------------------------------------------------
-  // Isolation control
-  // -------------------------------------------------------------------------
-
   const submitWith = async (getByTestId: (id: string) => HTMLElement, text: string) => {
     const input = getByTestId('composer-input') as HTMLTextAreaElement;
     fireEvent.input(input, { target: { value: text } });
@@ -232,79 +209,190 @@ describe('CenterComposer', () => {
     return createSessionMock.mock.calls[0][0];
   };
 
-  it('leaves isolation unset until the control is touched', async () => {
+  const pickProject = async (getByTestId: (id: string) => HTMLElement) => {
+    await waitFor(() => expect(getByTestId('composer-project')).toBeInTheDocument());
+    fireEvent.click(getByTestId('composer-project'));
+    await waitFor(() => expect(screen.getByText('crucible')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('crucible'));
+  };
+
+  // ---------------------------------------------------------------------------
+  // The workspace axis — where the session's files live
+  // ---------------------------------------------------------------------------
+
+  it('offers the branches a workspace provider enumerated for the selected project', async () => {
     const { getByTestId } = render(() => <CenterComposer />);
-    await waitFor(() => expect(getByTestId('composer-isolation')).toBeInTheDocument());
-    const params = await submitWith(getByTestId, 'untouched');
-    // Absent, not false: "resolve normally" is a different instruction from
-    // "no sandbox even if the project has one".
-    expect(params).not.toHaveProperty('isolation');
+    await waitFor(() => expect(getByTestId('composer-workspace-target')).toBeInTheDocument());
+
+    fireEvent.click(getByTestId('composer-workspace-target'));
+    // A single provider flattens: a submenu holding the entire menu is an
+    // extra click, not a drill-down.
+    await waitFor(() => expect(screen.getByText('feat/x')).toBeInTheDocument());
+    expect(screen.queryByText('Worktree')).toBeNull();
   });
 
-  it('the toggle asks for isolation, and asks to skip it when flipped off', async () => {
+  it('sends the pick as a provider-addressed spec, and nothing when untouched', async () => {
     const { getByTestId } = render(() => <CenterComposer />);
-    await waitFor(() => expect(getByTestId('composer-isolation')).toBeInTheDocument());
-    fireEvent.click(getByTestId('composer-isolation'));
+    await waitFor(() => expect(getByTestId('composer-workspace-target')).toBeInTheDocument());
 
-    const toggle = await waitFor(() => screen.getByTestId('isolation-toggle'));
-    expect(toggle.getAttribute('aria-pressed')).toBe('false');
-    fireEvent.click(toggle);
-    await waitFor(() => expect(toggle.getAttribute('aria-pressed')).toBe('true'));
+    expect(await submitWith(getByTestId, 'untouched')).not.toHaveProperty('workspace_target');
+    createSessionMock.mockClear();
+    cleanup();
 
-    // On with no profile named = `true`: the server picks its default.
-    expect(await submitWith(getByTestId, 'sandboxed')).toMatchObject({ isolation: true });
-  });
+    const second = render(() => <CenterComposer />);
+    await waitFor(() => expect(second.getByTestId('composer-workspace-target')).toBeInTheDocument());
+    fireEvent.click(second.getByTestId('composer-workspace-target'));
+    await waitFor(() => expect(screen.getByText('feat/x')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('feat/x'));
 
-  it('flipping the toggle off sends false', async () => {
-    const { getByTestId } = render(() => <CenterComposer />);
-    await waitFor(() => expect(getByTestId('composer-isolation')).toBeInTheDocument());
-    fireEvent.click(getByTestId('composer-isolation'));
-    const toggle = await waitFor(() => screen.getByTestId('isolation-toggle'));
-    fireEvent.click(toggle); // on
-    fireEvent.click(toggle); // explicitly off
-    await waitFor(() => expect(toggle.getAttribute('aria-pressed')).toBe('false'));
-    expect(await submitWith(getByTestId, 'no sandbox')).toMatchObject({ isolation: false });
-  });
-
-  it('picking a profile forwards its name and turns isolation on', async () => {
-    const { getByTestId } = render(() => <CenterComposer />);
-    await waitFor(() => expect(getByTestId('composer-isolation')).toBeInTheDocument());
-    fireEvent.click(getByTestId('composer-isolation'));
-    // Popouts render through a Portal — query via screen.
-    await waitFor(() => expect(screen.getByTestId('composer-isolation-popout')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('throwaway'));
-
-    expect(await submitWith(getByTestId, 'with profile')).toMatchObject({
-      isolation: 'throwaway',
+    // The daemon splits on the first colon to find who answers. A bare branch
+    // name would name no provider.
+    expect(await submitWith(second.getByTestId, 'on a worktree')).toMatchObject({
+      workspace_target: 'worktree:feat/x',
     });
   });
 
-  it('offers no isolation control on a server that offers no isolation', async () => {
-    const { getIsolationOffer } = await import('@/lib/api');
-    vi.mocked(getIsolationOffer).mockResolvedValue({ available: false, profiles: [] });
+  // A branch chosen for one repo need not exist in the next. Carrying it over
+  // would resolve against a repository the user never picked it in.
+  it('clears the chosen workspace target when the project changes', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() => expect(getByTestId('composer-workspace-target')).toBeInTheDocument());
+    fireEvent.click(getByTestId('composer-workspace-target'));
+    await waitFor(() => expect(screen.getByText('feat/x')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('feat/x'));
+    await waitFor(() =>
+      expect(getByTestId('composer-workspace-target').textContent).toContain('feat/x'),
+    );
+
+    await pickProject(getByTestId);
+    await waitFor(() =>
+      expect(getByTestId('composer-workspace-target').textContent).not.toContain('feat/x'),
+    );
+    expect(await submitWith(getByTestId, 'after switching')).not.toHaveProperty('workspace_target');
+  });
+
+  it('shows no workspace chip when no provider offers anything', async () => {
+    const { getProviderTargets } = await import('@/lib/api');
+    vi.mocked(getProviderTargets).mockResolvedValue([]);
 
     const { queryByTestId, getByTestId } = render(() => <CenterComposer />);
     await waitFor(() => expect(getByTestId('composer-kiln').textContent).toContain('helios'));
-    // A dead control is worse than none: nothing here offers isolation.
-    expect(queryByTestId('composer-isolation')).toBeNull();
+    // A repo-less project gets no chip rather than an empty one — a control
+    // that can only fail is worse than none.
+    await waitFor(() => expect(queryByTestId('composer-workspace-target')).toBeNull());
   });
 
-  // The regression this whole channel exists for. `[plugins.oci] image = "…"`
-  // with no profiles table is the documented config, and gating the control on
-  // profile names hid it exactly there — so a browser user could not opt a
-  // session OUT of a project's isolation.
-  it('offers the control on a box with isolation but no named profiles', async () => {
-    const { getIsolationOffer } = await import('@/lib/api');
-    vi.mocked(getIsolationOffer).mockResolvedValue({ available: true, profiles: [] });
+  // ---------------------------------------------------------------------------
+  // The runtime axis — where the process runs
+  // ---------------------------------------------------------------------------
+
+  it('always offers this machine, whatever plugins are installed', async () => {
+    const { getProviderTargets } = await import('@/lib/api');
+    vi.mocked(getProviderTargets).mockResolvedValue([]);
 
     const { getByTestId } = render(() => <CenterComposer />);
-    await waitFor(() => expect(getByTestId('composer-isolation')).toBeInTheDocument());
+    fireEvent.click(getByTestId('composer-target'));
+    // Running here is what happens when no provider is asked, so it cannot
+    // depend on one being installed.
+    await waitFor(() => expect(screen.getByText('This PC')).toBeInTheDocument());
+  });
 
-    fireEvent.click(getByTestId('composer-isolation'));
-    const toggle = await waitFor(() => screen.getByTestId('isolation-toggle'));
-    fireEvent.click(toggle);
-    fireEvent.click(toggle);
-    await waitFor(() => expect(toggle.getAttribute('aria-pressed')).toBe('false'));
+  it('leaves the runtime unset until the chip is touched', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() => expect(getByTestId('composer-target')).toBeInTheDocument());
+    // Untouched and "This PC" are different instructions: one lets the
+    // project's own setting decide, the other overrides it.
+    expect(await submitWith(getByTestId, 'untouched')).not.toHaveProperty('isolation');
+  });
+
+  it('sends false when this machine is chosen explicitly', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    fireEvent.click(getByTestId('composer-target'));
+    await waitFor(() => expect(screen.getByText('This PC')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('This PC'));
+
     expect(await submitWith(getByTestId, 'no sandbox')).toMatchObject({ isolation: false });
   });
+
+  // Addressed, not a bare name: more than one plugin answers on this channel
+  // now, and a name meant for one used to be a hard error inside another.
+  it('addresses a runtime target to the provider that offered it', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    fireEvent.click(getByTestId('composer-target'));
+    await waitFor(() => expect(screen.getByText('throwaway')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('throwaway'));
+
+    expect(await submitWith(getByTestId, 'sandboxed')).toMatchObject({
+      isolation: { plugin: 'oci', target: 'throwaway' },
+    });
+  });
+
+  it('addresses an unnamed default target to its provider too', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    fireEvent.click(getByTestId('composer-target'));
+    await waitFor(() => expect(screen.getByText('Default')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Default'));
+
+    // Empty target, still addressed: the provider resolves its own default.
+    expect(await submitWith(getByTestId, 'default env')).toMatchObject({
+      isolation: { plugin: 'oci', target: '' },
+    });
+  });
+
+  // The axes are independent, and this is the combination the oci plugin
+  // already assumed worked but nothing could express.
+  it('carries a worktree and a container together', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() => expect(getByTestId('composer-workspace-target')).toBeInTheDocument());
+
+    fireEvent.click(getByTestId('composer-workspace-target'));
+    await waitFor(() => expect(screen.getByText('feat/x')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('feat/x'));
+
+    fireEvent.click(getByTestId('composer-target'));
+    await waitFor(() => expect(screen.getByText('throwaway')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('throwaway'));
+
+    expect(await submitWith(getByTestId, 'both axes')).toMatchObject({
+      workspace_target: 'worktree:feat/x',
+      isolation: { plugin: 'oci', target: 'throwaway' },
+    });
+  });
+
+  it('drills into a submenu once a second provider answers on an axis', async () => {
+    const { getTargetProviders } = await import('@/lib/api');
+    vi.mocked(getTargetProviders).mockImplementation((axis: string) =>
+      Promise.resolve(
+        axis === 'runtime'
+          ? [
+              { plugin: 'oci', axis, label: 'Container', targets_command: 'oci.targets' },
+              { plugin: 'ssh', axis, label: 'Remote Machines', targets_command: 'ssh.targets' },
+            ]
+          : [],
+      ),
+    );
+
+    const { getByTestId } = render(() => <CenterComposer />);
+    fireEvent.click(getByTestId('composer-target'));
+    // Two providers earn the drill-down; the targets stay behind it.
+    await waitFor(() => expect(screen.getByText('Remote Machines')).toBeInTheDocument());
+    expect(screen.getByText('Container')).toBeInTheDocument();
+    expect(screen.queryByText('throwaway')).toBeNull();
+
+    fireEvent.click(screen.getByText('Remote Machines'));
+    await waitFor(() => expect(screen.getByTestId('composer-target-flyout')).toBeInTheDocument());
+  });
+
+  it('shows the remote-control status card in the run-on menu', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    fireEvent.click(getByTestId('composer-target'));
+    const pop = await waitFor(() => screen.getByTestId('composer-target-popout'));
+    expect(pop.textContent).toContain('Remote control');
+    await waitFor(() =>
+      expect(screen.getByTestId('remote-control-state').getAttribute('aria-label')).toBe(
+        'Remote control off',
+      ),
+    );
+  });
+
 });

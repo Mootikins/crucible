@@ -65,9 +65,40 @@ export const MOCK_CONFIG = {
 // What plugins published about themselves, keyed by contribution kind then
 // plugin. The composer reads its isolation offer from here rather than from
 // plugin config, so a second isolating plugin needs no frontend change.
+/**
+ * Target providers on both axes, as plugins publish them.
+ *
+ * The targets themselves are not here — they are enumerated on demand through
+ * `targets_command`, which `MOCK_PLUGIN_COMMAND` answers.
+ */
 export const MOCK_PUBLICATIONS = {
   publications: {
-    isolation: { oci: { available: true, profiles: ['rust', 'throwaway'] } },
+    targets: {
+      oci: { axis: 'runtime', label: 'Container', targets_command: 'oci.targets' },
+      worktree: {
+        axis: 'workspace',
+        label: 'Worktree',
+        targets_command: 'worktree.targets',
+        resolve_command: 'worktree.resolve',
+      },
+    },
+  },
+};
+
+/** What each provider's `targets_command` answers, by command name. */
+export const MOCK_PLUGIN_TARGETS: Record<string, { targets: object[] }> = {
+  'oci.targets': {
+    targets: [
+      { value: '', label: 'Default', hint: 'alpine:latest' },
+      { value: 'rust', label: 'rust', hint: 'rust:1-bookworm' },
+      { value: 'throwaway', label: 'throwaway' },
+    ],
+  },
+  'worktree.targets': {
+    targets: [
+      { value: 'master', label: 'master', hint: 'current' },
+      { value: 'feat/x', label: 'feat/x', hint: 'new worktree' },
+    ],
   },
 };
 

@@ -78,12 +78,24 @@ export interface CreateSessionParams {
   /** ACP agent profile name; required when agent_type is "acp". */
   agent_name?: string;
   /**
-   * Isolation override, forwarded untouched: `false` = unisolated even if the
-   * project asks otherwise, `true` = the server's default profile, a string =
-   * a named profile from `GET /api/config`. Omit to let the server resolve
-   * normally — omitted and `false` are different instructions.
+   * The RUNTIME axis — where the session's process runs. Forwarded untouched:
+   * `false` = unisolated even if the project asks otherwise, `true` = the
+   * server's default, a string = a named profile, and `{plugin, target}` = a
+   * target addressed to the provider that offered it. Omit to let the server
+   * resolve normally — omitted and `false` are different instructions.
+   *
+   * Loosely typed on purpose. The daemon forwards this to whichever plugin
+   * claims it without parsing it, so a shape only a future provider
+   * understands has to survive the trip.
    */
-  isolation?: string | boolean;
+  isolation?: string | boolean | { plugin: string; target?: string };
+  /**
+   * The WORKSPACE axis — where the session's files live, as a
+   * `provider:target` spec (e.g. `worktree:feat/x`). The daemon resolves it to
+   * a path *before* creating the session, so a target it cannot resolve
+   * refuses the create rather than silently running against the main checkout.
+   */
+  workspace_target?: string;
 }
 
 /** ACP agent profile entry from GET /api/agents. */

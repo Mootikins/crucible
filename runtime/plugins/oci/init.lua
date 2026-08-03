@@ -388,10 +388,32 @@ local function resolve_config(session)
   end
 
   if type(requested) == "table" then
-    if not requested.image then
-      error("oci: the session's isolation object names no image")
+    -- An ADDRESSED target: `{ plugin = "ssh", target = "build-box" }`, the
+    -- shape the runtime chip sends now that more than one plugin answers on
+    -- this channel. One addressed elsewhere is not this plugin's business, and
+    -- must not raise — before the axes were separated, the only thing this
+    -- plugin could do with a name it did not recognise was fail the session,
+    -- which made a second runtime provider impossible.
+    if requested.plugin ~= nil then
+      if requested.plugin ~= "oci" then return nil end
+      local target = requested.target
+      if target == nil or target == "" then
+        -- Addressed here, naming nothing: the default profile, resolved below
+        -- exactly as a bare `true` is.
+        requested = true
+      else
+        local profile = config.profiles and config.profiles[target]
+        if not profile then
+          error("oci: unknown isolation profile '" .. tostring(target) .. "'")
+        end
+        return environment(profile)
+      end
+    else
+      if not requested.image then
+        error("oci: the session's isolation object names no image")
+      end
+      return environment(requested)
     end
-    return environment(requested)
   end
 
   if requested ~= nil and requested ~= true then
@@ -702,29 +724,56 @@ end)
 
 return {
   name = "oci",
+
+  commands = {
+    --- The container environments this box offers, as menu rows.
+    ---
+    --- A command rather than published data so the answer tracks a reloaded
+    --- config and, for the devcontainer row, the project actually selected —
+    --- which the publication, made once at load, cannot know.
+    ["oci.targets"] = {
+      desc = "Container environments available as runtime targets",
+      fn = function(args)
+        local targets = {}
+
+        -- ONE unnamed row, not one per possible source. The devcontainer and
+        -- the configured image are not a choice the user makes — they are the
+        -- same request (`isolation = true`), and `resolve_config` decides
+        -- between them by precedence. Offering both would present a pick that
+        -- does not exist, and both would carry the same empty value anyway.
+        -- The hint says which one it will actually be, for this project.
+        local workspace = args and args.workspace
+        local has_devcontainer = workspace ~= nil
+          and config.devcontainer ~= false
+          and devcontainer.find(workspace) ~= nil
+        if has_devcontainer or config.image then
+          targets[#targets + 1] = {
+            value = "",
+            label = "Default",
+            hint = has_devcontainer and "this project's devcontainer" or config.image,
+          }
+        end
+
+        local names = {}
+        for name in pairs(config.profiles or {}) do names[#names + 1] = name end
+        table.sort(names)
+        for _, name in ipairs(names) do
+          local profile = config.profiles[name]
+          targets[#targets + 1] = {
+            value = name,
+            label = name,
+            hint = type(profile) == "table" and profile.image or nil,
+          }
+        end
+
+        return { targets = targets }
+      end,
+    },
+  },
+
   --- Receives the `[plugins.oci]` section at load.
   setup = function(cfg)
     config = cfg or {}
-
-    -- Tell clients what this box offers, so none of them has to read this
-    -- plugin's config to work it out. `crucible-web` used to match on the
-    -- shape of `[plugins.oci]` — a `profiles` table meant profiles existed —
-    -- which put this schema in the rendering layer, missed the documented bare
-    -- `image` config entirely, and would have ignored a second isolating
-    -- plugin. Only the plugin knows what its own config means.
-    --
-    -- `available` and the profile *names* are the whole contract. What a
-    -- profile resolves to is server-side detail and stays here.
-    -- Encoded as a JSON array, always. An empty Lua table is ambiguous and
-    -- serialises as `{}`, which is not iterable to a client walking the list —
-    -- so `image = "alpine"` with no profiles published `profiles = {}` and made
-    -- the whole offer unreadable. `nil` says "none" unambiguously.
-    local names = nil
-    for name in pairs(config.profiles or {}) do
-      names = names or {}
-      names[#names + 1] = name
-    end
-    if names then table.sort(names) end
 
     -- Declared once; the TUI and the web settings pane render it in their own
     -- idiom. `values` and `desc` are functions where the answer depends on
@@ -784,12 +833,23 @@ return {
       },
     }
 
-    crucible.publish("isolation", {
-      available = config.image ~= nil
-        or config.profiles ~= nil
-        or config.devcontainer == true,
-      profiles = names,
-    })
+    -- The runtime axis: *where does the process run?* Declared as a provider
+    -- rather than as an isolation offer, because `ssh` answers the same
+    -- question and the old shape had no way to say who was answering. The
+    -- workspace axis — which worktree, which checkout — is a separate provider
+    -- in a separate plugin, and the two compose.
+    --
+    -- Published only when this box actually offers containers. A provider that
+    -- publishes nothing contributes no menu entry, which is how "unavailable"
+    -- is now said; the `available` flag existed because the old channel had no
+    -- way not to answer.
+    if config.image ~= nil or config.profiles ~= nil or config.devcontainer == true then
+      crucible.publish("targets", {
+        axis = "runtime",
+        label = "Container",
+        targets_command = "oci.targets",
+      })
+    end
   end,
   version = "0.2.0",
   description = "Run agent tools inside OCI containers via generic hook interception",

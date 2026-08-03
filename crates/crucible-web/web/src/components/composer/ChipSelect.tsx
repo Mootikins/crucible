@@ -212,8 +212,12 @@ export const ChipSelect: Component<{
   const activate = (o: ChipOption, index: number, row: HTMLElement) => {
     if (o.disabled) return;
     if (o.children?.length) {
-      if (flyoutFor() === index) closeFlyout();
-      else openFlyout(index, row);
+      // Open, never toggle. A real pointer fires `mouseenter` before `click`,
+      // so the row's own hover handler has ALREADY opened this flyout by the
+      // time the click lands — toggling would close the submenu the user just
+      // clicked to open. (jsdom's synthetic click fires no mouseenter, which
+      // is exactly why this only showed up in the browser.)
+      openFlyout(index, row);
       return;
     }
     pick(o);

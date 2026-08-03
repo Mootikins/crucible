@@ -240,14 +240,36 @@ daemon since plugins did; the web has simply never called it.
 1. **Groundwork** — *done*. `workspace_targets` resolution before create, the `targets`
    publication channel, `plugin.run_command` reachable from the web, `ChipSelect`
    submenus, the `SandboxEnv` extension.
-2. **Worktree plugin** — plus deleting the hardcoded web orchestration it replaces, and
-   rewiring the composer's two chips onto `getTargetProviders`.
+2. **Worktree plugin and the composer** — *done*. `runtime/plugins/worktree/`, `oci`
+   republished on the runtime axis, and both chips rebuilt on `getTargetProviders`.
 3. **SSH plugin**.
 4. **Retire the `scm.*` worktree RPCs** once the plugin has carried a release.
 
-Nothing in step 1 changes behaviour on its own: no plugin publishes `targets` yet, so both
-chips still render exactly as they do today. That is deliberate — the groundwork lands and
-is exercised by tests before anything user-visible moves.
+### What the composer looks like now
+
+The chip row lost one control and gained a real one. Three chips became two:
+
+| Before | After |
+|--------|-------|
+| `branch ⌄` — called `scm.worktree_add` directly, confirmed with `window.confirm` | `workspace ⌄` — whatever workspace providers enumerated |
+| `run on ⌄` — hardcoded, only `This machine` enabled, the other rows `disabled: true` | *(merged below)* |
+| `isolation ⌄` — a toggle plus published profile names | `run on ⌄` — `This PC` plus whatever runtime providers enumerated |
+
+The old "run on" chip and the isolation chip were always the same question asked twice, so
+they are now one. A single provider on an axis flattens its targets into the menu; two or
+more get a `▸` drill-down, because a submenu holding the entire menu is an extra click
+rather than a drill-down.
+
+### Addressing, and why `oci` had to change
+
+The runtime chip sends `{ plugin, target }` rather than a bare profile name. `oci`'s
+resolver previously raised on any name it did not recognise, which was correct when it was
+the only plugin on the channel and fatal the moment a second one existed — an `ssh` target
+would have failed the session inside `oci`. It now ignores a table addressed elsewhere and
+returns `nil`, which is what makes more than one runtime provider possible at all.
+
+Bare `true` / `false` / `"profile-name"` still work unchanged; every existing config sends
+those.
 
 ## Known limits
 

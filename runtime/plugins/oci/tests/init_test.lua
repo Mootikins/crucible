@@ -499,6 +499,36 @@ describe("oci per-session isolation", function()
     assert.equals(0, #exec_log)
   end)
 
+  -- The addressed form the runtime chip sends now that more than one plugin
+  -- answers on this channel.
+  it("uses a profile named by an addressed target", function()
+    start_isolated_session("iso-addressed", { plugin = "oci", target = "heavy" }, fresh_ws())
+    assert_ran_image("heavy:latest")
+  end)
+
+  it("treats an addressed target naming nothing as the default", function()
+    start_isolated_session("iso-addressed-default", { plugin = "oci" }, fresh_ws())
+    assert_ran_image("alpine:latest")
+  end)
+
+  -- The property that makes a second runtime provider possible at all. Before
+  -- the axes were separated this raised, so an `ssh` target would have failed
+  -- the session inside an entirely unrelated plugin.
+  it("ignores a target addressed to another plugin instead of refusing", function()
+    local ok = pcall(start_isolated_session, "iso-elsewhere",
+      { plugin = "ssh", target = "build-box" }, fresh_ws())
+    assert.truthy(ok, "a target for another provider must not fail this one")
+    assert.equals(0, #exec_log, "and must not start a container either")
+    assert.equals(0, #isolation_calls, "nor claim isolation it is not providing")
+  end)
+
+  it("still refuses a profile it does not have when the target is addressed here", function()
+    local ok, err = pcall(start_isolated_session, "iso-addressed-unknown",
+      { plugin = "oci", target = "nope" }, fresh_ws())
+    assert.falsy(ok)
+    assert.truthy(tostring(err):find("nope", 1, true))
+  end)
+
   it("refuses an isolation table that names no image", function()
     local ok, err = pcall(start_isolated_session, "iso-imageless", { env = { A = "1" } }, fresh_ws())
     assert.falsy(ok)
@@ -1141,55 +1171,102 @@ describe("oci publishes what it offers", function()
     publications = {}
   end)
 
-  it("offers isolation when an image is configured", function()
+  it("declares itself on the runtime axis, not the workspace one", function()
     spec.setup({ image = "alpine:latest" })
-    assert.truthy(publications.isolation, "nothing published; clients have nothing to render")
-    assert.truthy(publications.isolation.available)
+    local decl = publications.targets
+    assert.truthy(decl, "nothing published; clients have nothing to render")
+    -- Where the process runs. Which worktree it runs *against* is the other
+    -- axis, answered by another plugin, and the two compose.
+    assert.equals("runtime", decl.axis)
+    assert.equals("oci.targets", decl.targets_command)
   end)
 
-  it("offers isolation when only named profiles are configured", function()
+  -- A runtime provider is asked for targets, never asked to resolve a
+  -- workspace path — the daemon checks the axis before dispatching, and a
+  -- resolve_command here would be an offer to answer the wrong question.
+  it("names no resolve_command", function()
+    spec.setup({ image = "alpine:latest" })
+    assert.is_nil(publications.targets.resolve_command)
+  end)
+
+  it("declares itself when only named profiles are configured", function()
     spec.setup({ profiles = { rust = { image = "rust:1-bookworm" } } })
-    assert.truthy(publications.isolation.available)
+    assert.truthy(publications.targets)
   end)
 
-  it("offers isolation when the project's devcontainer is opted into", function()
+  it("declares itself when the project's devcontainer is opted into", function()
     spec.setup({ devcontainer = true })
-    assert.truthy(publications.isolation.available)
+    assert.truthy(publications.targets)
   end)
 
   -- A runtime says *how* to run a container, not that there is one to run.
-  it("offers nothing when nothing is configured to run", function()
+  -- Publishing nothing is now how "unavailable" is said: a provider that does
+  -- not declare itself contributes no menu entry.
+  it("publishes nothing when nothing is configured to run", function()
     spec.setup({ runtime = "podman" })
-    assert.falsy(publications.isolation.available)
+    assert.is_nil(publications.targets)
     spec.setup(nil)
-    assert.falsy(publications.isolation.available)
+    assert.is_nil(publications.targets)
+  end)
+end)
+
+describe("oci.targets", function()
+  local targets = spec.commands["oci.targets"].fn
+
+  before_each(function()
+    install_shell()
+    publications = {}
   end)
 
-  it("names the profiles, sorted, and nothing about their images", function()
+  it("offers every named profile, sorted", function()
     spec.setup({
-      image = "alpine:latest",
       profiles = {
         throwaway = { image = "debian:trixie" },
         rust = { image = "rust:1-bookworm" },
       },
     })
-    local names = publications.isolation.profiles
-    assert.equals(2, #names)
-    assert.equals("rust", names[1])
-    assert.equals("throwaway", names[2])
-    assert.is_nil(publications.isolation.images,
-      "a profile's image is server-side detail; only the name is offered")
+    local rows = targets({}).targets
+    assert.equals(2, #rows)
+    assert.equals("rust", rows[1].value)
+    assert.equals("throwaway", rows[2].value)
   end)
 
-  -- An empty Lua table is ambiguous and encodes as `{}`, not `[]`. A client
-  -- iterating that throws, and the whole offer — availability included —
-  -- disappears with it. Omitting the key says "no named profiles" in a way
-  -- that survives the encoding.
-  it("omits the profile list entirely rather than publishing an empty table", function()
+  -- The documented config is a bare image with no profiles table. Gating the
+  -- unnamed row on profile names hid the control exactly there, leaving no way
+  -- to ask for the default environment at all.
+  it("offers an unnamed default for a bare image", function()
     spec.setup({ image = "alpine:latest" })
-    assert.equals(true, publications.isolation.available,
-      "a bare image is still an offer, with or without named profiles")
-    assert.is_nil(publications.isolation.profiles)
+    local rows = targets({}).targets
+    assert.equals(1, #rows)
+    assert.equals("", rows[1].value)
+    assert.equals("alpine:latest", rows[1].hint)
+  end)
+
+  -- The devcontainer and the configured image are not a choice: they are the
+  -- same request, and `resolve_config` decides between them by precedence. Two
+  -- rows would present a pick that does not exist — and both would carry the
+  -- same empty value.
+  it("says the default will be the devcontainer when the project has one", function()
+    local saved = cru.fs
+    cru.fs = {
+      exists = function(path) return path:find("devcontainer%.json") ~= nil end,
+      read = function() return '{ "image": "mcr.microsoft.com/devcontainers/base" }' end,
+    }
+    spec.setup({ image = "alpine:latest" })
+    local rows = targets({ workspace = "/repo" }).targets
+    cru.fs = saved
+
+    local defaults = 0
+    for _, row in ipairs(rows) do
+      if row.value == "" then defaults = defaults + 1 end
+    end
+    assert.equals(1, defaults, "one unnamed row, whatever it resolves to")
+    assert.equals("this project's devcontainer", rows[1].hint)
+  end)
+
+  it("offers nothing when nothing is configured", function()
+    spec.setup({ runtime = "podman" })
+    assert.equals(0, #targets({}).targets)
   end)
 end)
 

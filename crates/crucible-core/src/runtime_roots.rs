@@ -293,6 +293,8 @@ mod tests {
             "plugins/kiln-expert/lua/config.lua",
             "plugins/oci/init.lua",
             "plugins/reflection/plugin.yaml",
+            "plugins/worktree/init.lua",
+            "plugins/worktree/lua/git.lua",
             "crucible-help/skills/crucible-help/SKILL.md",
         ] {
             assert!(

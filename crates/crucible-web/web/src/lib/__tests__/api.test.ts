@@ -16,7 +16,6 @@ import {
   searchSessions,
   listModels,
   getConfig,
-  getIsolationOffer,
   getTargetProviders,
   getProviderTargets,
   getSessionStatus,
@@ -521,74 +520,6 @@ describe('getConfig', () => {
   });
 });
 
-describe('getIsolationOffer', () => {
-  it('reports what a plugin published', async () => {
-    global.fetch = createMockFetch({
-      'GET /api/plugins/publications': {
-        body: {
-          publications: {
-            isolation: { oci: { available: true, profiles: ['rust', 'throwaway'] } },
-          },
-        },
-      },
-    });
-    expect(await getIsolationOffer()).toEqual({
-      available: true,
-      profiles: ['rust', 'throwaway'],
-    });
-  });
-
-  // Availability is not "has named profiles": the documented config is a bare
-  // image with no profiles table, and gating on names left no way to opt out.
-  it('reports availability with no named profiles', async () => {
-    global.fetch = createMockFetch({
-      'GET /api/plugins/publications': {
-        body: { publications: { isolation: { oci: { available: true, profiles: [] } } } },
-      },
-    });
-    expect(await getIsolationOffer()).toEqual({ available: true, profiles: [] });
-  });
-
-  // Publications are opaque plugin JSON, and an empty Lua table encodes as `{}`
-  // rather than `[]`. Iterating that throws, swrLocal swallows the rejection,
-  // and the isolation control silently never renders — so a shape this reader
-  // did not expect must cost the profile names, not the whole offer.
-  it('survives a profiles value that is not an array', async () => {
-    global.fetch = createMockFetch({
-      'GET /api/plugins/publications': {
-        body: { publications: { isolation: { oci: { available: true, profiles: {} } } } },
-      },
-    });
-    expect(await getIsolationOffer()).toEqual({ available: true, profiles: [] });
-  });
-
-  // Two isolating plugins both answer; neither may erase the other.
-  it('merges answers from every plugin that offers isolation', async () => {
-    global.fetch = createMockFetch({
-      'GET /api/plugins/publications': {
-        body: {
-          publications: {
-            isolation: {
-              jail: { available: false, profiles: ['sandbox'] },
-              oci: { available: true, profiles: ['rust'] },
-            },
-          },
-        },
-      },
-    });
-    expect(await getIsolationOffer()).toEqual({
-      available: true,
-      profiles: ['rust', 'sandbox'],
-    });
-  });
-
-  it('offers nothing when no plugin published an isolation key', async () => {
-    global.fetch = createMockFetch({
-      'GET /api/plugins/publications': { body: { publications: {} } },
-    });
-    expect(await getIsolationOffer()).toEqual({ available: false, profiles: [] });
-  });
-});
 
 // =============================================================================
 // Target providers — the workspace and runtime axes

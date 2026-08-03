@@ -31,22 +31,6 @@ export interface Config {
  */
 export type PluginPublications = Record<string, Record<string, unknown>>;
 
-/**
- * What a box offers for isolating a new session.
- *
- * `available` and the profile *names* are the whole contract. Profiles are
- * opaque strings: the composer lists them and hands the chosen one back on
- * create, and nothing here knows what a profile selects.
- *
- * `available` is deliberately separate from a non-empty `profiles`. Named
- * profiles are optional — the documented config is a bare image with no
- * profiles table — so gating the control on profile names hid it exactly
- * there, leaving no way to opt a session *out* of a project's isolation.
- */
-export interface IsolationOffer {
-  available: boolean;
-  profiles: string[];
-}
 
 /**
  * A plugin that provides session targets on one of the two axes.
@@ -508,30 +492,6 @@ export async function executePluginOption(plugin: string, path: string[]): Promi
   });
 }
 
-/**
- * The box's isolation offer, merged across every plugin that answered.
- *
- * More than one plugin may isolate sessions, so this ORs availability and
- * unions profile names rather than picking a winner — a second isolating
- * plugin appears without a change here.
- */
-export async function getIsolationOffer(): Promise<IsolationOffer> {
-  const answers = (await getPluginPublications()).isolation ?? {};
-  const profiles = new Set<string>();
-  let available = false;
-  for (const value of Object.values(answers)) {
-    const offer = value as Partial<IsolationOffer> | null;
-    if (offer?.available) available = true;
-    // Publications are opaque JSON from a plugin, so `profiles` is whatever it
-    // sent. A non-array must not take the whole offer down with it: a throw
-    // here is swallowed by swrLocal, and the isolation control silently never
-    // appears — the exact failure this channel replaced.
-    if (Array.isArray(offer?.profiles)) {
-      for (const name of offer.profiles) profiles.add(name);
-    }
-  }
-  return { available, profiles: [...profiles].sort() };
-}
 
 /**
  * Invoke a plugin command and hand back what it returned.

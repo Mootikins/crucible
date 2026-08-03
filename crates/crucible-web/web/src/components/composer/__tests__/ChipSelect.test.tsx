@@ -59,6 +59,25 @@ describe('ChipSelect submenus', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  /**
+   * What a real pointer actually does: `mouseenter` then `click`.
+   *
+   * A synthetic click fires no mouseenter, so a toggle-on-click implementation
+   * passes every jsdom test and closes the submenu under a real cursor — which
+   * is how this shipped to the browser suite before being caught there.
+   */
+  it('stays open when the category is hovered and then clicked', () => {
+    renderChip();
+    openMenu();
+    const row = screen.getByTestId('run-on-opt-ssh');
+    fireEvent.mouseEnter(row);
+    expect(screen.getByTestId('run-on-flyout')).toBeTruthy();
+
+    fireEvent.click(row);
+    expect(screen.getByTestId('run-on-flyout')).toBeTruthy();
+    expect(screen.getByText('krohnos-k3s')).toBeTruthy();
+  });
+
   it('selects a child and closes the whole menu', () => {
     const onSelect = renderChip();
     openMenu();

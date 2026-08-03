@@ -1,0 +1,29 @@
+name: worktree
+version: "0.1.0"
+description: Run a session against a git worktree — the workspace axis
+author: Crucible Team
+license: MIT
+
+main: init.lua
+
+capabilities:
+  - shell
+  - config
+  # Checks whether a worktree destination already exists before creating it.
+  - filesystem
+
+config:
+  properties:
+    template:
+      type: string
+      description: >-
+        Where a new worktree is created. `{repo}` is the repository root and
+        `{branch}` the branch name; `{branch}` keeps its slashes, so `feat/x`
+        nests a directory. A location inside the repo should be gitignored or
+        the agent's own checkout shows up as untracked.
+      default: "{repo}/tree/{branch}"
+
+# The spec table init.lua returns declares the two commands; scanning lua/
+# would additionally register every pure helper in git.lua as a tool.
+exports:
+  auto_discover: false

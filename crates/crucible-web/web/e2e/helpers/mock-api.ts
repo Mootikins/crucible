@@ -8,6 +8,7 @@ import {
   MOCK_CONFIG,
   MOCK_PROJECT,
   MOCK_PUBLICATIONS,
+  MOCK_PLUGIN_TARGETS,
 } from './fixtures';
 import { mockSSERoute } from './mock-sse';
 
@@ -16,6 +17,8 @@ export interface MockOverrides {
   providers?: object;
   config?: object;
   publications?: object;
+  /** Per-command answers for `POST /api/plugins/command`, by command name. */
+  pluginTargets?: Record<string, { targets: object[] }>;
   kilns?: object;
   projects?: object[];
   sessionHistory?: object;
@@ -82,6 +85,14 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
   await page.route('**/api/plugins/publications', (route) =>
     route.fulfill({ json: overrides.publications ?? MOCK_PUBLICATIONS }),
   );
+
+  // Target enumeration. A command rather than more published data because the
+  // workspace axis is per-project: the branch list belongs to a repository.
+  await page.route('**/api/plugins/command', (route) => {
+    const { name } = JSON.parse(route.request().postData() ?? '{}');
+    const answers = overrides.pluginTargets ?? MOCK_PLUGIN_TARGETS;
+    route.fulfill({ json: answers[name] ?? { targets: [] } });
+  });
 
   await page.route('**/api/kilns', (route) =>
     route.fulfill({ json: overrides.kilns ?? MOCK_KILNS }),

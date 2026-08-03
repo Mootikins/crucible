@@ -2,24 +2,26 @@ import { Component, Show, createEffect, createSignal, on, onMount } from 'solid-
 import { useSessionSafe } from '@/contexts/SessionContext';
 import {
   getConfig,
-  getIsolationOffer,
-  isBranchNameish,
+  getProviderTargets,
+  getTargetProviders,
   isGitRepoUrl,
   listAgents,
   listAllModels,
   listKilns,
   listProjects,
   listProviders,
-  registerProject,
-  scmBranches,
   scmClone,
-  scmWorktreeAdd,
-  type IsolationOffer,
-  type ScmBranchesResponse,
+  type ProviderTarget,
+  type TargetProvider,
 } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
 import { closeDraftTab } from '@/lib/draft-session';
-import type { AgentProfileEntry, KilnListEntry, Project } from '@/lib/types';
+import type {
+  AgentProfileEntry,
+  CreateSessionParams,
+  KilnListEntry,
+  Project,
+} from '@/lib/types';
 import { WorkingDots } from '@/components/AssistantTurn';
 import { ComposerCard } from '@/components/composer/ComposerCard';
 import { pathBasename } from '@/stores/statusBarStore';
@@ -39,6 +41,25 @@ import {
   Network,
   Shield,
 } from '@/lib/icons';
+
+/**
+ * The runtime chip's built-in "run here" row.
+ *
+ * Not a `provider:target` spec and deliberately not published by anything:
+ * running on this machine is what happens when no provider is asked, so it
+ * cannot depend on a plugin being installed. Picking it says "not isolated"
+ * out loud, which the daemon acts on differently from saying nothing.
+ */
+const HOST = 'host';
+
+/** A provider's mark, by the axis-agnostic name it published itself under. */
+const PROVIDER_ICONS: Record<string, Component<{ class?: string }>> = {
+  oci: Shield,
+  ssh: Network,
+  worktree: GitBranch,
+  cloud: Cloud,
+};
+const iconForProvider = (plugin: string) => PROVIDER_ICONS[plugin] ?? FlaskConical;
 
 /**
  * The session-creation surface — the content of a "New Session" tab. Context
@@ -61,33 +82,38 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
   const [defaultKiln, setDefaultKiln] = createSignal('');
   const [defaultModel, setDefaultModel] = createSignal('');
   const [remoteShell, setRemoteShell] = createSignal(false);
-  // What the box offers for isolating a session, published by whichever
-  // plugin(s) provide it. Opaque to this component: it renders the offer and
-  // hands the pick back on create, and never reads plugin config to infer it.
-  const [isolationOffer, setIsolationOffer] = createSignal<IsolationOffer>({
-    available: false,
-    profiles: [],
-  });
-  const profiles = () => isolationOffer().profiles;
+
+  // The two axes, both contributed by plugins. WORKSPACE answers where the
+  // session's files live (a worktree, a checkout on another machine); RUNTIME
+  // answers where its process runs (a container, an ssh host). They are
+  // orthogonal and compose, which is why they are two chips and not one
+  // setting — a session can run in a container against a worktree.
+  //
+  // Entirely opaque here: this component renders what providers published and
+  // hands the pick back on create. It knows nothing about branches, images or
+  // hosts, which is what lets a provider shipped tomorrow appear with no
+  // change on this side. The branch chip it replaces did the opposite — it
+  // called `scm.worktree_add` directly and put git in the rendering layer.
+  const [wsProviders, setWsProviders] = createSignal<TargetProvider[]>([]);
+  const [rtProviders, setRtProviders] = createSignal<TargetProvider[]>([]);
+  const [wsTargets, setWsTargets] = createSignal<Record<string, ProviderTarget[]>>({});
+  const [rtTargets, setRtTargets] = createSignal<Record<string, ProviderTarget[]>>({});
 
   // '' = internal agent / default kiln / default model / no project.
   const [agentName, setAgentName] = createSignal('');
   const [kiln, setKiln] = createSignal('');
   const [model, setModel] = createSignal('');
   const [workspace, setWorkspace] = createSignal('');
-  // undefined = untouched (the server resolves normally), false = explicitly
-  // no isolation, true = isolate with the server's default, string = a named
-  // profile. `undefined` and `false` are DIFFERENT instructions, so this is a
-  // three-state control, not a boolean.
-  const [isolation, setIsolation] = createSignal<string | boolean | undefined>(undefined);
+  // `provider:target` specs, or '' for "untouched". Empty is NOT the same as
+  // an explicit pick: an untouched runtime lets the project's own setting
+  // decide, while `host` overrides it. Collapsing the two would silently
+  // containerize a session that opted out, or unsandbox one that did not.
+  const [wsTarget, setWsTarget] = createSignal('');
+  const [runtime, setRuntime] = createSignal('');
 
   const [message, setMessage] = createSignal('');
   const [busy, setBusy] = createSignal(false);
   const [cloning, setCloning] = createSignal(false);
-  // Branch data for the selected project's repo (Cursor's `repo ˅ branch ˅`
-  // pair): fetched whenever the workspace chip changes to a git checkout.
-  const [repoBranches, setRepoBranches] = createSignal<ScmBranchesResponse | null>(null);
-  const [branchBusy, setBranchBusy] = createSignal(false);
 
   const isAcp = () => agentName() !== '';
 
@@ -99,8 +125,11 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
       if (cfg?.kiln_path) setDefaultKiln(cfg.kiln_path);
       setRemoteShell(cfg?.remote_shell === true);
     });
-    swrLocal('isolation-offer', getIsolationOffer, (offer) => {
-      if (offer) setIsolationOffer(offer);
+    swrLocal('targets-workspace', () => getTargetProviders('workspace'), (p) => {
+      if (p) setWsProviders(p);
+    });
+    swrLocal('targets-runtime', () => getTargetProviders('runtime'), (p) => {
+      if (p) setRtProviders(p);
     });
     swrLocal('agents', listAgents, setAgents);
     swrLocal('models', () => listAllModels(), (mo) =>
@@ -115,6 +144,26 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
     syncRecentsFromServer();
   });
 
+  /**
+   * The runtime chip's pick, as `session.create` takes it.
+   *
+   * Three outcomes, and they are three different instructions:
+   *   untouched → nothing sent; the project's own setting decides
+   *   This PC   → `false`; overrides the project, runs unisolated
+   *   a target  → addressed to the provider that offered it
+   *
+   * Addressed rather than a bare name because more than one plugin answers on
+   * this channel now, and a name meant for one used to be a hard error inside
+   * another.
+   */
+  const runtimeParam = (): Partial<Pick<CreateSessionParams, 'isolation'>> => {
+    const spec = runtime();
+    if (!spec) return {};
+    if (spec === HOST) return { isolation: false };
+    const [plugin, ...rest] = spec.split(':');
+    return { isolation: { plugin, target: rest.join(':') } };
+  };
+
   const submit = async () => {
     const text = message().trim();
     if (!text || busy()) return;
@@ -127,9 +176,13 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
           kiln: kiln() === 'none' ? undefined : kiln() || defaultKiln() || undefined,
           workspace: workspace() || undefined,
           ...(isAcp() ? { agent_type: 'acp', agent_name: agentName() } : {}),
-          // Spread on `!== undefined`, never on truthiness: `false` is an
-          // instruction the server acts on, not a value to drop.
-          ...(isolation() !== undefined ? { isolation: isolation()! } : {}),
+          // The workspace axis: the daemon resolves this to a path before it
+          // creates anything, so the session is born in the right checkout.
+          ...(wsTarget() ? { workspace_target: wsTarget() } : {}),
+          // The runtime axis. Spread on truthiness of the SPEC, then translated
+          // — because `false` is an instruction the server acts on and must not
+          // be dropped, while an untouched chip must send nothing at all.
+          ...runtimeParam(),
         },
         {
           initialMessage: text,
@@ -167,95 +220,92 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
     { value: 'none', label: 'No kiln' },
   ];
 
+  /**
+   * Re-enumerate every provider on one axis for the selected project.
+   *
+   * Providers answer per-project — a branch list belongs to a repo — so this
+   * re-runs whenever the project chip changes. The guard is the reason it is
+   * written out rather than dropped into a resource: a slow answer for project
+   * A resolving after the user picked B must not land A's branches, or the
+   * session is created against a worktree of the wrong repository.
+   */
+  const loadTargets = (
+    providers: TargetProvider[],
+    ws: string,
+    set: (v: Record<string, ProviderTarget[]>) => void,
+  ) => {
+    if (providers.length === 0) return set({});
+    void Promise.all(
+      providers.map((p) => getProviderTargets(p, ws || undefined).then((t) => [p.plugin, t] as const)),
+    ).then((entries) => {
+      if (workspace() !== ws) return;
+      set(Object.fromEntries(entries));
+    });
+  };
+
   createEffect(
-    on(workspace, (ws) => {
-      setRepoBranches(null);
-      if (!ws) return;
-      // Out-of-order guard: a slow scmBranches(A) resolving after the user
-      // switched to project B must not land A's branches (a branch pick
-      // would then create worktrees on the WRONG repo).
-      scmBranches(ws)
-        .then((res) => workspace() === ws && setRepoBranches(res))
-        .catch(() => workspace() === ws && setRepoBranches(null)); // repo-less project: no chip
+    on([workspace, wsProviders, rtProviders], ([ws, wsp, rtp]) => {
+      // A target chosen for the previous project names a branch that may not
+      // exist in this one. Clearing is the only safe answer; keeping it would
+      // silently resolve against a repo the user did not pick it in.
+      setWsTarget('');
+      loadTargets(wsp, ws, setWsTargets);
+      loadTargets(rtp, ws, setRtTargets);
     }),
   );
 
-  const currentBranch = () => repoBranches()?.branches.find((b) => b.is_current)?.name ?? '';
+  /**
+   * One axis's menu: a row per target, under a submenu per provider.
+   *
+   * Flattened when a single provider offers everything, because a submenu
+   * containing the whole menu is not a submenu — it is an extra click. With
+   * two or more, the drill-down earns its place and keeps the list short as
+   * providers multiply.
+   *
+   * Values are `provider:target` specs, which is what the daemon splits on to
+   * find who should answer.
+   */
+  const axisOptions = (
+    providers: TargetProvider[],
+    targets: Record<string, ProviderTarget[]>,
+  ): ChipOption[] => {
+    const rows = (p: TargetProvider): ChipOption[] =>
+      (targets[p.plugin] ?? []).map((t) => ({
+        value: `${p.plugin}:${t.value}`,
+        label: t.label,
+        hint: t.hint,
+        disabled: t.disabled,
+      }));
 
-  const branchOptions = (): ChipOption[] =>
-    (repoBranches()?.branches ?? []).map((b) => ({
-      value: b.name,
-      label: b.name,
-      hint: b.is_current
-        ? 'current'
-        : b.worktree_path
-          ? pathBasename(b.worktree_path) || undefined
-          : b.remote_only
-            ? 'remote · new worktree'
-            : 'new worktree',
+    const offering = providers.filter((p) => rows(p).length > 0);
+    if (offering.length === 1) return rows(offering[0]);
+    return offering.map((p) => ({
+      value: p.plugin,
+      label: p.label,
+      icon: iconForProvider(p.plugin),
+      children: rows(p),
     }));
+  };
 
-  // Selecting a branch moves the session's workspace to that branch's
-  // checkout — jumping to an existing worktree, or creating one (the
-  // parallel-agents flow: N sessions × N worktrees without leaving the
-  // composer).
-  const switchToCheckout = async (path: string) => {
-    try {
-      await registerProject(path);
-    } catch {
-      /* already registered */
+  const wsOptions = () => axisOptions(wsProviders(), wsTargets());
+
+  // "This PC" is built in, not published: running here is what happens when no
+  // provider is asked, so no plugin has to exist for it to be an option — and
+  // it is the only way to say "not isolated" out loud, which is a different
+  // instruction from saying nothing.
+  const runtimeOptions = (): ChipOption[] => [
+    { value: HOST, label: 'This PC', icon: Monitor, hint: 'no isolation' },
+    ...axisOptions(rtProviders(), rtTargets()),
+  ];
+
+  /** The label for a chosen spec, looked up through any submenu. */
+  const specLabel = (options: ChipOption[], spec: string): string | undefined => {
+    for (const option of options) {
+      if (option.value === spec && !option.children?.length) return option.label;
+      const child = option.children?.find((c) => c.value === spec);
+      if (child) return `${option.label} · ${child.label}`;
     }
-    setProjects(await listProjects().catch(() => projects()));
-    setWorkspace(path);
-  };
-
-  const pickBranch = (name: string) => {
-    const repo = repoBranches();
-    const branch = repo?.branches.find((b) => b.name === name);
-    if (!repo || !branch || branch.is_current) return;
-    setBranchBusy(true);
-    void (async () => {
-      try {
-        if (branch.worktree_path) {
-          await switchToCheckout(branch.worktree_path);
-        } else {
-          if (!window.confirm(`No worktree for '${name}' — create one?`)) return;
-          const res = await scmWorktreeAdd(repo.repo_root, name, false);
-          if (res.warning) notificationActions.addNotification('warning', res.warning);
-          setProjects(await listProjects().catch(() => projects()));
-          setWorkspace(res.path);
-        }
-      } catch (err) {
-        notificationActions.addNotification(
-          'error',
-          err instanceof Error ? err.message : 'Failed to switch branch',
-        );
-      } finally {
-        setBranchBusy(false);
-      }
-    })();
-  };
-
-  const createBranchWorktree = (name: string) => {
-    const repo = repoBranches();
-    if (!repo) return;
-    if (!window.confirm(`Create branch '${name}' and a worktree for it?`)) return;
-    setBranchBusy(true);
-    void (async () => {
-      try {
-        const res = await scmWorktreeAdd(repo.repo_root, name, true);
-        if (res.warning) notificationActions.addNotification('warning', res.warning);
-        setProjects(await listProjects().catch(() => projects()));
-        setWorkspace(res.path);
-      } catch (err) {
-        notificationActions.addNotification(
-          'error',
-          err instanceof Error ? err.message : 'Failed to create branch',
-        );
-      } finally {
-        setBranchBusy(false);
-      }
-    })();
+    return undefined;
   };
 
 
@@ -333,32 +383,6 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
     })),
   ];
 
-  // ---- isolation (toggle + profile select) --------------------------------
-  //
-  // Generic by construction: `profiles` is a list of names from /api/config
-  // and the chosen name goes back on create untouched. Nothing here knows what
-  // a profile selects, or what kind of thing does the isolating — that is the
-  // resolving plugin's business, and keeping it there is what lets a plugin
-  // shipped tomorrow reuse this control unchanged.
-  const isolationOn = () => isolation() !== undefined && isolation() !== false;
-  const isolationProfile = () => (typeof isolation() === 'string' ? (isolation() as string) : '');
-  const toggleIsolation = () => setIsolation(isolationOn() ? false : true);
-
-  const isolationLabel = () => {
-    const value = isolation();
-    if (value === undefined) return 'Isolation';
-    if (value === false) return 'No isolation';
-    return value === true ? 'Isolated' : `Isolated · ${value}`;
-  };
-
-  const isolationOptions = (): ChipOption[] => [
-    { value: '', label: 'Default profile', hint: 'server default', group: 'Profile' },
-    ...profiles().map((p) => ({ value: p, label: p, group: 'Profile' })),
-  ];
-
-  // A profile pick implies "on" — nobody names a profile to then not use it.
-  const pickProfile = (name: string) => setIsolation(name || true);
-
   const modelOptions = (): ChipOption[] => [
     // '' = provider default. No placeholder on the chip, so an unset model
     // reads as the 'Auto' row that is actually selected rather than implying
@@ -419,56 +443,40 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
                 run: cloneAndSelect,
               }}
             />
-            {/* Branch chip — only once the selected project is a git repo
-                (Cursor's `repo ˅ branch ˅` pair). Picking a branch moves the
-                workspace to that branch's worktree, creating it on demand. */}
-            <Show when={repoBranches()}>
+            {/* The WORKSPACE axis — where the session's files live. Shown only
+                when a provider actually offers something for this project, so
+                a repo-less folder gets no chip rather than an empty one. This
+                replaces the old branch chip, which called `scm.worktree_add`
+                from here and confirmed with `window.confirm`; both are now the
+                worktree plugin's business and neither is in the frontend. */}
+            <Show when={wsOptions().length > 0}>
               <ChipSelect
-                name="branch"
+                name="workspace"
                 icon={GitBranch}
-                options={branchOptions()}
-                value={currentBranch()}
-                onSelect={pickBranch}
-                disabled={busy() || branchBusy()}
-                placeholder={branchBusy() ? 'Switching…' : 'branch'}
-                testid="composer-branch"
-                create={{
-                  when: isBranchNameish,
-                  label: (name) => `Create branch + worktree '${name}'`,
-                  run: createBranchWorktree,
-                }}
+                options={wsOptions()}
+                value={wsTarget()}
+                onSelect={setWsTarget}
+                disabled={busy()}
+                placeholder={specLabel(wsOptions(), wsTarget()) ?? 'Workspace'}
+                testid="composer-workspace-target"
+                optionTestidPrefix="workspace-target"
               />
             </Show>
-            {/* Execution target (Cursor's "Run on" menu). Only the local
-                machine exists today — cloud/remote rows are the declared
-                seam for the containers/targets design. Worktree creation
-                deliberately lives in the branch/project menus, not here. */}
+            {/* The RUNTIME axis — where the process runs (Cursor's "Run on"
+                menu). One chip where there used to be two: a hardcoded target
+                picker whose only enabled row was "This machine", and a separate
+                isolation toggle. They were always the same question, and the
+                answer is now whatever providers published. */}
             <ChipSelect
               name="run on"
               icon={Monitor}
-              options={[
-                { value: 'local', label: 'This machine', group: 'Run on', icon: Monitor },
-                {
-                  value: 'cloud',
-                  label: 'Cloud',
-                  group: 'Run on',
-                  icon: Cloud,
-                  disabled: true,
-                  hint: 'planned',
-                },
-                {
-                  value: 'remote',
-                  label: 'Remote machines',
-                  group: 'Run on',
-                  icon: Network,
-                  disabled: true,
-                  hint: 'planned',
-                },
-              ]}
-              value="local"
-              onSelect={() => {}}
+              options={runtimeOptions()}
+              value={runtime()}
+              onSelect={setRuntime}
               disabled={busy()}
+              placeholder={specLabel(runtimeOptions(), runtime()) ?? 'Run on'}
               testid="composer-target"
+              optionTestidPrefix="runtime-target"
               footer={
                 <div class="m-1.5 mt-1 rounded-md border border-hairline bg-surface-base p-2.5">
                   <div class="flex items-center justify-between gap-2">
@@ -500,60 +508,6 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
                 </div>
               }
             />
-            {/* Isolation — a toggle plus whatever profile names were
-                published. Gated on the box OFFERING isolation, not on there
-                being named profiles: the documented config is a bare image
-                with no profiles table, and gating on names hid the control
-                exactly there — leaving no way to opt a session *out*. A
-                control that can only fail is still worse than none, so a box
-                offering nothing shows nothing. */}
-            <Show when={isolationOffer().available}>
-              <ChipSelect
-                name="isolation"
-                icon={Shield}
-                options={isolationOptions()}
-                value={isolationProfile()}
-                triggerLabel={isolationLabel()}
-                onSelect={pickProfile}
-                disabled={busy()}
-                testid="composer-isolation"
-                footer={
-                  <div class="m-1.5 mt-1 rounded-md border border-hairline bg-surface-base p-2.5">
-                    <button
-                      type="button"
-                      onClick={toggleIsolation}
-                      aria-pressed={isolationOn()}
-                      class="w-full flex items-center justify-between gap-2"
-                      data-testid="isolation-toggle"
-                    >
-                      <span class="text-xs font-medium text-shell-ink">Isolate this session</span>
-                      <span
-                        classList={{
-                          'relative inline-block w-7 h-4 rounded-full transition-colors': true,
-                          'bg-primary/60': isolationOn(),
-                          'bg-surface-elevated border border-hairline': !isolationOn(),
-                        }}
-                      >
-                        <span
-                          classList={{
-                            'absolute top-0.5 w-3 h-3 rounded-full bg-shell-ink transition-all': true,
-                            'left-3.5': isolationOn(),
-                            'left-0.5 opacity-50': !isolationOn(),
-                          }}
-                        />
-                      </span>
-                    </button>
-                    <p class="mt-1 text-[11px] leading-snug text-muted-dark">
-                      {isolation() === undefined
-                        ? 'Untouched — this session follows the project’s own setting.'
-                        : isolationOn()
-                          ? 'This session runs in the selected environment.'
-                          : 'This session runs unisolated, even if the project asks otherwise.'}
-                    </p>
-                  </div>
-                }
-              />
-            </Show>
             <ChipSelect
               name="agent"
               // The trigger wears the SELECTED agent's mark, so the chosen
