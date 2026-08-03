@@ -220,6 +220,54 @@ The other open question is whether the remote checkout is assumed to exist or is
 provisioned. Assumed, initially: the target names a machine and a path that is already
 there. Provisioning is a workspace-axis concern and belongs to a future clone provider.
 
+### The hazard the ssh plugin has to solve
+
+**A locally-resolved workspace path is meaningless on a remote runtime.** `worktree.resolve`
+runs daemon-side and answers with a path on *this* machine. Compose that with an ssh
+runtime and the agent starts on a box where `/repo/tree/feat/x` may not exist, or — worse —
+exists and is something else.
+
+This is not hypothetical. Cursor ships the same shape and has the same bug: its
+`.cursor/worktrees.json` is not found when the agent runs over Remote SSH, because config
+discovery is path-based rather than target-aware.
+
+The daemon does not currently guard against it, and deliberately so — nothing can reach the
+combination until an ssh provider exists, and a guard written now would be guessing at the
+shape of the thing it guards. What the ssh plugin must do, whichever way it goes:
+
+- **Refuse** a `workspace_target` resolved by a local provider, naming the conflict; or
+- **Reinterpret** the path remotely, which means the workspace axis needs to know the
+  runtime is remote — i.e. the axes stop being independent for this pair.
+
+Note also that `build_client_config` sets `working_dir` on the *launcher* process. For
+`podman exec` that is irrelevant (the `-w` flag in the prefix carries the real one), but for
+ssh it would set the directory of the local ssh client, and the remote agent would start in
+the login shell's home. The prefix has to carry the remote directory itself.
+
+## Prior art
+
+A survey of Claude Code, Cursor 3.x, Zed/ACP, VS Code agent plugins, OpenCode, Continue.dev,
+Aider and Pi (`earendil-works/pi`) turned up **no system that models workspace-location and
+process-location as separate composable axes**, and none where a plugin enumerates run
+targets on demand:
+
+| Tool | Workspace axis | Runtime axis | Who supplies the targets |
+|------|---------------|--------------|--------------------------|
+| Claude Code | worktrees (`--worktree`) | none — always local | CLI flag, static `.worktreeinclude` |
+| Cursor 3.x | worktrees | cloud / SSH / local | built-in UI; static `.cursor/worktrees.json` |
+| Zed (ACP) | none | none | — |
+| VS Code, Continue, Aider, OpenCode | none | implicit local | static manifests / config files |
+
+Cursor is closest, but treats the two as **correlated pairs** — "run this agent in the
+cloud", "run it on that SSH host" — chosen per session from a built-in picker, not
+contributed by anything.
+
+Two consequences worth holding onto. First, there is nobody to copy: the sharp edges will be
+found here rather than read about, and the ssh hazard above is the first one. Second, the
+survey is a reason to keep the axes *cheap to collapse* if the composition turns out not to
+earn its keep — the evidence that anyone wants `worktree × ssh` is currently zero, and
+`worktree × container` is the only crossing with a real user behind it.
+
 ## Web
 
 `ChipSelect` gains `children?: ChipOption[]` and a drill-down, so `Remote Machines ▸`
@@ -274,6 +322,9 @@ those.
 ## Known limits
 
 - One runtime provider per session. Container-on-remote is not expressible.
+- **A locally-resolved workspace target composed with a remote runtime is unsound** — the
+  path means nothing on the other machine. Unreachable until an ssh provider exists; see
+  the hazard above, which that plugin has to close.
 - The workspace axis rewrites a path; it does not sync, copy, or clean up. A worktree
   created for a session outlives it, exactly as one created by hand does.
 - `session.isolation` keeps its untyped shape for backward compatibility, so a
