@@ -1201,3 +1201,68 @@ describe("oci publishes what it offers", function()
     assert.is_nil(publications.isolation.profiles)
   end)
 end)
+
+-- A branch is normally worked on in a linked worktree, whose `.git` is a FILE
+-- holding an absolute host path into the main repo. Mount the worktree alone
+-- and that path is absent in the container, so every git command inside fails.
+describe("oci with a worktree workspace", function()
+  before_each(function()
+    install_shell()
+    exec_log = {}
+    responders = {}
+    isolation_calls = {}
+    status_calls = {}
+    available = { podman = true }
+  end)
+
+  --- Answer `rev-parse --git-common-dir` with `common`, and `git rev-parse
+  --- --git-dir` inside the container per `git_ok`.
+  local function with_git(common, git_ok)
+    responders["git"] = function(_, args)
+      if index_of(args, "--git-common-dir") then
+        return { success = common ~= nil, exit_code = 0, stdout = (common or "") .. "\n", stderr = "" }
+      end
+      return { success = false, exit_code = 128, stdout = "", stderr = "not a git repository" }
+    end
+    responders["podman exec"] = {
+      success = git_ok ~= false, exit_code = git_ok == false and 128 or 0,
+      stdout = "", stderr = "",
+    }
+  end
+
+  it("mounts the main repo's git dir so git resolves in the container", function()
+    spec.setup({ image = "alpine:latest" })
+    with_git("/home/user/project/.git", true)
+    start_session("s-wt", "/home/user/worktrees/feat")
+
+    local run = exec_call("run")
+    assert.is_not_nil(run)
+    assert.is_not_nil(index_of(run.args, "type=bind,source=/home/user/project/.git,"
+      .. "destination=/home/user/project/.git,relabel=shared"),
+      "a worktree session must mount the main repo's git dir")
+  end)
+
+  it("adds no such mount for an ordinary checkout", function()
+    spec.setup({ image = "alpine:latest" })
+    -- Common dir inside the workspace: the ordinary case.
+    with_git("/home/user/plain/.git", true)
+    start_session("s-plain", "/home/user/plain")
+
+    local run = exec_call("run")
+    assert.is_nil(index_of(run.args, "--mount"),
+      "an ordinary checkout already has its git dir inside the workspace mount")
+  end)
+
+  -- The mount is easy to lose silently (a runtime that drops it, SELinux
+  -- denying the read). The agent cannot tell a broken mount from a project
+  -- that simply is not version controlled, so the session says so.
+  it("warns when git still does not resolve inside the container", function()
+    spec.setup({ image = "alpine:latest" })
+    with_git("/home/user/project/.git", false)
+    start_session("s-wt-broken", "/home/user/worktrees/broken")
+
+    local last = status_calls[#status_calls]
+    assert.equals("warn", last.level)
+    assert.truthy(last.text:find("git is not resolvable", 1, true), last.text)
+  end)
+end)

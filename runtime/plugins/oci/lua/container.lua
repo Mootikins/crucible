@@ -88,9 +88,37 @@ function M.host_ids()
   return uid, gid
 end
 
+--- The main repository's git directory, when it is OUTSIDE `workspace`.
+---
+--- A linked worktree's `.git` is not a directory but a file holding
+--- `gitdir: <absolute host path>` into the main repo. Bind-mount the worktree
+--- alone and that path does not exist in the container, so every git command
+--- inside it fails with `not a git repository` — for the shape that is the
+--- normal way to run parallel agents.
+---
+--- Returns nil when the workspace is an ordinary checkout (its common dir is
+--- `<workspace>/.git`, already inside the mount) or is not a repository at all.
+function M.git_common_dir(workspace)
+  if not workspace or workspace == "" then return nil end
+  local r = cru.shell.exec("git", {
+    "-C", workspace, "rev-parse", "--path-format=absolute", "--git-common-dir",
+  })
+  if not (r and r.success) then return nil end
+  local dir = (r.stdout or ""):gsub("%s+$", "")
+  if dir == "" then return nil end
+  -- Inside the workspace already: the ordinary checkout, nothing to add.
+  if dir == workspace or dir:sub(1, #workspace + 1) == workspace .. "/" then
+    return nil
+  end
+  return dir
+end
+
 --- The argv for `run`, as a pure function so tests can assert on it without
---- a runtime present. `run` is exactly `exec(runtime, run_args(opts))`.
-function M.run_args(opts)
+--- a runtime present. `run` is exactly `exec(runtime, run_args(opts, runtime))`.
+---
+--- `runtime` is passed as well as used as the command because one mount option
+--- is podman-only; see the git-dir mount below.
+function M.run_args(opts, runtime)
   -- The bind target and the working directory are the same value on purpose:
   -- mounting the workspace at one path and starting in another puts every
   -- relative tool call in an empty directory.
@@ -131,6 +159,31 @@ function M.run_args(opts)
   table.insert(args, "-v")
   table.insert(args, opts.workspace .. ":" .. target .. ":rw,z")
 
+  -- A linked worktree's `.git` points at the main repo by ABSOLUTE host path,
+  -- so the same path has to exist in the container for git to resolve it.
+  -- Mounted at its own path rather than remapped: the pointer is baked into
+  -- files this must not rewrite, since they are the human's working tree too.
+  -- rw because the agent commits — see the devcontainer trust note.
+  --
+  -- `--mount`, not `-v`, and that is not a style choice. Measured on podman
+  -- 5.8.4: `-v <path>:<path>:rw,z` — source and destination IDENTICAL, which
+  -- is exactly what this mount needs — is silently dropped. No warning, no
+  -- failure, just a container whose git is broken. The same spec with two
+  -- different paths mounts fine, and `--mount` with explicit keys mounts
+  -- either way.
+  if opts.git_common_dir then
+    local spec = "type=bind,source=" .. opts.git_common_dir
+      .. ",destination=" .. opts.git_common_dir
+    -- SELinux denies the read without it (measured: `Permission denied` on
+    -- .git/HEAD under Enforcing). Podman-only — docker and nerdctl reject the
+    -- option, and take `:z` on `-v` instead.
+    if (runtime or ""):match("podman$") then
+      spec = spec .. ",relabel=shared"
+    end
+    table.insert(args, "--mount")
+    table.insert(args, spec)
+  end
+
   for _, m in ipairs(opts.mounts or {}) do
     table.insert(args, "-v")
     table.insert(args, m)
@@ -155,9 +208,24 @@ end
 --- Create and start a container with the sleep infinity sidecar pattern.
 --- Covers the image pull, which is the part that can take minutes.
 function M.run(runtime, opts)
-  return cru.shell.exec(runtime, M.run_args(opts), {
+  return cru.shell.exec(runtime, M.run_args(opts, runtime), {
     timeout = opts.start_timeout or M.DEFAULT_START_TIMEOUT,
   })
+end
+
+--- Whether git resolves inside the container.
+---
+--- Only meaningful for a workspace whose git dir lives outside it (a linked
+--- worktree). The mount that makes it resolve is easy to lose silently — one
+--- runtime drops a bind spec whose source and destination match, and SELinux
+--- can deny the read even when the mount lands — and the symptom is a
+--- container where every git command says "not a git repository". Checking
+--- costs one exec at session start and turns that into a message.
+function M.git_works(runtime, name, target)
+  local r = cru.shell.exec(runtime, {
+    "exec", "-w", target, name, "git", "rev-parse", "--git-dir",
+  })
+  return not not (r and r.success)
 end
 
 --- Build an image from a Dockerfile.

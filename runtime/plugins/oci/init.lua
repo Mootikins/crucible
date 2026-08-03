@@ -526,6 +526,9 @@ crucible.on_session_start(function(session)
     return
   end
 
+  -- Set only when the workspace's git dir lives outside it; see below.
+  local git_dir
+
   if cfg.cli then
     -- The devcontainer named something only @devcontainers/cli can build, and
     -- it is installed, so it builds the environment and this plugin adopts the
@@ -585,6 +588,8 @@ crucible.on_session_start(function(session)
       text = "starting " .. cfg.image, level = "info",
     }
 
+    git_dir = container.git_common_dir(workspace)
+
     -- Uid mapping only when the image runs as non-root; see container.lua for
     -- the measurements. Both keep-id and an explicit --user are required.
     local userns, run_as_uid, run_as_gid = cfg.userns, nil, nil
@@ -599,6 +604,9 @@ crucible.on_session_start(function(session)
 
     local r = container.run(runtime, {
       name = name, session_id = session.id, workspace = workspace,
+      -- Only set for a linked worktree (or a workspace below the repo root),
+      -- where git's own pointer into the main repo is an absolute host path.
+      git_common_dir = git_dir,
       image = cfg.image, mounts = cfg.mounts, env = cfg.env, target = cfg.target,
       run_args = cfg.run_args, user = cfg.user,
       userns = userns, run_as_uid = run_as_uid, run_as_gid = run_as_gid,
@@ -632,6 +640,15 @@ crucible.on_session_start(function(session)
   local level = "info"
   if cfg.uncommitted_drift then
     text = text .. " — uncommitted devcontainer edits are not applied"
+    level = "warn"
+  end
+
+  -- Said out loud rather than left to be discovered mid-turn. A worktree whose
+  -- main repo did not mount gives a container where every git command fails
+  -- with "not a git repository", and the agent has no way to tell that from a
+  -- project that simply is not version controlled.
+  if git_dir and not container.git_works(runtime, name, cfg.target) then
+    text = text .. " — git is not resolvable in the container (worktree mount failed)"
     level = "warn"
   end
 

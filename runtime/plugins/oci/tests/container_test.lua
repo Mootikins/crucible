@@ -268,3 +268,120 @@ describe("container.build args", function()
     end)
   end)
 end)
+
+-- A linked worktree's `.git` is a FILE holding `gitdir: <absolute host path>`
+-- into the main repo. Bind-mount the worktree alone and that path does not
+-- exist in the container, so every git command inside fails with `not a git
+-- repository` — verified against a real podman run, and for the shape that is
+-- the normal way to work on a branch.
+describe("container.git_common_dir", function()
+  --- Stub git's answer for `rev-parse --git-common-dir`.
+  local function with_git(stdout, success, fn)
+    local saved = cru.shell
+    local calls = {}
+    cru.shell = {
+      exec = function(cmd, args, opts)
+        table.insert(calls, { cmd = cmd, args = args, opts = opts })
+        return {
+          success = success ~= false,
+          exit_code = success == false and 128 or 0,
+          stdout = stdout,
+          stderr = "",
+        }
+      end,
+      which = saved and saved.which,
+    }
+    local ok, err = pcall(fn, calls)
+    cru.shell = saved
+    if not ok then error(err, 0) end
+  end
+
+  it("reports the main repo's git dir for a linked worktree", function()
+    with_git("/home/user/project/.git\n", true, function(calls)
+      assert.equals("/home/user/project/.git",
+        container.git_common_dir("/home/user/worktrees/feat"))
+      -- Absolute, because the value becomes a bind-mount source.
+      assert.is_not_nil(index_of(calls[1].args, "--path-format=absolute"))
+    end)
+  end)
+
+  -- An ordinary checkout's common dir is already inside the mount, so adding
+  -- it would be a redundant second mount of a directory the container has.
+  it("reports nothing when the git dir is already inside the workspace", function()
+    with_git("/home/user/project/.git\n", true, function()
+      assert.is_nil(container.git_common_dir("/home/user/project"))
+    end)
+  end)
+
+  -- A prefix match is not containment: /home/user/project-other/.git is not
+  -- inside /home/user/project.
+  it("does not mistake a sibling path for one inside the workspace", function()
+    with_git("/home/user/project-other/.git\n", true, function()
+      assert.equals("/home/user/project-other/.git",
+        container.git_common_dir("/home/user/project"))
+    end)
+  end)
+
+  it("reports nothing outside a repository", function()
+    with_git("", false, function()
+      assert.is_nil(container.git_common_dir("/tmp/scratch"))
+    end)
+  end)
+
+  it("reports nothing for an unset workspace", function()
+    assert.is_nil(container.git_common_dir(nil))
+    assert.is_nil(container.git_common_dir(""))
+  end)
+end)
+
+describe("container.run_args with a worktree", function()
+  it("mounts the main git dir at its own path so git resolves inside", function()
+    local args = container.run_args({
+      name = "crucible-s1",
+      session_id = "s1",
+      workspace = "/home/user/worktrees/feat",
+      image = "alpine:latest",
+      git_common_dir = "/home/user/project/.git",
+    }, "podman")
+    -- Same path on both sides: the pointer is baked into files in the human's
+    -- working tree, so remapping would mean rewriting them.
+    --
+    -- `--mount`, not `-v`: measured on podman 5.8.4, a `-v` spec whose source
+    -- and destination are identical is silently dropped, which is precisely
+    -- this mount.
+    local i = index_of(args, "type=bind,source=/home/user/project/.git,"
+      .. "destination=/home/user/project/.git,relabel=shared")
+    assert.is_not_nil(i, "the main git dir must be mounted at its own path")
+    assert.equals("--mount", args[i - 1])
+    -- ...and the workspace mount is still there.
+    assert.is_not_nil(index_of(args, "/home/user/worktrees/feat:/workspace:rw,z"))
+  end)
+
+  -- `relabel=` is podman's; docker and nerdctl reject it outright, so a spec
+  -- carrying it would fail the run rather than mount without relabelling.
+  it("omits the podman-only relabel option for other runtimes", function()
+    local args = container.run_args({
+      name = "crucible-s1",
+      session_id = "s1",
+      workspace = "/home/user/worktrees/feat",
+      image = "alpine:latest",
+      git_common_dir = "/home/user/project/.git",
+    }, "docker")
+    assert.is_not_nil(index_of(args, "type=bind,source=/home/user/project/.git,"
+      .. "destination=/home/user/project/.git"))
+  end)
+
+  it("adds no second mount for an ordinary checkout", function()
+    local args = container.run_args({
+      name = "crucible-s1",
+      session_id = "s1",
+      workspace = "/home/user/project",
+      image = "alpine:latest",
+    })
+    local mounts = 0
+    for _, v in ipairs(args) do
+      if v == "-v" or v == "--mount" then mounts = mounts + 1 end
+    end
+    assert.equals(1, mounts, "only the workspace is mounted when git needs nothing extra")
+  end)
+end)

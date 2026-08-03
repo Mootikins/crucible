@@ -334,6 +334,34 @@ The flip side: a session asking for a *different* environment on a workspace
 that is already sandboxed is refused rather than joined, since joining would
 hand it an image it did not ask for.
 
+## Worktrees
+
+A session's workspace is often a **linked git worktree** — one branch per
+session is how parallel agents stay out of each other's way, and the composer
+creates one when you pick a branch that has none.
+
+A linked worktree's `.git` is not a directory but a file holding
+`gitdir: /absolute/host/path/to/main/.git/worktrees/<name>`. Bind-mount the
+worktree alone and that path does not exist inside the container, so *every*
+git command there fails with `not a git repository`. So when the workspace's
+git directory lives outside it, the main repo's `.git` is mounted too, at its
+own absolute path — the pointer is baked into files that are also the human's
+working tree, so rewriting them is not an option.
+
+It is mounted read-write, because the agent commits. Its commits land on the
+worktree's branch and the main checkout is untouched.
+
+Two details worth knowing if you are debugging a mount:
+
+- The spec uses `--mount`, not `-v`. On podman 5.8.4 a `-v` spec whose source
+  and destination are **identical** — exactly this mount — is silently dropped:
+  no warning, no failure, just a container whose git is broken.
+- `relabel=shared` is added for podman only. Without it SELinux denies the read
+  even though the mount landed. Docker and nerdctl reject the option.
+
+Both are easy to lose silently, so the plugin runs `git rev-parse` inside the
+container once at session start and says so in the status slot if it fails.
+
 ## External (ACP) agents
 
 An **internal** agent's tools are dispatched by the daemon, so interception and
