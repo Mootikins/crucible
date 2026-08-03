@@ -7,6 +7,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-08-03
+
+Sandboxing, and what it takes to make it real. 0.20 could put an agent's tools
+in a container; it could not *prove* they stayed there, could not tell you so
+from a browser, and could not run an external agent under it at all. This
+release closes those three, then generalises the result: where a session's
+files live and where its process runs become two plugin-contributed axes rather
+than one hardcoded setting, and the composer is built from what plugins publish
+instead of from TypeScript literals.
+
+### Added
+- **Session isolation is default-deny, by tool *surface*.** A plugin calls
+  `crucible.require_isolation` and from then on any host-touching tool it did
+  not handle is refused. Interception used to be an allowlist of six tool names,
+  which is complete only by coincidence — a seventh workspace tool, a
+  plugin-contributed tool or an MCP gateway tool escaped silently. The gate now
+  asks what a tool's executor can *reach* (`Host` / `Daemon` / `Unknown`), so
+  kiln tools survive a claim by construction and one added next year inherits
+  that instead of falling off a list nobody updated.
+- **External (ACP) agents can run inside the sandbox.** A claiming plugin
+  supplies the argv that relocates a command into its container, and the daemon
+  launches the agent *through* it — `cru chat -a claude` in a container instead
+  of a refusal. The daemon cannot intercept tools an ACP agent runs in its own
+  process, but it does not have to when that process is already confined.
+- **Per-session isolation opt-in.** `session.create` takes an `isolation`
+  parameter, forwarded to plugins untouched. Absent, `false` and a named
+  environment are three different instructions and stay distinguishable end to
+  end.
+- **The project's devcontainer decides the environment.** `oci` reads
+  `.devcontainer/devcontainer.json`, so an agent works in the container the
+  human's editor builds rather than a second one configured separately. Six
+  keys that configure the container *from outside it* — `runArgs`, `mounts`,
+  `initializeCommand`, `features`, and the compose keys — need operator opt-in,
+  because the sandboxed agent can write that file.
+- **Plugins publish what they offer.** `crucible.publish("<key>", value)` is a
+  generic contribution channel that clients read back verbatim. Web used to
+  infer the isolation offer by matching on the shape of `[plugins.oci]`, which
+  put one plugin's config schema in the rendering layer and would have ignored a
+  second isolating plugin entirely.
+- **Plugins declare settings once and every frontend renders them.**
+  `crucible.options{…}` is an Ace3-style tree of typed nodes; the web settings
+  pane switches on `type` alone, so a plugin shipped tomorrow gets a pane for
+  free. Values changed there persist and are replayed through the plugin's own
+  setter on reload.
+- **Plugins can report progress.** `crucible.set_status` fills a per-session
+  slot the TUI and web both render, and `cru.shell.spawn` streams a command's
+  output line by line — a container build now reports itself instead of looking
+  like a hang.
+- **Workspace and runtime targets, both contributed by plugins.** Two orthogonal
+  axes: *where do the files live* (a worktree, a remote checkout) and *where
+  does the process run* (a container, an ssh host). They compose — a session can
+  run in a container against a worktree — which `oci` already assumed and
+  nothing declared. Providers publish themselves on the `targets` channel and
+  enumerate on demand, because a branch list depends on the selected project and
+  changes when someone creates a branch outside the app.
+- **A `worktree` plugin.** Shells out to git the way `oci` shells out to podman.
+  Resolution runs before the session exists, so the session is *born* in the
+  right checkout rather than moved into one afterwards, and a target that cannot
+  be resolved refuses the session — an agent that quietly works on `main` when
+  it was told `feat/x` commits there.
+
+### Changed
+- **The composer's chips are built from publications, not literals.** Three
+  controls became two: the branch chip (which called `scm.worktree_add` directly
+  and confirmed with `window.confirm`), a hardcoded "run on" chip whose only
+  enabled row was *This machine*, and a separate isolation toggle. The last two
+  were always the same question asked twice. Menus drill into a submenu once a
+  second provider answers on an axis, and open on hover.
+- **A runtime target names its provider.** `oci` previously raised on any
+  isolation name it did not recognise — correct while it was the only plugin on
+  that channel, and fatal the moment a second one exists. It now ignores a
+  target addressed elsewhere. Bare `true` / `false` / `"profile-name"` keep
+  working; every existing config sends those.
+
+### Fixed
+- **Delegation escaped the sandbox.** `create_child_session` fired no plugin
+  start hooks, so a subagent of a sandboxed session ran with no container and no
+  claim — on the host. Enforcement is now shared by every path that starts a
+  session, including `session.fork` and `cru.tools.call`.
+- **A devcontainer could configure its own way out.** The agent can write the
+  file that describes its own sandbox; `runArgs: ["--privileged"]` and a `/`
+  bind mount were both verified escapes, as were local `features`. Gated behind
+  operator config, and documented as a speed bump rather than a boundary — which
+  is what the devcontainer spec's own maintainers call it.
+- **Git worked in a container only by accident.** A linked worktree's `.git` is
+  a *file* holding an absolute host path, so mounting the worktree alone left
+  every git command inside the container broken. The common git dir is mounted
+  alongside it. (Under podman a `-v` whose source and destination are identical
+  is silently dropped — `--mount` is used instead.)
+- **A plugin's odd publication shape no longer hides the whole offer.** An empty
+  Lua table encodes as `{}`, not `[]`; iterating it threw, the rejection was
+  swallowed, and the isolation control silently never appeared.
+- **`cru session create --format json` is honoured when piped.** Output falls
+  back to the bare session id when stdout is not a terminal — right for
+  `$(cru session create)` — but that implicit default outranked the explicit
+  flag, so JSON was printed only on a terminal and silently degraded to an id
+  exactly when something was parsing it. `--quiet` is explicit too, and still
+  wins.
+
+### Removed
+- **Five tests that could not pass, and one that could not fail.** The four
+  `test_watch_*` CLI tests aborted the watch task and then asserted
+  `result.is_err() || result.unwrap().is_ok()` — a tautology on an aborted
+  handle, so "detects file modification" wrote a file and checked nothing; they
+  had also stopped running at all once storage moved daemon-side. Watch is
+  tested where it happens, in five unignored daemon suites. `test_event_stream`
+  asserted that *no* event arrived within 100ms, which cannot distinguish
+  correct from broken and failed against any daemon with traffic.
+- **`scm.branches`, `scm.worktree_add`, `/api/scm/branches`, `/api/scm/worktree`
+  and `[scm] worktree_dir`.** Worktrees are the plugin's business now; the
+  daemon and the web frontend each held their own copy of what a branch is. The
+  destination template moved to `[plugins.worktree] template`. `scm.clone`
+  stays — cloning has no plugin behind it yet.
+
 ## [0.20.1] - 2026-08-01
 
 ### Fixed
