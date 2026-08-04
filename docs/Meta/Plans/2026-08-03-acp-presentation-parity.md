@@ -395,16 +395,37 @@ numbers. Skip straight to Task 5.
   `stopReason: cancelled`, and `acp_handle.rs` was discarding the whole `PromptResponse` as
   `_response`. The fix reads it (`turn_stop_reason`, unit-tested for all five ACP variants —
   the enum is `#[non_exhaustive]`, so the mapping needs a wildcard arm regardless).
-- **"Skip the orphaned `ToolResult`" is right only for half the cases.** An orphan is a `ToolEnd`
-  whose id has no `ToolStart` *yet* — and the ordering matters: when the offending
-  `tool_call_update` carries a `title`, the client records it and the handle's post-stream replay
-  announces the call, **after** the result has already gone out. Skipping unconditionally would
-  discard a result that does have a real name and a real card. The handle now defers orphaned
-  results to after the replay, names them from it, and drops only the ones still unnameable —
-  those have no card in either renderer (`containers.rs::update_tool` and the web's
-  `updateToolMessage` both match on the call id of an announced call and no-op otherwise), so
-  emitting them only put a nonexistent tool into the transcript, into `tool_result` Lua handlers,
-  and into the web event stream.
+- **"Skip the orphaned `ToolResult`" is right only for a minority of the cases.** A `ToolEnd`
+  whose id has no *live* name covers four situations, and only one of them is a genuine orphan:
+  1. **Late title** — the `tool_call_update` carries a `title`, so the client records it and the
+     handle's post-stream replay announces the call, **after** the result has gone out.
+  2. **Repeat completion** — ACP updates are partial-field merges, so an agent may send
+     `completed` twice for the same call, the later frame usually carrying the fuller
+     `rawOutput`. Both renderers key a result on the **call id** (`containers.rs::update_tool`,
+     the web's `updateToolMessage`), so the second result belongs on the same card.
+  3. **Out of order** — a bare completed update arrives before the `tool_call` that names it.
+  4. **Truly unnameable** — nothing in the turn ever names that id.
+
+  Only (4) is dropped. The name table is therefore **read, never consumed** (an early
+  `remove()` turned (2) into a false orphan and silently swallowed the real answer), and the
+  deferred drain falls back from the replay's names to the live table, which is what recovers
+  (3). The deferred list is capped at 256 — each entry pins an un-truncated payload for the rest
+  of the turn.
+
+  **Dropping (4) is a real loss, not a no-op.** Beyond the missing card, the row never reaches
+  `{kiln}/.crucible/sessions/{id}/session.jsonl` (`should_persist` persists `tool_result`) or
+  `recording.jsonl` (which records every broadcast event unfiltered), never fires a Lua
+  `tool_result` handler or redactor (`agent_manager/messaging/stream.rs`), and never becomes a
+  `ResponsePart::ToolResult` for `cru.sessions.send_and_collect` (`session_bridge.rs`), which
+  some plugins render standalone. It is still the right trade — the row names a `call_id` no
+  other row in the turn mentions, so no renderer has anywhere to put it — but the drop logs the
+  **payload** at `warn!`, not just the id, because the daemon log is the only place it survives.
+- **Replayed names are humanized like live ones.** The live `ToolStart` carries
+  `humanize_tool_title(&tool_call.title)` (`acp/client/streaming.rs`) while `record_tool_call`
+  stores the raw title, so a replayed call used to read `mcp__crucible__semantic_search` where
+  the same tool announced live read `Semantic Search`. The replay path is *always* taken for a
+  late-titled orphan, so the divergence was hot rather than latent. `humanize_tool_title` is
+  idempotent on a clean title, so the fix is safe at the replay site.
 - The `ToolBatchEnd` hole Task 3 flagged is closed as a consequence: every `ToolResult` a turn
   yields now belongs to a `ToolCall` the same turn yielded, so `announced_any` can no longer
   disagree with what was reported. The identical gate in the non-callback `apply_session_update`
@@ -415,14 +436,40 @@ numbers. Skip straight to Task 5.
   `replay_unannounced_tool_calls`, `acp_prompt_text` — moved with their unit tests into
   `acp_handle/translate.rs`. That is the file's natural seam: everything in it is pure, so the
   wire-shape decisions are testable without spawning an agent.
+- **`StopReason::Empty` was fixed on the *internal* side, not faked on the ACP side.** The first
+  draft of this section claimed the internal agent emits `Empty` for a contentless turn. It did
+  not: `genai_handle.rs` emitted `Empty` at exactly one site — an *unexpected stream close* — and
+  a well-formed turn that produced nothing fell through to `EndTurn`. Reporting `Empty` on ACP
+  alone would have created a **new** divergence inside the parity task. `Empty` is the more
+  honest value (the enum's own doc), so `genai_handle` now tracks whether the turn yielded
+  non-blank text, thinking or a tool call across the whole `'turn` loop and reports `Empty` when
+  it did not. Both agents agree, and `StopReason::Empty`'s doc was widened from "no text and no
+  tool calls" to "nothing the user can see", which is what both implementations mean.
+- **Neither new stop-reason value has a reader.** `terminal_stop_reason`
+  (`agent_manager/messaging/stream.rs`) is only ever tested for `is_none()`, nothing matches on
+  the value, and the daemon-proxy path re-fabricates `EndTurn`
+  (`rpc_client/agent/convert.rs:206,239`). Earlier drafts of this section named consumers ("retry,
+  validation, statusline") that do not exist. This lands for contract consistency with
+  `GenaiAgentHandle` — the same honest framing Task 3 used for `ToolBatchEnd`.
+- **`MaxTokens` / `MaxTurnRequests` / `Refusal` still collapse to `EndTurn`**, which repeats B3's
+  own failure mode: a truncated answer reported as a natural completion. No variant is added
+  because parity holds — the internal agent has no upstream reason to carry either. They are
+  listed explicitly before the wildcard and `debug!`-logged at the collapse site so the loss is
+  visible and a future `#[non_exhaustive]` ACP variant is not swallowed into this set. When such
+  a turn produced *nothing*, `Empty` still wins — a contentless refusal is a blank screen, not a
+  completed answer.
 - Mock hooks added (child-scoped env, value-read not presence-read): `CRU_MOCK_STOP_REASON`
   (`cancelled` picks the `PromptTurn::cancelled` ending the mock already built) and
-  `CRU_MOCK_ORPHAN_TOOL_END` (`bare` | `titled`, the two orphan flavors above). The empty-turn
-  case needed no hook — an unconfigured mock turn already produces nothing.
+  `CRU_MOCK_ORPHAN_TOOL_END` (`bare` | `titled` | `repeat` | `out_of_order`, the four flavors
+  above). The empty-turn case needed no hook — an unconfigured mock turn already produces
+  nothing.
 
 **Files:**
 - Test: `crates/crucible-daemon/tests/acp_integration/turn_event_parity.rs`
-- Modify: `crates/crucible-daemon/src/acp_handle.rs:549,606`
+- Modify: `crates/crucible-daemon/src/acp_handle.rs` (the `ToolEnd` arm and the post-stream drain),
+  `crates/crucible-daemon/src/acp_handle/translate.rs`,
+  `crates/crucible-daemon/src/provider/genai_handle.rs` (the contentless-turn `Done`),
+  `crates/crucible-core/src/turn/mod.rs` (`StopReason::Empty` doc)
 
 **Step 1: Write the failing tests**
 

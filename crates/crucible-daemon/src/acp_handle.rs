@@ -36,6 +36,13 @@ use crucible_core::traits::KnowledgeRepository;
 use crucible_core::types::acp::schema::SessionModeState;
 use crucible_core::types::mode::default_internal_modes;
 
+/// How many still-unnamed tool results one turn will hold before dropping them.
+///
+/// Each entry keeps an un-truncated tool payload alive until the turn ends, so
+/// an agent that completes calls it never announces would otherwise pin
+/// unbounded memory for the whole turn. A real turn defers a handful at most.
+const MAX_ORPHANED_RESULTS: usize = 256;
+
 /// Errors specific to ACP agent handle creation and management.
 #[derive(Error, Debug)]
 pub enum AcpHandleError {
@@ -563,24 +570,44 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                         };
                     }
                     StreamingChunk::ToolEnd { id, result, error } => {
-                        let Some(name) = tool_names_by_id.remove(&id) else {
+                        // Read, never consume: ACP `tool_call_update` frames are
+                        // partial-field merges, so an agent may send `completed`
+                        // more than once for one call (the later frame usually
+                        // carrying the fuller `rawOutput`). Both renderers key a
+                        // result on the call id, so every one of those results
+                        // belongs to the call this name came from.
+                        let Some(name) = tool_names_by_id.get(&id).cloned() else {
                             // No `ToolStart` for this id — an ACP
                             // `tool_call_update{status: completed}` whose
-                            // `tool_call` never arrived. Naming it here would
-                            // have to invent one, and the renderer keys results
-                            // on the id of an announced call
+                            // `tool_call` has not arrived (yet). Naming it here
+                            // would have to invent one, and the renderer keys
+                            // results on the id of an announced call
                             // (`containers.rs::update_tool`), so a made-up name
                             // reaches the transcript and the web view while the
                             // TUI silently drops the result.
                             //
-                            // Hold it instead: if that same update carried a
-                            // title/raw_input/diff, the client recorded the call
-                            // and the post-stream replay below announces it and
-                            // supplies the real name.
+                            // Hold it instead: by the end of the turn either the
+                            // naming `tool_call` has landed, or — if that same
+                            // update carried a title/raw_input/diff — the client
+                            // recorded the call and the post-stream replay below
+                            // announces it. Both supply the real name.
                             debug!(
                                 tool_id = %id,
                                 "ACP tool result arrived before its call; deferring until named"
                             );
+                            // Bounded: these hold un-truncated payloads for the
+                            // rest of the turn, and an agent that never names
+                            // any of its calls would otherwise grow this without
+                            // limit. Past the cap the drop is immediate and
+                            // loud rather than deferred and silent.
+                            if orphaned_results.len() >= MAX_ORPHANED_RESULTS {
+                                warn!(
+                                    tool_id = %id,
+                                    cap = MAX_ORPHANED_RESULTS,
+                                    "ACP reported more unnamed tool results than the defer cap; dropping"
+                                );
+                                continue;
+                            }
                             orphaned_results.push((id, result, error));
                             continue;
                         };
@@ -630,16 +657,34 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                         yield event;
                     }
 
-                    // Results deferred above, now that the replay has named
-                    // what it could. A result whose call is still unknown is
-                    // dropped: nothing downstream can render it (no card was
-                    // ever created for that id) and the only alternative is to
-                    // invent a name for a tool that was never announced.
+                    // Results deferred above, now that every name this turn can
+                    // produce is known: the replay's, plus the live table for a
+                    // `ToolStart` that simply arrived after its `ToolEnd`.
+                    //
+                    // A result whose call is still unknown is dropped. That is
+                    // the right call — it references a `call_id` no other row
+                    // mentions, so no renderer has a card for it — but it is a
+                    // real loss, not a no-op: the row never reaches
+                    // `{kiln}/.crucible/sessions/{id}/session.jsonl`
+                    // (`should_persist` persists `tool_result`), never reaches
+                    // `recording.jsonl` (which records every broadcast event),
+                    // never fires a Lua `tool_result` handler or redactor, and
+                    // never becomes a `ResponsePart::ToolResult` for
+                    // `cru.sessions.send_and_collect` (which some plugins render
+                    // standalone). So log the payload, not just the id — the
+                    // daemon log is the only place it survives.
                     for (id, result, error) in orphaned_results {
-                        let Some(name) = replayed_names.remove(&id) else {
+                        let Some(name) = replayed_names
+                            .remove(&id)
+                            .or_else(|| tool_names_by_id.get(&id).cloned())
+                        else {
                             warn!(
                                 tool_id = %id,
-                                "ACP reported a tool result for a call it never announced; dropping"
+                                result = ?result,
+                                error = ?error,
+                                "ACP reported a tool result for a call it never announced; \
+                                 dropping (lost from session.jsonl, recordings, Lua handlers \
+                                 and send_and_collect)"
                             );
                             continue;
                         };

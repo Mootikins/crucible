@@ -112,7 +112,9 @@ async fn acp_shapes_for_empty_turn() -> Vec<EventShape> {
 /// `flavor` picks the mock's `CRU_MOCK_ORPHAN_TOOL_END` script: `"bare"` omits
 /// every field the client records a call from, so the name is unknowable;
 /// `"titled"` carries a title, so the call *is* recorded and the handle's
-/// post-stream replay can still name it.
+/// post-stream replay can still name it; `"repeat"` completes a properly
+/// announced call twice; `"out_of_order"` completes a call before announcing
+/// it.
 async fn acp_shapes_for_orphaned_tool_end(flavor: &str) -> Vec<EventShape> {
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
     let mut agent_config = mock_session_agent(&agent_path);
@@ -242,10 +244,17 @@ async fn acp_cancelled_turn_reports_cancelled_stop_reason() {
 
 /// B3: a turn that produced nothing says so.
 ///
-/// `StopReason::Empty` means "no text and no tool calls" — the internal agent
-/// distinguishes it (`provider/genai_handle.rs`), and a consumer that keys on
-/// it (retry, validation, statusline) was silently told every delegated turn
-/// succeeded.
+/// `StopReason::Empty` means "the user saw nothing" — no text, no thinking, no
+/// tool calls. Before this task *neither* agent reported it for a well-formed
+/// contentless turn: `genai_handle.rs` emitted `Empty` at exactly one site, an
+/// unexpected stream close, and reported `EndTurn` for a turn that simply said
+/// nothing. Both now agree.
+///
+/// Nothing reads the value yet. `terminal_stop_reason`
+/// (`agent_manager/messaging/stream.rs`) is only tested for `is_none()`, and
+/// the daemon-proxy path re-fabricates `EndTurn`
+/// (`rpc_client/agent/convert.rs`). This pins the contract so the first reader
+/// is not silently wrong, exactly as Task 3 did for `ToolBatchEnd`.
 #[tokio::test]
 async fn acp_empty_turn_reports_empty_stop_reason() {
     let shapes = acp_shapes_for_empty_turn().await;
@@ -267,6 +276,13 @@ async fn acp_empty_turn_reports_empty_stop_reason() {
 /// as a real tool result, while the TUI drops it silently (`update_tool`
 /// matches nothing and warns, `containers.rs:335-364`) because no card was ever
 /// created for that id.
+///
+/// Dropping it is not free, and the loss is not only cosmetic: the row also
+/// never reaches `session.jsonl` (`should_persist` persists `tool_result`),
+/// `recording.jsonl`, Lua `tool_result` handlers and redactors, or
+/// `cru.sessions.send_and_collect`. It is still the right trade — the row names
+/// a `call_id` nothing else in the turn mentions — and the daemon log keeps the
+/// payload so the drop stays diagnosable.
 ///
 /// It must also not leave the `ToolBatchEnd` guard lying: a turn that announced
 /// no call must not claim a batch.
@@ -310,18 +326,94 @@ async fn acp_orphaned_tool_end_with_a_late_title_reports_the_real_name() {
             EventShape::Text("Done".into()),
             EventShape::ToolCall {
                 call: "call#0".into(),
-                name: "late_named_tool".into(),
+                name: "Late Named Tool".into(),
                 diff_paths: vec![],
             },
             EventShape::ToolResult {
                 call: "call#0".into(),
-                name: "late_named_tool".into(),
+                name: "Late Named Tool".into(),
                 is_error: false,
             },
             EventShape::ToolBatchEnd,
             EventShape::Done(StopReason::EndTurn),
         ],
         "a late-titled orphan must be announced before its result and named \
-         from the announcement; got {shapes:#?}"
+         from the announcement, with the same humanized spelling the live \
+         path uses; got {shapes:#?}"
+    );
+}
+
+/// A second completed update for a call already announced is still its result.
+///
+/// ACP `tool_call_update` frames are partial-field merges, so an agent may send
+/// `completed` more than once for one call — the later frame typically carries
+/// the fuller `rawOutput`. Both renderers key a result on the **call id**
+/// (`containers.rs::update_tool`, the web's `updateToolMessage`), so the second
+/// result lands on the same card and replaces the first. Consuming the recorded
+/// name on the first completion turns the second into an unnameable orphan and
+/// drops it: the card keeps the partial payload forever, and the row is missing
+/// from `session.jsonl`, `recording.jsonl`, Lua `tool_result` handlers and
+/// `send_and_collect`.
+#[tokio::test]
+async fn acp_repeated_completion_for_an_announced_call_keeps_its_name() {
+    let shapes = acp_shapes_for_orphaned_tool_end("repeat").await;
+
+    assert_eq!(
+        shapes,
+        vec![
+            EventShape::Text("Done".into()),
+            EventShape::ToolCall {
+                call: "call#0".into(),
+                name: "Repeated Tool".into(),
+                diff_paths: vec![],
+            },
+            EventShape::ToolResult {
+                call: "call#0".into(),
+                name: "Repeated Tool".into(),
+                is_error: false,
+            },
+            EventShape::ToolResult {
+                call: "call#0".into(),
+                name: "Repeated Tool".into(),
+                is_error: false,
+            },
+            EventShape::ToolBatchEnd,
+            EventShape::Done(StopReason::EndTurn),
+        ],
+        "a repeated completed update for an announced call was dropped, so the \
+         card keeps the earlier partial payload; got {shapes:#?}"
+    );
+}
+
+/// A result that arrives before its call is named by the call that follows.
+///
+/// The bare completed update carries nothing the client records a call from, so
+/// it reaches the handle as a `ToolEnd` for an id the stream has not announced
+/// *yet* — the naming `tool_call` is still in flight. Deferring the result to
+/// the end of the turn is what makes it nameable: by then the `ToolStart` has
+/// landed and the live name table answers.
+#[tokio::test]
+async fn acp_result_arriving_before_its_call_is_named_by_the_later_call() {
+    let shapes = acp_shapes_for_orphaned_tool_end("out_of_order").await;
+
+    assert_eq!(
+        shapes,
+        vec![
+            EventShape::Text("Done".into()),
+            EventShape::ToolCall {
+                call: "call#0".into(),
+                name: "Late Call".into(),
+                diff_paths: vec![],
+            },
+            EventShape::ToolResult {
+                call: "call#0".into(),
+                name: "Late Call".into(),
+                is_error: false,
+            },
+            EventShape::ToolBatchEnd,
+            EventShape::Done(StopReason::EndTurn),
+        ],
+        "a result whose `tool_call` arrived later in the same turn was dropped \
+         even though the turn announced the call; got {shapes:#?}"
     );
 }

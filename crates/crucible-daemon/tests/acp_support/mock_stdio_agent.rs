@@ -547,9 +547,10 @@ impl MockStdioAgent {
             })));
         }
 
-        // Test hook, same shape as the two above: a `tool_call_update` for an
-        // id no `tool_call` ever introduced (divergence B4). Two flavors,
-        // because the client treats them differently:
+        // Test hook, same shape as the two above: `tool_call_update` frames a
+        // naive `tool_call`→`tool_call_update` pairing mishandles (divergence
+        // B4). Four flavors, because the client and the handle treat them
+        // differently:
         //
         // - `bare` omits every field the record gate in
         //   `apply_session_update_with_callback` looks at (title, rawInput,
@@ -558,6 +559,14 @@ impl MockStdioAgent {
         // - `titled` carries a title, so the client *does* record it and the
         //   handle's post-stream replay announces the call — but only after
         //   the result has already been emitted.
+        // - `repeat` announces a call properly and then completes it *twice*.
+        //   ACP updates are partial-field merges, so an agent may legitimately
+        //   re-send a completed update carrying a fuller `rawOutput`; both
+        //   renderers key results on the call id, so both results belong on
+        //   the same card.
+        // - `out_of_order` sends the bare completed update *before* the
+        //   `tool_call` that names it. The name exists, it just arrives later
+        //   in the same turn.
         //
         // Read as a value, not a presence; unknown values mean off.
         match env::var("CRU_MOCK_ORPHAN_TOOL_END")
@@ -577,6 +586,42 @@ impl MockStdioAgent {
                 "title": "late_named_tool",
                 "rawOutput": { "result": "orphaned output" }
             }))),
+            Ok("repeat") => {
+                notifications.push(update(json!({
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "mock-repeat-1",
+                    "title": "repeated_tool",
+                    "status": "pending",
+                    "rawInput": { "query": "2+2" }
+                })));
+                notifications.push(update(json!({
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "mock-repeat-1",
+                    "status": "completed",
+                    "rawOutput": { "result": "PARTIAL" }
+                })));
+                notifications.push(update(json!({
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "mock-repeat-1",
+                    "status": "completed",
+                    "rawOutput": { "result": "FINAL_ANSWER_4" }
+                })));
+            }
+            Ok("out_of_order") => {
+                notifications.push(update(json!({
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "mock-late-1",
+                    "status": "completed",
+                    "rawOutput": { "result": "result before the call" }
+                })));
+                notifications.push(update(json!({
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "mock-late-1",
+                    "title": "late_call",
+                    "status": "pending",
+                    "rawInput": { "query": "2+2" }
+                })));
+            }
             _ => {}
         }
 

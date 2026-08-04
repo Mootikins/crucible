@@ -25,6 +25,13 @@
 /// site in `acp/client/streaming.rs` calls `.with_id`), so the multi-`None`
 /// case is latent — but the rule belongs to this seam, not to the accident
 /// that its only current caller cannot hit it.
+///
+/// The title is humanized here because the live path already is: the
+/// `ToolStart` chunk carries `humanize_tool_title(&tool_call.title)`
+/// (`acp/client/streaming.rs`) while `record_tool_call` stores the raw title,
+/// so replaying it verbatim named the same tool `mcp__crucible__semantic_search`
+/// when replayed and `Semantic Search` when announced live. The function is
+/// idempotent on an already-clean title, so applying it twice is not a risk.
 pub(super) fn replay_unannounced_tool_calls(
     acp_tool_calls: Vec<crucible_core::types::acp::ToolCallInfo>,
     announced_ids: &std::collections::HashSet<String>,
@@ -38,7 +45,7 @@ pub(super) fn replay_unannounced_tool_calls(
             }
             Some(crucible_core::turn::TurnEvent::ToolCall {
                 id,
-                name: tc.title,
+                name: crate::acp::streaming::humanize_tool_title(&tc.title),
                 args: tc.arguments.unwrap_or(serde_json::Value::Null),
                 diffs: tc.diffs,
             })
@@ -59,24 +66,48 @@ pub(super) fn replay_unannounced_tool_calls(
 ///
 /// `MaxTokens`, `MaxTurnRequests` and `Refusal` all describe a turn the agent
 /// chose to end and that the user sees as complete; Crucible has no variant for
-/// them, so they collapse to `EndTurn` rather than being mis-reported.
+/// them, so they collapse to `EndTurn`. That collapse is a real loss — a
+/// budget-truncated answer is reported as a natural completion, which is the
+/// same failure mode divergence B3 named — but it is *parity*: the internal
+/// agent collapses identically, having no upstream reason to carry either.
+/// They are listed explicitly rather than left to the wildcard so the loss is
+/// visible at the call site, so it is logged, and so a future
+/// `#[non_exhaustive]` variant lands in the wildcard as an unreviewed default
+/// instead of being quietly folded into this set.
+///
 /// `MaxToolDepth` stays unreachable on this path: the daemon does not dispatch a
 /// delegated agent's tools, so it never counts their depth
 /// (`crucible-core/src/traits/chat.rs`).
 ///
-/// `produced_anything` is "the turn yielded text, thinking or a tool call".
-/// Without it every contentless ACP turn reported `EndTurn`, so a consumer
-/// keying on `Empty` — the internal agent emits it
-/// (`provider/genai_handle.rs`) — was told a silent turn had succeeded.
+/// `produced_anything` is "the turn yielded text, thinking or a tool call". It
+/// outranks the budget reasons: a refusal or a token cap that produced nothing
+/// is still a turn the user saw nothing from, and `Empty` is the variant that
+/// says so.
+///
+/// **No consumer reads any of this yet.** `terminal_stop_reason`
+/// (`agent_manager/messaging/stream.rs`) is only ever tested for `is_none()`,
+/// nothing matches on the value, and the daemon-proxy path re-fabricates
+/// `EndTurn` (`rpc_client/agent/convert.rs`). This lands for contract
+/// consistency with `GenaiAgentHandle` — so the first consumer that does read a
+/// stop reason is not silently wrong on delegated turns — not because a reader
+/// exists today.
 pub(super) fn turn_stop_reason(
     acp: agent_client_protocol::StopReason,
     produced_anything: bool,
 ) -> crucible_core::turn::StopReason {
+    use agent_client_protocol::StopReason as Acp;
     use crucible_core::turn::StopReason;
 
     match acp {
-        agent_client_protocol::StopReason::Cancelled => StopReason::Cancelled,
+        Acp::Cancelled => StopReason::Cancelled,
         _ if !produced_anything => StopReason::Empty,
+        reason @ (Acp::MaxTokens | Acp::MaxTurnRequests | Acp::Refusal) => {
+            tracing::debug!(
+                acp_stop_reason = ?reason,
+                "ACP turn ended for a reason Crucible has no variant for; reporting EndTurn"
+            );
+            StopReason::EndTurn
+        }
         _ => StopReason::EndTurn,
     }
 }
@@ -226,6 +257,25 @@ mod tests {
         }
     }
 
+    /// A budget or refusal ending that produced nothing is still empty.
+    ///
+    /// The `EndTurn` collapse above is only honest for a turn the user saw
+    /// output from. A refusal the agent emitted no text for, or a token cap hit
+    /// before the first delta, showed nothing at all — reporting `EndTurn`
+    /// there would claim a completed answer where there is a blank screen.
+    #[test]
+    fn a_budget_or_refusal_ending_that_produced_nothing_is_still_empty() {
+        use crucible_core::turn::StopReason;
+
+        for acp in [
+            agent_client_protocol::StopReason::MaxTokens,
+            agent_client_protocol::StopReason::MaxTurnRequests,
+            agent_client_protocol::StopReason::Refusal,
+        ] {
+            assert_eq!(turn_stop_reason(acp, false), StopReason::Empty, "{acp:?}");
+        }
+    }
+
     // -- Post-stream replay of tool calls the callback missed ----------------
 
     use crucible_core::turn::TurnEvent;
@@ -246,13 +296,29 @@ mod tests {
     fn replay_skips_calls_the_stream_already_announced() {
         let announced: HashSet<String> = ["seen".to_string()].into_iter().collect();
         let calls = vec![
-            ToolCallInfo::new("already_rendered").with_id("seen"),
-            ToolCallInfo::new("missed_by_the_callback").with_id("unseen"),
+            ToolCallInfo::new("Already Rendered").with_id("seen"),
+            ToolCallInfo::new("Missed By The Callback").with_id("unseen"),
         ];
 
         let events = replay_unannounced_tool_calls(calls, &announced);
 
-        assert_eq!(replayed_names(&events), vec!["missed_by_the_callback"]);
+        assert_eq!(replayed_names(&events), vec!["Missed By The Callback"]);
+    }
+
+    /// A replayed call is named exactly as the live path would have named it.
+    ///
+    /// `record_tool_call` stores the raw ACP `title`, but the live `ToolStart`
+    /// carries `humanize_tool_title(&title)` (`acp/client/streaming.rs`). Left
+    /// alone, the same tool reads `Semantic Search` when the callback announced
+    /// it and `mcp__crucible__semantic_search` when the replay did — a name
+    /// that changes with the timing of a frame.
+    #[test]
+    fn replayed_names_are_humanized_like_the_live_ones() {
+        let calls = vec![ToolCallInfo::new("mcp__crucible__semantic_search").with_id("late")];
+
+        let events = replay_unannounced_tool_calls(calls, &HashSet::new());
+
+        assert_eq!(replayed_names(&events), vec!["Semantic Search"]);
     }
 
     /// Every id-less call replays — dedup keys on an id these calls do not have.
@@ -264,16 +330,16 @@ mod tests {
     #[test]
     fn replay_keeps_every_id_less_call() {
         let calls = vec![
-            ToolCallInfo::new("first_untitled"),
-            ToolCallInfo::new("second_untitled"),
-            ToolCallInfo::new("third_untitled"),
+            ToolCallInfo::new("First Untitled"),
+            ToolCallInfo::new("Second Untitled"),
+            ToolCallInfo::new("Third Untitled"),
         ];
 
         let events = replay_unannounced_tool_calls(calls, &HashSet::new());
 
         assert_eq!(
             replayed_names(&events),
-            vec!["first_untitled", "second_untitled", "third_untitled"],
+            vec!["First Untitled", "Second Untitled", "Third Untitled"],
             "id-less tool calls share the empty key and must not dedup against \
              each other — dropping them loses the call in every renderer"
         );
@@ -288,11 +354,11 @@ mod tests {
     #[test]
     fn an_id_less_replay_leaves_no_id_for_the_batch_end_guard_to_read() {
         let announced: HashSet<String> = HashSet::new();
-        let calls = vec![ToolCallInfo::new("untitled")];
+        let calls = vec![ToolCallInfo::new("Untitled")];
 
         let events = replay_unannounced_tool_calls(calls, &announced);
 
-        assert_eq!(replayed_names(&events), vec!["untitled"]);
+        assert_eq!(replayed_names(&events), vec!["Untitled"]);
         assert!(
             announced.is_empty(),
             "the replay reports what it yielded, it does not record it"

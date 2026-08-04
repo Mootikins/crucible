@@ -1306,6 +1306,19 @@ impl GenaiAgentHandle {
             // budget and burned its dedup key, so it can never be re-supplied.
             let mut attached: Vec<String> = Vec::new();
 
+            // Whether this turn put anything in front of the user. Declared
+            // outside `'turn: loop` for the same reason as `attached`: a later
+            // iteration that yields nothing still belongs to a turn that
+            // already showed text or ran a tool, and that turn is not empty.
+            //
+            // Without this the only site that reported `StopReason::Empty` was
+            // the unexpected-stream-close arm below, so a *well-formed* turn
+            // that produced nothing reported `EndTurn` — the same "silence
+            // reported as natural completion" that `Empty` exists to name, and
+            // a divergence from the ACP path, which reports `Empty`
+            // (`acp_handle/translate.rs::turn_stop_reason`).
+            let mut produced_content = false;
+
             'turn: loop {
                 // Collect ToolCall events emitted during this LLM iteration
                 // so the outer loop can dispatch them when the stream ends.
@@ -1320,6 +1333,7 @@ impl GenaiAgentHandle {
 
                     match event {
                         TurnEvent::ToolCall { ref id, ref name, ref args, .. } => {
+                            produced_content = true;
                             pending_calls.push(ChatToolCall {
                                 id: Some(id.clone()),
                                 name: name.clone(),
@@ -1332,12 +1346,28 @@ impl GenaiAgentHandle {
                             yield TurnEvent::Error(e);
                             return;
                         }
-                        other => yield other,
+                        other => {
+                            // Whitespace-only deltas are what a provider emits
+                            // while producing nothing; `stream.rs`'s own
+                            // empty-response check trims for the same reason.
+                            produced_content |= match &other {
+                                TurnEvent::TextDelta(t) | TurnEvent::Thinking(t) => {
+                                    !t.trim().is_empty()
+                                }
+                                _ => false,
+                            };
+                            yield other;
+                        }
                     }
                 }
 
                 if pending_calls.is_empty() {
-                    yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+                    let stop_reason = if produced_content {
+                        StopReason::EndTurn
+                    } else {
+                        StopReason::Empty
+                    };
+                    yield TurnEvent::Done { stop_reason };
                     return;
                 }
 

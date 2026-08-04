@@ -141,7 +141,10 @@ pub enum StopReason {
     MaxToolDepth,
     /// Cancelled by user / caller.
     Cancelled,
-    /// Model produced no text and no tool calls.
+    /// Turn produced nothing the user can see: no text, no thinking, no tool
+    /// calls. Both agents report it — `GenaiAgentHandle` when a well-formed
+    /// stream yielded no content (and on an unexpected stream close),
+    /// `AcpAgentHandle` when a delegated turn ended without emitting anything.
     Empty,
 }
 
