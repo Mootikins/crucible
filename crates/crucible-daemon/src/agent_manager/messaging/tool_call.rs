@@ -519,7 +519,10 @@ impl AgentManager {
                     tool_ref.definition.description.map(|d| d.to_string()),
                     Some(Self::format_tool_source(&tool_ref.source)),
                 )),
-                ToolSource::Mcp { .. } | ToolSource::Plugin { .. } => None,
+                // `Acp` is unreachable here — a delegated agent's tools are
+                // never in our registry — but it is not a description source
+                // either way.
+                ToolSource::Mcp { .. } | ToolSource::Plugin { .. } | ToolSource::Acp { .. } => None,
             })
             .unwrap_or((None, None));
 

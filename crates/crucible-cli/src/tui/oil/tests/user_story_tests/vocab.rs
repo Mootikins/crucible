@@ -47,6 +47,37 @@ pub(crate) fn expect_assistant_contains(
     story.expect_frame(move |frame| frame.contains(&needle), max_ticks)
 }
 
+/// Simulate the daemon announcing that a tool is running. `source` is the wire
+/// provenance string the daemon stamps on the event (`Acp:claude`, `Mcp:gmail`,
+/// `Core`, …); `None` for a call with no attribution.
+pub(crate) fn announce_tool_call(
+    story: &mut StoryRuntime,
+    name: &str,
+    args: &str,
+    source: Option<&str>,
+) {
+    story.send(ChatAppMsg::ToolCall {
+        name: name.to_string(),
+        args: args.to_string(),
+        call_id: Some(format!("{name}-1")),
+        description: None,
+        source: source.map(str::to_string),
+        lua_primary_arg: None,
+        diffs: Vec::new(),
+        auto_approved: None,
+    });
+}
+
+/// Feed this console a raw daemon session event, through the same
+/// `session_event → ChatAppMsg` mapping the live RPC client uses. Use this
+/// (rather than [`announce_tool_call`]) when the story is about the wire
+/// payload surviving that mapping.
+pub(crate) fn relay_session_event(story: &mut StoryRuntime, event: &str, data: serde_json::Value) {
+    for msg in crate::tui::oil::chat_runner::session_event_to_chat_msgs(event, &data) {
+        story.send(msg);
+    }
+}
+
 /// Open a bash permission request modal (as the daemon would when a tool needs
 /// approval). `argv` is the command the agent wants to run.
 pub(crate) fn open_permission(

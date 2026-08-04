@@ -27,6 +27,7 @@ use crucible_core::session::{validate_output, OutputValidation};
 use crucible_core::traits::chat::{ChatToolCall, ChatToolResult};
 use crucible_core::traits::llm::TokenUsage;
 use crucible_core::turn::{Agent as TurnAgent, StopReason, TurnContext, TurnEvent};
+use crucible_core::types::ToolSource;
 use futures::StreamExt;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc;
@@ -474,13 +475,21 @@ impl AgentManager {
                                 args.clone(),
                                 None,
                                 // Name the agent so the card badges
-                                // `[acp:claude]`, not a bare `[acp]` —
-                                // which agent ran the tool is the whole
-                                // point of the provenance badge.
-                                Some(match &stream_ctx.agent_stream_config.agent_name {
-                                    Some(agent) => format!("Acp:{agent}"),
-                                    None => "Acp".to_string(),
-                                }),
+                                // `[acp:claude]` — which agent ran the tool is
+                                // the whole point of the provenance badge.
+                                // An ACP session cannot exist without a name
+                                // (`session/create` rejects it), so `None`
+                                // here means a non-ACP owns-history agent and
+                                // there is no provenance to claim.
+                                stream_ctx
+                                    .agent_stream_config
+                                    .agent_name
+                                    .as_ref()
+                                    .map(|agent| {
+                                        Self::format_tool_source(&ToolSource::Acp {
+                                            agent: agent.clone(),
+                                        })
+                                    }),
                                 None,
                                 diffs,
                                 // The ACP agent ran its own gate in its own

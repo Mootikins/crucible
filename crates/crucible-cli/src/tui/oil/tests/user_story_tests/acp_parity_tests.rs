@@ -5,29 +5,22 @@
 //! indistinguishable from a tool Crucible ran itself, which hides the fact
 //! that another process — under another permission gate — touched the
 //! workspace. See `docs/Meta/Plans/2026-08-03-acp-presentation-parity.md`.
+//!
+//! These cover the *consumer* half of the badge contract. The producer half —
+//! the daemon stamping `Acp:<agent>` onto the `tool_call` event — is pinned in
+//! `crucible-daemon/src/agent_manager/tests/messaging.rs`, because nothing in
+//! this crate can fail when that literal regresses.
 
 use super::support::StoryRuntime;
-use crate::tui::oil::chat_app::ChatAppMsg;
-use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
+use super::vocab::{announce_tool_call, relay_session_event, send_user_message};
 
-fn acp_tool_call(name: &str, source: &str) -> ChatAppMsg {
-    ChatAppMsg::ToolCall {
-        name: name.into(),
-        args: r#"{"path":"README.md"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: Some(source.into()),
-        lua_primary_arg: None,
-        diffs: Vec::new(),
-        auto_approved: None,
-    }
-}
+const READ_ARGS: &str = r#"{"path":"README.md"}"#;
 
 #[test]
 fn acp_tool_call_renders_a_provenance_badge() {
     let mut story = StoryRuntime::new(80, 24);
-    story.send(ChatAppMsg::UserMessage("read the readme".into()));
-    story.send(acp_tool_call("read_file", "Acp:claude"));
+    send_user_message(&mut story, "read the readme");
+    announce_tool_call(&mut story, "read_file", READ_ARGS, Some("Acp:claude"));
 
     let frame = story.fresh_screen();
     assert!(
@@ -38,21 +31,20 @@ fn acp_tool_call_renders_a_provenance_badge() {
 
 #[test]
 fn acp_tool_call_badge_survives_the_daemon_event_mapping() {
-    // Pins the wire contract: the daemon's `tool_call` event carries the
-    // agent under `source`, and the TUI's event mapping keeps it.
-    let data = serde_json::json!({
-        "tool": "read_file",
-        "args": {"path": "README.md"},
-        "call_id": "c1",
-        "source": "Acp:claude",
-    });
-    let msgs = session_event_to_chat_msgs("tool_call", &data);
-
+    // The daemon's `tool_call` event carries the agent under `source`; the
+    // RPC → `ChatAppMsg` mapping must keep it all the way to the badge.
     let mut story = StoryRuntime::new(80, 24);
-    story.send(ChatAppMsg::UserMessage("read the readme".into()));
-    for msg in msgs {
-        story.send(msg);
-    }
+    send_user_message(&mut story, "read the readme");
+    relay_session_event(
+        &mut story,
+        "tool_call",
+        serde_json::json!({
+            "tool": "read_file",
+            "args": {"path": "README.md"},
+            "call_id": "c1",
+            "source": "Acp:claude",
+        }),
+    );
 
     let frame = story.fresh_screen();
     assert!(
@@ -62,16 +54,17 @@ fn acp_tool_call_badge_survives_the_daemon_event_mapping() {
 }
 
 #[test]
-fn internal_tool_call_still_renders_no_badge() {
-    // Core/Crucible provenance is implicit; badging it would be noise. This
-    // guards the ACP arm from widening into "badge everything".
+fn a_pre_badge_recording_still_badges_the_delegated_card() {
+    // Sessions recorded before the daemon named the agent carry a bare
+    // lowercase `acp`. Replaying one must still say "another agent ran this",
+    // even though it can no longer say which one.
     let mut story = StoryRuntime::new(80, 24);
-    story.send(ChatAppMsg::UserMessage("read the readme".into()));
-    story.send(acp_tool_call("read_file", "Core"));
+    send_user_message(&mut story, "read the readme");
+    announce_tool_call(&mut story, "read_file", READ_ARGS, Some("acp"));
 
     let frame = story.fresh_screen();
     assert!(
-        !frame.contains("acp") && !frame.contains("core"),
-        "an internal tool call should carry no provenance badge:\n{frame}"
+        frame.contains("[acp]"),
+        "a pre-badge ACP recording replayed with no provenance badge:\n{frame}"
     );
 }

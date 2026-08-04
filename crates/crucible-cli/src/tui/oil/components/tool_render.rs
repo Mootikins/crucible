@@ -1330,6 +1330,8 @@ mod tests {
     #[test_case(ToolSourceDisplay::Crucible, "[crucible]", false ; "crucible renders no badge")]
     #[test_case(ToolSourceDisplay::Mcp { server: Arc::from("gmail") }, "[mcp:gmail]", true ; "mcp renders badge")]
     #[test_case(ToolSourceDisplay::Plugin { name: Arc::from("oci") }, "[plugin:oci]", true ; "plugin renders badge")]
+    #[test_case(ToolSourceDisplay::Acp { agent: Some(Arc::from("claude")) }, "[acp:claude]", true ; "acp renders badge naming the agent")]
+    #[test_case(ToolSourceDisplay::Acp { agent: None }, "[acp]", true ; "acp from a pre-badge recording renders an anonymous badge")]
     fn source_badge_visibility(source: ToolSourceDisplay, badge: &str, should_show: bool) {
         let mut tool = test_tool_with_output("bash", r#"{"command": "ls"}"#, "ok", true);
         tool.source = Some(source);

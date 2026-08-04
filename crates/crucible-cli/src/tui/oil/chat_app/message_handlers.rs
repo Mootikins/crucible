@@ -22,15 +22,14 @@ fn parse_tool_source(s: &str) -> Option<ToolSourceDisplay> {
         s if s.starts_with("Plugin:") => Some(ToolSourceDisplay::Plugin {
             name: Arc::from(&s[7..]),
         }),
-        // Delegated ACP tool calls. The daemon names the agent when the
-        // session config has one (`Acp:claude`); the bare form is the
-        // fallback for a session with no configured agent name.
+        // Delegated ACP tool calls. The live daemon always names the agent
+        // (`Acp:claude`) — an ACP session cannot be created without one.
         s if s.starts_with("Acp:") => Some(ToolSourceDisplay::Acp {
-            agent: Arc::from(&s[4..]),
+            agent: Some(Arc::from(&s[4..])),
         }),
-        "Acp" => Some(ToolSourceDisplay::Acp {
-            agent: Arc::from(""),
-        }),
+        // Sessions recorded before the daemon named the agent carry a bare
+        // `acp`. Replaying them must still badge the card, just anonymously.
+        "acp" | "Acp" => Some(ToolSourceDisplay::Acp { agent: None }),
         _ => None,
     }
 }
@@ -379,21 +378,23 @@ mod tests {
         assert_eq!(
             parse_tool_source("Acp:claude"),
             Some(ToolSourceDisplay::Acp {
-                agent: Arc::from("claude")
+                agent: Some(Arc::from("claude"))
             }),
             "`Acp:claude` did not parse, so delegated tool cards render no badge"
         );
     }
 
     #[test]
-    fn acp_source_without_an_agent_name_still_parses() {
-        assert_eq!(
-            parse_tool_source("Acp"),
-            Some(ToolSourceDisplay::Acp {
-                agent: Arc::from("")
-            }),
-            "a session with no configured agent name must still get a badge"
-        );
+    fn acp_source_from_a_pre_badge_recording_still_parses() {
+        // Every session recorded before the daemon named the agent wrote a
+        // bare lowercase `acp`. Dropping this arm replays those unbadged.
+        for legacy in ["acp", "Acp"] {
+            assert_eq!(
+                parse_tool_source(legacy),
+                Some(ToolSourceDisplay::Acp { agent: None }),
+                "`{legacy}` from an old recording must still badge the card"
+            );
+        }
     }
 
     #[test]

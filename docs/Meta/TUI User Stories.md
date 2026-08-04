@@ -122,6 +122,11 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Acceptance:** connected/disconnected/connecting states visible; status refresh on `McpStatusLoaded`.
 **Tests:** T1 (status msg handling), T2 `:mcp` list render with connection status in `user_story_tests/subagent_mcp_tests.rs`.
 
+### US-307: Delegated (ACP) tool provenance
+**As a user**, when I delegate to an external agent (`cru chat -a claude`), tool cards for tools *that agent* ran show which agent ran them, so I can tell them apart from tools Crucible ran under my own permission gate.
+**Acceptance:** the card badges `[acp:<agent>]`; Core/Crucible tools stay unbadged (provenance is implicit); sessions recorded before the agent name was on the wire replay with a bare `[acp]`.
+**Tests:** T1 (`parse_tool_source` arms, `badge_label`, `source_badge_visibility` table), T2 badge-in-frame + daemon-event-mapping legs in `user_story_tests/acp_parity_tests.rs`; producer side pinned daemon-side in `agent_manager/tests/messaging.rs`.
+
 ## 4. Interaction Modals
 
 ### US-401: Permission modal full flow

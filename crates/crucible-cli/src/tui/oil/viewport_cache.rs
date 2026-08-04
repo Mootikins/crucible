@@ -17,10 +17,11 @@ pub enum ToolSourceDisplay {
         name: Arc<str>,
     },
     /// Executed inside a delegated ACP agent's own tool loop. `agent` is the
-    /// configured agent name (e.g. `claude`); empty when the daemon could not
-    /// resolve one.
+    /// configured agent name (e.g. `claude`). `None` only for sessions
+    /// recorded before the daemon started naming the agent — the live wire
+    /// form always carries one.
     Acp {
-        agent: Arc<str>,
+        agent: Option<Arc<str>>,
     },
 }
 
@@ -36,8 +37,8 @@ impl ToolSourceDisplay {
             Self::Core | Self::Crucible => None,
             Self::Mcp { server } => Some(format!("mcp:{server}")),
             Self::Plugin { name } => Some(format!("plugin:{name}")),
-            Self::Acp { agent } if agent.is_empty() => Some("acp".to_string()),
-            Self::Acp { agent } => Some(format!("acp:{agent}")),
+            Self::Acp { agent: Some(agent) } => Some(format!("acp:{agent}")),
+            Self::Acp { agent: None } => Some("acp".to_string()),
         }
     }
 }
@@ -280,16 +281,15 @@ mod tests {
     fn tool_source_badge_label_acp_names_the_agent() {
         assert_eq!(
             ToolSourceDisplay::Acp {
-                agent: Arc::from("claude")
+                agent: Some(Arc::from("claude"))
             }
             .badge_label(),
             Some("acp:claude".to_string())
         );
+        // Pre-badge recordings carry a bare `acp` and name no agent; they
+        // still deserve the "another process ran this" signal.
         assert_eq!(
-            ToolSourceDisplay::Acp {
-                agent: Arc::from("")
-            }
-            .badge_label(),
+            ToolSourceDisplay::Acp { agent: None }.badge_label(),
             Some("acp".to_string())
         );
     }

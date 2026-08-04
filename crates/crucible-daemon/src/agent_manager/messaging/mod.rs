@@ -18,6 +18,7 @@ impl AgentManager {
             ToolSource::Crucible => "Crucible".to_string(),
             ToolSource::Mcp { server } => format!("Mcp:{server}"),
             ToolSource::Plugin { name } => format!("Plugin:{name}"),
+            ToolSource::Acp { agent } => format!("Acp:{agent}"),
         }
     }
 

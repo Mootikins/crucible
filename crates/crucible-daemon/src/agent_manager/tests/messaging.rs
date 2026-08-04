@@ -175,6 +175,42 @@ async fn owns_history_agent_tool_call_passes_through_without_truncating_turn() {
     assert_eq!(complete.data["full_response"], "Line two is: LINE TWO beta");
 }
 
+/// The daemon half of the ACP provenance-badge contract (US-307).
+///
+/// The TUI badges a delegated tool card `[acp:claude]` by parsing the
+/// `source` field off the `tool_call` event. That field is produced *here*,
+/// and the CLI's tests can only ever prove the parse — revert this producer
+/// to a bare `"acp"` and every crucible-cli test stays green while the badge
+/// silently loses the agent name. This asserts the wire string itself.
+#[tokio::test]
+async fn acp_pass_through_tool_call_names_the_agent_in_its_source() {
+    let mut h = ReactorTestHarness::new().await;
+    h.reconfigure(SessionAgent {
+        agent_type: "acp".to_string(),
+        agent_name: Some("claude".to_string()),
+        ..test_agent()
+    })
+    .await;
+    h.inject_agent(Box::new(OwnsToolsMockAgent {
+        events: vec![
+            script::tool_call("call1", "Read", serde_json::json!({"file_path": "a.txt"})),
+            script::tool_result("call1", "Read", "contents"),
+            script::done(),
+        ],
+    }));
+
+    h.send("read a.txt").await;
+
+    let tool_call = h.wait_for("tool_call").await;
+    assert_eq!(tool_call.data["tool"], "Read");
+    assert_eq!(
+        tool_call.data["source"], "Acp:claude",
+        "delegated tool_call must carry `Acp:<agent>` as its source, or the \
+         TUI renders the card with no provenance badge; got {:?}",
+        tool_call.data["source"]
+    );
+}
+
 /// A `tool_result` handler must fire for tool calls an ACP-style agent ran
 /// itself, not just for ones the daemon dispatched. The pass-through arm used
 /// to emit straight to subscribers, so a redactor scrubbed the transcript for

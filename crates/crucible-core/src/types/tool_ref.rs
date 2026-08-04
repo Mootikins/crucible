@@ -56,6 +56,17 @@ pub enum ToolSource {
         /// Plugin name
         name: String,
     },
+
+    /// Tool executed inside a delegated ACP agent's own tool loop.
+    ///
+    /// Never appears in our tool registry — the agent owns the tool and ran
+    /// it in its own process under its own permission gate. It exists as a
+    /// `ToolSource` because it is provenance the user must see on the card,
+    /// and provenance has exactly one wire grammar (`format_tool_source`).
+    Acp {
+        /// Configured ACP agent name (`claude`, `opencode`, …)
+        agent: String,
+    },
 }
 
 impl ToolRef {
