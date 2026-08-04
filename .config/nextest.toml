@@ -41,8 +41,16 @@ fail-fast = true
 slow-timeout = { period = "30s", terminate-after = 1 }
 
 # Setup scripts — build test fixtures before test runs
+#
+# `cru` is here, not just `mock-acp-agent`, because `TestDaemon` spawns the
+# `cru` BINARY out of the target directory. Nextest rebuilds the crate under
+# test and its test binaries; it has no reason to rebuild a binary from another
+# package. So every daemon e2e test ran against whatever `cru` was last built —
+# which silently passes when the change under test is in the daemon and the
+# stale binary predates it. Caught by mutating `resolve_workspace_target` to a
+# no-op and watching all eight `workspace_targets_e2e` tests keep passing.
 [scripts.setup.build-test-fixtures]
-command = 'cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent'
+command = 'cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent -p crucible-cli --bin cru'
 
 [[profile.default.scripts]]
 filter = 'package(crucible-daemon)'
