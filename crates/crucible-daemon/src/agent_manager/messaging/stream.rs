@@ -473,7 +473,14 @@ impl AgentManager {
                                 &name,
                                 args.clone(),
                                 None,
-                                Some("acp".to_string()),
+                                // Name the agent so the card badges
+                                // `[acp:claude]`, not a bare `[acp]` —
+                                // which agent ran the tool is the whole
+                                // point of the provenance badge.
+                                Some(match &stream_ctx.agent_stream_config.agent_name {
+                                    Some(agent) => format!("Acp:{agent}"),
+                                    None => "Acp".to_string(),
+                                }),
                                 None,
                                 diffs,
                                 // The ACP agent ran its own gate in its own

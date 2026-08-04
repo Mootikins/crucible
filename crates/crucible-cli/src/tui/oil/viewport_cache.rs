@@ -10,21 +10,34 @@ pub const TOOL_OUTPUT_MAX_TAIL_LINES: usize = 50;
 pub enum ToolSourceDisplay {
     Core,
     Crucible,
-    Mcp { server: Arc<str> },
-    Plugin { name: Arc<str> },
+    Mcp {
+        server: Arc<str>,
+    },
+    Plugin {
+        name: Arc<str>,
+    },
+    /// Executed inside a delegated ACP agent's own tool loop. `agent` is the
+    /// configured agent name (e.g. `claude`); empty when the daemon could not
+    /// resolve one.
+    Acp {
+        agent: Arc<str>,
+    },
 }
 
 impl ToolSourceDisplay {
     /// Badge label for non-internal sources.
     ///
     /// Core/Crucible tools are part of the runtime — provenance is implicit,
-    /// so they render no badge. MCP and plugin tools surface their origin so
-    /// the user can tell where a tool came from.
+    /// so they render no badge. MCP, plugin and ACP tools surface their origin
+    /// so the user can tell where a tool came from — for ACP especially, the
+    /// call ran in another process under another agent's permission gate.
     pub fn badge_label(&self) -> Option<String> {
         match self {
             Self::Core | Self::Crucible => None,
             Self::Mcp { server } => Some(format!("mcp:{server}")),
             Self::Plugin { name } => Some(format!("plugin:{name}")),
+            Self::Acp { agent } if agent.is_empty() => Some("acp".to_string()),
+            Self::Acp { agent } => Some(format!("acp:{agent}")),
         }
     }
 }
@@ -260,6 +273,24 @@ mod tests {
             }
             .badge_label(),
             Some("plugin:my_plugin".to_string())
+        );
+    }
+
+    #[test]
+    fn tool_source_badge_label_acp_names_the_agent() {
+        assert_eq!(
+            ToolSourceDisplay::Acp {
+                agent: Arc::from("claude")
+            }
+            .badge_label(),
+            Some("acp:claude".to_string())
+        );
+        assert_eq!(
+            ToolSourceDisplay::Acp {
+                agent: Arc::from("")
+            }
+            .badge_label(),
+            Some("acp".to_string())
         );
     }
 }

@@ -71,6 +71,11 @@ pub(crate) struct AgentStreamConfig {
     /// and nothing else, so what the daemon knows about that tool has to
     /// arrive with the turn.
     pub(crate) mcp_read_only_tools: std::collections::HashSet<String>,
+    /// The session's ACP agent name (`claude`, `opencode`, …), when the
+    /// session delegates to an external agent. `None` for internal providers.
+    /// Carried so pass-through tool-call events can name which agent ran the
+    /// tool — the renderer badges it as `acp:<agent>`.
+    pub(crate) agent_name: Option<String>,
 }
 
 /// What the daemon knows at turn start that the session's own config does not:
@@ -120,6 +125,7 @@ impl AgentStreamConfig {
             plugin_tool_names,
             modes,
             mcp_read_only_tools,
+            agent_name: session_agent.agent_name.clone(),
         }
     }
 }

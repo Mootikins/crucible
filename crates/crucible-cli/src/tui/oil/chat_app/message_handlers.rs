@@ -22,6 +22,15 @@ fn parse_tool_source(s: &str) -> Option<ToolSourceDisplay> {
         s if s.starts_with("Plugin:") => Some(ToolSourceDisplay::Plugin {
             name: Arc::from(&s[7..]),
         }),
+        // Delegated ACP tool calls. The daemon names the agent when the
+        // session config has one (`Acp:claude`); the bare form is the
+        // fallback for a session with no configured agent name.
+        s if s.starts_with("Acp:") => Some(ToolSourceDisplay::Acp {
+            agent: Arc::from(&s[4..]),
+        }),
+        "Acp" => Some(ToolSourceDisplay::Acp {
+            agent: Arc::from(""),
+        }),
         _ => None,
     }
 }
@@ -355,5 +364,40 @@ impl OilChatApp {
             }
         }
         Action::Continue
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn acp_source_parses_to_a_displayable_source() {
+        // The daemon tags delegated tool calls with an ACP source
+        // (agent_manager/messaging/stream.rs). Falling through to None
+        // means the card renders with no provenance at all.
+        assert_eq!(
+            parse_tool_source("Acp:claude"),
+            Some(ToolSourceDisplay::Acp {
+                agent: Arc::from("claude")
+            }),
+            "`Acp:claude` did not parse, so delegated tool cards render no badge"
+        );
+    }
+
+    #[test]
+    fn acp_source_without_an_agent_name_still_parses() {
+        assert_eq!(
+            parse_tool_source("Acp"),
+            Some(ToolSourceDisplay::Acp {
+                agent: Arc::from("")
+            }),
+            "a session with no configured agent name must still get a badge"
+        );
+    }
+
+    #[test]
+    fn unknown_tool_source_is_still_none() {
+        assert_eq!(parse_tool_source("Whatever"), None);
     }
 }
