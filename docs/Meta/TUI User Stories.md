@@ -122,10 +122,10 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Acceptance:** connected/disconnected/connecting states visible; status refresh on `McpStatusLoaded`.
 **Tests:** T1 (status msg handling), T2 `:mcp` list render with connection status in `user_story_tests/subagent_mcp_tests.rs`.
 
-### US-307: Delegated (ACP) tool provenance
-**As a user**, when I delegate to an external agent (`cru chat -a claude`), tool cards for tools *that agent* ran show which agent ran them, so I can tell them apart from tools Crucible ran under my own permission gate.
-**Acceptance:** the card badges `[acp:<agent>]`; Core/Crucible tools stay unbadged (provenance is implicit); sessions recorded before the agent name was on the wire replay with a bare `[acp]`.
-**Tests:** T1 (`parse_tool_source` arms, `badge_label`, `source_badge_visibility` table), T2 badge-in-frame + daemon-event-mapping legs in `user_story_tests/acp_parity_tests.rs`; producer side pinned daemon-side in `agent_manager/tests/messaging.rs`.
+### US-307: Delegated (ACP) presentation parity
+**As a user**, when I delegate to an external agent (`cru chat -a claude`), the turn looks exactly like one the internal agent ran — except that tool cards for tools *that agent* ran say which agent ran them, so I can tell them apart from tools Crucible ran under my own permission gate.
+**Acceptance:** the card badges `[acp:<agent>]`; Core/Crucible tools stay unbadged (provenance is implicit); sessions recorded before the agent name was on the wire replay with a bare `[acp]`. **The badge is the only sanctioned frame difference** — the same behaviour recorded from either agent renders byte-identically once the badge is removed. A diff the agent attaches *after* the card was announced (ACP's `tool_call_update`, which the internal agent never sends because it synthesizes diffs up front) lands on that card and is painted.
+**Tests:** T1 (`parse_tool_source` arms, `badge_label`, `source_badge_visibility` table), T2 badge-in-frame + daemon-event-mapping legs, the fixture-pair frame-equality leg (`acp_and_internal_agents_render_identical_frames`), the rendered late-diff leg, and the delegated-turn snapshot — all in `user_story_tests/acp_parity_tests.rs`; producer side pinned daemon-side in `agent_manager/tests/messaging.rs`.
 
 ## 4. Interaction Modals
 

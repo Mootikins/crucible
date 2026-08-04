@@ -21,7 +21,8 @@ use serde_json::json;
 
 use super::support::StoryRuntime;
 use super::vocab::{
-    announce_tool_call, relay_session_event, relay_session_turn, send_user_message,
+    announce_tool_call, attach_late_diff, complete_tool_call, hydrate_from_recording,
+    relay_session_event, relay_session_turn, send_user_message,
 };
 
 const READ_ARGS: &str = r#"{"path":"README.md"}"#;
@@ -142,4 +143,144 @@ fn an_end_of_stream_reasoning_replay_is_not_painted_twice() {
         1,
         "the end-of-stream reasoning replay rendered a second copy:\n{frame}"
     );
+}
+
+/// The `[acp:<agent>]` badge is the *only* sanctioned frame difference between
+/// a delegated turn and an internal one. Removing it lets the rest of the two
+/// frames be compared byte-for-byte; a weakened `contains` assertion would let
+/// any other divergence through.
+fn without_the_provenance_badge(frame: &str) -> String {
+    frame.replace(" [acp:claude]", "")
+}
+
+/// US-307: the same agent behaviour renders the same whoever performed it.
+///
+/// The two fixtures are the *post-convergence* layer — `SessionEvent` JSONL,
+/// after `AcpAgentHandle` and `GenaiAgentHandle` have both funnelled into
+/// `SessionEventMessage`. Pumping them through one `StoryRuntime` each
+/// exercises the single shared renderer, so any surviving frame difference is
+/// a real presentation divergence and not the by-design `owns_history`
+/// asymmetry at the `TurnEvent` layer.
+///
+/// Every field in both fixtures was copied from a live capture of the daemon's
+/// broadcast stream; see `scripts/gen_acp_parity_fixtures.py`. That includes
+/// the two fields the plan's divergence A2 named:
+///
+/// - `description` — the internal fixture carries the registry text, the
+///   delegated one has none. It costs no pixels today because
+///   `session_event_to_chat_msgs` deliberately drops descriptions on *every*
+///   path (`commands.rs`: "not shown during live streaming … omit on resume
+///   for consistency"), and that converter is the only producer of
+///   `ChatAppMsg::ToolCall`. Wire it through for one arm only and this test
+///   fails, which is the point of leaving the asymmetry in the fixtures.
+/// - `lua_primary_arg` / `auto_approved` — absent from both, because neither
+///   is a property of the *behaviour*. A registry tool with no Lua display
+///   plugin emits no hint, and an interactively approved call earns no
+///   `[auto]` marker. Baking either into the internal side alone would assert
+///   a difference this pair does not describe.
+#[test]
+fn acp_and_internal_agents_render_identical_frames() {
+    let mut internal = StoryRuntime::new(80, 24);
+    hydrate_from_recording(&mut internal, "acp_parity_internal.jsonl");
+    let internal_frame = internal.fresh_screen();
+
+    let mut delegated = StoryRuntime::new(80, 24);
+    hydrate_from_recording(&mut delegated, "acp_parity_delegated.jsonl");
+    let delegated_frame = delegated.fresh_screen();
+
+    assert_ne!(
+        internal_frame, delegated_frame,
+        "the delegated frame is byte-identical to the internal one, so the \
+         provenance badge is missing — see `acp_tool_call_renders_a_provenance_badge`"
+    );
+    assert_eq!(
+        internal_frame,
+        without_the_provenance_badge(&delegated_frame),
+        "the same agent behaviour renders differently when delegated over ACP, \
+         beyond the provenance badge"
+    );
+}
+
+/// The counterweight to the normalization above: proving the frames match once
+/// the badge is stripped is only meaningful if the badge was there to strip.
+#[test]
+fn the_delegated_frame_still_names_the_agent() {
+    let mut delegated = StoryRuntime::new(80, 24);
+    hydrate_from_recording(&mut delegated, "acp_parity_delegated.jsonl");
+
+    let frame = delegated.fresh_screen();
+    assert!(
+        frame.contains("[acp:claude]"),
+        "the delegated tool card lost its provenance badge:\n{frame}"
+    );
+}
+
+/// US-307 (C2): a diff that arrives *after* the tool card must land on the card.
+///
+/// Only ACP produces this shape — Claude Code sends the initial `tool_call`
+/// notification with empty content and attaches the diff in a follow-up
+/// `tool_call_update`. `message_routing_tests` pins the resulting
+/// `tools[0].diffs` state, but state is not a frame: nothing until now proved
+/// the late diff is actually painted.
+///
+/// The frame is rendered *before* the update as well as after, so this also
+/// pins the boundary of the drop path at `containers.rs`'s
+/// `update_tool_by_call_id`: a `ToolGroup` never graduates while the turn is
+/// active, so an intervening render cannot strand the diff. Reaching that
+/// warning needs a render taken after the turn ended and a diff after that —
+/// an ordering the ACP client cannot produce, since every `tool_call_update`
+/// precedes the prompt response that ends the turn.
+#[test]
+fn a_late_acp_diff_appears_in_the_rendered_tool_card() {
+    let mut story = StoryRuntime::new(80, 24);
+    send_user_message(&mut story, "fix the greeting");
+    announce_tool_call(
+        &mut story,
+        "Edit File",
+        r#"{"path":"greeting.rs"}"#,
+        Some("Acp:claude"),
+    );
+
+    let before = story.fresh_screen();
+    assert!(
+        !before.contains("println!"),
+        "the tool card already showed a diff before the update arrived, so \
+         this test cannot tell whether the late diff landed:\n{before}"
+    );
+
+    attach_late_diff(
+        &mut story,
+        "Edit File-1",
+        "greeting.rs",
+        "    println!(\"hello\");\n",
+        "    println!(\"hello, world\");\n",
+    );
+    complete_tool_call(
+        &mut story,
+        "Edit File",
+        "Edit File-1",
+        "Replaced 1 occurrence(s)",
+    );
+
+    let frame = story.fresh_screen();
+    assert!(
+        frame.contains("-    println!(\"hello\");"),
+        "the late ACP diff's removed line never rendered:\n{frame}"
+    );
+    assert!(
+        frame.contains("+    println!(\"hello, world\");"),
+        "the late ACP diff's added line never rendered:\n{frame}"
+    );
+}
+
+/// The rendered shape of a whole delegated turn, pinned.
+///
+/// The equality test above proves the delegated frame matches the internal one
+/// modulo the badge; it cannot prove either is *right*. This one is the
+/// eyeballed reference — read the `.snap` when it changes.
+#[test]
+fn acp_delegated_turn_frame() {
+    let mut story = StoryRuntime::new(80, 24);
+    hydrate_from_recording(&mut story, "acp_parity_delegated.jsonl");
+    insta::assert_snapshot!(story.fresh_screen());
 }

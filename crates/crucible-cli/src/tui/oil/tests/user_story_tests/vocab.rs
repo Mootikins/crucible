@@ -12,6 +12,7 @@
 use crossterm::event::KeyCode;
 
 use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermRequest};
+use crucible_core::types::acp::FileDiff;
 
 use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::ChatAppMsg;
@@ -66,6 +67,48 @@ pub(crate) fn announce_tool_call(
         lua_primary_arg: None,
         diffs: Vec::new(),
         auto_approved: None,
+    });
+}
+
+/// Simulate a delegated agent attaching file diffs to a tool call it already
+/// announced — ACP's `tool_call_update` carrying `ToolCallContent::Diff`, which
+/// the daemon forwards as a `tool_call_diff_update` event keyed only on
+/// `call_id`. Only ACP produces this; the internal agent synthesizes its diffs
+/// up front and ships them on the `tool_call` itself.
+pub(crate) fn attach_late_diff(
+    story: &mut StoryRuntime,
+    call_id: &str,
+    path: &str,
+    old_content: &str,
+    new_content: &str,
+) {
+    story.send(ChatAppMsg::ToolCallDiffUpdate {
+        call_id: call_id.to_string(),
+        diffs: vec![FileDiff::from_contents(
+            path.to_string(),
+            Some(old_content.to_string()),
+            new_content.to_string(),
+        )],
+    });
+}
+
+/// Simulate the daemon reporting that a tool finished, as the pair of messages
+/// the `tool_result` event maps to (output, then completion). `call_id` must
+/// match the one [`announce_tool_call`] used, or the update misses the card.
+pub(crate) fn complete_tool_call(
+    story: &mut StoryRuntime,
+    name: &str,
+    call_id: &str,
+    output: &str,
+) {
+    story.send(ChatAppMsg::ToolResultDelta {
+        name: name.to_string(),
+        delta: output.to_string(),
+        call_id: Some(call_id.to_string()),
+    });
+    story.send(ChatAppMsg::ToolResultComplete {
+        name: name.to_string(),
+        call_id: Some(call_id.to_string()),
     });
 }
 

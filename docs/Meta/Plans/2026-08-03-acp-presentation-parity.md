@@ -69,12 +69,12 @@ mapping table (`commands/acp/translate.rs:291-500`, 14 tests).
 | `acp_integration/{tool_roundtrip,streaming_chat,permission_flow}.rs`, `acp_fixture_replay.rs` | All assert on `StreamingChunk`/`FileDiff` values. **None render a frame.** |
 | `acp_fixture_replay.rs` + `tests/fixtures/acp/recorded/*` | Only `claude/basic-chat.jsonl` is referenced. `opencode` (68 KB), `codex` (10 KB), `cursor` (1.8 KB), `gemini` (305 B) are dead files. |
 | `fixture_replay_tests.rs:339 replay_acp_demo_80x24` | Asserts "no invariant violations", snapshots nothing, and **silently returns if the fixture is missing**. Worse: `acp-demo.jsonl` is misnamed — it has no `source` field and its tool names are pre-humanized, so the test exercises nothing ACP-specific. |
-| All 8 `assets/fixtures/*.jsonl` | **Zero contain ACP-shaped data**: no `"source":"acp"`, no `tool_call_diff_update`, no `"diffs"`. |
-| `user_story_tests/` | No ACP/delegation file. |
-| `docs/Meta/TUI User Stories.md` | No ACP story. By the doc's own governance rule, the delegated-agent surface is untested by definition. |
-| `assets/fixtures/parity-test.jsonl` (74 lines) | Orphaned — nothing references it. |
+| All 8 `assets/fixtures/*.jsonl` | **Zero contain ACP-shaped data**: no `"source":"acp"`, no `tool_call_diff_update`, no `"diffs"`. *(Closed by Task 7: `acp_parity_delegated.jsonl` carries `"source":"Acp:claude"` and a `tool_call_diff_update` whose payload is a `diffs` array; `acp_parity_internal.jsonl` carries `diffs` on the `tool_call` itself.)* |
+| `user_story_tests/` | No ACP/delegation file. *(Closed: `acp_parity_tests.rs`.)* |
+| `docs/Meta/TUI User Stories.md` | No ACP story. By the doc's own governance rule, the delegated-agent surface is untested by definition. *(Closed: US-307.)* |
+| `assets/fixtures/parity-test.jsonl` (74 lines) | Orphaned — nothing references it. *(Closed by Task 6, which adopted it into the thinking-delta count table — so Task 7 did **not** seed from it.)* |
 
-**Nothing anywhere asserts a rendered frame for an ACP-sourced turn.**
+**Nothing anywhere asserts a rendered frame for an ACP-sourced turn.** *(Closed by Task 7.)*
 
 ## Verified divergences
 
@@ -611,7 +611,7 @@ US-203 is where the acceptance criteria and test references now live.
 
 ---
 
-## Task 7: The frame-level parity test
+## Task 7: The frame-level parity test — DONE
 
 The payoff: same behavior, both sources, identical pixels.
 
@@ -620,83 +620,69 @@ The payoff: same behavior, both sources, identical pixels.
 `StoryRuntime` exercises the single shared renderer, so any frame difference is a genuine
 presentation divergence rather than the by-design `owns_history` asymmetry.
 
-**Files:**
-- Create: `crates/crucible-cli/src/tui/oil/tests/user_story_tests/acp_parity_tests.rs`
-- Modify: `crates/crucible-cli/src/tui/oil/tests/user_story_tests/mod.rs`
-- Create: `assets/fixtures/acp_parity_internal.jsonl`, `assets/fixtures/acp_parity_delegated.jsonl`
+**What shipped:**
 
-**Step 1: Build the two fixtures**
+- `assets/fixtures/acp_parity_internal.jsonl` and `acp_parity_delegated.jsonl`: one `edit_file`
+  turn (text preamble → tool card with a diff → result → coda) told twice.
+- `scripts/gen_acp_parity_fixtures.py` regenerates both. **Neither was written from the docs.**
+  Both event streams were captured from the daemon's live broadcast channel via a throwaway
+  `ReactorTestHarness` test — `StreamingMockAgent` + the real `WorkspaceTools` dispatcher and the
+  real permission gate for the internal arm, `OwnsToolsMockAgent` with `agent_name: "claude"` for
+  the delegated arm — and the emitted JSON was copied field for field, including the
+  `tool_call_with_metadata`-computed `display` object and the `terminate: false` on every
+  `tool_result`. The capture test was deleted; the script's comments name each field's origin.
+- Four new tests in `user_story_tests/acp_parity_tests.rs` (file now 9 tests):
+  `acp_and_internal_agents_render_identical_frames`, `the_delegated_frame_still_names_the_agent`,
+  `a_late_acp_diff_appears_in_the_rendered_tool_card`, `acp_delegated_turn_frame` (insta).
+- Two new `vocab.rs` verbs: `attach_late_diff` (ACP `tool_call_diff_update`) and
+  `complete_tool_call` (the delta + complete pair a `tool_result` maps to).
+- US-307 in `docs/Meta/TUI User Stories.md` widened from "tool provenance" to "presentation
+  parity" and given the new legs.
 
-Two `SessionEvent` JSONL fixtures describing the *same* behavior — text preamble, one `edit_file`
-call carrying a diff, its result, completion. One shaped as the internal agent emits it (seed from
-the currently orphaned `assets/fixtures/parity-test.jsonl`), one as the ACP path emits it —
-**including `"source":"Acp:claude"` and a late `tool_call_diff_update`**, neither of which appears
-in any fixture in the repo today.
+**The specification of "parity": every difference, classified.**
 
-**Step 2: Write the failing test**
+| # | Difference | Classification |
+|---|---|---|
+| 1 | `source`: `Core` vs `Acp:claude` → ` [acp:claude]` on the card | **Deliberate.** This is the badge Task 2 added; erasing it is the failure mode, not the fix. Encoded explicitly: the test asserts `assert_ne!` on the raw frames *and* `assert_eq!` after removing exactly the string `" [acp:claude]"`. Both halves are load-bearing — mutation-verified by flipping the delegated fixture's source to `Core` (kills the `assert_ne!`). |
+| 2 | `description`: registry text on internal, absent on ACP (divergence **A2**) | **Not frame-observable, and the plan's expectation here was wrong.** The task predicted the equality test would fail on this. It does not, because `session_event_to_chat_msgs` hard-codes `let description = None` for *every* path ("not shown during live streaming … omit on resume for consistency"), and it is the **only** producer of `ChatAppMsg::ToolCall` — the live TUI shares the converter with replay. So A2's description half is a `crucible-web` concern, not a TUI one. **No daemon fix was made:** the "fixable" option (look up a description in the ACP arm) would add a field the TUI still discards, i.e. speculative work behind an unobservable seam. The asymmetry is deliberately *left in the fixtures* so that wiring descriptions through for one arm only breaks this test. |
+| 3 | diff delivery: on the `tool_call` (internal, `diff_synth`) vs a later `tool_call_diff_update` (ACP) | **Fixed by design, now pinned.** Both land on the same card and render the same body. Mutation-verified by deleting the `tool_call_diff_update` line from the delegated fixture. |
+| 4 | `tool`: `edit_file` vs `Edit File` | **Deliberate and invisible.** ACP carries no tool name on the wire, only a prose `title`; the client stores `humanize_tool_title(title)`. The renderer's `display_name()` applies the same (idempotent) humanizer, so both render `Edit File`. `ToolDisplay::of` also picks `greeting.rs` for both — verified in the captures, not assumed. |
+| 5 | `tool_result` payload: `{"result":"{\"result\":\"Replaced 1 occurrence(s)\"}"}` vs `{"result":"Replaced 1 occurrence(s)"}` | **Deliberate and invisible.** The internal envelope really is doubly wrapped (the tool returns JSON, the event wraps it again); ACP's `extract_tool_result` stringifies `rawOutput` flat. `unwrap_json_result` normalizes both to the same text. Kept in the fixtures rather than smoothed over, because smoothing it would stop testing the normalizer. |
+| 6 | `lua_primary_arg` / `auto_approved` (rest of **A2**) | **Out of the pair, deliberately.** Neither is a property of the *behaviour*: a registry tool with no Lua display plugin emits no hint, and an interactively approved `edit_file` earns no `[auto]` marker. Putting either on the internal side alone would assert a difference the pair does not describe. The `[auto]` marker genuinely is unreachable on ACP — correctly so, since Crucible granted nothing; the delegated agent ran its own gate in its own process. |
+| 7 | `interaction_requested` present only on the internal side | **Deliberate and inert.** It is in the internal fixture because a real recording of a gated edit contains it. The converter has no arm for it, so it produces no `ChatAppMsg` and no pixels. |
+| 8 | Statusline: `— ctx` "no data" (divergence **A3**) | **Not covered by this pair.** `providers_listed` / `context_limit_resolved` are absent from *both* fixtures, so both render the no-data path and the test cannot see A3. Naming it here so nobody reads the green test as covering it; it needs its own leg. |
 
-```rust
-/// US-307: a delegated ACP agent renders identically to the internal agent.
-#[test]
-fn acp_and_internal_agents_render_identical_frames() {
-    let mut internal = StoryRuntime::new(80, 24);
-    internal.pump_fixture("acp_parity_internal.jsonl");
-    let internal_frame = internal.fresh_screen();
+**Reachability of the graduated-diff drop path (`containers.rs::update_tool_by_call_id`'s warning).**
+Not reachable from any ordering the ACP client can produce. Graduation only runs inside
+`drain_completed` at render time, and `is_graduatable` refuses to graduate a `ToolGroup` while
+`turn_active`. So stranding a late diff needs *all* of: turn ended → a render → diff arrives. Every
+`tool_call_update` precedes the prompt response that ends the turn, so the third step cannot follow
+the first. `a_late_acp_diff_appears_in_the_rendered_tool_card` renders a frame between the card and
+the diff to pin exactly that: an intervening render does not strand it. (The warning is still worth
+keeping — a resumed session replaying events into an idle app could hit it.)
 
-    let mut delegated = StoryRuntime::new(80, 24);
-    delegated.pump_fixture("acp_parity_delegated.jsonl");
-    let delegated_frame = delegated.fresh_screen();
+**Snapshot verification** (`acp_delegated_turn_frame.snap`, read line by line before accepting):
+80-column rows for all chrome rows; `▄` U+2584 / `▀` U+2580 half-block frames around the user
+message and the input prompt, identical to `undo_flow_frame_sequence.snap`; ` ● ` U+25CF assistant
+bullet on the first segment and a 3-column indent on the post-tool continuation (` Done.`), i.e.
+one response split by the tool group, not two responses; tool header
+` ✓ Edit File [acp:claude] greeting.rs → Replaced 1 occurrence(s)` with U+2713 and U+2192 exactly
+where `render_complete` composes them; diff header `edit greeting.rs  +1 -1` (action from
+`diff_action`, counts matching the one-line change) and a unified body whose context lines carry a
+leading space and whose changed lines carry `-`/`+`; `— ctx` U+2014 in the status row. No duplicate
+assistant text — `message_complete`'s `full_response` snapshot was suppressed by
+`SessionEventStream`, which is Task 6's machinery doing its job on a fixture written after it. The
+snapshot is plain `screen_contents()`, so it carries no ANSI attributes to verify.
 
-    assert_eq!(
-        internal_frame, delegated_frame,
-        "the same agent behavior renders differently when delegated over ACP"
-    );
-}
-```
+**Two things in the task description did not match reality:**
+- `assets/fixtures/parity-test.jsonl` is **no longer orphaned** — Task 6 adopted it into
+  `session_event_stream_tests.rs`'s thinking-delta count table. The new fixtures were built from a
+  fresh capture instead, which is stronger grounding anyway.
+- The predicted A2 failure did not occur, for the reason in row 2 above.
 
-**Step 3: Run it and read the diff carefully**
-
-Run: `just test-crate-filter crucible-cli 'acp_and_internal_agents_render'`
-
-Expect it to fail on the A2 gap (missing description / primary arg). Two legitimate outcomes:
-- **Fixable** — make the ACP arm populate what it can (`stream.rs:454-480` can look up a
-  description from the tool registry by `acp_tool_name`).
-- **Deliberate** — the provenance badge from Task 2 *should* differ. Encode that as an explicit
-  expected difference, not a weakened substring assertion.
-
-**Step 4: Add a rendered late-diff test** (C2 — no existing test renders this)
-
-```rust
-#[test]
-fn late_acp_diff_appears_in_the_rendered_tool_card() {
-    let mut r = StoryRuntime::new(120, 40);
-    r.send(acp_tool_call_msg_without_diffs("edit_file", "call-1"));
-    r.send(acp_late_diff_msg("call-1"));
-    let frame = r.fresh_screen();
-    assert!(frame.contains("-old line"), "late ACP diff never rendered:\n{frame}");
-}
-```
-
-**Step 5: Snapshot the delegated frame**
-
-```rust
-#[test]
-fn acp_delegated_turn_frame() {
-    let mut r = StoryRuntime::new(80, 24);
-    r.pump_fixture("acp_parity_delegated.jsonl");
-    insta::assert_snapshot!(r.fresh_screen());
-}
-```
-
-Per project rules: **read the generated `.snap` and verify glyphs, layout and colors before
-accepting it.** A passing snapshot proves stability, not correctness.
-
-**Step 6: Commit**
-
-```bash
-git add crates/crucible-cli assets/fixtures
-git commit -m "test(tui): assert ACP-delegated turns render identically to internal ones"
-```
+**Verification:** `cargo nextest run -p crucible-cli` — 1945 passed, 71 skipped.
+`cargo fmt --all --check` and `cargo clippy -p crucible-cli --all-targets` clean. The daemon was
+not modified.
 
 ---
 

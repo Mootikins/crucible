@@ -21,6 +21,17 @@ This makes demo recording **deterministic** — no waiting for LLM latency, no v
 | `acp-demo.jsonl` | `acp-demo.gif` | Claude Code via ACP discussing ACP vs MCP |
 | `delegation-demo.jsonl` | `delegation-demo.gif` | Claude delegating to OpenCode via `delegate_session` tool |
 
+### Test-only fixtures
+
+Not demo material — these exist so a test can pin a rendered frame. They are
+still real event streams, just hand-assembled rather than recorded.
+
+| Fixture | Used by |
+|---------|---------|
+| `acp_parity_internal.jsonl` / `acp_parity_delegated.jsonl` | `user_story_tests/acp_parity_tests.rs` — one `edit_file` turn told two ways (internal agent vs delegated ACP agent), asserted to render identically apart from the `[acp:claude]` badge. Regenerate with `scripts/gen_acp_parity_fixtures.py`; every field is copied from a live capture of the daemon's broadcast stream. |
+| `parity-test.jsonl`, `reproduce.jsonl`, `reproduce-formatting.jsonl` | `session_event_stream_tests.rs` — rendered `ThinkingDelta` counts, pinning end-of-stream reasoning-replay suppression. |
+| `permission_flow.jsonl`, `undo_flow.jsonl` | `user_story_tests/` permission and undo stories. |
+
 ## Recording New Fixtures
 
 Recording uses the **programmatic session pipeline**. Create a session, send a message, and extract the recording:
