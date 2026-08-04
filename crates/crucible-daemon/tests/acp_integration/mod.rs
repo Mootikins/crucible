@@ -18,6 +18,7 @@ mod mock_agent_framework;
 mod permission_flow;
 mod streaming_chat;
 mod tool_roundtrip;
+mod turn_event_parity;
 
 // Consolidated from former tests/acp_mcp_integration.rs +
 // tests/acp_in_process_mcp.rs (T12: MCP integration test consolidation)

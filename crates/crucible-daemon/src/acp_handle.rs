@@ -589,7 +589,7 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                     // `ToolCallUpdate` frames merged via `upsert_tool_info`).
                     for tc in acp_tool_calls {
                         let id = tc.id.clone().unwrap_or_default();
-                        if announced_ids.contains(&id) {
+                        if !announced_ids.insert(id.clone()) {
                             continue;
                         }
                         yield TurnEvent::ToolCall {
@@ -598,6 +598,22 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                             args: tc.arguments.unwrap_or(serde_json::Value::Null),
                             diffs: tc.diffs,
                         };
+                    }
+
+                    // Close the batch. An ACP agent runs its own tool loop, so
+                    // the whole turn is one batch — there is no boundary on the
+                    // wire to split it at — and it closes once every call has
+                    // been announced. That is *after* the replay above, not
+                    // before it: `ToolBatchEnd` claims "no further tool calls in
+                    // this batch", and the scheduler resets its per-batch state
+                    // on it (`agent_manager/messaging/stream.rs`), so emitting
+                    // it first would split one logical batch in two and leave
+                    // the second half never closed.
+                    //
+                    // A turn that called nothing announces nothing: an empty
+                    // batch-end would claim a batch that never existed.
+                    if !announced_ids.is_empty() {
+                        yield TurnEvent::ToolBatchEnd;
                     }
 
                     if let Some(usage) = usage {

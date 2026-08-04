@@ -11,9 +11,9 @@
 //! ```
 
 use crucible_core::background::JobStatus;
-use crucible_core::config::{AcpConfig, AgentProfile, BackendType, DelegationConfig};
+use crucible_core::config::{AcpConfig, AgentProfile, DelegationConfig};
 use crucible_core::session::RecordingMode;
-use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
+use crucible_core::session::{SessionAgent, SessionType};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::turn::{Agent, TurnContext, TurnEvent};
 use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
@@ -27,7 +27,6 @@ use crucible_daemon::{
     AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
 };
 use futures::StreamExt;
-use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -36,65 +35,11 @@ use tempfile::TempDir;
 use tokio::sync::{broadcast, oneshot};
 use tokio::time::{timeout, Duration};
 
-/// Returns the path to the mock-acp-agent binary.
-///
-/// Prefers `CARGO_BIN_EXE_mock-acp-agent` (set by cargo when the bin target is
-/// built, i.e. when the test-utils feature is enabled — honors any custom
-/// target-dir). Falls back to the default workspace-root target path.
-pub fn mock_agent_path() -> PathBuf {
-    if let Some(path) = option_env!("CARGO_BIN_EXE_mock-acp-agent") {
-        return PathBuf::from(path);
-    }
-
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/debug/mock-acp-agent")
-        .canonicalize()
-        .expect(
-            "mock-acp-agent binary not found. Build it with:\n\
-             cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent",
-        )
-}
-
-/// Creates a SessionAgent configured for ACP with the given agent path.
-///
-/// This helper constructs a minimal SessionAgent with:
-/// - agent_type: "acp"
-/// - agent_name: the provided agent_path
-/// - provider: Mock (for testing)
-/// - All other fields set to sensible defaults
-pub fn mock_session_agent(agent_path: &str) -> SessionAgent {
-    SessionAgent {
-        mode: None,
-        agent_type: "acp".to_string(),
-        agent_name: Some(agent_path.to_string()),
-        provider_key: None,
-        provider: BackendType::Mock,
-        model: "mock-model".to_string(),
-        system_prompt: "You are a helpful assistant.".to_string(),
-        temperature: None,
-        max_tokens: None,
-        max_context_tokens: None,
-        thinking_budget: None,
-        endpoint: None,
-        env_overrides: HashMap::new(),
-        mcp_servers: vec![],
-        agent_card_name: None,
-        capabilities: None,
-        agent_description: None,
-        delegation_config: None,
-        precognition_enabled: false,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
-        context_budget: None,
-        context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
-        tool_policy: None,
-    }
-}
+// Shared with the `acp_integration` binary, which drives the same spawned
+// mock agent through `AcpAgentHandle`.
+#[path = "acp_support/mock_agent_bin.rs"]
+mod mock_agent_bin;
+use mock_agent_bin::{mock_agent_path, mock_session_agent};
 
 fn delegation_enabled_agent(agent_path: &str) -> SessionAgent {
     let mut agent = mock_session_agent(agent_path);

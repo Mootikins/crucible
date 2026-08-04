@@ -54,7 +54,9 @@ pub struct MockStdioAgentConfig {
     /// with a bare `end_turn` and no notifications (legacy behavior).
     pub stream_chunks: Vec<String>,
     /// Emit a `tool_call` + completed `tool_call_update` notification pair
-    /// (after the text chunks) before the final PromptResponse.
+    /// (after the text chunks) before the final PromptResponse. The spawned
+    /// binary cannot reach this field, so it also honors the
+    /// `CRU_MOCK_STREAM_TOOL_CALL` env hook (see `handle_prompt_turn`).
     pub stream_tool_call: bool,
     /// After emitting the notifications, hold the turn open until a
     /// `session/cancel` notification arrives, then finish with
@@ -505,7 +507,11 @@ impl MockStdioAgent {
             }
         }
 
-        if self.config.stream_tool_call {
+        // Same test hook as CRU_MOCK_STREAM_CHUNKS above: a spawned binary
+        // can't be handed the in-process config, so tests that drive a real
+        // `AcpAgentHandle` (which spawns this binary) select the tool-call
+        // script through the session agent's `env_overrides` instead.
+        if self.config.stream_tool_call || env::var("CRU_MOCK_STREAM_TOOL_CALL").is_ok() {
             notifications.push(update(json!({
                 "sessionUpdate": "tool_call",
                 "toolCallId": "mock-tool-call-1",

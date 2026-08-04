@@ -99,13 +99,19 @@ pub struct ChatToolResult {
     /// non-Lua tools always send `terminate: false`.
     ///
     /// **Consumer scope (v1):** the conjunctive check fires at
-    /// `TurnEvent::ToolBatchEnd`. The genai agent loop emits that event
-    /// after every tool batch. The ACP delegation path
-    /// (`crucible-daemon/src/acp_handle.rs`) does not yet emit
-    /// `ToolBatchEnd`, so this flag has no effect for
-    /// `cru chat -a claude / opencode / gemini` sessions. Wire
-    /// `ToolBatchEnd` through the ACP adapter when an ACP-side use case
-    /// appears.
+    /// `TurnEvent::ToolBatchEnd`, which both agent paths now emit — the
+    /// genai loop after every tool batch, the ACP delegation path
+    /// (`crucible-daemon/src/acp_handle.rs`) once per turn after the last
+    /// tool call is announced.
+    ///
+    /// The flag still has no effect on `cru chat -a claude / opencode /
+    /// gemini`, for a different reason: it is produced by the scheduler's
+    /// tool-dispatch path, and an `owns_history` agent never takes it. Such
+    /// an agent executes the tool in its own process and the scheduler only
+    /// passes the call through (`agent_manager/messaging/stream.rs`), so no
+    /// `ChatToolResult` — and therefore no `terminate` — is ever produced
+    /// for it. Reaching a delegated agent's tools needs a signal on the ACP
+    /// wire, not another event here.
     #[serde(default)]
     pub terminate: bool,
 }

@@ -175,6 +175,45 @@ async fn owns_history_agent_tool_call_passes_through_without_truncating_turn() {
     assert_eq!(complete.data["full_response"], "Line two is: LINE TWO beta");
 }
 
+/// An owns-history agent's `ToolBatchEnd` must not cut its turn short.
+///
+/// `AcpAgentHandle` closes its tool batch (`acp_handle.rs`), so the scheduler
+/// now sees this event on delegated turns. It reaches the conjunctive
+/// early-stop check, which ends the turn when *every* result in the batch set
+/// `terminate` — and `batch_terminate_signals` is filled only by the dispatch
+/// path an owns-history agent never takes. An empty signal set must therefore
+/// read as "nobody asked to stop", not as "all agreed": the vacuous-truth
+/// reading would end every delegated turn at its first tool call, dropping the
+/// agent's answer exactly like the truncation bug above.
+#[tokio::test]
+async fn owns_history_tool_batch_end_does_not_end_the_turn() {
+    let mut h = ReactorTestHarness::new().await;
+    h.inject_agent(Box::new(OwnsToolsMockAgent {
+        events: vec![
+            script::tool_call(
+                "call1",
+                "Read",
+                serde_json::json!({"file_path": "notes.txt"}),
+            ),
+            script::tool_result("call1", "Read", "LINE TWO beta"),
+            crucible_core::turn::TurnEvent::ToolBatchEnd,
+            script::text("Line two is: LINE TWO beta"),
+            script::done(),
+        ],
+    }));
+
+    h.send("read notes").await;
+
+    let tool_call = h.wait_for("tool_call").await;
+    assert_eq!(tool_call.data["tool"], "Read");
+
+    let delta = h.wait_for("text_delta").await;
+    assert_eq!(delta.data["content"], "Line two is: LINE TWO beta");
+
+    let complete = h.wait_for("message_complete").await;
+    assert_eq!(complete.data["full_response"], "Line two is: LINE TWO beta");
+}
+
 /// The daemon half of the ACP provenance-badge contract (US-307).
 ///
 /// The TUI badges a delegated tool card `[acp:claude]` by parsing the
