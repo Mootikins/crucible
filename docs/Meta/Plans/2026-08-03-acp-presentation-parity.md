@@ -530,49 +530,84 @@ git commit -am "fix(acp): report Cancelled and Empty stop reasons, drop orphaned
 
 ---
 
-## Task 6: C1 — ACP thinking after text must survive
+## Task 6: C1 — ACP thinking after text must survive — DONE (`1795a937e`, reviewed)
 
-**Files:**
-- Test: `crates/crucible-cli/src/tui/oil/tests/session_event_stream_tests.rs`
-- Modify: `crates/crucible-cli/src/tui/oil/chat_runner/stream.rs:42-46`
+**The implementation took a third route, not either option this task prescribed.** The plan offered
+"suppress only the trailing block that arrives with `message_complete`" or "gate on `owns_history`".
+Neither was used:
 
-**Step 1: Write the failing test**
+- The trailing-block rule is unimplementable from the event stream. The replay does **not** arrive
+  attached to `message_complete`; it is an ordinary `thinking` event that lands mid-turn, and
+  `reproduce.jsonl` carries two flavours of it — one after a `text_delta` and one with no text in
+  between at all. Position cannot separate it from a real thought.
+- Gating on `owns_history` would have been a per-agent branch in the one place the whole plan says
+  there is exactly one renderer, and it would still have been wrong for the internal agent, which
+  also interleaves thinking and text between tool batches.
 
-```rust
-#[test]
-fn acp_thinking_after_text_is_not_dropped() {
-    // The saw_text_delta guard exists to suppress internal providers' late
-    // thinking *summaries*. ACP agents legitimately interleave thoughts with
-    // text, and those are real content.
-    let mut stream = SessionEventStream::new();
-    stream.translate("text_delta", &json!({"content": "Let me check. "}));
-    let msgs = stream.translate("thinking", &json!({"content": "checking config"}));
-    assert!(
-        msgs.iter().any(|m| matches!(m, ChatAppMsg::ThinkingDelta(_))),
-        "interleaved ACP thinking was discarded"
-    );
-}
-```
+What shipped instead is **content-based, turn-scoped replay detection**: keep the concatenation of
+the thinking rendered since the last boundary, and drop a `thinking` payload that equals it exactly,
+consuming the run on a match so several reasoning blocks in one turn each get their own replay
+suppressed. Interleaving is then free — a new thought never equals the run before it.
 
-**Step 2: Run to confirm FAIL**
+**The live path no longer needs any of this, and that is the honest framing.** The daemon fixed the
+duplication at its source: `ReasoningEmissionState` (`provider/genai_handle.rs:202`, commit
+`acab76636`) tracks whether reasoning chunks were emitted live and suppresses the `End`-time replay
+when they were. So on a current session this heuristic has nothing to catch. What it serves is
+**replay of recordings made before that fix** — every `session.jsonl` and `recording.jsonl` in the
+wild predating 2026-04-27, including the four fixtures in `assets/fixtures` — which is precisely
+what `SessionEventStream` exists for.
 
-**Step 3: Scope the guard to the case it was written for**
+**Accepted downside risk, stated explicitly:** the rule also runs live, where it can only cost. If a
+model ever streams a reasoning block and then genuinely thinks the identical thing again in the same
+turn, we delete the second one. That is judged acceptable because the rule is content-exact,
+turn-scoped, and floored at a two-delta run (below) — but it is a deletion, not a suppression, and
+it is unrecoverable. The alternative, running the heuristic only in replay mode, would mean the
+replay path and the live path no longer render a recording identically, which is a worse property
+to lose than this risk is to carry.
 
-The guard must not key on "text was seen" alone. Narrow it — suppress only the single trailing
-thinking block that arrives with `message_complete`, not mid-stream thoughts. If that cannot be
-distinguished from the event stream alone, gate on the agent's `owns_history` capability, which
-the daemon already knows, and pass it through.
+**Review findings, fixed in a follow-up commit:**
+- **I1 — the rule had a silent-deletion window.** Matching *any* non-empty run meant a thought that
+  merely repeated its predecessor was deleted: `["Hmm.", "Hmm.", "Hmm."]` rendered only twice,
+  alternating drop and render as the run reset itself, and a single-delta thought followed by an
+  identical one vanished. The window was open exactly when the run was short — at turn start and
+  right after every drop — i.e. where the old `saw_text_delta` guard had never dropped anything, so
+  the narrowing was strictly *less* safe there. Fixed with `MIN_REPLAY_RUN_DELTAS = 2`: a replay is
+  by construction the concatenation of a streamed run, so it takes at least two deltas to make one.
+  Costs nothing on real data — all 11 replays across the four fixtures follow runs of **17–103**
+  deltas and carry 79–515 chars.
+- **I6 — the per-turn reset test was vacuous.** `a_repeated_thought_in_a_later_turn_still_renders`
+  fired the same thought twice inside turn "a", which tripped the replay rule *there* and cleared
+  the run as a side effect, so the reset it claimed to pin was never exercised — deleting
+  `thinking_run.clear()` from the `user_message` arm left every test green. Turn "a" now streams the
+  thought as two deltas instead, making its run both replay-eligible and byte-equal to turn "b"'s
+  thought. Mutation-verified: the test now dies when that reset is removed.
+- **I7 — run-consumption was untested and the fixture oracle was blind.** The oracle re-derived the
+  run itself but never reset its accumulator when the converter dropped a payload, so after the
+  first replay its model diverged from production and it could not see a second. Deleting the
+  in-match `thinking_run.clear()` left all tests green while regressing `demo.jsonl`. Replaced with
+  a **count** of rendered `ThinkingDelta`s per fixture (demo 66, parity-test 58, reproduce 169,
+  reproduce-formatting 158) — a constant has no model to get wrong. Mutation-verified against
+  never-drop and no-run-consume. It does **not** catch a missing turn reset (no recording opens a
+  turn with a thought equal to the previous turn's whole run), which is why I6's test is separate.
+- **I5 — a third private copy of the old guard.**
+  `user_story_tests/support.rs::load_fixture` mapped fixtures through raw
+  `session_event_to_chat_msgs`, with no replay dedup and no `message_complete` suppression. Harmless
+  while only thinking-free fixtures were pumped, but Task 7's parity fixtures go through exactly
+  that helper. Converted to the production `SessionEventStream`, matching the other two sites.
+- **M2/M3/M4 —** two stale comments in `inter_frame_invariant_tests.rs` (neither test guards replay
+  suppression; `check_no_duplicate_thought_lines` only fires on adjacent identical collapsed
+  headers), cross-references between `relay_session_event` and `relay_session_turn` in `vocab.rs`
+  including the fresh-stream-per-call caveat, and a cwd-relative fixture path replaced by a single
+  shared `helpers::fixture_path`/`read_fixture` (three private copies collapsed into one).
 
-**Step 4: Run the full TUI suite** — this guard exists for a reason; confirm no thinking-duplication
-regression in `rendering_regression_tests.rs`.
+**Story attribution:** the two new frame tests are **US-203** (thinking display), not US-307. They
+sit in `acp_parity_tests.rs` because a delegated agent is the shape that exposes the behaviour, but
+US-203 is where the acceptance criteria and test references now live.
 
-Run: `just test-crate crucible-cli`
-
-**Step 5: Commit**
-
-```bash
-git commit -am "fix(tui): stop discarding interleaved thinking on delegated sessions"
-```
+**Files:** `crates/crucible-cli/src/tui/oil/chat_runner/stream.rs`,
+`tests/session_event_stream_tests.rs`, `tests/helpers.rs`, `tests/fixture_replay_tests.rs`,
+`tests/inter_frame_invariant_tests.rs`, `tests/user_story_tests/{support,vocab,acp_parity_tests}.rs`,
+`docs/Meta/TUI User Stories.md` (US-203).
 
 ---
 
@@ -784,8 +819,10 @@ is deliberate (an `[acp:<agent>]` provenance badge).
 **Acceptance:** equivalent behavior produces equivalent `TurnEvent` shape sequences from
 `AcpAgentHandle` and `GenaiAgentHandle`; frames rendered from both differ only in the provenance
 badge; delegated tool calls carry a source badge; late `tool_call_diff_update` diffs render into
-the existing card; interleaved thinking is not discarded; structured tool results stay structured;
-cancelled and empty turns report honest stop reasons. Known deliberate difference: the permission
+the existing card; structured tool results stay structured;
+cancelled and empty turns report honest stop reasons. (Interleaved thinking and reasoning-replay
+dedup belong to **US-203**, not here — they are about which thoughts reach the screen, not about
+provenance; C1 and C4 are pinned there.) Known deliberate difference: the permission
 modal shows a `ToolKind`-derived name because ACP carries no tool name on the wire.
 **Tests:** T1 shape-sequence parity in `acp_integration/turn_event_parity.rs` + `parse_tool_source`
 unit tests; T2 identical-frame assertion, badge, late-diff render and snapshot in

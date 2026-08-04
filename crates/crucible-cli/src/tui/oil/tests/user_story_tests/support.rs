@@ -10,38 +10,30 @@
 //! every frame comes from the real render path (render_frame → raw
 //! terminal bytes → vt100 parser), not a re-implemented view.
 
-use std::path::PathBuf;
-
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::tui::oil::app::{Action, App};
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
+use crate::tui::oil::chat_runner::SessionEventStream;
 use crate::tui::oil::event::Event;
 
+use super::super::helpers::read_fixture;
 use super::super::vt100_runtime::Vt100TestRuntime;
 
-/// Resolve `assets/fixtures/<name>` relative to the workspace root.
-pub(crate) fn fixture_path(name: &str) -> PathBuf {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    std::path::Path::new(manifest_dir)
-        .parent()
-        .and_then(|p| p.parent())
-        .expect("workspace root")
-        .join("assets/fixtures")
-        .join(name)
-}
-
 /// Parse a JSONL session recording into the `ChatAppMsg` stream the TUI
-/// would receive on replay. Only the daemon's replayable session events
-/// are mapped (via the production `session_event_to_chat_msgs`); header,
-/// footer, and interaction/undo control events are ignored — those are
-/// injected directly by the test, matching how the live runner delivers
-/// them over separate channels.
+/// would receive on replay. Header, footer, and interaction/undo control
+/// events are ignored — those are injected directly by the test, matching how
+/// the live runner delivers them over separate channels.
+///
+/// Translation goes through the production [`SessionEventStream`], not raw
+/// `session_event_to_chat_msgs`: the stateful converter is what suppresses a
+/// provider's end-of-stream reasoning replay and `message_complete`'s
+/// full-response snapshot once granular deltas have streamed. A private copy
+/// that skipped it would render a fixture differently from every live console,
+/// which is precisely the class of divergence these stories exist to catch.
 pub(crate) fn load_fixture(name: &str) -> Vec<ChatAppMsg> {
-    let path = fixture_path(name);
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read fixture {}: {e}", path.display()));
+    let content = read_fixture(name);
+    let mut stream = SessionEventStream::new();
 
     let mut msgs = Vec::new();
     for line in content.lines() {
@@ -62,7 +54,7 @@ pub(crate) fn load_fixture(name: &str) -> Vec<ChatAppMsg> {
             .get("data")
             .cloned()
             .unwrap_or(serde_json::Value::Null);
-        msgs.extend(session_event_to_chat_msgs(event_type, &data));
+        msgs.extend(stream.translate(event_type, &data));
     }
     msgs
 }

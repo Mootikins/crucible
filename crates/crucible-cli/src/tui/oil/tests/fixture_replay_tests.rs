@@ -60,14 +60,7 @@ fn parse_fixture(path: &Path) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
     messages
 }
 
-fn fixture_path(name: &str) -> std::path::PathBuf {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let workspace_root = std::path::Path::new(manifest_dir)
-        .parent()
-        .and_then(|p| p.parent())
-        .expect("Could not find workspace root");
-    workspace_root.join("assets/fixtures").join(name)
-}
+use super::helpers::fixture_path;
 
 // ─── Replay Infrastructure ─────────────────────────────────────────────────
 

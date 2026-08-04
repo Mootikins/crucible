@@ -672,9 +672,16 @@ fn invariant_demo_fixture() {
     let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(120, 50);
     let mut frame = 0;
-    // The production converter, not a copy of it: this test's whole job is to
-    // catch duplicated thought lines, which is exactly what that converter's
-    // reasoning-replay suppression prevents.
+    // The production converter, not a copy of it, so this replay matches what a
+    // live console renders.
+    //
+    // It is *not* the thing that guards reasoning-replay suppression: the only
+    // thought check here, `check_no_duplicate_thought_lines`, fires on two
+    // adjacent identical collapsed headers, so a replay appended into an
+    // existing thinking node is invisible to it — this test stays green with
+    // the suppression removed. The count assertions in
+    // `session_event_stream_tests::recorded_fixtures_render_exactly_their_non_replayed_thoughts`
+    // are what pin that.
     let mut stream = SessionEventStream::new();
 
     for line in content.lines() {
@@ -786,10 +793,15 @@ fn invariant_reproduce_jsonl_every_frame() {
         } else if event_type == "user_message" {
             saw_text_delta = false;
         }
-        // DO NOT skip thinking events that arrive after text_delta.
-        // The real TUI processes them (causing the duplicate thinking bug).
-        // Only skip the full_response text from message_complete to avoid
-        // double-counting text that was already streamed via text_delta.
+        // This one deliberately feeds the *un-deduped* worst case: raw
+        // `session_event_to_chat_msgs` with no reasoning-replay suppression, so
+        // every thinking event in the recording reaches the app including the
+        // end-of-stream replays. The layout invariants below must hold on that
+        // input too — a console is not allowed to break its geometry just
+        // because it was handed more thoughts than a deduped stream would send.
+        // (The suppression itself is pinned in `session_event_stream_tests`.)
+        // The only thing skipped here is `message_complete`'s full_response
+        // text, which would double-count what already streamed as text_delta.
 
         // Skip non-rendering events
         if event_type == "precognition_complete"

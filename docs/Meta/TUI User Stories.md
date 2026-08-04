@@ -92,8 +92,8 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### US-203: Thinking display
 **As a user**, I see thinking blocks stream with a token count, toggle them with Ctrl+T, and set `:set thinking`.
-**Acceptance:** collapsed/expanded states render correctly; toggle applies retroactively to visible blocks; thinking never leaks into graduated content when hidden.
-**Tests:** T2 (collapsed/expanded snapshots exist), T1 (toggle state).
+**Acceptance:** collapsed/expanded states render correctly; toggle applies retroactively to visible blocks; thinking never leaks into graduated content when hidden. An agent that reasons, speaks, then reasons again within one turn — any ACP-delegated agent, and the internal agent between tool batches — has every one of those thoughts rendered, in wire order. A provider's end-of-stream replay of a reasoning block it already streamed is painted once, not twice; suppression is content-based and turn-scoped, and never fires on a run short enough to be a single ordinary thought (a thought that merely repeats its predecessor is new content, not a replay).
+**Tests:** T2 (collapsed/expanded snapshots exist), T1 (toggle state); T1 `session_event_stream_tests` (interleaving, replay drop, minimum-run floor, per-turn reset, per-fixture rendered-thought counts); T2 `user_story_tests/acp_parity_tests::{a_delegated_agent_second_thought_reaches_the_screen, an_end_of_stream_reasoning_replay_is_not_painted_twice}`.
 
 ### US-204: Markdown rendering
 **As a user**, responses render styled markdown: bold/italic, inline code, highlighted code blocks, lists, tables.

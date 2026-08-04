@@ -21,14 +21,34 @@ pub struct SessionEventStream {
     saw_text_delta: bool,
     /// Thinking rendered since the last replay boundary, concatenated.
     thinking_run: String,
+    /// How many `thinking` deltas that run is made of. A run of one is a
+    /// single thought, not a stream — see [`MIN_REPLAY_RUN_DELTAS`].
+    thinking_run_deltas: usize,
     context_limit: Option<Arc<AtomicUsize>>,
 }
+
+/// Shortest delta run a `thinking` payload may be judged a replay of.
+///
+/// A replay is by construction the *concatenation* of a streamed run, so it
+/// takes at least two deltas to make one. Without this floor the rule also
+/// matches a thought that simply repeats the one before it — an agent that says
+/// `"Hmm."` three times rendered only twice, and a single-delta thought
+/// followed by an identical single-delta thought was deleted outright. That
+/// window is open exactly when the run is short: at the start of a turn and
+/// immediately after every drop.
+///
+/// The floor costs nothing on real data. All 11 replays across
+/// `assets/fixtures` (`demo`, `parity-test`, `reproduce`,
+/// `reproduce-formatting`) follow runs of **17–103** deltas and carry 79–515
+/// chars; none is anywhere near the boundary.
+const MIN_REPLAY_RUN_DELTAS: usize = 2;
 
 impl SessionEventStream {
     pub fn new() -> Self {
         Self {
             saw_text_delta: false,
             thinking_run: String::new(),
+            thinking_run_deltas: 0,
             context_limit: None,
         }
     }
@@ -55,9 +75,20 @@ impl SessionEventStream {
     /// reasoning blocks in one turn: each replay covers only the block since
     /// the previous one. Verified against every recording in `assets/fixtures`
     /// — each replay there is byte-identical to its run.
+    ///
+    /// The [`MIN_REPLAY_RUN_DELTAS`] floor is what keeps a *repetition* from
+    /// being mistaken for a replay. Dropping content is unrecoverable, so the
+    /// rule must never fire on a run short enough to be one ordinary thought.
     fn is_thinking_replay(&self, data: &serde_json::Value) -> bool {
-        !self.thinking_run.is_empty()
+        self.thinking_run_deltas >= MIN_REPLAY_RUN_DELTAS
             && data.get("content").and_then(|v| v.as_str()) == Some(self.thinking_run.as_str())
+    }
+
+    /// Forget the thinking run: nothing rendered after this can be judged a
+    /// replay of what came before it.
+    fn reset_thinking_run(&mut self) {
+        self.thinking_run.clear();
+        self.thinking_run_deltas = 0;
     }
 
     pub fn with_context_limit(mut self, limit: Arc<AtomicUsize>) -> Self {
@@ -70,16 +101,17 @@ impl SessionEventStream {
             self.saw_text_delta = true;
         } else if event_type == "user_message" {
             self.saw_text_delta = false;
-            self.thinking_run.clear();
+            self.reset_thinking_run();
         }
 
         if event_type == "thinking" {
             if self.is_thinking_replay(data) {
-                self.thinking_run.clear();
+                self.reset_thinking_run();
                 return Vec::new();
             }
             if let Some(content) = data.get("content").and_then(|v| v.as_str()) {
                 self.thinking_run.push_str(content);
+                self.thinking_run_deltas += 1;
             }
         }
 

@@ -194,11 +194,18 @@ fn thinking_replay_is_dropped_even_without_an_intervening_text_delta() {
 fn a_repeated_thought_in_a_later_turn_still_renders() {
     // Replay suppression is turn-scoped: the same reasoning text in the next
     // turn is a genuinely new thought and must survive.
+    //
+    // Turn "a" streams the thought as two deltas on purpose. That makes its run
+    // replay-eligible *and* byte-equal to turn "b"'s single thought, so the only
+    // thing standing between turn "b" and deletion is the per-turn reset — which
+    // is what this test claims to pin. Repeating the thought inside turn "a"
+    // instead would trip the replay rule there and clear the run as a side
+    // effect, leaving nothing for the reset to do.
     let mut stream = SessionEventStream::new();
     for (t, d) in [
         ("user_message", json!({"content": "a"})),
-        ("thinking", json!({"content": "same thought"})),
-        ("thinking", json!({"content": "same thought"})),
+        ("thinking", json!({"content": "same "})),
+        ("thinking", json!({"content": "thought"})),
     ] {
         let _ = stream.translate(t, &d);
     }
@@ -215,21 +222,109 @@ fn a_repeated_thought_in_a_later_turn_still_renders() {
 }
 
 #[test]
-fn recorded_fixtures_carry_no_thinking_replay_after_translation() {
-    // Pins the rule against every recording in the repo: after translation no
-    // `thinking` payload may equal the concatenation of the thoughts already
-    // rendered since the last replay boundary. Written against the fixtures
-    // whose raw event streams do contain such a replay.
-    for fixture in [
-        "demo.jsonl",
-        "parity-test.jsonl",
-        "reproduce.jsonl",
-        "reproduce-formatting.jsonl",
+fn a_thought_that_merely_repeats_the_one_before_it_still_renders() {
+    // A replay is the *concatenation* of a streamed run, so it takes at least
+    // two deltas to make one. Matching a one-delta run as well deleted real
+    // content: an agent that said "Hmm." three times rendered only twice,
+    // alternating drop and render as the run reset itself.
+    let mut stream = SessionEventStream::new();
+    let mut msgs = Vec::new();
+    for (t, d) in [
+        ("user_message", json!({"content": "hi"})),
+        ("thinking", json!({"content": "Hmm."})),
+        ("thinking", json!({"content": "Hmm."})),
+        ("thinking", json!({"content": "Hmm."})),
     ] {
-        let jsonl = std::fs::read_to_string(format!("../../assets/fixtures/{fixture}"))
-            .unwrap_or_else(|e| panic!("read {fixture}: {e}"));
+        msgs.extend(stream.translate(t, &d));
+    }
+
+    assert_eq!(
+        thinking_of(&msgs),
+        vec!["Hmm.", "Hmm.", "Hmm."],
+        "a repeated short thought was deleted as if it were a stream replay"
+    );
+}
+
+#[test]
+fn a_single_delta_thought_is_never_a_replay_boundary() {
+    // The same hole at its smallest: one thought, then the identical thought.
+    // Nothing has been *streamed* yet, so there is no run for the second to be
+    // a replay of — and the window was open at exactly the moment a turn
+    // starts, where the old `saw_text_delta` guard never dropped anything.
+    let mut stream = SessionEventStream::new();
+    let mut msgs = Vec::new();
+    for (t, d) in [
+        ("user_message", json!({"content": "hi"})),
+        ("thinking", json!({"content": "check the lockfile"})),
+        ("thinking", json!({"content": "check the lockfile"})),
+    ] {
+        msgs.extend(stream.translate(t, &d));
+    }
+
+    assert_eq!(
+        thinking_of(&msgs),
+        vec!["check the lockfile", "check the lockfile"],
+        "a thought was deleted for repeating a single-delta predecessor"
+    );
+}
+
+#[test]
+fn a_replay_is_still_dropped_at_the_minimum_run_length() {
+    // The floor is two deltas, not more: a run of exactly two must still have
+    // its replay suppressed, or the fix would have traded one silent deletion
+    // for a duplicated thought.
+    let mut stream = SessionEventStream::new();
+    let mut msgs = Vec::new();
+    for (t, d) in [
+        ("user_message", json!({"content": "hi"})),
+        ("thinking", json!({"content": "read "})),
+        ("thinking", json!({"content": "the config"})),
+        ("thinking", json!({"content": "read the config"})),
+    ] {
+        msgs.extend(stream.translate(t, &d));
+    }
+
+    assert_eq!(thinking_of(&msgs), vec!["read ", "the config"]);
+}
+
+#[test]
+fn recorded_fixtures_render_exactly_their_non_replayed_thoughts() {
+    // Pins the rule against every recording in the repo that carries an
+    // end-of-stream reasoning replay, as a **count** of rendered
+    // `ThinkingDelta`s rather than a self-checking oracle.
+    //
+    // The oracle version of this test was blind: it re-derived the "run so far"
+    // itself but never reset that accumulator when the converter dropped a
+    // payload, so after the first replay its model diverged from production and
+    // it could no longer see a second one. Deleting the run-consumption inside
+    // the converter's match arm left it green while regressing `demo.jsonl`,
+    // whose second 119-char replay would then render.
+    //
+    // A constant has no model to get wrong. Each number is the count of
+    // `thinking` events in that fixture minus its replays, verified
+    // independently against the raw JSONL:
+    //
+    //   demo                  68 thinking events −  2 replays (156, 119 chars)
+    //   parity-test           59                 −  1        (266)
+    //   reproduce            173                 −  4        (515, 79, 161, 87)
+    //   reproduce-formatting 162                 −  4        (272, 146, 183, 144)
+    //
+    // Mutation-verified: it dies both when a replay is never dropped (counts
+    // rise) and when the run is not consumed on a match (later replays in the
+    // same turn stop matching, counts rise). It does **not** catch a missing
+    // `user_message` reset — no recording here happens to open a turn with a
+    // thought equal to the previous turn's whole run — so that mutation is
+    // owned by `a_repeated_thought_in_a_later_turn_still_renders`, which
+    // constructs the collision on purpose.
+    for (fixture, expected) in [
+        ("demo.jsonl", 66),
+        ("parity-test.jsonl", 58),
+        ("reproduce.jsonl", 169),
+        ("reproduce-formatting.jsonl", 158),
+    ] {
+        let jsonl = crate::tui::oil::tests::helpers::read_fixture(fixture);
         let mut stream = SessionEventStream::new();
-        let mut run = String::new();
+        let mut rendered = 0usize;
 
         for line in jsonl.lines() {
             let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
@@ -239,19 +334,13 @@ fn recorded_fixtures_carry_no_thinking_replay_after_translation() {
                 continue;
             };
             let data = v.get("data").cloned().unwrap_or_default();
-            if event_type == "user_message" {
-                run.clear();
-            }
-            for text in thinking_of(&stream.translate(event_type, &data)) {
-                assert!(
-                    run.is_empty() || text != run,
-                    "{fixture}: rendered a {} char thinking replay of the \
-                     preceding run",
-                    text.len()
-                );
-                run.push_str(&text);
-            }
+            rendered += thinking_of(&stream.translate(event_type, &data)).len();
         }
+
+        assert_eq!(
+            rendered, expected,
+            "{fixture} rendered {rendered} thinking deltas, expected {expected}"
+        );
     }
 }
 
@@ -371,10 +460,7 @@ fn message_complete_without_token_counts_does_not_emit_context_usage() {
 
 #[test]
 fn delegation_fixture_renders_without_duplication() {
-    use std::fs::read_to_string;
-
-    let jsonl =
-        read_to_string("../../assets/fixtures/delegation-demo.jsonl").expect("fixture present");
+    let jsonl = crate::tui::oil::tests::helpers::read_fixture("delegation-demo.jsonl");
     let mut stream = SessionEventStream::new();
     let mut all_msgs = Vec::new();
 

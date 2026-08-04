@@ -10,6 +10,12 @@
 //! the daemon stamping `Acp:<agent>` onto the `tool_call` event — is pinned in
 //! `crucible-daemon/src/agent_manager/tests/messaging.rs`, because nothing in
 //! this crate can fail when that literal regresses.
+//!
+//! The two thinking tests at the end belong to **US-203** (thinking display),
+//! not US-307: they are about which thoughts reach the screen, which has
+//! nothing to do with provenance. They live here because a delegated agent is
+//! the shape that exposes the behaviour — it runs its own tool loop, so it
+//! alternates reasoning and narration inside one turn.
 
 use serde_json::json;
 
@@ -73,9 +79,9 @@ fn a_pre_badge_recording_still_badges_the_delegated_card() {
     );
 }
 
-/// A delegated agent runs its own tool loop, so it narrates and reasons in
-/// alternation across a single turn. Every one of those thoughts is content the
-/// user asked to see (`show_thinking` defaults on), not a restatement.
+/// US-203: a delegated agent runs its own tool loop, so it narrates and reasons
+/// in alternation across a single turn. Every one of those thoughts is content
+/// the user asked to see (`show_thinking` defaults on), not a restatement.
 #[test]
 fn a_delegated_agent_second_thought_reaches_the_screen() {
     let mut story = StoryRuntime::new(80, 24);
@@ -108,9 +114,10 @@ fn a_delegated_agent_second_thought_reaches_the_screen() {
     );
 }
 
-/// The counterweight: a provider that streams its reasoning and *then* replays
-/// the whole block at stream end must not paint it twice. This is what the
-/// original `saw_text_delta` guard bought, and it has to survive the narrowing.
+/// US-203, the counterweight: a provider that streams its reasoning and *then*
+/// replays the whole block at stream end must not paint it twice. This is what
+/// the original `saw_text_delta` guard bought, and it has to survive the
+/// narrowing.
 #[test]
 fn an_end_of_stream_reasoning_replay_is_not_painted_twice() {
     let mut story = StoryRuntime::new(80, 24);

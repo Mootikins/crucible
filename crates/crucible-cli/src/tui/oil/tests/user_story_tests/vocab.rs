@@ -73,6 +73,11 @@ pub(crate) fn announce_tool_call(
 /// `session_event → ChatAppMsg` mapping the live RPC client uses. Use this
 /// (rather than [`announce_tool_call`]) when the story is about the wire
 /// payload surviving that mapping.
+///
+/// **Stateless.** This is the bare mapping function; it carries nothing across
+/// events. Any story whose meaning depends on what came before — replay dedup,
+/// `message_complete` suppression — must use [`relay_session_turn`] instead, or
+/// it will assert against a stream no live console produces.
 pub(crate) fn relay_session_event(story: &mut StoryRuntime, event: &str, data: serde_json::Value) {
     for msg in crate::tui::oil::chat_runner::session_event_to_chat_msgs(event, &data) {
         story.send(msg);
@@ -85,8 +90,15 @@ pub(crate) fn relay_session_event(story: &mut StoryRuntime, event: &str, data: s
 /// Prefer this over repeated [`relay_session_event`] calls whenever the story
 /// depends on cross-event state — de-duplicating a provider's end-of-stream
 /// replays, or suppressing `message_complete`'s full-response snapshot once
-/// granular deltas have streamed. One call is one turn: the stream is
-/// constructed fresh, exactly as a turn's worth of events would arrive.
+/// granular deltas have streamed.
+///
+/// **One call is one turn, and each call builds a fresh `SessionEventStream`.**
+/// Production keeps *one* stream per session for its whole life and relies on
+/// the `user_message` event to reset the per-turn state
+/// (`chat_runner/stream.rs`). So consecutive calls here model two turns only
+/// because construction happens to reset the same fields; a story that needs to
+/// pin the `user_message` reset itself must drive one stream across both turns
+/// directly (see `session_event_stream_tests`).
 pub(crate) fn relay_session_turn(story: &mut StoryRuntime, events: &[(&str, serde_json::Value)]) {
     let mut stream = SessionEventStream::new();
     for (event, data) in events {
