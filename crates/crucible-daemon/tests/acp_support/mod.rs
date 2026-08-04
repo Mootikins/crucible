@@ -5,6 +5,7 @@
 //! This module provides mock agents and test helpers for integration testing.
 
 pub mod mock_stdio_agent;
+pub mod parity;
 pub mod threaded_mock_agent;
 
 pub use mock_stdio_agent::{AgentBehavior, MockStdioAgent, MockStdioAgentConfig};
