@@ -83,6 +83,49 @@ async fn acp_shapes_for_text_only_turn(tool_call: Option<&str>) -> Vec<EventShap
     acp_shapes(agent_config).await
 }
 
+/// A turn the agent ends with `stopReason: cancelled`.
+///
+/// Per ACP an agent MUST end a cancelled turn this way, so this is the shape
+/// the daemon sees whenever cancellation actually lands.
+async fn acp_shapes_for_cancelled_turn() -> Vec<EventShape> {
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
+    let mut agent_config = mock_session_agent(&agent_path);
+    agent_config
+        .env_overrides
+        .insert("CRU_MOCK_STREAM_CHUNKS".to_string(), "Working on it".into());
+    agent_config
+        .env_overrides
+        .insert("CRU_MOCK_STOP_REASON".to_string(), "cancelled".into());
+
+    acp_shapes(agent_config).await
+}
+
+/// A turn that produces nothing at all: no text, no thinking, no tool calls.
+async fn acp_shapes_for_empty_turn() -> Vec<EventShape> {
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
+    acp_shapes(mock_session_agent(&agent_path)).await
+}
+
+/// A turn whose only tool traffic is a completed `tool_call_update` for an id
+/// that no `tool_call` ever introduced.
+///
+/// `flavor` picks the mock's `CRU_MOCK_ORPHAN_TOOL_END` script: `"bare"` omits
+/// every field the client records a call from, so the name is unknowable;
+/// `"titled"` carries a title, so the call *is* recorded and the handle's
+/// post-stream replay can still name it.
+async fn acp_shapes_for_orphaned_tool_end(flavor: &str) -> Vec<EventShape> {
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
+    let mut agent_config = mock_session_agent(&agent_path);
+    agent_config
+        .env_overrides
+        .insert("CRU_MOCK_STREAM_CHUNKS".to_string(), "Done".into());
+    agent_config
+        .env_overrides
+        .insert("CRU_MOCK_ORPHAN_TOOL_END".to_string(), flavor.into());
+
+    acp_shapes(agent_config).await
+}
+
 /// B1: an ACP turn that called a tool must close the batch.
 ///
 /// `ToolBatchEnd` is the event the scheduler's per-batch bookkeeping hangs off
@@ -175,5 +218,110 @@ async fn mock_tool_call_hook_set_to_zero_scripts_no_tool_call() {
             EventShape::Done(StopReason::EndTurn),
         ],
         "CRU_MOCK_STREAM_TOOL_CALL=0 must mean off; got {shapes:#?}"
+    );
+}
+
+/// B3: a cancelled turn must not render as a normal completion.
+///
+/// The stop reason is the only signal that separates "the agent finished" from
+/// "the agent was stopped", and ACP puts it on the wire: an agent that has seen
+/// `session/cancel` MUST end the turn with `stopReason: cancelled`. The handle
+/// used to discard the whole `PromptResponse` and hardcode `EndTurn`, so a
+/// cancelled delegated turn was indistinguishable from a finished one.
+#[tokio::test]
+async fn acp_cancelled_turn_reports_cancelled_stop_reason() {
+    let shapes = acp_shapes_for_cancelled_turn().await;
+
+    assert_eq!(
+        shapes.last(),
+        Some(&EventShape::Done(StopReason::Cancelled)),
+        "an ACP turn the agent ended as cancelled reported a different stop \
+         reason, so a stopped turn renders as a completed one; got {shapes:#?}"
+    );
+}
+
+/// B3: a turn that produced nothing says so.
+///
+/// `StopReason::Empty` means "no text and no tool calls" — the internal agent
+/// distinguishes it (`provider/genai_handle.rs`), and a consumer that keys on
+/// it (retry, validation, statusline) was silently told every delegated turn
+/// succeeded.
+#[tokio::test]
+async fn acp_empty_turn_reports_empty_stop_reason() {
+    let shapes = acp_shapes_for_empty_turn().await;
+
+    assert_eq!(
+        shapes,
+        vec![EventShape::Done(StopReason::Empty)],
+        "a turn with no text, no thinking and no tool calls did not report \
+         Empty; got {shapes:#?}"
+    );
+}
+
+/// B4: a result for a call that was never announced must not invent a name.
+///
+/// A bare `tool_call_update{status: completed}` — no title, no rawInput, no
+/// diff — reaches the handle as a `ToolEnd` with an id the stream never saw a
+/// `ToolStart` for. The handle used to name it `"unknown_tool"`, which is a
+/// tool that does not exist: it reaches the session transcript and the web view
+/// as a real tool result, while the TUI drops it silently (`update_tool`
+/// matches nothing and warns, `containers.rs:335-364`) because no card was ever
+/// created for that id.
+///
+/// It must also not leave the `ToolBatchEnd` guard lying: a turn that announced
+/// no call must not claim a batch.
+#[tokio::test]
+async fn acp_orphaned_tool_end_does_not_invent_a_tool_name() {
+    let shapes = acp_shapes_for_orphaned_tool_end("bare").await;
+
+    assert!(
+        !shapes.iter().any(|s| matches!(
+            s,
+            EventShape::ToolResult { name, .. } if name == "unknown_tool"
+        )),
+        "a tool_call_update with no matching tool_call produced a result for a \
+         fabricated tool; got {shapes:#?}"
+    );
+    assert_eq!(
+        shapes,
+        vec![
+            EventShape::Text("Done".into()),
+            EventShape::Done(StopReason::EndTurn),
+        ],
+        "an unnameable result has no card to land in, so the turn must carry \
+         neither the result nor a batch end; got {shapes:#?}"
+    );
+}
+
+/// B4, the recoverable half: the name arrives late, so use it.
+///
+/// When the orphaned `tool_call_update` carries a title, the client records the
+/// call and the handle's post-stream replay announces it — after the result.
+/// Emitting the result live would have to guess a name; holding it until the
+/// replay names it keeps the real one *and* puts the `ToolCall` before its
+/// `ToolResult`, which is the order the renderer needs to build the card first.
+#[tokio::test]
+async fn acp_orphaned_tool_end_with_a_late_title_reports_the_real_name() {
+    let shapes = acp_shapes_for_orphaned_tool_end("titled").await;
+
+    assert_eq!(
+        shapes,
+        vec![
+            EventShape::Text("Done".into()),
+            EventShape::ToolCall {
+                call: "call#0".into(),
+                name: "late_named_tool".into(),
+                diff_paths: vec![],
+            },
+            EventShape::ToolResult {
+                call: "call#0".into(),
+                name: "late_named_tool".into(),
+                is_error: false,
+            },
+            EventShape::ToolBatchEnd,
+            EventShape::Done(StopReason::EndTurn),
+        ],
+        "a late-titled orphan must be announced before its result and named \
+         from the announcement; got {shapes:#?}"
     );
 }

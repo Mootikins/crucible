@@ -382,7 +382,43 @@ display hints (`tool_call.rs:729-734`), which is already captured as **A2**.
 Renumbering is deliberately avoided so review comments and commits keep referring to stable task
 numbers. Skip straight to Task 5.
 
-## Task 5: B3/B4 — honest stop reasons and no `unknown_tool`
+## Task 5: B3/B4 — honest stop reasons and no `unknown_tool` — DONE
+
+**Two of the three prescribed implementation steps were wrong; read this before citing Task 5.**
+
+- **"Thread `StreamingState.cancelled` out of the client" is dead plumbing, and was not done.**
+  That flag is set when a streaming callback returns `false`, and this handle's callback is
+  `channel_callback` (`acp/streaming.rs:71`), which returns `false` only when `chunk_rx` has been
+  dropped — i.e. when the `stream!` body that would yield `Done` no longer exists. A stop reason
+  derived from it can never be read by anyone. The observable signal is the one already sitting in
+  the handle unused: ACP mandates that an agent which saw `session/cancel` answer with
+  `stopReason: cancelled`, and `acp_handle.rs` was discarding the whole `PromptResponse` as
+  `_response`. The fix reads it (`turn_stop_reason`, unit-tested for all five ACP variants —
+  the enum is `#[non_exhaustive]`, so the mapping needs a wildcard arm regardless).
+- **"Skip the orphaned `ToolResult`" is right only for half the cases.** An orphan is a `ToolEnd`
+  whose id has no `ToolStart` *yet* — and the ordering matters: when the offending
+  `tool_call_update` carries a `title`, the client records it and the handle's post-stream replay
+  announces the call, **after** the result has already gone out. Skipping unconditionally would
+  discard a result that does have a real name and a real card. The handle now defers orphaned
+  results to after the replay, names them from it, and drops only the ones still unnameable —
+  those have no card in either renderer (`containers.rs::update_tool` and the web's
+  `updateToolMessage` both match on the call id of an announced call and no-op otherwise), so
+  emitting them only put a nonexistent tool into the transcript, into `tool_result` Lua handlers,
+  and into the web event stream.
+- The `ToolBatchEnd` hole Task 3 flagged is closed as a consequence: every `ToolResult` a turn
+  yields now belongs to a `ToolCall` the same turn yielded, so `announced_any` can no longer
+  disagree with what was reported. The identical gate in the non-callback `apply_session_update`
+  needed no change — that path has no callback and so emits no `ToolEnd` chunks at all.
+- The added code pushed `acp_handle.rs` past the 1000-line budget
+  (`architecture_tests::no_new_oversized_modules`, and the ledger only shrinks), so the free
+  functions that translate the ACP wire into `TurnEvent`s — `turn_stop_reason`,
+  `replay_unannounced_tool_calls`, `acp_prompt_text` — moved with their unit tests into
+  `acp_handle/translate.rs`. That is the file's natural seam: everything in it is pure, so the
+  wire-shape decisions are testable without spawning an agent.
+- Mock hooks added (child-scoped env, value-read not presence-read): `CRU_MOCK_STOP_REASON`
+  (`cancelled` picks the `PromptTurn::cancelled` ending the mock already built) and
+  `CRU_MOCK_ORPHAN_TOOL_END` (`bare` | `titled`, the two orphan flavors above). The empty-turn
+  case needed no hook — an unconfigured mock turn already produces nothing.
 
 **Files:**
 - Test: `crates/crucible-daemon/tests/acp_integration/turn_event_parity.rs`

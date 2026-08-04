@@ -174,6 +174,17 @@ impl MockStdioAgentConfig {
     }
 }
 
+/// Test hook: end the scripted turn with `stopReason: cancelled` rather than
+/// `end_turn`, which is what a conforming agent must do once it has seen a
+/// `session/cancel` (the stdio run loop cannot interleave reads with a
+/// long-running turn, so the cancelled ending is scripted rather than raced).
+///
+/// Read as a value, not a presence: `CRU_MOCK_STOP_REASON=end_turn` must mean
+/// `end_turn`.
+fn scripted_stop_reason_is_cancelled() -> bool {
+    env::var("CRU_MOCK_STOP_REASON").as_deref().map(str::trim) == Ok("cancelled")
+}
+
 /// Mock stdio-based ACP agent
 ///
 /// This agent reads JSON-RPC messages from stdin and writes responses to stdout,
@@ -246,7 +257,12 @@ impl MockStdioAgent {
             // only honored by ThreadedMockAgent.)
             if method == Some("session/prompt") && !self.config.inject_errors {
                 let turn = self.handle_prompt_turn(&request);
-                for message in turn.notifications.iter().chain([&turn.end_turn]) {
+                let final_message = if scripted_stop_reason_is_cancelled() {
+                    &turn.cancelled
+                } else {
+                    &turn.end_turn
+                };
+                for message in turn.notifications.iter().chain([final_message]) {
                     writeln!(stdout, "{}", serde_json::to_string(message)?)?;
                 }
                 stdout.flush()?;
@@ -529,6 +545,39 @@ impl MockStdioAgent {
                 "status": "completed",
                 "rawOutput": { "result": "4" }
             })));
+        }
+
+        // Test hook, same shape as the two above: a `tool_call_update` for an
+        // id no `tool_call` ever introduced (divergence B4). Two flavors,
+        // because the client treats them differently:
+        //
+        // - `bare` omits every field the record gate in
+        //   `apply_session_update_with_callback` looks at (title, rawInput,
+        //   diff content), so the update produces a `ToolEnd` chunk and is
+        //   never recorded — nothing downstream can ever learn its name.
+        // - `titled` carries a title, so the client *does* record it and the
+        //   handle's post-stream replay announces the call — but only after
+        //   the result has already been emitted.
+        //
+        // Read as a value, not a presence; unknown values mean off.
+        match env::var("CRU_MOCK_ORPHAN_TOOL_END")
+            .as_deref()
+            .map(str::trim)
+        {
+            Ok("bare") => notifications.push(update(json!({
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "mock-orphan-1",
+                "status": "completed",
+                "rawOutput": { "result": "orphaned output" }
+            }))),
+            Ok("titled") => notifications.push(update(json!({
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "mock-orphan-1",
+                "status": "completed",
+                "title": "late_named_tool",
+                "rawOutput": { "result": "orphaned output" }
+            }))),
+            _ => {}
         }
 
         let final_response = |stop_reason: &str| {
