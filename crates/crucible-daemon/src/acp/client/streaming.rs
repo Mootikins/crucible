@@ -338,6 +338,28 @@ impl CrucibleAcpClient {
                     tracing::debug!("Ignoring non-text content block: {:?}", other);
                 }
             },
+            // Reasoning. Every conforming ACP agent streams it, and without
+            // this arm it fell through to the terminal "ignoring session
+            // update" case below, leaving `StreamingChunk::Thinking` with no
+            // producer — so a delegated session showed no thinking blocks while
+            // the internal agent showed them.
+            //
+            // Deliberately *not* guarded by `is_duplicate_resend`: that guard
+            // compares against `accumulated_text`, which is the assistant's
+            // answer. Sharing it would let a thought suppress an answer chunk
+            // (and vice versa) whenever the two happened to match. A thinking
+            // twin of it is not added either — an agent that replays its whole
+            // reasoning block is already handled downstream, source-agnostically
+            // and turn-scoped, by `SessionEventStream::is_thinking_replay`
+            // (`crucible-cli/src/tui/oil/chat_runner/stream.rs`).
+            SessionUpdate::AgentThoughtChunk(chunk) => match chunk.content {
+                ContentBlock::Text(text_block) => {
+                    state.cancelled |= !callback(StreamingChunk::Thinking(text_block.text));
+                }
+                other => {
+                    tracing::debug!("Ignoring non-text thought block: {:?}", other);
+                }
+            },
             SessionUpdate::ToolCall(tool_call) => {
                 let tool_name = humanize_tool_title(&tool_call.title);
                 let tool_id = tool_call.tool_call_id.to_string();
@@ -593,6 +615,17 @@ impl CrucibleAcpClient {
                     tracing::debug!("Ignoring non-text content block: {:?}", other);
                 }
             },
+            // Matched so reasoning is no longer swallowed by the terminal arm,
+            // but deliberately *not* folded into `state`: this path's only
+            // output is `formatted_output()`, which is the assistant's answer.
+            // Reasoning is not the answer, and there is no thinking channel in
+            // this function's return type — the live path
+            // (`apply_session_update_with_callback`) is the one that carries
+            // thoughts, via `StreamingChunk::Thinking`. An accumulator here
+            // would have no reader.
+            SessionUpdate::AgentThoughtChunk(chunk) => {
+                tracing::trace!("Agent thought chunk (not part of the answer): {:?}", chunk);
+            }
             SessionUpdate::ToolCall(tool_call) => {
                 tracing::info!("Tool call: {}", tool_call.title);
                 // Extract diffs from ToolCallContent::Diff entries
@@ -749,6 +782,60 @@ mod tests {
         assert!(
             state.cancelled,
             "a false callback (dropped receiver) must mark the turn cancelled"
+        );
+    }
+
+    /// A thought must not enter the answer accumulator, and must not be able to
+    /// mask a later answer chunk through `is_duplicate_resend`.
+    #[test]
+    fn thought_chunks_stay_out_of_the_answer_text() {
+        use agent_client_protocol::SessionNotification;
+
+        let mut client = test_client();
+        let mut state = StreamingState::default();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut cb = crate::acp::streaming::channel_callback(tx);
+
+        let thought: SessionNotification = serde_json::from_value(serde_json::json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "agent_thought_chunk",
+                "content": { "type": "text", "text": "weigh the options" }
+            }
+        }))
+        .expect("valid agent_thought_chunk notification");
+        client.apply_session_update_with_callback(thought, &mut state, &mut cb);
+
+        // The same words then arrive as the answer. If the thought had been
+        // appended to `accumulated_text`, the resend guard would drop it.
+        let answer: SessionNotification = serde_json::from_value(serde_json::json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": { "type": "text", "text": "weigh the options" }
+            }
+        }))
+        .expect("valid agent_message_chunk notification");
+        client.apply_session_update_with_callback(answer, &mut state, &mut cb);
+        drop(cb);
+
+        let mut chunks = Vec::new();
+        while let Ok(chunk) = rx.try_recv() {
+            chunks.push(chunk);
+        }
+
+        assert_eq!(
+            chunks,
+            vec![
+                StreamingChunk::Thinking("weigh the options".to_string()),
+                StreamingChunk::Text("weigh the options".to_string()),
+            ],
+            "reasoning and the answer share one accumulator, so one masked the other"
+        );
+        assert_eq!(
+            state.formatted_output(),
+            "weigh the options",
+            "reasoning leaked into the assistant's answer text"
         );
     }
 

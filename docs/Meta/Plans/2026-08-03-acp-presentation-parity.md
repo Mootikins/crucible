@@ -132,6 +132,19 @@ Grouped by where they bite. Each becomes a RED test.
   already graduated to scrollback, `update_tool_by_call_id` logs a warning and drops the diff
   (`containers.rs:382`). The existing tests (`message_routing_tests.rs:177,216`) check
   `tools[0].diffs` state but never render a frame.
+- **C4 — ACP thinking never reached the screen at all.** Found while reviewing Task 6, and the
+  largest parity gap in this plan. `SessionUpdate::AgentThoughtChunk` was **never matched** in
+  `acp/client/streaming.rs`: both `apply_session_update_with_callback` and `apply_session_update`
+  handled `AgentMessageChunk` and let thought chunks fall into the terminal
+  `other => tracing::debug!("Ignoring session update: …")` arm. Consequence:
+  `StreamingChunk::Thinking` (`acp/streaming.rs:27`) had **no production producer** — its only
+  non-test reference was its consumer at `acp_handle.rs:550` — so the entire
+  `StreamingChunk::Thinking` → `TurnEvent::Thinking` → `thinking` SessionEvent →
+  `ThinkingComponent` chain was dead on delegated sessions. Claude Code, Gemini and every other
+  conforming ACP agent stream reasoning this way, so a delegated session showed the user **no
+  thinking blocks whatsoever** while the internal agent showed them. The only `AgentThoughtChunk`
+  references anywhere in the repo were in `crucible-cli/src/commands/acp/translate.rs`, i.e. the
+  *outbound* `cru acp` direction. Fixed in Task 13.
 - **C3 — permission modal shows a coarse tool name.** The live ACP gate matches on ACP `ToolKind`
   via `acp_tool_name` (`agent_manager/messaging/permission.rs:30-52`) because **ACP carries no
   tool name on the wire** — only prose `title` and a `kind`. So the modal shows `read`/`edit`/
@@ -793,6 +806,46 @@ and populates the same `tool_call` metadata. Note that `display_parity.rs` tests
 git add docs/
 git commit -m "docs: add US-307 delegated agent presentation parity and the TurnEvent contract"
 ```
+
+---
+
+## Task 13: C4 — ACP thought chunks must reach the screen — DONE
+
+Task 6 narrowed the *converter's* thinking guard so interleaved thoughts survive. Reviewing it
+surfaced that on the ACP path there were no thoughts to survive: the client never produced one.
+
+**What shipped:**
+- `acp/client/streaming.rs` gained a `SessionUpdate::AgentThoughtChunk` arm in both update
+  appliers. The live one (`apply_session_update_with_callback`) mirrors `AgentMessageChunk`'s
+  `ContentBlock` match and emits `StreamingChunk::Thinking`, giving that variant its first
+  production producer. The rest of the chain needed no change — `acp_handle.rs` already mapped it
+  to `TurnEvent::Thinking`.
+- **Thought chunks deliberately get no duplicate-resend guard.** `is_duplicate_resend` compares
+  against `StreamingState::accumulated_text`, which is the assistant's *answer*; sharing it would
+  let a thought suppress an answer chunk and vice versa whenever the two matched. A separate
+  thinking twin was not added either: an agent that replays its whole reasoning block is already
+  handled downstream, source-agnostically and turn-scoped, by
+  `SessionEventStream::is_thinking_replay` — and a second content-equality rule inside the client
+  would reintroduce exactly the silent-deletion hazard Task 6's I1 fix closes. A regression test
+  (`thought_chunks_stay_out_of_the_answer_text`) pins that the two channels cannot mask each other.
+- **`StreamingState` gained no thinking accumulator.** `accumulated_text` exists only to serve
+  `is_duplicate_resend` and `formatted_output()` — the answer text. A parallel
+  `accumulated_thinking` would have no reader: the live path emits per chunk through the callback,
+  and `acp_handle.rs` discards the assembled `_content` entirely. Adding one would be another
+  `CrucibleClient`-shaped dead path (D1). The non-callback `apply_session_update` therefore matches
+  the variant only to keep it out of the terminal ignore arm and `trace!`s it, with a comment
+  saying why reasoning is not folded into `formatted_output()`.
+- Mock hook `CRU_MOCK_STREAM_THOUGHTS` (child-scoped env, value-read not presence-read):
+  `;`-separated thoughts, the first emitted *before* the text chunks and the rest *after*, which is
+  the think → narrate → think shape a delegated agent actually produces.
+
+**Tests:** `acp_thought_chunks_reach_the_turn_stream` and
+`mock_thinking_hook_set_to_empty_scripts_no_thoughts`
+(`tests/acp_integration/turn_event_parity.rs`); `thought_chunks_stay_out_of_the_answer_text`
+(`acp/client/streaming.rs`). The rest of the chain was already pinned —
+`TurnEvent::Thinking` → `thinking` SessionEvent in `agent_manager/tests/messaging.rs`, and
+`thinking` → a rendered block in
+`user_story_tests/acp_parity_tests.rs::a_delegated_agent_second_thought_reaches_the_screen`.
 
 ---
 

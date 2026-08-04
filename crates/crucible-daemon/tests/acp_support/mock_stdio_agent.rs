@@ -523,6 +523,29 @@ impl MockStdioAgent {
             }
         }
 
+        // Test hook, same value-read grammar as CRU_MOCK_STREAM_CHUNKS:
+        // script the agent's reasoning as `;`-separated thoughts, emitted as
+        // ACP `agent_thought_chunk` updates (divergence C4). The first lands
+        // *before* the text chunks and the rest *after* them, because that is
+        // the shape a delegated agent actually produces — it reasons,
+        // narrates, then reasons again within one turn. An unset or blank
+        // value means no thoughts at all.
+        let thoughts: Vec<String> = env::var("CRU_MOCK_STREAM_THOUGHTS")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| value.split(';').map(str::to_string).collect())
+            .unwrap_or_default();
+        if let Some((first, rest)) = thoughts.split_first() {
+            let thought = |text: &str| {
+                update(json!({
+                    "sessionUpdate": "agent_thought_chunk",
+                    "content": { "type": "text", "text": text }
+                }))
+            };
+            notifications.insert(0, thought(first));
+            notifications.extend(rest.iter().map(|text| thought(text)));
+        }
+
         // Same test hook as CRU_MOCK_STREAM_CHUNKS above: a spawned binary
         // can't be handed the in-process config, so tests that drive a real
         // `AcpAgentHandle` (which spawns this binary) select the tool-call

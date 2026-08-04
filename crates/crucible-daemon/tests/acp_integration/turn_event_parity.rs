@@ -100,6 +100,26 @@ async fn acp_shapes_for_cancelled_turn() -> Vec<EventShape> {
     acp_shapes(agent_config).await
 }
 
+/// A turn in which the agent reasons, narrates, then reasons again.
+///
+/// `thoughts` is the mock's `CRU_MOCK_STREAM_THOUGHTS` script: `;`-separated
+/// thoughts, the first emitted before the text chunk and the rest after it. The
+/// hook reads a *value*, so an empty script must mean "no thoughts" rather than
+/// "thoughts on".
+async fn acp_shapes_for_thinking_turn(thoughts: &str) -> Vec<EventShape> {
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
+    let mut agent_config = mock_session_agent(&agent_path);
+    agent_config.env_overrides.insert(
+        "CRU_MOCK_STREAM_CHUNKS".to_string(),
+        "The answer is 4".into(),
+    );
+    agent_config
+        .env_overrides
+        .insert("CRU_MOCK_STREAM_THOUGHTS".to_string(), thoughts.into());
+
+    acp_shapes(agent_config).await
+}
+
 /// A turn that produces nothing at all: no text, no thinking, no tool calls.
 async fn acp_shapes_for_empty_turn() -> Vec<EventShape> {
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
@@ -126,6 +146,68 @@ async fn acp_shapes_for_orphaned_tool_end(flavor: &str) -> Vec<EventShape> {
         .insert("CRU_MOCK_ORPHAN_TOOL_END".to_string(), flavor.into());
 
     acp_shapes(agent_config).await
+}
+
+/// C4: an ACP agent's reasoning must reach the turn stream.
+///
+/// Claude Code, Gemini and every other conforming ACP agent stream reasoning as
+/// `session/update` `agent_thought_chunk` frames. The client matched
+/// `AgentMessageChunk` and let thought chunks fall into its terminal
+/// "ignoring session update" arm, so `StreamingChunk::Thinking` had **no
+/// production producer** and the whole
+/// `Thinking` → `TurnEvent::Thinking` → `thinking` SessionEvent →
+/// `ThinkingComponent` chain was dead on delegated sessions: the internal agent
+/// showed thinking blocks and a delegated one showed none.
+///
+/// Order is part of the contract, not decoration: a delegated agent runs its
+/// own tool loop, so it reasons, narrates and reasons again inside one turn.
+/// Hoisting every thought to the front — or dropping the ones that follow text
+/// — would rewrite what the user reads.
+///
+/// The rest of the chain is already pinned: `TurnEvent::Thinking` → `thinking`
+/// SessionEvent in `agent_manager/tests/messaging.rs`, and `thinking` → a
+/// rendered block in `user_story_tests/acp_parity_tests.rs`
+/// (`a_delegated_agent_second_thought_reaches_the_screen`). This test is the
+/// link that was missing.
+#[tokio::test]
+async fn acp_thought_chunks_reach_the_turn_stream() {
+    let shapes = acp_shapes_for_thinking_turn("let me add them;that checks out").await;
+
+    assert!(
+        shapes.iter().any(|s| matches!(s, EventShape::Thinking(_))),
+        "an ACP agent's thought chunks never became Thinking events, so a \
+         delegated session renders no thinking blocks at all; got {shapes:#?}"
+    );
+    assert_eq!(
+        shapes,
+        vec![
+            EventShape::Thinking("let me add them".into()),
+            EventShape::Text("The answer is 4".into()),
+            EventShape::Thinking("that checks out".into()),
+            EventShape::Done(StopReason::EndTurn),
+        ],
+        "delegated reasoning must interleave with the narration in wire order; \
+         got {shapes:#?}"
+    );
+}
+
+/// The mock's thinking hook reads a *value*, not the variable's presence.
+///
+/// A presence check would make `CRU_MOCK_STREAM_THOUGHTS=` script a thought
+/// with empty text, which the harness drops as invisible — so the negative case
+/// would silently stop testing anything.
+#[tokio::test]
+async fn mock_thinking_hook_set_to_empty_scripts_no_thoughts() {
+    let shapes = acp_shapes_for_thinking_turn("").await;
+
+    assert_eq!(
+        shapes,
+        vec![
+            EventShape::Text("The answer is 4".into()),
+            EventShape::Done(StopReason::EndTurn),
+        ],
+        "CRU_MOCK_STREAM_THOUGHTS= must mean no thoughts; got {shapes:#?}"
+    );
 }
 
 /// B1: an ACP turn that called a tool must close the batch.
