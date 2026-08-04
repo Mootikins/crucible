@@ -16,15 +16,42 @@ tags:
 agent for equivalent behavior, and pin that with tests at both the event and frame level.
 
 **Architecture:** `AcpAgentHandle` and `GenaiAgentHandle` both `impl AgentHandle` and both emit
-`TurnEvent`, which a *single shared* consumer (`agent_manager/messaging/stream.rs`) converts to
+`TurnEvent`, consumed by the shared `agent_manager/messaging/stream.rs`, which emits
 `SessionEventMessage` → RPC → `chat_runner/commands.rs::session_event_to_chat_msgs()` →
 `ChatAppMsg` → `ContainerList` → render. **From `ChatAppMsg` onward there is no ACP/internal branch
-anywhere in `crates/crucible-cli/src/tui/oil/` — there is exactly one renderer.** Presentation
-parity therefore reduces to a contract on the events reaching that renderer. We assert at the event
-boundary (cheap, deterministic, localizing) and again at the rendered frame (proves it lands).
+anywhere in `crates/crucible-cli/src/tui/oil/` — there is exactly one renderer.**
+
+**The parity boundary is `SessionEventMessage`, not `TurnEvent`.** This distinction was wrong in
+the first draft of this plan and matters:
+
+- At the `TurnEvent` layer the two agents differ **by design**. The internal agent yields
+  `ToolCall` + `ToolBatchEnd` and lets the daemon dispatch the tool, receiving the result back
+  *inbound* (`stream.rs:715`). An ACP agent (`owns_history`) runs its own tool loop and yields
+  `ToolCall` + `ToolResult` *outbound*. `genai_handle.rs:1363` only ever matches `ToolResult` as
+  inbound; it never yields one. A direct `assert_eq!(turn_events(acp), turn_events(internal))` is
+  therefore structurally impossible and must never be written.
+- Both paths **converge** on `SessionEventMessage::tool_result(session_id, id, name, {"result"|"error": …})`
+  — internal from `tool_call.rs:739`, ACP from `stream.rs:786`. That is the shared vocabulary the
+  renderer consumes, and the only honest place to assert cross-agent equality.
+
+So: `TurnEvent`-level tests are **per-agent expectations** (does ACP emit the events its own
+contract requires), and cross-agent parity is asserted at `SessionEventMessage` and at the
+rendered frame.
 
 **Tech Stack:** Rust, cargo-nextest, `insta` snapshots, `StoryRuntime`/`Vt100TestRuntime`,
 the existing ACP replay transport (`acp::client::replay::ReplayFixture`) and `mock-acp-agent`.
+
+**Prerequisites.** Run `just web-build` once in a fresh worktree — the nextest setup script fails
+otherwise with `#[derive(RustEmbed)] folder crucible-web/web/dist does not exist`, which blocks
+*every* daemon test. Note also that `just test-crate <crate>` takes only a crate name; to filter,
+use `just test-crate-filter <crate> <filter>`. nextest's `test()` matcher runs against the test's
+path *within* the binary, not the binary name — so a filter like `acp_` will not select
+`support::parity::tests::*`.
+
+**Known pre-existing breakage (not caused by this branch).** `just clippy` fails under `-D warnings`
+on `clippy::cloned_ref_to_slice_refs` at `daemon_plugins/tests.rs:395` and `skills/discovery.rs:383`
+— a newer clippy than the code was written against. `just ci` will fail at final verification until
+these are fixed; fix them in a separate commit rather than folding them into a parity task.
 
 **Scope note — two ACP directions.** Crucible is an ACP *client* (daemon spawns
 claude/opencode/codex; `crucible-daemon/src/acp/` + `acp_handle.rs`) **and** an ACP *agent*
@@ -74,8 +101,10 @@ Grouped by where they bite. Each becomes a RED test.
 - **B1 — no `ToolBatchEnd`.** `acp_handle.rs:519-571` never yields it; `genai_handle.rs:1344`
   does. Acknowledged at `crucible-core/src/traits/chat.rs:102-107`. Depth-cap ticking and the Lua
   `terminate` flag are dead on every ACP session.
-- **B2 — tool results are stringified.** `acp_handle.rs:559` wraps in `Value::String(...)`; the
-  internal path carries structured JSON. Result cards receive different types.
+- **~~B2 — tool results are stringified.~~ WITHDRAWN — this was a false premise.** `acp_handle.rs:559`
+  does wrap in `Value::String(...)`, but so does the internal path (`stream.rs:717`), and both
+  converge on the same `{"result": <string>}` envelope at the `SessionEventMessage` boundary
+  (`tool_call.rs:739` vs `stream.rs:786`). There is no divergence here. Task 4 is dropped.
 - **B3 — `StopReason` is always `EndTurn`.** `acp_handle.rs:606`. Notably the client *does*
   implement cancellation (`state.cancelled` → `session/cancel`, `client/streaming.rs:225-248`),
   but that never reaches the stop reason — so a cancelled ACP turn renders as a normal completion.
@@ -211,7 +240,7 @@ In `crates/crucible-daemon/tests/acp_support/mod.rs`, add `pub mod parity;`
 
 **Step 3: Verify it compiles**
 
-Run: `just test-crate crucible-daemon -E 'test(acp_)'`
+Run: `just test-crate-filter crucible-daemon 'acp_'`
 Expected: compiles, existing ACP tests still pass.
 
 **Step 4: Commit**
@@ -250,7 +279,7 @@ fn acp_source_parses_to_a_displayable_source() {
 
 **Step 2: Run to confirm it fails**
 
-Run: `just test-crate crucible-cli -E 'test(acp_source_parses)'`
+Run: `just test-crate-filter crucible-cli 'acp_source_parses'`
 Expected: FAIL — `parse_tool_source` returns `None`.
 
 **Step 3: Add the variant and the arm**
@@ -281,7 +310,7 @@ fn acp_tool_call_renders_a_provenance_badge() {
 
 **Step 5: Run both, confirm PASS**
 
-Run: `just test-crate crucible-cli -E 'test(acp_source_parses) or test(acp_tool_call_renders)'`
+Run: `just test-crate-filter crucible-cli 'acp_'`
 
 **Step 6: Commit**
 
@@ -314,7 +343,7 @@ async fn acp_emits_tool_batch_end_after_tool_calls() {
 
 **Step 2: Run to confirm it fails**
 
-Run: `just test-crate crucible-daemon -E 'test(acp_emits_tool_batch_end)'`
+Run: `just test-crate-filter crucible-daemon 'acp_emits_tool_batch_end'`
 
 **Step 3: Emit the event**
 
@@ -328,7 +357,7 @@ if !announced_ids.is_empty() {
 
 **Step 4: Run and check the depth-cap consumer**
 
-Run: `just test-crate crucible-daemon -E 'test(acp_)'`
+Run: `just test-crate-filter crucible-daemon 'acp_'`
 `stream.rs:823` now ticks depth for ACP — confirm nothing regresses on tool-depth counting.
 
 **Step 5: Update the stale doc comment** at `traits/chat.rs:102-107`.
@@ -341,52 +370,21 @@ git commit -am "fix(acp): emit ToolBatchEnd so depth-cap and terminate apply to 
 
 ---
 
-## Task 4: B2 — preserve tool-result structure
+## Task 4: WITHDRAWN — B2 was a false premise
 
-**Files:**
-- Test: `crates/crucible-daemon/tests/acp_integration/turn_event_parity.rs`
-- Modify: `crates/crucible-daemon/src/acp_handle.rs:559`
+**Do not implement.** The original claim was that ACP stringifies tool results while the internal
+agent keeps them structured. It does not hold:
 
-**Step 1: Write the failing test**
+- ACP: `acp_handle.rs:559` wraps in `Value::String`.
+- Internal: `stream.rs:717` *also* wraps in `Value::String` when feeding the result back inbound.
+- Both converge on the same `{"result": <string>}` / `{"error": <string>}` envelope at the
+  `SessionEventMessage` boundary — `tool_call.rs:739` (internal) and `stream.rs:786` (ACP).
 
-```rust
-#[tokio::test]
-async fn acp_tool_result_preserves_json_structure() {
-    let shapes = coalesce(acp_shapes_for_json_tool_result(r#"{"matches": 3}"#).await);
-    let result_is_string = shapes.iter().find_map(|s| match s {
-        EventShape::ToolResult { result_is_string, .. } => Some(*result_is_string),
-        _ => None,
-    });
-    assert_eq!(
-        result_is_string, Some(false),
-        "ACP stringified a structured tool result; the internal agent keeps it \
-         structured, so result cards receive different types"
-    );
-}
-```
+The only real difference in that envelope is the internal path's optional `summary` field from Lua
+display hints (`tool_call.rs:729-734`), which is already captured as **A2**.
 
-**Step 2: Run to confirm FAIL**
-
-**Step 3: Parse when the payload is JSON**
-
-Plain prose stays a string — correct, and matches the internal path for text tools.
-
-```rust
-let result_value = match result {
-    Some(raw) => serde_json::from_str(&raw).unwrap_or(serde_json::Value::String(raw)),
-    None => serde_json::Value::String(String::new()),
-};
-```
-
-**Step 4: Run to confirm PASS**
-
-**Step 5: Commit**
-
-```bash
-git commit -am "fix(acp): keep structured tool results structured for result rendering"
-```
-
----
+Renumbering is deliberately avoided so review comments and commits keep referring to stable task
+numbers. Skip straight to Task 5.
 
 ## Task 5: B3/B4 — honest stop reasons and no `unknown_tool`
 
@@ -490,6 +488,11 @@ git commit -am "fix(tui): stop discarding interleaved thinking on delegated sess
 
 The payoff: same behavior, both sources, identical pixels.
 
+**Why this one is legitimate** (unlike a `TurnEvent`-level equality assertion): the fixtures are
+`SessionEvent` JSONL, i.e. the layer *after* the two agents converge. Pumping both through
+`StoryRuntime` exercises the single shared renderer, so any frame difference is a genuine
+presentation divergence rather than the by-design `owns_history` asymmetry.
+
 **Files:**
 - Create: `crates/crucible-cli/src/tui/oil/tests/user_story_tests/acp_parity_tests.rs`
 - Modify: `crates/crucible-cli/src/tui/oil/tests/user_story_tests/mod.rs`
@@ -526,7 +529,7 @@ fn acp_and_internal_agents_render_identical_frames() {
 
 **Step 3: Run it and read the diff carefully**
 
-Run: `just test-crate crucible-cli -E 'test(acp_and_internal_agents_render)'`
+Run: `just test-crate-filter crucible-cli 'acp_and_internal_agents_render'`
 
 Expect it to fail on the A2 gap (missing description / primary arg). Two legitimate outcomes:
 - **Fixable** — make the ACP arm populate what it can (`stream.rs:454-480` can look up a
