@@ -15,6 +15,7 @@ use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermRe
 
 use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::ChatAppMsg;
+use crate::tui::oil::chat_runner::SessionEventStream;
 
 use super::support::StoryRuntime;
 
@@ -75,6 +76,23 @@ pub(crate) fn announce_tool_call(
 pub(crate) fn relay_session_event(story: &mut StoryRuntime, event: &str, data: serde_json::Value) {
     for msg in crate::tui::oil::chat_runner::session_event_to_chat_msgs(event, &data) {
         story.send(msg);
+    }
+}
+
+/// Relay a whole turn of raw daemon session events through the *stateful*
+/// [`SessionEventStream`] the live runner and session resume both use.
+///
+/// Prefer this over repeated [`relay_session_event`] calls whenever the story
+/// depends on cross-event state — de-duplicating a provider's end-of-stream
+/// replays, or suppressing `message_complete`'s full-response snapshot once
+/// granular deltas have streamed. One call is one turn: the stream is
+/// constructed fresh, exactly as a turn's worth of events would arrive.
+pub(crate) fn relay_session_turn(story: &mut StoryRuntime, events: &[(&str, serde_json::Value)]) {
+    let mut stream = SessionEventStream::new();
+    for (event, data) in events {
+        for msg in stream.translate(event, data) {
+            story.send(msg);
+        }
     }
 }
 

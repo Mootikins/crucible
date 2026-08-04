@@ -666,13 +666,16 @@ fn invariant_demo_fixture() {
         return;
     }
 
-    use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
+    use crate::tui::oil::chat_runner::SessionEventStream;
 
     let content = std::fs::read_to_string(&path).unwrap();
     let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(120, 50);
     let mut frame = 0;
-    let mut saw_text_delta = false;
+    // The production converter, not a copy of it: this test's whole job is to
+    // catch duplicated thought lines, which is exactly what that converter's
+    // reasoning-replay suppression prevents.
+    let mut stream = SessionEventStream::new();
 
     for line in content.lines() {
         if line.trim().is_empty() {
@@ -689,23 +692,8 @@ fn invariant_demo_fixture() {
             Some(e) => e,
             None => continue,
         };
-        if event_type == "text_delta" {
-            saw_text_delta = true;
-        } else if event_type == "user_message" {
-            saw_text_delta = false;
-        }
-        // Skip late thinking summaries and duplicate full_response
-        if event_type == "thinking" && saw_text_delta {
-            continue;
-        }
         let data = value.get("data").cloned().unwrap_or_default();
-        for msg in session_event_to_chat_msgs(event_type, &data) {
-            if saw_text_delta
-                && event_type == "message_complete"
-                && matches!(&msg, ChatAppMsg::TextDelta(_))
-            {
-                continue;
-            }
+        for msg in stream.translate(event_type, &data) {
             app.on_message(msg);
         }
 

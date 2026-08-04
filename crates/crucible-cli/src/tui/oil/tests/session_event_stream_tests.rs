@@ -104,6 +104,157 @@ fn state_resets_per_turn() {
     assert_eq!(deltas, vec!["r2"]);
 }
 
+/// Collect the thinking text a translated event stream would render.
+fn thinking_of(msgs: &[ChatAppMsg]) -> Vec<String> {
+    msgs.iter()
+        .filter_map(|m| match m {
+            ChatAppMsg::ThinkingDelta(s) => Some(s.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn interleaved_thinking_after_text_is_not_dropped() {
+    // An agent that runs its own tool loop (any `owns_history` ACP agent, and
+    // the internal agent between tool batches) legitimately goes
+    // think → speak → think again inside one turn. Those later thoughts are
+    // new content, not a replay of what already rendered.
+    let mut stream = SessionEventStream::new();
+    let mut msgs = Vec::new();
+    for (t, d) in [
+        ("user_message", json!({"content": "why is the build slow?"})),
+        ("thinking", json!({"content": "check the profile first"})),
+        ("text_delta", json!({"content": "Let me check. "})),
+        ("thinking", json!({"content": "link time dominates"})),
+    ] {
+        msgs.extend(stream.translate(t, &d));
+    }
+
+    assert_eq!(
+        thinking_of(&msgs),
+        vec!["check the profile first", "link time dominates"],
+        "a thought that arrived after the first text delta was discarded"
+    );
+}
+
+#[test]
+fn end_of_stream_thinking_replay_is_dropped() {
+    // Providers that stream reasoning incrementally *also* hand back the whole
+    // block at stream end. Rendering that replay duplicates the entire thought.
+    // The daemon dedupes this at the source since `ReasoningEmissionState`
+    // (genai_handle.rs), but every session recorded before that still carries
+    // the replay, and replay is the path this converter serves.
+    let mut stream = SessionEventStream::new();
+    let mut msgs = Vec::new();
+    for (t, d) in [
+        ("user_message", json!({"content": "hi"})),
+        ("thinking", json!({"content": "first I "})),
+        ("thinking", json!({"content": "consider the options"})),
+        ("text_delta", json!({"content": "Here goes."})),
+        (
+            "thinking",
+            json!({"content": "first I consider the options"}),
+        ),
+    ] {
+        msgs.extend(stream.translate(t, &d));
+    }
+
+    assert_eq!(
+        thinking_of(&msgs),
+        vec!["first I ", "consider the options"],
+        "the end-of-stream reasoning replay was rendered a second time"
+    );
+}
+
+#[test]
+fn thinking_replay_is_dropped_even_without_an_intervening_text_delta() {
+    // The same replay lands mid-turn with no text between it and the run it
+    // repeats — `reproduce.jsonl` carries two of each flavour. The old
+    // `saw_text_delta` guard only caught the flavour that followed text.
+    let mut stream = SessionEventStream::new();
+    let mut msgs = Vec::new();
+    for (t, d) in [
+        ("user_message", json!({"content": "hi"})),
+        ("thinking", json!({"content": "weigh "})),
+        ("thinking", json!({"content": "the tradeoffs"})),
+        ("thinking", json!({"content": "weigh the tradeoffs"})),
+    ] {
+        msgs.extend(stream.translate(t, &d));
+    }
+
+    assert_eq!(
+        thinking_of(&msgs),
+        vec!["weigh ", "the tradeoffs"],
+        "a mid-turn reasoning replay rendered the block twice"
+    );
+}
+
+#[test]
+fn a_repeated_thought_in_a_later_turn_still_renders() {
+    // Replay suppression is turn-scoped: the same reasoning text in the next
+    // turn is a genuinely new thought and must survive.
+    let mut stream = SessionEventStream::new();
+    for (t, d) in [
+        ("user_message", json!({"content": "a"})),
+        ("thinking", json!({"content": "same thought"})),
+        ("thinking", json!({"content": "same thought"})),
+    ] {
+        let _ = stream.translate(t, &d);
+    }
+
+    let mut msgs = Vec::new();
+    for (t, d) in [
+        ("user_message", json!({"content": "b"})),
+        ("thinking", json!({"content": "same thought"})),
+    ] {
+        msgs.extend(stream.translate(t, &d));
+    }
+
+    assert_eq!(thinking_of(&msgs), vec!["same thought"]);
+}
+
+#[test]
+fn recorded_fixtures_carry_no_thinking_replay_after_translation() {
+    // Pins the rule against every recording in the repo: after translation no
+    // `thinking` payload may equal the concatenation of the thoughts already
+    // rendered since the last replay boundary. Written against the fixtures
+    // whose raw event streams do contain such a replay.
+    for fixture in [
+        "demo.jsonl",
+        "parity-test.jsonl",
+        "reproduce.jsonl",
+        "reproduce-formatting.jsonl",
+    ] {
+        let jsonl = std::fs::read_to_string(format!("../../assets/fixtures/{fixture}"))
+            .unwrap_or_else(|e| panic!("read {fixture}: {e}"));
+        let mut stream = SessionEventStream::new();
+        let mut run = String::new();
+
+        for line in jsonl.lines() {
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            let Some(event_type) = v.get("event").and_then(|x| x.as_str()) else {
+                continue;
+            };
+            let data = v.get("data").cloned().unwrap_or_default();
+            if event_type == "user_message" {
+                run.clear();
+            }
+            for text in thinking_of(&stream.translate(event_type, &data)) {
+                assert!(
+                    run.is_empty() || text != run,
+                    "{fixture}: rendered a {} char thinking replay of the \
+                     preceding run",
+                    text.len()
+                );
+                run.push_str(&text);
+            }
+        }
+    }
+}
+
 #[test]
 fn subagent_spawned_maps_to_chat_msg() {
     let mut stream = SessionEventStream::new();

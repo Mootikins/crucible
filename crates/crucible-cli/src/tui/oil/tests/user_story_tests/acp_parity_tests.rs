@@ -11,8 +11,12 @@
 //! `crucible-daemon/src/agent_manager/tests/messaging.rs`, because nothing in
 //! this crate can fail when that literal regresses.
 
+use serde_json::json;
+
 use super::support::StoryRuntime;
-use super::vocab::{announce_tool_call, relay_session_event, send_user_message};
+use super::vocab::{
+    announce_tool_call, relay_session_event, relay_session_turn, send_user_message,
+};
 
 const READ_ARGS: &str = r#"{"path":"README.md"}"#;
 
@@ -66,5 +70,69 @@ fn a_pre_badge_recording_still_badges_the_delegated_card() {
     assert!(
         frame.contains("[acp]"),
         "a pre-badge ACP recording replayed with no provenance badge:\n{frame}"
+    );
+}
+
+/// A delegated agent runs its own tool loop, so it narrates and reasons in
+/// alternation across a single turn. Every one of those thoughts is content the
+/// user asked to see (`show_thinking` defaults on), not a restatement.
+#[test]
+fn a_delegated_agent_second_thought_reaches_the_screen() {
+    let mut story = StoryRuntime::new(80, 24);
+    send_user_message(&mut story, "why is the build slow?");
+    relay_session_turn(
+        &mut story,
+        &[
+            ("thinking", json!({"content": "profile the build first"})),
+            ("text_delta", json!({"content": "Checking the build. "})),
+            ("thinking", json!({"content": "link time dominates"})),
+            (
+                "text_delta",
+                json!({"content": "Linking is the bottleneck."}),
+            ),
+            (
+                "message_complete",
+                json!({"message_id": "m1", "full_response": "Checking the build. Linking is the bottleneck."}),
+            ),
+        ],
+    );
+
+    let frame = story.fresh_screen();
+    assert!(
+        frame.contains("link time dominates"),
+        "the delegated agent's second thought never rendered:\n{frame}"
+    );
+    assert!(
+        frame.contains("profile the build first") && frame.contains("Linking is the bottleneck."),
+        "letting the second thought through lost earlier turn content:\n{frame}"
+    );
+}
+
+/// The counterweight: a provider that streams its reasoning and *then* replays
+/// the whole block at stream end must not paint it twice. This is what the
+/// original `saw_text_delta` guard bought, and it has to survive the narrowing.
+#[test]
+fn an_end_of_stream_reasoning_replay_is_not_painted_twice() {
+    let mut story = StoryRuntime::new(80, 24);
+    send_user_message(&mut story, "hello");
+    relay_session_turn(
+        &mut story,
+        &[
+            ("thinking", json!({"content": "weigh "})),
+            ("thinking", json!({"content": "the tradeoffs"})),
+            ("text_delta", json!({"content": "Here goes."})),
+            ("thinking", json!({"content": "weigh the tradeoffs"})),
+            (
+                "message_complete",
+                json!({"message_id": "m1", "full_response": "Here goes."}),
+            ),
+        ],
+    );
+
+    let frame = story.fresh_screen();
+    assert_eq!(
+        frame.matches("the tradeoffs").count(),
+        1,
+        "the end-of-stream reasoning replay rendered a second copy:\n{frame}"
     );
 }

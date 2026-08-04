@@ -11,11 +11,16 @@ use super::commands::session_event_to_chat_msgs;
 /// (the "coarse resume" case — daemon drops text_delta during storage
 /// compaction, keeping only the final message_complete snapshot).
 ///
+/// Also de-duplicates a provider's end-of-stream reasoning replay — see
+/// [`SessionEventStream::is_thinking_replay`].
+///
 /// Optionally holds a `context_limit` handle so that `message_complete`
 /// token counts can be converted into a `ContextUsage` with the correct
 /// `total` field. Without a handle, the total defaults to 0.
 pub struct SessionEventStream {
     saw_text_delta: bool,
+    /// Thinking rendered since the last replay boundary, concatenated.
+    thinking_run: String,
     context_limit: Option<Arc<AtomicUsize>>,
 }
 
@@ -23,8 +28,36 @@ impl SessionEventStream {
     pub fn new() -> Self {
         Self {
             saw_text_delta: false,
+            thinking_run: String::new(),
             context_limit: None,
         }
+    }
+
+    /// Is this `thinking` payload a replay of reasoning already rendered?
+    ///
+    /// Providers that stream reasoning incrementally *also* hand the whole
+    /// block back at stream end (genai's `End.captured_reasoning_content`), so
+    /// the replay arrives as one `thinking` event carrying the exact
+    /// concatenation of the deltas that preceded it. Painting it duplicates the
+    /// entire thought. `ReasoningEmissionState` (`provider/genai_handle.rs`)
+    /// drops it at the source, but only since 2026-04-27 — every session
+    /// recorded before that still carries the replay, and replay is precisely
+    /// what this converter serves.
+    ///
+    /// Matching on content rather than position is what lets genuinely
+    /// interleaved thoughts through. An agent that owns its own tool loop —
+    /// any ACP-delegated agent, and the internal agent between tool batches —
+    /// alternates thinking and text within one turn; those later thoughts are
+    /// new content. The earlier `saw_text_delta` rule discarded all of them,
+    /// and still missed the replays that arrive with no text in between.
+    ///
+    /// Consuming the run on a match keeps this correct across several
+    /// reasoning blocks in one turn: each replay covers only the block since
+    /// the previous one. Verified against every recording in `assets/fixtures`
+    /// — each replay there is byte-identical to its run.
+    fn is_thinking_replay(&self, data: &serde_json::Value) -> bool {
+        !self.thinking_run.is_empty()
+            && data.get("content").and_then(|v| v.as_str()) == Some(self.thinking_run.as_str())
     }
 
     pub fn with_context_limit(mut self, limit: Arc<AtomicUsize>) -> Self {
@@ -37,12 +70,17 @@ impl SessionEventStream {
             self.saw_text_delta = true;
         } else if event_type == "user_message" {
             self.saw_text_delta = false;
+            self.thinking_run.clear();
         }
 
-        // Late thinking summaries arrive after text_delta and
-        // duplicate incremental thinking deltas — drop them.
-        if event_type == "thinking" && self.saw_text_delta {
-            return Vec::new();
+        if event_type == "thinking" {
+            if self.is_thinking_replay(data) {
+                self.thinking_run.clear();
+                return Vec::new();
+            }
+            if let Some(content) = data.get("content").and_then(|v| v.as_str()) {
+                self.thinking_run.push_str(content);
+            }
         }
 
         let raw = session_event_to_chat_msgs(event_type, data);
