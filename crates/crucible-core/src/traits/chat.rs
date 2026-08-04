@@ -102,7 +102,11 @@ pub struct ChatToolResult {
     /// `TurnEvent::ToolBatchEnd`, which both agent paths now emit — the
     /// genai loop after every tool batch, the ACP delegation path
     /// (`crucible-daemon/src/acp_handle.rs`) once per turn after the last
-    /// tool call is announced.
+    /// tool call is announced. On the ACP side that is only for a turn that
+    /// actually announced a call: a text-only turn emits no batch-end (it
+    /// would claim a batch that never existed), and a turn whose only tool
+    /// evidence is an orphaned completion update announces nothing to close
+    /// (divergence B4).
     ///
     /// The flag still has no effect on `cru chat -a claude / opencode /
     /// gemini`, for a different reason: it is produced by the scheduler's

@@ -510,8 +510,12 @@ impl MockStdioAgent {
         // Same test hook as CRU_MOCK_STREAM_CHUNKS above: a spawned binary
         // can't be handed the in-process config, so tests that drive a real
         // `AcpAgentHandle` (which spawns this binary) select the tool-call
-        // script through the session agent's `env_overrides` instead.
-        if self.config.stream_tool_call || env::var("CRU_MOCK_STREAM_TOOL_CALL").is_ok() {
+        // script through the session agent's `env_overrides` instead. Read as
+        // a value, not a presence: `CRU_MOCK_STREAM_TOOL_CALL=0` must mean off.
+        let tool_call_env = env::var("CRU_MOCK_STREAM_TOOL_CALL")
+            .as_deref()
+            .is_ok_and(|v| !matches!(v.trim(), "" | "0" | "false"));
+        if self.config.stream_tool_call || tool_call_env {
             notifications.push(update(json!({
                 "sessionUpdate": "tool_call",
                 "toolCallId": "mock-tool-call-1",

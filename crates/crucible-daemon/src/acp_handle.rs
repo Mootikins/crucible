@@ -516,6 +516,11 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
         let body = stream! {
             let mut announced_ids: std::collections::HashSet<String> =
                 std::collections::HashSet::new();
+            // Whether this turn announced *any* tool call. Deliberately not
+            // `!announced_ids.is_empty()`: the replay below yields calls that
+            // contribute no id (see `replay_unannounced_tool_calls`), so the
+            // set answers "which ids are spoken for", not "did a batch exist".
+            let mut announced_any = false;
             let mut tool_names_by_id: HashMap<String, String> = HashMap::new();
 
             while let Some(chunk) = chunk_rx.recv().await {
@@ -537,6 +542,7 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                         );
                         tool_names_by_id.insert(id.clone(), name.clone());
                         announced_ids.insert(id.clone());
+                        announced_any = true;
                         yield TurnEvent::ToolCall {
                             id,
                             name,
@@ -583,21 +589,11 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                     );
 
                     // Emit any final tool calls the ACP client reported but
-                    // the streaming callback hadn't announced. `tc.diffs` was
-                    // populated by `record_tool_call` from the ACP frames'
-                    // `ToolCallContent::Diff` entries (initial + later
-                    // `ToolCallUpdate` frames merged via `upsert_tool_info`).
-                    for tc in acp_tool_calls {
-                        let id = tc.id.clone().unwrap_or_default();
-                        if !announced_ids.insert(id.clone()) {
-                            continue;
-                        }
-                        yield TurnEvent::ToolCall {
-                            id,
-                            name: tc.title,
-                            args: tc.arguments.unwrap_or(serde_json::Value::Null),
-                            diffs: tc.diffs,
-                        };
+                    // the streaming callback hadn't announced.
+                    let replayed = replay_unannounced_tool_calls(acp_tool_calls, &announced_ids);
+                    announced_any |= !replayed.is_empty();
+                    for event in replayed {
+                        yield event;
                     }
 
                     // Close the batch. An ACP agent runs its own tool loop, so
@@ -605,14 +601,35 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                     // wire to split it at — and it closes once every call has
                     // been announced. That is *after* the replay above, not
                     // before it: `ToolBatchEnd` claims "no further tool calls in
-                    // this batch", and the scheduler resets its per-batch state
-                    // on it (`agent_manager/messaging/stream.rs`), so emitting
-                    // it first would split one logical batch in two and leave
-                    // the second half never closed.
+                    // this batch", so emitting it first would split one logical
+                    // batch in two and leave the second half never closed.
+                    //
+                    // The scheduler resets per-batch state on this event
+                    // (`agent_manager/messaging/stream.rs:839`) — but today that
+                    // is a no-op here rather than a reason for the ordering:
+                    // every variable it touches (`in_tool_batch`,
+                    // `capped_this_batch`, `batch_terminate_signals`) is still
+                    // at its default on an `owns_history` turn, because the
+                    // pass-through arm `continue`s before any of them is
+                    // written. Emitting this is control-flow neutral today; it
+                    // is emitted for contract consistency with
+                    // `GenaiAgentHandle`, so a future consumer of the batch
+                    // boundary is not silently wrong on delegated turns.
                     //
                     // A turn that called nothing announces nothing: an empty
                     // batch-end would claim a batch that never existed.
-                    if !announced_ids.is_empty() {
+                    //
+                    // Caveat (divergence B4, open as Task 5): a bare
+                    // `tool_call_update{status: completed}` with no prior
+                    // `tool_call` and no title/raw_input/diff emits a `ToolEnd`
+                    // chunk but never reaches `record_tool_call` — the
+                    // title/raw_input/diff gate in
+                    // `apply_session_update_with_callback` skips it
+                    // (`acp/client/streaming.rs`). Such a turn yields a
+                    // `ToolResult` and still announces nothing, so no
+                    // batch-end. Whatever B4 lands for that orphaned result
+                    // must feed this guard too, or it leaves the hole behind.
+                    if announced_any {
                         yield TurnEvent::ToolBatchEnd;
                     }
 
@@ -715,6 +732,47 @@ impl Drop for AcpAgentHandle {
     }
 }
 
+/// Replay the tool calls the ACP client reported that the streaming callback
+/// never announced, in wire order.
+///
+/// `tc.diffs` was populated by `record_tool_call` from the ACP frames'
+/// `ToolCallContent::Diff` entries (initial + later `ToolCallUpdate` frames
+/// merged via `upsert_tool_info`).
+///
+/// Dedup keys on the call id, and only a call that *has* an id can dedup:
+/// `ToolCallInfo::id` is `Option<String>`, and `upsert_tool_info`
+/// (`acp/client/tools.rs`) falls through to `push` for an id-less call without
+/// merging, so one turn's `acp_tool_calls` can hold several. They all collapse
+/// to `""` here and every one of them still has to reach the renderer — hence
+/// this only *reads* the announced set and never adds to it. Deciding whether
+/// a batch existed is the caller's bookkeeping for the same reason: a replayed
+/// id-less call announces something while contributing no id.
+///
+/// No production `ToolCallInfo` reaches here without an id (every construction
+/// site in `acp/client/streaming.rs` calls `.with_id`), so the multi-`None`
+/// case is latent — but the rule belongs to this seam, not to the accident
+/// that its only current caller cannot hit it.
+fn replay_unannounced_tool_calls(
+    acp_tool_calls: Vec<crucible_core::types::acp::ToolCallInfo>,
+    announced_ids: &std::collections::HashSet<String>,
+) -> Vec<crucible_core::turn::TurnEvent> {
+    acp_tool_calls
+        .into_iter()
+        .filter_map(|tc| {
+            let id = tc.id.clone().unwrap_or_default();
+            if announced_ids.contains(&id) {
+                return None;
+            }
+            Some(crucible_core::turn::TurnEvent::ToolCall {
+                id,
+                name: tc.title,
+                args: tc.arguments.unwrap_or(serde_json::Value::Null),
+                diffs: tc.diffs,
+            })
+        })
+        .collect()
+}
+
 /// Build the prompt text sent to an ACP agent for one turn.
 ///
 /// ACP agents own their conversation history, so we send only the new user
@@ -808,5 +866,78 @@ mod tests {
     #[test]
     fn empty_messages_falls_back_to_raw_content() {
         assert_eq!(acp_prompt_text("solo", &[]), "solo");
+    }
+
+    // -- Post-stream replay of tool calls the callback missed ----------------
+
+    use crucible_core::turn::TurnEvent;
+    use crucible_core::types::acp::ToolCallInfo;
+    use std::collections::HashSet;
+
+    fn replayed_names(events: &[TurnEvent]) -> Vec<&str> {
+        events
+            .iter()
+            .map(|e| match e {
+                TurnEvent::ToolCall { name, .. } => name.as_str(),
+                other => panic!("replay yielded a non-ToolCall event: {other:?}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn replay_skips_calls_the_stream_already_announced() {
+        let announced: HashSet<String> = ["seen".to_string()].into_iter().collect();
+        let calls = vec![
+            ToolCallInfo::new("already_rendered").with_id("seen"),
+            ToolCallInfo::new("missed_by_the_callback").with_id("unseen"),
+        ];
+
+        let events = replay_unannounced_tool_calls(calls, &announced);
+
+        assert_eq!(replayed_names(&events), vec!["missed_by_the_callback"]);
+    }
+
+    /// Every id-less call replays — dedup keys on an id these calls do not have.
+    ///
+    /// `upsert_tool_info` (`acp/client/tools.rs`) pushes an id-less
+    /// `ToolCallInfo` without merging, so `acp_tool_calls` can hold several,
+    /// and they all collapse to `""` at the replay. Treating that shared empty
+    /// key as a dedup key renders the first and silently swallows the rest.
+    #[test]
+    fn replay_keeps_every_id_less_call() {
+        let calls = vec![
+            ToolCallInfo::new("first_untitled"),
+            ToolCallInfo::new("second_untitled"),
+            ToolCallInfo::new("third_untitled"),
+        ];
+
+        let events = replay_unannounced_tool_calls(calls, &HashSet::new());
+
+        assert_eq!(
+            replayed_names(&events),
+            vec!["first_untitled", "second_untitled", "third_untitled"],
+            "id-less tool calls share the empty key and must not dedup against \
+             each other — dropping them loses the call in every renderer"
+        );
+    }
+
+    /// A replayed id-less call leaves the announced set empty.
+    ///
+    /// This is what forces the batch-end guard to be its own flag rather than
+    /// `!announced_ids.is_empty()`: a batch plainly existed — the caller is
+    /// about to yield a `ToolCall` for it — while the set that would have
+    /// answered the question is still empty.
+    #[test]
+    fn an_id_less_replay_leaves_no_id_for_the_batch_end_guard_to_read() {
+        let announced: HashSet<String> = HashSet::new();
+        let calls = vec![ToolCallInfo::new("untitled")];
+
+        let events = replay_unannounced_tool_calls(calls, &announced);
+
+        assert_eq!(replayed_names(&events), vec!["untitled"]);
+        assert!(
+            announced.is_empty(),
+            "the replay reports what it yielded, it does not record it"
+        );
     }
 }

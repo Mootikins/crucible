@@ -39,7 +39,7 @@ use tokio::time::{timeout, Duration};
 // mock agent through `AcpAgentHandle`.
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
-use mock_agent_bin::{mock_agent_path, mock_session_agent};
+use mock_agent_bin::{mock_agent_path, mock_handle_params, mock_session_agent};
 
 fn delegation_enabled_agent(agent_path: &str) -> SessionAgent {
     let mut agent = mock_session_agent(agent_path);
@@ -69,23 +69,10 @@ fn make_acp_agent_factory() -> AgentFactoryOverride {
         let agent_config = agent_config.clone();
         let workspace = workspace.to_path_buf();
         Box::pin(async move {
-            AcpAgentHandle::new(AcpAgentHandleParams {
-                agent_config: &agent_config,
-                workspace: &workspace,
-                kiln_path: None,
-                knowledge_repo: None,
-                embedding_provider: None,
-                background_spawner: None,
-                delegation_spawner: None,
-                parent_session_id: None,
-                delegation_config: None,
-                acp_config: None,
-                permission_handler: None,
-                sandbox_exec: None,
-            })
-            .await
-            .map(|handle| Box::new(handle) as Box<dyn AgentHandle + Send + Sync>)
-            .map_err(|e| e.to_string())
+            AcpAgentHandle::new(mock_handle_params(&agent_config, &workspace))
+                .await
+                .map(|handle| Box::new(handle) as Box<dyn AgentHandle + Send + Sync>)
+                .map_err(|e| e.to_string())
         })
             as Pin<
                 Box<dyn Future<Output = Result<Box<dyn AgentHandle + Send + Sync>, String>> + Send>,
@@ -198,20 +185,7 @@ async fn mock_acp_handshake_succeeds() {
 
     let handle = timeout(
         Duration::from_secs(30),
-        AcpAgentHandle::new(AcpAgentHandleParams {
-            agent_config: &agent_config,
-            workspace: workspace.path(),
-            kiln_path: None,
-            knowledge_repo: None,
-            embedding_provider: None,
-            background_spawner: None,
-            delegation_spawner: None,
-            parent_session_id: None,
-            delegation_config: None,
-            acp_config: None,
-            permission_handler: None,
-            sandbox_exec: None,
-        }),
+        AcpAgentHandle::new(mock_handle_params(&agent_config, workspace.path())),
     )
     .await
     .expect("ACP handshake timed out")
@@ -231,20 +205,7 @@ async fn mock_acp_agent_returns_message_response() {
 
     let mut handle = timeout(
         Duration::from_secs(30),
-        AcpAgentHandle::new(AcpAgentHandleParams {
-            agent_config: &agent_config,
-            workspace: workspace.path(),
-            kiln_path: None,
-            knowledge_repo: None,
-            embedding_provider: None,
-            background_spawner: None,
-            delegation_spawner: None,
-            parent_session_id: None,
-            delegation_config: None,
-            acp_config: None,
-            permission_handler: None,
-            sandbox_exec: None,
-        }),
+        AcpAgentHandle::new(mock_handle_params(&agent_config, workspace.path())),
     )
     .await
     .expect("ACP handshake timed out")
@@ -289,20 +250,7 @@ async fn injected_system_context_reaches_acp_prompt() {
 
     let mut handle = timeout(
         Duration::from_secs(30),
-        AcpAgentHandle::new(AcpAgentHandleParams {
-            agent_config: &agent_config,
-            workspace: workspace.path(),
-            kiln_path: None,
-            knowledge_repo: None,
-            embedding_provider: None,
-            background_spawner: None,
-            delegation_spawner: None,
-            parent_session_id: None,
-            delegation_config: None,
-            acp_config: None,
-            permission_handler: None,
-            sandbox_exec: None,
-        }),
+        AcpAgentHandle::new(mock_handle_params(&agent_config, workspace.path())),
     )
     .await
     .expect("ACP handshake timed out")
@@ -359,20 +307,7 @@ async fn acp_model_switching_round_trips() {
 
     let mut handle = timeout(
         Duration::from_secs(30),
-        AcpAgentHandle::new(AcpAgentHandleParams {
-            agent_config: &agent_config,
-            workspace: workspace.path(),
-            kiln_path: None,
-            knowledge_repo: None,
-            embedding_provider: None,
-            background_spawner: None,
-            delegation_spawner: None,
-            parent_session_id: None,
-            delegation_config: None,
-            acp_config: None,
-            permission_handler: None,
-            sandbox_exec: None,
-        }),
+        AcpAgentHandle::new(mock_handle_params(&agent_config, workspace.path())),
     )
     .await
     .expect("ACP handshake timed out")
@@ -425,20 +360,7 @@ async fn missing_binary_returns_connection_error() {
 
     let result = timeout(
         Duration::from_secs(10),
-        AcpAgentHandle::new(AcpAgentHandleParams {
-            agent_config: &agent_config,
-            workspace: workspace.path(),
-            kiln_path: None,
-            knowledge_repo: None,
-            embedding_provider: None,
-            background_spawner: None,
-            delegation_spawner: None,
-            parent_session_id: None,
-            delegation_config: None,
-            acp_config: None,
-            permission_handler: None,
-            sandbox_exec: None,
-        }),
+        AcpAgentHandle::new(mock_handle_params(&agent_config, workspace.path())),
     )
     .await
     .expect("missing binary should fail quickly");
@@ -465,18 +387,8 @@ async fn inject_errors_causes_handshake_failure() {
     let result = timeout(
         Duration::from_secs(30),
         AcpAgentHandle::new(AcpAgentHandleParams {
-            agent_config: &agent_config,
-            workspace: workspace.path(),
-            kiln_path: None,
-            knowledge_repo: None,
-            embedding_provider: None,
-            background_spawner: None,
-            delegation_spawner: None,
-            parent_session_id: None,
-            delegation_config: None,
             acp_config: Some(&acp_config),
-            permission_handler: None,
-            sandbox_exec: None,
+            ..mock_handle_params(&agent_config, workspace.path())
         }),
     )
     .await

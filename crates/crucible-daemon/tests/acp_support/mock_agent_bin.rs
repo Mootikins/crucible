@@ -7,10 +7,11 @@
 //! over an in-process duplex pipe.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crucible_core::config::BackendType;
 use crucible_core::session::{OutputValidation, SessionAgent};
+use crucible_daemon::acp_handle::AcpAgentHandleParams;
 
 /// Returns the path to the mock-acp-agent binary.
 ///
@@ -69,5 +70,38 @@ pub fn mock_session_agent(agent_path: &str) -> SessionAgent {
         validation_retries: 3,
         autocompact_threshold: None,
         tool_policy: None,
+    }
+}
+
+/// `AcpAgentHandleParams` with everything optional switched off.
+///
+/// Every test that drives a spawned mock agent needs the same twelve-field
+/// literal with only the two required references filled in; the struct cannot
+/// `derive(Default)` because those two are borrows. Override a field with
+/// functional-update syntax:
+///
+/// ```ignore
+/// AcpAgentHandle::new(AcpAgentHandleParams {
+///     acp_config: Some(&acp_config),
+///     ..mock_handle_params(&agent_config, workspace.path())
+/// })
+/// ```
+pub fn mock_handle_params<'a>(
+    agent_config: &'a SessionAgent,
+    workspace: &'a Path,
+) -> AcpAgentHandleParams<'a> {
+    AcpAgentHandleParams {
+        agent_config,
+        workspace,
+        kiln_path: None,
+        knowledge_repo: None,
+        embedding_provider: None,
+        background_spawner: None,
+        delegation_spawner: None,
+        parent_session_id: None,
+        delegation_config: None,
+        acp_config: None,
+        permission_handler: None,
+        sandbox_exec: None,
     }
 }

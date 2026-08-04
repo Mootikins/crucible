@@ -99,8 +99,18 @@ Grouped by where they bite. Each becomes a RED test.
 ### Group B — event-shape divergences in `acp_handle.rs`
 
 - **B1 — no `ToolBatchEnd`.** `acp_handle.rs:519-571` never yields it; `genai_handle.rs:1344`
-  does. Acknowledged at `crucible-core/src/traits/chat.rs:102-107`. Depth-cap ticking and the Lua
-  `terminate` flag are dead on every ACP session.
+  does. Acknowledged at `crucible-core/src/traits/chat.rs:102-107`.
+  **Correction (found while implementing Task 3):** the original claim that this is *why* depth-cap
+  and the Lua `terminate` flag are dead on ACP sessions is **wrong**. Both are dead for an
+  independent reason — the `agent_owns_tools` arm `continue`s at `stream.rs:506`, *before*
+  `in_tool_batch = true` (`:535`) and `tool_depth += 1` (`:555`), so `tool_depth` never advances;
+  and `batch_terminate_signals` is only pushed at `:699` inside the dispatch-result block, which an
+  ACP agent never reaches because it executes tools in its own process. Emitting `ToolBatchEnd`
+  therefore changes **no** daemon control flow — its two assignments are no-ops on values already
+  false. It is still worth emitting for contract consistency, and Task 3 pins that it does not end
+  the turn. Making depth-cap meaningful for delegated agents is a separate design question: the
+  runtime does not dispatch, and `DepthCapHit` is sent to an inbound channel the ACP agent has
+  dropped.
 - **~~B2 — tool results are stringified.~~ WITHDRAWN — this was a false premise.** `acp_handle.rs:559`
   does wrap in `Value::String(...)`, but so does the internal path (`stream.rs:717`), and both
   converge on the same `{"result": <string>}` envelope at the `SessionEventMessage` boundary
@@ -320,53 +330,39 @@ git commit -am "fix(tui): badge delegated tool calls with their ACP agent"
 
 ---
 
-## Task 3: B1 — ACP must emit `ToolBatchEnd`
+## Task 3: B1 — ACP must emit `ToolBatchEnd` — DONE (`7926e5035`)
 
-**Files:**
-- Test: `crates/crucible-daemon/tests/acp_integration/turn_event_parity.rs` (new)
-- Modify: `crates/crucible-daemon/src/acp_handle.rs:519-571`
-- Modify: `crates/crucible-core/src/traits/chat.rs:102-107`
+**Outcome differed from the plan; read this before citing Task 3.** The original body claimed
+emitting `ToolBatchEnd` would revive depth-capping and the Lua `terminate` flag for delegated
+sessions. That is false, and was disproven while implementing (see the correction on B1 above).
+Emitting the event is **control-flow neutral** — reviewer independently traced every write site of
+all three variables the `stream.rs:839` handler touches (`in_tool_batch`, `capped_this_batch`,
+`batch_terminate_signals`) and confirmed each is unreachable on an `owns_history` turn.
 
-**Step 1: Write the failing test**
+It was implemented anyway, on contract-consistency grounds: `AcpAgentHandle` should honour the same
+`TurnEvent` contract as `GenaiAgentHandle`, so a future consumer of the batch boundary is not
+silently wrong on delegated turns.
 
-```rust
-#[tokio::test]
-async fn acp_emits_tool_batch_end_after_tool_calls() {
-    let shapes = coalesce(acp_shapes_for_scripted_tool_call().await);
-    assert!(
-        shapes.contains(&EventShape::ToolBatchEnd),
-        "ACP turn emitted no ToolBatchEnd, so depth-cap and Lua `terminate` \
-         are dead on delegated sessions; got {shapes:#?}"
-    );
-}
-```
+**What shipped:**
+- `acp_handle.rs` yields `ToolBatchEnd` **after** the post-stream replay loop, not before
+  `result_rx` as originally sketched. Emitting earlier would announce a batch close ahead of
+  `ToolCall`s the same turn is about to yield from the replay path.
+- Guard is "≥1 `ToolCall` was yielded this turn"; error/timeout arms deliberately do not emit,
+  since those `return StreamOutcome::Failed` immediately and all batch state is loop-local.
+- `traits/chat.rs:102-107` rewritten to name the real reason depth-cap and `terminate` are dead
+  (the `agent_owns_tools` fork), rather than blaming the missing event.
+- Non-regression test `owns_history_tool_batch_end_does_not_end_the_turn`
+  (`agent_manager/tests/messaging.rs`) — mutation-verified: dropping the `!is_empty()` guard at
+  `stream.rs:851` makes it fail, because an empty `all()` returns true and would end every
+  delegated turn at its first tool call.
+- Test scaffolding: `AcpAgentHandle` has no transport seam (it always spawns a process), so the
+  test drives a spawned `mock-acp-agent` via the `acp_smoke.rs` idiom rather than the in-process
+  duplex transport. Added a child-scoped `CRU_MOCK_STREAM_TOOL_CALL` env hook.
 
-**Step 2: Run to confirm it fails**
-
-Run: `just test-crate-filter crucible-daemon 'acp_emits_tool_batch_end'`
-
-**Step 3: Emit the event**
-
-In `acp_handle.rs`, after the `chunk_rx` drain loop and before consuming `result_rx`:
-
-```rust
-if !announced_ids.is_empty() {
-    yield TurnEvent::ToolBatchEnd;
-}
-```
-
-**Step 4: Run and check the depth-cap consumer**
-
-Run: `just test-crate-filter crucible-daemon 'acp_'`
-`stream.rs:823` now ticks depth for ACP — confirm nothing regresses on tool-depth counting.
-
-**Step 5: Update the stale doc comment** at `traits/chat.rs:102-107`.
-
-**Step 6: Commit**
-
-```bash
-git commit -am "fix(acp): emit ToolBatchEnd so depth-cap and terminate apply to delegated turns"
-```
+**Follow-on design question, deliberately not answered here:** making depth-cap meaningful for
+delegated agents. The runtime does not dispatch their tools, and `DepthCapHit` is sent to an
+inbound channel the ACP agent has dropped — so a cap would need to be expressed on the ACP wire,
+not as another `TurnEvent`.
 
 ---
 

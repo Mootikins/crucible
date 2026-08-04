@@ -14,12 +14,12 @@ use std::time::Duration;
 
 use crucible_core::session::SessionAgent;
 use crucible_core::turn::{Agent, StopReason, TurnContext};
-use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
+use crucible_daemon::acp_handle::AcpAgentHandle;
 use tempfile::TempDir;
 use tokio::time::timeout;
 
 use crate::support::parity::{coalesce, shapes, EventShape};
-use crate::support::{mock_agent_path, mock_session_agent};
+use crate::support::{mock_agent_path, mock_handle_params, mock_session_agent};
 
 /// Connect a handle to the mock agent binary and drain one turn into its
 /// rendering-relevant shape sequence.
@@ -28,20 +28,7 @@ async fn acp_shapes(agent_config: SessionAgent) -> Vec<EventShape> {
 
     let mut handle = timeout(
         Duration::from_secs(30),
-        AcpAgentHandle::new(AcpAgentHandleParams {
-            agent_config: &agent_config,
-            workspace: workspace.path(),
-            kiln_path: None,
-            knowledge_repo: None,
-            embedding_provider: None,
-            background_spawner: None,
-            delegation_spawner: None,
-            parent_session_id: None,
-            delegation_config: None,
-            acp_config: None,
-            permission_handler: None,
-            sandbox_exec: None,
-        }),
+        AcpAgentHandle::new(mock_handle_params(&agent_config, workspace.path())),
     )
     .await
     .expect("ACP handshake timed out")
@@ -75,32 +62,49 @@ async fn acp_shapes_for_scripted_tool_call() -> Vec<EventShape> {
 }
 
 /// The same turn with no tool call at all.
-async fn acp_shapes_for_text_only_turn() -> Vec<EventShape> {
+///
+/// `tool_call` selects the value of the mock's `CRU_MOCK_STREAM_TOOL_CALL`
+/// hook: `None` leaves it unset, `Some("0")` sets it to an off value. Both
+/// must produce a text-only turn — the hook reads a value, not a presence, so
+/// `=0` cannot mean "on".
+async fn acp_shapes_for_text_only_turn(tool_call: Option<&str>) -> Vec<EventShape> {
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
     let mut agent_config = mock_session_agent(&agent_path);
     agent_config.env_overrides.insert(
         "CRU_MOCK_STREAM_CHUNKS".to_string(),
         "The answer is 4".into(),
     );
+    if let Some(value) = tool_call {
+        agent_config
+            .env_overrides
+            .insert("CRU_MOCK_STREAM_TOOL_CALL".to_string(), value.into());
+    }
 
     acp_shapes(agent_config).await
 }
 
 /// B1: an ACP turn that called a tool must close the batch.
 ///
-/// `ToolBatchEnd` is the event the scheduler's per-batch bookkeeping hangs
-/// off (`agent_manager/messaging/stream.rs`): batch reset and the conjunctive
+/// `ToolBatchEnd` is the event the scheduler's per-batch bookkeeping hangs off
+/// (`agent_manager/messaging/stream.rs:839`): batch reset and the conjunctive
 /// `terminate` check both key on it. The internal agent emits it after every
-/// tool batch (`provider/genai_handle.rs`); an ACP turn that never emits it
-/// leaves every consumer of that boundary permanently un-notified.
+/// tool batch (`provider/genai_handle.rs`).
+///
+/// Emitting it here changes no daemon behaviour *today* — every variable that
+/// handler touches is already at its default on an `owns_history` turn, so the
+/// scheduler has no live consumer of the boundary on the ACP path. This pins
+/// the contract, not an observable effect: `AcpAgentHandle` must honour the
+/// same `TurnEvent` grammar as `GenaiAgentHandle` so the first consumer that
+/// does key on the boundary is not silently wrong on delegated sessions.
 #[tokio::test]
 async fn acp_emits_tool_batch_end_after_tool_calls() {
     let shapes = acp_shapes_for_scripted_tool_call().await;
 
     assert!(
         shapes.contains(&EventShape::ToolBatchEnd),
-        "ACP turn emitted no ToolBatchEnd, so every consumer of the tool-batch \
-         boundary is dead on delegated sessions; got {shapes:#?}"
+        "ACP turn emitted no ToolBatchEnd, so a delegated turn's tool batch is \
+         never closed and the ACP event grammar diverges from the internal \
+         agent's; got {shapes:#?}"
     );
 }
 
@@ -140,7 +144,7 @@ async fn acp_tool_batch_end_comes_after_every_tool_call_and_before_done() {
 /// tells a consumer that tools ran.
 #[tokio::test]
 async fn acp_text_only_turn_emits_no_tool_batch_end() {
-    let shapes = acp_shapes_for_text_only_turn().await;
+    let shapes = acp_shapes_for_text_only_turn(None).await;
 
     assert!(
         !shapes.contains(&EventShape::ToolBatchEnd),
@@ -152,5 +156,24 @@ async fn acp_text_only_turn_emits_no_tool_batch_end() {
             EventShape::Text("The answer is 4".into()),
             EventShape::Done(StopReason::EndTurn),
         ]
+    );
+}
+
+/// The mock's tool-call hook reads a *value*, not the variable's presence.
+///
+/// A presence check (`env::var(..).is_ok()`) makes
+/// `CRU_MOCK_STREAM_TOOL_CALL=0` turn the tool call *on*, which would quietly
+/// invert any future test that scripts the negative case through this hook.
+#[tokio::test]
+async fn mock_tool_call_hook_set_to_zero_scripts_no_tool_call() {
+    let shapes = acp_shapes_for_text_only_turn(Some("0")).await;
+
+    assert_eq!(
+        shapes,
+        vec![
+            EventShape::Text("The answer is 4".into()),
+            EventShape::Done(StopReason::EndTurn),
+        ],
+        "CRU_MOCK_STREAM_TOOL_CALL=0 must mean off; got {shapes:#?}"
     );
 }
