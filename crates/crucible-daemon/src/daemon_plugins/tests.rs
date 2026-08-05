@@ -392,7 +392,7 @@ fn plugins_extracted_from_the_binary_are_discovered() {
     let extracted = tmp.path().join("runtime-x.y.z");
     crucible_core::runtime_roots::write_bundled_runtime(&extracted).unwrap();
 
-    let paths = runtime_plugin_paths(&[extracted.clone()]);
+    let paths = runtime_plugin_paths(std::slice::from_ref(&extracted));
 
     assert!(
         paths

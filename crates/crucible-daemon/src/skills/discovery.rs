@@ -380,7 +380,7 @@ mod tests {
         let extracted = tmp.path().join("runtime-x.y.z");
         crucible_core::runtime_roots::write_bundled_runtime(&extracted).unwrap();
 
-        let found = runtime_skill_paths(&[extracted.clone()]);
+        let found = runtime_skill_paths(std::slice::from_ref(&extracted));
 
         let skills = extracted.join("crucible-help").join("skills");
         assert!(
