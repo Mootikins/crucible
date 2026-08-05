@@ -380,6 +380,40 @@ fn replay_acp_demo_80x24() {
     );
 }
 
+// ─── ACP presentation-parity fixtures ─────────────────────────────────────
+
+/// The parity pairs carry the only genuinely ACP-shaped payloads in
+/// `assets/fixtures` — `"source":"Acp:claude"` and a `tool_call_diff_update`,
+/// neither of which `acp-demo.jsonl` has. `acp_parity_tests.rs` renders one
+/// frame from each; nothing pumped them through the per-frame invariant sweep,
+/// so a mid-turn violation on the ACP-only path (a late diff arriving while a
+/// spinner is on screen, say) had nowhere to show up.
+#[test]
+fn replay_acp_parity_fixtures_80x24() {
+    for fixture in [
+        "acp_parity_internal.jsonl",
+        "acp_parity_delegated.jsonl",
+        "acp_parity_read_internal.jsonl",
+        "acp_parity_read_delegated.jsonl",
+    ] {
+        let path = fixture_path(fixture);
+        assert!(
+            path.exists(),
+            "{} is missing; it is committed, so this is a broken checkout \
+             rather than a test to skip",
+            path.display()
+        );
+
+        let result = replay_fixture(&path, 80, 24);
+        assert!(
+            result.violations.is_empty(),
+            "Invariant violations in {fixture} at 80x24 ({} frames):\n{}",
+            result.total_frames,
+            result.violations.join("\n")
+        );
+    }
+}
+
 // ─── Reproduce fixture (spacing + thinking bugs) ──────────────────────────
 
 #[test]

@@ -16,12 +16,24 @@ pair is the one that bites: a multi-line result is summarized by a table keyed
 on the tool name, and the internal snake_case name and the ACP prose title are
 not the same string (divergence **A4**).
 
-Every field below was copied from a live capture of the daemon's broadcast
-stream (`ReactorTestHarness` + `StreamingMockAgent` / `OwnsToolsMockAgent`),
-not written from the docs — see
-`docs/Meta/Plans/2026-08-03-acp-presentation-parity.md`, Task 7.
+**Provenance — these are not transcripts of a real `claude` session.** Each
+event was emitted by the daemon's own broadcast channel, driven by
+`ReactorTestHarness` with two mock agents: `StreamingMockAgent` for the
+internal arm (against the real `WorkspaceTools` dispatcher and the real
+permission gate) and `OwnsToolsMockAgent` with `agent_name: "claude"` for the
+delegated arm. The mocks supply the `TurnEvent`s a real handle would; every
+field downstream of them — the `display` object, the `Core`/`Acp:claude`
+source, the doubly-wrapped internal result envelope, `terminate: false` — is
+the daemon's own work, not this script's invention.
 
-Run: python3 scripts/gen_acp_parity_fixtures.py
+That capture is not a one-off. `agent_manager::tests::parity_capture` reruns
+it on every test run and fails when the daemon stops emitting these bytes, so
+a fixture cannot quietly outlive the shape it pins. Run this script only after
+that test tells you the shape legitimately changed.
+
+See `docs/Meta/Plans/2026-08-03-acp-presentation-parity.md`, Task 7 and A4.
+
+Run: python3 scripts/gen-acp-parity-fixtures.py
 """
 
 import json
@@ -34,6 +46,15 @@ OLD = 'fn main() {\n    println!("hello");\n}\n'
 NEW = 'fn main() {\n    println!("hello, world");\n}\n'
 DIFFS = [{"path": "greeting.rs", "old_content": OLD, "new_content": NEW}]
 ARGS = {"path": "greeting.rs", "old_string": "hello", "new_string": "hello, world"}
+# A delegated Claude Code edit arrives as `rawInput` keyed `file_path`, not
+# `path`. Both are in `ToolDisplay`'s `PATH_KEYS`, so the card shows
+# `greeting.rs` either way — keeping each side's real key means the pair tests
+# that rather than assuming it.
+ARGS_ACP = {
+    "file_path": "greeting.rs",
+    "old_string": "hello",
+    "new_string": "hello, world",
+}
 DISPLAY = {"kind": "path", "primary": "greeting.rs"}
 PREAMBLE = "I'll fix the greeting."
 CODA = " Done."
@@ -90,7 +111,10 @@ common_tail = [
 internal = common_head + [
     # The gate fires before the card: `edit_file` is not read-only, so the user
     # was asked and said yes. An interactive approval leaves no `auto_approved`
-    # marker — only a rule/card grant does.
+    # marker — only a rule/card grant does. The request carries the same
+    # synthesized diffs the card does: `handle_permission_request` builds
+    # `PermRequest::tool(..).with_diffs(synthesize_diffs(..))`, the same call
+    # that put `diffs` on the `tool_call`.
     (
         "interaction_requested",
         {
@@ -98,6 +122,7 @@ internal = common_head + [
             "request": {
                 "kind": "permission",
                 "action": {"type": "tool", "name": "edit_file", "args": ARGS},
+                "diffs": DIFFS,
             },
         },
     ),
@@ -120,10 +145,11 @@ internal = common_head + [
         {
             "call_id": "call-edit-1",
             "tool": "edit_file",
-            # Doubly wrapped on purpose: the tool returns a JSON envelope and
-            # the event wraps it again. `unwrap_json_result` unwraps it back to
-            # the same text the delegated arm carries plain.
-            "result": {"result": json.dumps({"result": "Replaced 1 occurrence(s)"})},
+            # Doubly wrapped on purpose: `WorkspaceTools` answers
+            # `{"result": text}` and `tool_call.rs` wraps that value's
+            # `to_string()` again. `unwrap_json_result` unwraps it back to the
+            # same text the delegated arm carries plain.
+            "result": {"result": compact({"result": "Replaced 1 occurrence(s)"})},
             "terminate": False,
         },
     ),
@@ -141,7 +167,7 @@ delegated = common_head + [
             # ACP carries no tool name on the wire, only a prose `title`; the
             # client stores `humanize_tool_title(title)` as the name.
             "tool": "Edit File",
-            "args": ARGS,
+            "args": ARGS_ACP,
             "source": "Acp:claude",
             "display": DISPLAY,
         },

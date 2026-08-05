@@ -28,8 +28,19 @@ still real event streams, just hand-assembled rather than recorded.
 
 | Fixture | Used by |
 |---------|---------|
-| `acp_parity_internal.jsonl` / `acp_parity_delegated.jsonl` | `user_story_tests/acp_parity_tests.rs` — one `edit_file` turn told two ways (internal agent vs delegated ACP agent), asserted to render identically apart from the `[acp:claude]` badge. Regenerate with `scripts/gen_acp_parity_fixtures.py`; every field is copied from a live capture of the daemon's broadcast stream. |
+| `acp_parity_internal.jsonl` / `acp_parity_delegated.jsonl` | `user_story_tests/acp_parity_tests.rs` — one `edit_file` turn told two ways (internal agent vs delegated ACP agent), asserted to render identically apart from the `[acp:claude]` badge. |
 | `acp_parity_read_internal.jsonl` / `acp_parity_read_delegated.jsonl` | The same, over `read_file`. The edit pair's result is one short line, which every tool's card collapses the same way; a read's is not, so this pair is the one that reaches the name-keyed summary table (divergence **A4**). |
+
+The four `acp_parity_*` files are **not** transcripts of a real `claude`
+session. They are the daemon's own broadcast output, driven by
+`ReactorTestHarness` with `StreamingMockAgent` (internal arm — real
+`WorkspaceTools` dispatcher, real permission gate) and `OwnsToolsMockAgent`
+with `agent_name: "claude"` (delegated arm). The mock agents supply the
+`TurnEvent`s a real handle would; everything downstream of them is the
+daemon's. `crucible-daemon`'s `agent_manager::tests::parity_capture` reruns
+that capture on every test run and fails when these bytes stop matching what
+the daemon emits, so regenerate with `scripts/gen-acp-parity-fixtures.py`
+only once that test says the shape legitimately changed.
 | `parity-test.jsonl`, `reproduce.jsonl`, `reproduce-formatting.jsonl` | `session_event_stream_tests.rs` — rendered `ThinkingDelta` counts, pinning end-of-stream reasoning-replay suppression. |
 | `permission_flow.jsonl`, `undo_flow.jsonl` | `user_story_tests/` permission and undo stories. |
 

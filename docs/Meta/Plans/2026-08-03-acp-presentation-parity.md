@@ -731,9 +731,60 @@ for future pairs: pick a behaviour whose output exercises the code path you mean
 counterweight assertion (`both_read_cards_collapse_their_result_to_a_summary`) so "the two frames
 match" cannot be satisfied by both being wrong.
 
-**Verification:** `cargo nextest run -p crucible-cli` — 1945 passed, 71 skipped (1968 after A4).
-`cargo fmt --all --check` and `cargo clippy -p crucible-cli --all-targets` clean. The daemon was
-not modified.
+**Review findings, fixed in a follow-up commit:**
+
+- **I1 — the fixtures' provenance was unverifiable.** The capture harness was written, run and
+  *deleted*, so nothing watched the producers. `tool_call_with_metadata`, the `agent_owns_tools`
+  pass-through arm and `call_tool_result_to_value` could all change shape while the CLI tests
+  stayed green against bytes the daemon had stopped emitting — the `CrucibleClient`/D1 failure
+  mode this plan indicts, reintroduced by the task meant to close it. The capture is now a
+  permanent test: `crucible-daemon`'s `agent_manager::tests::parity_capture` drives the same
+  `ReactorTestHarness` (real `WorkspaceTools` dispatcher, real permission gate for the internal
+  arm; `OwnsToolsMockAgent` with `agent_name: "claude"` for the delegated one) and asserts the
+  broadcast events equal the committed fixtures, id-normalized. Mutation-verified twice —
+  replacing `data["display"]` with just its `kind` kills all four arms, and adding a field to the
+  ACP pass-through `tool_result` envelope kills exactly the two delegated ones. It is **not**
+  `#[ignore]`d: `#[ignore]` is for tests needing a daemon, Ollama or an agent binary, and this
+  needs only mocks and a `TempDir`. Gating it would defeat the point, which is that CI notices.
+  A fifth test pins that the delegated read fixture quotes what `read_file` actually returns, so
+  the pair cannot drift into comparing a delegated agent against a fiction.
+- **I2 — the fixtures were not byte-faithful.** The internal `tool_result` carried
+  `"{\"result\": \"Replaced 1 occurrence(s)\"}"` — a space after the colon, which is Python's
+  `json.dumps` default. The daemon produces that string with `serde_json::Value::to_string()`,
+  which is compact. Fixed with a `compact()` helper (`separators=(",", ":")`), and the "copied
+  field for field from a live capture" wording in the script and `assets/fixtures/README.md`
+  softened: these are the daemon's output driven by two *named mock agents*, not a transcript of
+  a real `claude` session.
+- **M1 —** the header comment in `acp_parity_tests.rs` said the TUI "discards" tool descriptions.
+  It does not: `render_description` paints a dimmed indented line and `CachedToolCall.description`
+  is populated. The dead link is one hard-coded `let description = None` in
+  `chat_runner/commands.rs`. Reworded.
+- **M2 —** the internal fixture's `interaction_requested` omitted `diffs`, but a real gated
+  `edit_file` builds `PermRequest::tool(..).with_diffs(synthesize_diffs(..))` — the same call that
+  put `diffs` on the `tool_call`. Inert (the converter has no arm for the event) but it contradicted
+  the fixture's own comment. Now present, and the capture test proves it.
+- **M3 —** the delegated fixture's `args` used `path`; a real Claude Code edit arrives as
+  `rawInput` keyed `file_path`. Both are in `ToolDisplay`'s `PATH_KEYS`, so the frame is unchanged
+  — which is now *tested* rather than assumed, since each arm carries its own real key.
+- **M4 —** `without_the_provenance_badge` used a global `.replace`. It now asserts exactly one
+  occurrence and uses `replacen(.., 1)`, so a future two-badge fixture cannot let the
+  normalization scrub an unrelated divergence along with the badge.
+- **M5 —** none of the parity fixtures were pumped through the invariant sweeps, though they carry
+  the only ACP-shaped payloads in `assets/fixtures`. Added to both
+  (`replay_acp_parity_fixtures_80x24`, `invariant_acp_parity_fixtures_every_frame`).
+  `check_spacing_between_non_tool_containers` is deliberately excluded from the second: it
+  classifies any `● `-prefixed line as a tool card, but that glyph is also the assistant's
+  response bullet, so a paragraph followed by a pending tool reads as two adjacent tools and it
+  demands they be flush. The blank line between them is correct; the checker cannot tell the two
+  bullets apart from stripped text.
+- **M6 —** `scripts/gen_acp_parity_fixtures.py` had a shebang but no execute bit, and underscores
+  where the other executable tools in `scripts/` use hyphens. Now
+  `scripts/gen-acp-parity-fixtures.py`, `+x`, matching `gen-third-party-notices.py`.
+
+**Verification:** `cargo nextest run -p crucible-cli` — 1945 passed, 71 skipped at the time
+(1970 after A4 and the review fixes). `cargo fmt --all --check` and
+`cargo clippy -p crucible-cli --all-targets` clean. The daemon was not modified by Task 7 itself;
+the review's I1 added `agent_manager/tests/parity_capture.rs` (tests only).
 
 ---
 

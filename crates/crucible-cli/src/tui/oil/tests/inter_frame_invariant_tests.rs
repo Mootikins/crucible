@@ -742,6 +742,77 @@ fn soft_check<F: FnOnce()>(f: F) -> Option<String> {
     }
 }
 
+/// The ACP presentation-parity pairs, checked after every single event.
+///
+/// These are the only fixtures carrying `"source":"Acp:claude"` or a
+/// `tool_call_diff_update` — a diff that lands on a card *after* the card was
+/// announced, which no other recording in `assets/fixtures` produces. The
+/// story tests render one frame from each; nothing swept the frames in
+/// between, so a transient geometry break on the ACP-only path (the moment the
+/// late diff expands an already-painted card, say) had nowhere to surface.
+///
+/// They are small enough to run the full checker set on every frame rather
+/// than sampling, and they go through the production `SessionEventStream`, so
+/// this replays what a live console would render.
+#[test]
+fn invariant_acp_parity_fixtures_every_frame() {
+    use crate::tui::oil::chat_runner::SessionEventStream;
+
+    for fixture in [
+        "acp_parity_internal.jsonl",
+        "acp_parity_delegated.jsonl",
+        "acp_parity_read_internal.jsonl",
+        "acp_parity_read_delegated.jsonl",
+    ] {
+        let content = super::helpers::read_fixture(fixture);
+        let mut app = OilChatApp::default();
+        let mut vt = Vt100TestRuntime::new(80, 24);
+        let mut stream = SessionEventStream::new();
+        let mut frame = 0usize;
+
+        for line in content.lines() {
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            // The recording header and footer carry no `event`.
+            let Some(event_type) = value.get("event").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let data = value.get("data").cloned().unwrap_or_default();
+            for msg in stream.translate(event_type, &data) {
+                app.on_message(msg);
+            }
+
+            vt.render_frame(&mut app);
+            frame += 1;
+            let full = strip_ansi(&vt.full_history());
+            let screen = strip_ansi(&vt.screen_contents());
+            let ctx = format!("{fixture} frame {frame} (event={event_type})");
+
+            check_no_duplicate_thought_lines(&full, &ctx);
+            check_no_triple_blanks(&full, &ctx);
+            check_consistent_content_spacing(&full, &ctx);
+            check_no_split_thinking_nodes(&screen, &ctx);
+            check_no_simultaneous_thought_and_thinking(&screen, &ctx);
+            check_thinking_word_count_monotonic(&screen, &ctx);
+            // `check_spacing_between_non_tool_containers` is deliberately not
+            // in this list. It classifies any line starting `● ` as a tool
+            // card, but that glyph is also the assistant's response bullet, so
+            // on a turn whose text is immediately followed by a pending tool
+            // (which is every frame of these fixtures) it reads " ● I'll fix
+            // the greeting." and " ● Edit File greeting.rs" as two adjacent
+            // tools and demands they be flush. The blank line between a
+            // paragraph and a tool card is correct; the checker cannot tell
+            // the two bullets apart from stripped text.
+        }
+
+        assert!(
+            frame >= 7,
+            "{fixture} produced only {frame} frames — the fixture lost events"
+        );
+    }
+}
+
 /// Replay reproduce.jsonl frame-by-frame, rendering and checking ALL invariants
 /// after EVERY SINGLE event. Collects all violations across all frames, then
 /// fails with a comprehensive report.

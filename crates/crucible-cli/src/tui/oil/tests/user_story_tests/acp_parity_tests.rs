@@ -149,8 +149,22 @@ fn an_end_of_stream_reasoning_replay_is_not_painted_twice() {
 /// a delegated turn and an internal one. Removing it lets the rest of the two
 /// frames be compared byte-for-byte; a weakened `contains` assertion would let
 /// any other divergence through.
+///
+/// **Exactly one occurrence, deliberately.** A global `replace` would happily
+/// scrub a second badge a future fixture grew, and with it any divergence that
+/// happened to sit on that card — the normalization would start hiding what it
+/// exists to expose. Each fixture here has one delegated tool call; if that
+/// ever changes, this assertion is the place to decide what "modulo the badge"
+/// should mean rather than silently widening it.
 fn without_the_provenance_badge(frame: &str) -> String {
-    frame.replace(" [acp:claude]", "")
+    const BADGE: &str = " [acp:claude]";
+    assert_eq!(
+        frame.matches(BADGE).count(),
+        1,
+        "expected exactly one `{BADGE}` to normalize away, so that stripping it \
+         cannot mask an unrelated difference:\n{frame}"
+    );
+    frame.replacen(BADGE, "", 1)
 }
 
 /// US-307: the same agent behaviour renders the same whoever performed it.
@@ -162,17 +176,21 @@ fn without_the_provenance_badge(frame: &str) -> String {
 /// a real presentation divergence and not the by-design `owns_history`
 /// asymmetry at the `TurnEvent` layer.
 ///
-/// Every field in both fixtures was copied from a live capture of the daemon's
-/// broadcast stream; see `scripts/gen_acp_parity_fixtures.py`. That includes
-/// the two fields the plan's divergence A2 named:
+/// Both fixtures are the daemon's own broadcast output, replayed on demand by
+/// `crucible-daemon`'s `agent_manager::tests::parity_capture` so they cannot
+/// outlive the shape they pin; see `scripts/gen-acp-parity-fixtures.py`. They
+/// include the two fields the plan's divergence A2 named:
 ///
 /// - `description` — the internal fixture carries the registry text, the
-///   delegated one has none. It costs no pixels today because
-///   `session_event_to_chat_msgs` deliberately drops descriptions on *every*
-///   path (`commands.rs`: "not shown during live streaming … omit on resume
-///   for consistency"), and that converter is the only producer of
-///   `ChatAppMsg::ToolCall`. Wire it through for one arm only and this test
-///   fails, which is the point of leaving the asymmetry in the fixtures.
+///   delegated one has none. The TUI does render descriptions when it has one:
+///   `render_description` paints a dimmed indented line and `CachedToolCall`
+///   keeps the field. What breaks the chain is a single hard-coded
+///   `let description = None` in `session_event_to_chat_msgs`
+///   (`chat_runner/commands.rs`: "not shown during live streaming … omit on
+///   resume for consistency"), and that converter is the only producer of
+///   `ChatAppMsg::ToolCall`. So the asymmetry costs no pixels *today*; wire
+///   the daemon's description through for one arm only and this test fails,
+///   which is the point of leaving it in the fixtures.
 /// - `lua_primary_arg` / `auto_approved` — absent from both, because neither
 ///   is a property of the *behaviour*. A registry tool with no Lua display
 ///   plugin emits no hint, and an interactively approved call earns no
