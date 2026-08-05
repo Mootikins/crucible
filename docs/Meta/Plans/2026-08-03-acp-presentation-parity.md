@@ -160,7 +160,10 @@ Grouped by where they bite. Each becomes a RED test.
   with no diffs — a serious presentation bug *if it ran*. ~13 tests pass against it. This is the
   exact failure mode the `acp_tool_name` doc comment calls out: "its unit tests passed because
   they build `PermRequest::tool` shapes that production never produces."
+  *(Resolved by Task 11: `acp_client.rs` deleted, 740 lines / 15 tests.)*
 - **D2 — `acp/protocol.rs`'s `MessageHandler`/`ProtocolVersion` are tested but unused.**
+  *(Confirmed and resolved by Task 11: the whole file was dead — `ACP_VERSION` included — and was
+  deleted, 129 lines / 3 tests, in its own commit.)*
 
 ---
 
@@ -766,7 +769,34 @@ git commit -am "test(tui): pin the ACP permission modal's coarse tool naming"
 
 ---
 
-## Task 11: Resolve the dead `CrucibleClient` path (D1)
+## Task 11: Resolve the dead `CrucibleClient` path (D1) — DONE
+
+**What shipped** (maintainer approved the deletion; two commits so the decisions revert
+independently):
+
+- **`crates/crucible-daemon/src/acp/acp_client.rs` deleted — 740 lines, 15 tests** (the plan said
+  "~13"; the real count was 15). It held `CrucibleClient`, `WriteInfo`, and a free `spawn_agent`.
+  Verified unreachable by grepping the whole workspace — `crucible-cli`, `crucible-web`, `tests/`,
+  `benches/`, `examples/`, Lua and docs — not just the daemon: the only hits outside the file were
+  its own re-export at `acp/mod.rs:30`. `WriteInfo` had no consumer outside `acp_client.rs`
+  either, and the free `spawn_agent` was shadowed everywhere by the *method*
+  `CrucibleAcpClient::spawn_agent` in `acp/client/connection.rs`. The daemon's `tokio-util`
+  `compat` feature went with it — `acp_client.rs` was its only user in that crate.
+- **`crates/crucible-daemon/src/acp/protocol.rs` deleted — 129 lines, 3 tests (D2).** The claim
+  checked out and went further than the plan stated: `ACP_VERSION` was dead too, read only by this
+  module's own `Default` impl and its own tests. Production negotiates the wire version through
+  `agent_client_protocol` (`InitializeRequest::new(1u16.into())`, `acp/client/connection.rs:265`)
+  and never consults the local tuple. The one out-of-module consumer,
+  `tests/acp_integration/error_propagation.rs::test_error_protocol_version_mismatch_is_reported`,
+  compared two `ProtocolVersion`s through a `protocol_guard` helper defined in that same test file
+  — a test of test-local logic. Removed, with a comment in its place recording why. Note the name
+  collision: `acp/client/protocol.rs` is the *live* handshake module and stays.
+
+**Net:** 869 lines and 19 tests removed (`cargo nextest list -p crucible-daemon --features
+test-utils`: 2670 → 2651). No production behavior changed; `cargo check --workspace --all-targets`
+and clippy are clean.
+
+**Original task text follows.**
 
 **Files:**
 - Modify or delete: `crates/crucible-daemon/src/acp/acp_client.rs`
