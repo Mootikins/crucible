@@ -15,6 +15,15 @@
 # Raise it on a big or idle box: `CARGO_BUILD_JOBS=12 just test`
 export CARGO_BUILD_JOBS := env_var_or_default("CARGO_BUILD_JOBS", "6")
 
+# Where cargo actually puts artifacts, for recipes that run a built binary.
+#
+# TRAP this encodes: worktrees under `tree/` share the primary checkout's
+# target dir (`tree/.cargo/config.toml`), so `./target/debug/cru` does not
+# exist there and every recipe hardcoding it fails with exit 127 — which is
+# how `just ci` used to break in any worktree.
+cargo_target_dir := `cargo metadata --format-version 1 --no-deps --offline 2>/dev/null | jq -r .target_directory`
+cru_debug := cargo_target_dir / "debug" / "cru"
+
 # Default recipe - show help
 default:
     @just --list
@@ -84,7 +93,7 @@ test-crate-filter crate filter:
 # Run a Lua plugin's own test suite, e.g. `just test-plugin runtime/plugins/oci`
 test-plugin dir:
     cargo build -q -p crucible-cli --bin cru
-    ./target/debug/cru plugin test {{dir}}
+    {{cru_debug}} plugin test {{dir}}
 
 # Run tests with output
 test-verbose:
@@ -383,7 +392,7 @@ test-plugins:
     for dir in runtime/plugins/*/; do
         if compgen -G "${dir}tests/*.lua" > /dev/null; then
             echo "== ${dir}"
-            ./target/debug/cru plugin test "${dir%/}"
+            {{cru_debug}} plugin test "${dir%/}"
         fi
     done
 
