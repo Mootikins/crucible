@@ -239,6 +239,81 @@ fn rpc_error_prose_is_sanitised() {
     assert_eq!(described, "Internal2J error: quotadexe.gpj exceeded");
 }
 
+/// Both halves of the label are agent-authored and neither may size the
+/// daemon's allocation. Capping `data` alone would just move the payload into
+/// `message`, so the assertion covers each in turn.
+#[test]
+fn agent_supplied_error_text_is_capped_in_both_halves() {
+    for field in ["message", "data"] {
+        let mut error = serde_json::json!({ "code": -32603, "message": "Internal error" });
+        error[field] = serde_json::Value::String("A".repeat(5_000_000));
+
+        let described = describe_rpc_error(&error);
+
+        assert!(
+            described.contains('…'),
+            "the cut in `{field}` was not marked: {described:?}"
+        );
+        assert!(
+            described.chars().count() <= 2 * MAX_DETAIL_CHARS + 8,
+            "`{field}` produced {} characters, past the cap",
+            described.chars().count()
+        );
+    }
+}
+
+/// The nested unwrap has to keep working on the payloads that motivated it:
+/// an upstream JSON envelope forwarded as a string runs to kilobytes, well
+/// past the display cap, and the sentence inside it is short.
+#[test]
+fn a_kilobyte_scale_envelope_still_yields_its_inner_sentence() {
+    let envelope = serde_json::json!({
+        "message": "rate limit exceeded",
+        "request_id": "r".repeat(4_000)
+    })
+    .to_string();
+    assert!(
+        envelope.len() > MAX_DETAIL_CHARS,
+        "envelope must exceed the display cap to be a test"
+    );
+
+    let described = describe_rpc_error(&serde_json::json!({
+        "code": -32603,
+        "message": "Internal error",
+        "data": envelope
+    }));
+
+    assert_eq!(described, "Internal error: rate limit exceeded");
+}
+
+/// Past the input cap the unwrap is abandoned rather than attempted on a
+/// truncated envelope — the point of the cap is to refuse the copy, not to
+/// make a doomed parse cheaper.
+#[test]
+fn an_envelope_past_the_input_cap_is_not_unwrapped() {
+    let envelope = serde_json::json!({
+        "message": "rate limit exceeded",
+        "request_id": "r".repeat(MAX_DETAIL_INPUT_CHARS)
+    })
+    .to_string();
+
+    let described = describe_rpc_error(&serde_json::json!({
+        "code": -32603,
+        "message": "Internal error",
+        "data": envelope
+    }));
+
+    assert!(
+        described.starts_with(r#"Internal error: {"message":"rate limit exceeded""#),
+        "expected the raw head of the oversized envelope: {described:?}"
+    );
+    assert!(
+        described.ends_with('…'),
+        "the cut was not marked: {described:?}"
+    );
+    assert!(described.chars().count() <= MAX_DETAIL_CHARS + 24);
+}
+
 #[test]
 fn streaming_callback_returning_true_leaves_state_running() {
     use agent_client_protocol::SessionNotification;

@@ -29,6 +29,38 @@ pub(super) fn build_cancel_notification(session_id: &str) -> serde_json::Value {
 /// self-referential payload terminates.
 const MAX_DETAIL_DEPTH: u8 = 4;
 
+/// Longest error text shown to the user, in characters.
+///
+/// This is a one-line failure label, not a log: past a couple of paragraphs
+/// nobody reads further, and the full payload is already in the trace at
+/// `debug` level for whoever needs it.
+const MAX_DETAIL_CHARS: usize = 512;
+
+/// Largest agent payload this will copy while looking for a sentence, in
+/// characters.
+///
+/// The display cap alone is not enough. `data` is whatever the agent chose to
+/// send, and unwrapping it holds the raw string, its sanitised copy, the
+/// nested `Value` it parses to, and the formatted result at once — roughly
+/// four times the payload. Bounding the *input* bounds all four: a 500 MB
+/// `error.data` costs the one already-parsed copy, not 2 GB of derived ones.
+///
+/// Sized well above any error body an agent actually forwards (an upstream
+/// JSON envelope with headers and a request id runs to a few kilobytes) so
+/// that the nested unwrap keeps working on real payloads; anything larger is
+/// not a sentence, so there is nothing to dig for and the head is all the user
+/// can use.
+const MAX_DETAIL_INPUT_CHARS: usize = 16 * 1024;
+
+/// Truncate to the display cap, marking the cut so a clipped sentence does not
+/// read as the agent's own words.
+fn elide(text: &str) -> String {
+    match text.char_indices().nth(MAX_DETAIL_CHARS) {
+        Some((end, _)) => format!("{}…", &text[..end]),
+        None => text.to_string(),
+    }
+}
+
 /// One human-readable line for a JSON-RPC `error` object.
 ///
 /// JSON-RPC pins down only `code` and `message`, and agents routinely leave
@@ -44,14 +76,18 @@ const MAX_DETAIL_DEPTH: u8 = 4;
 /// message into `data` does not read like two separate failures.
 ///
 /// Both halves are agent-authored and both are rendered as a single-line
-/// failure label, so both are sanitised — see `crucible_core::text`.
+/// failure label, so both are sanitised — see `crucible_core::text` — and both
+/// are capped. Capping only `data` would be theatre: an agent that wants to
+/// hand the daemon half a gigabyte of prose would simply put it in `message`.
 pub(super) fn describe_rpc_error(error: &serde_json::Value) -> String {
-    let message = sanitize_single_line(
+    // Elide before sanitising, so no copy of the agent's string larger than
+    // the cap is ever made. Sanitising only shrinks, so the order is safe.
+    let message = sanitize_single_line(&elide(
         error
             .get("message")
             .and_then(|m| m.as_str())
             .unwrap_or("Unknown error"),
-    );
+    ));
 
     match error.get("data").and_then(|data| detail_text(data, 0)) {
         Some(detail) if !message.contains(detail.as_str()) => format!("{message}: {detail}"),
@@ -64,6 +100,17 @@ pub(super) fn describe_rpc_error(error: &serde_json::Value) -> String {
 fn detail_text(value: &serde_json::Value, depth: u8) -> Option<String> {
     match value {
         serde_json::Value::String(text) => {
+            // Bound the input on a borrow, before anything copies it.
+            let (text, oversized) = match text.char_indices().nth(MAX_DETAIL_INPUT_CHARS) {
+                Some((end, _)) => (&text[..end], true),
+                None => (text.as_str(), false),
+            };
+            if oversized {
+                tracing::warn!(
+                    depth,
+                    "ACP error detail exceeded the input cap; truncating without unwrapping"
+                );
+            }
             // Sanitise before the emptiness check, not after: a payload that is
             // nothing *but* control characters must read as "no detail" rather
             // than as an empty-looking detail that still carries them.
@@ -74,7 +121,9 @@ fn detail_text(value: &serde_json::Value, depth: u8) -> Option<String> {
             }
             // Agents proxying an upstream API often forward its error body
             // verbatim as a string; dig into it rather than printing JSON.
-            let nested = if depth < MAX_DETAIL_DEPTH {
+            // Skipped once truncated — a cut envelope is not parseable JSON,
+            // and re-parsing it is the allocation the cap exists to refuse.
+            let nested = if !oversized && depth < MAX_DETAIL_DEPTH {
                 serde_json::from_str::<serde_json::Value>(text)
                     .ok()
                     .filter(serde_json::Value::is_object)
@@ -82,7 +131,8 @@ fn detail_text(value: &serde_json::Value, depth: u8) -> Option<String> {
             } else {
                 None
             };
-            Some(nested.unwrap_or_else(|| text.to_string()))
+            // A nested result already came back elided by this same arm.
+            Some(nested.unwrap_or_else(|| elide(text)))
         }
         serde_json::Value::Object(_) if depth < MAX_DETAIL_DEPTH => value
             .get("message")
