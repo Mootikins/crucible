@@ -477,3 +477,135 @@ fn tool_call_update_without_prior_announcement_does_not_emit_diff_update() {
         chunks
     );
 }
+
+// ---------------------------------------------------------------------------
+// describe_rpc_error — folding the agent-defined `data` into the message
+// ---------------------------------------------------------------------------
+//
+// JSON-RPC only guarantees `code` and `message`. `data` is agent-defined, so
+// each shape below is something an agent has been or could be observed to
+// send, and none of them may panic or leak JSON noise into user-facing text.
+
+use crate::acp::client::streaming::describe_rpc_error;
+
+#[test]
+fn describe_rpc_error_uses_message_when_there_is_no_data() {
+    let err = json!({ "code": -32601, "message": "Method not found" });
+    assert_eq!(describe_rpc_error(&err), "Method not found");
+}
+
+#[test]
+fn describe_rpc_error_falls_back_when_message_is_missing() {
+    assert_eq!(describe_rpc_error(&json!({ "code": -1 })), "Unknown error");
+}
+
+#[test]
+fn describe_rpc_error_appends_data_message() {
+    let err = json!({
+        "code": -32603,
+        "message": "Internal error",
+        "data": { "message": "rate limit exceeded, retry in 30s" },
+    });
+    assert_eq!(
+        describe_rpc_error(&err),
+        "Internal error: rate limit exceeded, retry in 30s"
+    );
+}
+
+#[test]
+fn describe_rpc_error_unwraps_a_stringified_error_envelope() {
+    // The codex-acp shape: `data.message` is itself a JSON document, and the
+    // sentence worth reading is nested another level down under `error`.
+    let err = json!({
+        "code": -32603,
+        "message": "Internal error",
+        "data": {
+            "message": r#"{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-5.2-codex' model is not supported when using Codex with a ChatGPT account."}}"#,
+            "codex_error_info": "other",
+        },
+    });
+    assert_eq!(
+        describe_rpc_error(&err),
+        "Internal error: The 'gpt-5.2-codex' model is not supported when using \
+         Codex with a ChatGPT account."
+    );
+}
+
+#[test]
+fn describe_rpc_error_accepts_a_bare_string_data() {
+    let err = json!({
+        "code": -32000,
+        "message": "Agent failure",
+        "data": "model quota exhausted",
+    });
+    assert_eq!(
+        describe_rpc_error(&err),
+        "Agent failure: model quota exhausted"
+    );
+}
+
+#[test]
+fn describe_rpc_error_ignores_data_without_readable_text() {
+    // An object with no `message`, a null, an empty object, an array, a
+    // whitespace-only string: nothing to say, so say nothing rather than
+    // rendering `null` or `{}` at the user.
+    for data in [
+        json!({ "retryable": true }),
+        json!(null),
+        json!({}),
+        json!([1, 2, 3]),
+        json!("   "),
+        json!({ "message": "" }),
+        json!({ "message": 42 }),
+    ] {
+        let err = json!({ "code": -32603, "message": "Internal error", "data": data });
+        assert_eq!(
+            describe_rpc_error(&err),
+            "Internal error",
+            "data {data} should contribute nothing"
+        );
+    }
+}
+
+#[test]
+fn describe_rpc_error_does_not_repeat_a_duplicate_detail() {
+    let err = json!({
+        "code": -32603,
+        "message": "Internal error",
+        "data": { "message": "Internal error" },
+    });
+    assert_eq!(describe_rpc_error(&err), "Internal error");
+}
+
+#[test]
+fn describe_rpc_error_does_not_repeat_a_detail_the_message_already_contains() {
+    let err = json!({
+        "code": -32000,
+        "message": "auth failed: token expired",
+        "data": { "message": "token expired" },
+    });
+    assert_eq!(describe_rpc_error(&err), "auth failed: token expired");
+}
+
+#[test]
+fn describe_rpc_error_survives_a_non_object_error_payload() {
+    // Nothing guarantees the peer sent an object at all.
+    assert_eq!(describe_rpc_error(&json!("boom")), "Unknown error");
+    assert_eq!(describe_rpc_error(&json!(null)), "Unknown error");
+}
+
+#[test]
+fn describe_rpc_error_stops_unwrapping_self_referential_payloads() {
+    // Deeply nested stringified envelopes must terminate, not recurse away
+    // the stack. The exact text below the bound does not matter; returning
+    // at all does. Eight levels is comfortably past MAX_DETAIL_DEPTH — and
+    // stays small, since each round re-escapes the whole payload and so
+    // roughly doubles it.
+    let mut nested = String::from(r#"{"message":"innermost"}"#);
+    for _ in 0..8 {
+        nested = serde_json::to_string(&json!({ "message": nested })).unwrap();
+    }
+    let err = json!({ "code": -1, "message": "Internal error", "data": { "message": nested } });
+    let rendered = describe_rpc_error(&err);
+    assert!(rendered.starts_with("Internal error: "), "got {rendered:?}");
+}

@@ -231,12 +231,12 @@ const CURSOR: FixtureCase = FixtureCase {
 /// a JSON-RPC error, so this is the recorded coverage for the mid-turn agent
 /// error path.
 ///
-/// Note what is asserted: Codex puts the actionable text ("the 'gpt-5.2-codex'
-/// model is not supported when using Codex with a ChatGPT account") in
-/// `error.data.message`, and the client surfaces only `error.message`, i.e.
-/// the generic "Internal error". The assertion pins today's behavior; if the
-/// client learns to fold `data.message` in, this expectation should grow to
-/// require it rather than be deleted.
+/// Note what is asserted: Codex's `error.message` is the generic "Internal
+/// error" and the whole reason the turn failed lives in the agent-defined
+/// `error.data` — here a `message` holding a stringified upstream error
+/// envelope whose innermost `message` names the unsupported model. The
+/// surfaced text must carry that sentence, or the user is told only that
+/// something internal went wrong.
 const CODEX: FixtureCase = FixtureCase {
     agent: "codex",
     cwd: "<HOME>/.crucible",
@@ -245,7 +245,11 @@ const CODEX: FixtureCase = FixtureCase {
     auth_methods: &["chatgpt", "codex-api-key", "openai-api-key"],
     session_id: "019da825-7c50-7133-8d2a-346b1c707f33",
     turn: TurnExpectation::Failed {
-        message_contains: &["Internal error", "-32603"],
+        message_contains: &[
+            "Internal error",
+            "-32603",
+            "The 'gpt-5.2-codex' model is not supported when using Codex with a ChatGPT account.",
+        ],
     },
 };
 

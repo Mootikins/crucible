@@ -22,6 +22,66 @@ pub(super) fn build_cancel_notification(session_id: &str) -> serde_json::Value {
     })
 }
 
+/// How far to chase a nested error payload before giving up. Deep enough for
+/// the shapes agents actually send (an upstream envelope forwarded as a string,
+/// with the sentence one key further in), shallow enough that a hostile or
+/// self-referential payload terminates.
+const MAX_DETAIL_DEPTH: u8 = 4;
+
+/// One human-readable line for a JSON-RPC `error` object.
+///
+/// JSON-RPC pins down only `code` and `message`, and agents routinely leave
+/// `message` a generic label — codex-acp sends "Internal error" — while the
+/// reason the turn failed sits in the agent-defined `data`. Surfacing only
+/// `message` tells the user nothing they can act on, so fold the two together.
+///
+/// `data` is agent-defined, so no shape is assumed: an object with a string
+/// `message`, a bare string, or an upstream error envelope forwarded as a JSON
+/// string all yield their innermost sentence. Anything else contributes
+/// nothing, rather than rendering `null` or `{}` at the user. The detail is
+/// dropped when `message` already contains it, so an agent that echoes its own
+/// message into `data` does not read like two separate failures.
+pub(super) fn describe_rpc_error(error: &serde_json::Value) -> String {
+    let message = error
+        .get("message")
+        .and_then(|m| m.as_str())
+        .unwrap_or("Unknown error");
+
+    match error.get("data").and_then(|data| detail_text(data, 0)) {
+        Some(detail) if !message.contains(detail.as_str()) => format!("{message}: {detail}"),
+        _ => message.to_string(),
+    }
+}
+
+/// The innermost readable string in an agent-defined error payload, following
+/// `message` then `error` and unwrapping stringified JSON on the way down.
+fn detail_text(value: &serde_json::Value, depth: u8) -> Option<String> {
+    match value {
+        serde_json::Value::String(text) => {
+            let text = text.trim();
+            if text.is_empty() {
+                return None;
+            }
+            // Agents proxying an upstream API often forward its error body
+            // verbatim as a string; dig into it rather than printing JSON.
+            let nested = if depth < MAX_DETAIL_DEPTH {
+                serde_json::from_str::<serde_json::Value>(text)
+                    .ok()
+                    .filter(serde_json::Value::is_object)
+                    .and_then(|inner| detail_text(&inner, depth + 1))
+            } else {
+                None
+            };
+            Some(nested.unwrap_or_else(|| text.to_string()))
+        }
+        serde_json::Value::Object(_) if depth < MAX_DETAIL_DEPTH => value
+            .get("message")
+            .or_else(|| value.get("error"))
+            .and_then(|inner| detail_text(inner, depth + 1)),
+        _ => None,
+    }
+}
+
 impl CrucibleAcpClient {
     /// Send a prompt request and handle streaming responses
     ///
@@ -91,10 +151,7 @@ impl CrucibleAcpClient {
 
                 // Check for error responses
                 if let Some(error) = response.get("error") {
-                    let error_msg = error
-                        .get("message")
-                        .and_then(|m| m.as_str())
-                        .unwrap_or("Unknown error");
+                    let error_msg = describe_rpc_error(error);
                     let error_code = error.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
 
                     tracing::error!("Agent returned error: {} (code: {})", error_msg, error_code);
@@ -192,10 +249,7 @@ impl CrucibleAcpClient {
                 tracing::trace!("Received line: {}", response_line);
 
                 if let Some(error) = response.get("error") {
-                    let error_msg = error
-                        .get("message")
-                        .and_then(|m| m.as_str())
-                        .unwrap_or("Unknown error");
+                    let error_msg = describe_rpc_error(error);
                     let error_code = error.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
 
                     return Err(ClientError::Session(format!(
