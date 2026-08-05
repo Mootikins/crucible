@@ -171,6 +171,30 @@ demo-validate:
 demo-record name *args:
     cargo run -p crucible-cli -- chat --record assets/fixtures/{{name}}.jsonl {{args}}
 
+# Re-record the ACP wire fixture replayed by tests/acp_fixture_replay.rs.
+# REQUIRES the real agent binary on PATH (claude / opencode / codex / cursor /
+# gemini) and a working login for it — the replay test itself is hermetic and
+# needs none of this. The capture is sanitized ($HOME -> <HOME>) and installed
+# over the existing fixture; diff it before committing, and update the case
+# table in acp_fixture_replay.rs to match the new session id / usage numbers.
+record-acp-fixture agent prompt="say hello in exactly 3 words":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir=$(mktemp -d)
+    dest="crates/crucible-daemon/tests/fixtures/acp/recorded/{{agent}}/basic-chat.jsonl"
+    # The recorder lives in the daemon, not the CLI, so the env var only takes
+    # effect on a daemon this command spawns itself. An already-running daemon
+    # started without it records nothing — stop it first.
+    cargo run -p crucible-cli -- daemon stop >/dev/null 2>&1 || true
+    echo "Recording {{agent}} into $dir (agent binary must be installed and logged in)"
+    export CRUCIBLE_ACP_RECORD_DIR="$dir" CRUCIBLE_ACP_RECORD_SCENARIO=basic-chat
+    session=$(cargo run -p crucible-cli -- session create -a {{agent}} --permissions allow -q)
+    cargo run -p crucible-cli -- session send "$session" "{{prompt}}" --permissions allow
+    capture=$(ls -t "$dir"/{{agent}}-*.jsonl | head -n1)
+    mkdir -p "$(dirname "$dest")"
+    sed "s|$HOME|<HOME>|g" "$capture" > "$dest"
+    echo "Wrote $dest — review it (secrets, absolute paths) before committing."
+
 # === MCP Server ===
 
 # Start MCP server (SSE on port 3847)
