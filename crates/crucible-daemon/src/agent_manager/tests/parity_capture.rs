@@ -142,12 +142,26 @@ fn assert_matches_fixture(
 }
 
 /// Drain everything the turn broadcast, in order.
+///
+/// `Lagged` panics rather than ending the loop. A silent truncation here
+/// surfaces as "the daemon no longer emits the event sequence" — a fixture
+/// mismatch pointing at production code that is fine — and the fix is to raise
+/// the channel capacity, not to re-record the fixture. Capacity is 256 against
+/// ~9 events, so this is a tripwire, not a live risk.
 fn drain(rx: &mut broadcast::Receiver<SessionEventMessage>) -> Vec<SessionEventMessage> {
     let mut out = Vec::new();
-    while let Ok(event) = rx.try_recv() {
-        out.push(event);
+    loop {
+        match rx.try_recv() {
+            Ok(event) => out.push(event),
+            Err(broadcast::error::TryRecvError::Empty)
+            | Err(broadcast::error::TryRecvError::Closed) => return out,
+            Err(broadcast::error::TryRecvError::Lagged(n)) => panic!(
+                "the session broadcast dropped {n} event(s) before this capture read them, \
+                 so the sequence below is truncated and any fixture mismatch it reports is \
+                 an artefact. Raise the channel capacity."
+            ),
+        }
     }
-    out
 }
 
 async fn configure_delegated(h: &ReactorTestHarness) {
