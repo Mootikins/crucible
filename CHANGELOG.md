@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-08-05
+
+Delegation, made presentable. `cru chat -a claude` has worked for a while, but
+what it *showed* you was quietly a different product: no thinking blocks at all,
+a dead context indicator, tool cards with no provenance and no result summaries,
+and a turn that ran tools but said nothing reported as an error. This release
+makes a delegated agent render like the internal one, and pins that with tests
+that compare the two frame for frame.
+
+The boundary that makes it testable: `AcpAgentHandle` and `GenaiAgentHandle`
+differ at the `TurnEvent` layer *by design* — one runs its own tool loop, the
+other lets the daemon dispatch — but both converge on `SessionEventMessage`, and
+from there a single renderer draws everything. Parity is a contract at that
+convergence point, and nowhere else.
+
+### Added
+- **Delegated agents' reasoning reaches the screen.** `session/update` frames of
+  type `agent_thought_chunk` were never matched, so every thought Claude Code or
+  Gemini streamed was discarded. The whole thinking pipeline existed and had no
+  producer feeding it.
+- **Context usage on delegated sessions.** ACP agents put their window on the
+  wire and Crucible dropped it — the `usage_update` variant sits behind an
+  unstable feature flag and `SessionUpdate` is internally tagged, so the frame
+  failed to *deserialize entirely* rather than being ignored. The fields are now
+  read from the raw JSON, and the statusline fills in with no client changes.
+- **Tool cards say who ran them.** A delegated call renders `[acp:claude]`
+  alongside the existing `mcp:` and `plugin:` badges, so a tool another process
+  ran under another permission gate is no longer indistinguishable from one
+  Crucible ran itself.
+- **Agent errors keep their detail.** Only `error.message` was surfaced, which
+  for Codex is a bare "Internal error" while the actionable sentence sits two
+  keys deep inside a stringified envelope.
+
+### Fixed
+- **A delegated turn that only ran tools reported an error.** The empty-response
+  check keyed on a flag set after the pass-through branch returns, so a turn that
+  worked showed a red status line.
+- **Interleaved thinking was discarded on both agent paths.** The guard against
+  providers replaying their reasoning at stream end dropped *every* thought after
+  the first token of prose. It now recognises a replay by content, so genuine
+  mid-turn reasoning survives.
+- **Delegated tool results lost their summaries.** `→ 42 lines` collapsed to
+  nothing because the summary table keyed on a spelling ACP never sends.
+- **Cancelled and empty delegated turns** reported as normal completions.
+- **A tool result with no matching call** invented the name `unknown_tool` and
+  put it in the transcript, the web feed, and Lua `tool_result` hooks.
+- **Agent-supplied text is sanitized** before it reaches the terminal. Escape
+  sequences were already filtered, but 8-bit C1 controls bypassed that filter on
+  xterm-family terminals, and bidi overrides could make a tool title display as
+  something other than what it named.
+
+### Removed
+- `CrucibleClient`, `WriteInfo` and the `acp/protocol.rs` version scaffolding —
+  around 900 lines with no production caller. `CrucibleClient` was also a
+  liability: its `write_text_file` wrote to any absolute path an agent asked for.
+  Breaking only for code depending on `crucible-daemon`'s `acp` module directly.
+
+
 ## [0.21.0] - 2026-08-03
 
 Sandboxing, and what it takes to make it real. 0.20 could put an agent's tools
