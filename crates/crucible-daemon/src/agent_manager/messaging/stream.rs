@@ -23,6 +23,7 @@
 use super::super::*;
 use crate::agent_manager::tool_tracking::ToolCallTracker;
 use crucible_core::events::InternalSessionEvent;
+use crucible_core::protocol::session_events::ContextLimitSource;
 use crucible_core::session::{validate_output, OutputValidation};
 use crucible_core::traits::chat::{ChatToolCall, ChatToolResult};
 use crucible_core::traits::llm::TokenUsage;
@@ -871,6 +872,63 @@ impl AgentManager {
                 }
                 TurnEvent::Usage(usage) => {
                     last_usage = Some(usage);
+                }
+                TurnEvent::ContextWindow { used, limit } => {
+                    // A3. Only a delegated agent gets here: the internal
+                    // agent's window is resolved once per session from its
+                    // provider API, but an ACP session has no endpoint and no
+                    // model to query, so the number can only come from the
+                    // agent. Re-emitting the *setup* event rather than a new
+                    // one is the point — every subscriber already assigns
+                    // `context_limit_resolved` to its context total, so the
+                    // statusline lights up with no client change at all.
+                    if !emit_event(
+                        &stream_ctx.event_tx,
+                        SessionEventMessage::context_limit_resolved(
+                            &stream_ctx.session_id,
+                            limit as usize,
+                            ContextLimitSource::Agent,
+                        ),
+                    ) {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            "No subscribers for context_limit_resolved event"
+                        );
+                    }
+
+                    // `used` is the other operand of that indicator, and it
+                    // reaches subscribers on `message_complete` — there is no
+                    // standalone event for it. Seeding `last_usage` is a
+                    // floor, not the primary path: `usage_update` arrives
+                    // mid-turn and `TurnEvent::Usage` (parsed from the final
+                    // `PromptResponse`, see `acp/client/usage.rs`) arrives
+                    // after it, so whenever the agent reports both, the later
+                    // and strictly better value wins. The `is_none` guard only
+                    // stops a trailing window frame from clobbering it.
+                    //
+                    // The floor is what keeps the fix honest. Emitting a limit
+                    // with no occupancy would make the statusline draw
+                    // "0% ctx" — a confident wrong answer, and worse than the
+                    // "— ctx" it draws today. Nothing in ACP requires an agent
+                    // that reports its window to also report per-turn usage;
+                    // both fields are optional and independently gated
+                    // upstream.
+                    //
+                    // `used` counts the context *before* the response is
+                    // appended, so it reads as prompt tokens: opencode's 28224
+                    // is exactly inputTokens 24496 + cachedReadTokens 3728,
+                    // while its totalTokens 28278 also counts the 54 output
+                    // tokens.
+                    if last_usage.is_none() {
+                        let used = u32::try_from(used).unwrap_or(u32::MAX);
+                        last_usage = Some(TokenUsage {
+                            prompt_tokens: used,
+                            completion_tokens: 0,
+                            total_tokens: used,
+                            cache_read_tokens: None,
+                            cache_creation_tokens: None,
+                        });
+                    }
                 }
                 TurnEvent::HandlerInjection { .. }
                 | TurnEvent::DepthCapHit { .. }

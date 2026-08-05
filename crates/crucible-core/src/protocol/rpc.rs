@@ -223,6 +223,28 @@ impl SessionEventMessage {
         )
     }
 
+    /// The session's context window is now known.
+    ///
+    /// Usually a setup event (the daemon queries the provider API for the
+    /// configured endpoint + model). A delegated agent has neither, so on an
+    /// ACP session this instead rides the turn stream, carrying the window the
+    /// agent reported in a `usage_update` frame. Same event, same payload,
+    /// later — subscribers assign the limit and do not care which produced it.
+    pub fn context_limit_resolved(
+        session_id: impl Into<String>,
+        limit: usize,
+        source: crate::protocol::session_events::ContextLimitSource,
+    ) -> Self {
+        Self::new(
+            session_id,
+            "context_limit_resolved",
+            serde_json::to_value(
+                crate::protocol::session_events::ContextLimitResolvedPayload { limit, source },
+            )
+            .unwrap_or(Value::Null),
+        )
+    }
+
     pub fn tool_result(
         session_id: impl Into<String>,
         call_id: impl Into<String>,

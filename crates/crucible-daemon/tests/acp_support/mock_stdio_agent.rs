@@ -185,6 +185,18 @@ fn scripted_stop_reason_is_cancelled() -> bool {
     env::var("CRU_MOCK_STOP_REASON").as_deref().map(str::trim) == Ok("cancelled")
 }
 
+/// Parse a `CRU_MOCK_USAGE_UPDATE` script (`used/size`) into its two counts.
+///
+/// Returns `None` for anything that is not two parseable numbers, so a
+/// malformed script scripts *no* usage frame rather than a zeroed one — a
+/// zeroed window would make the "agent reports no window" case indistinguishable
+/// from "agent reports a window of 0", and the daemon has to treat those
+/// differently.
+fn parse_usage_script(value: &str) -> Option<(u64, u64)> {
+    let (used, size) = value.trim().split_once('/')?;
+    Some((used.trim().parse().ok()?, size.trim().parse().ok()?))
+}
+
 /// Mock stdio-based ACP agent
 ///
 /// This agent reads JSON-RPC messages from stdin and writes responses to stdout,
@@ -544,6 +556,35 @@ impl MockStdioAgent {
             };
             notifications.insert(0, thought(first));
             notifications.extend(rest.iter().map(|text| thought(text)));
+        }
+
+        // Test hook, same value-read grammar as the two above: report the
+        // session's context window as an ACP `usage_update` frame
+        // (divergence A3). Script is `used/size`, matching the wire field
+        // names; an unset, blank or unparseable value means the agent never
+        // reports its window — which is what `cursor` and `gemini` actually
+        // do, so the negative case has to stay reachable.
+        //
+        // The frame is placed *before* the text so the daemon learns the
+        // window while the turn is still streaming, which is where claude and
+        // opencode both put it in
+        // `tests/fixtures/acp/recorded/*/basic-chat.jsonl`.
+        if let Some((used, size)) = env::var("CRU_MOCK_USAGE_UPDATE")
+            .ok()
+            .and_then(|value| parse_usage_script(&value))
+        {
+            notifications.insert(
+                0,
+                update(json!({
+                    "sessionUpdate": "usage_update",
+                    "used": used,
+                    "size": size,
+                    // Real agents attach it; Crucible has no consumer for it.
+                    // Present here so the client is exercised against the
+                    // full wire shape rather than a trimmed one.
+                    "cost": { "amount": 0.14204, "currency": "USD" }
+                })),
+            );
         }
 
         // Same test hook as CRU_MOCK_STREAM_CHUNKS above: a spawned binary

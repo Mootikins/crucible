@@ -52,6 +52,15 @@ pub enum EventShape {
     },
     ToolBatchEnd,
     Usage,
+    /// Both numbers are retained, unlike `Usage`: they are not incidental
+    /// token counts but the two operands of the statusline's context
+    /// indicator (`context_label`, `components/status_items.rs`), which draws
+    /// `used/limit` as a percentage. Erasing them would let a turn that
+    /// reported the wrong window project identically to a correct one.
+    ContextWindow {
+        used: u64,
+        limit: u64,
+    },
     Done(StopReason),
     /// The `TurnError` discriminant only. The message can carry absolute
     /// paths, but its first line *is* rendered
@@ -134,6 +143,10 @@ impl ShapeProjector {
             },
             TurnEvent::ToolBatchEnd => EventShape::ToolBatchEnd,
             TurnEvent::Usage(_) => EventShape::Usage,
+            TurnEvent::ContextWindow { used, limit } => EventShape::ContextWindow {
+                used: *used,
+                limit: *limit,
+            },
             TurnEvent::Done { stop_reason } => EventShape::Done(stop_reason.clone()),
             TurnEvent::Error(e) => EventShape::Error(e.into()),
 
@@ -147,6 +160,26 @@ impl ShapeProjector {
             | TurnEvent::ContextAttach { .. }
             | TurnEvent::DepthCapHit { .. } => return None,
         })
+    }
+}
+
+/// The wire-level kind of a [`StreamingChunk`], for tests that assert the
+/// *order* chunks arrived in rather than their payloads.
+///
+/// Four call sites were carrying byte-identical copies of this match, so every
+/// new chunk variant broke all four the same way.
+// `acp_support` is `#[path]`-included by several test binaries; only
+// `acp_integration` calls this one.
+#[allow(dead_code)]
+pub fn chunk_kind(chunk: &crucible_daemon::acp::StreamingChunk) -> &'static str {
+    use crucible_daemon::acp::StreamingChunk;
+    match chunk {
+        StreamingChunk::Text(_) => "text",
+        StreamingChunk::Thinking(_) => "thinking",
+        StreamingChunk::ToolStart { .. } => "tool_start",
+        StreamingChunk::ToolEnd { .. } => "tool_end",
+        StreamingChunk::ToolDiffUpdate { .. } => "tool_diff_update",
+        StreamingChunk::ContextWindow { .. } => "context_window",
     }
 }
 

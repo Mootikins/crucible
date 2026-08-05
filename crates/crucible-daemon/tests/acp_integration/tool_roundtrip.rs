@@ -215,13 +215,7 @@ async fn test_acp_tool_roundtrip_read_file() {
     let captured = chunks.lock().unwrap();
     let kinds: Vec<&str> = captured
         .iter()
-        .map(|c| match c {
-            StreamingChunk::Text(_) => "text",
-            StreamingChunk::Thinking(_) => "thinking",
-            StreamingChunk::ToolStart { .. } => "tool_start",
-            StreamingChunk::ToolEnd { .. } => "tool_end",
-            StreamingChunk::ToolDiffUpdate { .. } => "tool_diff_update",
-        })
+        .map(crate::support::parity::chunk_kind)
         .collect();
 
     assert_eq!(
@@ -391,13 +385,7 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
     let captured = chunks.lock().unwrap();
     let kinds: Vec<&str> = captured
         .iter()
-        .map(|c| match c {
-            StreamingChunk::Text(_) => "text",
-            StreamingChunk::Thinking(_) => "thinking",
-            StreamingChunk::ToolStart { .. } => "tool_start",
-            StreamingChunk::ToolEnd { .. } => "tool_end",
-            StreamingChunk::ToolDiffUpdate { .. } => "tool_diff_update",
-        })
+        .map(crate::support::parity::chunk_kind)
         .collect();
 
     assert_eq!(

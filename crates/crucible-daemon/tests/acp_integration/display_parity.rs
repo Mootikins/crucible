@@ -950,13 +950,7 @@ async fn full_flow_text_tool_result_text_via_callback() {
 
     let kinds: Vec<&str> = captured
         .iter()
-        .map(|c| match c {
-            StreamingChunk::Text(_) => "text",
-            StreamingChunk::Thinking(_) => "thinking",
-            StreamingChunk::ToolStart { .. } => "tool_start",
-            StreamingChunk::ToolEnd { .. } => "tool_end",
-            StreamingChunk::ToolDiffUpdate { .. } => "tool_diff_update",
-        })
+        .map(crate::support::parity::chunk_kind)
         .collect();
 
     assert_eq!(
@@ -995,6 +989,9 @@ fn streaming_chunk_variants_roundtrip_via_json() {
             StreamingChunk::ToolDiffUpdate { call_id, diffs } => {
                 json!({"kind": "tool_diff_update", "id": call_id, "diffs": diffs})
             }
+            StreamingChunk::ContextWindow { used, limit } => {
+                json!({"kind": "context_window", "used": used, "limit": limit})
+            }
         };
 
         let kind = serialized["kind"].as_str().unwrap();
@@ -1025,6 +1022,10 @@ fn streaming_chunk_variants_roundtrip_via_json() {
                 call_id: serialized["id"].as_str().unwrap().to_string(),
                 diffs: serde_json::from_value(serialized["diffs"].clone()).unwrap_or_default(),
             },
+            "context_window" => StreamingChunk::ContextWindow {
+                used: serialized["used"].as_u64().unwrap(),
+                limit: serialized["limit"].as_u64().unwrap(),
+            },
             _ => panic!("unknown kind"),
         }
     }
@@ -1053,6 +1054,10 @@ fn streaming_chunk_variants_roundtrip_via_json() {
             id: "tool-3".to_string(),
             result: None,
             error: Some("timeout".to_string()),
+        },
+        StreamingChunk::ContextWindow {
+            used: 22_700,
+            limit: 1_000_000,
         },
     ];
 
@@ -1094,6 +1099,22 @@ fn streaming_chunk_variants_roundtrip_via_json() {
                 assert_eq!(a_i, b_i);
                 assert_eq!(a_r, b_r);
                 assert_eq!(a_e, b_e);
+            }
+            (
+                StreamingChunk::ContextWindow {
+                    used: a_u,
+                    limit: a_l,
+                },
+                StreamingChunk::ContextWindow {
+                    used: b_u,
+                    limit: b_l,
+                },
+            ) => {
+                // Both operands, and in the right slots: a serializer that
+                // swapped them would still roundtrip to a ContextWindow.
+                assert_eq!(a_u, b_u);
+                assert_eq!(a_l, b_l);
+                assert_ne!(b_u, b_l, "fixture must not use equal numbers");
             }
             _ => panic!("variant mismatch after roundtrip"),
         }

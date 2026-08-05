@@ -53,6 +53,12 @@ pub enum StreamingChunk {
         call_id: String,
         diffs: Vec<FileDiff>,
     },
+    /// The agent's report of its own context window: tokens currently
+    /// occupying it and its total size, from a `usage_update` session update.
+    ///
+    /// The daemon cannot derive either number for a delegated session — it has
+    /// no endpoint or model to query — so this is the only source (A3).
+    ContextWindow { used: u64, limit: u64 },
 }
 
 /// Callback type for receiving streaming chunks.

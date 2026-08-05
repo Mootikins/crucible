@@ -552,6 +552,14 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                         produced_content = true;
                         yield TurnEvent::Thinking(text);
                     }
+                    StreamingChunk::ContextWindow { used, limit } => {
+                        debug!(used, limit, "ACP agent reported its context window");
+                        // Deliberately not `produced_content`: a window
+                        // reading is chrome, not an answer. A turn whose only
+                        // output was a usage frame still showed the user
+                        // nothing, and must still report `StopReason::Empty`.
+                        yield TurnEvent::ContextWindow { used, limit };
+                    }
                     StreamingChunk::ToolStart { name, id, arguments, diffs } => {
                         info!(
                             tool = %name,

@@ -55,6 +55,7 @@ enum ChunkShape {
     ToolStart,
     ToolEnd,
     ToolDiffUpdate,
+    ContextWindow,
 }
 
 fn shape_of(chunk: &StreamingChunk) -> ChunkShape {
@@ -64,6 +65,7 @@ fn shape_of(chunk: &StreamingChunk) -> ChunkShape {
         StreamingChunk::ToolStart { .. } => ChunkShape::ToolStart,
         StreamingChunk::ToolEnd { .. } => ChunkShape::ToolEnd,
         StreamingChunk::ToolDiffUpdate { .. } => ChunkShape::ToolDiffUpdate,
+        StreamingChunk::ContextWindow { .. } => ChunkShape::ContextWindow,
     }
 }
 
@@ -103,6 +105,11 @@ enum TurnExpectation {
         stop_reason: StopReason,
         /// `None` means the agent's `PromptResponse` carried no `usage`.
         usage: Option<ExpectedUsage>,
+        /// `(used, size)` from the agent's `usage_update` frame, or `None`
+        /// for an agent that never reports its window. This is the only
+        /// source of a context limit on a delegated session (A3), so the
+        /// numbers are asserted, not just the shape.
+        context_window: Option<(u64, u64)>,
     },
     /// The agent answered `session/prompt` with a JSON-RPC error, so the turn
     /// never produced a response. Substrings the surfaced error must contain.
@@ -138,8 +145,11 @@ const CLAUDE: FixtureCase = FixtureCase {
     auth_methods: &[],
     session_id: "c299d62f-4d2b-49d1-8b77-9c7f8d403f01",
     turn: TurnExpectation::Completed {
-        // Three `agent_message_chunk` frames — `""`, `"Hello"`, `" to you!"`.
-        shapes: &[ChunkShape::Text],
+        // Three `agent_message_chunk` frames — `""`, `"Hello"`, `" to you!"` —
+        // then the trailing `usage_update`. Real agents report the window at
+        // the end of the turn; the mock in `turn_event_parity.rs` reports it
+        // at the start, so both positions are covered.
+        shapes: &[ChunkShape::Text, ChunkShape::ContextWindow],
         text: "Hello to you!",
         thinking_contains: None,
         stop_reason: StopReason::EndTurn,
@@ -150,6 +160,10 @@ const CLAUDE: FixtureCase = FixtureCase {
             cache_read_tokens: Some(0),
             cache_creation_tokens: Some(22696),
         }),
+        // `used` is 6 below the response's `totalTokens` (22706): it is the
+        // context *before* the 7 output tokens landed, so the two numbers
+        // measure the same quantity a moment apart.
+        context_window: Some((22700, 1_000_000)),
     },
 };
 
@@ -165,7 +179,11 @@ const OPENCODE: FixtureCase = FixtureCase {
     auth_methods: &["opencode-login"],
     session_id: "ses_257dac449ffeYWh0E1t42u4DA7",
     turn: TurnExpectation::Completed {
-        shapes: &[ChunkShape::Thinking, ChunkShape::Text],
+        shapes: &[
+            ChunkShape::Thinking,
+            ChunkShape::Text,
+            ChunkShape::ContextWindow,
+        ],
         text: "Hello there, friend!",
         thinking_contains: Some("exactly 3 words"),
         stop_reason: StopReason::EndTurn,
@@ -179,6 +197,10 @@ const OPENCODE: FixtureCase = FixtureCase {
             cache_read_tokens: Some(3728),
             cache_creation_tokens: None,
         }),
+        // Exactly inputTokens 24496 + cachedReadTokens 3728. The response's
+        // totalTokens 28278 adds the 54 output tokens on top, which is why
+        // the `PromptResponse` usage is preferred when both are present.
+        context_window: Some((28224, 200_000)),
     },
 };
 
@@ -199,6 +221,9 @@ const CURSOR: FixtureCase = FixtureCase {
         thinking_contains: None,
         stop_reason: StopReason::Refusal,
         usage: None,
+        // Reports neither usage nor a window: the delegated session that gets
+        // no context indicator at all, and must not get a fabricated one.
+        context_window: None,
     },
 };
 
@@ -307,10 +332,13 @@ async fn run_case(case: &FixtureCase) {
 
     let mut shapes = Vec::new();
     let mut thinking = String::new();
+    let mut windows: Vec<(u64, u64)> = Vec::new();
     while let Ok(chunk) = rx.try_recv() {
         shapes.push(shape_of(&chunk));
-        if let StreamingChunk::Thinking(text) = chunk {
-            thinking.push_str(&text);
+        match chunk {
+            StreamingChunk::Thinking(text) => thinking.push_str(&text),
+            StreamingChunk::ContextWindow { used, limit } => windows.push((used, limit)),
+            _ => {}
         }
     }
     let shapes = coalesce(&shapes);
@@ -322,6 +350,7 @@ async fn run_case(case: &FixtureCase) {
             thinking_contains,
             stop_reason,
             usage: expected_usage,
+            context_window: expected_window,
         } => {
             let (text, tools, response) =
                 result.unwrap_or_else(|e| panic!("[{agent}] send prompt: {e}"));
@@ -352,6 +381,16 @@ async fn run_case(case: &FixtureCase) {
                     "[{agent}] unexpected reasoning: {thinking:?}"
                 ),
             }
+
+            // A3. Collected as a list, not an Option: a second window frame
+            // would silently overwrite the first, and an agent that reports
+            // its window twice per turn is a different contract from one that
+            // reports it once.
+            assert_eq!(
+                windows.as_slice(),
+                expected_window.as_slice(),
+                "[{agent}] context window reported by the agent"
+            );
 
             let usage = client.take_last_usage();
             match (usage, expected_usage) {

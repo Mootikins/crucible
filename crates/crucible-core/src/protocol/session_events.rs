@@ -16,6 +16,13 @@
 //! | `kiln_notes_indexed`       | [`KilnNotesIndexedPayload`]      |
 //! | `plugins_discovered`       | [`PluginsDiscoveredPayload`]     |
 //! | `mcp_servers_ready`        | [`McpServersReadyPayload`]       |
+//!
+//! `context_limit_resolved` is the one that is not exclusively a setup event.
+//! A delegated agent has no endpoint or model for the daemon to query, so its
+//! window arrives mid-turn instead (ACP `usage_update` →
+//! [`TurnEvent::ContextWindow`](crate::turn::TurnEvent::ContextWindow)) and the
+//! daemon re-emits the same event from the turn stream. Consumers treat it as a
+//! plain assignment, so a late one needs no special case.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -49,6 +56,10 @@ pub enum ContextLimitSource {
     ProviderApi,
     Config,
     Default,
+    /// The agent reported its own window. Only a delegated (ACP) agent can:
+    /// it has no endpoint or model for the daemon to query, so the number
+    /// arrives on the wire in a `usage_update` frame instead.
+    Agent,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

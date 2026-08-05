@@ -430,13 +430,7 @@ async fn acp_safe_tool_no_permission_request_needed() {
     let captured = chunks.lock().unwrap();
     let chunk_kinds: Vec<&str> = captured
         .iter()
-        .map(|c| match c {
-            StreamingChunk::Text(_) => "text",
-            StreamingChunk::Thinking(_) => "thinking",
-            StreamingChunk::ToolStart { .. } => "tool_start",
-            StreamingChunk::ToolEnd { .. } => "tool_end",
-            StreamingChunk::ToolDiffUpdate { .. } => "tool_diff_update",
-        })
+        .map(crate::support::parity::chunk_kind)
         .collect();
     assert_eq!(
         chunk_kinds,

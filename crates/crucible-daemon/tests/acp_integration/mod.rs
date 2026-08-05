@@ -12,6 +12,7 @@ mod support;
 // Test modules
 mod agent_handshake_tests;
 mod concurrent_sessions;
+mod context_usage;
 mod display_parity;
 mod error_propagation;
 mod mock_agent_framework;

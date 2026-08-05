@@ -261,6 +261,14 @@ impl CrucibleAcpClient {
 
             if method_name == "session/update" {
                 if let Some(params) = response.get("params") {
+                    // Handled ahead of the typed parse, which cannot see it:
+                    // see `usage.rs::extract_context_window`.
+                    if let Some((used, limit)) = super::usage::extract_context_window(params) {
+                        if !callback(StreamingChunk::ContextWindow { used, limit }) {
+                            state.cancelled = true;
+                        }
+                        return Ok(None);
+                    }
                     match serde_json::from_value::<SessionNotification>(params.clone()) {
                         Ok(notification) => {
                             self.apply_session_update_with_callback(notification, state, callback);
@@ -521,14 +529,23 @@ impl CrucibleAcpClient {
 
             if method_name == "session/update" {
                 if let Some(params) = response.get("params") {
-                    match serde_json::from_value::<SessionNotification>(params.clone()) {
-                        Ok(notification) => {
-                            self.apply_session_update(notification, state);
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to parse SessionNotification: {}", e);
-                            tracing::debug!("Raw params: {}", params);
-                        }
+                    // Consumed here too, though this path has nowhere to put
+                    // it: its only output is `formatted_output()`, the
+                    // assistant's answer. Recognising the frame keeps it from
+                    // being reported as a parse failure — it parses fine, the
+                    // variant is just feature-gated out of the typed enum.
+                    if let Some((used, limit)) = super::usage::extract_context_window(params) {
+                        tracing::debug!(
+                            used,
+                            limit,
+                            "Context window reported on a non-streaming prompt; no consumer"
+                        );
+                    } else if let Err(e) =
+                        serde_json::from_value::<SessionNotification>(params.clone())
+                            .map(|notification| self.apply_session_update(notification, state))
+                    {
+                        tracing::warn!("Failed to parse SessionNotification: {}", e);
+                        tracing::debug!("Raw params: {}", params);
                     }
                 } else {
                     tracing::warn!("session/update notification missing params");

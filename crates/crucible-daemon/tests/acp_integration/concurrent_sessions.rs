@@ -112,12 +112,19 @@ fn serialize_chunk(chunk: &StreamingChunk) -> serde_json::Value {
         StreamingChunk::ToolDiffUpdate { call_id, diffs } => {
             json!({"kind": "tool_diff_update", "id": call_id, "diffs": diffs})
         }
+        StreamingChunk::ContextWindow { used, limit } => {
+            json!({"kind": "context_window", "used": used, "limit": limit})
+        }
     }
 }
 
 fn deserialize_chunk(value: &serde_json::Value) -> StreamingChunk {
     let kind = value["kind"].as_str().expect("kind field is required");
     match kind {
+        "context_window" => StreamingChunk::ContextWindow {
+            used: value["used"].as_u64().unwrap(),
+            limit: value["limit"].as_u64().unwrap(),
+        },
         "text" => StreamingChunk::Text(value["text"].as_str().unwrap().to_string()),
         "thinking" => StreamingChunk::Thinking(value["text"].as_str().unwrap().to_string()),
         "tool_start" => StreamingChunk::ToolStart {

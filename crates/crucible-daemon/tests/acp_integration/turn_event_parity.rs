@@ -120,6 +120,27 @@ async fn acp_shapes_for_thinking_turn(thoughts: &str) -> Vec<EventShape> {
     acp_shapes(agent_config).await
 }
 
+/// A turn in which the agent also reports its context window.
+///
+/// `script` is the mock's `CRU_MOCK_USAGE_UPDATE` hook, `used/size`. `None`
+/// leaves it unset — an agent that never reports a window, which is what
+/// `cursor` and `gemini` do in the recorded fixtures.
+async fn acp_shapes_for_usage_update(script: Option<&str>) -> Vec<EventShape> {
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
+    let mut agent_config = mock_session_agent(&agent_path);
+    agent_config.env_overrides.insert(
+        "CRU_MOCK_STREAM_CHUNKS".to_string(),
+        "The answer is 4".into(),
+    );
+    if let Some(value) = script {
+        agent_config
+            .env_overrides
+            .insert("CRU_MOCK_USAGE_UPDATE".to_string(), value.into());
+    }
+
+    acp_shapes(agent_config).await
+}
+
 /// A turn that produces nothing at all: no text, no thinking, no tool calls.
 async fn acp_shapes_for_empty_turn() -> Vec<EventShape> {
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
@@ -497,5 +518,96 @@ async fn acp_result_arriving_before_its_call_is_named_by_the_later_call() {
         ],
         "a result whose `tool_call` arrived later in the same turn was dropped \
          even though the turn announced the call; got {shapes:#?}"
+    );
+}
+
+/// A3: an ACP agent's context window must reach the turn stream.
+///
+/// The statusline's context indicator needs two numbers, and on a delegated
+/// session the daemon can produce neither on its own: `context_limit_resolved`
+/// (`server/session/mod.rs`) needs an endpoint and a non-empty model to query,
+/// and an ACP session delegates, so it has neither. The window is therefore
+/// only knowable from the agent — which puts it on the wire. Both recorded
+/// fixtures carry it mid-turn:
+///
+/// ```text
+/// claude:   {"sessionUpdate":"usage_update","used":22700,"size":1000000,…}
+/// opencode: {"sessionUpdate":"usage_update","used":28224,"size":200000,…}
+/// ```
+///
+/// Crucible threw it away, and not in the "unmatched arm" way: `usage_update`
+/// is gated behind the upstream `unstable_session_usage` feature, which this
+/// build does not enable, so the variant is absent from the `SessionUpdate`
+/// enum and the whole `SessionNotification` fails to deserialize. The frame
+/// died at `tracing::warn!("Failed to parse SessionNotification: …")` in
+/// `acp/client/streaming.rs` — before any `match` on the update ran. So the
+/// user saw `— ctx` (or at best a bare `22k tok`) where the internal agent
+/// shows a percentage.
+#[tokio::test]
+async fn acp_usage_update_reaches_the_turn_stream() {
+    let shapes = acp_shapes_for_usage_update(Some("22700/1000000")).await;
+
+    assert!(
+        shapes
+            .iter()
+            .any(|s| matches!(s, EventShape::ContextWindow { .. })),
+        "an ACP agent's usage_update never became a ContextWindow event, so a \
+         delegated session has no context limit and the statusline renders its \
+         no-data path; got {shapes:#?}"
+    );
+    assert_eq!(
+        shapes,
+        vec![
+            EventShape::ContextWindow {
+                used: 22700,
+                limit: 1_000_000,
+            },
+            EventShape::Text("The answer is 4".into()),
+            EventShape::Done(StopReason::EndTurn),
+        ],
+        "the window must carry both operands, in the wire position the agent \
+         put it in; got {shapes:#?}"
+    );
+}
+
+/// An agent that reports no window must produce no window event.
+///
+/// `cursor` and `gemini` send no `usage_update` at all in the recorded
+/// fixtures. A `ContextWindow { used: 0, limit: 0 }` for them would be worse
+/// than silence: `context_label` (`components/status_items.rs`) branches on
+/// `limit > 0`, so a zero window is indistinguishable from no window in the
+/// frame but *is* a distinct claim on the wire, and any future consumer that
+/// divides by it is silently wrong.
+#[tokio::test]
+async fn acp_turn_without_a_usage_update_reports_no_context_window() {
+    let shapes = acp_shapes_for_usage_update(None).await;
+
+    assert_eq!(
+        shapes,
+        vec![
+            EventShape::Text("The answer is 4".into()),
+            EventShape::Done(StopReason::EndTurn),
+        ],
+        "an agent that never reported its window still produced one; got \
+         {shapes:#?}"
+    );
+}
+
+/// The mock's usage hook reads a *value*, not the variable's presence.
+///
+/// A presence check would make an unparseable script report a zeroed window,
+/// which is exactly the claim the test above pins as forbidden — so the
+/// negative case would silently stop testing anything.
+#[tokio::test]
+async fn mock_usage_hook_set_to_a_malformed_script_reports_no_window() {
+    let shapes = acp_shapes_for_usage_update(Some("not-a-window")).await;
+
+    assert_eq!(
+        shapes,
+        vec![
+            EventShape::Text("The answer is 4".into()),
+            EventShape::Done(StopReason::EndTurn),
+        ],
+        "CRU_MOCK_USAGE_UPDATE=not-a-window must mean no window; got {shapes:#?}"
     );
 }

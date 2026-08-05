@@ -125,6 +125,20 @@ pub enum TurnEvent {
     /// Token usage. Typically one event per turn, near `Done`.
     Usage(TokenUsage),
 
+    /// The agent's own view of its context window: how many tokens are
+    /// currently occupying it and how large it is.
+    ///
+    /// Outbound only. Distinct from [`TurnEvent::Usage`], which reports what
+    /// *this turn* consumed: `used` is an occupancy reading for the whole
+    /// conversation and `limit` is a property of the agent, not of the turn.
+    ///
+    /// Only a delegated agent produces this. The internal agent's window is
+    /// resolved once per session from the provider API
+    /// (`server/session/mod.rs`), because its endpoint and model are known
+    /// up front; a delegated agent has neither, so the window can only come
+    /// from the agent itself — ACP `session/update` `usage_update` frames.
+    ContextWindow { used: u64, limit: u64 },
+
     /// Turn finished normally. Terminal.
     Done { stop_reason: StopReason },
 

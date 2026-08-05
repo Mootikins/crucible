@@ -123,7 +123,8 @@ fn _terminal_variant_check(event: TurnEvent) -> bool {
         | TurnEvent::HandlerInjection { .. }
         | TurnEvent::DepthCapHit { .. }
         | TurnEvent::ContextAttach { .. }
-        | TurnEvent::Usage(_) => false,
+        | TurnEvent::Usage(_)
+        | TurnEvent::ContextWindow { .. } => false,
     }
 }
 
