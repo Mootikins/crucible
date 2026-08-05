@@ -23,6 +23,24 @@
 //! [`TurnEvent::ContextWindow`](crate::turn::TurnEvent::ContextWindow)) and the
 //! daemon re-emits the same event from the turn stream. Consumers treat it as a
 //! plain assignment, so a late one needs no special case.
+//!
+//! # Forward compatibility across a version skew
+//!
+//! `chat_runner/commands.rs` decodes each of these with `serde_json::from_value`
+//! and, on failure, warns and drops the event. So a payload an older `cru`
+//! cannot decode is a *feature it silently loses*, not an error it reports.
+//! Unknown struct fields are ignored by serde already, which leaves
+//! string-valued enums as the only sharp edge — one unrecognised label fails
+//! the whole payload. [`ContextLimitSource`] is the only one in this decode
+//! surface, and it carries a `#[serde(other)]` fallback; the other payloads
+//! nest only structs of scalars (`ProviderInfo`, `McpServerInfo`,
+//! `PluginStatusEntry`).
+//!
+//! [`crate::types::ToolSource`] was checked and needs nothing: it never crosses
+//! this boundary as JSON. Tool provenance travels as a flat string built by
+//! `format_tool_source` and read by `parse_tool_source`, which already returns
+//! `None` for any spelling it does not know — the card then renders without a
+//! badge instead of the event being dropped.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -60,6 +78,23 @@ pub enum ContextLimitSource {
     /// it has no endpoint or model for the daemon to query, so the number
     /// arrives on the wire in a `usage_update` frame instead.
     Agent,
+
+    /// A source this build does not know — a newer daemon than this `cru`.
+    ///
+    /// Without this the unknown string fails the whole
+    /// [`ContextLimitResolvedPayload`] decode, so `chat_runner/commands.rs`
+    /// warns and drops the event and the statusline keeps its "no data" path:
+    /// an older client loses a `limit` it could have rendered perfectly well,
+    /// because it did not recognise the label saying where the number came
+    /// from. The number is what the user sees; the provenance is not rendered
+    /// anywhere.
+    ///
+    /// Never constructed by this crate — only produced by deserialization.
+    /// The mirror of the care taken on `TurnEvent::ToolCall::diffs`
+    /// (`#[serde(default, skip_serializing_if)]`), which is the same
+    /// old-client-new-daemon problem on the other kind of field.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -168,6 +203,25 @@ mod tests {
         let back: ContextLimitSource =
             serde_json::from_value(serde_json::Value::String("provider_api".into())).unwrap();
         assert_eq!(back, ContextLimitSource::ProviderApi);
+    }
+
+    /// An older `cru` against a newer daemon must still render the limit.
+    ///
+    /// Without the `#[serde(other)]` arm an unrecognised source failed the
+    /// *whole* payload decode, so `chat_runner/commands.rs` warned and dropped
+    /// the event — the client lost a number it could render perfectly well
+    /// because it did not recognise the label saying where the number came
+    /// from. The source is not rendered anywhere; the limit is.
+    #[test]
+    fn an_unknown_source_from_a_newer_daemon_still_yields_the_limit() {
+        let payload: ContextLimitResolvedPayload = serde_json::from_value(serde_json::json!({
+            "limit": 200_000,
+            "source": "some_source_invented_after_this_build",
+        }))
+        .expect("an unknown source must not fail the whole payload");
+
+        assert_eq!(payload.limit, 200_000);
+        assert_eq!(payload.source, ContextLimitSource::Unknown);
     }
 
     #[test]
