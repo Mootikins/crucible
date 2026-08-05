@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
-"""Regenerate the ACP presentation-parity fixture pair.
+"""Regenerate the ACP presentation-parity fixture pairs.
 
-The two files describe *one* agent behaviour told two ways:
+Each pair describes *one* agent behaviour told two ways:
 
-  - `acp_parity_internal.jsonl`  — the internal (genai) agent running Crucible's
-    own `edit_file` tool, gated and approved interactively by the user.
-  - `acp_parity_delegated.jsonl` — the same edit performed inside a delegated
-    ACP agent's own tool loop (`cru chat -a claude`).
+  - `acp_parity_internal.jsonl`       — the internal (genai) agent running
+    Crucible's own `edit_file` tool, gated and approved interactively.
+  - `acp_parity_delegated.jsonl`      — the same edit performed inside a
+    delegated ACP agent's own tool loop (`cru chat -a claude`).
+  - `acp_parity_read_internal.jsonl`  — the internal agent running `read_file`.
+  - `acp_parity_read_delegated.jsonl` — the same read, delegated.
+
+The edit pair's result is 23 characters on one line, which *every* tool's card
+collapses the same way, so it proves parity only for one benign shape. The read
+pair is the one that bites: a multi-line result is summarized by a table keyed
+on the tool name, and the internal snake_case name and the ACP prose title are
+not the same string (divergence **A4**).
 
 Every field below was copied from a live capture of the daemon's broadcast
 stream (`ReactorTestHarness` + `StreamingMockAgent` / `OwnsToolsMockAgent`),
@@ -31,6 +39,17 @@ PREAMBLE = "I'll fix the greeting."
 CODA = " Done."
 FULL = PREAMBLE + CODA
 MSG_ID = "msg-parity-0001"
+
+
+def compact(value):
+    """Serialize as the daemon does.
+
+    A dispatched tool's result reaches the event as
+    `serde_json::Value::to_string()`, which is compact. Python's default
+    `json.dumps` puts a space after `:` and would pin a shape the daemon never
+    emits.
+    """
+    return json.dumps(value, separators=(",", ":"))
 
 
 def lines(session_id, events):
@@ -143,10 +162,108 @@ delegated = common_head + [
     ),
 ] + common_tail
 
-(OUT / "acp_parity_internal.jsonl").write_text(
-    lines("chat-2026-08-03T0914-parint", internal)
+# --- the read pair (divergence A4) -----------------------------------------
+#
+# Same story, a tool whose result does not fit on one line. `read_file` renders
+# the file with `cat -n` gutters and a trailing counter; the card is expected to
+# collapse that to the counter rather than paint the file body into the header.
+
+READ_MSG_ID = "msg-parity-0002"
+READ_PREAMBLE = "Let me look."
+READ_CODA = " That's the greeting."
+READ_FULL = READ_PREAMBLE + READ_CODA
+READ_ARGS = {"path": "greeting.rs"}
+# A delegated Claude Code read arrives as `rawInput` keyed `file_path`. Both
+# keys are in `ToolDisplay`'s `PATH_KEYS`, so the card shows `greeting.rs`
+# either way — keeping the real key on each side tests that rather than
+# assuming it.
+READ_ARGS_ACP = {"file_path": "greeting.rs"}
+READ_OUTPUT = (
+    '     1\tfn main() {\n     2\t    println!("hello");\n     3\t}\n'
+    "\n[3 lines read, 3 total]"
 )
-(OUT / "acp_parity_delegated.jsonl").write_text(
-    lines("chat-2026-08-03T0914-pardel", delegated)
+
+read_head = [
+    ("user_message", {"message_id": READ_MSG_ID, "content": "read the greeting"}),
+    ("text_delta", {"content": READ_PREAMBLE}),
+    (
+        "segment_complete",
+        {"message_id": READ_MSG_ID, "index": 0, "content": READ_PREAMBLE},
+    ),
+]
+read_tail = [
+    ("text_delta", {"content": READ_CODA}),
+    ("message_complete", {"message_id": READ_MSG_ID, "full_response": READ_FULL}),
+]
+
+read_internal = (
+    read_head
+    + [
+        # No `interaction_requested`: `read_file` is read-only, so `is_safe`
+        # exempts it from the gate.
+        (
+            "tool_call",
+            {
+                "call_id": "call-read-1",
+                "tool": "read_file",
+                "args": READ_ARGS,
+                "description": "Read file contents. Returns content with line numbers.",
+                "source": "Core",
+                "display": DISPLAY,
+            },
+        ),
+        (
+            "tool_result",
+            {
+                "call_id": "call-read-1",
+                "tool": "read_file",
+                "result": {"result": compact({"result": READ_OUTPUT})},
+                "terminate": False,
+            },
+        ),
+    ]
+    + read_tail
 )
-print("wrote acp_parity_internal.jsonl and acp_parity_delegated.jsonl")
+
+read_delegated = (
+    read_head
+    + [
+        (
+            "tool_call",
+            {
+                "call_id": "call-read-1",
+                # `mcp__crucible__read_file` is what a delegated agent calls to
+                # reach Crucible's own read tool over MCP; the client stores
+                # `humanize_tool_title` of it, i.e. `Read File`. Same tool, same
+                # output, a different string on the wire — which is A4.
+                "tool": "Read File",
+                "args": READ_ARGS_ACP,
+                "source": "Acp:claude",
+                "display": DISPLAY,
+            },
+        ),
+        (
+            "tool_result",
+            {
+                "call_id": "call-read-1",
+                "tool": "Read File",
+                # Flat, not doubly wrapped: the ACP arm stringifies `rawOutput`
+                # once. The text is the internal tool's own output, because the
+                # pair is about presenting equivalent output — not about two
+                # tools formatting it differently.
+                "result": {"result": READ_OUTPUT},
+                "terminate": False,
+            },
+        ),
+    ]
+    + read_tail
+)
+
+for name, session_id, events in [
+    ("acp_parity_internal.jsonl", "chat-2026-08-03T0914-parint", internal),
+    ("acp_parity_delegated.jsonl", "chat-2026-08-03T0914-pardel", delegated),
+    ("acp_parity_read_internal.jsonl", "chat-2026-08-03T0914-rdint", read_internal),
+    ("acp_parity_read_delegated.jsonl", "chat-2026-08-03T0914-rddel", read_delegated),
+]:
+    (OUT / name).write_text(lines(session_id, events))
+    print(f"wrote {name}")

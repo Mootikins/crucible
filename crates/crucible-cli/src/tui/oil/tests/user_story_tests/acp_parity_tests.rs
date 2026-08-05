@@ -273,6 +273,64 @@ fn a_late_acp_diff_appears_in_the_rendered_tool_card() {
     );
 }
 
+/// US-307 (A4): the same tool, the same output, summarized the same way.
+///
+/// The edit pair above converges partly by luck: `Replaced 1 occurrence(s)` is
+/// 23 characters on one line, which `collapse_result`'s generic short-result
+/// branch renders identically whatever the tool is called. A result that does
+/// *not* fit on one line goes through `summarize_tool_result`'s per-tool table
+/// instead — and that table matched the internal snake_case name (`read_file`)
+/// and nothing else, so the delegated card, whose name is
+/// `humanize_tool_title(title)`, fell through to painting the file body into
+/// the card while the internal one showed `→ [3 lines read, 3 total]`.
+#[test]
+fn acp_and_internal_read_turns_render_identical_frames() {
+    let mut internal = StoryRuntime::new(80, 24);
+    hydrate_from_recording(&mut internal, "acp_parity_read_internal.jsonl");
+    let internal_frame = internal.fresh_screen();
+
+    let mut delegated = StoryRuntime::new(80, 24);
+    hydrate_from_recording(&mut delegated, "acp_parity_read_delegated.jsonl");
+    let delegated_frame = delegated.fresh_screen();
+
+    assert_ne!(
+        internal_frame, delegated_frame,
+        "the delegated frame is byte-identical to the internal one, so the \
+         provenance badge is missing — see `acp_tool_call_renders_a_provenance_badge`"
+    );
+    assert_eq!(
+        internal_frame,
+        without_the_provenance_badge(&delegated_frame),
+        "a delegated read renders differently from the internal read of the \
+         same file, beyond the provenance badge"
+    );
+}
+
+/// The counterweight: proving the two read frames match is only worth
+/// something if both actually collapsed the result. A future change that made
+/// *neither* card summarize would keep the equality test green while losing
+/// the summary on both sides.
+#[test]
+fn both_read_cards_collapse_their_result_to_a_summary() {
+    for fixture in [
+        "acp_parity_read_internal.jsonl",
+        "acp_parity_read_delegated.jsonl",
+    ] {
+        let mut story = StoryRuntime::new(80, 24);
+        hydrate_from_recording(&mut story, fixture);
+        let frame = story.fresh_screen();
+        assert!(
+            frame.contains("\u{2192} [3 lines read, 3 total]"),
+            "{fixture} did not collapse the read result into the card header:\n{frame}"
+        );
+        assert!(
+            !frame.contains("println!"),
+            "{fixture} painted the file body into the transcript instead of \
+             summarizing it:\n{frame}"
+        );
+    }
+}
+
 /// The rendered shape of a whole delegated turn, pinned.
 ///
 /// The equality test above proves the delegated frame matches the internal one

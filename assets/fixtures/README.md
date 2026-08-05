@@ -29,6 +29,7 @@ still real event streams, just hand-assembled rather than recorded.
 | Fixture | Used by |
 |---------|---------|
 | `acp_parity_internal.jsonl` / `acp_parity_delegated.jsonl` | `user_story_tests/acp_parity_tests.rs` — one `edit_file` turn told two ways (internal agent vs delegated ACP agent), asserted to render identically apart from the `[acp:claude]` badge. Regenerate with `scripts/gen_acp_parity_fixtures.py`; every field is copied from a live capture of the daemon's broadcast stream. |
+| `acp_parity_read_internal.jsonl` / `acp_parity_read_delegated.jsonl` | The same, over `read_file`. The edit pair's result is one short line, which every tool's card collapses the same way; a read's is not, so this pair is the one that reaches the name-keyed summary table (divergence **A4**). |
 | `parity-test.jsonl`, `reproduce.jsonl`, `reproduce-formatting.jsonl` | `session_event_stream_tests.rs` — rendered `ThinkingDelta` counts, pinning end-of-stream reasoning-replay suppression. |
 | `permission_flow.jsonl`, `undo_flow.jsonl` | `user_story_tests/` permission and undo stories. |
 

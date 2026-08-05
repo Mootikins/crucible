@@ -205,6 +205,15 @@ fn styled_snapshot_basic_conversation() {
     insta::assert_snapshot!("styled_basic_conversation", styled);
 }
 
+/// A completed read, in colour.
+///
+/// `Read File` is the ACP spelling — what `humanize_tool_title` stores for a
+/// delegated agent's read. Until divergence **A4** was fixed this snapshot
+/// recorded the bug: the summary table keyed on `read_file` alone, so this
+/// card painted the file body into the transcript while the identical
+/// internal read collapsed to `→ 3 lines`. The body-line styling that used to
+/// live here is now pinned by `styled_snapshot_tool_call_with_body`, which
+/// uses a tool the table deliberately does not summarize.
 #[test]
 fn styled_snapshot_tool_call() {
     let mut app = OilChatApp::init();
@@ -240,6 +249,49 @@ fn styled_snapshot_tool_call() {
 
     let styled = vt.screen_contents_styled();
     insta::assert_snapshot!("styled_tool_call", styled);
+}
+
+/// The other half of a tool card: the result body, in colour.
+///
+/// A multi-line `bash` result has no entry in the summary table and is too
+/// long for `collapse_result`'s one-line branch, so it renders through
+/// `format_output_tail` — the `│`-prefixed dim rows. This is the only styled
+/// snapshot that covers them.
+#[test]
+fn styled_snapshot_tool_call_with_body() {
+    let mut app = OilChatApp::init();
+    let mut vt = Vt100TestRuntime::new(80, 24);
+
+    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::UserMessage(
+        "Show me the file".into(),
+    ));
+    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ToolCall {
+        name: "bash".into(),
+        args: r#"{"command": "cat src/main.rs"}"#.into(),
+        call_id: Some("c1".into()),
+        description: None,
+        source: None,
+        lua_primary_arg: None,
+        diffs: Vec::new(),
+        auto_approved: None,
+    });
+    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ToolResultDelta {
+        name: "bash".into(),
+        delta: "fn main() {\n    println!(\"Hello\");\n}".into(),
+        call_id: Some("c1".into()),
+    });
+    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ToolResultComplete {
+        name: "bash".into(),
+        call_id: Some("c1".into()),
+    });
+    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::TextDelta(
+        "The file contains a simple hello world program.".into(),
+    ));
+    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::StreamComplete);
+    vt.render_frame(&mut app);
+
+    let styled = vt.screen_contents_styled();
+    insta::assert_snapshot!("styled_tool_call_with_body", styled);
 }
 
 #[test]

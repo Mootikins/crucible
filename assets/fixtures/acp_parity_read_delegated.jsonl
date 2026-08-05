@@ -1,0 +1,8 @@
+{"version": 1, "session_id": "chat-2026-08-03T0914-rddel", "recording_mode": "granular", "started_at": "2026-08-03T09:14:07.000000+00:00"}
+{"ts": "2026-08-03T09:14:07.000000+00:00", "seq": 1, "event": "user_message", "session_id": "chat-2026-08-03T0914-rddel", "data": {"message_id": "msg-parity-0002", "content": "read the greeting"}}
+{"ts": "2026-08-03T09:14:07.000000+00:00", "seq": 2, "event": "text_delta", "session_id": "chat-2026-08-03T0914-rddel", "data": {"content": "Let me look."}}
+{"ts": "2026-08-03T09:14:07.000000+00:00", "seq": 3, "event": "segment_complete", "session_id": "chat-2026-08-03T0914-rddel", "data": {"message_id": "msg-parity-0002", "index": 0, "content": "Let me look."}}
+{"ts": "2026-08-03T09:14:07.000000+00:00", "seq": 4, "event": "tool_call", "session_id": "chat-2026-08-03T0914-rddel", "data": {"call_id": "call-read-1", "tool": "Read File", "args": {"file_path": "greeting.rs"}, "source": "Acp:claude", "display": {"kind": "path", "primary": "greeting.rs"}}}
+{"ts": "2026-08-03T09:14:07.000000+00:00", "seq": 5, "event": "tool_result", "session_id": "chat-2026-08-03T0914-rddel", "data": {"call_id": "call-read-1", "tool": "Read File", "result": {"result": "     1\tfn main() {\n     2\t    println!(\"hello\");\n     3\t}\n\n[3 lines read, 3 total]"}, "terminate": false}}
+{"ts": "2026-08-03T09:14:07.000000+00:00", "seq": 6, "event": "text_delta", "session_id": "chat-2026-08-03T0914-rddel", "data": {"content": " That's the greeting."}}
+{"ts": "2026-08-03T09:14:07.000000+00:00", "seq": 7, "event": "message_complete", "session_id": "chat-2026-08-03T0914-rddel", "data": {"message_id": "msg-parity-0002", "full_response": "Let me look. That's the greeting."}}

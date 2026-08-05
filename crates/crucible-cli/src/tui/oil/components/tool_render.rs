@@ -333,6 +333,31 @@ pub(crate) fn format_elapsed(duration: Duration) -> String {
     }
 }
 
+/// The identity a result summary is keyed on.
+///
+/// **Divergence A4.** These tables used to match `self.name` literally, which
+/// only ever named the internal agent's tools. ACP carries no tool name on the
+/// wire — only a prose `title` — so a delegated card's `name` is
+/// `humanize_tool_title(title)`: `Read File`, `Read`. `"read_file"` equals
+/// neither, so a delegated read painted the file body into the transcript
+/// while the internal read of the same file collapsed to a one-line summary.
+///
+/// Routing the match through the humanizer keys the summary on exactly the
+/// identity [`CachedToolCall::display_name`] already puts in the card header,
+/// so the two can no longer disagree. The function is idempotent on an
+/// already-clean title, which is what lets one arm serve `read_file`,
+/// `mcp_read`, `mcp__crucible__read_file` and a bare prose `Read`.
+///
+/// Membership is preserved exactly: every name each arm used to list maps into
+/// the arm it now lists (`read_file` → `Read File`, `mcp_read` → `Read`,
+/// `edit`/`mcp_edit` → `Edit`, …). `edit_file` and `write_file` stay outside
+/// the `Edit`/`Write` arms, as they were — and that costs no parity, because
+/// both tools answer with one short line (`Replaced N occurrence(s)`), which
+/// [`collapse_result`] returns verbatim before it ever reaches the table.
+fn summary_key(name: &str) -> String {
+    crucible_daemon::acp::streaming::humanize_tool_title(name)
+}
+
 fn collapse_result(name: &str, result: &str, summary: Option<&str>) -> Option<String> {
     if let Some(s) = summary {
         return Some(s.to_string());
@@ -348,9 +373,9 @@ fn collapse_result(name: &str, result: &str, summary: Option<&str>) -> Option<St
         return Some(inner.trim().to_string());
     }
 
-    match name {
-        "write" | "mcp_write" => Some("written".to_string()),
-        "edit" | "mcp_edit" => Some("applied".to_string()),
+    match summary_key(name).as_str() {
+        "Write" => Some("written".to_string()),
+        "Edit" => Some("applied".to_string()),
         _ => None,
     }
 }
@@ -455,8 +480,8 @@ pub fn format_tool_result(name: &str, result: &str, width: usize) -> Node {
 /// Summarize tool result into a short string.
 pub fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
     let inner = unwrap_json_result(result);
-    match name {
-        "read_file" | "mcp_read" => {
+    match summary_key(name).as_str() {
+        "Read File" | "Read" => {
             // Extract short bracketed metadata (e.g., "[Directory Context: ...]") if present,
             // but not spill references or long content
             let bracket_summary = inner.rfind('[').and_then(|i| {
@@ -469,15 +494,15 @@ pub fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
             });
             bracket_summary.or_else(|| Some(format!("{} lines", inner.lines().count())))
         }
-        "glob" | "mcp_glob" => count_newline_items(&inner).map(|n| format!("{} files", n)),
-        "grep" | "mcp_grep" => count_grep_matches(&inner).map(|n| format!("{} matches", n)),
-        "edit" | "mcp_edit" if inner.contains("success") || inner.contains("applied") => {
+        "Glob" => count_newline_items(&inner).map(|n| format!("{} files", n)),
+        "Grep" => count_grep_matches(&inner).map(|n| format!("{} matches", n)),
+        "Edit" if inner.contains("success") || inner.contains("applied") => {
             Some("applied".to_string())
         }
-        "write" | "mcp_write" if inner.contains("success") || inner.contains("written") => {
+        "Write" if inner.contains("success") || inner.contains("written") => {
             Some("written".to_string())
         }
-        "bash" | "mcp_bash" => {
+        "Bash" => {
             let lines: Vec<&str> = inner.lines().collect();
             if lines.len() <= 1 && inner.len() < 60 {
                 Some(inner.trim().to_string())
@@ -655,6 +680,80 @@ mod tests {
     fn summarize_tool_result_bash_long_returns_none() {
         let result = summarize_tool_result("mcp_bash", "line1\nline2\nline3\nline4");
         assert!(result.is_none());
+    }
+
+    /// Divergence A4: a delegated card's name is the agent's prose `title`
+    /// run through `humanize_tool_title`, so the summary table has to answer
+    /// to the humanized spelling as well as the snake_case one. The prose
+    /// forms carry no underscore at all, which is why a snake_case-only
+    /// normalizer would not have been enough.
+    #[test_case("read_file", "3 lines"; "internal_snake_case")]
+    #[test_case("mcp_read", "3 lines"; "mcp_prefixed")]
+    #[test_case("mcp__crucible__read_file", "3 lines"; "mcp_double_underscore")]
+    #[test_case("Read File", "3 lines"; "acp_title_two_words")]
+    #[test_case("Read", "3 lines"; "acp_title_one_word")]
+    fn every_spelling_of_read_summarizes_the_same(name: &str, expected: &str) {
+        assert_eq!(
+            summarize_tool_result(name, "line1\nline2\nline3"),
+            Some(expected.to_string()),
+            "`{name}` did not reach the read arm of the summary table"
+        );
+    }
+
+    #[test_case("glob", "2 files"; "glob_internal")]
+    #[test_case("Glob", "2 files"; "glob_acp_title")]
+    fn every_spelling_of_glob_summarizes_the_same(name: &str, expected: &str) {
+        assert_eq!(
+            summarize_tool_result(name, "a.rs\nb.rs"),
+            Some(expected.to_string())
+        );
+    }
+
+    #[test_case("grep", "2 matches"; "grep_internal")]
+    #[test_case("Grep", "2 matches"; "grep_acp_title")]
+    fn every_spelling_of_grep_summarizes_the_same(name: &str, expected: &str) {
+        assert_eq!(
+            summarize_tool_result(name, "a.rs:1: x\nb.rs:2: y"),
+            Some(expected.to_string())
+        );
+    }
+
+    #[test_case("edit"; "edit_internal")]
+    #[test_case("mcp_edit"; "edit_mcp")]
+    #[test_case("Edit"; "edit_acp_title")]
+    fn every_spelling_of_edit_summarizes_the_same(name: &str) {
+        assert_eq!(
+            summarize_tool_result(name, "Edit applied successfully"),
+            Some("applied".to_string())
+        );
+    }
+
+    /// The normalization must not *widen* the table. `edit_file` and
+    /// `write_file` were outside the `Edit`/`Write` arms before A4 and stay
+    /// outside them: humanizing maps them to `Edit File`/`Write File`, which
+    /// no arm lists. Both tools answer with one short line that
+    /// `collapse_result` returns verbatim, so nothing is lost.
+    #[test_case("edit_file", "Edit applied successfully"; "edit_file_is_not_edit")]
+    #[test_case("write_file", "written successfully"; "write_file_is_not_write")]
+    fn compound_internal_names_stay_out_of_the_short_arms(name: &str, result: &str) {
+        assert_eq!(summarize_tool_result(name, result), None);
+    }
+
+    /// The other half of the table: the long-result fallback in
+    /// `collapse_result` keys on the same identity.
+    #[test_case("write", Some("written"); "write_internal")]
+    #[test_case("Write", Some("written"); "write_acp_title")]
+    #[test_case("mcp_write", Some("written"); "write_mcp")]
+    #[test_case("edit", Some("applied"); "edit_internal")]
+    #[test_case("Edit", Some("applied"); "edit_acp_title")]
+    #[test_case("read_file", None; "read_has_no_long_fallback")]
+    fn collapse_result_keys_on_the_humanized_name(name: &str, expected: Option<&str>) {
+        let long = "a line that is definitely longer than sixty characters so the \
+                    short-result branch cannot claim it first";
+        assert_eq!(
+            collapse_result(name, long, None),
+            expected.map(str::to_string)
+        );
     }
 
     #[test]
