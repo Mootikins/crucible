@@ -3,8 +3,7 @@ use agent_client_protocol::{InitializeRequest, PromptRequest};
 use crucible_core::traits::acp::SessionManager;
 use crucible_core::types::acp::{SessionConfig, SessionId};
 use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient};
-use crucible_daemon::acp::protocol::ProtocolVersion;
-use crucible_daemon::acp::{ClientError, MessageHandler};
+use crucible_daemon::acp::ClientError;
 use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
 
@@ -51,23 +50,6 @@ fn client_with_custom_transport(
     );
 
     (client, BufReader::new(agent_read), agent_write)
-}
-
-fn protocol_guard(
-    agent_version: ProtocolVersion,
-    local_version: ProtocolVersion,
-) -> Result<(), ClientError> {
-    if agent_version.is_compatible_with(&local_version) {
-        Ok(())
-    } else {
-        Err(ClientError::Protocol(agent_client_protocol::Error::new(
-            -32600,
-            format!(
-                "protocol mismatch: agent={}, local={}",
-                agent_version, local_version
-            ),
-        )))
-    }
 }
 
 #[test]
@@ -308,15 +290,8 @@ async fn test_error_session_already_ended_is_graceful() {
     assert!(result.is_ok(), "ending non-active session should be safe");
 }
 
-#[test]
-fn test_error_protocol_version_mismatch_is_reported() {
-    let local = MessageHandler::default().version().clone();
-    let incompatible = ProtocolVersion::new(local.major + 1, 0, 0);
-
-    let result = protocol_guard(incompatible, local);
-
-    assert!(
-        matches!(result, Err(ClientError::Protocol(_))),
-        "expected Protocol error for version mismatch"
-    );
-}
+// A `test_error_protocol_version_mismatch_is_reported` test lived here until the
+// dead `acp/protocol.rs` module was removed (D2). It compared two
+// `ProtocolVersion`s through a `protocol_guard` helper defined in this file, so
+// it only ever exercised test-local logic — production negotiates the wire
+// version through `agent_client_protocol` in `acp/client/connection.rs`.
