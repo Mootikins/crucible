@@ -48,10 +48,20 @@ use `just test-crate-filter <crate> <filter>`. nextest's `test()` matcher runs a
 path *within* the binary, not the binary name — so a filter like `acp_` will not select
 `support::parity::tests::*`.
 
-**Known pre-existing breakage (not caused by this branch).** `just clippy` fails under `-D warnings`
-on `clippy::cloned_ref_to_slice_refs` at `daemon_plugins/tests.rs:395` and `skills/discovery.rs:383`
-— a newer clippy than the code was written against. `just ci` will fail at final verification until
-these are fixed; fix them in a separate commit rather than folding them into a parity task.
+**Verification status.** `just ci` **passes** on this branch (fmt, clippy, size gate, nextest, web
+unit + e2e). An earlier note here claimed it could not, because two `clippy::cloned_ref_to_slice_refs`
+warnings exist at `daemon_plugins/tests.rs` and `skills/discovery.rs`. That was wrong — they are
+warnings under `just clippy`'s flags, not errors, and do not fail the gate. They are still worth
+cleaning up, but they never blocked this branch.
+
+**Two environment traps that cost this branch real time**, both self-inflicted and worth knowing:
+a subagent used the scratchpad as a `CARGO_TARGET_DIR`, putting 33 GB of Rust artifacts into a
+RAM-backed tmpfs — which surfaced as `ld terminated with signal 7 [Bus error]` on *doctests only*,
+in files the branch never touched. And a CPU-saturation experiment left 128 orphaned busy-loop
+shells running for two days at load average 144. Between them they produced the "load-dependent
+e2e flakes with fixed 5s deadlines" this plan previously recorded as a property of the repo. It is
+not one. If daemon e2e tests flake, check `df -h /tmp` and the load average before believing the
+test is at fault.
 
 **Scope note — two ACP directions.** Crucible is an ACP *client* (daemon spawns
 claude/opencode/codex; `crucible-daemon/src/acp/` + `acp_handle.rs`) **and** an ACP *agent*
@@ -92,7 +102,20 @@ Grouped by where they bite. Each becomes a RED test.
   `lua_primary_arg: None`, `auto_approved: None`. Internal calls get a registry description, Lua
   display hints and the auto-approval reason (`tool_call.rs:488-557`). The `[auto]` marker
   (`tool_render.rs:101`) is structurally unreachable on ACP.
-- **A3 — statusline degrades on ACP sessions.** `providers_listed` and `context_limit_resolved`
+- **A3 — statusline degrades on ACP sessions. RESOLVED — see Task 15 (`f70542b19`).**
+  **Correction (found while implementing Task 9):** the stated cause was only half the story, and
+  the other half made it fixable. `context_limit_resolved` needs an `endpoint` and a non-empty
+  `model`, which a delegating session has neither of — so it can never fire. But ACP agents put
+  the context window on the wire in a `usage_update` frame and Crucible discarded it. Worse than
+  "unhandled": `SessionUpdate::UsageUpdate` is behind the `unstable_session_usage` cargo feature,
+  which the daemon does not enable, and `SessionUpdate` is internally tagged on `sessionUpdate` —
+  so the frame failed to *deserialize at all* and died at the "Failed to parse SessionNotification"
+  warning, never reaching any match arm. **Any** unstable update type an agent sends is dropped
+  wholesale by the same mechanism. Task 15 extracts the fields from the raw JSON (the house
+  pattern already used by `acp/client/usage.rs`) rather than enabling the feature, and emits the
+  existing `context_limit_resolved` with a new `ContextLimitSource::Agent` — so the statusline
+  lights up on delegated sessions with **zero** TUI changes. Original text follows for the record:
+  `providers_listed` and `context_limit_resolved`
   are internal-only (`server/session/mod.rs:207-238`), so `current_provider` is never set and
   `context_total` stays 0 — the context indicator renders its "no data" path (US-205).
 - **A4 — delegated tool cards lose their result summary. FIXED.** Found while reviewing Task 7.
@@ -218,7 +241,11 @@ Grouped by where they bite. Each becomes a RED test.
 
 ---
 
-## Task 1: Parity harness — normalized event capture
+## Task 1: Parity harness — normalized event capture — DONE (`b0c9cfe6b`, `46b11823d`)
+
+> Shipped with review fixes: ids normalize to first-seen ordinals (`call#0`) rather than being
+> erased, the inbound-only arms are enumerated so a new outbound variant breaks the build, and
+> `diff_paths` replaced a bare count. `args_is_object`/`result_is_string` were removed with B2.
 
 **Files:**
 - Create: `crates/crucible-daemon/tests/acp_support/parity.rs`
@@ -329,7 +356,12 @@ git commit -m "test(acp): add TurnEvent parity harness"
 
 ---
 
-## Task 2: A1 — ACP tool cards must render a provenance badge
+## Task 2: A1 — ACP tool cards must render a provenance badge — DONE (`e6bec7f54`, `140e672f5`)
+
+> Shipped with review fixes: `ToolSource::Acp { agent }` added in `crucible-core` and routed
+> through the canonical `format_tool_source`, so the `Acp:` grammar has one producer; a
+> daemon-side test pins the wire contract (reverting the producer previously left every CLI test
+> green); lowercase `acp` from pre-badge recordings also parses.
 
 Highest user-visible impact and the cheapest fix. Do it first.
 
@@ -704,7 +736,7 @@ presentation divergence rather than the by-design `owns_history` asymmetry.
 | 5 | `tool_result` payload: `{"result":"{\"result\":\"Replaced 1 occurrence(s)\"}"}` vs `{"result":"Replaced 1 occurrence(s)"}` | **Deliberate and invisible.** The internal envelope really is doubly wrapped (the tool returns JSON, the event wraps it again); ACP's `extract_tool_result` stringifies `rawOutput` flat. `unwrap_json_result` normalizes both to the same text. Kept in the fixtures rather than smoothed over, because smoothing it would stop testing the normalizer. |
 | 6 | `lua_primary_arg` / `auto_approved` (rest of **A2**) | **Out of the pair, deliberately.** Neither is a property of the *behaviour*: a registry tool with no Lua display plugin emits no hint, and an interactively approved `edit_file` earns no `[auto]` marker. Putting either on the internal side alone would assert a difference the pair does not describe. The `[auto]` marker genuinely is unreachable on ACP — correctly so, since Crucible granted nothing; the delegated agent ran its own gate in its own process. |
 | 7 | `interaction_requested` present only on the internal side | **Deliberate and inert.** It is in the internal fixture because a real recording of a gated edit contains it. The converter has no arm for it, so it produces no `ChatAppMsg` and no pixels. |
-| 8 | Statusline: `— ctx` "no data" (divergence **A3**) | **Not covered by this pair.** `providers_listed` / `context_limit_resolved` are absent from *both* fixtures, so both render the no-data path and the test cannot see A3. Naming it here so nobody reads the green test as covering it; it needs its own leg. |
+| 8 | Statusline: `— ctx` "no data" (divergence **A3**) | **Not covered by this pair — and A3 itself is since RESOLVED by Task 15 (`f70542b19`), which this pair predates.** `providers_listed` / `context_limit_resolved` are absent from *both* fixtures, so both render the no-data path and the test is silent either way. The fix has its own leg: `acp_integration/context_usage.rs`. Regenerating these fixtures against a delegated session that now emits `context_limit_resolved` would change both arms and is deliberately not done here. |
 
 **Reachability of the graduated-diff drop path (`containers.rs::update_tool_by_call_id`'s warning).**
 Not reachable from any ordering the ACP client can produce. Graduation only runs inside
@@ -803,7 +835,23 @@ the review's I1 added `agent_manager/tests/parity_capture.rs` (tests only).
 
 ---
 
-## Task 8: Fix the misnamed, silently-skipping replay test
+## Task 8: Fix the misnamed, silently-skipping replay test — DONE (`f425be299`)
+
+> **Outcome differed from the plan.** The silent-skip pattern was in **9** tests, not 1 — with the
+> recordings removed, nine passed against an empty fixture directory. Fixed at the choke point:
+> `helpers::fixture_path` now asserts existence, making "name a fixture, get a non-existent path"
+> unrepresentable, which deleted 7 guards and 2 hand-rolled path blocks.
+>
+> **Option 1 was not available.** `acp-demo.jsonl` has five dependents (`assets/acp-demo.tape`,
+> `justfile:160`, `scripts/validate-demos.sh`, the fixtures README, `docs/Help/Concepts/Session
+> Replay.md`), so deleting it would break the demo tooling and the demo validator. Took Option 2.
+>
+> **The fixture is also malformed** — 26 `tool_call` events are 13 calls emitted twice (second copy
+> sharing the `call_id`, different title, arriving *after* the answer), and every `tool_result`
+> carries a UUID matching no call, so no result ever attaches. The test is renamed
+> `replay_malformed_acp_demo_recording_80x24` and reframed as a corrupt-transcript robustness
+> input. **No snapshot was taken** — the render is visibly wrong, and snapshotting would pin
+> artifacts as truth.
 
 **Files:**
 - Modify: `crates/crucible-cli/src/tui/oil/tests/fixture_replay_tests.rs:339`
@@ -832,7 +880,22 @@ git commit -am "test(tui): fail rather than skip when the ACP replay fixture is 
 
 ---
 
-## Task 9: Assert the four dead recorded fixtures
+## Task 9: Assert the four dead recorded fixtures — DONE (`b39f37d68`)
+
+> **Outcome differed from the plan.** 1 test → 5, mutation-verified. The parity harness does *not*
+> reach this layer: it projects `TurnEvent`, and this test drives `CrucibleAcpClient` (whose output
+> is a `StreamingChunk` callback) because `AcpAgentHandle` has no transport seam. A local
+> `ChunkShape` applies the same idea one layer down.
+>
+> **Cursor is not "too thin"** as the plan claimed — it is the only recorded capture of the
+> refusal/produced-nothing path and now carries real assertions. **Gemini genuinely is unusable**:
+> 305 bytes, one outbound `initialize`, no agent response at all. It got a structural guard that
+> fails if someone re-records it, rather than a test pretending to cover it. A `record-acp-fixture`
+> recipe documents the procedure (it stops any running daemon first — the recorder is daemon-side).
+>
+> **This task produced the branch's two most valuable findings**, both from reading the wire:
+> `usage_update` (→ Task 15) and the dropped error detail (→ Task 16). Also: only opencode streams
+> thought chunks, making it the natural regression fixture for C4.
 
 **Files:**
 - Modify: `crates/crucible-daemon/tests/acp_fixture_replay.rs`
@@ -863,7 +926,13 @@ git commit -am "test(acp): replay every recorded agent fixture, not just claude"
 
 ---
 
-## Task 10: Pin the permission-modal difference (C3)
+## Task 10: Pin the permission-modal difference (C3) — DONE (`fbe7cf465`)
+
+> Four frame tests pin the coarse `kind`-derived name, the surviving diff body, the internal
+> contrast leg, and the `Execute` boundary — under a comment naming `unstable_tool_call_name` /
+> schema 1.6.0 as the upgrade that *should* change them. See the corrections recorded on C3: the
+> plan's "ACP attaches no diffs" was wrong, `Execute` hides the divergence entirely, and
+> `ToolKind::Other` → `acp_tool` renders no diff (an open gap).
 
 **Files:**
 - Test: `crates/crucible-cli/src/tui/oil/tests/user_story_tests/acp_parity_tests.rs`
@@ -959,8 +1028,8 @@ contract.
   a delegated tool's result collapses into the card header exactly as the internal tool's does,
   because the summary table keys on the humanized name both spellings share. A new **Not
   claimed** line states what the pair deliberately does not cover: the coarse permission-modal
-  name (C3, pinned separately), the statusline's no-data path on delegated sessions (A3/US-205 —
-  both fixtures omit `providers_listed`/`context_limit_resolved`, so this pair *cannot* see it),
+  name (C3, pinned separately), the statusline (A3/US-205 — since RESOLVED by Task 15; both
+  fixtures omit the limit events, so this pair is silent on it either way),
   and the `description` asymmetry, which costs no pixels only because the converter drops
   descriptions on every path.
 - **`Systems.md` gained a "Presentation Parity Boundary" section** stating: `SessionEventMessage`
@@ -1012,6 +1081,57 @@ surfaced that on the ACP path there were no thoughts to survive: the client neve
 `TurnEvent::Thinking` → `thinking` SessionEvent in `agent_manager/tests/messaging.rs`, and
 `thinking` → a rendered block in
 `user_story_tests/acp_parity_tests.rs::a_delegated_agent_second_thought_reaches_the_screen`.
+
+---
+
+## Task 15: A3 — consume ACP `usage_update` — DONE (`f70542b19`)
+
+**Not in the original plan.** Found while table-driving the recorded fixtures in Task 9: real
+agents put context-window data on the wire and Crucible discarded it.
+
+- **The frame never deserialized.** `SessionUpdate::UsageUpdate` is gated behind the
+  `unstable_session_usage` cargo feature, which `crucible-daemon` does not enable, and
+  `SessionUpdate` is internally tagged on `sessionUpdate`. So the whole `SessionNotification`
+  failed to parse and died at a `warn!`, never reaching a match arm. **Any** unstable update type
+  an agent sends is lost the same way — worth remembering the next time a field looks "ignored".
+- **The feature was deliberately not enabled.** Extracting from the raw JSON follows the pattern
+  `acp/client/usage.rs` already establishes, and here it is load-bearing rather than stylistic:
+  enabling the flag only moves the failure to the next unstable variant an agent sends.
+- **Zero TUI changes.** `size` → the existing `SessionEventMessage::context_limit_resolved` (new
+  `ContextLimitSource::Agent`); the client arms in `chat_runner/commands.rs`,
+  `chat_app/message_handlers.rs` and `chat_runner/stream.rs` already existed. `used` rides the
+  existing `extract_usage`/`take_last_usage` → `TurnEvent::Usage` path.
+- **`used` and the internal agent's `total_tokens` mean the same thing**, one moment apart:
+  measured against the fixtures, claude's `used` = total − 6 and opencode's = input + cacheRead
+  exactly (total additionally includes that turn's output). `used` is occupancy *before* the
+  response is appended. Good for parity — `context_used` means the same thing on both agent types.
+  A `used`-derived floor seeds `last_usage` only when no `Usage` event arrives, so the statusline
+  never draws a confident `0% ctx`.
+- **`cost` dropped** — no consumer anywhere (YAGNI).
+- The recorded fixtures now assert exact context-window numbers from real claude/opencode traffic.
+
+**Tests:** `acp_integration/context_usage.rs`, three in `turn_event_parity.rs`, four in
+`acp/client/usage.rs`, plus a pin that `usage_update` does *not* deserialize as a typed
+`SessionNotification` — which will start failing usefully if the variant is ever stabilized.
+
+---
+
+## Task 16: surface the ACP error detail agents actually send — DONE (`0a962a978`)
+
+**Not in the original plan.** Also found in Task 9. `acp/client/streaming.rs` read only
+`error.message`, so a codex failure surfaced as `Internal error (code: -32603)` while the
+actionable sentence sat in `error.data`.
+
+The nesting was deeper than first described: `data.message` is itself a **stringified JSON
+envelope**, so the sentence is two keys down. Folding in `data.message` naively would have dumped
+a JSON blob at the user. `describe_rpc_error` therefore recurses (`message` → `error`, parsing any
+string that is itself a JSON object), is depth-bounded at 4, contributes nothing for unreadable
+shapes (`{}`, `null`, arrays, non-string `message`), and drops the detail when the base message
+already contains it. Both read sites fixed.
+
+Codex is the only recorded fixture with a JSON-RPC error frame at all, so every other `data` shape
+is covered by unit test rather than fixture. Nothing downstream parses this text — the one piece of
+string surgery (`rpc_client/agent/convert.rs`) only strips *leading* Display labels.
 
 ---
 

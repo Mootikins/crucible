@@ -434,9 +434,8 @@ fn an_acp_permission_modal_still_shows_its_diff() {
     let frame = story.fresh_screen();
     // The coarse name is what `synthesize_diffs` normalizes, and `edit` is one
     // of the names it knows — so the diff survives the naming divergence and
-    // US-401's expand/collapse toggle has a body to act on. (The acceptance
-    // text in `docs/Meta/TUI User Stories.md` says `d`; the modal binds `h`,
-    // and the hint line below is what the user actually reads.)
+    // US-401's expand/collapse toggle has a body to act on. The toggle is `h`
+    // (`interaction_modal/perm.rs`), which is what the hint line below reads.
     assert!(
         frame.contains("-    old();") && frame.contains("+    fresh();"),
         "the ACP permission modal rendered no diff body — a delegated edit is \
