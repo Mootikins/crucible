@@ -12,7 +12,6 @@ pub use agent_client_protocol::{
 };
 
 // Module declarations
-pub mod acp_client;
 pub mod client;
 pub mod discovery;
 pub mod filesystem;
@@ -27,7 +26,6 @@ pub mod tracing_utils;
 pub mod mock_agent;
 
 // Public exports
-pub use acp_client::{CrucibleClient, WriteInfo};
 pub use client::CrucibleAcpClient;
 pub use discovery::{
     discover_agent, get_agent_help, is_agent_available, reset_agent_cache, AgentInfo,
