@@ -31,6 +31,7 @@ pub mod serde_md;
 pub mod session;
 pub mod storage;
 pub mod test_support;
+pub mod text;
 pub mod traits;
 pub mod turn;
 pub mod types;

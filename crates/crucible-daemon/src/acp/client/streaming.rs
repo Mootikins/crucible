@@ -9,6 +9,7 @@ use super::types::StreamingState;
 use super::{CrucibleAcpClient, REQUEST_ID};
 use crate::acp::streaming::{humanize_tool_title, StreamingCallback, StreamingChunk};
 use crate::acp::{ClientError, Result};
+use crucible_core::text::{sanitize_multiline, sanitize_single_line};
 use crucible_core::types::acp::{FileDiff, ToolCallInfo};
 
 /// Build the `session/cancel` JSON-RPC notification (no `id` — notifications
@@ -41,15 +42,20 @@ const MAX_DETAIL_DEPTH: u8 = 4;
 /// nothing, rather than rendering `null` or `{}` at the user. The detail is
 /// dropped when `message` already contains it, so an agent that echoes its own
 /// message into `data` does not read like two separate failures.
+///
+/// Both halves are agent-authored and both are rendered as a single-line
+/// failure label, so both are sanitised — see `crucible_core::text`.
 pub(super) fn describe_rpc_error(error: &serde_json::Value) -> String {
-    let message = error
-        .get("message")
-        .and_then(|m| m.as_str())
-        .unwrap_or("Unknown error");
+    let message = sanitize_single_line(
+        error
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("Unknown error"),
+    );
 
     match error.get("data").and_then(|data| detail_text(data, 0)) {
         Some(detail) if !message.contains(detail.as_str()) => format!("{message}: {detail}"),
-        _ => message.to_string(),
+        _ => message,
     }
 }
 
@@ -58,6 +64,10 @@ pub(super) fn describe_rpc_error(error: &serde_json::Value) -> String {
 fn detail_text(value: &serde_json::Value, depth: u8) -> Option<String> {
     match value {
         serde_json::Value::String(text) => {
+            // Sanitise before the emptiness check, not after: a payload that is
+            // nothing *but* control characters must read as "no detail" rather
+            // than as an empty-looking detail that still carries them.
+            let text = sanitize_single_line(text);
             let text = text.trim();
             if text.is_empty() {
                 return None;
@@ -384,17 +394,24 @@ impl CrucibleAcpClient {
         match notification.update {
             SessionUpdate::AgentMessageChunk(chunk) => match chunk.content {
                 ContentBlock::Text(text_block) => {
+                    // The agent process owns every byte of this, so it is
+                    // sanitised here — at the one point all agents pass
+                    // through, before anything is accumulated, broadcast,
+                    // persisted or replayed. Sanitising *before* the resend
+                    // check keeps the comparison like-for-like with what
+                    // `append_text` stores.
+                    let text = sanitize_multiline(&text_block.text);
                     // Skip full-text re-sends from agents like cursor-acp that
                     // emit accumulated text as a final notification
-                    if state.is_duplicate_resend(&text_block.text) {
+                    if state.is_duplicate_resend(&text) {
                         tracing::debug!(
-                            text_len = text_block.text.len(),
+                            text_len = text.len(),
                             "Skipping duplicate full-text re-send from agent"
                         );
                         return;
                     }
-                    state.append_text(&text_block.text);
-                    state.cancelled |= !callback(StreamingChunk::Text(text_block.text));
+                    state.append_text(&text);
+                    state.cancelled |= !callback(StreamingChunk::Text(text));
                 }
                 other => {
                     tracing::debug!("Ignoring non-text content block: {:?}", other);
@@ -416,14 +433,21 @@ impl CrucibleAcpClient {
             // (`crucible-cli/src/tui/oil/chat_runner/stream.rs`).
             SessionUpdate::AgentThoughtChunk(chunk) => match chunk.content {
                 ContentBlock::Text(text_block) => {
-                    state.cancelled |= !callback(StreamingChunk::Thinking(text_block.text));
+                    state.cancelled |= !callback(StreamingChunk::Thinking(sanitize_multiline(
+                        &text_block.text,
+                    )));
                 }
                 other => {
                     tracing::debug!("Ignoring non-text thought block: {:?}", other);
                 }
             },
             SessionUpdate::ToolCall(tool_call) => {
-                let tool_name = humanize_tool_title(&tool_call.title);
+                // A title is a one-line label naming what the agent is about
+                // to do, so it gets the single-line form: a newline or a bidi
+                // override in it makes the card claim one action and perform
+                // another.
+                let title = sanitize_single_line(&tool_call.title);
+                let tool_name = humanize_tool_title(&title);
                 let tool_id = tool_call.tool_call_id.to_string();
 
                 // Extract diffs once from this notification's content; reuse
@@ -452,9 +476,7 @@ impl CrucibleAcpClient {
                     diffs: diffs.clone(),
                 });
 
-                let mut info = ToolCallInfo::new(tool_call.title.clone())
-                    .with_id(tool_id)
-                    .with_diffs(diffs);
+                let mut info = ToolCallInfo::new(title).with_id(tool_id).with_diffs(diffs);
                 if let Some(args) = tool_call.raw_input.clone() {
                     info = info.with_arguments(args);
                 }
@@ -492,10 +514,14 @@ impl CrucibleAcpClient {
                     || update.fields.raw_input.is_some()
                     || has_content_diffs
                 {
+                    // Only the wire title needs sanitising; the fallback comes
+                    // from `state`, which is only ever written with one that
+                    // already passed through here.
                     let title = update
                         .fields
                         .title
-                        .clone()
+                        .as_deref()
+                        .map(sanitize_single_line)
                         .or_else(|| state.title_for_tool(&tool_id))
                         .unwrap_or_else(|| "Unnamed tool".to_string());
 
@@ -675,10 +701,14 @@ impl CrucibleAcpClient {
         match notification.update {
             SessionUpdate::AgentMessageChunk(chunk) => match chunk.content {
                 ContentBlock::Text(text_block) => {
-                    state.append_text(&text_block.text);
+                    // Same boundary, same treatment as the streaming path:
+                    // this accumulator becomes `formatted_output()`, which is
+                    // what gets persisted as the assistant's answer.
+                    let text = sanitize_multiline(&text_block.text);
+                    state.append_text(&text);
                     tracing::trace!(
                         "Accumulated chunk: '{}' (total: {} chars)",
-                        text_block.text,
+                        text,
                         state.formatted_length()
                     );
                 }
@@ -713,7 +743,7 @@ impl CrucibleAcpClient {
                     })
                     .filter(filter_oversize_diff)
                     .collect();
-                let mut info = ToolCallInfo::new(tool_call.title.clone())
+                let mut info = ToolCallInfo::new(sanitize_single_line(&tool_call.title))
                     .with_id(tool_call.tool_call_id.to_string())
                     .with_diffs(diffs);
                 if let Some(args) = tool_call.raw_input.clone() {
@@ -742,7 +772,8 @@ impl CrucibleAcpClient {
                     let title = update
                         .fields
                         .title
-                        .clone()
+                        .as_deref()
+                        .map(sanitize_single_line)
                         .or_else(|| state.title_for_tool(&id))
                         .unwrap_or_else(|| "Unnamed tool".to_string());
 
@@ -800,138 +831,5 @@ fn filter_oversize_diff(d: &FileDiff) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::acp::client::ClientConfig;
-
-    fn test_client() -> CrucibleAcpClient {
-        CrucibleAcpClient::new(ClientConfig {
-            agent_path: std::path::PathBuf::from("/nonexistent"),
-            agent_args: None,
-            working_dir: None,
-            env_vars: None,
-            timeout_ms: None,
-            max_retries: None,
-        })
-    }
-
-    #[test]
-    fn cancel_notification_is_a_valid_jsonrpc_notification() {
-        let n = build_cancel_notification("sess-123");
-        assert_eq!(n["jsonrpc"], "2.0");
-        assert_eq!(n["method"], "session/cancel");
-        assert_eq!(n["params"]["sessionId"], "sess-123");
-        // Notifications MUST NOT carry an id.
-        assert!(
-            n.get("id").is_none(),
-            "cancel is a notification, not a request"
-        );
-    }
-
-    #[test]
-    fn streaming_callback_returning_false_marks_state_cancelled() {
-        use agent_client_protocol::SessionNotification;
-
-        let mut client = test_client();
-        let mut state = StreamingState::default();
-        // A callback that returns `false` models the daemon's turn stream being
-        // dropped (receiver gone) — i.e. the user cancelled. The read loop uses
-        // `state.cancelled` to decide to send `session/cancel`.
-        let mut cb: StreamingCallback = Box::new(|_chunk| false);
-
-        let notification: SessionNotification = serde_json::from_value(serde_json::json!({
-            "sessionId": "s1",
-            "update": {
-                "sessionUpdate": "agent_message_chunk",
-                "content": { "type": "text", "text": "partial answer" }
-            }
-        }))
-        .expect("valid agent_message_chunk notification");
-
-        client.apply_session_update_with_callback(notification, &mut state, &mut cb);
-
-        assert!(
-            state.cancelled,
-            "a false callback (dropped receiver) must mark the turn cancelled"
-        );
-    }
-
-    /// A thought must not enter the answer accumulator, and must not be able to
-    /// mask a later answer chunk through `is_duplicate_resend`.
-    #[test]
-    fn thought_chunks_stay_out_of_the_answer_text() {
-        use agent_client_protocol::SessionNotification;
-
-        let mut client = test_client();
-        let mut state = StreamingState::default();
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut cb = crate::acp::streaming::channel_callback(tx);
-
-        let thought: SessionNotification = serde_json::from_value(serde_json::json!({
-            "sessionId": "s1",
-            "update": {
-                "sessionUpdate": "agent_thought_chunk",
-                "content": { "type": "text", "text": "weigh the options" }
-            }
-        }))
-        .expect("valid agent_thought_chunk notification");
-        client.apply_session_update_with_callback(thought, &mut state, &mut cb);
-
-        // The same words then arrive as the answer. If the thought had been
-        // appended to `accumulated_text`, the resend guard would drop it.
-        let answer: SessionNotification = serde_json::from_value(serde_json::json!({
-            "sessionId": "s1",
-            "update": {
-                "sessionUpdate": "agent_message_chunk",
-                "content": { "type": "text", "text": "weigh the options" }
-            }
-        }))
-        .expect("valid agent_message_chunk notification");
-        client.apply_session_update_with_callback(answer, &mut state, &mut cb);
-        drop(cb);
-
-        let mut chunks = Vec::new();
-        while let Ok(chunk) = rx.try_recv() {
-            chunks.push(chunk);
-        }
-
-        assert_eq!(
-            chunks,
-            vec![
-                StreamingChunk::Thinking("weigh the options".to_string()),
-                StreamingChunk::Text("weigh the options".to_string()),
-            ],
-            "reasoning and the answer share one accumulator, so one masked the other"
-        );
-        assert_eq!(
-            state.formatted_output(),
-            "weigh the options",
-            "reasoning leaked into the assistant's answer text"
-        );
-    }
-
-    #[test]
-    fn streaming_callback_returning_true_leaves_state_running() {
-        use agent_client_protocol::SessionNotification;
-
-        let mut client = test_client();
-        let mut state = StreamingState::default();
-        let mut cb: StreamingCallback = Box::new(|_chunk| true);
-
-        let notification: SessionNotification = serde_json::from_value(serde_json::json!({
-            "sessionId": "s1",
-            "update": {
-                "sessionUpdate": "agent_message_chunk",
-                "content": { "type": "text", "text": "still going" }
-            }
-        }))
-        .expect("valid agent_message_chunk notification");
-
-        client.apply_session_update_with_callback(notification, &mut state, &mut cb);
-
-        assert!(
-            !state.cancelled,
-            "an active receiver must not trigger cancellation"
-        );
-    }
-}
+#[path = "streaming_tests.rs"]
+mod tests;

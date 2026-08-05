@@ -231,6 +231,44 @@ async fn mock_thinking_hook_set_to_empty_scripts_no_thoughts() {
     );
 }
 
+/// A hostile agent's reasoning must not reach the turn stream able to drive
+/// the terminal.
+///
+/// The agent process owns every byte on its stdout, and a thought chunk is the
+/// widest agent-controlled text surface the daemon has: unbounded prose, no
+/// schema, rendered verbatim. Three payloads, three different escapes:
+///
+/// - `\u{9b}` is the 8-bit C1 CSI. It is an ordinary `char` to
+///   `unicode_width`, so `crucible-oil`'s ESC filter (`cell_grid.rs`, which
+///   only lets 7-bit `\x1b[…m` through) never sees it — it is emitted as UTF-8
+///   `C2 9B` and xterm and its derivatives decode it back to CSI, so
+///   `\u{9b}2J` clears the user's screen.
+/// - BEL rings the terminal; CR garbles the line by rewinding the cursor.
+/// - `\u{202E}` (RLO) reorders how the *rest* of the line reads without
+///   changing what it contains — the `annexe\u{202E}cod.exe` trick, applied to
+///   an agent's narration of what it is about to do.
+///
+/// `\n` and `\t` are the exception: they are legitimate in prose, the renderer
+/// handles them, and stripping them would mangle every code block an agent
+/// reasons about.
+#[tokio::test]
+async fn hostile_control_characters_are_stripped_from_delegated_reasoning() {
+    let shapes =
+        acp_shapes_for_thinking_turn("plan\u{9b}2J\u{7}line\rone\ttab\nnewline\u{202E}exe.dcoc")
+            .await;
+
+    assert_eq!(
+        shapes,
+        vec![
+            EventShape::Thinking("plan2Jlineone\ttab\nnewlineexe.dcoc".into()),
+            EventShape::Text("The answer is 4".into()),
+            EventShape::Done(StopReason::EndTurn),
+        ],
+        "an ACP agent's reasoning reached the turn stream carrying terminal \
+         control characters; got {shapes:#?}"
+    );
+}
+
 /// B1: an ACP turn that called a tool must close the batch.
 ///
 /// `ToolBatchEnd` is the event the scheduler's per-batch bookkeeping hangs off

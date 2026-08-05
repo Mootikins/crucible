@@ -79,27 +79,13 @@ impl std::fmt::Debug for StatuslineExprRegistry {
 
 /// Whether a character may not appear in a statusline value.
 ///
-/// Control characters are the obvious half: a value can originate in a branch
-/// name, a shell command's output, or model-derived text, and none of those may
-/// move the cursor or emit an OSC sequence.
-///
-/// The bidi and zero-width formatting characters are the less obvious half.
-/// They are not control characters, so `is_control` misses them, but a
-/// right-to-left override in a branch name reorders how the rest of the bar
-/// *reads* without changing what it contains — the display-spoofing trick
-/// behind filenames like `annexe\u{202E}cod.exe`. A status bar has no use for
-/// them, so refusing them outright costs nothing.
+/// A statusline value can originate in a branch name, a shell command's
+/// output, or model-derived text, so it gets the same treatment as any other
+/// untrusted display string — see [`crucible_core::text::is_display_hostile`]
+/// for what that covers and why. A bar occupies exactly one line, so newlines
+/// and tabs are hostile here too and the single-line form applies.
 pub fn is_forbidden(c: char) -> bool {
-    c.is_control()
-        || matches!(c,
-            // LRM, RLM, ALM
-            '\u{200E}' | '\u{200F}' | '\u{061C}'
-            // embeddings and overrides: LRE, RLE, PDF, LRO, RLO
-            | '\u{202A}'..='\u{202E}'
-            // isolates: LRI, RLI, FSI, PDI
-            | '\u{2066}'..='\u{2069}'
-            // zero-width space / non-joiner / joiner / no-break space
-            | '\u{200B}'..='\u{200D}' | '\u{FEFF}')
+    crucible_core::text::is_display_hostile(c)
 }
 
 /// Strip forbidden characters and cap the length.
@@ -118,7 +104,7 @@ pub fn sanitize(value: &str) -> String {
 /// carrying the same attacker-influenced data an expression would, through a
 /// variant that used to be trusted purely because of where it came from.
 pub fn sanitize_uncapped(value: &str) -> String {
-    value.chars().filter(|c| !is_forbidden(*c)).collect()
+    crucible_core::text::sanitize_single_line(value)
 }
 
 impl StatuslineExprRegistry {
