@@ -187,6 +187,21 @@ Grouped by where they bite. Each becomes a RED test.
   `bash`/`acp_tool` where internal shows the real tool name. This is a deliberate, documented
   tradeoff, not a bug — but it is a parity difference users see, and it must be pinned so the
   schema-1.6.0 `unstable_tool_call_name` upgrade can improve it deliberately.
+  **Corrections (found while implementing Task 10, by rendering real frames):**
+  1. The earlier claim that ACP "attaches no diffs" is **wrong**. Both sites build the identical
+     `PermRequest::tool(name, args).with_diffs(synthesize_diffs(..))` — ACP at
+     `permission.rs:212-225`, internal at `:934-940` — and `diff_synth::normalize_tool_name`
+     already accepts the coarse spellings (`"edit_file" | "edit" | "Edit" | …`), so the derived
+     name lands on the same synthesizer arm and the diff survives. Args are byte-identical
+     (ACP's come straight from `raw_input`). **The `unstable_tool_call_name` upgrade must keep
+     that true.**
+  2. For `ToolKind::Execute` the divergence is **invisible** — `render_perm_interaction`'s
+     `ToolDisplayKind::Command` arm renders the command line and drops the tool name entirely.
+     The naming difference only costs anything for non-command kinds.
+  3. **Open gap:** `ToolKind::Other`/absent derives `acp_tool`, which `normalize_tool_name` does
+     not recognise, so an unkinded ACP edit renders **no diff** and is approved without one.
+     Correct in that an unidentified call must not inherit file-op treatment, but it means diff
+     visibility depends on the agent supplying a `kind`. Worth its own decision.
 
 ### Group D — dead code creating false confidence
 
