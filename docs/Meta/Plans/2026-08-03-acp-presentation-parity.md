@@ -155,6 +155,64 @@ Grouped by where they bite. Each becomes a RED test.
   to a new `styled_snapshot_tool_call_with_body`, which uses `bash` (deliberately unsummarized
   for a multi-line result) so that coverage is not lost to the fix.
 
+  **Correction — the fix above did not cover the titles real agents send, and the tests could
+  not have told us.** The arms it preserved (`Read File | Read | Glob | Grep | Edit | Write |
+  Bash`) only match when an agent's `title` happens to look like an internal snake_case tool
+  name. The only delegated spellings under test were the ones the mock behind
+  `acp_parity_read_delegated.jsonl` was written to emit, and the fixture generator and the fix
+  were designed together — so the fixture could not falsify the fix. That is the same trap this
+  plan correctly diagnosed for the original `edit_file` pair, reproduced one level up.
+
+  **The evidence:** `assets/fixtures/acp-demo.jsonl` is the repo's only recording of a real
+  Claude Code session that ran tools (the five `tests/fixtures/acp/recorded/*/basic-chat.jsonl`
+  wire dumps contain none). Its live `tool_call` titles are `Read File`, `Find`, `Terminal`,
+  `ToolSearch`, `Get Kiln Info`, `Semantic Search`, `List Notes`; the refined titles its
+  `tool_call_update`s carry are `Read tools/hello.rn`, ``Find `/home/moot/.crucible` `**/*.rs` ``
+  and bare shell command lines. So Claude Code names its glob **`Find`** and its bash
+  **`Terminal`**, and `title_case` splits only on `_`/`-`, so `Read tools/hello.rn` matched no
+  arm either.
+
+  **Second fix (title-keyed, option (b)):**
+  - `summary_key` now keys on the **leading Title-Cased run** of the humanized name, so a title
+    that appends its subject (`Read tools/hello.rn`) keys as its verb. The cut cannot widen the
+    table over an internal tool: `title_case` uppercases *every* word it makes from a
+    snake_case or kebab-case name, so `read_notes` stays `Read Notes` and stays out of the
+    `Read` arm, exactly as `edit_file`/`write_file` membership was preserved the first time.
+  - One synonym added, read off the recording rather than guessed: `Find` joins the `Glob` arm.
+  - **`Terminal` deliberately *not* added to the `Bash` arm.** That arm answers only for a
+    single line under 60 characters, which is precisely when `collapse_result`'s
+    name-independent short-result branch answers with the same string. The synonym would change
+    no pixel, and a test for it would pass with or without it — the exact shape of coverage this
+    branch exists to stop shipping. Bash parity holds by that other route and is pinned as such.
+
+  **Why not option (a), gating on ACP's `ToolKind`:** it is neither cheap nor sufficient here.
+  Sufficiency first — `Glob` and `Grep` are both `ToolKind::Search`, and the two arms give
+  different answers (`N files` vs `N matches`), so `kind` cannot separate them and the title
+  would still be needed. Cost second — `kind` reaches only `permission.rs` today; carrying it to
+  the summary means a new field on `StreamingChunk::ToolStart`, `TurnEvent::ToolCall` (a wire
+  type both agents emit, so `Option` + `#[serde(default)]` and a `None` on every internal call),
+  a ninth parameter on `tool_call_with_metadata`, a new key on the `tool_call` session event,
+  and then `ChatAppMsg::ToolCall` → `CachedToolCall` → both summary tables — plus the four
+  parity fixtures, `parity_capture`, and the web reducer. And the decisive objection: **no
+  recording in this repo carries a `kind`** (`acp-demo.jsonl` is a `SessionEvent` recording,
+  which has no such field), so the plumbing could only be verified against kinds a mock
+  manufactured — reproducing the trap while claiming to escape it.
+
+  **Tests (all driven from the recording, not from titles written by their author):**
+  `helpers::recorded_claude_code_title` reads `acp-demo.jsonl` and fails if the title it is
+  handed is no longer in it. `recorded_claude_code_titles_reach_their_summary_arm` and
+  `the_leading_run_rule_does_not_widen_the_summary_table` (`tool_render_tests.rs`);
+  `a_delegated_glob_collapses_its_file_list_like_the_internal_one` — mutation-verified by
+  dropping `Find` from the arm — and
+  `a_delegated_shell_command_needs_no_synonym_to_match_the_internal_one` in `acp_parity_tests.rs`.
+
+  **Still open, recorded rather than fixed:** `ToolSearch`, `Get Kiln Info`, `Semantic Search`
+  and `List Notes` reach no arm, correctly — Crucible has no summary for them on either path.
+  `Grep`'s real Claude Code title is unknown: the recording contains no grep call, so no synonym
+  was invented for it. And an agent whose bash title is a bare command line (`ls /home/…`) keys
+  as `Ls` and matches nothing; that costs only the single-line-under-60 case, which the
+  name-independent branch already covers.
+
 ### Group B — event-shape divergences in `acp_handle.rs`
 
 - **B1 — no `ToolBatchEnd`.** `acp_handle.rs:519-571` never yields it; `genai_handle.rs:1344`

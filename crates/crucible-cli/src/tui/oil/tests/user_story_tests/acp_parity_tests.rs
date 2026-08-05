@@ -19,6 +19,7 @@
 
 use serde_json::json;
 
+use super::super::helpers::recorded_claude_code_title;
 use super::support::StoryRuntime;
 use super::vocab::{
     announce_tool_call, attach_late_diff, complete_tool_call, hydrate_from_recording,
@@ -345,6 +346,88 @@ fn both_read_cards_collapse_their_result_to_a_summary() {
             !frame.contains("println!"),
             "{fixture} painted the file body into the transcript instead of \
              summarizing it:\n{frame}"
+        );
+    }
+}
+
+/// US-307 (A4, second pass): the titles a *real* agent sends must collapse too.
+///
+/// The read pair above proves the tables answer to `Read File`. That is a
+/// spelling the mock behind `acp_parity_read_delegated.jsonl` was written to
+/// emit — and it is also, as it happens, one Claude Code really sends, which is
+/// how the first fix passed while covering almost nothing. The recording says
+/// the same agent titles its glob `Find` and its bash `Terminal`, neither of
+/// which the table listed, so a delegated glob painted its whole file list into
+/// the transcript.
+///
+/// The titles come from [`recorded_claude_code_title`], which fails if
+/// `acp-demo.jsonl` stops containing them — the pair cannot drift into testing
+/// a spelling nothing produces.
+///
+/// The card *header* legitimately differs (`Glob` vs `Find`): ACP carries no
+/// tool name on the wire, only prose, so the two cards are entitled to
+/// different names for the same tool. What must not differ is the body — one
+/// summary line, not the file list.
+#[test]
+fn a_delegated_glob_collapses_its_file_list_like_the_internal_one() {
+    // A newline-separated list, which is what both Crucible's `glob` and
+    // Claude Code's Find answer with.
+    const FILES: &str = "alpha.rs\nbeta.rs\ngamma.rs";
+
+    for (tool, source) in [
+        ("glob", "Core"),
+        (recorded_claude_code_title("Find"), "Acp:claude"),
+    ] {
+        let mut story = StoryRuntime::new(80, 24);
+        send_user_message(&mut story, "find the rust files");
+        announce_tool_call(&mut story, tool, r#"{"pattern":"**/*.rs"}"#, Some(source));
+        complete_tool_call(&mut story, tool, &format!("{tool}-1"), FILES);
+
+        let frame = story.fresh_screen();
+        assert!(
+            frame.contains("\u{2192} 3 files"),
+            "`{tool}` did not collapse its file list into the card header:\n{frame}"
+        );
+        assert!(
+            !frame.contains("beta.rs"),
+            "`{tool}` painted the file list into the transcript instead of \
+             summarizing it:\n{frame}"
+        );
+    }
+}
+
+/// The counter-case, pinned so it is not "fixed" by reflex.
+///
+/// The same recording titles Claude Code's bash `Terminal`, which no arm of the
+/// summary table lists either — but unlike the glob, that costs nothing. The
+/// `Bash` arm only answers for a result of one line under 60 characters, and
+/// that is precisely when `collapse_result`'s *name-independent* short-result
+/// branch answers with the same string. So a delegated shell command already
+/// collapses exactly like the internal one, and adding `Terminal` to the arm
+/// would change no pixel while looking like coverage.
+///
+/// This fails if that short-result branch ever becomes name-dependent, which is
+/// what would make the synonym necessary.
+#[test]
+fn a_delegated_shell_command_needs_no_synonym_to_match_the_internal_one() {
+    for (tool, source) in [
+        ("bash", "Core"),
+        (recorded_claude_code_title("Terminal"), "Acp:claude"),
+    ] {
+        let mut story = StoryRuntime::new(80, 24);
+        send_user_message(&mut story, "check the version");
+        announce_tool_call(
+            &mut story,
+            tool,
+            r#"{"command":"cru --version"}"#,
+            Some(source),
+        );
+        complete_tool_call(&mut story, tool, &format!("{tool}-1"), "cru 0.21.0");
+
+        let frame = story.fresh_screen();
+        assert!(
+            frame.contains("\u{2192} cru 0.21.0"),
+            "`{tool}` did not collapse its output into the card header:\n{frame}"
         );
     }
 }

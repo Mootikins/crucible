@@ -372,11 +372,47 @@ pub(crate) fn format_elapsed(duration: Duration) -> String {
 /// humanized name never contains `__`. The rule is what keeps the change
 /// additive — it admits the prose spellings ACP needs and no name that did not
 /// already reach these tables before.
+///
+/// # A title is prose, so it carries its subject
+///
+/// The first version of this stopped at the humanizer, which covers a title
+/// that happens to *look* like an internal tool name and nothing else. The
+/// repo's one recording of a real Claude Code session that ran tools
+/// (`assets/fixtures/acp-demo.jsonl`) shows that is not what agents send: its
+/// titles are `Find`, `Terminal`, `Read File` and `Read tools/hello.rn`. A
+/// resolved title appends the thing being acted on, so the key is the leading
+/// Title-Cased run — everything up to the first word that does not start
+/// uppercase.
+///
+/// That cut cannot pull an internal tool into a new arm: `title_case`
+/// uppercases *every* word it produces from a snake_case or kebab-case name,
+/// so `read_notes` → `Read Notes` has no lowercase tail to lose and stays out
+/// of the `Read` arm exactly as it was. It only bites on agent-authored prose,
+/// which is the only thing that has a subject appended. A title whose *first*
+/// word is not Title-Cased (a bare shell command, say) keeps its whole
+/// humanized form and, as before, matches nothing.
+///
+/// The one synonym the arms below list — `Find` for glob — is read off that
+/// same recording rather than guessed. ACP has no tool name on the wire, so
+/// there is no closed set here and never will be until schema 1.6.0's
+/// `unstable_tool_call_name` lands; see `acp_tool_name`
+/// (`agent_manager/messaging/permission.rs`), which is the other place paying
+/// for the same missing field. Keying on ACP's `kind` instead would not close
+/// it either: `Glob` and `Grep` are both `ToolKind::Search`, so the two arms
+/// below could not be told apart without the title anyway.
 fn summary_key(name: &str) -> Option<String> {
     if name.contains("__") {
         return None;
     }
-    Some(crucible_daemon::acp::streaming::humanize_tool_title(name))
+    let humanized = crucible_daemon::acp::streaming::humanize_tool_title(name);
+    let leading_run: Vec<&str> = humanized
+        .split_whitespace()
+        .take_while(|word| word.starts_with(char::is_uppercase))
+        .collect();
+    if leading_run.is_empty() {
+        return Some(humanized);
+    }
+    Some(leading_run.join(" "))
 }
 
 fn collapse_result(name: &str, result: &str, summary: Option<&str>) -> Option<String> {
@@ -515,7 +551,8 @@ pub fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
             });
             bracket_summary.or_else(|| Some(format!("{} lines", inner.lines().count())))
         }
-        Some("Glob") => count_newline_items(&inner).map(|n| format!("{} files", n)),
+        // `Find` is Claude Code's title for its glob (acp-demo.jsonl).
+        Some("Glob" | "Find") => count_newline_items(&inner).map(|n| format!("{} files", n)),
         Some("Grep") => count_grep_matches(&inner).map(|n| format!("{} matches", n)),
         Some("Edit") if inner.contains("success") || inner.contains("applied") => {
             Some("applied".to_string())
@@ -523,6 +560,14 @@ pub fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
         Some("Write") if inner.contains("success") || inner.contains("written") => {
             Some("written".to_string())
         }
+        // `Terminal` — Claude Code's title for its bash (acp-demo.jsonl) — is
+        // deliberately *not* listed here. This arm answers only when the
+        // result is one line under 60 characters, which is exactly when
+        // `collapse_result`'s name-independent short-result branch answers with
+        // the same string; adding the synonym would be an arm with no
+        // observable effect, and a test for it would pass either way. Bash
+        // parity holds by that route instead — pinned by
+        // `a_delegated_shell_command_needs_no_synonym_to_match_the_internal_one`.
         Some("Bash") => {
             let lines: Vec<&str> = inner.lines().collect();
             if lines.len() <= 1 && inner.len() < 60 {

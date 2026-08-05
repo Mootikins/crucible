@@ -184,6 +184,56 @@ fn a_namespaced_tool_reaches_no_summary_arm(name: &str, result: &str) {
     );
 }
 
+/// Divergence A4, second pass: the titles real ACP agents actually send.
+///
+/// The first fix keyed the summary tables on `humanize_tool_title(name)` and
+/// listed `Read File | Read | Glob | Grep | Edit | Write | Bash`. Those hold
+/// only when the agent's `title` happens to look like an internal snake_case
+/// tool name — which is exactly what the mock behind
+/// `acp_parity_read_delegated.jsonl` was written to emit, so the fixture could
+/// not falsify the fix.
+///
+/// The real recording disagrees. Claude Code titles its glob `Find` and a
+/// resolved read `Read tools/hello.rn`. Neither matched, so a delegated glob
+/// painted the whole file list and a delegated read painted the file body
+/// where the internal tool collapsed to one line.
+///
+/// Each case is checked to be *in* the recording before it is exercised, so
+/// re-recording the fixture with different titles fails here instead of
+/// quietly leaving the arms uncovered. `Terminal` — the recording's title for
+/// bash — is absent on purpose: see the `Bash` arm's comment, it would be an
+/// arm that changes nothing.
+#[test_case("Find", "a.rs\nb.rs", "2 files"; "claude_code_names_its_glob_Find")]
+#[test_case("Read File", "l1\nl2\nl3", "3 lines"; "read_before_the_path_resolves")]
+#[test_case("Read tools/hello.rn", "l1\nl2\nl3", "3 lines"; "read_once_the_path_resolves")]
+fn recorded_claude_code_titles_reach_their_summary_arm(title: &str, result: &str, expected: &str) {
+    let title = crate::tui::oil::tests::helpers::recorded_claude_code_title(title);
+    assert_eq!(
+        summarize_tool_result(title, result),
+        Some(expected.to_string()),
+        "`{title}` — a title a real Claude Code session sent — reached no arm \
+         of the summary table, so a delegated card paints its whole result"
+    );
+}
+
+/// The leading-run rule must not widen the table over names that were already
+/// outside it. `title_case` uppercases *every* word it makes from a snake_case
+/// or kebab-case name, so an internal tool never has a lowercase trailing word
+/// and never loses one — `read_notes` stays `Read Notes` and stays out of the
+/// `Read` arm, exactly as `read_file`-vs-`Read File` membership was preserved
+/// the first time.
+#[test_case("read_notes", "alpha\nbeta\ngamma"; "internal_compound_read")]
+#[test_case("glob_index", "a.rs\nb.rs"; "internal_compound_glob")]
+#[test_case("Get Kiln Info", "alpha\nbeta"; "recorded_title_that_is_not_a_verb_plus_arg")]
+#[test_case("Semantic Search", "alpha\nbeta"; "recorded_mcp_title")]
+fn the_leading_run_rule_does_not_widen_the_summary_table(name: &str, result: &str) {
+    assert_eq!(
+        summarize_tool_result(name, result),
+        None,
+        "`{name}` was pulled into a summary arm it did not belong to"
+    );
+}
+
 /// The other half of the table: the long-result fallback in
 /// `collapse_result` keys on the same identity.
 #[test_case("write", Some("written"); "write_internal")]

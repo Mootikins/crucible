@@ -46,6 +46,55 @@ pub fn read_fixture(name: &str) -> String {
         .unwrap_or_else(|e| panic!("read fixture {}: {e}", path.display()))
 }
 
+/// Every distinct `tool` a `tool_call` names in `assets/fixtures/acp-demo.jsonl`.
+///
+/// That recording is the repo's only capture of a real Claude Code session that
+/// ran tools — the five `crucible-daemon/tests/fixtures/acp/recorded/*/
+/// basic-chat.jsonl` wire dumps contain no tool call at all. Any test about
+/// "the titles ACP agents send" must read them from here rather than spell
+/// them inline: a hand-written ACP title is whatever its author imagined an
+/// agent sends, which is how divergence A4's first fix came to be verified
+/// only against titles a mock had manufactured for it.
+///
+/// The recording is malformed in other ways (see
+/// `replay_malformed_acp_demo_recording_80x24`) — 13 calls announced twice,
+/// results keyed to no call. None of that touches the `title` strings, which
+/// are the agent's own and the only thing read here.
+pub fn recorded_claude_code_tool_titles() -> Vec<String> {
+    let text = read_fixture("acp-demo.jsonl");
+    let mut titles: Vec<String> = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|value| value.get("event").and_then(|e| e.as_str()) == Some("tool_call"))
+        .filter_map(|value| Some(value.get("data")?.get("tool")?.as_str()?.to_string()))
+        .collect();
+    titles.sort();
+    titles.dedup();
+    assert!(
+        !titles.is_empty(),
+        "acp-demo.jsonl names no tools, so nothing keyed off it is grounded in \
+         a real recording any more"
+    );
+    titles
+}
+
+/// Assert `title` is one a real agent actually sent, then hand it back.
+///
+/// Callers use the return value so the title under test cannot drift away from
+/// the recording it claims to come from: re-record `acp-demo.jsonl` with
+/// different titles and the caller fails here rather than quietly testing a
+/// spelling no agent produces.
+pub fn recorded_claude_code_title(title: &str) -> &str {
+    let recorded = recorded_claude_code_tool_titles();
+    assert!(
+        recorded.iter().any(|t| t == title),
+        "`{title}` is no longer in acp-demo.jsonl, so this test is no longer \
+         grounded in a real agent's output. Recorded titles: {recorded:?}"
+    );
+    title
+}
+
 pub fn view_with_default_ctx(app: &OilChatApp) -> Node {
     let focus = FocusContext::new();
     let ctx = ViewContext::new(&focus);
