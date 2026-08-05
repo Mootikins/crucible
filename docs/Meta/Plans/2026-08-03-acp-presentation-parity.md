@@ -918,46 +918,45 @@ git commit -am "refactor(acp): remove the unreachable CrucibleClient permission 
 
 ---
 
-## Task 12: Document the story and the contract
+## Task 12: Document the story and the contract — DONE
 
-**Files:**
-- Modify: `docs/Meta/TUI User Stories.md` (new section 3 entry)
-- Modify: `docs/Meta/Analysis/Systems.md`
+Most of this landed incrementally: US-307 was written by Task 2 and widened by Task 7, and Task 6
+gave US-203 its interleaving criteria. What was left was the part the earlier tasks could not do
+for themselves — checking that the story still describes what shipped, and writing down the
+contract.
 
-**Step 1: Add the user story**
+**Two things in the task description were wrong; do not cite them.**
 
-```markdown
-### US-307: Delegated agent presentation parity
-**As a user**, an ACP-delegated agent (`cru chat -a claude`) renders like the internal agent —
-same tool cards, thinking blocks, diffs and stop states — with delegation surfaced only where it
-is deliberate (an `[acp:<agent>]` provenance badge).
-**Acceptance:** equivalent behavior produces equivalent `TurnEvent` shape sequences from
-`AcpAgentHandle` and `GenaiAgentHandle`; frames rendered from both differ only in the provenance
-badge; delegated tool calls carry a source badge; late `tool_call_diff_update` diffs render into
-the existing card; structured tool results stay structured;
-cancelled and empty turns report honest stop reasons. (Interleaved thinking and reasoning-replay
-dedup belong to **US-203**, not here — they are about which thoughts reach the screen, not about
-provenance; C1 and C4 are pinned there.) Known deliberate difference: the permission
-modal shows a `ToolKind`-derived name because ACP carries no tool name on the wire.
-**Tests:** T1 shape-sequence parity in `acp_integration/turn_event_parity.rs` + `parse_tool_source`
-unit tests; T2 identical-frame assertion, badge, late-diff render and snapshot in
-`user_story_tests/acp_parity_tests.rs`; T3 recorded-fixture replay for all five agents in
-`acp_fixture_replay.rs`.
-```
+- **Step 1's draft acceptance text does not match reality.** It promised "equivalent `TurnEvent`
+  shape sequences from `AcpAgentHandle` and `GenaiAgentHandle`", which this plan's own header
+  rules out as structurally impossible (see below), and "structured tool results stay
+  structured", which Task 4 withdrew as a false premise. Neither is in the shipped story.
+- **Step 2 names the wrong boundary.** It says "`TurnEvent` is the parity boundary". It is not —
+  `SessionEventMessage` is. The header of this plan corrected that in its second draft; Task 12's
+  body was never updated to match. `Systems.md` records the corrected version.
 
-**Step 2: Record the contract in `Systems.md`**
+**What shipped:**
 
-State that `TurnEvent` is the parity boundary: everything downstream is shared, so a new
-`AgentHandle` gets correct presentation for free *if and only if* it emits the same event shapes
-and populates the same `tool_call` metadata. Note that `display_parity.rs` tests the
-`StreamingChunk` layer, which sits *above* this boundary and cannot prove parity alone.
-
-**Step 3: Commit**
-
-```bash
-git add docs/
-git commit -m "docs: add US-307 delegated agent presentation parity and the TurnEvent contract"
-```
+- **US-307 narrowed to what the tests prove.** It had claimed "the badge is the only sanctioned
+  frame difference" flatly. The evidence is two fixture pairs, so the claim is now explicitly
+  per-behaviour: an `edit_file` turn with a late diff and a `read_file` turn with a multi-line
+  result, each recorded from both agents. A2's `read_file` half — A4's resolution — is named:
+  a delegated tool's result collapses into the card header exactly as the internal tool's does,
+  because the summary table keys on the humanized name both spellings share. A new **Not
+  claimed** line states what the pair deliberately does not cover: the coarse permission-modal
+  name (C3, pinned separately), the statusline's no-data path on delegated sessions (A3/US-205 —
+  both fixtures omit `providers_listed`/`context_limit_resolved`, so this pair *cannot* see it),
+  and the `description` asymmetry, which costs no pixels only because the converter drops
+  descriptions on every path.
+- **`Systems.md` gained a "Presentation Parity Boundary" section** stating: `SessionEventMessage`
+  is the boundary; a new `AgentHandle` gets correct presentation for free iff it emits that
+  vocabulary with the same fields populated; `TurnEvent`-level cross-agent equality is
+  structurally impossible (internal yields `ToolCall` + `ToolBatchEnd` and receives its result
+  **inbound**, an `owns_history` agent yields `ToolCall` + `ToolResult` **outbound**, and
+  `GenaiAgentHandle` never yields a `ToolResult` at all) and **must never be asserted** —
+  `TurnEvent` tests are per-agent contract expectations; and `display_parity.rs` sits above the
+  boundary at `StreamingChunk`, so a green run there says the ACP client parsed the wire, not
+  that the turn renders.
 
 ---
 

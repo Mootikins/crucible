@@ -198,6 +198,54 @@ Lua surfaces ship with embedded Rust defaults (`statusline_items::builtin_defaul
 2. User's `init.lua` overrides the default — not required for basic functionality
 3. One rendering path (config-driven) for both default and custom configs
 
+## Presentation Parity Boundary
+
+Crucible runs turns through two kinds of agent — the internal one
+(`GenaiAgentHandle`) and a delegated ACP agent (`AcpAgentHandle`) — and both must
+reach the user as the same picture. **`SessionEventMessage` is the boundary where
+that becomes true.** Downstream of it there is exactly one renderer per surface:
+`chat_runner/commands.rs::session_event_to_chat_msgs()` → `ChatAppMsg` →
+`ContainerList` for the TUI, `crucible-web/src/events.rs` for the web. Nothing in
+`crucible-cli/src/tui/oil/` branches on which agent produced the turn.
+
+The contract that follows: **a new `AgentHandle` gets correct presentation for
+free if and only if it emits the same `SessionEventMessage` vocabulary with the
+same fields populated** — `tool_call` with its `source`, `display` and `diffs`,
+`tool_result` with the `{"result"|"error": …}` envelope, `thinking`,
+`text_delta`, `segment_complete`, `message_complete`. A field a handle leaves
+`None` is a card the renderer draws with less information, not an error anyone
+sees.
+
+**`TurnEvent`-level cross-agent equality is structurally impossible and must
+never be asserted.** The two handles differ there *by design*: the internal agent
+yields `ToolCall` + `ToolBatchEnd` and lets the daemon dispatch the tool,
+receiving the result back **inbound**; an ACP agent (`owns_history`) runs its own
+tool loop in its own process and yields `ToolCall` + `ToolResult` **outbound**.
+`GenaiAgentHandle` never yields a `ToolResult` at all — it only ever matches one
+as inbound. So `assert_eq!(turn_events(acp), turn_events(internal))` compares two
+things that are *supposed* to be different, and any test written that way is
+either failing for the wrong reason or passing by accident. `TurnEvent` tests are
+**per-agent contract expectations** ("does this handle emit what its own contract
+requires"), never cross-agent comparisons.
+
+**`acp_integration/display_parity.rs` sits above the boundary and cannot prove
+parity on its own.** Despite the name it stops at `StreamingChunk`, which is
+upstream of `TurnEvent` and two layers upstream of anything the user sees; a green
+run there says the ACP client parsed the wire, not that the turn renders. Real
+parity evidence is a pair of `SessionEvent` recordings of the same behaviour — one
+per agent — pumped through the shared renderer and compared as frames
+(`user_story_tests/acp_parity_tests.rs`, fixtures in `assets/fixtures/acp_parity_*`).
+Those fixtures are re-derived from the daemon's own broadcast channel on every test
+run by `agent_manager/tests/parity_capture.rs`, so they cannot quietly outlive the
+shape they pin — a recorded payload nothing regenerates is the same trap as a
+unit-tested code path production never reaches.
+
+The equality such a pair proves is **per-behaviour, not general**: it covers the
+tools and event shapes those two recordings contain. Divergences outside them stay
+open until a pair exercises them.
+
+See: [[Meta/TUI User Stories]] (US-307), [[Help/Concepts/Agent Client Protocol]]
+
 ## Cross-Cutting Concerns
 
 Some changes span multiple systems:
