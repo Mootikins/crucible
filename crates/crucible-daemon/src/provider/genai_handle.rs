@@ -1350,9 +1350,11 @@ impl GenaiAgentHandle {
                             // Whitespace-only deltas are what a provider emits
                             // while producing nothing; `stream.rs`'s own
                             // empty-response check trims for the same reason.
+                            // Shared with `AcpAgentHandle` so the two agents
+                            // cannot drift on what "produced content" means.
                             produced_content |= match &other {
                                 TurnEvent::TextDelta(t) | TurnEvent::Thinking(t) => {
-                                    !t.trim().is_empty()
+                                    crucible_core::turn::is_visible_content(t)
                                 }
                                 _ => false,
                             };

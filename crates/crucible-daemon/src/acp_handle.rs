@@ -446,7 +446,7 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
         crucible_core::turn::AgentError,
     > {
         use async_stream::stream;
-        use crucible_core::turn::{TurnError, TurnEvent};
+        use crucible_core::turn::{is_visible_content, TurnError, TurnEvent};
         use tokio::sync::mpsc;
 
         // Forward daemon-injected context (Precognition, Lua transform_context)
@@ -539,12 +539,12 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                 match chunk {
                     StreamingChunk::Text(text) => {
                         debug!(chunk_type = "text", len = text.len(), "ACP streaming chunk");
-                        produced_content = true;
+                        produced_content |= is_visible_content(&text);
                         yield TurnEvent::TextDelta(text);
                     }
                     StreamingChunk::Thinking(text) => {
                         debug!(chunk_type = "thinking", len = text.len(), "ACP streaming chunk");
-                        produced_content = true;
+                        produced_content |= is_visible_content(&text);
                         yield TurnEvent::Thinking(text);
                     }
                     StreamingChunk::ContextWindow { used, limit } => {

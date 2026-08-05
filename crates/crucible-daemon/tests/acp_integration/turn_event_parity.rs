@@ -147,6 +147,17 @@ async fn acp_shapes_for_empty_turn() -> Vec<EventShape> {
     acp_shapes(mock_session_agent(&agent_path)).await
 }
 
+/// A turn whose only output is a whitespace-only text chunk.
+async fn acp_shapes_for_blank_text_turn() -> Vec<EventShape> {
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
+    let mut agent_config = mock_session_agent(&agent_path);
+    agent_config
+        .env_overrides
+        .insert("CRU_MOCK_STREAM_CHUNKS".to_string(), "\n".into());
+
+    acp_shapes(agent_config).await
+}
+
 /// A turn whose only tool traffic is a completed `tool_call_update` for an id
 /// that no `tool_call` ever introduced.
 ///
@@ -405,6 +416,34 @@ async fn acp_empty_turn_reports_empty_stop_reason() {
         vec![EventShape::Done(StopReason::Empty)],
         "a turn with no text, no thinking and no tool calls did not report \
          Empty; got {shapes:#?}"
+    );
+}
+
+/// B3, continued: "produced content" must mean the same thing on both agents.
+///
+/// `GenaiAgentHandle` trims before counting a delta as content, because
+/// whitespace is what a provider emits while producing nothing
+/// (`genai_handle.rs`, and `stream.rs`'s empty-response guard trims too).
+/// `AcpAgentHandle` counted *any* chunk, so an agent whose whole turn was a
+/// single `"\n"` reported `EndTurn` delegated and `Empty` internally — a fresh
+/// asymmetry inside the two functions that exist to remove asymmetry. Both now
+/// call `crucible_core::turn::is_visible_content`.
+///
+/// The blank delta is still yielded: what the renderer does with whitespace is
+/// its business, and suppressing it here would be a second divergence.
+#[tokio::test]
+async fn acp_whitespace_only_turn_reports_empty_stop_reason() {
+    let shapes = acp_shapes_for_blank_text_turn().await;
+
+    assert_eq!(
+        shapes,
+        vec![
+            EventShape::Text("\n".to_string()),
+            EventShape::Done(StopReason::Empty)
+        ],
+        "a delegated turn whose only output was whitespace did not report \
+         Empty, so it disagrees with the internal agent on the same turn; \
+         got {shapes:#?}"
     );
 }
 

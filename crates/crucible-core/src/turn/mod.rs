@@ -162,6 +162,20 @@ pub enum StopReason {
     Empty,
 }
 
+/// Does this streamed text count as something the user can see?
+///
+/// Whitespace-only chunks are what a provider or a delegated agent emits while
+/// producing nothing, so they must not keep a turn out of [`StopReason::Empty`].
+/// Both `GenaiAgentHandle` and `AcpAgentHandle` gate `produced_content` on this
+/// one function rather than on two hand-written predicates: they had drifted —
+/// ACP counted any chunk at all — so an agent streaming a single `"\n"`
+/// reported `EndTurn` delegated and `Empty` internally. `stream.rs`'s
+/// empty-response guard trims for the same reason.
+#[must_use]
+pub fn is_visible_content(text: &str) -> bool {
+    !text.trim().is_empty()
+}
+
 /// Non-fatal error delivered as a terminal `TurnEvent::Error`.
 ///
 /// Distinct from [`AgentError`]: a `TurnError` is an error that happened
@@ -398,6 +412,19 @@ pub type SharedAgent = Arc<tokio::sync::Mutex<BoxAgent>>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The predicate both agent handles gate `StopReason::Empty` on. Unicode
+    /// whitespace counts as blank because `str::trim` uses `White_Space`, and
+    /// a turn made of non-breaking spaces showed the user nothing either.
+    #[test]
+    fn only_non_whitespace_text_counts_as_visible_content() {
+        assert!(is_visible_content("hi"));
+        assert!(is_visible_content("  hi  "));
+        assert!(!is_visible_content(""));
+        assert!(!is_visible_content("\n"));
+        assert!(!is_visible_content(" \t\r\n "));
+        assert!(!is_visible_content("\u{00a0}"));
+    }
 
     #[test]
     fn not_supported_carries_capability_name() {
