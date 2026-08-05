@@ -126,11 +126,6 @@ fn replay_fixture(path: &Path, width: u16, height: u16) -> ReplayResult {
 #[test]
 fn replay_demo_80x24() {
     let path = fixture_path("demo.jsonl");
-    if !path.exists() {
-        eprintln!("Skipping: {} not found", path.display());
-        return;
-    }
-
     let result = replay_fixture(&path, 80, 24);
 
     assert!(
@@ -150,10 +145,6 @@ fn replay_demo_80x24() {
 #[test]
 fn replay_demo_120x40() {
     let path = fixture_path("demo.jsonl");
-    if !path.exists() {
-        return;
-    }
-
     let result = replay_fixture(&path, 120, 40);
 
     assert!(
@@ -167,10 +158,6 @@ fn replay_demo_120x40() {
 #[test]
 fn replay_demo_60x20() {
     let path = fixture_path("demo.jsonl");
-    if !path.exists() {
-        return;
-    }
-
     let result = replay_fixture(&path, 60, 20);
 
     assert!(
@@ -345,11 +332,6 @@ fn styled_snapshot_thinking_expanded_after_graduation() {
 #[test]
 fn replay_reproduce_formatting_80x24() {
     let path = fixture_path("reproduce-formatting.jsonl");
-    if !path.exists() {
-        eprintln!("Skipping: {} not found", path.display());
-        return;
-    }
-
     let result = replay_fixture(&path, 80, 24);
 
     assert!(
@@ -360,16 +342,40 @@ fn replay_reproduce_formatting_80x24() {
     );
 }
 
-// ─── ACP demo fixture ──────────────────────────────────────────────────────
+// ─── Degenerate recording ──────────────────────────────────────────────────
 
+/// `acp-demo.jsonl` replayed at 80x24 — a robustness test, **not ACP coverage**.
+///
+/// This test used to be called `replay_acp_demo_80x24`, which claimed something
+/// it never delivered. Despite the filename, the recording carries no ACP
+/// presentation signal at all: grep it and you will find zero `source` fields
+/// and no `tool_call_diff_update`, and its tool titles are stored already
+/// humanized. Nothing here exercises the delegated-vs-internal rendering split.
+/// [`replay_acp_parity_fixtures_80x24`] is where that lives.
+///
+/// What the fixture *is* worth keeping for is that it is malformed, in three
+/// ways an old recorder path baked in:
+///
+/// 1. Every `call_id` is emitted twice — once at seq 8–31 with `{}` args and a
+///    generic title, then again at seq 43–55 with the real args and a different
+///    title for the same id (`Get Kiln Info` → `mcp__crucible__get_kiln_info`).
+/// 2. The `tool_result` events carry fresh UUIDs that match no `tool_call`, so
+///    no result can ever attach to its call.
+/// 3. The second batch of calls arrives *after* the assistant's answer.
+///
+/// So this is a "fed a corrupt transcript, does the TUI still behave" test. It
+/// deliberately does not snapshot: the render contains genuine artifacts —
+/// 13 calls become ~25 cards, and a few rows lose their leading bullet to
+/// viewport-scroll seams — and pinning those would be recording a bug as
+/// truth. It asserts only what must hold regardless: no spinner leaks into
+/// scrollback, both ends of the conversation survive, and no raw identifier
+/// escapes humanization.
+///
+/// See `assets/fixtures/README.md`; the fixture also backs `just demo
+/// acp-demo` and `scripts/validate-demos.sh`, so it stays put.
 #[test]
-fn replay_acp_demo_80x24() {
+fn replay_malformed_acp_demo_recording_80x24() {
     let path = fixture_path("acp-demo.jsonl");
-    if !path.exists() {
-        eprintln!("Skipping: {} not found", path.display());
-        return;
-    }
-
     let result = replay_fixture(&path, 80, 24);
 
     assert!(
@@ -378,6 +384,55 @@ fn replay_acp_demo_80x24() {
         result.total_frames,
         result.violations.join("\n")
     );
+
+    let out = &result.final_output;
+
+    // Both ends of the turn survive the malformed middle.
+    assert!(
+        out.contains("Describe Crucible's architecture in two sentences."),
+        "user prompt missing from replay:\n{out}"
+    );
+    assert!(
+        out.contains("Crucible is an MCP"),
+        "assistant answer missing from replay:\n{out}"
+    );
+
+    // No card may be *titled* with a raw MCP identifier. Four of the seq 43–55
+    // calls arrive named `mcp__crucible__*`; `humanize_tool_title` is the only
+    // thing standing between those and the user's screen.
+    //
+    // Scoped to titles on purpose: `mcp__` legitimately appears mid-line as
+    // argument text, because two of the calls are `ToolSearch` queries whose
+    // payload is literally `select:mcp__crucible__get_kiln_info`. A blanket
+    // `!out.contains("mcp__")` fails on that, and would be testing the wrong
+    // thing — that string is data the user asked to see.
+    for line in out.lines() {
+        let title = line.trim_start().trim_start_matches('●').trim_start();
+        assert!(
+            !title.starts_with("mcp__"),
+            "tool card titled with a raw MCP identifier: {line:?}\n{out}"
+        );
+    }
+
+    // Nor may a raw JSON argument blob. Every seq 43–55 call carries one.
+    assert!(
+        !out.contains("{\""),
+        "raw JSON args leaked into the transcript:\n{out}"
+    );
+
+    // Each distinct tool still earns a card rather than collapsing away.
+    for title in [
+        "ToolSearch",
+        "Get Kiln Info",
+        "Semantic Search",
+        "List Notes",
+        "Read File",
+    ] {
+        assert!(
+            out.contains(title),
+            "tool card {title:?} missing from replay:\n{out}"
+        );
+    }
 }
 
 // ─── ACP presentation-parity fixtures ─────────────────────────────────────
@@ -397,13 +452,6 @@ fn replay_acp_parity_fixtures_80x24() {
         "acp_parity_read_delegated.jsonl",
     ] {
         let path = fixture_path(fixture);
-        assert!(
-            path.exists(),
-            "{} is missing; it is committed, so this is a broken checkout \
-             rather than a test to skip",
-            path.display()
-        );
-
         let result = replay_fixture(&path, 80, 24);
         assert!(
             result.violations.is_empty(),
@@ -419,11 +467,6 @@ fn replay_acp_parity_fixtures_80x24() {
 #[test]
 fn replay_reproduce_124x59() {
     let path = fixture_path("reproduce.jsonl");
-    if !path.exists() {
-        eprintln!("Skipping: {} not found", path.display());
-        return;
-    }
-
     let result = replay_fixture(&path, 124, 59);
 
     assert!(
@@ -467,10 +510,6 @@ fn replay_reproduce_124x59() {
 #[test]
 fn replay_reproduce_80x24() {
     let path = fixture_path("reproduce.jsonl");
-    if !path.exists() {
-        return;
-    }
-
     let result = replay_fixture(&path, 80, 24);
 
     assert!(

@@ -653,18 +653,7 @@ fn invariant_streaming_text_stable_chrome() {
 /// Fixture replay: the demo.jsonl fixture should pass all invariants.
 #[test]
 fn invariant_demo_fixture() {
-    let path = {
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let workspace_root = std::path::Path::new(manifest_dir)
-            .parent()
-            .and_then(|p| p.parent())
-            .expect("workspace root");
-        workspace_root.join("assets/fixtures/demo.jsonl")
-    };
-    if !path.exists() {
-        eprintln!("Skipping: {} not found", path.display());
-        return;
-    }
+    let path = super::helpers::fixture_path("demo.jsonl");
 
     use crate::tui::oil::chat_runner::SessionEventStream;
 
@@ -822,18 +811,7 @@ fn invariant_acp_parity_fixtures_every_frame() {
 fn invariant_reproduce_jsonl_every_frame() {
     use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
 
-    let path = {
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let workspace_root = std::path::Path::new(manifest_dir)
-            .parent()
-            .and_then(|p| p.parent())
-            .expect("workspace root");
-        workspace_root.join("assets/fixtures/reproduce.jsonl")
-    };
-    if !path.exists() {
-        eprintln!("Skipping: {} not found", path.display());
-        return;
-    }
+    let path = super::helpers::fixture_path("reproduce.jsonl");
 
     let content = std::fs::read_to_string(&path).unwrap();
     let mut app = OilChatApp::default();

@@ -12,13 +12,31 @@ use super::vt100_runtime::Vt100TestRuntime;
 ///
 /// The one place a test may name a fixture. A relative `../../assets/...`
 /// silently depends on which directory the runner happens to start in.
+///
+/// **Panics if the fixture is absent, by design.** Every fixture under
+/// `assets/fixtures` is committed, so a missing one is a broken checkout, not a
+/// condition to tiptoe around. The replay tests used to open with
+/// `if !path.exists() { eprintln!("Skipping…"); return; }` — which reports
+/// success while asserting nothing. Deleting all four recordings left nine such
+/// tests passing in 0.02s apiece. Resolving through here makes that
+/// unrepresentable: there is no way to name a fixture and receive a path that
+/// does not exist.
 pub fn fixture_path(name: &str) -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|p| p.parent())
         .expect("workspace root")
         .join("assets/fixtures")
-        .join(name)
+        .join(name);
+
+    assert!(
+        path.exists(),
+        "fixture {} is missing. It is committed to the repo, so this is a \
+         broken checkout — not a test to skip.",
+        path.display()
+    );
+
+    path
 }
 
 /// Read `assets/fixtures/<name>`, panicking with the resolved path on failure.
