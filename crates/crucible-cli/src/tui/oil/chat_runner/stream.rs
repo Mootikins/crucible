@@ -79,6 +79,15 @@ impl SessionEventStream {
     /// The [`MIN_REPLAY_RUN_DELTAS`] floor is what keeps a *repetition* from
     /// being mistaken for a replay. Dropping content is unrecoverable, so the
     /// rule must never fire on a run short enough to be one ordinary thought.
+    ///
+    /// The comparison is byte-exact, deliberately. A replay whose bytes differ
+    /// from its run — by a trailing newline, say — renders, painting the block
+    /// twice. Equality is the only predicate here that says something about how
+    /// the payload was *produced*; every looser one is a similarity heuristic
+    /// feeding a code path that deletes without a trace. A visible duplicate is
+    /// recoverable and a deleted thought is not, and no recording in
+    /// `assets/fixtures` is non-exact, so nothing is bought by loosening it.
+    /// Pinned by `a_replay_that_is_not_byte_exact_renders_twice_on_purpose`.
     fn is_thinking_replay(&self, data: &serde_json::Value) -> bool {
         self.thinking_run_deltas >= MIN_REPLAY_RUN_DELTAS
             && data.get("content").and_then(|v| v.as_str()) == Some(self.thinking_run.as_str())

@@ -269,6 +269,59 @@ fn a_single_delta_thought_is_never_a_replay_boundary() {
 }
 
 #[test]
+fn a_replay_that_is_not_byte_exact_renders_twice_on_purpose() {
+    // A replay whose bytes differ from the run — here by one trailing newline —
+    // is rendered, painting the reasoning block a second time. That is the
+    // intended fall of the rule, not an oversight, and this test exists to keep
+    // it a decision rather than an accident.
+    //
+    // Byte-equality is the only predicate here with a *reason* behind it: a
+    // replay is by construction the concatenation of the run that preceded it,
+    // so equality is a statement about how the payload was produced. Every
+    // looser predicate — equal modulo trailing whitespace, prefix-of, "close
+    // enough" — is a similarity heuristic, and each one admits a fresh class of
+    // genuine reasoning into a code path that deletes without a trace.
+    //
+    // The two failure modes are not symmetric, which is what settles it. A
+    // replay that renders is a visible duplicate: the user reads it, recognises
+    // it, scrolls past. A real thought that is dropped is gone, and the user has
+    // no way to know it existed. `MIN_REPLAY_RUN_DELTAS` was added for exactly
+    // that reason, and loosening the comparison reopens the same hazard from
+    // the other side.
+    //
+    // Nor is the loosening earning anything today: all 11 replays across the
+    // four recordings in `assets/fixtures` are byte-identical to their runs, so
+    // no recording in this repo — including the pre-2026-04-27 ones, which are
+    // the whole reason this converter still dedupes at all — needs it. A
+    // provider that normalizes its `captured_reasoning_content` would show a
+    // duplicated block, and the fix then belongs at the source, next to
+    // `ReasoningEmissionState`, where the exact normalization is known.
+    //
+    // The non-match also leaves the run in place and appends to it, so the cost
+    // of guessing wrong stays bounded at "rendered twice" — the following
+    // assertion pins that no thought after it is deleted either.
+    let mut stream = SessionEventStream::new();
+    let mut msgs = Vec::new();
+    for (t, d) in [
+        ("user_message", json!({"content": "hi"})),
+        ("thinking", json!({"content": "read "})),
+        ("thinking", json!({"content": "the config"})),
+        ("thinking", json!({"content": "read the config\n"})),
+        ("thinking", json!({"content": "now run it"})),
+    ] {
+        msgs.extend(stream.translate(t, &d));
+    }
+
+    assert_eq!(
+        thinking_of(&msgs),
+        vec!["read ", "the config", "read the config\n", "now run it"],
+        "the byte-exactness rule changed direction: a replay that differs from \
+         its run is now suppressed, which trades a visible duplicate for a \
+         silent deletion"
+    );
+}
+
+#[test]
 fn a_replay_is_still_dropped_at_the_minimum_run_length() {
     // The floor is two deltas, not more: a run of exactly two must still have
     // its replay suppressed, or the fix would have traded one silent deletion
