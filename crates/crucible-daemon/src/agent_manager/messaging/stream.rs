@@ -318,7 +318,15 @@ impl AgentManager {
         let mut blocked_tools: HashSet<String> = HashSet::new();
         let mut last_failure_key: Option<(String, String)> = None;
         let mut consecutive_failure_count = 0usize;
-        let mut tool_calls_dispatched = false;
+        // Did this turn produce any tool activity the user can see? Set on
+        // both forks — the dispatch path below and the `agent_owns_tools`
+        // pass-through, which `continue`s before ever reaching the dispatch
+        // site. Reading it as "dispatched" made the empty-response guard fire
+        // on every delegated turn that ran tools and narrated nothing.
+        // Depth-capped calls deliberately do not count: they are dropped
+        // undispatched, and the guard's `depth_cap_triggered` arm is what
+        // should report them.
+        let mut saw_tool_activity = false;
         // Args of tool calls an ACP-style agent announced but executed itself,
         // kept so the pass-through `tool_result` below can hand handlers the
         // same `{tool, args, ...}` payload the dispatched path gets. Keyed by
@@ -454,6 +462,7 @@ impl AgentManager {
                     // count it toward the tool-depth cap. The agent streams its
                     // own ToolResult + follow-up text, handled below.
                     if agent_owns_tools {
+                        saw_tool_activity = true;
                         acp_tool_args.insert(id.clone(), args.clone());
                         {
                             let mut tree = stream_ctx.conversation_tree.lock().await;
@@ -564,7 +573,7 @@ impl AgentManager {
                         continue;
                     }
 
-                    tool_calls_dispatched = true;
+                    saw_tool_activity = true;
 
                     // Commit to scheduler-owned conversation tree
                     // (shadow state until handle.history retires).
@@ -965,7 +974,7 @@ impl AgentManager {
         drop(inbound_tx);
 
         // Empty response handling.
-        if accumulated_response.trim().is_empty() && !tool_calls_dispatched {
+        if accumulated_response.trim().is_empty() && !saw_tool_activity {
             let error_reason = if depth_cap_triggered {
                 "error: max_tool_depth exceeded".to_string()
             } else {

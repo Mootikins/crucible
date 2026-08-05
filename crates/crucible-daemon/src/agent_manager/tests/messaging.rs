@@ -250,6 +250,52 @@ async fn acp_pass_through_tool_call_names_the_agent_in_its_source() {
     );
 }
 
+/// A delegated turn that only ran tools is a success, not an error.
+///
+/// The empty-response guard (`stream.rs`) fires when the turn accumulated no
+/// text *and* dispatched no tools — but `tool_calls_dispatched` is set only on
+/// the dispatch path, which the `agent_owns_tools` arm `continue`s past. So a
+/// delegated turn that ran tools and narrated nothing tripped the guard: the
+/// user saw `error: LLM returned empty response` on a turn that worked, while
+/// the identical internal turn completed normally. `AcpAgentHandle` reports
+/// `EndTurn` for the same turn, so the two layers disagreed outright.
+#[tokio::test]
+async fn owns_history_tool_only_turn_is_not_reported_as_an_empty_response() {
+    let mut h = ReactorTestHarness::new().await;
+    h.inject_agent(Box::new(OwnsToolsMockAgent {
+        events: vec![
+            script::tool_call("call1", "Write", serde_json::json!({"path": "a.txt"})),
+            script::tool_result("call1", "Write", "wrote 12 bytes"),
+            crucible_core::turn::TurnEvent::ToolBatchEnd,
+            script::done(),
+        ],
+    }));
+
+    h.send("write a.txt").await;
+
+    // The turn must reach `message_complete` without an error `ended` on the
+    // way — an empty `full_response` is correct here; an error is not.
+    timeout(Duration::from_secs(2), async {
+        loop {
+            match h.event_rx.recv().await {
+                Ok(event) if event.event == "ended" => {
+                    let reason = event.data["reason"].as_str().unwrap_or_default();
+                    assert!(
+                        !reason.starts_with("error:"),
+                        "a delegated turn that only ran tools ended in error: {reason}"
+                    );
+                }
+                Ok(event) if event.event == "message_complete" => return,
+                Ok(_) => continue,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(err) => panic!("event channel closed: {err}"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for message_complete on a tool-only delegated turn");
+}
+
 /// A `tool_result` handler must fire for tool calls an ACP-style agent ran
 /// itself, not just for ones the daemon dispatched. The pass-through arm used
 /// to emit straight to subscribers, so a redactor scrubbed the transcript for
