@@ -164,6 +164,33 @@ pub(crate) fn open_permission(
         .open_interaction(request_id.to_string(), request)
 }
 
+/// Open a *tool* permission request modal, built exactly the way the daemon
+/// builds one: `PermRequest::tool(name, args)` carrying whatever
+/// `synthesize_diffs` makes of that name and those args against `workspace`.
+///
+/// Both live construction sites are literally this shape — the ACP gate
+/// (`agent_manager/messaging/permission.rs`, the `request_permission`
+/// callback) and the internal tool loop (same file, the `interaction_requested`
+/// emitter). They differ only in where `name` comes from: the internal one has
+/// the real tool name, the ACP one has a coarse `ToolKind`-derived stand-in
+/// (`acp_tool_name`). Calling the daemon's own synthesizer rather than handing
+/// in diffs means a change to tool-name normalization shows up here instead of
+/// being papered over by a hand-built `FileDiff`.
+pub(crate) fn open_tool_permission(
+    story: &mut StoryRuntime,
+    request_id: &str,
+    tool_name: &str,
+    args: serde_json::Value,
+    workspace: &std::path::Path,
+) -> Action<ChatAppMsg> {
+    let diffs = crucible_daemon::tools::diff_synth::synthesize_diffs(tool_name, &args, workspace);
+    let request =
+        InteractionRequest::Permission(PermRequest::tool(tool_name, args).with_diffs(diffs));
+    story
+        .app()
+        .open_interaction(request_id.to_string(), request)
+}
+
 /// Press `y` to approve the open permission modal; returns the allow/deny
 /// decision the modal emitted (`Some(true)` when approved).
 pub(crate) fn approve_permission(story: &mut StoryRuntime) -> Option<bool> {

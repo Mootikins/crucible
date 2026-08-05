@@ -22,7 +22,7 @@ use serde_json::json;
 use super::support::StoryRuntime;
 use super::vocab::{
     announce_tool_call, attach_late_diff, complete_tool_call, hydrate_from_recording,
-    relay_session_event, relay_session_turn, send_user_message,
+    open_tool_permission, relay_session_event, relay_session_turn, send_user_message,
 };
 
 const READ_ARGS: &str = r#"{"path":"README.md"}"#;
@@ -359,4 +359,142 @@ fn acp_delegated_turn_frame() {
     let mut story = StoryRuntime::new(80, 24);
     hydrate_from_recording(&mut story, "acp_parity_delegated.jsonl");
     insta::assert_snapshot!(story.fresh_screen());
+}
+
+// ---------------------------------------------------------------------------
+// Divergence C3: the permission modal's tool name on the ACP path.
+//
+// ACP carries no tool name on the wire. `ToolCallUpdateFields` has `title`
+// (prose for a human — "Read src/main.rs") and `kind` (a category), so the
+// daemon's gate derives a name from `kind`: `read`/`edit`/`bash`/`acp_tool`
+// (`acp_tool_name`, `agent_manager/messaging/permission.rs`). Keying on
+// `title` was tried and abandoned — it made `is_safe` never true and left the
+// whole gate unreachable. The modal therefore shows a coarse category where an
+// internally-run tool shows its real name.
+//
+// These tests pin that, deliberately. **The upgrade path is schema 1.6.0's
+// `unstable_tool_call_name`**, which would replace the derivation outright at
+// the cost of moving `agent-client-protocol` 0.10 → 2.0 and opting into a
+// field its own docs call removable. When that lands, these tests are the
+// thing that should change — read `acp_tool_name`'s doc comment, then update
+// the expected name here. Failing after that upgrade is the intended outcome,
+// not a regression.
+// ---------------------------------------------------------------------------
+
+/// A workspace holding the file both modal legs below edit, so the daemon's
+/// real `synthesize_diffs` has something on disk to diff against — an edit
+/// whose `old_string` isn't found produces no diff at all.
+fn workspace_with_main_rs() -> tempfile::TempDir {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    std::fs::write(dir.path().join("main.rs"), "fn main() {\n    old();\n}\n").expect("write");
+    dir
+}
+
+/// The edit an agent asks permission for. Identical on both legs: the *only*
+/// difference under test is the tool name the daemon had available.
+fn edit_args() -> serde_json::Value {
+    json!({
+        "path": "main.rs",
+        "old_string": "    old();",
+        "new_string": "    fresh();",
+    })
+}
+
+#[test]
+fn an_acp_permission_modal_names_the_tool_kind_not_the_tool() {
+    let ws = workspace_with_main_rs();
+    let mut story = StoryRuntime::new(80, 30);
+    send_user_message(&mut story, "fix main.rs");
+    // `ToolKind::Edit` is all the wire carried, so this is the name the gate
+    // matched rules against and the name the user is shown.
+    let _ = open_tool_permission(&mut story, "req-1", "edit", edit_args(), ws.path());
+
+    let frame = story.fresh_screen();
+    // Pinned, not endorsed: see the C3 comment above. `unstable_tool_call_name`
+    // (schema 1.6.0) is what would make this read `edit_file` — changing this
+    // literal is the deliberate signal that the upgrade happened.
+    assert!(
+        frame.contains(r#"edit (path="main.rs""#),
+        "the ACP permission modal stopped showing the kind-derived name:\n{frame}"
+    );
+    assert!(
+        !frame.contains("edit_file"),
+        "the ACP modal named a real tool — the wire cannot know one, so \
+         something is inventing it:\n{frame}"
+    );
+}
+
+#[test]
+fn an_acp_permission_modal_still_shows_its_diff() {
+    let ws = workspace_with_main_rs();
+    let mut story = StoryRuntime::new(80, 30);
+    send_user_message(&mut story, "fix main.rs");
+    let _ = open_tool_permission(&mut story, "req-1", "edit", edit_args(), ws.path());
+
+    let frame = story.fresh_screen();
+    // The coarse name is what `synthesize_diffs` normalizes, and `edit` is one
+    // of the names it knows — so the diff survives the naming divergence and
+    // US-401's expand/collapse toggle has a body to act on. (The acceptance
+    // text in `docs/Meta/TUI User Stories.md` says `d`; the modal binds `h`,
+    // and the hint line below is what the user actually reads.)
+    assert!(
+        frame.contains("-    old();") && frame.contains("+    fresh();"),
+        "the ACP permission modal rendered no diff body — a delegated edit is \
+         approved blind:\n{frame}"
+    );
+    assert!(
+        frame.contains("press h to expand/collapse diff"),
+        "the diff toggle hint is gone, so the body cannot be collapsed:\n{frame}"
+    );
+}
+
+#[test]
+fn an_internal_permission_modal_names_the_real_tool() {
+    // The contrast leg: same edit, same args, same synthesized diff — the
+    // daemon's own tool loop has the registry name, so it shows it.
+    let ws = workspace_with_main_rs();
+    let mut story = StoryRuntime::new(80, 30);
+    send_user_message(&mut story, "fix main.rs");
+    let _ = open_tool_permission(&mut story, "req-1", "edit_file", edit_args(), ws.path());
+
+    let frame = story.fresh_screen();
+    assert!(
+        frame.contains(r#"edit_file (path="main.rs""#),
+        "the internal permission modal lost the real tool name:\n{frame}"
+    );
+    assert!(
+        frame.contains("-    old();") && frame.contains("+    fresh();"),
+        "the internal permission modal rendered no diff body:\n{frame}"
+    );
+}
+
+#[test]
+fn an_acp_shell_permission_modal_shows_the_command_not_the_derived_name() {
+    // The divergence's boundary: for `ToolKind::Execute` the modal renders the
+    // command line and drops the tool name entirely (`ToolDisplayKind::Command`
+    // in `render_perm_interaction`), so the coarse `bash` never reaches the
+    // screen and this path costs nothing. Pinned so a change that started
+    // printing the derived name — `bash (command="…")` — shows up as a
+    // *behaviour* change rather than as cosmetics.
+    let ws = workspace_with_main_rs();
+    let mut story = StoryRuntime::new(80, 30);
+    send_user_message(&mut story, "clean up");
+    let _ = open_tool_permission(
+        &mut story,
+        "req-1",
+        "bash",
+        json!({"command": "rm -rf build"}),
+        ws.path(),
+    );
+
+    let frame = story.fresh_screen();
+    assert!(
+        frame.contains("rm -rf build"),
+        "the shell permission modal did not show the command:\n{frame}"
+    );
+    assert!(
+        !frame.contains("bash (command"),
+        "the derived tool name leaked into a shell prompt that reads as a \
+         command line:\n{frame}"
+    );
 }
