@@ -30,15 +30,30 @@ impl CrucibleAcpClient {
             "result": result_value
         });
 
-        self.write_permission_response(json_response).await
+        self.write_agent_response(json_response).await
     }
 
-    async fn write_permission_response(&mut self, payload: serde_json::Value) -> Result<()> {
-        if self.agent_stdin.is_none() && self.boxed_writer.is_none() {
-            tracing::warn!("Agent stdin unavailable; cannot send permission response");
-            return Ok(());
-        }
-        self.write_request(&payload).await
+    /// Answer an inbound *request* whose method we do not implement.
+    ///
+    /// A frame carrying an `id` is a request: the agent blocks until it gets a
+    /// response. Dropping it hangs the turn until a read timeout fires, so an
+    /// unknown method has to come back as JSON-RPC `-32601` instead.
+    pub(super) async fn respond_method_not_found(
+        &mut self,
+        request_id: u64,
+        method: &str,
+    ) -> Result<()> {
+        tracing::debug!(request_id, method, "Refusing unimplemented ACP method");
+
+        self.write_agent_response(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {
+                "code": -32601,
+                "message": format!("Method not found: {method}"),
+            }
+        }))
+        .await
     }
 
     pub(super) fn parse_request_id(&self, value: &serde_json::Value) -> Option<u64> {

@@ -31,6 +31,21 @@ impl CrucibleAcpClient {
         Ok(response)
     }
 
+    /// Write a reply to a request the *agent* sent us.
+    ///
+    /// Unlike [`Self::write_request`], a missing transport is not an error: the
+    /// agent is already gone, so there is nobody left to answer.
+    ///
+    /// The guard checks both writers — an earlier version checked only
+    /// `agent_stdin` and silently dropped every reply on in-process transports.
+    pub(super) async fn write_agent_response(&mut self, payload: serde_json::Value) -> Result<()> {
+        if self.agent_stdin.is_none() && self.boxed_writer.is_none() {
+            tracing::warn!("Agent transport unavailable; cannot send response");
+            return Ok(());
+        }
+        self.write_request(&payload).await
+    }
+
     /// Write a JSON request to the agent's stdin
     ///
     /// # Arguments

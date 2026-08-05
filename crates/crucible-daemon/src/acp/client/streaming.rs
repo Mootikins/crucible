@@ -354,6 +354,24 @@ impl CrucibleAcpClient {
         }
     }
 
+    /// Handle an inbound frame whose method we do not implement.
+    ///
+    /// A frame with an `id` is a request and gets a `-32601` reply; one without
+    /// is a notification, which by JSON-RPC must not be answered at all.
+    async fn refuse_unhandled_method(
+        &mut self,
+        frame: &serde_json::Value,
+        method_name: &str,
+    ) -> Result<()> {
+        match frame.get("id").and_then(|id| self.parse_request_id(id)) {
+            Some(request_id) => self.respond_method_not_found(request_id, method_name).await,
+            None => {
+                tracing::debug!("Ignoring RPC notification: {}", method_name);
+                Ok(())
+            }
+        }
+    }
+
     /// Send a `session/cancel` notification so the agent stops the in-flight
     /// turn. Per ACP, the agent then ends the turn with `StopReason::Cancelled`.
     async fn send_session_cancel(&mut self, session_id: &str) -> Result<()> {
@@ -405,6 +423,8 @@ impl CrucibleAcpClient {
                         }
                     }
                 }
+            } else {
+                self.refuse_unhandled_method(response, method_name).await?;
             }
 
             return Ok(None);
@@ -726,7 +746,7 @@ impl CrucibleAcpClient {
                     tracing::warn!("session/request_permission missing params");
                 }
             } else {
-                tracing::debug!("Ignoring RPC method: {}", method_name);
+                self.refuse_unhandled_method(response, method_name).await?;
             }
 
             return Ok(None);
