@@ -19,15 +19,27 @@
 //! hermetic: it never spawns an agent, so these tests are **not** `#[ignore]`d
 //! and run on any machine.
 //!
-//! ## Why not the `acp_support::parity` harness
+//! ## Why [`ChunkShape`] is spelled out here
 //!
-//! `ShapeProjector`/`shapes()` project a `TurnEvent` stream, which is what
-//! `AcpAgentHandle` emits. `AcpAgentHandle::new` spawns a real agent process
-//! and has no transport-injection constructor, so a fixture cannot be driven
-//! through it — this test sits one layer lower, on `CrucibleAcpClient`, whose
-//! per-turn output is a `StreamingChunk` callback. [`ChunkShape`] below is the
-//! same idea (ordered, value-normalized projection with adjacent runs
-//! coalesced) applied at the layer this test can actually reach.
+//! `acp_support::parity::chunk_kind` already projects a `StreamingChunk` onto
+//! its variant name, which is exactly what [`shape_of`] below does — the two
+//! are structural twins, differing only in returning `&'static str` versus an
+//! enum. The duplication is not a design choice: `acp_support` is a
+//! `#[path]`-included module tree, and this binary does not include it. Reaching
+//! `chunk_kind` would mean pulling that tree into a test that needs none of the
+//! rest of it. If a third `StreamingChunk` projection appears, or this binary
+//! grows a reason to include `acp_support` anyway, collapse them.
+//!
+//! [`coalesce`] has no counterpart there and is the part that carries judgement:
+//! chunk *boundaries* are an artifact of the agent's flush cadence, so only the
+//! run-collapsed sequence is a contract.
+//!
+//! A different near-neighbour, `acp_support::parity`'s `ShapeProjector`/
+//! `shapes()`, is genuinely inapplicable rather than merely out of reach: it
+//! projects a `TurnEvent` stream, which is what `AcpAgentHandle` emits, and
+//! `AcpAgentHandle::new` spawns a real agent process with no
+//! transport-injection constructor — so a fixture cannot be driven through it
+//! at all. This test sits one layer lower, on `CrucibleAcpClient`.
 
 use std::path::{Path, PathBuf};
 
