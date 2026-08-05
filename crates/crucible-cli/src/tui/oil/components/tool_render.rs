@@ -354,8 +354,29 @@ pub(crate) fn format_elapsed(duration: Duration) -> String {
 /// the `Edit`/`Write` arms, as they were — and that costs no parity, because
 /// both tools answer with one short line (`Replaced N occurrence(s)`), which
 /// [`collapse_result`] returns verbatim before it ever reaches the table.
-fn summary_key(name: &str) -> String {
-    crucible_daemon::acp::streaming::humanize_tool_title(name)
+///
+/// # Namespaced names are not keys
+///
+/// The humanizer exists to build a *display name*, so it strips whatever
+/// namespace a tool arrived under: `mcp__crucible__write`, `mcp__fs__write` and
+/// `plugin_foo__write` all show as `Write`. That is right in a header and wrong
+/// as a summary key — [`collapse_result`]'s `Write` arm is unconditional and
+/// replaces the entire result with the word `written`, so keying on the
+/// stripped name would silently destroy the output of any third-party MCP or
+/// plugin tool whose trailing segment happened to be `write` or `edit`.
+///
+/// So a `__` in the name — the separator every namespacing scheme here uses —
+/// disqualifies it. That costs nothing on the ACP path this normalization was
+/// added for: a delegated card's name has *already* been through the humanizer
+/// (`acp_handle/translate.rs`), and its title-caser splits on `_`, so a
+/// humanized name never contains `__`. The rule is what keeps the change
+/// additive — it admits the prose spellings ACP needs and no name that did not
+/// already reach these tables before.
+fn summary_key(name: &str) -> Option<String> {
+    if name.contains("__") {
+        return None;
+    }
+    Some(crucible_daemon::acp::streaming::humanize_tool_title(name))
 }
 
 fn collapse_result(name: &str, result: &str, summary: Option<&str>) -> Option<String> {
@@ -373,9 +394,9 @@ fn collapse_result(name: &str, result: &str, summary: Option<&str>) -> Option<St
         return Some(inner.trim().to_string());
     }
 
-    match summary_key(name).as_str() {
-        "Write" => Some("written".to_string()),
-        "Edit" => Some("applied".to_string()),
+    match summary_key(name).as_deref() {
+        Some("Write") => Some("written".to_string()),
+        Some("Edit") => Some("applied".to_string()),
         _ => None,
     }
 }
@@ -480,8 +501,8 @@ pub fn format_tool_result(name: &str, result: &str, width: usize) -> Node {
 /// Summarize tool result into a short string.
 pub fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
     let inner = unwrap_json_result(result);
-    match summary_key(name).as_str() {
-        "Read File" | "Read" => {
+    match summary_key(name).as_deref() {
+        Some("Read File" | "Read") => {
             // Extract short bracketed metadata (e.g., "[Directory Context: ...]") if present,
             // but not spill references or long content
             let bracket_summary = inner.rfind('[').and_then(|i| {
@@ -494,15 +515,15 @@ pub fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
             });
             bracket_summary.or_else(|| Some(format!("{} lines", inner.lines().count())))
         }
-        "Glob" => count_newline_items(&inner).map(|n| format!("{} files", n)),
-        "Grep" => count_grep_matches(&inner).map(|n| format!("{} matches", n)),
-        "Edit" if inner.contains("success") || inner.contains("applied") => {
+        Some("Glob") => count_newline_items(&inner).map(|n| format!("{} files", n)),
+        Some("Grep") => count_grep_matches(&inner).map(|n| format!("{} matches", n)),
+        Some("Edit") if inner.contains("success") || inner.contains("applied") => {
             Some("applied".to_string())
         }
-        "Write" if inner.contains("success") || inner.contains("written") => {
+        Some("Write") if inner.contains("success") || inner.contains("written") => {
             Some("written".to_string())
         }
-        "Bash" => {
+        Some("Bash") => {
             let lines: Vec<&str> = inner.lines().collect();
             if lines.len() <= 1 && inner.len() < 60 {
                 Some(inner.trim().to_string())
@@ -687,9 +708,13 @@ mod tests {
     /// to the humanized spelling as well as the snake_case one. The prose
     /// forms carry no underscore at all, which is why a snake_case-only
     /// normalizer would not have been enough.
+    ///
+    /// The namespaced spelling `mcp__crucible__read_file` is deliberately
+    /// absent — see [`a_namespaced_tool_reaches_no_summary_arm`]. Nothing is
+    /// lost: a delegated agent's call is humanized to `Read`/`Read File`
+    /// before it ever reaches here.
     #[test_case("read_file", "3 lines"; "internal_snake_case")]
     #[test_case("mcp_read", "3 lines"; "mcp_prefixed")]
-    #[test_case("mcp__crucible__read_file", "3 lines"; "mcp_double_underscore")]
     #[test_case("Read File", "3 lines"; "acp_title_two_words")]
     #[test_case("Read", "3 lines"; "acp_title_one_word")]
     fn every_spelling_of_read_summarizes_the_same(name: &str, expected: &str) {
@@ -737,6 +762,43 @@ mod tests {
     #[test_case("write_file", "written successfully"; "write_file_is_not_write")]
     fn compound_internal_names_stay_out_of_the_short_arms(name: &str, result: &str) {
         assert_eq!(summarize_tool_result(name, result), None);
+    }
+
+    /// A `__` in the name is a foreign namespace — `mcp__<server>__<tool>`,
+    /// `plugin_<name>__<tool>`. That tool's `write` is somebody else's `write`,
+    /// and `collapse_result`'s `Write` arm answers *unconditionally*: it
+    /// replaces the whole result with the literal word `written`. Normalizing a
+    /// namespaced name into the internal table therefore destroys the output of
+    /// every MCP or plugin tool whose trailing segment happens to be `write` or
+    /// `edit`, on every card, for users who never touch ACP.
+    #[test_case("mcp__crucible__write"; "mcp_crucible_write")]
+    #[test_case("mcp__crucible__edit"; "mcp_crucible_edit")]
+    #[test_case("mcp__fs__write"; "mcp_third_party_write")]
+    #[test_case("plugin_foo__write"; "plugin_write")]
+    #[test_case("plugin_foo__edit"; "plugin_edit")]
+    fn a_namespaced_tool_keeps_its_whole_result(name: &str) {
+        let long = "first line of real output\n\
+                    second line the user needs to see\n\
+                    third line, well past the sixty-character short-result branch";
+        assert_eq!(
+            collapse_result(name, long, None),
+            None,
+            "`{name}` had its result replaced by a one-word summary"
+        );
+    }
+
+    /// Same rule on the other table. The derived summaries are not
+    /// word-for-word destructive like `collapse_result`, but they still hide a
+    /// foreign tool's output behind a count invented for Crucible's own tools.
+    #[test_case("mcp__crucible__read_file", "alpha\nbeta\ngamma"; "namespaced_read")]
+    #[test_case("mcp__fs__glob", "a.rs\nb.rs"; "namespaced_glob")]
+    #[test_case("plugin_foo__write", "Report written to the log\nand here is what it says"; "namespaced_write")]
+    fn a_namespaced_tool_reaches_no_summary_arm(name: &str, result: &str) {
+        assert_eq!(
+            summarize_tool_result(name, result),
+            None,
+            "`{name}` was summarized as if it were an internal tool"
+        );
     }
 
     /// The other half of the table: the long-result fallback in
