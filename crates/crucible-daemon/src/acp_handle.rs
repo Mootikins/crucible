@@ -737,6 +737,7 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                 }
                 Ok(Err(e)) => {
                     warn!(error = %e, "ACP stream error");
+                    orphaned_results.log_dropped("ACP stream error");
                     let turn_err = match e {
                         crate::acp::ClientError::Connection(msg) => TurnError::Connection(
                             format!("ACP agent connection lost: {msg}"),
@@ -779,6 +780,7 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                 }
                 Err(_) => {
                     warn!("ACP streaming task dropped (oneshot cancelled)");
+                    orphaned_results.log_dropped("ACP streaming task dropped");
                     yield TurnEvent::Error(TurnError::AgentUnavailable(
                         "ACP agent process terminated unexpectedly".to_string(),
                     ));

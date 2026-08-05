@@ -193,6 +193,11 @@ impl OrphanedResults {
         {
             tracing::warn!(
                 tool_id = %id,
+                // The payload, not just the id: the daemon log is the only
+                // place a dropped result survives, so this arm reports the same
+                // thing the end-of-turn drop does.
+                result = ?result,
+                error = ?error,
                 held = self.entries.len(),
                 held_bytes = self.bytes,
                 entry_bytes,
@@ -206,6 +211,33 @@ impl OrphanedResults {
 
         self.bytes += entry_bytes;
         self.entries.push((id, result, error));
+    }
+
+    /// Report every result still held, because the turn is ending without a
+    /// chance to name them.
+    ///
+    /// The success arm consumes this buffer and logs whatever it could not
+    /// name. The failure arms — a `ClientError` from the stream, or the
+    /// streaming task's oneshot being dropped — used to let it fall out of
+    /// scope silently, so a turn that errored *after* deferring a result lost
+    /// that result with no trace anywhere: not in `session.jsonl`, not in
+    /// `recording.jsonl`, not through a Lua handler, and not in the log either.
+    /// A failing turn is exactly when the held payload is most worth reading.
+    ///
+    /// This is a report, not a `Drop` impl: the success arm moves `entries` out
+    /// via `IntoIterator`, which a `Drop` impl would forbid.
+    pub(super) fn log_dropped(&self, reason: &str) {
+        for (id, result, error) in &self.entries {
+            tracing::warn!(
+                tool_id = %id,
+                result = ?result,
+                error = ?error,
+                reason,
+                "ACP turn ended before this deferred tool result could be named; \
+                 dropping (lost from session.jsonl, recordings, Lua handlers and \
+                 send_and_collect)"
+            );
+        }
     }
 }
 
@@ -246,6 +278,112 @@ mod tests {
             vec!["t0", "t1", "t2"],
             "the byte cap let the buffer grow to the count cap's worth of \
              agent-sized payloads"
+        );
+    }
+
+    /// Capture `warn!` output so the "the log is the only place it survives"
+    /// claim can actually be checked.
+    fn captured_warnings(body: impl FnOnce()) -> String {
+        use std::io;
+        use std::sync::{Arc, Mutex};
+        use tracing_subscriber::layer::SubscriberExt;
+
+        #[derive(Clone)]
+        struct SharedBuf(Arc<Mutex<Vec<u8>>>);
+        impl io::Write for SharedBuf {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(buf);
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SharedBuf {
+            type Writer = SharedBuf;
+            fn make_writer(&'a self) -> Self::Writer {
+                self.clone()
+            }
+        }
+
+        let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+        let subscriber = tracing_subscriber::registry().with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(buf.clone())
+                .with_ansi(false)
+                .without_time(),
+        );
+        tracing::subscriber::with_default(subscriber, body);
+        let out = String::from_utf8_lossy(&buf.0.lock().unwrap()).to_string();
+        out
+    }
+
+    /// The cap warning must carry the payload it is discarding, like the
+    /// end-of-turn drop does. Logging only the id says a result was lost and
+    /// nothing about what was in it — and the log is the only place it lands.
+    #[test]
+    fn the_cap_warning_reports_the_payload_it_discards() {
+        let logged = captured_warnings(|| {
+            let mut orphans = OrphanedResults::default();
+            orphans.push(
+                "huge".to_string(),
+                Some(format!(
+                    "SENTINEL-PAYLOAD{}",
+                    "x".repeat(MAX_ORPHANED_RESULT_BYTES)
+                )),
+                None,
+            );
+        });
+
+        assert!(
+            logged.contains("SENTINEL-PAYLOAD"),
+            "the cap warning named the dropped result but not its content:\n{logged}"
+        );
+    }
+
+    /// A turn that errors after deferring a result must still say what it lost.
+    ///
+    /// The success arm drains this buffer and logs whatever it could not name.
+    /// The two failure arms in `acp_handle.rs` used to drop it silently, so a
+    /// result deferred just before a connection error vanished from every sink
+    /// there is, the log included.
+    ///
+    /// **This pins the report, not the two call sites.** Reaching them needs a
+    /// turn that defers a result and *then* has its stream fail, which the mock
+    /// agent has no hook for; the call sites are one line each in
+    /// `acp_handle.rs`'s `Ok(Err(..))` and dropped-oneshot arms.
+    #[test]
+    fn a_turn_ending_in_error_reports_the_results_it_still_holds() {
+        let logged = captured_warnings(|| {
+            let mut orphans = OrphanedResults::default();
+            orphans.push(
+                "call-1".to_string(),
+                Some("SENTINEL-HELD-RESULT".to_string()),
+                None,
+            );
+            orphans.push(
+                "call-2".to_string(),
+                None,
+                Some("SENTINEL-HELD-ERROR".into()),
+            );
+            orphans.log_dropped("ACP stream error");
+        });
+
+        for sentinel in [
+            "SENTINEL-HELD-RESULT",
+            "SENTINEL-HELD-ERROR",
+            "call-1",
+            "call-2",
+        ] {
+            assert!(
+                logged.contains(sentinel),
+                "a deferred result was dropped without `{sentinel}` reaching the \
+                 log:\n{logged}"
+            );
+        }
+        assert!(
+            logged.contains("ACP stream error"),
+            "the drop report did not say why the turn ended:\n{logged}"
         );
     }
 
