@@ -787,7 +787,7 @@ presentation divergence rather than the by-design `owns_history` asymmetry.
 
 | # | Difference | Classification |
 |---|---|---|
-| 1 | `source`: `Core` vs `Acp:claude` → ` [acp:claude]` on the card | **Deliberate.** This is the badge Task 2 added; erasing it is the failure mode, not the fix. Encoded explicitly: the test asserts `assert_ne!` on the raw frames *and* `assert_eq!` after removing exactly the string `" [acp:claude]"`. Both halves are load-bearing — mutation-verified by flipping the delegated fixture's source to `Core` (kills the `assert_ne!`). |
+| 1 | `source`: `Core` vs `Acp:claude` → a space-prefixed `[acp:claude]` badge on the card | **Deliberate.** This is the badge Task 2 added; erasing it is the failure mode, not the fix. Encoded explicitly: the test asserts `assert_ne!` on the raw frames *and* `assert_eq!` after removing exactly the string `" [acp:claude]"`. Both halves are load-bearing — mutation-verified by flipping the delegated fixture's source to `Core` (kills the `assert_ne!`). |
 | 2 | `description`: registry text on internal, absent on ACP (divergence **A2**) | **Not frame-observable, and the plan's expectation here was wrong.** The task predicted the equality test would fail on this. It does not, because `session_event_to_chat_msgs` hard-codes `let description = None` for *every* path ("not shown during live streaming … omit on resume for consistency"), and it is the **only** producer of `ChatAppMsg::ToolCall` — the live TUI shares the converter with replay. So A2's description half is a `crucible-web` concern, not a TUI one. **No daemon fix was made:** the "fixable" option (look up a description in the ACP arm) would add a field the TUI still discards, i.e. speculative work behind an unobservable seam. The asymmetry is deliberately *left in the fixtures* so that wiring descriptions through for one arm only breaks this test. |
 | 3 | diff delivery: on the `tool_call` (internal, `diff_synth`) vs a later `tool_call_diff_update` (ACP) | **Fixed by design, now pinned.** Both land on the same card and render the same body. Mutation-verified by deleting the `tool_call_diff_update` line from the delegated fixture. |
 | 4 | `tool`: `edit_file` vs `Edit File` | **Deliberate and invisible.** ACP carries no tool name on the wire, only a prose `title`; the client stores `humanize_tool_title(title)`. The renderer's `display_name()` applies the same (idempotent) humanizer, so both render `Edit File`. `ToolDisplay::of` also picks `greeting.rs` for both — verified in the captures, not assumed. |
@@ -807,12 +807,13 @@ keeping — a resumed session replaying events into an idle app could hit it.)
 
 **Snapshot verification** (`acp_delegated_turn_frame.snap`, read line by line before accepting):
 80-column rows for all chrome rows; `▄` U+2584 / `▀` U+2580 half-block frames around the user
-message and the input prompt, identical to `undo_flow_frame_sequence.snap`; ` ● ` U+25CF assistant
-bullet on the first segment and a 3-column indent on the post-tool continuation (` Done.`), i.e.
-one response split by the tool group, not two responses; tool header
-` ✓ Edit File [acp:claude] greeting.rs → Replaced 1 occurrence(s)` with U+2713 and U+2192 exactly
-where `render_complete` composes them; diff header `edit greeting.rs  +1 -1` (action from
-`diff_action`, counts matching the one-line change) and a unified body whose context lines carry a
+message and the input prompt, identical to `undo_flow_frame_sequence.snap`; a `●` U+25CF assistant
+bullet on the first segment, space-padded on both sides, and a 3-column indent on the post-tool
+continuation (`Done.`), i.e. one response split by the tool group, not two responses; a tool
+header reading `✓ Edit File [acp:claude] greeting.rs → Replaced 1 occurrence(s)` after a
+one-column indent, with U+2713 and U+2192 exactly where `render_complete` composes them; diff
+header `edit greeting.rs  +1 -1` (action from `diff_action`, counts matching the one-line change)
+and a unified body whose context lines carry a
 leading space and whose changed lines carry `-`/`+`; `— ctx` U+2014 in the status row. No duplicate
 assistant text — `message_complete`'s `full_response` snapshot was suppressed by
 `SessionEventStream`, which is Task 6's machinery doing its job on a fixture written after it. The
@@ -878,10 +879,10 @@ match" cannot be satisfied by both being wrong.
   the only ACP-shaped payloads in `assets/fixtures`. Added to both
   (`replay_acp_parity_fixtures_80x24`, `invariant_acp_parity_fixtures_every_frame`).
   `check_spacing_between_non_tool_containers` is deliberately excluded from the second: it
-  classifies any `● `-prefixed line as a tool card, but that glyph is also the assistant's
-  response bullet, so a paragraph followed by a pending tool reads as two adjacent tools and it
-  demands they be flush. The blank line between them is correct; the checker cannot tell the two
-  bullets apart from stripped text.
+  classifies any line prefixed with `●` and a space as a tool card, but that glyph is also the
+  assistant's response bullet, so a paragraph followed by a pending tool reads as two adjacent
+  tools and it demands they be flush. The blank line between them is correct; the checker cannot
+  tell the two bullets apart from stripped text.
 - **M6 —** `scripts/gen_acp_parity_fixtures.py` had a shebang but no execute bit, and underscores
   where the other executable tools in `scripts/` use hyphens. Now
   `scripts/gen-acp-parity-fixtures.py`, `+x`, matching `gen-third-party-notices.py`.

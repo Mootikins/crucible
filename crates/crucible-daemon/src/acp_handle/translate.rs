@@ -179,7 +179,11 @@ pub(super) struct OrphanedResults {
 }
 
 impl OrphanedResults {
-    /// Hold a result, or return `false` if either cap refuses it.
+    /// Hold a result, or drop it if either cap refuses it.
+    ///
+    /// Refusal is silent to the caller — there is no failure for a caller to
+    /// handle, since the only alternative to dropping is unbounded growth, so
+    /// the `warn!` below is the sole record that a result existed.
     ///
     /// Refusal is per-entry, not terminal: a single oversized payload does not
     /// stop a later small one from being held, because the two are unrelated

@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 //! Threaded mock agent for integration testing without subprocess spawning
 //!
 //! This module provides an in-process mock agent that communicates via
@@ -18,6 +16,11 @@
 //! // Now use client normally - it's connected to the in-process mock agent
 //! let result = client.connect_with_best_mcp(None).await;
 //! ```
+//!
+//! `acp_support` is `#[path]`-included by several test binaries and each uses
+//! only part of it, so an item unused here is usually live in another. The
+//! allows are per-item rather than a module-level `#![allow(unused)]` so that
+//! an unused import or variable added later is still a warning.
 
 use super::mock_stdio_agent::{MockStdioAgent, MockStdioAgentConfig};
 use serde_json::Value;
@@ -31,6 +34,7 @@ use tokio::task::JoinHandle;
 /// When dropped, signals the agent task to shut down.
 pub struct ThreadedMockAgentHandle {
     /// Task handle for the agent background task
+    #[allow(dead_code)]
     task: JoinHandle<()>,
     /// Shutdown signal sender
     _shutdown_tx: oneshot::Sender<()>,
@@ -38,11 +42,13 @@ pub struct ThreadedMockAgentHandle {
 
 impl ThreadedMockAgentHandle {
     /// Wait for the agent task to complete
+    #[allow(dead_code)]
     pub async fn join(self) -> Result<(), tokio::task::JoinError> {
         self.task.await
     }
 
     /// Abort the agent task immediately
+    #[allow(dead_code)]
     pub fn abort(&self) {
         self.task.abort();
     }
@@ -304,23 +310,6 @@ impl ThreadedMockAgent {
         writer.flush().await.map_err(|_| ())
     }
 }
-
-/// Trait extension for MockStdioAgent to access config
-trait MockStdioAgentExt {
-    fn config(&self) -> &MockStdioAgentConfig;
-}
-
-// Extend MockStdioAgent with a config field accessor
-// Note: This requires MockStdioAgent.config to be pub
-impl MockStdioAgentExt for MockStdioAgent {
-    fn config(&self) -> &MockStdioAgentConfig {
-        // Access via the public field
-        &self.config
-    }
-}
-
-// Add pub to MockStdioAgent.config field - we need to modify mock_stdio_agent.rs
-// For now, we'll work around this by storing config separately in run_agent_loop
 
 #[cfg(test)]
 mod tests {

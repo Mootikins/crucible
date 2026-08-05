@@ -294,4 +294,27 @@ mod tests {
         let parsed: ToolSource = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, source);
     }
+
+    /// `Acp` has no constructor on `ToolRef` — it is built directly by the ACP
+    /// translator and reaches the TUI and the web view as wire data, so its tag
+    /// and field name are part of the protocol even though no `from_acp` pins
+    /// them.
+    #[test]
+    fn test_acp_tool_source_serialization() {
+        let source = ToolSource::Acp {
+            agent: "claude".to_string(),
+        };
+        let json = serde_json::to_string(&source).unwrap();
+        assert!(
+            json.contains("\"type\":\"acp\""),
+            "unexpected tag in {json}"
+        );
+        assert!(
+            json.contains("\"agent\":\"claude\""),
+            "unexpected payload in {json}"
+        );
+
+        let parsed: ToolSource = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, source);
+    }
 }

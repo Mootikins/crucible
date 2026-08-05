@@ -121,16 +121,24 @@ fn saturating_u32(v: u64) -> u32 {
 /// Both counts are required. A frame carrying only one of them describes
 /// neither an occupancy nor a window, and a zero-filled stand-in would be
 /// indistinguishable from a real reading downstream.
+///
+/// `size: 0` is refused for the same reason a missing `size` is: it is not a
+/// window. It travels as `TurnEvent::ContextWindow { limit: 0 }` and is
+/// re-emitted as `context_limit_resolved { limit: 0, source: Agent }`, which
+/// tells every subscriber the agent's window has been *resolved* — the
+/// statusline consumers guard on `total > 0` so nothing divides by zero, but
+/// they then display the "no data" state under a source that claims otherwise.
+/// Reporting nothing lets the unresolved path stay unresolved.
 pub fn extract_context_window(params: &Value) -> Option<(u64, u64)> {
     let update = params.get("update")?;
     if update.get("sessionUpdate").and_then(Value::as_str) != Some("usage_update") {
         return None;
     }
 
-    Some((
-        update.get("used").and_then(Value::as_u64)?,
-        update.get("size").and_then(Value::as_u64)?,
-    ))
+    let used = update.get("used").and_then(Value::as_u64)?;
+    let size = update.get("size").and_then(Value::as_u64)?;
+
+    (size > 0).then_some((used, size))
 }
 
 #[cfg(test)]
@@ -265,8 +273,9 @@ mod tests {
     #[test]
     fn a_half_reported_window_is_no_window() {
         // Zero-filling the missing half would be indistinguishable downstream
-        // from a real reading: `size: 0` divides the statusline by zero and
-        // `used: 0` makes it draw a confident "0% ctx".
+        // from a real reading: a stand-in `size` sets a window the agent never
+        // reported, and `used: 0` makes the statusline draw a confident
+        // "0% ctx".
         let used_only = json!({
             "update": { "sessionUpdate": "usage_update", "used": 22700 }
         });
@@ -276,6 +285,27 @@ mod tests {
 
         assert!(extract_context_window(&used_only).is_none());
         assert!(extract_context_window(&size_only).is_none());
+    }
+
+    #[test]
+    fn a_zero_size_is_no_window() {
+        // Same reasoning as the missing half, one step further in: an explicit
+        // `size: 0` is a value, so it survives `as_u64`, but it describes no
+        // window. Passing it on emits `context_limit_resolved { limit: 0,
+        // source: Agent }` — a claim that the agent's window is *resolved*,
+        // sitting under a statusline that renders the no-data state because it
+        // guards `total > 0`. Reporting nothing keeps unresolved unresolved.
+        let zero_size = json!({
+            "update": { "sessionUpdate": "usage_update", "used": 22700, "size": 0 }
+        });
+        assert!(extract_context_window(&zero_size).is_none());
+
+        // Only `size` is refused for being zero. A fresh turn legitimately has
+        // used nothing yet, and that is a real reading of a real window.
+        let zero_used = json!({
+            "update": { "sessionUpdate": "usage_update", "used": 0, "size": 200_000 }
+        });
+        assert_eq!(extract_context_window(&zero_used), Some((0, 200_000)));
     }
 
     #[test]

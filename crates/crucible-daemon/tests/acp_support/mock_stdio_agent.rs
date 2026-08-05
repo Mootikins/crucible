@@ -1,10 +1,14 @@
-#![allow(unused)]
-
 //! Mock stdio-based ACP agent for integration testing
 //!
 //! This module provides a mock agent that communicates via stdin/stdout,
 //! allowing integration tests to simulate real agent behavior without
 //! requiring actual agent binaries.
+//!
+//! `acp_support` is `#[path]`-included by the `mock-acp-agent` binary and by
+//! several test binaries, and each reaches a different part of this file, so an
+//! item unused here is usually live in one of the others. The allows are
+//! per-item rather than a module-level `#![allow(unused)]` so that an unused
+//! import or variable added later is still a warning.
 
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -27,6 +31,7 @@ pub enum AgentBehavior {
     /// Codex-compatible agent
     Codex,
     /// Custom behavior with specific responses
+    #[allow(dead_code)]
     Custom(HashMap<String, Value>),
 }
 
@@ -44,6 +49,7 @@ pub struct MockStdioAgentConfig {
     /// Whether to inject errors
     pub inject_errors: bool,
     /// Custom capabilities to advertise (legacy, kept for backward compat)
+    #[allow(dead_code)]
     pub capabilities: Vec<String>,
     /// Whether agent advertises HTTP MCP support (ACP spec: McpCapabilities.http)
     pub mcp_http: bool,
@@ -63,6 +69,7 @@ pub struct MockStdioAgentConfig {
     /// `stopReason: cancelled` (per ACP, cancel MUST end the turn that way).
     /// Models a long-running turn so cancellation propagation is testable.
     /// Honored by `ThreadedMockAgent`; the stdio binary ignores it.
+    #[allow(dead_code)]
     pub hold_turn_until_cancel: bool,
 }
 
@@ -111,6 +118,7 @@ impl MockStdioAgentConfig {
     }
 
     /// Create configuration for Claude-ACP-compatible agent
+    #[allow(dead_code)]
     pub fn claude_acp() -> Self {
         Self {
             behavior: AgentBehavior::ClaudeAcp,
@@ -133,6 +141,7 @@ impl MockStdioAgentConfig {
     }
 
     /// Create configuration for Gemini-compatible agent
+    #[allow(dead_code)]
     pub fn gemini() -> Self {
         Self {
             behavior: AgentBehavior::Gemini,
@@ -153,6 +162,7 @@ impl MockStdioAgentConfig {
     }
 
     /// Create configuration for Codex-compatible agent
+    #[allow(dead_code)]
     pub fn codex() -> Self {
         Self {
             behavior: AgentBehavior::Codex,
@@ -181,6 +191,7 @@ impl MockStdioAgentConfig {
 ///
 /// Read as a value, not a presence: `CRU_MOCK_STOP_REASON=end_turn` must mean
 /// `end_turn`.
+#[allow(dead_code)]
 fn scripted_stop_reason_is_cancelled() -> bool {
     env::var("CRU_MOCK_STOP_REASON").as_deref().map(str::trim) == Ok("cancelled")
 }
@@ -232,6 +243,7 @@ impl MockStdioAgent {
     /// Run the mock agent, reading from stdin and writing to stdout
     ///
     /// This is the main entry point for the mock agent process.
+    #[allow(dead_code)]
     pub fn run(&mut self) -> io::Result<()> {
         let stdin = io::stdin();
         let mut stdout = io::stdout();

@@ -1,10 +1,13 @@
-#![allow(unused)]
-
 //! Locating and configuring the spawned `mock-acp-agent` binary.
 //!
 //! Shared by every test that drives a real `AcpAgentHandle` (which spawns a
 //! process and speaks ACP over its stdio) rather than a `CrucibleAcpClient`
 //! over an in-process duplex pipe.
+//!
+//! `acp_support` is `#[path]`-included by several test binaries and each uses
+//! only part of it, so every helper here is dead code in at least one of them.
+//! The allows are per-item rather than a module-level `#![allow(unused)]` so
+//! that an unused import or variable added later is still a warning.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -18,6 +21,7 @@ use crucible_daemon::acp_handle::AcpAgentHandleParams;
 /// Prefers `CARGO_BIN_EXE_mock-acp-agent` (set by cargo when the bin target is
 /// built, i.e. when the test-utils feature is enabled — honors any custom
 /// target-dir). Falls back to the default workspace-root target path.
+#[allow(dead_code)]
 pub fn mock_agent_path() -> PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_mock-acp-agent") {
         return PathBuf::from(path);
@@ -39,6 +43,7 @@ pub fn mock_agent_path() -> PathBuf {
 /// - agent_name: the provided agent_path
 /// - provider: Mock (for testing)
 /// - All other fields set to sensible defaults
+#[allow(dead_code)]
 pub fn mock_session_agent(agent_path: &str) -> SessionAgent {
     SessionAgent {
         mode: None,
@@ -86,6 +91,7 @@ pub fn mock_session_agent(agent_path: &str) -> SessionAgent {
 ///     ..mock_handle_params(&agent_config, workspace.path())
 /// })
 /// ```
+#[allow(dead_code)]
 pub fn mock_handle_params<'a>(
     agent_config: &'a SessionAgent,
     workspace: &'a Path,
