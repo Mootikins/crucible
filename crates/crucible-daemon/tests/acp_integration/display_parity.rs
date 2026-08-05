@@ -1,5 +1,23 @@
-//! Display parity integration tests — verifies ACP streaming chunks preserve
-//! tool call arguments, tool results, and handle missing token usage gracefully.
+//! `StreamingChunk` contract tests — verifies the ACP client's wire parsing
+//! preserves tool call arguments, tool results, and handles missing token usage
+//! gracefully.
+//!
+//! **This file does not prove display parity, despite its name.** Everything
+//! here stops at [`StreamingChunk`], which sits *above* the `SessionEventMessage`
+//! parity boundary and two layers upstream of anything a user sees. A green run
+//! says the ACP client parsed the agent's wire messages correctly; it says
+//! nothing about whether the resulting turn renders like an internal one. The
+//! name reading as a parity claim is precisely how the presentation divergences
+//! this suite could not see went unnoticed — see the parity boundary section of
+//! `docs/Meta/Analysis/Systems.md`.
+//!
+//! Real parity evidence is a pair of `SessionEvent` recordings of the same
+//! behaviour, one per agent, pumped through the shared renderer and compared as
+//! frames: `crucible-cli`'s `user_story_tests/acp_parity_tests.rs`, over the
+//! `assets/fixtures/acp_parity_*` recordings.
+//!
+//! The name is kept because `Systems.md` and the branch plan both cite it by
+//! path as the example of a test whose name overclaims its layer.
 
 use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient};
 use crucible_daemon::acp::StreamingChunk;
