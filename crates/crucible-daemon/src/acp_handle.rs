@@ -19,7 +19,9 @@ use tracing::{debug, info, warn};
 
 mod translate;
 
-use translate::{acp_prompt_text, replay_unannounced_tool_calls, turn_stop_reason};
+use translate::{
+    acp_prompt_text, replay_unannounced_tool_calls, turn_stop_reason, OrphanedResults,
+};
 
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 
@@ -35,13 +37,6 @@ use crucible_core::traits::chat::{AgentHandle, ChatError, ChatResult};
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::types::acp::schema::SessionModeState;
 use crucible_core::types::mode::default_internal_modes;
-
-/// How many still-unnamed tool results one turn will hold before dropping them.
-///
-/// Each entry keeps an un-truncated tool payload alive until the turn ends, so
-/// an agent that completes calls it never announces would otherwise pin
-/// unbounded memory for the whole turn. A real turn defers a handful at most.
-const MAX_ORPHANED_RESULTS: usize = 256;
 
 /// Errors specific to ACP agent handle creation and management.
 #[derive(Error, Debug)]
@@ -538,7 +533,7 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
             let mut produced_content = false;
             // Results whose `ToolStart` never arrived, held until the
             // post-stream replay can name them. See the `ToolEnd` arm.
-            let mut orphaned_results: Vec<(String, Option<String>, Option<String>)> = Vec::new();
+            let mut orphaned_results = OrphanedResults::default();
 
             while let Some(chunk) = chunk_rx.recv().await {
                 match chunk {
@@ -603,20 +598,10 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                                 tool_id = %id,
                                 "ACP tool result arrived before its call; deferring until named"
                             );
-                            // Bounded: these hold un-truncated payloads for the
-                            // rest of the turn, and an agent that never names
-                            // any of its calls would otherwise grow this without
-                            // limit. Past the cap the drop is immediate and
-                            // loud rather than deferred and silent.
-                            if orphaned_results.len() >= MAX_ORPHANED_RESULTS {
-                                warn!(
-                                    tool_id = %id,
-                                    cap = MAX_ORPHANED_RESULTS,
-                                    "ACP reported more unnamed tool results than the defer cap; dropping"
-                                );
-                                continue;
-                            }
-                            orphaned_results.push((id, result, error));
+                            // Bounded in count *and* bytes; past either cap the
+                            // drop is immediate and loud rather than deferred
+                            // and silent. See `OrphanedResults`.
+                            orphaned_results.push(id, result, error);
                             continue;
                         };
                         info!(

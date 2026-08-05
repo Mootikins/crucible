@@ -145,9 +145,178 @@ pub(super) fn acp_prompt_text(
     out
 }
 
+/// How many still-unnamed tool results one turn will hold.
+///
+/// A real turn defers a handful at most — one `tool_call_update{completed}`
+/// that raced ahead of its `tool_call`.
+const MAX_ORPHANED_RESULTS: usize = 256;
+
+/// How many bytes of them one turn will hold.
+///
+/// The count cap alone bounds nothing an agent controls: each entry keeps an
+/// un-truncated `rawOutput` payload alive until the turn ends, so 256 entries
+/// is 256× whatever the largest single frame was. A byte cap makes the peak
+/// the agent can pin a fixed number rather than a multiple of its own frame
+/// size, and it also catches the case the count cap cannot see at all — one
+/// enormous result.
+///
+/// 8 MiB is orders of magnitude above real deferred traffic (kilobytes) while
+/// staying small next to the daemon's own footprint.
+const MAX_ORPHANED_RESULT_BYTES: usize = 8 * 1024 * 1024;
+
+/// Tool results whose `ToolCall` never arrived, held until the post-stream
+/// replay can name them — bounded in both count and bytes.
+///
+/// The alternative to holding them is naming them here, which means inventing
+/// a name: both renderers key a result on the id of an announced call, so a
+/// made-up name reaches the transcript and the web view while the TUI silently
+/// drops the result. Holding is right; holding *without limit* is what an
+/// agent that never names any of its calls would otherwise get.
+#[derive(Debug, Default)]
+pub(super) struct OrphanedResults {
+    entries: Vec<(String, Option<String>, Option<String>)>,
+    bytes: usize,
+}
+
+impl OrphanedResults {
+    /// Hold a result, or return `false` if either cap refuses it.
+    ///
+    /// Refusal is per-entry, not terminal: a single oversized payload does not
+    /// stop a later small one from being held, because the two are unrelated
+    /// calls and dropping the second would lose a result for no reason.
+    pub(super) fn push(&mut self, id: String, result: Option<String>, error: Option<String>) {
+        let len = |s: &Option<String>| s.as_ref().map_or(0, String::len);
+        let entry_bytes = id.len() + len(&result) + len(&error);
+
+        if self.entries.len() >= MAX_ORPHANED_RESULTS
+            || self.bytes + entry_bytes > MAX_ORPHANED_RESULT_BYTES
+        {
+            tracing::warn!(
+                tool_id = %id,
+                held = self.entries.len(),
+                held_bytes = self.bytes,
+                entry_bytes,
+                count_cap = MAX_ORPHANED_RESULTS,
+                byte_cap = MAX_ORPHANED_RESULT_BYTES,
+                "ACP deferred tool results hit their cap; dropping this result \
+                 (lost from session.jsonl, recordings and Lua handlers)"
+            );
+            return;
+        }
+
+        self.bytes += entry_bytes;
+        self.entries.push((id, result, error));
+    }
+}
+
+impl IntoIterator for OrphanedResults {
+    type Item = (String, Option<String>, Option<String>);
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.into_iter()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- Deferred tool results: both caps ------------------------------------
+
+    fn held(orphans: OrphanedResults) -> Vec<String> {
+        orphans.into_iter().map(|(id, _, _)| id).collect()
+    }
+
+    /// The count cap is not a memory bound on its own: 256 entries of whatever
+    /// size the agent chose is 256× the agent's own frame size.
+    #[test]
+    fn deferred_results_are_bounded_by_bytes_not_only_by_count() {
+        let mut orphans = OrphanedResults::default();
+        let chunk = "x".repeat(MAX_ORPHANED_RESULT_BYTES / 4);
+
+        for i in 0..MAX_ORPHANED_RESULTS {
+            orphans.push(format!("t{i}"), Some(chunk.clone()), None);
+        }
+
+        // Three, not four: the ids count towards the cap too, so the fourth
+        // quarter-sized payload no longer fits.
+        assert_eq!(
+            held(orphans),
+            vec!["t0", "t1", "t2"],
+            "the byte cap let the buffer grow to the count cap's worth of \
+             agent-sized payloads"
+        );
+    }
+
+    /// The count cap cannot see a single enormous result at all.
+    #[test]
+    fn one_oversized_result_is_refused_outright() {
+        let mut orphans = OrphanedResults::default();
+
+        orphans.push(
+            "huge".to_string(),
+            Some("x".repeat(MAX_ORPHANED_RESULT_BYTES + 1)),
+            None,
+        );
+
+        assert!(
+            held(orphans).is_empty(),
+            "a result larger than the whole buffer was still held"
+        );
+    }
+
+    /// Refusal is per-entry. One agent frame being oversized says nothing
+    /// about the next, and dropping an unrelated small result would lose it
+    /// for no reason.
+    #[test]
+    fn an_oversized_result_does_not_poison_the_ones_after_it() {
+        let mut orphans = OrphanedResults::default();
+
+        orphans.push(
+            "huge".to_string(),
+            Some("x".repeat(u16::MAX as usize)),
+            None,
+        );
+        orphans.push(
+            "big".to_string(),
+            Some("x".repeat(MAX_ORPHANED_RESULT_BYTES)),
+            None,
+        );
+        orphans.push("small".to_string(), Some("ok".to_string()), None);
+
+        assert_eq!(held(orphans), vec!["huge", "small"]);
+    }
+
+    /// The count cap still applies to results too small to reach the byte cap.
+    #[test]
+    fn the_count_cap_still_bounds_a_flood_of_tiny_results() {
+        let mut orphans = OrphanedResults::default();
+
+        for i in 0..MAX_ORPHANED_RESULTS * 2 {
+            orphans.push(format!("t{i}"), Some("ok".to_string()), None);
+        }
+
+        assert_eq!(held(orphans).len(), MAX_ORPHANED_RESULTS);
+    }
+
+    /// Everything held survives to the post-stream replay in wire order — the
+    /// caps must not reorder or merge what they do accept.
+    #[test]
+    fn accepted_results_come_back_whole_and_in_order() {
+        let mut orphans = OrphanedResults::default();
+
+        orphans.push("a".into(), Some("first".into()), None);
+        orphans.push("b".into(), None, Some("boom".into()));
+
+        assert_eq!(
+            orphans.into_iter().collect::<Vec<_>>(),
+            vec![
+                ("a".to_string(), Some("first".to_string()), None),
+                ("b".to_string(), None, Some("boom".to_string())),
+            ]
+        );
+    }
 
     // -- ACP prompt building: daemon-injected context push -------------------
     //
