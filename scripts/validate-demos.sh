@@ -95,7 +95,9 @@ validate_fixture() {
   # WARN Check 3: Thinking event count
   if [[ "$name" == "demo" ]]; then
     local think_count
-    think_count=$(grep -c '"thinking"' "$fixture" 2>/dev/null || echo 0)
+    # `|| true`, not `|| echo 0`: grep -c already prints 0 on no match (while
+    # exiting 1), so `|| echo 0` would capture "0\n0" and break the arithmetic.
+    think_count=$(grep -c '"thinking"' "$fixture" 2>/dev/null || true)
     if (( think_count > 150 )); then
       warn "High thinking event count ($think_count > 150); model over-deliberating"
     else
@@ -106,7 +108,9 @@ validate_fixture() {
 
   # WARN Check 4: Response length per fixture
   local max_chars=600
-  [[ "$name" == "acp-demo" ]] && max_chars=800
+  # acp-demo is two exchanges (architecture Q + ACP/MCP Q), so its budget is
+  # roughly double the single-exchange fixtures'.
+  [[ "$name" == "acp-demo" ]] && max_chars=1200
   [[ "$name" == "delegation-demo" ]] && max_chars=300
   if (( char_count > max_chars )); then
     warn "Response too long ($char_count chars > $max_chars limit)"
@@ -218,7 +222,7 @@ check_strict_recording_quality() {
   local footer_total
   footer_total=$(tail -1 "$fixture" | jq -r '.total_events // empty' 2>/dev/null)
   local actual_events
-  actual_events=$(grep -c '"event"' "$fixture" 2>/dev/null || echo 0)
+  actual_events=$(grep -c '"event"' "$fixture" 2>/dev/null || true)
   if [[ -n "$footer_total" && "$footer_total" != "$actual_events" ]]; then
     echo "  FAIL: footer total_events ($footer_total) doesn't match actual events ($actual_events)"
     ((FAIL++)) || true; ((TOTAL++)) || true
@@ -241,11 +245,13 @@ check_delegation_fixture() {
     ((FAIL++)) || true; ((TOTAL++)) || true; return
   fi
   
-  python3 << 'PYEOF'
+  # `if python3` (not a bare call): under `set -e` a failing bare python3
+  # aborts the whole script, silently skipping every check after this one.
+  if python3 - "$fixture" << 'PYEOF'
 import json, sys
 
 try:
-    with open("assets/fixtures/delegation-demo.jsonl") as f:
+    with open(sys.argv[1]) as f:
         lines = f.readlines()
     
     data = [json.loads(line) for line in lines]
@@ -291,13 +297,12 @@ except Exception as e:
     print(f"  FAIL: {e}")
     sys.exit(1)
 PYEOF
-  
-  if (( $? == 0 )); then
+  then
     ((PASS++)) || true; ((TOTAL++)) || true
   else
     ((FAIL++)) || true; ((TOTAL++)) || true
   fi
-  
+
   echo
 }
 
@@ -327,7 +332,7 @@ check_duplicate_paragraphs() {
     ((FAIL++)) || true; ((TOTAL++)) || true; return
   fi
 
-  python3 -c "
+  if python3 -c "
 import json, sys
 
 fixture = '$fixture'
@@ -359,7 +364,7 @@ else:
     print('  PASS: No duplicate paragraphs')
     sys.exit(0)
 "
-  if (( $? == 0 )); then
+  then
     ((PASS++)) || true; ((TOTAL++)) || true
   else
     ((FAIL++)) || true; ((TOTAL++)) || true
@@ -380,7 +385,7 @@ check_text_delta_consistency() {
     ((FAIL++)) || true; ((TOTAL++)) || true; return
   fi
 
-  python3 -c "
+  if python3 -c "
 import json, sys
 
 fixture = '$fixture'
@@ -429,7 +434,7 @@ if all_ok:
 else:
     sys.exit(1)
 "
-  if (( $? == 0 )); then
+  then
     ((PASS++)) || true; ((TOTAL++)) || true
   else
     ((FAIL++)) || true; ((TOTAL++)) || true
@@ -492,7 +497,7 @@ check_event_ordering() {
     ((FAIL++)) || true; ((TOTAL++)) || true; return
   fi
 
-  python3 -c "
+  if python3 -c "
 import json, sys
 
 fixture = '$fixture'
@@ -508,11 +513,13 @@ if not events:
 
 errors = []
 
-# Check 1: First event after header must be user_message
-# Header lines lack 'event' key, so events[0] is the first real event
-first_event = events[0].get('event', '')
-if first_event != 'user_message':
-    errors.append(f'First event is \"{first_event}\", expected \"user_message\"')
+# Check 1: First conversational event must be user_message. Recordings open
+# with session-setup events (session_initialized, workspace_indexed, ...)
+# before the conversation starts; those are fine to skip.
+conversational = ('user_message', 'text_delta', 'tool_call', 'message_complete')
+first_conv = next((e.get('event', '') for e in events if e.get('event', '') in conversational), '')
+if first_conv != 'user_message':
+    errors.append(f'First conversational event is \"{first_conv}\", expected \"user_message\"')
 
 # Check 2: Last event must be message_complete or post_llm_call
 # Footer lines lack 'event' key, so events[-1] is the last real event
@@ -539,7 +546,7 @@ else:
     print('  PASS: Event ordering is valid')
     sys.exit(0)
 "
-  if (( $? == 0 )); then
+  then
     ((PASS++)) || true; ((TOTAL++)) || true
   else
     ((FAIL++)) || true; ((TOTAL++)) || true
