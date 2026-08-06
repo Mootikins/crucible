@@ -377,8 +377,9 @@ pub(crate) fn format_elapsed(duration: Duration) -> String {
 ///
 /// The first version of this stopped at the humanizer, which covers a title
 /// that happens to *look* like an internal tool name and nothing else. The
-/// repo's one recording of a real Claude Code session that ran tools
-/// (`assets/fixtures/acp-demo.jsonl`) shows that is not what agents send: its
+/// repo's richest recording of a real Claude Code session that ran tools
+/// (`assets/fixtures/malformed-acp-recording.jsonl`) shows that is not what
+/// agents send: its
 /// titles are `Find`, `Terminal`, `Read File` and `Read tools/hello.rn`. A
 /// resolved title appends the thing being acted on, so the key is the leading
 /// Title-Cased run — everything up to the first word that does not start
@@ -551,7 +552,7 @@ pub fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
             });
             bracket_summary.or_else(|| Some(format!("{} lines", inner.lines().count())))
         }
-        // `Find` is Claude Code's title for its glob (acp-demo.jsonl).
+        // `Find` is Claude Code's title for its glob (malformed-acp-recording.jsonl).
         Some("Glob" | "Find") => count_newline_items(&inner).map(|n| format!("{} files", n)),
         Some("Grep") => count_grep_matches(&inner).map(|n| format!("{} matches", n)),
         Some("Edit") if inner.contains("success") || inner.contains("applied") => {
@@ -560,7 +561,7 @@ pub fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
         Some("Write") if inner.contains("success") || inner.contains("written") => {
             Some("written".to_string())
         }
-        // `Terminal` — Claude Code's title for its bash (acp-demo.jsonl) — is
+        // `Terminal` — Claude Code's title for its bash (malformed-acp-recording.jsonl) — is
         // deliberately *not* listed here. This arm answers only when the
         // result is one line under 60 characters, which is exactly when
         // `collapse_result`'s name-independent short-result branch answers with

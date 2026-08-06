@@ -153,7 +153,7 @@ clean:
 
 # Generate demo GIF from replay fixture
 demo name speed="3":
-    @printf '#!/bin/sh\nexec cru chat --replay assets/fixtures/%s.jsonl --replay-speed %s --replay-auto-exit 500\n' "{{name}}" "{{speed}}" > /tmp/cru-demo-wrapper && chmod +x /tmp/cru-demo-wrapper
+    @printf '#!/bin/sh\nexec cru chat --replay assets/fixtures/%s.jsonl --replay-speed %s --replay-auto-exit 3000\n' "{{name}}" "{{speed}}" > /tmp/cru-demo-wrapper && chmod +x /tmp/cru-demo-wrapper
     vhs assets/{{name}}.tape
 
 # Generate all demo GIFs

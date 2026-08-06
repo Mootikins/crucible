@@ -18,24 +18,23 @@ This makes demo recording **deterministic** — no waiting for LLM latency, no v
 | Fixture | Demo | Description |
 |---------|------|-------------|
 | `demo.jsonl` | `demo.gif` | Single-turn feature showcase: wikilinks/knowledge graph with Precognition context injection (1 exchange) |
-| `acp-demo.jsonl` | `acp-demo.gif` | Claude Code via ACP discussing ACP vs MCP (see caveat below) |
+| `acp-demo.jsonl` | `acp-demo.gif` | Claude Code via ACP: architecture Q, then a kiln-grounded ACP-vs-MCP Q with tool calls (2 exchanges) |
 | `delegation-demo.jsonl` | `delegation-demo.gif` | Claude delegating to OpenCode via `delegate_session` tool |
 
-**`acp-demo.jsonl` is not ACP coverage.** The session behind it ran over ACP,
-but the recorder that captured it dropped every ACP marker: there is no
-`source` field anywhere in the file, no `tool_call_diff_update`, and the tool
-titles are stored already humanized. It is also malformed — each `call_id` is
-emitted twice (once at seq 8–31 with `{}` args, again at seq 43–55 with real
-args and a *different* title for the same id), and the `tool_result` events
-carry fresh UUIDs matching no call, so no result ever attaches. Replayed, 13
-calls render as ~25 cards.
+**`acp-demo.jsonl` is a clean re-recording** (2026-08) with genuine ACP
+markers: its `tool_call` events carry `"source":"Acp:claude"`, and its titles
+are the agent's own. `replay_acp_demo_80x24` replays it under the invariant
+sweep.
 
-It stays because `just demo acp-demo` and `scripts/validate-demos.sh` depend on
-it, and because a corrupt transcript is a useful robustness input —
-`replay_malformed_acp_demo_recording_80x24` feeds it to the TUI and checks
-nothing leaks. For actual ACP presentation coverage use the `acp_parity_*`
-fixtures below. Do not regenerate the GIF from a re-recording without checking
-whether the recorder still does this.
+Its predecessor lives on as `malformed-acp-recording.jsonl` (test-only, below):
+an old recorder path emitted each `call_id` twice (once with `{}` args and a
+generic title, again with real args and a *different* title for the same id)
+and gave `tool_result` events fresh UUIDs matching no call, so no result ever
+attaches. Replayed, 13 calls render as ~25 cards. A corrupt transcript is a
+useful robustness input — `replay_malformed_acp_recording_80x24` feeds it to
+the TUI and checks nothing leaks — and it remains the richest capture of the
+tool titles a real Claude Code session sends
+(`recorded_claude_code_tool_titles()` reads them from it).
 
 ### Test-only fixtures
 

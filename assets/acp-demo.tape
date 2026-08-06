@@ -1,5 +1,7 @@
 # ACP Agent Demo — Crucible chat with Claude Code
-# Usage: just demo acp-demo
+# Usage: just demo acp-demo 5
+# The recording spans ~118s; speed 5 fits it inside this tape's visible
+# window. The default speed 3 overruns and cuts off the second turn.
 
 Output assets/acp-demo.gif
 
@@ -18,4 +20,4 @@ Type "/tmp/cru-demo-wrapper"
 Enter
 Sleep 2s
 Show
-Sleep 25s
+Sleep 13s

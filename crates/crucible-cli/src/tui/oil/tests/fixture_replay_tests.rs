@@ -344,14 +344,18 @@ fn replay_reproduce_formatting_80x24() {
 
 // ─── Degenerate recording ──────────────────────────────────────────────────
 
-/// `acp-demo.jsonl` replayed at 80x24 — a robustness test, **not ACP coverage**.
+/// `malformed-acp-recording.jsonl` replayed at 80x24 — a robustness test,
+/// **not ACP coverage**.
 ///
-/// This test used to be called `replay_acp_demo_80x24`, which claimed something
-/// it never delivered. Despite the filename, the recording carries no ACP
-/// presentation signal at all: grep it and you will find zero `source` fields
-/// and no `tool_call_diff_update`, and its tool titles are stored already
-/// humanized. Nothing here exercises the delegated-vs-internal rendering split.
-/// [`replay_acp_parity_fixtures_80x24`] is where that lives.
+/// This fixture used to be `acp-demo.jsonl` itself, and this test used to be
+/// called `replay_acp_demo_80x24`, which claimed something it never delivered.
+/// Despite that filename, the recording carries no ACP presentation signal at
+/// all: grep it and you will find zero `source` fields and no
+/// `tool_call_diff_update`, and its tool titles are stored already humanized.
+/// Nothing here exercises the delegated-vs-internal rendering split.
+/// [`replay_acp_parity_fixtures_80x24`] is where that lives, and the
+/// re-recorded demo fixture ([`replay_acp_demo_80x24`]) now carries real
+/// `source` fields.
 ///
 /// What the fixture *is* worth keeping for is that it is malformed, in three
 /// ways an old recorder path baked in:
@@ -371,11 +375,13 @@ fn replay_reproduce_formatting_80x24() {
 /// scrollback, both ends of the conversation survive, and no raw identifier
 /// escapes humanization.
 ///
-/// See `assets/fixtures/README.md`; the fixture also backs `just demo
-/// acp-demo` and `scripts/validate-demos.sh`, so it stays put.
+/// See `assets/fixtures/README.md`. The demo itself was re-recorded into a
+/// clean `acp-demo.jsonl`; this capture stays solely as the corrupt-transcript
+/// specimen, and as the recording that grounds
+/// `recorded_claude_code_tool_titles()`.
 #[test]
-fn replay_malformed_acp_demo_recording_80x24() {
-    let path = fixture_path("acp-demo.jsonl");
+fn replay_malformed_acp_recording_80x24() {
+    let path = fixture_path("malformed-acp-recording.jsonl");
     let result = replay_fixture(&path, 80, 24);
 
     assert!(
@@ -393,7 +399,7 @@ fn replay_malformed_acp_demo_recording_80x24() {
         "user prompt missing from replay:\n{out}"
     );
     assert!(
-        out.contains("Crucible is an MCP"),
+        out.contains("Crucible is a knowledge-grounded agent runtime"),
         "assistant answer missing from replay:\n{out}"
     );
 
@@ -435,11 +441,61 @@ fn replay_malformed_acp_demo_recording_80x24() {
     }
 }
 
+// ─── ACP demo recording ────────────────────────────────────────────────────
+
+/// `acp-demo.jsonl` — the re-recorded ACP demo (Claude Code driving Crucible's
+/// tools over ACP, against the docs kiln) replayed at 80x24. Unlike its
+/// malformed predecessor ([`replay_malformed_acp_recording_80x24`]) this
+/// capture is well-formed and carries genuine ACP presentation signal:
+/// `"source":"Acp:claude"` on its tool calls. It also backs `just demo
+/// acp-demo` and `scripts/validate-demos.sh`.
+#[test]
+fn replay_acp_demo_80x24() {
+    let path = fixture_path("acp-demo.jsonl");
+    let result = replay_fixture(&path, 80, 24);
+
+    assert!(
+        result.violations.is_empty(),
+        "Invariant violations ({} frames):\n{}",
+        result.total_frames,
+        result.violations.join("\n")
+    );
+
+    let out = &result.final_output;
+
+    // Both turns survive end to end: each prompt and the load-bearing phrase
+    // of each answer. Fragments are kept short so an 80-column word-wrap
+    // cannot split them.
+    for needle in [
+        "Describe Crucible's architecture in two sentences.",
+        "knowledge-grounded agent runtime",
+        "According to the docs kiln",
+        "Model Context",
+        "Agent Client",
+    ] {
+        assert!(
+            needle.len() < 60,
+            "needle too long to be wrap-safe: {needle:?}"
+        );
+        assert!(
+            out.contains(needle),
+            "{needle:?} missing from replay:\n{out}"
+        );
+    }
+
+    // The delegated tool calls render as humanized cards.
+    for title in ["ToolSearch", "Semantic Search"] {
+        assert!(
+            out.contains(title),
+            "tool card {title:?} missing from replay:\n{out}"
+        );
+    }
+}
+
 // ─── ACP presentation-parity fixtures ─────────────────────────────────────
 
-/// The parity pairs carry the only genuinely ACP-shaped payloads in
-/// `assets/fixtures` — `"source":"Acp:claude"` and a `tool_call_diff_update`,
-/// neither of which `acp-demo.jsonl` has. `acp_parity_tests.rs` renders one
+/// The parity pairs carry a `tool_call_diff_update`, which no demo recording
+/// has, alongside `"source":"Acp:claude"`. `acp_parity_tests.rs` renders one
 /// frame from each; nothing pumped them through the per-frame invariant sweep,
 /// so a mid-turn violation on the ACP-only path (a late diff arriving while a
 /// spinner is on screen, say) had nowhere to show up.

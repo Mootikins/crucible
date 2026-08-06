@@ -361,8 +361,8 @@ fn both_read_cards_collapse_their_result_to_a_summary() {
 /// the transcript.
 ///
 /// The titles come from [`recorded_claude_code_title`], which fails if
-/// `acp-demo.jsonl` stops containing them — the pair cannot drift into testing
-/// a spelling nothing produces.
+/// `malformed-acp-recording.jsonl` stops containing them — the pair cannot
+/// drift into testing a spelling nothing produces.
 ///
 /// The card *header* legitimately differs (`Glob` vs `Find`): ACP carries no
 /// tool name on the wire, only prose, so the two cards are entitled to

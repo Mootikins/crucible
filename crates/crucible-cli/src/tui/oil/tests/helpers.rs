@@ -46,22 +46,24 @@ pub fn read_fixture(name: &str) -> String {
         .unwrap_or_else(|e| panic!("read fixture {}: {e}", path.display()))
 }
 
-/// Every distinct `tool` a `tool_call` names in `assets/fixtures/acp-demo.jsonl`.
+/// Every distinct `tool` a `tool_call` names in
+/// `assets/fixtures/malformed-acp-recording.jsonl`.
 ///
-/// That recording is the repo's only capture of a real Claude Code session that
-/// ran tools — the five `crucible-daemon/tests/fixtures/acp/recorded/*/
-/// basic-chat.jsonl` wire dumps contain no tool call at all. Any test about
+/// That recording is the repo's richest capture of a real Claude Code session
+/// that ran tools (the current `acp-demo.jsonl` re-recording carries only two
+/// calls, and the five `crucible-daemon/tests/fixtures/acp/recorded/*/
+/// basic-chat.jsonl` wire dumps contain no tool call at all). Any test about
 /// "the titles ACP agents send" must read them from here rather than spell
 /// them inline: a hand-written ACP title is whatever its author imagined an
 /// agent sends, which is how divergence A4's first fix came to be verified
 /// only against titles a mock had manufactured for it.
 ///
 /// The recording is malformed in other ways (see
-/// `replay_malformed_acp_demo_recording_80x24`) — 13 calls announced twice,
+/// `replay_malformed_acp_recording_80x24`) — 13 calls announced twice,
 /// results keyed to no call. None of that touches the `title` strings, which
 /// are the agent's own and the only thing read here.
 pub fn recorded_claude_code_tool_titles() -> Vec<String> {
-    let text = read_fixture("acp-demo.jsonl");
+    let text = read_fixture("malformed-acp-recording.jsonl");
     let mut titles: Vec<String> = text
         .lines()
         .filter(|line| !line.trim().is_empty())
@@ -73,8 +75,8 @@ pub fn recorded_claude_code_tool_titles() -> Vec<String> {
     titles.dedup();
     assert!(
         !titles.is_empty(),
-        "acp-demo.jsonl names no tools, so nothing keyed off it is grounded in \
-         a real recording any more"
+        "malformed-acp-recording.jsonl names no tools, so nothing keyed off it \
+         is grounded in a real recording any more"
     );
     titles
 }
@@ -89,8 +91,8 @@ pub fn recorded_claude_code_title(title: &str) -> &str {
     let recorded = recorded_claude_code_tool_titles();
     assert!(
         recorded.iter().any(|t| t == title),
-        "`{title}` is no longer in acp-demo.jsonl, so this test is no longer \
-         grounded in a real agent's output. Recorded titles: {recorded:?}"
+        "`{title}` is no longer in malformed-acp-recording.jsonl, so this test \
+         is no longer grounded in a real agent's output. Recorded titles: {recorded:?}"
     );
     title
 }
