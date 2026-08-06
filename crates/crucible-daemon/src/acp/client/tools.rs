@@ -1,8 +1,10 @@
 use agent_client_protocol::ToolCallStatus;
 
+use super::streaming::elide;
 use super::types::{ResponseSegment, StreamingState};
 use super::CrucibleAcpClient;
 use crate::acp::streaming::humanize_tool_title;
+use crucible_core::text::sanitize_single_line;
 use crucible_core::types::acp::{FileDiff, ToolCallInfo};
 
 /// Format a slice of `FileDiff`s as a unified-diff text block, suitable for
@@ -71,10 +73,43 @@ impl CrucibleAcpClient {
         }
 
         if status == Some(ToolCallStatus::Failed) {
-            return Some("Tool call failed".to_string());
+            // claude-agent-acp forwards the failed tool_result's content
+            // blocks as `rawOutput` — the actual reason ("File not found: …")
+            // lives in their text, and a status with no `error` key used to
+            // collapse it to the generic label below. The text is
+            // agent-authored and renders as a one-line error label, so it
+            // gets the same sanitising and display cap as `describe_rpc_error`.
+            return Some(
+                raw_output
+                    .and_then(Self::content_block_text)
+                    .map(|text| sanitize_single_line(&elide(&text)))
+                    .filter(|text| !text.is_empty())
+                    .unwrap_or_else(|| "Tool call failed".to_string()),
+            );
         }
 
         None
+    }
+
+    /// Text carried by a tool output that is a bare string or a content-block
+    /// array (`[{"type":"text","text":…}, …]`). None when neither shape holds
+    /// or no block carries text.
+    fn content_block_text(value: &serde_json::Value) -> Option<String> {
+        match value {
+            serde_json::Value::String(text) => Some(text.clone()),
+            serde_json::Value::Array(blocks) => {
+                let texts: Vec<&str> = blocks
+                    .iter()
+                    .filter_map(|block| block.get("text").and_then(|t| t.as_str()))
+                    .collect();
+                if texts.is_empty() {
+                    None
+                } else {
+                    Some(texts.join("\n"))
+                }
+            }
+            _ => None,
+        }
     }
 
     fn format_json_value(value: &serde_json::Value) -> String {

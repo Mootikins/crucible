@@ -609,3 +609,76 @@ fn describe_rpc_error_stops_unwrapping_self_referential_payloads() {
     let rendered = describe_rpc_error(&err);
     assert!(rendered.starts_with("Internal error: "), "got {rendered:?}");
 }
+
+// ─── extract_tool_error ────────────────────────────────────────────────────
+
+/// A failed call whose `rawOutput` is a content-block array must surface the
+/// blocks' text as the error. This is the shape claude-agent-acp actually
+/// sends on an MCP tool failure (`rawOutput: chunk.content`, i.e. the
+/// tool_result content blocks) — the precise reason, e.g.
+/// "File not found: …", is in there, and collapsing it to a generic
+/// "Tool call failed" hides the only actionable part.
+#[test]
+fn failed_tool_error_surfaces_content_block_text() {
+    use agent_client_protocol::ToolCallStatus;
+
+    let raw = json!([
+        {"type": "text", "text": "MCP error -32602: File not found: Concepts/Target.md"}
+    ]);
+    let err = CrucibleAcpClient::extract_tool_error(Some(ToolCallStatus::Failed), Some(&raw));
+    assert_eq!(
+        err.as_deref(),
+        Some("MCP error -32602: File not found: Concepts/Target.md")
+    );
+}
+
+/// An explicit `error` field still wins over content blocks.
+#[test]
+fn failed_tool_error_prefers_explicit_error_field() {
+    use agent_client_protocol::ToolCallStatus;
+
+    let raw = json!({
+        "error": "explicit reason",
+        "content": [{"type": "text", "text": "secondary text"}]
+    });
+    let err = CrucibleAcpClient::extract_tool_error(Some(ToolCallStatus::Failed), Some(&raw));
+    assert_eq!(err.as_deref(), Some("explicit reason"));
+}
+
+/// With nothing usable in the output, the generic label remains the floor.
+#[test]
+fn failed_tool_error_without_detail_falls_back_to_generic() {
+    use agent_client_protocol::ToolCallStatus;
+
+    for raw in [
+        None,
+        Some(json!({})),
+        Some(json!([])),
+        Some(json!([{"type": "image"}])),
+    ] {
+        let err = CrucibleAcpClient::extract_tool_error(Some(ToolCallStatus::Failed), raw.as_ref());
+        assert_eq!(err.as_deref(), Some("Tool call failed"), "raw={raw:?}");
+    }
+}
+
+/// The surfaced text is agent-authored: it renders as a one-line error label,
+/// so it gets the same single-line sanitising and display cap as
+/// `describe_rpc_error`'s output — control characters stripped, length elided.
+#[test]
+fn failed_tool_error_text_is_sanitized_and_capped() {
+    use agent_client_protocol::ToolCallStatus;
+
+    let hostile = format!("bad\x1b[31m\r{}", "x".repeat(4096));
+    let raw = json!([{"type": "text", "text": hostile}]);
+    let err = CrucibleAcpClient::extract_tool_error(Some(ToolCallStatus::Failed), Some(&raw))
+        .expect("failed status must yield an error");
+    assert!(
+        !err.contains('\x1b'),
+        "control chars must be stripped: {err:?}"
+    );
+    assert!(
+        err.chars().count() <= 520,
+        "error label must be display-capped, got {} chars",
+        err.chars().count()
+    );
+}

@@ -54,7 +54,7 @@ const MAX_DETAIL_INPUT_CHARS: usize = 16 * 1024;
 
 /// Truncate to the display cap, marking the cut so a clipped sentence does not
 /// read as the agent's own words.
-fn elide(text: &str) -> String {
+pub(super) fn elide(text: &str) -> String {
     match text.char_indices().nth(MAX_DETAIL_CHARS) {
         Some((end, _)) => format!("{}…", &text[..end]),
         None => text.to_string(),
