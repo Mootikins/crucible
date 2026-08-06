@@ -426,8 +426,8 @@ Highest user-visible impact and the cheapest fix. Do it first.
 **Files:**
 - Test: `crates/crucible-cli/src/tui/oil/chat_app/message_handlers.rs` (inline `#[cfg(test)]`)
 - Test: `crates/crucible-cli/src/tui/oil/tests/user_story_tests/acp_parity_tests.rs` (new)
-- Modify: `crates/crucible-cli/src/tui/oil/chat_app/message_handlers.rs:15-27`
-- Modify: `crates/crucible-cli/src/tui/oil/viewport_cache.rs:10-29`
+- Modify: `crates/crucible-cli/src/tui/oil/chat_app/message_handlers.rs` (the `parse_tool_source` arm)
+- Modify: `crates/crucible-cli/src/tui/oil/viewport_cache.rs` (`ToolSourceDisplay`)
 
 **Step 1: Write the failing unit test**
 
@@ -913,7 +913,7 @@ the review's I1 added `agent_manager/tests/parity_capture.rs` (tests only).
 > artifacts as truth.
 
 **Files:**
-- Modify: `crates/crucible-cli/src/tui/oil/tests/fixture_replay_tests.rs:339`
+- Modify: `crates/crucible-cli/src/tui/oil/tests/fixture_replay_tests.rs`
 - Modify or replace: `assets/fixtures/acp-demo.jsonl`
 
 **Step 1: Make a missing fixture a failure**
@@ -1016,7 +1016,7 @@ git commit -am "test(tui): pin the ACP permission modal's coarse tool naming"
 **What shipped** (maintainer approved the deletion; two commits so the decisions revert
 independently):
 
-- **`crates/crucible-daemon/src/acp/acp_client.rs` deleted — 740 lines, 15 tests** (the plan said
+- **`acp/acp_client.rs` (formerly under `crates/crucible-daemon/src/acp/`) deleted — 740 lines, 15 tests** (the plan said
   "~13"; the real count was 15). It held `CrucibleClient`, `WriteInfo`, and a free `spawn_agent`.
   Verified unreachable by grepping the whole workspace — `crucible-cli`, `crucible-web`, `tests/`,
   `benches/`, `examples/`, Lua and docs — not just the daemon: the only hits outside the file were
@@ -1024,7 +1024,7 @@ independently):
   either, and the free `spawn_agent` was shadowed everywhere by the *method*
   `CrucibleAcpClient::spawn_agent` in `acp/client/connection.rs`. The daemon's `tokio-util`
   `compat` feature went with it — `acp_client.rs` was its only user in that crate.
-- **`crates/crucible-daemon/src/acp/protocol.rs` deleted — 129 lines, 3 tests (D2).** The claim
+- **`acp/protocol.rs` (formerly under `crates/crucible-daemon/src/acp/`) deleted — 129 lines, 3 tests (D2).** The claim
   checked out and went further than the plan stated: `ACP_VERSION` was dead too, read only by this
   module's own `Default` impl and its own tests. Production negotiates the wire version through
   `agent_client_protocol` (`InitializeRequest::new(1u16.into())`, `acp/client/connection.rs:265`)
@@ -1041,8 +1041,8 @@ and clippy are clean.
 **Original task text follows.**
 
 **Files:**
-- Modify or delete: `crates/crucible-daemon/src/acp/acp_client.rs`
-- Modify: `crates/crucible-daemon/src/acp/mod.rs:30`
+- Modify or delete: `acp/acp_client.rs` (since deleted)
+- Modify: `acp/mod.rs` (the `CrucibleClient` re-export, since removed)
 
 `CrucibleClient` is never constructed outside its own test module. Its `request_permission` builds
 `PermRequest::tool(tool_call_id, <raw ACP struct>)` with no diffs — a serious presentation bug if
