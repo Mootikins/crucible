@@ -357,13 +357,16 @@ impl CrucibleAcpClient {
     /// Handle an inbound frame whose method we do not implement.
     ///
     /// A frame with an `id` is a request and gets a `-32601` reply; one without
-    /// is a notification, which by JSON-RPC must not be answered at all.
+    /// is a notification, which by JSON-RPC must not be answered at all. The
+    /// *presence* of the key is what distinguishes the two, so every id shape
+    /// the protocol allows — string, negative, null — is answered rather than
+    /// mistaken for a notification and dropped.
     async fn refuse_unhandled_method(
         &mut self,
         frame: &serde_json::Value,
         method_name: &str,
     ) -> Result<()> {
-        match frame.get("id").and_then(|id| self.parse_request_id(id)) {
+        match frame.get("id") {
             Some(request_id) => self.respond_method_not_found(request_id, method_name).await,
             None => {
                 tracing::debug!("Ignoring RPC notification: {}", method_name);

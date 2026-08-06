@@ -38,12 +38,19 @@ impl CrucibleAcpClient {
     /// A frame carrying an `id` is a request: the agent blocks until it gets a
     /// response. Dropping it hangs the turn until a read timeout fires, so an
     /// unknown method has to come back as JSON-RPC `-32601` instead.
+    ///
+    /// The id is echoed as the raw JSON value rather than parsed. JSON-RPC ids
+    /// are strings, numbers or null, and the response id must match the request
+    /// id in type as well as value — an agent keyed on `"req-7"` does not
+    /// recognise a reply addressed to `7`. Narrowing to `u64` first also threw
+    /// away every id it could not represent, which put string and negative ids
+    /// straight back into the hang this reply exists to prevent.
     pub(super) async fn respond_method_not_found(
         &mut self,
-        request_id: u64,
+        request_id: &serde_json::Value,
         method: &str,
     ) -> Result<()> {
-        tracing::debug!(request_id, method, "Refusing unimplemented ACP method");
+        tracing::debug!(%request_id, method, "Refusing unimplemented ACP method");
 
         self.write_agent_response(serde_json::json!({
             "jsonrpc": "2.0",
