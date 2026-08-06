@@ -53,18 +53,25 @@ MCP is a standard for AI tools. It defines how agents discover and use capabilit
 
 See [[Help/Extending/MCP Gateway]] for connecting MCP servers.
 
-### ACP (Agent Context Protocol)
+### ACP (Agent Client Protocol)
 
-ACP extends MCP with features for continuous agent interaction:
+ACP is a protocol for hosting agents. It defines how a host application
+spawns, manages, and talks to an external AI agent (Claude Code, OpenCode,
+Gemini CLI) over stdio JSON-RPC:
 
-- Session persistence
-- Multi-turn conversations
-- Workflow orchestration
+- Session lifecycle (create, prompt, pause/resume, end)
+- Streaming responses, thinking, and tool-call events
+- Permission requests from agent to host
+
+ACP does not extend MCP — the two are complementary. ACP runs on the
+outside (host ↔ agent, controlling the process and session), MCP on the
+inside (agent ↔ tools, discovering and calling capabilities). When Crucible
+hosts an external agent over ACP, it exposes kiln tools to that agent via
+MCP.
 
 **Use ACP when:**
-- Building complex agent workflows
-- Agents need to coordinate
-- Long-running tasks with state
+- Delegating work to an external agent (`cru chat -a claude`)
+- Driving Crucible itself from an editor (`cru acp`)
 
 ## Using Agents
 
