@@ -50,6 +50,9 @@ pub enum EventShape {
         call: String,
         diff_paths: Vec<String>,
     },
+    ToolCallArgsUpdate {
+        call: String,
+    },
     ToolBatchEnd,
     Usage,
     /// Both numbers are retained, unlike `Usage`: they are not incidental
@@ -141,6 +144,9 @@ impl ShapeProjector {
                 call: self.ordinal(id),
                 diff_paths: diff_paths(diffs),
             },
+            TurnEvent::ToolCallArgsUpdate { id, .. } => EventShape::ToolCallArgsUpdate {
+                call: self.ordinal(id),
+            },
             TurnEvent::ToolBatchEnd => EventShape::ToolBatchEnd,
             TurnEvent::Usage(_) => EventShape::Usage,
             TurnEvent::ContextWindow { used, limit } => EventShape::ContextWindow {
@@ -179,6 +185,7 @@ pub fn chunk_kind(chunk: &crucible_daemon::acp::StreamingChunk) -> &'static str 
         StreamingChunk::ToolStart { .. } => "tool_start",
         StreamingChunk::ToolEnd { .. } => "tool_end",
         StreamingChunk::ToolDiffUpdate { .. } => "tool_diff_update",
+        StreamingChunk::ToolArgsUpdate { .. } => "tool_args_update",
         StreamingChunk::ContextWindow { .. } => "context_window",
     }
 }

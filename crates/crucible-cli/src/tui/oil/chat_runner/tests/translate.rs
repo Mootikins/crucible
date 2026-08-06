@@ -394,3 +394,45 @@ fn tool_call_without_auto_approval_carries_none() {
         other => panic!("expected single ToolCall, got {other:?}"),
     }
 }
+
+#[test]
+fn translate_tool_call_args_update_emits_chat_msg_with_args() {
+    use serde_json::json;
+
+    // Late-args path: claude-agent-acp announces the tool call without
+    // `rawInput` and only supplies it in a follow-up frame. The daemon
+    // translates that into a `tool_call_args_update` event; the TUI must
+    // produce a `ChatAppMsg::ToolCallArgsUpdate` so the existing card can
+    // fill in its arguments.
+    let data = json!({
+        "call_id": "tc-late-args",
+        "args": {"path": "Concepts/Target.md"},
+    });
+
+    let msgs = session_event_to_chat_msgs("tool_call_args_update", &data);
+    assert_eq!(msgs.len(), 1, "got {msgs:?}");
+    match &msgs[0] {
+        ChatAppMsg::ToolCallArgsUpdate { call_id, args } => {
+            assert_eq!(call_id, "tc-late-args");
+            assert_eq!(args, r#"{"path":"Concepts/Target.md"}"#);
+        }
+        other => panic!("expected ToolCallArgsUpdate, got {other:?}"),
+    }
+}
+
+#[test]
+fn translate_tool_call_args_update_with_empty_args_drops_msg() {
+    use serde_json::json;
+    // Nothing to merge → no need to disturb the existing card.
+    for args in [json!({}), json!(null)] {
+        let data = json!({
+            "call_id": "tc-noop",
+            "args": args,
+        });
+        let msgs = session_event_to_chat_msgs("tool_call_args_update", &data);
+        assert!(
+            msgs.is_empty(),
+            "empty args should not emit a ChatAppMsg, got {msgs:?}"
+        );
+    }
+}

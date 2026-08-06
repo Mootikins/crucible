@@ -622,6 +622,25 @@ impl CrucibleAcpClient {
                         state.cancelled |= cancelled;
                     }
 
+                    // Late-args path, mirroring the late-diff path above: the
+                    // call was announced without `rawInput` (claude-agent-acp
+                    // defers it), so re-emit once the arguments are known.
+                    // Skip when the recorded call already carries the same
+                    // arguments — an identical snapshot is pure noise.
+                    if let Some(args) = update.fields.raw_input.as_ref() {
+                        let prior_args = state
+                            .tool_calls
+                            .iter()
+                            .find(|tc| tc.id.as_deref() == Some(tool_id.as_str()))
+                            .and_then(|tc| tc.arguments.as_ref());
+                        if prior_args != Some(args) {
+                            state.cancelled |= !callback(StreamingChunk::ToolArgsUpdate {
+                                call_id: tool_id.clone(),
+                                arguments: args.clone(),
+                            });
+                        }
+                    }
+
                     let mut info = ToolCallInfo::new(title).with_id(tool_id).with_diffs(diffs);
                     if let Some(args) = update.fields.raw_input.clone() {
                         info = info.with_arguments(args);

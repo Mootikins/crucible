@@ -122,6 +122,14 @@ impl CachedToolCall {
         self.diffs = diffs;
     }
 
+    /// Replace the tool's argument snapshot. Same deferred-content story as
+    /// [`Self::set_diffs`], but for `rawInput`: ACP agents announce the call
+    /// with no arguments and supply them via a follow-up
+    /// `tool_call_args_update` event.
+    pub fn set_args(&mut self, args: &str) {
+        self.args = Arc::from(args);
+    }
+
     /// Record that this call's permission was granted without asking, and by
     /// which layer. Rendered as a marker: an auto-approved call is otherwise
     /// indistinguishable from one that never needed permission.

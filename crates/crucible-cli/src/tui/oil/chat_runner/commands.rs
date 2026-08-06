@@ -279,6 +279,27 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
             }
             vec![ChatAppMsg::ToolCallDiffUpdate { call_id, diffs }]
         }
+        "tool_call_args_update" => {
+            let Some(call_id) = data
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+            else {
+                return Vec::new();
+            };
+            // Same noise filter as the diff path: an empty or null payload
+            // carries nothing worth disturbing the existing card for.
+            let args = match data.get("args") {
+                Some(raw) if !raw.is_null() && raw != &serde_json::json!({}) => {
+                    serde_json::to_string(raw).unwrap_or_default()
+                }
+                _ => return Vec::new(),
+            };
+            if args.is_empty() {
+                return Vec::new();
+            }
+            vec![ChatAppMsg::ToolCallArgsUpdate { call_id, args }]
+        }
         "tool_result" => {
             let name = data
                 .get("tool")

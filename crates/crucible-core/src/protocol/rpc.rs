@@ -223,6 +223,26 @@ impl SessionEventMessage {
         )
     }
 
+    /// Late arguments for a tool call that was already announced via a prior
+    /// `tool_call` event. Produced when an ACP agent (e.g. Claude Code)
+    /// announces the call without `rawInput` and only supplies it in a
+    /// follow-up `ToolCallUpdate` frame. Subscribers should merge `args` into
+    /// the existing tool entry keyed by `call_id`.
+    pub fn tool_call_args_update(
+        session_id: impl Into<String>,
+        call_id: impl Into<String>,
+        args: serde_json::Value,
+    ) -> Self {
+        Self::new(
+            session_id,
+            "tool_call_args_update",
+            serde_json::json!({
+                "call_id": call_id.into(),
+                "args": args,
+            }),
+        )
+    }
+
     /// The session's context window is now known.
     ///
     /// Usually a setup event (the daemon queries the provider API for the

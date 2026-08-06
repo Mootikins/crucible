@@ -112,6 +112,9 @@ fn serialize_chunk(chunk: &StreamingChunk) -> serde_json::Value {
         StreamingChunk::ToolDiffUpdate { call_id, diffs } => {
             json!({"kind": "tool_diff_update", "id": call_id, "diffs": diffs})
         }
+        StreamingChunk::ToolArgsUpdate { call_id, arguments } => {
+            json!({"kind": "tool_args_update", "id": call_id, "arguments": arguments})
+        }
         StreamingChunk::ContextWindow { used, limit } => {
             json!({"kind": "context_window", "used": used, "limit": limit})
         }

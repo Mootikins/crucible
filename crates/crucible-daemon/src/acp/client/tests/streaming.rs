@@ -682,3 +682,92 @@ fn failed_tool_error_text_is_sanitized_and_capped() {
         err.chars().count()
     );
 }
+
+/// claude-agent-acp announces a tool call with no `rawInput` and only
+/// supplies the arguments in a later `tool_call_update`. Those late args must
+/// be re-emitted the way late diffs are — otherwise every downstream surface
+/// (session log, recording, TUI card) shows `args: {}` forever, which is
+/// exactly what made the demo recording's failed `read_note` calls
+/// undiagnosable.
+#[test]
+fn tool_call_update_with_late_raw_input_emits_args_update_chunk() {
+    let mut client = make_client();
+    let mut state = StreamingState::default();
+
+    capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tool-1",
+                "title": "Read Note",
+            },
+        }),
+    );
+
+    let chunks = capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tool-1",
+                "rawInput": {"path": "Concepts/Target.md"},
+            },
+        }),
+    );
+
+    assert!(
+        chunks.iter().any(|c| matches!(c,
+            StreamingChunk::ToolArgsUpdate { call_id, arguments }
+                if call_id == "tool-1"
+                    && arguments == &json!({"path": "Concepts/Target.md"})
+        )),
+        "expected ToolArgsUpdate for late rawInput, got: {chunks:?}"
+    );
+}
+
+/// An update repeating the arguments the call was announced with is silent —
+/// re-emitting an identical snapshot has no informational gain.
+#[test]
+fn tool_call_update_with_unchanged_raw_input_does_not_emit_args_update() {
+    let mut client = make_client();
+    let mut state = StreamingState::default();
+
+    capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tool-1",
+                "title": "Read Note",
+                "rawInput": {"path": "Concepts/Target.md"},
+            },
+        }),
+    );
+
+    let chunks = capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tool-1",
+                "rawInput": {"path": "Concepts/Target.md"},
+            },
+        }),
+    );
+
+    assert!(
+        !chunks
+            .iter()
+            .any(|c| matches!(c, StreamingChunk::ToolArgsUpdate { .. })),
+        "unchanged rawInput must not re-emit, got: {chunks:?}"
+    );
+}

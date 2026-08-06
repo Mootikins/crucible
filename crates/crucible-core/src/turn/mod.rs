@@ -87,6 +87,19 @@ pub enum TurnEvent {
         diffs: Vec<crate::types::acp::FileDiff>,
     },
 
+    /// Arguments that arrived after the corresponding `ToolCall` was
+    /// already emitted. claude-agent-acp sends the initial `tool_call`
+    /// notification without `rawInput` and only supplies it in a follow-up
+    /// `tool_call_update` frame; subscribers merge the arguments into the
+    /// existing tool entry by `id`.
+    ///
+    /// Outbound only (agent → runtime). Does not advance tool depth and
+    /// does not trigger tool dispatch.
+    ToolCallArgsUpdate {
+        id: String,
+        arguments: serde_json::Value,
+    },
+
     /// Marker that all `ToolCall`s from the current chat completion
     /// have been emitted. The runtime uses this to tick tool-depth
     /// per batch rather than per individual call — models that emit

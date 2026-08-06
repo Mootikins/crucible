@@ -53,6 +53,15 @@ pub enum StreamingChunk {
         call_id: String,
         diffs: Vec<FileDiff>,
     },
+    /// Arguments that arrived in a `ToolCallUpdate` after the matching
+    /// `ToolStart` was already announced. claude-agent-acp sends the initial
+    /// `tool_call` notification without `rawInput` and only supplies it in a
+    /// follow-up frame; without this variant every downstream surface
+    /// (session log, recording, TUI card) records the call as `args: {}`.
+    ToolArgsUpdate {
+        call_id: String,
+        arguments: serde_json::Value,
+    },
     /// The agent's report of its own context window: tokens currently
     /// occupying it and its total size, from a `usage_update` session update.
     ///

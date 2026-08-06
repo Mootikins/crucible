@@ -633,6 +633,16 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                             diffs,
                         };
                     }
+                    StreamingChunk::ToolArgsUpdate { call_id, arguments } => {
+                        debug!(
+                            tool_id = %call_id,
+                            "ACP late args update"
+                        );
+                        yield TurnEvent::ToolCallArgsUpdate {
+                            id: call_id,
+                            arguments,
+                        };
+                    }
                 }
             }
 

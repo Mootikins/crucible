@@ -1007,6 +1007,9 @@ fn streaming_chunk_variants_roundtrip_via_json() {
             StreamingChunk::ToolDiffUpdate { call_id, diffs } => {
                 json!({"kind": "tool_diff_update", "id": call_id, "diffs": diffs})
             }
+            StreamingChunk::ToolArgsUpdate { call_id, arguments } => {
+                json!({"kind": "tool_args_update", "id": call_id, "arguments": arguments})
+            }
             StreamingChunk::ContextWindow { used, limit } => {
                 json!({"kind": "context_window", "used": used, "limit": limit})
             }
@@ -1040,6 +1043,10 @@ fn streaming_chunk_variants_roundtrip_via_json() {
                 call_id: serialized["id"].as_str().unwrap().to_string(),
                 diffs: serde_json::from_value(serialized["diffs"].clone()).unwrap_or_default(),
             },
+            "tool_args_update" => StreamingChunk::ToolArgsUpdate {
+                call_id: serialized["id"].as_str().unwrap().to_string(),
+                arguments: serialized["arguments"].clone(),
+            },
             "context_window" => StreamingChunk::ContextWindow {
                 used: serialized["used"].as_u64().unwrap(),
                 limit: serialized["limit"].as_u64().unwrap(),
@@ -1072,6 +1079,10 @@ fn streaming_chunk_variants_roundtrip_via_json() {
             id: "tool-3".to_string(),
             result: None,
             error: Some("timeout".to_string()),
+        },
+        StreamingChunk::ToolArgsUpdate {
+            call_id: "tool-1".to_string(),
+            arguments: json!({"path": "Concepts/Target.md"}),
         },
         StreamingChunk::ContextWindow {
             used: 22_700,
@@ -1117,6 +1128,19 @@ fn streaming_chunk_variants_roundtrip_via_json() {
                 assert_eq!(a_i, b_i);
                 assert_eq!(a_r, b_r);
                 assert_eq!(a_e, b_e);
+            }
+            (
+                StreamingChunk::ToolArgsUpdate {
+                    call_id: a_i,
+                    arguments: a_a,
+                },
+                StreamingChunk::ToolArgsUpdate {
+                    call_id: b_i,
+                    arguments: b_a,
+                },
+            ) => {
+                assert_eq!(a_i, b_i);
+                assert_eq!(a_a, b_a);
             }
             (
                 StreamingChunk::ContextWindow {

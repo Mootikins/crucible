@@ -94,6 +94,17 @@ pub enum ChatAppMsg {
         call_id: String,
         diffs: Vec<FileDiff>,
     },
+    /// **Event** (daemon → TUI): Late arguments for an already-announced
+    /// tool call. claude-agent-acp sends the initial `tool_call` frame
+    /// without `rawInput` and only supplies it in a follow-up frame; the
+    /// TUI fills in the existing `CachedToolCall`'s args keyed by
+    /// `call_id`.
+    ToolCallArgsUpdate {
+        call_id: String,
+        /// JSON-serialized arguments, same representation as
+        /// [`Self::ToolCall`]'s `args`.
+        args: String,
+    },
     /// **Event** (daemon → TUI): Streaming delta of tool result output.
     ToolResultDelta {
         name: String,
@@ -294,6 +305,7 @@ impl ChatAppMsg {
             | Self::ThinkingDelta(_)
             | Self::ToolCall { .. }
             | Self::ToolCallDiffUpdate { .. }
+            | Self::ToolCallArgsUpdate { .. }
             | Self::ToolResultDelta { .. }
             | Self::ToolResultComplete { .. }
             | Self::ToolResultError { .. }

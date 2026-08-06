@@ -824,6 +824,26 @@ impl AgentManager {
                         );
                     }
                 }
+                TurnEvent::ToolCallArgsUpdate { id, arguments } => {
+                    // ACP late-args path: the agent announced the call
+                    // without `rawInput` and supplied it in a follow-up
+                    // frame. Pass through so subscribers can fill in the
+                    // existing tool entry's arguments.
+                    if !emit_event(
+                        &stream_ctx.event_tx,
+                        SessionEventMessage::tool_call_args_update(
+                            &stream_ctx.session_id,
+                            &id,
+                            arguments,
+                        ),
+                    ) {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            call_id = %id,
+                            "No subscribers for tool_call_args_update event"
+                        );
+                    }
+                }
                 TurnEvent::ToolCallDiffUpdate { id, diffs } => {
                     // ACP late-diff path: the agent attached file-diff
                     // content via a `tool_call_update` after the matching

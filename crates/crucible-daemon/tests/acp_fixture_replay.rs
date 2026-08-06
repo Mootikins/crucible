@@ -67,6 +67,7 @@ enum ChunkShape {
     ToolStart,
     ToolEnd,
     ToolDiffUpdate,
+    ToolArgsUpdate,
     ContextWindow,
 }
 
@@ -77,6 +78,7 @@ fn shape_of(chunk: &StreamingChunk) -> ChunkShape {
         StreamingChunk::ToolStart { .. } => ChunkShape::ToolStart,
         StreamingChunk::ToolEnd { .. } => ChunkShape::ToolEnd,
         StreamingChunk::ToolDiffUpdate { .. } => ChunkShape::ToolDiffUpdate,
+        StreamingChunk::ToolArgsUpdate { .. } => ChunkShape::ToolArgsUpdate,
         StreamingChunk::ContextWindow { .. } => ChunkShape::ContextWindow,
     }
 }
