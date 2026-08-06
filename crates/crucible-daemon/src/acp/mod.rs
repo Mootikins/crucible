@@ -14,7 +14,6 @@ pub use agent_client_protocol::{
 // Module declarations
 pub mod client;
 pub mod discovery;
-pub mod filesystem;
 pub mod session;
 pub mod streaming;
 pub mod tools;
@@ -29,7 +28,6 @@ pub use client::CrucibleAcpClient;
 pub use discovery::{
     discover_agent, get_agent_help, is_agent_available, reset_agent_cache, AgentInfo,
 };
-pub use filesystem::FileSystemHandler;
 pub use session::{AcpSession, TransportConfig};
 pub use streaming::{
     channel_callback, humanize_tool_title, StreamConfig, StreamHandler, StreamingCallback,

@@ -31,7 +31,6 @@ pub mod workflow;
 pub mod config;
 pub mod status;
 
-pub mod secure_filesystem;
 pub mod stats;
 pub mod storage;
 
