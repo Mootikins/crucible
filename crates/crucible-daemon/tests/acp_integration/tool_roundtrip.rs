@@ -440,6 +440,7 @@ async fn test_acp_tool_roundtrip_with_mcp_server() {
 
     let host = match InProcessMcpHost::start(
         temp.path().to_path_buf(),
+        temp.path().to_path_buf(),
         knowledge_repo,
         embedding_provider,
         None,

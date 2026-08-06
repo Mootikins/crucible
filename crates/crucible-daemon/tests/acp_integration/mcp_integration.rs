@@ -263,7 +263,15 @@ async fn start_mcp_host(
     knowledge_repo: Arc<dyn KnowledgeRepository>,
     embedding_provider: Arc<dyn EmbeddingProvider>,
 ) -> InProcessMcpHost {
-    match InProcessMcpHost::start(kiln_path, knowledge_repo, embedding_provider, None).await {
+    match InProcessMcpHost::start(
+        kiln_path.clone(),
+        kiln_path,
+        knowledge_repo,
+        embedding_provider,
+        None,
+    )
+    .await
+    {
         Ok(host) => host,
         Err(err) => {
             if is_permission_denied(&err) {

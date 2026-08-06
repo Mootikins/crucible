@@ -203,6 +203,7 @@ async fn test_acp_delegation_pipeline_all_fixes_work() {
 
     let host = match InProcessMcpHost::start(
         temp.path().to_path_buf(),
+        temp.path().to_path_buf(),
         knowledge_repo,
         embedding_provider,
         None,
@@ -308,6 +309,7 @@ async fn test_acp_delegation_pipeline_all_fixes_work() {
     let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
 
     let host = match InProcessMcpHost::start(
+        temp.path().to_path_buf(),
         temp.path().to_path_buf(),
         knowledge_repo,
         embedding_provider,

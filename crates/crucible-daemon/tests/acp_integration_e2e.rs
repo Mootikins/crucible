@@ -288,6 +288,7 @@ async fn test_mcp_host_initializes() {
 
     let host = match InProcessMcpHost::start(
         temp.path().to_path_buf(),
+        temp.path().to_path_buf(),
         knowledge_repo,
         embedding_provider,
         None, // no delegation context
@@ -424,6 +425,7 @@ async fn test_mcp_host_initializes_with_delegation_context() {
     };
 
     let host = match InProcessMcpHost::start(
+        temp.path().to_path_buf(),
         temp.path().to_path_buf(),
         knowledge_repo,
         embedding_provider,

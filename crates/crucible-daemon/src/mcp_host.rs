@@ -67,8 +67,31 @@ pub struct InProcessMcpHost {
 }
 
 impl InProcessMcpHost {
+    /// Build the MCP server an external ACP agent will connect to.
+    ///
+    /// Note/search/kiln tools resolve against `kiln_path`; `workspace_path` is
+    /// the session's working directory. These differ whenever a project's kiln
+    /// is not its root (e.g. a `./docs` kiln) — binding note tools to the
+    /// workspace makes `read_note` fail on every id `semantic_search` returns.
+    fn build_server(
+        kiln_path: &std::path::Path,
+        workspace_path: &std::path::Path,
+        knowledge_repo: Arc<dyn KnowledgeRepository>,
+        embedding_provider: Arc<dyn EmbeddingProvider>,
+        delegation_context: Option<DelegationContext>,
+    ) -> CrucibleMcpServer {
+        CrucibleMcpServer::new_with_workspace_and_delegation(
+            kiln_path.to_string_lossy().to_string(),
+            workspace_path.to_path_buf(),
+            knowledge_repo,
+            embedding_provider,
+            delegation_context,
+        )
+    }
+
     pub async fn start(
         kiln_path: PathBuf,
+        workspace_path: PathBuf,
         knowledge_repo: Arc<dyn KnowledgeRepository>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
         delegation_context: Option<DelegationContext>,
@@ -96,8 +119,9 @@ impl InProcessMcpHost {
 
         info!("MCP streamable HTTP server bound to {}", actual_addr);
 
-        let mcp_server = CrucibleMcpServer::new_with_delegation(
-            kiln_path.to_string_lossy().to_string(),
+        let mcp_server = Self::build_server(
+            &kiln_path,
+            &workspace_path,
             knowledge_repo,
             embedding_provider,
             delegation_context,
@@ -174,6 +198,61 @@ mod tests {
 
     use crate::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
 
+    /// The server an external ACP agent connects to must resolve note tools
+    /// against the session's *kiln*, not its workspace. The two differ
+    /// whenever a project's kiln is not its root (e.g. a `./docs` kiln):
+    /// binding the workspace made `read_note` fail with "File not found" on
+    /// every id `semantic_search` itself returned, because search is
+    /// index-backed while note reads hit the filesystem.
+    ///
+    /// A decoy note sits at the same relative path inside the workspace, so
+    /// this fails loudly (wrong content, not just a missing file) if the
+    /// binding ever swaps back.
+    #[tokio::test]
+    async fn read_note_resolves_against_kiln_not_workspace() {
+        let kiln = TempDir::new().unwrap();
+        let workspace = TempDir::new().unwrap();
+        std::fs::create_dir_all(kiln.path().join("Concepts")).unwrap();
+        std::fs::write(
+            kiln.path().join("Concepts/Target.md"),
+            "kiln-grounded content",
+        )
+        .unwrap();
+        std::fs::create_dir_all(workspace.path().join("Concepts")).unwrap();
+        std::fs::write(
+            workspace.path().join("Concepts/Target.md"),
+            "workspace decoy",
+        )
+        .unwrap();
+
+        let server = InProcessMcpHost::build_server(
+            kiln.path(),
+            workspace.path(),
+            Arc::new(MockKnowledgeRepository),
+            Arc::new(MockEmbeddingProvider),
+            None,
+        );
+
+        let params = serde_json::from_value::<crate::tools::notes::ReadNoteParams>(
+            serde_json::json!({"path": "Concepts/Target.md"}),
+        )
+        .unwrap();
+        let result = server
+            .read_note(rmcp::handler::server::wrapper::Parameters(params))
+            .await
+            .expect("read_note should resolve ids against the kiln");
+
+        let rendered = format!("{result:?}");
+        assert!(
+            rendered.contains("kiln-grounded content"),
+            "read_note did not return the kiln's note: {rendered}"
+        );
+        assert!(
+            !rendered.contains("workspace decoy"),
+            "read_note read from the workspace instead of the kiln: {rendered}"
+        );
+    }
+
     #[tokio::test]
     async fn test_mcp_host_starts_and_binds() {
         let temp = TempDir::new().unwrap();
@@ -181,6 +260,7 @@ mod tests {
         let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
 
         let host = match InProcessMcpHost::start(
+            temp.path().to_path_buf(),
             temp.path().to_path_buf(),
             knowledge_repo,
             embedding_provider,
@@ -223,6 +303,7 @@ mod tests {
         let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
 
         let host = match InProcessMcpHost::start(
+            temp.path().to_path_buf(),
             temp.path().to_path_buf(),
             knowledge_repo,
             embedding_provider,
