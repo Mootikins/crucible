@@ -120,7 +120,7 @@ async fn turn_emitting(
     reply
 }
 
-fn unhandled_request(request_id: u64) -> serde_json::Value {
+fn unhandled_request(request_id: serde_json::Value) -> serde_json::Value {
     json!({
         "jsonrpc": "2.0",
         "id": request_id,
@@ -132,14 +132,16 @@ fn unhandled_request(request_id: u64) -> serde_json::Value {
     })
 }
 
-fn assert_method_not_found(reply: Option<serde_json::Value>, expected_id: u64) {
+fn assert_method_not_found(reply: Option<serde_json::Value>, expected_id: serde_json::Value) {
     let reply = reply.expect("client should answer an inbound request it cannot handle");
 
     assert_eq!(reply["jsonrpc"], "2.0");
+    // JSON-RPC 2.0 requires the response id to equal the request id — same
+    // value *and* same type. An agent keyed on `"req-7"` does not recognise a
+    // reply addressed to `7`.
     assert_eq!(
-        reply["id"].as_u64(),
-        Some(expected_id),
-        "reply must carry the request's id, got {reply}"
+        reply["id"], expected_id,
+        "reply must carry the request's id unchanged, got {reply}"
     );
     assert_eq!(
         reply["error"]["code"].as_i64(),
@@ -162,21 +164,21 @@ fn assert_method_not_found(reply: Option<serde_json::Value>, expected_id: u64) {
 async fn an_unhandled_inbound_request_gets_a_method_not_found_reply() {
     let (mut client, reader, writer) = client_with_custom_transport(Some(500));
 
-    let agent = tokio::spawn(turn_emitting(reader, writer, unhandled_request(901)));
+    let agent = tokio::spawn(turn_emitting(reader, writer, unhandled_request(json!(901))));
 
     client
         .send_prompt_with_streaming(make_prompt_request("ses-inbound", "read a file"))
         .await
         .expect("turn should complete");
 
-    assert_method_not_found(agent.await.expect("agent task"), 901);
+    assert_method_not_found(agent.await.expect("agent task"), json!(901));
 }
 
 #[tokio::test]
 async fn an_unhandled_inbound_request_is_answered_on_the_callback_path_too() {
     let (mut client, reader, writer) = client_with_custom_transport(Some(500));
 
-    let agent = tokio::spawn(turn_emitting(reader, writer, unhandled_request(902)));
+    let agent = tokio::spawn(turn_emitting(reader, writer, unhandled_request(json!(902))));
 
     client
         .send_prompt_with_callback(
@@ -186,7 +188,44 @@ async fn an_unhandled_inbound_request_is_answered_on_the_callback_path_too() {
         .await
         .expect("turn should complete");
 
-    assert_method_not_found(agent.await.expect("agent task"), 902);
+    assert_method_not_found(agent.await.expect("agent task"), json!(902));
+}
+
+/// JSON-RPC ids are strings, numbers or null — not just `u64`. A non-numeric
+/// string id used to parse to `None`, which read as "this is a notification"
+/// and dropped the request, reintroducing the very hang this module exists to
+/// prevent.
+#[tokio::test]
+async fn an_unhandled_request_with_a_string_id_is_answered_with_that_string_id() {
+    let (mut client, reader, writer) = client_with_custom_transport(Some(500));
+
+    let agent = tokio::spawn(turn_emitting(
+        reader,
+        writer,
+        unhandled_request(json!("req-7")),
+    ));
+
+    client
+        .send_prompt_with_streaming(make_prompt_request("ses-inbound", "read a file"))
+        .await
+        .expect("turn should complete");
+
+    assert_method_not_found(agent.await.expect("agent task"), json!("req-7"));
+}
+
+/// Negative ids are legal JSON-RPC and `as_u64()` rejects them.
+#[tokio::test]
+async fn an_unhandled_request_with_a_negative_id_is_answered_with_that_id() {
+    let (mut client, reader, writer) = client_with_custom_transport(Some(500));
+
+    let agent = tokio::spawn(turn_emitting(reader, writer, unhandled_request(json!(-3))));
+
+    client
+        .send_prompt_with_streaming(make_prompt_request("ses-inbound", "read a file"))
+        .await
+        .expect("turn should complete");
+
+    assert_method_not_found(agent.await.expect("agent task"), json!(-3));
 }
 
 #[tokio::test]

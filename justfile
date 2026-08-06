@@ -21,7 +21,11 @@ export CARGO_BUILD_JOBS := env_var_or_default("CARGO_BUILD_JOBS", "6")
 # target dir (`tree/.cargo/config.toml`), so `./target/debug/cru` does not
 # exist there and every recipe hardcoding it fails with exit 127 — which is
 # how `just ci` used to break in any worktree.
-cargo_target_dir := `cargo metadata --format-version 1 --no-deps --offline 2>/dev/null | jq -r .target_directory`
+#
+# Needs `jq`, as `scripts/validate-demos.sh` already does. Errors are left
+# unsuppressed: a cargo failure here should be visible, not silently collapse
+# the path to `/debug/cru`.
+cargo_target_dir := `cargo metadata --format-version 1 --no-deps --offline | jq -r .target_directory`
 cru_debug := cargo_target_dir / "debug" / "cru"
 
 # Default recipe - show help
@@ -93,7 +97,7 @@ test-crate-filter crate filter:
 # Run a Lua plugin's own test suite, e.g. `just test-plugin runtime/plugins/oci`
 test-plugin dir:
     cargo build -q -p crucible-cli --bin cru
-    {{cru_debug}} plugin test {{dir}}
+    {{quote(cru_debug)}} plugin test {{dir}}
 
 # Run tests with output
 test-verbose:
@@ -392,7 +396,7 @@ test-plugins:
     for dir in runtime/plugins/*/; do
         if compgen -G "${dir}tests/*.lua" > /dev/null; then
             echo "== ${dir}"
-            {{cru_debug}} plugin test "${dir%/}"
+            {{quote(cru_debug)}} plugin test "${dir%/}"
         fi
     done
 
