@@ -201,6 +201,21 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         _ => false,
     };
 
+    // A daemon running as the spawned background process has its stderr
+    // redirected to ~/.crucible/daemon.log. With the old OFF default that
+    // file stayed empty and a startup failure had no cause anywhere; WARN
+    // gives it something to say.
+    let is_daemon_process = matches!(
+        &cli.command,
+        Some(Commands::Daemon(
+            commands::daemon::DaemonCommands::Serve
+                | commands::daemon::DaemonCommands::Start {
+                    foreground: true,
+                    ..
+                }
+        ))
+    );
+
     // Determine base log level from CLI flags or config
     // Priority: --log-level flag > --verbose flag > config file > default
     // Default: WARN for stdio commands (always log errors/warnings), OFF for others
@@ -209,12 +224,12 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
     } else if cli.verbose {
         LevelFilter::DEBUG
     } else if let Some(config_level) = config.logging_level() {
-        parse_log_level(&config_level).unwrap_or(if uses_stdio {
+        parse_log_level(&config_level).unwrap_or(if uses_stdio || is_daemon_process {
             LevelFilter::WARN
         } else {
             LevelFilter::OFF
         })
-    } else if uses_stdio {
+    } else if uses_stdio || is_daemon_process {
         LevelFilter::WARN // Default to WARN for chat/mcp (always capture errors)
     } else {
         LevelFilter::OFF

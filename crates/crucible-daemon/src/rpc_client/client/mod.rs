@@ -152,7 +152,7 @@ impl DaemonClient {
         }
     }
 
-    /// Start daemon and retry connecting with exponential backoff.
+    /// Start daemon and retry connecting with capped exponential backoff.
     async fn start_and_retry<T, F, Fut>(connect: F) -> Result<T>
     where
         F: Fn() -> Fut,
@@ -160,22 +160,62 @@ impl DaemonClient {
     {
         Self::start_daemon().await?;
 
-        let mut delay = Duration::from_millis(50);
-        for attempt in 0..10 {
+        let mut attempts = 0usize;
+        for delay in Self::connect_backoff() {
             tokio::time::sleep(delay).await;
+            attempts += 1;
             if let Ok(result) = connect().await {
                 return Ok(result);
             }
-            delay *= 2;
-            if attempt > 5 {
-                warn!("Daemon not ready after {} attempts", attempt + 1);
+            if attempts > 5 {
+                warn!("Daemon not ready after {attempts} attempts");
             }
         }
 
+        let log_path = crate::rpc_client::lifecycle::daemon_log_path();
+        let tail = crate::rpc_client::lifecycle::read_log_tail(&log_path, 15);
         anyhow::bail!(
-            "Failed to connect to daemon after 10 attempts. \
-             Try: cru daemon stop && cru daemon start"
+            "{}",
+            Self::compose_connect_failure(attempts, &log_path, tail)
         )
+    }
+
+    /// Connect retry schedule: doubling from 50ms, capped at 1s, 8 attempts —
+    /// ~4.6s total. A daemon that hasn't bound its socket by then is not
+    /// coming up; the previous uncapped 10-doubling schedule left the user
+    /// staring at nothing for 51 seconds.
+    fn connect_backoff() -> impl Iterator<Item = Duration> {
+        (0u32..8).map(|i| Duration::from_millis((50u64 << i).min(1000)))
+    }
+
+    /// The message shown when the spawned daemon never became reachable.
+    /// Carries the *cause* (the daemon's own recent log output), not just the
+    /// restart incantation — the log is where a startup crash actually lands.
+    fn compose_connect_failure(
+        attempts: usize,
+        log_path: &Path,
+        log_tail: Option<String>,
+    ) -> String {
+        let mut msg = format!(
+            "Failed to connect to daemon after {attempts} attempts. \
+             Try: cru daemon stop && cru daemon start (and `cru daemon logs` \
+             or `cru doctor` to diagnose)."
+        );
+        match log_tail {
+            Some(tail) => {
+                msg.push_str(&format!(
+                    "\nRecent daemon output ({}):\n{tail}",
+                    log_path.display()
+                ));
+            }
+            None => {
+                msg.push_str(&format!(
+                    "\nNo daemon output captured at {}.",
+                    log_path.display()
+                ));
+            }
+        }
+        msg
     }
 
     /// Build the args for `cru <...> daemon serve`, forwarding `--config` (which
@@ -218,11 +258,14 @@ impl DaemonClient {
 
         tracing::info!("Starting daemon: {:?} {:?}", exe, args);
 
+        // Capture the daemon's output: a detached daemon that dies on startup
+        // is otherwise a silent 4.6s timeout with no cause anywhere.
+        let (out, err) = crate::rpc_client::lifecycle::daemon_log_stdio();
         Command::new(&exe)
             .args(&args)
             .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
+            .stdout(out)
+            .stderr(err)
             .spawn()
             .map_err(|e| anyhow::anyhow!("Failed to spawn daemon: {}", e))?;
         Ok(())
@@ -877,6 +920,54 @@ mod tests {
     use super::*;
     use crate::Server;
     use tempfile::TempDir;
+
+    /// Approval criterion 1.3: a cold-start failure must surface in seconds,
+    /// not the 51.15s the old uncapped schedule took.
+    #[test]
+    fn the_connect_backoff_gives_up_in_seconds_not_minutes() {
+        let delays: Vec<Duration> = DaemonClient::connect_backoff().collect();
+        let total: Duration = delays.iter().sum();
+
+        assert!(
+            total < Duration::from_secs(6),
+            "backoff must give up quickly; total was {total:?}"
+        );
+        assert!(
+            delays.first().unwrap() < &Duration::from_millis(100),
+            "first retry must be fast for the healthy-start case"
+        );
+    }
+
+    /// The failure message must carry the daemon's own words — the log tail —
+    /// not just the restart incantation.
+    #[test]
+    fn the_connect_failure_message_shows_the_daemon_log_tail() {
+        let msg = DaemonClient::compose_connect_failure(
+            8,
+            std::path::Path::new("/home/user/.crucible/daemon.log"),
+            Some("Error: invalid config: unknown field `chat.provider`".to_string()),
+        );
+
+        assert!(msg.contains("Try: cru daemon stop && cru daemon start"));
+        assert!(msg.contains("cru daemon logs"));
+        assert!(msg.contains("cru doctor"));
+        assert!(
+            msg.contains("unknown field `chat.provider`"),
+            "the daemon's actual error text must be in the message"
+        );
+    }
+
+    #[test]
+    fn the_connect_failure_message_admits_when_there_is_no_log() {
+        let msg = DaemonClient::compose_connect_failure(
+            8,
+            std::path::Path::new("/home/user/.crucible/daemon.log"),
+            None,
+        );
+
+        assert!(msg.contains("No daemon output captured"));
+        assert!(msg.contains("/home/user/.crucible/daemon.log"));
+    }
 
     #[test]
     fn daemon_serve_args_forwards_config() {

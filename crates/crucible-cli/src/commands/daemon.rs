@@ -36,6 +36,12 @@ pub enum DaemonCommands {
         #[arg(long)]
         json: bool,
     },
+    /// Show recent output from the background daemon
+    Logs {
+        /// Number of lines to show from the end of the log
+        #[arg(short = 'n', long, default_value_t = 50)]
+        lines: usize,
+    },
     /// Internal: run as foreground daemon (used by auto-spawn)
     #[command(hide = true)]
     Serve,
@@ -47,10 +53,23 @@ pub async fn handle(cmd: DaemonCommands, config_path: Option<PathBuf>) -> Result
             start_daemon(foreground, wait, config_path).await
         }
         DaemonCommands::Stop => stop_daemon().await,
-        DaemonCommands::Restart { wait: _ } => restart_daemon(config_path).await,
+        DaemonCommands::Restart { wait } => restart_daemon(config_path, wait).await,
         DaemonCommands::Serve => start_daemon(true, false, config_path).await,
         DaemonCommands::Status { json } => show_status(json).await,
+        DaemonCommands::Logs { lines } => show_logs(lines),
     }
+}
+
+fn show_logs(lines: usize) -> Result<()> {
+    let path = crucible_daemon::rpc_client::lifecycle::daemon_log_path();
+    match crucible_daemon::rpc_client::lifecycle::read_log_tail(&path, lines) {
+        Some(tail) => println!("{tail}"),
+        None => println!(
+            "No daemon output at {} yet — it appears after the first background daemon start.",
+            path.display()
+        ),
+    }
+    Ok(())
 }
 
 async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>) -> Result<()> {
@@ -115,10 +134,12 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
             cmd.arg("--config").arg(path);
         }
 
-        // Daemonize: redirect stdio and detach
+        // Daemonize: detach stdin, capture output in the daemon log so a
+        // startup crash has somewhere to leave its cause.
+        let (out, err) = crucible_daemon::rpc_client::lifecycle::daemon_log_stdio();
         cmd.stdin(Stdio::null());
-        cmd.stdout(Stdio::null());
-        cmd.stderr(Stdio::null());
+        cmd.stdout(out);
+        cmd.stderr(err);
 
         // Spawn detached
         cmd.spawn()?;
@@ -171,7 +192,7 @@ async fn stop_daemon() -> Result<()> {
     Ok(())
 }
 
-async fn restart_daemon(config_path: Option<PathBuf>) -> Result<()> {
+async fn restart_daemon(config_path: Option<PathBuf>, wait: bool) -> Result<()> {
     let sock = socket_path();
     if is_daemon_running(&sock) {
         // Stop the existing daemon
@@ -194,7 +215,7 @@ async fn restart_daemon(config_path: Option<PathBuf>) -> Result<()> {
     }
 
     // Start fresh daemon
-    start_daemon(false, true, config_path).await?;
+    start_daemon(false, wait, config_path).await?;
     println!("Daemon restarted");
     Ok(())
 }
