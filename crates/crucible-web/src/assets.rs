@@ -14,9 +14,18 @@ use axum::{
 use rust_embed::Embed;
 use tower_http::services::ServeDir;
 
-/// Embedded assets for release builds
+/// Embedded assets for release builds.
+///
+/// `allow_missing` because `web/dist` is a build artifact of the frontend
+/// (bun), not a tracked file — so it is absent in a fresh clone. Without it
+/// the derive is a hard compile error and `cargo build` fails for anyone who
+/// has not run the frontend build first, which is every new user and every
+/// contributor whose first command is `cargo test`. A release build still
+/// embeds the real assets; a build without them serves the message in
+/// [`serve_embedded`] instead of failing to compile.
 #[derive(Embed)]
 #[folder = "web/dist"]
+#[allow_missing = true]
 struct Assets;
 
 /// Create router for serving static assets
@@ -47,6 +56,16 @@ fn serve_from_dir(dir: &str) -> Router {
 }
 
 fn serve_embedded() -> Router {
+    // Distinguish "built without the frontend" from "asset genuinely missing"
+    // at startup rather than leaving the user a bare 404 per request. This is
+    // reachable because the embed tolerates a missing `web/dist` (see
+    // [`Assets`]) — a build that skipped `just web-build` gets here.
+    if <Assets as Embed>::iter().next().is_none() {
+        tracing::error!(
+            "No embedded web assets: this binary was built without the frontend. \
+             Run `just web-build` and rebuild, or pass --web-dir to serve from a directory."
+        );
+    }
     Router::new().fallback(embedded_handler)
 }
 

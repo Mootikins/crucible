@@ -25,12 +25,32 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - name: Create web asset placeholder
-        run: mkdir -p crates/crucible-web/web/dist && echo "<html></html>" > crates/crucible-web/web/dist/index.html
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --lib --bins --tests -- -W warnings
       - name: Check for god files
         run: scripts/check-file-sizes.sh
+
+  # The install path a new user actually takes: clone, cargo build, no bun and
+  # so no web/dist. Every other job here builds the frontend or once faked it
+  # with a placeholder index.html, which is exactly how a fresh clone stayed
+  # broken while CI was green. Deliberately no bun step — that absence is the
+  # thing under test.
+  build-from-clean-clone:
+    name: Build without a frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Fail if web/dist is present
+        run: |
+          if [ -e crates/crucible-web/web/dist ]; then
+            echo "web/dist exists in a fresh checkout; this job no longer tests anything" >&2
+            exit 1
+          fi
+      - run: cargo build -p crucible-cli
 
   deny:
     name: Dependency Licences
@@ -84,8 +104,6 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - name: Create web asset placeholder
-        run: mkdir -p crates/crucible-web/web/dist && echo "<html></html>" > crates/crucible-web/web/dist/index.html
       - name: Build mock ACP agent for smoke tests
         run: cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent
       - name: Run tests with nextest
@@ -120,8 +138,6 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - name: Create web asset placeholder
-        run: mkdir -p crates/crucible-web/web/dist && echo "<html></html>" > crates/crucible-web/web/dist/index.html
       - name: Build cru binary for e2e tests
         run: cargo build -p crucible-cli --bin cru
       - name: Build mock ACP agent for smoke tests
