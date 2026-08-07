@@ -204,6 +204,21 @@ impl TuiTestSession {
         // that would split — none of our test env values (socket/config
         // paths) contain spaces.
         let home = tempfile::tempdir().expect("create hermetic HOME for TUI child");
+
+        // The hermetic env means the child resolves ZERO providers, and chat
+        // preflight now refuses to open the TUI in that state (the
+        // zero-provider guard). These tests exercise the TUI, not providers,
+        // so give the child the default local setup a real machine would
+        // have. Tests that pass `--config` (CRUCIBLE_TEST_CONFIG) override
+        // this file entirely.
+        let cfg_dir = home.path().join(".config/crucible");
+        std::fs::create_dir_all(&cfg_dir).expect("create hermetic config dir");
+        std::fs::write(
+            cfg_dir.join("config.toml"),
+            "[llm]\ndefault = \"ollama\"\n\n[llm.providers.ollama]\ntype = \"ollama\"\n",
+        )
+        .expect("write hermetic provider config");
+
         let mut pairs = crucible_core::test_support::hermetic_env_pairs(home.path());
         // A TUI child needs a terminal type; parents under CI may not have one.
         if !pairs.iter().any(|(k, _)| k == "TERM") {

@@ -44,7 +44,16 @@ pub async fn ensure_providers_available(
     client: &crucible_daemon::DaemonClient,
     kiln: &std::path::Path,
 ) -> Result<()> {
-    let providers = client.list_providers_summary(Some(kiln)).await?;
+    // Best-effort: a listing hiccup must not block a chat that might work —
+    // if something is genuinely wrong, the turn surfaces it with the
+    // (now much better) daemon-side error.
+    let providers = match client.list_providers_summary(Some(kiln)).await {
+        Ok(providers) => providers,
+        Err(e) => {
+            warn!("providers.list failed during preflight; continuing: {e}");
+            return Ok(());
+        }
+    };
     if providers.is_empty() {
         anyhow::bail!("{}", no_providers_message());
     }

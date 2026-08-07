@@ -21,18 +21,31 @@ pub fn daemon_log_path() -> PathBuf {
     crucible_core::config::crucible_home().join("daemon.log")
 }
 
+/// Rotate the log once it crosses this size. There is no long-running
+/// process to rotate it later — the daemon just inherits the fd — so the
+/// spawn moment is the only chance to keep growth bounded.
+const LOG_ROTATE_BYTES: u64 = 5 * 1024 * 1024;
+
 /// stdout/stderr handles for spawning a background daemon: the daemon log,
 /// or `Stdio::null()` when the log file can't be opened — a daemon that
 /// can't log must still be able to start.
 pub fn daemon_log_stdio() -> (std::process::Stdio, std::process::Stdio) {
-    let path = daemon_log_path();
+    open_rotating_log(&daemon_log_path())
+}
+
+fn open_rotating_log(path: &Path) -> (std::process::Stdio, std::process::Stdio) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
+    }
+    // One `.old` generation: enough to survive a crash-then-restart without
+    // losing the crash output, without growing forever.
+    if std::fs::metadata(path).is_ok_and(|m| m.len() > LOG_ROTATE_BYTES) {
+        let _ = std::fs::rename(path, path.with_extension("log.old"));
     }
     let file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&path);
+        .open(path);
     match file {
         Ok(f) => {
             let err = f
@@ -122,6 +135,40 @@ mod tests {
         std::fs::write(&log, "only line\n").unwrap();
 
         assert_eq!(read_log_tail(&log, 50).as_deref(), Some("only line"));
+    }
+
+    #[test]
+    fn an_oversized_log_is_rotated_at_spawn_time() {
+        let tmp = TempDir::new().unwrap();
+        let log = tmp.path().join("daemon.log");
+        std::fs::write(&log, vec![b'x'; (LOG_ROTATE_BYTES + 1) as usize]).unwrap();
+
+        let _stdio = open_rotating_log(&log);
+
+        assert!(
+            tmp.path().join("daemon.log.old").exists(),
+            "the oversized log must be rotated aside"
+        );
+        assert!(
+            std::fs::metadata(&log).unwrap().len() < LOG_ROTATE_BYTES,
+            "the live log must start fresh after rotation"
+        );
+    }
+
+    #[test]
+    fn a_small_log_is_not_rotated() {
+        let tmp = TempDir::new().unwrap();
+        let log = tmp.path().join("daemon.log");
+        std::fs::write(&log, "recent output\n").unwrap();
+
+        let _stdio = open_rotating_log(&log);
+
+        assert!(!tmp.path().join("daemon.log.old").exists());
+        assert_eq!(
+            std::fs::read_to_string(&log).unwrap(),
+            "recent output\n",
+            "existing content must survive (append mode)"
+        );
     }
 
     #[test]

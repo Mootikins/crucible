@@ -128,8 +128,11 @@ fn detect_providers_inner(
     }
 
     // Ollama is always offered: it is the no-credential path. `available` is
-    // an assumption unless the caller asked for a probe.
-    let endpoint = if std::env::var("OLLAMA_HOST").is_ok() {
+    // an assumption unless the caller asked for a probe. `OLLAMA_HOST=""`
+    // counts as unset — the daemon's env discovery filters empty values, and
+    // the two must agree or an empty export produces the endpoint "http://".
+    let ollama_host_set = std::env::var("OLLAMA_HOST").is_ok_and(|v| !v.trim().is_empty());
+    let endpoint = if ollama_host_set {
         ollama_endpoint()
     } else {
         config
@@ -137,7 +140,7 @@ fn detect_providers_inner(
             .clone()
             .unwrap_or_else(|| DEFAULT_OLLAMA_ENDPOINT.to_string())
     };
-    let mut reason = if std::env::var("OLLAMA_HOST").is_ok() {
+    let mut reason = if ollama_host_set {
         format!("OLLAMA_HOST={}", endpoint)
     } else if config.endpoint.is_some() {
         format!("config endpoint={}", endpoint)
@@ -184,7 +187,23 @@ fn keyed_backend_display_name(backend: BackendType) -> &'static str {
 
 /// Whether anything is listening at an `http(s)://host:port` endpoint.
 /// A TCP dial, not an HTTP request — cheap enough for interactive setup.
+///
+/// The timeout bounds the *whole* probe, including DNS: `to_socket_addrs`
+/// resolves synchronously with no timeout of its own, and a hostname that
+/// doesn't resolve (an `OLLAMA_HOST` pointing at an off-VPN box) would
+/// otherwise freeze `cru init` for the resolver's full multi-second budget.
+/// The worker thread is deliberately detached — it may outlive the wait,
+/// but the caller never blocks past `timeout`.
 fn endpoint_answers(endpoint: &str, timeout: std::time::Duration) -> bool {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let endpoint = endpoint.to_string();
+    std::thread::spawn(move || {
+        let _ = tx.send(dial_endpoint(&endpoint, timeout));
+    });
+    rx.recv_timeout(timeout).unwrap_or(false)
+}
+
+fn dial_endpoint(endpoint: &str, timeout: std::time::Duration) -> bool {
     let hostport = endpoint
         .strip_prefix("http://")
         .or_else(|| endpoint.strip_prefix("https://"))
@@ -393,6 +412,46 @@ mod tests {
             &endpoint,
             std::time::Duration::from_millis(300)
         ));
+    }
+
+    /// DNS has no timeout of its own; the probe's budget must bound the
+    /// whole operation or an unresolvable OLLAMA_HOST freezes `cru init`
+    /// for the resolver's multi-second retry schedule.
+    #[test]
+    fn the_probe_gives_up_within_its_budget_even_for_dns() {
+        let start = std::time::Instant::now();
+        let answered = endpoint_answers(
+            "http://nonexistent-host.invalid:11434",
+            std::time::Duration::from_millis(300),
+        );
+
+        assert!(!answered);
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(1500),
+            "the probe must not block past its budget, took {:?}",
+            start.elapsed()
+        );
+    }
+
+    /// `OLLAMA_HOST=""` must behave like unset — the daemon's env discovery
+    /// filters empty values and detection has to agree, or the empty export
+    /// yields the endpoint `http://`.
+    #[test]
+    #[serial]
+    fn an_empty_ollama_host_is_treated_as_unset() {
+        let _host = EnvVarGuard::set("OLLAMA_HOST", String::new());
+
+        let detected = detect_isolated(&ChatConfig::default(), false);
+        let ollama = detected
+            .iter()
+            .find(|p| p.provider_type == "ollama")
+            .unwrap();
+
+        assert!(
+            !ollama.reason.contains("OLLAMA_HOST"),
+            "an empty OLLAMA_HOST must not be reported as the source: {}",
+            ollama.reason
+        );
     }
 
     #[test]

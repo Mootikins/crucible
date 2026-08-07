@@ -127,8 +127,16 @@ async fn run_kiln_init(
     // to mean something answered, not "we assume local Ollama exists".
     let providers = detect_providers_probed(&crucible_core::config::ChatConfig::default());
 
-    let (provider, model) = if !yes && !providers.is_empty() {
-        prompt_provider_selection(&providers)?
+    // `provider_usable = false` means nothing answered and nothing has a
+    // credential. The kiln still gets its local defaults, but the selection
+    // must NOT be registered globally: a dead `[llm.providers.*]` entry
+    // makes `cru chat`'s zero-provider guard pass for exactly the user it
+    // exists to protect, moving the failure back to mid-conversation.
+    let (provider, model, provider_usable) = if !yes && !providers.is_empty() {
+        let (p, m) = prompt_provider_selection(&providers)?;
+        // An interactive pick is informed — the picker shows the probe
+        // result — so honor it even if it isn't answering right now.
+        (p, m, true)
     } else {
         select_provider_noninteractive(&providers)
     };
@@ -168,14 +176,22 @@ async fn run_kiln_init(
             global_config_path.display()
         );
     }
-    if let Err(e) = crucible_core::config::register_llm_provider_in_config(
-        global_config_path,
-        &provider,
-        &model,
-    ) {
-        warn!(
-            "could not save provider selection to {}: {e}",
-            global_config_path.display()
+    if provider_usable {
+        if let Err(e) = crucible_core::config::register_llm_provider_in_config(
+            global_config_path,
+            &provider,
+            &model,
+        ) {
+            warn!(
+                "could not save provider selection to {}: {e}",
+                global_config_path.display()
+            );
+        }
+    } else {
+        println!(
+            "{} {}",
+            "Note:".yellow(),
+            crate::commands::chat_preflight::no_providers_message()
         );
     }
 
@@ -403,10 +419,10 @@ pub fn create_kiln_with_config(
     Ok(())
 }
 
-/// `-y` mode's provider pick: the first *available* provider, falling back
-/// to the first listed (with a warning) so init still completes on a box
-/// with no reachable provider at all.
-fn select_provider_noninteractive(providers: &[DetectedProvider]) -> (String, String) {
+/// `-y` mode's provider pick: the first *available* provider. When nothing
+/// answers, the returned `usable: false` tells the caller to use the pick
+/// only for the kiln's local defaults — never to register it globally.
+fn select_provider_noninteractive(providers: &[DetectedProvider]) -> (String, String, bool) {
     let pick = providers
         .iter()
         .find(|p| p.available)
@@ -415,9 +431,8 @@ fn select_provider_noninteractive(providers: &[DetectedProvider]) -> (String, St
         Some(p) => {
             if !p.available {
                 println!(
-                    "{} No reachable provider found; defaulting to {} ({}).",
+                    "{} No reachable provider found ({}).",
                     "Warning:".yellow(),
-                    p.name,
                     p.reason
                 );
             }
@@ -425,9 +440,11 @@ fn select_provider_noninteractive(providers: &[DetectedProvider]) -> (String, St
                 .default_model
                 .clone()
                 .unwrap_or_else(|| default_model_for(&p.provider_type).to_string());
-            (p.provider_type.clone(), model)
+            (p.provider_type.clone(), model, p.available)
         }
-        None => ("ollama".to_string(), "llama3.2".to_string()),
+        // Defensive: detection currently always lists Ollama, so this arm
+        // only fires if that invariant changes.
+        None => ("ollama".to_string(), "llama3.2".to_string(), false),
     }
 }
 
@@ -441,7 +458,13 @@ fn prompt_provider_selection(providers: &[DetectedProvider]) -> Result<(String, 
         println!("  {}. {} - {}", i + 1, p.name, p.reason);
     }
 
-    let items: Vec<&str> = providers.iter().map(|p| p.name.as_str()).collect();
+    // The selectable items carry the probe result too — the header above
+    // scrolls away, and a dead Ollama must not look identical to a live one
+    // at the moment of choice.
+    let items: Vec<String> = providers
+        .iter()
+        .map(|p| format!("{} — {}", p.name, p.reason))
+        .collect();
     let selection = Select::with_theme(&theme)
         .with_prompt("Select LLM provider")
         .items(&items)
@@ -594,18 +617,24 @@ mod tests {
     fn noninteractive_selection_skips_an_unavailable_provider() {
         let providers = vec![detected("ollama", false), detected("anthropic", true)];
 
-        let (provider, _model) = select_provider_noninteractive(&providers);
+        let (provider, _model, usable) = select_provider_noninteractive(&providers);
 
         assert_eq!(provider, "anthropic");
+        assert!(usable);
     }
 
+    /// When nothing answers, init still completes — but the pick is flagged
+    /// unusable so it never reaches the global config. A registered-but-dead
+    /// provider makes the chat preflight's zero-provider guard pass for
+    /// exactly the user it exists to protect.
     #[test]
     fn noninteractive_selection_falls_back_when_nothing_answers() {
         let providers = vec![detected("ollama", false)];
 
-        let (provider, _model) = select_provider_noninteractive(&providers);
+        let (provider, _model, usable) = select_provider_noninteractive(&providers);
 
         assert_eq!(provider, "ollama", "init must still complete");
+        assert!(!usable, "a dead fallback must not be registered globally");
     }
 
     #[test]

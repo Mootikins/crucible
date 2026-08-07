@@ -24,12 +24,8 @@ pub enum DaemonCommands {
     },
     /// Stop the daemon
     Stop,
-    /// Restart the daemon (stop if running, then start)
-    Restart {
-        /// Wait for daemon to be ready
-        #[arg(long)]
-        wait: bool,
-    },
+    /// Restart the daemon (stop if running, start, wait until it answers)
+    Restart,
     /// Check daemon status
     Status {
         /// Emit status as JSON
@@ -53,7 +49,7 @@ pub async fn handle(cmd: DaemonCommands, config_path: Option<PathBuf>) -> Result
             start_daemon(foreground, wait, config_path).await
         }
         DaemonCommands::Stop => stop_daemon().await,
-        DaemonCommands::Restart { wait } => restart_daemon(config_path, wait).await,
+        DaemonCommands::Restart => restart_daemon(config_path).await,
         DaemonCommands::Serve => start_daemon(true, false, config_path).await,
         DaemonCommands::Status { json } => show_status(json).await,
         DaemonCommands::Logs { lines } => show_logs(lines),
@@ -192,7 +188,7 @@ async fn stop_daemon() -> Result<()> {
     Ok(())
 }
 
-async fn restart_daemon(config_path: Option<PathBuf>, wait: bool) -> Result<()> {
+async fn restart_daemon(config_path: Option<PathBuf>) -> Result<()> {
     let sock = socket_path();
     if is_daemon_running(&sock) {
         // Stop the existing daemon
@@ -214,8 +210,11 @@ async fn restart_daemon(config_path: Option<PathBuf>, wait: bool) -> Result<()> 
         }
     }
 
-    // Start fresh daemon
-    start_daemon(false, wait, config_path).await?;
+    // Restart always waits for a ping: the no-wait path returns as soon as
+    // the socket *file* exists, and a leftover socket from the old daemon
+    // makes that instant — "Daemon restarted" would print before the
+    // replacement had bound anything.
+    start_daemon(false, /* wait */ true, config_path).await?;
     println!("Daemon restarted");
     Ok(())
 }

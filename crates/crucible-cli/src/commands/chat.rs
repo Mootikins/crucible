@@ -158,12 +158,19 @@ pub async fn execute(params: ExecuteParams) -> Result<()> {
 
     // A session on the internal agent can do nothing without a provider.
     // Fail here, with remedies, rather than mid-conversation with a raw
-    // transport error. External (`-a`) agents bring their own provider;
-    // replay never reaches this point (it returns before the destructure);
-    // and a resumed session's agent type is stored daemon-side (it may be
-    // ACP even without `-a`), so resume relies on the TUI's empty-list
-    // warning instead of blocking here.
-    if agent_name.is_none() && resume_session_id.is_none() {
+    // transport error. ACP agents bring their own provider — and "is this
+    // ACP?" must be `resolve_is_acp`, not `agent_name.is_some()`: a user
+    // with `[chat] agent_preference = "acp"` runs plain `cru chat` with no
+    // LLM provider configured, legitimately. Replay never reaches this
+    // point (it returns before the destructure), and a resumed session's
+    // agent type is stored daemon-side (it may be ACP even without `-a`),
+    // so resume relies on the TUI's empty-list warning instead.
+    let is_acp = crate::factories::agent::resolve_is_acp(
+        None,
+        agent_name.as_deref(),
+        &config.chat.agent_preference,
+    );
+    if !is_acp && resume_session_id.is_none() {
         let client = crucible_daemon::DaemonClient::connect_or_start().await?;
         crate::commands::chat_preflight::ensure_providers_available(&client, &config.kiln_path)
             .await?;
