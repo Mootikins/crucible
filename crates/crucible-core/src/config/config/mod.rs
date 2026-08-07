@@ -3,6 +3,8 @@
 mod cli_app;
 mod errors;
 mod provider;
+#[cfg(feature = "toml")]
+mod registration;
 pub mod registry;
 mod server;
 mod types;
@@ -10,13 +12,13 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-#[cfg(feature = "toml")]
-pub use cli_app::{
-    register_kiln_in_config, register_llm_provider_in_config, register_project_in_config,
-};
 pub use cli_app::{CliAppConfig, ProcessingConfig};
 pub use errors::{ConfigError, ConfigValidationError};
 pub use provider::EffectiveLlmConfig;
+#[cfg(feature = "toml")]
+pub use registration::{
+    register_kiln_in_config, register_llm_provider_in_config, register_project_in_config,
+};
 pub use server::{LoggingConfig, ScmConfig, ServerConfig, WebConfig};
 pub use types::{
     parse_duration_string, plugin_name_from_url, Config, PluginEntry, PluginsConfig, ScheduleEntry,
