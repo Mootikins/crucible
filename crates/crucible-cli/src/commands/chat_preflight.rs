@@ -10,7 +10,7 @@
 use anyhow::Result;
 use colored::Colorize;
 use std::io::IsTerminal;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::config::CliConfig;
 use crate::kiln_discover::{discover_kiln, DiscoverySource};
@@ -29,7 +29,12 @@ pub async fn ensure_valid_kiln(config: &mut CliConfig) -> Result<()> {
         return Ok(());
     }
 
-    if let Some(found) = discover_kiln(None, None) {
+    // Hand discovery the configured kiln, or the `[kilns]` entry the setup
+    // wizard writes is never consulted: passing None here skipped the
+    // global-config branch entirely, so the wizard's answer was invisible and
+    // the user got prompted a second time with a different default.
+    let configured = config.resolved_kiln_path();
+    if let Some(found) = discover_kiln(None, configured.as_deref()) {
         info!(
             "Discovered kiln at {} (via {:?})",
             found.path.display(),
@@ -80,6 +85,31 @@ pub async fn ensure_valid_kiln(config: &mut CliConfig) -> Result<()> {
             crate::commands::init::generate_config_with_provider("ollama", "llama3.2");
         crate::commands::init::create_kiln_with_config(&crucible_dir, &config_content, false)?;
         println!("{} Kiln initialized at {}", "✓".green(), expanded.display());
+    }
+
+    // Persist, or this prompt fires again on every run from outside a kiln.
+    // Assigning the in-memory config only was why "No kiln found" greeted the
+    // user forever no matter how many times they answered it.
+    let config_path = crucible_core::config::CliAppConfig::default_config_path();
+    if let Err(e) = crucible_core::config::register_kiln_in_config(
+        &config_path,
+        "default",
+        &expanded,
+        /* make_default */ true,
+    ) {
+        // Non-fatal: the session can still proceed with the in-memory value.
+        // Say so rather than failing the chat the user actually asked for.
+        warn!("could not save kiln path to {}: {e}", config_path.display());
+        println!(
+            "{} Could not save the kiln path — you may be asked again next time.",
+            "Note:".yellow()
+        );
+    } else {
+        println!(
+            "{} Saved kiln path to {}",
+            "✓".green(),
+            config_path.display()
+        );
     }
 
     config.kiln_path = expanded;

@@ -3,6 +3,7 @@ use colored::Colorize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tokio::task;
+use tracing::warn;
 
 use crate::kiln_validate::{expand_tilde, validate_kiln_path, ValidationSeverity};
 use crate::provider_detect::{detect_providers, DetectedProvider};
@@ -141,6 +142,33 @@ async fn run_kiln_init(
         Ok::<(), anyhow::Error>(())
     })
     .await??;
+
+    // Register the kiln and the chosen provider globally. Without this the
+    // selection above went only into `.crucible/config.toml`, which nothing
+    // reads — so the user picked Anthropic, saw "Provider: anthropic", and
+    // then chatted against whatever the global default happened to be.
+    let global_config_path = crucible_core::config::CliAppConfig::default_config_path();
+    if let Err(e) = crucible_core::config::register_kiln_in_config(
+        &global_config_path,
+        &name,
+        &target_for_display,
+        /* make_default */ false,
+    ) {
+        warn!(
+            "could not register kiln in {}: {e}",
+            global_config_path.display()
+        );
+    }
+    if let Err(e) = crucible_core::config::register_llm_provider_in_config(
+        &global_config_path,
+        &provider,
+        &model,
+    ) {
+        warn!(
+            "could not save provider selection to {}: {e}",
+            global_config_path.display()
+        );
+    }
 
     println!(
         "{} Kiln initialized at: {}",
@@ -472,15 +500,18 @@ pub fn generate_config_with_provider(provider: &str, model: &str) -> String {
         _ => "http://localhost:11434",
     };
 
+    // No `[chat] provider` key: the loader rejects it outright as legacy
+    // config (see `CliAppConfig::load`), so emitting it here left a file that
+    // would hard-fail the moment anything parsed it. `[llm.providers.*]` is
+    // the supported spelling.
     format!(
         r#"# Crucible kiln configuration
-# See https://github.com/mootless/crucible for options
+# See https://github.com/Mootikins/crucible for options
 
 [storage]
 backend = "sqlite"
 
 [chat]
-provider = "{provider}"
 model = "{model}"
 endpoint = "{endpoint}"
 
@@ -552,23 +583,49 @@ mod tests {
     fn test_generate_config_with_provider() {
         let config = generate_config_with_provider("ollama", "llama3.2");
         assert!(config.contains("[chat]"));
-        assert!(config.contains("provider = \"ollama\""));
+        assert!(config.contains("type = \"ollama\""));
         assert!(config.contains("model = \"llama3.2\""));
     }
 
     #[test]
     fn test_generate_config_openai() {
         let config = generate_config_with_provider("openai", "gpt-4o");
-        assert!(config.contains("provider = \"openai\""));
+        assert!(config.contains("type = \"openai\""));
         assert!(config.contains("model = \"gpt-4o\""));
     }
 
     #[test]
     fn test_generate_config_anthropic() {
         let config = generate_config_with_provider("anthropic", "claude-3-5-sonnet-latest");
-        assert!(config.contains("provider = \"anthropic\""));
+        assert!(config.contains("type = \"anthropic\""));
         assert!(config.contains("model = \"claude-3-5-sonnet-latest\""));
         assert!(config.contains("endpoint = \"https://api.anthropic.com/v1\""));
+    }
+
+    /// The generated file used to carry `[chat] provider`, which the loader
+    /// rejects outright as legacy config — so anything that parsed it would
+    /// hard-fail. These three tests previously asserted that key was present,
+    /// pinning the defect in place.
+    #[test]
+    fn the_generated_kiln_config_does_not_use_rejected_legacy_keys() {
+        for provider in ["ollama", "openai", "anthropic"] {
+            let config = generate_config_with_provider(provider, "some-model");
+
+            let parsed: toml::Value =
+                toml::from_str(&config).expect("generated kiln config must be valid TOML");
+            let chat = parsed
+                .get("chat")
+                .and_then(|c| c.as_table())
+                .expect("a [chat] table");
+            assert!(
+                !chat.contains_key("provider"),
+                "[chat] provider is rejected by the config loader; the provider belongs \
+                 under [llm.providers.*] (provider={provider})"
+            );
+
+            // The supported spelling must still be present and correct.
+            assert!(config.contains(&format!("type = \"{provider}\"")));
+        }
     }
 
     #[test]

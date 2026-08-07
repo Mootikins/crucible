@@ -11,7 +11,9 @@ mod types;
 mod tests;
 
 #[cfg(feature = "toml")]
-pub use cli_app::register_project_in_config;
+pub use cli_app::{
+    register_kiln_in_config, register_llm_provider_in_config, register_project_in_config,
+};
 pub use cli_app::{CliAppConfig, ProcessingConfig};
 pub use errors::{ConfigError, ConfigValidationError};
 pub use provider::EffectiveLlmConfig;

@@ -66,14 +66,16 @@ pub use components::{
     PermissionMode, StorageConfig, TransportType, TrustLevel, TypeDiscoveryConfig,
     UpstreamServerConfig,
 };
-#[cfg(feature = "toml")]
-pub use config::register_project_in_config;
 pub use config::registry::{KilnEntry, ProjectEntry};
 pub use config::{
     crucible_home, is_crucible_home, lua_stubs_dir, parse_duration_string, plugin_name_from_url,
     CliAppConfig, Config, ConfigError, ConfigValidationError, EffectiveLlmConfig, LoggingConfig,
     PluginEntry, PluginsConfig, ProcessingConfig, ScheduleEntry, ScmConfig, ServerConfig,
     WebConfig,
+};
+#[cfg(feature = "toml")]
+pub use config::{
+    register_kiln_in_config, register_llm_provider_in_config, register_project_in_config,
 };
 #[cfg(feature = "keyring")]
 pub use credentials::KeyringStore;

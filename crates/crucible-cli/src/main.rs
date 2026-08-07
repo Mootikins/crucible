@@ -62,6 +62,30 @@ fn main() -> Result<()> {
         .block_on(async_main(cli, standalone_sock))
 }
 
+/// Whether this command should offer first-run setup.
+///
+/// Deliberately a short allowlist rather than "anything interactive": the
+/// wizard writes config and prompts, which would be wrong for a daemon, a
+/// completion script, or `doctor` — whose job is to *report* that setup is
+/// missing, not to perform it.
+///
+/// A TTY is necessary but not sufficient. `cru chat --replay` runs under a
+/// PTY and `cru chat "question"` is a one-shot: both have a terminal, neither
+/// wants an interactive setup walkthrough, and prompting there hangs a
+/// non-interactive invocation forever rather than failing.
+fn wants_first_run_setup(command: &Option<Commands>) -> bool {
+    match command {
+        None => true,
+        Some(Commands::Chat {
+            query,
+            replay,
+            record,
+            ..
+        }) => query.is_none() && replay.is_none() && record.is_none(),
+        Some(_) => false,
+    }
+}
+
 async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Result<()> {
     // Install ring as the rustls CryptoProvider before any TLS usage.
     // Both ring and aws-lc-rs are compiled (via lancedb), so rustls can't auto-detect.
@@ -82,6 +106,30 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             config::CliConfig::default()
         }
         (_, result) => result?,
+    };
+
+    // First-run setup runs before dispatch, not inside the bare-`cru` arm.
+    // The README's quick start is `cru chat`, which previously skipped setup
+    // entirely — the wizard only fired for a bare `cru`.
+    //
+    // The reload matters as much as the hoist: the wizard *writes*
+    // config.toml, so a config loaded above is stale the moment it returns.
+    // Without this the user's provider, model and kiln choices did nothing
+    // until the next invocation.
+    let config = if wants_first_run_setup(&cli.command) && std::io::stdin().is_terminal() {
+        let config_path = crucible_core::config::CliAppConfig::default_config_path();
+        if commands::wizard::is_first_run(&config_path) {
+            commands::wizard::run_setup_wizard(&config_path)?;
+            config::CliConfig::load(
+                cli.config.clone(),
+                cli.embedding_url.clone(),
+                cli.embedding_model.clone(),
+            )?
+        } else {
+            config
+        }
+    } else {
+        config
     };
 
     // Forward an explicit --config to an auto-spawned daemon. Without this, a
@@ -411,13 +459,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         }
 
         None => {
-            // First-run wizard: if no config exists and stdin is a terminal,
-            // walk the user through initial setup before launching chat.
-            let config_path = crucible_core::config::CliAppConfig::default_config_path();
-            if commands::wizard::is_first_run(&config_path) && std::io::stdin().is_terminal() {
-                commands::wizard::run_setup_wizard(&config_path)?;
-            }
-
+            // Setup already ran before dispatch — see `wants_first_run_setup`.
             commands::chat::execute(commands::chat::ExecuteParams {
                 config,
                 agent_name: None,

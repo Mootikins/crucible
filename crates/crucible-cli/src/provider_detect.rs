@@ -65,9 +65,17 @@ pub fn has_api_key_with_source(provider: &str) -> Option<CredentialSource> {
 
 /// Detect available providers from config and environment only (no HTTP probes).
 ///
-/// Checks: config file provider, OLLAMA_HOST env, API key env vars, credential store.
+/// Checks OLLAMA_HOST env, API key env vars, and the credential store. The
+/// Ollama entry is unconditional and unprobed — "available" means "we know
+/// where it would be", not "something answered there" — so callers that pick
+/// a single provider get credential-backed ones first (see the ranking at the
+/// end of this function).
 pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
     let mut providers = Vec::new();
+    // TODO(crucible): read the configured backend here instead of assuming
+    // Ollama. The match below is over a constant, so its non-Ollama arms are
+    // unreachable; the post-match detection compensates for OpenAI and
+    // Anthropic but not for the rest.
     let provider_backend = BackendType::Ollama;
 
     match provider_backend {
@@ -193,6 +201,13 @@ pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
         });
     }
 
+    // Rank credential-backed providers ahead of the unprobed local default.
+    // `cru init -y` takes providers[0], so without this a user whose only
+    // credential is ANTHROPIC_API_KEY got an Ollama kiln — Ollama is pushed
+    // first and unconditionally, with no probe behind its `available: true`.
+    // Stable sort, so relative order within each group is preserved.
+    providers.sort_by_key(|p| u8::from(p.source.is_none()));
+
     providers
 }
 
@@ -202,7 +217,32 @@ mod tests {
     use crucible_core::test_support::EnvVarGuard;
     use serial_test::serial;
 
+    /// `cru init -y` selects `providers[0]`, and the Ollama entry is pushed
+    /// first with `available: true` and no probe behind it. A user whose only
+    /// credential is an Anthropic key must not be handed an Ollama kiln.
     #[test]
+    #[serial]
+    fn a_credentialled_provider_outranks_the_unprobed_local_default() {
+        let _key = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-test".to_string());
+        let detected = detect_providers(&ChatConfig::default());
+
+        let anthropic = detected
+            .iter()
+            .position(|p| p.provider_type == "anthropic")
+            .expect("an Anthropic key in the environment must be detected");
+        let ollama = detected
+            .iter()
+            .position(|p| p.provider_type == "ollama")
+            .expect("Ollama is always listed");
+
+        assert!(
+            anthropic < ollama,
+            "a provider with a real credential must rank above an unprobed local default: {detected:#?}"
+        );
+    }
+
+    #[test]
+    #[serial]
     fn test_detect_ollama_from_default_config() {
         let config = ChatConfig::default();
         let detected = detect_providers(&config);

@@ -792,6 +792,23 @@ verbose = false
         map
     }
 
+    /// The filesystem path of the effective default kiln, if one is configured.
+    ///
+    /// `kiln_path` and `[kilns]` are two ways to say the same thing, and code
+    /// that reads only the first misses a config written via the second —
+    /// which is how the setup wizard's answer used to get ignored. Prefer the
+    /// named entry, fall back to the flat field.
+    pub fn resolved_kiln_path(&self) -> Option<std::path::PathBuf> {
+        let name = self.resolved_default_kiln();
+        if let Some(entry) = self.kilns.get(&name) {
+            return Some(match entry {
+                crate::config::config::registry::KilnEntry::Path(p) => p.clone(),
+                crate::config::config::registry::KilnEntry::Config { path, .. } => path.clone(),
+            });
+        }
+        (!self.kiln_path.as_os_str().is_empty()).then(|| self.kiln_path.clone())
+    }
+
     /// Returns the effective default kiln name.
     pub fn resolved_default_kiln(&self) -> String {
         if let Some(ref name) = self.default_kiln {
@@ -846,6 +863,102 @@ pub fn register_project_in_config(
             default_kiln: default_kiln.map(|s| s.to_string()),
         },
     );
+
+    let contents = toml::to_string_pretty(&config)?;
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(config_path, contents)?;
+    Ok(())
+}
+
+/// Persist a kiln path to the global config file.
+///
+/// The counterpart to [`register_project_in_config`]. Without this, a kiln
+/// the user supplies at a prompt lives only in the in-memory config and the
+/// prompt returns on every subsequent run.
+///
+/// Writes both `kiln_path` and a `[kilns]` entry: the former is what
+/// `ensure_valid_kiln` checks directly, the latter is what `resolved_kilns`
+/// and the daemon use. Keeping them in step here is what stops the two
+/// halves of the config disagreeing about where the kiln is.
+#[cfg(feature = "toml")]
+pub fn register_kiln_in_config(
+    config_path: &std::path::Path,
+    name: &str,
+    kiln_path: &std::path::Path,
+    make_default: bool,
+) -> anyhow::Result<()> {
+    let mut config: CliAppConfig = if config_path.exists() {
+        let contents = std::fs::read_to_string(config_path)?;
+        toml::from_str(&contents)?
+    } else {
+        CliAppConfig::default()
+    };
+
+    // Absolute, always. This is the *global* config: a relative path like "."
+    // — which is what `cru init` in the current directory hands us — would
+    // resolve against whatever directory the next command runs from.
+    let kiln_path = kiln_path
+        .canonicalize()
+        .unwrap_or_else(|_| kiln_path.to_path_buf());
+
+    config.kilns.insert(
+        name.to_string(),
+        crate::config::config::registry::KilnEntry::Path(kiln_path.clone()),
+    );
+    config.kiln_path = kiln_path;
+    if make_default || config.default_kiln.is_none() {
+        config.default_kiln = Some(name.to_string());
+    }
+
+    let contents = toml::to_string_pretty(&config)?;
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(config_path, contents)?;
+    Ok(())
+}
+
+/// Persist an LLM provider selection to the global config file.
+///
+/// `cru init` and the setup wizard both ask which provider to use. Writing
+/// that answer only into the kiln directory meant it was never read — the
+/// user's choice was displayed back to them and then ignored.
+///
+/// Registers the provider under `[llm.providers.<name>]` and makes it the
+/// default when no default is set.
+#[cfg(feature = "toml")]
+pub fn register_llm_provider_in_config(
+    config_path: &std::path::Path,
+    provider: &str,
+    model: &str,
+) -> anyhow::Result<()> {
+    use crate::config::components::llm::LlmProviderConfig;
+    use crate::config::BackendType;
+
+    let mut config: CliAppConfig = if config_path.exists() {
+        let contents = std::fs::read_to_string(config_path)?;
+        toml::from_str(&contents)?
+    } else {
+        CliAppConfig::default()
+    };
+
+    let provider_type: BackendType = provider
+        .parse()
+        .map_err(|_| anyhow::anyhow!("unknown provider type: {provider}"))?;
+
+    let entry = config
+        .llm
+        .providers
+        .entry(provider.to_string())
+        .or_insert_with(|| LlmProviderConfig::builder(provider_type).build());
+    entry.provider_type = provider_type;
+    entry.default_model = Some(model.to_string());
+
+    if config.llm.default.is_none() {
+        config.llm.default = Some(provider.to_string());
+    }
 
     let contents = toml::to_string_pretty(&config)?;
     if let Some(parent) = config_path.parent() {
@@ -1147,6 +1260,74 @@ docs = "~/docs"
             Some("vault")
         );
         assert_eq!(config.projects["myproject"].path, tmp.path().to_path_buf());
+    }
+
+    /// A kiln the user names at a prompt has to survive the process, or the
+    /// prompt fires again on the next run — forever.
+    #[test]
+    fn a_registered_kiln_survives_a_config_round_trip() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        let kiln = tmp.path().join("my-kiln");
+
+        register_kiln_in_config(&config_path, "default", &kiln, true).unwrap();
+
+        let contents = std::fs::read_to_string(&config_path).unwrap();
+        let config: CliAppConfig = toml::from_str(&contents).unwrap();
+
+        // Both halves must agree: `kiln_path` is what the preflight check
+        // reads, `[kilns]` is what the daemon and `resolved_kilns` use.
+        assert_eq!(config.kiln_path, kiln);
+        assert_eq!(config.default_kiln.as_deref(), Some("default"));
+        assert!(config.kilns.contains_key("default"));
+        assert_eq!(
+            config.resolved_kilns()["default"],
+            crate::config::config::registry::KilnEntry::Path(kiln)
+        );
+    }
+
+    /// The global config is read from arbitrary working directories, so a
+    /// relative path stored in it points somewhere different every time.
+    /// `cru init` with no argument hands us exactly that: ".".
+    ///
+    /// `#[serial]` because the cwd is process-global, exactly like the env:
+    /// changing it under a parallel run corrupts unrelated tests.
+    #[test]
+    #[serial_test::serial]
+    fn a_registered_kiln_path_is_stored_absolute() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        let kiln = tmp.path().join("relative-kiln");
+        std::fs::create_dir_all(&kiln).unwrap();
+
+        let previous = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&kiln).unwrap();
+        let result = register_kiln_in_config(&config_path, "here", std::path::Path::new("."), true);
+        std::env::set_current_dir(previous).unwrap();
+        result.unwrap();
+
+        let contents = std::fs::read_to_string(&config_path).unwrap();
+        let config: CliAppConfig = toml::from_str(&contents).unwrap();
+        assert!(
+            config.kiln_path.is_absolute(),
+            "stored kiln path must be absolute, got {}",
+            config.kiln_path.display()
+        );
+    }
+
+    /// Registering a second kiln must not silently steal the default.
+    #[test]
+    fn registering_a_second_kiln_leaves_the_existing_default_alone() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let config_path = tmp.path().join("config.toml");
+
+        register_kiln_in_config(&config_path, "first", &tmp.path().join("a"), true).unwrap();
+        register_kiln_in_config(&config_path, "second", &tmp.path().join("b"), false).unwrap();
+
+        let contents = std::fs::read_to_string(&config_path).unwrap();
+        let config: CliAppConfig = toml::from_str(&contents).unwrap();
+        assert_eq!(config.default_kiln.as_deref(), Some("first"));
+        assert_eq!(config.kilns.len(), 2);
     }
 
     #[test]
