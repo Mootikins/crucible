@@ -97,7 +97,15 @@ impl PluginManager {
         let mut loaded = Vec::new();
         for name in order {
             match self.load(&name) {
-                Ok(()) => loaded.push(name),
+                // `load` returns Ok for a disabled plugin too — it is not an
+                // error to skip one. Report only what actually became Active,
+                // or callers iterating this list will execute plugins the
+                // operator has switched off.
+                Ok(()) => {
+                    if self.plugins.get(&name).map(|p| p.state) == Some(PluginState::Active) {
+                        loaded.push(name);
+                    }
+                }
                 Err(LifecycleError::AlreadyLoaded(_)) => {}
                 Err(e) => {
                     warn!("Failed to load plugin {}: {}", name, e);

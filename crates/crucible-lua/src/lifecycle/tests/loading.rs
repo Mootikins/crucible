@@ -17,6 +17,58 @@ fn test_load_plugin() {
     assert_eq!(plugin.state, PluginState::Active);
 }
 
+/// `enabled: false` is the only user-facing kill switch for a plugin, and
+/// the documented remediation for a misbehaving one. `load` marked such a
+/// plugin Disabled and then returned `Ok(())`, so `load_all` counted it as
+/// loaded and the daemon went on to execute it — registering its tools and
+/// services while `plugin.list` reported it Disabled.
+#[test]
+fn load_all_omits_a_disabled_plugin_from_the_loaded_list() {
+    let temp = TempDir::new().unwrap();
+    let plugin_dir = create_test_plugin(temp.path(), "disabled-plugin", "1.0.0");
+    std::fs::write(
+        plugin_dir.join("plugin.yaml"),
+        "name: disabled-plugin\nversion: \"1.0.0\"\nmain: init.lua\nenabled: false\n",
+    )
+    .unwrap();
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+    let loaded = manager.load_all().unwrap();
+
+    assert!(
+        !loaded.contains(&"disabled-plugin".to_string()),
+        "a disabled plugin must not be reported as loaded: {loaded:?}"
+    );
+    assert_eq!(
+        manager.get("disabled-plugin").unwrap().state,
+        PluginState::Disabled
+    );
+}
+
+/// The state flag is not enough on its own — what matters is that nothing
+/// the plugin declares becomes reachable.
+#[test]
+fn a_disabled_plugin_registers_no_tools() {
+    let temp = TempDir::new().unwrap();
+    let plugin_dir = create_test_plugin(temp.path(), "disabled-tools", "1.0.0");
+    std::fs::write(
+        plugin_dir.join("plugin.yaml"),
+        "name: disabled-tools\nversion: \"1.0.0\"\nmain: init.lua\nenabled: false\n",
+    )
+    .unwrap();
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    manager.discover().unwrap();
+    manager.load_all().unwrap();
+
+    assert_eq!(
+        manager.tools().len(),
+        0,
+        "a disabled plugin must register nothing"
+    );
+}
+
 #[test]
 fn test_load_discovers_tools() {
     let temp = TempDir::new().unwrap();

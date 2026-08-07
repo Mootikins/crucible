@@ -594,6 +594,25 @@ end
             .load_all()
             .map_err(|e| anyhow::anyhow!("plugin load_all: {e}"))?;
 
+        // Second layer on the kill switch. `load_all` already filters these
+        // out; re-checking here means a future regression in that filter
+        // cannot silently re-enable execution of a plugin the operator has
+        // switched off. `enabled: false` is the documented remediation for a
+        // misbehaving plugin, so it is worth two cheap checks.
+        let loaded: Vec<String> = loaded
+            .into_iter()
+            .filter(|name| {
+                let disabled = self
+                    .plugin_manager
+                    .get(name)
+                    .is_some_and(|p| p.state == crucible_lua::manifest::PluginState::Disabled);
+                if disabled {
+                    warn!("Refusing to execute disabled plugin '{name}'");
+                }
+                !disabled
+            })
+            .collect();
+
         info!("Loaded {} daemon plugin(s)", loaded.len());
 
         let mut specs = Vec::new();
