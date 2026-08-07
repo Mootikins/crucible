@@ -409,6 +409,21 @@ impl WorkspaceTools {
             ));
         }
 
+        // An absolute pattern discards the base entirely under `Path::join`,
+        // so `/etc/*` would escape the search path. Unlike the `..` check
+        // above this cannot be conditional on `allowed_roots`: the instance
+        // the daemon builds for plugin tool calls has none, and that is
+        // precisely the caller a stranger's message can reach.
+        if std::path::Path::new(&pattern).is_absolute() {
+            return Err(rmcp::ErrorData::invalid_params(
+                format!(
+                    "Glob pattern '{pattern}' is absolute — patterns are relative to the \
+                     search path"
+                ),
+                None,
+            ));
+        }
+
         let full_pattern = search_path.join(&pattern);
         let pattern_str = full_pattern.to_string_lossy();
         let max_results = limit.unwrap_or(100);
@@ -466,17 +481,20 @@ impl WorkspaceTools {
 
         let max_matches = limit.unwrap_or(50);
 
+        // Every flag must precede `--`; the pattern and paths follow it.
+        // Without the separator rg parses a leading-dash pattern as a flag,
+        // and `--pre=<cmd>` runs <cmd> against every file walked — arbitrary
+        // execution from a tool that never reaches the permission gate.
+        // `--glob` in particular has to move ahead of the pattern: appended
+        // after it, it would become a positional argument.
         let mut cmd = Command::new("rg");
-        cmd.arg("--line-number")
-            .arg("--max-count")
-            .arg("1000")
-            .arg(&pattern);
+        cmd.arg("--line-number").arg("--max-count").arg("1000");
 
         if let Some(g) = glob {
             cmd.arg("--glob").arg(g);
         }
 
-        cmd.arg(&search_path);
+        cmd.arg("--").arg(&pattern).arg(&search_path);
 
         let output = cmd.output().await.mcp_err_ctx("Grep error")?;
 

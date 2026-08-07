@@ -396,3 +396,124 @@ fn test_tool_definitions_have_descriptions() {
         );
     }
 }
+
+// =========================================================================
+// Argument-injection containment
+//
+// `grep` and `glob` are in `is_safe` (see `agent_manager::is_safe`), so a
+// model-chosen argument reaches them without ever passing the permission
+// gate — no mode stance, no Lua hook, no prompt. Anything these two accept
+// is accepted unconditionally, which is why their argument handling is
+// load-bearing in a way the gated tools' is not.
+// =========================================================================
+
+/// A pattern is data, not argv.
+///
+/// `rg` parses any leading-dash argument as a flag, and `--pre=<cmd>` runs
+/// `<cmd>` against every file walked — so a pattern that reached rg
+/// unseparated was arbitrary command execution on the host.
+#[tokio::test]
+async fn grep_pattern_starting_with_dash_is_not_parsed_as_a_flag() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (temp, tools) = create_workspace();
+    let marker = temp.path().join("executed.marker");
+    let script = temp.path().join("pre.sh");
+
+    tokio::fs::write(
+        &script,
+        format!("#!/bin/sh\ntouch '{}'\ncat \"$1\"\n", marker.display()),
+    )
+    .await
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    tokio::fs::write(temp.path().join("target.txt"), "hello")
+        .await
+        .unwrap();
+
+    // Whether this errors or returns no matches is immaterial; what matters
+    // is that the preprocessor never ran.
+    let _ = tools
+        .grep(format!("--pre={}", script.display()), None, None, None)
+        .await;
+
+    assert!(
+        !marker.exists(),
+        "a grep pattern beginning with '-' must reach rg as a pattern, not a flag"
+    );
+}
+
+/// The separator must not be defeated by a later flag.
+///
+/// `--glob` is appended after the pattern, so a naive `--` placement would
+/// turn the glob into a positional argument and silently change which files
+/// are searched.
+#[tokio::test]
+async fn grep_still_honors_a_glob_filter_alongside_a_literal_pattern() {
+    let (temp, tools) = create_workspace();
+    tokio::fs::write(temp.path().join("a.rs"), "needle")
+        .await
+        .unwrap();
+    tokio::fs::write(temp.path().join("b.txt"), "needle")
+        .await
+        .unwrap();
+
+    let result = tools
+        .grep("needle".to_string(), None, Some("*.rs".to_string()), None)
+        .await
+        .expect("grep with a glob filter should succeed");
+
+    let content = format!("{:?}", result.content);
+    assert!(content.contains("a.rs"), "the glob filter must still apply");
+    assert!(
+        !content.contains("b.txt"),
+        "files excluded by the glob must not be searched"
+    );
+}
+
+/// A leading-dash pattern must still be searchable as a pattern.
+#[tokio::test]
+async fn grep_finds_a_literal_pattern_that_begins_with_a_dash() {
+    let (temp, tools) = create_workspace();
+    tokio::fs::write(
+        temp.path().join("sig.rs"),
+        "fn f() -> Result<()> { Ok(()) }",
+    )
+    .await
+    .unwrap();
+
+    let result = tools
+        .grep("-> Result".to_string(), None, None, None)
+        .await
+        .expect("a pattern beginning with '-' is legitimate and must still match");
+
+    assert!(
+        format!("{:?}", result.content).contains("sig.rs"),
+        "the pattern must be searched, not swallowed by the separator"
+    );
+}
+
+/// `PathBuf::join` with an absolute argument discards the base, so an
+/// absolute glob pattern silently escaped the search path. The `..` guard
+/// does not catch this, and the allowed-roots filter is `None` on the
+/// instance the daemon builds for plugin tool calls.
+#[tokio::test]
+async fn glob_absolute_pattern_does_not_escape_the_search_path() {
+    let (temp, tools) = create_workspace();
+    tokio::fs::write(temp.path().join("inside.rs"), "")
+        .await
+        .unwrap();
+
+    let result = tools.glob("/etc/*".to_string(), None, None);
+
+    match result {
+        Err(_) => {}
+        Ok(r) => {
+            let content = format!("{:?}", r.content);
+            assert!(
+                !content.contains("/etc/"),
+                "an absolute glob pattern must not enumerate paths outside the search path: {content}"
+            );
+        }
+    }
+}
