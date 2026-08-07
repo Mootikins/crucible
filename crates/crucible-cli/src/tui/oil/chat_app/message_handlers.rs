@@ -316,6 +316,16 @@ impl OilChatApp {
                 }
             }
             ChatAppMsg::ProvidersListed(providers) => {
+                // An empty list means every turn will fail with a raw
+                // transport error; warn now instead of letting the user
+                // discover it mid-conversation. Preflight usually catches
+                // this before the TUI opens — this covers resume and any
+                // path that skipped it.
+                if providers.is_empty() {
+                    self.add_notification(crucible_core::types::Notification::warning(
+                        crate::commands::chat_preflight::no_providers_message(),
+                    ));
+                }
                 // Surface the first available provider as the "current"
                 // display string. Matches the old preflight behavior.
                 if let Some(p) = providers.iter().find(|p| p.available) {

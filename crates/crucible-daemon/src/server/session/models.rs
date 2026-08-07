@@ -113,18 +113,31 @@ pub(crate) async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> 
 }
 
 /// List all available providers without requiring an active session.
+///
+/// `include_models: false` skips model discovery (which dials endpoints and
+/// can hang on a dead provider); the CLI's chat preflight uses it to answer
+/// "are there any providers at all?" quickly.
 pub(crate) async fn handle_providers_list(req: Request, am: &Arc<AgentManager>) -> Response {
     let kiln_path = req
         .params
         .get("kiln_path")
         .and_then(|v| v.as_str())
         .map(PathBuf::from);
+    let include_models = req
+        .params
+        .get("include_models")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
 
     let classification = kiln_path
         .as_ref()
         .and_then(|kiln| crate::trust_resolution::find_workspace_and_resolve_classification(kiln));
 
-    let providers = am.list_providers(classification).await;
+    let providers = if include_models {
+        am.list_providers(classification).await
+    } else {
+        am.list_providers_summary(classification).await
+    };
     Response::success(req.id, serde_json::json!({ "providers": providers }))
 }
 

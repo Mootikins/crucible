@@ -156,6 +156,19 @@ pub async fn execute(params: ExecuteParams) -> Result<()> {
     }
     fill_default_model_if_missing(&mut config);
 
+    // A session on the internal agent can do nothing without a provider.
+    // Fail here, with remedies, rather than mid-conversation with a raw
+    // transport error. External (`-a`) agents bring their own provider;
+    // replay never reaches this point (it returns before the destructure);
+    // and a resumed session's agent type is stored daemon-side (it may be
+    // ACP even without `-a`), so resume relies on the TUI's empty-list
+    // warning instead of blocking here.
+    if agent_name.is_none() && resume_session_id.is_none() {
+        let client = crucible_daemon::DaemonClient::connect_or_start().await?;
+        crate::commands::chat_preflight::ensure_providers_available(&client, &config.kiln_path)
+            .await?;
+    }
+
     match query {
         None => {
             run_interactive_chat(RunInteractiveChatParams {

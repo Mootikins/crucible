@@ -16,6 +16,41 @@ use crate::config::CliConfig;
 use crate::kiln_discover::{discover_kiln, DiscoverySource};
 use crate::provider_detect::detect_providers;
 
+/// The zero-provider remedies, shared by chat preflight, the TUI fallback
+/// warning, and `cru doctor`, so they cannot drift apart. Doctor prints this
+/// form; everything else appends the pointer to doctor itself.
+pub fn no_providers_remedies() -> &'static str {
+    "No LLM providers are configured. \
+     Try: `cru auth login` (cloud API key) or `ollama serve` (local models)."
+}
+
+/// [`no_providers_remedies`] plus the diagnostics pointer — the message for
+/// every surface except `cru doctor` (which would be telling the user to run
+/// the command they are already in).
+pub fn no_providers_message() -> String {
+    format!(
+        "{} Run `cru doctor` to verify your setup.",
+        no_providers_remedies()
+    )
+}
+
+/// Block chat startup when the daemon can resolve zero providers.
+///
+/// Without this the user gets a normal prompt, types a message, and receives
+/// a raw transport error mid-conversation — the worst possible first-run
+/// failure. Only meaningful for the internal agent; external (`-a`) agents
+/// bring their own provider.
+pub async fn ensure_providers_available(
+    client: &crucible_daemon::DaemonClient,
+    kiln: &std::path::Path,
+) -> Result<()> {
+    let providers = client.list_providers_summary(Some(kiln)).await?;
+    if providers.is_empty() {
+        anyhow::bail!("{}", no_providers_message());
+    }
+    Ok(())
+}
+
 /// Ensure the CLI has a valid kiln to hand to the daemon.
 ///
 /// Filesystem check: `<kiln>/.crucible/` must be a directory. If missing,
@@ -136,5 +171,20 @@ pub fn fill_default_model_if_missing(config: &mut CliConfig) {
             config.chat.model = Some(model.clone());
             info!("Set default model to {}", model);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The message is the product's single highest-value error string; each
+    /// remedy is load-bearing (§1.2 of the launch plan).
+    #[test]
+    fn the_zero_provider_message_names_every_remedy() {
+        let msg = no_providers_message();
+        assert!(msg.contains("cru auth login"), "must offer the cloud path");
+        assert!(msg.contains("ollama serve"), "must offer the local path");
+        assert!(msg.contains("cru doctor"), "must point at diagnostics");
     }
 }

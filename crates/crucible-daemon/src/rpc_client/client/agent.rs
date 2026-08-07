@@ -154,6 +154,10 @@ pub struct ListAllModelsRequest {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ListProvidersRequest {
     pub kiln_path: Option<String>,
+    /// `false` skips per-provider model discovery (which dials endpoints).
+    /// Omitted means `true` for backward compatibility.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_models: Option<bool>,
 }
 
 /// Request for `session.connect_kiln` / `session.disconnect_kiln`.
@@ -310,11 +314,31 @@ impl DaemonClient {
         &self,
         kiln_path: Option<&std::path::Path>,
     ) -> Result<Vec<crate::agent_manager::providers::ProviderInfo>> {
+        self.list_providers_inner(kiln_path, None).await
+    }
+
+    /// Like [`Self::list_providers`], but skips model discovery — no endpoint
+    /// is dialed, so this returns fast even when a provider is down. The
+    /// `models` field comes back empty and `available` is not meaningful;
+    /// use this when only the *existence* of providers matters (preflight).
+    pub async fn list_providers_summary(
+        &self,
+        kiln_path: Option<&std::path::Path>,
+    ) -> Result<Vec<crate::agent_manager::providers::ProviderInfo>> {
+        self.list_providers_inner(kiln_path, Some(false)).await
+    }
+
+    async fn list_providers_inner(
+        &self,
+        kiln_path: Option<&std::path::Path>,
+        include_models: Option<bool>,
+    ) -> Result<Vec<crate::agent_manager::providers::ProviderInfo>> {
         let result: serde_json::Value = self
             .typed_call_with_retry(
                 "providers.list",
                 ListProvidersRequest {
                     kiln_path: kiln_path.map(|p| p.to_string_lossy().to_string()),
+                    include_models,
                 },
             )
             .await?;

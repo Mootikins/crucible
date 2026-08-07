@@ -44,13 +44,36 @@ impl AgentManager {
         &self,
         classification: Option<DataClassification>,
     ) -> Vec<ProviderInfo> {
+        self.list_providers_impl(classification, true).await
+    }
+
+    /// [`Self::list_providers`] without model discovery. Discovery dials each
+    /// provider's endpoint, which can hang on a dead one; callers that only
+    /// need to know *whether* providers exist (chat preflight) use this.
+    /// `models` comes back empty, so `available` is not meaningful here.
+    pub async fn list_providers_summary(
+        &self,
+        classification: Option<DataClassification>,
+    ) -> Vec<ProviderInfo> {
+        self.list_providers_impl(classification, false).await
+    }
+
+    async fn list_providers_impl(
+        &self,
+        classification: Option<DataClassification>,
+        include_models: bool,
+    ) -> Vec<ProviderInfo> {
         let mut providers = Vec::new();
         for (provider_key, provider_config, source_reason) in
             self.iter_chat_providers(classification)
         {
             let backend = provider_config.provider_type;
 
-            let models = self.discover_models(&provider_key, &provider_config).await;
+            let models = if include_models {
+                self.discover_models(&provider_key, &provider_config).await
+            } else {
+                Vec::new()
+            };
 
             providers.push(build_provider_info(
                 backend,
@@ -281,6 +304,52 @@ mod tests {
         assert_eq!(providers[0].name, "OpenAI");
         assert!(providers[0].available);
         assert_eq!(providers[0].reason.as_deref(), Some("config"));
+    }
+
+    /// The summary variant answers "do any providers exist?" without model
+    /// discovery — same entries, no models. Chat preflight depends on this
+    /// staying cheap: discovery dials endpoints and can hang on a dead one.
+    #[tokio::test]
+    // SAFETY: This lock intentionally serializes process-wide env var mutation across async tests.
+    // It must be held for the entire test body (including await points) to prevent cross-test races.
+    #[allow(clippy::await_holding_lock)]
+    async fn summary_lists_the_same_providers_without_model_discovery() {
+        let _env_lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _env_guards = clear_provider_env();
+        let config = LlmConfig {
+            providers: HashMap::from([(
+                "openai".to_string(),
+                LlmProviderConfig {
+                    provider_type: BackendType::OpenAI,
+                    endpoint: None,
+                    default_model: Some("gpt-4o".to_string()),
+                    temperature: None,
+                    max_tokens: None,
+                    timeout_secs: None,
+                    api_key: Some("sk-test".to_string()),
+                    available_models: Some(vec!["gpt-4o".to_string()]),
+                    trust_level: None,
+                    name: None,
+                },
+            )]),
+            ..Default::default()
+        };
+        let manager = make_agent_manager_with_config(Some(config));
+
+        let full = manager.list_providers(None).await;
+        let summary = manager.list_providers_summary(None).await;
+
+        assert_eq!(full.len(), 1);
+        assert_eq!(summary.len(), 1, "summary must list the same providers");
+        assert_eq!(summary[0].provider_type, "openai");
+        assert!(
+            !full[0].models.is_empty(),
+            "the full listing keeps its models"
+        );
+        assert!(
+            summary[0].models.is_empty(),
+            "summary must skip model discovery"
+        );
     }
 
     #[tokio::test]

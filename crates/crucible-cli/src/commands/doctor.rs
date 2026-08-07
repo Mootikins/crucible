@@ -89,7 +89,7 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: &str) -> Res
         results.push(DoctorCheckResult {
             check_name: "Providers".to_string(),
             status: "warn".to_string(),
-            message: "No LLM providers configured. Try: `cru config init`".to_string(),
+            message: crate::commands::chat_preflight::no_providers_remedies().to_string(),
         });
     } else {
         let mut all_reachable = true;

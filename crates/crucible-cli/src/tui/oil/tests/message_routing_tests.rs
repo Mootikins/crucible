@@ -391,3 +391,45 @@ fn a_mode_change_from_another_client_updates_the_mode() {
     }
     assert_eq!(app.mode(), "review");
 }
+
+// ─── Provider list routing ─────────────────────────────────────────────────
+
+fn provider_info(name: &str) -> crucible_core::types::ProviderInfo {
+    crucible_core::types::ProviderInfo {
+        name: name.to_string(),
+        provider_type: "ollama".to_string(),
+        available: true,
+        default_model: None,
+        models: vec![],
+        endpoint: None,
+        reason: None,
+        is_local: true,
+    }
+}
+
+/// A zero-provider session used to no-op: the user saw a normal prompt, typed,
+/// and got a raw transport error mid-conversation. The empty list must warn
+/// with remedies instead of staying silent.
+#[test]
+fn an_empty_provider_list_surfaces_a_warning_with_remedies() {
+    let mut app = OilChatApp::init();
+    app.on_message(ChatAppMsg::ProvidersListed(vec![]));
+
+    assert!(
+        app.has_notifications(),
+        "an empty provider list must produce a visible warning, not silence"
+    );
+}
+
+#[test]
+fn a_populated_provider_list_sets_the_provider_without_warning() {
+    let mut app = OilChatApp::init();
+    app.on_message(ChatAppMsg::ProvidersListed(vec![provider_info(
+        "Ollama (Local)",
+    )]));
+
+    assert!(
+        !app.has_notifications(),
+        "a healthy provider list must not raise a warning"
+    );
+}
