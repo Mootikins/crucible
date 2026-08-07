@@ -6,7 +6,7 @@ use tokio::task;
 use tracing::warn;
 
 use crate::kiln_validate::{expand_tilde, validate_kiln_path, ValidationSeverity};
-use crate::provider_detect::{detect_providers, DetectedProvider};
+use crate::provider_detect::{detect_providers_probed, DetectedProvider};
 use crucible_core::config::components::DataClassification;
 use crucible_core::config::{
     read_kiln_config, read_project_config, register_project_in_config, write_kiln_config,
@@ -123,19 +123,14 @@ async fn run_kiln_init(
 ) -> Result<()> {
     let crucible_dir = target_path.join(".crucible");
 
-    let providers = detect_providers(&crucible_core::config::ChatConfig::default());
+    // Probed: `-y` writes its pick straight into config, so "available" has
+    // to mean something answered, not "we assume local Ollama exists".
+    let providers = detect_providers_probed(&crucible_core::config::ChatConfig::default());
 
     let (provider, model) = if !yes && !providers.is_empty() {
         prompt_provider_selection(&providers)?
-    } else if !providers.is_empty() {
-        let p = providers[0].provider_type.clone();
-        let m = providers[0]
-            .default_model
-            .clone()
-            .unwrap_or_else(|| default_model_for(&p).to_string());
-        (p, m)
     } else {
-        ("ollama".to_string(), "llama3.2".to_string())
+        select_provider_noninteractive(&providers)
     };
 
     let (name, classification) = if yes {
@@ -408,6 +403,34 @@ pub fn create_kiln_with_config(
     Ok(())
 }
 
+/// `-y` mode's provider pick: the first *available* provider, falling back
+/// to the first listed (with a warning) so init still completes on a box
+/// with no reachable provider at all.
+fn select_provider_noninteractive(providers: &[DetectedProvider]) -> (String, String) {
+    let pick = providers
+        .iter()
+        .find(|p| p.available)
+        .or_else(|| providers.first());
+    match pick {
+        Some(p) => {
+            if !p.available {
+                println!(
+                    "{} No reachable provider found; defaulting to {} ({}).",
+                    "Warning:".yellow(),
+                    p.name,
+                    p.reason
+                );
+            }
+            let model = p
+                .default_model
+                .clone()
+                .unwrap_or_else(|| default_model_for(&p.provider_type).to_string());
+            (p.provider_type.clone(), model)
+        }
+        None => ("ollama".to_string(), "llama3.2".to_string()),
+    }
+}
+
 fn prompt_provider_selection(providers: &[DetectedProvider]) -> Result<(String, String)> {
     use dialoguer::{theme::ColorfulTheme, Input, Select};
 
@@ -553,6 +576,37 @@ fn default_model_for(provider: &str) -> &'static str {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    fn detected(provider_type: &str, available: bool) -> DetectedProvider {
+        DetectedProvider {
+            name: provider_type.to_string(),
+            provider_type: provider_type.to_string(),
+            available,
+            reason: "test".to_string(),
+            default_model: None,
+            source: None,
+        }
+    }
+
+    /// Approval criterion 1.4: with only an Anthropic key, `-y` must not
+    /// hand the user a kiln pointed at an Ollama that isn't running.
+    #[test]
+    fn noninteractive_selection_skips_an_unavailable_provider() {
+        let providers = vec![detected("ollama", false), detected("anthropic", true)];
+
+        let (provider, _model) = select_provider_noninteractive(&providers);
+
+        assert_eq!(provider, "anthropic");
+    }
+
+    #[test]
+    fn noninteractive_selection_falls_back_when_nothing_answers() {
+        let providers = vec![detected("ollama", false)];
+
+        let (provider, _model) = select_provider_noninteractive(&providers);
+
+        assert_eq!(provider, "ollama", "init must still complete");
+    }
 
     #[test]
     fn detect_kiln_from_kiln_toml() {

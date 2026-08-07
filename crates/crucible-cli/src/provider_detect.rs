@@ -2,7 +2,8 @@
 //!
 //! This module exists because `cru init` runs before the daemon is started,
 //! so it cannot use the `providers.list` RPC. It performs env-var and
-//! credential-store checks only — no HTTP probing.
+//! credential-store checks; the one piece of network traffic is
+//! [`detect_providers_probed`]'s TCP dial to the Ollama endpoint.
 //!
 //! For runtime provider discovery (after daemon is running), use
 //! `DaemonClient::list_providers()` instead. Model context-length fetches
@@ -45,17 +46,28 @@ pub fn has_api_key(provider: &str) -> bool {
 
 /// Check if an API key exists and return its source
 pub fn has_api_key_with_source(provider: &str) -> Option<CredentialSource> {
-    match provider.to_lowercase().as_str() {
-        "openai" if std::env::var("OPENAI_API_KEY").is_ok() => {
-            return Some(CredentialSource::EnvVar)
+    has_api_key_with_source_in(&SecretsFile::new(), provider)
+}
+
+/// [`has_api_key_with_source`] against an explicit store. Tests inject an
+/// isolated store here; the default path reads the developer's real
+/// `~/.config/crucible/secrets.toml`, whose contents would leak into
+/// assertions (pass on CI, fail on any box with stored credentials).
+fn has_api_key_with_source_in(store: &SecretsFile, provider: &str) -> Option<CredentialSource> {
+    // The env-var name comes from the backend's own metadata rather than a
+    // hand-kept list here — hardcoding only OPENAI/ANTHROPIC was how
+    // OpenRouter and Z.AI keys went undetected.
+    let env_var = provider
+        .to_lowercase()
+        .parse::<BackendType>()
+        .ok()
+        .and_then(|b| b.api_key_env_var());
+    if let Some(env_var) = env_var {
+        if std::env::var(env_var).is_ok_and(|v| !v.trim().is_empty()) {
+            return Some(CredentialSource::EnvVar);
         }
-        "anthropic" if std::env::var("ANTHROPIC_API_KEY").is_ok() => {
-            return Some(CredentialSource::EnvVar)
-        }
-        _ => {}
     }
 
-    let store = SecretsFile::new();
     if let Ok(Some(_)) = store.get(provider) {
         return Some(CredentialSource::Store);
     }
@@ -63,152 +75,134 @@ pub fn has_api_key_with_source(provider: &str) -> Option<CredentialSource> {
     None
 }
 
-/// Detect available providers from config and environment only (no HTTP probes).
+/// Chat backends that authenticate with an API key, in the order they are
+/// offered when several have credentials.
+const KEYED_CHAT_BACKENDS: &[BackendType] = &[
+    BackendType::Anthropic,
+    BackendType::OpenAI,
+    BackendType::OpenRouter,
+    BackendType::ZAI,
+];
+
+/// Detect available providers from config, environment, and the credential
+/// store — no network traffic.
 ///
-/// Checks OLLAMA_HOST env, API key env vars, and the credential store. The
-/// Ollama entry is unconditional and unprobed — "available" means "we know
-/// where it would be", not "something answered there" — so callers that pick
-/// a single provider get credential-backed ones first (see the ranking at the
-/// end of this function).
+/// Every keyed backend with a credential is listed, plus an unconditional
+/// Ollama entry whose `available: true` is an assumption ("we know where it
+/// would be"), not a probe result. Credential-backed providers rank first.
 pub fn detect_providers(config: &ChatConfig) -> Vec<DetectedProvider> {
+    detect_providers_inner(config, false, &SecretsFile::new())
+}
+
+/// Like [`detect_providers`], but verifies the Ollama endpoint actually
+/// answers (a TCP dial capped at ~300ms — the module's one exception to
+/// "no network"). `cru init` and the wizard use this: writing an unreachable
+/// provider into a fresh config is the exact bug being prevented. Per-launch
+/// callers keep the dial-free variant.
+pub fn detect_providers_probed(config: &ChatConfig) -> Vec<DetectedProvider> {
+    detect_providers_inner(config, true, &SecretsFile::new())
+}
+
+fn detect_providers_inner(
+    config: &ChatConfig,
+    probe: bool,
+    store: &SecretsFile,
+) -> Vec<DetectedProvider> {
     let mut providers = Vec::new();
-    // TODO(crucible): read the configured backend here instead of assuming
-    // Ollama. The match below is over a constant, so its non-Ollama arms are
-    // unreachable; the post-match detection compensates for OpenAI and
-    // Anthropic but not for the rest.
-    let provider_backend = BackendType::Ollama;
 
-    match provider_backend {
-        BackendType::Ollama => {
-            let endpoint = config
-                .endpoint
-                .as_deref()
-                .unwrap_or(DEFAULT_OLLAMA_ENDPOINT);
-            let reason = if std::env::var("OLLAMA_HOST").is_ok() {
-                format!("OLLAMA_HOST={}", ollama_endpoint())
-            } else if config.endpoint.is_some() {
-                format!("config endpoint={}", endpoint)
-            } else {
-                "config provider=ollama".to_string()
-            };
+    for &backend in KEYED_CHAT_BACKENDS {
+        let provider_type = backend.as_str();
+        if let Some(src) = has_api_key_with_source_in(store, provider_type) {
             providers.push(DetectedProvider {
-                name: "Ollama (Local)".to_string(),
-                provider_type: "ollama".to_string(),
-                available: true,
-                reason,
-                default_model: config.model.clone(),
-                source: None,
-            });
-        }
-        BackendType::OpenAI => {
-            if let Some(src) = has_api_key_with_source("openai") {
-                providers.push(DetectedProvider {
-                    name: "OpenAI".to_string(),
-                    provider_type: "openai".to_string(),
-                    available: true,
-                    reason: format!("API key found ({})", src),
-                    default_model: config.model.clone().or(Some("gpt-4o-mini".to_string())),
-                    source: Some(src),
-                });
-            }
-        }
-        BackendType::Anthropic => {
-            if let Some(src) = has_api_key_with_source("anthropic") {
-                providers.push(DetectedProvider {
-                    name: "Anthropic".to_string(),
-                    provider_type: "anthropic".to_string(),
-                    available: true,
-                    reason: format!("API key found ({})", src),
-                    default_model: config
-                        .model
-                        .clone()
-                        .or(Some("claude-3-5-sonnet-latest".to_string())),
-                    source: Some(src),
-                });
-            }
-        }
-        BackendType::GitHubCopilot => {}
-        BackendType::OpenRouter => {
-            if let Some(src) = has_api_key_with_source("openrouter") {
-                providers.push(DetectedProvider {
-                    name: "OpenRouter".to_string(),
-                    provider_type: "openrouter".to_string(),
-                    available: true,
-                    reason: format!("API key found ({})", src),
-                    default_model: config.model.clone().or(Some("openai/gpt-4o".to_string())),
-                    source: Some(src),
-                });
-            }
-        }
-        BackendType::ZAI => {
-            if let Some(src) = has_api_key_with_source("zai") {
-                providers.push(DetectedProvider {
-                    name: "Z.AI".to_string(),
-                    provider_type: "zai".to_string(),
-                    available: true,
-                    reason: format!("API key found ({})", src),
-                    default_model: config.model.clone().or(Some("GLM-4.7".to_string())),
-                    source: Some(src),
-                });
-            }
-        }
-        BackendType::Cohere
-        | BackendType::VertexAI
-        | BackendType::FastEmbed
-        | BackendType::Burn
-        | BackendType::Custom
-        | BackendType::Mock => {}
-    }
-
-    // Also detect providers not in config but available via env/credentials
-    if !providers.iter().any(|p| p.provider_type == "openai") {
-        if let Some(src) = has_api_key_with_source("openai") {
-            providers.push(DetectedProvider {
-                name: "OpenAI".to_string(),
-                provider_type: "openai".to_string(),
+                name: keyed_backend_display_name(backend).to_string(),
+                provider_type: provider_type.to_string(),
                 available: true,
                 reason: format!("API key found ({})", src),
-                default_model: Some("gpt-4o-mini".to_string()),
+                default_model: config
+                    .model
+                    .clone()
+                    .or_else(|| backend.default_chat_model().map(str::to_string)),
                 source: Some(src),
             });
         }
     }
 
-    if !providers.iter().any(|p| p.provider_type == "anthropic") {
-        if let Some(src) = has_api_key_with_source("anthropic") {
-            providers.push(DetectedProvider {
-                name: "Anthropic".to_string(),
-                provider_type: "anthropic".to_string(),
-                available: true,
-                reason: format!("API key found ({})", src),
-                default_model: Some("claude-3-5-sonnet-latest".to_string()),
-                source: Some(src),
-            });
+    // Ollama is always offered: it is the no-credential path. `available` is
+    // an assumption unless the caller asked for a probe.
+    let endpoint = if std::env::var("OLLAMA_HOST").is_ok() {
+        ollama_endpoint()
+    } else {
+        config
+            .endpoint
+            .clone()
+            .unwrap_or_else(|| DEFAULT_OLLAMA_ENDPOINT.to_string())
+    };
+    let mut reason = if std::env::var("OLLAMA_HOST").is_ok() {
+        format!("OLLAMA_HOST={}", endpoint)
+    } else if config.endpoint.is_some() {
+        format!("config endpoint={}", endpoint)
+    } else {
+        "config provider=ollama".to_string()
+    };
+    let available = if probe {
+        let answers = endpoint_answers(&endpoint, std::time::Duration::from_millis(300));
+        if !answers {
+            reason = format!("{reason} (not answering at {endpoint})");
         }
-    }
+        answers
+    } else {
+        true
+    };
+    providers.push(DetectedProvider {
+        name: "Ollama (Local)".to_string(),
+        provider_type: "ollama".to_string(),
+        available,
+        reason,
+        default_model: config.model.clone(),
+        source: None,
+    });
 
-    // Ollama via OLLAMA_HOST env even if not the configured provider
-    if !providers.iter().any(|p| p.provider_type == "ollama")
-        && std::env::var("OLLAMA_HOST").is_ok()
-    {
-        providers.push(DetectedProvider {
-            name: "Ollama (Local)".to_string(),
-            provider_type: "ollama".to_string(),
-            available: true,
-            reason: format!("OLLAMA_HOST={}", ollama_endpoint()),
-            default_model: None,
-            source: None,
-        });
-    }
-
-    // Rank credential-backed providers ahead of the unprobed local default.
-    // `cru init -y` takes providers[0], so without this a user whose only
-    // credential is ANTHROPIC_API_KEY got an Ollama kiln — Ollama is pushed
-    // first and unconditionally, with no probe behind its `available: true`.
-    // Stable sort, so relative order within each group is preserved.
-    providers.sort_by_key(|p| u8::from(p.source.is_none()));
+    // Rank credential-backed providers ahead of the assumed local default,
+    // and reachable ones ahead of dead ones. `cru init -y` picks from the
+    // front, so without this a user whose only credential is
+    // ANTHROPIC_API_KEY got an Ollama kiln. Stable sort preserves the
+    // KEYED_CHAT_BACKENDS order within each group.
+    providers.sort_by_key(|p| (p.source.is_none(), !p.available));
 
     providers
+}
+
+fn keyed_backend_display_name(backend: BackendType) -> &'static str {
+    match backend {
+        BackendType::Anthropic => "Anthropic",
+        BackendType::OpenAI => "OpenAI",
+        BackendType::OpenRouter => "OpenRouter",
+        BackendType::ZAI => "Z.AI",
+        _ => backend.as_str(),
+    }
+}
+
+/// Whether anything is listening at an `http(s)://host:port` endpoint.
+/// A TCP dial, not an HTTP request — cheap enough for interactive setup.
+fn endpoint_answers(endpoint: &str, timeout: std::time::Duration) -> bool {
+    let hostport = endpoint
+        .strip_prefix("http://")
+        .or_else(|| endpoint.strip_prefix("https://"))
+        .unwrap_or(endpoint);
+    let hostport = hostport.split('/').next().unwrap_or(hostport);
+    let addr = if hostport.contains(':') {
+        hostport.to_string()
+    } else {
+        format!("{hostport}:11434")
+    };
+
+    use std::net::ToSocketAddrs;
+    let Ok(addrs) = addr.to_socket_addrs() else {
+        return false;
+    };
+    addrs
+        .into_iter()
+        .any(|a| std::net::TcpStream::connect_timeout(&a, timeout).is_ok())
 }
 
 #[cfg(test)]
@@ -217,6 +211,15 @@ mod tests {
     use crucible_core::test_support::EnvVarGuard;
     use serial_test::serial;
 
+    /// Detection against an empty, isolated credential store. The default
+    /// store is the developer's real secrets.toml — using it makes these
+    /// tests pass on CI and fail on any box with stored credentials.
+    fn detect_isolated(config: &ChatConfig, probe: bool) -> Vec<DetectedProvider> {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = SecretsFile::with_path(tmp.path().join("secrets.toml"));
+        detect_providers_inner(config, probe, &store)
+    }
+
     /// `cru init -y` selects `providers[0]`, and the Ollama entry is pushed
     /// first with `available: true` and no probe behind it. A user whose only
     /// credential is an Anthropic key must not be handed an Ollama kiln.
@@ -224,7 +227,7 @@ mod tests {
     #[serial]
     fn a_credentialled_provider_outranks_the_unprobed_local_default() {
         let _key = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-test".to_string());
-        let detected = detect_providers(&ChatConfig::default());
+        let detected = detect_isolated(&ChatConfig::default(), false);
 
         let anthropic = detected
             .iter()
@@ -242,15 +245,18 @@ mod tests {
     }
 
     /// Ranks first only when nothing else has a credential — this reads the
-    /// process environment, so the API-key vars must be cleared or the test
-    /// passes on CI and fails on a developer box that exports one.
+    /// process environment, so every keyed backend's env var must be cleared
+    /// or the test passes on CI and fails on a developer box that exports one
+    /// (GLM_AUTH_TOKEN did exactly that when Z.AI detection came alive).
     #[test]
     #[serial]
     fn test_detect_ollama_from_default_config() {
         let _openai = EnvVarGuard::remove("OPENAI_API_KEY");
         let _anthropic = EnvVarGuard::remove("ANTHROPIC_API_KEY");
+        let _openrouter = EnvVarGuard::remove("OPENROUTER_API_KEY");
+        let _zai = EnvVarGuard::remove("GLM_AUTH_TOKEN");
         let config = ChatConfig::default();
-        let detected = detect_providers(&config);
+        let detected = detect_isolated(&config, false);
         assert!(!detected.is_empty());
         assert_eq!(detected[0].provider_type, "ollama");
         assert!(detected[0].reason.contains("config provider=ollama"));
@@ -261,7 +267,7 @@ mod tests {
     fn test_detect_ollama_from_env() {
         let _guard = EnvVarGuard::set("OLLAMA_HOST", "http://myhost:11434".to_string());
         let config = ChatConfig::default();
-        let detected = detect_providers(&config);
+        let detected = detect_isolated(&config, false);
         assert!(!detected.is_empty());
         let ollama = detected
             .iter()
@@ -275,7 +281,7 @@ mod tests {
     fn test_detect_openai_from_config_with_key() {
         let _guard = EnvVarGuard::set("OPENAI_API_KEY", "sk-test".to_string());
         let config = ChatConfig::default();
-        let detected = detect_providers(&config);
+        let detected = detect_isolated(&config, false);
         assert!(detected.iter().any(|p| p.provider_type == "openai"));
     }
 
@@ -285,7 +291,7 @@ mod tests {
         let _guard1 = EnvVarGuard::remove("OPENAI_API_KEY");
         let _guard2 = EnvVarGuard::remove("ANTHROPIC_API_KEY");
         let config = ChatConfig::default();
-        let detected = detect_providers(&config);
+        let detected = detect_isolated(&config, false);
         // No API key = no provider detected for cloud providers
         assert!(!detected.iter().any(|p| p.provider_type == "openai"));
     }
@@ -295,7 +301,7 @@ mod tests {
     fn test_detect_extra_providers_from_env() {
         let _guard = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-test".to_string());
         let config = ChatConfig::default(); // ollama config
-        let detected = detect_providers(&config);
+        let detected = detect_isolated(&config, false);
         // Should have ollama from config + anthropic from env
         assert!(detected.iter().any(|p| p.provider_type == "ollama"));
         assert!(detected.iter().any(|p| p.provider_type == "anthropic"));
@@ -355,6 +361,98 @@ mod tests {
         assert!(provider.available);
         assert_eq!(provider.reason, "Test reason");
         assert_eq!(provider.default_model, Some("test-model".to_string()));
+    }
+
+    /// OpenRouter and Z.AI were only reachable through match arms that a
+    /// hardcoded `BackendType::Ollama` made dead code — an exported key for
+    /// either was silently invisible to `cru init`.
+    #[test]
+    #[serial]
+    fn openrouter_and_zai_keys_are_detected() {
+        let _or = EnvVarGuard::set("OPENROUTER_API_KEY", "sk-or-test".to_string());
+        let _zai = EnvVarGuard::set("GLM_AUTH_TOKEN", "zai-test".to_string());
+
+        let detected = detect_isolated(&ChatConfig::default(), false);
+
+        assert!(
+            detected.iter().any(|p| p.provider_type == "openrouter"),
+            "an OpenRouter key must be detected: {detected:#?}"
+        );
+        assert!(
+            detected.iter().any(|p| p.provider_type == "zai"),
+            "a Z.AI key must be detected: {detected:#?}"
+        );
+    }
+
+    #[test]
+    fn the_probe_sees_a_listening_socket() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+
+        assert!(endpoint_answers(
+            &endpoint,
+            std::time::Duration::from_millis(300)
+        ));
+    }
+
+    #[test]
+    fn the_probe_reports_a_closed_port() {
+        // Bind-then-drop guarantees the port was just free.
+        let port = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            l.local_addr().unwrap().port()
+        };
+
+        assert!(!endpoint_answers(
+            &format!("http://127.0.0.1:{port}"),
+            std::time::Duration::from_millis(300)
+        ));
+    }
+
+    /// `cru init` must not write an unreachable Ollama into a fresh config
+    /// while claiming it is available.
+    #[test]
+    #[serial]
+    fn probed_detection_marks_a_dead_ollama_unavailable() {
+        let port = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            l.local_addr().unwrap().port()
+        };
+        let _host = EnvVarGuard::set("OLLAMA_HOST", format!("http://127.0.0.1:{port}"));
+
+        let detected = detect_isolated(&ChatConfig::default(), true);
+        let ollama = detected
+            .iter()
+            .find(|p| p.provider_type == "ollama")
+            .expect("Ollama stays listed so the wizard can still offer it");
+
+        assert!(
+            !ollama.available,
+            "a dead endpoint must not claim available"
+        );
+        assert!(
+            ollama.reason.contains("not answering"),
+            "the reason must say why: {}",
+            ollama.reason
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn probed_detection_marks_a_live_ollama_available() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let _host = EnvVarGuard::set(
+            "OLLAMA_HOST",
+            format!("http://{}", listener.local_addr().unwrap()),
+        );
+
+        let detected = detect_isolated(&ChatConfig::default(), true);
+        let ollama = detected
+            .iter()
+            .find(|p| p.provider_type == "ollama")
+            .unwrap();
+
+        assert!(ollama.available);
     }
 
     #[test]

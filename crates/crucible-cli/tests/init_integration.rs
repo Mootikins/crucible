@@ -169,8 +169,11 @@ async fn init_writes_only_to_the_config_path_it_was_given() {
         !parsed.kilns.is_empty(),
         "the kiln must be registered in the config path passed in, got:\n{contents}"
     );
+    // Which provider gets picked depends on the host's env keys (detection
+    // is honest about OPENROUTER/GLM tokens now); this test only pins that
+    // the selection landed in the path it was given.
     assert!(
-        parsed.llm.providers.contains_key("ollama"),
+        !parsed.llm.providers.is_empty(),
         "the provider selection must be registered too, got:\n{contents}"
     );
 }
