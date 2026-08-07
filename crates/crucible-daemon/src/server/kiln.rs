@@ -310,10 +310,14 @@ pub(crate) async fn handle_embed_query(req: Request, km: &Arc<KilnManager>) -> R
     let text = require_param!(req, "text", as_str);
 
     let Some(config) = km.enrichment_config().cloned() else {
+        // Do not name `[embedding]` here: the config loader rejects that
+        // section outright as legacy, so a user who followed this advice
+        // would brick every subsequent `cru` command.
         return internal_error(
             req.id,
             anyhow::anyhow!(
-                "embedding provider not configured for this daemon; set it in crucible.toml under [embedding]"
+                "no embedding provider configured; add one under \
+                 [llm.providers.<name>] and set [llm].default, then run `cru doctor` to verify"
             ),
         );
     };

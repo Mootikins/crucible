@@ -492,17 +492,41 @@ pub(crate) fn build_chat_client_for_agent(
     // sends the real credential in the Authorization header.
     if let Some(env_var_name) = &llm_config.api_key {
         match std::env::var(env_var_name) {
-            Ok(resolved) => {
-                if !resolved.is_empty() {
-                    llm_config.api_key = Some(resolved);
-                }
+            Ok(resolved) if !resolved.is_empty() => {
+                llm_config.api_key = Some(resolved);
             }
-            Err(e) => {
-                warn!(
-                    "Failed to resolve API key env var '{}': {} — clearing api_key",
-                    env_var_name, e
-                );
-                llm_config.api_key = None;
+            // No env var — fall back to the credential store before giving up.
+            // `cru auth login` and the first-run wizard both write there and
+            // both print "stored securely", but nothing on this path ever read
+            // it, so those keys silently did nothing and the user's next turn
+            // failed with a raw provider error.
+            _ => {
+                let provider_name = match provider_type {
+                    BackendType::GitHubCopilot => "github-copilot".to_string(),
+                    _ => format!("{provider_type:?}").to_lowercase(),
+                };
+                let store = crucible_core::config::credentials::AutoStore::new();
+                match crucible_core::config::credentials::resolve_api_key(
+                    &provider_name,
+                    &store,
+                    None,
+                ) {
+                    Some((key, source)) => {
+                        debug!(
+                            "Resolved API key for {} from {:?} after env var '{}' was unset",
+                            provider_name, source, env_var_name
+                        );
+                        llm_config.api_key = Some(key);
+                    }
+                    None => {
+                        warn!(
+                            "No API key for {}: env var '{}' is unset and the credential \
+                             store has no entry — try `cru auth login`",
+                            provider_name, env_var_name
+                        );
+                        llm_config.api_key = None;
+                    }
+                }
             }
         }
     }
