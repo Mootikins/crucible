@@ -186,8 +186,12 @@ See the [plugin guide](./docs/Help/Concepts/Scripting%20Languages.md) for the fu
 | `cru tasks list` | | Manage tasks from TASKS.md |
 | `cru daemon start` | | Start background daemon |
 | `cru daemon status` | | Check daemon status |
+| `cru daemon logs` | | Show recent output from the background daemon |
 | `cru storage verify` | | Verify content integrity |
 | `cru auth login` | | Store LLM provider API key |
+| `cru doctor` | | Diagnose setup problems, each with a concrete fix |
+| `cru search <query>` | | Semantic + text search across kiln notes |
+| `cru setup` | | Bootstrap the runtime directory (plugins, themes) |
 
 Run `cru <command> --help` for full options.
 

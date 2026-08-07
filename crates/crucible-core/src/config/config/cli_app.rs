@@ -189,6 +189,23 @@ pub struct CliAppConfig {
     pub source_map: Option<crate::config::value_source::ValueSourceMap>,
 }
 
+/// A config parse failure is a first-run dead end, so every variant carries
+/// the same pointer at `cru doctor` — the one place that explains the
+/// failure with a concrete fix.
+fn config_parse_error(
+    config_path: &std::path::Path,
+    detail: impl std::fmt::Display,
+) -> anyhow::Error {
+    error!(
+        "Failed to parse config file {}: {detail}",
+        config_path.display()
+    );
+    anyhow::anyhow!(
+        "Failed to parse config file {}: {detail}. Try: `cru doctor`",
+        config_path.display()
+    )
+}
+
 fn default_kiln_path() -> std::path::PathBuf {
     std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
 }
@@ -273,36 +290,26 @@ impl CliAppConfig {
             #[cfg(feature = "toml")]
             {
                 // First parse as a raw TOML table to detect which fields are present
-                let raw_table: toml::Table = toml::from_str(&contents).map_err(|e| {
-                    error!(
-                        "Failed to parse config file {}: {}",
-                        config_path.display(),
-                        e
-                    );
-                    anyhow::anyhow!(
-                        "Failed to parse config file {}: {}",
-                        config_path.display(),
-                        e
-                    )
-                })?;
+                let raw_table: toml::Table =
+                    toml::from_str(&contents).map_err(|e| config_parse_error(&config_path, e))?;
 
                 if raw_table.contains_key("embedding") {
-                    return Err(anyhow::anyhow!(
-                        "Failed to parse config file {}: legacy [embedding] is no longer supported. Use [llm.providers.<name>] with [llm].default",
-                        config_path.display()
+                    return Err(config_parse_error(
+                        &config_path,
+                        "legacy [embedding] is no longer supported. Use [llm.providers.<name>] with [llm].default",
                     ));
                 }
                 if raw_table.contains_key("providers") {
-                    return Err(anyhow::anyhow!(
-                        "Failed to parse config file {}: legacy [providers] is no longer supported. Use [llm.providers.<name>] with [llm].default",
-                        config_path.display()
+                    return Err(config_parse_error(
+                        &config_path,
+                        "legacy [providers] is no longer supported. Use [llm.providers.<name>] with [llm].default",
                     ));
                 }
                 if let Some(toml::Value::Table(chat)) = raw_table.get("chat") {
                     if chat.contains_key("provider") {
-                        return Err(anyhow::anyhow!(
-                            "Failed to parse config file {}: chat.provider is no longer supported. Use [llm.providers.<name>] with [llm].default",
-                            config_path.display()
+                        return Err(config_parse_error(
+                            &config_path,
+                            "chat.provider is no longer supported. Use [llm.providers.<name>] with [llm].default",
                         ));
                     }
                 }
@@ -326,16 +333,7 @@ impl CliAppConfig {
                         (cfg, file_fields)
                     }
                     Err(e) => {
-                        error!(
-                            "Failed to parse config file {}: {}",
-                            config_path.display(),
-                            e
-                        );
-                        return Err(anyhow::anyhow!(
-                            "Failed to parse config file {}: {}",
-                            config_path.display(),
-                            e
-                        ));
+                        return Err(config_parse_error(&config_path, e));
                     }
                 }
             }
@@ -1030,6 +1028,41 @@ mod tests {
         config.chat.timeout_secs = Some(30);
         config.processing.parallel_workers = Some(4);
         config
+    }
+
+    /// §1.5 of the launch plan: the config-parse failure is one of the three
+    /// first-run dead ends, and each must point at `cru doctor`.
+    #[test]
+    fn a_config_parse_failure_points_at_doctor() {
+        let file = NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), "this is [not valid toml").unwrap();
+
+        let err = CliAppConfig::load(Some(file.path().to_path_buf()), None, None)
+            .expect_err("garbage TOML must fail to load");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("cru doctor"),
+            "parse failures must point at diagnostics, got: {msg}"
+        );
+    }
+
+    /// The legacy-key rejections take a different code path than the TOML
+    /// syntax error; they need the pointer too.
+    #[test]
+    fn a_rejected_legacy_key_points_at_doctor() {
+        let file = NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), "[chat]\nprovider = \"ollama\"\n").unwrap();
+
+        let err = CliAppConfig::load(Some(file.path().to_path_buf()), None, None)
+            .expect_err("chat.provider is a rejected legacy key");
+
+        let msg = err.to_string();
+        assert!(msg.contains("cru doctor"), "got: {msg}");
+        assert!(
+            msg.contains("chat.provider"),
+            "the specific rejected key must still be named, got: {msg}"
+        );
     }
 
     #[test]
