@@ -493,6 +493,33 @@ async fn grep_finds_a_literal_pattern_that_begins_with_a_dash() {
     );
 }
 
+/// The `..` guard used to be gated on `allowed_roots.is_some()`, so on the
+/// unconstrained instance — the one the daemon builds for plugin tool calls,
+/// and the one an untrusted message reaches — `../../etc/*` walked straight
+/// out. `create_workspace()` builds exactly that instance, which is why this
+/// test is meaningful here.
+#[tokio::test]
+async fn glob_parent_traversal_is_rejected_even_with_no_allowed_roots() {
+    let (temp, tools) = create_workspace();
+    assert!(
+        tools.allowed_roots.is_none(),
+        "this test is only meaningful on an unconstrained instance"
+    );
+    tokio::fs::write(temp.path().join("inside.rs"), "")
+        .await
+        .unwrap();
+
+    let result = tools.glob("../../../../../../etc/pas*".to_string(), None, None);
+
+    match result {
+        Err(_) => {}
+        Ok(r) => panic!(
+            "an upward-traversing glob pattern must be rejected, got: {:?}",
+            r.content
+        ),
+    }
+}
+
 /// `PathBuf::join` with an absolute argument discards the base, so an
 /// absolute glob pattern silently escaped the search path. The `..` guard
 /// does not catch this, and the allowed-roots filter is `None` on the

@@ -7,9 +7,14 @@ async fn test_init_creates_config_with_provider() {
     let path = temp_dir.path().to_path_buf();
 
     // Run init (non-interactive mode with defaults)
-    crucible_cli::commands::init::execute(Some(path.clone()), false, true)
-        .await
-        .unwrap();
+    crucible_cli::commands::init::execute(
+        Some(path.clone()),
+        false,
+        true,
+        &temp_dir.path().join("global-config.toml"),
+    )
+    .await
+    .unwrap();
 
     // Verify .crucible directory was created
     let crucible_dir = path.join(".crucible");
@@ -40,9 +45,14 @@ async fn test_init_creates_required_directories() {
     let temp_dir = TempDir::new().unwrap();
     let path = temp_dir.path().to_path_buf();
 
-    crucible_cli::commands::init::execute(Some(path.clone()), false, true)
-        .await
-        .unwrap();
+    crucible_cli::commands::init::execute(
+        Some(path.clone()),
+        false,
+        true,
+        &temp_dir.path().join("global-config.toml"),
+    )
+    .await
+    .unwrap();
 
     // Verify required subdirectories
     let crucible_dir = path.join(".crucible");
@@ -62,12 +72,23 @@ async fn test_init_is_idempotent_on_existing_kiln() {
     let path = temp_dir.path().to_path_buf();
 
     // First init should succeed
-    crucible_cli::commands::init::execute(Some(path.clone()), false, true)
-        .await
-        .unwrap();
+    crucible_cli::commands::init::execute(
+        Some(path.clone()),
+        false,
+        true,
+        &temp_dir.path().join("global-config.toml"),
+    )
+    .await
+    .unwrap();
 
     // Second init without force should succeed (idempotent — prints "already exists", returns Ok)
-    let result = crucible_cli::commands::init::execute(Some(path.clone()), false, true).await;
+    let result = crucible_cli::commands::init::execute(
+        Some(path.clone()),
+        false,
+        true,
+        &temp_dir.path().join("global-config.toml"),
+    )
+    .await;
     assert!(
         result.is_ok(),
         "re-init on existing kiln should be idempotent (Ok)"
@@ -87,9 +108,14 @@ async fn test_init_force_reinitializes() {
     let path = temp_dir.path().to_path_buf();
 
     // First init
-    crucible_cli::commands::init::execute(Some(path.clone()), false, true)
-        .await
-        .unwrap();
+    crucible_cli::commands::init::execute(
+        Some(path.clone()),
+        false,
+        true,
+        &temp_dir.path().join("global-config.toml"),
+    )
+    .await
+    .unwrap();
 
     // Create a marker file to verify directory is recreated
     let marker = path.join(".crucible/marker.txt");
@@ -97,12 +123,54 @@ async fn test_init_force_reinitializes() {
     assert!(marker.exists());
 
     // Force reinit should succeed and remove marker
-    crucible_cli::commands::init::execute(Some(path.clone()), true, true)
-        .await
-        .unwrap();
+    crucible_cli::commands::init::execute(
+        Some(path.clone()),
+        true,
+        true,
+        &temp_dir.path().join("global-config.toml"),
+    )
+    .await
+    .unwrap();
 
     assert!(
         !marker.exists(),
         "marker should be removed after force reinit"
+    );
+}
+
+/// `cru init` writes to the user's *global* config. A test that does not
+/// isolate that path rewrites the developer's real `~/.config/crucible/config.toml`
+/// — which is exactly what happened while this feature was being built: a run
+/// of this suite replaced a working config's `kiln_path` and `default_kiln`
+/// with deleted tempdirs and left 13 junk `[kilns]` entries behind.
+///
+/// The path is a parameter rather than a global lookup so this cannot recur
+/// silently; this test pins the guarantee.
+#[tokio::test]
+async fn init_writes_only_to_the_config_path_it_was_given() {
+    let temp_dir = TempDir::new().unwrap();
+    let kiln = temp_dir.path().join("kiln");
+    std::fs::create_dir_all(&kiln).unwrap();
+    let global = temp_dir.path().join("global-config.toml");
+
+    crucible_cli::commands::init::execute(Some(kiln.clone()), false, true, &global)
+        .await
+        .unwrap();
+
+    assert!(
+        global.exists(),
+        "the kiln and provider must be registered in the config path passed in"
+    );
+    // Assert on the parsed value, not the text: the writer may emit either a
+    // `[kilns]` section or an inline table depending on the existing file.
+    let contents = std::fs::read_to_string(&global).unwrap();
+    let parsed: crucible_core::config::CliAppConfig = toml::from_str(&contents).unwrap();
+    assert!(
+        !parsed.kilns.is_empty(),
+        "the kiln must be registered in the config path passed in, got:\n{contents}"
+    );
+    assert!(
+        parsed.llm.providers.contains_key("ollama"),
+        "the provider selection must be registered too, got:\n{contents}"
     );
 }

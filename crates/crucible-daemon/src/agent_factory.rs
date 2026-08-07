@@ -490,43 +490,49 @@ pub(crate) fn build_chat_client_for_agent(
     // Resolve the env var value — with_api_key_env_var_name() stores the env var
     // NAME (e.g. "GLM_AUTH_TOKEN"), not the actual token. Look it up now so genai
     // sends the real credential in the Authorization header.
-    if let Some(env_var_name) = &llm_config.api_key {
-        match std::env::var(env_var_name) {
-            Ok(resolved) if !resolved.is_empty() => {
-                llm_config.api_key = Some(resolved);
+    // `provider_type.as_str()` rather than `format!("{:?}")`: the Debug form
+    // happens to match for every current variant except GitHubCopilot, but it
+    // would silently diverge on the next multi-word one, and this string is
+    // the key credentials are stored under.
+    let provider_name = provider_type.as_str().to_string();
+
+    let env_resolved = llm_config
+        .api_key
+        .as_ref()
+        .and_then(|name| match std::env::var(name) {
+            Ok(v) if !v.is_empty() => Some(v),
+            _ => None,
+        });
+
+    if let Some(resolved) = env_resolved {
+        llm_config.api_key = Some(resolved);
+    } else {
+        // Fall back to the credential store. `cru auth login` and the
+        // first-run wizard both write there and both print "stored securely",
+        // but nothing on this path ever read it, so those keys silently did
+        // nothing and the user's next turn failed with a raw provider error.
+        //
+        // Deliberately outside the `api_key.is_some()` branch:
+        // `with_api_key_env_var_name` yields None for Custom, Ollama,
+        // FastEmbed, Burn and Mock, so gating on it would reproduce the same
+        // bug for anyone running `cru auth login --provider custom`.
+        let store = crucible_core::config::credentials::AutoStore::new();
+        match crucible_core::config::credentials::resolve_api_key(&provider_name, &store, None) {
+            Some((key, source)) => {
+                debug!("Resolved API key for {provider_name} from {source:?}");
+                llm_config.api_key = Some(key);
             }
-            // No env var — fall back to the credential store before giving up.
-            // `cru auth login` and the first-run wizard both write there and
-            // both print "stored securely", but nothing on this path ever read
-            // it, so those keys silently did nothing and the user's next turn
-            // failed with a raw provider error.
-            _ => {
-                let provider_name = match provider_type {
-                    BackendType::GitHubCopilot => "github-copilot".to_string(),
-                    _ => format!("{provider_type:?}").to_lowercase(),
-                };
-                let store = crucible_core::config::credentials::AutoStore::new();
-                match crucible_core::config::credentials::resolve_api_key(
-                    &provider_name,
-                    &store,
-                    None,
-                ) {
-                    Some((key, source)) => {
-                        debug!(
-                            "Resolved API key for {} from {:?} after env var '{}' was unset",
-                            provider_name, source, env_var_name
-                        );
-                        llm_config.api_key = Some(key);
-                    }
-                    None => {
-                        warn!(
-                            "No API key for {}: env var '{}' is unset and the credential \
-                             store has no entry — try `cru auth login`",
-                            provider_name, env_var_name
-                        );
-                        llm_config.api_key = None;
-                    }
+            None => {
+                // Only a problem for providers that actually need a key —
+                // Ollama and the local backends legitimately have none, so
+                // do not cry wolf at them.
+                if llm_config.api_key.is_some() {
+                    warn!(
+                        "No API key for {provider_name}: the environment variable is unset \
+                         and the credential store has no entry — try `cru auth login`"
+                    );
                 }
+                llm_config.api_key = None;
             }
         }
     }

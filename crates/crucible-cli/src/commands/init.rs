@@ -33,7 +33,19 @@ pub fn detect_init_type(path: &Path) -> InitType {
     }
 }
 
-pub async fn execute(path: Option<PathBuf>, force: bool, yes: bool) -> Result<()> {
+/// Initialize a kiln or project.
+///
+/// `global_config_path` is where the kiln and provider selection get
+/// registered. It is a parameter rather than a call to
+/// `CliAppConfig::default_config_path()` so in-process tests can point it at a
+/// tempdir: this function writes to the *user's* global config, and a test
+/// that forgets to isolate it silently rewrites the developer's real one.
+pub async fn execute(
+    path: Option<PathBuf>,
+    force: bool,
+    yes: bool,
+    global_config_path: &Path,
+) -> Result<()> {
     let target_path = match path {
         Some(p) => expand_tilde(&p.to_string_lossy()),
         None => PathBuf::from("."),
@@ -94,7 +106,9 @@ pub async fn execute(path: Option<PathBuf>, force: bool, yes: bool) -> Result<()
     };
 
     match resolved_type {
-        InitType::Kiln => run_kiln_init(&target_path, force, yes, &validation).await,
+        InitType::Kiln => {
+            run_kiln_init(&target_path, force, yes, &validation, global_config_path).await
+        }
         InitType::Project => run_project_init(&target_path, force, yes).await,
         InitType::Unknown => unreachable!(),
     }
@@ -105,6 +119,7 @@ async fn run_kiln_init(
     force: bool,
     yes: bool,
     validation: &crate::kiln_validate::ValidationResult,
+    global_config_path: &Path,
 ) -> Result<()> {
     let crucible_dir = target_path.join(".crucible");
 
@@ -147,9 +162,8 @@ async fn run_kiln_init(
     // selection above went only into `.crucible/config.toml`, which nothing
     // reads — so the user picked Anthropic, saw "Provider: anthropic", and
     // then chatted against whatever the global default happened to be.
-    let global_config_path = crucible_core::config::CliAppConfig::default_config_path();
     if let Err(e) = crucible_core::config::register_kiln_in_config(
-        &global_config_path,
+        global_config_path,
         &name,
         &target_for_display,
         /* make_default */ false,
@@ -160,7 +174,7 @@ async fn run_kiln_init(
         );
     }
     if let Err(e) = crucible_core::config::register_llm_provider_in_config(
-        &global_config_path,
+        global_config_path,
         &provider,
         &model,
     ) {
@@ -669,9 +683,14 @@ mod tests {
     #[tokio::test]
     async fn execute_yes_creates_kiln_by_default() {
         let tmp = TempDir::new().unwrap();
-        execute(Some(tmp.path().to_path_buf()), false, true)
-            .await
-            .unwrap();
+        execute(
+            Some(tmp.path().to_path_buf()),
+            false,
+            true,
+            &tmp.path().join("global-config.toml"),
+        )
+        .await
+        .unwrap();
 
         // Should have created kiln.toml (kiln is the default with --yes)
         assert!(tmp.path().join(".crucible/kiln.toml").exists());
@@ -686,9 +705,14 @@ mod tests {
         fs::write(crucible_dir.join("kiln.toml"), "[kiln]\nname = \"test\"").unwrap();
 
         // Should succeed without error (early return)
-        execute(Some(tmp.path().to_path_buf()), false, true)
-            .await
-            .unwrap();
+        execute(
+            Some(tmp.path().to_path_buf()),
+            false,
+            true,
+            &tmp.path().join("global-config.toml"),
+        )
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -703,8 +727,13 @@ mod tests {
         .unwrap();
 
         // Should succeed without error (early return)
-        execute(Some(tmp.path().to_path_buf()), false, true)
-            .await
-            .unwrap();
+        execute(
+            Some(tmp.path().to_path_buf()),
+            false,
+            true,
+            &tmp.path().join("global-config.toml"),
+        )
+        .await
+        .unwrap();
     }
 }

@@ -889,34 +889,76 @@ pub fn register_kiln_in_config(
     kiln_path: &std::path::Path,
     make_default: bool,
 ) -> anyhow::Result<()> {
-    let mut config: CliAppConfig = if config_path.exists() {
-        let contents = std::fs::read_to_string(config_path)?;
-        toml::from_str(&contents)?
-    } else {
-        CliAppConfig::default()
-    };
-
     // Absolute, always. This is the *global* config: a relative path like "."
     // — which is what `cru init` in the current directory hands us — would
     // resolve against whatever directory the next command runs from.
     let kiln_path = kiln_path
         .canonicalize()
         .unwrap_or_else(|_| kiln_path.to_path_buf());
+    let kiln_str = kiln_path.to_string_lossy().to_string();
 
-    config.kilns.insert(
-        name.to_string(),
-        crate::config::config::registry::KilnEntry::Path(kiln_path.clone()),
-    );
-    config.kiln_path = kiln_path;
-    if make_default || config.default_kiln.is_none() {
-        config.default_kiln = Some(name.to_string());
-    }
+    edit_config_in_place(config_path, |doc| {
+        doc["kiln_path"] = toml_edit::value(kiln_str.clone());
+        if make_default || doc.get("default_kiln").is_none() {
+            doc["default_kiln"] = toml_edit::value(name);
+        }
+        ensure_table(doc.as_table_mut(), "kilns").insert(name, toml_edit::value(kiln_str.clone()));
+    })
+}
 
-    let contents = toml::to_string_pretty(&config)?;
+/// Get or create a child table, as a real `[section]` rather than an inline
+/// one.
+///
+/// Indexing a `DocumentMut` into a missing key materialises an *inline* table,
+/// so a fresh config would come out as `kilns = { a = "…" }` — valid TOML, but
+/// unreadable in a file people hand-edit, and unlike every other section in
+/// the shipped example config.
+/// Returns a `TableLike` so an existing *inline* table keeps the user's chosen
+/// style — rewriting it would be gratuitous churn in their file — while a
+/// missing one is created as a real section.
+#[cfg(feature = "toml")]
+fn ensure_table<'a>(
+    parent: &'a mut toml_edit::Table,
+    key: &str,
+) -> &'a mut dyn toml_edit::TableLike {
+    parent
+        .entry(key)
+        .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()))
+        .as_table_like_mut()
+        .expect("config section must be a table")
+}
+
+/// Read, mutate, and write a config file **without** destroying it.
+///
+/// A serde round-trip (`from_str` → mutate → `to_string_pretty`) silently
+/// drops every comment and every key the struct does not model, and freezes
+/// all defaults into the file. That is unacceptable for a file a user
+/// hand-edits — and it is not hypothetical: an early version of this feature
+/// rewrote a working `~/.config/crucible/config.toml`, losing its comments and
+/// leaving junk entries behind.
+///
+/// `toml_edit` preserves formatting, comments, and unknown keys, so we only
+/// touch the keys we mean to.
+///
+/// Note `register_project_in_config` still uses the serde round-trip. It has
+/// the same hazard, and predates this helper.
+#[cfg(feature = "toml")]
+fn edit_config_in_place(
+    config_path: &std::path::Path,
+    edit: impl FnOnce(&mut toml_edit::DocumentMut),
+) -> anyhow::Result<()> {
+    let mut doc: toml_edit::DocumentMut = if config_path.exists() {
+        std::fs::read_to_string(config_path)?.parse()?
+    } else {
+        toml_edit::DocumentMut::new()
+    };
+
+    edit(&mut doc);
+
     if let Some(parent) = config_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(config_path, contents)?;
+    std::fs::write(config_path, doc.to_string())?;
     Ok(())
 }
 
@@ -934,38 +976,33 @@ pub fn register_llm_provider_in_config(
     provider: &str,
     model: &str,
 ) -> anyhow::Result<()> {
-    use crate::config::components::llm::LlmProviderConfig;
     use crate::config::BackendType;
 
-    let mut config: CliAppConfig = if config_path.exists() {
-        let contents = std::fs::read_to_string(config_path)?;
-        toml::from_str(&contents)?
-    } else {
-        CliAppConfig::default()
-    };
-
+    // Validate before touching the file: an unknown provider should fail
+    // rather than write a config the loader will reject.
     let provider_type: BackendType = provider
         .parse()
         .map_err(|_| anyhow::anyhow!("unknown provider type: {provider}"))?;
+    let type_str = provider_type.as_str().to_string();
 
-    let entry = config
-        .llm
-        .providers
-        .entry(provider.to_string())
-        .or_insert_with(|| LlmProviderConfig::builder(provider_type).build());
-    entry.provider_type = provider_type;
-    entry.default_model = Some(model.to_string());
-
-    if config.llm.default.is_none() {
-        config.llm.default = Some(provider.to_string());
-    }
-
-    let contents = toml::to_string_pretty(&config)?;
-    if let Some(parent) = config_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(config_path, contents)?;
-    Ok(())
+    edit_config_in_place(config_path, |doc| {
+        let llm = ensure_table(doc.as_table_mut(), "llm");
+        if llm.get("default").is_none() {
+            llm.insert("default", toml_edit::value(provider));
+        }
+        let providers = llm
+            .entry("providers")
+            .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()))
+            .as_table_like_mut()
+            .expect("[llm.providers] must be a table");
+        let entry = providers
+            .entry(provider)
+            .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()))
+            .as_table_like_mut()
+            .expect("a provider entry must be a table");
+        entry.insert("type", toml_edit::value(type_str.clone()));
+        entry.insert("default_model", toml_edit::value(model));
+    })
 }
 
 #[cfg(test)]
@@ -1312,6 +1349,94 @@ docs = "~/docs"
             config.kiln_path.is_absolute(),
             "stored kiln path must be absolute, got {}",
             config.kiln_path.display()
+        );
+    }
+
+    /// The global config is hand-edited. Rewriting it through serde drops
+    /// every comment and every key the struct does not model — which is how a
+    /// working config got mangled while this feature was being built.
+    #[test]
+    fn registering_a_kiln_preserves_comments_and_unknown_keys() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            "# my careful notes\nkiln_path = \"/old\"\n\n\
+             [llm]\ndefault = \"zai-coding\"\n\n\
+             [some_future_section]\nkey = \"value\"\n",
+        )
+        .unwrap();
+
+        register_kiln_in_config(&config_path, "new", tmp.path(), false).unwrap();
+
+        let after = std::fs::read_to_string(&config_path).unwrap();
+        assert!(
+            after.contains("# my careful notes"),
+            "comments must survive: {after}"
+        );
+        assert!(
+            after.contains("[some_future_section]"),
+            "unknown sections must survive: {after}"
+        );
+        assert!(
+            after.contains("zai-coding"),
+            "unrelated settings must survive: {after}"
+        );
+        // And the edit actually landed. Assert on the parsed value, not the
+        // text: toml_edit may write an inline table (`kilns = { new = ... }`)
+        // rather than a `[kilns]` section, which is the same config.
+        let parsed: CliAppConfig = toml::from_str(&after).unwrap();
+        assert!(parsed.kilns.contains_key("new"));
+        assert_eq!(parsed.kiln_path, tmp.path().canonicalize().unwrap());
+    }
+
+    /// Same guarantee for the provider writer.
+    #[test]
+    fn registering_a_provider_preserves_comments_and_does_not_steal_the_default() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            "# keep me\n[llm]\ndefault = \"existing\"\n\n\
+             [llm.providers.existing]\ntype = \"ollama\"\n",
+        )
+        .unwrap();
+
+        register_llm_provider_in_config(&config_path, "anthropic", "claude-x").unwrap();
+
+        let after = std::fs::read_to_string(&config_path).unwrap();
+        assert!(
+            after.contains("# keep me"),
+            "comments must survive: {after}"
+        );
+        assert!(
+            after.contains("existing"),
+            "the pre-existing provider must survive: {after}"
+        );
+
+        let parsed: CliAppConfig = toml::from_str(&after).unwrap();
+        assert_eq!(
+            parsed.llm.default.as_deref(),
+            Some("existing"),
+            "an explicit default must not be overwritten"
+        );
+        assert_eq!(
+            parsed.llm.providers["anthropic"].default_model.as_deref(),
+            Some("claude-x")
+        );
+    }
+
+    /// An unknown provider must fail before the file is touched.
+    #[test]
+    fn registering_an_unknown_provider_leaves_the_file_untouched() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        std::fs::write(&config_path, "# original\n").unwrap();
+
+        assert!(register_llm_provider_in_config(&config_path, "not-a-provider", "m").is_err());
+        assert_eq!(
+            std::fs::read_to_string(&config_path).unwrap(),
+            "# original\n"
         );
     }
 

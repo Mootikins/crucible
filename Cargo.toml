@@ -80,6 +80,7 @@ num_cpus = "1.17"
 flume = "0.12"
 markdown-it = "0.6"
 toml = "1.0"
+toml_edit = "0.22"
 futures-util = "0.3"
 tokio-stream = "0.1"
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }

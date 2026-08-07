@@ -941,6 +941,27 @@ end
             .load(name)
             .map_err(|e| anyhow::anyhow!("reload plugin '{}': {e}", name))?;
 
+        // `load` returns Ok for a disabled plugin — skipping one is not an
+        // error — so reload must re-check before executing. Otherwise the kill
+        // switch only holds at boot: `plugin.reload`, the web UI's reload
+        // button, and (with no human in the loop) the file watcher would each
+        // re-run a disabled plugin's init.lua and setup(), re-register its
+        // tools, and re-spawn its services, while `plugin.list` still reported
+        // it Disabled.
+        //
+        // The realistic path is an operator disabling a misbehaving plugin,
+        // then opening its init.lua to investigate and saving the file.
+        if self
+            .plugin_manager
+            .get(name)
+            .is_some_and(|p| p.state == crucible_lua::manifest::PluginState::Disabled)
+        {
+            self.plugin_registry.remove_plugin(name);
+            self.handler_registry.clear_plugin_handlers(name);
+            self.executor.lua().expire_registry_values();
+            anyhow::bail!("plugin '{name}' is disabled; enable it before reloading");
+        }
+
         let spec = match self.load_plugin_spec(name).await {
             Ok(spec) => spec,
             Err(e) => {

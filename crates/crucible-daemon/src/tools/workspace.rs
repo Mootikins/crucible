@@ -390,31 +390,36 @@ impl WorkspaceTools {
             None => self.workspace_root.clone(),
         };
 
-        // Containment must cover the PATTERN too, not just the search path:
-        // the glob crate special-cases literal `..` components and genuinely
-        // walks up, so `../../etc/*` would enumerate host files. Reject
-        // upward traversal in the pattern, and belt-and-braces filter every
-        // yielded path through the same allowed-roots check.
-        if self.allowed_roots.is_some()
-            && std::path::Path::new(&pattern)
-                .components()
-                .any(|c| matches!(c, std::path::Component::ParentDir))
+        // Containment must cover the PATTERN too, not just the search path.
+        // Two ways a pattern leaves the search path, and neither check may be
+        // conditional on `allowed_roots`: the instance the daemon builds for
+        // plugin tool calls has none (`server/mod.rs`), and that is precisely
+        // the caller an untrusted message can reach. `..` was gated on
+        // `allowed_roots.is_some()` and so `../../etc/*` walked out of exactly
+        // the instance that needed the guard most.
+        //
+        // The allowed-roots filter on the yielded paths below stays as
+        // belt-and-braces for the contained case; it cannot substitute for
+        // these, because with no roots configured it admits everything.
+        let pattern_path = std::path::Path::new(&pattern);
+
+        // The glob crate special-cases literal `..` components and genuinely
+        // walks up, so `../../etc/*` would enumerate host files.
+        if pattern_path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
         {
             return Err(rmcp::ErrorData::invalid_params(
                 format!(
-                    "Glob pattern '{pattern}' contains '..' — patterns must stay inside \
-                     this session's allowed roots"
+                    "Glob pattern '{pattern}' contains '..' — patterns are relative to the \
+                     search path and may not traverse upward"
                 ),
                 None,
             ));
         }
 
-        // An absolute pattern discards the base entirely under `Path::join`,
-        // so `/etc/*` would escape the search path. Unlike the `..` check
-        // above this cannot be conditional on `allowed_roots`: the instance
-        // the daemon builds for plugin tool calls has none, and that is
-        // precisely the caller a stranger's message can reach.
-        if std::path::Path::new(&pattern).is_absolute() {
+        // An absolute pattern discards the base entirely under `Path::join`.
+        if pattern_path.is_absolute() {
             return Err(rmcp::ErrorData::invalid_params(
                 format!(
                     "Glob pattern '{pattern}' is absolute — patterns are relative to the \

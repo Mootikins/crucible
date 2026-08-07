@@ -241,9 +241,14 @@ mod tests {
         );
     }
 
+    /// Ranks first only when nothing else has a credential — this reads the
+    /// process environment, so the API-key vars must be cleared or the test
+    /// passes on CI and fails on a developer box that exports one.
     #[test]
     #[serial]
     fn test_detect_ollama_from_default_config() {
+        let _openai = EnvVarGuard::remove("OPENAI_API_KEY");
+        let _anthropic = EnvVarGuard::remove("ANTHROPIC_API_KEY");
         let config = ChatConfig::default();
         let detected = detect_providers(&config);
         assert!(!detected.is_empty());
