@@ -672,14 +672,14 @@ endpoint = "http://localhost:11434"
 
 # ACP (Agent Client Protocol) configuration
 [acp]
-default_agent = null
+# default_agent = "claude"   # unset means "no default"; TOML has no null
 enable_discovery = true
 session_timeout_minutes = 30
 max_message_size_mb = 25
 
 # Chat configuration
 [chat]
-model = null
+# model = "claude-sonnet-4-5"   # unset means "use the provider default"
 enable_markdown = true
 
 # CLI configuration

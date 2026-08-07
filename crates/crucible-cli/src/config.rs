@@ -225,6 +225,29 @@ verbose = false
         assert!(contents.contains("[cli]"));
     }
 
+    /// `cru config init` is the repair `cru doctor` recommends for a broken
+    /// config, so a template that cannot be parsed bricks every subsequent
+    /// command until the user hand-edits the file.
+    ///
+    /// Substring assertions cannot catch that — the surrounding test passed
+    /// throughout — so this parses the generated file the way the loader
+    /// does.
+    #[test]
+    fn the_generated_example_config_parses() {
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("example-config.toml");
+
+        CliConfig::create_example(&config_path).unwrap();
+
+        let contents = fs::read_to_string(&config_path).unwrap();
+        let parsed: Result<toml::Value, _> = toml::from_str(&contents);
+        assert!(
+            parsed.is_ok(),
+            "`cru config init` must write parseable TOML: {}",
+            parsed.unwrap_err()
+        );
+    }
+
     // Additional comprehensive tests for CLI config reading
 
     #[test]
