@@ -34,9 +34,21 @@ export function readHeroState(): HeroState {
   if (!existsSync(STATE_FILE)) {
     return { skip: true, reason: 'no hero state (globalSetup did not run)' };
   }
+  let state: HeroState;
   try {
-    return JSON.parse(readFileSync(STATE_FILE, 'utf-8')) as HeroState;
+    state = JSON.parse(readFileSync(STATE_FILE, 'utf-8')) as HeroState;
   } catch {
     return { skip: true, reason: 'unreadable hero state' };
   }
+  // Staleness guard: the state file is gitignored and survives crashed or
+  // killed runs, so a spec run outside hero-setup (which always rewrites it)
+  // could otherwise inherit dead temp dirs and fail with "cannot change
+  // directory to /tmp/cru-hero-*". A live stack's tmpDir must exist.
+  if (!state.skip && (!state.tmpDir || !existsSync(state.tmpDir))) {
+    return {
+      skip: true,
+      reason: `stale hero state (${STATE_FILE} points at missing ${state.tmpDir ?? 'tmpDir'}; run \`just hero\` to regenerate)`,
+    };
+  }
+  return state;
 }

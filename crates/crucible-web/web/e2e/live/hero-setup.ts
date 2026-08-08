@@ -75,16 +75,25 @@ async function globalSetup(): Promise<void> {
 
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), 'cru-hero-'));
   const home = path.join(tmpDir, 'home');
-  // Unify on the default kiln ($HOME/.crucible): the daemon binds new sessions
-  // to it, and the web filters its session list by its own kiln — so `cru web`
-  // must serve this same kiln for the session to appear + resume. The note also
-  // lives here so the editor can read it (a file within the open kiln).
-  const kilnDir = path.join(home, '.crucible');
+  // An ordinary kiln directory under $HOME, NOT the daemon's default kiln
+  // ($HOME/.crucible). Both consoles reach the same kiln by running in it —
+  // `cru chat` discovers it by ancestor walk and `cru web` serves its cwd — so
+  // the session appears in the list and resumes, and the note is a file within
+  // the open kiln for the editor to read.
+  //
+  // It used to be $HOME/.crucible, which forced the harness to register $HOME
+  // itself as the project (the only non-`.crucible` ancestor). That is now
+  // refused: a project root is a read scope, and $HOME as a read scope puts
+  // every credential the user owns in it. Using a real kiln dir means the
+  // harness registers what a real user would.
+  const kilnDir = path.join(home, 'kiln');
   const configDir = path.join(tmpDir, 'cfg-crucible');
   const socket = path.join(tmpDir, 'd.sock');
   for (const d of [
     home,
     kilnDir,
+    // Marks it as a kiln for the ancestor walk `cru chat` uses.
+    path.join(kilnDir, '.crucible'),
     path.join(kilnDir, 'notes'),
     configDir,
     path.join(tmpDir, 'cfg'),
@@ -178,19 +187,23 @@ async function globalSetup(): Promise<void> {
       return;
     }
 
-    // Register the HOME dir as a project so the web Sessions panel renders its
-    // list (SessionSection is gated on a registered project; a `.crucible` dir
-    // itself is rejected as a project path). Home's attached kiln is
-    // $HOME/.crucible — the same kiln `cru web` serves and where sessions live —
-    // so the session appears in the list and is selectable.
-    try {
-      await fetch(`${baseURL}/api/project/register`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ path: home }),
-      });
-    } catch {
-      /* non-fatal; the spec will surface a missing session item */
+    // Register the kiln dir as a project so the web Sessions panel renders its
+    // list (SessionSection is gated on a registered project). A refusal here
+    // used to be swallowed and surfaced three assertions later as "session row
+    // never appeared", so fail the setup loudly instead — this is the call the
+    // root-containment floor rejects if the layout regresses.
+    const reg = await fetch(`${baseURL}/api/project/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: kilnDir }),
+    });
+    // `skip` is for an absent prerequisite (no `cru` binary). A refusal is a
+    // failure — the stack is up and said no — so it aborts the run rather than
+    // skipping green.
+    if (!reg.ok) {
+      const detail = await reg.text();
+      bestEffortCleanup();
+      throw new Error(`hero setup: project register refused ${kilnDir}: ${reg.status} ${detail}`);
     }
 
     const childEnv: Record<string, string> = {};

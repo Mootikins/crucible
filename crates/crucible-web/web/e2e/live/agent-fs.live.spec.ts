@@ -4,6 +4,7 @@ import path from 'node:path';
 import { readHeroState } from './hero-state';
 import { AGENT_FS_WRITE } from './hero-script';
 import { findTuiTestBinary, runTuiLeg } from './tui-leg-runner';
+import { appReady, openSessionsList } from '../helpers/nav';
 
 /**
  * The flagship full-flow journey: new session → agent responds → agent
@@ -26,15 +27,14 @@ import { findTuiTestBinary, runTuiLeg } from './tui-leg-runner';
  * trigger prompt → the real `PermissionInteraction` card renders inline →
  * click Allow → the reply renders → the file lands on disk.
  *
- * IMPORTANT ASYMMETRY: a web-created session's tool `workspace` is the
- * registered PROJECT root (`home`), not the kiln (`home/.crucible`) —
- * `SessionPanel.handleCreateSession` passes `workspace: project.path`
- * explicitly, unlike a plain `cru chat`/`cru session create` (no
- * `--workspace` flag), whose session workspace defaults to the kiln. So the
- * web leg's file lands under `home/notes/agent-web.md`, while the TUI leg's
- * lands under `home/.crucible/notes/agent-tui.md` (the kiln hero-setup
- * already builds notes under). Both are derived from `state.kilnDir` below
- * (`kilnDir = path.join(home, '.crucible')`, set by hero-setup.ts).
+ * Both legs write into `state.kilnDir`, but by different routes, and that is
+ * worth knowing when this breaks: a web-created session's tool `workspace` is
+ * the registered PROJECT root — `SessionPanel.handleCreateSession` passes
+ * `workspace: project.path` explicitly — while a plain `cru chat` (no
+ * `--workspace`) defaults its workspace to the kiln. hero-setup registers the
+ * kiln dir as the project, so the two coincide here, as they do for a real
+ * user working in one directory. If the harness ever registers a project that
+ * is NOT the kiln, the web leg's file moves and the TUI leg's does not.
  *
  * Requires a real `cru` (CRU_BIN or target/debug/cru) + the built TUI test
  * binary; otherwise hero-setup writes { skip:true } and this skips cleanly.
@@ -53,7 +53,6 @@ test('agent writes a file: TUI leg then web leg, both via a real permission appr
   );
 
   const kilnDir = state.kilnDir!;
-  const homeDir = path.dirname(kilnDir); // hero-setup.ts: kilnDir = path.join(home, '.crucible')
   const framesDir = path.join(testInfo.outputDir, 'tui-frames');
   mkdirSync(framesDir, { recursive: true });
 
@@ -76,15 +75,34 @@ test('agent writes a file: TUI leg then web leg, both via a real permission appr
 
   // ── PART B — web console: New Session, tool call, real permission prompt ──
   await page.goto(state.baseURL!);
-  // App-ready signal (the center pane defaults to a "Home" welcome tab, not
-  // an empty state — see e2e/new-session-chat-tab.spec.ts for the same idiom).
-  await expect(page.getByTestId('new-session-button')).toBeVisible({ timeout: 20_000 });
+  // App ready, then Navigator into Sessions scope — `new-session-button` only
+  // exists there. Both via e2e/helpers/nav.ts, the same path the mock tier
+  // takes (e2e/new-session-chat-tab.spec.ts); asserting the testid inline is
+  // what let this spec rot past the Navigator refactor.
+  await appReady(page);
+  await openSessionsList(page);
 
+  // New Session opens a DRAFT surface with the center composer — nothing hits
+  // the daemon until the first message, which creates the session and swaps the
+  // draft tab for a real chat tab (`chat-input`). This spec used to reach
+  // straight for `chat-input`, which only exists after that swap.
   await page.getByTestId('new-session-button').click();
-  await expect(page.getByTestId('chat-input')).toBeEnabled({ timeout: 15_000 });
+  await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 15_000 });
 
-  await page.getByTestId('chat-input').fill(`Please ${AGENT_FS_WRITE.web.trigger} to create the note.`);
-  await page.getByTestId('chat-input').press('Enter');
+  // Bind the draft to the registered project. The composer defaults to
+  // "Session folder" — the daemon's per-session scratch dir — and this spec is
+  // specifically about the project-rooted workspace, so choose it explicitly
+  // rather than depending on whatever the default happens to be.
+  await page.getByTestId('composer-project').click();
+  await page
+    .getByTestId('composer-project-popout')
+    .getByText(path.basename(kilnDir), { exact: true })
+    .click();
+
+  await page.getByTestId('composer-input').fill(`Please ${AGENT_FS_WRITE.web.trigger} to create the note.`);
+  await page.getByTestId('composer-send').click();
+  // No "input is enabled" wait here: sending starts the turn, which disables
+  // the composer until it completes. The permission card below IS the signal.
 
   // The daemon blocks on a real interaction_requested event before the tool
   // runs; the web console renders the real PermissionInteraction card inline
@@ -102,7 +120,7 @@ test('agent writes a file: TUI leg then web leg, both via a real permission appr
     page.getByTestId('message-assistant').filter({ hasText: AGENT_FS_WRITE.web.replyAfterTool }).first(),
   ).toBeVisible({ timeout: 30_000 });
 
-  const webNotePath = path.join(homeDir, AGENT_FS_WRITE.web.path);
+  const webNotePath = path.join(kilnDir, AGENT_FS_WRITE.web.path);
   await expect.poll(() => existsSync(webNotePath), { timeout: 15_000 }).toBe(true);
   expect(readFileSync(webNotePath, 'utf-8')).toBe(AGENT_FS_WRITE.web.content);
 });

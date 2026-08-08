@@ -51,7 +51,16 @@ export default defineConfig({
   },
 
   projects: [
-    { name: 'live' },
+    {
+      name: 'live',
+      // The hero-flow specs also live in e2e/live and match *.live.spec.ts,
+      // but they belong to playwright.hero.config.ts: they need hero-setup
+      // (fake Ollama + .hero-state.json) and the compiled TUI test binary,
+      // neither of which this config provides. Swept in here they read
+      // whatever stale .hero-state.json a previous `just hero` run left
+      // behind and fail against its dead temp dirs.
+      testIgnore: ['**/hero.live.spec.ts', '**/agent-fs.live.spec.ts'],
+    },
     { name: 'served', testDir: './tests', testMatch: '**/*.pw.ts' },
   ],
 });

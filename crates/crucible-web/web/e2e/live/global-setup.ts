@@ -140,12 +140,17 @@ async function globalSetup(): Promise<void> {
     execFileSync(cru, ['init', '-p', kilnDir, '-y'], { env, stdio: 'ignore', timeout: 60_000 });
     // Seed a note so browse has content.
     writeFileSync(path.join(kilnDir, 'Seed.md'), '# Seed\n\nseeded note body\n');
-    // Open the kiln in the daemon (text search = kiln_open with no embedding).
-    execFileSync(cru, ['search', 'seed', '--type', 'text', '-f', 'json'], {
+    // Open AND index the kiln in the daemon. `/api/kiln/notes` serves the note
+    // index (SQLite), and opening a kiln deliberately does not scan it — the
+    // daemon's `open()` only starts the file watcher, so files that already
+    // exist are invisible to the index until the product's explicit indexing
+    // step runs. `cru process` is that step (kiln_open with process=true),
+    // exactly what a real deployment runs; without it WS-201 sees zero notes.
+    execFileSync(cru, ['process'], {
       cwd: kilnDir,
       env,
       stdio: 'ignore',
-      timeout: 60_000,
+      timeout: 120_000,
     });
 
     const port = await freePort();

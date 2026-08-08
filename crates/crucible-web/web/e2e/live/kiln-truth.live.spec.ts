@@ -53,11 +53,22 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
     });
     expect(put.ok()).toBe(true);
 
-    // Appears in the shared file tree (what the editor/FilesPanel lists).
-    const notesRes = await api.get(`/api/kiln/notes?kiln=${encodeURIComponent(kiln)}`);
-    expect(notesRes.ok()).toBe(true);
-    const notes = (await notesRes.json()) as { files: Array<{ name: string }> };
-    expect(notes.files.some((f) => f.name === 'Shared')).toBe(true);
+    // Appears in the note index (what wikilink completion lists). The PUT
+    // route writes the file and deliberately does NOT upsert the index — the
+    // daemon's file watcher runs the note through the pipeline (500ms debounce
+    // + processing), so the listing is eventually consistent by design. Poll
+    // for that contract instead of racing it.
+    await expect
+      .poll(
+        async () => {
+          const notesRes = await api.get(`/api/kiln/notes?kiln=${encodeURIComponent(kiln)}`);
+          if (!notesRes.ok()) return false;
+          const notes = (await notesRes.json()) as { files: Array<{ name: string }> };
+          return notes.files.some((f) => f.name === 'Shared');
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(true);
 
     // The one shared truth is the kiln file on disk — what an agent tool reads
     // next turn. NOTE(finding): GET /api/notes/:name returns metadata only (no
@@ -81,8 +92,10 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
     const res = await api.get(`/api/kiln/notes?kiln=${encodeURIComponent(kiln)}`);
     expect(res.ok()).toBe(true);
     const body = (await res.json()) as { files: Array<{ name: string; is_dir: boolean }> };
-    // At least the notes created by earlier specs are present.
+    // At least the seeded note is present: globalSetup indexed the kiln with
+    // `cru process`, so the index-backed listing has content from the start.
     expect(body.files.length).toBeGreaterThan(0);
+    expect(body.files.some((f) => f.name === 'Seed')).toBe(true);
     await api.dispose();
   });
 

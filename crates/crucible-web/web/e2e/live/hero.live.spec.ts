@@ -4,6 +4,7 @@ import path from 'node:path';
 import { readHeroState, STATE_FILE } from './hero-state';
 import { HERO_REPLIES } from './hero-script';
 import { findTuiTestBinary, runTuiLeg } from './tui-leg-runner';
+import { appReady, openSessionsList } from '../helpers/nav';
 
 /**
  * The hero flow — one cross-surface journey proving the mental model:
@@ -67,11 +68,14 @@ test('hero flow: TUI → web → TUI, one session across three consoles', async 
 
   // ── Leg 2 — web console: resume, hydrate turn 1, edit the note, turn 2 ──
   await page.goto(state.baseURL!);
-  // Let the app settle (config → kiln → session list) before resuming. The
-  // center pane now defaults to a "Home" welcome tab (not an empty state),
-  // so "app is ready" is signaled by the session-creation control, same as
-  // the mock-tier suite (e2e/new-session-chat-tab.spec.ts) uses post-nav.
-  await expect(page.getByTestId('new-session-button')).toBeVisible({ timeout: 20_000 });
+  // Let the app settle (config → kiln → session list) before resuming, then
+  // put the Navigator in Sessions scope: it opens in FILES scope, so neither
+  // the session-creation control nor any `session-item-*` row exists until it
+  // is switched. Both steps go through e2e/helpers/nav.ts, where that shell
+  // knowledge lives — this spec asserted `new-session-button` inline and so
+  // was not updated when the Navigator replaced the Files/Sessions tabs.
+  await appReady(page);
+  await openSessionsList(page);
 
   // Resume by selecting the session in the Sessions panel (the real product
   // path — onSelect → selectSession resumes it, sets currentSession so the

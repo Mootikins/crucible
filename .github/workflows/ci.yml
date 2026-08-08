@@ -144,6 +144,39 @@ jobs:
       - name: Run Vitest unit tests
         run: just web-test-unit
 
+  test-web-live:
+    # Its own job, not a step in `test-web`: this tier needs a Rust toolchain
+    # and a `cru` build, and the sharded matrix would pay that four times.
+    #
+    # This is the only job that sees real HTTP responses from `cru web` — CSP,
+    # nosniff, Content-Disposition, host validation, file serving. `test-web`
+    # runs against the Vite dev server, which sends none of those headers, so
+    # without this job every one of those controls could regress green.
+    name: Web Live Tier
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/rust-prereqs
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        working-directory: crates/crucible-web/web
+      - name: Install Playwright browsers
+        run: bunx playwright install --with-deps chromium
+        working-directory: crates/crucible-web/web
+      # Builds `cru` and `web/dist` itself — see the recipe's comment on why it
+      # must not be allowed to skip.
+      - run: just web-test-live
+      - name: Upload failure traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-traces-live
+          path: crates/crucible-web/web/test-results/
+          retention-days: 7
+
   test-web:
     # Sharded across jobs rather than parallelised inside one: workers share a
     # single Vite dev server, so separate jobs get a server each. Requires

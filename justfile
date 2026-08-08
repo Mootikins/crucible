@@ -350,10 +350,20 @@ web-test-coverage:
 web-test-stories:
     cd crates/crucible-web/web && bunx playwright test --project=stories --reporter=line
 
-# Needs a `cru` binary: set CRU_BIN or build one first. Skips cleanly if absent.
+# This tier is the ONLY one that exercises real HTTP responses from `cru web` —
+# CSP, nosniff, Content-Disposition, host validation, and file serving. The mock
+# tier runs against the Vite dev server, which sends none of those headers.
+#
+# It builds `cru` and `web/dist` rather than skipping without them: the suite
+# skips *green* when the binary is absent, so as a CI gate an unbuilt `cru`
+# would report success while asserting nothing. Debug `cru` reads `web/dist`
+# from disk (rust-embed has no `debug-embed`), so both are prerequisites.
+# Set CRU_BIN to point at an existing binary and the build is still cheap (noop).
 #
 # Run the live web tier (real `cru web` + daemon + temp kiln)
 web-test-live:
+    cargo build -p crucible-cli --bin cru
+    cd crates/crucible-web/web && bun install && bun run build
     cd crates/crucible-web/web && bunx playwright test --config=playwright.live.config.ts
 
 # Deterministic via a fake Ollama server. Builds `cru`, the web assets and the
@@ -414,7 +424,7 @@ coverage-open: coverage
 # cannot drift. CI-only: `build-from-clean-clone` (needs a tree with no web/dist).
 #
 # Run every gate GitHub runs — do this before committing
-ci: fmt-check clippy lint-docs license-check file-size-check test-ci test-features test-doc web-test-unit web-typecheck web-test test-plugins
+ci: fmt-check clippy lint-docs license-check file-size-check test-ci test-features test-doc web-test-unit web-typecheck web-test web-test-live test-plugins
     @echo "CI checks passed!"
 
 # In `ci` because `oci` decides which environment to build and whether config is
