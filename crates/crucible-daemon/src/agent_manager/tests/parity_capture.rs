@@ -181,7 +181,7 @@ async fn internal_edit_fixture_matches_a_live_capture() {
     // The mock stands in for the handle, so it supplies what the handle would;
     // everything after that is the daemon's own work.
     let diffs: Vec<FileDiff> =
-        crate::tools::diff_synth::synthesize_diffs("edit_file", &edit_args(), h.workspace());
+        crate::tools::diff_synth::synthesize_diffs("edit_file", &edit_args());
     assert_eq!(diffs.len(), 1, "the edit fixture needs a synthesized diff");
 
     h.inject_streaming_agent(vec![
@@ -241,7 +241,7 @@ async fn delegated_edit_fixture_matches_a_live_capture() {
     let mut h = ReactorTestHarness::new().await;
     std::fs::write(h.workspace().join("greeting.rs"), GREETING).unwrap();
     let diffs: Vec<FileDiff> =
-        crate::tools::diff_synth::synthesize_diffs("edit_file", &edit_args(), h.workspace());
+        crate::tools::diff_synth::synthesize_diffs("edit_file", &edit_args());
 
     configure_delegated(&h).await;
     h.inject_agent(Box::new(OwnsToolsMockAgent {

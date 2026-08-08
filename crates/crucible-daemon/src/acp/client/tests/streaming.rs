@@ -133,7 +133,7 @@ fn test_formatted_output_includes_diff() {
     let client = CrucibleAcpClient::new(config);
     let mut state = StreamingState::default();
 
-    std::fs::write(workspace.path().join("note.md"), "old content\n").unwrap();
+    std::fs::write(workspace.path().join("note.md"), "SENTINEL-ON-DISK\n").unwrap();
 
     // Record a write tool call
     client.record_tool_call(
@@ -148,9 +148,11 @@ fn test_formatted_output_includes_diff() {
 
     let output = state.formatted_output();
     assert!(output.contains("▷ Update Note"), "Should have tool label");
+    // The replaced line is deliberately absent: showing it required reading
+    // the target from the model's unapproved arguments. See `diff_synth`.
     assert!(
-        output.contains("-old content"),
-        "Should show deleted line in diff"
+        !output.contains("SENTINEL-ON-DISK"),
+        "the preview must not read the target: {output}"
     );
     assert!(
         output.contains("+new content"),

@@ -738,13 +738,12 @@ pub async fn create_agent_from_session_config(
         &skills_catalog,
     );
 
-    let handle = GenaiAgentHandle::with_workspace(
+    let handle = GenaiAgentHandle::new(
         genai_client,
         model_iden,
         &enriched_prompt.stable,
         tool_defs,
         agent_config.thinking_budget,
-        workspace.to_path_buf(),
     )
     // Separate from the prompt above so it can carry its own cache breakpoint;
     // it is the half that changes per session.

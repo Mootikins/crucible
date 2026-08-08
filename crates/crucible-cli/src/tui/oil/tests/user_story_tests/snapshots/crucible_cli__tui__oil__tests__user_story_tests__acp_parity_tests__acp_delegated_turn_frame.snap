@@ -10,10 +10,8 @@ expression: story.fresh_screen()
 
  ✓ Edit File [acp:claude] greeting.rs → Replaced 1 occurrence(s)
 edit greeting.rs  +1 -1
- fn main() {
--    println!("hello");
-+    println!("hello, world");
- }
+-hello
++hello, world
 
    Done.
 

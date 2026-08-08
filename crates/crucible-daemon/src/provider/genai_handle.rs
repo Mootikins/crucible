@@ -153,16 +153,14 @@ struct ToolCallEmitter {
     emitted_call_ids: std::collections::HashSet<String>,
     emitted_count: usize,
     max_depth: usize,
-    workspace_root: std::path::PathBuf,
 }
 
 impl ToolCallEmitter {
-    fn new(max_depth: usize, workspace_root: std::path::PathBuf) -> Self {
+    fn new(max_depth: usize) -> Self {
         Self {
             emitted_call_ids: std::collections::HashSet::new(),
             emitted_count: 0,
             max_depth,
-            workspace_root,
         }
     }
 
@@ -180,11 +178,7 @@ impl ToolCallEmitter {
         // Pure helper — returns an empty Vec for unknown tools, malformed
         // args, or oversized content. Mirrors the permission flow's
         // synthesis at `agent_manager::messaging::permission`.
-        let diffs = crate::tools::diff_synth::synthesize_diffs(
-            &tc.fn_name,
-            &normalized_args,
-            &self.workspace_root,
-        );
+        let diffs = crate::tools::diff_synth::synthesize_diffs(&tc.fn_name, &normalized_args);
         Some(TurnEvent::ToolCall {
             id: tc.call_id,
             name: tc.fn_name,
@@ -416,7 +410,6 @@ pub struct GenaiAgentHandle {
     /// the daemon's CWD"; it does not canonicalize, so every path is refused.
     /// That matters here because this emitter has no permission gate in front
     /// of it, so a preview read is published unconditionally.
-    workspace_root: std::path::PathBuf,
     /// Tool names eligible for progressive disclosure. The daemon's agent
     /// factory populates this with the gateway (user MCP) tool names; kiln
     /// and workspace tools are never deferrable. Empty means the handle
@@ -744,23 +737,6 @@ pub(crate) async fn summarize_via_backend(
 }
 
 impl GenaiAgentHandle {
-    pub fn new(
-        client: genai::Client,
-        model: ModelIden,
-        system_prompt: &str,
-        tools: Vec<LlmToolDefinition>,
-        thinking_budget: Option<i64>,
-    ) -> Self {
-        Self::with_workspace(
-            client,
-            model,
-            system_prompt,
-            tools,
-            thinking_budget,
-            std::path::PathBuf::new(),
-        )
-    }
-
     /// Attach this session's workspace/kiln header.
     ///
     /// Kept out of `system_prompt` so the stable half can be cached across
@@ -827,13 +803,12 @@ impl GenaiAgentHandle {
     /// the daemon's CWD — that fallback was the exfiltration path, since
     /// this emitter runs on tool-call emission with no permission gate
     /// anywhere downstream of it.
-    pub fn with_workspace(
+    pub fn new(
         client: genai::Client,
         model: ModelIden,
         system_prompt: &str,
         tools: Vec<LlmToolDefinition>,
         thinking_budget: Option<i64>,
-        workspace_root: std::path::PathBuf,
     ) -> Self {
         let mode_state = default_internal_modes();
         let current_mode_id = mode_state.current_mode_id.0.to_string();
@@ -858,7 +833,6 @@ impl GenaiAgentHandle {
             output_validation: OutputValidation::default(),
             validation_retries: 3,
             autocompact_threshold: None,
-            workspace_root,
             deferrable_tool_names: std::collections::HashSet::new(),
             plugin_tool_names: std::collections::HashSet::new(),
         }
@@ -1129,7 +1103,6 @@ impl GenaiAgentHandle {
         let client = self.client.clone();
         let model_name = self.explicit_model_name();
         let max_tool_depth = self.max_tool_depth;
-        let workspace_root = self.workspace_root.clone();
         let context_budget = self.context_budget;
         let context_strategy = self.context_strategy.clone();
         let context_window = self.context_window;
@@ -1193,7 +1166,7 @@ impl GenaiAgentHandle {
             };
             let mut first_chunk_logged = false;
 
-            let mut tool_emitter = ToolCallEmitter::new(max_tool_depth, workspace_root.clone());
+            let mut tool_emitter = ToolCallEmitter::new(max_tool_depth);
             let mut reasoning_state = ReasoningEmissionState::new();
 
             while let Some(next) = stream.next().await {
@@ -1804,7 +1777,7 @@ mod tests {
     /// synthesis (the tool name is a non-edit tool like "bash" or
     /// "read", so synthesis returns an empty Vec).
     fn emitter(max_depth: usize) -> ToolCallEmitter {
-        ToolCallEmitter::new(max_depth, std::path::PathBuf::new())
+        ToolCallEmitter::new(max_depth)
     }
 
     #[test]
@@ -1937,8 +1910,7 @@ mod tests {
         // pending file contents alongside the call header. The synthesizer
         // is pure and gracefully degrades to empty for unknown tools, but
         // for known edit-style tools it must produce one entry per file.
-        let tmp = tempfile::TempDir::new().expect("tempdir");
-        let mut e = ToolCallEmitter::new(10, tmp.path().to_path_buf());
+        let mut e = ToolCallEmitter::new(10);
 
         let raw = ToolCall {
             call_id: "call-1".to_string(),

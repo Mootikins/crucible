@@ -181,9 +181,8 @@ pub(crate) fn open_tool_permission(
     request_id: &str,
     tool_name: &str,
     args: serde_json::Value,
-    workspace: &std::path::Path,
 ) -> Action<ChatAppMsg> {
-    let diffs = crucible_daemon::tools::diff_synth::synthesize_diffs(tool_name, &args, workspace);
+    let diffs = crucible_daemon::tools::diff_synth::synthesize_diffs(tool_name, &args);
     let request =
         InteractionRequest::Permission(PermRequest::tool(tool_name, args).with_diffs(diffs));
     story

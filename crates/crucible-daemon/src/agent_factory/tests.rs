@@ -315,15 +315,8 @@ async fn over_budget_agent_attaches_core_plus_bridge_and_plan_excludes_gateway()
     let model = chat_client
         .model_iden("gpt-4o-mini")
         .expect("model iden for gpt-4o-mini");
-    let mut handle = GenaiAgentHandle::with_workspace(
-        client,
-        model,
-        "system",
-        defs,
-        None,
-        std::path::PathBuf::new(),
-    )
-    .with_deferrable_tools(deferrable);
+    let mut handle = GenaiAgentHandle::new(client, model, "system", defs, None)
+        .with_deferrable_tools(deferrable);
     // Tiny budget → the tool schemas exceed the 15% share.
     handle.set_context_budget(Some(1_000)).await.unwrap();
 

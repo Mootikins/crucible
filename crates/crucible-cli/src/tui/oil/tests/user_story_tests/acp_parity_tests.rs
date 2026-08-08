@@ -464,14 +464,10 @@ fn acp_delegated_turn_frame() {
 // not a regression.
 // ---------------------------------------------------------------------------
 
-/// A workspace holding the file both modal legs below edit, so the daemon's
-/// real `synthesize_diffs` has something on disk to diff against — an edit
-/// whose `old_string` isn't found produces no diff at all.
-fn workspace_with_main_rs() -> tempfile::TempDir {
-    let dir = tempfile::TempDir::new().expect("tempdir");
-    std::fs::write(dir.path().join("main.rs"), "fn main() {\n    old();\n}\n").expect("write");
-    dir
-}
+// There is deliberately no on-disk fixture here any more. `synthesize_diffs`
+// renders from the tool arguments alone, so these legs need no file to diff
+// against — and an edit naming a path that does not exist previews exactly
+// like one that does.
 
 /// The edit an agent asks permission for. Identical on both legs: the *only*
 /// difference under test is the tool name the daemon had available.
@@ -485,12 +481,11 @@ fn edit_args() -> serde_json::Value {
 
 #[test]
 fn an_acp_permission_modal_names_the_tool_kind_not_the_tool() {
-    let ws = workspace_with_main_rs();
     let mut story = StoryRuntime::new(80, 30);
     send_user_message(&mut story, "fix main.rs");
     // `ToolKind::Edit` is all the wire carried, so this is the name the gate
     // matched rules against and the name the user is shown.
-    let _ = open_tool_permission(&mut story, "req-1", "edit", edit_args(), ws.path());
+    let _ = open_tool_permission(&mut story, "req-1", "edit", edit_args());
 
     let frame = story.fresh_screen();
     // Pinned, not endorsed: see the C3 comment above. `unstable_tool_call_name`
@@ -509,10 +504,9 @@ fn an_acp_permission_modal_names_the_tool_kind_not_the_tool() {
 
 #[test]
 fn an_acp_permission_modal_still_shows_its_diff() {
-    let ws = workspace_with_main_rs();
     let mut story = StoryRuntime::new(80, 30);
     send_user_message(&mut story, "fix main.rs");
-    let _ = open_tool_permission(&mut story, "req-1", "edit", edit_args(), ws.path());
+    let _ = open_tool_permission(&mut story, "req-1", "edit", edit_args());
 
     let frame = story.fresh_screen();
     // The coarse name is what `synthesize_diffs` normalizes, and `edit` is one
@@ -534,10 +528,9 @@ fn an_acp_permission_modal_still_shows_its_diff() {
 fn an_internal_permission_modal_names_the_real_tool() {
     // The contrast leg: same edit, same args, same synthesized diff — the
     // daemon's own tool loop has the registry name, so it shows it.
-    let ws = workspace_with_main_rs();
     let mut story = StoryRuntime::new(80, 30);
     send_user_message(&mut story, "fix main.rs");
-    let _ = open_tool_permission(&mut story, "req-1", "edit_file", edit_args(), ws.path());
+    let _ = open_tool_permission(&mut story, "req-1", "edit_file", edit_args());
 
     let frame = story.fresh_screen();
     assert!(
@@ -558,7 +551,6 @@ fn an_acp_shell_permission_modal_shows_the_command_not_the_derived_name() {
     // screen and this path costs nothing. Pinned so a change that started
     // printing the derived name — `bash (command="…")` — shows up as a
     // *behaviour* change rather than as cosmetics.
-    let ws = workspace_with_main_rs();
     let mut story = StoryRuntime::new(80, 30);
     send_user_message(&mut story, "clean up");
     let _ = open_tool_permission(
@@ -566,7 +558,6 @@ fn an_acp_shell_permission_modal_shows_the_command_not_the_derived_name() {
         "req-1",
         "bash",
         json!({"command": "rm -rf build"}),
-        ws.path(),
     );
 
     let frame = story.fresh_screen();

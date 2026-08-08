@@ -190,17 +190,10 @@ impl CrucibleAcpClient {
 
         // Fall back to synthesizing from tool name + args. Single source of
         // truth for write-tool detection and argument shape. The working dir
-        // is the containment root, not merely a base to join against: an
-        // absent one denies every preview instead of letting an absolute path
-        // through, which is why the tests here no longer pass absolute paths.
+        // renders from the arguments alone and opens nothing, so there is no
+        // working_dir to resolve against and no containment question here.
         let args = tool_call.arguments.as_ref()?;
-        let workspace_root = self
-            .config
-            .working_dir
-            .as_deref()
-            .unwrap_or_else(|| std::path::Path::new(""));
-        let synthesized =
-            crate::tools::diff_synth::synthesize_diffs(&tool_call.title, args, workspace_root);
+        let synthesized = crate::tools::diff_synth::synthesize_diffs(&tool_call.title, args);
         if synthesized.is_empty() {
             return None;
         }

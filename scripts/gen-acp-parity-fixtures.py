@@ -42,8 +42,13 @@ import pathlib
 OUT = pathlib.Path(__file__).resolve().parent.parent / "assets" / "fixtures"
 
 TS = "2026-08-03T09:14:07.000000+00:00"
-OLD = 'fn main() {\n    println!("hello");\n}\n'
-NEW = 'fn main() {\n    println!("hello, world");\n}\n'
+# The diff a permission card carries is the REPLACEMENT, not the file it
+# lands in. `diff_synth` renders from the tool arguments and never opens the
+# target: reading it meant an unapproved read of a model-supplied path whose
+# result was published before anyone approved anything. So `old_content` is
+# `old_string`, not the file's former body.
+OLD = "hello"
+NEW = "hello, world"
 DIFFS = [{"path": "greeting.rs", "old_content": OLD, "new_content": NEW}]
 ARGS = {"path": "greeting.rs", "old_string": "hello", "new_string": "hello, world"}
 # A delegated Claude Code edit arrives as `rawInput` keyed `file_path`, not

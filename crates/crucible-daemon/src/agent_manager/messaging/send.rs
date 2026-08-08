@@ -569,7 +569,6 @@ impl AgentManager {
                 is_interactive,
                 permission_override,
                 agent_permissions,
-                workspace.to_path_buf(),
             ))
         } else {
             None

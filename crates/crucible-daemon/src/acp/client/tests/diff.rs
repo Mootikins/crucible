@@ -26,14 +26,20 @@ fn client_in(working_dir: &TempDir) -> CrucibleAcpClient {
     })
 }
 
+/// A whole-file write shows what it will write and nothing else.
+///
+/// It used to show the replaced lines too, by reading the target — an
+/// unapproved read of a path from the model's raw arguments, which is the
+/// exfiltration primitive `diff_synth` was rewritten to make impossible. The
+/// old side of a whole-file write is genuinely unknowable without that read,
+/// so it is `None`, and the sentinel below proves the file stays unopened.
 #[test]
 fn test_generate_diff_for_write_operation() {
     let workspace = TempDir::new().unwrap();
     let client = client_in(&workspace);
 
-    std::fs::write(workspace.path().join("note.md"), "line1\nline2\nline3\n").unwrap();
+    std::fs::write(workspace.path().join("note.md"), "SENTINEL-ON-DISK\n").unwrap();
 
-    // Simulate a write tool call that modifies content
     let tool_call = ToolCallInfo::new("update_note")
         .with_id("tool-1")
         .with_arguments(json!({
@@ -41,12 +47,15 @@ fn test_generate_diff_for_write_operation() {
             "content": "line1\nmodified\nline3\n"
         }));
 
-    let diff = client.generate_diff_for_write(&tool_call);
-    assert!(diff.is_some(), "Should generate diff for write operation");
+    let diff_str = client
+        .generate_diff_for_write(&tool_call)
+        .expect("Should generate diff for write operation");
 
-    let diff_str = diff.unwrap();
-    assert!(diff_str.contains("-line2"), "Should show deleted line");
     assert!(diff_str.contains("+modified"), "Should show inserted line");
+    assert!(
+        !diff_str.contains("SENTINEL-ON-DISK"),
+        "the preview must not read the target: {diff_str}"
+    );
 }
 
 #[test]
