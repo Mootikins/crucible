@@ -29,9 +29,9 @@ futures = { workspace = true }
 tokio-util = { version = "0.7", features = ["rt"] }
 crucible-core = { path = "../crucible-core", features = ["test-utils"] }
 
-lancedb = { version = "0.31.0", default-features = false }
-arrow-array = "58"
-arrow-schema = "58"
+lancedb = { version = "0.33.0", default-features = false }
+arrow-array = "59"
+arrow-schema = "59"
 
 crucible-lua = { path = "../crucible-lua", features = ["send"] }
 genai = "0.6"
@@ -41,7 +41,7 @@ async-stream = "0.3"
 # explicitly-unstable ACP feature — real claude-agent-acp implements it as
 # `unstable_setSessionModel`. Re-verify model switching when bumping this crate.
 agent-client-protocol = { version = "0.10.4", features = ["unstable_session_model"] }
-gix = { version = "0.85", default-features = false, features = ["blocking-network-client", "sha1"] }
+gix = { version = "0.86", default-features = false, features = ["blocking-network-client", "sha1"] }
 mlua = { workspace = true }
 notify = { workspace = true }
 notify-debouncer-full = { workspace = true }
@@ -74,7 +74,7 @@ fastembed = { version = "5.13", optional = true, default-features = false, featu
 ort = { version = "=2.0.0-rc.11", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-rustls", "copy-dylibs"], optional = true }
 
 # Tools dependencies (absorbed from crucible-tools)
-rmcp = { version = "2.2", features = ["macros", "server", "client", "transport-io", "transport-streamable-http-server", "transport-child-process", "transport-streamable-http-client-reqwest"] }
+rmcp = { version = "3.1", features = ["macros", "server", "client", "transport-io", "transport-streamable-http-server", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 axum = "0.8"
 schemars = { workspace = true }
 regex = { workspace = true }
@@ -107,7 +107,7 @@ which = "8.0"
 proptest = { workspace = true }
 # Absorbed from crucible-llm dev-deps
 criterion = { workspace = true, features = ["html_reports"] }
-serial_test = "3.3"
+serial_test = "4.0"
 toon-format = "0.5"
 futures-util = { workspace = true }
 test-case = { workspace = true }
