@@ -7,10 +7,17 @@ use crate::config::CliConfig;
 use crate::output;
 
 /// Execute config subcommand
-pub async fn execute(cmd: ConfigCommands) -> Result<()> {
+///
+/// `config` takes the already-resolved config rather than re-loading it: the
+/// resolution in `async_main` is what honours `--config/-C`, the embedding
+/// overrides, and the first-run wizard's rewrite.
+pub async fn execute(config: CliConfig, cmd: ConfigCommands) -> Result<()> {
     match cmd {
         ConfigCommands::Init { path, force } => init(path, force).await,
-        ConfigCommands::Show { format, sources } => show(format, sources).await,
+        ConfigCommands::Show { format, sources } => {
+            println!("{}", render(&config, &format, sources)?);
+            Ok(())
+        }
         ConfigCommands::Dump { format } => dump(format).await,
     }
 }
@@ -52,53 +59,18 @@ async fn init(path: Option<PathBuf>, force: bool) -> Result<()> {
     Ok(())
 }
 
-/// Show the current effective configuration
-async fn show(format: String, sources: bool) -> Result<()> {
-    // Load the current config (with all precedence applied)
-    let config = CliConfig::load(None, None, None)?;
-
-    if sources {
-        match format.as_str() {
-            "json" => {
-                let json = config.display_as_json_with_sources()?;
-                println!("{}", json);
-            }
-            _ => {
-                let toml = config.display_as_toml_with_sources()?;
-                println!("{}", toml);
-            }
-        }
-    } else {
-        match format.as_str() {
-            "json" => {
-                let json = config.display_as_json()?;
-                println!("{}", json);
-            }
-            _ => {
-                let toml = config.display_as_toml()?;
-                println!("{}", toml);
-            }
-        }
-    }
-
-    Ok(())
+/// Render the effective configuration for `config show`
+fn render(config: &CliConfig, format: &str, sources: bool) -> Result<String> {
+    Ok(match (format, sources) {
+        ("json", true) => config.display_as_json_with_sources()?,
+        ("json", false) => config.display_as_json()?,
+        (_, true) => config.display_as_toml_with_sources()?,
+        (_, false) => config.display_as_toml()?,
+    })
 }
 
 /// Dump default configuration to stdout
 async fn dump(format: String) -> Result<()> {
-    // Create default config
-    let config = CliConfig::default();
-
-    match format.as_str() {
-        "json" => {
-            let json = config.display_as_json()?;
-            println!("{}", json);
-        }
-        _ => {
-            let toml = config.display_as_toml()?;
-            println!("{}", toml);
-        }
-    }
-
+    println!("{}", render(&CliConfig::default(), &format, false)?);
     Ok(())
 }

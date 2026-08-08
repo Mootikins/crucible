@@ -27,7 +27,7 @@
 //!
 //! - `show_ignored` (default false): reveal gitignored entries. The web UI
 //!   passes `true` — a file browser must show ALL files in a folder, not
-//!   just the git-clean subset (build outputs, `thoughts/`, …).
+//!   just the git-clean subset (`target/`, `node_modules/`, …).
 //! - `show_hidden` (default false): reveal dotfiles/dot-dirs. Off by
 //!   default so non-gitignored secret files (`.env`, `.netrc`, `.envrc`)
 //!   are not enumerable unless explicitly requested (the tree's

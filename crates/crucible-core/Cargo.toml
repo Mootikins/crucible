@@ -93,4 +93,8 @@ test-case = { workspace = true }
 # Dev-kiln validation tests
 walkdir = "2.5"
 regex = { workspace = true }
+# `docs_config` needs the keys `CliAppConfig` silently drops: no struct in the
+# config tree uses `deny_unknown_fields`, so a documented-but-nonexistent field
+# deserializes clean and the doc looks validated when it is not.
+serde_ignored = "0.1"
 

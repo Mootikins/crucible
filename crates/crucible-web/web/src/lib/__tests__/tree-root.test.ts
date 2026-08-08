@@ -103,10 +103,10 @@ describe('buildRoster', () => {
     // bare name through the name→path map so both collapse to one root, keeping
     // the descriptive name.
     const groups = buildRoster(
-      [project('/home/moot/crucible', 'crucible', [{ path: '/home/moot/crucible/docs', name: 'crucible-docs' }])],
-      [kiln('crucible-docs', null), kiln('/home/moot/crucible/docs', 'crucible-docs')],
+      [project('/home/user/crucible', 'crucible', [{ path: '/home/user/crucible/docs', name: 'crucible-docs' }])],
+      [kiln('crucible-docs', null), kiln('/home/user/crucible/docs', 'crucible-docs')],
     );
-    const docsRoots = kilnRoots(groups).filter((r) => r.path === '/home/moot/crucible/docs');
+    const docsRoots = kilnRoots(groups).filter((r) => r.path === '/home/user/crucible/docs');
     expect(docsRoots).toHaveLength(1);
     expect(docsRoots[0].name).toBe('crucible-docs');
     // The bare name did not survive as its own phantom root.

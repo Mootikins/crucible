@@ -4,8 +4,8 @@
 //! `list`/`show` are Phase 1+2: they read workflow notes from the active
 //! kiln and render the parsed [`WorkflowDoc`] without involving the
 //! daemon. `start`/`approve`/`status`/`cancel` are Phase 3a: they drive
-//! the daemon-side workflow engine over RPC. See the plan at
-//! `thoughts/shared/plans/workflows_2026-04-22-2030.md`.
+//! the daemon-side workflow engine over RPC. See `docs/Help/Workflows/`
+//! for the user-facing surface.
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};

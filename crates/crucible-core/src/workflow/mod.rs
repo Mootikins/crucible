@@ -6,8 +6,7 @@
 //! `[type:: ...]` heading attribute, threads a per-session
 //! [`OutputScope`] through the run, and emits [`WorkflowEvent`]s.
 //!
-//! Per the plan (`thoughts/shared/plans/workflows_2026-04-22-2030.md`)
-//! this is deliberately structured to make Phase 3b (port orchestration
+//! It is deliberately structured to make Phase 3b (port orchestration
 //! to Lua) a mechanical translation — dispatch table not match arms, no
 //! ambient state, hook events always emitted, and every primitive that a
 //! handler calls goes through a narrow trait surface.

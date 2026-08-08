@@ -51,7 +51,7 @@ names between client and server (silent failure — verify `session.get_*` retur
 ### Hooks and ACP delegation
 
 - Plugins can fully handle tool calls: `crucible.on("pre_tool_call", opts, handler)` returns `{ handled = true, result = ... }` to replace execution, `{ cancel = true, reason = ... }` to block, or `nil` to observe. Supports `pattern` and `priority` opts; handlers may call async APIs. Reference implementation: `runtime/plugins/oci/`.
-- Crucible delegates to external agents (Claude Code, OpenCode, Gemini CLI) via ACP: `cru chat -a claude`, `cru session create --agent claude`, or the `delegate_session` tool. Trust/depth limits in `crucible.toml` (`[acp.agents.*]` profiles can `extends` built-ins). Code: `crucible-daemon/src/acp/`, `agent_manager/`, `tools/mcp_server.rs`.
+- Crucible delegates to external agents (Claude Code, OpenCode, Gemini CLI) via ACP: `cru chat -a claude`, `cru session create --agent claude`, or the `delegate_session` tool. Trust/depth limits in `~/.config/crucible/config.toml` (`[acp.agents.*]` profiles can `extends` built-ins). Code: `crucible-daemon/src/acp/`, `agent_manager/`, `tools/mcp_server.rs`.
 
 ## Workflow
 
@@ -59,7 +59,7 @@ names between client and server (silent failure — verify `session.get_*` retur
 this box's constraints (thread caps, build prereqs). Scoped runs pass through args. If a flow
 has no recipe and you need it twice, add a recipe.
 
-- `just ci` — **run before committing**: fmt, clippy, size gate, nextest, web unit + e2e
+- `just ci` — **run before committing**
 - `just build` / `just test` / `just check`; `just test-crate <crate>`; `just test ignored` / `just test full` for `#[ignore]`d tests
 - `just web-test-unit [paths…]` / `just web-test [specs…]` / `just web-typecheck`
 - `just web` (build + serve on 3000) / `just web-debug [port]` (side port, safe next to installed instance); `just mcp`
@@ -83,7 +83,8 @@ regression tests.
 - **Compress via the type system**: `From`/`Into` over `.map_err()` chains, `?`, iterator combinators, `#[derive]`. A pattern repeated 5+ times is a missing helper. One pattern, used uniformly.
 - **Comments explain why, not what** — tradeoffs, workarounds, non-obvious decisions.
 - **Lua sees the same domain model.** Rust types are source of truth; Lua bindings project them, never duplicate them.
-- `snake_case` functions, `PascalCase` types. Fix clippy warnings properly — no module-level `#![allow(...)]`.
+- `snake_case` functions, `PascalCase` types, `snake_case.rs` modules. Fix clippy warnings properly — no module-level `#![allow(...)]`.
+- **Name for what the code does, not where it lives.** `new()` for simple constructors (few params, no external resources); `new_with_*()` when exactly one thing varies (`AgentManager::new_with_delegation`); `create_*()` for factories that build external resources or return trait objects, typically at the composition root (`create_knowledge_repository`) — start with `new()` and rename only once it is clearly a factory. Suffixes: `*Handler` reacts to events or messages (`IndexingHandler`), `*Executor` executes actions or commands (`ToolExecutor`), `*Config` is configuration loaded or assembled at startup (`ChatConfig`).
 
 ## Testing
 

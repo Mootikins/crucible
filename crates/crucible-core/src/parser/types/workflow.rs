@@ -2,7 +2,7 @@
 //! frontmatter declares `type: workflow`.
 //!
 //! Phase 1 shape: parse only. No execution. See
-//! `thoughts/shared/plans/workflows_2026-04-22-2030.md` for the full design.
+//! `docs/Help/Workflows/Workflow Syntax.md` for the surface this parses.
 //!
 //! # Ownership
 //!

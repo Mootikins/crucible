@@ -21,7 +21,6 @@ const TRACKED_FIELDS: &[(&str, &str)] = &[
     ("cli.confirm_destructive", "CLI"),
     ("cli.verbose", "CLI"),
     ("logging.level", "Logging"),
-    ("processing.parallel_workers", "Processing"),
 ];
 
 use crate::config::components::{
@@ -39,14 +38,6 @@ extern crate toml;
 use super::errors::ConfigError;
 use super::provider::EffectiveLlmConfig;
 use super::server::{LoggingConfig, ScmConfig, WebConfig};
-
-/// Processing configuration for file processing operations.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ProcessingConfig {
-    /// Number of parallel workers for processing (default: num_cpus / 2)
-    #[serde(default)]
-    pub parallel_workers: Option<usize>,
-}
 
 /// CLI application composite configuration structure.
 ///
@@ -116,10 +107,6 @@ pub struct CliAppConfig {
     /// Logging configuration
     #[serde(default)]
     pub logging: Option<LoggingConfig>,
-
-    /// Processing configuration
-    #[serde(default)]
-    pub processing: ProcessingConfig,
 
     /// Context configuration (rules files, etc.)
     #[serde(default)]
@@ -226,7 +213,6 @@ impl Default for CliAppConfig {
             enrichment: None,
             cli: CliConfig::default(),
             logging: None,
-            processing: ProcessingConfig::default(),
             context: None,
             storage: None,
             mcp: None,
@@ -272,8 +258,20 @@ impl CliAppConfig {
     ) -> anyhow::Result<Self> {
         use crate::config::value_source::{ValueSource, ValueSourceMap};
 
-        // Determine config file path
+        // Determine config file path. An explicitly named file must exist: a
+        // typo'd `-C` is otherwise indistinguishable from omitting the flag,
+        // and the user reads defaults believing they are reading their file.
+        // An absent *default* path stays fine — a user who has never run
+        // `cru config init` still gets a working CLI.
+        let explicit = config_file.is_some();
         let config_path = config_file.unwrap_or_else(Self::default_config_path);
+
+        if explicit && !config_path.exists() {
+            return Err(anyhow::anyhow!(
+                "Config file not found: {}. Try: `cru doctor`",
+                config_path.display()
+            ));
+        }
 
         debug!("Attempting to load config from: {}", config_path.display());
 
@@ -555,7 +553,6 @@ impl CliAppConfig {
             "cli.confirm_destructive" => Some(json!(self.cli.confirm_destructive)),
             "cli.verbose" => Some(json!(self.cli.verbose)),
             "logging.level" => self.logging.as_ref().map(|l| json!(l.level)),
-            "processing.parallel_workers" => self.processing.parallel_workers.map(|v| json!(v)),
             _ => None,
         }
     }
@@ -691,9 +688,6 @@ verbose = false
 # [logging]
 # level = "info"  # off, error, warn, info, debug, trace
 
-# Processing configuration (optional)
-# [processing]
-# parallel_workers = 4  # Number of parallel workers (default: num_cpus / 2)
 "#;
 
         // Create parent directory if it doesn't exist
@@ -747,14 +741,6 @@ verbose = false
     /// from the logging configuration section, or None if not configured.
     pub fn logging_level(&self) -> Option<String> {
         self.logging.as_ref().map(|l| l.level.clone())
-    }
-
-    /// Get the parallel workers setting from config, if set
-    ///
-    /// Returns the number of parallel workers for processing, or None if not configured.
-    /// When None, the CLI should use a default (e.g., num_cpus / 2).
-    pub fn parallel_workers(&self) -> Option<usize> {
-        self.processing.parallel_workers
     }
 
     /// Get the effective LLM provider for chat.
@@ -857,7 +843,6 @@ mod tests {
         config.chat.temperature = Some(0.7);
         config.chat.max_tokens = Some(2048);
         config.chat.timeout_secs = Some(30);
-        config.processing.parallel_workers = Some(4);
         config
     }
 
@@ -1131,5 +1116,37 @@ docs = "~/docs"
         let toml_str = r#"kiln_path = "~/vault""#;
         let config: CliAppConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.resolved_default_kiln(), "default");
+    }
+
+    #[test]
+    fn an_explicitly_named_config_file_that_is_missing_is_an_error() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let absent = tmp.path().join("typo.toml");
+
+        let err = CliAppConfig::load(Some(absent.clone()), None, None)
+            .expect_err("a -C path the user typed but that does not exist must not load defaults");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("typo.toml"),
+            "the error must name the file the user asked for, got: {msg}"
+        );
+        assert!(
+            msg.contains("cru doctor"),
+            "first-run failures point at doctor (phase 1 §1.5), got: {msg}"
+        );
+    }
+
+    #[test]
+    fn an_absent_default_config_path_still_falls_back_to_defaults() {
+        // Only an *explicit* path is required to exist. A user who has never run
+        // `cru config init` must still get a working CLI.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let _guard = crate::test_support::EnvVarGuard::set(
+            "CRUCIBLE_CONFIG_DIR",
+            tmp.path().to_string_lossy().to_string(),
+        );
+
+        assert!(CliAppConfig::load(None, None, None).is_ok());
     }
 }

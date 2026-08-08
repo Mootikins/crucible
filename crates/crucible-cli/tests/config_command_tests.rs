@@ -232,6 +232,37 @@ streaming = false
         .stdout(predicate::str::contains("[chat]"));
 }
 
+#[test]
+#[serial]
+fn config_show_honours_the_config_path_flag() {
+    let temp = TempDir::new().unwrap();
+    let config_path = temp.path().join("flagged.toml");
+    let kiln_path = temp.path().join("flagged-kiln");
+
+    fs::write(
+        &config_path,
+        format!(
+            "kiln_path = {:?}\n\n[chat]\nmodel = \"flagged-model\"\n",
+            kiln_path.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("cru").unwrap();
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+        .arg("-C")
+        .arg(&config_path)
+        .arg("config")
+        .arg("show");
+
+    // `config show` reports the *effective* config, so it must reflect the
+    // file named by -C rather than whatever the default lookup finds.
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains(kiln_path.to_str().unwrap()))
+        .stdout(predicate::str::contains("flagged-model"));
+}
+
 // ============================================================================
 // Config Show --trace Tests
 // ============================================================================

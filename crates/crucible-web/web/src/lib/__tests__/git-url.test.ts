@@ -10,7 +10,7 @@ describe('isGitRepoUrl', () => {
   });
 
   it('rejects local paths and non-repo strings', () => {
-    expect(isGitRepoUrl('/home/moot/crucible')).toBe(false);
+    expect(isGitRepoUrl('/home/user/crucible')).toBe(false);
     expect(isGitRepoUrl('~/src/thing')).toBe(false);
     expect(isGitRepoUrl('./relative/dir')).toBe(false);
     expect(isGitRepoUrl('just-a-name')).toBe(false);

@@ -848,7 +848,7 @@ fn compact_no_args_no_parens() {
 #[test]
 fn bash_command_uses_full_terminal_width() {
     // Long command that fits in 120 cols but not in the old hardcoded 40-char cap.
-    let cmd = "cd /home/moot/crucible && git log --oneline -n 20 | head -50";
+    let cmd = "cd /home/user/crucible && git log --oneline -n 20 | head -50";
     let args = format!(r#"{{"command": "{}"}}"#, cmd);
     let tool = test_tool("bash", &args, false);
     let node = tool.render_compact(120);

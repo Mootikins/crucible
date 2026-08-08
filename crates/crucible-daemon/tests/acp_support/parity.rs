@@ -483,7 +483,7 @@ mod tests {
     fn error_shape_keeps_the_discriminant_but_not_the_message() {
         let mut p = ShapeProjector::new();
         let internal = p.project(&TurnEvent::Error(TurnError::Internal(
-            "/home/moot/secret exploded".into(),
+            "/home/user/secret exploded".into(),
         )));
         let connection = p.project(&TurnEvent::Error(TurnError::Connection("refused".into())));
 

@@ -12,7 +12,7 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use cli_app::{CliAppConfig, ProcessingConfig};
+pub use cli_app::CliAppConfig;
 pub use errors::{ConfigError, ConfigValidationError};
 pub use provider::EffectiveLlmConfig;
 #[cfg(feature = "toml")]

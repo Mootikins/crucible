@@ -26,9 +26,11 @@ pub fn default_max_precognition_chars() -> usize {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct EnrichmentConfig {
     /// Embedding provider configuration
+    #[serde(default)]
     pub provider: EmbeddingProviderConfig,
 
     /// Pipeline configuration
+    #[serde(default)]
     pub pipeline: PipelineConfig,
 }
 
@@ -1148,6 +1150,50 @@ mod tests {
             EmbeddingProviderConfig::FastEmbed(_)
         ));
         assert_eq!(config.pipeline.batch_size, 16);
+    }
+
+    #[test]
+    fn provider_stanza_alone_loads_with_default_pipeline() {
+        // Mirrors the documented shape: users configure the provider and never
+        // mention `[enrichment.pipeline]`, which is entirely defaulted.
+        #[derive(Deserialize)]
+        struct Wrapper {
+            enrichment: EnrichmentConfig,
+        }
+
+        let wrapper: Wrapper = toml::from_str(
+            r#"
+[enrichment.provider]
+type = "ollama"
+model = "nomic-embed-text"
+"#,
+        )
+        .expect("[enrichment.provider] alone must load");
+
+        assert_eq!(wrapper.enrichment.provider.model(), "nomic-embed-text");
+        assert_eq!(wrapper.enrichment.pipeline, PipelineConfig::default());
+    }
+
+    #[test]
+    fn pipeline_stanza_alone_loads_with_default_provider() {
+        #[derive(Deserialize)]
+        struct Wrapper {
+            enrichment: EnrichmentConfig,
+        }
+
+        let wrapper: Wrapper = toml::from_str(
+            r#"
+[enrichment.pipeline]
+batch_size = 42
+"#,
+        )
+        .expect("[enrichment.pipeline] alone must load");
+
+        assert_eq!(wrapper.enrichment.pipeline.batch_size, 42);
+        assert_eq!(
+            wrapper.enrichment.provider,
+            EmbeddingProviderConfig::default()
+        );
     }
 
     #[test]

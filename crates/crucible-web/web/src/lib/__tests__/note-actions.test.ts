@@ -37,13 +37,13 @@ beforeEach(() => {
 
 describe('kilnRoot', () => {
   it('strips a trailing .crucible config dir to the kiln root', () => {
-    expect(kilnRoot('/home/moot/crucible/docs/.crucible')).toBe(
-      '/home/moot/crucible/docs'
+    expect(kilnRoot('/home/user/crucible/docs/.crucible')).toBe(
+      '/home/user/crucible/docs'
     );
   });
 
   it('leaves a kiln root untouched (no-op once the registry reports the root)', () => {
-    expect(kilnRoot('/home/moot/crucible/docs')).toBe('/home/moot/crucible/docs');
+    expect(kilnRoot('/home/user/crucible/docs')).toBe('/home/user/crucible/docs');
   });
 
   it('tolerates a trailing slash', () => {
@@ -69,23 +69,23 @@ describe('noteAbsolutePath', () => {
 
 describe('kilnForPath', () => {
   const kilns = [
-    { path: '/home/moot/crucible/docs' },
-    { path: '/home/moot/canvas-demo' },
-    { path: '/home/moot/canvas-demo/Nested' },
+    { path: '/home/user/crucible/docs' },
+    { path: '/home/user/canvas-demo' },
+    { path: '/home/user/canvas-demo/Nested' },
   ];
 
   it('attributes a file to the kiln containing it, not the first or the active one', () => {
-    expect(kilnForPath('/home/moot/canvas-demo/Notes/A.md', kilns)).toBe('/home/moot/canvas-demo');
+    expect(kilnForPath('/home/user/canvas-demo/Notes/A.md', kilns)).toBe('/home/user/canvas-demo');
   });
 
   it('gives a nested kiln its own files, so links cannot widen to the outer kiln', () => {
-    expect(kilnForPath('/home/moot/canvas-demo/Nested/A.md', kilns)).toBe(
-      '/home/moot/canvas-demo/Nested',
+    expect(kilnForPath('/home/user/canvas-demo/Nested/A.md', kilns)).toBe(
+      '/home/user/canvas-demo/Nested',
     );
   });
 
   it('requires a path-segment boundary', () => {
-    expect(kilnForPath('/home/moot/canvas-demo-archive/A.md', kilns)).toBeUndefined();
+    expect(kilnForPath('/home/user/canvas-demo-archive/A.md', kilns)).toBeUndefined();
   });
 
   it('returns undefined for a file in no kiln, rather than guessing one', () => {

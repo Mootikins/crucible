@@ -1,71 +1,43 @@
 //! Dev-Kiln Documentation Validation Tests
 //!
-//! These tests validate the integrity and quality of the `docs/` documentation kiln.
-//! They follow TDD (RED-GREEN-REFACTOR) methodology:
-//!
-//! 1. RED: Tests are written to FAIL initially
-//! 2. GREEN: Documentation is fixed to make tests pass
-//! 3. REFACTOR: Improve without changing behavior
-//!
-//! Run with: `cargo test -p crucible-core -- --ignored dev_kiln`
-//!
-//! # Test Coverage
+//! These tests validate the integrity and quality of the `docs/` documentation kiln:
 //!
 //! 1. **Parsing**: All `.md` files must parse without errors
 //! 2. **Frontmatter**: Required fields (title, description, tags)
 //! 3. **Wikilinks**: STRICT - ALL wikilinks must resolve to existing files
-//! 4. **Code References**: All `crates/...` paths must exist in repo
+//! 4. **Reachability**: every `docs/Help/**` note is linked from somewhere
+//! 5. **Code References**: All `crates/...` paths must exist in the repo, and a
+//!    `path.rs:26` citation must name a line that file actually has
+//!
+//! # Running
+//!
+//! ```text
+//! cargo test -p crucible-core --test dev_kiln -- --ignored
+//! ```
+//!
+//! `--test <name>` selects a test *binary*; the `-- --ignored` after it is
+//! passed through to the libtest harness to bypass the `#[ignore]` gate.
+//! `cargo test --ignored dev_kiln` is INVALID Cargo syntax — `dev_kiln` sitting
+//! after `--ignored` parses as a positional test-name filter, not a binary
+//! selector, so it silently runs nothing. `just lint-docs` runs this binary
+//! together with `docs_config`, and that recipe is what the CI `docs` job calls.
+//!
+//! The suite is `#[ignore]`d because it walks and parses every markdown and
+//! script file under `docs/`. It is anchored at `CARGO_MANIFEST_DIR`, so it can
+//! only ever validate this repo's `docs/` — a failure must be reproduced by
+//! editing `docs/` itself, never a copy under `/tmp`.
 
-use std::collections::HashMap;
+mod common;
+
+use common::docs_kiln::{
+    docs_root, files_with_extensions, is_authored, markdown_files, workspace_root,
+};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-/// Base path to docs kiln (relative to workspace root)
-const DEV_KILN_PATH: &str = "docs";
-
-/// Get absolute path to dev-kiln from workspace root
-fn dev_kiln_root() -> PathBuf {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    PathBuf::from(manifest_dir)
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join(DEV_KILN_PATH)
-}
-
-/// Find all markdown files in dev-kiln
-fn find_markdown_files() -> Vec<PathBuf> {
-    let root = dev_kiln_root();
-    WalkDir::new(&root)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
-        // `.crucible/` holds session notes the daemon writes when someone
-        // chats in this kiln. They are generated, not authored, so holding
-        // them to the authoring conventions failed the suite for any developer
-        // who had used `docs/` as a kiln.
-        .filter(|e| !e.path().components().any(|c| c.as_os_str() == ".crucible"))
-        .map(|e| e.path().to_path_buf())
-        .collect()
-}
-
-/// Find all Lua script files in dev-kiln
-fn find_lua_files() -> Vec<PathBuf> {
-    let root = dev_kiln_root();
-    WalkDir::new(&root)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .is_some_and(|ext| ext == "lua" || ext == "fnl")
-        })
-        .map(|e| e.path().to_path_buf())
-        .collect()
-}
+/// Workspace-relative roots that make up the docs kiln.
+const DEV_KILN_ROOTS: &[&str] = &["docs"];
 
 /// Extract wikilinks from markdown content using regex
 ///
@@ -109,10 +81,24 @@ fn extract_wikilinks(content: &str) -> Vec<String> {
         .collect()
 }
 
+/// A `crates/…` path cited in prose, optionally anchored to a line.
+#[derive(Debug, PartialEq, Eq)]
+struct CodeRef {
+    /// Workspace-relative path, with any `:LINE` suffix removed.
+    path: String,
+    /// The cited line number, 1-indexed, if the citation had one.
+    line: Option<usize>,
+}
+
 /// Extract code references from markdown content
 ///
-/// Finds paths like `crates/crucible-core/src/...` in the content
-fn extract_code_references(content: &str) -> Vec<String> {
+/// Finds paths like `crates/crucible-core/src/...`, including the
+/// `crates/…/vault.rs:26` form. The line suffix is split off here so the
+/// citation resolves to a real file *and* can be checked against that file's
+/// length: before this, `:` was simply swept into the path, so every
+/// line-anchored citation resolved to a file named `vault.rs:26` and failed.
+/// The gate forbade the most precise citation style instead of validating it.
+fn extract_code_references(content: &str) -> Vec<CodeRef> {
     // `"` and `]` terminate a path as surely as `)` does: a mermaid node label
     // (`D["Path: crates/…/lib.rs"]`) is a legitimate citation, and without
     // these the trailing `"]` became part of the path and the file "did not
@@ -120,41 +106,127 @@ fn extract_code_references(content: &str) -> Vec<String> {
     let re = regex::Regex::new(r#"crates/[a-zA-Z0-9_-]+/[^\s)`"\]]+"#).unwrap();
 
     re.find_iter(content)
-        .map(|m| m.as_str().to_string())
+        .map(|m| {
+            let raw = m.as_str();
+            match raw
+                .rsplit_once(':')
+                .filter(|(_, n)| n.chars().all(|c| c.is_ascii_digit()))
+                .and_then(|(path, n)| n.parse::<usize>().ok().map(|n| (path, n)))
+            {
+                Some((path, line)) => CodeRef {
+                    path: path.to_string(),
+                    line: Some(line),
+                },
+                None => CodeRef {
+                    path: raw.to_string(),
+                    line: None,
+                },
+            }
+        })
         .collect()
 }
 
-/// Resolve a wikilink target to a file path
+/// Check every code reference in one document.
 ///
-/// Resolution algorithm (Obsidian-style, name-only):
-/// - `[[Title]]` -> Search for `Title.md` anywhere in dev-kiln
-/// - `[[Folder/Title]]` -> Extract `Title`, search for `Title.md` anywhere
-///
-/// This matches Obsidian's behavior where paths are hints, not requirements.
-/// Multi-kiln resolution is a future design consideration (see thoughts/backlog.md).
-fn resolve_wikilink(target: &str, dev_kiln_root: &Path) -> Option<PathBuf> {
-    // Extract just the filename (ignore path prefixes like "Help/Config/")
-    let filename_part = target.rsplit('/').next().unwrap_or(target);
+/// Returns the number of references seen and one `file: …` message per broken
+/// one. Split out from the test so the checking rules are exercised directly by
+/// unit tests rather than only against whatever `docs/` happens to contain.
+fn code_reference_failures(
+    workspace_root: &Path,
+    display: &str,
+    content: &str,
+) -> (usize, Vec<String>) {
+    let refs = extract_code_references(content);
+    let mut failures = Vec::new();
 
-    // Try common extensions: .md (notes), .lua/.fnl (Lua/Fennel scripts)
-    let extensions = [".md", ".lua", ".fnl"];
+    for code_ref in &refs {
+        let resolved = workspace_root.join(&code_ref.path);
 
-    for ext in extensions {
-        let target_filename = format!("{}{}", filename_part, ext).to_lowercase();
+        let Some(line) = code_ref.line else {
+            if !resolved.exists() {
+                failures.push(format!(
+                    "{display}: Code reference does not exist: {}",
+                    code_ref.path
+                ));
+            }
+            continue;
+        };
 
-        // Search for filename anywhere in dev-kiln (case-insensitive)
-        for entry in WalkDir::new(dev_kiln_root).into_iter().flatten() {
-            if entry.file_type().is_file() {
-                if let Some(filename) = entry.path().file_name() {
-                    if filename.to_string_lossy().to_lowercase() == target_filename {
-                        return Some(entry.path().to_path_buf());
-                    }
+        match std::fs::read_to_string(&resolved) {
+            Ok(text) => {
+                let count = text.lines().count();
+                if line == 0 || line > count {
+                    failures.push(format!(
+                        "{display}: Code reference {}:{line} names line {line} of a {count}-line file",
+                        code_ref.path
+                    ));
                 }
             }
+            Err(e) => failures.push(format!(
+                "{display}: Code reference {}:{line} is not a readable file: {e}",
+                code_ref.path
+            )),
         }
     }
 
-    None
+    (refs.len(), failures)
+}
+
+/// Every file a wikilink target could mean.
+///
+/// Resolution is Obsidian-style: the name is what matters, a path prefix is a
+/// hint. `[[Folder/Title]]` prefers a file actually under `Folder/`, but falls
+/// back to any `Title.md`. Names are *not* unique in this kiln — there are eight
+/// `Index.md`s — so this returns all candidates rather than the first the
+/// directory walk happens to reach.
+fn resolve_wikilink_candidates(target: &str, dev_kiln_root: &Path) -> Vec<PathBuf> {
+    let wanted = target.to_lowercase();
+    let filename_part = wanted.rsplit('/').next().unwrap_or(&wanted).to_string();
+
+    // Try common extensions: .md (notes), .lua/.fnl (Lua/Fennel scripts)
+    for ext in [".md", ".lua", ".fnl"] {
+        let target_filename = format!("{filename_part}{ext}");
+
+        let matches: Vec<PathBuf> = WalkDir::new(dev_kiln_root)
+            .into_iter()
+            .flatten()
+            .filter(|e| e.file_type().is_file())
+            .filter(|e| is_authored(e.path()))
+            .filter(|e| {
+                e.path()
+                    .file_name()
+                    .is_some_and(|f| f.to_string_lossy().to_lowercase() == target_filename)
+            })
+            .map(|e| e.path().to_path_buf())
+            .collect();
+
+        if matches.is_empty() {
+            continue;
+        }
+
+        if wanted.contains('/') {
+            let suffix = format!("{wanted}{ext}");
+            let hinted: Vec<PathBuf> = matches
+                .iter()
+                .filter(|p| p.to_string_lossy().to_lowercase().ends_with(&suffix))
+                .cloned()
+                .collect();
+            if !hinted.is_empty() {
+                return hinted;
+            }
+        }
+
+        return matches;
+    }
+
+    Vec::new()
+}
+
+/// Whether a wikilink target names a file that exists.
+fn resolve_wikilink(target: &str, dev_kiln_root: &Path) -> Option<PathBuf> {
+    resolve_wikilink_candidates(target, dev_kiln_root)
+        .into_iter()
+        .next()
 }
 
 /// Parse frontmatter from markdown content
@@ -217,7 +289,7 @@ fn parse_frontmatter_fields(yaml: &str) -> HashMap<String, String> {
 async fn dev_kiln_all_notes_parse() {
     use crucible_core::parser::test_utils::parse_note;
 
-    let md_files = find_markdown_files();
+    let md_files = markdown_files(DEV_KILN_ROOTS);
 
     assert!(
         !md_files.is_empty(),
@@ -267,7 +339,7 @@ async fn dev_kiln_all_notes_parse() {
 #[tokio::test]
 #[ignore = "slow test - parses all markdown files - run with cargo test --ignored"]
 async fn dev_kiln_frontmatter_has_required_fields() {
-    let md_files = find_markdown_files();
+    let md_files = markdown_files(DEV_KILN_ROOTS);
     let required_fields = vec!["title", "description", "tags"];
 
     let mut failures = Vec::new();
@@ -448,8 +520,8 @@ fn is_example_link(target: &str) -> bool {
 #[tokio::test]
 #[ignore = "slow test - parses all markdown files - run with cargo test --ignored"]
 async fn dev_kiln_all_wikilinks_resolve() {
-    let dev_kiln_root = dev_kiln_root();
-    let md_files = find_markdown_files();
+    let dev_kiln_root = docs_root();
+    let md_files = markdown_files(DEV_KILN_ROOTS);
 
     let mut all_broken_links = Vec::new();
     let mut total_links = 0;
@@ -520,38 +592,88 @@ async fn dev_kiln_all_wikilinks_resolve() {
 }
 
 // ============================================================================
-// TEST 4: All Code References Exist in Repository
+// TEST 4: Every Help Note Is Reachable From The Graph
+// ============================================================================
+
+/// A user-facing note nothing links to is only findable by search, which is not
+/// how the kiln is meant to be navigated: `docs/Help/**` is the shipped manual,
+/// and an orphan there is a page that was written and then lost.
+#[tokio::test]
+#[ignore = "slow test - resolves every wikilink in the kiln - run with cargo test --ignored"]
+async fn dev_kiln_every_help_note_is_reachable() {
+    let dev_kiln_root = docs_root();
+    let md_files = markdown_files(DEV_KILN_ROOTS);
+
+    let mut linked: HashSet<PathBuf> = HashSet::new();
+
+    for file_path in &md_files {
+        let Ok(content) = tokio::fs::read_to_string(file_path).await else {
+            continue;
+        };
+
+        for link in extract_wikilinks(&content) {
+            if link.is_empty() || is_example_link(&link) {
+                continue;
+            }
+            // An ambiguous link (`[[Index]]`) counts as reaching every
+            // candidate: which one a reader lands on is a resolution detail,
+            // and calling the others orphans would be a lie.
+            for target in resolve_wikilink_candidates(&link, &dev_kiln_root) {
+                // A note linking to itself does not make it reachable.
+                if &target != file_path {
+                    linked.insert(target);
+                }
+            }
+        }
+    }
+
+    let help_root = dev_kiln_root.join("Help");
+    let help_notes: Vec<&PathBuf> = md_files
+        .iter()
+        .filter(|p| p.starts_with(&help_root))
+        .collect();
+    assert!(
+        !help_notes.is_empty(),
+        "no notes found under {} — root discovery is broken",
+        help_root.display()
+    );
+
+    let orphans: Vec<&PathBuf> = help_notes
+        .iter()
+        .copied()
+        .filter(|p| !linked.contains(*p))
+        .collect();
+
+    if !orphans.is_empty() {
+        panic!(
+            "❌ UNREACHABLE HELP NOTES ({} of {} orphaned — no wikilink anywhere in the kiln targets them):\n\n{}",
+            orphans.len(),
+            help_notes.len(),
+            orphans
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
+
+    println!("✅ Every Help note is linked from at least one other note");
+}
+
+// ============================================================================
+// TEST 5: All Code References Exist in Repository
 // ============================================================================
 
 #[tokio::test]
 #[ignore = "slow test - parses all markdown files - run with cargo test --ignored"]
 async fn dev_kiln_code_references_exist() {
-    // dev_kiln_root() returns <workspace>/docs, so one parent() gets workspace root
-    let workspace_root = dev_kiln_root().parent().unwrap().to_path_buf();
-
-    let md_files = find_markdown_files();
-    let dev_kiln = dev_kiln_root();
-
-    // Historical docs that captured a past codebase state were deleted in
-    // the 2026-07 kiln cleanup; the exclusion lists remain as the hook for
-    // any future point-in-time documents.
-    let excluded_prefixes: Vec<PathBuf> = Vec::new();
-    let excluded_files: Vec<PathBuf> = Vec::new();
-    let _ = &dev_kiln;
+    let workspace_root = workspace_root();
+    let md_files = markdown_files(DEV_KILN_ROOTS);
 
     let mut failures = Vec::new();
     let mut total_refs = 0;
-    let mut skipped_files = 0;
 
     for file_path in &md_files {
-        // Skip excluded historical documents
-        if excluded_files.iter().any(|f| file_path == f)
-            || excluded_prefixes.iter().any(|p| file_path.starts_with(p))
-        {
-            skipped_files += 1;
-            continue;
-        }
-
         let content = match tokio::fs::read_to_string(file_path).await {
             Ok(c) => c,
             Err(e) => {
@@ -564,20 +686,10 @@ async fn dev_kiln_code_references_exist() {
             }
         };
 
-        let code_refs = extract_code_references(&content);
-        total_refs += code_refs.len();
-
-        for code_ref in code_refs {
-            let ref_path = workspace_root.join(&code_ref);
-
-            if !ref_path.exists() {
-                failures.push(format!(
-                    "{}: Code reference does not exist: {}",
-                    file_path.display(),
-                    code_ref
-                ));
-            }
-        }
+        let (n, mut file_failures) =
+            code_reference_failures(&workspace_root, &file_path.display().to_string(), &content);
+        total_refs += n;
+        failures.append(&mut file_failures);
     }
 
     if !failures.is_empty() {
@@ -588,19 +700,16 @@ async fn dev_kiln_code_references_exist() {
         );
     }
 
-    println!(
-        "✅ All {} code references exist in repository ({} historical files skipped)",
-        total_refs, skipped_files
-    );
+    println!("✅ All {total_refs} code references exist in repository");
 }
 
 // ============================================================================
-// TEST 5: Lua/Fennel Scripts Have Valid Syntax
+// TEST 6: Lua/Fennel Scripts Have Valid Syntax
 // ============================================================================
 #[tokio::test]
 #[ignore = "slow test - parses all script files - run with cargo test --ignored"]
 async fn dev_kiln_lua_scripts_valid_syntax() {
-    let lua_files = find_lua_files();
+    let lua_files = files_with_extensions(DEV_KILN_ROOTS, &["lua", "fnl"]);
 
     if lua_files.is_empty() {
         println!("No Lua/Fennel scripts found in dev-kiln, skipping.");
@@ -690,9 +799,110 @@ See also:
     let refs = extract_code_references(content);
 
     assert_eq!(refs.len(), 3);
-    assert!(refs.contains(&"crates/crucible-cli/src/commands/stats.rs".to_string()));
-    assert!(refs.contains(&"crates/crucible-core/src/parser/types.rs".to_string()));
-    assert!(refs.contains(&"crates/crucible-core/src/parser/wikilinks.rs".to_string()));
+    assert!(refs.iter().all(|r| r.line.is_none()));
+    let paths: Vec<&str> = refs.iter().map(|r| r.path.as_str()).collect();
+    assert!(paths.contains(&"crates/crucible-cli/src/commands/stats.rs"));
+    assert!(paths.contains(&"crates/crucible-core/src/parser/types.rs"));
+    assert!(paths.contains(&"crates/crucible-core/src/parser/wikilinks.rs"));
+}
+
+#[test]
+fn a_line_anchored_reference_splits_into_path_and_line() {
+    let refs = extract_code_references("see crates/crucible-core/src/vault.rs:26 for the guard");
+
+    assert_eq!(
+        refs,
+        vec![CodeRef {
+            path: "crates/crucible-core/src/vault.rs".into(),
+            line: Some(26),
+        }]
+    );
+}
+
+/// The `:` in a windows-style or otherwise non-numeric suffix is part of the
+/// path, not a line anchor.
+#[test]
+fn a_non_numeric_suffix_stays_part_of_the_path() {
+    let refs = extract_code_references("crates/crucible-core/src/lib.rs:main");
+
+    assert_eq!(refs[0].path, "crates/crucible-core/src/lib.rs:main");
+    assert_eq!(refs[0].line, None);
+}
+
+#[test]
+fn a_reference_to_a_line_the_file_has_passes() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("crates/demo/src")).unwrap();
+    std::fs::write(root.path().join("crates/demo/src/lib.rs"), "a\nb\nc\n").unwrap();
+
+    let (count, failures) =
+        code_reference_failures(root.path(), "Doc.md", "see crates/demo/src/lib.rs:3");
+
+    assert_eq!(count, 1);
+    assert!(failures.is_empty(), "{failures:?}");
+}
+
+#[test]
+fn a_reference_past_the_end_of_the_file_fails() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("crates/demo/src")).unwrap();
+    std::fs::write(root.path().join("crates/demo/src/lib.rs"), "a\nb\nc\n").unwrap();
+
+    let (_, failures) =
+        code_reference_failures(root.path(), "Doc.md", "see crates/demo/src/lib.rs:400");
+
+    assert_eq!(failures.len(), 1);
+    assert!(
+        failures[0].contains("crates/demo/src/lib.rs:400") && failures[0].contains("3-line"),
+        "{}",
+        failures[0]
+    );
+}
+
+#[test]
+fn a_reference_to_a_missing_file_fails() {
+    let root = tempfile::tempdir().unwrap();
+
+    let (_, failures) = code_reference_failures(
+        root.path(),
+        "Doc.md",
+        "crates/demo/src/gone.rs and crates/demo/src/gone.rs:1",
+    );
+
+    assert_eq!(failures.len(), 2, "{failures:?}");
+    assert!(failures[0].contains("does not exist"), "{}", failures[0]);
+    assert!(
+        failures[1].contains("not a readable file"),
+        "{}",
+        failures[1]
+    );
+}
+
+/// Two notes can share a name (`Canvas.md` exists under both `Help/` and
+/// `Meta/`). A link that carries a path hint means the note under that path;
+/// without this, `[[Meta/Analysis/Canvas]]` credited whichever `Canvas.md` the
+/// directory walk reached first, and the real one looked reachable when it was
+/// the *other* one being linked.
+#[test]
+fn a_path_hint_picks_between_notes_that_share_a_name() {
+    let kiln = tempfile::tempdir().unwrap();
+    for dir in ["Help/Concepts", "Meta/Analysis"] {
+        std::fs::create_dir_all(kiln.path().join(dir)).unwrap();
+        std::fs::write(kiln.path().join(dir).join("Canvas.md"), "").unwrap();
+    }
+
+    let hinted = resolve_wikilink_candidates("Meta/Analysis/Canvas", kiln.path());
+    assert_eq!(hinted, vec![kiln.path().join("Meta/Analysis/Canvas.md")]);
+
+    let mut ambiguous = resolve_wikilink_candidates("Canvas", kiln.path());
+    ambiguous.sort();
+    assert_eq!(
+        ambiguous,
+        vec![
+            kiln.path().join("Help/Concepts/Canvas.md"),
+            kiln.path().join("Meta/Analysis/Canvas.md"),
+        ]
+    );
 }
 
 #[test]

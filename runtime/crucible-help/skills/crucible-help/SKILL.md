@@ -20,7 +20,7 @@ A local-first AI assistant where every conversation becomes a searchable, linkab
 
 **Precognition** — Auto-RAG that injects relevant kiln context before each agent turn. Always on by default. This is the core differentiator: every conversation is knowledge-graph-aware. Toggle with `:set precognition`.
 
-**ACP (Agent Context Protocol)** — Crucible spawns external agents (Claude, OpenCode, Gemini, Codex) and gives them access to your knowledge graph, semantic search, and tools. Use `cru chat -a claude`. See [[Help/Concepts/Agents & Protocols]].
+**ACP (Agent Client Protocol)** — Crucible spawns external agents (Claude, OpenCode, Gemini, Codex) and gives them access to your knowledge graph, semantic search, and tools. Use `cru chat -a claude`. See [[Help/Concepts/Agents & Protocols]].
 
 **MCP (Model Context Protocol)** — Expose your kiln as tools for any MCP-compatible AI. Run `cru mcp` to start the server. Tools include `semantic_search`, `create_note`, `read_note`, `list_notes`, and more.
 

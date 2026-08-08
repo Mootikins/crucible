@@ -32,65 +32,101 @@ pub struct AgentInfo {
     pub env_vars: HashMap<String, String>,
 }
 
-const BUILTIN_AGENT_ORDER: &[&str] = &["opencode", "claude", "gemini", "codex", "cursor"];
+/// A built-in agent: everything Crucible knows about it, in one place.
+///
+/// Single source of truth for the default profiles, the discovery priority
+/// order (array order), and the install instructions rendered by the "no agent
+/// found" error and [`get_agent_help`]. It used to be three parallel tables,
+/// which is how `opencode` spent several releases pointing at an unrelated
+/// project and how two different descriptions of the same agent drifted apart.
+struct BuiltinAgent {
+    name: &'static str,
+    command: &'static str,
+    args: &'static [&'static str],
+    description: &'static str,
+    /// Base CLI this agent bridges to, or `None` if it is standalone.
+    requires: Option<&'static str>,
+    install: &'static str,
+}
 
-/// Built-in agent profiles (table-driven initialization)
-const BUILTIN_PROFILES: &[(&str, &str, &[&str], Option<&str>)] = &[
-    ("opencode", "opencode", &["acp"], Some("OpenCode AI (Go)")),
-    (
-        "claude",
-        "npx",
-        &["@zed-industries/claude-agent-acp"],
-        Some("Claude Code via ACP"),
-    ),
-    ("gemini", "gemini", &[], Some("Google Gemini CLI")),
-    (
-        "codex",
-        "npx",
-        &["@zed-industries/codex-acp"],
-        Some("OpenAI Codex via ACP"),
-    ),
-    ("cursor", "cursor-acp", &[], Some("Cursor IDE via ACP")),
+const BUILTIN_AGENTS: &[BuiltinAgent] = &[
+    BuiltinAgent {
+        name: "opencode",
+        command: "opencode",
+        args: &["acp"],
+        description: "Standalone ACP agent — https://opencode.ai",
+        requires: None,
+        install: "npm install -g opencode-ai@latest",
+    },
+    BuiltinAgent {
+        name: "claude",
+        command: "npx",
+        args: &["@zed-industries/claude-agent-acp"],
+        description: "Bridge to Claude Code",
+        requires: Some("Claude Code CLI"),
+        install: "npm install -g @zed-industries/claude-agent-acp",
+    },
+    BuiltinAgent {
+        name: "gemini",
+        command: "gemini",
+        args: &[],
+        description: "Google's Gemini CLI, speaks ACP directly",
+        requires: None,
+        install: "npm install -g @google/gemini-cli",
+    },
+    BuiltinAgent {
+        name: "codex",
+        command: "npx",
+        args: &["@zed-industries/codex-acp"],
+        description: "Bridge to OpenAI Codex",
+        requires: Some("OpenAI Codex CLI"),
+        install: "npm install -g @zed-industries/codex-acp",
+    },
+    BuiltinAgent {
+        name: "cursor",
+        command: "cursor-acp",
+        args: &[],
+        description: "Bridge to Cursor's ACP agent",
+        requires: Some("Cursor CLI"),
+        install: "npm install -g cursor-acp",
+    },
 ];
 
+fn is_builtin(name: &str) -> bool {
+    BUILTIN_AGENTS.iter().any(|agent| agent.name == name)
+}
+
 pub fn default_agent_profiles() -> HashMap<String, AgentProfile> {
-    let mut profiles = HashMap::new();
-
-    for (name, command, args_slice, description) in BUILTIN_PROFILES {
-        let args = if args_slice.is_empty() {
-            Some(Vec::new())
-        } else {
-            Some(args_slice.iter().map(|s| s.to_string()).collect())
-        };
-        profiles.insert(
-            name.to_string(),
-            AgentProfile {
-                extends: None,
-                command: Some(command.to_string()),
-                args,
-                env: HashMap::new(),
-                description: description.map(|d| d.to_string()),
-                capabilities: None,
-                delegation: None,
-                permissions: None,
-            },
-        );
-    }
-
-    profiles
+    BUILTIN_AGENTS
+        .iter()
+        .map(|agent| {
+            (
+                agent.name.to_string(),
+                AgentProfile {
+                    extends: None,
+                    command: Some(agent.command.to_string()),
+                    args: Some(agent.args.iter().map(|s| s.to_string()).collect()),
+                    env: HashMap::new(),
+                    description: Some(agent.description.to_string()),
+                    capabilities: None,
+                    delegation: None,
+                    permissions: None,
+                },
+            )
+        })
+        .collect()
 }
 
 fn ordered_profile_names(profiles: &HashMap<String, AgentProfile>) -> Vec<String> {
-    let mut ordered = Vec::new();
-    for name in BUILTIN_AGENT_ORDER {
-        if profiles.contains_key(*name) {
-            ordered.push((*name).to_string());
-        }
-    }
+    let mut ordered: Vec<String> = BUILTIN_AGENTS
+        .iter()
+        .filter(|agent| profiles.contains_key(agent.name))
+        .map(|agent| agent.name.to_string())
+        .collect();
 
     let mut custom: Vec<String> = profiles
         .keys()
-        .filter(|name| !BUILTIN_AGENT_ORDER.contains(&name.as_str()))
+        .filter(|name| !is_builtin(name))
         .cloned()
         .collect();
     custom.sort();
@@ -223,22 +259,28 @@ pub async fn discover_agent_uncached(
     Err(anyhow!(
         "No compatible ACP agent found.\n\
          \n\
-         Compatible agents:\n\
-         \n\
          Standalone agents:\n\
-         • opencode: go install github.com/grafana/opencode@latest\n\
-         • gemini: npm install -g gemini-cli\n\
+         {}\
          \n\
-         Bridge agents (require base CLI):\n\
-         • claude: npm install -g @zed-industries/claude-agent-acp\n\
-         • codex: npm install -g @zed-industries/codex-acp\n\
-         • cursor: npm install -g cursor-acp\n\
+         Bridge agents (require the base CLI as well):\n\
+         {}\
          \n\
          After installation, use with:\n\
          cru chat --agent <agent> \"your message\"\n\
          \n\
-         Or specify a custom agent with: --agent <command>"
+         Or specify a custom agent with: --agent <command>",
+        install_lines(|agent| agent.requires.is_none()),
+        install_lines(|agent| agent.requires.is_some()),
     ))
+}
+
+/// Render `• <name>: <install>` lines for the agents matching `keep`.
+fn install_lines(keep: impl Fn(&BuiltinAgent) -> bool) -> String {
+    BUILTIN_AGENTS
+        .iter()
+        .filter(|agent| keep(agent))
+        .map(|agent| format!("• {}: {}\n", agent.name, agent.install))
+        .collect()
 }
 
 /// Clear the agent cache to prevent state bleeding across tests.
@@ -253,44 +295,36 @@ pub fn reset_agent_cache() {
 
 /// Get help text about available ACP agents and installation instructions
 pub fn get_agent_help() -> String {
-    "Available ACP Agents:
-=================
+    let agents: String = BUILTIN_AGENTS
+        .iter()
+        .map(|agent| {
+            let requires = agent
+                .requires
+                .map(|cli| format!("  Requires: {cli} installed\n"))
+                .unwrap_or_default();
+            format!(
+                "• {}\n{requires}  Install:  {}\n  {}\n\n",
+                agent.name, agent.install, agent.description
+            )
+        })
+        .collect();
 
-• opencode
-  Installation: go install github.com/grafana/opencode@latest
-  Standalone ACP agent with basic functionality
-
-• claude
-  Requirements: Claude Code CLI installed
-   Bridge: npm install -g @zed-industries/claude-agent-acp
-  Connects to Claude Code agent
-
-• gemini
-  Installation: npm install -g gemini-cli
-  Google's Gemini AI standalone agent
-
-• codex
-  Requirements: OpenAI Codex CLI installed
-  Bridge: npm install -g @zed-industries/codex-acp
-  Connects to OpenAI Codex agent
-
-• cursor
-  Requirements: Cursor CLI installed
-  Bridge: npm install -g cursor-acp
-  Connects to Cursor IDE's ACP agent
-
-Usage:
-  cru chat                    # Auto-detect first available agent
-  cru chat --agent <name>     # Use specific agent
-  cru chat --agent <cmd>      # Use custom command
-
-Examples:
-  cru chat --agent claude \"Refactor this function\"
-  cru chat --agent cursor \"Add error handling\"
-
-Note: Some agents require both the base CLI and a bridge package.
-"
-    .to_string()
+    format!(
+        "Available ACP Agents:\n\
+         ====================\n\
+         \n\
+         {agents}\
+         Usage:\n  \
+         cru chat                    # Auto-detect first available agent\n  \
+         cru chat --agent <name>     # Use specific agent\n  \
+         cru chat --agent <cmd>      # Use custom command\n\
+         \n\
+         Examples:\n  \
+         cru chat --agent claude \"Refactor this function\"\n  \
+         cru chat --agent cursor \"Add error handling\"\n\
+         \n\
+         Note: Some agents require both the base CLI and a bridge package.\n"
+    )
 }
 
 /// Commands that should trust PATH lookup without --version verification.

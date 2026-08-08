@@ -6,7 +6,7 @@
 //! any caller (chat app, lua plugin, hypothetical other consumer)
 //! constructs node trees.
 //!
-//! Invariant phasing per `thoughts/shared/plans/tui-stage-c-sequencing-proofs_2026-05-16-2146.md`:
+//! Invariant phasing:
 //! - C-1 (this file initially): #1 monotonic scrollback, #4 render idempotence,
 //!   #5 determinism.
 //! - C-2: #2 width-stable graduation, #3 no double-paint.

@@ -20,13 +20,15 @@ fn test_path(name: &str) -> PathBuf {
 // ============================================================================
 
 #[test]
-fn test_config_load_from_nonexistent_file() {
+fn an_explicitly_named_config_file_that_is_missing_is_an_error() {
     let temp = TempDir::new().unwrap();
     let nonexistent = temp.path().join("nonexistent.toml");
 
-    // Should fall back to defaults when file doesn't exist
-    let result = CliConfig::load(Some(nonexistent), None, None);
-    assert!(result.is_ok());
+    // A typo'd `-C` used to be indistinguishable from omitting the flag.
+    let err = CliConfig::load(Some(nonexistent), None, None)
+        .expect_err("a named config file that does not exist must not load defaults");
+
+    assert!(err.to_string().contains("nonexistent.toml"));
 }
 
 #[test]

@@ -11,7 +11,7 @@
 //! -- @param limit number? Maximum results (optional)
 //! -- @return {SearchResult}
 //! function search(query, limit)
-//!     return crucible.search(query, limit or 10)
+//!     return cru.kiln.search(query, { limit = limit or 10 })
 //! end
 //! ```
 //!
@@ -22,7 +22,7 @@
 //! ;; @tool desc="Search for notes"
 //! ;; @param query string The search query
 //! (fn search [query limit]
-//!   (crucible.search query (or limit 10)))
+//!   (cru.kiln.search query {:limit (or limit 10)}))
 //! ```
 
 use crate::error::LuaError;
@@ -639,7 +639,7 @@ mod tests {
 -- @param query string The search query
 -- @param limit number? Maximum results
 function search(query, limit)
-    return crucible.search(query, limit or 10)
+    return cru.kiln.search(query, { limit = limit or 10 })
 end
 "#;
 

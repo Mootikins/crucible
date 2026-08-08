@@ -469,9 +469,7 @@ impl ToolExecutor for McpToolExecutor {
     /// `create_child_session` fires plugin `on_session_start` and the child
     /// acquires its own claim — until then a sandboxed parent can delegate a
     /// child that runs every tool on the host. The two changes belong to the
-    /// same phase and must land together; see
-    /// `thoughts/Container Isolation Usability.md` § "Closing the delegation
-    /// escape".
+    /// same phase and must land together.
     fn surface(&self) -> ToolSurface {
         ToolSurface::Daemon
     }

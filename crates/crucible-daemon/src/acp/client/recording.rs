@@ -4,8 +4,8 @@
 //! the ACP client to a JSONL fixture file. Activated by the
 //! `CRUCIBLE_ACP_RECORD_DIR` environment variable.
 //!
-//! Fixture format (see `thoughts/shared/plans/2026-04-19-acp-test-infrastructure.md`
-//! for full design):
+//! Fixture format (replayed by `crates/crucible-daemon/tests/acp_fixture_replay.rs`;
+//! re-record with `just record-acp-fixture <agent>`):
 //!
 //! ```jsonl
 //! {"version":1,"agent":"claude","agent_version":"unknown","recorded_at":"...","scenario":"basic-chat"}

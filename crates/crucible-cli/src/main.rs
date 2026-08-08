@@ -386,7 +386,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
 
         Some(Commands::Models { format }) => commands::models::execute(config, &format).await?,
 
-        Some(Commands::Config(cmd)) => commands::config::execute(cmd).await?,
+        Some(Commands::Config(cmd)) => commands::config::execute(config, cmd).await?,
 
         Some(Commands::Status {
             path,

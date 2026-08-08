@@ -71,13 +71,17 @@ mod tests {
     }
 
     #[test]
-    fn test_config_load_from_nonexistent_file() {
+    fn an_explicitly_named_config_file_that_is_missing_is_an_error() {
         let temp = TempDir::new().unwrap();
         let nonexistent = temp.path().join("nonexistent.toml");
 
-        // Should fall back to defaults when file doesn't exist
-        let result = CliConfig::load(Some(nonexistent), None, None);
-        assert!(result.is_ok());
+        // Silently falling back to defaults made a typo'd `-C` indistinguishable
+        // from omitting the flag: the user reads defaults believing they are
+        // reading their file. Only an absent *default* path falls back.
+        let err = CliConfig::load(Some(nonexistent), None, None)
+            .expect_err("a named config file that does not exist must not load defaults");
+
+        assert!(err.to_string().contains("nonexistent.toml"));
     }
 
     #[test]
@@ -295,11 +299,12 @@ type = "openai"
     }
 
     #[test]
-    fn test_config_file_not_found_uses_defaults() {
+    fn an_empty_config_file_yields_defaults() {
         let temp = TempDir::new().unwrap();
-        let nonexistent = temp.path().join("nonexistent.toml");
+        let empty = temp.path().join("empty.toml");
+        fs::write(&empty, "").unwrap();
 
-        let config = CliConfig::load(Some(nonexistent), None, None).unwrap();
+        let config = CliConfig::load(Some(empty), None, None).unwrap();
 
         assert_eq!(config.chat_model(), "llama3.2");
         assert!(!config.llm.has_providers());
