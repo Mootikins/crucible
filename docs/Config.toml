@@ -249,16 +249,16 @@ verbose = false
 # =============================================================================
 # See Help/Config/web.md.
 #
-# `registration_roots` and `allowed_hosts` are FAIL-CLOSED and empty by
-# default, and neither has a command-line override:
+#   registration_roots  OPTIONAL confinement for the web UI's "add project"
+#                       button. Empty ([], the default) means any ordinary
+#                       directory registers — the floor (filesystem root, your
+#                       home dir, credential stores, config tree) is the only
+#                       gate. Set it to confine registration to an explicit
+#                       list instead. A project root is also a read scope for
+#                       /api/file/raw, which is why the floor exists.
 #
-#   registration_roots  Directories the web UI's "add project" button may
-#                       create a NEW project root under. Empty ([]) refuses
-#                       every new root — the button 403s. A project root is
-#                       also a read scope for /api/file/raw, so new roots are
-#                       opt-in. The other path is to run `cru` inside the
-#                       directory; anything under an already-registered
-#                       project needs no configuration at all.
+# `allowed_hosts` is FAIL-CLOSED and empty by default, with no command-line
+# override:
 #
 #   allowed_hosts       Extra Host authorities this server answers to, on top
 #                       of localhost/127.0.0.1/[::1] on `port` and whatever
@@ -288,7 +288,7 @@ verbose = false
 # host = "127.0.0.1"
 # api_key = ""                        # "" disables auth entirely
 # remote_shell = false
-# registration_roots = []             # e.g. ["~/Projects"]
+# registration_roots = []             # empty = any ordinary dir; set to confine
 # allowed_hosts = []                  # e.g. ["impulse.local", "crucible.example.com"]
 
 # =============================================================================

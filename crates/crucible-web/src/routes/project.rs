@@ -75,21 +75,21 @@ pub(crate) fn untrusted_root_refusal(path: &Path, home: Option<&Path>) -> Option
         .map(|entry| format!("it holds the credential store {entry}"))
 }
 
-/// Directories the web API may create a NEW root under.
+/// The optional tightening filter over registration.
 ///
-/// Three sources, all canonical:
-/// - `[web] registration_roots` — explicit operator opt-in.
-/// - `[scm] projects_dir` (default `~/Projects`) — the base `scm.clone`
-///   already clones into, so this grants no scope cloning does not. It is what
-///   makes a default install work: "add project" and picking a worktree
-///   created by `git worktree add ../feature-x` both land here.
-/// - The already-registered projects — a worktree or subproject of something
-///   the user already trusts needs no new configuration.
+/// The gate is [`untrusted_root_refusal`] — the filesystem root, the home
+/// directory, credential stores and the user's config tree are refused whatever
+/// this returns. On top of that, `[web] registration_roots` lets an operator
+/// confine registration to an explicit set: `None` (the default, empty list)
+/// leaves the floor as the only gate, so any ordinary directory `cru web` is
+/// pointed at registers, exactly as running `cru` inside it does. `Some(roots)`
+/// additionally requires containment in one of them.
 ///
-/// Anything outside all three is refused: a root is also a read scope for the
-/// file API, so widening it stays a deliberate act (`cru` inside the directory,
-/// or config).
-pub(crate) async fn allowed_roots(state: &AppState) -> Result<Vec<PathBuf>, WebError> {
+/// Entries are canonicalized and floor-checked, so `registration_roots = ["/"]`
+/// cannot re-open the hole. A non-empty list whose every entry is invalid
+/// yields `Some(empty)`, which refuses everything — a misconfigured allowlist
+/// fails closed rather than falling back to the floor.
+pub(crate) fn registration_roots(state: &AppState) -> Option<Vec<PathBuf>> {
     let home = dirs::home_dir();
     let configured = state
         .config
@@ -97,53 +97,25 @@ pub(crate) async fn allowed_roots(state: &AppState) -> Result<Vec<PathBuf>, WebE
         .as_ref()
         .map(|w| w.registration_roots.as_slice())
         .unwrap_or_default();
+    if configured.is_empty() {
+        return None;
+    }
 
-    let mut roots = Vec::with_capacity(configured.len() + 1);
-    let mut admit = |label: &str, root: PathBuf| {
-        // A root that does not resolve cannot contain anything, and one that is
-        // itself forbidden must not be honoured — otherwise
-        // `registration_roots = ["/"]` would re-open the hole from config.
-        let Ok(root) = root.canonicalize() else {
-            tracing::debug!(root = %root.display(), "Ignoring unresolvable {label} entry");
-            return;
+    let mut roots = Vec::with_capacity(configured.len());
+    for raw in configured {
+        let raw = resolve_registration_root(raw, home.as_deref());
+        let Ok(root) = raw.canonicalize() else {
+            tracing::debug!(root = %raw.display(), "Ignoring unresolvable registration_roots entry");
+            continue;
         };
         match untrusted_root_refusal(&root, home.as_deref()) {
             Some(reason) => {
-                tracing::warn!(root = %root.display(), %reason, "Ignoring forbidden {label} entry")
+                tracing::warn!(root = %root.display(), %reason, "Ignoring forbidden registration_roots entry")
             }
             None => roots.push(root),
         }
-    };
-
-    for raw in configured {
-        admit(
-            "[web] registration_roots",
-            resolve_registration_root(raw, home.as_deref()),
-        );
     }
-    admit(
-        "[scm] projects_dir",
-        crucible_daemon::scm::resolve_projects_dir(
-            state
-                .config
-                .scm
-                .as_ref()
-                .and_then(|s| s.projects_dir.as_deref()),
-            home.as_deref(),
-        ),
-    );
-
-    // Daemon-side project paths are already canonical.
-    roots.extend(
-        state
-            .daemon
-            .project_list()
-            .await
-            .daemon_err()?
-            .into_iter()
-            .map(|p| p.path),
-    );
-    Ok(roots)
+    Some(roots)
 }
 
 pub(crate) fn contained(path: &Path, roots: &[PathBuf]) -> bool {
@@ -152,35 +124,48 @@ pub(crate) fn contained(path: &Path, roots: &[PathBuf]) -> bool {
 
 fn refuse(path: &Path, why: &str) -> WebError {
     WebError::Forbidden(format!(
-        "Refusing to register {}: {why}. A project root is also a read scope \
-         for the file API, so roots are limited to [scm] projects_dir \
-         (default ~/Projects), any already-registered project, and \
-         [web] registration_roots.",
+        "Refusing to register {}: {why}. The filesystem root, your home \
+         directory, credential stores and config directories are never \
+         registerable over the web API; `[web] registration_roots`, when set, \
+         confines registration further.",
         path.display()
     ))
 }
 
 /// Decide whether the web API may make the ALREADY-CANONICAL `path` a root.
-pub(crate) fn check_canonical_root(path: &Path, roots: &[PathBuf]) -> Result<(), WebError> {
+/// `restriction` is [`registration_roots`]: `None` gates on the floor alone,
+/// `Some` additionally requires containment.
+pub(crate) fn check_canonical_root(
+    path: &Path,
+    restriction: Option<&[PathBuf]>,
+) -> Result<(), WebError> {
     if let Some(why) = untrusted_root_refusal(path, dirs::home_dir().as_deref()) {
         return Err(refuse(path, &why));
     }
-    if !contained(path, roots) {
-        return Err(refuse(path, "it is not inside an allowed root"));
+    if let Some(roots) = restriction {
+        if !contained(path, roots) {
+            return Err(refuse(
+                path,
+                "it is not inside a [web] registration_roots entry",
+            ));
+        }
     }
     Ok(())
 }
 
 /// Canonicalize a caller-supplied `path`, then [`check_canonical_root`] it.
 /// Returns the canonical path so callers act on exactly what was checked.
-pub(crate) fn check_root(path: &Path, roots: &[PathBuf]) -> Result<PathBuf, WebError> {
+pub(crate) fn check_root(
+    path: &Path,
+    restriction: Option<&[PathBuf]>,
+) -> Result<PathBuf, WebError> {
     // Canonicalize before deciding, so a symlink cannot present a name inside
     // a root for a target outside it. A path that does not resolve is refused
     // rather than guessed at.
     let canonical = path
         .canonicalize()
         .map_err(|_| refuse(path, "it does not resolve to an existing directory"))?;
-    check_canonical_root(&canonical, roots)?;
+    check_canonical_root(&canonical, restriction)?;
     Ok(canonical)
 }
 
@@ -188,8 +173,8 @@ async fn register_project(
     State(state): State<AppState>,
     Json(req): Json<ProjectPathRequest>,
 ) -> Result<Json<crucible_core::Project>, WebError> {
-    let roots = allowed_roots(&state).await?;
-    let canonical = check_root(&req.path, &roots)?;
+    let restriction = registration_roots(&state);
+    let canonical = check_root(&req.path, restriction.as_deref())?;
 
     let project = state
         .daemon
@@ -198,12 +183,11 @@ async fn register_project(
         .daemon_err()?;
 
     // The daemon resolves a registration inside a git repo up to the repo
-    // root, which can land ABOVE the base. Check where it actually landed and
-    // undo it if it escaped — nothing outside the base stays registered. The
-    // roots snapshot was taken before the call, so a path that escapes was by
-    // definition not already registered and rolling it back destroys nothing.
-    // The daemon reports a canonical path, so this re-checks the policy only.
-    if let Err(refusal) = check_canonical_root(&project.path, &roots) {
+    // root, which can land ABOVE what was checked. Re-check where it actually
+    // landed and undo it if it escaped the floor (or an active restriction) —
+    // nothing outside stays registered. The daemon reports a canonical path,
+    // so this re-checks the policy only.
+    if let Err(refusal) = check_canonical_root(&project.path, restriction.as_deref()) {
         if let Err(e) = state.daemon.project_unregister(&project.path).await {
             tracing::error!(
                 path = %project.path.display(),
@@ -359,15 +343,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn register_on_a_default_install_refuses_a_root_outside_the_projects_dir() {
-        // Default config: no `registration_roots`, the mock daemon's
-        // project.list is empty, and the projects dir defaults to
-        // `~/Projects` — which a temp dir is never inside. Seeding the
-        // projects dir widens the allowed set to exactly that base, not to
-        // anywhere the caller names.
+    async fn register_on_a_default_install_accepts_an_ordinary_directory() {
+        // No `registration_roots`: the daemon floor is the only gate, so an
+        // ordinary directory the operator points `cru web` at registers — the
+        // repo you are working in included. It does NOT require a `~/Projects`
+        // or any other configured base.
         let tmp = tempfile::tempdir().unwrap();
         assert_eq!(
             register(CliAppConfig::default(), tmp.path()).await,
+            StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    async fn register_on_a_default_install_still_refuses_a_credential_store() {
+        // "No allowlist" is not "no gate": the floor stands on a default
+        // install, so a dotfiles repo holding `.ssh` is refused with no config.
+        let tmp = tempfile::tempdir().unwrap();
+        let dotfiles = tmp.path().join("dotfiles");
+        std::fs::create_dir_all(dotfiles.join(".ssh")).unwrap();
+        assert_eq!(
+            register(CliAppConfig::default(), &dotfiles).await,
             StatusCode::FORBIDDEN
         );
     }
@@ -417,54 +413,19 @@ mod tests {
         );
     }
 
-    /// Config whose `[scm] projects_dir` is `dir` and whose
-    /// `registration_roots` is empty — i.e. a DEFAULT install, except that the
-    /// projects dir is pointed at a temp dir instead of `~/Projects`.
-    fn config_with_projects_dir(dir: &Path) -> CliAppConfig {
-        CliAppConfig {
-            scm: Some(crucible_core::config::ScmConfig {
-                projects_dir: Some(dir.to_string_lossy().to_string()),
-                ..crucible_core::config::ScmConfig::default()
-            }),
-            ..CliAppConfig::default()
-        }
-    }
-
     #[tokio::test]
-    async fn register_accepts_a_worktree_beside_the_repo_in_the_projects_dir() {
-        // `git worktree add ../feature-x` from `<projects_dir>/repo` lands at
-        // `<projects_dir>/feature-x` — outside every registered project. On a
-        // default install (`registration_roots` empty) this used to 403 and
-        // name a config key documented nowhere, which broke the web UI's "add
-        // project" button and `RootDropdown.selectWorktreeRoot`.
+    async fn a_configured_restriction_confines_registration_to_its_roots() {
+        // With `registration_roots` set, the floor is no longer the only gate:
+        // a directory outside every configured root is refused even though the
+        // floor would permit it.
         let tmp = tempfile::tempdir().unwrap();
-        let projects = tmp.path().join("Projects");
-        let worktree = projects.join("feature-x");
-        std::fs::create_dir_all(&worktree).unwrap();
-
-        let mut config = config_with_projects_dir(&projects);
-        // The mock daemon always answers with `/tmp/test-project`, which is
-        // containment-checked too.
-        config.web = Some(WebConfig {
-            registration_roots: vec![std::env::temp_dir().to_string_lossy().to_string()],
-            ..WebConfig::default()
-        });
-
-        assert_eq!(register(config, &worktree).await, StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn register_refuses_a_path_outside_the_projects_dir() {
-        // Seeding from `[scm] projects_dir` grants exactly the base `scm.clone`
-        // already writes into — nothing wider.
-        let tmp = tempfile::tempdir().unwrap();
-        let projects = tmp.path().join("Projects");
+        let allowed = tmp.path().join("allowed");
         let outside = tmp.path().join("elsewhere");
-        std::fs::create_dir_all(&projects).unwrap();
+        std::fs::create_dir_all(&allowed).unwrap();
         std::fs::create_dir_all(&outside).unwrap();
 
         assert_eq!(
-            register(config_with_projects_dir(&projects), &outside).await,
+            register(config_with_roots(&[&allowed]), &outside).await,
             StatusCode::FORBIDDEN
         );
     }

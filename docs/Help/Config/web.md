@@ -24,7 +24,7 @@ Add it to `~/.config/crucible/config.toml`.
 | `static_dir` | string | *(unset)* | Serve assets from this directory instead of the ones embedded in the binary |
 | `api_key` | string | *(unset)* | Bearer token for non-localhost clients. Unset generates and persists one; `""` disables auth entirely |
 | `remote_shell` | bool | `false` | Let authenticated non-localhost clients use the terminal routes |
-| `registration_roots` | array of strings | `[]` | Directories under which the web UI may register a **new** project root. Empty refuses every new root — see [Project registration from the web UI](#project-registration-from-the-web-ui) |
+| `registration_roots` | array of strings | `[]` | Optional confinement for the web UI's "add project" button. Empty allows any ordinary directory (the floor is the only gate); a non-empty list confines registration to it — see [Project registration from the web UI](#project-registration-from-the-web-ui) |
 | `allowed_hosts` | array of strings | `[]` | Extra `Host` authorities the server answers to. Empty derives them from the bind address — see [Host validation](#host-validation) |
 | `enabled` | bool | `false` | **Currently unread.** `cru web` starts the server unconditionally; nothing consults this field |
 
@@ -34,9 +34,9 @@ port = 3000
 host = "127.0.0.1"
 ```
 
-`registration_roots` and `allowed_hosts` are both **fail-closed and empty by default**, and
-neither has a command-line override. If the "add project" button returns 403, or reaching
-the server by hostname returns 403, those two fields are the fix.
+`allowed_hosts` is **fail-closed and empty by default** with no command-line override: if
+reaching the server by hostname returns 403, that field is the fix. `registration_roots` is
+the opposite — empty allows any ordinary directory, and you set it only to *restrict*.
 
 `cru web` overrides `port`, `host`, `static_dir`, and `remote_shell` from the command line:
 
@@ -164,50 +164,42 @@ matches; it does not fail the whole list.
 
 ## Project registration from the web UI
 
-`POST /api/project/register` — the web UI's "add project" button — may only register a
-directory that is inside one of:
+`POST /api/project/register` — the web UI's "add project" button — registers any ordinary
+directory you point it at, including the repository you are working in. A registered project
+root is also a read scope for `/api/file/raw`, so a small floor is always refused (see below);
+everything else is allowed by default.
 
-- a `[web] registration_roots` entry, or
-- an already-registered project (so adding a worktree or a subproject of something you
-  already trust needs no new configuration).
-
-`registration_roots` is **empty by default, and empty refuses every new root**. The button
-returns 403 with a message naming this field. That is deliberate: a registered project root
-is also a read scope for `/api/file/raw`, so registering a directory hands the web API read
-access to everything beneath it. Creating a brand-new root stays a deliberate local act.
-
-Two ways to fix a 403:
-
-1. **Run `cru` inside the directory.** Local invocation registers the project, and from then
-   on the web UI can register anything beneath it. No configuration needed — this is the
-   path to prefer.
-2. **Name the parent** in `registration_roots`, if you want the web UI to be able to create
-   new roots on its own.
+`registration_roots` is **empty by default, which means the floor is the only gate**. Set it
+only if you want to *confine* registration further — with a non-empty list, a new root must
+also be inside one of its entries:
 
 ```toml
 [web]
-registration_roots = ["~/Projects", "~/work/repos"]
+registration_roots = ["~/work/repos"]
 ```
 
 A leading `~/` expands to your home directory. Entries are canonicalised before use, so a
-symlink cannot present a name inside a root for a target outside it.
+symlink cannot present a name inside a root for a target outside it. An entry that does not
+resolve, or that is itself a floor-refused root, is dropped with a warning; if a non-empty
+list has no valid entries left, registration is refused entirely (a misconfigured allowlist
+fails closed rather than falling back to the floor).
 
-An entry that does not resolve to an existing directory is dropped with a warning, as is one
-that is itself a root nothing may ever be registered under. That floor holds for every
-caller — CLI, TUI, RPC and web alike — and is:
+The floor holds for every caller — CLI, TUI, RPC and web alike — and is:
 
 - the filesystem root `/`;
 - your home directory itself, or any ancestor of it (every credential you own lives under
-  it), so `registration_roots = ["~"]` is refused while `["~/Projects"]` is fine;
+  it), so `registration_roots = ["~"]` is refused while `["~/work"]` is fine;
 - `/home` and `/Users`, which hold every user's home;
+- a credential store (`.ssh`, `.gnupg`, `.aws`, …) or the user's config/state tree
+  (`.config`, `.local`) — the web caller is untrusted, so these are refused even though a
+  local `cru` may register them;
 - anything under `/etc`, `/proc`, `/sys`, `/dev`, `/boot`, `/root` or `/run`.
 
-So `registration_roots = ["/"]` does not re-open the door; it is dropped and the list stays
-effectively empty. A dropped entry does not invalidate the others.
+So `registration_roots = ["/"]` does not re-open the door; it is dropped.
 
 The daemon resolves a registration inside a git repo up to the repo root, which can land
-*above* the directory you asked for. If that escapes every allowed root the registration is
-rolled back.
+*above* the directory you asked for. If that escapes the floor (or an active
+`registration_roots` restriction) the registration is rolled back.
 
 ## Endpoint validation
 
