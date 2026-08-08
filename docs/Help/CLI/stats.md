@@ -68,8 +68,10 @@ Please configure kiln.path in your config file (see: cru config show)
 **Solution**: Configure your kiln path:
 
 ```toml
-[kiln]
-path = "/path/to/your/kiln"
+default_kiln = "main"
+
+[kilns]
+main = "/path/to/your/kiln"
 ```
 
 ### Permission Errors

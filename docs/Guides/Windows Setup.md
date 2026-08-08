@@ -30,23 +30,20 @@ The primary configuration file location follows platform conventions:
 
 Each kiln (knowledge base) can have its own configuration:
 
-- **Kiln config**: `KILN_ROOT/.crucible/` directory
-  - Database: `KILN_ROOT/.crucible/kiln.db`
-  - Plugins: `KILN_ROOT/.crucible/plugins/`
-  - Agents: `KILN_ROOT/.crucible/agents/`
+- **Kiln metadata**: `KILN_ROOT\.crucible\kiln.toml`
+- **SQLite database**: `KILN_ROOT\.crucible\crucible-sqlite.db`
+- **Vector index**: `KILN_ROOT\.crucible\crucible-vectors.lance\`
+- **Agent cards**: `KILN_ROOT\.crucible\agents\`
 
 ### Discovery Paths
 
-Crucible searches for plugins and agents in the following order:
+Agent cards are collected from every directory below; a card found later shadows a
+card of the same name found earlier, so the workspace wins and the user-wide directory
+loses:
 
-1. **Kiln-specific** (highest priority):
-   - `KILN_ROOT/.crucible/plugins/`
-   - `KILN_ROOT/.crucible/agents/`
-
-2. **Global user directories**:
-   - **Windows**: `%APPDATA%\crucible\plugins\`, `%APPDATA%\crucible\agents\`
-
-3. **Additional paths** from `config.toml`
+1. `%APPDATA%\crucible\agents\`
+2. `KILN_ROOT\.crucible\agents\`, then `KILN_ROOT\agents\`, then `KILN_ROOT\Agents\`
+3. `WORKSPACE\.crucible\agents\` (when the workspace is not the kiln)
 
 ### Creating Your Configuration File
 
@@ -58,10 +55,13 @@ New-Item -ItemType Directory -Force -Path "$env:APPDATA\crucible"
 
 # Create a basic config file
 @"
-kiln_path = "C:\Users\YourName\Documents\my-kiln"
+default_kiln = "notes"
 
-[embedding]
-provider = "fastembed"
+[kilns]
+notes = 'C:\Users\YourName\Documents\my-kiln'
+
+[enrichment.provider]
+type = "fastembed"
 model = "BAAI/bge-small-en-v1.5"
 batch_size = 16
 "@ | Out-File -FilePath "$env:APPDATA\crucible\config.toml" -Encoding utf8
@@ -71,16 +71,11 @@ Or manually create the file at: `C:\Users\YourName\AppData\Roaming\crucible\conf
 
 ### Environment Variables
 
-Override configuration using environment variables:
-
-| Variable | Description |
-|----------|-------------|
-| `CRUCIBLE_KILN_PATH` | Path to your kiln |
-| `CRUCIBLE_EMBEDDING_URL` | Embedding provider API URL |
-| `CRUCIBLE_EMBEDDING_MODEL` | Embedding model name |
-| `CRUCIBLE_EMBEDDING_PROVIDER` | Provider type (fastembed, ollama, openai) |
-| `CRUCIBLE_DATABASE_URL` | Database connection URL |
-| `CRUCIBLE_LOG_LEVEL` | Logging level (off, error, warn, info, debug, trace) |
+The `CRUCIBLE_*` variables are the same on every platform — see
+[[Help/Configuration#Environment Variables]] for the full list. Only the default paths are
+spelled with backslashes: `CRUCIBLE_HOME` defaults to `%USERPROFILE%\.crucible`,
+`CRUCIBLE_LOG_FILE` to `%USERPROFILE%\.crucible\<command>.log`, and `CRUCIBLE_CONFIG_DIR`
+overrides `%APPDATA%\crucible`.
 
 ## Building on Windows
 
@@ -109,7 +104,7 @@ cargo build --release
 cargo test
 
 # Run specific test
-cargo test -p crucible-daemon --test test_backend_comparison
+cargo test -p crucible-daemon --test llm_backend_comparison
 ```
 
 ## C Runtime Library Configuration
@@ -158,11 +153,12 @@ FastEmbed uses ONNX Runtime for local embedding generation. On Windows, this can
 
 1. **Run the diagnostic test:**
    ```powershell
-   cargo test -p crucible-daemon --features fastembed --test test_onnx_windows_diagnostics -- --nocapture
+   cargo test -p crucible-daemon --features fastembed --test llm_onnx_windows_diagnostics -- --nocapture
    ```
 
 2. **Verify build configuration:**
    Ensure `.cargo/config.toml` contains:
+   <!-- crucible:not-config — this is Cargo's config file, not Crucible's -->
    ```toml
    [target.'cfg(windows)']
    rustflags = ["-C", "target-feature=-crt-static"]
@@ -231,7 +227,7 @@ cargo test -p crucible-daemon
 cargo test -- --nocapture
 
 # ONNX Runtime diagnostic test
-cargo test -p crucible-daemon --features fastembed --test test_onnx_windows_diagnostics -- --nocapture
+cargo test -p crucible-daemon --features fastembed --test llm_onnx_windows_diagnostics -- --nocapture
 ```
 
 ## Performance Considerations

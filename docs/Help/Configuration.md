@@ -14,9 +14,12 @@ Crucible uses TOML configuration files. The main config file is at `~/.config/cr
 # Minimal config — single kiln (legacy shorthand, still supported)
 kiln_path = "/home/user/notes"
 
-[chat]
-provider = "ollama"
-model = "llama3.2"
+[llm]
+default = "local"
+
+[llm.providers.local]
+type = "ollama"
+default_model = "llama3.2"
 ```
 
 Or with the newer named kilns:
@@ -27,9 +30,12 @@ default_kiln = "vault"
 [kilns]
 vault = "~/vault"
 
-[chat]
-provider = "ollama"
-model = "llama3.2"
+[llm]
+default = "local"
+
+[llm.providers.local]
+type = "ollama"
+default_model = "llama3.2"
 ```
 
 ## Configuration Sections
@@ -95,67 +101,35 @@ Controls the chat interface and LLM settings for internal agents.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `model` | string | provider default | Model to use (e.g., "llama3.2", "gpt-4o") |
-| `provider` | string | `"ollama"` | LLM provider: `ollama`, `openai`, `anthropic` |
-| `agent_preference` | string | `"acp"` | Prefer `acp` (external) or `crucible` (internal) agents |
+| `agent_preference` | string | `"crucible"` | Prefer `acp` (external) or `crucible` (internal) agents |
 | `endpoint` | string | provider default | Custom API endpoint URL |
 | `temperature` | float | `0.7` | Generation temperature (0.0-2.0) |
 | `max_tokens` | int | `2048` | Maximum tokens to generate |
 | `timeout_secs` | int | `120` | API timeout in seconds |
 | `enable_markdown` | bool | `true` | Enable markdown rendering |
 | `show_thinking` | bool | `false` | Show extended thinking/reasoning blocks in chat output |
+| `show_diffs` | bool | `true` | Render diff bodies under edit/write tool calls |
 
-### [acp] - Agent Client Protocol
+There is no `provider` key here — a config containing `chat.provider` is rejected at load.
+The provider is selected by `[llm].default`.
 
-Controls external agent communication (Claude Code, OpenCode, etc.).
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `default_agent` | string | auto-discover | Default agent to use |
-| `enable_discovery` | bool | `true` | Enable agent auto-discovery |
-| `session_timeout_minutes` | int | `30` | Session timeout |
-| `max_message_size_mb` | int | `25` | Maximum message size in MB |
-| `streaming_timeout_minutes` | int | `15` | Timeout for streaming responses |
-| `lazy_agent_selection` | bool | `true` | Show agent picker on startup |
-
-#### [acp.agents.<name>] - Agent Profiles
-
-Define custom agent profiles with environment overrides:
-
-```toml
-[acp.agents.opencode-local]
-env.LOCAL_ENDPOINT = "http://localhost:11434/v1"
-env.OPENCODE_MODEL = "ollama/llama3.2"
-
-[acp.agents.claude-proxy]
-extends = "claude"
-env.ANTHROPIC_BASE_URL = "http://localhost:4000"
-
-[acp.agents.custom-agent]
-command = "/usr/local/bin/my-agent"
-args = ["--mode", "acp"]
-env.MY_API_KEY = "secret"
-```
-
-### [embedding] - Embedding Configuration
+### [enrichment] - Embedding Configuration
 
 Controls how text embeddings are generated for semantic search.
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `provider` | string | `"fastembed"` | Provider type (see below) |
-| `model` | string | provider default | Model name |
-| `api_url` | string | provider default | API endpoint for remote providers |
-| `batch_size` | int | `16` | Batch size for processing |
-| `max_concurrent` | int | provider default | Max concurrent embedding jobs |
+```toml
+[enrichment.provider]
+type = "fastembed"
+```
 
-**Providers:**
-- `fastembed` - Local CPU-friendly (default: `BAAI/bge-small-en-v1.5`)
-- `ollama` - Local Ollama (default: `nomic-embed-text`)
-- `openai` - OpenAI API (default: `text-embedding-3-small`)
-- `anthropic` - Anthropic API
-- `cohere` - Cohere API
-- `vertexai` - Google Vertex AI API
-- `burn` - Local GPU via Burn framework
+**Provider types:** `fastembed` (default, local CPU), `ollama`, `openai`, `cohere`,
+`vertexai`, `burn`, `custom`, `mock`. Each has its own fields — see
+[[Help/Config/embedding|Embedding Configuration]].
+
+Without an `[enrichment]` section the daemon skips embedding generation entirely.
+
+> The older flat `[embedding]` section is no longer supported; a config containing it fails
+> to load.
 
 ### [context] - Context Configuration
 
@@ -226,7 +200,7 @@ Each server in the list has these options:
 
 **Transport types:**
 - `stdio` - Spawn subprocess: `command`, `args`, `env`
-- `sse` - HTTP SSE: `url`, `auth_header`
+- `sse` - HTTP SSE: `url`, `auth_header` — parses, but connecting is not implemented yet
 
 ```toml
 [[mcp.servers]]
@@ -244,21 +218,67 @@ GITHUB_TOKEN = "{env:GITHUB_TOKEN}"
 
 See [[Help/Config/mcp|MCP Configuration]] for full details.
 
-### [processing] - Processing Configuration
-
-Controls how notes are processed during indexing.
-
-```toml
-[processing]
-# Processing options here
-```
-
 ### [logging] - Logging Configuration
 
 ```toml
 [logging]
-# Logging options here
+level = "info"           # off | error | warn | info | debug | trace
+format = "text"          # text | json | compact
+console = true
+file = false
+file_path = "~/.local/share/crucible/crucible.log"
+
+[logging.component_levels]
+crucible_core = "debug"
 ```
+
+### Other sections
+
+| Section | Covered in |
+|---------|-----------|
+| `[acp]`, `[acp.agents.*]` | [[Help/Config/acp|ACP Configuration]] |
+| `[permissions]` | [[Help/Config/permissions|Permission Configuration]] |
+| `[storage]` | [[Help/Config/storage|Storage Configuration]] |
+| `[web]` | [[Help/Config/web|Web UI Configuration]] |
+| `[scm]`, `[server]`, `[[schedules]]`, `[plugins.*]`, `runtimepath` | `docs/Config.toml` |
+
+## Value References
+
+Any string value can be a reference that the loader resolves before parsing.
+
+| Reference | Resolves to |
+|-----------|-------------|
+| `{env:VAR}` | The environment variable's value |
+| `{file:path}` | The file's contents — parsed as TOML when the path ends in `.toml`, otherwise used as a trimmed string |
+| `{dir:path}` | Every non-hidden `.toml` file in the directory, merged in filename order |
+
+```toml
+[llm.providers.openai]
+type = "openai"
+api_key = "{env:OPENAI_API_KEY}"
+
+[llm.providers.work]
+type = "openai"
+api_key = "{file:~/.secrets/work-openai.key}"
+```
+
+Paths resolve relative to the config file's own directory, unless they start with `/`
+(absolute) or `~/` (home). References work at any nesting depth and inside arrays.
+
+For `{dir:}`, later files override earlier ones on conflicting keys; tables are
+deep-merged and arrays are appended. That gives you `config.d`-style drop-ins per section:
+
+```
+~/.config/crucible/
+├── config.toml          # llm = "{dir:~/.config/crucible/llm.d/}"
+└── llm.d/
+    ├── 00-base.toml
+    ├── 10-local.toml
+    └── 99-override.toml
+```
+
+> An `[include]` section also exists in the codebase, but the CLI config loader does not
+> apply it — only the value references above. Use `{dir:}` or `{file:}`.
 
 ## Environment Variables
 
@@ -266,16 +286,31 @@ Some settings can be overridden via environment variables:
 
 | Variable | Description |
 |----------|-------------|
-| `CRUCIBLE_KILN_PATH` | Override kiln path |
-| `OPENAI_API_KEY` | OpenAI API key |
-| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `CRUCIBLE_CONFIG` | Path to the config file (same as `-C`) |
+| `CRUCIBLE_CONFIG_DIR` | Directory containing `config.toml` |
+| `CRUCIBLE_KILN` | Kiln path, when no `--kiln` flag and no ancestor `.crucible/` is found |
+| `CRUCIBLE_HOME` | Daemon data root — project registry, default session storage, home kiln. Defaults to `~/.crucible` |
+| `CRUCIBLE_SOCKET` | Daemon socket path |
+| `CRUCIBLE_RUNTIME` | Runtime root for plugins, themes, and skills |
+| `CRUCIBLE_PLUGIN_PATH` | Extra plugin search paths, prepended to the runtime path |
+| `CRUCIBLE_LOG_FILE` | Log file path. Defaults to `~/.crucible/<command>.log` |
+
+Provider API keys are referenced from the config with `{env:VAR_NAME}` rather than being
+read from a fixed variable — see [[Help/Config/llm|LLM Configuration]].
 
 ## Config File Locations
 
-- **Global config:** `~/.config/crucible/config.toml`
-- **Workspace config:** `.crucible/config.toml` (in project root)
+There is one config file, resolved in this order:
 
-Workspace config overrides global config.
+1. `cru -C <path>` / `$CRUCIBLE_CONFIG`
+2. `$CRUCIBLE_CONFIG_DIR/config.toml`
+3. The platform config directory — `~/.config/crucible/config.toml` on Linux,
+   `~/Library/Application Support/crucible/config.toml` on macOS,
+   `%APPDATA%\crucible\config.toml` on Windows
+
+A kiln's `.crucible/kiln.toml` holds only the kiln's display name, and a project's
+`.crucible/project.toml` holds project metadata and security policy. Neither is a place to
+put the sections on this page.
 
 ## Example Configurations
 
@@ -287,13 +322,16 @@ default_kiln = "notes"
 [kilns]
 notes = "~/notes"
 
-[chat]
-provider = "ollama"
-model = "llama3.2"
+[llm]
+default = "local"
+
+[llm.providers.local]
+type = "ollama"
+default_model = "llama3.2"
 endpoint = "http://localhost:11434"
 
-[embedding]
-provider = "fastembed"
+[enrichment.provider]
+type = "fastembed"
 ```
 
 ### Multi-Kiln (Work / Personal Split)
@@ -317,9 +355,13 @@ kilns = ["work"]
 path = "~/dotfiles"
 kilns = ["personal"]
 
-[chat]
-provider = "openai"
-model = "gpt-4o"
+[llm]
+default = "cloud"
+
+[llm.providers.cloud]
+type = "openai"
+default_model = "gpt-4o"
+api_key = "{env:OPENAI_API_KEY}"
 ```
 
 ### OpenAI Setup
@@ -328,12 +370,17 @@ model = "gpt-4o"
 [kilns]
 vault = "~/vault"
 
-[chat]
-provider = "openai"
-model = "gpt-4o"
+[llm]
+default = "cloud"
 
-[embedding]
-provider = "openai"
+[llm.providers.cloud]
+type = "openai"
+default_model = "gpt-4o"
+api_key = "{env:OPENAI_API_KEY}"
+
+[enrichment.provider]
+type = "openai"
+api_key = "{env:OPENAI_API_KEY}"
 model = "text-embedding-3-small"
 ```
 
@@ -343,12 +390,16 @@ model = "text-embedding-3-small"
 [kilns]
 vault = "~/vault"
 
-[chat]
-provider = "openai"
-model = "gpt-4o"
+[llm]
+default = "cloud"
 
-[embedding]
-provider = "fastembed"
+[llm.providers.cloud]
+type = "openai"
+default_model = "gpt-4o"
+api_key = "{env:OPENAI_API_KEY}"
+
+[enrichment.provider]
+type = "fastembed"
 model = "BAAI/bge-small-en-v1.5"
 ```
 
@@ -371,7 +422,7 @@ notes = "/home/user/notes"
 
 You can also run `cru init` in your kiln directory to register it by name, or `cru init` in a project directory to create a project entry with kiln bindings.
 
-The `CRUCIBLE_KILN_PATH` environment variable continues to work as an override for the legacy `kiln_path` field.
+`CRUCIBLE_KILN` points Crucible at a kiln directly when no `--kiln` flag is given and no ancestor `.crucible/` directory is found.
 
 ## See Also
 

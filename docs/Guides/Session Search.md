@@ -162,4 +162,4 @@ The raw JSONL format can be noisy. For human-readable session history, read the 
 
 - [[Guides/Getting Started|Getting Started Guide]]
 - [[Guides/Basic Commands|Basic Commands]]
-- [[Help/Config/LLM Providers|LLM Providers Reference]]
+- [[Help/Config/llm|LLM Providers Reference]]

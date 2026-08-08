@@ -17,7 +17,7 @@ The daemon is the only storage backend. It starts automatically on first use via
 
 Data is stored in:
 - `<kiln_path>/.crucible/crucible-sqlite.db` (notes, metadata, FTS index)
-- `<kiln_path>/.crucible/lance/` (vector embeddings)
+- `<kiln_path>/.crucible/crucible-vectors.lance/` (vector embeddings)
 
 ## Configuration
 

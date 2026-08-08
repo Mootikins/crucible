@@ -95,7 +95,7 @@ Crucible ships with a default whitelist of common safe commands: `git`, `cargo`,
 
 ### Workspace Customization
 
-```toml
+```toml title=".crucible/project.toml"
 # .crucible/project.toml
 [security.shell]
 # Add project-specific tools
@@ -124,51 +124,49 @@ When a plugin tries a non-whitelisted command, you're prompted:
 
 Choose the prefix granularity and where to save it.
 
-## Provider Restrictions
+## Restricting Providers Per Kiln
 
-Control which LLM providers are available in each workspace:
+There is no per-project provider allow/deny list. What exists is trust-based: a kiln
+carries a `data_classification`, a provider carries a `trust_level`, and Crucible refuses
+to send classified content to a provider that is not trusted enough for it. See
+[[Help/Concepts/Trust and Classification]].
 
-```toml
-# .crucible/project.toml
-[security.providers]
-allowed = ["ollama-*"]           # Only local models
-blocked = ["openai", "anthropic"] # No cloud providers
-```
+## Splitting Configuration Across Files
 
-Providers can also restrict which workspaces they're available in:
+Any string value in `config.toml` can be a reference that the loader resolves before
+parsing:
 
-```toml
-# ~/.config/crucible/providers.d/work.toml
-[providers.work-openai]
-type = "openai"
-api_key = "{file:~/.secrets/work-openai.key}"
-allowed_workspaces = ["work-*"]  # Only work projects
-```
+| Reference | Resolves to |
+|---|---|
+| `{env:VAR}` | The environment variable's value |
+| `{file:path}` | The file's contents — parsed as TOML for a `.toml` file, otherwise the trimmed text |
+| `{dir:path}` | Every non-hidden `.toml` file in the directory, merged in filename order |
 
-## Drop-in Configuration
-
-Global config supports a `config.d/` pattern for modular configuration:
+That makes drop-in directories work per *section*. Setting
+`llm = "{dir:~/.config/crucible/llm.d/}"` at the top level of `config.toml` replaces the
+whole `[llm]` section with the merged contents of that directory:
 
 ```
 ~/.config/crucible/
-├── config.toml           # Main config
-├── config.d/             # Merged alphabetically
-│   ├── 00-defaults.toml
-│   └── 50-personal.toml
-├── providers.d/          # Provider credentials
-│   ├── anthropic.toml
-│   └── ollama.toml
-└── workspaces.d/         # Registered workspaces
-    └── projects.toml
+├── config.toml           # llm = "{dir:~/.config/crucible/llm.d/}"
+└── llm.d/                # merged in filename order
+    ├── 00-default.toml   # default = "local"
+    └── 50-cloud.toml     # [providers.cloud] …
 ```
 
-Reference directories in your main config:
+The reference is resolved best-effort: if the directory is missing, the raw string is left
+in place and the config then fails to parse, so a typo surfaces immediately.
+
+Use `{file:}` to keep a secret out of the config itself:
 
 ```toml
-[include]
-providers = "{dir:~/.config/crucible/providers.d/}"
-workspaces = "{dir:~/.config/crucible/workspaces.d/}"
+[llm.providers.work]
+type = "openai"
+api_key = "{file:~/.secrets/work-openai.key}"
 ```
+
+> An `[include]` section exists in the codebase but is **not** applied by the CLI config
+> loader — only the value references above are. Use `{dir:}` instead.
 
 ## See Also
 

@@ -122,7 +122,7 @@ Available permissions:
 
 Permissions are set during `session.configure_agent`. The host validates each tool call against the agent's granted permissions. A `write_kiln` call from an agent that only has `read_kiln` will be rejected before it reaches the MCP layer.
 
-Custom agent profiles can specify capabilities in `crucible.toml`:
+Custom agent profiles can specify capabilities in `config.toml`:
 
 ```toml
 [acp.agents.read-only-claude]
@@ -152,19 +152,23 @@ Errors propagate as JSON-RPC error responses with standard error codes. The `err
 
 Crucible ships with profiles for common ACP-compatible agents:
 
-| Agent | Command | Install |
-|-------|---------|---------|
-| OpenCode | `opencode acp` | `go install github.com/grafana/opencode@latest` |
-| Claude Code | `npx @zed-industries/claude-agent-acp` | `npm install -g @zed-industries/claude-agent-acp` |
-| Gemini CLI | `gemini` | `npm install -g gemini-cli` |
-| Codex | `npx @zed-industries/codex-acp` | `npm install -g @zed-industries/codex-acp` |
-| Cursor | `cursor-acp` | `npm install -g cursor-acp` |
+| Profile | Command | Install |
+|---------|---------|---------|
+| `opencode` | `opencode acp` | `npm install -g opencode-ai@latest` (or `curl -fsSL https://opencode.ai/install \| bash`) |
+| `claude` | `npx @zed-industries/claude-agent-acp` | `npm install -g @zed-industries/claude-agent-acp` (bridges to the Claude Code CLI) |
+| `gemini` | `gemini` | `npm install -g @google/gemini-cli` |
+| `codex` | `npx @zed-industries/codex-acp` | `npm install -g @zed-industries/codex-acp` (bridges to the OpenAI Codex CLI) |
+| `cursor` | `cursor-acp` | `npm install -g cursor-acp` (bridges to the Cursor CLI) |
+
+`opencode` and `gemini` speak ACP directly; the other three are bridges that also need the
+underlying vendor CLI installed. `cru` prints the same install lines when no agent is
+found, so if this table ever disagrees with the binary, trust the binary.
 
 Agent discovery uses parallel probing: Crucible checks all known agents concurrently via `which` + `--version`, caches the result, and falls back through the priority list if the preferred agent isn't available.
 
 ## Custom Agent Profiles
 
-Define custom profiles in `crucible.toml` using `extends` to inherit from a built-in:
+Define custom profiles in `config.toml` using `extends` to inherit from a built-in:
 
 ```toml
 [acp.agents.my-claude]

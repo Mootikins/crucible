@@ -54,13 +54,13 @@ Every delegation creates a parent-child relationship between sessions. Children 
 A delegation target is resolved in this order:
 
 1. **[[Help/Extending/Agent Cards|Agent cards]]** — specialized internal agents defined as markdown cards in your kiln, project, or config directory. This is the primary way to define delegation targets: a card carries its own system prompt, optional model, and per-tool policy.
-2. **[[Agent Client Protocol]] profiles** — external agents (Claude Code, OpenCode, Cursor, Gemini, Codex, or custom profiles from `crucible.toml`).
+2. **[[Agent Client Protocol]] profiles** — external agents (Claude Code, OpenCode, Cursor, Gemini, Codex, or custom profiles from `config.toml`).
 
 Omit the target to hand the task to a clone of the parent's own agent configuration.
 
 ## Configuration
 
-Delegation settings live in your agent profile under `crucible.toml`. Each agent can have its own delegation rules.
+Delegation settings live in your agent profile under `config.toml`. Each agent can have its own delegation rules.
 
 ```toml
 [acp.agents.my-claude]

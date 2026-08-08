@@ -312,7 +312,7 @@ Common commands (`git`, `cargo`, `npm`, `docker`, etc.) are whitelisted by defau
 
 ### Project Shell Policy
 
-```toml
+```toml title=".crucible/project.toml"
 # .crucible/project.toml
 [security.shell]
 whitelist = ["aws", "terraform"]  # Allow these commands
@@ -594,7 +594,7 @@ Crucible clears the plugin's module cache, re-reads the source files, and re-reg
 
 ### Automatic File Watching
 
-Enable watch mode in `crucible.toml` to reload plugins whenever their files change on disk:
+Enable watch mode in `config.toml` to reload plugins whenever their files change on disk:
 
 ```toml
 [plugins]

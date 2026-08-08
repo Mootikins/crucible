@@ -8,7 +8,7 @@ tags:
 
 # Embedding & Enrichment Configuration
 
-Semantic search, precognition, and similarity features all run through the **enrichment pipeline**. This page documents the `[enrichment]` section in `crucible.toml`.
+Semantic search, precognition, and similarity features all run through the **enrichment pipeline**. This page documents the `[enrichment]` section in `config.toml`.
 
 > Previous versions used a flat top-level `[embedding]` section. This is no longer supported — Crucible now rejects configs containing `[embedding]`. Use `[enrichment]` with a nested `provider` table as shown below.
 
@@ -21,12 +21,15 @@ Add to `~/.config/crucible/config.toml`:
 type = "fastembed"
 ```
 
-The `[enrichment]` section has two sub-tables:
+The `[enrichment]` section has two sub-tables, both optional:
 
 | Sub-table | Purpose |
 |---|---|
 | `[enrichment.provider]` | Which embedding backend to use + its settings |
-| `[enrichment.pipeline]` | Pipeline tuning (batch processing, chunking) |
+| `[enrichment.pipeline]` | Pipeline tuning (batch processing, retries, timeouts) |
+
+Omitting the whole `[enrichment]` section is meaningful, though: the daemon then skips
+embedding generation, and semantic search returns nothing.
 
 ## Providers
 
@@ -67,8 +70,8 @@ batch_size = 32
 ```toml
 [enrichment.provider]
 type = "openai"
+api_key = "{env:OPENAI_API_KEY}"           # required
 model = "text-embedding-3-small"
-# api_key read from OPENAI_API_KEY by default
 # base_url = "https://api.openai.com/v1"   # optional
 # dimensions = 1536                        # optional
 ```
@@ -78,8 +81,8 @@ model = "text-embedding-3-small"
 ```toml
 [enrichment.provider]
 type = "cohere"
+api_key = "{env:COHERE_API_KEY}"           # required
 model = "embed-english-v3.0"
-# api_key read from COHERE_API_KEY
 ```
 
 ### Vertex AI
@@ -87,6 +90,7 @@ model = "embed-english-v3.0"
 ```toml
 [enrichment.provider]
 type = "vertexai"
+project_id = "my-gcp-project"              # required
 model = "text-embedding-004"
 ```
 
@@ -106,7 +110,9 @@ Experimental local provider backed by the Burn ML framework.
 ```toml
 [enrichment.provider]
 type = "custom"
-endpoint = "http://your-service/embed"
+base_url = "http://your-service/embed"     # required
+model = "my-embedding-model"               # required
+dimensions = 768                           # required
 ```
 
 For HTTP-based providers that aren't first-class.
@@ -147,7 +153,8 @@ cru process --force       # regenerate all embeddings
 Embeddings live alongside the other daemon state in the kiln:
 
 ```
-<kiln>/.crucible/crucible-sqlite.db
+<kiln>/.crucible/crucible-vectors.lance/    # the vector index
+<kiln>/.crucible/crucible-sqlite.db         # notes, blocks, links, properties
 ```
 
 The vector index can be rebuilt from the markdown source with `cru process --force` — it's cache, not source of truth.
@@ -176,9 +183,15 @@ model = "nomic-embed-text"
 ```toml
 [enrichment.provider]
 type = "openai"
+api_key = "{env:OPENAI_API_KEY}"
 model = "text-embedding-3-small"
+
+[enrichment.pipeline]
 batch_size = 100
 ```
+
+`[enrichment.provider]` has no `batch_size` for the `openai` type — batching for cloud
+providers is a pipeline setting.
 
 ### Memory-Constrained
 

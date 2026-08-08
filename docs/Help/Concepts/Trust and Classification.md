@@ -65,7 +65,7 @@ A `local` provider can access everything. A `cloud` provider can access `public`
 
 ### Setting Trust on Providers
 
-Add `trust_level` to any provider in your `crucible.toml`:
+Add `trust_level` to any provider in your `config.toml`:
 
 ```toml
 [llm.providers.local-llama]
@@ -85,9 +85,12 @@ If you omit `trust_level`, Crucible uses the provider type's default. Most cloud
 
 ### Classifying Your Kilns
 
-Add `data_classification` to a kiln attachment in your workspace config:
+Classification lives on a **kiln attachment** in the project's own
+`.crucible/project.toml`, not in the global config — the `[[kilns]]` array there is a
+different shape from the `[kilns]` name-to-path map in `config.toml`.
 
-```toml
+```toml title=".crucible/project.toml"
+# .crucible/project.toml
 [[kilns]]
 path = "~/notes/public-wiki"
 # data_classification defaults to "public"
@@ -103,10 +106,9 @@ data_classification = "confidential"
 
 ## Practical Example
 
-Say you have three kilns and two providers:
+Say you have three kilns and two providers. The providers go in the global config:
 
 ```toml
-# Providers
 [llm.providers.ollama]
 type = "ollama"
 trust_level = "local"
@@ -115,8 +117,12 @@ trust_level = "local"
 type = "openai"
 api_key = "{env:OPENAI_API_KEY}"
 # defaults to cloud trust
+```
 
-# Kilns
+The classifications go in the project's `.crucible/project.toml`:
+
+```toml title=".crucible/project.toml"
+# .crucible/project.toml
 [[kilns]]
 path = "~/notes/recipes"
 # defaults to public

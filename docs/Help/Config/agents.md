@@ -18,7 +18,9 @@ LLM provider credentials and endpoints live in [[Help/Config/llm|[llm]]]; this p
 
 ## Configuration Location
 
-Agent settings live in `~/.config/crucible/config.toml` (global) or in a kiln's `.crucible/config.toml` (scoped).
+Agent settings live in `~/.config/crucible/config.toml`, or in whatever file you point
+`-C` / `$CRUCIBLE_CONFIG` at. A kiln's `.crucible/` directory holds `kiln.toml`, which
+carries only the kiln's display name — `[chat]` and `[acp]` are not read from there.
 
 ## `[chat]` — Chat Defaults
 
@@ -96,9 +98,13 @@ env = { ANTHROPIC_BASE_URL = "http://localhost:4000" }
 
 The extended name is then selectable via `cru chat --agent my-claude`.
 
+See [[Help/Config/acp]] for every field on `[acp]` and `[acp.agents.<name>]`, including
+delegation and per-agent permissions.
+
 ## See Also
 
 - [[Help/CLI/chat]] — `cru chat` reference
+- [[Help/Config/acp]] — full `[acp]` field reference
 - [[Help/Config/llm]] — LLM provider configuration
 - [[Help/Extending/Agent Cards]] — authoring agent cards
 - [[Help/Concepts/Agent Client Protocol]] — ACP architecture

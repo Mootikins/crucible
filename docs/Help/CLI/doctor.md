@@ -13,29 +13,37 @@ Run bounded installation diagnostics for your Crucible setup.
 ## Synopsis
 
 ```
-cru doctor
+cru doctor [-C <config>] [-f json]
 ```
 
 ## Description
 
-The `doctor` command runs five targeted health checks against your Crucible installation. It's the fastest way to diagnose setup problems after a fresh install or when something stops working.
+The `doctor` command runs targeted health checks against your Crucible installation. It's the fastest way to diagnose setup problems after a fresh install or when something stops working.
 
 ### Checks performed
 
-| # | Check | Pass condition | Fail suggestion |
-|---|-------|---------------|-----------------|
-| 1 | Daemon reachability | `DaemonClient::connect()` succeeds | `cru daemon start` |
-| 2 | Config validity | Config file exists and parses without errors | `cru config init` |
-| 3 | Provider connectivity | Each configured LLM provider responds within 2 seconds | Check provider URL and service status |
-| 4 | Kiln accessibility | Kiln path exists, is a directory, and is writable | `cru init` |
-| 5 | Embedding backend | FastEmbed compiled in, or Ollama reachable with embeddings | Enable `fastembed` feature or configure Ollama |
+| Check | Pass condition | Fail suggestion |
+|-------|---------------|-----------------|
+| Daemon reachability | `DaemonClient::connect()` succeeds | `cru daemon start` |
+| Config validity | Config file exists and parses without errors | `cru config init` |
+| Provider connectivity | Each configured LLM provider responds within 2 seconds | Check provider URL and service status |
+| Kiln accessibility | Kiln path exists, is a directory, and is writable | `cru init` |
+| Embedding backend | FastEmbed compiled in, or Ollama reachable | Enable the `fastembed` feature or configure Ollama |
+| Plugins | The daemon answers `plugin.list` | Warning only; skipped entirely if the daemon is down |
+| Kiln references | Every kiln named by a `[projects.*]` entry exists in `[kilns]` | Add the kiln to `[kilns]` or drop the reference |
+| Config validation | The loaded config passed structural validation | See the Config check above |
+
+Not every check emits a line on every run: the plugin check is skipped when the daemon is
+unreachable, the kiln-reference check is skipped when no projects are registered, and an
+unreachable provider produces one line per provider. The count in the summary is the number
+of lines actually emitted, so it varies with your setup.
 
 ### Exit codes
 
 - **0** if all checks pass (warnings are allowed)
 - **1** if any check fails
 
-Warnings (read-only kiln, no providers configured, config parse errors) are reported but don't cause a non-zero exit.
+Warnings (read-only kiln, no providers configured, config parse errors) are reported but don't cause a non-zero exit. `-f json` prints the raw results and always exits 0.
 
 ## Examples
 
@@ -43,14 +51,24 @@ Warnings (read-only kiln, no providers configured, config parse errors) are repo
 # Run all checks
 cru doctor
 
-# Typical healthy output
-✓ Daemon running
-✓ Config found at ~/.config/crucible/config.toml
-✓ Provider reachable: default (ollama)
-✓ Kiln accessible at ~/notes
-✓ Embeddings available (fastembed)
+# Machine-readable results
+cru doctor -f json
+```
 
-All 5 checks passed.
+Typical healthy output:
+
+```
+Crucible Doctor - Installation Health Check
+───────────────────────────────────────────
+✓ Daemon running
+✓ Config found at /home/you/.config/crucible/config.toml
+✓ All 1 provider(s) reachable
+✓ Kiln accessible at /home/you/notes
+✓ Embeddings available (fastembed)
+✓ 3 plugin(s) loaded
+✓ Config parsed and validated
+
+All 7 checks passed.
 ```
 
 ## See Also

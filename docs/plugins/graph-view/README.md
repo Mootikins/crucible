@@ -57,7 +57,7 @@ graph_stats({ note = "Index", depth = 3 })
 
 ## Configuration
 
-In your `crucible.toml`:
+In your `config.toml`:
 
 ```toml
 [plugins.graph-view]

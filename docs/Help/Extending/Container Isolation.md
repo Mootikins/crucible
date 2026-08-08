@@ -22,7 +22,7 @@ lifecycle hooks, with no container-specific Rust.
 ## Enabling it
 
 Isolation is off until an image is configured. Add a `[plugins.oci]` section to
-`crucible.toml`:
+`config.toml`:
 
 ```toml
 [plugins.oci]

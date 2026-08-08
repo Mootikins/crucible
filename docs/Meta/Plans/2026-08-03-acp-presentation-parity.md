@@ -10,8 +10,6 @@ tags:
 
 # ACP Presentation Parity Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-
 **Goal:** Make a delegated ACP agent (`cru chat -a claude`) render identically to the internal
 agent for equivalent behavior, and pin that with tests at both the event and frame level.
 
@@ -163,14 +161,17 @@ Grouped by where they bite. Each becomes a RED test.
   were designed together — so the fixture could not falsify the fix. That is the same trap this
   plan correctly diagnosed for the original `edit_file` pair, reproduced one level up.
 
-  **The evidence:** `assets/fixtures/acp-demo.jsonl` is the repo's only recording of a real
-  Claude Code session that ran tools (the five `tests/fixtures/acp/recorded/*/basic-chat.jsonl`
-  wire dumps contain none). Its live `tool_call` titles are `Read File`, `Find`, `Terminal`,
-  `ToolSearch`, `Get Kiln Info`, `Semantic Search`, `List Notes`; the refined titles its
-  `tool_call_update`s carry are `Read tools/hello.rn`, ``Find `/home/moot/.crucible` `**/*.rs` ``
-  and bare shell command lines. So Claude Code names its glob **`Find`** and its bash
-  **`Terminal`**, and `title_case` splits only on `_`/`-`, so `Read tools/hello.rn` matched no
-  arm either.
+  **The evidence:** the then-current `assets/fixtures/acp-demo.jsonl` was the repo's only
+  recording of a real Claude Code session that ran tools (the five per-agent
+  `basic-chat.jsonl` wire dumps under `crates/crucible-daemon/tests/fixtures/acp/recorded/`
+  contain none). Its live `tool_call` titles were `Read File`, `Find`, `Terminal`, `ToolSearch`,
+  `Get Kiln Info`, `Semantic Search`, `List Notes`; the refined titles its `tool_call_update`s
+  carried were `Read tools/hello.rn`, ``Find `<HOME>/.crucible` `**/*.rs` `` and bare shell
+  command lines. So Claude Code names its glob **`Find`** and its bash **`Terminal`**, and
+  `title_case` splits only on `_`/`-`, so `Read tools/hello.rn` matched no arm either.
+  (`acp-demo.jsonl` was re-recorded on 2026-08-05 against a session whose only tool calls are
+  `ToolSearch` and `Semantic Search`, so it no longer carries the other titles — the
+  per-spelling unit tests named below are what pins the behavior.)
 
   **Second fix (title-keyed, option (b)):**
   - `summary_key` now keys on the **leading Title-Cased run** of the humanized name, so a title
@@ -974,7 +975,8 @@ CRUCIBLE_ACP_RECORD_DIR=/tmp/acp cru session create -a <agent> --permissions all
 cru session send <id> "read README.md and tell me the first heading" --permissions allow
 ```
 
-Sanitize `/home/moot` → `<HOME>` as the existing header documents. Re-recording needs the real
+Sanitize `$HOME` → `<HOME>`, as `crates/crucible-daemon/tests/acp_fixture_replay.rs` documents and
+`just record-acp-fixture <agent>` already does. Re-recording needs the real
 agent binaries, so gate the *recipe*, not the replay test — replay stays hermetic.
 
 **Step 3: Commit**

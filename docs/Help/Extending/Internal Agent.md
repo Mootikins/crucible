@@ -312,15 +312,20 @@ During a session:
 
 ## Configuration
 
-In global config (`~/.config/crucible/config.toml`):
+The internal agent is configured through the ordinary `[chat]` and `[llm]` sections of
+`~/.config/crucible/config.toml`, and stores its sessions in the default kiln:
 
 ```toml
-# Personal kiln path
-personal_kiln = "~/Documents/crucible-testing"
+default_kiln = "notes"
 
-# Directories excluded from embedding (metadata still indexed)
-embedding_exclusions = ["sessions"]
+[kilns]
+notes = "~/Documents/crucible-testing"
+
+[chat]
+agent_preference = "crucible"
 ```
+
+See [[Help/Configuration]] for every field.
 
 ## Best Practices
 

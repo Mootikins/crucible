@@ -29,20 +29,20 @@ All external tools integrate with [[Help/Extending/Event Hooks|event hooks]], so
 
 ## Quick Start
 
-Add to your `Config.toml`:
+Add to `~/.config/crucible/config.toml`:
 
 ```toml
-[[gateway.servers]]
+[[mcp.servers]]
 name = "github"
 prefix = "gh_"
 
-[gateway.servers.transport]
+[mcp.servers.transport]
 type = "stdio"
 command = "npx"
 args = ["-y", "@modelcontextprotocol/server-github"]
 
-[gateway.servers.transport.env]
-GITHUB_TOKEN = "${GITHUB_TOKEN}"
+[mcp.servers.transport.env]
+GITHUB_TOKEN = "{env:GITHUB_TOKEN}"
 ```
 
 Set your token:
@@ -54,150 +54,10 @@ Now you have tools like `gh_search_code`, `gh_get_file_contents`, etc.
 
 ## Configuration
 
-### Basic Structure
-
-```toml
-[[gateway.servers]]
-name = "server_name"           # Unique name
-prefix = "prefix_"             # Added to tool names
-allowed_tools = ["search_*"]   # Whitelist (optional)
-blocked_tools = ["delete_*"]   # Blacklist (optional)
-auto_reconnect = true          # Reconnect if disconnected
-
-[gateway.servers.transport]
-type = "stdio"                 # or "sse"
-command = "npx"
-args = ["-y", "@package/name"]
-
-[gateway.servers.transport.env]
-TOKEN = "secret"
-```
-
-### Transport Types
-
-**stdio** - Runs a command and communicates via stdin/stdout:
-```toml
-[gateway.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-```
-
-**sse** - Connects to an HTTP endpoint:
-```toml
-[gateway.servers.transport]
-type = "sse"
-url = "http://localhost:3000/sse"
-auth_header = "Bearer secret"  # Optional
-```
-
-## Tool Filtering
-
-Control which tools are exposed:
-
-```toml
-# Only expose read operations
-allowed_tools = ["search_*", "get_*", "list_*"]
-
-# Block dangerous operations
-blocked_tools = ["delete_*", "create_pull_request"]
-```
-
-**Blacklist wins** - if a tool matches both allowed and blocked, it's blocked.
-
-Patterns use glob syntax:
-- `*` matches any characters
-- `?` matches one character
-
-## Prefixes
-
-Prefixes prevent name conflicts:
-
-```toml
-[[gateway.servers]]
-name = "github"
-prefix = "gh_"
-# Tools become: gh_search_code, gh_get_file_contents
-```
-
-**Always use prefixes** to avoid conflicts between servers.
-
-## Common Configurations
-
-### GitHub
-
-```toml
-[[gateway.servers]]
-name = "github"
-prefix = "gh_"
-allowed_tools = ["search_*", "get_*", "list_*"]
-
-[gateway.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-
-[gateway.servers.transport.env]
-GITHUB_TOKEN = "${GITHUB_TOKEN}"
-```
-
-### Filesystem (Read-Only)
-
-```toml
-[[gateway.servers]]
-name = "filesystem"
-prefix = "fs_"
-blocked_tools = ["write_*", "delete_*"]
-
-[gateway.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem", "/allowed/path"]
-```
-
-### Context7 (Library Docs)
-
-```toml
-[[gateway.servers]]
-name = "context7"
-prefix = "c7_"
-
-[gateway.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@upstash/context7-mcp"]
-
-[gateway.servers.transport.env]
-CONTEXT7_API_KEY = "${CONTEXT7_API_KEY}"
-```
-
-### Multiple Accounts
-
-```toml
-[[gateway.servers]]
-name = "github_work"
-prefix = "gh_work_"
-
-[gateway.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-
-[gateway.servers.transport.env]
-GITHUB_TOKEN = "${GITHUB_WORK_TOKEN}"
-
-[[gateway.servers]]
-name = "github_personal"
-prefix = "gh_personal_"
-
-[gateway.servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-
-[gateway.servers.transport.env]
-GITHUB_TOKEN = "${GITHUB_PERSONAL_TOKEN}"
-```
+Every field of `[[mcp.servers]]` — `name`, `prefix`, `transport`,
+`allowed_tools`, `blocked_tools`, `auto_reconnect`, `timeout_secs` — plus worked examples
+for GitHub, filesystem, and multiple servers, live in
+[[Help/Config/mcp|MCP Configuration]]. This page covers what the gateway *does* with them.
 
 ## Using with Hooks
 
@@ -225,9 +85,18 @@ end)
 Never commit tokens to your config:
 
 ```toml
-# Use environment variable reference
-[gateway.servers.transport.env]
-GITHUB_TOKEN = "${GITHUB_TOKEN}"
+[[mcp.servers]]
+name = "github"
+prefix = "gh_"
+
+[mcp.servers.transport]
+type = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+
+# Resolved from the environment at load time, never stored in the file
+[mcp.servers.transport.env]
+GITHUB_TOKEN = "{env:GITHUB_TOKEN}"
 ```
 
 Then set in your shell:
@@ -237,12 +106,8 @@ export GITHUB_TOKEN="ghp_actual_token"
 
 ### Principle of Least Privilege
 
-Only expose tools you need:
-
-```toml
-allowed_tools = ["search_*", "get_*", "list_*"]
-blocked_tools = ["delete_*", "create_*", "update_*"]
-```
+Only expose tools you need — use `allowed_tools` and `blocked_tools` as shown under
+[Tool Filtering](#tool-filtering) above.
 
 ### Validation Hooks
 
@@ -281,10 +146,6 @@ If a server disconnects (network issues, server restart, etc.), Crucible automat
 Gateway tools are dynamically injected into the agent at session creation via `McpProxyTool`. Tools appear with their configured prefix (e.g., `gh_search_code`) and are available alongside built-in tools.
 
 The daemon manages gateway connections through a shared `McpGatewayManager`, so all sessions share the same server connections.
-
-### SSE Keepalive
-
-For SSE transport connections, a 30-second keepalive ping prevents idle timeouts. This is automatic and requires no configuration.
 
 ## Progressive Tool Disclosure
 

@@ -43,7 +43,7 @@ cru chat --agent gemini-cli
 cru chat --agent codex
 ```
 
-Available agents: `claude-code`, `gemini-cli`, `codex`, `cursor`, or any custom profile defined in `crucible.toml`. The agent must be installed and available in your PATH.
+Available agents: `claude-code`, `gemini-cli`, `codex`, `cursor`, or any custom profile defined in `config.toml`. The agent must be installed and available in your PATH.
 
 #### `--provider <PROVIDER>`
 

@@ -125,8 +125,7 @@ output without calling an LLM. Handy for CI and demos.
 - default (no annotation) — inline: one agent turn per step
 - `[type:: gate]` — pause for human approval
 - unknown types — fall back to the default handler until a custom
-  executor is registered (ultimately via Lua; see Phase 3b in the
-  plan)
+  executor is registered (ultimately via Lua)
 - `[type:: fan]` / `[type:: ralph]` — **not yet implemented**; treated
   as default for now
 
@@ -135,11 +134,6 @@ output without calling an LLM. Handy for CI and demos.
 `[type:: fan]` lands — every step currently runs on the session's
 configured agent regardless of the `@agent` suffix. The daemon logs a
 warning when it sees a mismatched hint so you aren't surprised.
-
-See the plan at `thoughts/shared/plans/workflows_2026-04-22-2030.md`
-for the complete execution design and
-`thoughts/shared/plans/workflows_phase3a_followups_2026-04-23-1646.md`
-for the Phase 3a follow-up slice plan.
 
 ## Example Use Cases
 

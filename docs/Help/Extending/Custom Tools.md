@@ -43,9 +43,12 @@ end
 Expose tools via Model Context Protocol:
 
 ```toml
-# Config.toml
 [[mcp.servers]]
 name = "my-tools"
+prefix = "my_"
+
+[mcp.servers.transport]
+type = "stdio"
 command = "my-mcp-server"
 ```
 

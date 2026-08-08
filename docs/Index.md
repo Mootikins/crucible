@@ -77,6 +77,7 @@ Navigate by topic:
 - **[[Help/Extending/Internal Agent]]** — Built-in agent with session memory
 - **[[Help/Config/agents]]** — Agent configuration options
 - **[[Help/Delegation Patterns]]** — Broadcast / router / supervisor recipes in Lua
+- **[[Help/Concepts/Session Replay]]** — Play a recorded session back without LLM calls
 
 ### Scripting Languages
 - **[[Help/Concepts/Scripting Languages]]** — Overview
@@ -88,6 +89,8 @@ Navigate by topic:
 - **[[Help/Frontmatter]]** — YAML metadata for notes
 - **[[Help/Tags]]** — Organizing with `#tags`
 - **[[Help/Block References]]** — Linking to paragraphs with `^block-id`
+- **[[Help/Diagrams and Math]]** — Mermaid diagrams and LaTeX math in notes
+- **[[Help/Concepts/Canvas]]** — Infinite-canvas boards in the JSON Canvas format
 
 ### Commands
 - **[[Help/CLI/chat]]** — AI agent integration
@@ -99,6 +102,11 @@ Navigate by topic:
 - **[[Help/Config/llm]]** — LLM provider setup
 - **[[Help/Config/embedding]]** — Embedding configuration
 - **[[Help/Config/storage]]** — Database and storage options
+- **[[Help/Config/acp]]** — External agents, profiles, and delegation
+- **[[Help/Config/mcp]]** — Upstream MCP server gateway
+- **[[Help/Config/permissions]]** — Tool allow/deny rules
+- **[[Help/Config/web]]** — Web UI server options
+- **[[Help/Config/workspaces]]** — Multi-workspace setup
 
 ### Terminal UI
 - **[[Help/TUI/Index]]** — TUI overview and shortcuts
@@ -109,6 +117,7 @@ Navigate by topic:
 - **[[Help/Extending/Event Hooks]]** — React to kiln events
 - **[[Help/Extending/MCP Gateway]]** — Connect external tools
 - **[[Help/Extending/Custom Tools]]** — Add MCP tools
+- **[[Help/TOON Format]]** — How `cru mcp` encodes Lua tool results
 
 ### Advanced Features
 - **[[Help/Workflows/Index]]** — Automated multi-step processes

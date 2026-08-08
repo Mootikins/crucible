@@ -64,7 +64,7 @@ That's it — no manual configuration needed. Crucible automatically resolves th
 
 ### Step 4: Configure Provider
 
-Add to your `crucible.toml`:
+Add to your `config.toml`:
 
 ```toml
 [llm]
@@ -200,4 +200,4 @@ The API token (30-min TTL) refreshes automatically, but if issues persist:
 - [[Guides/Getting Started|Getting Started Guide]]
 - [[Guides/OpenRouter Setup|OpenRouter Setup]]
 - [[Help/Configuration|Configuration Reference]]
-- [[Help/Config/LLM Providers|LLM Providers]]
+- [[Help/Config/llm|LLM Providers]]

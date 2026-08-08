@@ -42,7 +42,7 @@ Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist across
 
 ### Step 3: Configure the Provider
 
-Add to your `crucible.toml` or `llm_providers.toml`:
+Add to your `config.toml` or `llm_providers.toml`:
 
 ```toml
 [llm]
@@ -64,11 +64,8 @@ The `{env:OPENROUTER_API_KEY}` syntax reads the key from your environment variab
 
 Crucible accepts several aliases for the provider type:
 
-```toml
-type = "openrouter"    # preferred
-type = "open_router"   # also works
-type = "open-router"   # also works
-```
+`type = "openrouter"` is preferred; `"open_router"` and `"open-router"` are accepted
+aliases.
 
 ### Model Format
 
@@ -166,4 +163,4 @@ OpenRouter charges per-token based on the upstream model's pricing. Check your u
 
 - [[Guides/Getting Started|Getting Started Guide]]
 - [[Guides/GitHub Copilot Setup|GitHub Copilot Setup]]
-- [[Help/Config/LLM Providers|LLM Providers Reference]]
+- [[Help/Config/llm|LLM Providers Reference]]

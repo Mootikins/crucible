@@ -1,11 +1,12 @@
 ---
 title: Script Agent Queries
-description: How scripts can query LLM agents for decisions
+description: Status of the planned ask.agent() API for querying an LLM from a script
 tags:
   - help
   - extending
   - scripting
   - llm
+status: planned
 aliases:
   - ask_agent
   - Script LLM Queries
@@ -13,167 +14,33 @@ aliases:
 
 # Script Agent Queries
 
-Scripts can query LLM agents to make decisions using structured questions.
+> **Not implemented.** There is no way for a Lua or Fennel script to ask an LLM a question
+> today. `ask.agent()` does not exist, and neither does any other `cru.*` binding that
+> sends a prompt to a provider. Earlier revisions of this page documented such an API in
+> detail; none of it was real.
 
-## Overview
+## What the idea is
 
-The `ask.agent()` function lets scripts:
-- Ask the LLM structured multiple-choice questions
-- Get parsed responses with selected indices
-- Handle "other" free-text answers
-- Make decisions based on LLM reasoning
+A script builds a multiple-choice question batch and hands it to an *agent* rather than a
+human. The agent answers, the script branches on the selection. That would let a plugin
+delegate a judgement call ("is this note stale?", "which of these three fixes fits?")
+without hard-coding heuristics.
 
-This enables script-to-agent communication where another LLM answers questions instead of a human.
+## What actually exists
 
-## Lua API
+- [[Help/Lua/Ask Module]] — the global `ask` table builds question batches and answers.
+  It is a constructor API: nothing in it presents a question or waits for a reply.
+- `cru.interaction.ask` / `.popup` / `.panel` / `.permission` build interaction request
+  tables (`crates/crucible-lua/src/interaction.rs`).
+- Delegating a whole *task* to an external agent does work, but from the agent side rather
+  than the script side — see [[Help/Concepts/Delegation]] and the `delegate_session` tool.
 
-```lua
--- Create a question batch
-local batch = ask.batch()
-    :question(ask.question("Auth", "Which authentication method?")
-        :choice("OAuth (Recommended)")
-        :choice("JWT")
-        :choice("API Key"))
-    :question(ask.question("Database", "Which database?")
-        :choice("PostgreSQL")
-        :choice("SQLite")
-        :choice("MySQL"))
-
--- Ask the LLM agent
-local response = ask.agent(batch)
-
--- Process the response
-if not response:is_cancelled() then
-    local auth_answer = response:get_answer(0)
-    local selected = auth_answer:selected_indices()
-
-    if selected[1] == 0 then
-        -- OAuth was selected
-        configure_oauth()
-    elseif auth_answer:has_other() then
-        -- Custom answer provided
-        local custom = auth_answer:other_text()
-        handle_custom_auth(custom)
-    end
-end
-```
-
-## Question Building
-
-### Creating Questions
-
-```lua
--- Basic question with choices
-local q = ask.question("Header", "Question text?")
-    :choice("Option A")
-    :choice("Option B")
-    :choice("Option C")
-
--- Multi-select question
-local q = ask.question("Features", "Which features to enable?")
-    :choice("Logging")
-    :choice("Metrics")
-    :choice("Tracing")
-    :multi_select()
-```
-
-### Creating Batches
-
-```lua
--- Multiple questions in one batch
-local batch = ask.batch()
-    :question(q1)
-    :question(q2)
-    :question(q3)
-
--- Check batch info
-print(batch:question_count())  -- 3
-print(batch:id())              -- UUID string
-```
-
-## Response Handling
-
-### Answer Structure
-
-Each answer contains:
-- `selected_indices()` - Array of selected choice indices (0-based)
-- `other_text()` - Custom text if "other" was chosen
-- `has_other()` - Boolean indicating if custom text exists
-
-```lua
-local answer = response:get_answer(0)
-
--- Check what was selected
-local indices = answer:selected_indices()
-for i, idx in ipairs(indices) do
-    print("Selected choice " .. idx)
-end
-
--- Check for custom answer
-if answer:has_other() then
-    print("Custom: " .. answer:other_text())
-end
-```
-
-### Batch Response
-
-```lua
-local response = ask.agent(batch)
-
--- Check if cancelled
-if response:is_cancelled() then
-    print("Request was cancelled")
-    return
-end
-
--- Iterate answers
-for i = 0, response:answer_count() - 1 do
-    local answer = response:get_answer(i)
-    -- Process each answer
-end
-```
-
-## Use Cases
-
-### Dynamic Configuration
-
-```lua
--- Let LLM choose configuration based on context
-local batch = ask.batch()
-    :question(ask.question("Performance", "Optimize for?")
-        :choice("Memory efficiency")
-        :choice("Speed")
-        :choice("Balanced"))
-
-local response = ask.agent(batch)
-local choice = response:get_answer(0):selected_indices()[1]
-
-if choice == 0 then
-    config.memory_limit = "256MB"
-elseif choice == 1 then
-    config.workers = 8
-end
-```
-
-### Decision Trees
-
-```lua
--- Multi-step decision making
-local function decide_action(context)
-    local batch = ask.batch()
-        :question(ask.question("Action",
-            "Given context: " .. context .. "\nWhat should we do?")
-            :choice("Proceed with caution")
-            :choice("Request more info")
-            :choice("Abort operation"))
-
-    local response = ask.agent(batch)
-    return response:get_answer(0):selected_indices()[1]
-end
-```
+If you need an LLM decision inside a plugin today, the workable route is to expose the
+plugin's work as a tool and let the session's agent make the call, rather than having the
+script call out.
 
 ## See Also
 
-- [[Help/Extending/Custom Handlers]] - Using ask_agent in handlers
-- [[Help/Extending/Creating Plugins]] - Plugin development
-- [[Help/Lua/Ask Module]] - Full ask module reference
+- [[Help/Lua/Ask Module]] — the question/answer builders that do exist
+- [[Help/Extending/Creating Plugins]] — plugin development
+- [[Help/Extending/Custom Handlers]] — intercepting and transforming tool calls

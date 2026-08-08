@@ -124,13 +124,20 @@ default_kiln = "notes"
 [kilns]
 notes = "~/notes"
 
-[chat]
-provider = "ollama"
-model = "llama3.2"
+[llm]
+default = "local"
 
-[embedding]
-provider = "fastembed"
+[llm.providers.local]
+type = "ollama"
+endpoint = "http://localhost:11434"
+default_model = "llama3.2"
+
+[enrichment.provider]
+type = "fastembed"
 ```
+
+Without an `[enrichment]` section the daemon skips embedding generation entirely, so
+semantic search returns nothing. See [[Help/Config/embedding]] for the other providers.
 
 For multiple kilns and project bindings:
 
@@ -200,15 +207,17 @@ The first time you run `cru chat`, Crucible automatically starts a background da
 
 ## Understanding the Database
 
-Crucible stores processed data in a local SQLite database:
+Crucible stores processed data under `.crucible/` inside the kiln:
 
-**Location:** `<kiln_path>/.crucible/kiln.db/`
+| Path | Contents |
+|------|----------|
+| `<kiln_path>/.crucible/crucible-sqlite.db` | Notes, blocks, links, properties |
+| `<kiln_path>/.crucible/crucible-vectors.lance/` | Block embeddings (LanceDB index) |
 
-This database contains:
+The SQLite database contains:
 - Parsed note metadata (frontmatter, tags)
 - Extracted blocks (headings, paragraphs, lists)
 - Wikilink relationships (knowledge graph)
-- Block-level embeddings for semantic search
 - Content hashes for change detection
 
 **Important:** The database is derived data. Your markdown files are the source of truth. You can safely delete `.crucible/` and rebuild with `cru process --force`.
@@ -225,7 +234,7 @@ This database contains:
 
 ### "Error: kiln path does not exist"
 
-Check that your kiln is registered under `[kilns]` in `~/.config/crucible/config.toml` and that the path resolves. Alternatively, the legacy `CRUCIBLE_KILN_PATH` environment variable is still honored as a fallback.
+Check that your kiln is registered under `[kilns]` in `~/.config/crucible/config.toml` and that the path resolves. You can also point Crucible at a kiln directly with `$CRUCIBLE_KILN`.
 
 ### Processing is slow
 
@@ -245,16 +254,12 @@ cru daemon stop
 
 ### Remove the binary
 
-If installed via the installer script or `cargo binstall`:
+If you built from source, delete the checkout (and any symlink you created in step 3 of
+[Installation](#installation)). If you used the release installer script, the binary is at
+`~/.cargo/bin/cru`:
 
 ```bash
 rm ~/.cargo/bin/cru
-```
-
-If installed via Homebrew:
-
-```bash
-brew uninstall crucible
 ```
 
 ### Remove configuration and data (optional)

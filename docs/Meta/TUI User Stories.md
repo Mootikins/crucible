@@ -249,7 +249,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ## Coverage matrix maintenance
 
-When a story ships or a gap closes, update the tier annotations here and the gap list in `thoughts/shared/research/user-story-test-coverage_2026-07-02-0910.md`. New TUI features require a story here plus at least T1 + T2 coverage before merging (see AGENTS.md TUI Testing Workflow).
+When a story ships or a gap closes, update the tier annotations here — this file is the coverage matrix of record. New TUI features require a story here plus at least T1 + T2 coverage before merging (see AGENTS.md TUI Testing Workflow).
 
 ## See Also
 - [[Web User Stories]] — browser chat + kiln editing stories

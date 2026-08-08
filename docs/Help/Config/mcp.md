@@ -23,14 +23,9 @@ The MCP Gateway allows Crucible to connect to multiple upstream MCP servers, agg
 
 ## Configuration File
 
-Create `~/.config/crucible/mcps.toml` or add to `config.toml`:
+Add to `~/.config/crucible/config.toml`:
 
 ```toml
-# In config.toml, reference an external file
-[include]
-mcp = "mcps.toml"
-
-# Or configure inline
 [[mcp.servers]]
 name = "github"
 prefix = "gh_"
@@ -54,7 +49,7 @@ Each upstream server requires:
 |-------|----------|-------------|
 | `name` | Yes | Unique identifier for this upstream |
 | `prefix` | Yes | Prefix for all tools (e.g., `gh_` → `gh_search_code`) |
-| `transport` | Yes | Connection configuration (stdio or SSE) |
+| `transport` | Yes | Connection configuration (stdio; SSE parses but is not implemented) |
 | `allowed_tools` | No | Whitelist of tool patterns (glob) |
 | `blocked_tools` | No | Blacklist of tool patterns (glob) |
 | `auto_reconnect` | No | Reconnect on disconnect (default: true) |
@@ -68,17 +63,9 @@ Prefixes must:
 - End with an underscore (`_`)
 - Be unique across all configured upstreams
 
-```toml
-# Valid prefixes
-prefix = "gh_"
-prefix = "fs_"
-prefix = "docker_v2_"
+Valid: `gh_`, `fs_`, `docker_v2_`.
 
-# Invalid prefixes
-prefix = ""           # Empty
-prefix = "gh"         # Missing trailing underscore
-prefix = "my-server_" # Contains hyphen
-```
+Invalid: `""` (empty), `gh` (no trailing underscore), `my-server_` (contains a hyphen).
 
 ## Transport Types
 
@@ -106,6 +93,10 @@ GITHUB_TOKEN = "{env:GITHUB_TOKEN}"
 - `env` - Environment variables (optional)
 
 ### SSE (Server-Sent Events)
+
+> **Not yet implemented.** The config shape below parses, but connecting fails with
+> "SSE transport not yet implemented"
+> (`crates/crucible-daemon/src/tools/mcp_gateway.rs`). Use stdio.
 
 Connect to an HTTP-based MCP server:
 
@@ -141,10 +132,10 @@ command = "npx"
 args = ["-y", "@modelcontextprotocol/server-github"]
 ```
 
-**Filter behavior:**
-1. If `allowed_tools` is set, only matching tools are included
-2. If `blocked_tools` is set, matching tools are excluded
-3. Both can be combined (allow first, then block)
+**Filter behavior** (`mcp_gateway.rs`, `is_tool_allowed`):
+1. `blocked_tools` is checked first and wins — a tool matching both lists is blocked
+2. If `allowed_tools` is set, a tool must match it to be included
+3. With neither set, every tool from the upstream is exposed
 
 **Glob patterns:**
 - `*` matches any characters
@@ -217,34 +208,16 @@ prefix = "my_"
 auto_reconnect = false
 
 [mcp.servers.transport]
-type = "sse"
-url = "http://localhost:8080/mcp"
+type = "stdio"
+command = "/usr/local/bin/my-mcp-server"
 ```
 
 ### Separate Configuration File
 
-In `~/.config/crucible/config.toml`:
-
-```toml
-[include]
-mcp = "mcps.toml"
-```
-
-In `~/.config/crucible/mcps.toml`:
-
-```toml
-[[servers]]
-name = "github"
-prefix = "gh_"
-
-[servers.transport]
-type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-
-[servers.transport.env]
-GITHUB_TOKEN = "{env:GITHUB_TOKEN}"
-```
+To keep servers out of the main config, point the `mcp` key at a file with a value
+reference. The referenced `.toml` is parsed and substituted in place, so its top level is
+the body of `[mcp]` — `[[servers]]`, not `[[mcp.servers]]`. See
+[[Help/Configuration#Value References]] for `{file:}` and `{dir:}`.
 
 ## How Tools Appear
 
@@ -278,10 +251,18 @@ Ensure prefix:
 
 ### "Tool timed out"
 
-Increase the timeout:
+Increase the timeout on that server:
 
 ```toml
+[[mcp.servers]]
+name = "github"
+prefix = "gh_"
 timeout_secs = 120
+
+[mcp.servers.transport]
+type = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
 ```
 
 ### "Prefix collision"

@@ -1,4 +1,6 @@
 ---
+title: Phase 1 Execution — The Stranger's First Ten Minutes
+description: Task-by-task execution guide for Phase 1 of the public launch readiness plan.
 tags: [plan, execution, launch]
 ---
 

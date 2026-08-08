@@ -94,4 +94,3 @@ cru workflow list
 - [[Help/Core/Sessions]] - Session tracking
 - [[Help/Extending/Creating Plugins]] - Plugin development
 - [[Help/Extending/Custom Tools]] - Creating tools
-- [[Scripts/Daily Summary]] - Example workflow script

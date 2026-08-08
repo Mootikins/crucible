@@ -69,13 +69,15 @@ Complete reference for all Crucible CLI commands.
 
 ## cru doctor
 
-Run bounded installation diagnostics. Performs exactly five checks:
+Run bounded installation diagnostics:
 
-1. **Daemon reachability** — connects to the Unix socket to verify the daemon is running
-2. **Config validity** — loads and validates your config file
-3. **Provider connectivity** — pings each configured LLM provider endpoint (2s timeout per provider)
-4. **Kiln accessibility** — checks the kiln path exists, is a directory, and is writable
-5. **Embedding backend** — confirms FastEmbed or Ollama embeddings are available
+- **Daemon reachability** — connects to the Unix socket to verify the daemon is running
+- **Config validity** — loads and validates your config file
+- **Provider connectivity** — pings each configured LLM provider endpoint (2s timeout per provider)
+- **Kiln accessibility** — checks the kiln path exists, is a directory, and is writable
+- **Embedding backend** — confirms FastEmbed or Ollama embeddings are available
+- **Plugins** — asks the daemon how many plugins loaded (skipped if the daemon is down)
+- **Kiln references** — every kiln named by a `[projects.*]` entry exists in `[kilns]`
 
 ```
 cru doctor
@@ -83,14 +85,15 @@ cru doctor
 
 Exits with code 0 if all checks pass, code 1 if any check fails. Warnings (e.g., read-only kiln, no providers configured) don't cause a non-zero exit.
 
-Each failed check prints a suggested fix:
+Each failed check prints a suggested fix on the same line:
 
 ```
-✗ Daemon not running
-    Try: `cru daemon start`
-✗ Config missing at ~/.config/crucible/config.toml
-    Try: `cru config init`
+✗ Daemon not running. Try: `cru daemon start`
+✗ Config missing at ~/.config/crucible/config.toml. Try: `cru config init`
 ```
+
+`-f json` prints the raw check results (`check_name`, `status`, `message`) instead of the
+table, and always exits 0.
 
 ## See Also
 
