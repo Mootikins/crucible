@@ -2,70 +2,10 @@ import { defineConfig } from 'vitest/config';
 import solid from 'vite-plugin-solid';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
+import { pwaOptions } from './src/pwa-options';
 
 export default defineConfig({
-  plugins: [
-    solid(),
-    VitePWA({
-      // 'prompt': never yank the page out from under an in-flight turn.
-      // A new deploy surfaces as a notification; the update applies when
-      // the user reloads (registerSW onNeedRefresh in index.tsx).
-      registerType: 'prompt',
-      // Dev flow stays untouched: no SW or manifest in `bun run dev`.
-      devOptions: { enabled: false },
-      // A debug build ships a SW that UNREGISTERS itself and drops the
-      // precache, rather than simply omitting one.
-      //
-      // `prompt` is right in production but ruinous on a rebuild loop: the
-      // precache keeps serving the previous bundle until someone accepts the
-      // update toast, so a freshly deployed change is invisible and looks like
-      // a bug in the change. Omitting the SW would not help either — one
-      // already registered in the browser keeps serving the old assets forever.
-      // Self-destructing is what actually rescues a browser that has one.
-      selfDestroying: process.env.VITE_DISABLE_PWA === '1',
-      manifest: {
-        name: 'Crucible',
-        short_name: 'Crucible',
-        description: 'Knowledge-grounded agent runtime',
-        start_url: '/',
-        scope: '/',
-        display: 'standalone',
-        // neutral-950 — matches the dark UI (`bg-neutral-950` on <body>)
-        theme_color: '#0a0a0a',
-        background_color: '#0a0a0a',
-        icons: [
-          { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
-          {
-            src: '/pwa-maskable-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
-        ],
-      },
-      workbox: {
-        // Precache the app shell only. Oversized vendor chunks (shiki,
-        // transformers) exceed the 2 MiB default and are intentionally
-        // skipped — they load from network exactly as before.
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
-        // Activation waits for the user: registerType 'prompt' only sends
-        // SKIP_WAITING when they accept the update toast, so a deploy never
-        // reloads a page mid-turn (autoUpdate did exactly that — killing
-        // in-flight drafts/streams). The toast keeps stale-forever at bay.
-        skipWaiting: false,
-        clientsClaim: true,
-        cleanupOutdatedCaches: true,
-        // SPA navigation fallback, but NEVER for API paths. /api/* (including
-        // SSE chat event streams) must hit the network untouched. generateSW
-        // adds no other fetch routes since we define no runtimeCaching, so
-        // this denylist closes the only path where the SW could respond to
-        // an /api request.
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//],
-      },
-    }),
-  ],
+  plugins: [solid(), VitePWA(pwaOptions)],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

@@ -6,7 +6,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Server configuration.
+///
+/// `deny_unknown_fields` because this struct shares a file with [`WebConfig`],
+/// and every security-relevant key (`api_key`, `remote_shell`, `allowed_hosts`,
+/// `registration_roots`) lives on that one under `[web]`. Six separate places in
+/// the tree once told operators to configure those under `[server]`; serde's
+/// default is to ignore an unknown key, so each of them produced a config that
+/// parsed cleanly and did nothing. Failing loudly is the only version of this a
+/// reader can debug.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     /// Server host address.
     #[serde(default = "default_host")]
@@ -90,6 +99,33 @@ pub struct WebConfig {
     /// default). Fail-closed: ignored unless an API key is configured.
     #[serde(default)]
     pub remote_shell: bool,
+
+    /// Directories under which `POST /api/project/register` may create a NEW
+    /// project root. A leading `~/` expands to the home directory.
+    ///
+    /// A registered project root is also a read scope for `/api/file/raw`, so
+    /// registering a directory grants the web API read access to everything
+    /// beneath it. Registration is therefore contained the same way
+    /// `scm.clone` contains its destination.
+    ///
+    /// Default: EMPTY, which means "no new roots" — the web API can only
+    /// register paths that already sit inside a registered project (adding a
+    /// worktree or a subproject of something you already trust). Creating a
+    /// brand-new root stays a deliberate local act: run `cru` inside the
+    /// directory, or list its parent here.
+    #[serde(default)]
+    pub registration_roots: Vec<String>,
+
+    /// Host authorities (`host` or `host:port`) this server will answer to,
+    /// compared against the request's `Host` header. Guards against DNS
+    /// rebinding, where an attacker-controlled name resolving to 127.0.0.1
+    /// makes a victim's browser talk to a loopback-bound `cru web`.
+    ///
+    /// Default: EMPTY, which means "derive the expected authority from the
+    /// bind address". Set it when the server sits behind a reverse proxy or a
+    /// tunnel, where the public authority is not the one it binds.
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
 }
 
 fn default_web_port() -> u16 {
@@ -109,6 +145,8 @@ impl Default for WebConfig {
             static_dir: None,
             api_key: None,
             remote_shell: false,
+            registration_roots: Vec::new(),
+            allowed_hosts: Vec::new(),
         }
     }
 }

@@ -80,6 +80,7 @@ pub mod tools;
 pub mod tools_bridge;
 pub mod trust_resolution;
 pub mod watch;
+pub mod webhook;
 pub mod workflow_handlers;
 pub mod workflow_registry;
 pub mod workspace;

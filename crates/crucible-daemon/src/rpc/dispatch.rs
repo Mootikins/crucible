@@ -1829,6 +1829,17 @@ impl RpcDispatcher {
 
     // ── Webhook RPC handler ─────────────────────────────────────────────
 
+    /// Broadcasts an already-authenticated webhook delivery.
+    ///
+    /// Sender authentication happens at the HTTP edge (`crucible-web`'s
+    /// `routes/webhook.rs`, using [`crate::webhook`]) because that is the only
+    /// place the raw request bytes exist — by the time a body has been through
+    /// JSON-RPC it is a decoded `String`, and a signature must cover what was
+    /// actually sent. Re-checking here would be the same check written twice
+    /// over weaker inputs. Callers of this method are on the daemon's Unix
+    /// socket, which is the full control plane (`session.create`, shell tools):
+    /// anyone who can call it can already do strictly more than inject an
+    /// event, so there is nothing left for a signature to protect.
     fn handle_webhook_receive(&self, req: &Request) -> RpcResult<serde_json::Value> {
         use crate::rpc::params::parse_params;
         use serde::Deserialize;

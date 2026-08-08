@@ -2,8 +2,37 @@ use super::super::*;
 
 use super::create::validate_trust_level;
 use crate::agent_manager::AgentError;
+use crate::project_manager::forbidden_root_reason;
 use crate::trust_resolution::{find_workspace_and_resolve_classification, resolve_provider_trust};
 use crucible_core::Session;
+
+/// Daemon-side floor for a caller-supplied directory that becomes session
+/// scope — a kiln (indexed, then served by the file API through `kiln.list`)
+/// or a workspace (registered as a project, and the containment boundary for
+/// the agent's file tools).
+///
+/// The RPC socket has no authentication, so this is enforced here and not left
+/// to whichever client happened to make the call: `session.connect_kiln
+/// {"kiln_path": "/"}` otherwise granted the whole filesystem as a read scope
+/// without `project.register` ever being involved.
+///
+/// This is only the floor ([`forbidden_root_reason`] — catastrophic for every
+/// caller). Narrower policy for untrusted callers belongs at that caller's
+/// boundary; the web routes layer their own on top before reaching this.
+pub(crate) fn refuse_forbidden_scope(kind: &str, path: &Path) -> Result<(), String> {
+    // Decide on the resolved path so a symlink cannot present an innocent name
+    // for a forbidden target. A path that does not resolve is checked as given
+    // — it fails later on open/registration anyway.
+    let canonical = path.canonicalize();
+    let resolved = canonical.as_deref().unwrap_or(path);
+    match forbidden_root_reason(resolved, dirs::home_dir().as_deref()) {
+        Some(why) => Err(format!(
+            "Refusing '{}' as a session {kind}: {why}",
+            resolved.display()
+        )),
+        None => Ok(()),
+    }
+}
 
 fn scope_response(
     req_id: Option<crucible_core::protocol::RequestId>,
@@ -59,6 +88,10 @@ pub(crate) async fn handle_session_connect_kiln(
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str).to_string();
     let kiln_path = PathBuf::from(require_param!(req, "kiln_path", as_str));
+
+    if let Err(message) = refuse_forbidden_scope("kiln", &kiln_path) {
+        return Response::error(req.id, INVALID_PARAMS, message);
+    }
 
     // Trust must gate before any side effect: resolving the classification only
     // reads the path's config (no open needed), so a rejected attach leaves the
@@ -125,6 +158,12 @@ pub(crate) async fn handle_session_set_workspace(
                 format!("Workspace is not a directory: {}", ws.display()),
             );
         }
+        // Refused outright rather than "registered, and warn if that fails":
+        // the workspace is the agent's filesystem containment boundary even
+        // when registration is skipped, so a forbidden one must not be set.
+        if let Err(message) = refuse_forbidden_scope("workspace", ws) {
+            return Response::error(req.id, INVALID_PARAMS, message);
+        }
         if let Err(e) = pm.register_if_missing(ws) {
             tracing::warn!(path = %ws.display(), error = %e, "Failed to auto-register project");
         }
@@ -144,5 +183,55 @@ pub(crate) async fn handle_session_set_workspace(
     {
         Ok(session) => scope_response(req.id, &session),
         Err(e) => scope_error(req.id, e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `session.connect_kiln {"kiln_path": "/"}` used to reach `km.open("/")`
+    /// with only a trust check in the way. An open kiln is half of the file
+    /// API's `resolve_enclosing_root`, so that granted a read scope over the
+    /// whole filesystem — every credential included — without
+    /// `project.register` ever being called.
+    #[test]
+    fn a_session_kiln_may_not_be_the_filesystem_root_or_home() {
+        assert!(refuse_forbidden_scope("kiln", Path::new("/")).is_err());
+        assert!(refuse_forbidden_scope("kiln", Path::new("/etc")).is_err());
+        if let Some(home) = dirs::home_dir() {
+            assert!(refuse_forbidden_scope("kiln", &home).is_err());
+        }
+    }
+
+    /// Same door, other handler: `session.set_workspace` (and `session.create`)
+    /// hand the workspace straight to `register_if_missing`, whose failure was
+    /// only ever a warning — the session kept the scope regardless.
+    #[test]
+    fn a_session_workspace_may_not_be_the_filesystem_root_or_home() {
+        assert!(refuse_forbidden_scope("workspace", Path::new("/")).is_err());
+        if let Some(home) = dirs::home_dir() {
+            assert!(refuse_forbidden_scope("workspace", &home).is_err());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_to_a_forbidden_root_is_refused_as_scope() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let link = tmp.path().join("innocent-looking");
+        std::os::unix::fs::symlink("/", &link).unwrap();
+
+        assert!(refuse_forbidden_scope("kiln", &link).is_err());
+    }
+
+    #[test]
+    fn an_ordinary_directory_is_allowed_as_scope() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let kiln = tmp.path().join("notes");
+        std::fs::create_dir(&kiln).unwrap();
+
+        assert_eq!(refuse_forbidden_scope("kiln", &kiln), Ok(()));
+        assert_eq!(refuse_forbidden_scope("workspace", tmp.path()), Ok(()));
     }
 }

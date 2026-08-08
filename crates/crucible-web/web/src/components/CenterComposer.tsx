@@ -502,7 +502,7 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
                   </div>
                   <p class="mt-1 text-[11px] leading-snug text-muted-dark">
                     Reach this machine's sessions and terminal from other devices.
-                    Configure via <code class="text-muted">[server] remote_shell</code> in
+                    Configure via <code class="text-muted">[web] remote_shell</code> in
                     config.toml.
                   </p>
                 </div>

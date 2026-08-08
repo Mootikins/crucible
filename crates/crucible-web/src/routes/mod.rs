@@ -36,7 +36,7 @@ pub use plugin::plugin_routes;
 pub use project::project_routes;
 pub use scm::scm_routes;
 pub use search::search_routes;
-pub use session::session_routes;
+pub use session::{session_routes_fail_closed, session_routes_with, EndpointPolicy};
 pub use shell::shell_routes;
 pub use skills::skills_routes;
 pub use terminal::terminal_routes;

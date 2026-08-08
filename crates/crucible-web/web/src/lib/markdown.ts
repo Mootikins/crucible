@@ -65,22 +65,157 @@ function decodeHtml(value: string): string {
   return doc.documentElement.textContent ?? '';
 }
 
-function runDOMPurify(value: string, options: unknown): string {
-  const directSanitize = (DOMPurify as { sanitize?: (html: string, options?: unknown) => string })
-    .sanitize;
-  if (typeof directSanitize === 'function') {
-    return directSanitize(value, options);
-  }
+/**
+ * Inline CSS is a scripting-free injection primitive. `position:fixed;inset:0`
+ * paints a full-viewport surface INSIDE the trusted chrome (a login prompt that
+ * looks like ours), and `background:url(https://…)` beacons on render — no
+ * `<script>`, no event handler, nothing a "no XSS" review looks for. The
+ * content need not be ours: an agent saves a fetched page into the kiln and the
+ * reading view renders it as a document (`html: true`).
+ *
+ * DOMPurify allows `style` BY DEFAULT and never inspects its value — `style` is
+ * even in its `URI_SAFE_ATTRIBUTES` list, so `url()` is not URL-checked. Taking
+ * `'style'` out of `ADD_ATTR` therefore changes nothing; this filter is the
+ * enforcement point, and it is a positive allowlist of the presentational
+ * properties our own renderers emit:
+ *
+ *   shiki  — `color`, `background-color`, `font-style`
+ *   KaTeX  — box metrics (`height`, `vertical-align`, `top`, `left`, margins,
+ *            borders…)
+ *
+ * Everything else is dropped: an unknown property, a property name hidden
+ * behind a CSS escape or comment (exact match only, so neither matches), and
+ * any value carrying a `(`, a backslash or a quote — which is how `url()`,
+ * `expression()` and `image-set()` would re-enter.
+ *
+ * What the surviving set can and cannot do, precisely — an overclaiming comment
+ * here is how the next reader skips the check that actually matters:
+ *
+ * - Nothing fetches: no value may contain `(`, so there is no `url()`.
+ * - Nothing is POSITIONED. `position` is excluded, so `top`/`bottom`/`left` are
+ *   inert offsets on a statically positioned box. They are load-bearing for
+ *   KaTeX, which positions those boxes `relative`/`absolute` BY CLASS in its own
+ *   stylesheet: `.accent-body` is `width:0;position:relative`, and the inline
+ *   `left:-0.2077em` is the whole of what lands an accent over its base glyph.
+ * - Nothing moves VERTICALLY. Only the horizontal margins are listed; the
+ *   `margin` SHORTHAND is not, because a negative `margin-top` drags an element
+ *   up over the content above it with no `position` involved.
+ * - Nothing reaches VIEWPORT scale — see SAFE_STYLE_VALUE.
+ *
+ * What survives is a box that can be wider, taller, or nudged sideways inside
+ * its containing block. That is defacement, not a credential prompt.
+ *
+ * Two declarations our own renderers emit are deliberately excluded, both
+ * costing well under a pixel because KaTeX's stylesheet already handles the
+ * same job by class: `position:relative` on integral limits (paired with a
+ * 0.001em `top`), and the `margin:0 -0.02em` that centres an array's `|`
+ * column separator on the column boundary by half a rule thickness.
+ */
+const SAFE_STYLE_PROPERTIES = new Set([
+  'background-color',
+  'border-bottom-width',
+  'border-right-style',
+  'border-right-width',
+  'border-style',
+  'border-top-width',
+  'border-width',
+  'bottom',
+  'color',
+  'font-style',
+  'height',
+  'left',
+  'margin-left',
+  'margin-right',
+  'min-width',
+  'padding-left',
+  'top',
+  'vertical-align',
+  'width',
+]);
 
-  const domPurifyFactory = DOMPurify as unknown as ((windowObj: Window) => {
-    sanitize: (html: string, options?: unknown) => string;
+/** Lengths (`-0.686em`, `0 -0.02em`), hex colours, and bare keywords only. */
+const SAFE_STYLE_VALUE = /^[#a-z0-9%. +-]+$/i;
+
+/**
+ * Viewport- and container-relative length units, which no renderer here emits
+ * (KaTeX and shiki speak `em`, percentages and bare numbers). They are the one
+ * way a value that otherwise reads as an ordinary length reaches PAGE scale:
+ * `width:100vw`, `height:100vh` and `margin-left:-100vw` all satisfy
+ * SAFE_STYLE_VALUE on their own. Container-query units are included because
+ * with no containment ancestor they resolve against the small viewport too.
+ */
+const VIEWPORT_RELATIVE_UNIT = /[\d.](?:[dsl]?v|cq)(?:w|h|i|b|min|max)\b/i;
+
+function filterInlineCss(css: string): string {
+  const kept: string[] = [];
+  for (const declaration of css.split(';')) {
+    const colon = declaration.indexOf(':');
+    if (colon === -1) continue;
+    const property = declaration.slice(0, colon).trim().toLowerCase();
+    const value = declaration.slice(colon + 1).trim();
+    if (!SAFE_STYLE_PROPERTIES.has(property)) continue;
+    if (!SAFE_STYLE_VALUE.test(value) || VIEWPORT_RELATIVE_UNIT.test(value)) continue;
+    kept.push(`${property}:${value}`);
+  }
+  return kept.join(';');
+}
+
+/** Options accepted by {@link runDOMPurify}, plus our own opt-out. */
+type PurifyOptions = { rawInlineCss?: boolean } & Record<string, unknown>;
+
+type AttributeHook = (
+  node: Element,
+  data: { attrName: string; attrValue: string; keepAttr: boolean },
+  config: PurifyOptions | null,
+) => void;
+
+type Purifier = {
+  sanitize: (html: string, options?: unknown) => string;
+  addHook: (entryPoint: 'uponSanitizeAttribute', hook: AttributeHook) => void;
+};
+
+let purifier: Purifier | null = null;
+
+/** The DOMPurify instance every sanitize in this module goes through, with the
+ * inline-CSS filter installed. Resolved once; `null` outside a DOM. */
+function getPurifier(): Purifier | null {
+  if (purifier) return purifier;
+
+  const direct = DOMPurify as unknown as Purifier;
+  const resolved =
+    typeof direct.sanitize === 'function'
+      ? direct
+      : typeof window !== 'undefined'
+        ? (DOMPurify as unknown as (windowObj: Window) => Purifier)(window)
+        : null;
+  if (!resolved) return null;
+
+  resolved.addHook('uponSanitizeAttribute', (_node, data, config) => {
+    // DOMPurify lowercases attribute names before the hook; do not depend on it.
+    if (data.attrName.toLowerCase() !== 'style') return;
+    // Mermaid's own SVG opts out: its diagram styling IS inline `fill`/`stroke`
+    // and it has already been through mermaid's strict-mode sanitizer. A future
+    // DOMPurify that stops passing our config through fails closed here — the
+    // opt-out disappears and diagrams lose colour; nothing gains reach.
+    if (config?.rawInlineCss) return;
+    const filtered = filterInlineCss(data.attrValue);
+    if (filtered) data.attrValue = filtered;
+    else data.keepAttr = false;
   });
 
-  if (typeof window !== 'undefined') {
-    return domPurifyFactory(window).sanitize(value, options);
-  }
+  purifier = resolved;
+  return purifier;
+}
 
-  return value.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
+function runDOMPurify(value: string, options: PurifyOptions): string {
+  const instance = getPurifier();
+  if (instance) return instance.sanitize(value, options);
+
+  // No DOM (a bare Node import). Nothing here can parse HTML safely, so strip
+  // the two constructs unconditionally rather than pretend to sanitize.
+  return value
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+    .replace(/\sstyle\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
 }
 
 function sanitizeHtml(value: string): string {
@@ -88,7 +223,21 @@ function sanitizeHtml(value: string): string {
     // `align` keeps `<p align="center">` (README demo blocks); `data-copy`
     // marks code-block copy buttons for the reading-view click delegate.
     // `data-callout` carries the admonition kind through to the CSS.
-    ADD_ATTR: ['data-note', 'data-copy', 'data-callout', 'style', 'align'],
+    // `style` is NOT listed: DOMPurify allows it by default and listing it here
+    // read as a decision to permit arbitrary inline CSS. What actually governs
+    // it is filterInlineCss.
+    ADD_ATTR: ['data-note', 'data-copy', 'data-callout', 'align'],
+    // `style`: DOMPurify empties a bare `<style>` (FORBID_CONTENTS) but keeps
+    // one nested in `<svg>` intact — and an SVG `<style>` inside an HTML
+    // document is NOT scoped to the SVG, its rules apply to the whole page.
+    // That is the same overlay/beacon primitive as the style attribute, only
+    // unbounded, so the element goes too. Mermaid keeps its own `<style>` on
+    // its own sanitize (below); no renderer here emits one.
+    // `form`: the exfiltration half of a phishing overlay. Nothing in this app
+    // renders a form, and DOMPurify allows one by default — with it gone an
+    // injected `<input>` (the task-list checkbox is ours and stays) has nowhere
+    // to post. `<a>`/`<img>` remain the only ways off the origin, both visible.
+    FORBID_TAGS: ['style', 'form'],
     // DOMPurify allows every `data-*` attribute by default. The document
     // renderer permits raw HTML, and link resolution reads the nearest
     // `data-kiln` ancestor to decide WHICH KILN a link resolves in — so a note
@@ -111,7 +260,13 @@ function sanitizeHtml(value: string): string {
  * still dropped by the default allowlist. */
 function sanitizeMermaidSvg(svg: string): string {
   const purify = (value: string) =>
-    runDOMPurify(value, { ADD_TAGS: ['style', 'foreignObject'], ADD_ATTR: ['style'] });
+    runDOMPurify(value, {
+      ADD_TAGS: ['style', 'foreignObject'],
+      // Mermaid's node/edge styling IS inline `fill`/`stroke`/`max-width`, so
+      // this path keeps raw inline CSS (see filterInlineCss). It is the one
+      // opt-out and it is not reachable from the HTML pipeline.
+      rawInlineCss: true,
+    });
   // Sanitize BEFORE fitting — fitMermaidViewBox attaches the markup to the
   // document to measure it, so it must never see unsanitized input — and
   // again AFTER, because fitting reparses and re-serializes: that round trip

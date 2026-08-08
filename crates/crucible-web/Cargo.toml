@@ -21,7 +21,8 @@ crucible-daemon = { path = "../crucible-daemon", default-features = false }
 
 axum = { workspace = true, features = ["macros", "ws"] }
 tower = { workspace = true }
-tower-http = { version = "0.7", features = ["fs", "cors"] }
+# `set-header`: the global security-header layer in `server.rs`.
+tower-http = { version = "0.7", features = ["fs", "cors", "set-header"] }
 tokio = { workspace = true }
 tokio-stream = { workspace = true, features = ["sync"] }
 futures = { workspace = true }

@@ -11,6 +11,68 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
+/// System trees that are never a project and always hold host secrets.
+const SYSTEM_ROOTS: &[&str] = &["/etc", "/proc", "/sys", "/dev", "/boot", "/root", "/run"];
+
+/// Directories that hold *every* user's home, matched EXACTLY — a path under
+/// one of them is somebody's home, which is an ordinary place to keep work.
+/// The home rule below already covers these for the user the daemon runs as;
+/// this backstops the case where the OS reports no home directory at all,
+/// where that rule silently does nothing.
+const HOME_PARENTS: &[&str] = &["/home", "/Users"];
+
+/// Why `path` may never be a root for ANY caller, or `None` if it may.
+///
+/// **This is the floor, not the whole policy.** It holds for every caller —
+/// CLI, TUI, RPC, web — so it contains only the catastrophic set: roots that
+/// enclose *every* user's data (`/`, `$HOME` and its ancestors, `/home`,
+/// `/Users`) and the system trees that are never anybody's project. A local
+/// user who runs `cru` inside their own dotfiles repo or `~/.config/nvim` is
+/// registering their own work, and this must not stand in their way.
+///
+/// A registered root is also a read scope for clients (`/api/file/raw` serves
+/// anything inside one), so *untrusted* callers need more than this floor.
+/// That extra policy belongs where the untrusted caller is — see
+/// `untrusted_root_refusal` in `crucible-web`'s project route, which refuses
+/// credential stores and the user's config/state tree on top of this.
+///
+/// `path` must already be canonical: the decision is made on resolved paths so
+/// a symlink cannot present an innocent name for a forbidden target. `home` is
+/// injected rather than read from the environment so it is testable.
+///
+/// Returns the reason clause alone ("it is the filesystem root"); callers frame
+/// it for the thing they were asked to do — a project root, a session kiln.
+pub fn forbidden_root_reason(path: &Path, home: Option<&Path>) -> Option<&'static str> {
+    if path.parent().is_none() {
+        return Some("it is the filesystem root");
+    }
+    // `home.starts_with(path)` is true when `path` IS home or an ancestor of
+    // it — every credential directory the user owns lives underneath.
+    if home.is_some_and(|home| home.starts_with(path)) {
+        return Some("it is the home directory or an ancestor of it, which would put every credential under it in scope");
+    }
+    if HOME_PARENTS.iter().any(|parent| path == Path::new(parent)) {
+        return Some("it holds every user's home directory");
+    }
+    if SYSTEM_ROOTS.iter().any(|root| path.starts_with(root)) {
+        return Some("it is inside a system directory");
+    }
+
+    None
+}
+
+/// Expand a configured registration root (`~/…` relative to `home`) to a path.
+/// Kept beside [`forbidden_root_reason`] so all root policy reads in one
+/// place; `home = None` leaves a `~` prefix unexpanded, which then fails
+/// containment rather than resolving somewhere surprising.
+pub fn resolve_registration_root(raw: &str, home: Option<&Path>) -> PathBuf {
+    match (raw.strip_prefix("~/"), raw, home) {
+        (Some(rest), _, Some(home)) => home.join(rest),
+        (None, "~", Some(home)) => home.to_path_buf(),
+        _ => PathBuf::from(raw),
+    }
+}
+
 /// Manages registered projects in the daemon.
 pub struct ProjectManager {
     projects: DashMap<PathBuf, Project>,
@@ -59,6 +121,11 @@ impl ProjectManager {
         // root (worktrees resolve to their own worktree root). An explicit
         // `.crucible/project.toml` at the invocation dir opts a subdirectory
         // out and keeps it a project of its own.
+        //
+        // The root is re-canonicalized: a linked worktree's workdir comes from
+        // a `gitdir` file whose absolute path need not be canonical, and both
+        // the forbidden-root decision below and the `DashMap` key (which
+        // `get`/`unregister` look up canonically) assume it is.
         let canonical = match repository.as_ref() {
             Some(repo)
                 if repo.root != canonical
@@ -70,10 +137,27 @@ impl ProjectManager {
                     root = %repo.root.display(),
                     "Resolving project registration to repository root"
                 );
-                repo.root.clone()
+                repo.root.canonicalize().map_err(|_| {
+                    ProjectError::InvalidPath(format!(
+                        "Repository root does not resolve: {}",
+                        repo.root.display()
+                    ))
+                })?
             }
             _ => canonical,
         };
+
+        // Checked on the FINAL path: the repo-root resolution above can move a
+        // registration upwards (a `<base>/x` inside a repo rooted at `$HOME`
+        // would otherwise land on `$HOME`), so this has to see where it
+        // actually ended up. `canonical` is a canonicalized path, so a symlink
+        // cannot present an innocent name for a forbidden target.
+        if let Some(why) = forbidden_root_reason(&canonical, dirs::home_dir().as_deref()) {
+            return Err(ProjectError::ForbiddenRoot(format!(
+                "{} is not a valid project root: {why}",
+                canonical.display()
+            )));
+        }
 
         let (name, kilns) = self.read_project_metadata(&canonical);
 
@@ -294,6 +378,7 @@ impl ProjectManager {
 
         let content = fs::read_to_string(&self.storage_path)?;
         let projects: Vec<Project> = serde_json::from_str(&content)?;
+        let home = dirs::home_dir();
 
         for mut project in projects {
             // Heal legacy entries: kiln paths used to be persisted as the
@@ -311,14 +396,28 @@ impl ProjectManager {
                     .canonicalize()
                     .unwrap_or_else(|_| kiln.path.clone());
             }
-            if project.path.is_dir() {
-                self.projects.insert(project.path.clone(), project);
-            } else {
+            // Canonicalize before deciding: the file is on disk and editable,
+            // and `forbidden_root_reason` only holds on resolved paths — a
+            // persisted `/tmp/link` pointing at `/` would otherwise sail past
+            // every rule. It also keeps the map key one `get`/`unregister` can
+            // look up, since those canonicalize their argument.
+            let Some(path) = project.path.canonicalize().ok().filter(|p| p.is_dir()) else {
                 warn!(
                     path = %project.path.display(),
                     "Dropping stale project (directory missing)"
                 );
+                continue;
+            };
+            // Drop, don't keep: an entry like "/" can only have come from a
+            // build that allowed it, and keeping it would leave the read scope
+            // it granted alive across the upgrade. Loud, so the user can see
+            // what changed and re-register something narrower.
+            if let Some(why) = forbidden_root_reason(&path, home.as_deref()) {
+                warn!(path = %path.display(), reason = why, "Dropping registered project with a forbidden root");
+                continue;
             }
+            project.path = path.clone();
+            self.projects.insert(path, project);
         }
 
         debug!(
@@ -337,6 +436,9 @@ pub enum ProjectError {
 
     #[error("Invalid path: {0}")]
     InvalidPath(String),
+
+    #[error("{0}")]
+    ForbiddenRoot(String),
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -409,6 +511,140 @@ path = "./notes"
         let err = manager.register(&data_dir).unwrap_err();
         assert!(matches!(err, ProjectError::InvalidPath(_)));
         assert!(manager.list().is_empty());
+    }
+
+    // ── Forbidden registration roots ────────────────────────────────────
+    //
+    // The floor holds for EVERY caller — CLI, RPC, and web alike — so it only
+    // covers roots that are catastrophic for all of them: `/`, `$HOME` and its
+    // ancestors, the dirs that hold every home, and the system trees. Anything
+    // narrower (credential stores, the user's config tree) is per-client
+    // policy and lives with the untrusted client; see the web project route.
+
+    #[test]
+    fn register_refuses_the_filesystem_root() {
+        let (_tmp, manager) = test_manager();
+
+        let err = manager.register(Path::new("/")).unwrap_err();
+        assert!(matches!(err, ProjectError::ForbiddenRoot(_)), "{err:?}");
+        assert!(manager.list().is_empty());
+    }
+
+    #[test]
+    fn register_refuses_the_home_directory_and_every_ancestor_of_it() {
+        let home = Path::new("/home/u");
+
+        for path in ["/", "/home", "/home/u"] {
+            assert!(
+                forbidden_root_reason(Path::new(path), Some(home)).is_some(),
+                "{path} must be refused"
+            );
+        }
+        // A directory *under* home is a perfectly ordinary project.
+        assert!(forbidden_root_reason(Path::new("/home/u/work/app"), Some(home)).is_none());
+        // Another user's home is not an ancestor of ours — not this rule's job.
+        assert!(forbidden_root_reason(Path::new("/home/other/app"), Some(home)).is_none());
+
+        // The home rule is a no-op when the OS reports no home directory, so
+        // the dirs that hold every home must be refused on their own.
+        for path in ["/", "/home", "/Users"] {
+            assert!(
+                forbidden_root_reason(Path::new(path), None).is_some(),
+                "{path} must be refused even with no home dir"
+            );
+        }
+        assert!(forbidden_root_reason(Path::new("/home/u/work"), None).is_none());
+    }
+
+    #[test]
+    fn register_refuses_system_directories() {
+        let home = Path::new("/home/u");
+
+        for path in [
+            "/etc",
+            "/etc/ssl/private",
+            "/proc/self",
+            "/root/x",
+            "/run/x",
+        ] {
+            assert!(
+                forbidden_root_reason(Path::new(path), Some(home)).is_some(),
+                "{path} must be refused"
+            );
+        }
+    }
+
+    // Rewritten: these three cases used to be *refused* by the daemon floor
+    // (`.ssh`/`.config` matched as a path component anywhere, plus a "holds a
+    // credential store" probe). That refused ordinary local registrations —
+    // a dotfiles repo, `~/.config/nvim` — for a threat model that only exists
+    // on the web route. They are allowed here and refused there.
+    #[test]
+    fn register_allows_a_dotfiles_repo_that_holds_a_credential_store() {
+        let (tmp, manager) = test_manager();
+        let dotfiles = tmp.path().join("dotfiles");
+        fs::create_dir_all(dotfiles.join(".ssh")).unwrap();
+        fs::create_dir_all(dotfiles.join(".aws")).unwrap();
+
+        let project = manager.register(&dotfiles).unwrap();
+        assert_eq!(project.path, dotfiles.canonicalize().unwrap());
+        assert_eq!(manager.list().len(), 1);
+    }
+
+    #[test]
+    fn register_allows_a_project_inside_the_users_config_tree() {
+        let home = Path::new("/home/u");
+
+        // `~/.config/nvim` is somebody's editor config repo, and a `.config`
+        // component ANYWHERE (`/home/u/work/app/.config`) is ordinary.
+        for path in [
+            "/home/u/.config/nvim",
+            "/home/u/.local/share/chezmoi",
+            "/home/u/work/app/.config",
+            "/home/u/dotfiles/.ssh",
+        ] {
+            assert_eq!(
+                forbidden_root_reason(Path::new(path), Some(home)),
+                None,
+                "{path} must be allowed for a local caller"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn register_refuses_a_symlink_that_resolves_to_a_forbidden_root() {
+        let (tmp, manager) = test_manager();
+        let link = tmp.path().join("innocent-looking");
+        std::os::unix::fs::symlink("/", &link).unwrap();
+
+        let err = manager.register(&link).unwrap_err();
+        assert!(matches!(err, ProjectError::ForbiddenRoot(_)), "{err:?}");
+        assert!(manager.list().is_empty());
+    }
+
+    #[test]
+    fn load_drops_persisted_registrations_of_forbidden_roots() {
+        // An entry written by an earlier (permissive) build must not keep
+        // granting read scope after the upgrade — dropping it is the point.
+        let tmp = TempDir::new().unwrap();
+        let storage = tmp.path().join("projects.json");
+        let good = tmp.path().join("keep-me");
+        fs::create_dir(&good).unwrap();
+        fs::write(
+            &storage,
+            serde_json::to_string(&[
+                Project::new(PathBuf::from("/"), "root".to_string()),
+                Project::new(good.canonicalize().unwrap(), "keep-me".to_string()),
+            ])
+            .unwrap(),
+        )
+        .unwrap();
+
+        let manager = ProjectManager::new(storage);
+        let list = manager.list();
+        assert_eq!(list.len(), 1, "{list:?}");
+        assert_eq!(list[0].name, "keep-me");
     }
 
     #[test]

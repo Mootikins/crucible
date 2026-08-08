@@ -16,6 +16,21 @@ import { defineConfig, devices } from '@playwright/test';
  * 104) are intentionally NOT here — the web session route hardcodes the internal
  * agent, so the mock-acp-agent is unreachable and there is no deterministic
  * in-tree provider; those flows are covered at the mock tier.
+ *
+ * TWO projects, because "live" now means two different things:
+ *
+ *  - `live`   — e2e/live/*.live.spec.ts: the kiln/notes endpoint suite.
+ *  - `served` — tests/*.pw.ts: the BUILT bundle as the Rust server hands it
+ *               over, headers and all. The mock tier cannot cover these at
+ *               all: its baseURL is the Vite dev server, which emits no CSP,
+ *               no nosniff and no Referrer-Policy and never touches an axum
+ *               route — so a CSP that breaks the product passes there
+ *               unchanged. Anything asserting on response headers, on a CSP
+ *               violation, or on a file the daemon serves belongs here.
+ *
+ * `*.pw.ts`, not `*.spec.ts`: vitest's include is `**\/*.{test,spec}.*` with
+ * only `e2e/**` excluded, so a `.spec.ts` under tests/ would be swept into
+ * `just web-test-unit` and fail on the Playwright import.
  */
 export default defineConfig({
   testDir: './e2e/live',
@@ -34,4 +49,9 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     ...devices['Desktop Chrome'],
   },
+
+  projects: [
+    { name: 'live' },
+    { name: 'served', testDir: './tests', testMatch: '**/*.pw.ts' },
+  ],
 });

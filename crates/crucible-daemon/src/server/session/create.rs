@@ -1,6 +1,7 @@
 use super::super::*;
 use crate::optional_param;
 
+use super::scope::refuse_forbidden_scope;
 use super::spawn_setup_task;
 use crucible_core::config::McpConfig;
 use crucible_core::session::SessionType;
@@ -38,6 +39,30 @@ pub(crate) async fn handle_session_create(
 
     let workspace = optional_param!(req, "workspace", as_str).map(PathBuf::from);
 
+    let connected_kilns: Vec<PathBuf> = req
+        .params
+        .get("connect_kilns")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(PathBuf::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Before anything reads them: every caller-supplied directory that becomes
+    // session scope goes through the same floor as
+    // `session.connect_kiln`/`session.set_workspace` — the socket has no auth,
+    // so create must not be the cheaper door.
+    let scopes = std::iter::once(("kiln", &kiln))
+        .chain(workspace.iter().map(|w| ("workspace", w)))
+        .chain(connected_kilns.iter().map(|k| ("kiln", k)));
+    for (kind, path) in scopes {
+        if let Err(message) = refuse_forbidden_scope(kind, path) {
+            return Response::error(req.id, INVALID_PARAMS, message);
+        }
+    }
+
     // Forwarded untouched: `false`, a profile name and an environment object
     // are the isolating plugin's vocabulary, not the daemon's. Cloned rather
     // than parsed so a shape the daemon has never heard of still reaches the
@@ -55,17 +80,6 @@ pub(crate) async fn handle_session_create(
             return Response::error(req.id, INVALID_PARAMS, message);
         }
     }
-
-    let connected_kilns: Vec<PathBuf> = req
-        .params
-        .get("connect_kilns")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(PathBuf::from))
-                .collect()
-        })
-        .unwrap_or_default();
 
     let recording_mode = optional_param!(req, "recording_mode", as_str)
         .and_then(|s| s.parse::<RecordingMode>().ok());

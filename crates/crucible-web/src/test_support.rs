@@ -6,7 +6,7 @@
 #[cfg(any(test, feature = "test-utils"))]
 use crate::routes::{
     agents_routes, chat_routes, config_routes, fs_routes, health_routes, project_routes,
-    search_routes, session_routes,
+    search_routes, session_routes_fail_closed,
 };
 #[cfg(any(test, feature = "test-utils"))]
 use crate::services::daemon::{AppState, EventBroker, ReconnectingDaemon};
@@ -54,17 +54,34 @@ pub fn arb_ipv4_private() -> impl Strategy<Value = String> {
     ]
 }
 
+/// A globally routable unicast IPv4 address — the only kind an endpoint check
+/// may accept.
+///
+/// Every non-global block is screened HERE, not at the call site. A test that
+/// asserts "this address is accepted" and then filters the generator with a
+/// copy of the predicate under test can only ever fail when the two copies
+/// drift, and it silently drops exactly the ranges the predicate newly covers.
 pub fn arb_ipv4_public() -> impl Strategy<Value = String> {
     any::<[u8; 4]>()
         .prop_map(Ipv4Addr::from)
-        .prop_filter("must be routable/public-ish", |ip| {
-            !ip.is_private()
-                && !ip.is_loopback()
-                && !ip.is_link_local()
-                && !ip.is_broadcast()
-                && !ip.is_unspecified()
-        })
+        .prop_filter("globally routable unicast", is_globally_routable_unicast)
         .prop_map(|ip| ip.to_string())
+}
+
+/// The ranges excluded from [`arb_ipv4_public`], each one an address a server
+/// must never be talked into dialing. Kept as one list so the generator and
+/// `smoke_arb_ipv4_public` cannot disagree.
+fn is_globally_routable_unicast(ip: &Ipv4Addr) -> bool {
+    let [a, b, c, _] = ip.octets();
+    !ip.is_private()                            // 10/8, 172.16/12, 192.168/16
+        && !ip.is_loopback()                    // 127/8
+        && !ip.is_link_local()                  // 169.254/16, incl. the metadata address
+        && !ip.is_multicast()                   // 224/4
+        && a != 0                               // 0/8 "this host"
+        && !(a == 100 && (64..128).contains(&b)) // 100.64/10 CGNAT
+        && !(a == 192 && b == 0 && c == 0)      // 192.0.0/24 IETF assignments
+        && !(a == 198 && b & 0xfe == 18)        // 198.18/15 benchmarking
+        && a < 240 // 240/4 reserved, incl. 255.255.255.255
 }
 
 pub fn arb_ipv6_loopback() -> impl Strategy<Value = String> {
@@ -661,7 +678,7 @@ pub fn build_test_app(state: AppState) -> Router {
         .merge(agents_routes())
         .merge(chat_routes())
         .merge(config_routes())
-        .merge(session_routes())
+        .merge(session_routes_fail_closed())
         .merge(project_routes())
         .merge(search_routes())
         .merge(fs_routes())
@@ -729,6 +746,18 @@ mod tests {
             prop_assert!(!parsed.is_link_local());
             prop_assert!(!parsed.is_broadcast());
             prop_assert!(!parsed.is_unspecified());
+            prop_assert!(!parsed.is_multicast());
+
+            // The blocks the endpoint validator refuses beyond the classic
+            // private ones. Asserted from the octets rather than by calling
+            // `is_globally_routable_unicast`, so this is an independent check
+            // of the generator and not a tautology.
+            let [a, b, c, _] = parsed.octets();
+            prop_assert!(a != 0, "0.0.0.0/8 is not routable: {ip}");
+            prop_assert!(!(a == 100 && (64..128).contains(&b)), "CGNAT: {ip}");
+            prop_assert!(!(a == 192 && b == 0 && c == 0), "192.0.0.0/24: {ip}");
+            prop_assert!(!(a == 198 && b & 0xfe == 18), "198.18.0.0/15: {ip}");
+            prop_assert!(a < 240, "240.0.0.0/4 is reserved: {ip}");
         }
 
         #[test]

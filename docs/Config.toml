@@ -248,12 +248,48 @@ verbose = false
 # [web] - Browser UI
 # =============================================================================
 # See Help/Config/web.md.
+#
+# `registration_roots` and `allowed_hosts` are FAIL-CLOSED and empty by
+# default, and neither has a command-line override:
+#
+#   registration_roots  Directories the web UI's "add project" button may
+#                       create a NEW project root under. Empty ([]) refuses
+#                       every new root — the button 403s. A project root is
+#                       also a read scope for /api/file/raw, so new roots are
+#                       opt-in. The other path is to run `cru` inside the
+#                       directory; anything under an already-registered
+#                       project needs no configuration at all.
+#
+#   allowed_hosts       Extra Host authorities this server answers to, on top
+#                       of localhost/127.0.0.1/[::1] on `port` and whatever
+#                       `host` names. Empty ([]) means "derive from the bind
+#                       address", NOT "allow anything" — so reaching the box
+#                       by an mDNS name (impulse.local) or through a reverse
+#                       proxy is a 403 until the name is listed here. An entry
+#                       without a port matches both bare and on `port`; an
+#                       entry with a port matches that port only. No globs.
+#
+# Webhook sender secrets are NOT in this file. POST /api/webhook/{name}
+# requires an HMAC signature and is closed until you create
+# ~/.config/crucible/webhooks.toml with `[webhooks.<name>] secret = "..."`.
+# See Help/Config/web.md § Webhooks.
+#
+# Two more web controls have no config key at all:
+#   CRUCIBLE_WEB_ALLOW_LOOPBACK_ENDPOINTS=1   env var on the `cru web` process.
+#       A session endpoint pointing at the server's own loopback (a local
+#       Ollama on http://localhost:11434) is allowed when `host` is a loopback
+#       bind — 127.x, ::1 or "localhost" — and refused as SSRF otherwise.
+#       This variable force-allows it on a LAN/wildcard bind too; it only ever
+#       adds permission, and unlocks loopback only.
+#   CRUCIBLE_CORS_ORIGINS                     comma-separated extra CORS origins.
 
 # [web]
 # port = 3000
 # host = "127.0.0.1"
 # api_key = ""                        # "" disables auth entirely
 # remote_shell = false
+# registration_roots = []             # e.g. ["~/Projects"]
+# allowed_hosts = []                  # e.g. ["impulse.local", "crucible.example.com"]
 
 # =============================================================================
 # [scm] - Git integration

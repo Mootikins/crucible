@@ -5,7 +5,12 @@ use super::helpers::{
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::response::{IntoResponse, Response};
-use axum::{extract::State, http::header, routing::get, Json, Router};
+use axum::{
+    extract::State,
+    http::{header, HeaderMap, HeaderValue},
+    routing::get,
+    Json, Router,
+};
 use crucible_core::config::{read_project_config, ProjectFileAccess};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -123,10 +128,14 @@ async fn get_kiln_file(
     Ok(Json(serde_json::json!({ "content": content })))
 }
 
-/// `GET /api/file/raw?path=<path>` — serve a file's raw bytes with a guessed
-/// content type. Same containment as reading via `/api/kiln/file` (kiln, or a
-/// project whose `project_files` policy permits reads); used to load images
-/// (e.g. a README's `assets/demo.gif`) that markdown references by path.
+/// `GET /api/file/raw?path=<path>` — serve a file's raw bytes. Same
+/// containment as reading via `/api/kiln/file` (kiln, or a project whose
+/// `project_files` policy permits reads); used to load the media that markdown
+/// and canvas cards reference by path (e.g. a README's `assets/demo.gif`).
+///
+/// The content type is NOT simply the guess: see [`raw_file_response`], which
+/// serves media as itself (sandboxing the one scriptable media type) and forces
+/// everything else to download.
 async fn get_raw_file(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<FilePathQuery>,
@@ -147,11 +156,141 @@ async fn get_raw_file(
     let bytes = fs::read(&canonical_file)
         .await
         .map_err(|e| WebError::NotFound(format!("File not found: {e}")))?;
-    let mime = mime_guess::from_path(&canonical_file)
-        .first_or_octet_stream()
-        .to_string();
 
-    Ok(([(header::CONTENT_TYPE, mime)], bytes).into_response())
+    Ok(raw_file_response(&canonical_file, bytes))
+}
+
+/// Top-level types whose every subtype the browser hands to an image, audio or
+/// video decoder — a media document, with no scripting surface — rather than
+/// parsing as a document. The one subtype that is also a *document* is called
+/// out by [`SANDBOXED_MEDIA_TYPE`]; it is still served inline.
+const INLINE_SAFE_PREFIXES: &[&str] = &["image/", "audio/", "video/"];
+
+/// The one media type that is also a scriptable document: an SVG *navigated to*
+/// (or framed) parses as a document and runs its own `<script>`. As an `<img>`
+/// or `<object>` subresource — which is how the app loads it — no script runs
+/// at all.
+///
+/// It is served inline with its real type because both a markdown
+/// `<img src="diagram.svg">` and a canvas image card (`IMAGE_EXT` in
+/// `components/canvas/CanvasNodeView.tsx` matches `.svg`) fetch it from here,
+/// and `octet-stream` + `attachment` makes both fail silently. The document
+/// case is closed instead by [`sandbox_csp`], which strips the origin rather
+/// than the rendering.
+const SANDBOXED_MEDIA_TYPE: &str = "image/svg+xml";
+
+/// Denies a document built from these bytes everything it would need to matter:
+/// `sandbox` with no `allow-*` token puts it in a unique opaque origin, so its
+/// script cannot reach the API, the session cookie, or the app's DOM, and
+/// `frame-ancestors 'none'` stops the app itself from framing it.
+///
+/// Applied to the SVG path (where the bytes really are a document) and to the
+/// download path (where they are only a document if something ignores the
+/// `Content-Disposition`).
+fn sandbox_csp() -> HeaderValue {
+    HeaderValue::from_static("sandbox; frame-ancestors 'none'")
+}
+
+/// Non-media types served inline, exhaustively.
+///
+/// `application/pdf` because a canvas card embeds one, and a PDF's own
+/// scripting runs inside the viewer's sandbox with no DOM, cookie, or
+/// same-origin fetch access to the embedding page. `text/plain` because it is
+/// the browser's inert rendering path by definition.
+const INLINE_SAFE_TYPES: &[&str] = &["application/pdf", "text/plain"];
+
+/// The content type to serve `essence` with inline, or `None` to force a
+/// download.
+///
+/// Kiln and project files are agent-writable and `/api/file/raw` is
+/// same-origin with the API, so any file the browser parses as a document here
+/// can `fetch('/api/shell/exec')` with the user's credentials already applied.
+/// This is therefore an allowlist: a type gets served as itself only if the
+/// browser renders it without running script on *this* origin — either because
+/// it has no scripting surface at all, or because [`sandbox_csp`] takes the
+/// origin away. Anything unrecognised — including a file with no extension at
+/// all — falls through to the download path.
+fn inline_content_type(essence: &str) -> Option<&str> {
+    // Pinning the charset keeps the browser from picking one out of the bytes,
+    // which is its own (historic) script-injection route.
+    if essence == "text/plain" {
+        return Some("text/plain; charset=utf-8");
+    }
+    (INLINE_SAFE_PREFIXES.iter().any(|p| essence.starts_with(p))
+        || INLINE_SAFE_TYPES.contains(&essence))
+    .then_some(essence)
+}
+
+/// Build the `/api/file/raw` response.
+///
+/// The single enforcement point for "the browser must never execute a kiln
+/// file on the app origin". `nosniff` is set here as well as by the global
+/// `if_not_present` layer in `server.rs` — behaviourally identical today, kept
+/// deliberately so this route's guarantee does not depend on router
+/// composition. It serves attacker-writable bytes, and a declared content type
+/// is only binding with `nosniff`.
+fn raw_file_response(path: &Path, bytes: Vec<u8>) -> Response {
+    let essence = mime_guess::from_path(path)
+        .first_or_octet_stream()
+        .essence_str()
+        .to_ascii_lowercase();
+
+    // A type from the table above can only be a valid header value, but fall
+    // through to the download path rather than assume it.
+    let inline = inline_content_type(&essence).and_then(|ct| HeaderValue::from_str(ct).ok());
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    match &inline {
+        Some(content_type) => {
+            headers.insert(header::CONTENT_TYPE, content_type.clone());
+        }
+        None => {
+            headers.insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/octet-stream"),
+            );
+            // Navigating to this URL downloads the file instead of rendering it.
+            headers.insert(header::CONTENT_DISPOSITION, attachment_disposition(path));
+        }
+    }
+    // Sandbox exactly the responses that can still become a document: SVG,
+    // which is one by design, and the download path, for the case where
+    // something renders it anyway (a plugin, a viewer, a browser that
+    // mishandles the disposition). Decoded media and the PDF viewer are left
+    // with the app's own policy — `sandbox` is known to break Chrome's PDF
+    // viewer, and a canvas file card embeds one.
+    if inline.is_none() || essence == SANDBOXED_MEDIA_TYPE {
+        headers.insert(header::CONTENT_SECURITY_POLICY, sandbox_csp());
+    }
+
+    (headers, bytes).into_response()
+}
+
+/// `Content-Disposition` for a forced download. The file name is
+/// attacker-chosen, so it is reduced to `[A-Za-z0-9._-]` — dropping the
+/// quotes, semicolons and CR/LF that could otherwise close the quoted string
+/// or inject a second header — and omitted entirely when nothing usable
+/// survives, rather than emitted empty.
+fn attachment_disposition(path: &Path) -> HeaderValue {
+    let name: String = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        .take(64)
+        .collect();
+
+    if !name.contains(|c: char| c.is_ascii_alphanumeric()) {
+        return HeaderValue::from_static("attachment");
+    }
+
+    HeaderValue::from_str(&format!("attachment; filename=\"{name}\""))
+        .unwrap_or_else(|_| HeaderValue::from_static("attachment"))
 }
 
 /// `PUT /api/kiln/file` — write content to a file within an open kiln.
@@ -425,6 +564,231 @@ mod tests {
         let note = canonical_kiln.join("note.md");
         std::fs::write(&note, "hi").expect("write note");
         assert!(validate_write_target_within_kiln(&note, &canonical_kiln).is_ok());
+    }
+
+    // -- /api/file/raw: never hand back an executable document ---------------
+
+    /// Read a header off a built response, or `""` when absent.
+    fn header_of(response: &Response, name: axum::http::HeaderName) -> String {
+        response
+            .headers()
+            .get(&name)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    /// Path suffixes a browser will parse as a document — or as script or CSS —
+    /// on the app's own origin. Kiln and project files are agent-writable, so
+    /// every one of these can be attacker-authored; none may come back with a
+    /// content type that lets the browser run it here.
+    ///
+    /// Bypass coverage: `xhtml`/`xht`/`xml` (XML documents, XSLT-scriptable),
+    /// a bare name with NO extension (mime_guess falls through), a trailing-dot
+    /// name, an uppercase extension, and a double extension whose LAST
+    /// component is the dangerous one.
+    ///
+    /// SVG is deliberately NOT here — it renders inline, sandboxed; see
+    /// [`raw_file_serves_svg_inline_under_a_sandbox_csp`].
+    const EXECUTABLE_SUFFIXES: &[&str] = &[
+        "note.html",
+        "note.htm",
+        "note.xhtml",
+        "note.xht",
+        "note.shtml",
+        "note.xml",
+        "note.js",
+        "note.mjs",
+        "note.css",
+        "note.HTML",
+        "note",
+        "note.",
+        "note.png.html",
+        "note.jpg.xhtml",
+        "archive.tar.gz",
+    ];
+
+    #[test]
+    fn raw_file_never_serves_an_executable_document() {
+        for suffix in EXECUTABLE_SUFFIXES {
+            let path = PathBuf::from(format!("/kiln/{suffix}"));
+            let response =
+                raw_file_response(&path, b"<script>fetch('/api/shell/exec')</script>".to_vec());
+
+            assert_eq!(
+                header_of(&response, header::CONTENT_TYPE),
+                "application/octet-stream",
+                "{suffix} must not be served with a type the browser renders"
+            );
+            assert!(
+                header_of(&response, header::CONTENT_DISPOSITION).starts_with("attachment"),
+                "{suffix} must be forced to download, got {:?}",
+                header_of(&response, header::CONTENT_DISPOSITION)
+            );
+            assert_eq!(
+                header_of(&response, header::X_CONTENT_TYPE_OPTIONS),
+                "nosniff",
+                "{suffix} must not be sniffed back into a document type"
+            );
+            assert!(
+                header_of(&response, header::CONTENT_SECURITY_POLICY).contains("sandbox"),
+                "{suffix} must be sandboxed to an opaque origin if it is rendered anyway"
+            );
+        }
+    }
+
+    #[test]
+    fn raw_file_serves_svg_inline_under_a_sandbox_csp() {
+        // Both halves have to hold at once.
+        //
+        // Product: markdown `<img src="diagram.svg">` and a canvas image card
+        // (`IMAGE_EXT` in components/canvas/CanvasNodeView.tsx matches `.svg`)
+        // both load through this endpoint. `octet-stream` + `attachment` makes
+        // an `<img>` fail its decode and the card render an onerror placeholder,
+        // so the real type has to come back with no disposition.
+        //
+        // Security: an SVG *navigated to* is a document that runs its own
+        // `<script>`. The sandbox CSP gives that document an opaque origin — no
+        // API, no session cookie, no app DOM — which is the property that
+        // matters. As an `<img>` subresource no script runs at all.
+        for suffix in ["diagram.svg", "diagram.SVG", "diagram.png.svg"] {
+            let path = PathBuf::from(format!("/kiln/{suffix}"));
+            let response = raw_file_response(
+                &path,
+                br#"<svg xmlns="http://www.w3.org/2000/svg"><script>fetch('/api/shell/exec')</script></svg>"#.to_vec(),
+            );
+
+            assert_eq!(
+                header_of(&response, header::CONTENT_TYPE),
+                "image/svg+xml",
+                "{suffix} must render as an image, not download"
+            );
+            assert_eq!(
+                header_of(&response, header::CONTENT_DISPOSITION),
+                "",
+                "{suffix} must not be forced to download — it is a canvas image card"
+            );
+            assert_eq!(
+                header_of(&response, header::X_CONTENT_TYPE_OPTIONS),
+                "nosniff",
+                "{suffix} must not be sniffed into some other document type"
+            );
+            assert_eq!(
+                header_of(&response, header::CONTENT_SECURITY_POLICY),
+                "sandbox; frame-ancestors 'none'",
+                "{suffix} must get an opaque origin if it is navigated to or framed"
+            );
+        }
+    }
+
+    #[test]
+    fn raw_file_serves_inert_media_inline() {
+        // The endpoint exists so markdown can show a README's `assets/demo.gif`.
+        // These types render without ever running script on our origin, so they
+        // keep their real content type — but still never get sniffed.
+        for (suffix, expected) in [
+            ("demo.png", "image/png"),
+            ("demo.jpg", "image/jpeg"),
+            ("demo.jpeg", "image/jpeg"),
+            ("demo.gif", "image/gif"),
+            ("demo.webp", "image/webp"),
+            ("demo.avif", "image/avif"),
+            ("notes.txt", "text/plain; charset=utf-8"),
+            ("paper.pdf", "application/pdf"),
+        ] {
+            let path = PathBuf::from(format!("/kiln/{suffix}"));
+            let response = raw_file_response(&path, b"\x89PNG".to_vec());
+
+            assert_eq!(
+                header_of(&response, header::CONTENT_TYPE),
+                expected,
+                "{suffix} should be served inline as {expected}"
+            );
+            assert_eq!(
+                header_of(&response, header::CONTENT_DISPOSITION),
+                "",
+                "{suffix} is inert; it should not be forced to download"
+            );
+            assert_eq!(
+                header_of(&response, header::X_CONTENT_TYPE_OPTIONS),
+                "nosniff",
+                "{suffix} must carry nosniff so the declared type is binding"
+            );
+        }
+    }
+
+    #[test]
+    fn raw_file_serves_canvas_media_inline() {
+        // A canvas media card renders <audio>/<video> straight from this
+        // endpoint (components/canvas/CanvasNodeView.tsx). `octet-stream` plus
+        // nosniff makes a media element refuse to play, so these keep their
+        // real type — a media document has no scripting surface to abuse.
+        for (suffix, expected) in [
+            ("clip.mp3", "audio/mpeg"),
+            ("clip.wav", "audio/wav"),
+            ("clip.ogg", "audio/ogg"),
+            ("clip.flac", "audio/flac"),
+            ("clip.mp4", "video/mp4"),
+            ("clip.webm", "video/webm"),
+            ("clip.mov", "video/quicktime"),
+            ("clip.mkv", "video/x-matroska"),
+        ] {
+            let path = PathBuf::from(format!("/kiln/{suffix}"));
+            let response = raw_file_response(&path, b"\x00\x00".to_vec());
+
+            assert_eq!(header_of(&response, header::CONTENT_TYPE), expected);
+            assert_eq!(
+                header_of(&response, header::CONTENT_DISPOSITION),
+                "",
+                "{suffix} must stay playable, not download"
+            );
+            assert_eq!(
+                header_of(&response, header::X_CONTENT_TYPE_OPTIONS),
+                "nosniff"
+            );
+        }
+    }
+
+    #[test]
+    fn raw_file_double_extension_resolves_to_the_final_extension() {
+        // `evil.html.png` is HTML on disk. It is served as image/png with
+        // nosniff, so the browser decodes it as an image and never as a
+        // document — the declared type is binding.
+        let path = PathBuf::from("/kiln/evil.html.png");
+        let response = raw_file_response(&path, b"<script>alert(1)</script>".to_vec());
+        assert_eq!(header_of(&response, header::CONTENT_TYPE), "image/png");
+        assert_eq!(
+            header_of(&response, header::X_CONTENT_TYPE_OPTIONS),
+            "nosniff"
+        );
+    }
+
+    #[test]
+    fn raw_file_attachment_filename_cannot_inject_headers() {
+        // A kiln file name is attacker-chosen. Quotes, semicolons, CR/LF and
+        // non-ASCII must not reach the header value.
+        let path = PathBuf::from("/kiln/ev\"il;\r\nname\u{4e2d}.html");
+        let response = raw_file_response(&path, b"x".to_vec());
+        let disposition = header_of(&response, header::CONTENT_DISPOSITION);
+
+        assert_eq!(disposition, "attachment; filename=\"evilname.html\"");
+        assert!(!disposition.contains('\r') && !disposition.contains('\n'));
+    }
+
+    #[test]
+    fn raw_file_with_an_unnameable_filename_still_downloads() {
+        // Nothing survives sanitisation, so the disposition drops the filename
+        // rather than emitting an empty or malformed one — it still downloads.
+        let path = PathBuf::from("/kiln/\u{4e2d}\u{6587}");
+        let response = raw_file_response(&path, b"x".to_vec());
+        assert_eq!(
+            header_of(&response, header::CONTENT_DISPOSITION),
+            "attachment"
+        );
+        assert_eq!(
+            header_of(&response, header::CONTENT_TYPE),
+            "application/octet-stream"
+        );
     }
 
     // -- enclosing-root resolution (kiln vs project + policy) ----------------

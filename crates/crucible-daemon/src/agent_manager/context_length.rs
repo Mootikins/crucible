@@ -10,8 +10,18 @@ use std::time::Duration;
 /// Fetch context length for a model from OpenAI-compatible /v1/models endpoint
 /// Falls back to Ollama /api/show if /v1/models doesn't provide context length
 pub async fn fetch_model_context_length(endpoint: &str, model_id: &str) -> Option<usize> {
+    // `redirect::Policy::none()` is load-bearing. The endpoint reaching here has
+    // already been checked against the internal-address deny list
+    // (`crucible-web`'s `validate_endpoint`), but that check covers the URL we
+    // were handed, not wherever it points us next. Following redirects makes it
+    // meaningless: one `302 Location: http://169.254.169.254/` from a validated
+    // public endpoint is a full SSRF, needing no DNS control — just an HTTP
+    // server. A model-metadata probe has no legitimate reason to redirect, so a
+    // 3xx is treated as the non-success status it is and falls through to the
+    // Ollama probe.
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .ok()?;
 
@@ -151,6 +161,37 @@ mod tests {
         // Port 1 is reserved and reliably refuses connections.
         let result = fetch_model_context_length("http://127.0.0.1:1", "test-model").await;
         assert!(result.is_none());
+    }
+
+    /// The SSRF the endpoint allow-list does not cover on its own: the URL that
+    /// was validated answers `302` and names an address nothing ever checked.
+    /// Both probes must stop at the redirect rather than dial it.
+    ///
+    /// `internal` stands in for 169.254.169.254 — what is under test is whether
+    /// the client dials the `Location` at all, not which address it names.
+    #[tokio::test]
+    async fn a_redirect_from_the_endpoint_is_never_followed() {
+        let internal = MockServer::start().await;
+        let validated = MockServer::start().await;
+        for verb in [method("GET"), method("POST")] {
+            Mock::given(verb)
+                .respond_with(
+                    ResponseTemplate::new(302).insert_header("location", internal.uri().as_str()),
+                )
+                .mount(&validated)
+                .await;
+        }
+
+        let result = fetch_model_context_length(&validated.uri(), "test-model").await;
+
+        assert_eq!(result, None, "a 3xx advertises no context length");
+        let dialed = internal.received_requests().await.unwrap_or_default();
+        assert!(
+            dialed.is_empty(),
+            "the redirect target was dialed {} time(s) — a 302 from a validated \
+             endpoint would bypass the internal-address check entirely",
+            dialed.len()
+        );
     }
 
     #[tokio::test]

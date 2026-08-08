@@ -12,7 +12,7 @@ pub(super) use crucible_web::test_support::{
 use axum::Router;
 use crucible_web::routes::{
     chat_routes, fs_routes, health_routes, kiln_routes, plugin_routes, project_routes,
-    search_routes, session_routes, skills_routes,
+    search_routes, session_routes_fail_closed, skills_routes,
 };
 use crucible_web::services::daemon::AppState;
 
@@ -22,7 +22,7 @@ use crucible_web::services::daemon::AppState;
 pub(super) fn build_test_app(state: AppState) -> Router {
     Router::new()
         .merge(chat_routes())
-        .merge(session_routes())
+        .merge(session_routes_fail_closed())
         .merge(project_routes())
         .merge(fs_routes())
         .merge(search_routes())
