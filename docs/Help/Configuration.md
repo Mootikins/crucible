@@ -277,9 +277,6 @@ deep-merged and arrays are appended. That gives you `config.d`-style drop-ins pe
     └── 99-override.toml
 ```
 
-> An `[include]` section also exists in the codebase, but the CLI config loader does not
-> apply it — only the value references above. Use `{dir:}` or `{file:}`.
-
 ## Environment Variables
 
 Some settings can be overridden via environment variables:

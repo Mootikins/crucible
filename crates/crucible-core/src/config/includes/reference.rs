@@ -61,26 +61,6 @@ pub(super) fn parse_ref_kind(s: &str) -> Option<RefKind> {
     }
 }
 
-/// Read an include file and return its content as a TOML value
-#[cfg(feature = "toml")]
-pub fn read_include_file(path: &Path) -> Result<toml::Value, IncludeError> {
-    if !path.exists() {
-        return Err(IncludeError::FileNotFound(path.to_path_buf()));
-    }
-
-    let content = std::fs::read_to_string(path).map_err(|e| IncludeError::Io {
-        path: path.to_path_buf(),
-        error: e.to_string(),
-    })?;
-
-    let value: toml::Value = toml::from_str(&content).map_err(|e| IncludeError::Parse {
-        path: path.to_path_buf(),
-        error: e.to_string(),
-    })?;
-
-    Ok(value)
-}
-
 /// Read a file and return its content as a TOML value
 ///
 /// - If the file has a `.toml` extension, parse it as TOML

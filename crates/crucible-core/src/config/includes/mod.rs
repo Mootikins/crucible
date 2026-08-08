@@ -1,6 +1,6 @@
 //! Simple TOML include mechanism
 //!
-//! This module provides ways to include external content into configuration:
+//! This module provides three ways to pull external content into configuration.
 //!
 //! ## 1. File References: `{file:path}`
 //!
@@ -57,18 +57,6 @@
 //!
 //! Non-`.toml` files and hidden files (starting with `.`) are ignored.
 //!
-//! ## 4. Include Section (legacy)
-//!
-//! The `[include]` section merges files into specific top-level sections:
-//!
-//! ```toml
-//! [include]
-//! gateway = "mcps.toml"
-//! ```
-//!
-//! This merges `mcps.toml` into the `gateway` section.
-
-mod config;
 mod error;
 mod merge;
 mod path;
@@ -78,15 +66,7 @@ mod reference;
 #[cfg(all(test, feature = "toml"))]
 mod tests;
 
-pub use config::IncludeConfig;
 pub use error::IncludeError;
 #[cfg(feature = "toml")]
-pub use merge::merge_includes;
-#[allow(unused_imports)]
-pub use path::resolve_include_path;
-#[cfg(feature = "toml")]
 pub use process::process_file_references;
-#[allow(unused_imports)]
-#[cfg(feature = "toml")]
-pub use reference::read_include_file;
 pub use reference::ResolveMode;

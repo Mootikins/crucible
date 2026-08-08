@@ -1,4 +1,4 @@
-use super::super::resolve_include_path;
+use super::super::path::resolve_include_path;
 use crate::test_support::EnvVarGuard;
 use std::path::PathBuf;
 

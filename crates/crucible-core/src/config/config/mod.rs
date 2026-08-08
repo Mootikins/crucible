@@ -21,7 +21,7 @@ pub use registration::{
 };
 pub use server::{LoggingConfig, ScmConfig, ServerConfig, WebConfig};
 pub use types::{
-    parse_duration_string, plugin_name_from_url, Config, PluginEntry, PluginsConfig, ScheduleEntry,
+    parse_duration_string, plugin_name_from_url, PluginEntry, PluginsConfig, ScheduleEntry,
 };
 
 /// Returns the Crucible home directory (`~/.crucible/`).

@@ -3,7 +3,7 @@
 //! Defines the `~/.config/crucible/config.toml` format for user-level configuration.
 //! Provides defaults that apply to all workspaces unless overridden.
 
-use crate::config::{includes::IncludeConfig, workspace::SecurityConfig, ConfigError};
+use crate::config::{workspace::SecurityConfig, ConfigError};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 
@@ -14,8 +14,6 @@ use std::{fs, path::PathBuf};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(default)]
 pub struct GlobalConfig {
-    /// Include/exclude patterns for file processing
-    pub include: Option<IncludeConfig>,
     /// Security configuration defaults
     pub security: SecurityConfig,
 }
@@ -112,11 +110,6 @@ embedding = "secrets/api.toml"
             .shell
             .blacklist
             .contains(&"rm -rf".to_string()));
-
-        // Verify include config
-        let include = config.include.expect("Include config missing");
-        assert_eq!(include.gateway, Some("mcps.toml".to_string()));
-        assert_eq!(include.embedding, Some("secrets/api.toml".to_string()));
     }
 
     #[test]
@@ -127,7 +120,6 @@ embedding = "secrets/api.toml"
 
         assert_eq!(config.security.shell.whitelist.len(), 0);
         assert_eq!(config.security.shell.blacklist.len(), 0);
-        assert!(config.include.is_none());
     }
 
     #[test]
@@ -137,7 +129,6 @@ embedding = "secrets/api.toml"
 
         assert_eq!(config.security.shell.whitelist.len(), 0);
         assert_eq!(config.security.shell.blacklist.len(), 0);
-        assert!(config.include.is_none());
     }
 
     #[test]
@@ -150,31 +141,12 @@ embedding = "secrets/api.toml"
                 },
                 ..Default::default()
             },
-            include: None,
         };
 
         let toml = toml::to_string(&config).expect("Failed to serialize");
         let parsed: GlobalConfig = toml::from_str(&toml).expect("Failed to re-parse");
 
         assert_eq!(config, parsed);
-    }
-
-    #[test]
-    fn global_config_with_include_patterns() {
-        let toml = r#"
-[include]
-gateway = "mcps.toml"
-enrichment = "enrichment.toml"
-
-[security.shell]
-whitelist = ["git"]
-"#;
-
-        let config: GlobalConfig = toml::from_str(toml).expect("Failed to parse");
-
-        let include = config.include.expect("Include config missing");
-        assert_eq!(include.gateway, Some("mcps.toml".to_string()));
-        assert_eq!(include.enrichment, Some("enrichment.toml".to_string()));
     }
 
     #[test]

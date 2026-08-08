@@ -5,7 +5,6 @@
 //!
 //! ## Features
 //!
-//! - Multi-format support (YAML, TOML, JSON)
 //! - Environment-specific profiles
 //! - Provider configuration management
 //! - Migration utilities for backward compatibility
@@ -14,14 +13,13 @@
 //! ## Quick Start
 //!
 //! ```rust,no_run
-//! use crucible_core::config::{Config, ConfigLoader};
+//! use crucible_core::config::CliAppConfig;
 //!
-//! #[tokio::main]
-//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let config = ConfigLoader::load_from_file("config.yaml").await?;
-//!     let enrichment_config = config.enrichment_config()?;
-//!     Ok(())
-//! }
+//! // `None` uses `CliAppConfig::default_config_path()`; the two `Option`s are
+//! // the `--embedding-url` / `--embedding-model` CLI overrides.
+//! let config = CliAppConfig::load(None, None, None)?;
+//! let provider = config.effective_llm_provider()?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
 #![warn(missing_docs)]
@@ -40,9 +38,7 @@ mod global;
 mod includes;
 mod io_helpers;
 mod kiln_config;
-mod loader;
 mod patterns;
-mod profile;
 mod project_config;
 mod security;
 pub mod serde_helpers;
@@ -69,7 +65,7 @@ pub use components::{
 pub use config::registry::{KilnEntry, ProjectEntry};
 pub use config::{
     crucible_home, is_crucible_home, lua_stubs_dir, parse_duration_string, plugin_name_from_url,
-    CliAppConfig, Config, ConfigError, ConfigValidationError, EffectiveLlmConfig, LoggingConfig,
+    CliAppConfig, ConfigError, ConfigValidationError, EffectiveLlmConfig, LoggingConfig,
     PluginEntry, PluginsConfig, ScheduleEntry, ScmConfig, ServerConfig, WebConfig,
 };
 #[cfg(feature = "toml")]
@@ -88,13 +84,11 @@ pub use enrichment::{
     OpenAIConfig, PipelineConfig, VertexAIConfig,
 };
 pub use global::GlobalConfig;
-pub use includes::{process_file_references, IncludeConfig, IncludeError, ResolveMode};
+pub use includes::{process_file_references, IncludeError, ResolveMode};
 pub use kiln_config::{read_kiln_config, write_kiln_config, KilnConfig, KilnMeta};
-pub use loader::{ConfigFormat, ConfigLoader};
 pub use patterns::{
     BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, ToolPatterns,
 };
-pub use profile::{Environment, ProfileConfig};
 pub use project_config::{read_project_config, write_project_config, ProjectConfig, ProjectMeta};
 pub use security::{ProjectFileAccess, ShellPolicy};
 pub use value_source::{ValueInfo, ValueSource, ValueSourceMap};

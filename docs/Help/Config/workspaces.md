@@ -165,9 +165,6 @@ type = "openai"
 api_key = "{file:~/.secrets/work-openai.key}"
 ```
 
-> An `[include]` section exists in the codebase but is **not** applied by the CLI config
-> loader — only the value references above are. Use `{dir:}` instead.
-
 ## See Also
 
 - [[Help/Config/llm]] - LLM provider configuration
