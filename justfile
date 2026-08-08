@@ -124,10 +124,6 @@ test tier="quick":
             ;;
     esac
 
-# Run all tests (full output, legacy alias)
-test-full:
-    cargo test --workspace
-
 # Run tests for a specific crate
 test-crate crate:
     cargo test -p {{crate}}
@@ -144,7 +140,7 @@ test-plugin dir:
     # Worktrees share the primary checkout's target dir, so ./target/debug/cru
     # need not exist here. Ask cargo where the binary actually landed.
     cru="$(cargo metadata --format-version 1 --no-deps --offline | jq -r .target_directory)/debug/cru"
-    "$cru" plugin test {{dir}}
+    "$cru" plugin test "{{dir}}"
 
 # Run tests with output
 test-verbose:
@@ -317,17 +313,13 @@ web-build-debug:
 release-web: web-build
     cargo build -p crucible-cli --release
 
-# Args pass through: `just web-test e2e/cross-zone-dnd.spec.ts --project=chromium`
+# Always runs in a private output dir: two concurrent `playwright test` runs
+# otherwise share `test-results/` and wipe each other's traces mid-run, which
+# reads exactly like a flake. Args pass through:
+# `just web-test e2e/cross-zone-dnd.spec.ts --project=chromium`.
 #
 # Run web E2E tests (Playwright)
 web-test *args:
-    cd crates/crucible-web/web && bunx playwright test --reporter=line {{args}}
-
-# Two concurrent `playwright test` runs share `test-results/` and wipe each
-# other's traces mid-run, which reads exactly like a flake. Use this for both.
-#
-# Run web E2E tests in a private output dir (safe alongside another run)
-web-test-isolated *args:
     #!/usr/bin/env bash
     set -euo pipefail
     out="$(mktemp -d /tmp/crucible-pw-XXXXXX)"
@@ -432,14 +424,10 @@ ci: fmt-check clippy lint-docs license-check file-size-check test-ci test-featur
 test-plugins:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo build -q -p crucible-cli --bin cru
-    # Worktrees share the primary checkout's target dir, so ./target/debug/cru
-    # need not exist here. Ask cargo where the binary actually landed.
-    cru="$(cargo metadata --format-version 1 --no-deps --offline | jq -r .target_directory)/debug/cru"
     for dir in runtime/plugins/*/; do
         if compgen -G "${dir}tests/*.lua" > /dev/null; then
             echo "== ${dir}"
-            "$cru" plugin test "${dir%/}"
+            just test-plugin "${dir%/}"
         fi
     done
 
