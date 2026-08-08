@@ -232,6 +232,52 @@ impl AgentManager {
             );
         }
 
+        // Agent-card tool policy: Deny refuses outright (defense in depth —
+        // denied tools are also excluded from the advertised definitions),
+        // Ask forces the permission gate even for safe tools, Allow skips it.
+        //
+        // The Deny half is checked HERE, above the hook loop, for the same
+        // reason `plugin_tool_barred` is: a `pre_tool_call` handler returning
+        // `Handled` returns before the gate is ever reached, so a plugin could
+        // see the arguments of, rewrite, and fabricate a result for a tool the
+        // session policy refuses outright. No legitimate plugin needs to
+        // intercept a denied tool.
+        //
+        // Only the hard Deny moves. The permission gate itself — prompting,
+        // Lua hooks, the mode stance — stays below interception, because
+        // reordering it would change every plugin's contract. So does the
+        // isolation gate, deliberately: there, a handler taking the call over
+        // *is* the sandbox.
+        use crucible_core::agent::ToolPolicy;
+        let card_policy = stream_ctx
+            .agent_stream_config
+            .tool_policy
+            .as_ref()
+            .and_then(|m| m.get(&tool_call.name))
+            .copied();
+        if card_policy == Some(ToolPolicy::Deny) {
+            let error_msg = format!(
+                "Tool '{}' is denied by this agent's card tool policy",
+                tool_call.name
+            );
+            emit_event(
+                &stream_ctx.event_tx,
+                SessionEventMessage::tool_result(
+                    &stream_ctx.session_id,
+                    &call_id,
+                    &tool_call.name,
+                    serde_json::json!({ "error": &error_msg }),
+                ),
+            );
+            return Some(crucible_core::traits::chat::ChatToolResult {
+                name: tool_call.name.clone(),
+                result: String::new(),
+                error: Some(error_msg),
+                call_id: Some(call_id.clone()),
+                terminate: false,
+            });
+        }
+
         let mut intercepted = {
             let mut state = stream_ctx.session_state.lock().await;
             let pre_tool_event = SessionEvent::internal(InternalSessionEvent::PreToolCall {
@@ -415,38 +461,9 @@ impl AgentManager {
             }
         }
 
-        // Agent-card tool policy: Deny refuses outright (defense in depth —
-        // denied tools are also excluded from the advertised definitions),
-        // Ask forces the permission gate even for safe tools, Allow skips it.
-        use crucible_core::agent::ToolPolicy;
-        let card_policy = stream_ctx
-            .agent_stream_config
-            .tool_policy
-            .as_ref()
-            .and_then(|m| m.get(&tool_call.name))
-            .copied();
-        if card_policy == Some(ToolPolicy::Deny) {
-            let error_msg = format!(
-                "Tool '{}' is denied by this agent's card tool policy",
-                tool_call.name
-            );
-            emit_event(
-                &stream_ctx.event_tx,
-                SessionEventMessage::tool_result(
-                    &stream_ctx.session_id,
-                    &call_id,
-                    &tool_call.name,
-                    serde_json::json!({ "error": &error_msg }),
-                ),
-            );
-            return Some(crucible_core::traits::chat::ChatToolResult {
-                name: tool_call.name.clone(),
-                result: String::new(),
-                error: Some(error_msg),
-                call_id: Some(call_id.clone()),
-                terminate: false,
-            });
-        }
+        // `card_policy` was resolved above the hook loop, where the Deny half is
+        // enforced. Ask and Allow only matter once a call actually reaches the
+        // gate, so they are read here.
         let requires_gate =
             super::gate_decision::requires_permission_gate(card_policy, &tool_call.name);
 
@@ -896,102 +913,5 @@ fn is_reproducible_tool(name: &str) -> bool {
 }
 
 #[cfg(test)]
-mod invoke_tool_tests {
-    use super::AgentManager;
-    use crucible_core::traits::chat::ChatToolCall;
-
-    fn invoke(args: serde_json::Value) -> ChatToolCall {
-        ChatToolCall {
-            name: "invoke_tool".to_string(),
-            arguments: Some(args),
-            id: Some("call-42".to_string()),
-        }
-    }
-
-    #[test]
-    fn unwrap_rewrites_to_inner_tool_and_preserves_call_id() {
-        let call = invoke(serde_json::json!({
-            "name": "gh_search_repos",
-            "args": {"query": "rust"}
-        }));
-        let inner = AgentManager::unwrap_invoke_tool("auto", &call, "call-42")
-            .expect("valid invoke_tool must unwrap");
-        assert_eq!(inner.name, "gh_search_repos");
-        assert_eq!(inner.id.as_deref(), Some("call-42"));
-        assert_eq!(
-            inner
-                .arguments
-                .unwrap()
-                .get("query")
-                .and_then(|v| v.as_str()),
-            Some("rust")
-        );
-    }
-
-    #[test]
-    fn unwrap_defaults_missing_args_to_empty_object() {
-        let call = invoke(serde_json::json!({ "name": "list_jobs" }));
-        let inner = AgentManager::unwrap_invoke_tool("auto", &call, "call-42").unwrap();
-        assert!(inner.arguments.unwrap().is_object());
-    }
-
-    #[test]
-    fn unwrap_rejects_recursion() {
-        let call = invoke(serde_json::json!({ "name": "invoke_tool", "args": {} }));
-        let err = AgentManager::unwrap_invoke_tool("auto", &call, "call-42")
-            .expect_err("recursive invoke_tool must be denied");
-        assert_eq!(err.call_id.as_deref(), Some("call-42"));
-        assert!(err.error.unwrap().contains("itself"));
-    }
-
-    #[test]
-    fn unwrap_rejects_missing_name_without_panicking() {
-        let call = invoke(serde_json::json!({ "args": {"x": 1} }));
-        let err = AgentManager::unwrap_invoke_tool("auto", &call, "call-42")
-            .expect_err("missing name must yield an error result");
-        assert!(err.error.unwrap().contains("name"));
-    }
-
-    #[test]
-    fn unwrap_denies_write_tool_in_plan_mode() {
-        let call = invoke(serde_json::json!({
-            "name": "edit_file",
-            "args": {"path": "x", "content": "y"}
-        }));
-        let err = AgentManager::unwrap_invoke_tool("plan", &call, "call-42")
-            .expect_err("plan mode must deny non-plan tools via the bridge");
-        assert!(err.error.unwrap().contains("plan mode"));
-    }
-
-    #[test]
-    fn unwrap_allows_plan_tool_in_plan_mode() {
-        let call = invoke(serde_json::json!({
-            "name": "semantic_search",
-            "args": {"query": "notes"}
-        }));
-        let inner = AgentManager::unwrap_invoke_tool("plan", &call, "call-42")
-            .expect("plan-allowed tools remain callable via the bridge");
-        assert_eq!(inner.name, "semantic_search");
-    }
-
-    #[test]
-    fn missing_tool_after_unwrap_yields_error_result_not_stall() {
-        // invoke_tool named a tool the dispatcher doesn't know: must return an
-        // error result (so the turn completes) rather than None (which stalls
-        // the turn waiting for a result that never arrives).
-        let result = AgentManager::missing_tool_result(true, "bogus_tool", "call-42")
-            .expect("unwrapped unknown tool must yield an error result");
-        assert_eq!(result.name, "bogus_tool");
-        assert_eq!(result.call_id.as_deref(), Some("call-42"));
-        let err = result.error.expect("must carry an error");
-        assert!(err.contains("bogus_tool"));
-        assert!(err.contains("discover_tools"));
-    }
-
-    #[test]
-    fn missing_tool_without_unwrap_returns_none_for_external_agent() {
-        // A genuine ACP tool call (not unwrapped) still defers to the external
-        // agent — no synthetic error result.
-        assert!(AgentManager::missing_tool_result(false, "acp_tool", "call-42").is_none());
-    }
-}
+#[path = "tool_call/tests.rs"]
+mod invoke_tool_tests;
