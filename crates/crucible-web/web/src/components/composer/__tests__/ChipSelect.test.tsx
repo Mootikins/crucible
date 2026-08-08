@@ -16,7 +16,7 @@ const runOnOptions = (): ChipOption[] => [
     value: 'ssh',
     label: 'Remote Machines',
     children: [
-      { value: 'ssh:krohnos-k3s', label: 'krohnos-k3s', hint: 'aarch64' },
+      { value: 'ssh:example-k3s', label: 'example-k3s', hint: 'aarch64' },
       { value: 'ssh:build-box', label: 'build-box' },
     ],
   },
@@ -44,7 +44,7 @@ describe('ChipSelect submenus', () => {
     openMenu();
     expect(screen.getByText('Remote Machines')).toBeTruthy();
     expect(screen.queryByTestId('run-on-flyout')).toBeNull();
-    expect(screen.queryByText('krohnos-k3s')).toBeNull();
+    expect(screen.queryByText('example-k3s')).toBeNull();
   });
 
   it('opens the flyout when the category row is clicked, without selecting it', () => {
@@ -53,7 +53,7 @@ describe('ChipSelect submenus', () => {
     fireEvent.click(screen.getByText('Remote Machines'));
 
     expect(screen.getByTestId('run-on-flyout')).toBeTruthy();
-    expect(screen.getByText('krohnos-k3s')).toBeTruthy();
+    expect(screen.getByText('example-k3s')).toBeTruthy();
     // The whole point of a doorway row: clicking it must not hand the caller
     // 'ssh', which names no machine.
     expect(onSelect).not.toHaveBeenCalled();
@@ -75,16 +75,16 @@ describe('ChipSelect submenus', () => {
 
     fireEvent.click(row);
     expect(screen.getByTestId('run-on-flyout')).toBeTruthy();
-    expect(screen.getByText('krohnos-k3s')).toBeTruthy();
+    expect(screen.getByText('example-k3s')).toBeTruthy();
   });
 
   it('selects a child and closes the whole menu', () => {
     const onSelect = renderChip();
     openMenu();
     fireEvent.click(screen.getByText('Remote Machines'));
-    fireEvent.click(screen.getByText('krohnos-k3s'));
+    fireEvent.click(screen.getByText('example-k3s'));
 
-    expect(onSelect).toHaveBeenCalledWith('ssh:krohnos-k3s');
+    expect(onSelect).toHaveBeenCalledWith('ssh:example-k3s');
     expect(screen.queryByTestId('run-on-flyout')).toBeNull();
     expect(screen.queryByTestId('run-on-popout')).toBeNull();
   });
@@ -140,15 +140,15 @@ describe('ChipSelect submenus', () => {
     ]);
     openMenu();
 
-    fireEvent.input(screen.getByLabelText('Search Run on'), { target: { value: 'krohnos' } });
+    fireEvent.input(screen.getByLabelText('Search Run on'), { target: { value: 'example' } });
 
-    const hit = screen.getByText('krohnos-k3s');
+    const hit = screen.getByText('example-k3s');
     expect(hit).toBeTruthy();
     // Flattened under its parent's name, so the row still says where it lives.
     expect(screen.getByText('Remote Machines')).toBeTruthy();
 
     fireEvent.click(hit);
-    expect(onSelect).toHaveBeenCalledWith('ssh:krohnos-k3s');
+    expect(onSelect).toHaveBeenCalledWith('ssh:example-k3s');
   });
 
   it('escape backs out of the flyout before closing the menu', () => {
