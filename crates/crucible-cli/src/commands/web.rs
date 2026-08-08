@@ -165,16 +165,6 @@ fn running_server_addr(config: &WebConfig) -> Option<String> {
     Some(addr.to_string())
 }
 
-/// What rotation actually did.
-///
-/// `--rotate` writes the key file; it does not reach into a running server. The
-/// server resolves the key once, at startup, and `bearer_auth` compares against
-/// that in-memory string — and `SessionStore` binds every browser session to the
-/// same string, so outstanding sessions are not retired either. The result is
-/// the exact inverse of what this used to print ("remote devices must
-/// re-authenticate"): the old key keeps working and the new one is rejected
-/// until the process is restarted. Say that, in those terms, rather than let an
-/// operator believe they have locked a device out.
 fn handle_webhook_secret(config: &WebConfig, name: &str, rotate: bool) -> Result<()> {
     let path = crucible_daemon::webhook::default_secrets_path()
         .ok_or_else(|| anyhow::anyhow!("could not resolve the config directory"))?;
@@ -207,6 +197,16 @@ fn handle_webhook_secret(config: &WebConfig, name: &str, rotate: bool) -> Result
     Ok(())
 }
 
+/// What rotation actually did.
+///
+/// `--rotate` writes the key file; it does not reach into a running server. The
+/// server resolves the key once, at startup, and `bearer_auth` compares against
+/// that in-memory string — and `SessionStore` binds every browser session to the
+/// same string, so outstanding sessions are not retired either. The result is
+/// the exact inverse of what this used to print ("remote devices must
+/// re-authenticate"): the old key keeps working and the new one is rejected
+/// until the process is restarted. Say that, in those terms, rather than let an
+/// operator believe they have locked a device out.
 fn rotation_notice(listening_on: Option<&str>) -> String {
     let found = match listening_on {
         Some(addr) => format!(
