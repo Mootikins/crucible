@@ -86,7 +86,7 @@ keyring = ["dep:keyring"]
 tokio = { workspace = true, features = ["test-util", "full"] }
 tracing-subscriber = { workspace = true }
 tempfile = "3.27"
-serial_test = "3.3"
+serial_test = "4.0"
 test-case = { workspace = true }
 
 # Dev-kiln validation tests
