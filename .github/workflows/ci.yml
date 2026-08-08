@@ -12,6 +12,15 @@ env:
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
   CARGO_PROFILE_DEV_DEBUG: 0
+  # Overrides the justfile's dev-box defaults for a 4-core / 16GB runner and for
+  # the higher property-test budget CI is expected to carry.
+  CARGO_BUILD_JOBS: "4"
+  CRUCIBLE_PROPTEST_CASES: "256"
+
+# Jobs invoke `just` so the recipe and the CI step cannot become two
+# hand-maintained copies. Exceptions: `build-from-clean-clone` (provisioned with
+# nothing, on purpose), `deny` (runs through cargo-deny-action) and the sharded
+# Playwright jobs (their `--shard`/`--reporter` flags are CI-only).
 
 jobs:
   check:
@@ -19,22 +28,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --lib --bins --tests -- -W warnings
+      - uses: ./.github/actions/rust-prereqs
+      - run: just fmt-check
+      - run: just clippy
       - name: Check for god files
-        run: scripts/check-file-sizes.sh
+        run: just file-size-check
 
-  # The install path a new user actually takes: clone, cargo build, no bun and
-  # so no web/dist. Every other job here builds the frontend or once faked it
-  # with a placeholder index.html, which is exactly how a fresh clone stayed
-  # broken while CI was green. Deliberately no bun step — that absence is the
-  # thing under test.
+  # Validate the `docs/` kiln: every note parses, frontmatter is complete, every
+  # wikilink resolves, every `crates/…` code reference names a file that exists
+  # (and, where the reference carries a `:line` anchor, a line that is within
+  # that file), and every TOML block in the docs survives the config loader.
+  #
+  # Not filtered to `paths: docs/**`: the code-reference check fails on a Rust
+  # rename that touches no doc, and a skipped job deadlocks a required check.
+  docs:
+    name: Docs Kiln Invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/rust-prereqs
+      - run: just lint-docs
+
+  # The install path a new user actually takes: clone, cargo build, no bun and so
+  # no web/dist. The absence of a bun step is the thing under test.
   build-from-clean-clone:
     name: Build without a frontend build
     runs-on: ubuntu-latest
@@ -55,30 +71,17 @@ jobs:
   deny:
     name: Dependency Licences
     runs-on: ubuntu-latest
-    # This is the one job here that hands the checkout to a third-party
-    # container action, so it gets least privilege explicitly: read-only, and
-    # no git credentials left behind in the workspace for that container to
-    # find. Neither checkout nor cargo-deny performs an authenticated push.
+    # Least privilege: this job hands the checkout to a third-party container
+    # action, and neither it nor checkout performs an authenticated push.
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      # Runs `cargo-deny --all-features check licenses`, matching
-      # `just license-check` exactly — the two have to stay in step or the gate
-      # only ever runs on whichever side you remembered.
-      #
-      # `licenses` and nothing else: deny.toml states a policy for that check
-      # alone. The action's default of `check` (all checks) would additionally
-      # enforce `advisories`, `bans` and `sources` against cargo-deny's built-in
-      # defaults rather than anything this repo has decided — turning an
-      # upstream advisory published overnight into a red build on a branch that
-      # changed nothing.
-      #
-      # `--all-features` is deliberately broader than the release binary's
-      # `fastembed,web`: it means a licence cannot enter through a feature that
-      # is off today and on in a later release.
+      # Mirrors `just license-check`. `licenses` and nothing else: deny.toml
+      # states a policy for that check alone, and the action's default (all
+      # checks) would turn an overnight upstream advisory into a red build.
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           arguments: --all-features
@@ -99,53 +102,26 @@ jobs:
           sudo docker image prune --all --force || true
           df -h
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@nextest
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - name: Build mock ACP agent for smoke tests
-        run: cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent
+      - uses: ./.github/actions/rust-prereqs
       - name: Run tests with nextest
-        run: cargo nextest run --profile ci --workspace
-        # Push the proptest case budget above the local 64-case floor so
-        # heavyweight proofs get more coverage in CI than on a dev box.
-        # Per-file `.max(N)` floors in crucible-oil/tests still apply.
-        env:
-          CRUCIBLE_PROPTEST_CASES: "256"
-      # Oil's serde JSON contract (consumed by the web UI) and its proptests
-      # are feature-gated off the default build — run them explicitly.
-      - name: Run oil feature-gated tests (serde contract + proptests)
-        run: cargo nextest run --profile ci -p crucible-oil --features serde,test-utils
-        env:
-          CRUCIBLE_PROPTEST_CASES: "256"
-      - name: Verify Lua stubs are not stale
-        run: cargo nextest run --profile ci -p crucible-lua -E 'test(stubs)' --no-capture
-        env:
-          CRUCIBLE_PROPTEST_CASES: "256"
+        run: just test-ci
+      # Oil's serde JSON contract (consumed by the web UI) and the Lua
+      # stub-staleness check — feature-gated off the default build, so
+      # `test-ci` never compiles them.
+      - name: Run feature-gated suites
+        run: just test-features
       # nextest does not execute doctests, so every example in a doc comment
       # was unverified until this step existed — they had rotted to 62 failures.
       - name: Run doctests
-        run: cargo test --workspace --doc
+        run: just test-doc
 
-  test-sqlite:
-    name: Test SQLite Backend
+  test-plugins:
+    name: Lua Plugin Suites
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@nextest
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - name: Build cru binary for e2e tests
-        run: cargo build -p crucible-cli --bin cru
-      - name: Build mock ACP agent for smoke tests
-        run: cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent
-      - name: Run SQLite-backed tests (merged into crucible-daemon)
-        run: cargo nextest run -p crucible-daemon -E 'test(sqlite)'
-        env:
-          CRUCIBLE_PROPTEST_CASES: "256"
+      - uses: ./.github/actions/rust-prereqs
+      - run: just test-plugins
 
   test-web-unit:
     name: Web Unit Tests
@@ -158,18 +134,21 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+      # `just` finds the justfile by searching upward and runs recipes from the
+      # repo root, so the recipes work unchanged from this job's directory.
+      - uses: taiki-e/install-action@just
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: just web-typecheck
       - name: Run Vitest unit tests
-        run: bunx vitest run
+        run: just web-test-unit
 
   test-web:
-    # Sharded across jobs rather than parallelised inside one: every worker
-    # shares a single Vite dev server, so raising the worker count contends on
-    # that one process. Separate jobs get a server each. Requires
-    # `fullyParallel: true` (set in playwright.config.ts) — without it
-    # Playwright shards whole FILES, and one shard lands 20 tests while another
-    # gets 1.
+    # Sharded across jobs rather than parallelised inside one: workers share a
+    # single Vite dev server, so separate jobs get a server each. Requires
+    # `fullyParallel: true`, else Playwright shards whole FILES and one shard
+    # lands 20 tests while another gets 1.
     name: Web E2E Tests (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     strategy:

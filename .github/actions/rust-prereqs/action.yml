@@ -1,0 +1,19 @@
+name: Rust prerequisites
+description: >-
+  Everything a Rust job here needs before it can run a `just` recipe: toolchain,
+  build cache, protoc, just and nextest. One copy, so the jobs cannot drift.
+
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+    - uses: Swatinem/rust-cache@v2
+    - uses: taiki-e/install-action@just
+    - uses: taiki-e/install-action@nextest
+    # prost-build is a transitive dependency of crucible-cli, crucible-daemon
+    # and crucible-web; without protoc they do not compile.
+    - name: Install protoc
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y protobuf-compiler

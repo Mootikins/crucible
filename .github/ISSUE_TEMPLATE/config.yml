@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/Mootikins/crucible/discussions
+    about: Ask about usage, architecture, or anything that is not a defect.
+  - name: Security vulnerability
+    url: https://github.com/Mootikins/crucible/security/advisories/new
+    about: Report privately. Never in a public issue — see SECURITY.md.

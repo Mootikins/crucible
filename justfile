@@ -1,36 +1,84 @@
 # Crucible development recipes
 # Run `just` to see available commands
 
-# Cap cargo's BUILD parallelism for every recipe below.
-#
-# The compile phase is what overloads a dev box, not the tests: `rust-lld`
-# peaks around 7GB per link job, so an uncapped `--workspace` build runs ~30
-# linkers at once and can take the machine down. Capping it is what makes a
-# full-workspace `just test` / `just ci` safe to run.
-#
-# TRAP this encodes: nextest's `-j` caps TEST THREADS ONLY — the compile phase
-# still uses every core. `CARGO_BUILD_JOBS` is the knob that actually throttles
-# the build, and as an export it covers build/check/clippy/nextest uniformly.
-#
-# Raise it on a big or idle box: `CARGO_BUILD_JOBS=12 just test`
+# Throttles the COMPILE phase — nextest's `-j` caps test threads only, and
+# rust-lld peaks ~7GB per link job. Raise it: `CARGO_BUILD_JOBS=12 just test`.
 export CARGO_BUILD_JOBS := env_var_or_default("CARGO_BUILD_JOBS", "6")
 
-# Where cargo actually puts artifacts, for recipes that run a built binary.
-#
-# TRAP this encodes: worktrees under `tree/` share the primary checkout's
-# target dir (`tree/.cargo/config.toml`), so `./target/debug/cru` does not
-# exist there and every recipe hardcoding it fails with exit 127 — which is
-# how `just ci` used to break in any worktree.
-#
-# Needs `jq`, as `scripts/validate-demos.sh` already does. Errors are left
-# unsuppressed: a cargo failure here should be visible, not silently collapse
-# the path to `/debug/cru`.
-cargo_target_dir := `cargo metadata --format-version 1 --no-deps --offline | jq -r .target_directory`
-cru_debug := cargo_target_dir / "debug" / "cru"
+# Property-test budget for crucible-oil (`tests/common/mod.rs`); per-file
+# `.max(N)` floors still apply. CI raises it to 256 via the workflow `env:`.
+export CRUCIBLE_PROPTEST_CASES := env_var_or_default("CRUCIBLE_PROPTEST_CASES", "64")
 
 # Default recipe - show help
 default:
     @just --list
+
+# === Setup ===
+
+# Idempotent. protoc and bun are reported, not installed: their package name
+# differs per platform and guessing wrong is worse than saying so.
+#
+# Install everything `just ci` needs beyond a Rust toolchain
+setup:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    missing=0
+
+    if ! command -v protoc >/dev/null 2>&1; then
+        missing=1
+        echo "MISSING: protoc (protobuf-compiler) — crucible-cli, crucible-daemon and crucible-web pull prost-build and will not compile without it."
+        case "$(uname -s)" in
+            Darwin) echo "  brew install protobuf" ;;
+            Linux)
+                echo "  Debian/Ubuntu: sudo apt-get install -y protobuf-compiler"
+                echo "  Fedora:        sudo dnf install -y protobuf-compiler"
+                echo "  Arch:          sudo pacman -S protobuf"
+                ;;
+            *) echo "  Install the 'protobuf-compiler' package for your platform." ;;
+        esac
+    fi
+
+    if ! command -v bun >/dev/null 2>&1; then
+        missing=1
+        echo "MISSING: bun — required for the web frontend (npm/yarn are NOT substitutes)."
+        echo "  curl -fsSL https://bun.sh/install | bash    # or: brew install oven-sh/bun/bun"
+    fi
+
+    if ! command -v jq >/dev/null 2>&1; then
+        missing=1
+        echo "MISSING: jq — used by \`just test-plugin(s)\` and scripts/validate-demos.sh."
+        echo "  apt-get / dnf / pacman / brew install jq"
+    fi
+
+    if [ "$missing" -ne 0 ]; then
+        echo
+        echo "Install the above, then re-run \`just setup\`."
+        exit 1
+    fi
+
+    # cargo-nextest: every `just test*` recipe and every GitHub test job uses it.
+    if ! cargo nextest --version >/dev/null 2>&1; then
+        echo "== installing cargo-nextest"
+        cargo install cargo-nextest --locked
+    fi
+
+    # cargo-deny: backs `just license-check` / the `deny` CI job.
+    if ! cargo deny --version >/dev/null 2>&1; then
+        echo "== installing cargo-deny"
+        cargo install cargo-deny --locked
+    fi
+
+    echo "== installing web dependencies"
+    cd crates/crucible-web/web && bun install
+
+    # Chromium only — every Playwright project runs on chromium. `--with-deps`
+    # is left off on purpose: it shells out to sudo apt-get.
+    echo "== installing Playwright browsers (chromium)"
+    bunx playwright install chromium
+
+    echo
+    echo "Setup complete. Run \`just ci\` to verify."
 
 # === Build ===
 
@@ -52,16 +100,10 @@ release-cli:
 
 # === Test ===
 
-# Run tests (quick|ignored|full). Slow/external tests are gated with
-# #[ignore], not cargo features — there is no feature-based tier system.
-# - quick: everything not #[ignore]d (default)
-# - ignored: only #[ignore]d tests (need agent binaries, podman, or an LLM
-#   endpoint; see each test's ignore reason for its prerequisites)
-# - full: quick + ignored
+# Slow/external tests are gated with #[ignore], not cargo features; each ignore
+# reason names its prerequisite (agent binary, podman, or an `.env.local` endpoint).
 #
-# The ones needing a live LLM endpoint read `.env.local` at the repo root —
-# `cp .env.local.example .env.local` and edit. Without it they print SKIPPED
-# and pass, so the tier is green on a machine with no endpoint configured.
+# Run tests: quick (default, skips #[ignore]d) | ignored | full
 test tier="quick":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -96,8 +138,13 @@ test-crate-filter crate filter:
 
 # Run a Lua plugin's own test suite, e.g. `just test-plugin runtime/plugins/oci`
 test-plugin dir:
+    #!/usr/bin/env bash
+    set -euo pipefail
     cargo build -q -p crucible-cli --bin cru
-    {{quote(cru_debug)}} plugin test {{dir}}
+    # Worktrees share the primary checkout's target dir, so ./target/debug/cru
+    # need not exist here. Ask cargo where the binary actually landed.
+    cru="$(cargo metadata --format-version 1 --no-deps --offline | jq -r .target_directory)/debug/cru"
+    "$cru" plugin test {{dir}}
 
 # Run tests with output
 test-verbose:
@@ -105,13 +152,22 @@ test-verbose:
 
 # === Check & Lint ===
 
+# `--workspace` is mandatory: `default-members` is crucible-cli alone, so a bare
+# `--all-targets` silently skips daemon/core/lua/oil/web. The second line covers
+# oil's feature-gated test files, which `--all-targets` alone never compiles.
+#
 # Check compilation without building
 check:
-    cargo check --all-targets
+    cargo check --workspace --all-targets
+    cargo check -p crucible-oil --all-targets --features serde,test-utils
 
-# Run clippy
+# `--all-targets` covers target kinds, not feature combinations, so the second
+# line lints the feature-gated surface — it pairs 1:1 with `test-features`.
+#
+# Lint every crate's every target, denying warnings
 clippy:
-    cargo clippy --all-targets -- -D warnings
+    cargo clippy --workspace --all-targets -- -D warnings
+    cargo clippy -p crucible-oil --all-targets --features serde,test-utils -- -D warnings
 
 # Check for oversized Rust files (enforces 1500-line ceiling via whitelist)
 file-size-check:
@@ -125,26 +181,12 @@ fmt:
 fmt-check:
     cargo fmt --all -- --check
 
-# Validate the `docs/` documentation kiln against parser, frontmatter,
-# wikilink, and code-reference invariants. Runs the 5 `#[ignore]`d tests in
-# `crates/crucible-core/tests/dev_kiln.rs`.
+# These tests are `CARGO_MANIFEST_DIR`-anchored to this repo's `docs/`, so a
+# failure has to be reproduced by editing `docs/` in place, not a copy.
 #
-# Run this BEFORE EVERY RELEASE and whenever `docs/` structure changes. The
-# tests are slow (they walk and parse every markdown/script file under the
-# repo's `docs/`) and `dev_kiln_root()` is `env!("CARGO_MANIFEST_DIR")`-anchored
-# to that exact directory, so the suite cannot be pointed at a `/tmp` copy —
-# failures must be reproduced by a trapped edit/rename INSIDE `docs/`.
-#
-# NOT part of `just ci`: `docs/` rarely changes shape, re-parsing ~150 notes
-# on every local CI run is pure noise, and these invariants are user-facing
-# docs quality rather than compile/runtime correctness.
-#
-# Syntax: `--test dev_kiln` selects the binary, then `-- --ignored` is passed
-# through to the libtest harness to bypass the `#[ignore]` gate.
-# `cargo test --ignored dev_kiln` is INVALID Cargo syntax — `dev_kiln` after
-# `--ignored` parses as a positional test-name filter, not a binary selector.
+# Validate the `docs/` kiln (parser, frontmatter, wikilinks, code refs, config)
 lint-docs:
-    cargo test -p crucible-core --test dev_kiln -- --ignored
+    cargo test -p crucible-core --test dev_kiln --test docs_config -- --ignored
 
 # === Documentation ===
 
@@ -184,12 +226,10 @@ demo-validate:
 demo-record name *args:
     cargo run -p crucible-cli -- chat --record assets/fixtures/{{name}}.jsonl {{args}}
 
-# Re-record the ACP wire fixture replayed by tests/acp_fixture_replay.rs.
-# REQUIRES the real agent binary on PATH (claude / opencode / codex / cursor /
-# gemini) and a working login for it — the replay test itself is hermetic and
-# needs none of this. The capture is sanitized ($HOME -> <HOME>) and installed
-# over the existing fixture; diff it before committing, and update the case
-# table in acp_fixture_replay.rs to match the new session id / usage numbers.
+# REQUIRES the agent binary on PATH and logged in. Diff the result before
+# committing and update the case table in acp_fixture_replay.rs to match.
+#
+# Re-record the ACP wire fixture replayed by tests/acp_fixture_replay.rs
 record-acp-fixture agent prompt="say hello in exactly 3 words":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -247,36 +287,29 @@ web-vite-host:
 web-dev:
     cargo run -p crucible-cli -- web --host 0.0.0.0 --port 3000 --static-dir crates/crucible-web/web/dist
 
-# Debug-build web server on a side port (default 3001) with fresh assets.
-# ALWAYS --standalone: a debug client on the shared socket detects the git-SHA
-# mismatch with the installed daemon and SHUTS IT DOWN to respawn its own
-# (verify_or_restart) — killing the production instance on 3000 out from
-# under you. Build parallelism comes from CARGO_BUILD_JOBS at the top.
-# Debug web server on a side port. Binds 0.0.0.0 so the instance is reachable
-# from another machine on the LAN, which is how it actually gets looked at;
-# pass a host to narrow it. --standalone is NOT optional: a debug `cru` that
-# talks to the installed daemon will kill it for a version mismatch.
+# `--standalone` is NOT optional: a debug `cru` on the shared socket detects the
+# git-SHA mismatch and shuts the installed daemon down to respawn its own.
+#
+# Debug web server on a side port (default 3001, bound 0.0.0.0)
 web-debug port="3001" host="0.0.0.0": web-build-debug
     cargo build -p crucible-cli --bin cru
     cargo run -p crucible-cli -- --standalone web --host {{host}} --port {{port}} --static-dir crates/crucible-web/web/dist
 
-# Fail on a dependency whose licence is not on the allowlist in deny.toml.
-# Mirrored by the `deny` job in .github/workflows/ci.yml — GitHub does not
-# invoke `just ci`, so every gate has to exist in both places or it only ever
-# runs on whichever side you remembered.
+# Fail on a dependency whose licence is not on deny.toml's allowlist
 license-check:
     cargo deny --all-features check licenses
 
-# Regenerate THIRD-PARTY-NOTICES.md from the dependency graph that ships.
-# Needs the web tree's node_modules present, since the font and icon notices
-# are read from the packages themselves rather than transcribed.
+# Needs the web tree's node_modules present: font and icon notices are read from
+# the packages themselves rather than transcribed.
+#
+# Regenerate THIRD-PARTY-NOTICES.md from the dependency graph that ships
 notices:
     python3 scripts/gen-third-party-notices.py
 
-# Same build, minus the service worker. See the `selfDestroying` note in
-# vite.config.ts: with the production SW a rebuild keeps serving the PREVIOUS
-# bundle until the update toast is accepted, so changes look like they did not
-# deploy. Never use this output for a release.
+# Same build minus the service worker, which otherwise keeps serving the PREVIOUS
+# bundle until the update toast is accepted. Never ship this output.
+#
+# Build the frontend for debugging (no PWA service worker)
 web-build-debug:
     cd crates/crucible-web/web && bun install && VITE_DISABLE_PWA=1 bun run build
 
@@ -284,17 +317,16 @@ web-build-debug:
 release-web: web-build
     cargo build -p crucible-cli --release
 
-# Run web E2E tests (Playwright). Args pass through for scoped runs:
-# `just web-test e2e/cross-zone-dnd.spec.ts --project=chromium`
+# Args pass through: `just web-test e2e/cross-zone-dnd.spec.ts --project=chromium`
+#
+# Run web E2E tests (Playwright)
 web-test *args:
     cd crates/crucible-web/web && bunx playwright test --reporter=line {{args}}
 
-# Playwright run isolated from any other in-flight run. Two concurrent
-# `playwright test` invocations share `test-results/`, and one wipes the
-# other's trace files mid-run — which surfaces as ENOENT on
-# `.playwright-artifacts-N/traces/*.network` and reads exactly like a flake.
-# Use this whenever measuring flakiness (`--repeat-each=N`) alongside anything
-# else, or when running two suites at once.
+# Two concurrent `playwright test` runs share `test-results/` and wipe each
+# other's traces mid-run, which reads exactly like a flake. Use this for both.
+#
+# Run web E2E tests in a private output dir (safe alongside another run)
 web-test-isolated *args:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -304,17 +336,21 @@ web-test-isolated *args:
       PLAYWRIGHT_HTML_OUTPUT_DIR="$out/html" \
       bunx playwright test --reporter=line --output "$out/results" {{args}}
 
-# Run web unit tests (Vitest). Args pass through for scoped runs:
-# `just web-test-unit src/stores/__tests__`
+# `bun install` first so a fresh clone or a pulled lockfile bump fails on the
+# tests, not on a missing vitest.
+#
+# Run web unit tests (Vitest); args pass through for scoped runs
 web-test-unit *args:
-    cd crates/crucible-web/web && bunx vitest run {{args}}
+    cd crates/crucible-web/web && bun install && bunx vitest run {{args}}
 
 # Typecheck the web frontend (no emit)
 web-typecheck:
     cd crates/crucible-web/web && bunx tsc --noEmit -p tsconfig.json
 
-# Run web unit tests with coverage (Vitest + v8). Report at crates/crucible-web/web/coverage/index.html.
-# Thresholds in vite.config.ts gate against regressions below the 2026-05-17 baseline.
+# Report at crates/crucible-web/web/coverage/index.html; thresholds in
+# vite.config.ts gate against regressions below the baseline.
+#
+# Run web unit tests with coverage (Vitest + v8)
 web-test-coverage:
     cd crates/crucible-web/web && bun run test:coverage
 
@@ -322,14 +358,16 @@ web-test-coverage:
 web-test-stories:
     cd crates/crucible-web/web && bunx playwright test --project=stories --reporter=line
 
-# Run the live web tier (real `cru web` + daemon + temp kiln). Needs a `cru`
-# binary: set CRU_BIN or build target/debug/cru first. Skips cleanly if absent.
+# Needs a `cru` binary: set CRU_BIN or build one first. Skips cleanly if absent.
+#
+# Run the live web tier (real `cru web` + daemon + temp kiln)
 web-test-live:
     cd crates/crucible-web/web && bunx playwright test --config=playwright.live.config.ts
 
-# Run the cross-surface hero flow (TUI → web → TUI, one session; deterministic
-# via a fake Ollama server). Builds `cru`, the web assets, and the TUI test
-# binary, then runs only the hero spec. Skips cleanly if `cru` is absent.
+# Deterministic via a fake Ollama server. Builds `cru`, the web assets and the
+# TUI test binary first; skips cleanly if `cru` is absent.
+#
+# Run the cross-surface hero flow (TUI -> web -> TUI, one session)
 hero:
     cargo build -p crucible-cli --bin cru
     cd crates/crucible-web/web && bun install && bun run build
@@ -380,50 +418,47 @@ coverage-open: coverage
 
 # === CI ===
 
-# Run full CI check (mirrors GitHub CI workflow)
-ci: fmt-check clippy license-check file-size-check test-ci test-features test-doc web-test-unit web-test test-plugins
+# Every job in .github/workflows/ci.yml invokes one of these recipes, so the two
+# cannot drift. CI-only: `build-from-clean-clone` (needs a tree with no web/dist).
+#
+# Run every gate GitHub runs — do this before committing
+ci: fmt-check clippy lint-docs license-check file-size-check test-ci test-features test-doc web-test-unit web-typecheck web-test test-plugins
     @echo "CI checks passed!"
 
-# Every shipped plugin's own Lua suite.
+# In `ci` because `oci` decides which environment to build and whether config is
+# trustworthy — a regression there is a sandbox regression no Rust suite covers.
 #
-# In `ci` because these guard behaviour nothing in the Rust suites covers —
-# `oci` decides which environment to build and whether config is trustworthy,
-# and a regression there is a sandbox regression.
+# Run every shipped plugin's own Lua test suite
 test-plugins:
     #!/usr/bin/env bash
     set -euo pipefail
     cargo build -q -p crucible-cli --bin cru
+    # Worktrees share the primary checkout's target dir, so ./target/debug/cru
+    # need not exist here. Ask cargo where the binary actually landed.
+    cru="$(cargo metadata --format-version 1 --no-deps --offline | jq -r .target_directory)/debug/cru"
     for dir in runtime/plugins/*/; do
         if compgen -G "${dir}tests/*.lua" > /dev/null; then
             echo "== ${dir}"
-            {{quote(cru_debug)}} plugin test "${dir%/}"
+            "$cru" plugin test "${dir%/}"
         fi
     done
 
-# Run tests with CI profile (matches GitHub Actions).
-#
-# `CRUCIBLE_PROPTEST_CASES=256` overrides the local 64-case floor for
-# property tests (see `crucible-oil/tests/common/mod.rs`); per-file `.max(N)`
-# floors still apply. GitHub Actions sets the same value via workflow `env:`.
+# Run tests with CI profile (matches GitHub Actions)
 test-ci: build-test-fixtures
-    CRUCIBLE_PROPTEST_CASES=256 cargo nextest run --profile ci --workspace
+    cargo nextest run --profile ci --workspace
 
-# Feature-gated suites the default build never compiles.
+# `--workspace` builds every crate with its DEFAULT features, so anything behind
+# a non-default flag is not even type-checked by `test-ci`.
 #
-# `--workspace` builds every crate with its DEFAULT features, so anything
-# behind a non-default flag is not even type-checked by `test-ci`. That is how
-# a `Border::Custom(BorderChars)` variant reached CI inside a `Serialize`
-# derive without `BorderChars` implementing it: green locally, red on the one
-# step that turns the feature on. GitHub runs these; so must `just ci`.
-#
-# `CRUCIBLE_PROPTEST_CASES=256` matches `test-ci` so the local run exercises
-# the same high-budget path the oil property tests see in CI.
+# Run the feature-gated suites the default build never compiles
 test-features:
-    CRUCIBLE_PROPTEST_CASES=256 cargo nextest run --profile ci -p crucible-oil --features serde,test-utils
+    cargo nextest run --profile ci -p crucible-oil --features serde,test-utils
     cargo nextest run --profile ci -p crucible-lua -E 'test(stubs)' --no-capture
 
-# Run doctests. nextest cannot execute them, so `test-ci` alone leaves every
-# example in a doc comment unverified — which is how they rotted unnoticed.
+# nextest cannot execute doctests, so `test-ci` alone leaves every example in a
+# doc comment unverified — which is how they rotted unnoticed.
+#
+# Run doctests
 test-doc:
     cargo test --workspace --doc
 
@@ -432,7 +467,6 @@ build-test-fixtures: build-mock-acp-agent
     @echo "Test fixtures built"
 
 
-# Build mock-acp-agent binary for acp_smoke tests
-# Required before running: cargo nextest run -p crucible-daemon --test acp_smoke
+# Build the mock-acp-agent binary the acp_smoke tests spawn
 build-mock-acp-agent:
     cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent

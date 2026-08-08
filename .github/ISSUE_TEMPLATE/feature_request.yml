@@ -1,0 +1,34 @@
+name: Feature request
+description: Propose a capability Crucible does not have.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search [existing issues](https://github.com/Mootikins/crucible/issues) first.
+        Open-ended design discussion belongs in
+        [Discussions](https://github.com/Mootikins/crucible/discussions).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and where does Crucible get in the way today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: What should happen instead? Sketch the command, config, or API if you have one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried
+      description: >
+        Existing commands, config, or a Lua plugin — and why they do not cover it.
+        Crucible is plugin-driven; if a plugin could do this, say what it is missing.
