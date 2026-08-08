@@ -20,7 +20,9 @@ TUI-first, plugin-driven).
 
 Single `cru` binary. The daemon (`cru daemon serve`) is auto-spawned by
 `DaemonClient::connect_or_start()`; JSON-RPC 2.0 over Unix socket
-(`$CRUCIBLE_SOCKET`, else `$XDG_RUNTIME_DIR/crucible.sock`, else `/tmp/crucible.sock`).
+(`$CRUCIBLE_SOCKET`, else `$XDG_RUNTIME_DIR/crucible.sock`, else
+`<tmpdir>/crucible-<uid>/crucible.sock` — per-uid and 0700, because a shared
+`/tmp/crucible.sock` let any local user reach an unauthenticated RPC surface).
 **All storage is daemon-side** — the CLI has zero direct storage access.
 **Daemon owns business logic** (enrichment, providers, agent lifecycle); CLI/TUI/Web are
 thin rendering/input layers. If a web frontend would need to duplicate it, it's in the wrong place.

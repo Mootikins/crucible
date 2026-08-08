@@ -33,7 +33,10 @@ The daemon listens on a Unix socket, resolved in order:
 
 1. `$CRUCIBLE_SOCKET` environment variable
 2. `$XDG_RUNTIME_DIR/crucible.sock`
-3. `/tmp/crucible.sock`
+3. `<tmpdir>/crucible-<uid>/crucible.sock` — a per-uid directory created 0700.
+   The daemon refuses to start if it exists and is a symlink, is owned by someone
+   else, or is group/world accessible; it never repairs one, because chmod-ing a
+   path you do not own is itself a capability.
 
 ## Backward Compatibility
 

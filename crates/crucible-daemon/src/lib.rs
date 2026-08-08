@@ -18,7 +18,7 @@
 //! cru daemon serve
 //!
 //! # Server listens at: $XDG_RUNTIME_DIR/crucible.sock
-//! # Or: /tmp/crucible.sock
+//! # Or: <tmpdir>/crucible-<uid>/crucible.sock
 //! ```
 //!
 

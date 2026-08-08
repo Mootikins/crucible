@@ -52,8 +52,10 @@ pub mod grep;
 pub mod kiln;
 mod plugin_boot;
 mod socket_lock;
+mod socket_privacy;
 pub(crate) mod ui_broadcast;
 use socket_lock::acquire_socket_lock;
+use socket_privacy::{bind_private_listener, prepare_socket_dir};
 pub mod lua;
 pub mod lua_plugin_suite;
 pub mod note_refactor;
@@ -98,6 +100,10 @@ pub struct Server {
     /// one daemon binds this socket. Dropped (unlocked) when the Server drops.
     #[allow(dead_code)]
     socket_lock: Option<std::fs::File>,
+    /// The only uid allowed to connect (see `core::peer_accepted`). Always the
+    /// daemon's own uid in production; a test overrides it to prove the accept
+    /// path really consults it.
+    authorized_uid: u32,
 }
 
 /// Session handle backing for contexts that only need identity, not the full
@@ -215,10 +221,15 @@ impl Server {
 
     /// Bind to a Unix socket path with plugin configuration
     pub async fn bind_with_plugin_config(params: BindWithPluginConfigParams) -> Result<Self> {
-        // Create the socket's parent dir first (needed for both the lock and
-        // the socket itself).
+        // Verify (or privately create) the socket's parent dir first. This runs
+        // BEFORE acquire_socket_lock, not just before the bind: the lock file is
+        // opened inside this directory, so a squatted directory would otherwise
+        // be reached by the lock before anything had looked at it.
         if let Some(parent) = params.path.parent() {
-            std::fs::create_dir_all(parent)?;
+            prepare_socket_dir(
+                parent,
+                &crucible_core::protocol::lifecycle::fallback_socket_dir(),
+            )?;
         }
 
         // Exclusive advisory lock: exactly one daemon owns this socket. Acquired
@@ -233,7 +244,7 @@ impl Server {
         // missing file.
         crucible_core::protocol::remove_socket(&params.path);
 
-        let listener = UnixListener::bind(&params.path)?;
+        let listener = bind_private_listener(&params.path)?;
         let (shutdown_tx, _) = broadcast::channel(1);
         let (event_tx, _) = broadcast::channel(1024);
 
@@ -397,9 +408,18 @@ impl Server {
             data_home,
             mcp_server_manager,
             socket_lock,
+            authorized_uid: daemon_uid(),
             #[cfg(feature = "web")]
             web_config: params.web_config.clone(),
         })
+    }
+
+    /// Test seam for the peer check: spawning a process under a second uid needs
+    /// privileges the suite does not have, so the check is driven end-to-end by
+    /// moving the *expected* uid instead of the peer's.
+    #[cfg(test)]
+    fn set_authorized_uid(&mut self, uid: u32) {
+        self.authorized_uid = uid;
     }
 
     /// Get a shutdown sender for external shutdown triggers
@@ -797,6 +817,7 @@ impl Server {
                                 plugin_loader: self.plugin_loader.clone(),
                                 llm_config: self.llm_config.clone(),
                                 mcp_server_manager: self.mcp_server_manager.clone(),
+                                authorized_uid: self.authorized_uid,
                             });
                             let event_rx = ctx.event_tx.subscribe();
                             tokio::spawn(async move {
@@ -863,6 +884,9 @@ struct ServerContext {
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     llm_config: Option<LlmConfig>,
     mcp_server_manager: Arc<McpServerManager>,
+    /// Copied from `Server::authorized_uid`; `handle_client` refuses any peer
+    /// whose `SO_PEERCRED` uid is not this.
+    authorized_uid: u32,
 }
 
 #[cfg(test)]

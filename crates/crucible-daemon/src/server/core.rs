@@ -54,11 +54,54 @@ pub(super) fn agent_error_to_response(req_id: Option<RequestId>, err: AgentError
     }
 }
 
+/// The uid this daemon runs as — the only uid allowed to speak JSON-RPC to it.
+pub(super) fn daemon_uid() -> u32 {
+    crucible_core::protocol::lifecycle::current_uid()
+}
+
+/// Reject a connection from any other local user before it can send a request.
+///
+/// Every RPC method is unauthenticated once the connection is up — they read the
+/// kiln, run Lua, spawn agents. So the connection itself is the authentication
+/// boundary, and the only credential that grants it is being the same user. Root
+/// is refused too: root does not need our door, and blessing it would silently
+/// admit any process that gained it.
+///
+/// Fails closed: if `SO_PEERCRED` cannot be read there is no credential to
+/// check, and an unidentifiable peer is exactly what an attacker looks like.
+///
+/// `authorized_uid` is a parameter rather than `geteuid()` read inline so a test
+/// can bind a real server that expects a uid other than its own and watch a
+/// genuine connection get dropped — otherwise nothing in the suite would notice
+/// this check being deleted.
+#[cfg(unix)]
+pub(super) fn peer_accepted(stream: &UnixStream, authorized_uid: u32) -> bool {
+    match stream.peer_cred() {
+        Ok(cred) if cred.uid() == authorized_uid => true,
+        Ok(cred) => {
+            warn!(
+                peer_uid = cred.uid(),
+                authorized_uid, "refused a client connection from another user"
+            );
+            false
+        }
+        Err(e) => {
+            warn!(error = %e, "refused a client connection with unreadable peer credentials");
+            false
+        }
+    }
+}
+
 pub(super) async fn handle_client(
     stream: UnixStream,
     ctx: Arc<ServerContext>,
     mut event_rx: broadcast::Receiver<SessionEventMessage>,
 ) -> Result<()> {
+    #[cfg(unix)]
+    if !peer_accepted(&stream, ctx.authorized_uid) {
+        return Ok(());
+    }
+
     let client_id = ClientId::new();
     let (reader, writer) = stream.into_split();
     let writer: Arc<Mutex<OwnedWriteHalf>> = Arc::new(Mutex::new(writer));
