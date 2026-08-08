@@ -207,6 +207,15 @@ impl SessionAgent {
     /// resolution, precognition, context budget, validation) inherits from
     /// the base. An unrecognized `provider:` string falls back to the base
     /// provider (validated at use, not load).
+    ///
+    /// The two fields that decide what the child may EXECUTE — tool policy and
+    /// MCP servers — override only when the base is the configured defaults.
+    /// When the base is a delegating parent session they are intersected
+    /// instead, so a delegated child's configured tool surface is never wider
+    /// than the session that spawned it. Card discovery re-runs on every
+    /// delegation, so without that a session running under `bash: deny` could
+    /// write a card carrying `bash: allow` this turn and delegate into it the
+    /// next. `mode` is NOT narrowed — see the comment at the field.
     pub fn from_card(
         card: &crate::agent::AgentCard,
         base: &SessionAgent,
@@ -238,6 +247,17 @@ impl SessionAgent {
         let provider = provider_str
             .as_deref()
             .and_then(|p| p.parse::<BackendType>().ok());
+        // Is `base` a delegating parent the card must stay inside, or the
+        // configured defaults it may freely override? Only a session whose
+        // agent carries a delegation config can delegate (the spawner reads it
+        // before resolving a target: `crucible-daemon/src/delegation.rs:333`),
+        // and every default builder hardcodes `delegation_config: None`:
+        //   - crucible-daemon/src/server/session/create.rs:367
+        //     (`build_default_internal_agent`, the base at create.rs:260)
+        //   - `SessionAgent::internal_from_config` below
+        // A disabled config counts as a parent too: narrowing where it wasn't
+        // needed is not the unsafe direction.
+        let under_parent = base.delegation_config.is_some();
         Self {
             agent_type: "internal".to_string(),
             agent_name: None,
@@ -261,8 +281,19 @@ impl SessionAgent {
                 base.endpoint.clone()
             },
             env_overrides: HashMap::new(),
+            // Gateway tools are dispatchable under prefixed names that appear
+            // in no `tools:` block, so a delegated child that could add a
+            // server would route around the policy narrowing below by naming
+            // a server instead of a tool. An empty list means "no gateway
+            // servers", not "all of them", so intersecting is exact.
             mcp_servers: if card.mcp_servers.is_empty() {
                 base.mcp_servers.clone()
+            } else if under_parent {
+                card.mcp_servers
+                    .iter()
+                    .filter(|s| base.mcp_servers.contains(s))
+                    .cloned()
+                    .collect()
             } else {
                 card.mcp_servers.clone()
             },
@@ -280,8 +311,19 @@ impl SessionAgent {
             output_validation: base.output_validation.clone(),
             validation_retries: base.validation_retries,
             autocompact_threshold: base.autocompact_threshold,
+            // `mode` is deliberately left alone. Modes are an open set declared
+            // in Lua (`cru.modes.<name> = ...`) whose permission stance this
+            // crate cannot see, so there is no ordering here to take a minimum
+            // over — and forcing the parent's mode onto a delegated child also
+            // discards a card that volunteers a TIGHTER mode. Narrowing it
+            // needs the mode registry's stance ordering; that is a separate
+            // change, not this one.
             mode: card.mode.clone().or_else(|| base.mode.clone()),
-            tool_policy: card.tools.clone(),
+            tool_policy: if under_parent {
+                narrow_tool_policy(base.tool_policy.as_ref(), card.tools.as_ref())
+            } else {
+                card.tools.clone()
+            },
         }
     }
 
@@ -354,6 +396,57 @@ impl SessionAgent {
     }
 }
 
+/// Restrictiveness of one tool's policy entry, with "not listed" ranked
+/// between Allow and Ask: an unlisted tool faces the permission gate iff it is
+/// not read-only, which is strictly tighter than Allow (never gates) and no
+/// tighter than Ask (always gates). See
+/// `crucible-daemon/src/agent_manager/messaging/gate_decision.rs:21-32`.
+fn restrictiveness(policy: Option<crate::agent::ToolPolicy>) -> u8 {
+    use crate::agent::ToolPolicy;
+    match policy {
+        Some(ToolPolicy::Allow) => 0,
+        None => 1,
+        Some(ToolPolicy::Ask) => 2,
+        Some(ToolPolicy::Deny) => 3,
+    }
+}
+
+/// The per-tool policy a delegated child gets: for every tool named by EITHER
+/// side, the more restrictive of the two entries.
+///
+/// Both directions matter, and the second is the common one. A parent's Deny
+/// must survive a card that allows the same tool. But a parent that names no
+/// policy at all is not unconstrained — its own non-read-only tools still face
+/// the gate — so a card's `allow`, which makes `requires_permission_gate`
+/// answer false and skips the mode stance, the mode rules, every Lua
+/// `on_request` hook and the saved patterns, must not stand either. That is
+/// the stock shape: an ACP-profile parent carries no policy, so this is what
+/// keeps a card written this turn from widening the child.
+///
+/// An entry that ends up back at "not listed" is dropped, leaving the tool
+/// with default behavior rather than a synthesized one.
+fn narrow_tool_policy(
+    parent: Option<&crate::agent::ToolPolicyMap>,
+    card: Option<&crate::agent::ToolPolicyMap>,
+) -> Option<crate::agent::ToolPolicyMap> {
+    let empty = crate::agent::ToolPolicyMap::new();
+    let (parent, card) = (parent.unwrap_or(&empty), card.unwrap_or(&empty));
+    let narrowed: crate::agent::ToolPolicyMap = parent
+        .keys()
+        .chain(card.keys())
+        .filter_map(|name| {
+            let (p, c) = (parent.get(name).copied(), card.get(name).copied());
+            let stricter = if restrictiveness(p) >= restrictiveness(c) {
+                p
+            } else {
+                c
+            };
+            stricter.map(|policy| (name.clone(), policy))
+        })
+        .collect();
+    (!narrowed.is_empty()).then_some(narrowed)
+}
+
 /// Generate a session ID with the given type prefix.
 ///
 /// Format: `{type}-{YYYY-MM-DDTHHMM}-{random6}`
@@ -373,4 +466,223 @@ pub(super) fn generate_session_id(type_prefix: &str) -> String {
         })
         .collect();
     format!("{}-{}-{}", type_prefix, timestamp, random)
+}
+
+#[cfg(test)]
+mod narrowing_tests {
+    use super::*;
+    use crate::agent::{AgentCard, ToolPolicy, ToolPolicyMap};
+
+    fn delegation_config() -> DelegationConfig {
+        DelegationConfig {
+            enabled: true,
+            max_depth: 2,
+            allowed_targets: None,
+            result_max_bytes: 51200,
+            max_concurrent_delegations: 3,
+            timeout_secs: 300,
+        }
+    }
+
+    /// The stock delegating parent: an ACP profile session (`cru chat -a
+    /// claude`) with delegation turned on. Note `tool_policy` stays `None` —
+    /// that is the shape every production delegation actually has, because
+    /// `DelegationService::spawn_delegation` refuses unless the parent agent
+    /// carries a delegation config, and the only constructor that produces one
+    /// is `from_profile` (which hardcodes `tool_policy: None`).
+    fn delegating_parent() -> SessionAgent {
+        let profile = AgentProfile {
+            delegation: Some(delegation_config()),
+            ..AgentProfile::default()
+        };
+        SessionAgent::from_profile(&profile, "claude")
+    }
+
+    /// The `session.create` base: config-derived defaults, no delegation
+    /// config, no policy of its own.
+    fn config_defaults() -> SessionAgent {
+        let mut base = SessionAgent::from_profile(&AgentProfile::default(), "defaults");
+        base.agent_type = "internal".to_string();
+        base
+    }
+
+    fn card_with_tools(tools: Option<ToolPolicyMap>) -> AgentCard {
+        AgentCard {
+            id: uuid::Uuid::nil(),
+            name: "child".to_string(),
+            version: "0.1.0".to_string(),
+            description: "child card".to_string(),
+            tags: Vec::new(),
+            specialty: None,
+            system_prompt: String::new(),
+            mcp_servers: Vec::new(),
+            provider: None,
+            model: None,
+            temperature: None,
+            max_tokens: None,
+            max_turns: None,
+            mode: None,
+            tools,
+            config: HashMap::new(),
+            loaded_at: Utc::now(),
+        }
+    }
+
+    fn policy(entries: &[(&str, ToolPolicy)]) -> ToolPolicyMap {
+        entries
+            .iter()
+            .map(|(name, p)| (name.to_string(), *p))
+            .collect()
+    }
+
+    fn tool(agent: &SessionAgent, name: &str) -> Option<ToolPolicy> {
+        agent
+            .tool_policy
+            .as_ref()
+            .and_then(|p| p.get(name))
+            .copied()
+    }
+
+    /// The stock-configuration escape: the parent names no tool policy at all,
+    /// so its own bash calls face the permission gate. A card the agent writes
+    /// this turn saying `bash: allow` must not hand the child a bash that
+    /// skips the gate outright.
+    #[test]
+    fn a_delegated_card_cannot_auto_approve_a_tool_its_parent_must_ask_for() {
+        let card = card_with_tools(Some(policy(&[("bash", ToolPolicy::Allow)])));
+
+        let child = SessionAgent::from_card(&card, &delegating_parent(), None);
+
+        assert_eq!(
+            tool(&child, "bash"),
+            None,
+            "an unlisted parent entry still gates; the child must not be widened to Allow"
+        );
+    }
+
+    #[test]
+    fn a_parent_deny_outranks_a_card_that_allows_the_same_tool() {
+        let mut parent = delegating_parent();
+        parent.tool_policy = Some(policy(&[("bash", ToolPolicy::Deny)]));
+        let card = card_with_tools(Some(policy(&[("bash", ToolPolicy::Allow)])));
+
+        let child = SessionAgent::from_card(&card, &parent, None);
+
+        assert_eq!(
+            tool(&child, "bash"),
+            Some(ToolPolicy::Deny),
+            "a card written this turn must not delegate its way out of the parent's deny"
+        );
+    }
+
+    #[test]
+    fn a_parent_ask_tightens_a_card_allow() {
+        let mut parent = delegating_parent();
+        parent.tool_policy = Some(policy(&[("bash", ToolPolicy::Ask)]));
+        let card = card_with_tools(Some(policy(&[("bash", ToolPolicy::Allow)])));
+
+        let child = SessionAgent::from_card(&card, &parent, None);
+
+        assert_eq!(
+            tool(&child, "bash"),
+            Some(ToolPolicy::Ask),
+            "the parent always prompts for bash, so the child cannot auto-approve it"
+        );
+    }
+
+    /// The intersection is a minimum, not a blanket "drop every Allow": where
+    /// the parent has explicitly allowed a tool, a card that allows the same
+    /// tool keeps the allow.
+    #[test]
+    fn a_parent_allow_and_a_card_allow_stay_allow() {
+        let mut parent = delegating_parent();
+        parent.tool_policy = Some(policy(&[("bash", ToolPolicy::Allow)]));
+        let card = card_with_tools(Some(policy(&[("bash", ToolPolicy::Allow)])));
+
+        let child = SessionAgent::from_card(&card, &parent, None);
+
+        assert_eq!(
+            tool(&child, "bash"),
+            Some(ToolPolicy::Allow),
+            "narrowing takes the stricter of the two, so equal entries survive"
+        );
+    }
+
+    #[test]
+    fn a_card_without_a_tools_block_still_inherits_the_parents_restrictions() {
+        let mut parent = delegating_parent();
+        parent.tool_policy = Some(policy(&[
+            ("bash", ToolPolicy::Deny),
+            ("read_file", ToolPolicy::Allow),
+        ]));
+        let card = card_with_tools(None);
+
+        let child = SessionAgent::from_card(&card, &parent, None);
+
+        assert_eq!(tool(&child, "bash"), Some(ToolPolicy::Deny));
+        assert_eq!(
+            tool(&child, "read_file"),
+            None,
+            "the parent's blanket allow is not a permission the child's card asked for"
+        );
+    }
+
+    #[test]
+    fn a_card_deny_applies_where_the_parent_is_silent() {
+        let card = card_with_tools(Some(policy(&[("bash", ToolPolicy::Deny)])));
+
+        let child = SessionAgent::from_card(&card, &delegating_parent(), None);
+
+        assert_eq!(tool(&child, "bash"), Some(ToolPolicy::Deny));
+    }
+
+    #[test]
+    fn a_card_ask_applies_where_the_parent_is_silent() {
+        let card = card_with_tools(Some(policy(&[("bash", ToolPolicy::Ask)])));
+
+        let child = SessionAgent::from_card(&card, &delegating_parent(), None);
+
+        assert_eq!(tool(&child, "bash"), Some(ToolPolicy::Ask));
+    }
+
+    /// The other arm of `from_card`: `session.create` with an agent card, whose
+    /// base is the config-derived defaults, not a parent session. There is no
+    /// ceiling to narrow under, so the operator's card is authoritative.
+    #[test]
+    fn a_card_creating_a_session_keeps_its_own_allow() {
+        let card = card_with_tools(Some(policy(&[("bash", ToolPolicy::Allow)])));
+
+        let child = SessionAgent::from_card(&card, &config_defaults(), None);
+
+        assert_eq!(tool(&child, "bash"), Some(ToolPolicy::Allow));
+    }
+
+    #[test]
+    fn a_delegated_card_cannot_add_an_mcp_server_the_parent_lacks() {
+        let mut parent = delegating_parent();
+        parent.mcp_servers = vec!["notes".to_string()];
+        let mut card = card_with_tools(None);
+        card.mcp_servers = vec!["notes".to_string(), "shell".to_string()];
+
+        let child = SessionAgent::from_card(&card, &parent, None);
+
+        assert_eq!(
+            child.mcp_servers,
+            vec!["notes".to_string()],
+            "gateway tools carry names no tool policy mentions; adding a server \
+             would be a way around the policy narrowing"
+        );
+    }
+
+    #[test]
+    fn a_card_creating_a_session_keeps_its_own_mcp_servers() {
+        let mut base = config_defaults();
+        base.mcp_servers = vec!["notes".to_string()];
+        let mut card = card_with_tools(None);
+        card.mcp_servers = vec!["shell".to_string()];
+
+        let child = SessionAgent::from_card(&card, &base, None);
+
+        assert_eq!(child.mcp_servers, vec!["shell".to_string()]);
+    }
 }

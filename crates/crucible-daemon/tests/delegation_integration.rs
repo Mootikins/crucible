@@ -936,9 +936,17 @@ async fn delegation_to_agent_card_builds_specialized_child() {
     assert!(agent.system_prompt.contains("researcher card prompt"));
     let policy = agent.tool_policy.expect("card tool policy carried");
     assert_eq!(policy["bash"], crucible_core::agent::ToolPolicy::Deny);
-    assert_eq!(
-        policy["semantic_search"],
-        crucible_core::agent::ToolPolicy::Allow
+    // This assertion used to read `policy["semantic_search"] == Allow`, i.e. it
+    // asserted the widening. The parent here has `tool_policy: None` and a
+    // delegation config, so the card's `semantic_search: true` is a card
+    // written under a delegating parent that named no policy at all — an
+    // unlisted parent entry is stricter than a card Allow (it still faces the
+    // permission gate), so narrowing drops the entry. `bash: deny` above still
+    // applies, because a card may always tighten.
+    assert!(
+        !policy.contains_key("semantic_search"),
+        "a card's `allow` must not widen a delegated child past a parent that \
+         named no policy; the card's `deny` still applies"
     );
 }
 
