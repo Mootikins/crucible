@@ -591,7 +591,7 @@ behind 0.17.0.
 - **Spacing acceptance tests**: 10 tests exercising the live rendering path (drain_graduated + viewport) covering user→assistant, tool→tool, thinking→tool, and multi-frame graduation transitions
 - **Plugin install**: `plugins.toml` declaration + git bootstrap on daemon startup; `cru plugin add/remove/update` CLI commands
 - **LuaCATS auto-ship**: Type stubs auto-generated at `~/.config/crucible/luals/` on daemon start for IDE autocomplete
-- **Declarative schedules**: `[[schedules]]` section in `crucible.toml` with human-readable intervals (`1h`, `30m`, `5s`)
+- **Declarative schedules**: `[[schedules]]` section in `~/.config/crucible/config.toml` with human-readable intervals (`1h`, `30m`, `5s`) — this entry originally said `crucible.toml`, a filename the loader has never read
 - **Fuzzy finder**: nucleo-backed fuzzy matching replaces substring filtering in all autocomplete; `:pick` command for full-screen picker
 - **`session.fork`**: RPC method + `cru.sessions.fork(id, opts)` Lua API to branch conversations
 - **`session.messages`**: `cru.sessions.messages(id, opts)` Lua API to read conversation history with role/limit filtering
