@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use crucible_daemon::project_manager::forbidden_root_reason;
 use tracing::debug;
 
 const CRUCIBLE_DIR_NAME: &str = ".crucible";
@@ -68,9 +69,29 @@ pub fn discover_kiln(
 
 fn walk_ancestors_for_crucible() -> Option<PathBuf> {
     let cwd = std::env::current_dir().ok()?;
-    let mut current: Option<&Path> = Some(&cwd);
+    walk_ancestors_from(&cwd, dirs::home_dir().as_deref())
+}
+
+/// Nearest ancestor of `start` holding a `.crucible/` directory that may
+/// actually serve as a kiln.
+///
+/// A directory the daemon refuses as session scope is skipped rather than
+/// returned: `$HOME` always holds a `.crucible/` because that is where the
+/// daemon keeps its own data, so the plain walk answered "$HOME is your kiln"
+/// for anyone running `cru` outside a project. That put the whole home tree in
+/// the indexing and file-API scope, and `refuse_forbidden_scope` now rejects it
+/// outright — discovery must not hand the daemon something it has to refuse.
+/// Skipping continues upward, and every ancestor of a forbidden root is
+/// forbidden too, so the walk ends at `None` and the caller prompts.
+///
+/// `home` is injected rather than read from the environment so it is testable.
+fn walk_ancestors_from(start: &Path, home: Option<&Path>) -> Option<PathBuf> {
+    let mut current: Option<&Path> = Some(start);
     while let Some(dir) = current {
-        if !is_temp_directory(dir) && dir.join(CRUCIBLE_DIR_NAME).is_dir() {
+        if !is_temp_directory(dir)
+            && dir.join(CRUCIBLE_DIR_NAME).is_dir()
+            && forbidden_root_reason(dir, home).is_none()
+        {
             return Some(dir.to_path_buf());
         }
         current = dir.parent();
@@ -117,6 +138,38 @@ mod tests {
 
     fn make_kiln(dir: &Path) {
         std::fs::create_dir_all(dir.join(CRUCIBLE_DIR_NAME)).unwrap();
+    }
+
+    /// The daemon creates `~/.crucible` on first run, so the ancestor walk found
+    /// it for anyone running `cru` from their home directory or any non-project
+    /// folder under it, and answered "$HOME is your kiln". That silently made
+    /// the entire home tree the indexing and file-API scope; since the session
+    /// scope floor landed the daemon refuses it outright, so `cd ~ && cru chat`
+    /// fails with "Refusing '/home/you' as a session kiln".
+    #[test]
+    fn the_daemon_data_root_does_not_make_the_home_directory_a_kiln() {
+        let home = TempDir::new().unwrap();
+        make_kiln(home.path());
+        let elsewhere = home.path().join("Downloads");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+
+        assert_eq!(walk_ancestors_from(&elsewhere, Some(home.path())), None);
+    }
+
+    #[test]
+    fn an_ordinary_kiln_under_the_home_directory_is_still_discovered() {
+        let home = TempDir::new().unwrap();
+        make_kiln(home.path());
+        let kiln = home.path().join("notes");
+        make_kiln(&kiln);
+        let inside = kiln.join("daily");
+        std::fs::create_dir_all(&inside).unwrap();
+
+        assert_eq!(
+            walk_ancestors_from(&inside, Some(home.path())),
+            Some(kiln.clone())
+        );
+        assert_eq!(walk_ancestors_from(&kiln, Some(home.path())), Some(kiln));
     }
 
     #[test]
