@@ -69,6 +69,49 @@ pub trait WebResultExt<T> {
 
 impl<T, E: std::fmt::Display> WebResultExt<T> for std::result::Result<T, E> {
     fn daemon_err(self) -> Result<T> {
-        self.map_err(|e| WebError::Daemon(e.to_string()))
+        self.map_err(|e| {
+            let message = e.to_string();
+            // JSON-RPC `-32602` is INVALID_PARAMS: the caller sent something the
+            // daemon refused, which is a 4xx. Mapping it to `Daemon` told the
+            // client "upstream is broken" (502) for its own bad input — e.g.
+            // refusing `/` as a session kiln, a deliberate containment check,
+            // reported as a gateway failure. One route mapped this correctly and
+            // every other one did not, so it belongs here rather than per-route.
+            if message.contains("-32602") {
+                WebError::Validation(message)
+            } else {
+                WebError::Daemon(message)
+            }
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_invalid_params_rpc_error_is_a_client_error_not_a_gateway_failure() {
+        // The daemon's containment checks refuse bad input with `-32602`.
+        // Reporting that as 502 tells the caller the upstream is broken when
+        // the upstream worked exactly as designed.
+        let refusal: std::result::Result<(), String> = Err(
+            r#"RPC error: {"code":-32602,"message":"Refusing '/' as a session kiln: it is the filesystem root"}"#
+                .to_string(),
+        );
+
+        let status = refusal.daemon_err().unwrap_err().into_response().status();
+
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[test]
+    fn a_genuine_daemon_failure_is_still_a_gateway_error() {
+        let broken: std::result::Result<(), String> =
+            Err("connection refused (os error 111)".to_string());
+
+        let status = broken.daemon_err().unwrap_err().into_response().status();
+
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
     }
 }

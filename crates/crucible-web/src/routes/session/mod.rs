@@ -159,7 +159,7 @@ struct CreateSessionRequest {
     /// even if the project has one; `true`, a profile name or an environment
     /// object → override. Forwarded to the daemon untouched — the vocabulary
     /// belongs to the plugin that resolves it, and an unknown profile comes
-    /// back as `-32602`, which `map_create_error` already turns into a 422.
+    /// back as `-32602`, which `daemon_err` turns into a 422.
     isolation: Option<serde_json::Value>,
 }
 
@@ -423,15 +423,6 @@ where
 /// error (422), preserving the pre-consolidation behavior where the web
 /// validated the profile itself. Anything else is a daemon/transport failure
 /// (502).
-fn map_create_error(err: impl std::fmt::Display) -> WebError {
-    let message = err.to_string();
-    if message.contains("-32602") {
-        WebError::Validation(message)
-    } else {
-        WebError::Daemon(message)
-    }
-}
-
 async fn create_session(
     State(state): State<AppState>,
     Extension(endpoint_policy): Extension<EndpointPolicy>,
@@ -462,7 +453,7 @@ async fn create_session(
 
     // Hand the agent spec to the daemon, which owns default-agent resolution:
     // it resolves the ACP profile (unknown ⇒ INVALID_PARAMS, and no session is
-    // created — see map_create_error) or builds config-derived internal
+    // created — see `daemon_err`) or builds config-derived internal
     // defaults, configures the session's agent as part of create, and returns
     // the resolved model in `agent_model`. The web no longer keeps its own copy
     // of "what is the default agent". No kiln → omitted from the wire so the
@@ -490,7 +481,7 @@ async fn create_session(
         .daemon
         .session_create_with_agent(params, agent_spec)
         .await
-        .map_err(map_create_error)?;
+        .daemon_err()?;
 
     // A create response without a usable session_id (protocol drift) would
     // otherwise let subscribe run against an empty id and surface as a confusing
