@@ -1,7 +1,5 @@
-use std::io::Write;
-
 use serde_json::json;
-use tempfile::NamedTempFile;
+use tempfile::TempDir;
 
 use super::{test_path, upsert_tool_info};
 use crate::acp::client::types::{ClientConfig, StreamingState};
@@ -108,12 +106,26 @@ fn tool_call_updates_existing_entry() {
     assert!(output.contains("PRIME.md"));
 }
 
+/// A write tool's rendered output carries the unified diff.
+///
+/// The workspace is load-bearing, not scenery. This test used to build the
+/// client with `working_dir: None` and point it at a `NamedTempFile` in the
+/// system temp dir — an absolute path with no session scope at all. That
+/// shape passed only because the synthesizer, having no root, opened whatever
+/// absolute path the tool arguments named; the assertion "the diff shows
+/// `-old content`" was therefore an assertion that an unrooted preview reads
+/// and publishes an arbitrary file, i.e. it pinned the exfiltration primitive
+/// as desired behaviour. `acp/client/tests/diff.rs` was corrected the same
+/// way. The behaviour actually under test — a write tool renders old/new
+/// lines — is unchanged; it is now exercised through a legitimate in-session
+/// target, which is the only way it happens in production.
 #[test]
 fn test_formatted_output_includes_diff() {
+    let workspace = TempDir::new().unwrap();
     let config = ClientConfig {
         agent_path: test_path("agent"),
         agent_args: None,
-        working_dir: None,
+        working_dir: Some(workspace.path().to_path_buf()),
         env_vars: None,
         timeout_ms: Some(1000),
         max_retries: Some(1),
@@ -121,17 +133,14 @@ fn test_formatted_output_includes_diff() {
     let client = CrucibleAcpClient::new(config);
     let mut state = StreamingState::default();
 
-    // Create a temp file with initial content
-    let mut temp_file = NamedTempFile::new().unwrap();
-    writeln!(temp_file, "old content").unwrap();
-    let path = temp_file.path().to_string_lossy().to_string();
+    std::fs::write(workspace.path().join("note.md"), "old content\n").unwrap();
 
     // Record a write tool call
     client.record_tool_call(
         ToolCallInfo::new("update_note")
             .with_id("tool-1")
             .with_arguments(json!({
-                "path": path,
+                "path": "note.md",
                 "content": "new content\n"
             })),
         &mut state,

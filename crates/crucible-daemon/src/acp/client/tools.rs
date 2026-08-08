@@ -189,9 +189,10 @@ impl CrucibleAcpClient {
         }
 
         // Fall back to synthesizing from tool name + args. Single source of
-        // truth for write-tool detection and argument shape. Resolve relative
-        // paths against the session's working dir; tests pass absolute paths
-        // and tolerate the empty fallback.
+        // truth for write-tool detection and argument shape. The working dir
+        // is the containment root, not merely a base to join against: an
+        // absent one denies every preview instead of letting an absolute path
+        // through, which is why the tests here no longer pass absolute paths.
         let args = tool_call.arguments.as_ref()?;
         let workspace_root = self
             .config

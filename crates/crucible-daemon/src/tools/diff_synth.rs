@@ -14,6 +14,45 @@
 //! Size cap: any diff where either side exceeds 1 MiB is skipped — the
 //! renderer would suppress it anyway, and we'd rather not push it onto
 //! the wire.
+//!
+//! # Containment
+//!
+//! This module opens files named in the model's **raw, unapproved tool
+//! arguments**, and it does so *before* the permission gate resolves — its
+//! output is attached to the `PermRequest` and broadcast on the session
+//! event stream. A read performed here is therefore already published by
+//! the time a human clicks Deny; denying cannot un-read it. `synth_edit`
+//! with `old_string: ""` matches any file and returns its entire body as
+//! `old_content`, so an unbounded read here is a full-file exfiltration
+//! primitive reachable from any ordinary agent turn.
+//!
+//! The preview is consequently confined to `workspace_root` via the shared
+//! [`crucible_core::path_containment::resolve_within`] chokepoint. A target
+//! that cannot be proven inside it yields **no diff at all**, for reads and
+//! creates alike; see [`readable_target`] for why refusal rather than a
+//! redacted placeholder.
+//!
+//! ## `workspace_root` is NARROWER than the executing tool's own scope
+//!
+//! Stated here rather than discovered later. The tools this module recognises
+//! are not workspace-scoped: `agent_manager/mod.rs` contains `WorkspaceTools`
+//! to `[session.workspace, session.kiln, ..session.connected_kilns,
+//! session.storage_path()]` (`with_allowed_roots`), and `create_note` /
+//! `update_note` address the kiln exclusively
+//! (`tools/notes/mod.rs`, `validate_path_within_kiln`). So an `edit_file`
+//! naming an absolute path under the kiln, a connected kiln or the session
+//! dir will *execute* while previewing as nothing — and since a session
+//! started without an explicit workspace gets a private scratch directory
+//! (`session_manager.rs`, `create_session`), the kiln is routinely outside
+//! `workspace_root`.
+//!
+//! Losing a preview is a usability regression, never a disclosure one, so the
+//! narrow root stays until the wider set can be supplied: closing it means
+//! passing the executor's real root list to
+//! [`crucible_core::path_containment::resolve_within_any`], which requires
+//! the kiln, connected kilns and session dir to reach all four call sites —
+//! none of `StreamContext`, `GenAiHandle` or the ACP `ClientConfig` carries
+//! them today.
 
 use std::path::{Path, PathBuf};
 
@@ -23,10 +62,13 @@ use serde_json::Value;
 /// Synthesize `FileDiff`s for a permission request, given the tool name
 /// and the raw JSON arguments the agent passed.
 ///
-/// `workspace_root` is the cwd a relative `path` should resolve against.
+/// `workspace_root` is the session scope: relative `path`s resolve against
+/// it, and it also **bounds** what the preview may read — a target not
+/// provably inside it is refused outright (see [`readable_target`]). An
+/// empty or non-existent root therefore denies everything.
 ///
 /// Returns an empty `Vec` for non-file-mutating tools, malformed args,
-/// or oversized content. Never panics.
+/// oversized content, or an out-of-scope target. Never panics.
 pub fn synthesize_diffs(tool_name: &str, args: &Value, workspace_root: &Path) -> Vec<FileDiff> {
     let normalized = normalize_tool_name(tool_name);
     match normalized {
@@ -72,12 +114,59 @@ fn extract_path(obj: &serde_json::Map<String, Value>) -> Option<&str> {
         .and_then(Value::as_str)
 }
 
-fn resolve_path(path: &str, workspace_root: &Path) -> PathBuf {
-    let p = Path::new(path);
-    if p.is_absolute() {
-        p.to_path_buf()
-    } else {
-        workspace_root.join(p)
+/// The contained path this preview may read, or `None` (with a debug log)
+/// when it may not touch the target at all.
+///
+/// Containment itself is **not implemented here** — it delegates to the
+/// shared [`crucible_core::path_containment::resolve_within`], which is the
+/// one chokepoint the daemon, web and Lua layers all answer to. Writing a
+/// local variant is how the previous rounds of this work shipped divergent
+/// semantics: nine near-identical validators, each with a different hole.
+/// The one thing this wrapper owns is the *policy* (refuse ⇒ no diff) and
+/// the diagnostic; the walk, the symlink handling and the errno rules
+/// belong to the shared function.
+///
+/// `workspace_root` is the one root every caller already passes — which is
+/// why the fix lands at the sink and covers all four call sites without any
+/// of them changing (see the module docs for why that root is narrower than
+/// the executing tool's own scope, and what closing the gap would cost):
+/// `agent_manager/messaging/permission.rs:219` (ACP gate),
+/// `agent_manager/messaging/permission.rs:935` (internal tool loop),
+/// `provider/genai_handle.rs:183` (tool-call emission, which has no
+/// permission gate at all), and `acp/client/tools.rs:202` (tool-info
+/// fallback, whose `Path::new("")` default now denies rather than resolving
+/// against the daemon's process CWD).
+///
+/// # Why refuse rather than emit a redacted placeholder
+///
+/// The permission popup already renders its header without a diff body (the
+/// module docs' "graceful degradation"), so refusal reuses a display path
+/// that exists and needs no wire change; a placeholder would mean a new
+/// `FileDiff` shape rippling into the TUI and web renderers. More
+/// importantly, a partial preview *misinforms* the approver: emitting
+/// `old_content: None` for an out-of-scope overwrite reads as "this creates
+/// a new file" for an operation that destroys an existing one, and it turns
+/// the popup into a filesystem existence oracle (diff appeared ⇒ target
+/// absent; no diff ⇒ target present). The path string still reaches the
+/// human — it came from the agent, so showing it discloses nothing the
+/// agent did not already know.
+fn readable_target(path: &str, workspace_root: &Path) -> Option<PathBuf> {
+    match crucible_core::path_containment::resolve_within(workspace_root, Path::new(path)) {
+        Ok(resolved) => Some(resolved),
+        // Every `Refusal` variant lands here and means exactly one thing to
+        // this sink: do not read, do not emit. They stay distinct in the log
+        // because `RootUnavailable` (a misconfigured session) and
+        // `SymlinkEscape` (an agent probing outside its scope) want very
+        // different operator responses — but neither may soften the verdict.
+        Err(refusal) => {
+            tracing::debug!(
+                path = %path,
+                workspace_root = %workspace_root.display(),
+                refusal = %refusal,
+                "diff preview refused: target is not provably inside the session workspace"
+            );
+            None
+        }
     }
 }
 
@@ -103,7 +192,9 @@ fn synth_edit(args: &Value, workspace_root: &Path) -> Vec<FileDiff> {
         return Vec::new();
     };
 
-    let resolved = resolve_path(path, workspace_root);
+    let Some(resolved) = readable_target(path, workspace_root) else {
+        return Vec::new();
+    };
     // For an edit, the file must already exist; if it doesn't or the
     // disk read fails, we can't synthesize the diff sensibly.
     let Some(old_content) = read_old_content(&resolved) else {
@@ -156,7 +247,12 @@ fn synth_write(args: &Value, workspace_root: &Path) -> Vec<FileDiff> {
         return Vec::new();
     };
 
-    let resolved = resolve_path(path, workspace_root);
+    // Refused even though a create needs no read: emitting a create-shaped
+    // diff for an out-of-scope target would misdescribe an overwrite and
+    // would leak the target's existence. See `resolve_readable`.
+    let Some(resolved) = readable_target(path, workspace_root) else {
+        return Vec::new();
+    };
     let old_content = read_old_content(&resolved);
 
     if !within_size_cap(old_content.as_deref(), new_content) {
@@ -177,7 +273,9 @@ fn synth_multi_edit(args: &Value, workspace_root: &Path) -> Vec<FileDiff> {
         return Vec::new();
     };
 
-    let resolved = resolve_path(path, workspace_root);
+    let Some(resolved) = readable_target(path, workspace_root) else {
+        return Vec::new();
+    };
     let Some(original) = read_old_content(&resolved) else {
         return Vec::new();
     };
@@ -444,6 +542,278 @@ mod tests {
             native[0].new_content,
             "fn main() {\n    println!(\"hello\");\n}\n"
         );
+    }
+
+    // ── containment ────────────────────────────────────────────────────
+    //
+    // The synthesizer runs BEFORE the permission gate resolves and its
+    // output is broadcast on the session event stream, so a read it
+    // performs is already published by the time a human clicks Deny.
+    // Every test below is about what it is allowed to read, never about
+    // what the gate later decides.
+
+    /// A file outside the workspace, plus proof this process can read it.
+    ///
+    /// The proof matters: if the fixture were unreadable (restrictive
+    /// umask, odd tmpdir mode) an empty diff would prove nothing, because
+    /// `read_old_content` would have returned `None` on its own. Asserting
+    /// the read succeeds pins that containment — not file permissions — is
+    /// the only thing that can produce an empty result.
+    fn readable_secret(outside: &TempDir, body: &str) -> PathBuf {
+        let secret = outside.path().join("id_rsa");
+        std::fs::write(&secret, body).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&secret).unwrap(),
+            body,
+            "fixture must be readable by this process, or the assertions below \
+             would pass for the wrong reason"
+        );
+        secret
+    }
+
+    /// The exfiltration primitive itself: `old_string: ""` matches every
+    /// file, so `synth_edit` returns the WHOLE file body as `old_content`.
+    /// This control leg runs the attack against an in-workspace file and
+    /// asserts it succeeds — without it, an empty result on the
+    /// out-of-workspace leg could mean "the empty `old_string` trick does
+    /// not work" rather than "containment refused the read".
+    #[test]
+    fn empty_old_string_returns_the_whole_file_for_an_in_scope_path() {
+        let ws = TempDir::new().unwrap();
+        let target = ws.path().join("notes.md");
+        std::fs::write(&target, "SENTINEL-IN-SCOPE-BODY").unwrap();
+
+        let diffs = synthesize_diffs(
+            "edit_file",
+            &json!({
+                "path": target.to_str().unwrap(),
+                "old_string": "",
+                "new_string": "x",
+            }),
+            ws.path(),
+        );
+        assert_eq!(diffs.len(), 1);
+        assert_eq!(
+            diffs[0].old_content.as_deref(),
+            Some("SENTINEL-IN-SCOPE-BODY"),
+            "the empty-old_string full-file read must work in scope, or the \
+             out-of-scope leg proves nothing"
+        );
+    }
+
+    #[test]
+    fn edit_outside_the_workspace_never_reads_the_file() {
+        let ws = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let secret = readable_secret(&outside, "SENTINEL-PRIVATE-KEY-BODY");
+
+        let diffs = synthesize_diffs(
+            "edit_file",
+            &json!({
+                "path": secret.to_str().unwrap(),
+                "old_string": "",
+                "new_string": "x",
+            }),
+            ws.path(),
+        );
+
+        assert!(
+            diffs.is_empty(),
+            "an out-of-workspace edit produced a diff: {diffs:?}"
+        );
+        // The event stream carries these serialized; assert on the wire form
+        // so a leak through any field (not just `old_content`) is caught.
+        let wire = serde_json::to_string(&diffs).unwrap();
+        assert!(
+            !wire.contains("SENTINEL-PRIVATE-KEY-BODY"),
+            "file body reached the emitted diff: {wire}"
+        );
+    }
+
+    #[test]
+    fn write_outside_the_workspace_never_reads_the_file() {
+        let ws = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let secret = readable_secret(&outside, "SENTINEL-OVERWRITTEN-BODY");
+
+        let diffs = synthesize_diffs(
+            "write_file",
+            &json!({
+                "path": secret.to_str().unwrap(),
+                "content": "pwned",
+            }),
+            ws.path(),
+        );
+
+        let wire = serde_json::to_string(&diffs).unwrap();
+        assert!(
+            !wire.contains("SENTINEL-OVERWRITTEN-BODY"),
+            "file body reached the emitted diff: {wire}"
+        );
+        assert!(
+            diffs.is_empty(),
+            "an out-of-workspace write produced a diff: {diffs:?}"
+        );
+    }
+
+    #[test]
+    fn multi_edit_outside_the_workspace_never_reads_the_file() {
+        let ws = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let secret = readable_secret(&outside, "alpha SENTINEL-MULTI-BODY");
+
+        let diffs = synthesize_diffs(
+            "multi_edit",
+            &json!({
+                "path": secret.to_str().unwrap(),
+                "edits": [{ "old_string": "alpha", "new_string": "A" }],
+            }),
+            ws.path(),
+        );
+
+        let wire = serde_json::to_string(&diffs).unwrap();
+        assert!(
+            !wire.contains("SENTINEL-MULTI-BODY"),
+            "file body reached the emitted diff: {wire}"
+        );
+        assert!(diffs.is_empty(), "out-of-workspace multi_edit: {diffs:?}");
+    }
+
+    #[test]
+    fn relative_parent_traversal_never_reads_the_file() {
+        let ws_parent = TempDir::new().unwrap();
+        let ws = ws_parent.path().join("workspace");
+        std::fs::create_dir(&ws).unwrap();
+        std::fs::write(ws_parent.path().join("sibling.txt"), "SENTINEL-SIBLING").unwrap();
+
+        let diffs = synthesize_diffs(
+            "edit_file",
+            &json!({
+                "path": "../sibling.txt",
+                "old_string": "",
+                "new_string": "x",
+            }),
+            &ws,
+        );
+        let wire = serde_json::to_string(&diffs).unwrap();
+        assert!(!wire.contains("SENTINEL-SIBLING"), "`..` escaped: {wire}");
+        assert!(diffs.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_leaf_escaping_the_workspace_never_reads_the_file() {
+        let ws = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let secret = readable_secret(&outside, "SENTINEL-VIA-SYMLINK");
+        std::os::unix::fs::symlink(&secret, ws.path().join("innocent.md")).unwrap();
+
+        let diffs = synthesize_diffs(
+            "edit_file",
+            &json!({
+                "path": "innocent.md",
+                "old_string": "",
+                "new_string": "x",
+            }),
+            ws.path(),
+        );
+        let wire = serde_json::to_string(&diffs).unwrap();
+        assert!(
+            !wire.contains("SENTINEL-VIA-SYMLINK"),
+            "a symlink leaf inside the workspace read an outside file: {wire}"
+        );
+        assert!(diffs.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_directory_escaping_the_workspace_never_reads_the_file() {
+        let ws = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        readable_secret(&outside, "SENTINEL-VIA-DIR-SYMLINK");
+        std::os::unix::fs::symlink(outside.path(), ws.path().join("sub")).unwrap();
+
+        let diffs = synthesize_diffs(
+            "edit_file",
+            &json!({
+                "path": "sub/id_rsa",
+                "old_string": "",
+                "new_string": "x",
+            }),
+            ws.path(),
+        );
+        let wire = serde_json::to_string(&diffs).unwrap();
+        assert!(
+            !wire.contains("SENTINEL-VIA-DIR-SYMLINK"),
+            "a symlinked directory component escaped the workspace: {wire}"
+        );
+        assert!(diffs.is_empty());
+    }
+
+    /// An intra-workspace symlink is legitimate and must keep previewing —
+    /// the fix must refuse escapes, not all links.
+    #[cfg(unix)]
+    #[test]
+    fn symlink_staying_inside_the_workspace_still_previews() {
+        let ws = TempDir::new().unwrap();
+        std::fs::write(ws.path().join("real.md"), "inside body").unwrap();
+        std::os::unix::fs::symlink(ws.path().join("real.md"), ws.path().join("link.md")).unwrap();
+
+        let diffs = synthesize_diffs(
+            "edit_file",
+            &json!({
+                "path": "link.md",
+                "old_string": "inside",
+                "new_string": "still inside",
+            }),
+            ws.path(),
+        );
+        assert_eq!(diffs.len(), 1, "an in-workspace symlink lost its preview");
+        assert_eq!(diffs[0].new_content, "still inside body");
+    }
+
+    /// Out-of-scope creates are refused too. Emitting a create-shaped diff
+    /// for them would be an existence oracle: "diff appeared" would mean
+    /// the file does not exist, "no diff" would mean it does.
+    #[test]
+    fn write_create_outside_the_workspace_is_refused() {
+        let ws = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let diffs = synthesize_diffs(
+            "write_file",
+            &json!({
+                "path": outside.path().join("brand-new.txt").to_str().unwrap(),
+                "content": "x",
+            }),
+            ws.path(),
+        );
+        assert!(diffs.is_empty(), "out-of-workspace create previewed");
+    }
+
+    /// `acp/client/tools.rs` falls back to an empty workspace root when the
+    /// ACP session has no `working_dir`. An empty root cannot contain
+    /// anything, so it must deny everything rather than resolve against the
+    /// daemon's CWD.
+    #[test]
+    fn an_empty_workspace_root_denies_everything() {
+        let outside = TempDir::new().unwrap();
+        let secret = readable_secret(&outside, "SENTINEL-NO-WORKSPACE");
+
+        let diffs = synthesize_diffs(
+            "edit_file",
+            &json!({
+                "path": secret.to_str().unwrap(),
+                "old_string": "",
+                "new_string": "x",
+            }),
+            Path::new(""),
+        );
+        let wire = serde_json::to_string(&diffs).unwrap();
+        assert!(
+            !wire.contains("SENTINEL-NO-WORKSPACE"),
+            "an empty workspace root read an absolute path: {wire}"
+        );
+        assert!(diffs.is_empty());
     }
 
     /// For create-style writes (file doesn't exist), the diff has
