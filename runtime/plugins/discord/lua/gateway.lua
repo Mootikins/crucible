@@ -29,6 +29,10 @@ local session_id = nil
 local resume_gateway_url = nil
 local is_connected = false
 local awaiting_ack = false
+-- Set by `M.disconnect`, cleared by `M.connect`. The retry predicate below is
+-- the only thing separating a shutdown from a reconnect, because every error
+-- the receive loop can raise is otherwise indistinguishable from an outage.
+local stopped = false
 
 -- Event system
 local events = cru.emitter.new()
@@ -62,8 +66,14 @@ local function send_payload(op, d)
 end
 
 local function send_heartbeat()
+    -- A second heartbeat with the previous one unacknowledged means the socket
+    -- is a zombie: Discord is gone but the TCP connection has not noticed.
+    -- Logging and carrying on left the bot silently offline until the OS timed
+    -- the socket out, which can be many minutes.
     if awaiting_ack then
-        cru.log("warn", "Discord gateway: missed heartbeat ACK, connection may be zombie")
+        cru.log("warn", "Discord gateway: missed heartbeat ACK, dropping zombie connection")
+        ws = nil
+        error({ retryable = true })
     end
     awaiting_ack = true
     return send_payload(OP.HEARTBEAT, last_sequence)
@@ -163,12 +173,19 @@ end
 --- Connect to Discord Gateway with reconnection backoff.
 --- Blocks the calling context. Returns on clean disconnect or exhausted retries.
 function M.connect()
+    stopped = false
     cru.retry(function()
+        -- `cru.retry` sleeps between attempts, so a disconnect can land while
+        -- this body is waiting to be re-entered.
+        if stopped then return end
+        -- Every path out of the loop below raises, so this is the one place
+        -- that can honestly say the gateway is down.
+        is_connected = false
+
         local url = resume_gateway_url or config.gateway_url()
         cru.log("info", "Discord gateway: connecting to " .. url)
 
         ws = cru.ws.connect(url)
-        if not ws then error({ retryable = true }) end
 
         -- Receive loop with explicit heartbeat tracking
         -- Initial heartbeat uses jitter (random fraction of interval) per Discord spec
@@ -224,9 +241,14 @@ function M.connect()
         max_retries = 10,
         base_delay = 1.0,
         max_delay = 60.0,
-        retryable = function(err)
-            return type(err) == "table" and err.retryable
-        end,
+        -- `cru.ws.connect` raises a string, not a table, so a predicate keyed on
+        -- `err.retryable` rejected every real network failure and re-raised on
+        -- the first one — ten attempts that never happened. Retry on anything
+        -- and let `disconnect` be the only thing that stops us; deleting the
+        -- predicate instead would not do, because the stdlib default accepts
+        -- everything and a disconnected `ws` raises on the next `ws.receive`
+        -- lookup, turning a deliberate shutdown into a reconnect.
+        retryable = function() return not stopped end,
     })
 end
 
@@ -255,6 +277,10 @@ end
 
 --- Disconnect from gateway (clean disconnect clears session)
 function M.disconnect()
+    -- Before the close, and outside the `ws` guard: during an outage `ws` is
+    -- already nil, and that is exactly when a caller most needs the retry loop
+    -- to stop rather than to dial again.
+    stopped = true
     if ws then
         is_connected = false
         session_id = nil
