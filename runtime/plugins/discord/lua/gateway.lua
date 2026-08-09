@@ -141,6 +141,14 @@ local function handle_message(raw)
             resume_gateway_url = msg.d.resume_gateway_url
             is_connected = true
             cru.log("info", "Discord gateway: connected as " .. msg.d.user.username)
+        elseif event_name == "RESUMED" then
+            -- A reconnect that resumes never sees READY, so this was the only
+            -- dispatch that could mark the gateway up — and a working bot
+            -- reported itself down, which `:discord status` then told the
+            -- operator to "fix" by connecting a second time. RESUMED carries
+            -- neither `session_id` nor `user`, so only the flag is set here.
+            is_connected = true
+            cru.log("info", "Discord gateway: resumed")
         end
 
         events:emit(event_name, msg.d)
@@ -179,8 +187,14 @@ function M.connect()
         -- this body is waiting to be re-entered.
         if stopped then return end
         -- Every path out of the loop below raises, so this is the one place
-        -- that can honestly say the gateway is down.
+        -- that can honestly say the gateway is down. `awaiting_ack` belongs
+        -- here for the same reason: it is per-connection, and the zombie drop
+        -- that sets it leaves `ws` nil, so `M.disconnect` never gets to clear
+        -- it. Carried into the next attempt it dropped a healthy socket at its
+        -- first heartbeat, and every attempt after that, until the budget was
+        -- gone.
         is_connected = false
+        awaiting_ack = false
 
         local url = resume_gateway_url or config.gateway_url()
         cru.log("info", "Discord gateway: connecting to " .. url)
@@ -281,16 +295,21 @@ function M.disconnect()
     -- already nil, and that is exactly when a caller most needs the retry loop
     -- to stop rather than to dial again.
     stopped = true
+    -- Outside the `ws` guard, not inside it: during an outage `ws` is already
+    -- nil, and that is precisely when the state must be cleared. Left inside,
+    -- a disconnect mid-outage returned with `is_connected` still true, so
+    -- `:discord status` claimed a live connection and `:discord connect`
+    -- refused with "Already connected" until the daemon was restarted.
+    is_connected = false
+    session_id = nil
+    last_sequence = nil
+    resume_gateway_url = nil
+    awaiting_ack = false
     if ws then
-        is_connected = false
-        session_id = nil
-        last_sequence = nil
-        resume_gateway_url = nil
-        awaiting_ack = false
         ws:close()
         ws = nil
-        cru.log("info", "Discord gateway: disconnected")
     end
+    cru.log("info", "Discord gateway: disconnected")
 end
 
 function M.is_connected() return is_connected end
