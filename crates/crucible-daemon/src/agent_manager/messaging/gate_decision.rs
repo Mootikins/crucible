@@ -60,4 +60,27 @@ mod tests {
             "and a built-in mutating tool always gates"
         );
     }
+
+    /// A declared `allow` is what lets a non-interactive session do anything
+    /// at all.
+    ///
+    /// Plugin turns pass `is_interactive = false`, which the engine turns into
+    /// `Ask` -> `Deny`. That is the right answer for *who approves this* — a
+    /// chat-room username is not a Crucible principal — and the wrong answer
+    /// for *what may this session do*. The card's policy is the second input
+    /// to this decision and the one that survives non-interactivity, so a
+    /// plugin can grant a deliberate set without granting a prompt.
+    #[test]
+    fn a_declared_policy_decides_before_the_built_in_safe_list() {
+        use crucible_core::agent::ToolPolicy;
+
+        assert!(
+            !requires_permission_gate(Some(ToolPolicy::Allow), "bash"),
+            "a declared allow runs a tool the safe list would have gated"
+        );
+        assert!(
+            requires_permission_gate(Some(ToolPolicy::Ask), "read_file"),
+            "a declared ask gates a tool the safe list would have skipped"
+        );
+    }
 }

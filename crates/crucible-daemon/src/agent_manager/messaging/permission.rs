@@ -91,6 +91,29 @@ impl PermissionSerializer {
     }
 }
 
+/// Which ACP option a gate decision corresponds to.
+///
+/// `AllowAlways` only when the decision is one the user asked to be
+/// remembered — a saved pattern, or a scope wider than this single call.
+/// Anything else that was allowed is allowed once.
+fn outcome_kind(response: &PermResponse) -> agent_client_protocol::PermissionOptionKind {
+    use agent_client_protocol::PermissionOptionKind;
+
+    if !response.allowed {
+        return PermissionOptionKind::RejectOnce;
+    }
+    let remembered = response.pattern.is_some()
+        || matches!(
+            response.scope,
+            PermissionScope::Project | PermissionScope::User | PermissionScope::Session
+        );
+    if remembered {
+        PermissionOptionKind::AllowAlways
+    } else {
+        PermissionOptionKind::AllowOnce
+    }
+}
+
 impl AgentManager {
     pub(super) fn build_acp_permission_handler(
         &self,
@@ -99,6 +122,7 @@ impl AgentManager {
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
         agent_permissions: Option<PermissionConfig>,
+        tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
     ) -> crate::acp::client::PermissionRequestHandler {
         let pending_permissions = self.pending_permissions.clone();
         let session_id_owned = session_id.to_string();
@@ -197,39 +221,48 @@ impl AgentManager {
                 .with_prompt_callback(ask_callback),
         );
 
+        let tool_policy = tool_policy.map(Arc::new);
+
         Arc::new(
             move |request: agent_client_protocol::RequestPermissionRequest| {
                 let gate = gate.clone();
+                let tool_policy = tool_policy.clone();
 
                 Box::pin(async move {
                     use agent_client_protocol::{
                         PermissionOptionKind, RequestPermissionOutcome, SelectedPermissionOutcome,
                     };
+                    use crucible_core::agent::ToolPolicy;
 
                     let tool_name = acp_tool_name(&request.tool_call.fields);
-                    let args = request
-                        .tool_call
-                        .fields
-                        .raw_input
-                        .clone()
-                        .unwrap_or(serde_json::Value::Null);
+                    let declared = tool_policy
+                        .as_ref()
+                        .and_then(|m| m.get(&tool_name))
+                        .copied();
 
-                    let diffs = crate::tools::diff_synth::synthesize_diffs(&tool_name, &args);
-                    let permission = PermRequest::tool(tool_name, args).with_diffs(diffs);
-                    let response = gate.request_permission(permission).await;
-
-                    let desired_kind = if response.allowed {
-                        if response.scope == PermissionScope::Project
-                            || response.scope == PermissionScope::User
-                            || response.scope == PermissionScope::Session
-                            || response.pattern.is_some()
-                        {
-                            PermissionOptionKind::AllowAlways
-                        } else {
-                            PermissionOptionKind::AllowOnce
+                    // A declared policy answers before the gate, exactly as it
+                    // does on the internal path (`requires_permission_gate`
+                    // returns false for Allow, and `tool_call.rs` refuses Deny
+                    // above the hook loop). Without this the two agent types
+                    // disagreed about the same session's `tool_policy`: an
+                    // internal agent honoured it and an ACP agent fell through
+                    // to the interactive stance, so a non-interactive session
+                    // denied every tool its card had explicitly allowed.
+                    let desired_kind = match declared {
+                        Some(ToolPolicy::Allow) => PermissionOptionKind::AllowOnce,
+                        Some(ToolPolicy::Deny) => PermissionOptionKind::RejectOnce,
+                        _ => {
+                            let args = request
+                                .tool_call
+                                .fields
+                                .raw_input
+                                .clone()
+                                .unwrap_or(serde_json::Value::Null);
+                            let diffs =
+                                crate::tools::diff_synth::synthesize_diffs(&tool_name, &args);
+                            let permission = PermRequest::tool(tool_name, args).with_diffs(diffs);
+                            outcome_kind(&gate.request_permission(permission).await)
                         }
-                    } else {
-                        PermissionOptionKind::RejectOnce
                     };
 
                     request

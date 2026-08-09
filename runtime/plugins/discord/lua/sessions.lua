@@ -76,6 +76,39 @@ function M.get_or_create(channel_id, guild_id)
     return session.id, nil
 end
 
+--- Tools a Discord turn may run without asking anyone.
+---
+--- A plugin turn is non-interactive (`session_bridge.rs` passes `is_interactive
+--- = false`), which the permission engine turns into `Ask` -> `Deny`. That is
+--- the right answer for "who approves this?", because a chat-room username is
+--- not a Crucible principal and whoever answers first answers for everyone.
+--- It is the wrong answer for "what may this session do?": a bot that can
+--- answer questions about a kiln but may not read it is useless.
+---
+--- So the stance is declared here rather than inferred from interactivity.
+--- These are the tools the plugin exists to use, and `allow` means they run
+--- with no prompt on either the internal or the ACP path. Everything absent
+--- from this map keeps today's behaviour — `is_safe` reads pass, anything else
+--- reaches the gate and is denied for want of an approver.
+---
+--- Reads only, deliberately. `bash`, writes and edits are left off: they are
+--- the tools whose blast radius is not bounded by `allowed_roots`, and an
+--- operator who wants them for a personal bot can say so by setting
+--- `[plugins.discord] tool_policy` — which replaces this map wholesale.
+---
+--- Note `allow` skips the gate *entirely* — mode stance, Lua `on_request`
+--- hooks and saved patterns included (`gate_decision.rs`). Keep the list short
+--- and deliberate; it is a grant, not a hint.
+local DEFAULT_TOOL_POLICY = {
+    read_file = "allow",
+    glob = "allow",
+    grep = "allow",
+    read_note = "allow",
+    list_notes = "allow",
+    semantic_search = "allow",
+    text_search = "allow",
+}
+
 --- Configure the agent for a session with optional overrides from plugin config.
 --- Returns true when the session has a usable agent.
 function M.configure_agent(session_id)
@@ -89,6 +122,7 @@ function M.configure_agent(session_id)
 
     local agent_config = {
         agent_type = config.get("agent_type", "internal"),
+        tool_policy = config.get("tool_policy", DEFAULT_TOOL_POLICY),
         provider = provider,
         model = model,
         -- The citation sentence is conditional ("when kiln notes were

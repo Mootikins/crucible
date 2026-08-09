@@ -569,6 +569,7 @@ impl AgentManager {
                 is_interactive,
                 permission_override,
                 agent_permissions,
+                resolved_config.tool_policy.clone(),
             ))
         } else {
             None

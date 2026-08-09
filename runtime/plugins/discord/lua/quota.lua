@@ -7,10 +7,10 @@
 ---
 --- Turns, not tokens. Usage is only recorded `if let Some(u) = usage`
 --- (`agent_manager/messaging/stream.rs`) and `last_usage` is overwritten by
---- every tool-loop iteration, while ACP agents emit usage only conditionally
---- and Discord picks its `agent_type` from config. A token quota therefore
---- reads zero — fails *open* — the moment the configured agent changes. A turn
---- counter cannot read zero.
+--- every tool-loop iteration, so a token count sees one iteration of a turn
+--- rather than the turn. A token quota therefore under-counts exactly the
+--- expensive turns, and reads zero — fails *open* — against any agent that
+--- does not report usage. A turn counter cannot read zero.
 
 local M = {}
 
