@@ -98,6 +98,43 @@ Once a guild is allowed, `respond_to` decides *which* messages within it.
 To find an id, enable *Settings → Advanced → Developer Mode* in Discord, then
 right-click a user or server and *Copy ID*.
 
+
+## What the bot may do
+
+The allowlists decide **who gets an answer**. `access` decides **what that
+answer may do**, so one bot instance can read for a server and read *and* write
+for you.
+
+```toml
+[plugins.discord.access]
+"user:123456789012345678" = "write"   # your own DMs
+"guild:987654321098765432" = "read"   # a server that may look, not touch
+default = "read"
+```
+
+- **`read`** (the default, and what you get with no `access` block) — the agent
+  may read files and notes and run kiln searches, with no prompt.
+- **`write`** — the read tools plus `write_file`, `edit_file`, `multi_edit`,
+  `create_note` and `update_note`.
+
+Reads and writes are bounded by the session's kilns — `kiln` plus anything in
+`kilns` — not by the filesystem. Point `kiln` somewhere you are content for the
+bot to touch.
+
+A **guild message takes the guild's tier**, even when the sender has one of
+their own: everyone in a channel shares a single session, so a per-account
+grant there would apply to whoever else is in the room. Per-account tiers are
+therefore only meaningful in DMs, where the channel *is* the account.
+
+`bash` is in neither tier. Its blast radius is not bounded by the session's
+kilns, so granting it is deliberate: set `tool_policy` explicitly, which
+replaces the tier for every session.
+
+> [!NOTE]
+> A Discord turn runs non-interactively — there is no way to answer a
+> permission prompt from a chat room, and nothing that tried would know who was
+> entitled to answer. So a tool that is not granted here is *denied*, not
+> queued. Grant what the bot needs; it will not ask.
 ## Every option
 
 All keys live under `[plugins.discord]`.
@@ -110,6 +147,8 @@ All keys live under `[plugins.discord]`.
 | `intents` | `37889` | Gateway intents bitmask — `GUILDS` + `GUILD_MESSAGES` + `DIRECT_MESSAGES` + `MESSAGE_CONTENT`. Change it only if you know why. |
 | `allowed_users` | `[]` | User ids answered in DMs. **Empty means nobody.** |
 | `allowed_guilds` | `[]` | Guild ids answered in. **Empty means nobody.** |
+| `access` | `{}` | Capability per identity — see [What the bot may do](#what-the-bot-may-do). |
+| `tool_policy` | `{}` | Replaces the access tiers wholesale. The escape hatch for granting a tool the tiers withhold. |
 | `respond_to` | `"mentions"` | Within an allowed guild: `mentions`, `prefix`, `both`, or `all`. |
 | `command_prefix` | `""` | Text prefix for `respond_to = "prefix"`/`"both"`, e.g. `"!"`. Empty disables prefix matching. |
 | `quota_turns_per_day` | `50` | Agent turns each user may spend per UTC day. |

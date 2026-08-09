@@ -23,7 +23,7 @@ end
 
 --- Get or create a Crucible session for a Discord channel.
 --- Reuses an existing session if it was active within the TTL window.
-function M.get_or_create(channel_id, guild_id)
+function M.get_or_create(channel_id, guild_id, author_id)
     local entry = channel_sessions[channel_id]
     local ttl = session_ttl(guild_id)
 
@@ -68,7 +68,7 @@ function M.get_or_create(channel_id, guild_id)
     -- A session whose agent could not be configured answers every message with
     -- "NoAgentConfigured" for the full TTL if it is cached, so end it and
     -- report the failure instead.
-    if not M.configure_agent(session.id) then
+    if not M.configure_agent(session.id, M.access_tier(guild_id, author_id)) then
         pcall(cru.sessions.end_session, session.id)
         return nil, "Discord plugin: could not configure an agent for this session"
     end
@@ -82,30 +82,25 @@ function M.get_or_create(channel_id, guild_id)
     return session.id, nil
 end
 
---- Tools a Discord turn may run without asking anyone.
+--- What a Discord turn may do, by access tier.
 ---
---- A plugin turn is non-interactive (`session_bridge.rs` passes `is_interactive
---- = false`), which the permission engine turns into `Ask` -> `Deny`. That is
---- the right answer for "who approves this?", because a chat-room username is
---- not a Crucible principal and whoever answers first answers for everyone.
---- It is the wrong answer for "what may this session do?": a bot that can
---- answer questions about a kiln but may not read it is useless.
+--- A plugin turn is non-interactive, which the permission engine turns into
+--- `Ask` -> `Deny`. That answers "who approves this?" — a chat-room username is
+--- not a Crucible principal — but it is not the answer to "what may this
+--- session do?". The plugin configures its own sessions, and these tables are
+--- that configuration: `allow` runs with no prompt on the internal and the ACP
+--- path alike.
 ---
---- So the stance is declared here rather than inferred from interactivity.
---- These are the tools the plugin exists to use, and `allow` means they run
---- with no prompt on either the internal or the ACP path. Everything absent
---- from this map keeps today's behaviour — `is_safe` reads pass, anything else
---- reaches the gate and is denied for want of an approver.
+--- Two tiers, because one bot instance serves people the operator trusts
+--- differently. Reads are bounded by `allowed_roots` — the session kiln, its
+--- connected kilns and the session dir — so "read" means *within the kilns you
+--- configured*, not the filesystem.
 ---
---- Reads only, deliberately. `bash`, writes and edits are left off: they are
---- the tools whose blast radius is not bounded by `allowed_roots`, and an
---- operator who wants them for a personal bot can say so by setting
---- `[plugins.discord] tool_policy` — which replaces this map wholesale.
----
---- Note `allow` skips the gate *entirely* — mode stance, Lua `on_request`
---- hooks and saved patterns included (`gate_decision.rs`). Keep the list short
---- and deliberate; it is a grant, not a hint.
-local DEFAULT_TOOL_POLICY = {
+--- Anything absent from a tier keeps default behaviour: `is_safe` reads pass,
+--- everything else reaches the gate and is denied for want of an approver. Note
+--- `allow` skips the gate entirely — mode stance, Lua `on_request` hooks and
+--- saved patterns included — so both tables stay deliberate.
+local READ_TOOLS = {
     read_file = "allow",
     glob = "allow",
     grep = "allow",
@@ -115,9 +110,48 @@ local DEFAULT_TOOL_POLICY = {
     text_search = "allow",
 }
 
+--- The read set plus the tools that change the kiln. Still no `bash`: its blast
+--- radius is not bounded by `allowed_roots`, so it stays a deliberate opt-in
+--- via `[plugins.discord] tool_policy` rather than riding along with "write".
+local WRITE_TOOLS = {}
+for tool, policy in pairs(READ_TOOLS) do WRITE_TOOLS[tool] = policy end
+WRITE_TOOLS.write_file = "allow"
+WRITE_TOOLS.edit_file = "allow"
+WRITE_TOOLS.multi_edit = "allow"
+WRITE_TOOLS.create_note = "allow"
+WRITE_TOOLS.update_note = "allow"
+
+local TIERS = { read = READ_TOOLS, write = WRITE_TOOLS }
+
+--- The access tier for whoever triggered this turn.
+---
+--- Keyed on the two identities Discord actually gives us: the guild a message
+--- came from, or the account that sent it. A DM channel is per-account, so both
+--- are stable for the life of a channel session — which matters, because the
+--- agent config is fixed when the session is created and every later message in
+--- that channel reuses it.
+---
+---     [plugins.discord.access]
+---     "user:1234" = "write"     # the operator's own DMs
+---     "guild:5678" = "read"     # a server that may look but not touch
+---     default = "read"
+function M.access_tier(guild_id, author_id)
+    local access = config.get("access", {})
+    if type(access) ~= "table" then return "read" end
+
+    local key = guild_id and ("guild:" .. tostring(guild_id))
+        or (author_id and ("user:" .. tostring(author_id)))
+    local tier = key and access[key] or access.default or "read"
+    if not TIERS[tier] then
+        cru.log("warn", "Discord plugin: unknown access tier '" .. tostring(tier) .. "', using read")
+        return "read"
+    end
+    return tier
+end
+
 --- Configure the agent for a session with optional overrides from plugin config.
 --- Returns true when the session has a usable agent.
-function M.configure_agent(session_id)
+function M.configure_agent(session_id, tier)
     local provider = config.get("provider")
     local model = config.get("model")
 
@@ -128,7 +162,9 @@ function M.configure_agent(session_id)
 
     local agent_config = {
         agent_type = config.get("agent_type", "internal"),
-        tool_policy = config.get("tool_policy", DEFAULT_TOOL_POLICY),
+        -- An explicit `tool_policy` replaces the tier wholesale; that is the
+        -- escape hatch for an operator who wants `bash` on a personal bot.
+        tool_policy = config.get("tool_policy", TIERS[tier or "read"] or READ_TOOLS),
         provider = provider,
         model = model,
         -- The citation sentence is conditional ("when kiln notes were

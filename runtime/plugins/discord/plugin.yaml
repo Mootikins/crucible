@@ -35,6 +35,21 @@ config:
       description: When to respond to messages
       default: "mentions"
       enum: ["mentions", "prefix", "both", "all"]
+    access:
+      type: object
+      description: >-
+        Access tier per identity, keyed "user:<id>" (DMs) or "guild:<id>", with
+        an optional "default". Values are "read" or "write"; unset means read.
+        A guild message takes the guild's tier, since everyone in a channel
+        shares one session.
+      default: {}
+    tool_policy:
+      type: object
+      description: >-
+        Tool name to "allow"/"ask"/"deny". Set this to replace the access tiers
+        wholesale — the escape hatch for granting a tool the tiers withhold,
+        such as bash on a personal bot.
+      default: {}
     allowed_users:
       type: array
       description: >-

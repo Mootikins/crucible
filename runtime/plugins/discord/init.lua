@@ -77,7 +77,7 @@ gateway.on("MESSAGE_CREATE", function(data)
         return
     end
 
-    local session_id, err = sessions.get_or_create(channel_id, guild_id)
+    local session_id, err = sessions.get_or_create(channel_id, guild_id, data.author and data.author.id)
     if not session_id then
         cru.log("warn", "Failed to get session for channel " .. channel_id .. ": " .. tostring(err))
         return
