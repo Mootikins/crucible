@@ -67,11 +67,20 @@ impl DiffOptions {
     }
 }
 
+/// The verb shown in a permission header, derived only from what the diff can
+/// actually prove.
+///
+/// It used to say "create" for a missing old side and "delete" for an empty new
+/// side. Both became lies once `diff_synth` stopped reading the target: a
+/// whole-file write now always has `old_content: None` whether it creates or
+/// overwrites, and an edit whose `new_string` is empty removes a region, not a
+/// file. A wrong verb in the prompt a human approves on is worse than a vague
+/// one, so the absent old side reads as "write" — true either way — and an
+/// empty new side is just an edit.
 fn diff_action(diff: &FileDiff) -> &'static str {
-    match (&diff.old_content, diff.new_content.as_str()) {
-        (None, _) => "create",
-        (Some(_), "") => "delete",
-        (Some(_), _) => "edit",
+    match diff.old_content {
+        None => "write",
+        Some(_) => "edit",
     }
 }
 
@@ -632,14 +641,35 @@ mod tests {
         assert_eq!(opts.resolved_layout(), DiffLayout::Unified);
     }
 
+    /// A whole-file write says "write", not "create": since the preview no
+    /// longer reads the target, an absent old side cannot distinguish a new
+    /// file from an overwrite, and claiming "create" over an existing file
+    /// would misdescribe the very thing being approved.
     #[test]
-    fn header_shows_path_and_action_for_create() {
+    fn header_shows_write_when_the_old_side_is_unknown() {
         let d = FileDiff::new("src/foo.rs", "fn new() {}\n");
         let mut opts = DiffOptions::for_width(80);
         opts.collapsed = true;
         let out = render(&d, &opts);
         assert!(out.contains("src/foo.rs"), "got: {out:?}");
-        assert!(out.to_lowercase().contains("create"), "got: {out:?}");
+        let lower = out.to_lowercase();
+        assert!(lower.contains("write"), "got: {out:?}");
+        assert!(
+            !lower.contains("create"),
+            "must not claim a create: {out:?}"
+        );
+    }
+
+    /// An edit that empties its `new_string` removes a region of a file, and
+    /// used to render as "delete" — a file deletion, which it is not.
+    #[test]
+    fn an_edit_to_empty_is_not_a_delete() {
+        let d = FileDiff::from_contents("src/foo.rs", Some("gone\n".into()), "");
+        let mut opts = DiffOptions::for_width(80);
+        opts.collapsed = true;
+        let out = render(&d, &opts).to_lowercase();
+        assert!(out.contains("edit"), "got: {out:?}");
+        assert!(!out.contains("delete"), "must not claim a delete: {out:?}");
     }
 
     #[test]

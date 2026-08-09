@@ -256,26 +256,15 @@ impl AgentManager {
             .and_then(|m| m.get(&tool_call.name))
             .copied();
         if card_policy == Some(ToolPolicy::Deny) {
-            let error_msg = format!(
-                "Tool '{}' is denied by this agent's card tool policy",
-                tool_call.name
-            );
-            emit_event(
-                &stream_ctx.event_tx,
-                SessionEventMessage::tool_result(
-                    &stream_ctx.session_id,
-                    &call_id,
-                    &tool_call.name,
-                    serde_json::json!({ "error": &error_msg }),
+            return deny_tool_call(
+                stream_ctx,
+                &call_id,
+                &tool_call.name,
+                format!(
+                    "Tool '{}' is denied by this agent's card tool policy",
+                    tool_call.name
                 ),
             );
-            return Some(crucible_core::traits::chat::ChatToolResult {
-                name: tool_call.name.clone(),
-                result: String::new(),
-                error: Some(error_msg),
-                call_id: Some(call_id.clone()),
-                terminate: false,
-            });
         }
 
         let mut intercepted = {

@@ -402,14 +402,6 @@ pub struct GenaiAgentHandle {
     output_validation: OutputValidation,
     validation_retries: u32,
     autocompact_threshold: Option<f32>,
-    /// Session scope for diff previews of file-mutating tool calls
-    /// (`edit_file`, `write_file`, etc.): relative `path` arguments resolve
-    /// against it, and it also **bounds** what the preview may open — a
-    /// target `synthesize_diffs` cannot prove is inside it yields no diff at
-    /// all. An empty `PathBuf` is therefore deny-all, not "resolve against
-    /// the daemon's CWD"; it does not canonicalize, so every path is refused.
-    /// That matters here because this emitter has no permission gate in front
-    /// of it, so a preview read is published unconditionally.
     /// Tool names eligible for progressive disclosure. The daemon's agent
     /// factory populates this with the gateway (user MCP) tool names; kiln
     /// and workspace tools are never deferrable. Empty means the handle
@@ -795,14 +787,8 @@ impl GenaiAgentHandle {
         self
     }
 
-    /// Construct a handle with an explicit workspace root used for
-    /// containing the file paths a synthesized diff may read. The
-    /// daemon's `agent_factory` calls this with the session's working
-    /// directory; tests can pass any directory. An empty or relative
-    /// `PathBuf` now DENIES every preview rather than resolving against
-    /// the daemon's CWD — that fallback was the exfiltration path, since
-    /// this emitter runs on tool-call emission with no permission gate
-    /// anywhere downstream of it.
+    /// Construct a handle carrying no session-scoped state; the builder
+    /// methods below supply the rest.
     pub fn new(
         client: genai::Client,
         model: ModelIden,

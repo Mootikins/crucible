@@ -274,7 +274,7 @@ rm -rf ~/.config/crucible/
 rm -rf ~/.crucible/
 
 # Runtime socket (auto-cleaned on reboot)
-rm -f "${XDG_RUNTIME_DIR:-/tmp}/crucible.sock"
+rm -f "${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}/crucible-$(id -u)}/crucible.sock"
 ```
 
 Your **kilns** (note collections) are plain markdown directories and are never modified by uninstalling. They remain wherever you created them.
