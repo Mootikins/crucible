@@ -79,3 +79,64 @@ describe("should_respond", function()
         end)
     end)
 end)
+
+-- The mention and prefix matchers had no coverage at all: every case above
+-- either takes the DM branch or sets `respond_to = "all"`, and none passed a
+-- `bot_user_id` — production calls `should_respond(data, bot_user_id)` with
+-- two arguments. Deleting the whole matcher left the suite green, and
+-- `mentions` is the documented default, so this was the one guild path an
+-- unconfigured operator actually gets.
+describe("should_respond guild matching", function()
+    local BOT = "botid"
+
+    local function guild_msg(content)
+        return { content = content, guild_id = "g1", author = { id = "u1" } }
+    end
+
+    local ALLOWED = { ["discord.allowed_guilds"] = { "g1" } }
+
+    it("answers a plain @mention under the default respond_to", function()
+        with_config(ALLOWED, function()
+            assert.equals(true, routing.should_respond(guild_msg("hey <@botid> hi"), BOT))
+        end)
+    end)
+
+    it("answers the nickname form of a mention", function()
+        with_config(ALLOWED, function()
+            assert.equals(true, routing.should_respond(guild_msg("<@!botid> hi"), BOT))
+        end)
+    end)
+
+    it("ignores a guild message that mentions nobody", function()
+        with_config(ALLOWED, function()
+            assert.equals(false, routing.should_respond(guild_msg("just chatting"), BOT))
+        end)
+    end)
+
+    it("ignores a mention of somebody else", function()
+        with_config(ALLOWED, function()
+            assert.equals(false, routing.should_respond(guild_msg("<@someoneelse> hi"), BOT))
+        end)
+    end)
+
+    it("answers a prefixed message when respond_to is prefix", function()
+        local cfg = { ["discord.allowed_guilds"] = { "g1" },
+                      ["discord.respond_to"] = "prefix",
+                      ["discord.command_prefix"] = "!" }
+        with_config(cfg, function()
+            assert.equals(true, routing.should_respond(guild_msg("!ask something"), BOT))
+            assert.equals(false, routing.should_respond(guild_msg("no prefix here"), BOT))
+        end)
+    end)
+
+    -- `respond_to = "prefix"` means the prefix *instead of* mentions, and the
+    -- matcher skips the mention branch entirely for it.
+    it("ignores a bare mention when respond_to is prefix", function()
+        local cfg = { ["discord.allowed_guilds"] = { "g1" },
+                      ["discord.respond_to"] = "prefix",
+                      ["discord.command_prefix"] = "!" }
+        with_config(cfg, function()
+            assert.equals(false, routing.should_respond(guild_msg("<@botid> hi"), BOT))
+        end)
+    end)
+end)

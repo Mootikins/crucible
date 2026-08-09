@@ -33,8 +33,14 @@ function M.get_or_create(channel_id, guild_id)
             entry.last_active = os.time()
             return entry.session_id, nil
         end
-        -- Session too old, end it and create fresh
+        -- Session too old, end it and create fresh. Drop the map entry with
+        -- it: the only other place that clears one is the successful-create
+        -- overwrite below, which the three error returns skip — so on a
+        -- misconfigured daemon every later message in this channel re-ended
+        -- the same dead id (swallowed by the pcall) and `active_count` kept
+        -- reporting it to `:discord status`.
         pcall(cru.sessions.end_session, entry.session_id)
+        channel_sessions[channel_id] = nil
     end
 
     -- The kiln is required, not defaulted: `create_session` falls back to

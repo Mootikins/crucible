@@ -279,3 +279,70 @@ describe("gateway state across connections", function()
         assert.equals(false, gateway.is_connected())
     end)
 end)
+
+describe("gateway retry budget", function()
+    -- `M.connect` called `cru.retry` once, and its body never returns while a
+    -- connection is healthy — so one budget covered the daemon's whole life.
+    -- Every drop ever, including Discord's routine OP 7 RECONNECT, spent a
+    -- slot permanently and the backoff never decayed. On the eleventh the
+    -- service raised, and nothing restarts a raw `services = {}` entry: the
+    -- bot went offline for good, weeks after anyone touched it.
+    it("earns a fresh budget after each live connection", function()
+        local dials = 0
+        local sockets_seen = 0
+
+        -- Every socket connects, then drops. With one lifetime budget this
+        -- stops at eleven dials; with a per-outage budget it keeps going.
+        local function flaky_socket()
+            sockets_seen = sockets_seen + 1
+            local receives = 0
+            return {
+                send = function() return true end,
+                close = function() end,
+                receive = function()
+                    receives = receives + 1
+                    if receives == 1 then return HELLO end
+                    if receives == 2 then return READY end
+                    error("gateway_test: connection dropped")
+                end,
+            }
+        end
+
+        with_gateway_env({
+            clock = function() return 1000.0 end,
+            connect = function()
+                dials = dials + 1
+                if dials > 14 then
+                    -- Past anything a single ten-attempt budget could reach.
+                    gateway.disconnect()
+                    error("gateway_test: stopping the run")
+                end
+                return flaky_socket()
+            end,
+        }, function()
+            pcall(gateway.connect)
+        end)
+
+        assert.equals(15, dials)
+        assert.equals(true, sockets_seen > 11)
+    end)
+
+    -- The other half: a gateway that never answers must still give up, or the
+    -- outer loop spins through ten instant failures forever.
+    it("gives up when a cycle never reaches a live connection", function()
+        local dials = 0
+
+        with_gateway_env({
+            clock = function() return 1000.0 end,
+            connect = function()
+                dials = dials + 1
+                error("gateway_test: simulated unreachable gateway")
+            end,
+        }, function()
+            pcall(gateway.connect)
+        end)
+
+        -- One budget's worth of attempts, then out — not an endless loop.
+        assert.equals(11, dials)
+    end)
+end)

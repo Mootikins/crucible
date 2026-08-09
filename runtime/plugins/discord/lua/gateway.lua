@@ -29,6 +29,9 @@ local session_id = nil
 local resume_gateway_url = nil
 local is_connected = false
 local awaiting_ack = false
+-- Whether the current `M.connect` cycle ever reached a live connection. Decides
+-- whether an exhausted retry budget earns a fresh one or is a dead gateway.
+local connected_this_cycle = false
 -- Set by `M.disconnect`, cleared by `M.connect`. The retry predicate below is
 -- the only thing separating a shutdown from a reconnect, because every error
 -- the receive loop can raise is otherwise indistinguishable from an outage.
@@ -140,6 +143,7 @@ local function handle_message(raw)
             session_id = msg.d.session_id
             resume_gateway_url = msg.d.resume_gateway_url
             is_connected = true
+            connected_this_cycle = true
             cru.log("info", "Discord gateway: connected as " .. msg.d.user.username)
         elseif event_name == "RESUMED" then
             -- A reconnect that resumes never sees READY, so this was the only
@@ -148,6 +152,7 @@ local function handle_message(raw)
             -- operator to "fix" by connecting a second time. RESUMED carries
             -- neither `session_id` nor `user`, so only the flag is set here.
             is_connected = true
+            connected_this_cycle = true
             cru.log("info", "Discord gateway: resumed")
         end
 
@@ -182,6 +187,34 @@ end
 --- Blocks the calling context. Returns on clean disconnect or exhausted retries.
 function M.connect()
     stopped = false
+    -- One `cru.retry` per outage, not one for the process. The body below never
+    -- returns while a connection is healthy, so a single `cru.retry` spends its
+    -- budget across the daemon's whole life: every drop ever — including
+    -- Discord's routine `OP 7 RECONNECT` — permanently consumes a slot and the
+    -- backoff never decays, so the eleventh drop raises and the service ends
+    -- with nothing to restart it (`plugin_boot.rs` logs the failure and stops).
+    -- Re-entering gives each outage a fresh ten attempts and a fresh backoff.
+    --
+    -- The budget resets on a *connection*, not unconditionally: a cycle that
+    -- never reached READY or RESUMED means the gateway is genuinely
+    -- unreachable, and re-entering on that would busy-spin through ten
+    -- immediate failures forever. So a cycle that made no progress re-raises,
+    -- which is the old behaviour and the correct one.
+    while not stopped do
+        connected_this_cycle = false
+        local ok, err = pcall(M.connect_once)
+        if stopped or ok then
+            return
+        end
+        if not connected_this_cycle then
+            error(err)
+        end
+        cru.log("info", "Discord gateway: retry budget spent after a live connection; starting a fresh one")
+    end
+end
+
+--- One connection's worth of retries. Raises when the budget is spent.
+function M.connect_once()
     cru.retry(function()
         -- `cru.retry` sleeps between attempts, so a disconnect can land while
         -- this body is waiting to be re-entered.
