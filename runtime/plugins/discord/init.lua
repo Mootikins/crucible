@@ -1,0 +1,178 @@
+--- Discord integration plugin for Crucible
+--- Connects to Discord via Gateway WebSocket and REST API.
+--- Routes @mentions and DMs to Crucible agent sessions for chatbot responses.
+
+local M = {}
+
+local config = require("config")
+local gateway = require("gateway")
+local sessions = require("sessions")
+local responder = require("responder")
+local routing = require("routing")
+
+-- Bot identity (captured from READY event)
+local bot_user_id = nil
+
+-- ============================================================================
+-- Chatbot routing helpers
+-- ============================================================================
+
+--- Strip bot mention and command prefix from message content.
+local function clean_content(content)
+    if not content then return "" end
+
+    -- Strip @mention
+    if bot_user_id then
+        content = content:gsub("<@!?" .. bot_user_id .. ">", "")
+    end
+
+    -- Strip command prefix
+    local prefix = config.get("command_prefix", "")
+    if prefix ~= "" and content:sub(1, #prefix) == prefix then
+        content = content:sub(#prefix + 1)
+    end
+
+    return content:match("^%s*(.-)%s*$") or ""
+end
+
+-- ============================================================================
+-- Gateway event wiring
+-- ============================================================================
+
+gateway.on("READY", function(data)
+    bot_user_id = data.user and data.user.id
+    local guild_count = data.guilds and #data.guilds or 0
+    cru.log("info", string.format("Discord bot ready: %s (%d guilds)", data.user.username, guild_count))
+
+    gateway.update_presence("online", { name = "ready", type = 3 })
+end)
+
+gateway.on("MESSAGE_CREATE", function(data)
+    local channel_id = data.channel_id
+
+    if not routing.should_respond(data, bot_user_id) then return end
+
+    local content = clean_content(data.content)
+    if content == "" then return end
+
+    local guild_id = data.guild_id
+    local msg_id = data.id
+
+    local session_id, err = sessions.get_or_create(channel_id, guild_id)
+    if not session_id then
+        cru.log("warn", "Failed to get session for channel " .. channel_id .. ": " .. tostring(err))
+        return
+    end
+
+    local author_id = data.author and data.author.id
+    cru.spawn(function()
+        local reply_to = guild_id and msg_id or nil
+        local ok, resp_err = pcall(responder.respond, session_id, channel_id, content, reply_to, author_id)
+        if not ok then
+            cru.log("warn", "Responder error: " .. tostring(resp_err))
+        end
+    end)
+end)
+
+-- Runs on every receive-loop iteration, so it stays inline: `cru.spawn` is a
+-- real `tokio::spawn`, and one task per iteration would pile up faster than
+-- they finish.
+gateway.set_periodic_hook(function()
+    sessions.cleanup_stale()
+end)
+
+-- ============================================================================
+-- Commands (user-facing)
+-- ============================================================================
+
+--- Plugin commands are invoked as `fn(args)` with a single table and their
+--- return value is rendered by the caller; there is no display context, and
+--- nothing in the tree produces a positional argument list.
+function M.discord_command(args)
+    local sub = type(args) == "table" and type(args.input) == "string"
+        and args.input:match("^%s*(%S*)")
+        or nil
+    if not sub or sub == "" then sub = "status" end
+
+    if sub == "connect" then
+        if gateway.is_connected() then
+            return { status = "Already connected to Discord gateway." }
+        end
+        local ok, err = pcall(gateway.connect)
+        if not ok then
+            return { error = "Discord gateway error: " .. tostring(err) }
+        end
+        -- `gateway.connect` blocks until a clean disconnect or an exhausted
+        -- retry budget, so reaching here means the connection is over.
+        return { status = "Discord gateway connection ended." }
+
+    elseif sub == "disconnect" then
+        gateway.disconnect()
+        return { status = "Disconnected from Discord gateway." }
+
+    elseif sub == "status" then
+        local info = gateway.session_info()
+        if not info.connected then
+            return { status = "Not connected. Use :discord connect" }
+        end
+        return {
+            status = "Connected",
+            session_id = info.session_id,
+            last_sequence = info.last_sequence,
+            active_sessions = sessions.active_count(),
+        }
+    end
+
+    return { error = "Unknown subcommand: " .. sub .. ". Try: connect, disconnect, status" }
+end
+
+-- ============================================================================
+-- Plugin Spec
+-- ============================================================================
+
+return {
+    name = "discord",
+    version = "0.2.0",
+    description = "Discord integration via Gateway WebSocket and REST API",
+    capabilities = { "config", "network", "websocket", "agent" },
+
+    commands = {
+        discord = {
+            desc = "Discord gateway management",
+            hint = "[connect|disconnect|status]",
+            fn = M.discord_command,
+        },
+    },
+
+    services = {
+        gateway = {
+            desc = "Discord WebSocket gateway connection",
+            -- Fail closed, and do it here rather than in the spawner: every
+            -- declared service is spawned unconditionally on load, and
+            -- `gateway.connect` dials Discord before any token is read. The
+            -- resulting token error is a *table*, which the retry predicate
+            -- accepts, so an unconfigured daemon spent its whole retry budget
+            -- against a third party. A lazily-evaluated closure is required —
+            -- spec extraction stubs `cru` with an `__index` that returns a
+            -- function, so any `cru.x.y` at file scope raises and lands the
+            -- plugin in `PluginState::Error`.
+            fn = function()
+                if not config.get("auto_connect", false) then
+                    cru.log("info", "Discord: auto_connect is false; gateway not started")
+                    return
+                end
+                -- `config.get_token` errors when unset, so this is a pcall and
+                -- not a truthiness check.
+                if not pcall(config.get_token) then
+                    cru.log("info", "Discord: no bot_token configured; gateway not started")
+                    return
+                end
+                gateway.connect()
+            end,
+        },
+    },
+
+    setup = function(cfg)
+        cru.log("info", "Discord plugin loaded")
+    end,
+}

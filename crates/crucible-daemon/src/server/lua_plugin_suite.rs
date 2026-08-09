@@ -330,6 +330,7 @@ mod shipped_plugin_tests {
     // now a manual step. `every_shipped_plugin_is_discovered` and
     // `every_shipped_plugin_executes` still walk the real directory, so a
     // broken plugin in the tree fails CI regardless of this list.
+    #[test_case("discord")]
     #[test_case("kiln-expert")]
     #[test_case("oci")]
     #[test_case("reflection")]
@@ -517,7 +518,4 @@ mod plugin_test_diagnostics_tests {
             "load failure must say why: {result:#}"
         );
     }
-
-    // Per-plugin gates live in `shipped_plugin_tests` above — one test_case
-    // per shipped plugin, kept complete by every_shipped_plugin_has_a_test_case.
 }

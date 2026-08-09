@@ -37,8 +37,16 @@ function M.get_or_create(channel_id, guild_id)
         pcall(cru.sessions.end_session, entry.session_id)
     end
 
-    -- Build session creation options
-    local create_opts = { type = "chat" }
+    -- The kiln is required, not defaulted: `create_session` falls back to
+    -- `crucible_home()` when it is absent, which stages reflection proposals
+    -- under `~/.crucible/.crucible/proposals/` where `cru proposals list`
+    -- never looks. Refuse before creating anything.
+    local kiln = config.get("kiln")
+    if not kiln then
+        return nil, "Discord plugin: no kiln configured — set [plugins.discord] kiln in your Crucible config"
+    end
+
+    local create_opts = { type = "chat", kiln = kiln }
 
     -- Add configured read kilns if present
     local kilns = config.get("kilns")
@@ -51,8 +59,13 @@ function M.get_or_create(channel_id, guild_id)
         return nil, "Failed to create session: " .. tostring(err)
     end
 
-    -- Configure agent with defaults (provider/model come from daemon config)
-    M.configure_agent(session.id)
+    -- A session whose agent could not be configured answers every message with
+    -- "NoAgentConfigured" for the full TTL if it is cached, so end it and
+    -- report the failure instead.
+    if not M.configure_agent(session.id) then
+        pcall(cru.sessions.end_session, session.id)
+        return nil, "Discord plugin: could not configure an agent for this session"
+    end
 
     channel_sessions[channel_id] = {
         session_id = session.id,
@@ -64,13 +77,14 @@ function M.get_or_create(channel_id, guild_id)
 end
 
 --- Configure the agent for a session with optional overrides from plugin config.
+--- Returns true when the session has a usable agent.
 function M.configure_agent(session_id)
     local provider = config.get("provider")
     local model = config.get("model")
 
     if not provider or not model then
         cru.log("warn", "Discord plugin: provider and model must be configured")
-        return
+        return false
     end
 
     local agent_config = {
@@ -94,7 +108,10 @@ function M.configure_agent(session_id)
     local _, err = cru.sessions.configure_agent(session_id, agent_config)
     if err then
         cru.log("warn", "Failed to configure agent for session " .. session_id .. ": " .. tostring(err))
+        return false
     end
+
+    return true
 end
 
 --- End and remove stale sessions (inactive > STALE_TTL).

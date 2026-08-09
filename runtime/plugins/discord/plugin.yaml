@@ -30,10 +30,6 @@ config:
       type: string
       description: Prefix for text commands (empty = slash commands only)
       default: ""
-    app_id:
-      type: string
-      description: Discord application ID (enables slash commands)
-      default: ""
     respond_to:
       type: string
       description: When to respond to messages
@@ -51,14 +47,39 @@ config:
         Guild IDs the bot will answer in. Empty (the default) means nobody;
         respond_to then decides which messages within an allowed guild.
       default: []
-    digest_interval:
+    quota_turns_per_day:
       type: number
-      description: Seconds between digest sends (0 = disabled)
-      default: 0
-    digest_channels:
+      description: Maximum agent turns the bot will spend per user per day
+      default: 50
+    kiln:
+      type: string
+      description: >-
+        Path to the kiln every Discord session writes to. Required — without it
+        a session falls back to the daemon's data root and its proposals land
+        where `cru proposals list` never looks.
+    kilns:
       type: array
-      description: Channel IDs to deliver digest embeds to
+      description: Additional kiln paths the session may read from
       default: []
+    provider:
+      type: string
+      description: LLM provider for Discord sessions (required)
+    model:
+      type: string
+      description: Model id for Discord sessions (required)
+    agent_type:
+      type: string
+      description: Agent implementation to run
+      default: "internal"
+    system_prompt:
+      type: string
+      description: System prompt for Discord sessions (a Discord-shaped default applies when unset)
+    provider_key:
+      type: string
+      description: Named provider credential to use instead of the default
+    agent_name:
+      type: string
+      description: Display name for the agent on this session
 
 exports:
   auto_discover: true
