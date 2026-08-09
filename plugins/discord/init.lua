@@ -93,33 +93,6 @@ end)
 
 gateway.on("MESSAGE_CREATE", function(data)
     local channel_id = data.channel_id
-    local raw = (data.content or ""):match("^%s*(.-)%s*$") or ""
-    local lower = raw:lower()
-
-    -- Intercept permission replies from the original requester
-    local pending = responder.pending_replies[channel_id]
-    if pending and pending.state == "waiting" and data.author and data.author.id == pending.user_id then
-        if lower == "y" or lower == "yes" then
-            pending.state = "allowed"
-            pending.scope = "once"
-            return
-        elseif lower == "y!" or lower == "yes!" then
-            pending.state = "allowed"
-            pending.scope = "session"
-            return
-        elseif lower == "n" or lower == "no" then
-            pending.state = "denied"
-            return
-        elseif lower == "n!" or lower == "no!" then
-            pending.state = "denied"
-            pending.scope = "session"
-            return
-        elseif lower:match("^n[,:]%s*") or lower:match("^no[,:]%s*") then
-            pending.state = "denied"
-            pending.reason = raw:match("[,:]%s*(.+)$")
-            return
-        end
-    end
 
     if not should_respond(data) then return end
 

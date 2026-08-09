@@ -126,12 +126,22 @@ impl DaemonSessionApi for DaemonSessionBridge {
         })
     }
 
+    /// Plugin turns are non-interactive.
+    ///
+    /// There is no Crucible principal behind a plugin turn — a Discord message
+    /// carries a chat-room username, and permissions are keyed on
+    /// `(session_id, permission_id)` alone, so whoever answers first answers
+    /// for everyone. Passing `false` makes the permission engine convert `Ask`
+    /// to `Deny` (`PermissionEngine::evaluate`) and the gate return a tool
+    /// error before any prompt is emitted. A plugin that wants to drive
+    /// permissions itself can still subscribe and use
+    /// `cru.sessions.interaction_respond`.
     fn send_message(&self, session_id: String, content: String) -> BoxFut<String> {
         bridge_async!(
             self.agent_manager,
             self.event_tx,
             |am, event_tx| async move {
-                am.send_message(&session_id, content, &event_tx, true, None)
+                am.send_message(&session_id, content, &event_tx, false, None)
                     .await
                     .map_err(|e| e.to_string())
             }
@@ -437,7 +447,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
             let mut broadcast_rx = event_tx.subscribe();
 
             let _msg_id = am
-                .send_message(&session_id, content, &event_tx, true, None)
+                .send_message(&session_id, content, &event_tx, false, None)
                 .await
                 .map_err(|e| e.to_string())?;
 
@@ -445,7 +455,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
 
             tokio::spawn(async move {
                 let mut text_buf = String::new();
-                let mut deadline = tokio::time::Instant::now() + timeout;
+                let deadline = tokio::time::Instant::now() + timeout;
 
                 macro_rules! emit {
                     ($part:expr) => {
@@ -536,27 +546,6 @@ impl DaemonSessionApi for DaemonSessionBridge {
                                     {
                                         emit!(ResponsePart::Thinking {
                                             content: content.to_string(),
-                                        });
-                                    }
-                                }
-                                "interaction_requested" => {
-                                    if !flush_text(&mut text_buf, &part_tx) {
-                                        return;
-                                    }
-                                    // Reset deadline — user needs time to respond to the prompt
-                                    deadline = tokio::time::Instant::now() + timeout;
-                                    let request_id = event
-                                        .data
-                                        .get("request_id")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("")
-                                        .to_string();
-                                    let (tool, description) = extract_permission_info(&event.data);
-                                    if !request_id.is_empty() {
-                                        emit!(ResponsePart::PermissionRequest {
-                                            request_id,
-                                            tool,
-                                            description,
                                         });
                                     }
                                 }
@@ -735,48 +724,6 @@ fn parse_range(v: &serde_json::Value) -> Result<crucible_core::traits::context_o
     }
 }
 
-/// Extract tool name and human-readable description from a permission request's data payload.
-fn extract_permission_info(data: &serde_json::Value) -> (String, String) {
-    let action = data.get("request").and_then(|r| r.get("action"));
-    let action_type = action
-        .and_then(|a| a.get("type"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
-
-    fn collect_str_array<'a>(action: Option<&'a serde_json::Value>, key: &str) -> Vec<&'a str> {
-        action
-            .and_then(|a| a.get(key))
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
-            .unwrap_or_default()
-    }
-
-    match action_type {
-        "bash" => {
-            let description = collect_str_array(action, "tokens").join(" ");
-            ("bash".to_string(), description)
-        }
-        "read" | "write" => {
-            let description = collect_str_array(action, "segments").join("/");
-            (action_type.to_string(), description)
-        }
-        "tool" => {
-            let name = action
-                .and_then(|a| a.get("name"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
-            (
-                name.to_string(),
-                truncate_json_preview(action.and_then(|a| a.get("args")), 200),
-            )
-        }
-        _ => (
-            "unknown".to_string(),
-            "unrecognized action type".to_string(),
-        ),
-    }
-}
-
 fn truncate_str(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
@@ -806,6 +753,7 @@ mod tests {
     use crucible_core::config::BackendType;
     use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
     use std::collections::HashMap;
+    use std::time::Duration;
     use tempfile::TempDir;
 
     fn build_test_agent_manager(session_manager: Arc<SessionManager>) -> Arc<AgentManager> {
@@ -857,6 +805,199 @@ mod tests {
             autocompact_threshold: None,
             tool_policy: None,
         }
+    }
+
+    /// Agent that calls `bash` once and waits for the tool result.
+    ///
+    /// `bash` is not believed read-only, so it reaches the permission gate —
+    /// which is exactly the decision a plugin-created turn has nobody to make.
+    struct BashCallingAgent;
+
+    #[async_trait::async_trait]
+    impl crucible_core::turn::Agent for BashCallingAgent {
+        fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+            crucible_core::turn::AgentCapabilities::default()
+        }
+        async fn turn<'a>(
+            &'a mut self,
+            ctx: crucible_core::turn::TurnContext,
+        ) -> Result<
+            futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
+            crucible_core::turn::AgentError,
+        > {
+            use crucible_core::turn::{StopReason, TurnEvent};
+            let mut inbound = ctx.inbound;
+            let body = async_stream::stream! {
+                yield TurnEvent::ToolCall {
+                    id: "call-1".to_string(),
+                    name: "bash".to_string(),
+                    args: serde_json::json!({"command": "rm -rf /"}),
+                    diffs: Vec::new(),
+                };
+                yield TurnEvent::ToolBatchEnd;
+                if let Some(rx) = inbound.as_mut() {
+                    while let Some(event) = rx.recv().await {
+                        if matches!(event, TurnEvent::ToolResult { .. }) {
+                            break;
+                        }
+                    }
+                }
+                yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+            };
+            Ok(Box::pin(body))
+        }
+        async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+            Ok(())
+        }
+        async fn switch_model(&mut self, _: &str) -> Result<(), crucible_core::turn::NotSupported> {
+            Err(crucible_core::turn::NotSupported::new("switch_model"))
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crucible_core::traits::chat::AgentHandle for BashCallingAgent {
+        async fn send_message_fire_and_forget(
+            &mut self,
+            _: String,
+        ) -> crucible_core::traits::chat::ChatResult<()> {
+            Ok(())
+        }
+        async fn set_mode_str(&mut self, _: &str) -> crucible_core::traits::chat::ChatResult<()> {
+            Ok(())
+        }
+        fn get_mode_id(&self) -> &str {
+            "normal"
+        }
+    }
+
+    /// A session whose single turn calls `bash`, driven through the real
+    /// scheduler and tool dispatch behind a [`DaemonSessionBridge`]. No
+    /// `[permissions]` config, so the gate has no rule to fall back on.
+    async fn bash_calling_rig(
+        event_tx: broadcast::Sender<SessionEventMessage>,
+    ) -> (TempDir, DaemonSessionBridge, String) {
+        let tmp = TempDir::new().unwrap();
+        let workspace = tmp.path().to_path_buf();
+        let session_manager = Arc::new(SessionManager::with_storage(Arc::new(
+            FileSessionStorage::new(),
+        )));
+        let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager: session_manager.clone(),
+            background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config: None,
+            context_config: None,
+            permission_config: None,
+            plugin_loader: None,
+            workspace_tools: Arc::new(WorkspaceTools::new(workspace.clone())),
+        }));
+        agent_manager.set_agent_factory_override(Box::new(|_, _| {
+            Box::pin(async {
+                Ok(Box::new(BashCallingAgent)
+                    as Box<
+                        dyn crucible_core::traits::chat::AgentHandle + Send + Sync,
+                    >)
+            })
+        }));
+        let session = session_manager
+            .create_session(
+                SessionType::Chat,
+                workspace.clone(),
+                Some(workspace.clone()),
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+        agent_manager
+            .configure_agent(&session.id, make_test_agent(None))
+            .await
+            .unwrap();
+        let bridge = DaemonSessionBridge::new(session_manager, agent_manager, event_tx);
+        (tmp, bridge, session.id)
+    }
+
+    /// A Discord (or any plugin) turn has no Crucible principal on the other
+    /// end, so a tool that would need approval must come back as a tool error
+    /// rather than as a prompt anyone in the room could answer.
+    #[tokio::test]
+    async fn a_collected_plugin_turn_errors_on_a_gated_tool_instead_of_prompting() {
+        let (event_tx, _keep_open) = broadcast::channel(256);
+        let (_tmp, bridge, session_id) = bash_calling_rig(event_tx).await;
+
+        let mut rx = bridge
+            .send_and_collect(session_id, "go".to_string(), Some(5.0), None)
+            .await
+            .unwrap();
+
+        let mut parts = Vec::new();
+        while let Ok(Some(part)) = tokio::time::timeout(Duration::from_secs(30), rx.recv()).await {
+            parts.push(part);
+        }
+
+        assert!(
+            !parts
+                .iter()
+                .any(|p| matches!(p, ResponsePart::PermissionRequest { .. })),
+            "a plugin turn must never surface a permission prompt, got: {parts:?}"
+        );
+        assert!(
+            parts.iter().any(|p| matches!(
+                p,
+                ResponsePart::ToolResult {
+                    tool,
+                    is_error: true,
+                    ..
+                } if tool == "bash"
+            )),
+            "the gated bash call must come back as a tool error, got: {parts:?}"
+        );
+    }
+
+    /// Same guarantee on the fire-and-forget path, which has no part stream to
+    /// inspect: nothing may reach the broadcast that a subscriber could answer.
+    #[tokio::test]
+    async fn a_fire_and_forget_plugin_turn_never_broadcasts_a_permission_request() {
+        let (event_tx, mut events) = broadcast::channel(256);
+        let (_tmp, bridge, session_id) = bash_calling_rig(event_tx).await;
+
+        bridge
+            .send_message(session_id, "go".to_string())
+            .await
+            .unwrap();
+
+        let mut errored_tool = None;
+        while let Ok(Ok(event)) = tokio::time::timeout(Duration::from_secs(30), events.recv()).await
+        {
+            assert_ne!(
+                event.event, "interaction_requested",
+                "a plugin turn must never ask the broadcast for permission"
+            );
+            if event.event == "tool_result"
+                && event
+                    .data
+                    .get("result")
+                    .and_then(|r| r.get("error"))
+                    .is_some()
+            {
+                errored_tool = event
+                    .data
+                    .get("tool")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
+            }
+            if event.event == "message_complete" || event.event == "ended" {
+                break;
+            }
+        }
+
+        assert_eq!(
+            errored_tool.as_deref(),
+            Some("bash"),
+            "the gated bash call must come back as a tool error"
+        );
     }
 
     #[test]

@@ -8,12 +8,7 @@ local M = {}
 
 local MAX_MESSAGE_LEN = 2000
 local RESPONSE_TIMEOUT = 120  -- seconds
-local PERMISSION_TIMEOUT = 60 -- seconds to wait for y/n reply
 local TYPING_INTERVAL = 8    -- seconds between typing indicator refreshes
-
--- Pending permission replies: channel_id -> {state="waiting"|"allowed"|"denied", user_id=string}
--- Set by responder, resolved by init.lua when it intercepts a y/n from the same user.
-M.pending_replies = {}
 
 --- Find structural break positions in text up to `limit`, scored by priority:
 --- 3 = heading (\n#), 2 = paragraph (\n\n), 1 = single newline.
@@ -186,38 +181,6 @@ local function send_chunked(channel_id, text, reply_to_msg_id)
     return nil
 end
 
---- Wait for a permission reply from the original user.
---- Returns {allowed=bool, scope=string, reason=string|nil} or nil on timeout.
-local function wait_for_permission_reply(channel_id, user_id)
-    M.pending_replies[channel_id] = { state = "waiting", user_id = user_id }
-    local waited = 0
-    while M.pending_replies[channel_id]
-        and M.pending_replies[channel_id].state == "waiting"
-        and waited < PERMISSION_TIMEOUT do
-        cru.timer.sleep(0.5)
-        waited = waited + 0.5
-    end
-    local pending = M.pending_replies[channel_id]
-    M.pending_replies[channel_id] = nil
-    if not pending or pending.state == "waiting" then return nil end
-    return {
-        allowed = pending.state == "allowed",
-        scope = pending.scope or "once",
-        reason = pending.reason,
-    }
-end
-
---- Format a permission request prompt for Discord.
-local function format_permission_prompt(part)
-    local desc = part.description or ""
-    if #desc > 300 then desc = desc:sub(1, 297) .. "..." end
-    return string.format(
-        "> \u{26a0}\u{fe0f} **%s** wants to run:\n> ```\n> %s\n> ```\n> **y** / **n** / **y!** (allow session) / **n, reason**",
-        part.tool or "unknown",
-        desc
-    )
-end
-
 --- Send a user message to a Crucible session and stream response parts to Discord.
 ---@param session_id string Crucible session ID
 ---@param channel_id string Discord channel ID
@@ -279,38 +242,6 @@ function M.respond(session_id, channel_id, user_message, reply_to_msg_id, user_i
             first_message = false
 
         elseif part.type == "thinking" then
-            pcall(api.trigger_typing, channel_id)
-
-        elseif part.type == "permission_request" then
-            local prompt = format_permission_prompt(part)
-            api.send_message(channel_id, prompt, { reply_to = reply_id })
-            first_message = false
-
-            local wait_ok, reply = pcall(wait_for_permission_reply, channel_id, user_id)
-            if not wait_ok then
-                M.pending_replies[channel_id] = nil
-                reply = nil
-            end
-            if not reply then
-                api.send_message(channel_id, "> \u{23f0} Permission timed out — denying.")
-                reply = { allowed = false, scope = "once" }
-            end
-
-            local _, respond_err = cru.sessions.interaction_respond(
-                session_id, part.request_id, reply
-            )
-            if respond_err then
-                cru.log("warn", "Failed to respond to permission: " .. tostring(respond_err))
-            end
-
-            if reply.allowed then
-                local note = reply.scope == "session" and " (session)" or ""
-                api.send_message(channel_id, "> \u{2705} Approved" .. note)
-            else
-                local note = reply.reason and (": " .. reply.reason) or ""
-                if reply.scope == "session" then note = " (all denied)" .. note end
-                api.send_message(channel_id, "> \u{1f6ab} Denied" .. note)
-            end
             pcall(api.trigger_typing, channel_id)
         end
     end
