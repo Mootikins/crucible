@@ -39,7 +39,9 @@ config:
       type: object
       description: >-
         Access tier per identity, keyed "user:<id>" (DMs) or "guild:<id>", with
-        an optional "default". Values are "read" or "write"; unset means read.
+        an optional "default". Values are "read", "ask" or "write"; unset means
+        read. "ask" prompts in the DM before each write and is refused in a
+        guild, where no single account can answer for the room.
         A guild message takes the guild's tier, since everyone in a channel
         shares one session.
       default: {}

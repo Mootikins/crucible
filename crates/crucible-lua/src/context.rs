@@ -448,6 +448,7 @@ mod tests {
             _: String,
             _: Option<f64>,
             _: Option<usize>,
+            _: bool,
         ) -> Pin<
             Box<
                 dyn Future<

@@ -436,6 +436,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
         content: String,
         timeout_secs: Option<f64>,
         max_tool_result_len: Option<usize>,
+        interactive: bool,
     ) -> BoxFut<tokio::sync::mpsc::UnboundedReceiver<ResponsePart>> {
         let am = self.agent_manager.clone();
         let event_tx = self.event_tx.clone();
@@ -446,8 +447,14 @@ impl DaemonSessionApi for DaemonSessionBridge {
             // Subscribe to broadcast BEFORE sending so we don't miss early events
             let mut broadcast_rx = event_tx.subscribe();
 
+            // `false` unless the caller asserted a single identified principal.
+            // A plugin turn has no Crucible principal behind it by default:
+            // permissions are keyed on `(session_id, permission_id)` alone, so
+            // in any channel with more than one person the first reply answers
+            // for everyone. A plugin may opt in where it knows the channel is
+            // one named account — a DM — and only there.
             let _msg_id = am
-                .send_message(&session_id, content, &event_tx, false, None)
+                .send_message(&session_id, content, &event_tx, interactive, None)
                 .await
                 .map_err(|e| e.to_string())?;
 
@@ -928,7 +935,7 @@ mod tests {
         let (_tmp, bridge, session_id) = bash_calling_rig(event_tx).await;
 
         let mut rx = bridge
-            .send_and_collect(session_id, "go".to_string(), Some(5.0), None)
+            .send_and_collect(session_id, "go".to_string(), Some(5.0), None, false)
             .await
             .unwrap();
 

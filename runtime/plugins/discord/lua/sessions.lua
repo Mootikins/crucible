@@ -121,7 +121,22 @@ WRITE_TOOLS.multi_edit = "allow"
 WRITE_TOOLS.create_note = "allow"
 WRITE_TOOLS.update_note = "allow"
 
-local TIERS = { read = READ_TOOLS, write = WRITE_TOOLS }
+--- The read set, plus the write tools marked `ask` so the agent must get a
+--- yes before each one.
+---
+--- Only meaningful in a DM: a prompt is answered by whoever replies first, and
+--- the daemon keys permissions on `(session_id, permission_id)` alone, so in a
+--- guild channel anyone present could answer for everyone. `M.access_tier`
+--- degrades this to `read` outside a DM rather than trusting the room.
+local ASK_TOOLS = {}
+for tool, policy in pairs(WRITE_TOOLS) do
+    ASK_TOOLS[tool] = READ_TOOLS[tool] and policy or "ask"
+end
+
+local TIERS = { read = READ_TOOLS, write = WRITE_TOOLS, ask = ASK_TOOLS }
+
+--- Whether a tier needs a live person to answer prompts.
+function M.tier_is_interactive(tier) return tier == "ask" end
 
 --- The access tier for whoever triggered this turn.
 ---
@@ -144,6 +159,13 @@ function M.access_tier(guild_id, author_id)
     local tier = key and access[key] or access.default or "read"
     if not TIERS[tier] then
         cru.log("warn", "Discord plugin: unknown access tier '" .. tostring(tier) .. "', using read")
+        return "read"
+    end
+    -- `ask` needs one identified person to answer, and a guild channel is not
+    -- that: whoever replies first answers for everyone in the room. Degrade
+    -- rather than prompt into a crowd.
+    if tier == "ask" and guild_id then
+        cru.log("info", "Discord plugin: 'ask' is DM-only; using read for guild " .. tostring(guild_id))
         return "read"
     end
     return tier

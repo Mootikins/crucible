@@ -52,6 +52,33 @@ end)
 gateway.on("MESSAGE_CREATE", function(data)
     local channel_id = data.channel_id
 
+    -- A reply to an outstanding permission prompt, before anything else — it
+    -- is an answer, not a new turn, and must not cost a quota charge.
+    --
+    -- The authorization is the whole point: the reply is honoured only when it
+    -- comes from the account the prompt was shown to, in a DM. The prompt is
+    -- only ever raised for the `ask` tier, which `sessions.access_tier`
+    -- refuses to hand out in a guild — because permissions are keyed on
+    -- `(session_id, permission_id)` alone, so in a room with more than one
+    -- person the first reply would answer for everyone.
+    local pending = responder.pending_replies[channel_id]
+    if pending and pending.state == "waiting" and not data.guild_id then
+        local author_id = data.author and data.author.id
+        if author_id and author_id == pending.user_id then
+            local answer = (data.content or ""):lower()
+            local verdict, reason = answer:match("^(%a+)%s*,?%s*(.*)$")
+            if verdict == "y" or verdict == "yes" then
+                pending.state = "allowed"
+                return
+            elseif verdict == "n" or verdict == "no" then
+                pending.state = "denied"
+                pending.reason = reason ~= "" and reason or nil
+                return
+            end
+        end
+        -- Anything else falls through and is treated as an ordinary message.
+    end
+
     if not routing.should_respond(data, bot_user_id) then return end
 
     local content = clean_content(data.content)
@@ -83,9 +110,13 @@ gateway.on("MESSAGE_CREATE", function(data)
         return
     end
 
+    local interactive = sessions.tier_is_interactive(sessions.access_tier(guild_id, author_id))
+
     cru.spawn(function()
         local reply_to = guild_id and msg_id or nil
-        local ok, resp_err = pcall(responder.respond, session_id, channel_id, content, reply_to, author_id)
+        local ok, resp_err = pcall(
+            responder.respond, session_id, channel_id, content, reply_to, author_id, interactive
+        )
         if not ok then
             cru.log("warn", "Responder error: " .. tostring(resp_err))
         end

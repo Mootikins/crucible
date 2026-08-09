@@ -114,8 +114,22 @@ default = "read"
 
 - **`read`** (the default, and what you get with no `access` block) — the agent
   may read files and notes and run kiln searches, with no prompt.
+- **`ask`** — reads freely, but the agent must get a **y** from you in the DM
+  before each write. Prompts arrive as a callout naming the tool:
+
+  ```
+  > ⚠️ **write_file** wants to run:
+  > ```
+  > docs/Notes/scratch.md
+  > ```
+  > Reply **y** to allow, **n** to deny (optionally `n, reason`).
+  ```
+
+  No answer within 60 seconds denies. **DM-only** — in a guild it degrades to
+  `read`, because permissions are keyed on the session and the first reply
+  would answer for everyone in the room.
 - **`write`** — the read tools plus `write_file`, `edit_file`, `multi_edit`,
-  `create_note` and `update_note`.
+  `create_note` and `update_note`, with no prompt.
 
 Reads and writes are bounded by the session's kilns — `kiln` plus anything in
 `kilns` — not by the filesystem. Point `kiln` somewhere you are content for the
@@ -131,10 +145,12 @@ kilns, so granting it is deliberate: set `tool_policy` explicitly, which
 replaces the tier for every session.
 
 > [!NOTE]
-> A Discord turn runs non-interactively — there is no way to answer a
-> permission prompt from a chat room, and nothing that tried would know who was
-> entitled to answer. So a tool that is not granted here is *denied*, not
-> queued. Grant what the bot needs; it will not ask.
+> Outside the `ask` tier a Discord turn runs non-interactively, so a tool that
+> is not granted here is *denied* rather than queued — nothing will prompt, and
+> the agent gets a tool error. `ask` is the exception, and it is DM-only for a
+> reason: permissions are keyed on the session, not on who is speaking, so a
+> prompt in a shared channel would be answered by whoever typed first.
+
 ## Every option
 
 All keys live under `[plugins.discord]`.

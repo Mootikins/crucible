@@ -327,6 +327,7 @@ impl DaemonSessionApi for MockDaemonApi {
         _content: String,
         _timeout_secs: Option<f64>,
         _max_tool_result_len: Option<usize>,
+        _interactive: bool,
     ) -> Pin<
         Box<
             dyn Future<Output = Result<tokio::sync::mpsc::UnboundedReceiver<ResponsePart>, String>>

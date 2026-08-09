@@ -379,16 +379,25 @@ pub fn register_sessions_module_with_api(
         move |lua, (session_id, content, opts): (String, String, Value)| {
             let a = Arc::clone(&a);
             async move {
-                let (timeout_secs, max_tool_result_len) = match opts {
+                let (timeout_secs, max_tool_result_len, interactive) = match opts {
                     Value::Table(ref t) => (
                         t.get::<f64>("timeout").ok(),
                         t.get::<usize>("max_tool_result_len").ok(),
+                        // Absent means false: a caller that has not thought
+                        // about who may answer must not get a prompt.
+                        t.get::<bool>("interactive").unwrap_or(false),
                     ),
-                    Value::Number(n) => (Some(n), None),
-                    _ => (None, None),
+                    Value::Number(n) => (Some(n), None, false),
+                    _ => (None, None, false),
                 };
                 match a
-                    .send_and_collect(session_id, content, timeout_secs, max_tool_result_len)
+                    .send_and_collect(
+                        session_id,
+                        content,
+                        timeout_secs,
+                        max_tool_result_len,
+                        interactive,
+                    )
                     .await
                 {
                     Ok(rx) => {

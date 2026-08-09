@@ -370,12 +370,18 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
     /// and flushed as a single `Text` part at each boundary (tool call, tool
     /// result, thinking, or completion). `timeout_secs` defaults to 120.
     /// `max_tool_result_len` caps tool-result previews (default 500).
+    /// `interactive` lets a plugin assert that this turn has exactly one
+    /// identified principal who may answer a permission prompt — a DM from an
+    /// account the operator named, and nothing looser. It defaults to `false`
+    /// and the daemon cannot infer it: only the plugin knows whether the
+    /// channel it is serving has one person in it.
     fn send_and_collect(
         &self,
         session_id: String,
         content: String,
         timeout_secs: Option<f64>,
         max_tool_result_len: Option<usize>,
+        interactive: bool,
     ) -> Pin<
         Box<
             dyn Future<Output = Result<tokio::sync::mpsc::UnboundedReceiver<ResponsePart>, String>>

@@ -178,3 +178,53 @@ describe("access tiers", function()
         assert.equals(2, #calls.created)
     end)
 end)
+
+-- The `ask` tier: the middle ground between granting a tool outright and
+-- denying it with no recourse. It only works where exactly one identified
+-- account can answer, which is a DM.
+describe("the ask tier", function()
+    local function tier_with(access, guild_id, author_id)
+        local result
+        with_env({ ["discord.access"] = access }, {}, function()
+            result = sessions.access_tier(guild_id, author_id)
+        end)
+        return result
+    end
+
+    it("is handed out in a DM", function()
+        assert.equals("ask", tier_with({ ["user:u1"] = "ask" }, nil, "u1"))
+    end)
+
+    -- Permissions are keyed on (session_id, permission_id) alone, so in a
+    -- guild channel whoever replies first answers for everyone in the room.
+    it("degrades to read in a guild rather than prompting a crowd", function()
+        assert.equals("read", tier_with({ ["guild:g1"] = "ask" }, "g1", "u1"))
+    end)
+
+    it("marks only the ask tier as needing a live answer", function()
+        assert.equals(true, sessions.tier_is_interactive("ask"))
+        assert.equals(false, sessions.tier_is_interactive("write"))
+        assert.equals(false, sessions.tier_is_interactive("read"))
+    end)
+
+    it("asks for the write tools and still allows reads outright", function()
+        local seen
+        local _, api = recording_api()
+        api.configure_agent = function(_, cfg) seen = cfg.tool_policy; return true, nil end
+        with_env({
+            ["discord.kiln"] = "/tmp/kiln",
+            ["discord.provider"] = "p",
+            ["discord.model"] = "m",
+            ["discord.access"] = { ["user:asker"] = "ask" },
+        }, api, function()
+            sessions.get_or_create("dm-asker", nil, "asker")
+        end)
+
+        assert.equals("ask", seen.write_file)
+        assert.equals("ask", seen.create_note)
+        -- Reads stay `allow`: prompting for every grep would make the tier
+        -- unusable, and reads are what the read tier already grants freely.
+        assert.equals("allow", seen.read_file)
+        assert.equals("allow", seen.grep)
+    end)
+end)

@@ -183,16 +183,63 @@ end
 
 --- Send a user message to a Crucible session and stream response parts to Discord.
 ---@param session_id string Crucible session ID
+--- Seconds to wait for a y/n reply before denying.
+local PERMISSION_TIMEOUT = 60
+
+--- channel_id -> { state = "waiting"|"allowed"|"denied", user_id = string }
+--- Set here, resolved by `init.lua` when it intercepts a reply from the same
+--- account. Keyed by channel, which is sound only because the `ask` tier is
+--- DM-only — one channel, one account, one outstanding prompt.
+M.pending_replies = {}
+
+--- Block until the requester answers, or the timeout expires.
+local function wait_for_permission_reply(channel_id, user_id)
+    M.pending_replies[channel_id] = { state = "waiting", user_id = user_id }
+    local waited = 0
+    while M.pending_replies[channel_id]
+        and M.pending_replies[channel_id].state == "waiting"
+        and waited < PERMISSION_TIMEOUT do
+        cru.timer.sleep(0.5)
+        waited = waited + 0.5
+    end
+    local pending = M.pending_replies[channel_id]
+    M.pending_replies[channel_id] = nil
+    if not pending or pending.state == "waiting" then return nil end
+    return { allowed = pending.state == "allowed", reason = pending.reason }
+end
+
+--- The prompt itself: a callout naming the tool, with the arguments quoted.
+---
+--- No "allow for the session" option. The previous one sent `scope = "session"`
+--- with no pattern, and `permission.rs` honours a scope only for `Project` and
+--- only alongside a pattern — so it granted nothing while reporting success.
+--- Standing permission is what the `write` tier is for; this prompt answers one
+--- call.
+local function format_permission_prompt(part)
+    local desc = part.description or ""
+    if #desc > 300 then desc = desc:sub(1, 297) .. "..." end
+    return string.format(
+        "> \u{26a0}\u{fe0f} **%s** wants to run:\n> ```\n> %s\n> ```\n> Reply **y** to allow, **n** to deny (optionally `n, reason`).",
+        part.tool or "unknown",
+        desc
+    )
+end
+
 ---@param channel_id string Discord channel ID
 ---@param user_message string The user's message content
 ---@param reply_to_msg_id string|nil Discord message ID to reply to
 ---@param user_id string|nil Discord user ID of the requester (for permission auth)
-function M.respond(session_id, channel_id, user_message, reply_to_msg_id, user_id)
+function M.respond(session_id, channel_id, user_message, reply_to_msg_id, user_id, interactive)
     cru.log("info", "Responder: starting for session " .. session_id)
     pcall(api.trigger_typing, channel_id)
 
     local next_part, err = cru.sessions.send_and_collect(session_id, user_message, {
         timeout = RESPONSE_TIMEOUT,
+        -- Only the `ask` tier, and only in a DM. The daemon cannot tell that
+        -- this channel holds exactly one named account; the plugin can, and
+        -- asserting it here is what makes a prompt answerable by the person it
+        -- was shown to.
+        interactive = interactive or false,
     })
 
     if err then
@@ -248,6 +295,27 @@ function M.respond(session_id, channel_id, user_message, reply_to_msg_id, user_i
             local msg = format_tool_result(part)
             api.send_message(channel_id, msg, { reply_to = reply_id })
             first_message = false
+
+        elseif part.type == "permission_request" then
+            api.send_message(channel_id, format_permission_prompt(part), { reply_to = reply_id })
+            first_message = false
+
+            local ok, reply = pcall(wait_for_permission_reply, channel_id, user_id)
+            if not ok then
+                M.pending_replies[channel_id] = nil
+                reply = nil
+            end
+            if not reply then
+                api.send_message(channel_id, "> \u{23f0} No answer — denying.")
+                reply = { allowed = false }
+            end
+
+            local _, respond_err =
+                cru.sessions.interaction_respond(session_id, part.request_id, reply)
+            if respond_err then
+                cru.log("warn", "Failed to respond to permission: " .. tostring(respond_err))
+            end
+            pcall(api.trigger_typing, channel_id)
 
         elseif part.type == "thinking" then
             pcall(api.trigger_typing, channel_id)
