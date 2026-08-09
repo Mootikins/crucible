@@ -63,28 +63,31 @@ impl AgentManager {
         classification: Option<DataClassification>,
         include_models: bool,
     ) -> Vec<ProviderInfo> {
-        let mut providers = Vec::new();
-        for (provider_key, provider_config, source_reason) in
-            self.iter_chat_providers(classification)
-        {
-            let backend = provider_config.provider_type;
+        // Concurrent, not sequential: each probe waits up to
+        // `LIST_MODELS_TIMEOUT` (10s), and this runs on the `session.create`
+        // setup path. Awaited one at a time, a user with three providers and
+        // one dead endpoint waited up to thirty seconds for setup to finish.
+        // Order is preserved because `join_all` resolves positionally.
+        futures::future::join_all(self.iter_chat_providers(classification).into_iter().map(
+            |(provider_key, provider_config, source_reason)| async move {
+                let backend = provider_config.provider_type;
 
-            let models = if include_models {
-                self.discover_models(&provider_key, &provider_config).await
-            } else {
-                Vec::new()
-            };
+                let models = if include_models {
+                    self.discover_models(&provider_key, &provider_config).await
+                } else {
+                    Vec::new()
+                };
 
-            providers.push(build_provider_info(
-                backend,
-                &provider_config,
-                &source_reason,
-                &provider_key,
-                models,
-            ));
-        }
-
-        providers
+                build_provider_info(
+                    backend,
+                    &provider_config,
+                    &source_reason,
+                    &provider_key,
+                    models,
+                )
+            },
+        ))
+        .await
     }
 
     pub(super) fn discover_env_providers(

@@ -867,6 +867,7 @@ mod models_discovery;
 mod parity_capture;
 mod permissions;
 mod precognition;
+mod providers_concurrency;
 mod reactor;
 mod workspace;
 
