@@ -19,7 +19,6 @@ pub mod interaction_registry;
 pub mod kiln;
 pub mod note;
 pub mod parser;
-pub mod path_containment;
 pub mod processing;
 pub mod project;
 pub mod prompts;
@@ -48,7 +47,6 @@ pub use discovery::{DiscoveryConfig, DiscoveryPaths};
 pub use error_utils::strip_tool_error_prefix;
 pub use interaction_context::{EventPushCallback, InteractionContext};
 pub use kiln::EXCLUDED_DIRS;
-pub use path_containment::{resolve_within, resolve_within_any, Refusal};
 
 // Re-export enrichment types (concrete implementation lives in crucible-daemon::enrichment)
 pub use enrichment::{
