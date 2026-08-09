@@ -589,6 +589,29 @@ end
 
         info!("Discovered {} daemon plugin(s)", discovered.len());
 
+        // The kill switch, applied between discovery and load. A bundled
+        // plugin's `plugin.yaml` ships inside the binary and is re-stamped
+        // whenever `version + blake3(runtime tree)` changes, so editing
+        // `enabled:` there does not survive an upgrade — `[plugins.<name>]
+        // enabled = false` in config.toml is the only durable lever.
+        // `disable` unloads first, and `unload` returns early for anything not
+        // Active, so running it before `load_all` is just a state flip.
+        for name in &discovered {
+            let disabled = self
+                .plugin_config
+                .get(name)
+                .and_then(|c| c.get("enabled"))
+                .and_then(|v| v.as_bool())
+                == Some(false);
+            if disabled {
+                if let Err(e) = self.plugin_manager.disable(name) {
+                    warn!("Failed to disable plugin '{name}' from config: {e}");
+                } else {
+                    info!("Plugin '{name}' disabled by config");
+                }
+            }
+        }
+
         let loaded = self
             .plugin_manager
             .load_all()

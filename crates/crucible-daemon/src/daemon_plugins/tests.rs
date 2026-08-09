@@ -58,6 +58,42 @@ async fn every_shipped_plugin_executes() {
     }
 }
 
+/// The kill switch: `[plugins.<name>] enabled = false` in config.toml must
+/// keep a bundled plugin from ever executing.
+///
+/// Editing the extracted `plugin.yaml` does not work — the runtime tree is
+/// re-stamped from the binary whenever `version + blake3(tree)` changes, which
+/// silently restores `enabled: true`. Config is the only durable lever, and
+/// `oci` is the plugin that most needs it (it shells out to a container
+/// runtime). Paired with `every_shipped_plugin_executes` above, which proves
+/// `oci` DOES load when config says nothing.
+#[tokio::test]
+async fn a_plugin_disabled_in_config_never_executes() {
+    let plugin_config = HashMap::from([(
+        "oci".to_string(),
+        serde_json::json!({ "enabled": false, "runtime": "podman" }),
+    )]);
+    let mut loader = DaemonPluginLoader::new(plugin_config).expect("loader");
+    loader
+        .load_plugins(&[(shipped_plugins_dir(), PluginSource::Runtime)])
+        .await
+        .expect("load shipped plugins");
+
+    assert!(
+        !loader.loaded_plugin_names().contains(&"oci".to_string()),
+        "oci is disabled in config but loaded anyway: {:?}",
+        loader.loaded_plugin_names()
+    );
+    // Other bundled plugins are untouched — the switch is per-plugin.
+    assert!(
+        loader
+            .loaded_plugin_names()
+            .contains(&"reflection".to_string()),
+        "disabling oci must not disable anything else: {:?}",
+        loader.loaded_plugin_names()
+    );
+}
+
 /// A shipped plugin whose manifest doesn't parse is not merely broken —
 /// it never enters `PluginManager::plugins` at all, so it is absent from
 /// `plugin.list` with no error anywhere but the daemon log.
