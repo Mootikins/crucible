@@ -91,11 +91,18 @@ function M.configure_agent(session_id)
         agent_type = config.get("agent_type", "internal"),
         provider = provider,
         model = model,
+        -- The citation sentence is conditional ("when kiln notes were
+        -- provided"), not imperative. Precognition only injects on the first
+        -- user message of a session (`precognition_gate.rs`) while a channel
+        -- session is reused for 15 minutes, so from message two onward there
+        -- are no notes in context — an unconditional "cite your sources" would
+        -- make the model invent titles rather than admit it had none.
         system_prompt = config.get("system_prompt",
             "You are a knowledgeable assistant in a Discord chat. "
             .. "Conversations here are short — usually one or two exchanges — so make each response count. "
             .. "Be thorough and thoughtful rather than terse; the user may not follow up. "
-            .. "Use Discord markdown formatting (bold, code blocks, lists) when it helps clarity."),
+            .. "Use Discord markdown formatting (bold, code blocks, lists) when it helps clarity. "
+            .. "When kiln notes were provided to you, name the note titles you drew on at the end of your reply."),
     }
 
     -- Optional fields

@@ -408,13 +408,27 @@ cru.sessions.end_session(session_id)
 
 Respond to a permission or interaction request. The `response` table is passed through as JSON to the daemon.
 
+The key is `allowed`, not `approved`: the daemon deserializes the table into
+`PermResponse`, whose only required field is `allowed`
+(`crates/crucible-core/src/interaction/permission.rs`). `approved = true` parses
+as an unknown key and the request is rejected for the missing field.
+
 ```lua
-cru.sessions.interaction_respond(session_id, request_id, { approved = true })
+cru.sessions.interaction_respond(session_id, request_id, { allowed = true })
 ```
 
 ### Full subscribe/respond pattern
 
-This is the pattern used by the Discord plugin's responder module. Subscribe *before* sending the message to avoid missing early events:
+Subscribe *before* sending the message to avoid missing early events:
+
+> [!warning] Not reachable from a plugin-created session
+> A plugin's own sessions run their turns non-interactively, so
+> `PermissionEngine::evaluate` converts an `Ask` decision to `Deny` and the tool
+> returns an error before `interaction_requested` is ever emitted. No amount of
+> subscribing will surface a permission request from a session the plugin
+> created — a rule that would have asked simply denies. `interaction_respond`
+> and the `permission_request` event remain for a client that drives an
+> *interactive* session over RPC.
 
 ```lua
 -- 1. Subscribe first
