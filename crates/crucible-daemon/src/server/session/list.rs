@@ -55,10 +55,16 @@ pub(crate) async fn handle_session_list(
             collect_from(filtered);
         }
 
-        // Also load from the daemon data home if not already included
+        // Also load from the daemon data home if not already included.
+        //
+        // Deliberately without `km.open(&home)`: `server/mod.rs` documents that
+        // home is scanned but "never OPEN[ed] as a kiln — that is the leak this
+        // split fixes" (`61f28c144`), and an open kiln is a watched kiln, so
+        // opening it here indexed every session body under the data root into
+        // SQLite and LanceDB. Listing never needed it — the lookup below reads
+        // the in-memory map and `storage.list`, not `KilnManager`.
         let home = data_home.to_path_buf();
         if !kilns.iter().any(|(k, _, _)| k == &home) {
-            let _ = km.open(&home).await;
             let home_sessions = sm
                 .list_sessions_filtered_async(
                     Some(&home),
@@ -262,5 +268,48 @@ pub(crate) async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -
             INVALID_PARAMS,
             format!("Session not found: {}", session_id),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kiln_manager::KilnManager;
+    use crate::session_manager::SessionManager;
+    use tempfile::TempDir;
+
+    /// `server/mod.rs` documents the invariant this handler broke: the title
+    /// sweep scans `~/.crucible` "but never OPENS home as a kiln — that is the
+    /// leak this split fixes" (commit `61f28c144`). Listing sessions opened it
+    /// anyway, and an open kiln is a *watched* kiln, so every session body
+    /// under the data root — including a chat integration's transcript of a
+    /// stranger's messages — was parsed into SQLite and embedded into LanceDB
+    /// permanently.
+    ///
+    /// The open was never load-bearing: `list_sessions_filtered_async` reads
+    /// the in-memory map and `storage.list(kiln_path)`, and never consults
+    /// `KilnManager` at all.
+    #[tokio::test]
+    async fn listing_sessions_never_opens_the_data_root_as_a_kiln() {
+        let km = Arc::new(KilnManager::new());
+        let sm = Arc::new(SessionManager::new());
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().to_path_buf();
+
+        let req: Request = serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "session.list",
+            "params": {},
+        }))
+        .unwrap();
+
+        let _ = handle_session_list(req, &sm, &km, &data_home).await;
+
+        let opened: Vec<_> = km.list().await.into_iter().map(|(p, _, _)| p).collect();
+        assert!(
+            opened.is_empty(),
+            "session.list opened kilns as a side effect: {opened:?}"
+        );
     }
 }
