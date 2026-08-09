@@ -2,10 +2,14 @@
 //!
 //! Provides a token bucket rate limiter as userdata.
 //!
+//! `interval` is seconds *per token*, not the length of a window, so the
+//! sustained rate is `1 / interval` and `capacity` is only the burst allowance.
+//!
 //! # Example
 //!
 //! ```lua
-//! local limiter = cru.ratelimit.new({ capacity = 5, interval = 1.0 })
+//! -- burst of 5, sustained 5 per second
+//! local limiter = cru.ratelimit.new({ capacity = 5, interval = 0.2 })
 //! limiter:acquire()       -- async: yields until token available
 //! limiter:try_acquire()   -- sync: returns true/false
 //! limiter:remaining()     -- sync: current token count

@@ -9,6 +9,8 @@ local gateway = require("gateway")
 local sessions = require("sessions")
 local responder = require("responder")
 local routing = require("routing")
+local quota = require("quota")
+local api = require("api")
 
 -- Bot identity (captured from READY event)
 local bot_user_id = nil
@@ -57,6 +59,23 @@ gateway.on("MESSAGE_CREATE", function(data)
 
     local guild_id = data.guild_id
     local msg_id = data.id
+    local author_id = data.author and data.author.id
+
+    -- Above `get_or_create` so a throttled user never causes a session to
+    -- exist, and inline so the check and the increment are one synchronous
+    -- critical section — `cru.spawn` is a real `tokio::spawn`, so a flood run
+    -- through it could charge the same turn twice. Only the refusal reply is
+    -- spawned, and only for the message that crosses the cap.
+    local within_quota, refusal = quota.charge(author_id)
+    if not within_quota then
+        if refusal then
+            cru.spawn(function()
+                pcall(api.send_message, channel_id, refusal,
+                    { reply_to = guild_id and msg_id or nil })
+            end)
+        end
+        return
+    end
 
     local session_id, err = sessions.get_or_create(channel_id, guild_id)
     if not session_id then
@@ -64,7 +83,6 @@ gateway.on("MESSAGE_CREATE", function(data)
         return
     end
 
-    local author_id = data.author and data.author.id
     cru.spawn(function()
         local reply_to = guild_id and msg_id or nil
         local ok, resp_err = pcall(responder.respond, session_id, channel_id, content, reply_to, author_id)

@@ -5,8 +5,10 @@ local config = require("config")
 
 local M = {}
 
--- Rate limiter: 5 requests per second (Discord global rate limit)
-local limiter = cru.ratelimit.new({ capacity = 5, interval = 1.0 })
+-- Rate limiter: 5 requests per second (Discord global rate limit).
+-- `interval` is seconds *per token*, not the window length, so the sustained
+-- rate is `1 / interval`; `interval = 1.0` here was a 1/s bucket.
+local limiter = cru.ratelimit.new({ capacity = 5, interval = 0.2 })
 
 -- ---------------------------------------------------------------------------
 -- Internal helpers

@@ -197,9 +197,17 @@ function M.respond(session_id, channel_id, user_message, reply_to_msg_id, user_i
 
     if err then
         cru.log("warn", "Responder: send_and_collect failed: " .. tostring(err))
-        api.send_message(channel_id, "Sorry, I couldn't process that: " .. tostring(err), {
-            reply_to = reply_to_msg_id,
-        })
+        -- One task is spawned per message against one session id, and
+        -- `agent_manager` rejects a second concurrent turn before spawning
+        -- anything (`messaging/send.rs`). That rejection is what keeps replies
+        -- from interleaving, so it is normal operation, not a fault: say so
+        -- rather than pasting the daemon's error and the session id into a
+        -- public channel. No queue — a FIFO would add unbounded state and a new
+        -- failure mode for a cosmetic problem.
+        local text = tostring(err):find("Concurrent request in progress", 1, true)
+            and "I'm still working on your previous message."
+            or "Sorry, I couldn't process that: " .. tostring(err)
+        api.send_message(channel_id, text, { reply_to = reply_to_msg_id })
         return
     end
 
