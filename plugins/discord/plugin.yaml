@@ -39,6 +39,18 @@ config:
       description: When to respond to messages
       default: "mentions"
       enum: ["mentions", "prefix", "both", "all"]
+    allowed_users:
+      type: array
+      description: >-
+        User IDs the bot will answer in DMs. Empty (the default) means nobody —
+        a DM from anyone else is ignored. respond_to does not apply to DMs.
+      default: []
+    allowed_guilds:
+      type: array
+      description: >-
+        Guild IDs the bot will answer in. Empty (the default) means nobody;
+        respond_to then decides which messages within an allowed guild.
+      default: []
     digest_interval:
       type: number
       description: Seconds between digest sends (0 = disabled)

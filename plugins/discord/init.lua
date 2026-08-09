@@ -10,6 +10,7 @@ local api = require("api")
 local gateway = require("gateway")
 local sessions = require("sessions")
 local responder = require("responder")
+local routing = require("routing")
 
 -- Bot identity (captured from READY event)
 local bot_user_id = nil
@@ -17,38 +18,6 @@ local bot_user_id = nil
 -- ============================================================================
 -- Chatbot routing helpers
 -- ============================================================================
-
---- Check if a message should trigger a bot response.
-local function should_respond(data)
-    -- Never respond to bots
-    if data.author and data.author.bot then return false end
-
-    local content = data.content or ""
-    local respond_to = config.get("respond_to", "mentions")
-
-    -- DMs (guild_id is nil for DMs)
-    if not data.guild_id then return true end
-
-    -- Check @mention
-    if bot_user_id and respond_to ~= "prefix" then
-        if content:find("<@" .. bot_user_id .. ">") or content:find("<@!" .. bot_user_id .. ">") then
-            return true
-        end
-    end
-
-    -- Check prefix
-    local prefix = config.get("command_prefix", "")
-    if prefix ~= "" and (respond_to == "prefix" or respond_to == "both") then
-        if content:sub(1, #prefix) == prefix then
-            return true
-        end
-    end
-
-    -- Respond to all messages in channel
-    if respond_to == "all" then return true end
-
-    return false
-end
 
 --- Strip bot mention and command prefix from message content.
 local function clean_content(content)
@@ -94,7 +63,7 @@ end)
 gateway.on("MESSAGE_CREATE", function(data)
     local channel_id = data.channel_id
 
-    if not should_respond(data) then return end
+    if not routing.should_respond(data, bot_user_id) then return end
 
     local content = clean_content(data.content)
     if content == "" then return end
