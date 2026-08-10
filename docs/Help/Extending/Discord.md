@@ -271,6 +271,41 @@ session's tool grants are fixed when it is created; and the index of the bot's
 messages lives in memory, so a reply to something said before the daemon
 restarted starts a new session rather than resuming the old one.
 
+### DM sessions survive a daemon restart — if the kiln is registered
+
+DM sessions are written to `~/.crucible/plugin-state/discord/sessions.json` and
+read back when the plugin loads, so a conversation in a DM continues across a
+`cru daemon restart` rather than starting over. Channel sessions are not
+written: they are gone in fifteen minutes anyway, and remembering them would
+mean a file write on every channel message.
+
+**The kiln must belong to a registered project for this to work.** Reviving a
+session id means finding the kiln that holds its transcript, and a restarted
+daemon can only look inside the kilns it has opened — which are the kilns of
+the projects in `[projects.*]`. Setting `[plugins.discord] kiln` opens nothing;
+it only tells the plugin where to create sessions. Register it:
+
+```toml
+# ~/.config/crucible/config.toml
+
+[kilns]
+discord = "/home/you/kiln"
+
+[projects.discord]
+path = "/home/you/kiln"
+kilns = ["discord"]
+```
+
+Running `cru init` inside the kiln directory does the same thing.
+
+Without it the id is remembered and the revival fails, which costs one message:
+a new session is created and the conversation starts fresh.
+
+Two further limits. The index of the bot's own messages is not persisted, so a
+reply to something the bot said before the restart starts a new session (see
+above). And a DM session already past its 24-hour window when the daemon comes
+back is dropped rather than revived.
+
 A second message that arrives while the agent is still working on the first is
 refused by the daemon (one concurrent turn per session) and answered with
 *"I'm still working on your previous message."* There is no queue.
@@ -407,8 +442,13 @@ hash changes, reverting your edit. Config is the only durable lever.
 - **Reflection proposals** at `<kiln>/.crucible/proposals/*.md` — outside the
   index until you accept them, at which point they become ordinary kiln notes
   and are embedded and searchable.
-- **In memory only, lost on daemon restart:** the channel→session map and the
-  per-user turn counters.
+- **The DM half of the sender→session map**, at
+  `~/.crucible/plugin-state/discord/sessions.json`: a Discord channel id, the
+  sender's account id, a Crucible session id, an access tier and a timestamp
+  per open DM. No message content. Delete the file to forget every DM
+  conversation; the next message starts a fresh session.
+- **In memory only, lost on daemon restart:** the channel half of that map, the
+  index of the bot's own messages, and the per-user turn counters.
 - **Not retained by Crucible:** Discord message ids, attachments, and the
   channel history the bot did not answer. The plugin reads no history.
 

@@ -37,6 +37,12 @@ local STALE_TTL           = 7200    -- 2 hours before ending idle sessions
 -- short enough that a turn which never sent anything does not linger.
 local DISPATCH_TTL        = 300
 
+-- Where the DM half of the map is kept between daemon restarts, and the shape
+-- of what is written there.
+local STATE_PLUGIN  = "discord"
+local STATE_FILE    = "sessions.json"
+local STATE_VERSION = 1
+
 --- Get the session TTL based on context (DM vs channel).
 local function session_ttl(guild_id)
     if not guild_id then
@@ -78,6 +84,127 @@ function M.note_bot_message(bot_message_id, triggering_message_id)
     end
 end
 
+--- Where the state file lives, or nil in a runtime without a `paths` module.
+---
+--- `cru.paths` is registered by the daemon and by nothing else, so a runtime
+--- that lacks it — the plugin test VM, most obviously — gets no persistence
+--- and full routing. Persistence is an improvement on forgetting, never a
+--- prerequisite for answering.
+local function state_path()
+    local ok, path = pcall(function()
+        return cru.paths.join(cru.paths.state(STATE_PLUGIN), STATE_FILE)
+    end)
+    if ok and type(path) == "string" then return path end
+    return nil
+end
+
+--- The DM entries of `map`, as the blob that goes to disk.
+---
+--- DMs only, and this is the whole of D8: a channel session lives 900 seconds,
+--- so persisting one buys at most fifteen minutes of continuity in exchange
+--- for a write on every channel message. A DM lives 24 hours and is the
+--- conversation somebody expects to still be there tomorrow.
+---
+--- The reply-chain index is not written either. It keys on Discord message ids
+--- whose sessions this file may not carry, and a reply to something said
+--- before a restart falling through to a new session costs a lost thread
+--- rather than a wrong one.
+local function encode_dms(map)
+    local entries = {}
+    for key, entry in pairs(map) do
+        if not entry.guild_id and entry.session_id then
+            table.insert(entries, {
+                key = key,
+                session_id = entry.session_id,
+                last_active = entry.last_active,
+                tier = entry.tier,
+            })
+        end
+    end
+    return cru.json.encode({ version = STATE_VERSION, entries = entries })
+end
+
+--- Write the DM sessions of `map` to `path`. Returns whether it landed.
+function M.save_to(path, map)
+    if not path then return false end
+    local ok, err = pcall(cru.fs.write, path, encode_dms(map))
+    if not ok then
+        cru.log("warn", "Discord plugin: could not persist sessions: " .. tostring(err))
+    end
+    return ok
+end
+
+--- Read the DM sessions back from `path`, keyed as the live map keys them.
+---
+--- Anything unreadable is treated as no state at all: a corrupt blob costs the
+--- conversations it held, not the plugin's ability to answer the next message.
+function M.load_from(path)
+    if not path then return {} end
+    local exists_ok, exists = pcall(cru.fs.exists, path)
+    if not exists_ok or not exists then return {} end
+
+    local read_ok, raw = pcall(cru.fs.read, path)
+    if not read_ok then return {} end
+
+    local decode_ok, blob = pcall(cru.json.decode, raw)
+    if not decode_ok or type(blob) ~= "table" or type(blob.entries) ~= "table" then
+        cru.log("warn", "Discord plugin: session state at " .. path .. " is unreadable; starting empty")
+        return {}
+    end
+
+    local now = os.time()
+    local restored = {}
+    for _, record in ipairs(blob.entries) do
+        local last_active = tonumber(record.last_active) or 0
+        -- An entry already past the DM TTL would be ended and replaced by the
+        -- very next message. Reviving it to do that costs a daemon round trip
+        -- and leaves `:discord status` counting sessions nobody can reach.
+        if type(record.key) == "string" and type(record.session_id) == "string"
+            and now - last_active < DM_SESSION_TTL then
+            restored[record.key] = {
+                session_id = record.session_id,
+                last_active = last_active,
+                guild_id = nil,
+                tier = record.tier or "read",
+                key = record.key,
+            }
+        end
+    end
+    return restored
+end
+
+--- Merge the persisted DM sessions into the live map.
+---
+--- A key that is already live wins: the file records what was, the map holds
+--- what is, and a restore must never displace a session mid-conversation.
+function M.restore()
+    for key, entry in pairs(M.load_from(state_path())) do
+        if sender_sessions[key] == nil then
+            sender_sessions[key] = entry
+        end
+    end
+end
+
+local loaded = false
+
+--- Restore once, on first use.
+---
+--- Lazily rather than from `init.lua`, because `init.lua` returns a manifest
+--- and the map lives here: the file that owns the state owns reloading it, and
+--- no caller has to remember to ask.
+local function ensure_loaded()
+    if loaded then return end
+    loaded = true
+    M.restore()
+end
+
+--- Persist, when the entry that changed was a DM. Guild sessions are not in
+--- the file, so a guild mutation would rewrite it byte-identical.
+local function persist(guild_id)
+    if guild_id then return end
+    M.save_to(state_path(), sender_sessions)
+end
+
 --- Get or create a Crucible session for whoever sent this message.
 --- Reuses an existing session if it was active within the TTL window.
 ---
@@ -86,6 +213,7 @@ end
 --- ids (`data.member.roles`; absent in a DM).
 function M.get_or_create(channel_id, guild_id, author_id, opts)
     opts = opts or {}
+    ensure_loaded()
     local tier = M.access_tier(guild_id, author_id, opts.roles)
     local key = sender_key(channel_id, author_id)
     local entry = sender_sessions[key]
@@ -103,6 +231,7 @@ function M.get_or_create(channel_id, guild_id, author_id, opts)
         and os.time() - replied.last_active < session_ttl(replied.guild_id) then
         replied.last_active = os.time()
         note_dispatch(opts.message_id, replied)
+        persist(replied.guild_id)
         return replied.session_id, nil
     end
 
@@ -111,6 +240,11 @@ function M.get_or_create(channel_id, guild_id, author_id, opts)
         if age < ttl then
             entry.last_active = os.time()
             note_dispatch(opts.message_id, entry)
+            -- The bump is persisted, not just the creation: `load_from` drops
+            -- what is already past the DM TTL, so a file that never learns a
+            -- 24-hour conversation is still being had would discard it the
+            -- first time the daemon restarted a day in.
+            persist(entry.guild_id)
             return entry.session_id, nil
         end
         -- Session too old, end it and create fresh. Drop the map entry with
@@ -121,6 +255,7 @@ function M.get_or_create(channel_id, guild_id, author_id, opts)
         -- reporting it to `:discord status`.
         pcall(cru.sessions.end_session, entry.session_id)
         sender_sessions[key] = nil
+        persist(guild_id)
     end
 
     -- The kiln is required, not defaulted: `create_session` falls back to
@@ -164,6 +299,7 @@ function M.get_or_create(channel_id, guild_id, author_id, opts)
     }
     sender_sessions[key] = created
     note_dispatch(opts.message_id, created)
+    persist(guild_id)
 
     return session.id, nil
 end
@@ -372,19 +508,25 @@ end
 --- End and remove stale sessions (inactive > STALE_TTL), and drop the routing
 --- index entries that outlived them.
 function M.cleanup_stale()
+    ensure_loaded()
     local now = os.time()
     local to_remove = {}
+    local swept_a_dm = false
 
     for key, entry in pairs(sender_sessions) do
         if now - entry.last_active > STALE_TTL then
             pcall(cru.sessions.end_session, entry.session_id)
             table.insert(to_remove, key)
+            if not entry.guild_id then swept_a_dm = true end
         end
     end
 
     for _, key in ipairs(to_remove) do
         sender_sessions[key] = nil
     end
+
+    -- A session the sweep ended must not come back on the next restart.
+    if swept_a_dm then persist(nil) end
 
     -- Both indexes hold references to entries rather than ids, so a swept
     -- session is recognisable here and a reply that reaches one falls through
@@ -402,6 +544,7 @@ end
 
 --- Get current session count.
 function M.active_count()
+    ensure_loaded()
     local count = 0
     for _ in pairs(sender_sessions) do
         count = count + 1
