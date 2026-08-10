@@ -348,6 +348,33 @@ Send a user message to a session, triggering agent processing. Returns a request
 local msg_id, err = cru.sessions.send_message(session_id, "What is Crucible?")
 ```
 
+### cru.sessions.send_and_collect(session_id, content, opts)
+
+Send a message and read the reply back as a stream of parts, rather than
+subscribing to the raw event bus and filtering it yourself. Returns an iterator
+that yields one part at a time and `nil` when the turn ends.
+
+Each part is a table with a `type`: `text`, `tool_call`, `tool_result`,
+`thinking`, or `permission_request`.
+
+```lua
+local next_part, err = cru.sessions.send_and_collect(session_id, "What is Crucible?", {
+    timeout = 120,              -- seconds to wait for the turn (default 120)
+    max_tool_result_len = 500,  -- truncate tool output at this many chars
+    interactive = false,        -- see below; default false
+})
+
+for part in next_part do
+    if part.type == "text" then render(part.content) end
+end
+```
+
+`interactive` decides whether an `Ask` permission decision reaches you as a
+`permission_request` part or is converted straight to a denial. Leaving it
+false is right for almost every plugin. Setting it true is an assertion about
+your own channel — see the warning under
+[Full subscribe/respond pattern](#full-subscriberespond-pattern).
+
 ### cru.sessions.subscribe(session_id)
 
 Subscribe to session events. Returns a `next_event` iterator function.
@@ -421,14 +448,20 @@ cru.sessions.interaction_respond(session_id, request_id, { allowed = true })
 
 Subscribe *before* sending the message to avoid missing early events:
 
-> [!warning] Not reachable from a plugin-created session
-> A plugin's own sessions run their turns non-interactively, so
+> [!warning] Off by default, and opting in is an assertion
+> A plugin's turns run non-interactively unless it says otherwise, so
 > `PermissionEngine::evaluate` converts an `Ask` decision to `Deny` and the tool
-> returns an error before `interaction_requested` is ever emitted. No amount of
-> subscribing will surface a permission request from a session the plugin
-> created — a rule that would have asked simply denies. `interaction_respond`
-> and the `permission_request` event remain for a client that drives an
-> *interactive* session over RPC.
+> returns an error before `interaction_requested` is ever emitted. Subscribing
+> alone will not surface a permission request: a rule that would have asked
+> simply denies.
+>
+> Pass `interactive = true` in `send_and_collect`'s options to receive them.
+> Doing so asserts that **exactly one identified principal** can answer — the
+> daemon cannot check this, because permissions are keyed on
+> `(session_id, permission_id)` alone, so wherever more than one person can
+> reply the first answer binds everyone. A direct message from an account the
+> operator named is the shape that holds; a shared channel is not. The Discord
+> plugin's `ask` tier is the worked example.
 
 ```lua
 -- 1. Subscribe first
