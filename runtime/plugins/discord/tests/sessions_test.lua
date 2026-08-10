@@ -645,3 +645,35 @@ describe("cleanup_stale", function()
         assert.equals(2, #calls.created)
     end)
 end)
+
+-- A session created without an explicit `workspace` gets a private scratch
+-- directory as its containment boundary (`session_manager.rs:87-110`); one
+-- created *with* a workspace is contained to that path instead. The Discord
+-- plugin has never passed one, so every Discord turn is confined to a
+-- session-unique scratch dir rather than to the kiln — which is what keeps the
+-- kiln-content-is-executable path empty for this plugin.
+--
+-- That safety is currently accidental. Nothing stopped the next config key
+-- from adding `workspace = ...` to `create_opts` and quietly widening every
+-- Discord session's boundary to the whole kiln, with no test going red. This
+-- is that test. Do not "fix" it by passing a workspace.
+describe("the session workspace invariant", function()
+    it("never passes a workspace on create", function()
+        local calls, api = recording_api()
+        with_env({
+            ["discord.kiln"] = "/tmp/kiln",
+            ["discord.kilns"] = { "/tmp/other" },
+            ["discord.provider"] = "p",
+            ["discord.model"] = "m",
+        }, api, function()
+            sessions.get_or_create("chan-workspace", "g1", "u1", {})
+        end)
+
+        assert.equals(1, #calls.created)
+        assert.is_nil(
+            calls.created[1].workspace,
+            "a Discord session must take the daemon's private scratch workspace, " ..
+            "not a caller-chosen one"
+        )
+    end)
+end)

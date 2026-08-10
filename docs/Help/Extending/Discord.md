@@ -395,6 +395,11 @@ reports it, and `/discord connect` or a daemon restart brings it back.
 
 ## Turning it off
 
+If you are running the bot where other people can reach it, read
+[[Help/Operations/Discord Bot Runbook]] before you need it — it covers the three
+ways to stop the bot and which one fits, how to rotate both of its secrets, and
+what it can actually reach.
+
 Add `enabled = false` **to the `[plugins.discord]` section you already have**
 in `~/.config/crucible/config.toml`, leaving the rest of it in place:
 
