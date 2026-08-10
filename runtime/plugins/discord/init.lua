@@ -52,7 +52,19 @@ end)
 gateway.on("MESSAGE_CREATE", function(data)
     local channel_id = data.channel_id
 
-    -- A reply to an outstanding permission prompt, before anything else — it
+    -- Discord echoes the bot's own messages back over the gateway, and a reply
+    -- carries the id of the message it answered. That pair is what indexes a
+    -- bot message against the session that produced it — exactly, rather than
+    -- guessing from whichever turn was in flight, which two people talking in
+    -- one channel would get wrong. Nothing else here concerns our own
+    -- messages: `routing.should_respond` drops them anyway.
+    if bot_user_id and data.author and data.author.id == bot_user_id then
+        sessions.note_bot_message(data.id,
+            data.message_reference and data.message_reference.message_id)
+        return
+    end
+
+    -- A reply to an outstanding permission prompt, before any routing — it
     -- is an answer, not a new turn, and must not cost a quota charge.
     --
     -- The authorization is the whole point: the reply is honoured only when it
@@ -104,7 +116,17 @@ gateway.on("MESSAGE_CREATE", function(data)
         return
     end
 
-    local session_id, err = sessions.get_or_create(channel_id, guild_id, data.author and data.author.id)
+    -- `referenced_message` is the resolved reply target and arrives on the
+    -- event itself; `message_reference` is the id alone, and is what survives
+    -- when the target could not be resolved. Either identifies the session a
+    -- reply should continue.
+    local reply_to = (data.referenced_message and data.referenced_message.id)
+        or (data.message_reference and data.message_reference.message_id)
+
+    local session_id, err = sessions.get_or_create(channel_id, guild_id, author_id, {
+        message_id = msg_id,
+        reply_to = reply_to,
+    })
     if not session_id then
         cru.log("warn", "Failed to get session for channel " .. channel_id .. ": " .. tostring(err))
         return

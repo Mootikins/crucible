@@ -135,10 +135,11 @@ Reads and writes are bounded by the session's kilns — `kiln` plus anything in
 `kilns` — not by the filesystem. Point `kiln` somewhere you are content for the
 bot to touch.
 
-A **guild message takes the guild's tier**, even when the sender has one of
-their own: everyone in a channel shares a single session, so a per-account
-grant there would apply to whoever else is in the room. Per-account tiers are
-therefore only meaningful in DMs, where the channel *is* the account.
+A message takes **its sender's own tier**, and the guild's only when that
+sender has no key of their own: `user:` first, then `guild:`, then `default`,
+first match wins. That is safe because sessions are keyed per speaker — a
+per-account grant reaches nobody else, because nobody else is in that session.
+A `guild:` key is a floor for the unnamed rather than a ceiling on the named.
 
 `bash` is in neither tier. Its blast radius is not bounded by the session's
 kilns, so granting it is deliberate: set `tool_policy` explicitly, which
@@ -203,11 +204,23 @@ Counters live in memory and reset on daemon restart.
 
 ## Sessions
 
-One Crucible session per Discord channel, reused while it stays warm:
+One Crucible session per **speaker per channel**, reused while it stays warm:
 
 - **DMs** — 24 hours of inactivity.
 - **Guild channels** — 15 minutes of inactivity.
 - Sessions idle for 2 hours are ended outright by a periodic sweep.
+
+Two people talking to the bot in one channel get a session each, so their
+contexts stay apart and a tier or a quota charge belongs to whoever spoke. A DM
+channel already holds exactly one account, so nothing changes there.
+
+**Replying to one of the bot's messages continues the session that produced
+it**, even when it was answering somebody else — that is how you join a thread
+another person started. Two exceptions: a replier whose tier differs from the
+one that session was built with gets their own session instead, because a
+session's tool grants are fixed when it is created; and the index of the bot's
+messages lives in memory, so a reply to something said before the daemon
+restarted starts a new session rather than resuming the old one.
 
 A second message that arrives while the agent is still working on the first is
 refused by the daemon (one concurrent turn per session) and answered with

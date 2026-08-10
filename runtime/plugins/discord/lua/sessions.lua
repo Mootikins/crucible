@@ -1,17 +1,41 @@
---- Discord channel-to-session mapping
---- Manages Crucible agent sessions per Discord channel.
+--- Discord sender-to-session mapping
+--- Manages Crucible agent sessions per Discord channel and speaker.
 
 local config = require("config")
 
 local M = {}
 
--- channel_id -> { session_id, last_active, guild_id }
-local channel_sessions = {}
+-- "<channel_id>\0<author_id>" -> entry, where an entry is
+-- { session_id, last_active, guild_id, tier, key }.
+--
+-- Keyed per *sender*, not per channel. A DM channel holds one account, so DM
+-- behaviour is unchanged; a guild channel now gives each speaker their own
+-- session. That is what makes per-sender tiers, quota attribution and one
+-- permission prompt per person possible — and it stops one person's long
+-- tool-heavy turn from bloating everyone else's context.
+local sender_sessions = {}
+
+-- bot_message_id -> entry, for messages the bot has sent. An incoming reply
+-- pointing at one continues that session rather than the sender's own.
+--
+-- In memory and unpersisted, deliberately: a reply to a message the bot sent
+-- before a restart simply falls through to a new session, which costs a lost
+-- thread rather than a wrong one.
+local bot_messages = {}
+
+-- triggering_message_id -> { entry, at }. The bot's own messages echo back over
+-- the gateway carrying the id of the message they answered, which is how a bot
+-- message is attributed to a session exactly, rather than guessed at from
+-- whichever turn happened to be in flight in that channel.
+local dispatched = {}
 
 -- Session inactivity timeouts (seconds)
 local DM_SESSION_TTL      = 86400   -- 24 hours for DMs
 local CHANNEL_SESSION_TTL = 900     -- 15 minutes for channel @mentions
 local STALE_TTL           = 7200    -- 2 hours before ending idle sessions
+-- Long enough to outlive a turn (the responder's own timeout is 120s) and
+-- short enough that a turn which never sent anything does not linger.
+local DISPATCH_TTL        = 300
 
 --- Get the session TTL based on context (DM vs channel).
 local function session_ttl(guild_id)
@@ -21,26 +45,81 @@ local function session_ttl(guild_id)
     return CHANNEL_SESSION_TTL
 end
 
---- Get or create a Crucible session for a Discord channel.
+local function sender_key(channel_id, author_id)
+    return tostring(channel_id) .. "\0" .. tostring(author_id or "-")
+end
+
+--- Whether this entry is still the live session for its sender. An entry
+--- reached through the reply index may have been ended and replaced since.
+local function is_live(entry)
+    return entry and sender_sessions[entry.key] == entry
+end
+
+--- Remember which session a message routed to, so the bot's answer to it can
+--- be indexed when the gateway echoes it back.
+local function note_dispatch(message_id, entry)
+    if message_id then
+        dispatched[tostring(message_id)] = { entry = entry, at = os.time() }
+    end
+end
+
+--- Index a message the bot sent against the session that produced it.
+---
+--- `triggering_message_id` is the id the bot's reply references — the message
+--- that started the turn. Anything we did not dispatch is ignored: an
+--- unattributed bot message must index nothing rather than the wrong session.
+function M.note_bot_message(bot_message_id, triggering_message_id)
+    if not bot_message_id or not triggering_message_id then return end
+    local record = dispatched[tostring(triggering_message_id)]
+    if not record then return end
+    dispatched[tostring(triggering_message_id)] = nil
+    if is_live(record.entry) then
+        bot_messages[tostring(bot_message_id)] = record.entry
+    end
+end
+
+--- Get or create a Crucible session for whoever sent this message.
 --- Reuses an existing session if it was active within the TTL window.
-function M.get_or_create(channel_id, guild_id, author_id)
-    local entry = channel_sessions[channel_id]
+---
+--- `opts.message_id` is the incoming message's id and `opts.reply_to` the id of
+--- the message it replies to, if any.
+function M.get_or_create(channel_id, guild_id, author_id, opts)
+    opts = opts or {}
+    local tier = M.access_tier(guild_id, author_id)
+    local key = sender_key(channel_id, author_id)
+    local entry = sender_sessions[key]
     local ttl = session_ttl(guild_id)
+
+    -- Reply-chain continuity: a reply to something the bot said continues that
+    -- message's session, even when the bot said it to somebody else. The tier
+    -- must match, because `tool_policy` is fixed when the agent is configured —
+    -- joining across tiers would hand the replier the grant the session was
+    -- built with. A mismatch makes them their own session instead of
+    -- downgrading this one, which would mean discarding the conversation the
+    -- reply was continuing.
+    local replied = opts.reply_to and bot_messages[tostring(opts.reply_to)]
+    if replied and is_live(replied) and replied.tier == tier
+        and os.time() - replied.last_active < session_ttl(replied.guild_id) then
+        replied.last_active = os.time()
+        note_dispatch(opts.message_id, replied)
+        return replied.session_id, nil
+    end
 
     if entry then
         local age = os.time() - entry.last_active
         if age < ttl then
             entry.last_active = os.time()
+            note_dispatch(opts.message_id, entry)
             return entry.session_id, nil
         end
         -- Session too old, end it and create fresh. Drop the map entry with
         -- it: the only other place that clears one is the successful-create
         -- overwrite below, which the three error returns skip — so on a
-        -- misconfigured daemon every later message in this channel re-ended
+        -- misconfigured daemon every later message from this sender re-ended
         -- the same dead id (swallowed by the pcall) and `active_count` kept
         -- reporting it to `:discord status`.
         pcall(cru.sessions.end_session, entry.session_id)
-        channel_sessions[channel_id] = nil
+        sender_sessions[key] = nil
     end
 
     -- The kiln is required, not defaulted: `create_session` falls back to
@@ -68,16 +147,22 @@ function M.get_or_create(channel_id, guild_id, author_id)
     -- A session whose agent could not be configured answers every message with
     -- "NoAgentConfigured" for the full TTL if it is cached, so end it and
     -- report the failure instead.
-    if not M.configure_agent(session.id, M.access_tier(guild_id, author_id)) then
+    if not M.configure_agent(session.id, tier) then
         pcall(cru.sessions.end_session, session.id)
         return nil, "Discord plugin: could not configure an agent for this session"
     end
 
-    channel_sessions[channel_id] = {
+    -- The tier is recorded, not just applied: it is what a later reply is
+    -- checked against, and `tool_policy` cannot be changed after the fact.
+    local created = {
         session_id = session.id,
         last_active = os.time(),
         guild_id = guild_id,
+        tier = tier,
+        key = key,
     }
+    sender_sessions[key] = created
+    note_dispatch(opts.message_id, created)
 
     return session.id, nil
 end
@@ -140,23 +225,31 @@ function M.tier_is_interactive(tier) return tier == "ask" end
 
 --- The access tier for whoever triggered this turn.
 ---
---- Keyed on the two identities Discord actually gives us: the guild a message
---- came from, or the account that sent it. A DM channel is per-account, so both
---- are stable for the life of a channel session — which matters, because the
---- agent config is fixed when the session is created and every later message in
---- that channel reuses it.
+--- Keyed on the two identities Discord actually gives us: the account that sent
+--- the message, and the guild it came from. Precedence is `user:` > `guild:` >
+--- `default`, first match wins — the sender's own grant beats the room's.
+---
+--- That ordering is only safe because sessions are keyed per sender: a `user:`
+--- grant no longer leaks to whoever else is in the channel, because nobody else
+--- is in that session. A `guild:` key is a floor for the unnamed rather than a
+--- ceiling on the named. Both identities are stable for the life of a sender's
+--- session, which matters — the agent config is fixed when the session is
+--- created and every later message from them reuses it.
 ---
 ---     [plugins.discord.access]
----     "user:1234" = "write"     # the operator's own DMs
----     "guild:5678" = "read"     # a server that may look but not touch
+---     "user:1234" = "write"     # this account, wherever it speaks
+---     "guild:5678" = "read"     # everyone else in that server may look only
 ---     default = "read"
 function M.access_tier(guild_id, author_id)
     local access = config.get("access", {})
     if type(access) ~= "table" then return "read" end
 
-    local key = guild_id and ("guild:" .. tostring(guild_id))
-        or (author_id and ("user:" .. tostring(author_id)))
-    local tier = key and access[key] or access.default or "read"
+    local user_key = author_id and ("user:" .. tostring(author_id))
+    local guild_key = guild_id and ("guild:" .. tostring(guild_id))
+    local tier = (user_key and access[user_key])
+        or (guild_key and access[guild_key])
+        or access.default
+        or "read"
     if not TIERS[tier] then
         cru.log("warn", "Discord plugin: unknown access tier '" .. tostring(tier) .. "', using read")
         return "read"
@@ -219,27 +312,41 @@ function M.configure_agent(session_id, tier)
     return true
 end
 
---- End and remove stale sessions (inactive > STALE_TTL).
+--- End and remove stale sessions (inactive > STALE_TTL), and drop the routing
+--- index entries that outlived them.
 function M.cleanup_stale()
     local now = os.time()
     local to_remove = {}
 
-    for channel_id, entry in pairs(channel_sessions) do
+    for key, entry in pairs(sender_sessions) do
         if now - entry.last_active > STALE_TTL then
             pcall(cru.sessions.end_session, entry.session_id)
-            table.insert(to_remove, channel_id)
+            table.insert(to_remove, key)
         end
     end
 
-    for _, channel_id in ipairs(to_remove) do
-        channel_sessions[channel_id] = nil
+    for _, key in ipairs(to_remove) do
+        sender_sessions[key] = nil
+    end
+
+    -- Both indexes hold references to entries rather than ids, so a swept
+    -- session is recognisable here and a reply that reaches one falls through
+    -- to a fresh session instead of resurrecting a dead id.
+    for message_id, entry in pairs(bot_messages) do
+        if not is_live(entry) then bot_messages[message_id] = nil end
+    end
+
+    for message_id, record in pairs(dispatched) do
+        if now - record.at > DISPATCH_TTL or not is_live(record.entry) then
+            dispatched[message_id] = nil
+        end
     end
 end
 
 --- Get current session count.
 function M.active_count()
     local count = 0
-    for _ in pairs(channel_sessions) do
+    for _ in pairs(sender_sessions) do
         count = count + 1
     end
     return count
