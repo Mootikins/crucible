@@ -47,9 +47,20 @@ config:
         names. Roles are read from the message's guild membership: a DM carries
         none, so role: keys never apply there, and when a member holds two
         granting roles the first in their own role list wins.
-        "ask" prompts in the DM before each write and is refused in a guild,
-        where no single account can answer for the room.
+        "ask" prompts before each write; see approvers for who answers.
       default: {}
+    approvers:
+      type: array
+      description: >-
+        User ids that answer "ask" prompts, in order — the first is DMed the
+        prompt and only their reply resolves it, so the request may come from
+        any channel. Empty (the default) means the requester answers their own
+        prompt, which is offered only when their tier came from a "user:" or
+        "role:" key: a "guild:" or default grant names a room, not a person.
+        Put your own id here for a personal bot; you are then both parties.
+        Only one prompt may be outstanding per channel — a reply names no
+        request, so a second one arriving unanswered is denied.
+      default: []
     tool_policy:
       type: object
       description: >-

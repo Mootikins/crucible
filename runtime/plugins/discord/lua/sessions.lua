@@ -210,10 +210,10 @@ WRITE_TOOLS.update_note = "allow"
 --- The read set, plus the write tools marked `ask` so the agent must get a
 --- yes before each one.
 ---
---- Only meaningful in a DM: a prompt is answered by whoever replies first, and
---- the daemon keys permissions on `(session_id, permission_id)` alone, so in a
---- guild channel anyone present could answer for everyone. `M.access_tier`
---- degrades this to `read` outside a DM rather than trusting the room.
+--- Who answers is `approvers`: configured, the prompt goes to the first
+--- approver's DM and only they resolve it, so the request may come from
+--- anywhere. Unconfigured, the requester answers their own prompt, which
+--- `M.access_tier` only allows when a `user:` or `role:` key named them.
 local ASK_TOOLS = {}
 for tool, policy in pairs(WRITE_TOOLS) do
     ASK_TOOLS[tool] = READ_TOOLS[tool] and policy or "ask"
@@ -242,6 +242,33 @@ local function role_tier(access, guild_id, roles)
     return nil
 end
 
+--- The accounts that answer permission prompts, in order, from `approvers`.
+---
+--- Empty means the requester answers their own — which is only offered to
+--- someone a `user:` or `role:` key named. Put your own id here and the
+--- personal case is the delegated one with both parties being you.
+function M.approvers()
+    local list = config.get("approvers", {})
+    if type(list) ~= "table" then return {} end
+    return list
+end
+
+--- Which kind of key granted a tier, alongside the tier itself. The source is
+--- what decides whether an `ask` grant has a principal behind it: `user:` and
+--- `role:` name accounts, `guild:` and `default` name a room.
+local function granted_tier(access, guild_id, author_id, roles)
+    local user_key = author_id and ("user:" .. tostring(author_id))
+    if user_key and access[user_key] then return access[user_key], "user" end
+
+    local from_role = role_tier(access, guild_id, roles)
+    if from_role then return from_role, "role" end
+
+    local guild_key = guild_id and ("guild:" .. tostring(guild_id))
+    if guild_key and access[guild_key] then return access[guild_key], "guild" end
+
+    return access.default or "read", "default"
+end
+
 --- The access tier for whoever triggered this turn.
 ---
 --- Keyed on the identities Discord gives us: the account that sent the message,
@@ -263,6 +290,9 @@ end
 --- sender's session, which matters — the agent config is fixed when the session
 --- is created and every later message from them reuses it.
 ---
+---     [plugins.discord]
+---     approvers = ["1234"]      # who answers an `ask` prompt, in their DM
+---
 ---     [plugins.discord.access]
 ---     "user:1234" = "write"     # this account, wherever it speaks
 ---     "role:9012" = "write"     # anyone holding that server role
@@ -272,22 +302,20 @@ function M.access_tier(guild_id, author_id, roles)
     local access = config.get("access", {})
     if type(access) ~= "table" then return "read" end
 
-    local user_key = author_id and ("user:" .. tostring(author_id))
-    local guild_key = guild_id and ("guild:" .. tostring(guild_id))
-    local tier = (user_key and access[user_key])
-        or role_tier(access, guild_id, roles)
-        or (guild_key and access[guild_key])
-        or access.default
-        or "read"
+    local tier, source = granted_tier(access, guild_id, author_id, roles)
     if not TIERS[tier] then
         cru.log("warn", "Discord plugin: unknown access tier '" .. tostring(tier) .. "', using read")
         return "read"
     end
-    -- `ask` needs one identified person to answer, and a guild channel is not
-    -- that: whoever replies first answers for everyone in the room. Degrade
-    -- rather than prompt into a crowd.
-    if tier == "ask" and guild_id then
-        cru.log("info", "Discord plugin: 'ask' is DM-only; using read for guild " .. tostring(guild_id))
+    -- `ask` needs one identified account to answer. With `approvers` set that
+    -- is the approver, prompted in their own DM, and the request may come from
+    -- anywhere. Without one the requester answers, so the grant must have named
+    -- them: `guild:` and `default` describe the room, and prompting a room is
+    -- how the first person to type answers for everyone in it.
+    if tier == "ask" and #M.approvers() == 0
+        and (source == "guild" or source == "default") then
+        cru.log("info",
+            "Discord plugin: 'ask' from a " .. source .. " key needs an approvers list; using read")
         return "read"
     end
     return tier

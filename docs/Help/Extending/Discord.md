@@ -106,16 +106,20 @@ answer may do**, so one bot instance can read for a server and read *and* write
 for you.
 
 ```toml
+[plugins.discord]
+approvers = ["123456789012345678"]    # who answers an `ask` prompt
+
 [plugins.discord.access]
 "user:123456789012345678" = "write"   # your own DMs
+"role:135792468013579246" = "ask"     # moderators may write, once approved
 "guild:987654321098765432" = "read"   # a server that may look, not touch
 default = "read"
 ```
 
 - **`read`** (the default, and what you get with no `access` block) — the agent
   may read files and notes and run kiln searches, with no prompt.
-- **`ask`** — reads freely, but the agent must get a **y** from you in the DM
-  before each write. Prompts arrive as a callout naming the tool:
+- **`ask`** — reads freely, but the agent must get a **y** before each write.
+  Prompts arrive as a callout naming the tool:
 
   ```
   > ⚠️ **write_file** wants to run:
@@ -125,9 +129,9 @@ default = "read"
   > Reply **y** to allow, **n** to deny (optionally `n, reason`).
   ```
 
-  No answer within 60 seconds denies. **DM-only** — in a guild it degrades to
-  `read`, because permissions are keyed on the session and the first reply
-  would answer for everyone in the room.
+  No answer within 60 seconds denies, and so does a second request arriving
+  while that one is still unanswered. Who answers it is
+  [`approvers`](#who-answers-an-ask-prompt).
 - **`write`** — the read tools plus `write_file`, `edit_file`, `multi_edit`,
   `create_note` and `update_note`, with no prompt.
 
@@ -135,11 +139,12 @@ Reads and writes are bounded by the session's kilns — `kiln` plus anything in
 `kilns` — not by the filesystem. Point `kiln` somewhere you are content for the
 bot to touch.
 
-A message takes **its sender's own tier**, and the guild's only when that
-sender has no key of their own: `user:` first, then `guild:`, then `default`,
-first match wins. That is safe because sessions are keyed per speaker — a
-per-account grant reaches nobody else, because nobody else is in that session.
-A `guild:` key is a floor for the unnamed rather than a ceiling on the named.
+A message takes **its sender's own tier**, and the room's only when that sender
+has no key of their own: `user:` first, then `role:` (any guild role they
+hold), then `guild:`, then `default`, first match wins. That is safe because
+sessions are keyed per speaker — a per-account grant reaches nobody else,
+because nobody else is in that session. A `guild:` key is a floor for the
+unnamed rather than a ceiling on the named.
 
 `bash` is in neither tier. Its blast radius is not bounded by the session's
 kilns, so granting it is deliberate: set `tool_policy` explicitly, which
@@ -148,9 +153,52 @@ replaces the tier for every session.
 > [!NOTE]
 > Outside the `ask` tier a Discord turn runs non-interactively, so a tool that
 > is not granted here is *denied* rather than queued — nothing will prompt, and
-> the agent gets a tool error. `ask` is the exception, and it is DM-only for a
-> reason: permissions are keyed on the session, not on who is speaking, so a
-> prompt in a shared channel would be answered by whoever typed first.
+> the agent gets a tool error. `ask` is the exception.
+
+### Who answers an `ask` prompt
+
+`approvers` is a list of user ids. The **first** is sent the prompt in a DM,
+and **only their reply resolves it** — so the request itself may come from
+anywhere, because the room it came from never sees the prompt:
+
+```toml
+[plugins.discord]
+approvers = ["123456789012345678"]
+```
+
+The prompt names the requester and the room they asked from, because the
+approver is deciding for an account they cannot otherwise see:
+
+```
+> @someone in #general asked.
+> ⚠️ **write_file** wants to run:
+> ```
+> docs/Notes/scratch.md
+> ```
+> Reply **y** to allow, **n** to deny (optionally `n, reason`).
+```
+
+The requester is told their request is waiting, and gets the answer when it
+comes. If the DM cannot be opened, or the prompt cannot be sent, the request is
+**denied** rather than handed back to the requester to approve.
+
+**One request at a time.** A reply is a bare **y**, with nothing in it naming
+the request it answers — so only one prompt may be outstanding in a channel at
+once, and a second request arriving while the first is unanswered is denied
+immediately and told to try again. That matters most with an approver, since
+every requester's prompt lands in the same DM: without the rule, a **y** meant
+for one request could resolve another, from a different person in a different
+room.
+
+With `approvers` **unset**, the requester answers their own prompt, in the
+channel they asked in. That is only offered when their tier came from a `user:`
+or `role:` key — a grant that named an account. A `guild:` or `default` grant
+of `ask` degrades to `read` instead, because the principal it describes is
+"anyone in the room", which is also who would be answering.
+
+For a personal bot, put **your own id** in `approvers`. Nothing special
+happens: you are simply both parties, and the prompt arrives in your DMs
+wherever you asked from.
 
 ## Every option
 
@@ -165,6 +213,7 @@ All keys live under `[plugins.discord]`.
 | `allowed_users` | `[]` | User ids answered in DMs. **Empty means nobody.** |
 | `allowed_guilds` | `[]` | Guild ids answered in. **Empty means nobody.** |
 | `access` | `{}` | Capability per identity — see [What the bot may do](#what-the-bot-may-do). |
+| `approvers` | `[]` | User ids that answer `ask` prompts, in order; the first is DMed. Empty means the requester answers their own — see [Who answers an `ask` prompt](#who-answers-an-ask-prompt). |
 | `tool_policy` | `{}` | Replaces the access tiers wholesale. The escape hatch for granting a tool the tiers withhold. |
 | `respond_to` | `"mentions"` | Within an allowed guild: `mentions`, `prefix`, `both`, or `all`. |
 | `command_prefix` | `""` | Text prefix for `respond_to = "prefix"`/`"both"`, e.g. `"!"`. Empty disables prefix matching. |
@@ -262,18 +311,22 @@ with the rest of the default; re-add it if you want citations.
 > with a different embedding model is dropped with a warning in
 > `cru daemon logs` rather than an error at the user.
 
-## Discord turns are non-interactive
+## Discord turns are non-interactive outside `ask`
 
-A plugin-created session runs its turns with `is_interactive = false`. The
-permission engine converts an `Ask` decision to `Deny` when a turn is not
-interactive, and the tool call returns an error before any interaction request
-is emitted. **A rule that would have prompted instead denies.**
+Except on the `ask` tier, a plugin-created session runs its turns with
+`is_interactive = false`. The permission engine converts an `Ask` decision to
+`Deny` when a turn is not interactive, and the tool call returns an error before
+any interaction request is emitted. **A rule that would have prompted instead
+denies.**
 
 This is not a limitation to work around — it is the point. Permissions are
 keyed on `(session_id, permission_id)` and nothing in the daemon knows who is
-entitled to answer. The plugin previously matched a y/n reply against the
-Discord author id that triggered the prompt, which is a chat-room username with
-no Crucible principal behind it, in a channel anyone can be invited to.
+entitled to answer, so a y/n matched against the Discord author id that
+triggered the prompt is a chat-room username with no Crucible principal behind
+it, in a channel anyone can be invited to. That is what
+[`approvers`](#who-answers-an-ask-prompt) supplies: an account the *operator*
+named in config, prompted in its own DM. Only a turn that has one — or a
+requester a `user:`/`role:` key named — runs interactively at all.
 
 If you want a tool available to the Discord bot, `allow` it explicitly in your
 permission rules. See [[Help/Concepts/Permission Precedence]].

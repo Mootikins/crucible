@@ -64,31 +64,14 @@ gateway.on("MESSAGE_CREATE", function(data)
         return
     end
 
-    -- A reply to an outstanding permission prompt, before any routing — it
-    -- is an answer, not a new turn, and must not cost a quota charge.
-    --
-    -- The authorization is the whole point: the reply is honoured only when it
-    -- comes from the account the prompt was shown to, in a DM. The prompt is
-    -- only ever raised for the `ask` tier, which `sessions.access_tier`
-    -- refuses to hand out in a guild — because permissions are keyed on
-    -- `(session_id, permission_id)` alone, so in a room with more than one
-    -- person the first reply would answer for everyone.
-    local pending = responder.pending_replies[channel_id]
-    if pending and pending.state == "waiting" and not data.guild_id then
-        local author_id = data.author and data.author.id
-        if author_id and author_id == pending.user_id then
-            local answer = (data.content or ""):lower()
-            local verdict, reason = answer:match("^(%a+)%s*,?%s*(.*)$")
-            if verdict == "y" or verdict == "yes" then
-                pending.state = "allowed"
-                return
-            elseif verdict == "n" or verdict == "no" then
-                pending.state = "denied"
-                pending.reason = reason ~= "" and reason or nil
-                return
-            end
-        end
-        -- Anything else falls through and is treated as an ordinary message.
+    -- A reply to an outstanding permission prompt, before any routing — it is
+    -- an answer, not a new turn, and must not cost a quota charge. Anything
+    -- that is not an answer falls through and is treated as an ordinary
+    -- message. The authorization lives in `try_resolve_permission`: only the
+    -- account the prompt named resolves it, wherever it was shown.
+    if responder.try_resolve_permission(channel_id,
+        data.author and data.author.id, data.content) then
+        return
     end
 
     if not routing.should_respond(data, bot_user_id) then return end

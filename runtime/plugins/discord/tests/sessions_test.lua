@@ -274,13 +274,17 @@ describe("role grants", function()
 end)
 
 -- The `ask` tier: the middle ground between granting a tool outright and
--- denying it with no recourse. It only works where exactly one identified
--- account can answer, which is a DM.
+-- denying it with no recourse. It needs one identified account to answer, and
+-- what decides whether there is one is `approvers` — with none configured the
+-- requester answers, so the grant has to have named *them*.
 describe("the ask tier", function()
-    local function tier_with(access, guild_id, author_id)
+    local function tier_with(access, guild_id, author_id, opts)
+        opts = opts or {}
         local result
-        with_env({ ["discord.access"] = access }, {}, function()
-            result = sessions.access_tier(guild_id, author_id)
+        local cfg = { ["discord.access"] = access }
+        if opts.approvers then cfg["discord.approvers"] = opts.approvers end
+        with_env(cfg, {}, function()
+            result = sessions.access_tier(guild_id, author_id, opts.roles)
         end)
         return result
     end
@@ -289,10 +293,30 @@ describe("the ask tier", function()
         assert.equals("ask", tier_with({ ["user:u1"] = "ask" }, nil, "u1"))
     end)
 
-    -- Permissions are keyed on (session_id, permission_id) alone, so in a
-    -- guild channel whoever replies first answers for everyone in the room.
-    it("degrades to read in a guild rather than prompting a crowd", function()
+    -- No `approvers`, so the requester answers their own prompt. A `guild:` or
+    -- `default` grant names no one — the principal it describes is "anyone in
+    -- the room", which is also who could then answer.
+    it("is refused when the grant named the room rather than a person", function()
         assert.equals("read", tier_with({ ["guild:g1"] = "ask" }, "g1", "u1"))
+        assert.equals("read", tier_with({ default = "ask" }, "g1", "u1"))
+        assert.equals("read", tier_with({ default = "ask" }, nil, "u1"))
+    end)
+
+    -- Being in a guild is no longer the disqualifier: a `user:` or `role:`
+    -- grant names an account, and per-sender sessions mean the prompt belongs
+    -- to that account alone.
+    it("survives in a guild when a user or role key named the sender", function()
+        assert.equals("ask", tier_with({ ["user:u1"] = "ask" }, "g1", "u1"))
+        assert.equals("ask", tier_with({ ["role:r1"] = "ask" }, "g1", "u1", { roles = { "r1" } }))
+    end)
+
+    -- With an approver configured the requester is not the one answering, so
+    -- where the request came from stops mattering at all.
+    it("is handed out on a room-wide grant once an approver is configured", function()
+        assert.equals("ask",
+            tier_with({ ["guild:g1"] = "ask" }, "g1", "u1", { approvers = { "a1" } }))
+        assert.equals("ask",
+            tier_with({ default = "ask" }, "g1", "u1", { approvers = { "a1" } }))
     end)
 
     it("marks only the ask tier as needing a live answer", function()
