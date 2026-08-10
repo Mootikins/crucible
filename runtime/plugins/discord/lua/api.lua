@@ -87,48 +87,10 @@ function M.trigger_typing(channel_id)
     return api_request("POST", "/channels/" .. channel_id .. "/typing")
 end
 
+-- Dead until delegated approval lands, which DMs a named approver rather than
+-- prompting in the channel the request came from.
 function M.create_dm_channel(user_id)
     return api_request("POST", "/users/@me/channels", { recipient_id = user_id })
-end
-
--- ---------------------------------------------------------------------------
--- Channels & Guilds
--- ---------------------------------------------------------------------------
-
-function M.get_channels(guild_id)
-    return api_request("GET", "/guilds/" .. guild_id .. "/channels")
-end
-
-function M.get_guilds()
-    return api_request("GET", "/users/@me/guilds")
-end
-
--- ---------------------------------------------------------------------------
--- Slash Commands (PUT for bulk overwrite per Discord docs)
--- ---------------------------------------------------------------------------
-
-function M.register_global_commands(app_id, commands)
-    return api_request("PUT", "/applications/" .. app_id .. "/commands", commands)
-end
-
-function M.register_guild_commands(app_id, guild_id, commands)
-    return api_request("PUT", "/applications/" .. app_id .. "/guilds/" .. guild_id .. "/commands", commands)
-end
-
--- ---------------------------------------------------------------------------
--- Interactions
--- ---------------------------------------------------------------------------
-
-function M.respond_interaction(interaction_id, interaction_token, response)
-    return api_request("POST",
-        "/interactions/" .. interaction_id .. "/" .. interaction_token .. "/callback",
-        response)
-end
-
-function M.edit_interaction_response(app_id, interaction_token, data)
-    return api_request("PATCH",
-        "/webhooks/" .. app_id .. "/" .. interaction_token .. "/messages/@original",
-        data)
 end
 
 return M
