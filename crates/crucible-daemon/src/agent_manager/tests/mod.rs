@@ -869,6 +869,7 @@ mod permissions;
 mod precognition;
 mod providers_concurrency;
 mod reactor;
+mod revive_cold;
 mod workspace;
 
 /// Mock agent that runs a scheduler-driven tool loop and records every event
