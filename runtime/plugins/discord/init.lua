@@ -123,16 +123,22 @@ gateway.on("MESSAGE_CREATE", function(data)
     local reply_to = (data.referenced_message and data.referenced_message.id)
         or (data.message_reference and data.message_reference.message_id)
 
+    -- The sender's role ids in this guild, which `access_tier` reads `role:`
+    -- grants from. Present on every guild MESSAGE_CREATE; a DM has no `member`
+    -- at all, and a role id would mean nothing outside its guild anyway.
+    local roles = data.member and data.member.roles
+
     local session_id, err = sessions.get_or_create(channel_id, guild_id, author_id, {
         message_id = msg_id,
         reply_to = reply_to,
+        roles = roles,
     })
     if not session_id then
         cru.log("warn", "Failed to get session for channel " .. channel_id .. ": " .. tostring(err))
         return
     end
 
-    local interactive = sessions.tier_is_interactive(sessions.access_tier(guild_id, author_id))
+    local interactive = sessions.tier_is_interactive(sessions.access_tier(guild_id, author_id, roles))
 
     cru.spawn(function()
         local reply_to = guild_id and msg_id or nil

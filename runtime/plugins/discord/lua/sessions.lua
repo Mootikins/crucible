@@ -81,11 +81,12 @@ end
 --- Get or create a Crucible session for whoever sent this message.
 --- Reuses an existing session if it was active within the TTL window.
 ---
---- `opts.message_id` is the incoming message's id and `opts.reply_to` the id of
---- the message it replies to, if any.
+--- `opts.message_id` is the incoming message's id, `opts.reply_to` the id of
+--- the message it replies to, if any, and `opts.roles` the sender's guild role
+--- ids (`data.member.roles`; absent in a DM).
 function M.get_or_create(channel_id, guild_id, author_id, opts)
     opts = opts or {}
-    local tier = M.access_tier(guild_id, author_id)
+    local tier = M.access_tier(guild_id, author_id, opts.roles)
     local key = sender_key(channel_id, author_id)
     local entry = sender_sessions[key]
     local ttl = session_ttl(guild_id)
@@ -223,30 +224,58 @@ local TIERS = { read = READ_TOOLS, write = WRITE_TOOLS, ask = ASK_TOOLS }
 --- Whether a tier needs a live person to answer prompts.
 function M.tier_is_interactive(tier) return tier == "ask" end
 
+--- The tier named by the first of `roles` that appears in the access map.
+---
+--- Ordered by the member's own role list, because that is the only ordering in
+--- the comparison: `access` is a Lua table and `pairs` over it has no defined
+--- order, so resolving two granting roles against each other any other way
+--- would be a coin toss between them.
+---
+--- Requires a guild. A role id means nothing outside the guild that issued it,
+--- and a DM event carries no `member` to read one from in the first place.
+local function role_tier(access, guild_id, roles)
+    if not guild_id or type(roles) ~= "table" then return nil end
+    for _, role_id in ipairs(roles) do
+        local tier = access["role:" .. tostring(role_id)]
+        if tier then return tier end
+    end
+    return nil
+end
+
 --- The access tier for whoever triggered this turn.
 ---
---- Keyed on the two identities Discord actually gives us: the account that sent
---- the message, and the guild it came from. Precedence is `user:` > `guild:` >
---- `default`, first match wins — the sender's own grant beats the room's.
+--- Keyed on the identities Discord gives us: the account that sent the message,
+--- the roles it holds in the guild (`data.member.roles`, absent in a DM), and
+--- the guild itself. Precedence is `user:` > `role:` > `guild:` > `default`,
+--- first match wins — the sender's own grant beats a role's, and a role's beats
+--- the room's.
+---
+--- A role sits above `guild:` because holding one is something an administrator
+--- did on purpose, to that person; being in the guild is not. That is also why
+--- a role may grant `write` — it names a principal as surely as an account
+--- does, with the operational advantage that a new moderator has access the
+--- moment the role is granted, with no config edit and no restart.
 ---
 --- That ordering is only safe because sessions are keyed per sender: a `user:`
 --- grant no longer leaks to whoever else is in the channel, because nobody else
 --- is in that session. A `guild:` key is a floor for the unnamed rather than a
---- ceiling on the named. Both identities are stable for the life of a sender's
---- session, which matters — the agent config is fixed when the session is
---- created and every later message from them reuses it.
+--- ceiling on the named. All three identities are stable for the life of a
+--- sender's session, which matters — the agent config is fixed when the session
+--- is created and every later message from them reuses it.
 ---
 ---     [plugins.discord.access]
 ---     "user:1234" = "write"     # this account, wherever it speaks
+---     "role:9012" = "write"     # anyone holding that server role
 ---     "guild:5678" = "read"     # everyone else in that server may look only
 ---     default = "read"
-function M.access_tier(guild_id, author_id)
+function M.access_tier(guild_id, author_id, roles)
     local access = config.get("access", {})
     if type(access) ~= "table" then return "read" end
 
     local user_key = author_id and ("user:" .. tostring(author_id))
     local guild_key = guild_id and ("guild:" .. tostring(guild_id))
     local tier = (user_key and access[user_key])
+        or role_tier(access, guild_id, roles)
         or (guild_key and access[guild_key])
         or access.default
         or "read"

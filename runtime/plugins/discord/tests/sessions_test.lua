@@ -196,6 +196,83 @@ describe("access tiers", function()
     end)
 end)
 
+-- A role names a principal the same way an account does: handing one out is a
+-- deliberate act by whoever administers the server, and it is the grant that
+-- keeps working when a new moderator arrives — no config edit, no restart.
+-- Roles reach the plugin as `data.member.roles` on a guild MESSAGE_CREATE.
+describe("role grants", function()
+    local function tier_with(access, guild_id, author_id, roles)
+        local result
+        with_env({ ["discord.access"] = access }, {}, function()
+            result = sessions.access_tier(guild_id, author_id, roles)
+        end)
+        return result
+    end
+
+    it("gives a member the tier their role names", function()
+        assert.equals("write",
+            tier_with({ ["role:r-mod"] = "write" }, "g1", "u1", { "r-mod" }))
+    end)
+
+    -- Same rule as `guild:`, one rung up: a grant aimed at this account beats
+    -- one aimed at a group it happens to be in.
+    it("prefers the sender's own tier over their role's", function()
+        local access = { ["user:u1"] = "write", ["role:r-mod"] = "read" }
+        assert.equals("write", tier_with(access, "g1", "u1", { "r-mod" }))
+    end)
+
+    it("prefers a role's tier over the guild's", function()
+        local access = { ["guild:g1"] = "read", ["role:r-mod"] = "write" }
+        assert.equals("write", tier_with(access, "g1", "u1", { "r-mod" }))
+    end)
+
+    -- Two granting roles on one member need a deterministic winner. The access
+    -- map is a Lua table and `pairs` has no order, so the member's own role
+    -- list is the only ordering either side of the comparison actually has.
+    it("takes the first of the member's roles that names a tier", function()
+        local access = { ["role:r-a"] = "read", ["role:r-b"] = "write" }
+        assert.equals("write", tier_with(access, "g1", "u1", { "r-b", "r-a" }))
+        assert.equals("read", tier_with(access, "g1", "u1", { "r-a", "r-b" }))
+    end)
+
+    it("skips roles that name no tier rather than stopping at them", function()
+        local access = { ["role:r-mod"] = "write" }
+        assert.equals("write",
+            tier_with(access, "g1", "u1", { "r-none", "r-other", "r-mod" }))
+    end)
+
+    -- A DM carries no `member`, so there are no roles to read; and a role id is
+    -- guild-scoped, so one carried in from elsewhere must not grant here.
+    it("ignores roles in a DM", function()
+        assert.equals("read",
+            tier_with({ ["role:r-mod"] = "write" }, nil, "u1", { "r-mod" }))
+    end)
+
+    it("falls back to read on an unknown tier name from a role", function()
+        assert.equals("read",
+            tier_with({ ["role:r-mod"] = "superuser" }, "g1", "u1", { "r-mod" }))
+    end)
+
+    -- The tier is only worth resolving if it reaches the agent: `get_or_create`
+    -- has to carry the roles from the event through to `configure_agent`.
+    it("configures the agent from the role's tier", function()
+        local seen
+        local _, api = recording_api()
+        api.configure_agent = function(_, cfg) seen = cfg.tool_policy; return true, nil end
+        with_env({
+            ["discord.kiln"] = "/tmp/kiln",
+            ["discord.provider"] = "p",
+            ["discord.model"] = "m",
+            ["discord.access"] = { ["role:r-mod"] = "write", ["guild:g1"] = "read" },
+        }, api, function()
+            sessions.get_or_create("chan-roles", "g1", "u-mod", { roles = { "r-mod" } })
+        end)
+
+        assert.equals("allow", seen.write_file)
+        assert.equals("allow", seen.read_file)
+    end)
+end)
+
 -- The `ask` tier: the middle ground between granting a tool outright and
 -- denying it with no recourse. It only works where exactly one identified
 -- account can answer, which is a DM.
