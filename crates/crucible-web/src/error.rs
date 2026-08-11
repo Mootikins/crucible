@@ -29,6 +29,13 @@ pub enum WebError {
     #[error("Not found: {0}")]
     NotFound(String),
 
+    /// The resource is here; this endpoint cannot represent it. Distinct from
+    /// [`WebError::NotFound`] because collapsing the two sends the caller
+    /// looking for a missing file that is sitting right there — see the text
+    /// read in `routes/kiln.rs`.
+    #[error("Unsupported media type: {0}")]
+    UnsupportedMediaType(String),
+
     #[error("Forbidden: {0}")]
     Forbidden(String),
 
@@ -45,6 +52,7 @@ impl IntoResponse for WebError {
             WebError::Daemon(e) => (StatusCode::BAD_GATEWAY, e.clone()),
             WebError::Validation(e) => (StatusCode::UNPROCESSABLE_ENTITY, e.clone()),
             WebError::NotFound(e) => (StatusCode::NOT_FOUND, e.clone()),
+            WebError::UnsupportedMediaType(e) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, e.clone()),
             WebError::Forbidden(e) => (StatusCode::FORBIDDEN, e.clone()),
             WebError::Internal(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.clone()),
         };

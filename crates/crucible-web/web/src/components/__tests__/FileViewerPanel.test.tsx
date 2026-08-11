@@ -8,6 +8,7 @@ import { registerPanels } from '@/lib/register-panels';
 // file for "save UX"), so the mock reads module-level state at call time and
 // each describe's beforeEach stages the value its tests need.
 const saveFile = vi.fn(async () => {});
+const openFileSpy = vi.fn(async () => {});
 const FILE_PATH = '/kiln/notes/from-tui.md';
 
 let openFilesValue: { path: string; content: string; dirty: boolean }[] = [];
@@ -19,7 +20,7 @@ vi.mock('@/contexts/EditorContext', () => ({
   useEditorSafe: () => ({
     openFiles: () => openFilesValue,
     activeFile: () => activeFileValue,
-    openFile: vi.fn(async () => {}),
+    openFile: openFileSpy,
     closeFile: vi.fn(),
     saveFile,
     setActiveFile: vi.fn(),
@@ -118,6 +119,36 @@ describe('FileViewerPanel — rendering', () => {
     // With mocked useEditorSafe returning empty openFiles and isLoading=false,
     // the component shows the "Loading file..." fallback inside the <Show> fallback
     expect(screen.getByText('Loading file...')).toBeInTheDocument();
+  });
+
+  it('shows an image instead of asking the text endpoint for its bytes', () => {
+    // Opening a PNG used to hand it to the editor, which fetches
+    // /api/kiln/file — a text read that fails on the first non-UTF-8 byte and
+    // answered 404, so an image in the tree could not be opened at all.
+    render(() => <FileViewerPanel filePath="/kiln/assets/shot.png" />);
+
+    const img = screen.getByTestId('file-image') as HTMLImageElement;
+    expect(img.getAttribute('src')).toBe(
+      '/api/file/raw?path=%2Fkiln%2Fassets%2Fshot.png',
+    );
+    // No editor, and no "Loading file..." spinner waiting on a text read that
+    // is never coming.
+    expect(document.querySelector('.cm-editor')).toBeNull();
+    expect(screen.queryByText('Loading file...')).toBeNull();
+  });
+
+  it('leaves text files to the editor', () => {
+    render(() => <FileViewerPanel filePath="/kiln/notes/note.md" />);
+    expect(screen.queryByTestId('file-image')).toBeNull();
+    expect(openFileSpy).toHaveBeenCalledWith('/kiln/notes/note.md', expect.anything());
+  });
+
+  it('never asks the text endpoint to open an image', () => {
+    // Rendering an <img> is only half of it: the load effect runs whatever the
+    // panel returns, so without a guard the panel still fired the text read
+    // and took a 404 for a file it was already displaying correctly.
+    render(() => <FileViewerPanel filePath="/kiln/assets/shot.png" />);
+    expect(openFileSpy).not.toHaveBeenCalled();
   });
 });
 

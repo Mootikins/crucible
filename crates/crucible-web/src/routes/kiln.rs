@@ -121,11 +121,30 @@ async fn get_kiln_file(
     // only path/title/tags/links_to/content_hash — never a "content" field — so
     // a daemon-first content branch here was statically unreachable and a
     // footgun (it would have served stale DB text over the file bytes).
-    let content = fs::read_to_string(&canonical_file)
-        .await
-        .map_err(|e| WebError::NotFound(format!("File not found: {e}")))?;
+    let content = read_text_file(&canonical_file).await?;
 
     Ok(Json(serde_json::json!({ "content": content })))
+}
+
+/// Read a file this endpoint is able to represent, or say which way it failed.
+///
+/// `read_to_string` reports "not valid UTF-8" as an ordinary [`io::Error`], and
+/// mapping every error from it to `NotFound` turned every image in the tree
+/// into a 404 whose body read `File not found: stream did not contain valid
+/// UTF-8` — a status claiming the file is absent, a message claiming it is
+/// not, and a real file on disk that `/api/file/raw` serves without complaint.
+/// Clients branch on the status, so that is the half that has to be true.
+async fn read_text_file(path: &Path) -> Result<String, WebError> {
+    match fs::read_to_string(path).await {
+        Ok(content) => Ok(content),
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+            Err(WebError::UnsupportedMediaType(format!(
+                "{} is not a text file; fetch it from /api/file/raw",
+                path.display()
+            )))
+        }
+        Err(e) => Err(WebError::NotFound(format!("File not found: {e}"))),
+    }
 }
 
 /// `GET /api/file/raw?path=<path>` — serve a file's raw bytes. Same
@@ -430,6 +449,63 @@ mod tests {
     use std::os::unix::fs::symlink as symlink_dir;
     #[cfg(windows)]
     use std::os::windows::fs::symlink_dir;
+
+    #[tokio::test]
+    async fn a_file_that_is_not_text_is_not_reported_as_missing() {
+        // A PNG opened from the file tree used to answer
+        //   404 {"message": "File not found: stream did not contain valid UTF-8"}
+        // — a status that says the file is absent and a body that says it is
+        // not, for a file sitting on disk that `/api/file/raw` serves fine.
+        // The status is what clients branch on, so this is the half that has
+        // to carry the meaning.
+        let dir = tempdir().unwrap();
+        let png = dir.path().join("shot.png");
+        // A real PNG signature, and 0x89 is not valid UTF-8 in any position.
+        tokio::fs::write(&png, b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+            .await
+            .unwrap();
+
+        let err = read_text_file(&png).await.expect_err("a PNG is not text");
+        assert!(
+            matches!(err, WebError::UnsupportedMediaType(_)),
+            "expected 415, got {err:?}"
+        );
+        let message = err.to_string();
+        assert!(
+            message.contains("/api/file/raw"),
+            "the error has to name the endpoint that CAN serve it: {message}"
+        );
+        assert!(
+            !message.to_lowercase().contains("not found"),
+            "the file is not missing: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_missing_file_is_still_reported_as_missing() {
+        let dir = tempdir().unwrap();
+        let err = read_text_file(&dir.path().join("nope.md"))
+            .await
+            .expect_err("no such file");
+        assert!(
+            matches!(err, WebError::NotFound(_)),
+            "expected 404, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_text_file_reads_back_unchanged() {
+        let dir = tempdir().unwrap();
+        let note = dir.path().join("note.md");
+        tokio::fs::write(&note, "# hello\n\nwörld ✅\n")
+            .await
+            .unwrap();
+
+        assert_eq!(
+            read_text_file(&note).await.unwrap(),
+            "# hello\n\nwörld ✅\n"
+        );
+    }
 
     #[test]
     fn test_reject_path_traversal_rejects_dotdot() {

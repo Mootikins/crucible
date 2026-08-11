@@ -15,7 +15,7 @@ import { pendingDiffStore, pendingDiffActions } from '@/stores/pendingDiffStore'
 import { useSettingsSafe } from '@/contexts/SettingsContext';
 import { findTabByFilePath } from '@/lib/file-actions';
 import { kilnForPath, openNoteInEditor } from '@/lib/note-actions';
-import { listKilns } from '@/lib/api';
+import { listKilns, rawFileUrl } from '@/lib/api';
 import { swrLocal } from '@/lib/local-cache';
 import { windowActions } from '@/stores/windowStore';
 import { PanelShell } from './PanelShell';
@@ -26,6 +26,10 @@ import { EditorView } from '@codemirror/view';
 import { syncReviewLayer, type ReviewHunkMark } from './editor/review-decorations';
 import { pendingReveal, reviewActions, reviewStore, toolCallLabel } from '@/lib/review-store';
 import { isExternal } from '@/lib/review-types';
+
+/** Extensions the browser renders itself, kept in step with the canvas media
+ * node (`CanvasNodeView.tsx`) — the other place raw bytes become an `<img>`. */
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i;
 
 
 interface FileViewerPanelProps {
@@ -130,6 +134,9 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
 
   const menuItemClass =
     'flex items-center gap-2 px-3 py-1.5 cursor-pointer data-[highlighted]:bg-hover-wash';
+
+  /** Rendered as bytes, never opened as text — see the early return below. */
+  const isImage = () => !!props.filePath && IMAGE_EXT.test(props.filePath);
 
   const fileData = () => openFiles().find(f => f.path === props.filePath) ?? null;
 
@@ -292,7 +299,11 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   // keeps the reference-taking out of the tracking scope.
   createEffect(() => {
     const path = props.filePath;
-    if (path) {
+    // Images are displayed from their raw bytes and never enter the buffer
+    // model. `openFile` is a TEXT read, so calling it here took a 404 for a
+    // file the panel was already rendering correctly — the early return below
+    // governs what is DRAWN, and cannot stop an effect declared above it.
+    if (path && !isImage()) {
       untrack(() => openFile(path, { background: props.background }));
     }
   });
@@ -343,6 +354,29 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
       <div class="h-full bg-shell-bg p-4 flex items-center justify-center text-muted text-sm">
         No file selected
       </div>
+    );
+  }
+
+  // An image never reaches the editor. The editor's load path is a TEXT read
+  // (`/api/kiln/file`), which fails on the first non-UTF-8 byte — so opening a
+  // PNG from the tree produced "Failed to get file content: HTTP 404" for a
+  // file that was sitting right there. Bytes come from `/api/file/raw`, which
+  // serves them under a sandbox CSP as an inert type.
+  //
+  // The load effect above is guarded on the same predicate; a return here
+  // decides what is drawn and does nothing about what was already scheduled.
+  if (isImage()) {
+    return (
+      <PanelShell class="overflow-auto">
+        <div class="h-full w-full flex items-center justify-center p-4">
+          <img
+            src={rawFileUrl(props.filePath)}
+            alt={props.filePath.split('/').pop() ?? props.filePath}
+            class="max-h-full max-w-full object-contain"
+            data-testid="file-image"
+          />
+        </div>
+      </PanelShell>
     );
   }
 
